@@ -96,7 +96,7 @@ RENDER_KERNEL_RULES: list[dict[str, object]] = [
         "meets on one world plane - view-angle-dependently, so it survives a "
         "diff and any single screenshot taken from the lucky angle",
         "trigger": r"\bresolve_(?:placed_)?env_draws\b",
-        "requires": [r"\bdraw_plane_summaries\b", r"\bcoplanar_draw_offsets\b"],
+        "requires": [r"\bdraw_plane_summaries(?:_with)?\b", r"\bcoplanar_draw_offsets\b"],
         "exempt": {
             "crates/engine-shell/src/window/field_render/prop_animation.rs":
                 "resolves the placed draws only to read each one's "

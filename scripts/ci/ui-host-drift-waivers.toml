@@ -417,6 +417,7 @@ skips = [
     "poll_field_shop",
     "poll_game_over",
     "service_cutscene_fmv",
+    "step_expansion_preload_when_idle",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
@@ -448,6 +449,7 @@ skips = [
     "poll_field_shop",
     "poll_game_over",
     "service_cutscene_fmv",
+    "step_expansion_preload_when_idle",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
@@ -477,6 +479,7 @@ skips = [
     "drive_npc_clips",
     "poll_field_shop",
     "poll_game_over",
+    "step_expansion_preload_when_idle",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
@@ -558,6 +561,7 @@ skips = [
     "poll_game_over",
     "run_pending_bgm_handoff",
     "service_cutscene_fmv",
+    "step_expansion_preload_when_idle",
     "step_field_vram_fx",
     "tick_battle_intro",
     "tick_battle_presentation",
@@ -648,6 +652,12 @@ host = "native"
 kernel = "sync_text_balloon"
 host_only = true
 reason = "Commits the `4C E1` balloon's measured width while `self` is still mutable, because the window's draw passes take `&self`. Both hosts commit through the one kernel `legaia_engine_screens::field_messages::commit_text_balloon_measure`: the window here, the page at the head of its draw export (`play_dialog_draws_json`), which has no such split. Both then draw the balloon through the shared `field_message_frame`."
+
+[[frame_kernel]]
+host = "web"
+kernel = "step_expansion_preload_when_idle"
+host_only = true
+reason = "Prepares the expansion maps the current map's exits lead to, one step per tick once the player has stood still, because wasm has no threads. The native window does the same work off the frame path: `SceneHost::enter_expansion_map` queues the neighbours and `engine-scene-host::expansion_preload` builds them on worker threads the frame after entry. Arms that skip it (no session, the naming prompt, a held movie, the page's pause control) only delay a cache fill no frame draws from."
 
 [[frame_kernel]]
 host = "web"
@@ -742,7 +752,7 @@ reason = "The step itself is one pair of shared calls on both hosts (`legaia_eng
 [[frame_content]]
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
-native_only = ["build", "build_filtered_vram_mesh_lit", "chrome_frame", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "place_point", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
+native_only = ["build_filtered_vram_mesh_lit", "chrome_frame", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "place_point", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
 web_only = ["apply", "course", "last_result", "of_mode", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
 reason = """
 Everything the step does to the world or the audio director is a session step

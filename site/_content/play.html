@@ -69,6 +69,15 @@
 .play-mode[disabled] { opacity: 0.45; cursor: not-allowed; }
 .play-mode.is-active { border-color: var(--accent); background: var(--accent-soft); }
 .play-mode-name { font-weight: 600; font-size: 0.92rem; }
+/* Expansion packs are the port's own, still-moving feature: every place
+ * the page offers one says so. */
+.play-experimental {
+  display: inline-block; margin-left: 0.35rem; padding: 0 0.35rem;
+  border: 1px solid var(--warn-line); border-radius: 3px;
+  background: var(--warn-soft); color: var(--warn-text);
+  font-family: var(--font-mono); font-size: 0.62rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.04em; vertical-align: middle;
+}
 .play-mode-desc { color: var(--text-muted); font-size: 0.76rem; line-height: 1.45; }
 .play-mode-tag {
   font-family: var(--font-mono); font-size: 0.66rem; color: var(--text-dim);
@@ -96,7 +105,11 @@
 .play-canvas-wrap { position: relative; }
 /* `?embed=1` (the minigames page's arena): the picture alone, filling the
  * frame it is embedded in. */
-body.play-embedded { margin: 0; background: #000; overflow: hidden; }
+/* No topbar is drawn here, so none of its height is reserved
+   (styles.css pads every body by `--topbar-h`): kept, it pushed the picture
+   down by that much and the frame cut off the stage's bottom rows - a mode
+   table's action menu and hint bar. */
+body.play-embedded { margin: 0; padding: 0; background: #000; overflow: hidden; }
 body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); margin: 0 auto; }
 body.play-embedded .play-canvas-wrap { max-width: none; }
 body.play-embedded .play-canvas { border: 0; }
@@ -265,6 +278,8 @@ body.xw-preview .play-focus-veil { display: none; }
 .play-scene-item:hover { background: var(--bg-raised); }
 .play-scene-item.is-active { background: var(--accent-soft); }
 .play-scene-code { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text-dim); }
+.play-scene-group.is-pack { color: var(--accent); }
+.play-scene-pack-tag { color: var(--text-dim); text-transform: none; letter-spacing: 0; }
 .play-scene-group {
   font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
   color: var(--text-dim); padding: 0.45rem 0.2rem 0.2rem; font-family: var(--font-mono);
@@ -350,6 +365,7 @@ div.play-vis-head { cursor: default; }
 .play-lib-empty { font-size: 0.74rem; color: var(--text-dim); }
 .play-lib-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 0.5rem; align-items: center; border: 1px solid var(--border); background: var(--bg); padding: 0.3rem; }
 .play-lib-row.is-active { border-color: var(--accent); background: var(--accent-soft); }
+.play-lib-row.is-builtin .play-lib-cover.is-blank { color: var(--accent); }
 .play-lib-cover { width: 64px; height: 36px; object-fit: cover; display: block; background: var(--bg-raised); }
 .play-lib-cover.is-blank { display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-weight: 600; }
 .play-lib-meta { min-width: 0; }
@@ -543,6 +559,11 @@ div.play-vis-head { cursor: default; }
                 <span class="play-vis-tag is-enh">Enhancement</span></label>
               <p class="play-vis-desc">Bright lamps, lit windows and sunlit sky bleed a soft glow into their surroundings.</p>
             </li>
+            <li class="play-vis-row" title="Ambient occlusion: soft contact shadows where walls meet floors, under tables and eaves and at characters' feet, plus - with enhanced lighting on - a short shadow each character and prop casts from the mood's sun or moon right where it meets the ground (the native window's Home, persisted). Not retail - the game has no light source to occlude. Presentation only.">
+              <label class="play-vis-head"><input type="checkbox" id="play-ssao" checked> <span class="play-vis-name">Ambient occlusion</span> <kbd>Home</kbd>
+                <span class="play-vis-tag is-enh">Enhancement</span></label>
+              <p class="play-vis-desc">Soft contact shadows where walls meet floors and under characters and props.</p>
+            </li>
             <li class="play-vis-row" title="Ground fog: a low drifting mist bank over the scenes that read as misty or night (Rim Elm under the Mist, Drake Castle, the Voz forests, the Ravine, and any scene whose own fog puffs are live), parted by every character walking through it; a battle inherits its scene's bank (the native window's F9, persisted like its other options). Not retail - the game draws only its fog puffs. Presentation only.">
               <label class="play-vis-head"><input type="checkbox" id="play-ground-fog"> <span class="play-vis-name">Ground fog</span> <kbd>F9</kbd>
                 <span class="play-vis-tag is-enh">Enhancement</span></label>
@@ -727,14 +748,15 @@ div.play-vis-head { cursor: default; }
                 <option value="6">Dance</option>
               </select>
             </label>
-            <label title="The port's own game modes - poker, Grid Duel, golf, racing, prop hunt - from the loaded expansion pack, or the built-in practice set without one (the native backquote key and --mode flag). Start inside a mode asks to leave.">
-              Game mode
+            <label title="The port's custom game modes (experimental, not part of the original game) - poker, Grid Duel, golf, racing, prop hunt - from the loaded expansion pack, or the built-in practice set without one (the native backquote key and --mode flag). Start inside a mode asks to leave.">
+              Custom game mode
               <select id="play-pack-mode">
                 <option value="">enter...</option>
                 <option value="picker">Mode picker</option>
                 <option value="exit">Leave the mode</option>
               </select>
             </label>
+            <a href="modes.html" title="Play the custom game modes on their own page, no disc needed">custom modes page</a>
             <label title="The loaded expansion pack's trading cards: the card menu (binder, boosters, sell, deck) or the binder alone, drawn by the engine (the native backslash key). Circle backs out, Start leaves.">
               <span id="play-cards-label">Cards</span>
               <select id="play-cards">
@@ -809,6 +831,9 @@ div.play-vis-head { cursor: default; }
             <label title="Walk through walls, people and props on the field and the world map. Doors still open when you walk into them.">
               <input type="checkbox" id="play-cheat-noclip"> Walk through walls
             </label>
+            <label title="With an expansion pack loaded: the Journal's Travel page (Select on the pause menu) lists every map of the pack, not only the ones you have been to.">
+              <input type="checkbox" id="play-cheat-travel"> Unlock all Travel maps
+            </label>
           </div>
           <div class="play-btn-row">
             <label title="Gold (capped at 9,999,999).">
@@ -862,7 +887,7 @@ div.play-vis-head { cursor: default; }
 
       <div class="play-rail">
         <div class="play-card" id="play-scene-card">
-          <h3>Scenes</h3>
+          <h3 id="play-scene-title">Scenes</h3>
           <input type="search" id="play-scene-search" class="play-scene-search"
                  placeholder="Filter…" autocomplete="off">
           <div class="play-scene-list" id="play-scene-list"></div>
@@ -880,19 +905,16 @@ div.play-vis-head { cursor: default; }
         </div>
 
         <div class="play-card" id="play-expansion-card">
-          <h3>Expansion pack</h3>
-          <label class="play-save-import">Install a pack (.lxpack, or drop one on this card)
+          <h3>Expansion pack <span class="play-experimental">experimental, incomplete</span></h3>
+          <label class="play-save-import">Install another pack (.lxpack, or drop one on this card)
             <input type="file" id="expansion-import" accept=".lxpack" disabled>
           </label>
           <div class="play-lib" id="expansion-library" aria-label="Installed packs"></div>
           <div class="play-btn-row">
-            <select id="expansion-map" disabled aria-label="Pack map"></select>
-            <button id="expansion-enter" type="button" disabled
-                    title="Walk straight into this map of the pack (its entrances in the retail scenes lead here too).">Enter map</button>
             <button id="expansion-unload" type="button" disabled
-                    title="Play the game as it shipped. The pack's progress stays in your saves.">Unload</button>
+                    title="Turn the expansion pack off: the game as it shipped. The pack's progress stays in your saves.">Disable</button>
           </div>
-          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. A pack adds maps, quests and fights made for the port; New Game and Continue play with it, and Select in the pause menu opens its Journal.</div>
+          <div class="play-save-status" id="expansion-status" aria-live="polite">Load a disc first. Off by default. Expansion packs are experimental and incomplete: enabling one adds its maps and custom game modes to the Scenes list, and New Game and Continue play with it.</div>
         </div>
 
         <!-- Collapsed by default: the key list is long and most visitors only
@@ -1013,6 +1035,11 @@ div.play-vis-head { cursor: default; }
       <a href="minigames.html">minigames page</a> runs, with your points, casts and lure carried
       between sessions. <kbd>X</kbd> casts and locks the power meter, <kbd>Z</kbd> and
       <kbd>V</kbd> reel (<a href="subsystems/minigame-fishing.html">fishing</a>).</li>
+    <li><strong>The port's custom game modes.</strong> Hold'em, Grid Duel, golf, racing and prop
+      hunt - the port's own, experimental and not part of the original game - open from the
+      <em>Custom game mode</em> control, from the loaded pack or the built-in practice set;
+      Rebirth lays some of them out on its maps (enable it on the Expansion pack card). The
+      <a href="modes.html">custom game modes page</a> plays each one on its own, with no disc.</li>
     <li><strong>The overworld.</strong> Picking a kingdom map walks it with the world-map
       controller: step-driven encounters, ports and town doors
       (<a href="subsystems/world-map.html">world map</a>).</li>
@@ -1083,6 +1110,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/webgl-tmd-assembled-scene.js"></script>
 <script src="js/webgl-fog-volume.js"></script>
 <script src="js/webgl-bloom.js"></script>
+<script src="js/webgl-ssao.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/field-actors.js"></script>
 <script src="js/play-view-constants.js"></script>
@@ -1197,9 +1225,49 @@ div.play-vis-head { cursor: default; }
     renderList('');
   }).catch(() => {});
 
+  /* The enabled expansion pack, `{ name, maps: [{ id, name }], modes }` or
+   * null (`expansionShow` sets it on a load and clears it on an unload). A
+   * pack is enabled only from the Expansion pack card (or a hand-off that
+   * names one: the workbench, the custom game modes page); never on its
+   * own. Enabled, its maps and custom game modes are one more section of
+   * this same list, marked experimental, above the disc's scenes; disabled,
+   * the list is the disc's scenes alone and New game is the game as it
+   * shipped. A map click enters through the same call the workbench's
+   * Play here uses (`enterExpansionMap`). */
+  let pickerPack = null;
+  /* The pack map running now (its id), from the entry's state. */
+  let activePackMap = null;
+
   function renderList(filter) {
     const f = (filter || '').trim().toLowerCase();
     const parts = [];
+    if (pickerPack) {
+      const maps = pickerPack.maps
+        .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f));
+      if (maps.length) {
+        parts.push(`<div class="play-scene-group is-pack">${window.escapeHtml(pickerPack.name)} <span class="play-scene-pack-tag">expansion pack maps</span> <span class="play-experimental">experimental</span></div>`);
+        for (const m of maps) {
+          const cls = m.id === activePackMap ? 'play-scene-item is-pack is-active' : 'play-scene-item is-pack';
+          parts.push(
+            `<button class="${cls}" type="button" data-pack-map="${window.escapeHtml(m.id)}">` +
+            `<span>${window.escapeHtml(m.name || m.id)}</span><span class="play-scene-code">${window.escapeHtml(m.id)}</span></button>`);
+        }
+      }
+      /* The pack's game modes played in the world: at a table or on a
+       * course of one of its maps, in 3D. The modes page draws the same
+       * games flat without a disc. */
+      const wm = (pickerPack.modes || [])
+        .filter(m => !f || (m.name || '').toLowerCase().includes(f) || m.id.toLowerCase().includes(f)
+          || (m.kind || '').toLowerCase().includes(f));
+      if (wm.length) {
+        parts.push('<div class="play-scene-group is-pack">Custom game modes in 3D <span class="play-scene-pack-tag">expansion pack</span> <span class="play-experimental">experimental</span></div>');
+        for (const m of wm) {
+          parts.push(
+            `<button class="play-scene-item is-pack" type="button" data-pack-mode="${window.escapeHtml(m.id)}" data-mode-map="${window.escapeHtml(m.map || '')}" data-mode-scene="${window.escapeHtml(m.scene || '')}">` +
+            `<span>${window.escapeHtml(m.name || m.id)}</span><span class="play-scene-code">${window.escapeHtml(m.kind || '')}</span></button>`);
+        }
+      }
+    }
     for (const g of GROUPS) {
       const items = scenes
         .filter(s => s.category === g.key)
@@ -1208,7 +1276,7 @@ div.play-vis-head { cursor: default; }
       if (!items.length) continue;
       parts.push(`<div class="play-scene-group">${g.title}</div>`);
       for (const s of items) {
-        const cls = s.label === active ? 'play-scene-item is-active' : 'play-scene-item';
+        const cls = s.label === active && !activePackMap ? 'play-scene-item is-active' : 'play-scene-item';
         parts.push(
           `<button class="${cls}" type="button" data-scene="${s.label}">` +
           `<span>${s.display}</span><span class="play-scene-code">${s.label}</span></button>`);
@@ -1220,7 +1288,10 @@ div.play-vis-head { cursor: default; }
   searchEl.addEventListener('input', () => renderList(searchEl.value));
   listEl.addEventListener('click', (e) => {
     const b = e.target.closest('.play-scene-item');
-    if (b) enter(b.dataset.scene);
+    if (!b) return;
+    if (b.dataset.packMode) expansionEnterMode(b.dataset.packMode, b.dataset.modeMap, b.dataset.modeScene);
+    else if (b.dataset.packMap) expansionEnterMap(b.dataset.packMap, '');
+    else enter(b.dataset.scene);
   });
 
   document.getElementById('play-modes').addEventListener('click', (e) => {
@@ -1261,10 +1332,13 @@ div.play-vis-head { cursor: default; }
     statusEl.textContent = 'Loading the engine…';
     const prog = LoadProgress.create(statusEl);
     try {
+      /* The engine's module compiles while the image is read. */
+      const wasmLoad = wasm ? null : LegaiaWasm.load();
+      if (wasmLoad) wasmLoad.catch(() => {});
       const bytes = await prog.read(file, `Reading ${file.name}`);
       prog.indeterminate('Starting the engine…');
       if (!wasm) {
-        wasm = await LegaiaWasm.load();
+        wasm = await wasmLoad;
       }
       runtime = new wasm.LegaiaRuntime();
       prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
@@ -1323,8 +1397,6 @@ div.play-vis-head { cursor: default; }
    * (`load_expansion`), which validates and activates the pack; the page
    * keeps them only to hand back to a rebuilt engine (`recoverRuntime`). */
   const expansionInput = document.getElementById('expansion-import');
-  const expansionMapSel = document.getElementById('expansion-map');
-  const expansionEnterBtn = document.getElementById('expansion-enter');
   const expansionUnloadBtn = document.getElementById('expansion-unload');
   const expansionStatus = document.getElementById('expansion-status');
   let expansionBytes = null;
@@ -1334,19 +1406,17 @@ div.play-vis-head { cursor: default; }
     expansionStatus.classList.toggle('is-error', !!bad);
   }
 
+  /* A load's outcome: the pack's maps become a section of the scene picker
+   * (`pickerPack`), and Unload is offered. */
   function expansionShow(info) {
     const pack = info && info.pack;
     const ok = !!(info && info.ok && pack);
-    expansionMapSel.innerHTML = '';
-    for (const m of (ok ? pack.maps : [])) {
-      const o = document.createElement('option');
-      o.value = m.id;
-      o.textContent = m.name || m.id;
-      expansionMapSel.appendChild(o);
-    }
-    expansionMapSel.disabled = !ok || !pack.maps.length;
-    expansionEnterBtn.disabled = expansionMapSel.disabled;
+    pickerPack = ok ? { name: pack.name || pack.id, maps: pack.maps || [], modes: pack.world_modes || [] } : null;
+    if (!ok) activePackMap = null;
+    renderList(searchEl.value);
     expansionUnloadBtn.disabled = !ok;
+    const title = document.getElementById('play-scene-title');
+    if (title) title.textContent = ok ? `Scenes + ${pickerPack.name}` : 'Scenes';
   }
 
   /* The engine's answer to the last load (`load_expansion`'s JSON). */
@@ -1373,7 +1443,7 @@ div.play-vis-head { cursor: default; }
     const p = info.pack;
     const by = p.authors && p.authors.length ? ` by ${p.authors.join(', ')}` : '';
     const warn = info.warnings && info.warnings.length ? ` (${info.warnings.length} warning(s))` : '';
-    expansionMsg(`${p.name} ${p.version}${by}${warn}. New Game and Continue play with it; Select in the pause menu opens its Journal.`);
+    expansionMsg(`On: ${p.name} ${p.version}${by}${warn} - experimental and incomplete, still changing. Its maps and custom game modes are added to the Scenes list, New Game and Continue play with it, and Select in the pause menu opens its Journal. Disable turns it off.`);
     expansionShow(info);
   }
 
@@ -1416,13 +1486,13 @@ div.play-vis-head { cursor: default; }
 
   async function expansionDiscReady() {
     expansionInput.disabled = false;
-    expansionMsg('No expansion pack: the game as it shipped. Install an .lxpack to add one.');
+    expansionMsg('Off: the game as it shipped. Enable a pack above to add its maps and custom game modes to the Scenes list (experimental, incomplete).');
     if (packLibrary) packLibrary.render();
-    /* Without the workbench's hand-off, play with the library's active pack. */
-    if (!/[?&]expansion=1\b/.test(location.search)) {
-      if (packLibrary) await packLibrary.loadActive();
-      return;
-    }
+    /* Nothing enables a pack on its own: every visit starts off, and only
+     * the card's Enable turns one on. A hand-off that names one - the
+     * workbench's Play in browser, the custom game modes page's Play in 3D
+     * (`?expansion=1`) - is that explicit choice made elsewhere. */
+    if (!/[?&]expansion=1\b/.test(location.search)) return;
     const q = new URLSearchParams(location.search);
     /* `&lib=<id>`: the workbench installed the pack in the library and made
      * it active - play the library's copy. Without it, the older hand-off
@@ -1440,14 +1510,48 @@ div.play-vis-head { cursor: default; }
     }
     /* `&map=<id>` (the workbench's Play here): straight onto that map,
      * at `&spawn=<id>` or its first spawn. */
-    if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
+    /* `&mode=<id>` (the modes page's Play in 3D): seat that game mode at
+     * its table or course, entering `&map` (or a race's overworld, `&scene`)
+     * first. */
+    if (expansionBytes && q.get('mode')) expansionEnterMode(q.get('mode'), q.get('map') || '', q.get('scene') || '');
+    else if (expansionBytes && q.get('map')) expansionEnterMap(q.get('map'), q.get('spawn') || '');
+  }
+
+  /* Seat the pack's game mode `id` in the world. The engine walks the
+   * party onto the mode's map itself (`World::pack_mode_wants_map`; a race
+   * run on an overworld, `pack_mode_wants_scene`), but it needs a running
+   * scene to start from: with none, enter `map` (or the race's overworld
+   * `scene`) first and seat the mode once the session is up. */
+  function expansionEnterMode(id, map, scene) {
+    if (!runtime || !id) return;
+    const seat = () => {
+      let err = '';
+      try { err = runtime.play_pack_mode_enter(id); } catch (e) { err = 'This page build has no game modes yet.'; }
+      if (err) statusEl.textContent = err;
+      return !err;
+    };
+    let hasScene = false;
+    try { hasScene = JSON.parse(runtime.play_pack_modes_json()).modes.length > 0; } catch (e) { hasScene = false; }
+    if (hasScene && view) { showStage(); seat(); return; }
+    if (map) expansionEnterMap(map, '');
+    else if (scene) enter(scene);
+    let tries = 0;
+    const wait = setInterval(() => {
+      let up = false;
+      try { up = JSON.parse(runtime.play_pack_modes_json()).modes.some(m => m.id === id); } catch (e) { up = false; }
+      if (up) { clearInterval(wait); seat(); } else if (++tries > 240) {
+        clearInterval(wait);
+        statusEl.textContent = 'The game mode did not start: its map never finished loading.';
+      }
+    }, 250);
   }
 
   /* Enter map `id` of the active pack through the page's ordinary entry. */
   function expansionEnterMap(id, spawn) {
     if (!runtime || !id) return;
     supersedeStarts();
-    enterWith(id, (v) => v.enterExpansionMap(id, spawn || ''));
+    const m = pickerPack && pickerPack.maps.find((x) => x.id === id);
+    enterWith((m && m.name) || id, (v) => v.enterExpansionMap(id, spawn || ''));
   }
 
   /* The workbench's edit-test loop (js/play-expansion-live.js): a Play here
@@ -1509,20 +1613,18 @@ div.play-vis-head { cursor: default; }
     });
   })();
 
-  expansionEnterBtn.addEventListener('click', () => {
-    const id = expansionMapSel.value;
-    if (!runtime || !id) return;
-    supersedeStarts();
-    enterWith(expansionMapSel.selectedOptions[0].textContent, (v) => v.enterExpansionMap(id, ''));
-  });
-
   expansionUnloadBtn.addEventListener('click', () => {
     if (!runtime) return;
+    const onPackMap = !!activePackMap;
     try { runtime.unload_expansion(); } catch (e) { console.warn(e); }
     expansionBytes = null;
     expansionShow(null);
     if (packLibrary) packLibrary.deactivate();
-    expansionMsg('No expansion pack: the game as it shipped. Its progress stays in your saves.');
+    if (onPackMap) {
+      supersedeStarts();
+      if (view) { try { view.stop(); } catch (e) {} }
+    }
+    expansionMsg('Off: the game as it shipped. The pack\'s progress stays in your saves.');
   });
 
   /* Slice a named ISO file's raw Mode2/2352 sectors out of the disc bytes
@@ -1632,7 +1734,7 @@ div.play-vis-head { cursor: default; }
         view = new window.PlayView(runtime, canvas, {
           onState: onState,
           menuOverlay: menuCanvas,
-          onScene: (name) => { active = name; renderList(searchEl.value); },
+          onScene: (name) => { active = name; activePackMap = null; renderList(searchEl.value); },
           /* The opening naming prompt committed: the name is in the party
            * record from here on (status panel, dialogue, saves), so say so. */
           onNamed: (name) => {
@@ -1683,7 +1785,9 @@ div.play-vis-head { cursor: default; }
         if (window.__playApplyRenderToggles) window.__playApplyRenderToggles();
       }
       const st = run(view);
-      if (st && st.scene) { active = st.scene; renderList(searchEl.value); }
+      activePackMap = (st && st.expansion_map && st.expansion_map.id) || null;
+      if (st && st.scene) active = st.scene;
+      renderList(searchEl.value);
       view.start();
       /* Picking a scene is a user gesture: bring up the BGM output now (browser
        * autoplay policy) so the scene's music sounds without waiting for a
@@ -2440,14 +2544,21 @@ div.play-vis-head { cursor: default; }
    * when the cached faces land. */
   let portraitHarvestBusy = false;
   function harvestPortraits() {
+    /* The workbench's 3D preview shows the picture alone: no save bar to
+     * draw faces in (each decode hands the engine the whole image). */
+    if (embedQuery.get('xwpreview') === '1') return false;
     if (LegaiaSaves.portraitCanvases()) return false;
     if (portraitHarvestBusy || !discBytes) return false;
+    /* The runtime that loaded the disc reads the three faces off it (the
+     * free `disc_portrait_rgba` copies the whole image into the engine for
+     * each face); the bar asks again on its next render until it is up. */
+    const rt = window.__playRuntime;
+    if (!rt || typeof rt.loaded_disc_portrait_rgba !== 'function') return false;
     portraitHarvestBusy = true;
-    saveTools().then(mod => {
-      if (typeof mod.disc_portrait_rgba !== 'function') return;
+    Promise.resolve().then(() => {
       const rgba = [];
       for (let i = 0; i < 3; i++) {
-        const buf = mod.disc_portrait_rgba(discBytes, i);
+        const buf = rt.loaded_disc_portrait_rgba(i);
         if (!buf || buf.length !== 16 * 16 * 4) { portraitHarvestBusy = false; return; }
         rgba.push(buf);
       }
@@ -2942,6 +3053,7 @@ div.play-vis-head { cursor: default; }
   const timeOfDayEl = document.getElementById('play-time-of-day');
   const dynShadowsEl = document.getElementById('play-dyn-shadows');
   const bloomEl = document.getElementById('play-bloom');
+  const ssaoEl = document.getElementById('play-ssao');
   function applyRenderToggles() {
     const rt = window.__playRuntime;
     if (rt && typeof rt.set_enhanced_lighting === 'function') {
@@ -2950,6 +3062,7 @@ div.play-vis-head { cursor: default; }
         timeOfDayEl.value = rt.set_lighting_time_of_day(timeOfDayEl.value);
         if (typeof rt.set_light_shadows === 'function') rt.set_light_shadows(!!dynShadowsEl.checked);
         if (typeof rt.set_bloom === 'function') rt.set_bloom(!!bloomEl.checked);
+        if (typeof rt.set_ssao === 'function') rt.set_ssao(!!ssaoEl.checked);
       } catch (e) {}
     }
     /* PSX rasterisation is a remembered launch switch (the launcher's PSX
@@ -2962,6 +3075,7 @@ div.play-vis-head { cursor: default; }
     view.setDynamicLighting(!!dynLightEl.checked);
     view.setDynShadows(!!dynShadowsEl.checked);
     if (view.setBloom) view.setBloom(!!bloomEl.checked);
+    if (view.setSsao) view.setSsao(!!ssaoEl.checked);
   }
   function syncRenderToggles() {
     const rt = window.__playRuntime;
@@ -2971,6 +3085,7 @@ div.play-vis-head { cursor: default; }
         timeOfDayEl.value = rt.lighting_time_of_day();
         if (typeof rt.light_shadows === 'function') dynShadowsEl.checked = !!rt.light_shadows();
         if (typeof rt.bloom === 'function') bloomEl.checked = !!rt.bloom();
+        if (typeof rt.ssao === 'function') ssaoEl.checked = !!rt.ssao();
         if (typeof rt.occlusion_fade === 'function') seeThroughEl.checked = !!rt.occlusion_fade();
       } catch (e) {}
     }
@@ -2980,6 +3095,7 @@ div.play-vis-head { cursor: default; }
   timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynShadowsEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   bloomEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  ssaoEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   window.__playApplyRenderToggles = applyRenderToggles;
   window.__playSyncRenderToggles = syncRenderToggles;
 
@@ -3566,6 +3682,9 @@ div.play-vis-head { cursor: default; }
     if (cheatNoclipEl.checked) {
       try { window.__playRuntime.cheat_apply('noclip', 1, ''); } catch (e) { /* no runtime */ }
     }
+    if (cheatTravelEl.checked) {
+      try { window.__playRuntime.cheat_apply('travel', 1, ''); } catch (e) { /* no runtime */ }
+    }
     const who = (st.party || []).map((m) =>
       `${m.name} Lv ${m.level} - HP ${m.hp}/${m.hp_max}, MP ${m.mp}/${m.mp_max}, AP ${m.ap}`);
     cheatPartyEl.textContent = (who.length ? who.join(' · ') : 'No party.')
@@ -3607,6 +3726,10 @@ div.play-vis-head { cursor: default; }
   const cheatNoclipEl = document.getElementById('play-cheat-noclip');
   cheatNoclipEl.addEventListener('change', () => {
     runCheat((rt) => cheat(rt, 'noclip', cheatNoclipEl.checked ? 1 : 0));
+  });
+  const cheatTravelEl = document.getElementById('play-cheat-travel');
+  cheatTravelEl.addEventListener('change', () => {
+    runCheat((rt) => cheat(rt, 'travel', cheatTravelEl.checked ? 1 : 0));
   });
   document.getElementById('play-cheat-max-ap').addEventListener('click', () => {
     runCheat((rt) => cheat(rt, 'max-ap'));
@@ -3712,6 +3835,7 @@ div.play-vis-head { cursor: default; }
     enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
     light_shadows: () => { syncRenderToggles(); applyRenderToggles(); },
     bloom: () => { syncRenderToggles(); applyRenderToggles(); },
+    ssao: () => { syncRenderToggles(); applyRenderToggles(); },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
     /* `End`: reload the active pack from the library's copy - the one the

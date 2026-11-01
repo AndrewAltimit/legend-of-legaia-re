@@ -1,0 +1,3176 @@
+# Borrowed-mesh catalog: what each field-scene geometry-pack mesh is.
+# Sizes, `solid` and `tris` are measured off the disc by
+# `legaia-engine mesh-catalog --scene <s> --catalog <this file>`, which keeps
+# the hand-written `label`, `kind` and `note` of every entry already here.
+# Disc coordinates, labels and numbers only - no disc bytes.
+# size = [width X, depth Z, height] in world units at scale 1 (a tile is 128).
+
+[[mesh]]
+scene = "cave01"
+object = 0
+label = "cave wall piece"
+kind = "terrain"
+size = [520, 520, 368]
+solid = true
+tris = 97
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 1
+label = "cave wall piece"
+kind = "terrain"
+size = [520, 520, 368]
+solid = true
+tris = 97
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 2
+label = "cave wall piece"
+kind = "terrain"
+size = [520, 520, 368]
+solid = true
+tris = 97
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 3
+label = "cave wall piece"
+kind = "terrain"
+size = [520, 520, 368]
+solid = true
+tris = 97
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 4
+label = "cave wall piece"
+kind = "terrain"
+size = [430, 411, 376]
+solid = true
+tris = 106
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 5
+label = "cave wall piece"
+kind = "terrain"
+size = [430, 411, 376]
+solid = true
+tris = 106
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 6
+label = "cave wall piece"
+kind = "terrain"
+size = [430, 411, 376]
+solid = true
+tris = 106
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 7
+label = "cave wall piece"
+kind = "terrain"
+size = [430, 411, 376]
+solid = true
+tris = 106
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 8
+label = "cave wall piece"
+kind = "terrain"
+size = [894, 521, 368]
+solid = true
+tris = 183
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 9
+label = "cave wall piece"
+kind = "terrain"
+size = [894, 521, 368]
+solid = true
+tris = 183
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 10
+label = "cave wall piece"
+kind = "terrain"
+size = [517, 1092, 368]
+solid = true
+tris = 189
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 11
+label = "cave wall piece"
+kind = "terrain"
+size = [517, 1092, 368]
+solid = true
+tris = 189
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 12
+label = "cave wall corner"
+kind = "terrain"
+size = [137, 268, 352]
+solid = true
+tris = 51
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 13
+label = "cave wall corner"
+kind = "terrain"
+size = [134, 276, 352]
+solid = true
+tris = 51
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 14
+label = "cave wall corner"
+kind = "terrain"
+size = [134, 276, 352]
+solid = true
+tris = 51
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 15
+label = "cave wall corner"
+kind = "terrain"
+size = [137, 268, 352]
+solid = true
+tris = 51
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 16
+label = "cave wall corner"
+kind = "terrain"
+size = [136, 297, 364]
+solid = true
+tris = 51
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 17
+label = "cave wall corner"
+kind = "terrain"
+size = [136, 277, 358]
+solid = true
+tris = 61
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 18
+label = "cave wall corner"
+kind = "terrain"
+size = [136, 277, 358]
+solid = true
+tris = 61
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 19
+label = "cave wall corner"
+kind = "terrain"
+size = [136, 297, 364]
+solid = true
+tris = 51
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 20
+label = "cave wall piece"
+kind = "terrain"
+size = [889, 412, 377]
+solid = true
+tris = 216
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 21
+label = "draws nothing on its own"
+kind = "other"
+size = [889, 412, 377]
+solid = true
+tris = 216
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "cave01"
+object = 22
+label = "draws nothing on its own"
+kind = "other"
+size = [412, 886, 377]
+solid = true
+tris = 216
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "cave01"
+object = 23
+label = "draws nothing on its own"
+kind = "other"
+size = [412, 886, 377]
+solid = true
+tris = 216
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "cave01"
+object = 24
+label = "cave wall piece"
+kind = "terrain"
+size = [264, 277, 352]
+solid = true
+tris = 101
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 25
+label = "cave wall piece"
+kind = "terrain"
+size = [264, 277, 352]
+solid = true
+tris = 101
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 26
+label = "cave wall piece"
+kind = "terrain"
+size = [268, 298, 364]
+solid = true
+tris = 109
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 27
+label = "cave wall piece"
+kind = "terrain"
+size = [268, 298, 364]
+solid = true
+tris = 109
+note = "Snowdrift Cave rock"
+
+[[mesh]]
+scene = "cave01"
+object = 28
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 137, 368]
+solid = true
+tris = 29
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 29
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 137, 368]
+solid = true
+tris = 29
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 30
+label = "mushroom"
+kind = "plant"
+size = [64, 54, 224]
+solid = false
+tris = 84
+
+[[mesh]]
+scene = "cave01"
+object = 31
+label = "moss-roofed lean-to"
+kind = "structure"
+size = [275, 209, 242]
+solid = true
+tris = 136
+note = "a roof on four poles"
+
+[[mesh]]
+scene = "cave01"
+object = 32
+label = "cave floor ledge"
+kind = "terrain"
+size = [1053, 1064, 393]
+solid = true
+tris = 157
+
+[[mesh]]
+scene = "cave01"
+object = 33
+label = "cave wall bend"
+kind = "terrain"
+size = [1040, 1067, 384]
+solid = true
+tris = 110
+
+[[mesh]]
+scene = "cave01"
+object = 34
+label = "cave wall bend"
+kind = "terrain"
+size = [1040, 1067, 384]
+solid = true
+tris = 112
+
+[[mesh]]
+scene = "cave01"
+object = 35
+label = "cave wall run"
+kind = "terrain"
+size = [1053, 1064, 393]
+solid = true
+tris = 108
+
+[[mesh]]
+scene = "cave01"
+object = 36
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 265, 368]
+solid = true
+tris = 58
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 37
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 265, 368]
+solid = true
+tris = 58
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 38
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 137, 368]
+solid = true
+tris = 35
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 39
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 137, 368]
+solid = true
+tris = 35
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 40
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 137, 368]
+solid = true
+tris = 35
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 41
+label = "cave wall corner"
+kind = "terrain"
+size = [293, 137, 368]
+solid = true
+tris = 35
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 42
+label = "cave wall corner"
+kind = "terrain"
+size = [136, 297, 364]
+solid = true
+tris = 58
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 43
+label = "cave wall corner"
+kind = "terrain"
+size = [136, 297, 364]
+solid = true
+tris = 58
+note = "not a mushroom"
+
+[[mesh]]
+scene = "cave01"
+object = 44
+label = "stalagmite"
+kind = "rock"
+size = [64, 64, 96]
+solid = false
+tris = 24
+
+[[mesh]]
+scene = "cave01"
+object = 45
+label = "draws nothing on its own"
+kind = "other"
+size = [58, 128, 71]
+solid = false
+tris = 270
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "cave01"
+object = 46
+label = "NPC body part"
+kind = "other"
+size = [49, 39, 82]
+solid = false
+tris = 268
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "cave01"
+object = 47
+label = "pink mushroom cap"
+kind = "plant"
+size = [69, 56, 87]
+solid = false
+tris = 156
+note = "a cap without a stalk"
+
+[[mesh]]
+scene = "cave01"
+object = 48
+label = "draws nothing on its own"
+kind = "other"
+size = [80, 100, 116]
+solid = false
+tris = 158
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "cave01"
+object = 49
+label = "draws nothing on its own"
+kind = "other"
+size = [80, 100, 116]
+solid = false
+tris = 158
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "rugi"
+object = 0
+label = "brick maze walls"
+kind = "structure"
+size = [1091, 2824, 256]
+solid = true
+tris = 932
+
+[[mesh]]
+scene = "rugi"
+object = 1
+label = "brick maze walls"
+kind = "structure"
+size = [770, 3209, 256]
+solid = true
+tris = 896
+
+[[mesh]]
+scene = "rugi"
+object = 2
+label = "brick maze walls"
+kind = "structure"
+size = [963, 2824, 256]
+solid = true
+tris = 862
+
+[[mesh]]
+scene = "rugi"
+object = 3
+label = "blue rune circle"
+kind = "other"
+size = [128, 128, 0]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "rugi"
+object = 4
+label = "dark slab"
+kind = "other"
+size = [651, 262, 0]
+solid = false
+tris = 20
+
+[[mesh]]
+scene = "rugi"
+object = 5
+label = "violet flame"
+kind = "light"
+size = [92, 0, 128]
+solid = false
+tris = 8
+note = "sprite"
+
+[[mesh]]
+scene = "rugi"
+object = 6
+label = "torch, lit"
+kind = "light"
+size = [92, 0, 80]
+solid = false
+tris = 4
+
+[[mesh]]
+scene = "rugi"
+object = 7
+label = "dark disc"
+kind = "other"
+size = [128, 0, 128]
+solid = false
+tris = 2
+note = "shadow blob"
+
+[[mesh]]
+scene = "rugi"
+object = 8
+label = "brick maze walls"
+kind = "structure"
+size = [2182, 899, 256]
+solid = true
+tris = 360
+
+[[mesh]]
+scene = "rugi"
+object = 9
+label = "brick wall ends"
+kind = "structure"
+size = [2823, 1411, 256]
+solid = true
+tris = 410
+
+[[mesh]]
+scene = "rugi"
+object = 10
+label = "speckle floor overlay"
+kind = "other"
+size = [512, 512, 0]
+solid = false
+tris = 128
+note = "flat"
+
+[[mesh]]
+scene = "rugi"
+object = 11
+label = "speckle floor overlay"
+kind = "other"
+size = [512, 512, 0]
+solid = false
+tris = 128
+note = "flat"
+
+[[mesh]]
+scene = "rugi"
+object = 12
+label = "grey rune circle"
+kind = "other"
+size = [256, 256, 0]
+solid = false
+tris = 32
+note = "flat"
+
+[[mesh]]
+scene = "rugi"
+object = 13
+label = "wooden post"
+kind = "structure"
+size = [64, 64, 256]
+solid = false
+tris = 40
+
+[[mesh]]
+scene = "rugi"
+object = 14
+label = "violet flame"
+kind = "light"
+size = [92, 0, 128]
+solid = false
+tris = 16
+note = "sprite"
+
+[[mesh]]
+scene = "rugi"
+object = 15
+label = "torch, lit"
+kind = "light"
+size = [92, 0, 80]
+solid = false
+tris = 8
+note = "the Isles' lantern post"
+
+[[mesh]]
+scene = "rugi"
+object = 16
+label = "dark disc"
+kind = "other"
+size = [128, 0, 128]
+solid = false
+tris = 4
+note = "shadow blob"
+
+[[mesh]]
+scene = "rugi"
+object = 17
+label = "rough boulder"
+kind = "rock"
+size = [160, 157, 112]
+solid = false
+tris = 48
+
+[[mesh]]
+scene = "rugi"
+object = 18
+label = "rough boulder, upright"
+kind = "rock"
+size = [60, 70, 89]
+solid = false
+tris = 48
+
+[[mesh]]
+scene = "rugi"
+object = 19
+label = "rough boulder"
+kind = "rock"
+size = [85, 75, 72]
+solid = false
+tris = 48
+
+[[mesh]]
+scene = "rugi"
+object = 20
+label = "rough boulder, upright"
+kind = "rock"
+size = [63, 72, 109]
+solid = false
+tris = 48
+
+[[mesh]]
+scene = "rugi"
+object = 21
+label = "brick maze walls"
+kind = "structure"
+size = [2182, 899, 256]
+solid = true
+tris = 498
+
+[[mesh]]
+scene = "rugi"
+object = 22
+label = "brick maze walls"
+kind = "structure"
+size = [2823, 1476, 256]
+solid = true
+tris = 1362
+
+[[mesh]]
+scene = "rugi"
+object = 23
+label = "brick maze walls"
+kind = "structure"
+size = [2182, 899, 256]
+solid = true
+tris = 652
+
+[[mesh]]
+scene = "rugi"
+object = 24
+label = "stone cone"
+kind = "rock"
+size = [64, 64, 159]
+solid = false
+tris = 48
+
+[[mesh]]
+scene = "rugi"
+object = 25
+label = "brick maze walls"
+kind = "structure"
+size = [2182, 902, 256]
+solid = true
+tris = 584
+
+[[mesh]]
+scene = "rugi"
+object = 26
+label = "brick maze walls"
+kind = "structure"
+size = [2823, 1418, 256]
+solid = true
+tris = 1438
+
+[[mesh]]
+scene = "rugi"
+object = 27
+label = "brick maze walls"
+kind = "structure"
+size = [2182, 902, 256]
+solid = true
+tris = 474
+
+[[mesh]]
+scene = "rugi"
+object = 28
+label = "brick wall"
+kind = "structure"
+size = [384, 64, 256]
+solid = true
+tris = 38
+
+[[mesh]]
+scene = "rugi"
+object = 29
+label = "brick wall"
+kind = "structure"
+size = [384, 64, 256]
+solid = true
+tris = 38
+
+[[mesh]]
+scene = "rugi"
+object = 30
+label = "brick wall corner"
+kind = "structure"
+size = [55, 106, 128]
+solid = false
+tris = 44
+
+[[mesh]]
+scene = "rugi"
+object = 31
+label = "brick well with plant"
+kind = "structure"
+size = [55, 106, 128]
+solid = false
+tris = 44
+
+[[mesh]]
+scene = "rugi"
+object = 32
+label = "blue flame ring"
+kind = "light"
+size = [240, 244, 96]
+solid = true
+tris = 48
+
+[[mesh]]
+scene = "rugi"
+object = 33
+label = "aurora curtain"
+kind = "other"
+size = [234, 169, 256]
+solid = true
+tris = 28
+note = "effect"
+
+[[mesh]]
+scene = "rugi"
+object = 34
+label = "dark crack line"
+kind = "other"
+size = [234, 169, 6]
+solid = false
+tris = 28
+note = "flat"
+
+[[mesh]]
+scene = "rugi"
+object = 35
+label = "draws nothing on its own"
+kind = "other"
+size = [74, 74, 268]
+solid = false
+tris = 12
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "rugi"
+object = 36
+label = "hero figure"
+kind = "other"
+size = [45, 44, 64]
+solid = false
+tris = 496
+note = "not a prop"
+
+[[mesh]]
+scene = "rugi"
+object = 37
+label = "yellow crystal"
+kind = "rock"
+size = [78, 68, 288]
+solid = false
+tris = 90
+
+[[mesh]]
+scene = "rugi"
+object = 38
+label = "red-blue crystal drop"
+kind = "rock"
+size = [46, 38, 96]
+solid = false
+tris = 36
+
+[[mesh]]
+scene = "rugi"
+object = 39
+label = "falling shards"
+kind = "other"
+size = [765, 883, 734]
+solid = true
+tris = 84
+note = "effect"
+
+[[mesh]]
+scene = "rugi"
+object = 40
+label = "dark streak"
+kind = "other"
+size = [50, 296, 0]
+solid = false
+tris = 12
+note = "effect"
+
+[[mesh]]
+scene = "rugi"
+object = 41
+label = "crystal shard"
+kind = "rock"
+size = [119, 201, 224]
+solid = true
+tris = 322
+
+[[mesh]]
+scene = "rugi"
+object = 42
+label = "crystal shard"
+kind = "rock"
+size = [119, 201, 224]
+solid = true
+tris = 322
+
+[[mesh]]
+scene = "rugi"
+object = 43
+label = "purple crystal cluster"
+kind = "rock"
+size = [44, 204, 205]
+solid = true
+tris = 336
+
+[[mesh]]
+scene = "rugi"
+object = 44
+label = "purple crystal cluster"
+kind = "rock"
+size = [44, 204, 205]
+solid = true
+tris = 336
+
+[[mesh]]
+scene = "town01"
+object = 0
+label = "hedge bank, long"
+kind = "plant"
+size = [900, 396, 192]
+solid = true
+tris = 72
+
+[[mesh]]
+scene = "town01"
+object = 1
+label = "hedge bank"
+kind = "plant"
+size = [900, 444, 192]
+solid = true
+tris = 110
+
+[[mesh]]
+scene = "town01"
+object = 2
+label = "hedge bank over a cut edge"
+kind = "plant"
+size = [772, 317, 192]
+solid = true
+tris = 76
+
+[[mesh]]
+scene = "town01"
+object = 3
+label = "curved plank wall"
+kind = "structure"
+size = [126, 163, 50]
+solid = false
+tris = 26
+note = "round-house interior wall"
+
+[[mesh]]
+scene = "town01"
+object = 4
+label = "stone palisade wall, spiked"
+kind = "structure"
+size = [513, 2561, 1088]
+solid = true
+tris = 270
+note = "Rim Elm's village wall"
+
+[[mesh]]
+scene = "town01"
+object = 5
+label = "thatched shed frame"
+kind = "building"
+size = [98, 62, 92]
+solid = false
+tris = 50
+note = "open-sided; wicker roof on a timber frame"
+
+[[mesh]]
+scene = "town01"
+object = 6
+label = "stone wall post"
+kind = "structure"
+size = [192, 512, 1216]
+solid = true
+tris = 91
+
+[[mesh]]
+scene = "town01"
+object = 7
+label = "stone wall post, narrow"
+kind = "structure"
+size = [192, 256, 1216]
+solid = true
+tris = 52
+
+[[mesh]]
+scene = "town01"
+object = 8
+label = "stone wall post"
+kind = "structure"
+size = [192, 512, 1216]
+solid = true
+tris = 91
+
+[[mesh]]
+scene = "town01"
+object = 9
+label = "stone gatehouse wall with door"
+kind = "structure"
+size = [772, 260, 1084]
+solid = true
+tris = 190
+
+[[mesh]]
+scene = "town01"
+object = 10
+label = "stone wall post"
+kind = "structure"
+size = [256, 192, 1024]
+solid = true
+tris = 70
+
+[[mesh]]
+scene = "town01"
+object = 11
+label = "stone wall run on a footing"
+kind = "structure"
+size = [543, 2079, 1294]
+solid = true
+tris = 266
+
+[[mesh]]
+scene = "town01"
+object = 12
+label = "stone wall run on a footing"
+kind = "structure"
+size = [543, 2079, 1294]
+solid = true
+tris = 266
+
+[[mesh]]
+scene = "town01"
+object = 13
+label = "weathervane"
+kind = "structure"
+size = [320, 130, 558]
+solid = true
+tris = 84
+note = "a spike with a wheel and four vanes"
+
+[[mesh]]
+scene = "town01"
+object = 14
+label = "plaster interior wall"
+kind = "structure"
+size = [55, 282, 192]
+solid = true
+tris = 6
+note = "interior; open behind"
+
+[[mesh]]
+scene = "town01"
+object = 15
+label = "curved plank wall, tall"
+kind = "structure"
+size = [169, 189, 182]
+solid = false
+tris = 97
+note = "interior"
+
+[[mesh]]
+scene = "town01"
+object = 16
+label = "round wooden table top"
+kind = "furniture"
+size = [118, 118, 66]
+solid = false
+tris = 84
+note = "reads as a plate from above"
+
+[[mesh]]
+scene = "town01"
+object = 17
+label = "sky backdrop card"
+kind = "terrain"
+size = [4480, 0, 2400]
+solid = false
+tris = 24
+
+[[mesh]]
+scene = "town01"
+object = 18
+label = "round stone cottage"
+kind = "building"
+size = [476, 613, 367]
+solid = true
+tris = 301
+note = "Rim Elm house with door"
+
+[[mesh]]
+scene = "town01"
+object = 19
+label = "dark interior corner"
+kind = "structure"
+size = [160, 146, 161]
+solid = false
+tris = 16
+note = "interior occluder"
+
+[[mesh]]
+scene = "town01"
+object = 20
+label = "interior wall with picture"
+kind = "structure"
+size = [100, 440, 192]
+solid = true
+tris = 56
+
+[[mesh]]
+scene = "town01"
+object = 21
+label = "black occluder block"
+kind = "other"
+size = [125, 123, 161]
+solid = false
+tris = 10
+note = "masks an interior; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 22
+label = "interior corner wall"
+kind = "structure"
+size = [475, 484, 192]
+solid = true
+tris = 53
+
+[[mesh]]
+scene = "town01"
+object = 23
+label = "interior wall run, curved"
+kind = "structure"
+size = [475, 484, 192]
+solid = true
+tris = 53
+
+[[mesh]]
+scene = "town01"
+object = 24
+label = "interior wall run"
+kind = "structure"
+size = [456, 157, 192]
+solid = true
+tris = 32
+
+[[mesh]]
+scene = "town01"
+object = 25
+label = "round rug"
+kind = "furniture"
+size = [512, 512, 0]
+solid = false
+tris = 8
+note = "flat"
+
+[[mesh]]
+scene = "town01"
+object = 26
+label = "black occluder block"
+kind = "other"
+size = [55, 191, 147]
+solid = false
+tris = 6
+note = "not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 27
+label = "double bed"
+kind = "furniture"
+size = [171, 310, 60]
+solid = true
+tris = 56
+
+[[mesh]]
+scene = "town01"
+object = 28
+label = "stone well"
+kind = "structure"
+size = [68, 68, 78]
+solid = false
+tris = 132
+
+[[mesh]]
+scene = "town01"
+object = 29
+label = "plank wall with a sign"
+kind = "structure"
+size = [187, 61, 160]
+solid = false
+tris = 28
+
+[[mesh]]
+scene = "town01"
+object = 30
+label = "round table"
+kind = "furniture"
+size = [82, 83, 92]
+solid = false
+tris = 70
+
+[[mesh]]
+scene = "town01"
+object = 31
+label = "draws nothing on its own"
+kind = "other"
+size = [73, 57, 40]
+solid = false
+tris = 48
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "town01"
+object = 32
+label = "pendulum clock"
+kind = "furniture"
+size = [90, 57, 254]
+solid = false
+tris = 52
+
+[[mesh]]
+scene = "town01"
+object = 33
+label = "barrel"
+kind = "furniture"
+size = [110, 96, 116]
+solid = false
+tris = 28
+
+[[mesh]]
+scene = "town01"
+object = 34
+label = "rocky ledge"
+kind = "rock"
+size = [392, 219, 192]
+solid = true
+tris = 92
+
+[[mesh]]
+scene = "town01"
+object = 35
+label = "pot and jug"
+kind = "furniture"
+size = [134, 51, 45]
+solid = false
+tris = 76
+
+[[mesh]]
+scene = "town01"
+object = 36
+label = "round stone cottage"
+kind = "building"
+size = [476, 613, 367]
+solid = true
+tris = 301
+note = "variant"
+
+[[mesh]]
+scene = "town01"
+object = 37
+label = "rope kerb line"
+kind = "structure"
+size = [1024, 1792, 352]
+solid = false
+tris = 52
+note = "thin; a path edging"
+
+[[mesh]]
+scene = "town01"
+object = 38
+label = "low rock outcrop"
+kind = "rock"
+size = [898, 128, 192]
+solid = true
+tris = 32
+
+[[mesh]]
+scene = "town01"
+object = 39
+label = "dirt mound"
+kind = "rock"
+size = [96, 82, 117]
+solid = false
+tris = 42
+
+[[mesh]]
+scene = "town01"
+object = 40
+label = "boat hull frame, ribbed"
+kind = "vehicle"
+size = [226, 302, 128]
+solid = true
+tris = 118
+note = "an unfinished hull on a black base; reads oddly outdoors"
+
+[[mesh]]
+scene = "town01"
+object = 41
+label = "log"
+kind = "plant"
+size = [644, 153, 135]
+solid = true
+tris = 88
+note = "a felled trunk; a bench"
+
+[[mesh]]
+scene = "town01"
+object = 42
+label = "round stone cottage"
+kind = "building"
+size = [510, 649, 421]
+solid = true
+tris = 319
+note = "variant"
+
+[[mesh]]
+scene = "town01"
+object = 43
+label = "round stone cottage"
+kind = "building"
+size = [428, 594, 382]
+solid = true
+tris = 211
+note = "variant"
+
+[[mesh]]
+scene = "town01"
+object = 44
+label = "interior wall trim, curved"
+kind = "structure"
+size = [1064, 379, 192]
+solid = true
+tris = 60
+
+[[mesh]]
+scene = "town01"
+object = 45
+label = "interior wall with picture"
+kind = "structure"
+size = [71, 699, 192]
+solid = true
+tris = 56
+
+[[mesh]]
+scene = "town01"
+object = 46
+label = "stacked crates"
+kind = "furniture"
+size = [191, 118, 192]
+solid = false
+tris = 26
+
+[[mesh]]
+scene = "town01"
+object = 47
+label = "single bed"
+kind = "furniture"
+size = [154, 275, 49]
+solid = true
+tris = 54
+note = "not a boat"
+
+[[mesh]]
+scene = "town01"
+object = 48
+label = "boat stern section"
+kind = "vehicle"
+size = [170, 311, 60]
+solid = true
+tris = 79
+note = "the hull is cut open at the bow - a set piece meant to meet a wall; reads as a tub on open ground"
+
+[[mesh]]
+scene = "town01"
+object = 49
+label = "pedestal table"
+kind = "furniture"
+size = [68, 68, 107]
+solid = false
+tris = 58
+
+[[mesh]]
+scene = "town01"
+object = 50
+label = "two-storey timber house"
+kind = "building"
+size = [672, 585, 501]
+solid = true
+tris = 238
+
+[[mesh]]
+scene = "town01"
+object = 51
+label = "folding screen"
+kind = "furniture"
+size = [256, 32, 128]
+solid = true
+tris = 8
+
+[[mesh]]
+scene = "town01"
+object = 52
+label = "long wooden counter"
+kind = "furniture"
+size = [384, 125, 63]
+solid = true
+tris = 29
+
+[[mesh]]
+scene = "town01"
+object = 53
+label = "drying rack"
+kind = "structure"
+size = [58, 618, 416]
+solid = true
+tris = 148
+note = "a pole on two posts with a cloth"
+
+[[mesh]]
+scene = "town01"
+object = 54
+label = "low plank frame"
+kind = "structure"
+size = [1408, 1024, 256]
+solid = true
+tris = 148
+note = "a rectangular kerb"
+
+[[mesh]]
+scene = "town01"
+object = 55
+label = "draws nothing on its own"
+kind = "other"
+size = [78, 78, 121]
+solid = false
+tris = 46
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "town01"
+object = 56
+label = "interior walls, L plan"
+kind = "structure"
+size = [710, 1155, 416]
+solid = true
+tris = 79
+
+[[mesh]]
+scene = "town01"
+object = 57
+label = "plank table"
+kind = "furniture"
+size = [182, 246, 75]
+solid = true
+tris = 34
+note = "a market stall"
+
+[[mesh]]
+scene = "town01"
+object = 58
+label = "shop counter with goods"
+kind = "furniture"
+size = [256, 119, 113]
+solid = false
+tris = 76
+
+[[mesh]]
+scene = "town01"
+object = 59
+label = "wooden stair with rail"
+kind = "structure"
+size = [444, 198, 369]
+solid = true
+tris = 81
+
+[[mesh]]
+scene = "town01"
+object = 60
+label = "interior walls, U plan"
+kind = "structure"
+size = [709, 1155, 416]
+solid = true
+tris = 79
+
+[[mesh]]
+scene = "town01"
+object = 61
+label = "hedge ring"
+kind = "plant"
+size = [1266, 1057, 256]
+solid = true
+tris = 135
+note = "a round planter"
+
+[[mesh]]
+scene = "town01"
+object = 62
+label = "stone tower wall, tall"
+kind = "structure"
+size = [512, 512, 1056]
+solid = true
+tris = 134
+
+[[mesh]]
+scene = "town01"
+object = 63
+label = "stone wall post, tall"
+kind = "structure"
+size = [256, 192, 1024]
+solid = true
+tris = 70
+
+[[mesh]]
+scene = "town01"
+object = 64
+label = "stone palisade, long"
+kind = "structure"
+size = [1283, 192, 1065]
+solid = true
+tris = 182
+
+[[mesh]]
+scene = "town01"
+object = 65
+label = "winding hill path"
+kind = "terrain"
+size = [1368, 2057, 384]
+solid = true
+tris = 140
+note = "a ramp set piece"
+
+[[mesh]]
+scene = "town01"
+object = 66
+label = "dresser with goods"
+kind = "furniture"
+size = [202, 121, 160]
+solid = true
+tris = 65
+
+[[mesh]]
+scene = "town01"
+object = 67
+label = "axe and spear"
+kind = "furniture"
+size = [726, 0, 332]
+solid = false
+tris = 6
+note = "tools; tiny"
+
+[[mesh]]
+scene = "town01"
+object = 68
+label = "hearth with chimney hood"
+kind = "structure"
+size = [192, 193, 222]
+solid = true
+tris = 60
+
+[[mesh]]
+scene = "town01"
+object = 69
+label = "curtained doorway"
+kind = "structure"
+size = [416, 32, 256]
+solid = true
+tris = 20
+
+[[mesh]]
+scene = "town01"
+object = 70
+label = "grass bank strip"
+kind = "plant"
+size = [900, 444, 192]
+solid = true
+tris = 110
+
+[[mesh]]
+scene = "town01"
+object = 71
+label = "plank fence on a black base"
+kind = "structure"
+size = [224, 111, 144]
+solid = true
+tris = 28
+
+[[mesh]]
+scene = "town01"
+object = 72
+label = "grassy hilltop"
+kind = "terrain"
+size = [3102, 4033, 864]
+solid = true
+tris = 395
+note = "Rim Elm's plateau"
+
+[[mesh]]
+scene = "town01"
+object = 73
+label = "rock hill with a cave"
+kind = "rock"
+size = [512, 224, 224]
+solid = true
+tris = 31
+
+[[mesh]]
+scene = "town01"
+object = 74
+label = "black occluder block"
+kind = "other"
+size = [84, 123, 97]
+solid = false
+tris = 6
+note = "not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 75
+label = "small leafy tree"
+kind = "plant"
+size = [256, 256, 287]
+solid = true
+tris = 58
+
+[[mesh]]
+scene = "town01"
+object = 76
+label = "grass terrain piece"
+kind = "terrain"
+size = [770, 1343, 480]
+solid = true
+tris = 210
+
+[[mesh]]
+scene = "town01"
+object = 77
+label = "broken stone pillar"
+kind = "structure"
+size = [320, 192, 1024]
+solid = true
+tris = 57
+note = "a ruin"
+
+[[mesh]]
+scene = "town01"
+object = 78
+label = "stone palisade, long"
+kind = "structure"
+size = [1347, 192, 1065]
+solid = true
+tris = 169
+
+[[mesh]]
+scene = "town01"
+object = 79
+label = "rock mound with a hollow"
+kind = "rock"
+size = [512, 310, 256]
+solid = true
+tris = 43
+
+[[mesh]]
+scene = "town01"
+object = 80
+label = "flower pot"
+kind = "plant"
+size = [84, 84, 96]
+solid = false
+tris = 22
+note = "red flowers"
+
+[[mesh]]
+scene = "town01"
+object = 81
+label = "woodpile"
+kind = "plant"
+size = [112, 96, 84]
+solid = false
+tris = 18
+note = "stacked logs"
+
+[[mesh]]
+scene = "town01"
+object = 82
+label = "pond surface"
+kind = "terrain"
+size = [1408, 2302, 0]
+solid = false
+tris = 182
+note = "flat water"
+
+[[mesh]]
+scene = "town01"
+object = 83
+label = "wicker basket"
+kind = "furniture"
+size = [92, 60, 80]
+solid = false
+tris = 22
+
+[[mesh]]
+scene = "town01"
+object = 84
+label = "ring of white flecks"
+kind = "other"
+size = [8310, 8692, 840]
+solid = false
+tris = 26
+note = "an effect ring"
+
+[[mesh]]
+scene = "town01"
+object = 85
+label = "sky backdrop card"
+kind = "terrain"
+size = [17920, 0, 9600]
+solid = false
+tris = 24
+
+[[mesh]]
+scene = "town01"
+object = 86
+label = "grass strip"
+kind = "terrain"
+size = [512, 1792, 0]
+solid = false
+tris = 28
+note = "flat"
+
+[[mesh]]
+scene = "town01"
+object = 87
+label = "draws nothing on its own"
+kind = "other"
+size = [256, 512, 0]
+solid = false
+tris = 2
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "town01"
+object = 88
+label = "great tree"
+kind = "plant"
+size = [623, 667, 758]
+solid = true
+tris = 328
+note = "Rim Elm's village tree"
+
+[[mesh]]
+scene = "town01"
+object = 89
+label = "spiky sapling"
+kind = "plant"
+size = [179, 136, 261]
+solid = false
+tris = 86
+
+[[mesh]]
+scene = "town01"
+object = 90
+label = "stretcher"
+kind = "furniture"
+size = [50, 179, 4]
+solid = false
+tris = 76
+note = "canvas on two poles"
+
+[[mesh]]
+scene = "town01"
+object = 91
+label = "NPC body part"
+kind = "other"
+size = [54, 54, 90]
+solid = false
+tris = 280
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 92
+label = "NPC body part"
+kind = "other"
+size = [54, 56, 100]
+solid = false
+tris = 210
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 93
+label = "NPC body part"
+kind = "other"
+size = [50, 39, 86]
+solid = false
+tris = 244
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 94
+label = "NPC body part"
+kind = "other"
+size = [49, 39, 82]
+solid = false
+tris = 268
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 95
+label = "NPC body part"
+kind = "other"
+size = [39, 46, 73]
+solid = false
+tris = 214
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 96
+label = "NPC body part"
+kind = "other"
+size = [52, 39, 87]
+solid = false
+tris = 288
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 97
+label = "draws nothing on its own"
+kind = "other"
+size = [10, 8, 93]
+solid = false
+tris = 42
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "town01"
+object = 98
+label = "NPC body part"
+kind = "other"
+size = [45, 35, 80]
+solid = false
+tris = 288
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 99
+label = "NPC body part"
+kind = "other"
+size = [62, 76, 96]
+solid = false
+tris = 236
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 100
+label = "NPC body part"
+kind = "other"
+size = [53, 61, 75]
+solid = false
+tris = 180
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 101
+label = "NPC body part"
+kind = "other"
+size = [53, 51, 73]
+solid = false
+tris = 196
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 102
+label = "NPC body part"
+kind = "other"
+size = [62, 79, 96]
+solid = false
+tris = 216
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 103
+label = "NPC body part"
+kind = "other"
+size = [50, 39, 51]
+solid = false
+tris = 258
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 104
+label = "NPC body part"
+kind = "other"
+size = [32, 43, 48]
+solid = false
+tris = 250
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 105
+label = "NPC body part"
+kind = "other"
+size = [62, 79, 90]
+solid = false
+tris = 225
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 106
+label = "NPC body part"
+kind = "other"
+size = [24, 40, 76]
+solid = false
+tris = 252
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 107
+label = "NPC body part"
+kind = "other"
+size = [30, 38, 67]
+solid = false
+tris = 280
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "town01"
+object = 108
+label = "small purple rug"
+kind = "furniture"
+size = [260, 232, 71]
+solid = true
+tris = 220
+note = "flat"
+
+[[mesh]]
+scene = "town01"
+object = 109
+label = "draws nothing on its own"
+kind = "other"
+size = [222, 40, 42]
+solid = false
+tris = 22
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "town01"
+object = 110
+label = "chalkboard"
+kind = "furniture"
+size = [84, 16, 86]
+solid = false
+tris = 96
+
+[[mesh]]
+scene = "town01"
+object = 111
+label = "draws nothing on its own"
+kind = "other"
+size = [68, 78, 64]
+solid = false
+tris = 80
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "town01"
+object = 112
+label = "spiky idol with a banner"
+kind = "other"
+size = [128, 113, 237]
+solid = false
+tris = 227
+note = "Mist-creature figure"
+
+[[mesh]]
+scene = "town01"
+object = 113
+label = "draws nothing on its own"
+kind = "other"
+size = [64, 64, 238]
+solid = false
+tris = 12
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 0
+label = "ruin ground"
+kind = "terrain"
+size = [2994, 3699, 651]
+solid = true
+tris = 356
+
+[[mesh]]
+scene = "uru"
+object = 1
+label = "inscribed stone tablet"
+kind = "structure"
+size = [129, 95, 187]
+solid = false
+tris = 29
+
+[[mesh]]
+scene = "uru"
+object = 2
+label = "draws nothing on its own"
+kind = "other"
+size = [115, 115, 99]
+solid = false
+tris = 48
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 3
+label = "draws nothing on its own"
+kind = "other"
+size = [77, 76, 193]
+solid = false
+tris = 48
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 4
+label = "draws nothing on its own"
+kind = "other"
+size = [77, 76, 193]
+solid = false
+tris = 48
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 5
+label = "draws nothing on its own"
+kind = "other"
+size = [76, 77, 193]
+solid = false
+tris = 48
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 6
+label = "stone dome"
+kind = "terrain"
+size = [10406, 10788, 4924]
+solid = true
+tris = 50
+note = "the sky dome"
+
+[[mesh]]
+scene = "uru"
+object = 7
+label = "broken wall ring"
+kind = "structure"
+size = [948, 909, 256]
+solid = true
+tris = 116
+
+[[mesh]]
+scene = "uru"
+object = 8
+label = "standing stone"
+kind = "structure"
+size = [47, 54, 120]
+solid = false
+tris = 18
+note = "an obelisk"
+
+[[mesh]]
+scene = "uru"
+object = 9
+label = "leafy bush card"
+kind = "plant"
+size = [374, 112, 338]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 10
+label = "dead tree card"
+kind = "plant"
+size = [180, 0, 360]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 11
+label = "fern card"
+kind = "plant"
+size = [566, 170, 233]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 12
+label = "fallen log card"
+kind = "plant"
+size = [566, 170, 233]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 13
+label = "green shrine block"
+kind = "structure"
+size = [514, 384, 392]
+solid = true
+tris = 120
+
+[[mesh]]
+scene = "uru"
+object = 14
+label = "green shrine block"
+kind = "structure"
+size = [562, 385, 392]
+solid = true
+tris = 344
+
+[[mesh]]
+scene = "uru"
+object = 15
+label = "green shrine floor"
+kind = "structure"
+size = [2242, 2242, 636]
+solid = true
+tris = 780
+
+[[mesh]]
+scene = "uru"
+object = 16
+label = "fern card"
+kind = "plant"
+size = [188, 85, 116]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 17
+label = "blue shrine block"
+kind = "structure"
+size = [514, 384, 392]
+solid = true
+tris = 120
+
+[[mesh]]
+scene = "uru"
+object = 18
+label = "blue shrine block"
+kind = "structure"
+size = [562, 385, 392]
+solid = true
+tris = 344
+
+[[mesh]]
+scene = "uru"
+object = 19
+label = "blue shrine floor"
+kind = "structure"
+size = [2242, 2242, 636]
+solid = true
+tris = 780
+
+[[mesh]]
+scene = "uru"
+object = 20
+label = "red shrine block"
+kind = "structure"
+size = [514, 384, 392]
+solid = true
+tris = 120
+
+[[mesh]]
+scene = "uru"
+object = 21
+label = "red shrine block"
+kind = "structure"
+size = [562, 385, 392]
+solid = true
+tris = 344
+
+[[mesh]]
+scene = "uru"
+object = 22
+label = "red shrine floor"
+kind = "structure"
+size = [2242, 2242, 636]
+solid = true
+tris = 780
+
+[[mesh]]
+scene = "uru"
+object = 23
+label = "yellow pyramid"
+kind = "other"
+size = [507, 507, 442]
+solid = true
+tris = 4
+
+[[mesh]]
+scene = "uru"
+object = 24
+label = "blue pyramid"
+kind = "other"
+size = [507, 507, 442]
+solid = true
+tris = 4
+
+[[mesh]]
+scene = "uru"
+object = 25
+label = "green pyramid"
+kind = "other"
+size = [507, 507, 442]
+solid = true
+tris = 4
+
+[[mesh]]
+scene = "uru"
+object = 26
+label = "rune floor disc"
+kind = "other"
+size = [2138, 2138, 0]
+solid = false
+tris = 80
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 27
+label = "rune floor disc"
+kind = "other"
+size = [2138, 2138, 0]
+solid = false
+tris = 80
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 28
+label = "rune floor disc"
+kind = "other"
+size = [2138, 2138, 0]
+solid = false
+tris = 80
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 29
+label = "blue floor panel"
+kind = "other"
+size = [256, 192, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 30
+label = "rock lump"
+kind = "rock"
+size = [118, 127, 48]
+solid = false
+tris = 29
+
+[[mesh]]
+scene = "uru"
+object = 31
+label = "draws nothing on its own"
+kind = "other"
+size = [82, 82, 131]
+solid = false
+tris = 78
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 32
+label = "plank door"
+kind = "structure"
+size = [196, 276, 16]
+solid = false
+tris = 29
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 33
+label = "dirt patch"
+kind = "terrain"
+size = [168, 122, 0]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 34
+label = "flat rock"
+kind = "rock"
+size = [187, 129, 48]
+solid = false
+tris = 28
+
+[[mesh]]
+scene = "uru"
+object = 35
+label = "square stone block"
+kind = "rock"
+size = [187, 92, 129]
+solid = false
+tris = 32
+
+[[mesh]]
+scene = "uru"
+object = 36
+label = "stone block on a black base"
+kind = "structure"
+size = [290, 284, 129]
+solid = true
+tris = 36
+
+[[mesh]]
+scene = "uru"
+object = 37
+label = "stone block on a black base"
+kind = "structure"
+size = [256, 328, 129]
+solid = true
+tris = 35
+
+[[mesh]]
+scene = "uru"
+object = 38
+label = "black strip"
+kind = "other"
+size = [211, 1056, 2]
+solid = false
+tris = 6
+note = "occluder"
+
+[[mesh]]
+scene = "uru"
+object = 39
+label = "rubble patch"
+kind = "terrain"
+size = [764, 750, 1]
+solid = false
+tris = 27
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 40
+label = "stone block on a black base"
+kind = "structure"
+size = [160, 205, 80]
+solid = true
+tris = 35
+
+[[mesh]]
+scene = "uru"
+object = 41
+label = "black occluder"
+kind = "other"
+size = [959, 1105, 0]
+solid = false
+tris = 5
+
+[[mesh]]
+scene = "uru"
+object = 42
+label = "black occluder"
+kind = "other"
+size = [1460, 3705, 0]
+solid = false
+tris = 15
+
+[[mesh]]
+scene = "uru"
+object = 43
+label = "black occluder"
+kind = "other"
+size = [923, 1614, 0]
+solid = false
+tris = 6
+
+[[mesh]]
+scene = "uru"
+object = 44
+label = "black occluder"
+kind = "other"
+size = [2981, 1589, 0]
+solid = false
+tris = 17
+
+[[mesh]]
+scene = "uru"
+object = 45
+label = "red runner"
+kind = "other"
+size = [481, 480, 0]
+solid = false
+tris = 71
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 46
+label = "blue runner"
+kind = "other"
+size = [481, 480, 0]
+solid = false
+tris = 71
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 47
+label = "green runner"
+kind = "other"
+size = [481, 480, 0]
+solid = false
+tris = 71
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 48
+label = "blue floor panel"
+kind = "other"
+size = [256, 192, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 49
+label = "blue stone arch"
+kind = "structure"
+size = [353, 128, 422]
+solid = true
+tris = 56
+
+[[mesh]]
+scene = "uru"
+object = 50
+label = "green stone arch"
+kind = "structure"
+size = [353, 128, 422]
+solid = true
+tris = 56
+
+[[mesh]]
+scene = "uru"
+object = 51
+label = "red-gold dome"
+kind = "other"
+size = [128, 128, 64]
+solid = false
+tris = 24
+
+[[mesh]]
+scene = "uru"
+object = 52
+label = "blue floor panel"
+kind = "other"
+size = [401, 300, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 53
+label = "blue portal arch"
+kind = "structure"
+size = [353, 128, 422]
+solid = true
+tris = 74
+
+[[mesh]]
+scene = "uru"
+object = 54
+label = "draws nothing on its own"
+kind = "other"
+size = [1, 1179, 719]
+solid = true
+tris = 6
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 55
+label = "folded slab"
+kind = "other"
+size = [441, 817, 431]
+solid = true
+tris = 8
+
+[[mesh]]
+scene = "uru"
+object = 56
+label = "green floor panel"
+kind = "other"
+size = [401, 300, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 57
+label = "green portal arch"
+kind = "structure"
+size = [353, 128, 422]
+solid = true
+tris = 74
+
+[[mesh]]
+scene = "uru"
+object = 58
+label = "folded slab"
+kind = "other"
+size = [384, 451, 247]
+solid = true
+tris = 4
+
+[[mesh]]
+scene = "uru"
+object = 59
+label = "green floor panel"
+kind = "other"
+size = [256, 192, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 60
+label = "red swirl portal"
+kind = "other"
+size = [384, 0, 367]
+solid = false
+tris = 8
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 61
+label = "blue swirl portal"
+kind = "other"
+size = [384, 0, 367]
+solid = false
+tris = 8
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 62
+label = "green swirl portal"
+kind = "other"
+size = [384, 0, 367]
+solid = false
+tris = 8
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 63
+label = "red floor panel"
+kind = "other"
+size = [256, 192, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 64
+label = "red stone arch"
+kind = "structure"
+size = [353, 128, 422]
+solid = true
+tris = 56
+
+[[mesh]]
+scene = "uru"
+object = 65
+label = "draws nothing on its own"
+kind = "other"
+size = [1532, 0, 1160]
+solid = false
+tris = 2
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 66
+label = "red portal arch"
+kind = "structure"
+size = [353, 128, 422]
+solid = true
+tris = 74
+
+[[mesh]]
+scene = "uru"
+object = 67
+label = "red floor panel"
+kind = "other"
+size = [401, 300, 0]
+solid = false
+tris = 16
+note = "flat"
+
+[[mesh]]
+scene = "uru"
+object = 68
+label = "stone block on a black base"
+kind = "structure"
+size = [69, 93, 20]
+solid = false
+tris = 30
+
+[[mesh]]
+scene = "uru"
+object = 69
+label = "draws nothing on its own"
+kind = "other"
+size = [498, 302, 195]
+solid = true
+tris = 7
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 70
+label = "draws nothing on its own"
+kind = "other"
+size = [392, 432, 195]
+solid = true
+tris = 7
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 71
+label = "draws nothing on its own"
+kind = "other"
+size = [377, 432, 195]
+solid = true
+tris = 7
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 72
+label = "draws nothing on its own"
+kind = "other"
+size = [64, 64, 238]
+solid = false
+tris = 12
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 73
+label = "NPC body part"
+kind = "other"
+size = [33, 33, 69]
+solid = false
+tris = 418
+note = "a townsperson's head or limb; not a prop"
+
+[[mesh]]
+scene = "uru"
+object = 74
+label = "draws nothing on its own"
+kind = "other"
+size = [68, 25, 158]
+solid = false
+tris = 354
+note = "no texels in the field VRAM, or an effect-only mesh"
+
+[[mesh]]
+scene = "uru"
+object = 75
+label = "silver figure"
+kind = "other"
+size = [68, 25, 158]
+solid = false
+tris = 354
+note = "not a prop"
+
+[[mesh]]
+scene = "uru"
+object = 76
+label = "red-blue crystal drop"
+kind = "rock"
+size = [22, 18, 47]
+solid = false
+tris = 36
+
+[[mesh]]
+scene = "vell"
+object = 0
+label = "bent tree"
+kind = "plant"
+size = [301, 253, 477]
+solid = true
+tris = 133
+
+[[mesh]]
+scene = "vell"
+object = 1
+label = "mossy rock cliff"
+kind = "rock"
+size = [2867, 978, 1772]
+solid = true
+tris = 209
+
+[[mesh]]
+scene = "vell"
+object = 2
+label = "fern card, long"
+kind = "plant"
+size = [1200, 0, 400]
+solid = false
+tris = 2
+note = "a flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 3
+label = "great forest tree"
+kind = "plant"
+size = [768, 636, 758]
+solid = true
+tris = 208
+note = "the hive's tree in the Thornwood"
+
+[[mesh]]
+scene = "vell"
+object = 4
+label = "dead tree card"
+kind = "plant"
+size = [180, 0, 360]
+solid = false
+tris = 2
+note = "a flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 5
+label = "mossy boulder"
+kind = "rock"
+size = [782, 311, 266]
+solid = true
+tris = 127
+
+[[mesh]]
+scene = "vell"
+object = 6
+label = "leaning tree"
+kind = "plant"
+size = [560, 123, 347]
+solid = true
+tris = 99
+
+[[mesh]]
+scene = "vell"
+object = 7
+label = "tall bare trunk"
+kind = "plant"
+size = [170, 179, 836]
+solid = false
+tris = 90
+
+[[mesh]]
+scene = "vell"
+object = 8
+label = "fern card"
+kind = "plant"
+size = [566, 170, 233]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 9
+label = "fern card"
+kind = "plant"
+size = [188, 85, 116]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 10
+label = "grass tuft card"
+kind = "plant"
+size = [263, 264, 0]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "vell"
+object = 11
+label = "fern card"
+kind = "plant"
+size = [566, 170, 233]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 12
+label = "palm tree"
+kind = "plant"
+size = [64, 56, 455]
+solid = false
+tris = 44
+note = "fronds on a slim trunk"
+
+[[mesh]]
+scene = "vell"
+object = 13
+label = "bush card"
+kind = "plant"
+size = [374, 112, 338]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 14
+label = "bush card"
+kind = "plant"
+size = [374, 112, 338]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 15
+label = "palm tree"
+kind = "plant"
+size = [64, 56, 455]
+solid = false
+tris = 44
+note = "fronds on a slim trunk"
+
+[[mesh]]
+scene = "vell"
+object = 16
+label = "grass tuft card"
+kind = "plant"
+size = [263, 264, 0]
+solid = false
+tris = 2
+note = "flat"
+
+[[mesh]]
+scene = "vell"
+object = 17
+label = "fern card"
+kind = "plant"
+size = [188, 85, 116]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 18
+label = "bush card"
+kind = "plant"
+size = [374, 112, 338]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 19
+label = "bush card"
+kind = "plant"
+size = [374, 112, 338]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 20
+label = "moss strip card"
+kind = "plant"
+size = [566, 170, 233]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 21
+label = "moss strip card"
+kind = "plant"
+size = [566, 170, 233]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 22
+label = "rock outcrop"
+kind = "rock"
+size = [397, 132, 177]
+solid = true
+tris = 81
+
+[[mesh]]
+scene = "vell"
+object = 23
+label = "palm tree"
+kind = "plant"
+size = [64, 56, 455]
+solid = false
+tris = 64
+
+[[mesh]]
+scene = "vell"
+object = 24
+label = "palm tree"
+kind = "plant"
+size = [64, 56, 455]
+solid = false
+tris = 64
+
+[[mesh]]
+scene = "vell"
+object = 25
+label = "mountain backdrop card"
+kind = "terrain"
+size = [3648, 382, 1625]
+solid = true
+tris = 36
+
+[[mesh]]
+scene = "vell"
+object = 26
+label = "cloud backdrop card"
+kind = "terrain"
+size = [3648, 0, 1625]
+solid = false
+tris = 24
+
+[[mesh]]
+scene = "vell"
+object = 27
+label = "tall bare trunk"
+kind = "plant"
+size = [170, 179, 836]
+solid = false
+tris = 114
+
+[[mesh]]
+scene = "vell"
+object = 28
+label = "dead tree card"
+kind = "plant"
+size = [180, 0, 360]
+solid = false
+tris = 2
+note = "flat sprite"
+
+[[mesh]]
+scene = "vell"
+object = 29
+label = "pale rock shard"
+kind = "rock"
+size = [378, 267, 294]
+solid = true
+tris = 10
+
+[[mesh]]
+scene = "vell"
+object = 30
+label = "grassy cliff mound"
+kind = "terrain"
+size = [1450, 704, 1096]
+solid = true
+tris = 119
+
+[[mesh]]
+scene = "vell"
+object = 31
+label = "grassy cliff mound"
+kind = "terrain"
+size = [1152, 468, 741]
+solid = true
+tris = 97
+
+[[mesh]]
+scene = "vell"
+object = 32
+label = "mossy cliff ledge"
+kind = "terrain"
+size = [3043, 797, 1102]
+solid = true
+tris = 226
+
+[[mesh]]
+scene = "vell"
+object = 33
+label = "earth bank"
+kind = "terrain"
+size = [453, 244, 416]
+solid = true
+tris = 79
+
+[[mesh]]
+scene = "vell"
+object = 34
+label = "earth terraces"
+kind = "terrain"
+size = [229, 1794, 666]
+solid = true
+tris = 40
+
+[[mesh]]
+scene = "vell"
+object = 35
+label = "earth spire"
+kind = "rock"
+size = [142, 88, 444]
+solid = false
+tris = 67
+
+[[mesh]]
+scene = "vell"
+object = 36
+label = "earth bank"
+kind = "terrain"
+size = [1152, 472, 702]
+solid = true
+tris = 101
+
+[[mesh]]
+scene = "vell"
+object = 37
+label = "crater rim"
+kind = "terrain"
+size = [5202, 5394, 3014]
+solid = true
+tris = 82
+note = "a ring of rock round a pit"
+
+[[mesh]]
+scene = "vell"
+object = 38
+label = "earth mound with a hollow"
+kind = "rock"
+size = [629, 903, 445]
+solid = true
+tris = 104
+
+[[mesh]]
+scene = "vell"
+object = 39
+label = "mossy boulder"
+kind = "rock"
+size = [1044, 415, 356]
+solid = true
+tris = 127
+
+[[mesh]]
+scene = "vell"
+object = 40
+label = "vine root"
+kind = "plant"
+size = [194, 592, 160]
+solid = true
+tris = 286
+
+[[mesh]]
+scene = "vell"
+object = 41
+label = "leafy sapling"
+kind = "plant"
+size = [65, 33, 83]
+solid = false
+tris = 286
+
+[[mesh]]
+scene = "vell"
+object = 42
+label = "broken tree stump"
+kind = "plant"
+size = [209, 214, 328]
+solid = true
+tris = 152
+
+[[mesh]]
+scene = "vell"
+object = 43
+label = "blue crystal"
+kind = "rock"
+size = [42, 42, 58]
+solid = false
+tris = 48
+
+[[mesh]]
+scene = "vell"
+object = 44
+label = "rock slab"
+kind = "rock"
+size = [377, 2173, 112]
+solid = true
+tris = 24
+note = "flat"
+
+[[mesh]]
+scene = "vell"
+object = 45
+label = "rock slab"
+kind = "rock"
+size = [469, 2151, 118]
+solid = true
+tris = 38
+note = "flat"

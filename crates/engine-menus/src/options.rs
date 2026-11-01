@@ -232,6 +232,13 @@ pub struct OptionsState {
     /// look matures. Pure presentation: the screen-space layers and the HUD
     /// never bloom, and nothing reaches the simulation.
     pub bloom: bool,
+    /// Screen-space ambient occlusion (engine-only, non-retail): contact
+    /// shadows where geometry closes over a surface - a wall's foot, the
+    /// floor under a table, a character's feet (`Renderer::set_ssao` on the
+    /// native window; `Home` in `play-window`, `--no-ssao`). **Default on**.
+    /// Opaque scene geometry only: semi-transparent prims, sprites,
+    /// effects and the HUD never darken. Pure presentation.
+    pub ssao: bool,
     /// Native window: open borderless fullscreen (`F11` / `Alt+Enter` in
     /// `play-window`, `--fullscreen`; the launcher's row). Window chrome,
     /// not a render knob: the frame is drawn the same at any surface, and a
@@ -272,6 +279,7 @@ impl Default for OptionsState {
             light_shadows: true,
             occlusion_fade: true,
             bloom: false,
+            ssao: true,
             fullscreen: false,
             window_scale: 3,
         }
@@ -298,6 +306,7 @@ impl OptionsState {
         self.light_shadows = false;
         self.occlusion_fade = false;
         self.bloom = false;
+        self.ssao = false;
     }
 
     // --- lane Q ---
@@ -319,6 +328,7 @@ impl OptionsState {
         self.light_shadows = d.light_shadows;
         self.occlusion_fade = d.occlusion_fade;
         self.bloom = d.bloom;
+        self.ssao = d.ssao;
     }
 
     /// The options screen's rows as the config words a save block carries.
@@ -368,6 +378,9 @@ impl OptionsState {
         if knobs & BLOOM != 0 {
             self.bloom = from.bloom;
         }
+        if knobs & SSAO != 0 {
+            self.ssao = from.ssao;
+        }
     }
 
     /// The engine-only knobs currently off their retail value, by field
@@ -403,6 +416,9 @@ impl OptionsState {
         }
         if self.bloom {
             out.push("bloom");
+        }
+        if self.ssao {
+            out.push("ssao");
         }
         out
     }
@@ -1190,6 +1206,8 @@ pub mod options_pin {
     pub const ROW_FIRST: u32 = 1 << 9;
     /// `bloom` - clear of the retail-row bits above [`ROW_FIRST`].
     pub const BLOOM: u32 = 1 << 24;
+    /// `ssao`.
+    pub const SSAO: u32 = 1 << 25;
     /// Every knob [`super::OptionsState::pin_retail`] writes.
     pub const RETAIL: u32 = CAMERA_DISTANCE
         | PRECISE_MOVEMENT
@@ -1200,7 +1218,8 @@ pub mod options_pin {
         | ENHANCED_LIGHTING
         | LIGHT_SHADOWS
         | OCCLUSION_FADE
-        | BLOOM;
+        | BLOOM
+        | SSAO;
 }
 
 /// Session-only overrides of persisted options, and what to persist under
@@ -1374,16 +1393,17 @@ mod tests {
                 "reduce_flashing",
                 "enhanced_lighting",
                 "light_shadows",
-                "occlusion_fade"
+                "occlusion_fade",
+                "ssao"
             ]
         );
         o.precise_movement = true;
         o.retail_static_window = false;
         o.retail_view_window = false;
         o.volumetric_fog = true;
-        assert_eq!(o.retail_deviations().len(), 9);
-        o.bloom = true;
         assert_eq!(o.retail_deviations().len(), 10);
+        o.bloom = true;
+        assert_eq!(o.retail_deviations().len(), 11);
         let rows = (o.battle_camera, o.field_move, o.audio);
         o.pin_retail();
         assert!(o.retail_deviations().is_empty());
@@ -1437,6 +1457,25 @@ mod tests {
         let mut pinned = back.clone();
         pinned.pin_retail();
         assert!(!pinned.bloom);
+    }
+
+    /// SSAO defaults on, an options file written before the knob existed
+    /// reads it as on, and the retail pin turns it off.
+    #[test]
+    fn ssao_defaults_on_survives_old_files_and_pins_off() {
+        let opts = OptionsState::default();
+        assert!(opts.ssao);
+        let old: OptionsState = toml::from_str("muted = true\n").unwrap();
+        assert!(old.ssao);
+        let off = OptionsState {
+            ssao: false,
+            ..opts
+        };
+        let back: OptionsState = toml::from_str(&toml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.ssao, "an explicit off persists");
+        let mut pinned = OptionsState::default();
+        pinned.pin_retail();
+        assert!(!pinned.ssao);
     }
 
     #[test]
@@ -1504,6 +1543,7 @@ mod tests {
         assert_eq!(o.lighting_time_of_day, d.lighting_time_of_day);
         assert_eq!(o.light_shadows, d.light_shadows);
         assert_eq!(o.bloom, d.bloom);
+        assert_eq!(o.ssao, d.ssao);
         assert_eq!(o.volumetric_fog, d.volumetric_fog);
         assert_eq!(o.occlusion_fade, d.occlusion_fade);
         assert_eq!(o.camera_distance, d.camera_distance);

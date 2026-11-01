@@ -10,8 +10,8 @@
 use legaia_render_kernels::screen_prim::ScreenPrim;
 
 use super::{
-    Canvas, LINE, STAGE_H, STAGE_W, clip, footer, header, ink, labels_to_draws, pen, seat_color,
-    wrap,
+    Align, Canvas, LINE, STAGE_H, STAGE_W, clip, footer, header, ink, labels_to_draws, pen,
+    seat_color, wrap,
 };
 use crate::TextDraw;
 
@@ -107,27 +107,15 @@ fn compose_hunt(h: &NetHuntHud<'_>) -> Canvas {
     let (x, y, w) = (STAGE_W - 150, NET_PANEL_TOP, 146);
     let lines = 4 + i32::from(h.last.is_some());
     c.panel(x, y, w, lines * 12 + 6, [10, 14, 24, 200], ink::HIGHLIGHT);
-    c.text(
-        format!("Prop hunt - round {}", h.round + 1),
-        x + 4,
-        y + 1,
-        pen::GOLD,
-    );
-    c.text(
-        format!("{} {}s", h.phase, h.seconds),
-        x + 4,
-        y + 13,
-        pen::WHITE,
-    );
-    c.text(h.role, x + 4, y + 25, pen::GREEN);
-    c.text(
-        format!("Hidden {}/{}", h.hidden.0, h.hidden.1),
-        x + 4,
-        y + 37,
-        pen::DIM,
-    );
-    if let Some(l) = h.last {
-        c.text(l, x + 4, y + 49, pen::WHITE);
+    let rows = [
+        (format!("Prop hunt - round {}", h.round + 1), pen::GOLD),
+        (format!("{} {}s", h.phase, h.seconds), pen::WHITE),
+        (h.role.to_string(), pen::GREEN),
+        (format!("Hidden {}/{}", h.hidden.0, h.hidden.1), pen::DIM),
+    ];
+    let last = h.last.map(|l| (l.to_string(), pen::WHITE));
+    for (i, (text, ink_)) in rows.into_iter().chain(last).enumerate() {
+        c.text_in(text, x + 4, y + 1 + 12 * i as i32, w - 8, ink_, Align::Left);
     }
     footer(&mut c, h.hint);
     c

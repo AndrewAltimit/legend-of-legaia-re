@@ -369,3 +369,49 @@ materials = [{ name = "a", chars = ".#", cells = [{ tpage = 1, clut = 1, tile = 
     }
     assert_eq!(all.field, near.field);
 }
+
+#[test]
+fn a_deck_over_the_water_walks_and_the_water_round_it_does_not() {
+    let water = "water = { level = 10, wade = 6, cells = [{ tpage = 9, clut = 31880, tile = 56 }] }\nshapes = [{ kind = \"plateau\", rect = [0, 4, 9, 5], height = -60, edge = 1.0 }]";
+    let m = map(&format!(
+        "[[props]]\nmesh = {{ object = 3 }}\ntile = [3, 5]\ntop = 12\n\n[terrain]\nsmooth = 0\n{water}"
+    ));
+    let g = m.tile_grid().unwrap();
+    let w = m.terrain_walls(&g).unwrap();
+    assert_eq!(w[5 * g.width + 3], 0, "the deck's tile walks");
+    assert_eq!(w[5 * g.width + 6], 0xF, "the open water beside it");
+    // A top under the water walls as before.
+    let m = map(&format!(
+        "[[props]]\nmesh = {{ object = 3 }}\ntile = [3, 5]\ntop = -40\n\n[terrain]\nsmooth = 0\n{water}"
+    ));
+    assert_eq!(m.terrain_walls(&g).unwrap()[5 * g.width + 3], 0xF);
+}
+
+#[test]
+fn the_abyss_darkens_with_depth_and_leaves_the_floor_alone() {
+    let a = AbyssDef {
+        from: -60.0,
+        to: -700.0,
+        shade: 0.1,
+    };
+    assert_eq!(a.factor(0.0), 1.0);
+    assert_eq!(a.factor(-60.0), 1.0);
+    assert!((a.factor(-700.0) - 0.1).abs() < 1e-6);
+    assert!((a.factor(-2000.0) - 0.1).abs() < 1e-6);
+    let mid = a.factor(-380.0);
+    assert!(mid > 0.1 && mid < 1.0);
+    // On a surface: the sunk row draws darker than without the abyss.
+    let pit = "shapes = [{ kind = \"plateau\", rect = [0, 4, 9, 5], height = -600, edge = 1.0 }]";
+    let lit = map(&format!("[terrain]\nsmooth = 0\nvariation = 0\n{pit}"));
+    let dark = map(&format!(
+        "[terrain]\nsmooth = 0\nvariation = 0\nabyss = {{ from = -60, to = -500, shade = 0.1 }}\n{pit}"
+    ));
+    let (l, d) = (
+        lit.terrain_surface().unwrap().unwrap(),
+        dark.terrain_surface().unwrap().unwrap(),
+    );
+    assert_eq!(l.colors.len(), d.colors.len());
+    let sum = |c: &[[u8; 3]]| c.iter().map(|v| u32::from(v[0])).sum::<u32>();
+    assert!(sum(&d.colors) < sum(&l.colors));
+    assert_eq!(l.colors[0], d.colors[0], "the high corner is untouched");
+}

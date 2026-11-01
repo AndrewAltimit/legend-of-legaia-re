@@ -5,7 +5,9 @@ wgpu-free draw layer that both the native renderer (`legaia-engine-render`)
 and the browser play page (`legaia-web-play`) share. Inside the engine it
 depends on `legaia-render-kernels` and, for the battle HUD model its builders
 project (`battle_party_panel`, `battle_commit_log`, the value readout), on
-`legaia-engine-battle-vm`; it links no other kernel crate and not `legaia-engine-core`.
+`legaia-engine-battle-vm`; for the game modes' screens, on `legaia-engine-modes`
+and the mode seat in `legaia-engine-expansion`; it links no other kernel crate
+and not `legaia-engine-core`.
 
 ## Scope
 
@@ -127,7 +129,9 @@ navigation logic depends on the GPU backend.
 - `expansion_modes` - the port's own game modes' screens (mode picker,
   poker table, Grid Duel board, golf course, race and prop-hunt maps,
   quit prompt, results) as flat stage prims plus dialog-font labels.
-  `legaia-engine-screens` projects the world's mode seat into it.
+  `seat_screen` projects a mode seat into it - the world's, through
+  `legaia-engine-screens`, or the World-free modes page's - and
+  `mode_screen_labels` hands the labels unmeasured to a host with no font.
 - `shop_screen` - the gold shop's screen composition: window frames, the
   Buy / Sell / Quit picker, the paged lists and the party-compare column.
   `legaia-engine-screens` projects the live shop state into it.
@@ -166,8 +170,8 @@ depends on this crate for the draw types it uploads. The GPU-resident batch wrap
 `legaia-engine-render` because they hold wgpu handles.
 
 Depends only on `legaia-game-tables`, `legaia-ui-formats`,
-`legaia-minigame-formats`, `legaia-engine-battle-vm`,
-`legaia-render-kernels`, `legaia-font`, `legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` -
+`legaia-minigame-formats`, `legaia-engine-battle-vm`, `legaia-engine-modes`,
+`legaia-engine-expansion`, `legaia-expansion-format`, `legaia-render-kernels`, `legaia-font`, `legaia-tim`, `glam`, `serde`, `serde_json`, and `bytemuck` -
 no wgpu, no winit, and not `legaia-engine-core` - so it links into the lean
 WASM play build. The projection from live `engine-core` state into these
 builders, where it would otherwise be written once per host, lives in

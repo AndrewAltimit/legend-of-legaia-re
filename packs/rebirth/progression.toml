@@ -41,7 +41,7 @@ scope = "pack"
 rewards = true
 
 # Level 55, 80 and 99 are the climb's milestones: 55 is when the tower's
-# first arts come (arts.toml), 80 the Rebirth finishers, 99 the Warden's
+# first arts come (arts.toml), 80 the Knell finishers, 99 the Warden's
 # last request and the First Breath (quests.toml).
 [[level_rewards]]
 level = 55

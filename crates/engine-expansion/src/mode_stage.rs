@@ -22,14 +22,19 @@
 //!   camera follows it along the shot's line; between shots it returns
 //!   behind the next ball to play, looking down its aim.
 //! - **Racing.** The leader is the player's racer, facing its heading, its
-//!   run clip at speed. The camera chases from behind on the heading.
+//!   run clip at speed, lifted off the floor through a hop. The camera
+//!   chases from behind on the heading. The track carries the checkpoint
+//!   gates (the next one the leader must pass marked out) and the power-up
+//!   spots.
 //! - **Grid Duel.** A duel at a table ([`crate::duel_stage`]): the leader
 //!   stands at the player's side, the cards and NPCs are the table's.
 
 use legaia_engine_modes::active::{ActiveMode, ModeView, seat_name_for};
 use legaia_engine_modes::cards::duel::DuelView;
 use legaia_engine_modes::cards::table::DuelTableFrame;
+use legaia_engine_modes::fixed::Vec2;
 use legaia_engine_modes::fixed::{ANGLE_TURN, FX_ONE};
+use legaia_engine_modes::golf::course::{Course, Surface, TILE};
 use legaia_engine_modes::golf::{GolfPhase, GolfView};
 use legaia_engine_modes::map_frame::MapFrame;
 use legaia_engine_modes::poker::PokerView;
@@ -73,6 +78,8 @@ pub struct StagePose {
     /// Facing as a mode angle (`0` = world `+X`, a quarter turn = `+Z`).
     pub facing: u16,
     pub clip: LeaderClip,
+    /// Height above the floor, world units (a racer's hop).
+    pub lift: f32,
 }
 
 /// Another seat's body: an AI golfer at its ball, an AI racer.
@@ -87,6 +94,12 @@ pub struct StageBody {
     /// The field NPC slot that draws this body, when the instance names one
     /// (`bodies`; the world fills it in). `None` draws a stand-in figure.
     pub actor: Option<u8>,
+    /// Height above the floor, world units (a racer's hop).
+    pub lift: f32,
+    /// A racer's shield is up.
+    pub shielded: bool,
+    /// A racer runs slowed.
+    pub slowed: bool,
 }
 
 /// A golf ball.
@@ -114,6 +127,77 @@ pub struct StageAim {
 pub struct StageTrail {
     pub seat: usize,
     pub points: Vec<[f32; 2]>,
+}
+
+/// A race's track laid on the ground, for the hosts to mark out: the
+/// session's centerline, its half-width, its boost segments, its
+/// checkpoint gates and its power-up spots, in world units. Drawn only; the
+/// session keeps racers on it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StageTrack {
+    /// World `(X, Z)` of each waypoint, in driving order; segment `i` runs
+    /// from point `i` to point `i + 1` (on a circuit the last back to the
+    /// first).
+    pub points: Vec<[f32; 2]>,
+    /// Half the track's width, world units.
+    pub half_width: f32,
+    /// Segments that boost a racer running along them.
+    pub boost_segments: Vec<usize>,
+    /// A circuit (closed loop) rather than a sprint.
+    pub closed: bool,
+    /// The checkpoint the leader must pass next (a gate at that point), or
+    /// `None` once it has finished.
+    pub next_gate: Option<usize>,
+    /// The power-up spots.
+    pub pickups: Vec<StagePickup>,
+    /// The session's frame, for the spots' spin and bob.
+    pub clock: u32,
+    /// Each hopping racer's leap: the arc from where it left the ground to
+    /// where it lands, as world `(X, Z)` and height over the floor.
+    pub hops: Vec<StageHop>,
+}
+
+/// A racer's hop, drawn as a dotted arc over the ground.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StageHop {
+    pub seat: usize,
+    /// `[x, z, lift]` along the leap, takeoff first.
+    pub arc: Vec<[f32; 3]>,
+    /// How far along the arc the racer is, `0..=1`.
+    pub done: f32,
+}
+
+/// A power-up spot on the track.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StagePickup {
+    /// World `(X, Z)`.
+    pub pos: [f32; 2],
+    pub kind: legaia_engine_modes::racing::PowerKind,
+    /// Lying there to be taken (else waiting to come back).
+    pub ready: bool,
+}
+
+/// One playable tile of a golf hole, for the hosts to tint on the ground.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StageTile {
+    /// World `(X, Z)` of the tile's low corner; the tile runs
+    /// [`StageCourse::tile`] world units along each axis from it.
+    pub at: [f32; 2],
+    pub surface: Surface,
+    /// Downhill direction, each `-1..=1` (`(0, 0)` flat).
+    pub slope: (i8, i8),
+}
+
+/// The golf hole in play laid on the ground: its playable tiles (walls and
+/// out of bounds left out) and its tee. Drawn only; the session rolls the
+/// ball on its own tiles.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StageCourse {
+    pub tiles: Vec<StageTile>,
+    /// A tile's side, world units.
+    pub tile: f32,
+    /// World `(X, Z)` of the tee.
+    pub tee: [f32; 2],
 }
 
 /// The camera's shot: look at `focus` from behind along `yaw`.
@@ -150,11 +234,12 @@ impl StageShot {
 }
 
 /// The shots' pitches, 12-bit units: aiming looks down on the ball and its
-/// line, a rolling ball is watched from higher, the race chases low.
+/// line, a rolling ball is watched from higher, the race chases from high
+/// enough that a map's walls rarely stand between the camera and the racer.
 pub const AIM_PITCH: f32 = 600.0;
 pub const ROLL_PITCH: f32 = 680.0;
 pub const CUP_PITCH: f32 = 720.0;
-pub const CHASE_PITCH: f32 = 380.0;
+pub const CHASE_PITCH: f32 = 540.0;
 
 /// One frame of the stage.
 #[derive(Debug, Clone, PartialEq)]
@@ -166,6 +251,10 @@ pub struct StageFrame {
     pub cup: Option<[f32; 2]>,
     pub aim: Option<StageAim>,
     pub trails: Vec<StageTrail>,
+    /// A race's track, to mark out on the ground.
+    pub track: Option<StageTrack>,
+    /// A golf hole's tiles, to tint on the ground.
+    pub course: Option<StageCourse>,
     pub shot: StageShot,
     pub banner: Option<String>,
     /// A Grid Duel's table: cards, bursts, NPCs and cues.
@@ -188,6 +277,34 @@ impl StageFrame {
     }
 }
 
+/// The hole in play's playable tiles in world units.
+fn stage_course(c: &Course, frame: &MapFrame) -> StageCourse {
+    let mut tiles = Vec::new();
+    for ty in 0..c.height as i32 {
+        for tx in 0..c.width as i32 {
+            let low = Vec2::new(tx * TILE * FX_ONE, ty * TILE * FX_ONE);
+            let centre = Vec2::new(
+                (tx * TILE + TILE / 2) * FX_ONE,
+                (ty * TILE + TILE / 2) * FX_ONE,
+            );
+            let t = c.tile_at(centre);
+            if matches!(t.surface, Surface::Wall | Surface::OutOfBounds) {
+                continue;
+            }
+            tiles.push(StageTile {
+                at: frame.to_world_f(low),
+                surface: t.surface,
+                slope: t.slope,
+            });
+        }
+    }
+    StageCourse {
+        tiles,
+        tile: frame.len_to_world(TILE * FX_ONE),
+        tee: frame.to_world_f(c.tee),
+    }
+}
+
 /// What the stage remembers between frames. Presentation only.
 #[derive(Debug, Clone, Default)]
 pub struct WorldStage {
@@ -200,6 +317,8 @@ pub struct WorldStage {
     last_lap: Option<(u8, bool)>,
     banner: Option<(String, u32)>,
     trails: Vec<Vec<[f32; 2]>>,
+    /// Each seat's hop arc while it is in the air.
+    hops: Vec<Option<Vec<[f32; 3]>>>,
     /// A duel table's memory.
     pub duel: DuelStage,
     /// A poker table's memory.
@@ -229,6 +348,20 @@ fn ease(from: [f32; 2], to: [f32; 2], k: f32) -> [f32; 2] {
     ]
 }
 
+/// How high a hopping racer is, world units: a parabola over the hop's
+/// frames, [`HOP_HEIGHT`] at its top.
+pub fn hop_lift(frames_left: u32) -> f32 {
+    use legaia_engine_modes::racing::HOP_FRAMES;
+    if frames_left == 0 {
+        return 0.0;
+    }
+    let t = 1.0 - frames_left as f32 / HOP_FRAMES as f32;
+    HOP_HEIGHT * 4.0 * t * (1.0 - t)
+}
+
+/// A hop's top height, world units.
+pub const HOP_HEIGHT: f32 = 96.0;
+
 /// A golf result as a player names it, against `par`.
 pub fn score_name(strokes: u8, par: u8) -> String {
     if strokes == 1 {
@@ -251,8 +384,48 @@ impl WorldStage {
     pub fn step(&mut self, mode: &ActiveMode) -> Option<StageFrame> {
         let frame = mode.map_frame()?.clone();
         let mut out = match mode.view() {
-            ModeView::Golf(v) => self.golf(&frame, &v, mode.local_seat),
-            ModeView::Race(v) => self.race(&frame, &v, mode.local_seat),
+            ModeView::Golf(v) => {
+                let mut f = self.golf(&frame, &v, mode.local_seat);
+                f.course = mode.golf_course().map(|c| stage_course(c, &frame));
+                f
+            }
+            ModeView::Race(v) => {
+                let mut f = self.race(&frame, &v, mode.local_seat);
+                let me = v.racers.get(mode.local_seat);
+                f.track = mode.race_track().map(|t| StageTrack {
+                    points: t.points.iter().map(|&p| frame.to_world_f(p)).collect(),
+                    half_width: frame.len_to_world(t.half_width),
+                    boost_segments: t.boost_segments.clone(),
+                    closed: t.closed,
+                    next_gate: me.filter(|r| r.finished.is_none()).map(|r| r.next_cp),
+                    pickups: v
+                        .pickups
+                        .iter()
+                        .map(|p| StagePickup {
+                            pos: frame.to_world_f(p.pos),
+                            kind: p.kind,
+                            ready: p.ready,
+                        })
+                        .collect(),
+                    clock: v.frame,
+                    hops: self
+                        .hops
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(seat, h)| {
+                            let arc = h.clone()?;
+                            let left = v.racers.get(seat)?.hop_frames;
+                            let total = legaia_engine_modes::racing::HOP_FRAMES as f32;
+                            Some(StageHop {
+                                seat,
+                                arc,
+                                done: 1.0 - left as f32 / total,
+                            })
+                        })
+                        .collect(),
+                });
+                f
+            }
             ModeView::Duel(v) => {
                 let table = mode.duel_table()?;
                 self.duel.watching = mode.watching;
@@ -289,6 +462,8 @@ impl WorldStage {
             cup: None,
             aim: None,
             trails: Vec::new(),
+            track: None,
+            course: None,
             shot: duel.shot,
             banner: duel.banner.clone(),
             duel: Some(duel),
@@ -313,6 +488,8 @@ impl WorldStage {
             cup: None,
             aim: None,
             trails: Vec::new(),
+            track: None,
+            course: None,
             shot: poker.shot,
             banner: poker.banner.clone(),
             duel: None,
@@ -480,6 +657,7 @@ impl WorldStage {
             pos,
             facing: if walking { walk_facing } else { facing },
             clip,
+            lift: 0.0,
         };
         let bodies = v
             .balls
@@ -497,6 +675,9 @@ impl WorldStage {
                     boosting: false,
                     moving: false,
                     actor: None,
+                    lift: 0.0,
+                    shielded: false,
+                    slowed: false,
                 }
             })
             .collect();
@@ -535,6 +716,8 @@ impl WorldStage {
             cup: Some(cup),
             aim,
             trails: Vec::new(),
+            track: None,
+            course: None,
             shot,
             banner: None,
             duel: None,
@@ -546,6 +729,29 @@ impl WorldStage {
     fn race(&mut self, frame: &MapFrame, v: &RaceView, local: usize) -> StageFrame {
         let w = |p| frame.to_world_f(p);
         self.trails.resize(v.racers.len(), Vec::new());
+        self.hops.resize(v.racers.len(), None);
+        for (seat, r) in v.racers.iter().enumerate() {
+            let h = &mut self.hops[seat];
+            if r.hop_frames == 0 {
+                *h = None;
+            } else if h.is_none() {
+                // The leap from here, along the heading at the racer's
+                // speed, over the frames it has left in the air.
+                let at = w(r.pos);
+                let step = frame.len_to_world(r.speed);
+                let a = angle_rad(f32::from(r.heading));
+                let n = r.hop_frames;
+                *h = Some(
+                    (0..=n)
+                        .step_by(2)
+                        .map(|k| {
+                            let d = step * k as f32;
+                            [at[0] + a.cos() * d, at[1] + a.sin() * d, hop_lift(n - k)]
+                        })
+                        .collect(),
+                );
+            }
+        }
         for (seat, r) in v.racers.iter().enumerate() {
             let t = &mut self.trails[seat];
             if r.boost_frames > 0 {
@@ -582,6 +788,7 @@ impl WorldStage {
             StagePose {
                 pos,
                 facing,
+                lift: hop_lift(r.hop_frames),
                 clip: if r.speed > MAX_SPEED / 2 {
                     LeaderClip::Run
                 } else if r.speed > 0 {
@@ -605,6 +812,9 @@ impl WorldStage {
                     boosting: r.boost_frames > 0,
                     moving: r.speed > 0,
                     actor: None,
+                    lift: hop_lift(r.hop_frames),
+                    shielded: r.shield_frames > 0,
+                    slowed: r.slow_frames > 0,
                 }
             })
             .collect();
@@ -647,6 +857,8 @@ impl WorldStage {
             cup: None,
             aim: None,
             trails,
+            track: None,
+            course: None,
             shot,
             banner,
             duel: None,

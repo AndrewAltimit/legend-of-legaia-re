@@ -1,11 +1,20 @@
-//! Checkpoint racing for 1-8 racers on a closed track.
+//! Checkpoint racing for 1-8 racers on a circuit or a sprint course.
 //!
-//! The track is a closed centerline polyline with a half-width
-//! ([`Track`]); the drivable surface is every point within the half-width
-//! of some segment. Each centerline point is a checkpoint. A racer passes
-//! a checkpoint when the segment nearest to it becomes the one leaving the
-//! checkpoint, and only the next checkpoint in order counts, so a short
-//! cut that skips one gains nothing. Passing checkpoint `0` closes a lap.
+//! The track is a centerline polyline with a half-width ([`Track`]),
+//! closed on a circuit and open on a sprint; the drivable surface is every
+//! point within the half-width of some segment. Each centerline point is a
+//! checkpoint. A racer passes a checkpoint when the segment nearest to it
+//! becomes the one leaving the checkpoint, and only the next checkpoint in
+//! order counts, so a short cut that skips one gains nothing. On a circuit,
+//! passing checkpoint `0` closes a lap; a sprint finishes on crossing the
+//! line through its last point.
+//!
+//! Power-ups ([`PickupSpot`]) lie on and beside the course. A racer holding
+//! nothing takes one by running over it and uses it with Triangle; the
+//! spot comes back after its respawn delay. A boost is a long burst at
+//! boost speed, a hop leaves the ground (no bumps, and the edge lets the
+//! racer run a full track width wide), a shield makes bumps free and blocks
+//! the next slow, and a slow holds every rival under a reduced top speed.
 //!
 //! Driving is arcade: a heading and a scalar speed. Cross accelerates,
 //! Square brakes, Left / Right steer, R1 spends a full boost meter. A boost
@@ -49,14 +58,61 @@ pub const BOOST_FRAMES: u32 = 45;
 pub const RACER_RADIUS: i32 = 10;
 /// Countdown before the start.
 pub const COUNTDOWN_FRAMES: u32 = 180;
+/// A power-up's pick-up radius, world units (added to the racer's).
+pub const PICKUP_RADIUS: i32 = 18;
+/// Frames a spot stays empty once taken, when its pack entry names none.
+pub const PICKUP_RESPAWN: u32 = 600;
+/// Frames a boost power-up runs at boost speed.
+pub const SURGE_FRAMES: u32 = 100;
+/// Frames a hop keeps the racer off the ground.
+pub const HOP_FRAMES: u32 = 40;
+/// Frames a shield lasts.
+pub const SHIELD_FRAMES: u32 = 600;
+/// Frames a slow lasts.
+pub const SLOW_FRAMES: u32 = 120;
+/// A slowed racer's top speed, percent of its own.
+pub const SLOW_PCT: i32 = 55;
+/// Units a frame the hop's extra room at the edge shrinks after landing.
+pub const VERGE_RECOVER: Fx = 3 * FX_ONE;
 
-/// A closed track.
+/// What a power-up does when used.
+pub use legaia_expansion_format::modes::RacePickupKind as PowerKind;
+
+/// The names AI racers take when the race names none (`rivals`), in seat
+/// order with the player's skipped.
+pub const STOCK_RIVALS: [&str; 7] = [
+    "Kestrel", "Mara", "Old Bram", "Juno", "Talin", "Wren", "Corvo",
+];
+
+/// The name of racer `seat` (`1..`) of pack race `t`: its `rivals` entry,
+/// else a stock name.
+pub fn rival_name(t: &legaia_expansion_format::modes::RaceTrack, seat: usize) -> String {
+    let i = seat.saturating_sub(1);
+    match t.rivals.get(i).filter(|n| !n.trim().is_empty()) {
+        Some(n) => n.clone(),
+        None => STOCK_RIVALS[i % STOCK_RIVALS.len()].to_string(),
+    }
+}
+
+/// Where a power-up lies on the course, and how long it stays away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PickupSpot {
+    pub pos: Vec2,
+    pub kind: PowerKind,
+    /// Frames until it comes back once taken.
+    pub respawn: u32,
+}
+
+/// A track: a closed circuit, or an open sprint course.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Track {
     pub points: Vec<Vec2>,
     pub half_width: Fx,
     pub boost_segments: Vec<usize>,
+    /// Laps of a circuit; `1` on a sprint.
     pub laps: u8,
+    /// A circuit (the last point joins the first) or a sprint.
+    pub closed: bool,
 }
 
 /// Why a track was refused.
@@ -69,6 +125,8 @@ pub enum TrackError {
     NoMap(String),
     /// A waypoint falls off the map.
     OffMap(usize),
+    /// A power-up lies off the map.
+    PickupOffMap(usize),
 }
 
 fn closest_on_segment(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
@@ -88,16 +146,41 @@ fn closest_on_segment(p: Vec2, a: Vec2, b: Vec2) -> Vec2 {
 }
 
 impl Track {
+    /// A closed circuit run for `laps`.
     pub fn new(
         points: Vec<Vec2>,
         half_width: Fx,
         boost_segments: Vec<usize>,
         laps: u8,
     ) -> Result<Self, TrackError> {
-        if points.len() < 3 {
+        Self::shaped(points, half_width, boost_segments, laps, true)
+    }
+
+    /// An open sprint course from the first point to the last.
+    pub fn sprint(
+        points: Vec<Vec2>,
+        half_width: Fx,
+        boost_segments: Vec<usize>,
+    ) -> Result<Self, TrackError> {
+        Self::shaped(points, half_width, boost_segments, 1, false)
+    }
+
+    fn shaped(
+        points: Vec<Vec2>,
+        half_width: Fx,
+        boost_segments: Vec<usize>,
+        laps: u8,
+        closed: bool,
+    ) -> Result<Self, TrackError> {
+        if points.len() < if closed { 3 } else { 2 } {
             return Err(TrackError::TooFewPoints);
         }
-        for i in 0..points.len() {
+        let segments = if closed {
+            points.len()
+        } else {
+            points.len() - 1
+        };
+        for i in 0..segments {
             if points[i] == points[(i + 1) % points.len()] {
                 return Err(TrackError::DegenerateSegment(i));
             }
@@ -109,21 +192,75 @@ impl Track {
             points,
             half_width,
             boost_segments,
-            laps: laps.max(1),
+            laps: if closed { laps.max(1) } else { 1 },
+            closed,
         })
+    }
+
+    /// A pack track's shape off its `course`.
+    fn of_def(
+        t: &legaia_expansion_format::modes::RaceTrack,
+        points: Vec<Vec2>,
+    ) -> Result<Self, TrackError> {
+        let half_width = (t.half_width as i32).saturating_mul(FX_ONE);
+        let boosts = t.boost_segments.iter().map(|&s| s as usize).collect();
+        match t.course {
+            legaia_expansion_format::modes::RaceCourse::Circuit => {
+                Self::new(points, half_width, boosts, t.laps)
+            }
+            legaia_expansion_format::modes::RaceCourse::Sprint => {
+                Self::sprint(points, half_width, boosts)
+            }
+        }
     }
 
     /// Build from a pack track (world units).
     pub fn from_def(t: &legaia_expansion_format::modes::RaceTrack) -> Result<Self, TrackError> {
-        Self::new(
+        Self::of_def(
+            t,
             t.points
                 .iter()
                 .map(|p| Vec2::new(p[0] * FX_ONE, p[1] * FX_ONE))
                 .collect(),
-            (t.half_width as i32).saturating_mul(FX_ONE),
-            t.boost_segments.iter().map(|&s| s as usize).collect(),
-            t.laps,
         )
+    }
+
+    /// Build a pack track run on a kingdom overworld
+    /// ([`RaceTrack::scene`](legaia_expansion_format::modes::RaceTrack::scene)):
+    /// the centerline is the waypoints' overworld tile centres, in mode
+    /// units of the returned frame (mode `(0, 0)` at the scene's world
+    /// origin, [`crate::map_frame::RACE_UNIT`] world units a mode unit).
+    pub fn from_scene(
+        t: &legaia_expansion_format::modes::RaceTrack,
+        scene: &str,
+    ) -> Result<(Self, crate::map_frame::MapFrame), TrackError> {
+        use crate::map_frame::{MapFrame, OVERWORLD_TILES, RACE_UNIT};
+        let mut points = Vec::with_capacity(t.waypoints.len());
+        for (i, wp) in t.waypoints.iter().enumerate() {
+            if usize::from(wp[0]) >= OVERWORLD_TILES || usize::from(wp[1]) >= OVERWORLD_TILES {
+                return Err(TrackError::OffMap(i));
+            }
+            points.push(tile_centre(i32::from(wp[0]), i32::from(wp[1])));
+        }
+        let track = Self::of_def(t, points)?;
+        let frame = MapFrame {
+            map_id: scene.to_string(),
+            spawn: String::new(),
+            origin: [0, 0],
+            unit: RACE_UNIT,
+            scene: true,
+        };
+        Ok((track, frame))
+    }
+
+    /// The number of segments: one per point on a circuit, one fewer on a
+    /// sprint.
+    pub fn segment_count(&self) -> usize {
+        if self.closed {
+            self.points.len()
+        } else {
+            self.points.len() - 1
+        }
     }
 
     /// Build a pack track laid on its map: the centerline is the
@@ -146,15 +283,9 @@ impl Track {
             if usize::from(wp[0]) >= w || usize::from(wp[1]) >= h {
                 return Err(TrackError::OffMap(i));
             }
-            let centre = |c: u16| (i32::from(c) * MAP_TILE + MAP_TILE / 2) / RACE_UNIT * FX_ONE;
-            points.push(Vec2::new(centre(wp[0]), centre(wp[1])));
+            points.push(tile_centre(i32::from(wp[0]), i32::from(wp[1])));
         }
-        let track = Self::new(
-            points,
-            (t.half_width as i32).saturating_mul(FX_ONE),
-            t.boost_segments.iter().map(|&s| s as usize).collect(),
-            t.laps,
-        )?;
+        let track = Self::of_def(t, points)?;
         let frame = MapFrame {
             map_id: map_id.to_string(),
             spawn: t.spawn.clone(),
@@ -163,6 +294,7 @@ impl Track {
                 i32::from(def.tiles.origin[1]) * MAP_TILE,
             ],
             unit: RACE_UNIT,
+            scene: false,
         };
         Ok((track, frame))
     }
@@ -175,7 +307,7 @@ impl Track {
     /// The nearest segment to `p` and the closest point on it.
     pub fn nearest(&self, p: Vec2) -> (usize, Vec2) {
         let mut best = (0, self.points[0], i64::MAX);
-        for i in 0..self.points.len() {
+        for i in 0..self.segment_count() {
             let (a, b) = self.seg(i);
             let c = closest_on_segment(p, a, b);
             let d = (p - c).len_sq();
@@ -190,9 +322,60 @@ impl Track {
     /// one leaving it. The switch from segment `cp - 1` to `cp` happens on
     /// the corner's bisector, so a racer that cuts a corner still passes,
     /// and one that skips a segment never does.
+    ///
+    /// A sprint's last point has no segment leaving it: it is reached on
+    /// crossing the finish line square to the last segment through it.
     fn reached(&self, p: Vec2, cp: usize) -> bool {
+        let n = self.points.len();
+        if !self.closed && cp == n - 1 {
+            let (a, b) = self.seg(n - 2);
+            let d = b - a;
+            let o = p - b;
+            return self.nearest(p).0 == n - 2
+                && o.x as i64 * d.x as i64 + o.y as i64 * d.y as i64 >= 0;
+        }
         self.nearest(p).0 == cp
     }
+}
+
+/// A 128-unit tile's centre in race mode units.
+fn tile_centre(col: i32, row: i32) -> Vec2 {
+    use crate::map_frame::{MAP_TILE, RACE_UNIT};
+    let c = |v: i32| (v * MAP_TILE + MAP_TILE / 2) * FX_ONE / RACE_UNIT;
+    Vec2::new(c(col), c(row))
+}
+
+/// A pack track's power-ups in the session's mode units: tile centres on a
+/// map or overworld race (`on_tiles`), world units on a board race.
+fn pickup_spots(
+    t: &legaia_expansion_format::modes::RaceTrack,
+    on_tiles: bool,
+    tiles: (usize, usize),
+) -> Result<Vec<PickupSpot>, TrackError> {
+    t.pickups
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let pos = if on_tiles {
+                let (w, h) = tiles;
+                if p.at[0] < 0 || p.at[1] < 0 || p.at[0] as usize >= w || p.at[1] as usize >= h {
+                    return Err(TrackError::PickupOffMap(i));
+                }
+                tile_centre(p.at[0], p.at[1])
+            } else {
+                Vec2::new(p.at[0] * FX_ONE, p.at[1] * FX_ONE)
+            };
+            Ok(PickupSpot {
+                pos,
+                kind: p.kind,
+                respawn: if p.respawn == 0 {
+                    PICKUP_RESPAWN
+                } else {
+                    p.respawn
+                },
+            })
+        })
+        .collect()
 }
 
 /// A race's setup.
@@ -200,6 +383,8 @@ impl Track {
 pub struct RaceConfig {
     pub seats: Vec<SeatKind>,
     pub track: Track,
+    /// The power-ups on the course.
+    pub pickups: Vec<PickupSpot>,
     /// Frames the race runs on after the first finisher.
     pub finish_grace: u32,
     /// Frames after the start at which the race ends regardless.
@@ -213,7 +398,8 @@ impl RaceConfig {
         t: &legaia_expansion_format::modes::RaceTrack,
         seed: u64,
     ) -> Result<Self, TrackError> {
-        Ok(Self::with_track(t, Track::from_def(t)?, seed))
+        let pickups = pickup_spots(t, false, (0, 0))?;
+        Ok(Self::with_track(t, Track::from_def(t)?, pickups, seed))
     }
 
     /// [`Self::from_def`] for a track laid on its pack map
@@ -225,18 +411,43 @@ impl RaceConfig {
         seed: u64,
     ) -> Result<(Self, crate::map_frame::MapFrame), TrackError> {
         let (track, frame) = Track::from_map(t, def, map_id)?;
-        Ok((Self::with_track(t, track, seed), frame))
+        let tiles = def
+            .tile_grid()
+            .map(|g| (g.width, g.height))
+            .map_err(|_| TrackError::NoMap(map_id.to_string()))?;
+        let pickups = pickup_spots(t, true, tiles)?;
+        Ok((Self::with_track(t, track, pickups, seed), frame))
     }
 
-    fn with_track(t: &legaia_expansion_format::modes::RaceTrack, track: Track, seed: u64) -> Self {
+    /// [`Self::from_def`] for a track run on a kingdom overworld
+    /// ([`Track::from_scene`]), with the frame that places it on the scene.
+    pub fn from_scene(
+        t: &legaia_expansion_format::modes::RaceTrack,
+        scene: &str,
+        seed: u64,
+    ) -> Result<(Self, crate::map_frame::MapFrame), TrackError> {
+        use crate::map_frame::OVERWORLD_TILES;
+        let (track, frame) = Track::from_scene(t, scene)?;
+        let pickups = pickup_spots(t, true, (OVERWORLD_TILES, OVERWORLD_TILES))?;
+        Ok((Self::with_track(t, track, pickups, seed), frame))
+    }
+
+    fn with_track(
+        t: &legaia_expansion_format::modes::RaceTrack,
+        track: Track,
+        pickups: Vec<PickupSpot>,
+        seed: u64,
+    ) -> Self {
         let n = (t.racers as usize).clamp(1, crate::session::MAX_SEATS);
         let mut seats = vec![SeatKind::Human];
         seats.extend(std::iter::repeat_n(SeatKind::Ai(t.ai_tier.into()), n - 1));
+        let time_limit = u32::from(track.laps.max(1)) * 3 * 60 * 60;
         Self {
             seats,
             track,
+            pickups,
             finish_grace: 30 * 60,
-            time_limit: t.laps.max(1) as u32 * 3 * 60 * 60,
+            time_limit,
             seed,
         }
     }
@@ -256,6 +467,26 @@ pub struct Racer {
     pub finished: Option<u32>,
     /// The AI's lateral line offset in world units.
     pub line_offset: i32,
+    /// The power-up the racer carries, used with Triangle.
+    pub held: Option<PowerKind>,
+    /// Frames left in the air (a hop).
+    pub hop_frames: u32,
+    /// Frames left on the shield.
+    pub shield_frames: u32,
+    /// Frames left slowed.
+    pub slow_frames: u32,
+    /// Extra room past the track edge: a hop's full track width, shrinking
+    /// by [`VERGE_RECOVER`] a frame after landing.
+    pub verge: Fx,
+}
+
+/// A power-up spot this frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct PickupView {
+    pub pos: Vec2,
+    pub kind: PowerKind,
+    /// Lying there to be taken (not taken and waiting to come back).
+    pub ready: bool,
 }
 
 /// The race phase.
@@ -270,12 +501,50 @@ pub enum RacePhase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RaceEvent {
     Go,
-    Checkpoint { seat: usize, cp: usize },
-    Lap { seat: usize, lap: u8 },
-    Finished { seat: usize, place: u8, frame: u32 },
-    WallHit { seat: usize },
-    Bump { a: usize, b: usize },
-    Boost { seat: usize },
+    Checkpoint {
+        seat: usize,
+        cp: usize,
+    },
+    Lap {
+        seat: usize,
+        lap: u8,
+    },
+    Finished {
+        seat: usize,
+        place: u8,
+        frame: u32,
+    },
+    WallHit {
+        seat: usize,
+    },
+    Bump {
+        a: usize,
+        b: usize,
+    },
+    Boost {
+        seat: usize,
+    },
+    /// `seat` took a power-up from spot `spot`.
+    PickedUp {
+        seat: usize,
+        spot: usize,
+        kind: PowerKind,
+    },
+    /// `seat` used its power-up.
+    Used {
+        seat: usize,
+        kind: PowerKind,
+    },
+    /// `seat` runs slowed by `by`'s slow.
+    Slowed {
+        seat: usize,
+        by: usize,
+    },
+    /// `seat`'s shield blocked `by`'s slow (and is spent).
+    Blocked {
+        seat: usize,
+        by: usize,
+    },
     RaceOver,
 }
 
@@ -287,6 +556,8 @@ pub struct RaceView {
     pub racers: Vec<Racer>,
     /// Seats in current running order.
     pub standings: Vec<usize>,
+    /// The power-up spots, in pack order.
+    pub pickups: Vec<PickupView>,
 }
 
 /// A running race.
@@ -298,6 +569,8 @@ pub struct RaceSession {
     frame: u32,
     finishers: Vec<usize>,
     first_finish: Option<u32>,
+    /// Per power-up spot: the frame it is back from (`0` = lying there).
+    pickup_back: Vec<u32>,
     rng: ModeRng,
     pads: PadEdges,
 }
@@ -338,10 +611,17 @@ impl RaceSession {
                     next_cp: 1,
                     finished: None,
                     line_offset: rng.range(-max_off, max_off),
+                    held: None,
+                    hop_frames: 0,
+                    shield_frames: 0,
+                    slow_frames: 0,
+                    verge: 0,
                 }
             })
             .collect();
+        let pickup_back = vec![0; cfg.pickups.len()];
         Self {
+            pickup_back,
             cfg,
             racers,
             phase: RacePhase::Countdown {
@@ -393,8 +673,23 @@ impl RaceSession {
         s
     }
 
-    /// The AI's controls: (steer -1/0/1, throttle, brake, boost).
-    fn ai_controls(&mut self, seat: usize, tier: AiTier) -> (i32, bool, bool, bool) {
+    /// The power-up spots this frame.
+    pub fn pickups(&self) -> Vec<PickupView> {
+        self.cfg
+            .pickups
+            .iter()
+            .zip(&self.pickup_back)
+            .map(|(p, &back)| PickupView {
+                pos: p.pos,
+                kind: p.kind,
+                ready: back <= self.frame,
+            })
+            .collect()
+    }
+
+    /// The AI's controls: (steer -1/0/1, throttle, brake, boost, use the
+    /// held power-up).
+    fn ai_controls(&mut self, seat: usize, tier: AiTier) -> (i32, bool, bool, bool, bool) {
         let t = &self.cfg.track;
         let r = self.racers[seat];
         let n = t.points.len();
@@ -411,11 +706,41 @@ impl RaceSession {
             }
             left -= rest;
             at = end;
+            if !t.closed && seg + 1 >= t.segment_count() {
+                // The sprint's end: aim through the finish line.
+                break;
+            }
             seg = (seg + 1) % n;
         }
         let (a, b) = t.seg(seg);
         let lateral = ((b - a).angle() as i32 + 1024).rem_euclid(4096) as u16;
-        let target = at + Vec2::from_angle(lateral, r.line_offset * FX_ONE);
+        let mut target = at + Vec2::from_angle(lateral, r.line_offset * FX_ONE);
+        // A free hand reaches for a power-up lying just ahead on the track.
+        if r.held.is_none() {
+            let reach = t.half_width as i64 * 3;
+            let edge = t.half_width - RACER_RADIUS * FX_ONE;
+            let mut best: Option<(i64, Vec2)> = None;
+            for (p, &back) in self.cfg.pickups.iter().zip(&self.pickup_back) {
+                if back > self.frame {
+                    continue;
+                }
+                let d = p.pos - r.pos;
+                let len = d.length() as i64;
+                let (_, c) = t.nearest(p.pos);
+                if len > reach
+                    || (p.pos - c).length() > edge
+                    || angle_delta(r.heading, d.angle()).abs() > 500
+                {
+                    continue;
+                }
+                if best.is_none_or(|(l, _)| len < l) {
+                    best = Some((len, p.pos));
+                }
+            }
+            if let Some((_, p)) = best {
+                target = p;
+            }
+        }
         let want = (target - r.pos).angle();
         let d = angle_delta(r.heading, want);
         let steer = if d > TURN_RATE as i32 / 2 {
@@ -436,13 +761,72 @@ impl RaceSession {
         let throttle = (!sharp && r.speed < cap) || r.speed < MAX_SPEED / 4;
         let brake = sharp && r.speed > MAX_SPEED / 2;
         let boost = use_boost && d.abs() < 120 && r.boost_meter >= BOOST_METER;
+        // The held power-up: a boost on a straight, a hop into a corner, a
+        // shield at once, a slow from behind the leader. A novice dithers.
+        let use_power = match r.held {
+            None => false,
+            Some(_) if tier == AiTier::Novice && !self.rng.chance(2) => false,
+            Some(PowerKind::Boost) => d.abs() < 120,
+            // Into a corner to cut it, or over a rival close ahead.
+            Some(PowerKind::Hop) => {
+                d.abs() > 260
+                    || self.racers.iter().enumerate().any(|(o, x)| {
+                        let to = x.pos - r.pos;
+                        o != seat
+                            && to.len_sq()
+                                < (4 * RACER_RADIUS * FX_ONE) as i64
+                                    * (4 * RACER_RADIUS * FX_ONE) as i64
+                            && angle_delta(r.heading, to.angle()).abs() < 300
+                    })
+            }
+            Some(PowerKind::Shield) => true,
+            Some(PowerKind::Slow) => self.standings().first() != Some(&seat),
+        };
         // A little jitter so AI racers don't drive identical lines.
         let steer = if self.rng.chance(3) { 0 } else { steer };
-        (steer, throttle, brake, boost)
+        (steer, throttle, brake, boost, use_power)
+    }
+
+    /// Spend `seat`'s held power-up.
+    fn use_power(&mut self, seat: usize, ev: &mut Vec<RaceEvent>) {
+        let Some(kind) = self.racers[seat].held.take() else {
+            return;
+        };
+        ev.push(RaceEvent::Used { seat, kind });
+        let r = &mut self.racers[seat];
+        match kind {
+            PowerKind::Boost => {
+                r.boost_frames = r.boost_frames.max(SURGE_FRAMES);
+                ev.push(RaceEvent::Boost { seat });
+            }
+            PowerKind::Hop => r.hop_frames = HOP_FRAMES,
+            PowerKind::Shield => r.shield_frames = SHIELD_FRAMES,
+            PowerKind::Slow => {
+                for other in 0..self.racers.len() {
+                    let o = &mut self.racers[other];
+                    if other == seat || o.finished.is_some() {
+                        continue;
+                    }
+                    if o.shield_frames > 0 {
+                        o.shield_frames = 0;
+                        ev.push(RaceEvent::Blocked {
+                            seat: other,
+                            by: seat,
+                        });
+                    } else {
+                        o.slow_frames = SLOW_FRAMES;
+                        ev.push(RaceEvent::Slowed {
+                            seat: other,
+                            by: seat,
+                        });
+                    }
+                }
+            }
+        }
     }
 
     fn drive(&mut self, seat: usize, ev: &mut Vec<RaceEvent>) {
-        let (steer, throttle, brake, boost) = match self.cfg.seats[seat] {
+        let (steer, throttle, brake, boost, power) = match self.cfg.seats[seat] {
             SeatKind::Ai(tier) => self.ai_controls(seat, tier),
             SeatKind::Human => {
                 let p = &self.pads;
@@ -453,9 +837,13 @@ impl RaceSession {
                     p.held(seat, PadButton::Cross),
                     p.held(seat, PadButton::Square),
                     p.pressed(seat, PadButton::R1),
+                    p.pressed(seat, PadButton::Triangle),
                 )
             }
         };
+        if power && self.racers[seat].finished.is_none() {
+            self.use_power(seat, ev);
+        }
         let t = &self.cfg.track;
         let r = &mut self.racers[seat];
         if r.finished.is_some() {
@@ -468,11 +856,14 @@ impl RaceSession {
                 r.boost_frames = BOOST_FRAMES;
                 ev.push(RaceEvent::Boost { seat });
             }
-            let top = if r.boost_frames > 0 {
+            let mut top = if r.boost_frames > 0 {
                 BOOST_SPEED
             } else {
                 MAX_SPEED
             };
+            if r.slow_frames > 0 {
+                top = top * SLOW_PCT / 100;
+            }
             if r.boost_frames > 0 {
                 r.speed = (r.speed + ACCEL * 2).min(top);
                 r.boost_frames -= 1;
@@ -488,15 +879,23 @@ impl RaceSession {
             }
             r.boost_meter = (r.boost_meter + 1).min(BOOST_METER);
         }
+        r.shield_frames = r.shield_frames.saturating_sub(1);
+        r.slow_frames = r.slow_frames.saturating_sub(1);
+        if r.hop_frames > 0 {
+            r.hop_frames -= 1;
+            r.verge = t.half_width;
+        } else {
+            r.verge = (r.verge - VERGE_RECOVER).max(0);
+        }
         r.pos = r.pos
             + Vec2::new(
                 fx_mul(cos12(r.heading), r.speed),
                 fx_mul(sin12(r.heading), r.speed),
             );
-        // Keep inside the track.
+        // Keep inside the track (and its verge after a hop).
         let (seg, c) = t.nearest(r.pos);
         let off = r.pos - c;
-        let limit = t.half_width - RACER_RADIUS * FX_ONE;
+        let limit = t.half_width - RACER_RADIUS * FX_ONE + r.verge;
         let dist = off.length();
         if dist > limit {
             r.pos = c + off.scale(limit, dist.max(1));
@@ -512,7 +911,9 @@ impl RaceSession {
                 }
                 r.speed = slid.length() * 7 / 8;
             }
-            ev.push(RaceEvent::WallHit { seat });
+            if r.verge == 0 {
+                ev.push(RaceEvent::WallHit { seat });
+            }
         }
         if t.boost_segments.contains(&seg) && r.boost_frames == 0 && r.finished.is_none() {
             r.boost_frames = BOOST_FRAMES / 2;
@@ -520,17 +921,52 @@ impl RaceSession {
         }
     }
 
+    /// Racers with a free hand take the power-ups they reach, in seat order.
+    fn take_pickups(&mut self, ev: &mut Vec<RaceEvent>) {
+        let reach = (PICKUP_RADIUS + RACER_RADIUS) as i64 * FX_ONE as i64;
+        for spot in 0..self.cfg.pickups.len() {
+            if self.pickup_back[spot] > self.frame {
+                continue;
+            }
+            let p = self.cfg.pickups[spot];
+            let taker = (0..self.racers.len()).find(|&s| {
+                let r = &self.racers[s];
+                r.held.is_none()
+                    && r.finished.is_none()
+                    && (r.pos - p.pos).len_sq() <= reach * reach
+            });
+            if let Some(seat) = taker {
+                self.racers[seat].held = Some(p.kind);
+                self.pickup_back[spot] = self.frame + p.respawn;
+                ev.push(RaceEvent::PickedUp {
+                    seat,
+                    spot,
+                    kind: p.kind,
+                });
+            }
+        }
+    }
+
     fn checkpoints(&mut self, seat: usize, ev: &mut Vec<RaceEvent>) {
         let n = self.cfg.track.points.len();
+        let closed = self.cfg.track.closed;
         let r = self.racers[seat];
         if r.finished.is_some() || !self.cfg.track.reached(r.pos, r.next_cp) {
             return;
         }
         let cp = r.next_cp;
         let r = &mut self.racers[seat];
-        r.next_cp = (cp + 1) % n;
         ev.push(RaceEvent::Checkpoint { seat, cp });
-        if cp == 0 {
+        let lap_done = if closed {
+            r.next_cp = (cp + 1) % n;
+            cp == 0
+        } else if cp + 1 < n {
+            r.next_cp = cp + 1;
+            false
+        } else {
+            true
+        };
+        if lap_done {
             r.lap += 1;
             ev.push(RaceEvent::Lap { seat, lap: r.lap });
             if r.lap >= self.cfg.track.laps {
@@ -550,8 +986,14 @@ impl RaceSession {
         let d = 2 * RACER_RADIUS * FX_ONE;
         for a in 0..self.racers.len() {
             for b in a + 1..self.racers.len() {
-                // Finished racers park past the line as ghosts.
-                if self.racers[a].finished.is_some() || self.racers[b].finished.is_some() {
+                // Finished racers park past the line as ghosts; a racer in
+                // the air clears the others.
+                let (ra, rb) = (&self.racers[a], &self.racers[b]);
+                if ra.finished.is_some()
+                    || rb.finished.is_some()
+                    || ra.hop_frames > 0
+                    || rb.hop_frames > 0
+                {
                     continue;
                 }
                 let delta = self.racers[b].pos - self.racers[a].pos;
@@ -569,13 +1011,16 @@ impl RaceSession {
                 let shove = Vec2::new(fx_mul(n.x, push), fx_mul(n.y, push));
                 self.racers[a].pos = self.racers[a].pos - shove;
                 self.racers[b].pos = self.racers[b].pos + shove;
-                // The one behind (lower progress) loses speed.
+                // The one behind (lower progress) loses speed, unless its
+                // shield takes the knock.
                 let behind = if self.progress(a) < self.progress(b) {
                     a
                 } else {
                     b
                 };
-                self.racers[behind].speed = self.racers[behind].speed * 3 / 4;
+                if self.racers[behind].shield_frames == 0 {
+                    self.racers[behind].speed = self.racers[behind].speed * 3 / 4;
+                }
                 ev.push(RaceEvent::Bump { a, b });
             }
         }
@@ -615,6 +1060,7 @@ impl ModeSession for RaceSession {
             self.drive(seat, &mut ev);
         }
         self.collide(&mut ev);
+        self.take_pickups(&mut ev);
         for seat in 0..self.racers.len() {
             self.checkpoints(seat, &mut ev);
         }
@@ -635,6 +1081,7 @@ impl ModeSession for RaceSession {
             frame: self.frame,
             racers: self.racers.clone(),
             standings: self.standings(),
+            pickups: self.pickups(),
         }
     }
 
@@ -653,6 +1100,14 @@ impl ModeSession for RaceSession {
             h.usize(r.next_cp);
             h.u32(r.finished.unwrap_or(u32::MAX));
             h.i32(r.line_offset);
+            h.u8(r.held.map_or(0, |k| k as u8 + 1));
+            h.u32(r.hop_frames);
+            h.u32(r.shield_frames);
+            h.u32(r.slow_frames);
+            h.i32(r.verge);
+        }
+        for &back in &self.pickup_back {
+            h.u32(back);
         }
         match self.phase {
             RacePhase::Countdown { frames } => {
@@ -725,6 +1180,7 @@ mod tests {
         RaceSession::new(RaceConfig {
             seats,
             track: oval(laps),
+            pickups: Vec::new(),
             finish_grace: 60 * 60,
             time_limit: 60 * 60 * 10,
             seed,
@@ -850,5 +1306,202 @@ mod tests {
             s.tick(&[PadButton::Cross.mask()]);
         }
         assert!(s.racers()[0].speed > MAX_SPEED);
+    }
+
+    /// An open course: east, then north-east, then east again.
+    fn sprint_track() -> Track {
+        let pts = [(0, 0), (900, 0), (1500, 500), (2400, 500)];
+        Track::sprint(
+            pts.iter()
+                .map(|&(x, y)| Vec2::new(x * FX_ONE, y * FX_ONE))
+                .collect(),
+            80 * FX_ONE,
+            vec![],
+        )
+        .unwrap()
+    }
+
+    fn sprint(seats: Vec<SeatKind>, pickups: Vec<PickupSpot>, seed: u64) -> RaceSession {
+        RaceSession::new(RaceConfig {
+            seats,
+            track: sprint_track(),
+            pickups,
+            finish_grace: 60 * 60,
+            time_limit: 60 * 60 * 10,
+            seed,
+        })
+    }
+
+    fn spot(x: i32, y: i32, kind: PowerKind) -> PickupSpot {
+        PickupSpot {
+            pos: Vec2::new(x * FX_ONE, y * FX_ONE),
+            kind,
+            respawn: 120,
+        }
+    }
+
+    fn start(s: &mut RaceSession) {
+        for _ in 0..COUNTDOWN_FRAMES {
+            s.tick(&[]);
+        }
+    }
+
+    #[test]
+    fn a_sprint_runs_its_gates_in_order_once_to_the_finish() {
+        let t = sprint_track();
+        assert_eq!((t.segment_count(), t.laps, t.closed), (3, 1, false));
+        // The finish is crossed square to the last segment, not reached
+        // early by standing beside it.
+        assert!(!t.reached(Vec2::new(2390 * FX_ONE, 500 * FX_ONE), 3));
+        assert!(t.reached(Vec2::new(2401 * FX_ONE, 510 * FX_ONE), 3));
+        let seats = vec![SeatKind::Ai(AiTier::Expert), SeatKind::Ai(AiTier::Regular)];
+        let mut s = sprint(seats, Vec::new(), 3);
+        let mut gates = vec![Vec::new(); 2];
+        let mut frames = 0;
+        while !s.is_finished() {
+            for e in s.tick(&[]) {
+                if let RaceEvent::Checkpoint { seat, cp } = e {
+                    gates[seat].push(cp);
+                }
+            }
+            frames += 1;
+            assert!(frames < 60 * 60 * 5, "the sprint never ended");
+        }
+        for (seat, g) in gates.iter().enumerate() {
+            assert_eq!(g, &vec![1, 2, 3], "seat {seat}");
+            assert_eq!(s.racers()[seat].lap, 1);
+            assert!(s.racers()[seat].finished.is_some());
+        }
+    }
+
+    #[test]
+    fn a_power_up_is_taken_used_and_comes_back() {
+        let mut s = sprint(
+            vec![SeatKind::Human],
+            // In the lane the grid's first slot starts in.
+            vec![spot(200, -40, PowerKind::Boost)],
+            0,
+        );
+        start(&mut s);
+        let cross = PadButton::Cross.mask();
+        let mut took = None;
+        for _ in 0..200 {
+            if s.tick(&[cross]).iter().any(|e| {
+                matches!(
+                    e,
+                    RaceEvent::PickedUp {
+                        seat: 0,
+                        spot: 0,
+                        kind: PowerKind::Boost
+                    }
+                )
+            }) {
+                took = Some(s.frame);
+                break;
+            }
+        }
+        let took = took.expect("the racer drove over the spot");
+        assert_eq!(s.racers()[0].held, Some(PowerKind::Boost));
+        assert!(!s.view().pickups[0].ready);
+        let ev = s.tick(&[cross | PadButton::Triangle.mask()]);
+        assert!(ev.contains(&RaceEvent::Used {
+            seat: 0,
+            kind: PowerKind::Boost
+        }));
+        assert_eq!(s.racers()[0].held, None);
+        assert!(s.racers()[0].boost_frames > BOOST_FRAMES);
+        while s.frame < took + 120 {
+            s.tick(&[cross]);
+        }
+        assert!(s.view().pickups[0].ready, "the spot is back");
+    }
+
+    #[test]
+    fn a_slow_holds_rivals_and_a_shield_blocks_it() {
+        let mut s = sprint(
+            vec![SeatKind::Human, SeatKind::Human, SeatKind::Human],
+            Vec::new(),
+            0,
+        );
+        start(&mut s);
+        s.racers[0].held = Some(PowerKind::Slow);
+        s.racers[1].shield_frames = SHIELD_FRAMES;
+        let tri = PadButton::Triangle.mask();
+        let ev = s.tick(&[tri, 0, 0]);
+        assert!(ev.contains(&RaceEvent::Blocked { seat: 1, by: 0 }));
+        assert!(ev.contains(&RaceEvent::Slowed { seat: 2, by: 0 }));
+        assert_eq!(s.racers()[1].shield_frames, 0);
+        assert_eq!(s.racers()[0].slow_frames, 0, "the user is not slowed");
+        let cross = PadButton::Cross.mask();
+        for _ in 0..100 {
+            s.tick(&[cross, cross, cross]);
+        }
+        let (fast, slowed) = (s.racers()[1].speed, s.racers()[2].speed);
+        assert!(slowed <= MAX_SPEED * SLOW_PCT / 100, "{slowed}");
+        assert!(fast > slowed);
+    }
+
+    #[test]
+    fn a_hop_runs_wide_of_the_edge_and_lands_back_inside() {
+        let mut s = sprint(vec![SeatKind::Human], Vec::new(), 0);
+        start(&mut s);
+        let cross = PadButton::Cross.mask();
+        for _ in 0..40 {
+            s.tick(&[cross]);
+        }
+        s.racers[0].held = Some(PowerKind::Hop);
+        s.tick(&[cross | PadButton::Triangle.mask()]);
+        let edge = s.cfg.track.half_width - RACER_RADIUS * FX_ONE;
+        let mut widest = 0;
+        // Steer out to the left while airborne.
+        for _ in 0..HOP_FRAMES {
+            s.tick(&[cross | PadButton::Left.mask()]);
+            let p = s.racers()[0].pos;
+            widest = widest.max((p - s.cfg.track.nearest(p).1).length());
+        }
+        assert!(
+            widest > edge,
+            "the hop ran past the edge: {widest} vs {edge}"
+        );
+        assert!(widest <= edge + s.cfg.track.half_width);
+        for _ in 0..120 {
+            s.tick(&[cross]);
+        }
+        let p = s.racers()[0].pos;
+        assert!((p - s.cfg.track.nearest(p).1).length() <= edge);
+        assert_eq!(s.racers()[0].verge, 0);
+    }
+
+    #[test]
+    fn ai_racers_take_and_use_power_ups_deterministically() {
+        let seats = vec![
+            SeatKind::Ai(AiTier::Expert),
+            SeatKind::Ai(AiTier::Regular),
+            SeatKind::Ai(AiTier::Novice),
+            SeatKind::Ai(AiTier::Regular),
+        ];
+        let spots = vec![
+            spot(300, 20, PowerKind::Boost),
+            spot(700, -20, PowerKind::Shield),
+            spot(1200, 250, PowerKind::Slow),
+            spot(1900, 500, PowerKind::Hop),
+        ];
+        let run = |seed| {
+            let mut s = sprint(seats.clone(), spots.clone(), seed);
+            let (mut taken, mut used) = (0, 0);
+            while !s.is_finished() {
+                for e in s.tick(&[]) {
+                    match e {
+                        RaceEvent::PickedUp { .. } => taken += 1,
+                        RaceEvent::Used { .. } => used += 1,
+                        _ => {}
+                    }
+                }
+            }
+            (taken, used, s.state_hash())
+        };
+        let (taken, used, hash) = run(9);
+        assert!(taken >= 4 && used >= 2, "taken {taken}, used {used}");
+        assert_eq!(run(9).2, hash, "one seed, one race");
     }
 }

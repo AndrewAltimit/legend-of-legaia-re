@@ -27,6 +27,9 @@
        * it has something the engine cannot know: the VR gaze, and its own
        * orbit vantage (`F3`, or a frame the engine handed no matrix). */
       let pad = this.pad;
+      /* The workbench's map editor (`?xwpreview=1`) has no player: no pad
+       * reaches the lead until its Test play (`editorNoPlayer`). */
+      if (this.editorNoPlayer) { pad = 0; this.pulse.clear(); }
       if (this._vrDrive) {
         rt.set_camera_azimuth(this._vrDrive.azimuth);
         pad = this.pad | this._vrDrive.pad;
@@ -313,7 +316,8 @@
       /* The scene may hide the lead outright (`play_player_drawn`: the
        * opening prologue's vignette shots have none), the native actor
        * pass's skip. */
-      const leadDrawn = typeof rt.play_player_drawn !== 'function' || rt.play_player_drawn();
+      const leadDrawn = !this.editorNoPlayer
+        && (typeof rt.play_player_drawn !== 'function' || rt.play_player_drawn());
       /* A field prop hunt's hider is drawn as its prop instead of the lead
        * (`play_net_self_disguise`, the env-pack slot's mesh). */
       const selfProp = typeof rt.play_net_self_disguise === 'function'
@@ -474,6 +478,9 @@
             meshId: TILE_MESH_BASE + slot,
             x: tb[i + 1], y: -tb[i + 2], z: tb[i + 3],
             rotY: 0, scale: tb[i + 4],
+            /* A tile actor: an actor draw, as natively (after the
+             * watermark) - no occlusion fade, no ambient occlusion. */
+            noOccl: true,
           });
         }
       }

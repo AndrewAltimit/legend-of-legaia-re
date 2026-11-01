@@ -137,7 +137,12 @@ pub(super) fn podium_pieces(
         block(&mut out, pr, b);
     }
     for b in stage.bodies.iter().filter(|b| b.actor.is_none()) {
-        body(&mut out, pr, b.pos, b.seat, false);
+        // A podium figure never shows a racer's boost.
+        let still = legaia_engine_expansion::mode_stage::StageBody {
+            boosting: false,
+            ..*b
+        };
+        body(&mut out, pr, &still);
     }
     for c in &pod.confetti {
         let floor = pr.on_floor(c.pos[0], c.pos[2], 0.0)[1];

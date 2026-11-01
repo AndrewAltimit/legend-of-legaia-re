@@ -14,7 +14,7 @@
     <dt>Entry</dt><dd><code>SceneHost::enter_expansion_map</code> (<code>engine-scene-host</code>, <code>scene_host/expansion_map.rs</code>)</dd>
     <dt>Runtime</dt><dd>Zones and NPCs <code>legaia_engine_expansion::map</code>; entrances <code>legaia_engine_expansion::entrance</code></dd>
     <dt>Editor</dt><dd>The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s tile painter edits the file 1:1</dd>
-    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/rebirth/maps/rebirth_tower_1f.toml" target="_blank" rel="noopener"><code>packs/rebirth/maps/rebirth_tower_1f.toml</code></a></dd>
+    <dt>Sample</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/packs/rebirth/maps/genesis_1f.toml" target="_blank" rel="noopener"><code>packs/rebirth/maps/genesis_1f.toml</code></a></dd>
   </dl>
 </section>
 
@@ -276,6 +276,7 @@ footprint = [128, 128]                      # the top's extent, world units</cod
   <h3 id="standable-props">Standable props</h3>
   <p>A prop with a <code>top</code> is a floor box: a flat surface <code>top</code> world units up (the <code>floor_heights</code> convention) over its <code>footprint</code>, centred on the tile centre plus <code>offset</code>, the whole tile when the footprint is left out. It does not close its tile, so <code>solid</code> is unread.</p>
   <p>The floor sampler (<code>World::sample_field_floor_height</code>, the <code>FUN_80019278</code> port, and its camera-ladder sibling) answers the higher of the grid floor and the top inside the box. The tier grid is untouched: a top is not a corner height, so it neither slopes into its neighbours nor bends the ground mesh around it, which is why it is a separate surface rather than a raised tier. The prop's mesh draws on the tile's floor as before; matching <code>top</code> to the mesh's visible height is the modder's call.</p>
+  <p><b>Resting placement.</b> <code>on = "&lt;id&gt;"</code> sets an item's lowest point on another prop's or decoration's top (a standable <code>top</code>, else its mesh's highest point), <code>offset[1]</code> lifting it from there; the engine resolves it from the meshes' vertices at map load (<code>map_rest::rest_on</code>). The resting check (<code>map_rest::rest_issues</code>) reports an item more than <code>10</code> units over the highest ground under its footprint that is not on the top of the support its footprint is most over: floating, hovering over or sunk into a top, or overhanging it. A flat card (a flame, a sprite tree) is read from its origin, not its lowest vertex. Every <code>[[scatter]]</code> mesh and <code>[[edges]]</code> run is judged over its placements and reported once at its worst. <code>hangs = true</code> on an item, a brush or a run passes it over: a lantern on a chain, sconces on a wall.</p>
   <table>
     <thead><tr><th>Mover</th><th>On a standable prop</th></tr></thead>
     <tbody>
@@ -309,7 +310,7 @@ shop = "tower_dealer"                           # optional: a cards.toml dealer<
       <tr><td>Patrol</td><td>A loop of scripted walk legs through the motion VM (<code>World::start_field_npc_motion</code>): tile, each waypoint, back, each leg cueing <code>walk_clip</code> the way a <code>4C 51</code> walk cues its move clip. A leg starts only while no dialogue holds the field.</td></tr>
     </tbody>
   </table>
-  <p>Talking to an NPC runs its <code>line</code> through the pack dialogue runner (<code>World::expansion_say</code>) and then raises the quest event <code>Talked(id)</code> (<code>World::expansion_talked</code>), so a quest naming the NPC as <code>giver</code> or in a <code>talk</code> objective advances (<a href="expansion-pack-quests.html">quests</a>); a quest line the talk starts plays after the NPC's own. An NPC with a <code>shop</code> opens that counter instead: an <code>items.toml</code> shop id the <a href="expansion-pack-items.html#the-item-screen">pack item shop</a> (<code>World::open_item_shop</code>), a <code>cards.toml</code> <code>[[dealers]]</code> id the dealer's counter (<code>World::open_card_dealer</code>); an id that is both opens the item shop. It says its <code>line</code> only when the counter cannot open. An NPC with a <code>cutscene</code> plays it in place of its line, and one whose <code>present</code> gate is shut stays off the map for the visit (parked on retail's off-map hide box) until a cutscene's <code>show</code> step brings it on.</p>
+  <p>Talking to an NPC raises the quest event <code>Talked(id)</code> (<code>World::expansion_talked</code>), so a quest naming the NPC as <code>giver</code> or in a <code>talk</code> objective advances (<a href="expansion-pack-quests.html">quests</a>), and runs its <code>line</code> through the pack dialogue runner (<code>World::expansion_say</code>). When the talk starts, completes or reminds a quest that has a line of its own, that line is the answer and the NPC's <code>line</code> is not said before it: one box per talk. An NPC with a <code>shop</code> opens that counter instead: an <code>items.toml</code> shop id the <a href="expansion-pack-items.html#the-item-screen">pack item shop</a> (<code>World::open_item_shop</code>), a <code>cards.toml</code> <code>[[dealers]]</code> id the dealer's counter (<code>World::open_card_dealer</code>); an id that is both opens the item shop. It says its <code>line</code> only when the counter cannot open. An NPC with a <code>cutscene</code> plays it in place of its line, and one whose <code>present</code> gate is shut stays off the map for the visit (parked on retail's off-map hide box) until a cutscene's <code>show</code> step brings it on.</p>
 </section>
 
 <section class="doc-section" id="visible-walls" data-doc="visible-walls">
@@ -395,8 +396,11 @@ mood = "cave"                               # day, dusk, night, cave
 lamps = [{ tile = [7, 6], offset = [0, 140, 0], color = [110, 160, 255], radius = 760, flicker = 0.1, period = 40 }]
 
 [[props]]
-light = { color = [255, 150, 70], radius = 560, flicker = 0.25, period = 18 }</code></pre>
-  <p>Enhanced lighting lights a pack map as it lights a retail scene - from the emitter primitives of the meshes it draws, so a torch carried in from another scene lights its wall - plus the map's lamps and prop lights. <code>mood</code> stands in for the base scene's under the time of day <code>Auto</code>. Both hosts read mood and lights through one kernel (<code>engine-screens::field_frame</code>). With enhanced lighting off the map renders retail-faithful: baked colours, no lamps.</p>
+light = { color = [255, 150, 70], radius = 560, flicker = 0.25, period = 18 }
+
+# a slow, even breath instead of a flame's waver (a rootlight shrub)
+lamps = [{ tile = [12, 9], offset = [0, 40, 0], color = [120, 255, 150], radius = 360, breathe = 0.6, breathe_period = 260 }]</code></pre>
+  <p>Enhanced lighting lights a pack map as it lights a retail scene - from the emitter primitives of the meshes it draws, so a torch carried in from another scene lights its wall - plus the map's lamps and prop lights. <code>mood</code> stands in for the base scene's under the time of day <code>Auto</code>. <code>flicker</code> wavers a light like a flame; <code>breathe</code> swells and fades it evenly every <code>breathe_period</code> frames (default 240), each light at its own place in the breath, and its halo breathes with it. Both hosts read mood and lights through one kernel (<code>engine-screens::field_frame</code>). With enhanced lighting off the map renders retail-faithful: baked colours, no lamps, and no emitter marked <code>with_lighting</code>.</p>
 </section>
 
 <section class="doc-section" id="animated-materials" data-doc="animated-materials">
@@ -409,7 +413,22 @@ kind = "hsv"          # hue / brightness: clut, start, count, period, hue, value
 kind = "tint"         # standing recolour: clut, start, count, hue, value, color = [r, g, b]
 [[materials]]
 kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, period</code></pre>
-  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>tint</code> recolours entries once and holds them (a static hue turn and brightness shift through that kernel, then a per-channel multiply, <code>128</code> unchanged), so a kept room's art takes the map's mood; <code>scroll</code> rotates an atlas cell by whole texels. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
+  <p>A material rewrites words of the scene's VRAM each frame (<code>World::step_expansion_materials</code>, inside the field VRAM step both hosts run and re-upload after), from a capture of the words it first found, so every primitive sampling them animates. <code>hsv</code> runs the retail mode-3 HSV cell kernel; <code>tint</code> recolours entries once and holds them (a static hue turn and brightness shift through that kernel, then a per-channel multiply, <code>128</code> unchanged), so a kept room's art takes the map's mood; <code>scroll</code> rotates an atlas cell by whole texels - texture flowing over still geometry; a floor that moves is a <a href="#living-ground">ground motion</a>. A material with <code>from = "scene"</code> names a palette or cell in that scene's VRAM, resolved at load to the copy made for a mesh carried in from it (<code>detail::resolve_materials</code>) - so a scrolling water or cycling lava texture can come from another scene.</p>
+</section>
+
+<section class="doc-section" id="living-ground" data-doc="living-ground">
+  <h2>Living ground</h2>
+<pre><code>[[ground_motion]]
+kind = "swell"        # breathe, swell or ripple
+chars = "LlQ"         # legend characters whose tiles move
+amplitude = 10        # world units either side of rest
+period = 150          # frames a cycle
+phases = 4            # phase steps: ladder rungs per tier
+wavelength = 4.0      # tiles crest to crest
+angle = 0.0           # swell direction, 0 = +Z; a ripple takes centre = [x, z]</code></pre>
+  <p>A living floor moves its <strong>geometry</strong>, not its texture - the way retail animates its own. <code>jou</code>'s organic floor, <code>jouina</code>'s pulsing path and <code>concnow</code>'s flesh pits ride the scene's floor-height ladder, which field-VM op <code>4C 90</code> sets oscillating one rung at a time; the ground pass takes every ground vertex's corner tile through the live ladder each frame, the decoration sweep lifts decoration cells by it, and the floor sampler reads it, so what moves is drawn and walked as one shape (<a href="../subsystems/script-vm-menuctrl.html">menu-control nibble 9</a>).</p>
+  <p>A ground motion takes free rungs of the sixteen - one per phase step for every tier its characters stand on, each resting at that tier's height - writes its tiles' collision nibbles as those rungs, and every tick the world sets them to rest plus the wave (<code>ActiveMap::ground_motion_ladder</code>). Both hosts already redraw the ground and decoration cells from the live ladder, so neither draws anything new. <code>breathe</code> moves every tile together, <code>swell</code> rolls crests along <code>angle</code>, <code>ripple</code> spreads rings from <code>centre</code>; a step lags the one before by <code>period / phases</code> frames. The wave is the closed form of retail's rung oscillator <code>FUN_801DA930</code> (constant acceleration toward rest, no damping: parabolic arcs), integer arithmetic on <code>World::frame</code>.</p>
+  <p>As in retail, the party rides a walkable moving floor (the validator warns past 24 units), a still tile beside a moving one leans toward it, and placed props stand still. A terrain map, or one without its own <code>floor_heights</code>, takes none. Rebirth's Atrium dais ripples out from the Warden's Stone and the Ember Stair's lava heaves; <code>scroll</code> stays for texture flowing over still geometry - the terrain's water - as retail's own water is a VRAM animation.</p>
 </section>
 
 <section class="doc-section" id="fog" data-doc="fog">
@@ -417,6 +436,29 @@ kind = "scroll"       # texel scrolling: cell = { tpage, clut, tile }, dx, dy, p
 <pre><code>[fog]
 regions = [{ rect = [1, 1, 13, 3], angle = 90.0, spread = 40.0, speed = 18 }]</code></pre>
   <p>Arms the retail field fog pool over the map: each region becomes a MAN-section-4 region record and the ambient particle gate goes up (<code>World::arm_expansion_fog</code>). The wisps are the pool's own, drawn by both hosts through <code>World::fog_render_step</code>; the pool draws from the world's random stream as retail's does.</p>
+</section>
+
+<section class="doc-section" id="surround" data-doc="surround">
+  <h2>Surround</h2>
+<pre><code>[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }      # the drop's floor, one cell a tile
+side = { tpage = 11, clut = 32523, tile = 38 }      # the floor edge's face down to it
+depth = 448                                         # world units below tier 0
+reach = 8                                           # tiles past the map's edges
+shade = 72                                          # vertex colour, 128 = the texel as is
+backdrop = { tpage = 11, clut = 32523, tile = 38, height = 1152, distance = 2, sides = "esw", shade = 96, fade = 0 }</code></pre>
+  <p>A map with no base geometry draws nothing past its floor, which a follow camera at its edge frames as a black void. The surround lays a flat ground <code>depth</code> below tier <code>0</code> on every void tile and up to <code>reach</code> tiles past the map, with <code>side</code> a face from the floor's edge down to it, so the floor reads as a ledge. <code>backdrop</code> stands a wall <code>distance</code> tiles past the map along its <code>sides</code>, rising to <code>height</code> and darkening over its top two fifths to <code>fade</code>: the far side of a hall the camera looks over. The default <code>"esw"</code> leaves the camera's <code>-Z</code> side open. Both are drawn, never walked, through the decoration-cell path (<code>expansion_map::surround</code>).</p>
+</section>
+
+<section class="doc-section" id="ceiling" data-doc="ceiling">
+  <h2>Ceiling</h2>
+<pre><code>[ceiling]
+height = 2048                                    # world units above tier 0
+cell = { tpage = 11, clut = 32517, tile = 27 }   # the underside, one cell a tile
+shade = 48
+chain = { tpage = 11, clut = 32517, tile = 27, width = 6, shade = 64, items = ["lantern_hall"] }</code></pre>
+  <p>A room built from scratch has no ceiling, so a lantern marked <code>hangs</code> hangs from nothing. <code>chain</code> gives every hung prop and decoration named in <code>items</code> (every one when <code>items</code> is empty) a square shaft <code>width</code> units across from the item's top up to <code>height</code>; <code>items</code> keeps chains off wall-mounted items such as banners. The chain does not follow a prop's <code>sway</code>.</p>
+  <p><code>cell</code> draws a flat underside over the map's rectangle at <code>height</code>, wound to face down, so only a camera below it sees it. The follow camera looks down from above the walls, so it never sees the underside, and the camera-occlusion gate leaves out faces seen only from beneath. Both go in through the decoration bake and draw on both hosts. The validator holds <code>height</code> to <code>1..=4096</code>, the atlas cells to <code>0..64</code> and <code>width</code> to <code>1..=64</code>, and errors on an <code>items</code> id that names no hung prop or decoration.</p>
 </section>
 
 <section class="doc-section" id="particles" data-doc="particles">
@@ -428,8 +470,46 @@ height = [40, 90]
 count = 14
 seed = 11
 # optional over the kind's preset: life, velocity, spread, gravity, sway,
-# size, color, color_end, additive</code></pre>
+# size, color, color_end, additive
+with_lighting = false    # true: part of the enhanced-lighting layer, drawn only with it on</code></pre>
   <p>Each particle is a camera-facing sprite drawn through the field screen-effect pass the retail fog sheets use (<code>HostView::fog_prims</code>, both hosts), projected by the same view. Its whole life is a pure function of the seed, its index and <code>World::frame</code> - no state, no random stream - so it is the same on both hosts and in every run. The sprites are the engine's own (a soft dot, a spark, a leaf, a drop, drawn at load into free VRAM), additive for the glowing kinds, opaque for leaves.</p>
+</section>
+
+<section class="doc-section" id="light-beams" data-doc="light-beams">
+  <h2>Light beams</h2>
+<pre><code>[[beams]]
+tile = [30, 22]            # the tile the shaft lands on
+offset = [0, 0, 0]         # from the tile centre on its floor, y up
+height = 900               # length from the foot up
+tilt = 12.0                # degrees from vertical
+angle = 200.0              # heading the top leans toward, 0 = +Z
+width = [80, 150]          # at the top, at the foot
+color = [255, 236, 190]
+intensity = 80             # peak additive brightness
+profile = "fall"           # fall (from above) or rise (a glow from below)
+pool = true
+breathe = 0.15
+sway = 1.5
+period = 480
+motes = 10</code></pre>
+  <p>A soft shaft of light falling through a gap, with dust drifting in it. It is an enhancement: both hosts draw it only with enhanced lighting on (<code>HostView::beam_prims</code>), and with it off nothing of it draws, so the faithful frame is untouched. The shaft is a camera-facing ribbon of additive Gouraud quads through the field screen-effect pass - dark at both edges, shaped along its length by <code>profile</code> - each corner carrying its axis point's scene depth, so the scene in front hides it. A falling beam can pool light on the floor at its foot; the motes are the particle sheet's soft dot.</p>
+  <p>The lean, the breath and every mote are pure functions of the frame, the same on both hosts and invisible to a replay. A negative <code>offset[1]</code> sinks the foot into a pit: with <code>profile = "rise"</code> it is a glow far below. A beam costs a few dozen screen quads and no VRAM of its own.</p>
+</section>
+
+<section class="doc-section" id="pits-and-water" data-doc="pits-and-water">
+  <h2>Pits and water</h2>
+<pre><code>[surround]
+ground = { tpage = 5, clut = 30720, tile = 0 }
+side = { tpage = 11, clut = 32523, tile = 38 }
+depth = 448
+fade = 20                  # the faces darken to this at the drop
+
+[[surround.regions]]       # void tiles inside rect take this drop instead
+rect = [10, 6, 18, 14]
+depth = 1600
+fade = 4</code></pre>
+  <p>A void tile inside the map is a wall for every mover and draws the surround's drop, so a walkway over a pit is walkway tiles with void tiles beside them: collision stops the player at the edge and the walk height is the walkway's own tier. <code>fade</code> shades the edge faces from <code>shade</code> at their top down to <code>fade</code> at the drop, so a pit's walls go down into the dark; a region gives the void tiles of a rectangle a drop of their own (its <code>ground</code>, <code>side</code> and <code>shade</code> optional over the surround's), the first region holding a tile winning.</p>
+  <p>Water round a jetty or a stilt platform is a shallow region with an animated water cell for its ground. On a terrain map, a standable prop's top over the water keeps it from walling the deck's footprint, and <code>abyss</code> darkens a sculpted pit with depth.</p>
 </section>
 
 <section class="doc-section" id="terrain" data-doc="terrain">
@@ -504,6 +584,7 @@ sky = { tpage = 10, clut = 31104, radius = 6 }</code></pre>
       <tr><td><code>{ kind = "battle", formation = F }</code></td><td><code>World::start_expansion_battle(F)</code> - a <code>battle.toml</code> formation (<a href="expansion-pack-battle.html">battles</a>)</td></tr>
       <tr><td><code>{ kind = "boss", boss = B }</code></td><td><code>World::start_expansion_boss(B)</code> - a <code>battle.toml</code> boss</td></tr>
       <tr><td><code>{ kind = "dialog", line = L }</code></td><td><code>World::expansion_say(L)</code> - a <code>dialog.toml</code> line</td></tr>
+      <tr><td><code>{ kind = "toast", line = L }</code></td><td>Shows line <code>L</code>'s first page as one toast row - a cue that takes no input and stops nothing</td></tr>
       <tr><td><code>{ kind = "talk", npc = N }</code></td><td><code>World::expansion_talked(N)</code> - a quest's talk objective</td></tr>
       <tr><td><code>{ kind = "start_quest", quest = Q }</code></td><td><code>World::expansion_start_quest(Q)</code></td></tr>
       <tr><td><code>{ kind = "set_flag", flag = X }</code></td><td>Raises pack flag <code>X</code></td></tr>
@@ -516,6 +597,7 @@ sky = { tpage = 10, clut = 31104, radius = 6 }</code></pre>
   </table>
   <p>A map's <code>[[enter_cutscenes]]</code> (<code>cutscene</code>, <code>requires</code>, <code>repeat</code>) plays on arrival: the first entry whose gate holds and whose cutscene is unseen, or any with <code>repeat = true</code>. While a cutscene runs, the map's zones and exits fire nothing.</p>
   <p><code>once = true</code> fires a trigger once <strong>ever</strong>: firing raises the pack flag <code>map.&lt;map id&gt;.&lt;trigger id&gt;</code> (<code>map.&lt;map id&gt;.&lt;index&gt;</code> for a trigger with no id), which saves with the pack's progress, and a trigger whose flag is up stays quiet on every later visit. Quests can read the flag like any other.</p>
+  <p><code>press = true</code> makes a trigger something the player examines: walking onto it fires nothing, and the action button fires it while the player stands on it or faces it from the next tile. Use it for objects (a brazier, a bell, a notice board) and quest givers that are not NPCs, and keep walk-on triggers for what must happen as the player arrives. A line the player did not ask for is best a <code>toast</code>.</p>
   <h3 id="encounter-zones">Encounter zones</h3>
   <p>A zone's <code>table</code> names a <code>battle.toml</code> <code>[[encounters]]</code> entry by its <code>scene</code> key - a free string, so a pack map's tables sit beside the retail scenes' overrides:</p>
 <pre><code># battle.toml
@@ -547,7 +629,7 @@ requires = { min_level = 30 }</code></pre>
   </table>
   <p>Coordinates here are <strong>retail field-grid tiles</strong>, not map-local ones: tile <code>x</code> covers world <code>x * 128 .. x * 128 + 127</code>, the <code>world &gt;&gt; 7</code> quantisation the retail walk-on trigger dispatcher uses (<a href="../subsystems/field-locomotion.html">field locomotion</a>). An exit's arrival <code>tile</code> is in the same space, so a map's exit can land beside its own entrance.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 730 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a pack map is reached: a step onto an entrance rectangle in a retail field scene passes the EntranceWatch gate into SceneHost enter_expansion_map, as do the Journal's Travel page, the --map flag or the play page's Enter map, and a Load of a save made on a map; the map's exits lead back to a retail scene or into another map of the pack">
+    <svg viewBox="0 0 730 310" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="How a pack map is reached: a step onto an entrance rectangle in a retail field scene passes the EntranceWatch gate into SceneHost enter_expansion_map, as do the Journal's Travel page, the --map flag or the play page's scene list, and a Load of a save made on a map; the map's exits lead back to a retail scene or into another map of the pack">
       <defs><marker id="em-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="20" y="20" width="150" height="52" rx="4"/>
       <rect class="dg-node" x="195" y="20" width="150" height="52" rx="4"/>
@@ -561,8 +643,8 @@ requires = { min_level = 30 }</code></pre>
       <text class="dg-label" x="95" y="42">Retail field scene</text><text class="dg-sub" x="95" y="60">the player walks</text>
       <text class="dg-label" x="270" y="42">Entrance rect</text><text class="dg-sub" x="270" y="60">field-grid tiles</text>
       <text class="dg-label" x="450" y="42">EntranceWatch</text><text class="dg-sub" x="450" y="60">step on, gate holds</text>
-      <text class="dg-label" x="95" y="152">Journal: Travel</text><text class="dg-sub" x="95" y="170">any map of the pack</text>
-      <text class="dg-label" x="270" y="152">--map / Enter map</text><text class="dg-sub" x="270" y="170">direct entry</text>
+      <text class="dg-label" x="95" y="152">Journal: Travel</text><text class="dg-sub" x="95" y="170">maps visited</text>
+      <text class="dg-label" x="270" y="152">--map / scene list</text><text class="dg-sub" x="270" y="170">direct entry</text>
       <text class="dg-label" x="450" y="152">enter_expansion_map</text><text class="dg-sub" x="450" y="170">SceneHost</text>
       <text class="dg-label" x="635" y="152">Pack map</text><text class="dg-sub" x="635" y="170">base scene + layer</text>
       <text class="dg-label" x="450" y="262">Load a map save</text><text class="dg-sub" x="450" y="280">resume_save re-enters</text>
@@ -585,7 +667,7 @@ requires = { min_level = 30 }</code></pre>
     <p class="callout-title">Picking a rectangle</p>
     <p>Pick tiles the scene's walk reaches and that no retail trigger shares: a retail door's walk-on tile fires its own record on the same step. The validator checks the scene coordinate, the tile range, the spawn and the quests <code>requires</code> names; it cannot see the scene's walls without the disc.</p>
   </div>
-  <p>The pause menu's <strong>Travel</strong> page (the Journal, Select on the root list) enters any of the pack's maps directly, which is the way in for testing a map whose entrance is out of reach (<a href="../subsystems/field-menu.html">field menu</a>).</p>
+  <p>The pause menu's <strong>Travel</strong> page (the Journal, Select on the root list) enters a pack map the party has been to on this save directly, and lists a map whose entrance gate holds now before its first visit; the <em>Unlock all Travel maps</em> cheat (<code>--cheat-travel</code>, the play page's Cheats panel) lists every map, which is the way in for testing a map whose entrance is out of reach (<a href="../subsystems/field-menu.html">field menu</a>).</p>
 </section>
 
 <section class="doc-section" id="saving-on-a-map" data-doc="saving-on-a-map">
@@ -595,7 +677,7 @@ requires = { min_level = 30 }</code></pre>
 
 <section class="doc-section" id="running-a-map" data-doc="running-a-map">
   <h2>Running a map</h2>
-  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/rebirth --map rebirth_tower_1f [--spawn dais]</code></div>
+  <div class="cli"><code>legaia-engine play-window --disc "Legend of Legaia (USA).bin" --expansion packs/rebirth --map genesis_1f [--spawn dais]</code></div>
   <p><code>--expansion</code> takes a pack directory or an <code>.lxpack</code> bundle and activates it through <code>World::activate_expansion</code>; with <code>--resume-save</code> the save's own map (if any) is the landing instead of <code>--map</code>. Without <code>--map</code> the pack is simply active, for the title's New Game and Continue.</p>
   <p>The browser play page loads an <code>.lxpack</code> through <code>LegaiaRuntime::load_expansion</code> and enters a map through <code>enter_expansion_map</code>, the same <code>SceneHost::enter_expansion_map</code> entry; its scene build reads the map's ground, walls and props off the same <code>Scene</code> (<a href="../subsystems/browser-host.html">browser host</a>). Any scene change - an exit, a scene picker - leaves the map and drops its layer; a battle fought on the map returns to it. The map's <code>name</code> shows as the place-name banner on entry. Step-by-step: <a href="../guides/expansion-packs.html">expansion packs guide</a>.</p>
 </section>
@@ -603,7 +685,7 @@ requires = { min_level = 30 }</code></pre>
 <section class="doc-section" id="gaps" data-doc="gaps">
   <h2>Gaps</h2>
   <ul class="bullets">
-    <li><strong>Camera preset on an in-world entry.</strong> A map entered through an entrance or a Travel pick keeps the follow camera's distance; the map's <code>camera</code> preset applies on a host's direct entry (<code>--map</code>, the play page's <em>Enter map</em>).</li>
+    <li><strong>Camera preset on an in-world entry.</strong> A map entered through an entrance or a Travel pick keeps the follow camera's distance; the map's <code>camera</code> preset applies on a host's direct entry (<code>--map</code>, a pack map row in the play page's scene list).</li>
     <li><strong>NPC clips.</strong> A patrolling NPC keeps <code>walk_clip</code> (or its idle clip) at the ends of its legs; nothing cues the idle clip back between legs.</li>
   </ul>
 </section>

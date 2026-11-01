@@ -1,0 +1,543 @@
+# Genesis Tower, sixth floor: the Engine Deep. Laid out from scratch
+# (`geometry = "none"`) out of the retail Jette's Fortress (`chitei2`)
+# marble, riveted plate and machinery: the engine that once turned the
+# bell fills a shaft sunk deep into the tower, and the floor is the iron
+# decks hung over it. Two long walkways run down the shaft's sides, a
+# gantry runs down its middle, and two bridges cross it; far below, the
+# engine's great wheels still turn in the furnace glow. Off the walkways'
+# middle, the control room (west), where the lever starts the Engine
+# Gauntlet, and the furnace room (east). The Iron Regent holds the dais at
+# the gantry's end, an island over the pit with his flywheels turning
+# either side of it; the stair up leaves from the end of the east walkway.
+#
+# The follow camera looks south from the north side: the shaft's and the
+# side rooms' north walls are low, so the camera sees in over them and
+# down into the pit.
+
+name = "Genesis Tower 6F - Engine Deep"
+size = [35, 37]
+base = { scene = { kind = "scene", name = "chitei2" }, geometry = "none" }
+# Sound-test track 13, "Bio-Castle".
+bgm = { kind = "bgm", id = 13 }
+camera = "far"
+# Tier 1 the decks, side rooms and the Regent's dais, tier 2 the Regent's
+# own step. Nothing walks tier 0: it is only the height the pit's depth is
+# measured from.
+floor_heights = [0, 64, 112]
+
+# The pit: the shaft's walls drop far below the decks to the engine floor
+# at its foot, dim in the furnace glow.
+[surround]
+ground = { tpage = 9, clut = 31110, tile = 19 }
+side = { tpage = 9, clut = 31176, tile = 3 }
+depth = 1280
+shade = 40
+# The walls darken as they go down, into the dark at the foot.
+fade = 8
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 8, clut = 30979, tile = 27, height = 1152, distance = 2, shade = 96 }
+
+# The shaft itself: its floor, the engine's bed, lies shallower than the
+# drop past the tower's walls, so the cogs on it stay in the follow
+# camera's view over the decks' rims.
+[[surround.regions]]
+rect = [11, 5, 23, 35]
+depth = 640
+shade = 56
+fade = 10
+
+# The vault overhead: the lever's lamp hang on chains from it. The follow camera
+# looks down from under it, so only the chains show, rising out of the
+# frame; the underside is wound to face down and drawn only from beneath.
+[ceiling]
+height = 2048
+cell = { tpage = 8, clut = 30979, tile = 27 }
+shade = 40
+chain = { tpage = 8, clut = 30979, tile = 27, width = 6, shade = 72, items = ["lever_light"] }
+
+[tiles]
+origin = [20, 20]
+rows = [
+  "             ____>____             ",
+  "            #wwwwwwwww#            ",
+  "            #wwwwwwwww#            ",
+  "            #wwwwwwwww#            ",
+  "      _____wwwwwwwwwwwww_____      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwwwbbbbbbbbbbbbbwwww#      ",
+  "_______wwwwbbbbbbbbbbbbbwwww_______",
+  "#ccccc#wwww     kkk     wwww#ccccc#",
+  "#dcccc#wwww     kkk     wwww#ccccd#",
+  "#ccccccwwww     kkk     wwwwcccccc#",
+  "#Lcccccwwww     kkk     wwwwcccccF#",
+  "#ccccccwwww     kkk     wwwwcccccc#",
+  "#dcccccwwww     kkk     wwwwcccccd#",
+  "#ccccc#wwww     kkk     wwww#ccccc#",
+  "#ccccc#wwww     kkk     wwww#ccccc#",
+  "#######wwww     kkk     wwww#######",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwwwbbbbbbbbbbbbbwwww#      ",
+  "      #wwwwbbbbbbbbbbbbbwwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww     kkk     wwww#      ",
+  "      #wwww  ^^^^^^^^^  wwww#      ",
+  "      #wwww  ^^^^^^^^^  wwww#      ",
+  "      #wwww  ^^^^^^^^^  wwww#      ",
+  "      #wwww  ^^RRRRR^^  wwww#      ",
+  "      #wwww  ^^RRRRR^^  wwww#      ",
+  "      #wwww  ^^RRRRR^^  wwww#      ",
+  "      #wwww  ^^RRRRR^^  wwww#      ",
+  "      #######ff%%%%%%ff###<##      ",
+]
+
+[tiles.legend]
+# Every floor of the Deep is on tier 1 but the Regent's own step: the
+# walkways, gantry and bridges are iron decks over the open pit, and a
+# space in the rows is the pit itself (the surround's drop, a wall to every
+# mover). A wall takes the tier of the floor on its north or west side, so
+# no floor's last row tilts into it.
+"#" = { label = "wall", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30979, tile = 27 } }
+"%" = { label = "wall (dais)", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30979, tile = 27 } }
+"f" = { label = "wall (dais, dais side)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 8, clut = 30979, tile = 27 } }
+"_" = { label = "parapet", height = 1, walls = "all", wall = { kind = "box", height = 48, tpage = 25, clut = 31174, tile = 6 } }
+"w" = { label = "walkway", height = 1, ground = { kind = "texture", tpage = 25, clut = 31174, tile = 6 } }
+"b" = { label = "bridge", height = 1, ground = { kind = "texture", tpage = 25, clut = 31179, tile = 36 } }
+"k" = { label = "gantry", height = 1, ground = { kind = "texture", tpage = 25, clut = 31179, tile = 36 } }
+"c" = { label = "side room", height = 1, ground = { kind = "texture", tpage = 8, clut = 30979, tile = 35 } }
+"^" = { label = "dais", height = 1, ground = { kind = "texture", tpage = 25, clut = 31179, tile = 36 } }
+"R" = { label = "the Regent's step", height = 2, ground = { kind = "texture", tpage = 26, clut = 31300, tile = 6 } }
+# The side rooms' machine cabinets, the lever and the furnace: solid.
+"d" = { label = "cabinet", height = 1, walls = "all", wall = { kind = "box", height = 288, tpage = 9, clut = 31176, tile = 3 } }
+"L" = { label = "lever", height = 1, walls = "all", wall = { kind = "box", height = 96, tpage = 25, clut = 31174, tile = 6 } }
+"F" = { label = "furnace", height = 1, walls = "all", wall = { kind = "box", height = 160, tpage = 9, clut = 31176, tile = 3 } }
+">" = { label = "stair down", height = 1, ground = { kind = "texture", tpage = 25, clut = 31174, tile = 6 } }
+"<" = { label = "stair up", height = 1, ground = { kind = "texture", tpage = 25, clut = 31174, tile = 6 } }
+
+[[spawns]]
+id = "from_below"
+tile = [17, 2]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [26, 34]
+
+[[exits]]
+id = "stair_down"
+rect = [17, 0, 17, 0]
+to = { kind = "map", map = "genesis_5f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [26, 36, 26, 36]
+to = { kind = "map", map = "genesis_7f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [13, 3, 21, 3]
+event = { kind = "toast", line = "floor_6f_intro" }
+once = true
+
+# The foot of the Regent's step, on his dais.
+[[triggers]]
+id = "regent_alcove"
+rect = [17, 31, 17, 31]
+event = { kind = "talk", npc = "regent_seat" }
+press = true
+
+# The Regent's challenge: offered while he stands, so a won fight is not
+# offered again while the gauntlet is still to clear.
+[[triggers]]
+id = "regent_challenge"
+rect = [17, 31, 17, 31]
+event = { kind = "dialog", line = "regent_offer" }
+press = true
+requires = { quests = ["gamblers_rest"], min_level = 70, bosses_unbeaten = ["iron_regent"] }
+
+[[triggers]]
+id = "regent_seat_cold"
+rect = [17, 31, 17, 31]
+event = { kind = "dialog", line = "regent_after" }
+press = true
+requires = { bosses = ["iron_regent"] }
+once = true
+
+# The control room's lever: stepping up to it offers the Engine Gauntlet.
+[[triggers]]
+id = "gauntlet_lever"
+rect = [2, 18, 2, 18]
+event = { kind = "dialog", line = "engine_offer" }
+press = true
+
+[[encounters]]
+id = "west_track"
+rect = [7, 6, 10, 35]
+table = "tower_6f"
+
+[[encounters]]
+id = "east_track"
+rect = [24, 6, 27, 35]
+table = "tower_6f"
+
+[[encounters]]
+id = "gantry"
+rect = [16, 5, 18, 28]
+table = "tower_6f"
+
+# ---------------------------------------------------------------------------
+# The Regent's end: the fortress's flywheels (`chitei2` mesh 31) turn on
+# their axles in the pit either side of his island, edge-on to the gantry,
+# red banners hang over his step, and the dais is lit warm against the
+# cold shaft.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "flywheel_w"
+mesh = { object = 31 }
+tile = [11, 31]
+offset = [64, 40, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 1.6
+hangs = true
+solid = true
+animate = [{ kind = "spin", period = 240 }]
+light = { color = [255, 170, 90], radius = 640, height = 0, flicker = 0.3, period = 9 }
+
+[[props]]
+id = "flywheel_e"
+mesh = { object = 31 }
+tile = [22, 31]
+offset = [64, 40, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 1.6
+hangs = true
+solid = true
+animate = [{ kind = "spin", period = -240 }]
+light = { color = [255, 170, 90], radius = 640, height = 0, flicker = 0.3, period = 11 }
+
+# The engine itself, down the shaft: three great cogs lie on their beds
+# on the engine's floor, turning slowly, the furnace glow on them. Each
+# is solid so the drawn hull is closed, and each fits inside the pit's
+# open tiles so it closes nothing the decks need.
+[[props]]
+id = "deep_cog_n"
+mesh = { asset = "models/cog.glb" }
+tile = [13, 9]
+hangs = true
+offset = [0, -600, 0]
+scale = 3.2
+solid = true
+animate = [{ kind = "spin", axis = "y", period = 900 }]
+
+[[props]]
+id = "deep_cog_mid"
+mesh = { asset = "models/cog.glb" }
+tile = [21, 19]
+hangs = true
+offset = [0, -600, 0]
+scale = 3.2
+solid = true
+animate = [{ kind = "spin", axis = "y", period = -1000 }]
+
+[[props]]
+id = "deep_cog_s"
+mesh = { asset = "models/cog.glb" }
+tile = [13, 20]
+hangs = true
+offset = [0, -600, 0]
+scale = 3.0
+solid = true
+animate = [{ kind = "spin", axis = "y", period = 800 }]
+
+# A drive wheel stands edge-on in the shaft under each bridge, its top
+# turning just below the deck.
+[[props]]
+id = "drive_n"
+mesh = { asset = "models/cog.glb" }
+tile = [13, 15]
+hangs = true
+offset = [0, -300, -40]
+rotation = [90.0, 0.0, 0.0]
+scale = 2.4
+solid = true
+animate = [{ kind = "spin", axis = "z", period = 420 }]
+
+[[props]]
+id = "drive_s"
+mesh = { asset = "models/cog.glb" }
+tile = [21, 27]
+hangs = true
+offset = [0, -300, -40]
+rotation = [90.0, 0.0, 0.0]
+scale = 2.4
+solid = true
+animate = [{ kind = "spin", axis = "z", period = -420 }]
+
+[[props]]
+id = "regent_banner_w"
+mesh = { asset = "models/banner_red.glb" }
+tile = [15, 35]
+hangs = true
+offset = [0, 60, 40]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 140 }]
+
+[[props]]
+id = "regent_banner_e"
+mesh = { asset = "models/banner_red.glb" }
+tile = [19, 35]
+hangs = true
+offset = [0, 60, 40]
+scale = 1.3
+animate = [{ kind = "sway", axis = "x", degrees = 3.0, period = 150, phase = 0.5 }]
+
+[[props]]
+id = "regent_cog"
+mesh = { asset = "models/cog.glb" }
+tile = [17, 35]
+hangs = true
+offset = [0, 220, 40]
+scale = 1.6
+animate = [{ kind = "spin", axis = "z", period = 300 }]
+light = { color = [255, 200, 120], radius = 700, height = 0, flicker = 0.35, period = 7 }
+
+# Cogs turn set into the hall's side walls above the walkways, two a side:
+# solid, their footprint inside the wall they turn in.
+[[props]]
+id = "cog_nw"
+mesh = { asset = "models/cog.glb" }
+tile = [7, 10]
+hangs = true
+offset = [-110, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+solid = true
+animate = [{ kind = "spin", axis = "x", period = 300 }]
+
+[[props]]
+id = "cog_ne"
+mesh = { asset = "models/cog.glb" }
+tile = [27, 10]
+hangs = true
+offset = [110, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+solid = true
+animate = [{ kind = "spin", axis = "x", period = -300 }]
+
+[[props]]
+id = "cog_sw"
+mesh = { asset = "models/cog.glb" }
+tile = [7, 28]
+hangs = true
+offset = [-110, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+solid = true
+animate = [{ kind = "spin", axis = "x", period = -260 }]
+
+[[props]]
+id = "cog_se"
+mesh = { asset = "models/cog.glb" }
+tile = [27, 28]
+hangs = true
+offset = [110, 200, 0]
+rotation = [0.0, 0.0, 90.0]
+scale = 1.2
+solid = true
+animate = [{ kind = "spin", axis = "x", period = 260 }]
+
+# The control room: the gauntlet lever's housing glows blue, sparks
+# spraying off it.
+[[props]]
+id = "lever_light"
+mesh = { asset = "models/lantern.glb" }
+tile = [2, 16]
+hangs = true
+offset = [0, 220, 64]
+scale = 1.2
+light = { color = [140, 180, 255], radius = 560, height = 0, flicker = 0.4, period = 9 }
+
+# The furnace room: the engine's heart burns white-hot over the furnace.
+[[props]]
+id = "furnace_core"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [32, 18]
+hangs = true
+offset = [64, 220, 0]
+scale = 2.0
+animate = [{ kind = "spin", period = 140 }, { kind = "pulse", amount = 0.1, period = 30 }]
+light = { color = [255, 150, 60], radius = 800, height = 0, flicker = 0.35, period = 7 }
+
+# Braziers flank the stair down and the stair up.
+[[props]]
+id = "brazier_stair_down_w"
+mesh = { asset = "models/brazier.glb" }
+tile = [15, 1]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 10 }
+
+[[props]]
+id = "brazier_stair_down_e"
+mesh = { asset = "models/brazier.glb" }
+tile = [19, 1]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 12 }
+
+[[props]]
+id = "brazier_stair_up"
+mesh = { asset = "models/brazier.glb" }
+tile = [27, 35]
+solid = true
+light = { color = [255, 150, 70], radius = 460, height = 140, flicker = 0.35, period = 11 }
+
+[[emitters]]
+kind = "embers"
+rect = [16, 30, 18, 32]
+height = [20, 80]
+count = 30
+velocity = [0.0, 2.2, 0.0]
+spread = [1.2, 0.8, 1.2]
+gravity = -0.05
+color = [255, 240, 170]
+color_end = [255, 90, 20]
+life = 60
+seed = 601
+
+[[emitters]]
+kind = "embers"
+rect = [1, 17, 3, 19]
+height = [40, 120]
+count = 24
+velocity = [0.0, 2.0, 0.0]
+spread = [1.0, 0.7, 1.0]
+gravity = -0.05
+color = [200, 230, 255]
+color_end = [60, 90, 255]
+life = 60
+seed = 602
+
+# Heat rises out of the pit: sparks drift up from the furnace glow below.
+[[emitters]]
+kind = "embers"
+rect = [12, 6, 22, 34]
+height = [-700, -100]
+count = 60
+velocity = [0.0, 2.6, 0.0]
+spread = [0.6, 0.8, 0.6]
+life = 300
+color = [255, 210, 130]
+color_end = [255, 70, 10]
+seed = 608
+
+[[emitters]]
+kind = "embers"
+rect = [30, 16, 33, 20]
+height = [40, 200]
+count = 30
+velocity = [0.0, 1.8, 0.0]
+color = [255, 220, 140]
+color_end = [255, 80, 20]
+seed = 607
+
+[[emitters]]
+kind = "drips"
+rect = [7, 6, 27, 28]
+count = 12
+seed = 605
+
+[lighting]
+mood = "night"
+lamps = [
+  { id = "regent", tile = [17, 32], offset = [0, 140, 0], color = [255, 200, 120], radius = 800, flicker = 0.4, period = 7 },
+  { id = "lever", tile = [2, 18], offset = [0, 120, 0], color = [140, 180, 255], radius = 600, flicker = 0.4, period = 9 },
+  # Work lamps along the raised walkways, so they read in the dark.
+  { id = "track_w", tile = [8, 12], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 50 },
+  { id = "track_e", tile = [26, 12], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 53 },
+  { id = "track_w2", tile = [8, 26], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 47 },
+  { id = "track_e2", tile = [26, 26], offset = [0, 180, 0], color = [150, 190, 255], radius = 620, flicker = 0.05, period = 51 },
+  { id = "furnace", tile = [31, 18], offset = [0, 140, 0], color = [255, 140, 60], radius = 640, flicker = 0.35, period = 6 },
+  # The furnace glow at the pit's foot, breathing with the engine's beat.
+  { id = "pit_n", tile = [15, 11], offset = [0, -420, 0], color = [255, 120, 40], radius = 900, flicker = 0.15, period = 40, breathe = 0.4, breathe_period = 200 },
+  { id = "pit_s", tile = [19, 22], offset = [0, -420, 0], color = [255, 110, 40], radius = 900, flicker = 0.15, period = 44, breathe = 0.4, breathe_period = 220 },
+]
+
+# The furnace glow rising out of the shaft at the far side of each pit,
+# the light the decks are lit by from beneath (enhanced lighting only).
+[[beams]]
+id = "pit_glow_nw"
+tile = [13, 11]
+offset = [0, -300, 0]
+height = 800
+tilt = 6.0
+angle = 90.0
+width = [220, 120]
+color = [255, 140, 60]
+intensity = 80
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 200
+motes = 20
+seed = 61
+
+[[beams]]
+id = "pit_glow_se"
+tile = [21, 23]
+offset = [0, -300, 0]
+height = 800
+tilt = 6.0
+angle = 270.0
+width = [220, 120]
+color = [255, 130, 50]
+intensity = 80
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 220
+motes = 20
+seed = 62
+
+[[audio.ambient]]
+id = "engine_north"
+sound = { kind = "sound", id = "engine" }
+tile = [17, 10]
+radius = 900
+inner = 200
+volume = 0.5
+
+[[audio.ambient]]
+id = "engine_south"
+sound = { kind = "sound", id = "engine" }
+tile = [17, 30]
+radius = 900
+inner = 200
+volume = 0.55
+
+[[audio.ambient]]
+id = "furnace"
+sound = { kind = "sound", id = "torch" }
+tile = [32, 18]
+radius = 600
+inner = 96
+volume = 0.5
+
+# ---------------------------------------------------------------------------
+# Ysolde's journal. A page of it lies in the furnace room (dialog.toml).
+# ---------------------------------------------------------------------------
+
+[[triggers]]
+id = "journal_6f"
+rect = [31, 21, 31, 21]
+event = { kind = "dialog", line = "journal_6f" }
+press = true
+once = true

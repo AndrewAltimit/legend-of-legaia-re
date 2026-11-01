@@ -21,7 +21,11 @@ use legaia_expansion_format::cards::CardElement;
 use legaia_render_kernels::screen_prim::{ScreenPrim, ScreenQuad};
 
 use super::cards::{element_color, owner_color, rarity_color, side_label};
-use super::{Canvas, STAGE_H, STAGE_W, ink, pen};
+use super::{Align, Canvas, LINE, STAGE_H, STAGE_W, ink, pen};
+
+/// The score plates' width over the table, and under the 2D board.
+const HUD_SCORE_W: i32 = 84;
+const BOARD_SCORE_W: i32 = 70;
 
 /// A card on the 2D board.
 const CARD_W: i32 = 38;
@@ -123,10 +127,10 @@ fn prompt(mode: &ActiveMode, v: &DuelView, me: usize) -> String {
         };
     }
     match v.phase {
-        DuelPhase::PickCard { seat } if seat == me => "Your turn - choose a card",
-        DuelPhase::PickCell { seat, .. } if seat == me => "Your turn - choose a cell",
+        DuelPhase::PickCard { seat } if seat == me => "Choose a card",
+        DuelPhase::PickCell { seat, .. } if seat == me => "Choose a cell",
         DuelPhase::PickCard { .. } | DuelPhase::PickCell { .. } => "Rival is thinking...",
-        DuelPhase::Spoils { winner } if winner == me => "Take one of the rival's cards",
+        DuelPhase::Spoils { winner } if winner == me => "Take a rival's card",
         DuelPhase::Spoils { .. } => "The rival takes a card",
         DuelPhase::Finished => "Duel over",
     }
@@ -147,18 +151,22 @@ fn card_panel(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, me: usize, x: i32
     c.panel(x, y, w, h, [10, 14, 24, 210], ink::PANEL_EDGE);
     c.rect(x + 3, y + 3, 3, h - 6, element_color(card.element));
     c.dot(x + w - 8, y + 9, 2, rarity_color(card.rarity));
-    c.text(
+    c.text_in(
         mode.card_name(&card.id).to_string(),
         x + 10,
         y + 2,
+        w - 10 - 14,
         pen::WHITE,
+        Align::Left,
     );
     let [t, r, b, l] = card.sides.map(side_label);
-    c.text(
+    c.text_in(
         format!("Up {t} Right {r} Down {b} Left {l}"),
         x + 10,
         y + 17,
+        w - 14,
         pen::GOLD,
+        Align::Left,
     );
 }
 
@@ -180,19 +188,53 @@ fn cell_hint(v: &DuelView, me: usize, card: &DuelCard) -> Option<String> {
 }
 
 /// The score plates: the player's on the left in blue, the rival's on the
-/// right in red, the count large.
-fn scores(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, me: usize, rival: usize, y: i32) {
+/// right in red. A one-row plate (`tall` false, under the 2D board) sets
+/// the name and the count side by side; a two-row plate (the table HUD's
+/// corners) gives the name the whole top row and the count the row under
+/// it. Either way the name is held to its own box, clear of the count, so
+/// a table NPC's long name ("The Warden's Second") is cut, not run into the
+/// score.
+#[allow(clippy::too_many_arguments)]
+fn scores(
+    c: &mut Canvas,
+    mode: &ActiveMode,
+    v: &DuelView,
+    me: usize,
+    rival: usize,
+    y: i32,
+    w: i32,
+    tall: bool,
+) {
     let plate = [10, 14, 24, 200];
-    let w = 70;
-    c.panel(4, y, w, 18, plate, ink::PANEL_EDGE);
-    c.rect(5, y + 1, 4, 16, owner_color(0));
-    c.text(mode.seat_label(me, "You"), 13, y + 2, pen::WHITE);
-    c.text_right(v.scores[me].to_string(), 4 + w - 6, y + 2, pen::GOLD);
-    let x = STAGE_W - 4 - w;
-    c.panel(x, y, w, 18, plate, ink::PANEL_EDGE);
-    c.rect(x + w - 5, y + 1, 4, 16, owner_color(1));
-    c.text(mode.seat_label(rival, "Rival"), x + 6, y + 2, pen::WHITE);
-    c.text_right(v.scores[rival].to_string(), x + w - 10, y + 2, pen::GOLD);
+    let h = if tall { 18 + LINE } else { 18 };
+    // The count's box: two digits.
+    const COUNT_W: i32 = 16;
+    for (seat, left) in [(me, true), (rival, false)] {
+        let x = if left { 4 } else { STAGE_W - 4 - w };
+        c.panel(x, y, w, h, plate, ink::PANEL_EDGE);
+        let bar = if left { x + 1 } else { x + w - 5 };
+        c.rect(bar, y + 1, 4, h - 2, owner_color(usize::from(!left)));
+        // The text between the colour bar and the far edge.
+        let (l, r) = if left {
+            (x + 9, x + w - 4)
+        } else {
+            (x + 4, x + w - 9)
+        };
+        let name = mode.seat_label(seat, if left { "You" } else { "Rival" });
+        let count = v.scores[seat].to_string();
+        if tall {
+            c.text_in(name, l, y + 2, r - l, pen::WHITE, Align::Left);
+            let (cx, al) = if left {
+                (r, Align::Right)
+            } else {
+                (l, Align::Left)
+            };
+            c.text_in(count, cx, y + 2 + LINE, COUNT_W, pen::GOLD, al);
+        } else {
+            c.text_in(name, l, y + 2, r - l - COUNT_W - 2, pen::WHITE, Align::Left);
+            c.text_in(count, r, y + 2, COUNT_W, pen::GOLD, Align::Right);
+        }
+    }
 }
 
 /// The 2D board.
@@ -252,16 +294,25 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
 
     // Under the board: the selected card, the turn line, the newest event.
     let sy = GRID_Y + 3 * CELL_H + 1;
-    scores(c, mode, v, me, rival, sy);
+    scores(c, mode, v, me, rival, sy, BOARD_SCORE_W, false);
     let held = focus_card(v, me).and_then(|(s, i)| v.hands[s].get(i));
-    match held.and_then(|card| cell_hint(v, me, card)) {
-        Some(hint) => c.text_centre(hint, STAGE_W / 2, sy + 2, pen::GREEN),
-        None => c.text_centre(prompt(mode, v, me), STAGE_W / 2, sy + 2, pen::GOLD),
-    }
+    let (line, pen_) = match held.and_then(|card| cell_hint(v, me, card)) {
+        Some(hint) => (hint, pen::GREEN),
+        None => (prompt(mode, v, me), pen::GOLD),
+    };
+    let pw = STAGE_W - 2 * (4 + BOARD_SCORE_W + 4);
+    c.text_in(line, STAGE_W / 2, sy + 2, pw, pen_, Align::Centre);
     if focus_card(v, me).is_none()
         && let Some(last) = log.last()
     {
-        c.text(last.clone(), 8, STAGE_H - 30, pen::DIM);
+        c.text_in(
+            last.clone(),
+            8,
+            STAGE_H - 30,
+            STAGE_W - 16,
+            pen::DIM,
+            Align::Left,
+        );
     }
     bottom_bar(c, mode, v, me);
     if matches!(v.phase, DuelPhase::Spoils { winner } if winner == me) {
@@ -271,42 +322,50 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, log: &[Strin
 
 /// The selected card's panel bottom-left and the controls bottom-right.
 fn bottom_bar(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, me: usize) {
-    card_panel(c, mode, v, me, 4, STAGE_H - 36, 168);
+    // The card's line of four strengths is the widest label; the
+    // controls take what is left.
+    card_panel(c, mode, v, me, 4, STAGE_H - 36, 196);
     let (a, b) = match v.phase {
         DuelPhase::PickCell { seat, .. } if seat == me => ("D-pad: cell", "Cross: place"),
         DuelPhase::Spoils { winner } if winner == me => ("Left/Right: card", "Cross: take"),
         _ => ("Left/Right: card", "Cross: choose"),
     };
-    let (x, w) = (STAGE_W - 4 - 140, 140);
+    let (x, w) = (STAGE_W - 4 - 112, 112);
     c.panel(x, STAGE_H - 36, w, 34, [8, 12, 20, 170], ink::PANEL_EDGE);
-    c.text_right(a, x + w - 5, STAGE_H - 35, pen::DIM);
-    c.text_right(b, x + w - 5, STAGE_H - 20, pen::DIM);
+    c.text_in(a, x + w - 5, STAGE_H - 35, w - 10, pen::DIM, Align::Right);
+    c.text_in(b, x + w - 5, STAGE_H - 20, w - 10, pen::DIM, Align::Right);
 }
 
 /// The table HUD: the score plates and the turn prompt along the top, the
 /// selected card's panel along the bottom. During the reaction shot only
 /// the stage's banner shows.
-pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, outro: bool) {
+/// Returns the bottom of the HUD's top band (the score plates and the
+/// prompt), where a banner may start.
+pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, outro: bool) -> i32 {
     if outro {
-        return;
+        return 0;
     }
     let (me, rival) = seats(mode);
-    scores(c, mode, v, me, rival, 4);
+    scores(c, mode, v, me, rival, 4, HUD_SCORE_W, true);
     let plate = [10, 14, 24, 170];
-    c.panel(84, 4, 152, 18, plate, ink::PANEL_EDGE);
+    // The prompt between the two plates.
+    let (px, pw) = (4 + HUD_SCORE_W + 4, STAGE_W - 2 * (4 + HUD_SCORE_W + 4));
+    c.panel(px, 4, pw, 18, plate, ink::PANEL_EDGE);
     // Over an elemental cell the prompt says what the cell does to the
     // held card.
     let held = focus_card(v, me).and_then(|(s, i)| v.hands[s].get(i));
-    match held.and_then(|card| cell_hint(v, me, card)) {
-        Some(hint) => c.text_centre(hint, STAGE_W / 2, 6, pen::GREEN),
-        None => c.text_centre(prompt(mode, v, me), STAGE_W / 2, 6, pen::GOLD),
-    }
+    let (line, pen_) = match held.and_then(|card| cell_hint(v, me, card)) {
+        Some(hint) => (hint, pen::GREEN),
+        None => (prompt(mode, v, me), pen::GOLD),
+    };
+    c.text_in(line, STAGE_W / 2, 6, pw - 8, pen_, Align::Centre);
     // The selected card bottom-left, the controls bottom-right, the hand
     // between them.
     bottom_bar(c, mode, v, me);
     if matches!(v.phase, DuelPhase::Spoils { winner } if winner == me) {
         spoils(c, mode, v, rival);
     }
+    4 + 18 + LINE
 }
 
 fn cell_xy(cell: usize) -> (i32, i32) {
@@ -327,11 +386,13 @@ fn spoils(c: &mut Canvas, mode: &ActiveMode, v: &DuelView, rival: usize) {
         if on {
             c.rect(x + 2, ry, w - 4 - CARD_W - 6, 16, ink::SELECT);
         }
-        c.text(
+        c.text_in(
             mode.card_name(&card.id).to_string(),
             x + 8,
             ry + 1,
+            w - CARD_W - 6 - 12,
             if on { pen::GOLD } else { pen::WHITE },
+            Align::Left,
         );
     }
     let i = v.spoil_cursor.min(HAND - 1);

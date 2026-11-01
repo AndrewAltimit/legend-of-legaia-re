@@ -116,6 +116,27 @@ pub struct PackModeSeat {
     /// Each seat's name as the results card reads it ("You", a table
     /// NPC's name), noted as the session leaves play.
     pub seat_names: Vec<String>,
+    /// The map (its id) and the indices of its props the instance's table
+    /// hides (`hide`) while the seat is open, noted once the stage stands
+    /// on that map. Presentation only.
+    pub hidden_props: Option<(String, Vec<usize>)>,
+    /// Where the party stood before the seat took it to another scene (a
+    /// race run on an overworld): the scene host takes it back there when
+    /// the seat closes.
+    pub return_place: Option<ModeReturnPlace>,
+}
+
+/// The place a mode seat took the party away from, to go back to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModeReturnPlace {
+    /// The retail scene (a pack map's base scene included).
+    pub scene: String,
+    /// The pack map and spawn, when the party was on one.
+    pub pack_map: Option<(String, String)>,
+    /// The mode the world was in there.
+    pub mode: SceneMode,
+    /// The player's field pose `[x, y, z, facing]` there.
+    pub pose: Option<[i16; 4]>,
 }
 
 /// A card grant waiting for the card economy.
@@ -160,6 +181,8 @@ impl PackModeSeat {
             body_idle: Vec::new(),
             body_heading: Vec::new(),
             seat_names: Vec::new(),
+            hidden_props: None,
+            return_place: None,
             networked: false,
         }
     }
@@ -188,6 +211,8 @@ impl PackModeSeat {
             body_idle: Vec::new(),
             body_heading: Vec::new(),
             seat_names: Vec::new(),
+            hidden_props: None,
+            return_place: None,
             networked: false,
         }
     }

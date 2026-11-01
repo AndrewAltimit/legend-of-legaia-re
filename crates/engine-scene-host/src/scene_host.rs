@@ -284,11 +284,33 @@ pub struct SceneHost {
     /// ([`SceneHost::sync_pack_mode_map`]), so a broken map is tried once
     /// and the mode draws its top-down screen instead.
     pub(crate) failed_pack_mode_map: Option<String>,
+    /// The resource build a prepared pack map carries
+    /// ([`crate::expansion_preload::PreparedMap::build`]), armed beside
+    /// [`Self::pending_scene_override`] and taken by the next
+    /// [`SceneHost::enter_field_scene`] in place of its own build when the
+    /// scene it loads carries that same override.
+    pub(crate) pending_scene_build: Option<(
+        Arc<legaia_engine_scene::expansion_map::SceneOverride>,
+        Arc<legaia_engine_scene::scene_resources::SceneResources>,
+    )>,
+    /// The resource build of the pack map the player is on, before the
+    /// effect-texture underlay ([`SceneHost::expansion_entry_build`]).
+    pub(crate) expansion_entry_build:
+        Option<Arc<legaia_engine_scene::scene_resources::SceneResources>>,
+    /// Pack maps prepared ahead of their entry, and the background
+    /// preparation of the maps the current one's exits lead to
+    /// ([`crate::expansion_preload::MapPreloader`]).
+    pub expansion_preload: crate::expansion_preload::MapPreloader,
     /// Enter pack maps without their arrival presentation: no place-name
     /// banner and no arrival cutscene ([`SceneHost::enter_expansion_map`]).
     /// The expansion workbench's 3D preview sets it, so an edit-and-look
     /// entry shows the map rather than its story beat; play leaves it off.
     pub quiet_expansion_arrivals: bool,
+    /// The pack map last entered and what its collision grid was built from
+    /// past its definition ([`legaia_engine_scene::expansion_map::CollisionInputs`]):
+    /// the workbench's 3D preview re-derives the grid from it when it moves
+    /// a prop in place.
+    pub expansion_collision: Option<(String, legaia_engine_scene::expansion_map::CollisionInputs)>,
     /// The disc's inbound door / warp arrivals keyed by destination
     /// ([`legaia_engine_scene::scene_arrivals::ArrivalCatalog`]), built on the
     /// first scene-picker entry that asks for it and kept for the session.
@@ -405,7 +427,7 @@ pub use minigame_warp::{
     DOME_FAVORED_COST, DOME_STANDIN_BUDGET, DOME_STANDIN_COMBATANT, DOME_STANDIN_HP,
     DomeLeadFighter, MinigameWarpOutcome,
 };
-pub use scene_entry::{DoorTaken, FmvHandoffOutcome, PickerSeat};
+pub use scene_entry::{DoorTaken, FmvHandoffOutcome, PickerSeat, field_scene_build};
 
 #[cfg(test)]
 mod tests;

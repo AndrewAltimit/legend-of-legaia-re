@@ -32,15 +32,19 @@ import {
   h, renderManifest, renderBattle, renderProgression, drawXpChart, renderQuests,
   renderDialog, renderCards, renderItems, renderModes,
 } from './expansion-workbench-forms.js';
-import { renderMaps, armPick } from './expansion-workbench-map.js';
+import { renderMaps, armPick, openMapId } from './expansion-workbench-map.js';
 import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
-import { createFind } from './expansion-workbench-xref.js';
+import { createFind, locate } from './expansion-workbench-xref.js';
 import { renderFlow } from './expansion-workbench-graph.js';
 import { attachShare } from './expansion-workbench-share.js';
 import { addSectionHelp } from './expansion-workbench-help.js';
+import { authoringHints, hintScenes } from './expansion-workbench-hints.js';
+import {
+  AREAS, BUILD_MODES, renderNav, renderBuildHead, crumbs, setBuildMode, blankMap, areaOf,
+} from './expansion-workbench-shell.js';
 
 const $ = (id) => document.getElementById(id);
 const tick = () => new Promise((r) => setTimeout(r, 30));
@@ -88,7 +92,9 @@ const S = {
   pack: null,        // the pack JSON being edited
   label: '',         // where the pack came from
   issues: [],
-  tab: 'manifest',
+  hints: [],         // authoring hints (expansion-workbench-hints.js), not checks
+  sceneObj: {},      // scene_objects per scene, shared by the painter and the hints
+  tab: 'maps',
   sel: {},           // split-editor selections, by file:path
   jump: null,        // { file, field } while jumping to an issue
   chart: null,
@@ -98,6 +104,8 @@ const S = {
   hist: { past: [], future: [], cur: null, timer: null, bytes: 0 },
   clean: null,      // the pack JSON as last loaded or downloaded
   saved: { at: 0, state: 'none' },
+  discName: '',     // the disc image's file name, once read
+  pending: null,    // a start action waiting for the disc: { run, label }
 };
 
 const TABS = [
@@ -190,7 +198,8 @@ const ctx = {
   redo: () => stepHistory(1),
   // Close the pending history step now: a 3D edit is one step of its own.
   commit: () => commitHistory(),
-  canUndo: () => S.hist.past.length > 0 || pendingEdit(),
+  // An edit still coalescing (the commit timer runs) is undoable as it is.
+  canUndo: () => S.hist.past.length > 0 || S.hist.timer != null || pendingEdit(),
   canRedo: () => S.hist.future.length > 0,
   find: (q) => S.find && S.find.find(q),
   jump: (at) => jumpTo(at),
@@ -219,6 +228,8 @@ const ctx = {
     if (msg) setStatus(msg, 'ok', 'xw-export-status');
   },
   rerender: () => rerender(),
+  // A fold built late (listEd's lazy body) takes the checks on its fields.
+  markIssues: () => markFieldIssues(),
   checkDialog: (line) => {
     try { return JSON.parse(S.wb.check_dialog(JSON.stringify(line))); } catch (e) { return null; }
   },
@@ -228,6 +239,13 @@ const ctx = {
   mapPreview: (map) => {
     try { return JSON.parse(S.wb.map_preview(JSON.stringify(map))); } catch (e) { return { error: String(e) }; }
   },
+  // The same from the map's JSON, off this thread when the worker is up:
+  // `done(preview)` with the answer to the latest request for map `id` only
+  // (an older one still waiting is dropped). Here, at once, without it.
+  mapPreviewLater: (id, json, done) => mapPreviewLater(id, json, done),
+  // Bumped by every change to the session's own files (an asset import):
+  // a map preview reads the heightmap images among them.
+  sessionGen: () => V.gen,
   cutsceneTimeline: (id, picks) => {
     try {
       return JSON.parse(S.wb.cutscene_timeline(JSON.stringify(S.pack), id, new Uint32Array(picks || [])));
@@ -235,7 +253,10 @@ const ctx = {
       return { error: errText(e) };
     }
   },
-  sceneObjects: (scene) => JSON.parse(S.wb.scene_objects(scene)),
+  sceneObjects: (scene) => {
+    if (!S.sceneObj[scene]) S.sceneObj[scene] = JSON.parse(S.wb.scene_objects(scene));
+    return S.sceneObj[scene];
+  },
   sceneNpcs: (scene) => JSON.parse(S.wb.scene_npcs(scene)),
   // The pack's assets/ (glTF models and their PNGs for map props).
   assetPaths: () => (S.wb.asset_paths ? JSON.parse(S.wb.asset_paths()) : []),
@@ -254,18 +275,94 @@ function setStatus(msg, kind, id) {
 const errText = (e) => (e && e.message ? e.message : String(e));
 
 // --- Rendering ----------------------------------------------------------------------
+// Per page: its checks' error and warning counts (a check on no page's file
+// counts on the Pack files page).
+function tabCounts(tab) {
+  const t = TABS.find((x) => x[0] === tab);
+  const file = t && t[2];
+  const mine = S.issues.filter((i) => (file === 'maps/' ? i.path.startsWith('maps/') : file ? i.path === file : !TABS.some((x) => x[2] && (x[2] === i.path || (x[2] === 'maps/' && i.path.startsWith('maps/'))))));
+  const errs = mine.filter((i) => i.severity === 'error').length;
+  return [errs, mine.length - errs];
+}
+
+function goTab(tab) {
+  if (!TABS.some((t) => t[0] === tab)) return;
+  S.tab = tab;
+  rerender();
+}
+
 function renderTabs() {
-  const nav = $('xw-tabs');
-  nav.innerHTML = '';
-  for (const [id, label, file] of TABS) {
-    const mine = S.issues.filter((i) => (file === 'maps/' ? i.path.startsWith('maps/') : file ? i.path === file : !TABS.some((t) => t[2] && (t[2] === i.path || (t[2] === 'maps/' && i.path.startsWith('maps/'))))));
-    const errs = mine.filter((i) => i.severity === 'error').length;
-    const warns = mine.length - errs;
-    nav.append(h('button', {
-      type: 'button', role: 'tab', class: 'xw-tab' + (S.tab === id ? ' is-active' : ''), 'aria-selected': String(S.tab === id),
-      onclick: () => { S.tab = id; rerender(); },
-    }, label, errs ? h('span', { class: 'xw-badge' }, errs) : warns ? h('span', { class: 'xw-badge is-warn' }, warns) : null));
-  }
+  renderNav($('xw-tabs'), { tab: S.tab, counts: tabCounts, go: goTab });
+  const map = S.tab === 'maps' ? openMapId() : null;
+  const m = map && S.pack && S.pack.maps ? S.pack.maps[map] : null;
+  crumbs($('xw-crumbs'), { tab: S.tab, map, mapName: m && m.name });
+  renderCheckChip();
+}
+
+// The pack bar's checks chip: the validator's answer at a glance; a click
+// shows or hides the Find and checks column.
+function renderCheckChip() {
+  const el = $('xw-checks-btn');
+  if (!el) return;
+  const errs = S.issues.filter((i) => i.severity === 'error').length;
+  const warns = S.issues.length - errs;
+  el.textContent = S.checking && !S.issues.length ? 'Checking ...' : errs ? `${errs} problem${errs === 1 ? '' : 's'}` : warns ? `${warns} warning${warns === 1 ? '' : 's'}` : 'Pack checks out';
+  el.className = 'wb-mini xw-checks-btn' + (errs ? ' is-err' : warns ? ' is-warn' : ' is-ok');
+  el.setAttribute('aria-expanded', String(asideOpen()));
+}
+
+// The Find and checks column: hidden on the Build area by default (the 3D
+// view takes the width), shown elsewhere; the chip overrides it per area.
+function asideOpen() {
+  const a = areaOf(S.tab).id;
+  return S.aside && a in S.aside ? S.aside[a] : a !== 'build';
+}
+
+function applyAside() {
+  const open = asideOpen();
+  const work = document.querySelector('.xw-work');
+  if (work) work.classList.toggle('is-wide', !open);
+  const aside = document.querySelector('.xw-issues');
+  if (aside) aside.hidden = !open;
+}
+
+// The Build area's head: the map picker and the mode toolbar.
+function renderBuild() {
+  const head = $('xw-build');
+  const cat = $('xw-catalog');
+  const on = S.tab === 'maps';
+  head.hidden = !on;
+  cat.hidden = !on;
+  if (!on) return;
+  const maps = S.pack.maps || (S.pack.maps = {});
+  const ids = Object.keys(maps);
+  renderBuildHead(head, {
+    pack: S.pack,
+    cat: S.cat,
+    open: openMapId() && ids.includes(openMapId()) ? openMapId() : ids[0] || null,
+    choose: (id) => openMap(id),
+    add: () => {
+      let n = ids.length + 1;
+      while (maps[`map_${n}`]) n++;
+      const id = `map_${n}`;
+      maps[id] = blankMap(S.cat);
+      maps[id].name = `Map ${n}`;
+      S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
+      ctx.changed(true);
+    },
+    errorsOf: (id) => S.issues.filter((i) => i.severity === 'error' && i.path === `maps/${id}.toml`).length,
+    catalog: cat,
+    env: () => ({
+      map: openMapId(), preview: S.preview, pack: S.pack, rerender, jump: jumpTo, playHere, playPack: playInBrowser,
+    }),
+  });
+}
+
+// Open map `id` on the Build area, without a jump's scroll and flash.
+function openMap(id) {
+  S.tab = 'maps';
+  S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
+  rerender();
 }
 
 function rerender() {
@@ -276,9 +373,10 @@ function rerender() {
   $('xw-pack-title').textContent = m.name || '(unnamed pack)';
   $('xw-pack-id').textContent = m.id || '';
   $('xw-pack-ver').textContent = `${m.version || ''}${S.label ? ' - ' + S.label : ''}`;
-  renderTabs();
+  document.body.classList.toggle('xw-on-build', S.tab === 'maps');
+  applyAside();
   if (S.preview) {
-    S.preview.show(['maps', 'cutscenes', 'battle', 'cards'].includes(S.tab));
+    S.preview.show(['maps', 'cutscenes', 'battle', 'cards', 'modes'].includes(S.tab));
     // The 3D editor belongs to the Maps tab.
     if (S.preview.suspendEdit) S.preview.suspendEdit(S.tab !== 'maps');
   }
@@ -295,18 +393,42 @@ function rerender() {
     console.error(e);
   }
   if (S.tab === 'progression') updateChart();
+  // After the panel: the map picker and the breadcrumb name the map it opened.
+  renderTabs();
+  renderBuild();
+  markFieldIssues();
+  if (S.jump && S.jump.quiet) S.jump = null;
   if (S.jump) finishJump(panel);
   else window.scrollTo(0, y);
   // An editor may fill in a default as it draws (an empty gate box): that is
   // not an edit, so the committed present absorbs it.
   S.hist.cur = JSON.stringify(S.pack);
   if (wasClean) S.clean = S.hist.cur;
-  updateDirty();
-  if (S.find) S.find.refresh();
+  updateDirty(S.hist.cur);
+  if (S.find) refreshFindSoon();
 }
 
 // The reference model's sites for the pack as it stands, cached per pack JSON.
 let xrefCache = { json: null, sites: [] };
+const xrefAsk = { seq: 0, json: null, done: null };
+
+/* The Find box after an edit: a moment later, with the sites built in the
+ * worker when it is up, so an edit's re-render does not wait on them. */
+let findTimer = null;
+function refreshFindSoon() {
+  clearTimeout(findTimer);
+  findTimer = setTimeout(() => {
+    if (!S.find || !S.pack) return;
+    const json = JSON.stringify(S.pack);
+    if (xrefCache.json === json || !V.worker || !V.ready || !S.wb.xref_sites) { S.find.refresh(); return; }
+    syncWorkerFiles();
+    xrefAsk.seq++;
+    xrefAsk.json = json;
+    xrefAsk.done = () => S.find.refresh();
+    V.worker.postMessage({ type: 'xref_sites', seq: xrefAsk.seq, json });
+  }, 200);
+}
+
 function xrefSites() {
   if (!S.wb || !S.pack || !S.wb.xref_sites) return [];
   const json = JSON.stringify(S.pack);
@@ -336,13 +458,14 @@ function commitHistory() {
   if (!S.pack) return;
   const now = JSON.stringify(S.pack);
   const H = S.hist;
-  if (H.cur == null) { H.cur = now; return; }
-  if (now === H.cur) return;
+  if (H.cur == null) { H.cur = now; updateDirty(now); return; }
+  if (now === H.cur) { updateDirty(now); return; }
   H.past.push(H.cur);
   H.bytes += H.cur.length;
   H.cur = now;
   H.future = [];
   while (H.past.length > HIST_STEPS || (H.bytes > HIST_BYTES && H.past.length > 1)) H.bytes -= H.past.shift().length;
+  updateDirty(now);
 }
 
 function resetHistory() {
@@ -372,14 +495,21 @@ function stepHistory(dir) {
   return true;
 }
 
-function updateDirty() {
+/* `json`, when the caller has it, is the pack's JSON as it is now (the
+ * history's present just taken): it saves serialising the pack again. */
+function updateDirty(json) {
   const el = $('xw-dirty');
   if (!el || !S.pack) return;
-  const dirty = S.clean != null && JSON.stringify(S.pack) !== S.clean;
+  // While a burst of typing coalesces the pack is not serialised on every
+  // key (a few hundred kilobytes of JSON): an edit underway counts as a
+  // change, and the commit that closes the burst decides.
+  const now = () => (json != null ? json : (json = JSON.stringify(S.pack)));
+  const dirty = S.clean != null && (S.hist.timer != null || now() !== S.clean);
   el.hidden = !dirty;
   const u = $('xw-undo');
   const r = $('xw-redo');
-  if (u) u.disabled = !ctx.canUndo();
+  // Undo: a step behind, an edit coalescing, or one not yet committed.
+  if (u) u.disabled = !(S.hist.past.length > 0 || S.hist.timer != null || (S.hist.cur != null && now() !== S.hist.cur));
   if (r) r.disabled = !ctx.canRedo();
   const sv = $('xw-saved');
   if (sv) {
@@ -389,6 +519,41 @@ function updateDirty() {
         : st.state === 'failed' ? 'Autosave unavailable (no browser storage): download the .lxpack to keep your work'
           : '';
     sv.className = 'xw-saved' + (st.state === 'failed' ? ' is-err' : '');
+  }
+}
+
+// Each check on the open tab marks the field it names (the longest
+// data-path that contains its field) until it is fixed: a red edge and the
+// message under the field, so a jump's flash is not the only sign.
+// On the Maps tab the open map's checks are marked (its panel shows one
+// map of several; the others' stay in the Checks list).
+function markFieldIssues() {
+  const panel = $('xw-panel');
+  if (!panel) return;
+  for (const e of panel.querySelectorAll('.xw-has-issue')) e.classList.remove('xw-has-issue', 'is-warning');
+  for (const e of panel.querySelectorAll('.xw-issue-msg')) e.remove();
+  let file = fileOfTab(S.tab);
+  if (file === 'maps/') file = openMapId() ? `maps/${openMapId()}.toml` : null;
+  if (!file) return;
+  const els = [...panel.querySelectorAll('[data-path]')].map((e) => [e, e.getAttribute('data-path')]).filter(([, p]) => p);
+  for (const i of S.issues) {
+    if (i.path !== file || !i.field) continue;
+    let best = null;
+    let bestLen = -1;
+    for (const [e, p] of els) {
+      if ((i.field === p || i.field.startsWith(p + '.') || i.field.startsWith(p + '[')) && p.length > bestLen) { best = e; bestLen = p.length; }
+    }
+    if (!best) continue;
+    const warn = i.severity !== 'error';
+    // Red wins: an element with any error is not drawn as a warning.
+    const hadError = best.classList.contains('xw-has-issue') && !best.classList.contains('is-warning');
+    best.classList.add('xw-has-issue');
+    best.classList.toggle('is-warning', warn && !hadError);
+    // A bare control or a grid takes the edge only: a message inside would
+    // break its layout (the Checks list still says it).
+    if (best.matches('input,select,textarea,.xw-split,.xw-grid,.xw-list-ed,details')) continue;
+    const rest = i.field.slice(bestLen).replace(/^[.]/, '');
+    best.append(h('span', { class: 'xw-issue-msg' + (warn ? ' is-warning' : '') }, rest ? h('code', {}, rest + ' ') : null, i.message));
   }
 }
 
@@ -419,13 +584,47 @@ function jumpTo(issue) {
   rerender();
 }
 
+/* The authoring hints over the pack as it is: walk-through props and
+ * walk-on text. A walk-through judgement needs the base scene's geometry
+ * pack; one not built yet is built a scene at a time while the page is
+ * idle, and the hints redraw as each lands. */
+function computeHints() {
+  if (!S.pack) { S.hints = []; return; }
+  try {
+    S.hints = authoringHints(S.pack, (scene) => S.sceneObj[scene] || null);
+  } catch (e) {
+    S.hints = [];
+  }
+  if (!S.cat || !S.wb || S.hintLoad) return;
+  const todo = hintScenes(S.pack).filter((sc) => !S.sceneObj[sc]);
+  if (!todo.length) return;
+  // The worker builds it off this thread when it is up.
+  if (V.worker && V.ready) {
+    S.hintLoad = todo[0];
+    V.worker.postMessage({ type: 'scene_objects', scene: todo[0] });
+    return;
+  }
+  S.hintLoad = setTimeout(() => {
+    S.hintLoad = null;
+    try { S.sceneObj[todo[0]] = JSON.parse(S.wb.scene_objects(todo[0])); } catch (e) { S.sceneObj[todo[0]] = { scene: todo[0], objects: [] }; }
+    computeHints();
+    renderIssues();
+  }, 400);
+}
+
 function renderIssues() {
   const box = $('xw-issues');
   box.innerHTML = '';
   const errs = S.issues.filter((i) => i.severity === 'error').length;
   const warns = S.issues.length - errs;
-  $('xw-issue-sum').textContent = `${errs} error(s), ${warns} warning(s)${S.cat ? '' : ' - load a disc to check coordinates'}`;
-  if (!S.issues.length) { box.append(h('div', { class: 'xw-ok' }, 'No issues: the pack loads.')); return; }
+  const hints = S.hints || [];
+  $('xw-issue-sum').textContent = S.checking && !S.issues.length ? 'checking ...'
+    : `${errs} error(s), ${warns} warning(s)${hints.length ? `, ${hints.length} hint(s)` : ''}${S.cat ? '' : ' - load a disc to check coordinates'}`;
+  if (hints.length) box.append(renderHints(hints));
+  if (!S.issues.length) {
+    box.append(S.checking ? h('div', { class: 'xw-dim' }, 'Checking the pack ...') : h('div', { class: 'xw-ok' }, 'No issues: the pack loads.'));
+    return;
+  }
   const by = new Map();
   for (const i of S.issues) {
     if (!by.has(i.path)) by.set(i.path, []);
@@ -440,20 +639,277 @@ function renderIssues() {
   }
 }
 
+/* The hints as a fold under the checks: not errors, not warnings - a pack
+ * with hints exports and validates as it is. A click opens what it names
+ * (a prop, a trigger) selected in the painter. */
+function renderHints(hints) {
+  const walk = hints.filter((i) => i.kind === 'walk').length;
+  const text = hints.length - walk;
+  const det = h('details', { class: 'xw-hints' });
+  try { det.open = localStorage.getItem('xw-hints-open') !== '0'; } catch (e) { det.open = true; }
+  det.addEventListener('toggle', () => { try { localStorage.setItem('xw-hints-open', det.open ? '1' : '0'); } catch (e) { /* no storage */ } });
+  det.append(h('summary', {}, `Hints: ${[walk ? `${walk} walk-through` : '', text ? `${text} walk-on text` : ''].filter(Boolean).join(', ')}`,
+    h('span', { class: 'xw-hint' }, ' advice, not checks: the pack exports as it is')));
+  let path = null;
+  for (const i of hints) {
+    if (i.path !== path) { path = i.path; det.append(h('div', { class: 'xw-issue-file' }, path)); }
+    det.append(h('button', { type: 'button', class: 'xw-issue is-hint', 'data-kind': i.kind, onclick: () => jumpTo(i) },
+      i.field ? h('code', {}, i.field + ' ') : null, i.message));
+  }
+  return det;
+}
+
+// The path of the JSON value under character `at` of JSON.stringify(v): the
+// same output, written here with each value's span recorded.
+function pathAtOffset(v, at) {
+  let pos = 0;
+  let hit = null;
+  const walk = (x, path) => {
+    const start = pos;
+    if (Array.isArray(x)) {
+      pos += 1;
+      x.forEach((e, i) => {
+        if (i) pos += 1;
+        walk(e === undefined || typeof e === 'function' ? null : e, path.concat(i));
+      });
+      pos += 1;
+    } else if (x && typeof x === 'object') {
+      pos += 1;
+      let first = true;
+      for (const [k, e] of Object.entries(x)) {
+        if (e === undefined || typeof e === 'function') continue;
+        if (!first) pos += 1;
+        first = false;
+        pos += JSON.stringify(k).length + 1;
+        walk(e, path.concat(k));
+      }
+      pos += 1;
+    } else {
+      pos += JSON.stringify(x).length;
+    }
+    // The innermost span holding `at` wins: children are visited first.
+    if (!hit && at >= start && at < Math.max(pos, start + 1)) hit = path;
+  };
+  walk(v, []);
+  return hit;
+}
+
+// The session reports a value its types refuse (a 999 in a u8 field) as the
+// whole pack failing to parse, at a column of the JSON it was handed. That
+// column names the value: turn it into an ordinary check on that field.
+function placeParseError(issue) {
+  const m = issue.path === '(workbench)' && /^the editor's pack does not parse: (.*) at line 1 column (\d+)$/.exec(issue.message);
+  if (!m) return issue;
+  // serde's column is at or just past the value's last character.
+  const col = parseInt(m[2], 10);
+  const a = pathAtOffset(S.pack, col - 1) || [];
+  const b = pathAtOffset(S.pack, col - 2) || [];
+  const path = b.length > a.length ? b : a;
+  if (!path || !path.length) return issue;
+  const at = locate(path);
+  const RANGE = { u8: '0 to 255', i8: '-128 to 127', u16: '0 to 65535', i16: '-32768 to 32767', u32: '0 to 4294967295' };
+  const why = m[1].replace(/expected (u8|i8|u16|i16|u32)\b/, (_, t) => `expected a whole number from ${RANGE[t]}`);
+  return { severity: 'error', path: at.file, field: at.field, message: `not a value this field takes: ${why}` };
+}
+
+/* The validator runs a moment after each edit. It costs a few hundred
+ * milliseconds on a pack of Rebirth's size, so it runs in a worker
+ * (expansion-workbench-validate-worker.js) on a second session built from
+ * this one's disc files and pack files: typing never waits for it. An
+ * answer for a pack that has changed since is dropped (a newer one is on
+ * its way). Without the worker (an older bundle, a worker that failed) it
+ * runs here. An export or a hand-off still validates here, at once. */
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [] };
+
+// Count every change to the session's own files (the loaded tree, assets,
+// documents), so the worker is handed them again before its next check.
+function trackSession(wb) {
+  for (const k of ['begin_files', 'add_file', 'finish_files', 'finish_files_unchecked', 'load_bundle', 'import_bundle', 'start_fresh', 'add_asset', 'set_doc']) {
+    const f = wb[k];
+    if (typeof f !== 'function') continue;
+    wb[k] = function (...a) { V.gen++; return f.apply(wb, a); };
+  }
+  return wb;
+}
+
+function stopValidator() {
+  if (V.worker) V.worker.terminate();
+  V.worker = null;
+  V.ready = false;
+  if (typeof S.hintLoad === 'string') S.hintLoad = null;
+  // A bundle still owed by the worker is built here instead.
+  const owed = [...V.bundles.values()];
+  V.bundles.clear();
+  for (const b of owed) {
+    try { b.res(S.wb.export_bundle(b.json)); } catch (e) { b.rej(e); }
+  }
+  // ... and the Find box's sites and a map preview.
+  if (xrefAsk.done) { const done = xrefAsk.done; xrefAsk.done = null; done(); }
+  const waiting = [...V.previews.values()];
+  V.previews.clear();
+  for (const p of waiting) {
+    let pv;
+    try { pv = JSON.parse(S.wb.map_preview(p.json)); } catch (e) { pv = { error: String(e) }; }
+    p.done(pv);
+  }
+}
+
+/* Hand the worker the session's files when they changed since it had them. */
+function syncWorkerFiles() {
+  if (V.synced !== V.gen) {
+    V.worker.postMessage({ type: 'files', data: S.wb.session_files() });
+    V.synced = V.gen;
+  }
+}
+
+/* `map_preview` in the worker (see ctx.mapPreviewLater). */
+function mapPreviewLater(id, json, done) {
+  if (!V.worker || !V.ready) {
+    let pv;
+    try { pv = JSON.parse(S.wb.map_preview(json)); } catch (e) { pv = { error: String(e) }; }
+    done(pv);
+    return;
+  }
+  syncWorkerFiles();
+  const seq = ++V.previewSeq;
+  V.previews.set(id, { seq, done, json });
+  V.worker.postMessage({ type: 'map_preview', seq, map: id, json });
+}
+
+/* The `.lxpack` of the pack as it is now, built in the worker when it is
+ * up (the 3D preview's rebuilds; the page's thread is not held), else
+ * here. Rejects as `export_bundle` throws while the pack has an error. */
+function exportBundleAsync() {
+  const json = JSON.stringify(S.pack);
+  if (!V.worker || !V.ready) return new Promise((res) => res(S.wb.export_bundle(json)));
+  syncWorkerFiles();
+  const seq = ++V.bundleSeq;
+  return new Promise((res, rej) => {
+    V.bundles.set(seq, { res, rej, json });
+    V.worker.postMessage({ type: 'bundle', seq, json });
+  });
+}
+
+function startValidator(parts) {
+  stopValidator();
+  if (typeof Worker !== 'function' || !parts || !parts.length) return;
+  let w;
+  try {
+    w = new Worker(new URL('./expansion-workbench-validate-worker.js', import.meta.url), { type: 'module' });
+  } catch (e) {
+    return;
+  }
+  V.worker = w;
+  V.synced = -1;
+  const v = window.LEGAIA_WASM_V || '0';
+  w.onmessage = (ev) => {
+    const m = ev.data || {};
+    if (w !== V.worker) return;
+    if (m.type === 'disc') {
+      V.ready = true;
+      // Anything edited while the worker was starting.
+      if (S.pack) scheduleValidate();
+    } else if (m.type === 'issues') {
+      V.ms.push(m.ms);
+      if (V.ms.length > 20) V.ms.shift();
+      // Stale when another check was asked for since (an edit came after).
+      if (m.seq !== V.seq || V.edited) return;
+      applyIssues(JSON.parse(m.issues));
+    } else if (m.type === 'scene_objects') {
+      if (!S.sceneObj[m.scene]) {
+        try { S.sceneObj[m.scene] = m.error ? { scene: m.scene, objects: [] } : JSON.parse(m.json); } catch (e) { S.sceneObj[m.scene] = { scene: m.scene, objects: [] }; }
+      }
+      S.hintLoad = null;
+      computeHints();
+      renderIssues();
+    } else if (m.type === 'xref_sites') {
+      if (m.seq !== xrefAsk.seq) return;
+      const done = xrefAsk.done;
+      xrefAsk.done = null;
+      if (m.json != null) {
+        try { xrefCache = { json: xrefAsk.json, sites: JSON.parse(m.json).sites }; } catch (e) { /* built here on demand */ }
+      }
+      if (done) done();
+    } else if (m.type === 'map_preview') {
+      const p = V.previews.get(m.map);
+      if (!p || p.seq !== m.seq || m.dropped) return;
+      V.previews.delete(m.map);
+      V.previewMs.push(m.ms);
+      if (V.previewMs.length > 20) V.previewMs.shift();
+      p.done(m.preview);
+    } else if (m.type === 'bundle') {
+      const b = V.bundles.get(m.seq);
+      if (!b) return;
+      V.bundles.delete(m.seq);
+      if (m.error != null) { b.rej(new Error(m.error)); return; }
+      V.bundleMs.push(m.ms);
+      if (V.bundleMs.length > 20) V.bundleMs.shift();
+      b.res(m.bytes);
+    } else if (m.type === 'error') {
+      console.warn('expansion workbench: the validation worker stopped (' + m.message + '); validating on the page');
+      stopValidator();
+      if (S.pack) scheduleValidate();
+    }
+  };
+  w.onerror = (e) => {
+    if (w !== V.worker) return;
+    console.warn('expansion workbench: the validation worker failed to start; validating on the page', e.message || '');
+    stopValidator();
+    if (S.pack) scheduleValidate();
+  };
+  w.postMessage({
+    type: 'init',
+    glue: new URL('../wasm/legaia_web_viewer.js?v=' + v, import.meta.url).href,
+    bin: new URL('../wasm/legaia_web_viewer_bg.wasm?v=' + v, import.meta.url).href,
+  });
+  w.postMessage({ type: 'disc', parts: parts.buffer }, [parts.buffer]);
+}
+
 let validateTimer = null;
 function scheduleValidate() {
+  V.edited = true;
+  V.current = false;
   clearTimeout(validateTimer);
-  validateTimer = setTimeout(runValidate, 250);
+  validateTimer = setTimeout(validateSoon, 250);
 }
+
+function validateSoon() {
+  if (!S.wb || !S.pack) return;
+  if (!V.worker || !V.ready) { runValidate(); return; }
+  syncWorkerFiles();
+  V.edited = false;
+  V.seq++;
+  V.worker.postMessage({ type: 'validate', seq: V.seq, json: JSON.stringify(S.pack) });
+}
+
 function runValidate() {
   if (!S.wb || !S.pack) return;
+  // A worker answer still on its way is for this pack or an older one.
+  V.seq++;
+  let issues;
   try {
-    S.issues = JSON.parse(S.wb.validate(JSON.stringify(S.pack)));
+    issues = JSON.parse(S.wb.validate(JSON.stringify(S.pack)));
+  } catch (e) {
+    issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
+  }
+  applyIssues(issues);
+}
+
+function applyIssues(raw) {
+  // Every path here answers the pack as it is now (a stale worker answer
+  // never reaches it), until the next edit.
+  V.current = true;
+  S.checking = false;
+  try {
+    S.issues = raw.map(placeParseError);
   } catch (e) {
     S.issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
   }
+  computeHints();
   renderIssues();
   renderTabs();
+  if (S.tab === 'maps') renderBuild();
+  markFieldIssues();
   if (S.tab === 'progression') updateChart();
   if (S.share) S.share.refresh();
 }
@@ -502,7 +958,10 @@ function scheduleSave() {
     if (!S.pack) return;
     const at = Date.now();
     let ok = null;
-    try { ok = await savePut('current', { json: JSON.stringify(S.pack), label: S.label, savedAt: at }); } catch (e) { ok = null; }
+    const json = JSON.stringify(S.pack);
+    const edited = S.clean == null || json !== S.clean;
+    const rec = { json, label: S.label, savedAt: at, tab: S.tab, edited, clean: edited ? S.clean : null };
+    try { ok = await savePut('current', rec); } catch (e) { ok = null; }
     // A put resolves `undefined`-ish on success (the key), null on failure.
     S.saved = ok === null ? { at, state: 'failed' } : { at, state: 'saved' };
     updateDirty();
@@ -517,9 +976,16 @@ async function offerResume() {
   let pack;
   try { pack = JSON.parse(saved.json); } catch (e) { box.hidden = true; return; }
   const when = new Date(saved.savedAt).toLocaleString();
-  box.innerHTML = `<span>You have an unsaved pack in this browser: <strong>${esc(pack.manifest.name || pack.manifest.id)}</strong> (${esc(when)}).</span>
-    <button type="button" class="wb-button" id="xw-resume-go">Resume it</button>
-    <button type="button" class="wb-button wb-button-ghost" id="xw-resume-drop">Discard</button>`;
+  const name = esc(pack.manifest.name || pack.manifest.id);
+  // An autosave from before `edited` was recorded counts as edited.
+  const edited = saved.edited !== false;
+  box.innerHTML = edited
+    ? `<span>You have unsaved changes to <strong>${name}</strong> in this browser (${esc(when)}).</span>
+    <button type="button" class="wb-button" id="xw-resume-go">Resume editing</button>
+    <button type="button" class="wb-button wb-button-ghost" id="xw-resume-drop">Discard changes</button>`
+    : `<span>Pick up where you left off: <strong>${name}</strong> (${esc(saved.label || 'pack')}, ${esc(when)}).</span>
+    <button type="button" class="wb-button" id="xw-resume-go">Reopen</button>
+    <button type="button" class="wb-button wb-button-ghost" id="xw-resume-drop">Dismiss</button>`;
   box.hidden = false;
   $('xw-resume-go').onclick = async () => {
     box.hidden = true;
@@ -533,9 +999,11 @@ async function offerResume() {
     } else {
       S.wb.start_fresh(pack.manifest.id, pack.manifest.name);
     }
-    showPack(pack, saved.label || 'resumed', `Resumed ${pack.manifest.name || pack.manifest.id}.`);
+    showPack(pack, saved.label || 'resumed', `Resumed ${pack.manifest.name || pack.manifest.id}${edited ? ' with its unsaved changes' : ''}.`,
+      { tab: saved.tab, clean: edited ? (saved.clean || '') : null });
   };
   $('xw-resume-drop').onclick = async () => {
+    if (edited && !window.confirm(`Discard the unsaved changes to ${pack.manifest.name || pack.manifest.id}? This cannot be undone.`)) return;
     box.hidden = true;
     await saveDel('current');
     await saveDel('source');
@@ -559,9 +1027,21 @@ async function openDisc(file) {
     setStatus('Reading the monster archive, names and scenes on your disc ...');
     await tick();
     if (S.wb) { try { S.wb.free(); } catch (e) { /* already freed */ } }
-    S.wb = new mod.ExpansionWorkbench();
-    S.cat = JSON.parse(S.wb.open_disc(buf));
-    setStatus(`Disc read: ${file.name} - ${S.cat.monsters.length} monsters, ${S.cat.items.length} items, ${S.cat.scenes.length} scenes. Load a pack or start fresh.`, 'ok');
+    S.wb = trackSession(new mod.ExpansionWorkbench());
+    // The validation worker opens its own session from the disc files this
+    // one keeps (an older bundle has no worker: validation stays here).
+    const keep = typeof S.wb.open_disc_keep === 'function';
+    S.cat = JSON.parse(keep ? S.wb.open_disc_keep(buf) : S.wb.open_disc(buf));
+    if (keep) startValidator(S.wb.take_disc_parts());
+    S.discName = file.name;
+    setStatus(`Disc read: ${file.name} - ${S.cat.monsters.length} monsters, ${S.cat.items.length} items, ${S.cat.scenes.length} scenes.${S.pack ? '' : ' Pick a starting point below.'}`, 'ok');
+    updateStart();
+    updateSetup();
+    // A start chosen before the disc was in runs now, in place of the
+    // resume offer (the choice was the newer intent).
+    const pending = S.pending;
+    S.pending = null;
+    if (pending) { await pending.run(); return; }
     await offerResume();
   } catch (e) {
     setStatus('Error: ' + errText(e), 'err');
@@ -571,22 +1051,111 @@ async function openDisc(file) {
 function needDisc() {
   if (S.wb) return false;
   setStatus('Choose your disc image first.', 'err');
+  focusDisc();
   return true;
 }
 
-function showPack(pack, label, msg) {
+// The disc picker, unfolded and focused.
+function focusDisc() {
+  const setup = $('xw-setup');
+  if (setup) setup.open = true;
+  const input = $('xw-file');
+  input.scrollIntoView({ block: 'center' });
+  input.focus({ preventScroll: true });
+}
+
+// A start action before the disc is read waits for it, instead of
+// refusing: the newcomer who clicks a pack first and picks the disc second
+// gets the pack.
+function whenDisc(label, run, card) {
+  if (S.wb) return run();
+  S.pending = { label, run, card };
+  setStatus(`Choose your disc image: ${label} as soon as it is read.`, 'ok');
+  updateStart();
+  focusDisc();
+  return null;
+}
+
+// The start panel's step 1 says whether the disc is in; a queued choice
+// stays outlined until it runs.
+function updateStart() {
+  const step = $('xw-start-disc');
+  const text = $('xw-start-disc-text');
+  if (!step || !text) return;
+  step.classList.toggle('is-done', !!S.wb);
+  text.textContent = S.wb
+    ? `Disc read: ${S.discName || 'your disc'}. It stays in this tab.`
+    : 'Choose your disc image above. It is read in this tab and never uploaded.';
+  const box = $('xw-empty');
+  box.classList.toggle('is-waiting', !!S.pending);
+  for (const c of box.querySelectorAll('.xw-start-card')) c.classList.toggle('is-queued', !!S.pending && c.dataset.start === S.pending.card);
+}
+
+// The disc and pack pickers fold to a one-line summary once a pack is open.
+function updateSetup() {
+  const setup = $('xw-setup');
+  if (!setup) return;
+  const st = $('xw-setup-state');
+  const parts = [];
+  if (S.discName) parts.push(S.discName);
+  if (S.pack) parts.push(`${S.pack.manifest.name || S.pack.manifest.id} (${S.label || 'pack'})`);
+  if (st) st.textContent = parts.join(' - ');
+  setup.classList.toggle('is-foldable', !!S.pack);
+}
+
+function showPack(pack, label, msg, opts) {
+  const o = opts || {};
   S.pack = pack;
   S.label = label;
   S.sel = {};
   ctx.sel = S.sel;
+  // A pack opens on the Build area, its first map in the 3D view (a resume
+  // returns to the page it was saved on).
+  S.tab = o.tab && TABS.some((t) => t[0] === o.tab) ? o.tab : 'maps';
+  for (const a of AREAS) a.last = null;
+  document.body.classList.add('xw-has-pack');
   $('xw-main').hidden = false;
   $('xw-empty').hidden = true;
+  $('xw-new').hidden = true;
   resetHistory();
-  runValidate();
+  // The checks of a pack just opened: in the worker when it is up (the
+  // list the load itself made stands until they land), else here.
+  if (V.worker && V.ready) {
+    applyIssues(o.issues || []);
+    V.current = false;
+    if (!S.issues.length) { S.checking = true; renderIssues(); }
+    clearTimeout(validateTimer);
+    validateSoon();
+  } else {
+    runValidate();
+  }
   rerender();
+  if (S.tab === 'maps' && Object.keys(S.pack.maps || {}).length && S.preview && S.preview.setView) S.preview.setView('3d');
   resetHistory();
+  // A resumed pack keeps its unsaved state: `clean` is what it was opened as.
+  if (o.clean != null) { S.clean = o.clean; updateDirty(); }
   setStatus(msg, 'ok');
   scheduleSave();
+  updateSetup();
+  const setup = $('xw-setup');
+  if (setup) setup.open = false;
+  // The editor, not the page's header, fills the screen.
+  // Again once the 3D view has opened and laid itself out.
+  const toWork = () => {
+    const work = $('xw-main');
+    const top = work.getBoundingClientRect().top + window.scrollY - (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topbar-h')) || 56) - 8;
+    window.scrollTo({ top: Math.max(0, top) });
+  };
+  toWork();
+  requestAnimationFrame(toWork);
+  // The 3D view opening and the play page in its frame starting both
+  // scroll this page toward the frame: keep the work in view for the first
+  // seconds, until the reader scrolls, types or clicks themselves.
+  let held = true;
+  const release = () => { held = false; for (const t of ['wheel', 'keydown', 'pointerdown', 'touchstart']) window.removeEventListener(t, release, true); };
+  for (const t of ['wheel', 'keydown', 'pointerdown', 'touchstart']) window.addEventListener(t, release, true);
+  for (const ms of [500, 2000, 5000, 10000, 20000]) setTimeout(() => { if (held) toWork(); }, ms);
+  setTimeout(release, 20500);
 }
 
 async function loadResult(res, label, tree) {
@@ -600,13 +1169,16 @@ async function loadResult(res, label, tree) {
   $('xw-resume').hidden = true;
   // What a resume reloads the session from: the tree, or the bundle.
   await savePut('source', Object.assign({ label, savedAt: Date.now() }, tree.bundle ? { bundle: tree.bundle } : { files: tree }));
-  showPack(res.pack, label, `${label}: ${res.files.length} file(s) loaded.`);
+  showPack(res.pack, label, `${label}: ${res.files.length} file(s) loaded.`, { issues: res.issues });
 }
 
 async function loadTree(tree, label) {
   S.wb.begin_files();
   for (const [p, b] of Object.entries(tree)) S.wb.add_file(p, b);
-  await loadResult(JSON.parse(S.wb.finish_files()), label, tree);
+  // With the worker up the checks run there (showPack asks for them): the
+  // load itself only says why a tree does not load.
+  const quick = V.worker && V.ready && typeof S.wb.finish_files_unchecked === 'function';
+  await loadResult(JSON.parse(quick ? S.wb.finish_files_unchecked() : S.wb.finish_files()), label, tree);
 }
 
 async function loadRebirth(as) {
@@ -633,11 +1205,29 @@ async function loadRebirth(as) {
       S.clean = '';
       S.label = 'clone of Rebirth';
       updateDirty();
+      updateSetup();
       setStatus(`Started ${as.name} as a clone of Rebirth: every section is Rebirth's, the manifest is yours. Unchanged files keep Rebirth's comments.`, 'ok');
     }
   } catch (e) {
     setStatus('Error: ' + errText(e), 'err');
   }
+}
+
+// An export, a play or a hand-off is refused while the pack has an error:
+// say so and open the first error's field rather than only quoting it.
+function blockedByErrors(what) {
+  // The checks already answer the pack as it stands unless an edit came
+  // after them.
+  if (!V.current) {
+    clearTimeout(validateTimer);
+    runValidate();
+  }
+  const errs = S.issues.filter((i) => i.severity === 'error');
+  if (!errs.length) return false;
+  S.issueAt = 0;
+  jumpTo(errs[0]);
+  setStatus(`${what}: the pack has ${errs.length} error(s). The first is highlighted below; F8 steps through the rest.`, 'err', 'xw-export-status');
+  return true;
 }
 
 async function exportBundle() {
@@ -679,6 +1269,7 @@ function storePlay(bytes) {
 // Play here: the map the Maps tab is on, in a play tab - hot-reloaded in
 // place when one is open on the pack.
 async function playHere() {
+  if (blockedByErrors('Not sent to a play tab')) return;
   const map = S.preview && S.preview.state().map;
   if (!map) {
     setStatus('Open a map on the Maps tab first.', 'err', 'xw-export-status');
@@ -700,6 +1291,7 @@ async function playHere() {
 }
 
 async function playInBrowser() {
+  if (blockedByErrors('Not played')) return;
   try {
     const bytes = await exportBundle();
     const m = S.pack.manifest;
@@ -744,7 +1336,18 @@ function init() {
       if (f) openDisc(f);
     });
   }
-  $('xw-rebirth').addEventListener('click', () => loadRebirth());
+  $('xw-rebirth').addEventListener('click', () => whenDisc('the Rebirth example opens', () => loadRebirth(), 'rebirth'));
+  // The start panel's cards.
+  $('xw-empty').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-start]');
+    if (!b) return;
+    const what = b.dataset.start;
+    if (what === 'rebirth') whenDisc('the Rebirth example opens', () => loadRebirth(), 'rebirth');
+    else if (what === 'quick') whenDisc('your pack is created', quickPack, 'quick');
+    else if (what === 'new') openNewForm();
+    else if (what === 'bundle') { if (!needDisc()) $('xw-bundle-file').click(); }
+    else if (what === 'folder') { if (!needDisc()) $('xw-dir-file').click(); }
+  });
   $('xw-bundle-file').addEventListener('change', async (ev) => {
     const f = ev.target.files && ev.target.files[0];
     ev.target.value = '';
@@ -768,16 +1371,26 @@ function init() {
     await loadTree(tree, `folder ${root}`);
   });
   $('xw-fresh').addEventListener('click', () => {
-    const box = $('xw-new');
-    box.hidden = !box.hidden;
-    if (!box.hidden) $('xw-new-id').focus();
+    if ($('xw-new').hidden) openNewForm();
+    else $('xw-new').hidden = true;
   });
   $('xw-new-go').addEventListener('click', newPack);
+  $('xw-new').addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' && ev.target.tagName === 'INPUT') { ev.preventDefault(); newPack(); }
+    if (ev.key === 'Escape') $('xw-new').hidden = true;
+  });
   $('xw-new-cancel').addEventListener('click', () => { $('xw-new').hidden = true; });
   $('xw-dl').addEventListener('click', downloadBundle);
   $('xw-undo').addEventListener('click', () => stepHistory(-1));
   $('xw-redo').addEventListener('click', () => stepHistory(1));
-  $('xw-keys').addEventListener('click', () => { $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; });
+  $('xw-keys').addEventListener('click', () => toggleKeys());
+  $('xw-keyhelp-close').addEventListener('click', () => toggleKeys(false));
+  $('xw-checks-btn').addEventListener('click', () => {
+    const a = areaOf(S.tab).id;
+    S.aside = Object.assign(S.aside || {}, { [a]: !asideOpen() });
+    applyAside();
+    renderCheckChip();
+  });
   S.find = createFind($('xw-findbox'), {
     pack: () => S.pack,
     sites: () => xrefSites(),
@@ -793,8 +1406,17 @@ function init() {
 }
 
 async function downloadBundle() {
+  // Built in the worker when it is up; the export refuses a pack with an
+  // error, and only then do the checks run here to open the first one.
+  if (V.current && blockedByErrors('Not downloaded')) return;
   try {
-    const bytes = await exportBundle();
+    let bytes;
+    try {
+      bytes = await exportBundleAsync();
+    } catch (e) {
+      if (blockedByErrors('Not downloaded')) return;
+      throw e;
+    }
     const name = `${S.pack.manifest.id || 'pack'}.lxpack`;
     downloadFile(new Blob([bytes], { type: 'application/octet-stream' }), name);
     setStatus(`Downloaded ${name} (${bytes.length} bytes). It holds no game data: share it freely.`, 'ok', 'xw-export-status');
@@ -844,8 +1466,29 @@ function minimalPack(pack) {
   return pack;
 }
 
+// One click: a pack from the minimal template under a default id, open on
+// its map. Pack settings renames it.
+function quickPack() {
+  let pack = JSON.parse(S.wb.start_fresh('my_pack', 'My expansion'));
+  pack = minimalPack(pack);
+  saveDel('source');
+  showPack(pack, 'new pack', 'Started a new pack with one small map to build on, a monster, a fight, a line and a quest. Name it under Pack settings.', { tab: 'maps' });
+}
+
+function openNewForm() {
+  const box = $('xw-new');
+  box.hidden = false;
+  box.scrollIntoView({ block: 'nearest' });
+  $('xw-new-id').focus();
+  $('xw-new-id').select();
+}
+
 async function newPack() {
-  if (needDisc()) return;
+  if (!S.wb) {
+    $('xw-new').hidden = true;
+    whenDisc('your pack is created', newPack, 'new');
+    return;
+  }
   const id = ($('xw-new-id').value.trim() || 'my_pack').toLowerCase().replace(/[^a-z0-9_-]/g, '_');
   const name = $('xw-new-name').value.trim() || 'My expansion';
   const tpl = $('xw-new-tpl').value;
@@ -872,6 +1515,14 @@ function jumpIssue(dir) {
   jumpTo(list[S.issueAt]);
 }
 
+// The keyboard list, a panel over the page (`?`, the pack bar's Keys).
+function toggleKeys(on) {
+  const box = $('xw-keyhelp');
+  const show = on == null ? box.hidden : on;
+  box.hidden = !show;
+  if (show) box.focus({ preventScroll: true });
+}
+
 function onShortcut(ev) {
   if (!S.pack || $('xw-main').hidden) return;
   const k = ev.key.toLowerCase();
@@ -885,28 +1536,48 @@ function onShortcut(ev) {
   if (mod && k === 's') { ev.preventDefault(); downloadBundle(); return; }
   if ((mod && k === 'k') || (k === '/' && !TEXT_INPUT(ev.target))) {
     ev.preventDefault();
+    if (!asideOpen()) { S.aside = Object.assign(S.aside || {}, { [areaOf(S.tab).id]: true }); applyAside(); renderCheckChip(); }
     S.find.input.focus();
     S.find.input.select();
     return;
   }
   if (k === 'f8') { ev.preventDefault(); jumpIssue(ev.shiftKey ? -1 : 1); return; }
-  if (ev.altKey && !mod && /^[0-9]$/.test(ev.key)) {
-    const i = ev.key === '0' ? 9 : parseInt(ev.key, 10) - 1;
-    if (TABS[i]) { ev.preventDefault(); S.tab = TABS[i][0]; rerender(); }
+  if (ev.altKey && !mod && /^[1-9]$/.test(ev.key)) {
+    const a = AREAS[parseInt(ev.key, 10) - 1];
+    if (a) { ev.preventDefault(); goTab(a.last || a.tabs[0]); }
     return;
+  }
+  // 1 .. 6 pick a build mode on the Build area.
+  if (!ev.altKey && !mod && !ev.shiftKey && S.tab === 'maps' && !TEXT_INPUT(ev.target) && ev.target.tagName !== 'SELECT') {
+    const m = BUILD_MODES.find((x) => x.key === ev.key);
+    if (m) { ev.preventDefault(); setBuildMode(m.id); return; }
   }
   if (ev.altKey && !mod && (ev.key === '[' || ev.key === ']')) {
     ev.preventDefault();
     const i = TABS.findIndex((t) => t[0] === S.tab);
-    S.tab = TABS[(i + (ev.key === ']' ? 1 : -1) + TABS.length) % TABS.length][0];
-    rerender();
+    goTab(TABS[(i + (ev.key === ']' ? 1 : -1) + TABS.length) % TABS.length][0]);
     return;
   }
-  if (k === '?' && !TEXT_INPUT(ev.target)) { ev.preventDefault(); $('xw-keyhelp').hidden = !$('xw-keyhelp').hidden; return; }
-  if (k === 'escape') { $('xw-keyhelp').hidden = true; }
+  if (k === '?' && !TEXT_INPUT(ev.target)) { ev.preventDefault(); toggleKeys(); return; }
+  if (k === 'escape') toggleKeys(false);
+}
+
+// The pack bar's More menu (a phone folds the secondary buttons into it):
+// a press inside runs the button and closes the menu, as does a press
+// outside or Escape.
+function setupMoreMenu() {
+  const btn = $('xw-more');
+  const box = $('xw-more-items');
+  if (!btn || !box) return;
+  const set = (on) => { box.classList.toggle('is-open', on); btn.setAttribute('aria-expanded', String(on)); };
+  btn.addEventListener('click', (ev) => { ev.stopPropagation(); set(!box.classList.contains('is-open')); });
+  box.addEventListener('click', (ev) => { if (ev.target.closest('button')) set(false); });
+  document.addEventListener('click', (ev) => { if (!box.contains(ev.target) && ev.target !== btn) set(false); });
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') set(false); });
 }
 
 function initRest() {
+  setupMoreMenu();
   $('xw-toml').addEventListener('click', () => { S.tab = 'files'; rerender(); });
   $('xw-play').addEventListener('click', playInBrowser);
   $('xw-play-here').addEventListener('click', playHere);
@@ -914,10 +1585,12 @@ function initRest() {
   S.preview = createPreview3d({
     pack: () => S.pack,
     exportBundle: () => S.wb.export_bundle(JSON.stringify(S.pack)),
+    exportBundleAsync,
     storePlay,
     playUrl: playLibUrl,
   });
-  $('xw-panel').before(S.preview.el);
+  // The 3D view sits between the Build head and its catalog strip.
+  $('xw-catalog').before(S.preview.el);
   S.share = attachShare({
     S,
     changed: (structural) => ctx.changed(structural),
@@ -937,5 +1610,7 @@ else init();
 
 // Headless-verification hook: the page state (no disc bytes).
 window.__xwState = S;
+// ... the validation worker's state (headless checks: `__xwValidator.ready`, `.ms`).
+window.__xwValidator = V;
 // ... and the editors' context: `__xwCtx.changed(true)` after a scripted edit.
 window.__xwCtx = ctx;

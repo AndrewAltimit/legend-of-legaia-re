@@ -14,7 +14,7 @@
 #   Feet      Ra-Seru Boots / Shoes / Thongs: ATK 86-90, LDF 60-64, SPD 28-32.
 #
 # The Warden tier (sold from the start of the climb) lands between the shop
-# best and the Ra-Seru set; the Rebirth set beats Ra-Seru by about 12-15%
+# best and the Ra-Seru set; the Vigil set beats Ra-Seru by about 12-15%
 # a piece and adds set bonuses for wearing it together. A weapon swings at
 # half its ATK per hit (the retail per-slot fold), so +14 weapon ATK is +7
 # damage before defence - meaningful, not a one-shot.
@@ -64,32 +64,32 @@ all_party = true
 
 # --- Weapons: boss rewards ---------------------------------------------------
 
-[items.rebirth_blade]
-name = "Rebirth Blade"
+[items.vigil_blade]
+name = "Vigil Blade"
 description = "Forged where the Mist|was torn away."
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 characters = ["vahn"]
 attack = 112
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_talon]
-name = "Rebirth Talon"
+[items.vigil_talon]
+name = "Vigil Talon"
 description = "Light as breath and|twice as sharp."
 kind = "weapon"
 icon = { kind = "item", id = 0x2D }
 characters = ["noa"]
 attack = 110
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_maul]
-name = "Rebirth Maul"
+[items.vigil_maul]
+name = "Vigil Maul"
 description = "The Colossus's heartwood,|bound in iron."
 kind = "weapon"
 icon = { kind = "item", id = 0x33 }
 characters = ["gala"]
 attack = 114
-set = "rebirth"
+set = "vigil"
 
 # --- Armour: the Warden tier (sold from the start) ---------------------------
 
@@ -122,52 +122,52 @@ characters = ["gala"]
 udf = 69
 ldf = 76
 
-# --- The Rebirth set (sold once the Iron Regent falls) -----------------------
+# --- The Vigil set (sold once the Iron Regent falls) -------------------------
 
-[items.rebirth_mail]
-name = "Rebirth Mail"
-description = "Mail of the reborn."
+[items.vigil_mail]
+name = "Vigil Mail"
+description = "Mail the Wardens wore|to keep the bell."
 kind = "armor"
 icon = { kind = "item", id = 0x4A }
 price = 120000
 characters = ["vahn"]
 defence = 94
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_robe]
-name = "Rebirth Robe"
-description = "Robe of the reborn."
+[items.vigil_robe]
+name = "Vigil Robe"
+description = "Dyed green with|rootlight moss."
 kind = "armor"
 icon = { kind = "item", id = 0x50 }
 price = 118000
 characters = ["noa"]
 udf = 95
 ldf = 88
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_plate]
-name = "Rebirth Plate"
-description = "Plate of the reborn."
+[items.vigil_plate]
+name = "Vigil Plate"
+description = "For a long watch over|the tower's old root."
 kind = "armor"
 icon = { kind = "item", id = 0x56 }
 price = 120000
 characters = ["gala"]
 udf = 86
 ldf = 96
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_crown]
-name = "Rebirth Crown"
+[items.vigil_crown]
+name = "Vigil Crown"
 description = "A crown for whoever|climbs the whole tower."
 kind = "helmet"
 icon = { kind = "item", id = 0x3D }
 price = 90000
 udf = 71
 intelligence = 70
-set = "rebirth"
+set = "vigil"
 
-[items.rebirth_greaves]
-name = "Rebirth Greaves"
+[items.vigil_greaves]
+name = "Vigil Greaves"
 description = "Stride over the Mist."
 kind = "boots"
 icon = { kind = "item", id = 0x5E }
@@ -175,10 +175,10 @@ price = 95000
 attack = 98
 ldf = 70
 speed = 35
-set = "rebirth"
+set = "vigil"
 
-[sets.rebirth]
-name = "Rebirth"
+[sets.vigil]
+name = "Vigil"
 # Two pieces: +10 ATK. Three: +12 UDF and LDF. All four a hero can wear
 # (weapon, armour, crown, greaves): All Guard (passive 0x24, the Rainbow
 # Jewel's), freeing a Goods slot.
@@ -254,14 +254,14 @@ stock = [
     { item = "sovereign_nectar", requires = { bosses = ["verdant_colossus"] } },
     { item = "ysoldes_seal", requires = { bosses = ["verdant_colossus"] } },
     { item = "tower_sigil", requires = { quests = ["engine_deep"] } },
-    { item = "rebirth_mail", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_robe", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_plate", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } },
-    { item = "rebirth_greaves", requires = { bosses = ["azure_seraph"] } },
+    { item = "vigil_mail", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_robe", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_plate", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_crown", requires = { bosses = ["iron_regent"] } },
+    { item = "vigil_greaves", requires = { bosses = ["azure_seraph"] } },
 ]
 
-# Trader Pell's stall in the Rebirth Isles village (maps/isles_village.toml).
+# Trader Pell's stall in the Lantern Isles village (maps/isles_village.toml).
 [[shops]]
 id = "isles_trader"
 name = "Pell's Trading Post"

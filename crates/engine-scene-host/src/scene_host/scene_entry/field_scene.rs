@@ -1132,58 +1132,24 @@ impl SceneHost {
         // character meshes (loaded by `FUN_8001FE70` at battle init)
         // and battle_data records (`FUN_8001E890` chain) are excluded.
         if let Some(scene) = self.scene.as_ref() {
-            // The shared blocks the retail field engine keeps resident
-            // across scene transitions (player TMD + shared UI atlas).
-            let mut shared_scenes: Vec<Scene> = Vec::new();
-            for name in legaia_engine_scene::scene_resources::FIELD_SHARED_BLOCKS {
-                if let Ok(s) = Scene::load(&self.index, name) {
-                    shared_scenes.push(s);
-                }
-            }
-            let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
-            // World-map scenes (`map\d\d` = the three kingdom bundles) carry
-            // their landmark geometry in slot 1 of a 7-asset descriptor table,
-            // not as raw / loosely-LZS-packed TMDs. `SceneLoadKind::WorldMap`
-            // makes the resource build decode that slot explicitly (the
-            // faithful retail path) and routes per-prim emit through the
-            // distance-cue overlay variant. Every other field uses the plain
-            // field loader. See [`docs/subsystems/world-map.md`].
-            let load_kind = if legaia_engine_scene::scene::is_world_map_scene(name) {
-                legaia_engine_scene::scene_resources::SceneLoadKind::WorldMap
-            } else {
-                legaia_engine_scene::scene_resources::SceneLoadKind::Field
+            // A pack map prepared ahead of its entry
+            // (`crate::expansion_preload`) carries this same build, made from
+            // the same scene and override: it stands in for the fresh one.
+            let prebuilt = self
+                .pending_scene_build
+                .take()
+                .filter(|(o, _)| {
+                    scene
+                        .overrides
+                        .as_ref()
+                        .is_some_and(|so| Arc::ptr_eq(so, o))
+                })
+                .map(|(_, b)| (*b).clone());
+            let built = match prebuilt {
+                Some(res) => Ok(res),
+                None => field_scene_build(&self.index, scene),
             };
-            // The boot-resident system-UI bundle (raw PROT TOC entries 0/1)
-            // layers under every scene build - it is what makes CLUT rows
-            // 510/511 + the (960,256) menu-glyph atlas resident for the env
-            // meshes that sample them. Soft-fails to None (the scene still
-            // builds; those prims just drop like they used to).
-            let system_ui = match self.index.system_ui_bundle() {
-                Ok(b) => Some(b),
-                Err(err) => {
-                    eprintln!("[scene] system-UI bundle parse skipped: {err:#}");
-                    None
-                }
-            };
-            if let Ok((mut res, _stats)) =
-                legaia_engine_scene::scene_resources::SceneResources::build_targeted_with_options(
-                    scene,
-                    &shared_refs,
-                    legaia_engine_scene::scene_resources::BuildOptions {
-                        kind: load_kind,
-                        // Retail's field loader (FUN_8001F7C0) DMA-uploads
-                        // every TIM in the scene, not just the subset the
-                        // first-frame meshes sample. The town's environment
-                        // geometry (the LZS-packed mesh pack now parsed out of
-                        // the scene_asset_table) samples texture pages across
-                        // the whole atlas, so a render-targeted upload drops
-                        // ~75% of its prims (missing texture page). Uploading
-                        // all TIMs lifts the town keep ratio to ~95%.
-                        upload_all_tims: true,
-                        system_ui: system_ui.as_deref(),
-                    },
-                )
-            {
+            if let Ok(mut res) = built {
                 // Layer the effect-texture pool (etim.dat, PROT 0874 section 2)
                 // UNDER the scene VRAM: the 3D effect models (etmd.dat) and the
                 // field fog sheets (page `(448, 0)`, CLUT row 473) sample it.
@@ -1436,4 +1402,68 @@ impl SceneHost {
         }
         self.world.shops.scene_shops = shops;
     }
+}
+
+/// The field-entry resource build of `scene`, before the effect-texture
+/// underlay: the shared blocks the retail field engine keeps resident
+/// across scene transitions (player TMD + shared UI atlas), the field (or
+/// world-map) load kind, every TIM uploaded, the boot-resident system-UI
+/// bundle layered under it. [`SceneHost::enter_field_scene`] runs it on the
+/// scene it loads; a pack map prepared ahead of its entry runs it on a
+/// worker (`crate::expansion_preload`), and the native play window starts
+/// its own build of a pack map from the same result.
+pub fn field_scene_build(
+    index: &ProtIndex,
+    scene: &Scene,
+) -> Result<legaia_engine_scene::scene_resources::SceneResources> {
+    let mut shared_scenes: Vec<Scene> = Vec::new();
+    for name in legaia_engine_scene::scene_resources::FIELD_SHARED_BLOCKS {
+        if let Ok(s) = Scene::load(index, name) {
+            shared_scenes.push(s);
+        }
+    }
+    let shared_refs: Vec<&Scene> = shared_scenes.iter().collect();
+    // World-map scenes (`map\d\d` = the three kingdom bundles) carry
+    // their landmark geometry in slot 1 of a 7-asset descriptor table,
+    // not as raw / loosely-LZS-packed TMDs. `SceneLoadKind::WorldMap`
+    // makes the resource build decode that slot explicitly (the
+    // faithful retail path) and routes per-prim emit through the
+    // distance-cue overlay variant. Every other field uses the plain
+    // field loader. See [`docs/subsystems/world-map.md`].
+    let load_kind = if legaia_engine_scene::scene::is_world_map_scene(&scene.name) {
+        legaia_engine_scene::scene_resources::SceneLoadKind::WorldMap
+    } else {
+        legaia_engine_scene::scene_resources::SceneLoadKind::Field
+    };
+    // The boot-resident system-UI bundle (raw PROT TOC entries 0/1)
+    // layers under every scene build - it is what makes CLUT rows
+    // 510/511 + the (960,256) menu-glyph atlas resident for the env
+    // meshes that sample them. Soft-fails to None (the scene still
+    // builds; those prims just drop like they used to).
+    let system_ui = match index.system_ui_bundle() {
+        Ok(b) => Some(b),
+        Err(err) => {
+            eprintln!("[scene] system-UI bundle parse skipped: {err:#}");
+            None
+        }
+    };
+    let (res, _stats) =
+        legaia_engine_scene::scene_resources::SceneResources::build_targeted_with_options(
+            scene,
+            &shared_refs,
+            legaia_engine_scene::scene_resources::BuildOptions {
+                kind: load_kind,
+                // Retail's field loader (FUN_8001F7C0) DMA-uploads
+                // every TIM in the scene, not just the subset the
+                // first-frame meshes sample. The town's environment
+                // geometry (the LZS-packed mesh pack parsed out of
+                // the scene_asset_table) samples texture pages across
+                // the whole atlas, so a render-targeted upload drops
+                // ~75% of its prims (missing texture page). Uploading
+                // all TIMs lifts the town keep ratio to ~95%.
+                upload_all_tims: true,
+                system_ui: system_ui.as_deref(),
+            },
+        )?;
+    Ok(res)
 }

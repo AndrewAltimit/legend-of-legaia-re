@@ -11,7 +11,7 @@ A pack carries **no bytes from the disc**. Every disc asset it uses is named by 
 | Source form | A directory: `pack.toml` plus optional section files, `maps/`, `assets/` |
 | Shareable form | One `.lxpack` file ([bundle](#the-lxpack-bundle)) |
 | Text encoding | UTF-8 TOML for every manifest, section and map |
-| Schema version | `2` (`manifest::SCHEMA_VERSION`); schemas `1` and `2` load |
+| Schema version | `3` (`manifest::SCHEMA_VERSION`); schemas `1` to `3` load |
 | Disc | NA release only, `SCUS-94254` |
 | Parser | `ExpansionPack::from_files` (one parser for directory, bundle and browser input) |
 | Writer | `ExpansionPack::to_files`, `bundle::write_bundle` |
@@ -53,6 +53,7 @@ The whole tree is one `PackFiles` value (`BTreeMap<path, bytes>`). The directory
 |---|---|---|---|
 | `id` | string | yes | Machine id, `[a-z0-9_-]`, at most 48 characters, starting with a letter or digit. Namespaces every content id in the pack. |
 | `name` | string | yes | Display name. |
+| `short_name` | string | no | A label for narrow places (the launcher's Expansion button): one line of at most 24 characters; unset, those places show `name`. Schema 3. |
 | `version` | string | yes | Semantic version, `MAJOR.MINOR.PATCH[-pre][+build]`. |
 | `authors` | string list | no | Who made it. |
 | `description` | string | no | What the pack adds. |
@@ -80,10 +81,10 @@ Three versions meet when a pack loads: the pack's own `version`, the **pack form
 
 | Gate | Passes when | Refusal |
 |---|---|---|
-| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=2`) | "written in pack format N, newer than this engine reads ... update the engine" |
+| Pack format | `schema` is in `MIN_SCHEMA_VERSION..=SCHEMA_VERSION` (`1..=3`) | "written in pack format N, newer than this engine reads ... update the engine" |
 | Engine | `min_engine` is absent, or not newer than `ENGINE_VERSION` | "needs engine X or newer; this engine is Y" |
 
-`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schema 2 only added optional keys, so a schema-1 pack is a valid schema-2 pack with them absent. The validator warns when a schema-1 manifest uses a schema-2 key, since an older engine would trip on it.
+`ExpansionPack::from_files` runs both gates first, on a lenient read of `pack.toml` (`manifest::ManifestPeek`), before the strict parse. A pack from a newer format may carry keys this build has never heard of, and `deny_unknown_fields` would otherwise report the first of them as a typo; the gate reports the real reason instead. Since every reader parses through `from_files` - the native `--expansion`, the launcher, the play page, the workbench - every host refuses the same way. Old packs keep loading: schemas 2 (`cover`, `min_engine`) and 3 (`short_name`) only added optional keys, so an older pack is a valid newer one with them absent. The validator warns when a manifest uses a key newer than its `schema`, since an older engine would trip on it.
 
 ### Dependencies
 
@@ -226,7 +227,7 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 | `[[poker]]` | `seats` (4, `2..=6` with the player), `buy_in` (1000), `small_blind` (10), `big_blind` (20), `currency` (`gold` / `coins`), `chip_value` (1), `ai_tier` (`novice` / `regular` / `expert`), `max_hands`, `blind_double_every` |
 | `[[card_duels]]` | `deck` (the opponent's five `cards.toml` ids), `ai_tier`, `elemental_cells`, `chain`, `stakes`, `win_booster`, `map`, `spawn`, `[card_duels.table]` |
 | `[[golf]]` | `[[golf.holes]]`, each `par` (3), `rows` (tile strings), `heights` (digit strings of the same shape), `max_strokes` (0 = `par + 5`) |
-| `[[races]]` | `laps` (3), `points` (closed centerline, world units), `half_width` (64), `boost_segments`, `racers` (4), `ai_tier` |
+| `[[races]]` | `course` (`circuit` / `sprint`), `laps` (3, circuits), `points` (centerline, world units), `half_width` (64), `boost_segments`, `pickups`, `racers` (4), `ai_tier`, `rivals` (the AI racers' names in seat order; stock names past the list) |
 | `[[prop_hunt]]` | `props` (`id`, `mesh`, `radius`), `decoys` (`prop`, `x`, `y`), `bounds`, `blockers`, `rounds` (3), `hunters` (1), `players` (4), `hide_frames`, `round_frames`, `hunter_health` (100), `miss_penalty` (10), `ai_tier` |
 | `[[party_nights]]` | `order` (`fixed` / `shuffle`), `points` ([10, 6, 4, 2]), `last_place_picks` (false), `double_final` (true), `players` (4, a night alone's seats), `rivals` (names), `ai_tier`, `podium`, `[[party_nights.rounds]]`, `[[party_nights.prizes]]` |
 | `podium` | `map` (a pack map), `tile` (the first-place block), `facing` (compass sector), `bodies` (map NPCs that play the rivals, in rival order): where a night played alone ends, in the world ([expansion-modes.md](../subsystems/expansion-modes.md#the-podium-in-the-world)) |
@@ -235,9 +236,9 @@ Instances of the port's own game modes: a pack picks the numbers and the layout,
 
 A golf hole's tile legend is one character per tile: `.` fairway, `,` rough, `s` sand, `w` water, `#` wall, space out of bounds, `T` tee, `O` cup, and `^` `v` `<` `>` fairway sloping downhill that way.
 
-The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards) and the duel tables (the `map` exists, the `tile` is on it, the `facing` is a compass sector, every NPC seated is one of the map's), and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
+The validator checks the party nights (ids, each round naming an instance and only the knobs its kind takes, hole numbers, wager range, the prizes' boosters and cards), the duel tables (the `map` exists, the `tile` is on it, the `facing` is a compass sector, every NPC seated is one of the map's) and the races (below), and nothing else of the section; the rules of a night are in [expansion-modes.md](../subsystems/expansion-modes.md#party-night). An instance is built when it is entered (`legaia_engine_modes::active`): one whose data cannot make a session (a hole with no tee, a duel deck naming an unknown card) is refused there, and the mode picker shows the reason as its last entry error.
 
-A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
+A golf course or a race may name a pack map, and is then played in the 3D field scene that map builds; a race may instead name a kingdom overworld (`scene`) and run across it ([in-world golf and racing](../subsystems/expansion-modes.md#in-world-golf-and-racing)):
 
 | Key | On | Meaning |
 |---|---|---|
@@ -246,8 +247,31 @@ A golf course or a race may name a pack map, and is then played in the 3D field 
 | `surfaces` | `[[golf]]` | Map legend character -> `fairway`, `rough`, `sand`, `water`, `wall` or `out` |
 | `tee`, `cup` | `[[golf.holes]]` | Map tiles `[column, row]` of the tee and the cup; both required on a map course |
 | `area` | `[[golf.holes]]` | Inclusive map-tile rectangle `[col0, row0, col1, row1]` the hole plays in; the whole map when left out |
-| `waypoints` | `[[races]]` | The centerline as map tiles, in driving order, closing back on the first; replaces `points` |
+| `scene` | `[[races]]` | A kingdom overworld (`map01`, `map02`, `map03`) the race runs across, over its own ground; exclusive with `map` |
+| `waypoints` | `[[races]]` | The centerline as map tiles (on an overworld, its 128-unit tiles), in driving order - a circuit closes back on the first; replaces `points` |
 | `bodies` | `[[golf]]`, `[[races]]` | Map NPC ids (`[[npcs]]` of the map) that play the other seats, in seat order with the player's skipped |
+
+#### Courses and power-ups
+
+A race's `course` is a `circuit`, a closed loop run for `laps`, or a `sprint`, run once from the first point to the last; every point is a checkpoint gate the racers pass in order, and a sprint's last is its finish line. `pickups` are the power-ups lying on and beside the course ([racing](../subsystems/expansion-modes.md#power-ups)):
+
+| Key (default) | Meaning |
+|---|---|
+| `kind` (`boost`) | `boost`, `hop`, `shield` or `slow` |
+| `at` | Where it lies: a tile `[column, row]` (its centre) on a map or overworld race, world units on a board race |
+| `respawn` (0 = 600) | Frames until it comes back once taken |
+
+```toml
+[[races]]
+id = "drake-dash"
+scene = "map01"
+course = "sprint"
+half_width = 70
+waypoints = [[91, 20], [94, 28], [98, 31], [92, 36], [70, 40]]
+pickups = [{ kind = "hop", at = [96, 30] }, { kind = "boost", at = [80, 37] }]
+```
+
+The validator checks each race: `map` and `scene` are not both set, a `scene` is a kingdom overworld, a circuit has at least three points and a sprint two, no two consecutive points coincide, `half_width` is at least 20, `racers` is `1..=8`, every boost segment exists, and every waypoint and pickup is on its map. It warns on `points` given beside `waypoints`, `bodies` on an overworld race (it has no map NPCs; its rivals draw as stand-ins), a pickup farther from the course than a hop reaches (twice the half-width), and a party round's `laps` on a sprint.
 
 A Grid Duel may name a pack map and a table on it, and is then played on a board laid on that table in the 3D field scene ([Grid Duel at a table](../subsystems/expansion-modes.md#grid-duel-at-a-table)). `map` and `spawn` work as above; `[card_duels.table]` places the table:
 
@@ -258,10 +282,12 @@ A Grid Duel may name a pack map and a table on it, and is then played on a board
 | `facing` (0) | Compass sector `0..8` (an NPC's facing table) the player looks across the board in |
 | `height` (64) | The table top above the floor, world units |
 | `board` (132) | The board's width, world units; its depth is 1.36 times that |
-| `seat_distance` (120) | Each seat's distance from the board's centre |
+| `seat_distance` (120) | Each seat's distance from the board's centre; with `draw_table` it is pushed out to clear the drawn table's edge (`DuelTableFrame::from_duel`), so no body stands in the top |
 | `draw_table` (true) | Draw the built-in wooden table under the board; off when a prop of the map is the table |
-| `opponent` | `{ npc, name, think, cheer, slump }`: the map NPC seated across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss |
-| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them |
+| `hide` (`[]`) | Prop ids of the map (`[[props]] id`) whose draw goes while the duel is seated, back when the seat closes: the decor table the built-in one stands in for ([Hidden props](../subsystems/expansion-modes.md#hidden-props)) |
+| `opponent` | `{ npc, name, think, cheer, slump, sit }`: the map NPC across the board, the name the banners and results card give it, and the clips it plays while thinking, on a win or a big capture, and on a loss; with `sit` it sits in a chair at its seat ([Seated NPCs](#seated-npcs)) |
+| `spectators` | The same shape for NPCs that watch from where they stand: each turns to the board, cheers for the player and slumps against them; a spectator never sits |
+| `chair_height` (34) | The seat of the chair a seated NPC sits on, world units above the floor |
 | `surface` | `{ tpage, clut, uv = [u, v, w, h] }`: a texture of the base scene's VRAM the board's cells sample instead of the built-in felt |
 | `sfx` | `{ deal, place, flip, win, lose }`: sounds, each a retail cue (`{ kind = "sfx", id = N }`) or a pack sound (`{ kind = "sound", id = "..." }`); menu cues by default |
 
@@ -269,10 +295,17 @@ A poker table names a map and a table the same way (`map`, `spawn`, `[poker.tabl
 
 | Key (default) | Meaning |
 |---|---|
-| `tile`, `offset`, `facing`, `height` (64), `draw_table` (true), `surface`, `sfx` | As for a duel table; `sfx` plays `deal` per card, `place` for chips pushed out, `flip` per board card, `win` / `lose` for a pot |
+| `tile`, `offset`, `facing`, `height` (64), `draw_table` (true), `hide`, `surface`, `sfx` | As for a duel table; `sfx` plays `deal` per card, `place` for chips pushed out, `flip` per board card, `win` / `lose` for a pot |
 | `radius` (130) | The felt's half depth toward the player, world units; its half width is 1.35 times that |
-| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in }`, in seat order with the player's seat skipped; a seat with none stays empty-chaired |
+| `players` | The other seats' NPCs, `{ npc, name, think, cheer, slump, fold, all_in, sit }`, in seat order with the player's seat skipped; a seat with none stays empty |
+| `chair_height` (34) | As for a duel table |
 | `spectators` | NPCs watching from their tiles; they cheer when the player wins a pot |
+
+#### Seated NPCs
+
+A table NPC with `sit` sits: the stage draws a wooden chair at its seat (seat, legs, a back on the side away from the table, in the table's wood) and the NPC plays the `sit` clip in place of its idle while the game is seated, back to its own clip and tile when the seat closes. The chair is part of the stage, like the built-in table, so it needs no prop on the map and stands only while someone sits on it. `sit` is a clip id of the NPC's borrowed placement (the `clip` numbering) that the [posture table](expansion-pack-maps.md#npc-clip-postures) lists as `seated`; the validator warns on any other, and on `sit` given to a spectator.
+
+A reaction clip still plays over `sit`, so a seated NPC's `think` / `cheer` / `slump` / `fold` / `all_in` should be seated clips too, or left out; a standing NPC's should be standing clips. The validator warns on a reaction clip the posture table measures in the other pose (or as a walk), and on one the NPC's model does not play. The posture table cannot see a clip that flings the limbs while keeping the head, so a reaction is picked from the table's close-up: the duel's reaction shot frames the opponent at the end. The party leader stands at the player's side: the party's field bank has no seated clip, and no scene bank a pack map borrows from has one for its rig.
 
 A table prop of the map should not be standable (`top`): the board sits `height` above the floor the sampler answers at the table's centre. Sample: the `duel_table` test pack, `crates/engine-modes/tests/fixtures/duel_table/`.
 
@@ -333,7 +366,7 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Rule | Severity |
 |---|---|
 | `pack.toml` missing or unparsable, or any section or map unparsable | error |
-| `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name` | error |
+| `id`, `version`, `tags`, `requires` or `conflicts` malformed; empty `name`; `short_name` empty, over 24 characters or more than one line | error |
 | `schema` outside the formats this build reads; `disc` other than `SCUS-94254` | error |
 | `min_engine` malformed or newer than this engine; a `requires` / `conflicts` entry or its range malformed | error |
 | `cover` not a `.png` under `assets/`, absent from the pack, or over 1 MiB | error |
@@ -343,7 +376,7 @@ Every refusal carries a `bundle::BundleErrorKind` inside its error - `not_a_bund
 | Reference to undefined content, or to a pack not in `requires` | error |
 | `DiscRef` out of range, or rejected by the supplied resolver | error |
 | Any [no-disc-bytes](#the-no-disc-bytes-rule) violation | error |
-| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a schema-2 key in a schema-1 manifest | warning |
+| Empty `description`, `authors` or `license`; no `cover`; non-URL `homepage`; a repeated list entry; a manifest key newer than the manifest's `schema` | warning |
 | A file outside the [layout](#layout) | warning |
 | A [flow lint](#flow-lints): a pack flag or counter read and never written, or written and never read; a map, quest or challenge the player cannot reach; a quest prerequisite cycle; a card, booster or pack item nothing (reachable) grants | warning |
 

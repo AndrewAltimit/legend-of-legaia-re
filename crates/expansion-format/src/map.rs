@@ -24,7 +24,7 @@
 //! map.
 //!
 //! ```toml
-//! name = "Tower of Rebirth, 1F"
+//! name = "Genesis Tower, 1F"
 //! base = { scene = { kind = "scene", name = "dolk" } }
 //! floor_heights = [0, 64]
 //!
@@ -115,6 +115,10 @@ pub struct MapDef {
     pub lighting: crate::map_detail::MapLighting,
     /// Animated materials ([`crate::map_detail::MaterialFx`]).
     pub materials: Vec<crate::map_detail::MaterialFx>,
+    /// Living ground: tiles whose floor geometry moves on ladder rungs of
+    /// their own ([`crate::ground_motion::GroundMotionDef`]).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ground_motion: Vec<crate::ground_motion::GroundMotionDef>,
     /// The retail field fog pool over the map ([`crate::map_detail::MapFog`]).
     pub fog: crate::map_detail::MapFog,
     /// Flat textured floor decals ([`crate::map_detail::DecalDef`]).
@@ -132,6 +136,16 @@ pub struct MapDef {
     /// Music, music zones and ambient sources ([`crate::audio::MapAudio`]).
     #[serde(skip_serializing_if = "crate::audio::MapAudio::is_empty")]
     pub audio: crate::audio::MapAudio,
+    /// What draws past the floor's edge ([`crate::map_detail::SurroundDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surround: Option<crate::map_detail::SurroundDef>,
+    /// What hangs over the floor ([`crate::map_detail::CeilingDef`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ceiling: Option<crate::map_detail::CeilingDef>,
+    /// Light beams falling through gaps ([`crate::map_beams::BeamDef`]),
+    /// drawn with enhanced lighting on.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub beams: Vec<crate::map_beams::BeamDef>,
 }
 
 /// A cutscene a map plays on arrival.
@@ -401,6 +415,17 @@ pub struct PropDef {
     pub animate: Vec<crate::map_detail::Animator>,
     /// A light the prop carries under enhanced lighting.
     pub light: Option<crate::map_detail::PropLight>,
+    /// Rest the prop on another's top: the id of a prop or a `[[decor]]`
+    /// of this map. The mesh's lowest point sits on the support's top (its
+    /// standable `top`, else its mesh's highest point), and
+    /// [`Self::offset`]`[1]` lifts it from there
+    /// ([`crate::map_rest`]). Empty stands it on the floor.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub on: String,
+    /// The prop hangs or is mounted (a lantern on a chain, a torch on a
+    /// wall): the resting check passes it over off the floor.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hangs: bool,
 }
 
 /// A field NPC a pack places on a map.
@@ -436,6 +461,10 @@ pub struct NpcDef {
     /// The clip id a patrol leg plays (a walk cycle of the same bundle).
     /// `None` keeps the idle clip while walking.
     pub walk_clip: Option<u8>,
+    /// Ticks a patrolling NPC stands at each stop, in its idle clip
+    /// ([`Self::clip`]), before it sets out for the next one. `0` walks the
+    /// loop without stopping.
+    pub pause: u16,
     /// The `dialog.toml` line the NPC says when talked to. Empty says
     /// nothing (a quest giver whose quest lines do the talking).
     pub line: String,
@@ -566,6 +595,11 @@ pub struct ExitDef {
     /// shut (a sealed stair saying why). Optional.
     #[serde(default)]
     pub locked_line: Option<String>,
+    /// Show [`Self::locked_line`] as a toast (its first page on one row)
+    /// instead of a dialog box: the player learns why without being
+    /// stopped on every step onto the shut exit.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub locked_toast: bool,
 }
 
 /// Where an exit leads.
@@ -656,6 +690,12 @@ pub struct TriggerZone {
     /// the zone quiet on every later visit.
     #[serde(default)]
     pub once: bool,
+    /// Fire on the action button instead of on entry: walking onto the zone
+    /// does nothing, and pressing Cross while the player stands on it or
+    /// faces it fires it - an object the player chooses to examine (a
+    /// brazier, a notice board), not a tile that talks at every passer-by.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub press: bool,
     /// What must hold for the zone to fire: the quest prerequisite shape.
     /// A shut zone fires nothing and spends no `once`; it fires on the
     /// first entry after it opens. Empty is always open.
@@ -684,6 +724,10 @@ pub enum MapEvent {
     Boss { boss: String },
     /// Show a pack dialogue line (`dialog.toml`).
     Dialog { line: String },
+    /// Show a pack dialogue line as a toast: its first page on one row
+    /// ([`crate::boss_script::banner_text`]), on the toast rows, taking no
+    /// input and stopping nothing - a cue in place of a dialog box.
+    Toast { line: String },
     /// Count as talking to the pack NPC `npc` (a quest's talk objective).
     Talk { npc: String },
     /// Start a pack quest (`quests.toml`).
@@ -933,7 +977,8 @@ impl MapDef {
     }
 
     /// The floor-tier ladder as 16 heights (up positive), or `None` when the
-    /// map takes the base scene's.
+    /// map takes the base scene's. A ground motion's rungs hold their rest
+    /// heights.
     pub fn floor_ladder(&self) -> Option<[i16; FLOOR_TIERS]> {
         if self.floor_heights.is_empty() {
             return None;
@@ -941,6 +986,11 @@ impl MapDef {
         let mut out = [0i16; FLOOR_TIERS];
         for (slot, h) in out.iter_mut().zip(&self.floor_heights) {
             *slot = *h;
+        }
+        // A ground motion's rungs rest at the height of the tier each
+        // stands in for ([`crate::ground_motion`]).
+        for r in self.ground_motion_plan().rungs {
+            out[usize::from(r.rung)] = out[usize::from(r.base_tier)];
         }
         Some(out)
     }
@@ -1031,7 +1081,7 @@ to = { kind = "retail", scene = { kind = "scene", name = "town01" }, tile = [37,
 
 [[exits]]
 rect = [3, 2, 3, 2]
-to = { kind = "map", map = "rebirth_tower_2f" }
+to = { kind = "map", map = "genesis_2f" }
 
 [[triggers]]
 rect = [1, 2, 2, 2]
@@ -1067,9 +1117,7 @@ tile = [1, 2]
         assert_eq!(m.spawn("start").map(|s| s.facing), Some(4));
         assert!(m.spawn("nope").is_none());
         assert_eq!(m.exits.len(), 2);
-        assert!(
-            matches!(m.exits[1].to, ExitTarget::Map { ref map, .. } if map == "rebirth_tower_2f")
-        );
+        assert!(matches!(m.exits[1].to, ExitTarget::Map { ref map, .. } if map == "genesis_2f"));
         assert_eq!(
             m.triggers[0].event,
             MapEvent::Battle {

@@ -29,7 +29,7 @@
 //! building a mesh); the plain builders stay byte-faithful for the
 //! preservation/export paths.
 
-use super::{ColorMesh, VramMesh};
+use super::{ColorMesh, FastMap, VramMesh};
 
 /// Bit 15 of the per-vertex **CBA** attribute marks the prim as one copy of a
 /// detected double-sided pair. A PSX CBA word only uses bits 0..=14 (CLUT x
@@ -70,7 +70,8 @@ fn vkey(p: [f32; 3]) -> VKey {
 /// they interpolate to identical depths, so the depth test resolves them
 /// deterministically (first drawn wins) without shimmer.
 pub fn mark_double_sided_pairs(mesh: &mut VramMesh) -> usize {
-    use std::collections::HashMap;
+    // Each group pairs on its own and the flags only OR, so the map's
+    // iteration order cannot change the result: the fast hasher.
     let tris: Vec<[u32; 3]> = mesh
         .indices
         .as_chunks::<3>()
@@ -78,7 +79,7 @@ pub fn mark_double_sided_pairs(mesh: &mut VramMesh) -> usize {
         .iter()
         .map(|c| [c[0], c[1], c[2]])
         .collect();
-    let mut by_triple: HashMap<[VKey; 3], Vec<usize>> = HashMap::new();
+    let mut by_triple: FastMap<[VKey; 3], Vec<usize>> = FastMap::default();
     for (t_idx, t) in tris.iter().enumerate() {
         let mut k = [
             vkey(mesh.positions[t[0] as usize]),
@@ -284,7 +285,10 @@ pub fn separate_coplanar_prims(mesh: &mut VramMesh) -> usize {
 /// [`separate_coplanar_prims`] with the pair search's sweep on or off
 /// ([`overlap_pairs`]).
 fn separate_coplanar_prims_with(mesh: &mut VramMesh, sweep: bool) -> usize {
-    use std::collections::HashMap;
+    // The maps below are keyed lookups: the pairs come back as an ordered
+    // set, the colouring walks a sorted order and each ranked triangle
+    // moves its own vertices, so no iteration order reaches the result and
+    // the fast hasher stands in for SipHash.
     let tris: Vec<[u32; 3]> = mesh
         .indices
         .as_chunks::<3>()
@@ -335,7 +339,7 @@ fn separate_coplanar_prims_with(mesh: &mut VramMesh, sweep: bool) -> usize {
         });
     }
     // Bucket by quantized plane; d straddles land in adjacent buckets.
-    let mut buckets: HashMap<(i32, i32, i32, i64), Vec<usize>> = HashMap::new();
+    let mut buckets: FastMap<(i32, i32, i32, i64), Vec<usize>> = FastMap::default();
     for (i, r) in recs.iter().enumerate() {
         let base = (
             (r.n[0] * 512.0).round() as i32,
@@ -350,7 +354,7 @@ fn separate_coplanar_prims_with(mesh: &mut VramMesh, sweep: bool) -> usize {
         }
     }
     // Overlap edges between coplanar rec pairs.
-    let mut edges: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut edges: FastMap<usize, Vec<usize>> = FastMap::default();
     for (i, j) in overlap_pairs(&recs, buckets.into_values().collect(), sweep) {
         edges.entry(i).or_default().push(j);
         edges.entry(j).or_default().push(i);
@@ -370,7 +374,7 @@ fn separate_coplanar_prims_with(mesh: &mut VramMesh, sweep: bool) -> usize {
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(recs[a].tri.cmp(&recs[b].tri))
     });
-    let mut rank: HashMap<usize, u32> = HashMap::new();
+    let mut rank: FastMap<usize, u32> = FastMap::default();
     for &i in &order {
         let mut used = [false; 8];
         for &j in &edges[&i] {

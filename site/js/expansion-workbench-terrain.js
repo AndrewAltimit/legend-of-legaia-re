@@ -33,17 +33,29 @@ export function defaultTerrain() {
   };
 }
 
-/** Relief shading of the preview's heightfield over the painted tiles. */
-export function drawTerrain(g, map, pv, cs) {
-  const t = pv && pv.terrain;
-  if (!map.terrain || !t || !t.heights) return;
-  const step = cs / t.res;
+/* The relief image of one `map_preview` (one pixel per heightfield sample
+ * inside the skirt), built once per preview and kept with it: the painter
+ * redraws on every hover, and per-sample fillRect calls (a colour string
+ * parsed per cell) took most of a second on a big terrain map. */
+const RELIEF = new WeakMap();
+function reliefImage(t) {
+  const hit = RELIEF.get(t);
+  if (hit) return hit;
   const off = t.skirt * t.res;
-  const at = (i, j) => t.heights[Math.max(0, Math.min(t.rows - 1, j)) * t.cols + Math.max(0, Math.min(t.cols - 1, i))];
+  const iw = Math.max(0, t.cols - 1 - 2 * off), jh = Math.max(0, t.rows - 1 - 2 * off);
+  if (!iw || !jh || typeof document === 'undefined') return null;
+  const H = t.heights, cols = t.cols, rows = t.rows;
+  const at = (i, j) => H[(j < 0 ? 0 : j >= rows ? rows - 1 : j) * cols + (i < 0 ? 0 : i >= cols ? cols - 1 : i)];
   let lo = Infinity, hi = -Infinity;
-  for (const v of t.heights) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  for (const v of H) { if (v < lo) lo = v; if (v > hi) hi = v; }
   const span = Math.max(1, hi - lo);
-  const iw = (t.cols - 1 - 2 * off), jh = (t.rows - 1 - 2 * off);
+  const c = document.createElement('canvas');
+  c.width = iw;
+  c.height = jh;
+  const g = c.getContext('2d');
+  const img = g.createImageData(iw, jh);
+  const px = img.data;
+  const water = t.water;
   for (let j = 0; j < jh; j++) {
     for (let i = 0; i < iw; i++) {
       const I = i + off, J = j + off;
@@ -53,16 +65,34 @@ export function drawTerrain(g, map, pv, cs) {
       const dz = at(I, J + 1) - at(I, J - 1);
       const lit = Math.max(-1, Math.min(1, -(dx + dz) / 48));
       const k = (hv - lo) / span;
-      if (t.water != null && hv < t.water) {
-        g.fillStyle = `rgba(40,90,160,${0.35 + Math.min(0.4, (t.water - hv) / 120)})`;
+      const o = (j * iw + i) * 4;
+      let r, gg, b, a;
+      if (water != null && hv < water) {
+        r = 40; gg = 90; b = 160; a = 0.35 + Math.min(0.4, (water - hv) / 120);
       } else if (lit >= 0) {
-        g.fillStyle = `rgba(255,255,255,${0.08 + 0.3 * lit + 0.12 * k})`;
+        r = gg = b = 255; a = 0.08 + 0.3 * lit + 0.12 * k;
       } else {
-        g.fillStyle = `rgba(0,0,0,${0.08 - 0.35 * lit})`;
+        r = gg = b = 0; a = 0.08 - 0.35 * lit;
       }
-      g.fillRect(i * step, j * step, Math.ceil(step), Math.ceil(step));
+      px[o] = r; px[o + 1] = gg; px[o + 2] = b; px[o + 3] = Math.round(Math.max(0, Math.min(1, a)) * 255);
     }
   }
+  g.putImageData(img, 0, 0);
+  RELIEF.set(t, c);
+  return c;
+}
+
+/** Relief shading of the preview's heightfield over the painted tiles. */
+export function drawTerrain(g, map, pv, cs) {
+  const t = pv && pv.terrain;
+  if (!map.terrain || !t || !t.heights) return;
+  const img = reliefImage(t);
+  if (!img) return;
+  const step = cs / t.res;
+  const smooth = g.imageSmoothingEnabled;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(img, 0, 0, img.width * step, img.height * step);
+  g.imageSmoothingEnabled = smooth;
 }
 
 /** The shape one stroke adds, from its start and end in tile units. */

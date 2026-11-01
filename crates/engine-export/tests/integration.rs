@@ -6,3 +6,4 @@
 //! `cargo test -p legaia-engine-export --test integration <name>::`.
 
 mod glb_export_real;
+mod mesh_catalog_disc;

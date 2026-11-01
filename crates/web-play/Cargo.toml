@@ -37,6 +37,7 @@ legaia-engine-title.workspace = true
 legaia-engine-minigame-scenes.workspace = true
 legaia-engine-minigames.workspace = true
 legaia-engine-mode.workspace = true
+legaia-engine-modes.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-scene-host.workspace = true
 legaia-engine-screens.workspace = true

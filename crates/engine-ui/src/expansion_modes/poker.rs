@@ -5,7 +5,7 @@ use legaia_engine_modes::active::{ActiveMode, category_label};
 use legaia_engine_modes::poker::{Phase, PokerView, SeatView, Street};
 
 use super::cards::{CARD_H, CARD_W, card_back, card_slot, pip, playing_card, rank_label};
-use super::{Canvas, footer, ink, log_box, pen};
+use super::{Align, Canvas, LINE, STAGE_H, STAGE_W, footer, ink, log_box, pen};
 
 const TABLE: (i32, i32, i32, i32) = (8, 20, 304, 150);
 
@@ -44,8 +44,15 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, mode: &ActiveMode, log: &[Stri
         } else {
             pen::WHITE
         };
-        c.text_centre(mode.seat_name(seat), cx, 27, name_ink);
-        c.text_centre(seat_status(s), cx, 41, status_ink(s));
+        c.text_in(
+            mode.seat_name(seat),
+            cx,
+            27,
+            pw - 6,
+            name_ink,
+            Align::Centre,
+        );
+        c.text_in(seat_status(s), cx, 41, pw - 6, status_ink(s), Align::Centre);
         if v.button == seat {
             button_marker(c, x + pw - 4, 29);
         }
@@ -62,7 +69,14 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, mode: &ActiveMode, log: &[Stri
             }
         }
         if s.street_bet > 0 && !showdown {
-            c.text_centre(format!("bet {}", s.street_bet), cx, 82, pen::GOLD);
+            c.text_in(
+                format!("bet {}", s.street_bet),
+                cx,
+                82,
+                slot - 4,
+                pen::GOLD,
+                Align::Centre,
+            );
         }
     }
 
@@ -92,7 +106,7 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, mode: &ActiveMode, log: &[Stri
             ),
             None => format!("{} {verb} {amount}", names.join(" & ")),
         };
-        c.text_centre(text, 160, 138, pen::GOLD);
+        c.text_in(text, 160, 138, tw - 16, pen::GOLD, Align::Centre);
     } else {
         let street = match v.phase {
             Phase::Betting(Street::Preflop) => "Preflop",
@@ -101,18 +115,34 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, mode: &ActiveMode, log: &[Stri
             Phase::Betting(Street::River) => "River",
             _ => "",
         };
-        c.text_centre(format!("Pot {}", v.pot), 160, 138, pen::WHITE);
-        c.text(street, tx + 10, 138, pen::DIM);
-        c.text_right(
+        c.text_in(
+            format!("Pot {}", v.pot),
+            160,
+            138,
+            100,
+            pen::WHITE,
+            Align::Centre,
+        );
+        c.text_in(street, tx + 10, 138, 60, pen::DIM, Align::Left);
+        c.text_in(
             format!("Blinds {}/{}", v.small_blind, v.big_blind),
             tx + tw - 10,
             138,
+            90,
             pen::DIM,
+            Align::Right,
         );
     }
     let me = &v.seats[mine];
     if me.street_bet > 0 && !showdown {
-        c.text_centre(format!("your bet {}", me.street_bet), 160, 152, pen::GOLD);
+        c.text_in(
+            format!("your bet {}", me.street_bet),
+            160,
+            152,
+            tw - 16,
+            pen::GOLD,
+            Align::Centre,
+        );
     }
 
     // The near edge: log, hand, action menu.
@@ -135,15 +165,18 @@ pub(super) fn draw(c: &mut Canvas, v: &PokerView, mode: &ActiveMode, log: &[Stri
     if v.button == mine {
         button_marker(c, hx - 4, 176);
     }
-    c.text_centre(
+    c.text_in(
         format!("{} {}", mode.seat_name(mine), me.chips),
         hx + CARD_W + 1,
         210,
+        // Between the log box and the action menu.
+        62,
         if showdown && winners.contains(&mine) {
             pen::GOLD
         } else {
             pen::WHITE
         },
+        Align::Centre,
     );
     action_menu(c, v, mine, 186, 172);
     footer(
@@ -219,7 +252,7 @@ fn action_menu(c: &mut Canvas, v: &PokerView, seat: usize, x: i32, y: i32) {
             _ if !v.seats[seat].in_hand || v.seats[seat].folded => "Sitting out",
             _ => "Waiting...",
         };
-        c.text_centre(msg, x + w / 2, y + 18, pen::DIM);
+        c.text_in(msg, x + w / 2, y + 18, w - 8, pen::DIM, Align::Centre);
         return;
     }
     let me = &v.seats[seat];
@@ -242,37 +275,52 @@ fn action_menu(c: &mut Canvas, v: &PokerView, seat: usize, x: i32, y: i32) {
         if on {
             c.rect(cx, cy, 63, 16, ink::SELECT);
         }
-        c.text(
+        c.text_in(
             l.clone(),
             cx + 4,
             cy + 1,
+            63 - 6,
             if on { pen::GOLD } else { pen::WHITE },
+            Align::Left,
         );
     }
-    c.text_centre(
+    c.text_in(
         format!("to {}  (min {})", menu.raise_to, v.min_raise_to),
         x + w / 2,
         y + 35,
+        w - 8,
         if menu.cursor == 2 {
             pen::GOLD
         } else {
             pen::DIM
         },
+        Align::Centre,
     );
 }
 
 /// The table HUD over an in-world poker game: a plate per other seat along
-/// the top (name, chips or state, the street bet, the seat to act lit), the
-/// pot under them, the player's own plate and the action menu along the
-/// bottom. The cards and chips themselves are the table's.
-pub(super) fn hud(c: &mut Canvas, mode: &legaia_engine_modes::active::ActiveMode, v: &PokerView) {
+/// the top (name, chips or state, the street bet on its own row, the seat to
+/// act lit), the pot under them, the player's own plate and the action menu
+/// along the bottom. The cards and chips themselves are the table's.
+///
+/// Every label sits in a box of its own ([`Canvas::text_in`]): a long table
+/// name is cut to its plate, and a seat's stack and bet never share a row,
+/// so "4900" and "+100" cannot run together into "4900+100".
+///
+/// Returns the bottom of the HUD's top band (the plates and the pot),
+/// where a banner may start.
+pub(super) fn hud(
+    c: &mut Canvas,
+    mode: &legaia_engine_modes::active::ActiveMode,
+    v: &PokerView,
+) -> i32 {
     let me = mode.local_seat;
     let name = |seat: usize| mode.seat_name(seat);
     let others: Vec<usize> = (0..v.seats.len()).filter(|&s| s != me).collect();
     let n = others.len().max(1) as i32;
     let gap = 4;
-    let pw = ((super::STAGE_W - 8 - gap * (n - 1)) / n).min(104);
-    let x0 = (super::STAGE_W - (pw * n + gap * (n - 1))) / 2;
+    let pw = ((STAGE_W - 8 - gap * (n - 1)) / n).min(104);
+    let x0 = (STAGE_W - (pw * n + gap * (n - 1))) / 2;
     let plate = [10, 14, 24, 190];
     for (i, &seat) in others.iter().enumerate() {
         let s = &v.seats[seat];
@@ -283,47 +331,120 @@ pub(super) fn hud(c: &mut Canvas, mode: &legaia_engine_modes::active::ActiveMode
         } else {
             ink::PANEL_EDGE
         };
-        c.panel(x, 4, pw, 30, plate, edge);
-        if v.button == seat {
-            button_marker(c, x + pw - 6, 9);
+        c.panel(x, SEAT_PLATE_Y, pw, SEAT_PLATE_H, plate, edge);
+        // The dealer button takes the name row's right corner.
+        let button = v.button == seat;
+        if button {
+            button_marker(c, x + pw - 6, SEAT_PLATE_Y + 5);
         }
-        c.text(
+        let inner = pw - 8;
+        c.text_in(
             name(seat),
             x + 4,
-            4,
+            SEAT_PLATE_Y,
+            inner - if button { 8 } else { 0 },
             if acting { pen::GOLD } else { pen::WHITE },
+            Align::Left,
         );
-        c.text(seat_status(s), x + 4, 18, status_ink(s));
+        c.text_in(
+            seat_status(s),
+            x + 4,
+            SEAT_PLATE_Y + LINE,
+            inner,
+            status_ink(s),
+            Align::Left,
+        );
         if s.street_bet > 0 {
-            c.text_right(format!("+{}", s.street_bet), x + pw - 4, 18, pen::GOLD);
+            c.text_in(
+                format!("Bet {}", s.street_bet),
+                x + 4,
+                SEAT_PLATE_Y + 2 * LINE,
+                inner,
+                pen::GOLD,
+                Align::Left,
+            );
         }
     }
+    // The pot sits bottom-centre between the player's plate and the action
+    // menu: under the plates it would cover the far seats' bets and the
+    // pile on the felt.
     if v.pot > 0 {
-        c.panel(130, 37, 60, 16, plate, ink::PANEL_EDGE);
-        c.text_centre(format!("Pot {}", v.pot), super::STAGE_W / 2, 37, pen::GOLD);
+        let (w, h) = (POT_W, 2 * LINE + 4);
+        let (x, y) = ((STAGE_W - w) / 2, STAGE_H - 4 - h);
+        c.panel(x, y, w, h, plate, ink::PANEL_EDGE);
+        c.text_in("Pot", STAGE_W / 2, y + 1, w - 8, pen::DIM, Align::Centre);
+        c.text_in(
+            v.pot.to_string(),
+            STAGE_W / 2,
+            y + 1 + LINE,
+            w - 8,
+            pen::GOLD,
+            Align::Centre,
+        );
     }
-    // The player's plate, bottom-left.
+    // The player's plate, bottom-left: "You" and the best hand made, the
+    // stack, then the bet (or the fold) - one row each.
     if let Some(s) = v.seats.get(me) {
-        let y = super::STAGE_H - 56;
-        c.panel(4, y, 120, 52, plate, ink::PANEL_EDGE);
+        let (x, y, w, h) = (4, STAGE_H - 56, 120, 52);
+        c.panel(x, y, w, h, plate, ink::PANEL_EDGE);
         if v.button == me {
-            button_marker(c, 118, y + 6);
+            button_marker(c, x + w - 6, y + h - 7);
         }
-        c.text("You", 8, y + 1, pen::GOLD);
-        c.text(format!("{} chips", s.chips), 8, y + 15, status_ink(s));
+        let you_w = 28;
+        c.text_in("You", x + 4, y + 1, you_w, pen::GOLD, Align::Left);
+        c.text_in(
+            format!("{} chips", s.chips),
+            x + 4,
+            y + 1 + LINE,
+            w - 8,
+            status_ink(s),
+            Align::Left,
+        );
+        let last_w = w - 8 - 10;
         if s.street_bet > 0 {
-            c.text(format!("Bet {}", s.street_bet), 8, y + 31, pen::WHITE);
+            c.text_in(
+                format!("Bet {}", s.street_bet),
+                x + 4,
+                y + 1 + 2 * LINE,
+                last_w,
+                pen::WHITE,
+                Align::Left,
+            );
         } else if s.folded {
-            c.text("Folded", 8, y + 31, pen::DIM);
+            c.text_in(
+                "Folded",
+                x + 4,
+                y + 1 + 2 * LINE,
+                last_w,
+                pen::DIM,
+                Align::Left,
+            );
         }
-        if let (Some(h), false) = (s.hole, v.board.is_empty()) {
-            let mut seven: Vec<_> = h.to_vec();
+        if let (Some(hole), false) = (s.hole, v.board.is_empty()) {
+            let mut seven: Vec<_> = hole.to_vec();
             seven.extend_from_slice(&v.board);
             if seven.len() >= 5 && !s.folded {
                 let best = legaia_engine_modes::poker::hand::best_hand(&seven);
-                c.text_right(category_label(best.category()), 120, y + 31, pen::GREEN);
+                c.text_in(
+                    category_label(best.category()),
+                    x + w - 4,
+                    y + 1,
+                    w - 8 - you_w - 4,
+                    pen::GREEN,
+                    Align::Right,
+                );
             }
         }
     }
-    action_menu(c, v, me, super::STAGE_W - 4 - 130, super::STAGE_H - 56);
+    action_menu(c, v, me, STAGE_W - 4 - 130, STAGE_H - 56);
+    SEAT_PLATE_Y + SEAT_PLATE_H + 3
 }
+
+/// The pot box's width: the gap between the player's plate (`4..124`) and
+/// the action menu (`186..316`), less a margin each side.
+const POT_W: i32 = 56;
+
+/// The top of the other seats' plates, and their height: three rows (name,
+/// stack, bet).
+const SEAT_PLATE_Y: i32 = 4;
+const SEAT_PLATE_H: i32 = 3 * LINE + 4;

@@ -2,7 +2,8 @@
 //! owns a `World` and the `ProtIndex`, enters scenes and ticks them, and
 //! drains what a tick queues (door warps, BGM routing, the FMV hand-off).
 //! Beside it sit where a save resumes or a New Game starts ([`resume`]), the
-//! headless live-scene preview ([`scene_live`]), the disc readers the scene
+//! headless live-scene preview ([`scene_live`]), the pack maps prepared ahead
+//! of their entry ([`expansion_preload`]), the disc readers the scene
 //! entry feeds kernels from ([`disc_readers`]) and the fishing venue's host
 //! seam ([`fishing_venue`]).
 //!
@@ -11,6 +12,7 @@
 //! and below the play hosts.
 
 pub mod disc_readers;
+pub mod expansion_preload;
 pub mod fishing_venue;
 pub mod place_name_banner;
 pub mod resume;

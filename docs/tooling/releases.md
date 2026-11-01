@@ -32,7 +32,7 @@ The workflow has four jobs:
 | `verify` | self-hosted | `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace` |
 | `build-cross` | self-hosted (arm64 Linux) | the two Linux targets and Windows; uploads the archives as a workflow artifact |
 | `build-macos` | GitHub-hosted `macos-14` | the universal macOS archive; uploads it as a workflow artifact |
-| `publish` | GitHub-hosted `ubuntu-latest` | `needs` all three; checks every archive's hash, writes `SHA256SUMS`, makes the one release edit |
+| `publish` | self-hosted | `needs` all three; checks every archive's hash, writes `SHA256SUMS`, makes the one release edit with the runner's `gh` |
 
 The build jobs never touch the release. Only `publish` does, and it waits for
 the test gate and for **both** build jobs, so a release never appears with a
@@ -81,6 +81,8 @@ legaia-tools-<version>-<target>/
     Legaia Explorer             (.exe on Windows, .app on macOS)
     README-PLAY.txt
     LICENSE  LICENSE-MIT  THIRD-PARTY-LICENSES.txt
+    packs/
+        rebirth.lxpack          the Rebirth expansion pack
     command-line-tools/
         README.txt              every tool, one line each
         legaia-engine           the engine: launcher, play-window, every subcommand
@@ -105,6 +107,28 @@ binary side by side), in its `command-line-tools/`, then inside a `Legend of
 Legaia.app` there. Explorer inside `Legaia Explorer.app/Contents/MacOS/`
 reaches the archive folder three levels up. The release smoke-runs the staged
 `Legend of Legaia --version` on the native row, which exercises that lookup.
+
+### The bundled expansion pack
+
+`packs/rebirth.lxpack` is [`packs/rebirth/`](../../packs/rebirth/README.md)
+bundled by `asset expansion bundle` while the archive is staged. The bundler
+is the format's one deterministic writer, so every archive carries the same
+bytes, and it refuses a pack that fails validation - the
+[no-disc-bytes rule](../formats/expansion-pack.md#the-no-disc-bytes-rule)
+among the checks - so what ships is disc coordinates plus the pack's own art
+and audio. A cross target cannot run its own `asset`, so its row bundles with a
+host build; the native and universal macOS rows use the staged binary.
+
+The game finds the folder through
+`legaia_app_theme::release_layout::find_bundled_packs`: the first `packs/`
+folder in the four folders above the running program, the same walk as
+`find_engine`, which reaches the archive's top level from
+`command-line-tools/` and from inside a `.app`. A `cargo build` in
+`target/<profile>/` reaches the checkout's `packs/` the same way. The
+launcher's *Expansion pack* button steps through the packs it finds there
+and in the per-user packs folder (an installed copy of a pack id hides the
+bundled one), `legaia-engine packs` lists both folders, and
+`play-window --expansion rebirth` resolves the id in the same order.
 
 ## Icons
 
@@ -318,7 +342,8 @@ project is `MIT OR Unlicense`), and three generated text files:
   settings and saves live, and lists the keyboard controls (every pad
   button, the Escape-twice quit) and the display toggles. The launcher itself is described in
   [`playing-and-viewing.md`](../guides/playing-and-viewing.md#0-the-launcher).
-  It also points asset users at Legaia Explorer and the extraction guide.
+  It also points asset users at Legaia Explorer and the extraction guide, and
+  says how to play the bundled Rebirth pack.
 - `command-line-tools/README.txt` - the target, every command-line program
   with a one-line role, and the same bring-your-own-disc rule.
 - `THIRD-PARTY-LICENSES.txt` (top level) - the license texts and notices of every crate

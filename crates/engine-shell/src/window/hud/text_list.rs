@@ -872,7 +872,7 @@ pub(in crate::window) struct HelpPanelLayout {
 /// Two columns, each in table order. The table's own halves come first,
 /// which is what a narrow font gets. When their widest rows land in opposite
 /// columns and the pair is wider than the stage (the disc's dialog font,
-/// with "Camera distance: farther" and "Free-angle movement: off" both in
+/// with what were "Camera distance: farther" and "Free-angle movement: off" both in
 /// the second half, ran the panel off the right edge), the widest entries
 /// share one column instead - the most even such split that fits. A single
 /// column is the last candidate.

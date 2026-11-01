@@ -99,8 +99,9 @@ impl PlayWindowApp {
         // controller-driven camera (azimuth / zoom / pan); an active
         // in-engine cutscene (opdeene opening prologue) frames the
         // cutscene's executed op-0x45 camera target; every other mode
-        // uses the orbit camera.
-        let in_world_map = self.session.host.world.mode == SceneMode::WorldMap;
+        // uses the orbit camera. A race run on a kingdom overworld draws the
+        // overworld under its stage (`World::shows_overworld`).
+        let in_world_map = self.session.host.world.shows_overworld();
         let cam = self.compute_scene_camera(aspect, in_world_map, cutscene_cam);
         // The volumetric ground-fog enhancement (`render-kernels::fog_volume`,
         // `F9` / `--no-volumetric-fog`): the engine's bank for this tick,

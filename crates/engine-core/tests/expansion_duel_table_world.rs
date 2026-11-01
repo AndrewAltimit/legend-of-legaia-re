@@ -33,11 +33,14 @@ fn pack() -> Arc<ExpansionPack> {
 /// `on_map` (the duel then plays at its table) or off every map (its 2D
 /// screen).
 fn world(on_map: bool) -> World {
+    world_with(pack(), on_map)
+}
+
+fn world_with(pack: Arc<ExpansionPack>, on_map: bool) -> World {
     let mut w = World::new();
     w.mode = SceneMode::Field;
     w.spawn_actor(0).active = true;
     w.install_field_player(0);
-    let pack = pack();
     w.activate_expansion(pack.clone())
         .expect("the pack activates");
     if on_map {
@@ -246,4 +249,44 @@ fn the_card_page_is_written_and_put_back() {
         .flat_map(|(x, y)| vram.pixel(x, y).to_le_bytes())
         .collect();
     assert_eq!(after, before);
+}
+
+/// A table's `hide` takes the named props' draws (and lights) away while the
+/// duel is seated on the map, and gives them back when the seat closes.
+#[test]
+fn the_table_hides_its_props_while_seated() {
+    let mut pack = (*pack()).clone();
+    let room = pack.maps.get_mut("duel_room").unwrap();
+    room.props.push(legaia_expansion_format::map::PropDef {
+        id: "plank".into(),
+        tile: [5, 4],
+        solid: true,
+        ..Default::default()
+    });
+    room.props.push(legaia_expansion_format::map::PropDef {
+        id: "stool".into(),
+        tile: [5, 6],
+        ..Default::default()
+    });
+    pack.modes.card_duels[0].table.as_mut().unwrap().hide = vec!["plank".into()];
+    let mut w = world_with(Arc::new(pack), true);
+    let key = legaia_engine_scene::expansion_map::PROP_RECORD_BASE;
+    assert!(!w.hidden_object_records().contains(&key), "drawn before");
+    let grid = w.terrain.collision_grid.clone();
+    w.enter_pack_mode("table-duel").expect("enters");
+    for _ in 0..4 {
+        frame(&mut w, 0);
+    }
+    let hidden = w.hidden_object_records();
+    assert!(hidden.contains(&key), "the plank hides while seated");
+    assert!(!hidden.contains(&(key + 1)), "the stool stays");
+    assert_eq!(w.terrain.collision_grid, grid, "collision is untouched");
+    w.exit_pack_mode();
+    for _ in 0..2 {
+        frame(&mut w, 0);
+    }
+    assert!(
+        !w.hidden_object_records().contains(&key),
+        "drawn again once the seat closes"
+    );
 }

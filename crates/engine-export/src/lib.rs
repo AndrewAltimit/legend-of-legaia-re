@@ -6,3 +6,4 @@
 //! names the exporter back. No wgpu / windowing / audio dependencies.
 
 pub mod glb_export;
+pub mod mesh_catalog;

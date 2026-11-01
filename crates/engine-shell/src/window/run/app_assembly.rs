@@ -304,6 +304,13 @@ impl PlayWindowApp {
             );
             self.options_state.occlusion_fade = false;
         }
+        if !fidelity.ssao {
+            self.options_pins.pin(
+                &self.options_state,
+                legaia_engine_menus::options::options_pin::SSAO,
+            );
+            self.options_state.ssao = false;
+        }
         // `LEGAIA_BATTLE_CAMERA_OPTION=<0|1|2>`: the retail-compare image
         // child plays the capture's own Battle Camera word (`0x800846C0`).
         // Pinned like the fog: a session override, which neither a loaded

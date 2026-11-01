@@ -165,6 +165,7 @@ impl World {
         self.restore_pack_mode_player_from(seat.player_return);
         self.restore_pack_mode_bodies(&seat.body_idle);
         self.restore_pack_mode_headings(&seat.body_heading);
+        self.expansion.mode_return = seat.return_place.clone();
     }
 
     /// Action movement's dash as the racer's boost: with the toggle on, an
@@ -231,6 +232,7 @@ impl World {
                 self.restore_pack_mode_player_from(seat.player_return);
                 self.restore_pack_mode_bodies(&seat.body_idle);
                 self.restore_pack_mode_headings(&seat.body_heading);
+                self.expansion.mode_return = seat.return_place.clone();
             }
             SeatStep::Settled {
                 mode_id,

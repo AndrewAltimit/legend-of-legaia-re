@@ -254,7 +254,8 @@ pub enum ArtsInputResolution {
 /// any other press closes it - so retail shows at most three pages of five,
 /// however many arts are learned.
 ///
-/// PORT: overlay_battle_action_0898_801d3748
+/// The retail form of [`arts_list_pager_ext`], which is the one the command
+/// input steps (and where the port anchor sits).
 pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
     arts_list_pager_ext(open, learned, 0)
 }
@@ -263,6 +264,8 @@ pub fn arts_list_pager(open: Option<u8>, learned: u8) -> Option<u8> {
 /// record's `learned` arts: an engine extension. With `extra == 0` it is the
 /// retail pager exactly; otherwise the pages run on past the third while
 /// rows remain, so a pack's arts after a full retail list still show.
+///
+/// PORT: overlay_battle_action_0898_801d3748
 pub fn arts_list_pager_ext(open: Option<u8>, learned: u8, extra: u8) -> Option<u8> {
     if extra > 0 {
         let total = usize::from(learned) + usize::from(extra);

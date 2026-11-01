@@ -14,7 +14,11 @@
 //!
 //! The map itself is the scene host's to enter
 //! (`SceneHost::sync_pack_mode_map`), off [`World::pack_mode_wants_map`];
-//! until it is entered the instance draws as its top-down screen.
+//! until it is entered the instance draws as its top-down screen. A race
+//! run on a kingdom overworld names a retail scene instead
+//! ([`World::pack_mode_wants_scene`]); the scene host enters it, notes
+//! where the party stood, and takes it back there when the seat closes
+//! ([`legaia_engine_expansion::ExpansionState::mode_return`]).
 
 use legaia_engine_expansion::mode_stage::{LeaderClip, StageFrame};
 use legaia_engine_expansion::modes::PackModeSeat;
@@ -56,6 +60,21 @@ impl World {
         }
     }
 
+    /// Whether the card toasts wait: a mode session is in play (in the
+    /// world or on its board), or a table's stage still plays out. They
+    /// show once the session has left play - over the results card or the
+    /// field - so they never lie over a mode's HUD.
+    pub fn pack_mode_holds_toasts(&self) -> bool {
+        self.table_stage_up()
+            || (self.mode == SceneMode::Expansion
+                && self.expansion.mode_seat.as_deref().is_some_and(|s| {
+                    matches!(
+                        s.stage,
+                        legaia_engine_expansion::modes::ModeStage::Playing { .. }
+                    )
+                }))
+    }
+
     /// Whether a duel or poker table in the world owns the frame.
     pub fn table_stage_up(&self) -> bool {
         self.pack_mode_stage()
@@ -74,9 +93,48 @@ impl World {
         let Some(seat) = self.expansion.mode_seat.as_deref() else {
             return self.party_podium_wants_map();
         };
-        let frame = seat.active()?.map_frame()?;
+        let frame = seat.active()?.map_frame().filter(|f| !f.scene)?;
         let here = self.expansion.map.as_ref().map(|m| m.map_id.as_str());
         (here != Some(frame.map_id.as_str())).then(|| (frame.map_id.clone(), frame.spawn.clone()))
+    }
+
+    /// The retail scene the running instance is run on (a race on a kingdom
+    /// overworld), when the player is not in it yet - the scene host enters
+    /// it.
+    pub fn pack_mode_wants_scene(&self) -> Option<String> {
+        if self.mode != SceneMode::Expansion {
+            return None;
+        }
+        let frame = self
+            .expansion
+            .mode_seat
+            .as_deref()?
+            .active()?
+            .map_frame()
+            .filter(|f| f.scene)?;
+        (!self.on_mode_scene(&frame.map_id)).then(|| frame.map_id.clone())
+    }
+
+    /// Whether the player stands in retail scene `scene` itself, on no pack
+    /// map built over it.
+    fn on_mode_scene(&self, scene: &str) -> bool {
+        self.expansion.map.is_none() && self.active_scene_label == scene
+    }
+
+    /// Whether a mode seat holds the frame over a kingdom overworld (a race
+    /// run on one): the hosts draw the overworld - its ground, landmarks
+    /// and sky - under it, as they do in [`SceneMode::WorldMap`].
+    pub fn pack_mode_on_overworld(&self) -> bool {
+        self.mode == SceneMode::Expansion
+            && self.expansion.mode_seat.is_some()
+            && self.expansion.map.is_none()
+            && legaia_engine_scene::scene::is_world_map_scene(&self.active_scene_label)
+    }
+
+    /// Whether the frame shows a kingdom overworld: the overworld walk, or
+    /// a mode played over one ([`Self::pack_mode_on_overworld`]).
+    pub fn shows_overworld(&self) -> bool {
+        self.mode == SceneMode::WorldMap || self.pack_mode_on_overworld()
     }
 
     /// Note the player's pose on the open seat, to restore when it closes.
@@ -91,6 +149,12 @@ impl World {
         if let Some(seat) = self.expansion.mode_seat.as_deref_mut() {
             seat.player_return = pose;
         }
+    }
+
+    /// Put the player at field pose `[x, y, z, facing]` with the idle clip
+    /// on: the scene host's way back from a mode run in another scene.
+    pub fn restore_player_pose(&mut self, pose: Option<[i16; 4]>) {
+        self.restore_pack_mode_player_from(pose);
     }
 
     /// Put the player back where the seat found it (the in-world stage moved
@@ -109,6 +173,62 @@ impl World {
         (m.world_x, m.world_y, m.world_z, m.render_26) = (x, y, z, facing);
         if self.locomotion.clip_base != BASE_IDLE {
             self.field_player_strided_clip(BASE_IDLE);
+        }
+    }
+
+    /// The props of the map the player is on that instance `id`'s table
+    /// hides (`[poker.table]` / `[card_duels.table]` `hide`), as that map's
+    /// id and prop indices.
+    fn pack_mode_hidden_props(&self, id: &str) -> Option<(String, Vec<usize>)> {
+        let (modes, _) = self.pack_mode_sections();
+        let hide = modes
+            .poker
+            .iter()
+            .find(|p| p.id == id)
+            .and_then(|p| p.table.as_ref())
+            .map(|t| &t.hide)
+            .or_else(|| {
+                modes
+                    .card_duels
+                    .iter()
+                    .find(|d| d.id == id)
+                    .and_then(|d| d.table.as_ref())
+                    .map(|t| &t.hide)
+            })
+            .filter(|h| !h.is_empty())?;
+        let map = self.expansion.map.as_ref()?;
+        let props = map
+            .def
+            .props
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| !p.id.is_empty() && hide.contains(&p.id))
+            .map(|(i, _)| i)
+            .collect();
+        Some((map.map_id.clone(), props))
+    }
+
+    /// The draw-record keys of the props the open seat's table hides on the
+    /// map the player is on (`PROP_RECORD_BASE + n`, from
+    /// `legaia_engine_scene::expansion_map`): what
+    /// [`World::hidden_object_records`] adds, so both hosts skip their draws.
+    /// Empty once the seat closes; collision is never touched.
+    pub fn pack_mode_hidden_prop_records(&self) -> Vec<usize> {
+        if self.mode != SceneMode::Expansion {
+            return Vec::new();
+        }
+        let (Some(seat), Some(map)) = (
+            self.expansion.mode_seat.as_deref(),
+            self.expansion.map.as_ref(),
+        ) else {
+            return Vec::new();
+        };
+        match &seat.hidden_props {
+            Some((id, props)) if *id == map.map_id => props
+                .iter()
+                .map(|i| legaia_engine_scene::expansion_map::PROP_RECORD_BASE + i)
+                .collect(),
+            _ => Vec::new(),
         }
     }
 
@@ -269,10 +389,13 @@ impl World {
     /// runs only while the session's map is the one the player is in.
     pub(in crate::world) fn stage_pack_mode(&mut self, seat: &mut PackModeSeat) {
         let here = self.expansion.map.as_ref().map(|m| m.map_id.clone());
-        let on_map = seat
-            .active()
-            .and_then(|m| m.map_frame())
-            .is_some_and(|f| Some(&f.map_id) == here.as_ref());
+        let on_map = seat.active().and_then(|m| m.map_frame()).is_some_and(|f| {
+            if f.scene {
+                self.on_mode_scene(&f.map_id)
+            } else {
+                Some(&f.map_id) == here.as_ref()
+            }
+        });
         let after = matches!(
             seat.stage,
             legaia_engine_expansion::modes::ModeStage::Results { .. }
@@ -292,6 +415,9 @@ impl World {
             };
             seat.stage_frame = seat.world_stage.step(mode);
             let mode_id = mode.id.clone();
+            if seat.hidden_props.is_none() {
+                seat.hidden_props = self.pack_mode_hidden_props(&mode_id);
+            }
             self.stage_pack_mode_bodies(seat, &mode_id);
         }
         self.stage_pack_mode_duel(seat);
@@ -302,7 +428,7 @@ impl World {
             return;
         };
         let (x, z) = (leader.pos[0] as i32, leader.pos[1] as i32);
-        let y = self.sample_field_floor_height(x, z);
+        let y = self.sample_field_floor_height(x, z) - leader.lift as i32;
         if let Some(a) = self.actors.get_mut(slot) {
             let m = &mut a.move_state;
             m.world_x = x.clamp(i16::MIN.into(), i16::MAX.into()) as i16;

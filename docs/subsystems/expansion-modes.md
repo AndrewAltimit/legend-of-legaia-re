@@ -16,8 +16,8 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]`, `[[party_nights]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
 | Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
 | Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
-| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion` |
-| Screens | `legaia_engine_ui::expansion_modes`, projected by `legaia_engine_screens::expansion_modes` |
+| Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion`; the World-free modes page holds one directly |
+| Screens | `legaia_engine_ui::expansion_modes`; `seat_screen` projects a seat, `legaia_engine_screens::expansion_modes` the world's |
 | Tests | per-module rule tests; `crates/engine-modes/tests/` determinism, random-pad soak and Rebirth conversion |
 
 ## The session contract
@@ -146,14 +146,27 @@ AI seats look ahead with the same physics: they simulate candidate aims and powe
 
 ## Racing
 
-A track is a closed centerline polyline with a half-width; every point within the half-width of a segment is drivable, and every centerline point is a checkpoint.
+A track is a centerline polyline with a half-width: a **circuit** closes the line back on its first point and is run for laps, a **sprint** runs once from the first point to the last. Every point within the half-width of a segment is drivable, and every centerline point is a checkpoint gate.
 
-- **Checkpoints.** A racer passes the next checkpoint when the segment nearest to it becomes the segment leaving that checkpoint. The switch happens on the corner's bisector, so a cut corner still counts and a skipped segment never does; only the next checkpoint in order counts. Passing checkpoint 0 closes a lap.
-- **Driving.** Heading plus scalar speed: Cross accelerates, Square brakes, Left / Right steer, R1 spends a full boost meter (it refills a unit a frame), and boost-pad segments give a short boost free.
+- **Checkpoints.** A racer passes the next checkpoint when the segment nearest to it becomes the segment leaving that checkpoint. The switch happens on the corner's bisector, so a cut corner still counts and a skipped segment never does; only the next checkpoint in order counts. On a circuit, passing checkpoint 0 closes a lap; a sprint's last point has no segment leaving it, and is passed on crossing the line through it square to the last segment - the finish.
+- **Driving.** Heading plus scalar speed: Cross accelerates, Square brakes, Left / Right steer, R1 spends a full boost meter (it refills a unit a frame), and boost-pad segments give a short boost free. Triangle uses the power-up the racer carries.
 - **Contact.** At the edge the racer is pushed back inside, the velocity's outward component is dropped and the rest turns the heading along the edge at seven eighths speed. Overlapping racers are pushed apart and the one behind loses a quarter of its speed. A finished racer coasts and no longer collides.
-- **End.** All racers finished, `finish_grace` frames after the first finisher, or the time limit; unfinished racers place behind the finishers by laps, checkpoints and distance to the next one.
+- **End.** All racers finished, `finish_grace` frames after the first finisher, or the time limit (three minutes a lap; a sprint counts as one); unfinished racers place behind the finishers by laps, checkpoints and distance to the next one.
 
-AI racers steer by pure pursuit at a point two half-widths ahead along the centerline, offset by a per-racer line; tiers cap their top speed, brake for sharp turns and use the boost.
+AI racers carry the race's `rivals` names in seat order (`racing::rival_name`; a seat past the list takes a stock name from `racing::STOCK_RIVALS`), which every screen and the results card read through `ActiveMode::seat_name` under a networked player's own name. They steer by pure pursuit at a point two half-widths ahead along the centerline, offset by a per-racer line; tiers cap their top speed, brake for sharp turns and use the boost.
+
+### Power-ups
+
+A race's `pickups` lie on and beside the course. A racer with nothing in hand takes one by running within reach of it (its radius plus the racer's); the spot then stands empty for its `respawn` frames (600 by default) and comes back. The racer carries one power-up at a time and uses it with Triangle.
+
+| Power-up | Effect |
+|---|---|
+| Boost | 100 frames at boost speed, on top of whatever the meter holds |
+| Hop | 40 frames in the air: no bumps either way, and the track edge lets the racer run a full half-width wider, so a hop cuts a corner or reaches a pickup lying off the course. Landing, the extra room shrinks back three units a frame, easing the racer onto the track |
+| Shield | 600 frames in which a bump costs no speed; it blocks the next slow aimed at the racer, and is spent doing so |
+| Slow | Every rival not yet finished runs for 120 frames at 55% of its top speed; a shielded rival loses its shield instead |
+
+An AI racer with nothing in hand turns toward a ready power-up lying on the track within three half-widths ahead and in front of it. It uses what it carries by rule: a boost on a straight, a hop into a sharp turn or over a rival close ahead, a shield at once, a slow when it is not leading; a novice dithers half the frames. The spots' timers, what each racer carries and the effects' frames are all in the session's state hash, so a race with power-ups replays and runs in lockstep like any other.
 
 ## Prop hunt
 
@@ -269,7 +282,7 @@ itself a few frames later (`World::age_net_podium`).
 
 ## Hosts
 
-Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition.
+Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page runs the same seat with no `World` and no disc, and draws the same composition through `seat_screen`.
 
 ### The seat
 
@@ -289,6 +302,7 @@ When a session finishes, the seat settles it: the session's own rewards, plus, w
 |---|---|
 | Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
 | Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
+| Browser modes page | `site/modes.html`: the instances laid out on a pack map first, played in 3D in the play page's runtime framed with `?embed=1&mode=<id>` off the site's disc cache; then every instance flat, with no disc and no `World` (`LegaiaModes`, [`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)) |
 | Card screens | Native: `\` (backslash) opens the card menu and closes it; `--mode cards`, `--mode cards-binder` and `--mode cards-dealer[:ID]` open a card screen at launch. Browser: `play_cards_open("menu" / "binder" / "dealer:ID")`, `play_cards_close`, with `play_cards_json` (counts, completion) and `play_card_notices_json`. A pack map opens a dealer through its `card_dealer` trigger |
 
 ### Controls
@@ -300,7 +314,7 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 | Poker | Left / Right: Fold, Check-Call, Raise, All-in. Up / Down: raise size in big blinds. Cross: act, or skip the showdown |
 | Grid Duel | Left / Right: hand card. Cross: lift it, then D-pad to a cell and Cross to place. Circle: put it back |
 | Golf | Left / Right: aim (hold Square for fine steps). Cross: start the power meter, Cross again to strike. Circle: back to aiming |
-| Racing | Cross: accelerate. Square: brake. Left / Right: steer. R1: boost |
+| Racing | Cross: accelerate. Square: brake. Left / Right: steer. R1: boost. Triangle: use the power-up carried |
 | Prop hunt | Choose: Left / Right and Cross. Then the D-pad moves; a hunter inspects with Cross, a hider taunts with Triangle |
 
 ### Screens
@@ -313,21 +327,21 @@ Inside every mode, Start raises the quit prompt (Cross leaves, Circle resumes). 
 | Poker | Opponent plates along the far rail (chips or state, dealer button, card backs, street bets, revealed hands at showdown), the board and pot, the player's hole cards and stack, the action menu with the raise size, the event log |
 | Grid Duel | The 3x3 grid on its board with elemental cells, both hands fanned down the sides (the selected card slid out), the score plates, the turn line and the selected card's panel. Cards are the card page's faces |
 | Golf | The hole top-down from its tiles (surfaces, height shading, slope arrows), cup and flag, every ball, the aim line, the power meter and the scorecard |
-| Racing | A top-down track map with boost segments and the start line, every racer with its heading, and the lap / place / speed / boost / order panel. A functional view |
+| Racing | A top-down track map with boost segments, the start line (and a sprint's finish line) and the ready power-up spots, every racer with its heading, and the lap or gate / place / speed / boost / power-up / order panel. A functional view |
 | Prop hunt | A top-down arena with blockers, decoys, hunters and hiders, and the round / timer / role / score panel. A hidden hider draws exactly like a decoy while the player hunts. A functional view |
 | Results | Placements with each mode's score, and what was won |
 
 ## In-world golf and racing
 
-A golf course or a race that names a pack map (`map = "<id>"`, schema in the expansion-pack format page's `modes.toml` section) is played in the 3D field scene the map builds ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md)) instead of on a top-down board. The session is unchanged and stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. The pieces:
+A golf course or a race that names a pack map (`map = "<id>"`, schema in the expansion-pack format page's `modes.toml` section) is played in the 3D field scene the map builds ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md)) instead of on a top-down board. A race may instead name a kingdom overworld (`scene = "map01"`) and run across the overworld itself ([Racing on the overworld](#racing-on-the-overworld)). The session is unchanged and stays the only authority: the map only lays the course or track out, and what is drawn is read off the session's view each frame and never fed back. The pieces:
 
 | Piece | Where |
 |---|---|
-| Course and track from a map | `golf::course::Course::from_map`, `racing::Track::from_map`, built by `ActiveMode::build_with_maps` |
+| Course and track from a map | `golf::course::Course::from_map`, `racing::Track::from_map` (`Track::from_scene` on an overworld), built by `ActiveMode::build_with_maps` |
 | Mode units on the field | `map_frame::MapFrame` (origin and scale), `ActiveMode::map_frame` |
 | The stage (leader, balls, aim, bodies, trails, camera shot, banner) | `legaia_engine_expansion::mode_stage::WorldStage`, kept on `PackModeSeat` |
 | Moving the leader | `World::stage_pack_mode` (`world::expansion_stage`), after the seat's tick |
-| Entering the map | `SceneHost::sync_pack_mode_map`, off `World::pack_mode_wants_map` |
+| Entering the map | `SceneHost::sync_pack_mode_map`, off `World::pack_mode_wants_map` (`World::pack_mode_wants_scene` for an overworld) |
 | Camera | `legaia_engine_world_views::pack_mode_world::stage_frame`, a `FieldCameraFrame::Venue` arm of `resolve_field_camera` |
 | World pieces | `pack_mode_world::stage_prims` through `HostView::pack_mode_world_prims` |
 | HUD | `ModeScreen::InWorld` (`engine-ui` `golf::hud`, `race::hud`) |
@@ -343,7 +357,8 @@ The session runs in its own mode units, exactly as for a tile-string course, and
 `WorldStage::step` turns the session's view into a `StageFrame` once a frame, while the session's map is the one the player is in:
 
 - **Golf.** The party leader stands beside the player's ball facing the aim, plays the swing for 24 frames after a strike, and runs to the ball's new lie once it rests; holed, it waits by the cup. The other seats stand at their own balls as bodies, on the far side from where the leader would stand. Every ball not yet holed draws, the rolling one at the session's rolling position. The aim arrow lies on the ground from the ball to play, lengthening with the power meter and warming from yellow to red as it fills. The camera sits behind the ball to play looking down its aim, follows a rolling ball along the shot's line, and settles on the cup between holes; it eases toward each target. Banners name the hole and par at its start and the score as a ball drops ("Birdie!", "Hole in one!").
-- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it. The other racers are bodies. A boosting racer leaves a fading ribbon of its last positions. The camera chases from behind on the heading, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
+- **Racing.** The leader is the player's racer: its position, its heading, the run clip at speed and the walk below it, lifted off the floor on a parabola through a hop (`HOP_HEIGHT` at the top) while its shadow stays on the ground. The leap's whole arc, from takeoff to the landing ring, is dotted over the ground (`StageTrack::hops`).
+  The other racers are bodies, lifted the same way. A boosting racer leaves a fading ribbon of its last positions. The track carries the next checkpoint the leader must pass and the power-up spots (`StageTrack::next_gate`, `StageTrack::pickups`). The camera chases from behind and above on the heading, high enough that the map's walls rarely stand between it and the racer, a little ahead of the racer and pulled back as it speeds up. Banners carry the countdown, "Go!", each new lap and the finish place.
 
 The party bank has no swing clip, so the swing plays the landing clip (clip base `7`, the hop phase machine's landing), whose crouch and rise reads as a putt. The leader's walk to its ball, the camera ease and the banner timers are the stage's own memory; nothing the stage keeps reaches the session.
 
@@ -369,11 +384,22 @@ Both hosts draw the field under the seat as they draw any field scene, the leade
 |---|---|
 | Ball | A shaded disc facing the camera with a band of the seat's colour, over a blob shadow |
 | Cup | A dark disc with a white rim, a flagpole and a red pennant |
+| Hole | Every playable tile tinted by its surface over the map's floor (fairway mown in a checker, rough, sand, water), a white line where play ends, a chevron down each sloped tile, a lighter putting green round the cup, the tee's mat and two red markers |
+| Track | Red-and-white kerbs along both edges of the session's corridor, a chequered start line across the first segment (and a finish line across a sprint's last point), cyan chevrons down each boost segment |
+| Gate | Two posts either side of the track over every checkpoint, a banner between their tops: gold over the gate the leader must pass next (with a gold line across the ground under it), white ahead, grey behind on a sprint |
+| Power-up | A gem floating and turning over a coloured ring on the ground, its shape and colour the kind's - a cyan diamond for a boost, a green arrowhead for a hop, a gold square for a shield, a violet hourglass for a slow; an empty spot shows its ring faintly |
+| Racer rings | A gold ring under a shielded racer, a violet one under a slowed racer, under a stand-in figure and a map NPC body alike |
 | Aim arrow | A ground strip and head, translucent |
-| Body | A capsule billboard in the seat's colour with a head, over a blob shadow |
+| Body | A stand-in figure facing the camera - legs, a tunic in the seat's colour with a belt, arms, a head with hair - over a blob shadow; a body under way swings its legs and arms with the ground it covers |
 | Boost trail | A translucent cyan ribbon |
 
-They are built in code from no disc bytes. `screen_layers::compose_screen_prims` puts them, with the drop shadows, under the seat's HUD, which is `ModeScreen::InWorld`: the hole, par and whose stroke, a compact scorecard, the power meter; or the lap and place, the running order and the boost gauge; and the stage's banner. The native window fills `HostScreenPrims::pack_mode_world` from `HostView::pack_mode_world_prims`, and the browser play page from the same call (`play_field_fx.rs`).
+The hole and the track come from the session (`StageFrame::course` off `ActiveMode::golf_course`, `StageFrame::track` off `ActiveMode::race_track`), so they mark exactly where the ball rolls and the racers are held, whatever the map draws under them; they link in one ground band past every standing piece and draw first.
+
+They are built in code from no disc bytes. `screen_layers::compose_screen_prims` puts them, with the drop shadows, under the seat's HUD, which is `ModeScreen::InWorld`: the hole, par and whose stroke, a compact scorecard, the power meter; or the lap (a sprint's gates passed) and place, what runs on the racer (a hop, a shield's and a slow's seconds left), the running order, the boost gauge and the power-up slot beside it (the one carried, in its colour, with the shield's time under it); and the stage's banner.
+
+The card toasts ("Got card: X") wait while any mode session is in play (`World::pack_mode_holds_toasts`) and show once it has left play, stacked above the in-world HUDs' bottom band (`MODE_HUD_BOTTOM_BAND`), so they never lie over a mode's HUD on either host.
+
+The native window fills `HostScreenPrims::pack_mode_world` from `HostView::pack_mode_world_prims`, and the browser play page from the same call (`play_field_fx.rs`).
 
 ### Running it
 
@@ -383,11 +409,23 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --map links_green --mode links-golf
 ```
 
-`--mode links-race` with `--map links_ring` runs the race. The test pack's maps draw their walls as boxes (`wall = { kind = "box" }`) and seat Noa and Gala as map NPCs, the AI golfer and racers. Entered from anywhere else (the picker, `--mode` without `--map`), the scene host takes the player to the instance's map first. A headless capture (`--screenshot-every`) presses the pad through `--pad-script`, e.g. `--pad-script 120:Cross,150:Cross` to start the meter and strike.
+`--mode links-race` with `--map links_ring` runs the race; `--expansion packs/rebirth --mode drake-circuit` runs Rebirth's Drake Dash across `map01`. The test pack's maps draw their walls as boxes (`wall = { kind = "box" }`) and seat Noa and Gala as map NPCs, the AI golfer and racers. Entered from anywhere else (the picker, `--mode` without `--map`), the scene host takes the player to the instance's map first. A headless capture (`--screenshot-every`) presses the pad through `--pad-script`, e.g. `--pad-script 120:Cross,150:Cross` to start the meter and strike.
+
+### Racing on the overworld
+
+A race that names a kingdom overworld (`scene`, one of `map01`, `map02`, `map03`) runs across the retail scene itself ([`world-map.md`](world-map.md)), over its ground; it is usually a sprint between landmarks, and its `waypoints` are the overworld's 128-unit tiles. `Track::from_scene` lays the centerline on the tile centres at the race scale (two world units a mode unit), with the frame's origin at the scene's own world origin and `MapFrame::scene` set, so `MapFrame::map_id` names the scene rather than a pack map.
+
+- **Entering it.** `World::pack_mode_wants_scene` names the scene while the player stands anywhere else - another scene, or a pack map over one. `SceneHost::sync_pack_mode_map` lifts the seat off the world, enters the scene through the overworld's own entry (`SceneHost::enter_world_map_scene`), and puts the seat back under `SceneMode::Expansion`. The first time a seat leaves for another scene it notes where the party stood - the scene, the pack map over it if any, the mode and the player's pose (`PackModeSeat::return_place`).
+- **Coming back.** When the seat closes the world hands that place to the scene host (`ExpansionState::mode_return`), which re-enters it - the pack map at its first spawn, or the retail scene through its own entry - and puts the player back at its pose and in its mode. A seat entered on the overworld itself notes nothing and closes where it stands.
+- **The ground.** The stage reads floor heights through the world's floor sampler, which on a kingdom map is the overworld's heightfield (`FUN_80019278`'s math), so the leader, the bodies, the kerbs, the gates and the power-ups all follow the terrain.
+- **Drawing the overworld.** While a seat holds the frame over an overworld (`World::pack_mode_on_overworld`), `World::shows_overworld` is true, and the native window draws the overworld - its heightfield ground, landmarks and decorations, the sky band - exactly as in `SceneMode::WorldMap`; the browser play page draws a kingdom scene's ground by the scene, in either mode. The overworld's walk does not run under the seat (`SceneMode::Expansion` suspends it), so no random encounter, entrance or map display fires during a race.
+- **Rivals.** An overworld has no map NPCs, so its rivals draw as stand-in figures.
+
+The racers keep to the session's corridor, not the overworld's walls, so a course is laid along walkable tiles: Rebirth's two overworld sprints are checked against `map01`'s collision grid by the disc-gated `engine-scene-host` test `overworld_race_disc`, which also runs a sprint to its finish over the scene.
 
 ### Gaps
 
-- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a capsule billboard in its seat's colour.
+- **Stand-in figures.** A seat the instance names no `bodies` NPC for draws as a flat stand-in figure in its seat's colour, as every rival of an overworld race does.
 - **Racer collision is the session's.** Racers keep to the track by its half-width, not by the map's walls, so a map draws its corridor to the track.
 - **The browser host enters no pack map** yet ([`expansion-pack-maps.md`](../formats/expansion-pack-maps.md#gaps)); its draw path for the stage is in place for when it does.
 
@@ -410,7 +448,7 @@ The table is placed in its own axes: `across` from the player's seat toward the 
 
 - **Cards.** A card is a quad `0.86` of a cell wide at the face's aspect. Each hand is fanned along its seat's edge of the board, tilted up toward its holder; the selected card rises and reaches toward the board, and a held card hovers face up over the cursor's cell. Grid cards lie flat, reading from the near seat.
 - **Faces and backs.** Whether a card shows its face or its back is the projected quad's winding: the near hand turns its faces to the camera, the far hand its backs, and a capture flip shows the back at its half turn.
-- **Seats.** The opponent NPC stands on its seat, `seat_distance` past the board's far edge; the leader stands at the player's left, turned to the board; spectators keep their own tiles and turn to the board.
+- **Seats.** The opponent NPC takes its seat, `seat_distance` from the board's centre and never nearer than the drawn table's edge plus a body's depth (`cards::table::SEAT_CLEARANCE`), so the reaction shot frames it behind the top rather than in it - seated in a chair the stage draws when it names a `sit` clip, standing otherwise ([Seated NPCs](#seated-npcs)); the leader stands beside the table's left side near the player's corner, clear of the top, turned to the board; spectators keep their own tiles and turn to the board.
 
 ### The timeline
 
@@ -445,7 +483,7 @@ The seat holds its results card until the reaction shot is over (`WorldStage::ho
 
 Everything is screen primitives projected through the stage's frame with per-corner scene depth, so an NPC or a wall in front of the table hides it.
 
-Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
+Their order is explicit ordering-table bands, all deeper than the HUD's: the table's legs, apron and top (a wooden top on four legs, lit brightest under the board; drawn only when `draw_table`), the board (a gold rim, a dark inlay and the nine felt cells, each with an inset lip shadowed on its far and left edges and lit on the near and right; or the base scene's `surface` texture), the elemental cells' pulsing rings and the cursor's frame, the cards' shadows (subtractive, spreading as a card rises), the cards nearest last (owner quad, then the face or back subdivided `2 x 2` so its affine mapping bends with the card, then a raised card's rim light), and the sparks (additive). None carry disc bytes but the card page's portraits and a named `surface`.
 
 The HUD is the score plates, the turn prompt and the selected card's panel, clean of the table; it steps aside for the reaction shot, leaving the stage's banner.
 
@@ -453,10 +491,26 @@ The HUD is the score plates, the turn prompt and the selected card's panel, clea
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_5f --mode wardens-duel
+    --expansion packs/rebirth --map genesis_5f --mode wardens-duel
 ```
 
 The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
+
+### Hidden props
+
+A table drawn by the stage often stands where the map already has furniture: the hall's own card table, a plank table on a meadow. A table's `hide` names the map's props (`[[props]]` ids) whose draws go while the seat is open, so the stage's table replaces the decor one instead of standing inside it:
+
+```toml
+[poker.table]
+tile = [56, 32]
+hide = ["lantern_table"]      # the plank table the stage's felt replaces
+```
+
+The first frame the stage stands on the instance's map, `World::stage_pack_mode` notes the named props' indices on the seat (`PackModeSeat::hidden_props`), and `World::hidden_object_records` lists their draw-record keys (`PROP_RECORD_BASE + n`, which every named prop draws under) while the world is in the seat. Both hosts already skip a placed draw whose record is in that set each frame (the native window's placed-object pass, the play page's `field_placement_parked`), so the hiding is one model with no host code of its own.
+
+A hidden prop's light goes with it. The seat's results stage keeps them hidden while the table plays its last moves; when the seat closes the set empties and they draw again. Collision is never touched: the player is seated at the table, and the walk past it afterwards meets the same footprint as before.
+
+A decoration cannot hide: its tile's cell bakes it with every other decoration there into one mesh. The validator refuses a `hide` naming a `[[decor]]` id (make it a `[[props]]` entry) or an id the map does not have, and warns when a table hides props but draws none of its own (`draw_table = false`).
 
 ## Poker at a table
 
@@ -472,7 +526,7 @@ A poker instance that names a pack map and a table (`map`, `[poker.table]`) is d
 
 ### Chairs and hidden cards
 
-Chairs ring the oval evenly. Each peer sits in the near chair - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
+Seats ring the oval evenly. Each peer sits in the near seat - chair `0` is the local seat - and the others keep their seat order round the table to its left, so a networked game shows every player the table from their own chair. A pack's `players` NPCs sit in session seats `1..` (the single-player seat order); a networked viewer in one of those seats stands there in its stead.
 
 A hole card shows its face only to its own seat, and to every seat at a showdown while its seat is still in the hand. Every other card lies face down, and the card page holds no face for it at all (`poker::art::VisibleCards`): the page is built from the view the session or the hosting peer sent, which for a guest already carries no other seat's cards.
 
@@ -489,20 +543,30 @@ A hole card shows its face only to its own seat, and to every seat at a showdown
 
 The dealer button sits on the felt before the button's chair, and a pulsing ring marks the chair to act; the opponent to act plays its `think` clip and the camera leans toward it.
 
+### Seated NPCs
+
+A table NPC that names a `sit` clip ([`expansion-pack.md`](../formats/expansion-pack.md#seated-npcs)) sits while the seat is open: the stage pushes a `duel_stage::StageChair` for its seat (`DuelStageFrame::chairs`, `PokerStageFrame::chairs`), centred on the NPC's anchor, facing the table's middle, its seat at the table's `chair_height` plus `lift`, and poses the NPC with `sit` wherever it would have played its idle. `pack_mode_world`'s `duel::chair` draws each chair in the table's wood - four legs, the seat, two rear posts carrying a top rail and a slat - depth-tested like the table, so a sitter's legs and the table hide it where they should.
+
+The chair is the stage's own, not a map prop that appears while seated: it exists exactly while someone sits on it, follows the seat wherever a table's layout or a networked viewer's chair puts it, and needs no `hide` entry or collision. A seated clip lifts the model off its origin by itself (the posture table's `seated` rule is that lift), so the NPC's anchor stays on the floor and only the chair's height has to match the clips' hips. The party leader stays standing: the party locomotion bank has no seated record, and no scene bank a pack map borrows from has a record of the party rig's bone count.
+
 ### Drawing the table
 
-The table is an oval: a felt fan lit brightest in the middle, a gold betting line, a padded rail and its wooden outer face, on four legs. Chips are stacked discs, a side band per chip with a white stripe every third and a face on top, coloured by the stack's size against the big blind. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
+The table is an oval: a felt fan lit brightest in the middle with a gold betting line, a polished wooden racetrack round it, and a padded leather rail whose crown rises between its two lips; with `draw_table` also the wooden apron under the rail, its shadowed underside, and a pedestal on a cross foot.
 
-The HUD is a plate per other seat along the top (its name, chips or state, its street bet, the seat to act lit, the button), the pot under them, the player's own plate bottom-left (chips, bet, the hand it makes), and the action menu bottom-right.
+Chips are stacked discs with a casino chip's white edge spots, turned a little per chip, and an inlaid face on top, coloured by the stack's size against the big blind; a stack of six chips or more lies as a pile of two or three columns, its top denomination tallest and the two below it beside it, a pure function of the stack so every frame and every peer draws the same pile. Cards are the duel table's card quads (shadow, face or back by winding, `2 x 2` affine subdivision). Draw order uses the duel table's bands.
+
+The HUD is a plate per other seat along the top (its name, chips or state, its street bet on a row of its own, the seat to act lit, the button), the player's own plate bottom-left (chips, bet, the hand it makes), the pot bottom-centre between it and the action menu bottom-right. The pot stays off the top band, where it would cover the far seats' bets and the pile on the felt.
+
+Every label of the in-world HUDs sits in a box of its own (`Label::max_w`): the hosts set it in the dialog font and cut anything wider than its box with a `..` mark (`expansion_modes::fit_text`; the modes page does the same in its web font), so a long table name is shortened, never run into a score or off a plate. A banner starts under the HUD's top band. The engine-ui tests lay out each mode's in-world HUD across a session with long names and assert every box on the stage, no two labels sharing a row's pixels, and - with the extracted dialog font - every non-name label whole.
 
 ### Running it
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_5f --mode tower-high-table
+    --expansion packs/rebirth --map genesis_5f --mode tower-high-table
 ```
 
-The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt.
+The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt, with the hall's own card table put away while it plays (`hide = ["high_table"]`); the Mist Lantern Table and the Village Duel do the same with Tolva's Haven's plank tables.
 
 ## Tests
 

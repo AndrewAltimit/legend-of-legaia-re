@@ -1,4 +1,5 @@
-//! Where a mode played on a pack map sits in the field scene.
+//! Where a mode played on a pack map, or a race run on a kingdom overworld,
+//! sits in the field scene.
 //!
 //! A golf hole or a race track that names a pack map (`map = "<id>"` in
 //! `modes.toml`) is laid out in the map's tiles, and the session runs in
@@ -14,6 +15,10 @@
 //! [`GOLF_UNIT`] one golf tile is one map tile and a hole keeps the length
 //! its physics was tuned for. A race runs at [`RACE_UNIT`], where the
 //! racers' top speed is about the field player's run.
+//!
+//! A race run on an overworld ([`MapFrame::scene`]) names the retail scene
+//! in [`MapFrame::map_id`]; its origin is the scene's world origin, so a
+//! mode position is the overworld's own `(X, Z)` at [`RACE_UNIT`] scale.
 
 use serde::{Deserialize, Serialize};
 
@@ -26,11 +31,14 @@ pub const GOLF_UNIT: i32 = 4;
 pub const RACE_UNIT: i32 = 2;
 /// Field world units per map tile.
 pub const MAP_TILE: i32 = 128;
+/// Tiles along each side of a kingdom overworld's `.MAP` grid.
+pub const OVERWORLD_TILES: usize = 128;
 
 /// The placement of a session's mode units on a pack map's field.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MapFrame {
-    /// The pack map (`maps/<id>.toml` stem) the session is played on.
+    /// The pack map (`maps/<id>.toml` stem) the session is played on, or
+    /// the retail scene's CDNAME name when [`Self::scene`] is set.
     pub map_id: String,
     /// The spawn the host enters the map at (the map's first when empty).
     pub spawn: String,
@@ -38,6 +46,10 @@ pub struct MapFrame {
     pub origin: [i32; 2],
     /// Field world units per mode unit ([`GOLF_UNIT`], [`RACE_UNIT`]).
     pub unit: i32,
+    /// [`Self::map_id`] names a retail scene (a kingdom overworld the race
+    /// runs on), not a pack map.
+    #[serde(default)]
+    pub scene: bool,
 }
 
 impl MapFrame {
@@ -83,6 +95,7 @@ mod tests {
             spawn: String::new(),
             origin: [2048, 1024],
             unit: RACE_UNIT,
+            scene: false,
         };
         let p = Vec2::new(32 * FX_ONE, 16 * FX_ONE);
         assert_eq!(f.to_world(p), [2048 + 64, 1024 + 32]);

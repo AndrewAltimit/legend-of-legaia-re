@@ -10,7 +10,7 @@
     <dt>Source form</dt><dd>A directory: <code>pack.toml</code> plus optional section files, <code>maps/</code> and <code>assets/</code>.</dd>
     <dt>Shareable form</dt><dd>One <code>.lxpack</code> file (<a href="#the-lxpack-bundle">bundle</a>), byte-deterministic.</dd>
     <dt>Encoding</dt><dd>UTF-8 TOML for every manifest, section and map.</dd>
-    <dt>Schema</dt><dd>Version <code>2</code> (<code>manifest::SCHEMA_VERSION</code>); schemas <code>1</code> and <code>2</code> load.</dd>
+    <dt>Schema</dt><dd>Version <code>3</code> (<code>manifest::SCHEMA_VERSION</code>); schemas <code>1</code> to <code>3</code> load.</dd>
     <dt>Disc</dt><dd>NA release only, <code>SCUS-94254</code>.</dd>
     <dt>Parser</dt><dd><code>ExpansionPack::from_files</code> - one parser for a directory, a bundle and the browser workbench's input.</dd>
     <dt>Writer</dt><dd><code>ExpansionPack::to_files</code>, <code>bundle::write_bundle</code>.</dd>
@@ -51,6 +51,7 @@
     <tbody>
       <tr><td><code>id</code></td><td>string</td><td>yes</td><td>Machine id, <code>[a-z0-9_-]</code>, at most 48 characters, starting with a letter or digit. Namespaces every content id in the pack.</td></tr>
       <tr><td><code>name</code></td><td>string</td><td>yes</td><td>Display name.</td></tr>
+      <tr><td><code>short_name</code></td><td>string</td><td>no</td><td>A label for narrow places (the launcher's Expansion button): one line of at most 24 characters; unset, those places show <code>name</code>. Schema 3.</td></tr>
       <tr><td><code>version</code></td><td>string</td><td>yes</td><td>Semantic version, <code>MAJOR.MINOR.PATCH[-pre][+build]</code>.</td></tr>
       <tr><td><code>authors</code></td><td>string list</td><td>no</td><td>Who made it.</td></tr>
       <tr><td><code>description</code></td><td>string</td><td>no</td><td>What the pack adds.</td></tr>
@@ -76,11 +77,11 @@ version = "0.1.0"</code></pre>
   <table>
     <thead><tr><th>Gate</th><th>Passes when</th><th>Refusal</th></tr></thead>
     <tbody>
-      <tr><td>Pack format</td><td><code>schema</code> in <code>1..=2</code></td><td>"written in pack format N, newer than this engine reads ... update the engine"</td></tr>
+      <tr><td>Pack format</td><td><code>schema</code> in <code>1..=3</code></td><td>"written in pack format N, newer than this engine reads ... update the engine"</td></tr>
       <tr><td>Engine</td><td><code>min_engine</code> absent, or not newer than this engine</td><td>"needs engine X or newer; this engine is Y"</td></tr>
     </tbody>
   </table>
-  <p><code>ExpansionPack::from_files</code> runs both gates first, on a lenient read of <code>pack.toml</code> (<code>ManifestPeek</code>), before the strict parse - so a pack from a newer format is refused with "update the engine", not with "unknown field" for whatever new key it carries. Every reader parses through <code>from_files</code>, so the native <code>--expansion</code>, the launcher, the play page and the workbench all refuse alike. Old packs keep loading: schema 2 only added optional keys.</p>
+  <p><code>ExpansionPack::from_files</code> runs both gates first, on a lenient read of <code>pack.toml</code> (<code>ManifestPeek</code>), before the strict parse - so a pack from a newer format is refused with "update the engine", not with "unknown field" for whatever new key it carries. Every reader parses through <code>from_files</code>, so the native <code>--expansion</code>, the launcher, the play page and the workbench all refuse alike. Old packs keep loading: schemas 2 (<code>cover</code>, <code>min_engine</code>) and 3 (<code>short_name</code>) only added optional keys.</p>
   <h3 id="dependencies">Dependencies</h3>
   <p>A <code>requires</code> or <code>conflicts</code> entry is a pack id, optionally <code>@</code> and a version range (<code>PackDep</code>): comparators that must all hold, separated by commas or spaces, with cargo's operators.</p>
   <table>
@@ -230,11 +231,11 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
       <tr><td><code>[[poker]]</code></td><td><code>seats</code> (4, <code>2..=6</code>), <code>buy_in</code> (1000), <code>small_blind</code> (10), <code>big_blind</code> (20), <code>currency</code> (<code>gold</code> / <code>coins</code>), <code>chip_value</code> (1), <code>ai_tier</code>, <code>max_hands</code>, <code>blind_double_every</code></td></tr>
       <tr><td><code>[[card_duels]]</code></td><td><code>deck</code> (five card ids), <code>ai_tier</code>, <code>elemental_cells</code>, <code>chain</code>, <code>stakes</code>, <code>win_booster</code></td></tr>
       <tr><td><code>[[golf]]</code></td><td><code>[[golf.holes]]</code>: <code>par</code> (3), <code>rows</code>, <code>heights</code>, <code>max_strokes</code> (0 = par + 5)</td></tr>
-      <tr><td><code>[[races]]</code></td><td><code>laps</code> (3), <code>points</code>, <code>half_width</code> (64), <code>boost_segments</code>, <code>racers</code> (4), <code>ai_tier</code></td></tr>
+      <tr><td><code>[[races]]</code></td><td><code>course</code> (<code>circuit</code> / <code>sprint</code>), <code>laps</code> (3), <code>points</code>, <code>half_width</code> (64), <code>boost_segments</code>, <code>pickups</code>, <code>racers</code> (4), <code>ai_tier</code>, <code>rivals</code> (AI racers' names); on a map <code>map</code>, <code>spawn</code>, <code>waypoints</code>, <code>bodies</code>; across a kingdom overworld <code>scene</code> (<code>map01</code>..<code>map03</code>) with <code>waypoints</code> in its tiles</td></tr>
       <tr><td><code>[[prop_hunt]]</code></td><td><code>props</code>, <code>decoys</code>, <code>bounds</code>, <code>blockers</code>, <code>rounds</code> (3), <code>hunters</code> (1), <code>players</code> (4), <code>hide_frames</code>, <code>round_frames</code>, <code>hunter_health</code> (100), <code>miss_penalty</code> (10), <code>ai_tier</code></td></tr>
     </tbody>
   </table>
-  <p>A golf hole is one character per tile: <code>.</code> fairway, <code>,</code> rough, <code>s</code> sand, <code>w</code> water, <code>#</code> wall, space out of bounds, <code>T</code> tee, <code>O</code> cup, and <code>^ v &lt; &gt;</code> fairway sloping downhill that way. The validator parses the section and runs no checks of its own on it: an instance is built when it is entered (<code>legaia_engine_modes::active</code>), and one whose data cannot make a session is refused there, the mode picker showing the reason.</p>
+  <p>A golf hole is one character per tile: <code>.</code> fairway, <code>,</code> rough, <code>s</code> sand, <code>w</code> water, <code>#</code> wall, space out of bounds, <code>T</code> tee, <code>O</code> cup, and <code>^ v &lt; &gt;</code> fairway sloping downhill that way. A race's <code>pickups</code> are <code>{ kind, at, respawn }</code>: <code>boost</code>, <code>hop</code>, <code>shield</code> or <code>slow</code>, at a tile on a map or overworld race (world units on a board race), coming back <code>respawn</code> frames after it is taken (600 when 0). The validator checks the party nights, the duel tables and the races (one of <code>map</code> / <code>scene</code>, an overworld scene, enough points, no doubled point, the half-width, racer count, boost segments, waypoints and pickups on the map, and a warning for a pickup beyond a hop's reach); the rest of an instance is built when it is entered (<code>legaia_engine_modes::active</code>), and one whose data cannot make a session is refused there, the mode picker showing the reason.</p>
 </section>
 
 <section class="doc-section" id="the-lxpack-bundle" data-doc="the-lxpack-bundle">
@@ -282,7 +283,7 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
     <thead><tr><th>Rule</th><th>Severity</th></tr></thead>
     <tbody>
       <tr><td><code>pack.toml</code> missing or unparsable, or any section or map unparsable</td><td>error</td></tr>
-      <tr><td><code>id</code>, <code>version</code>, <code>tags</code>, <code>requires</code> or <code>conflicts</code> malformed; empty <code>name</code></td><td>error</td></tr>
+      <tr><td><code>id</code>, <code>version</code>, <code>tags</code>, <code>requires</code> or <code>conflicts</code> malformed; empty <code>name</code>; <code>short_name</code> empty, over 24 characters or more than one line</td><td>error</td></tr>
       <tr><td><code>schema</code> outside the formats this build reads; <code>disc</code> other than <code>SCUS-94254</code></td><td>error</td></tr>
       <tr><td><code>min_engine</code> malformed or newer than this engine; a <code>requires</code> / <code>conflicts</code> entry or range malformed</td><td>error</td></tr>
       <tr><td><code>cover</code> not a <code>.png</code> under <code>assets/</code>, absent, or over 1 MiB</td><td>error</td></tr>
@@ -292,7 +293,7 @@ guide      = { kind = "npc", scene = "town01", index = 12 }</code></pre>
       <tr><td>Reference to undefined content, or to a pack not in <code>requires</code></td><td>error</td></tr>
       <tr><td><code>DiscRef</code> out of range, or rejected by the supplied resolver</td><td>error</td></tr>
       <tr><td>Any <a href="#the-no-disc-bytes-rule">no-disc-bytes</a> violation</td><td>error</td></tr>
-      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; no <code>cover</code>; non-URL <code>homepage</code>; a repeated list entry; a schema-2 key in a schema-1 manifest</td><td>warning</td></tr>
+      <tr><td>Empty <code>description</code>, <code>authors</code> or <code>license</code>; no <code>cover</code>; non-URL <code>homepage</code>; a repeated list entry; a manifest key newer than the manifest's <code>schema</code></td><td>warning</td></tr>
       <tr><td>A file outside the <a href="#layout">layout</a></td><td>warning</td></tr>
     </tbody>
   </table>
@@ -375,7 +376,7 @@ asset expansion info rebirth.lxpack [--json]
 asset expansion diff old.lxpack packs/rebirth [--changelog | --json]
 legaia-engine packs [--dir DIR] [--json]                # the installed packs
 legaia-engine play-window --expansion rebirth           # an installed pack, by id
-legaia-engine play-window --expansion packs/rebirth --map rebirth_tower_1f --expansion-watch  # reload on every save</code></pre>
+legaia-engine play-window --expansion packs/rebirth --map genesis_1f --expansion-watch  # reload on every save</code></pre>
   <p><code>validate</code> exits non-zero on any error, and with <code>--strict</code> on any warning. None of these reads a disc. The native host's installed packs live in <code>packs/</code> under its data directory: <code>legaia-engine packs</code> lists each with its version, authors, pack format and whether it plays, <code>--expansion</code> takes a pack id as well as a path, and the launcher's pack picker opens there. The same checks run in the browser on the <a href="../tooling/expansion-workbench.html">expansion workbench</a>, with the visitor's disc resolving every coordinate.</p>
 </section>
 

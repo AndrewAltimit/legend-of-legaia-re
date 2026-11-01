@@ -51,6 +51,25 @@ pub const BALLOON_FRAME_ARG3: i16 = 0xB;
 /// Widget kind staged via `FUN_80034B6C(3)` before the frame emit.
 pub const BALLOON_FRAME_KIND: u8 = 3;
 
+/// Space the fitted frame ([`TextBalloon::fitted`]) keeps between the line
+/// and each side of its border, in stage pixels.
+pub const BALLOON_FIT_PAD: i16 = 8;
+/// The widest fitted frame: the screen less an 8-pixel margin each side.
+pub const BALLOON_FIT_MAX_W: i16 = BALLOON_SCREEN_W - 16;
+
+/// Where a balloon line and its frame go once the line is fitted to the
+/// frame ([`TextBalloon::fitted`]), in 320x240 stage pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BalloonFit {
+    /// The window rect, `(x, y, w, h)`.
+    pub frame: (i32, i32, i32, i32),
+    /// The pen the line prints at.
+    pub pen: (i32, i32),
+    /// The width the line is drawn in: its own width, or less when it is
+    /// condensed to fit [`BALLOON_FIT_MAX_W`].
+    pub text_w: i32,
+}
+
 /// Center a measured line: `X = (0x140 - width) >> 1`.
 ///
 /// The `width` is the line's pixel width as retail's measurer
@@ -144,6 +163,47 @@ impl TextBalloon {
             i32::from(BALLOON_FRAME_ARG2),
             i32::from(BALLOON_FRAME_ARG3),
         )
+    }
+
+    /// The frame and pen for a line `text_width_px` wide, with the line
+    /// kept inside its frame (the port's enhancement over
+    /// [`Self::frame_rect`] / [`Self::pen`]).
+    ///
+    /// A line that fits retail's fixed frame with [`BALLOON_FIT_PAD`] to
+    /// spare draws exactly as retail does: the `0x58 x 0x90` frame and the
+    /// retail pen. Every retail section-2 place name fits. A longer line
+    /// (an expansion map's name) widens the frame about the screen centre -
+    /// where retail's frame is centred too - to the line plus the padding,
+    /// up to [`BALLOON_FIT_MAX_W`]; the pen stays retail's
+    /// `(0x140 - width) >> 1`. A line too wide even for that is condensed to
+    /// the widest frame's inside (`text_w`) and centred on it.
+    pub fn fitted(&self, text_width_px: i16) -> BalloonFit {
+        let y = i32::from(self.y);
+        let width = i32::from(text_width_px.max(0));
+        let pad = i32::from(BALLOON_FIT_PAD);
+        let retail_w = i32::from(BALLOON_FRAME_ARG2);
+        if width + 2 * pad <= retail_w {
+            return BalloonFit {
+                frame: self.frame_rect(),
+                pen: (i32::from(balloon_center_x(text_width_px)), y),
+                text_w: width,
+            };
+        }
+        let screen = i32::from(BALLOON_SCREEN_W);
+        let max_w = i32::from(BALLOON_FIT_MAX_W);
+        // Even, so the frame sits on the centre exactly.
+        let frame_w = ((width + 2 * pad + 1) & !1).min(max_w);
+        let text_w = width.min(frame_w - 2 * pad);
+        BalloonFit {
+            frame: (
+                (screen - frame_w) / 2,
+                y,
+                frame_w,
+                i32::from(BALLOON_FRAME_ARG3),
+            ),
+            pen: ((screen - text_w) >> 1, y),
+            text_w,
+        }
     }
 
     /// The pen `FUN_80036888(text, 0, 0, x, y)` prints at, in stage pixels.
@@ -275,6 +335,47 @@ mod tests {
         // same tick falls into the kill arm.
         assert_eq!(b.tick(true, 1), BalloonTick::Killed);
         assert!(b.killed);
+    }
+
+    #[test]
+    fn a_line_that_fits_keeps_the_retail_frame_and_pen() {
+        let b = TextBalloon::spawn_measured(b"x", 103);
+        for w in [0, 40, 103, 0x90 - 2 * BALLOON_FIT_PAD] {
+            let fit = b.fitted(w);
+            assert_eq!(fit.frame, b.frame_rect(), "width {w}");
+            assert_eq!(fit.pen.0, i32::from(balloon_center_x(w)));
+            assert_eq!(fit.text_w, i32::from(w));
+        }
+    }
+
+    #[test]
+    fn a_long_line_widens_the_frame_about_the_centre() {
+        let b = TextBalloon::spawn(b"x");
+        for w in [0x90 - 2 * BALLOON_FIT_PAD + 1, 135, 195, 288] {
+            let fit = b.fitted(w);
+            let (fx, fy, fw, fh) = fit.frame;
+            assert_eq!(
+                (fy, fh),
+                (i32::from(BALLOON_Y), i32::from(BALLOON_FRAME_ARG3))
+            );
+            assert_eq!(fx * 2 + fw, 320, "centred: width {w}");
+            assert!(fw <= i32::from(BALLOON_FIT_MAX_W));
+            // The line is drawn whole, at retail's pen, inside the border.
+            assert_eq!(fit.text_w, i32::from(w));
+            assert_eq!(fit.pen.0, i32::from(balloon_center_x(w)));
+            let pad = i32::from(BALLOON_FIT_PAD);
+            assert!(fit.pen.0 >= fx + pad - 1 && fit.pen.0 + fit.text_w <= fx + fw - pad + 1);
+        }
+    }
+
+    #[test]
+    fn a_line_wider_than_the_widest_frame_is_condensed_into_it() {
+        let b = TextBalloon::spawn(b"x");
+        let fit = b.fitted(400);
+        let (fx, _, fw, _) = fit.frame;
+        assert_eq!(fw, i32::from(BALLOON_FIT_MAX_W));
+        assert_eq!(fit.text_w, fw - 2 * i32::from(BALLOON_FIT_PAD));
+        assert_eq!(fit.pen.0, fx + i32::from(BALLOON_FIT_PAD));
     }
 
     #[test]

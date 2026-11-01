@@ -63,20 +63,22 @@ pub fn card_screen_strings(v: &CardScreenView<'_>) -> Vec<String> {
 }
 
 /// The card toasts ("Got card: X") as text draws in stage pixels: centred
-/// one row under the quest toast over play (`top`), or above the footer
-/// while an expansion screen owns the frame.
+/// one row under the quest toast over play (`top`), or - while an
+/// expansion screen owns the frame - stacked upward from just above the
+/// in-world HUDs' bottom band ([`super::MODE_HUD_BOTTOM_BAND`]), so a toast
+/// never lands on a power meter, a boost gauge or a power-up slot.
 pub fn card_toast_texts(font: &legaia_font::Font, lines: &[&str], top: bool) -> Vec<TextDraw> {
     labels_to_draws(font, &toast_canvas(lines, top).labels)
 }
 
-fn toast_canvas(lines: &[&str], top: bool) -> Canvas {
+pub(super) fn toast_canvas(lines: &[&str], top: bool) -> Canvas {
     let mut c = Canvas::default();
     for (i, l) in lines.iter().enumerate() {
         let y = if top {
             // Under the quest toast's row, itself under the party HUD.
             crate::menu::screens::QUEST_TOAST_Y + LINE + i as i32 * LINE
         } else {
-            STAGE_H - 46 - i as i32 * LINE
+            super::MODE_HUD_BOTTOM_BAND - 2 - (i as i32 + 1) * LINE
         };
         let pen = if l.starts_with("Lost") {
             pen::RED
@@ -810,7 +812,7 @@ mod tests {
         assert_eq!((c.labels[0].y, c.labels[1].y), (top, top + LINE));
         assert_eq!(c.labels[1].color, pen::RED);
         let c = toast_canvas(&["Got card: A"], false);
-        assert_eq!(c.labels[0].y, STAGE_H - 46);
+        assert_eq!(c.labels[0].y, super::super::MODE_HUD_BOTTOM_BAND - 2 - LINE);
     }
 
     #[test]

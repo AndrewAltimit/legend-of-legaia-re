@@ -64,6 +64,8 @@ impl SectionRules for MapDef {
         check_props(self, cx, base.as_deref());
         crate::map_detail_rules::check_detail(self, cx, base.as_deref(), grid.as_ref());
         crate::terrain_rules::check_terrain(self, cx, grid.as_ref());
+        crate::map_beams::check_beams(self, cx, grid.as_ref());
+        crate::map_rest::check_rest(self, cx);
         check_npcs(self, cx, base.as_deref(), grid.as_ref());
         check_entrances(self, cx);
         check_enter_cutscenes(self, cx);
@@ -251,6 +253,24 @@ fn check_exits(m: &MapDef, cx: &mut Checker<'_>) {
                     "the exit has no `requires`, so it is never shut",
                 );
             }
+            let long = cx.pack().dialog.lines.get(l).map(|line| {
+                crate::boss_script::banner_text(line).chars().count()
+                    > crate::boss_script::BANNER_WARN_CHARS
+            });
+            if e.locked_toast && long == Some(true) {
+                cx.warning(
+                    &format!("exits[{i}].locked_line"),
+                    format!(
+                        "a toast shows one row; line `{l}`'s first page runs past {} characters",
+                        crate::boss_script::BANNER_WARN_CHARS
+                    ),
+                );
+            }
+        } else if e.locked_toast {
+            cx.warning(
+                &format!("exits[{i}].locked_toast"),
+                "`locked_toast` with no `locked_line` shows nothing",
+            );
         }
         let at = format!("exits[{i}].to");
         match &e.to {
@@ -311,6 +331,22 @@ fn check_triggers(m: &MapDef, cx: &mut Checker<'_>) {
             }
             MapEvent::Boss { boss } => cx.reference("boss", boss, &format!("{at}.boss")),
             MapEvent::Dialog { line } => cx.reference("line", line, &format!("{at}.line")),
+            MapEvent::Toast { line } => {
+                cx.reference("line", line, &format!("{at}.line"));
+                let long = cx.pack().dialog.lines.get(line).map(|l| {
+                    crate::boss_script::banner_text(l).chars().count()
+                        > crate::boss_script::BANNER_WARN_CHARS
+                });
+                if long == Some(true) {
+                    cx.warning(
+                        &format!("{at}.line"),
+                        format!(
+                            "a toast shows one row; line `{line}`'s first page runs past {} characters",
+                            crate::boss_script::BANNER_WARN_CHARS
+                        ),
+                    );
+                }
+            }
             MapEvent::StartQuest { quest } => cx.reference("quest", quest, &format!("{at}.quest")),
             MapEvent::Talk { npc } => {
                 if !talk_key_is_used(cx, npc) {
@@ -448,7 +484,13 @@ fn check_props(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>) {
         check_mesh(cx, &format!("{at}.mesh"), &p.mesh, base);
         check_animators(cx, &format!("{at}.animate"), &p.animate);
         if let Some(l) = &p.light {
-            check_light(cx, &format!("{at}.light"), l.radius, l.flicker, l.period);
+            check_light(
+                cx,
+                &format!("{at}.light"),
+                l.radius,
+                [l.flicker, l.breathe],
+                [l.period, l.breathe_period],
+            );
         }
         if let Some(s) = p.scale
             && !(s.is_finite() && s > 0.0)
@@ -537,22 +579,35 @@ pub(crate) fn check_animators(
     }
 }
 
-/// A light's reach, flicker depth and flicker period.
-pub(crate) fn check_light(cx: &mut Checker<'_>, at: &str, radius: u16, flicker: f32, period: i32) {
+/// A light's reach, its flicker and breath depths (`depth`) and their
+/// periods (`period`).
+pub(crate) fn check_light(
+    cx: &mut Checker<'_>,
+    at: &str,
+    radius: u16,
+    depth: [f32; 2],
+    period: [i32; 2],
+) {
     if radius == 0 {
         cx.error(&format!("{at}.radius"), "a light needs a radius");
     }
-    if !(0.0..=1.0).contains(&flicker) {
-        cx.error(
-            &format!("{at}.flicker"),
-            format!("flicker {flicker} is outside 0..=1"),
-        );
-    }
-    if flicker > 0.0 && period < 1 {
-        cx.error(
-            &format!("{at}.period"),
-            "a flickering light needs a period of at least 1",
-        );
+    for ((name, d), (pname, p)) in ["flicker", "breathe"]
+        .into_iter()
+        .zip(depth)
+        .zip(["period", "breathe_period"].into_iter().zip(period))
+    {
+        if !(0.0..=1.0).contains(&d) {
+            cx.error(
+                &format!("{at}.{name}"),
+                format!("{name} {d} is outside 0..=1"),
+            );
+        }
+        if d > 0.0 && p < 1 {
+            cx.error(
+                &format!("{at}.{pname}"),
+                format!("a light with {name} needs a {pname} of at least 1"),
+            );
+        }
     }
 }
 
@@ -564,12 +619,18 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
             None => cx.error(&format!("{at}.model"), "the NPC names no model"),
             Some(r @ DiscRef::Npc { scene, .. }) => {
                 cx.disc_ref(&format!("{at}.model"), r);
-                if base.is_some_and(|b| b != scene) {
+                if base.is_some()
+                    && let Some(other) = m.npcs[..i].iter().find_map(|o| match &o.model {
+                        Some(DiscRef::Npc { scene: s, .. }) if s != scene => Some(s.as_str()),
+                        _ => None,
+                    })
+                {
                     cx.warning(
                         &format!("{at}.model"),
                         format!(
-                            "the model is from `{scene}`, not the base scene; only a party-member \
-                             placement draws outside its own scene"
+                            "the NPCs borrow from `{scene}` and `{other}`: townsfolk come from one \
+                             scene, the base or one other (party-member placements excepted), \
+                             since one clip bank poses them"
                         ),
                     );
                 }
@@ -593,6 +654,11 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 &format!("{at}.clip"),
                 "clip ids are 1-based (ANM record + 1); leave `clip` out for the placement's own",
             );
+        }
+        if let Some(DiscRef::Npc { scene, index }) = &n.model
+            && !n.scenery
+        {
+            check_npc_postures(m, cx, &at, n, scene, *index);
         }
         if let Some(g) = grid {
             for t in std::iter::once(&n.tile).chain(&n.patrol) {
@@ -653,6 +719,78 @@ fn check_npcs(m: &MapDef, cx: &mut Checker<'_>, base: Option<&str>, grid: Option
                 "the NPC says nothing, runs no shop and gives no quest",
             );
         }
+    }
+}
+
+/// The NPC's clips against the measured posture table
+/// ([`crate::npc_postures`]): a seated clip needs something to sit on - a
+/// decoration or a standable prop on the NPC's tile - a patrol's
+/// `walk_clip` should walk, and a `clip` must be one the model can play.
+/// Placements the table does not cover, and scenery NPCs (often not a
+/// figure at all: town01's windmill sails are a placement), are not
+/// checked.
+fn check_npc_postures(
+    m: &MapDef,
+    cx: &mut Checker<'_>,
+    at: &str,
+    n: &crate::map::NpcDef,
+    scene: &str,
+    index: u16,
+) {
+    use crate::npc_postures::{Posture, table};
+    let Some(row) = table().get(scene, index) else {
+        return;
+    };
+    let list = |p: Posture| {
+        let v = row.clips(p);
+        if v.is_empty() {
+            "none".to_string()
+        } else {
+            v.iter().map(u8::to_string).collect::<Vec<_>>().join(", ")
+        }
+    };
+    if let Some(c) = n.clip
+        && row.posture(Some(c)).is_none()
+    {
+        cx.warning(
+            &format!("{at}.clip"),
+            format!(
+                "clip {c} is not one `{scene}` placement {index}'s model can play (its bone \
+                 count differs); standing clips: {}",
+                list(Posture::Standing)
+            ),
+        );
+    }
+    let seat = m.decor.iter().any(|d| d.tile == n.tile)
+        || m.props.iter().any(|p| p.tile == n.tile && p.top.is_some());
+    if row.posture(n.clip) == Some(Posture::Seated) && !seat {
+        let which = n.clip.map_or_else(
+            || "the placement's own clip".to_string(),
+            |c| format!("clip {c}"),
+        );
+        cx.warning(
+            &format!("{at}.clip"),
+            format!(
+                "{which} is a seated pose with nothing under it: put a seat (a decoration or a \
+                 prop with a `top`) on tile {:?}, or pick a standing clip: {}",
+                n.tile,
+                list(Posture::Standing)
+            ),
+        );
+    }
+    if let Some(w) = n.walk_clip
+        && !n.patrol.is_empty()
+        && let Some(p) = row.posture(Some(w))
+        && p != Posture::Walking
+    {
+        cx.warning(
+            &format!("{at}.walk_clip"),
+            format!(
+                "walk clip {w} is a {} pose; walking clips: {}",
+                p.word(),
+                list(Posture::Walking)
+            ),
+        );
     }
 }
 

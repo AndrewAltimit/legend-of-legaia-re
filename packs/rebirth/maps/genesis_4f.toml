@@ -1,0 +1,688 @@
+# Genesis Tower, fourth floor: the Verdant Vault. Laid out from scratch
+# (`geometry = "none"`) out of present-day Conkram's (`concnow`) veined
+# green stone, carved white marble, columns, planters and roots: a vault
+# the party climbs down into. The stair from below opens on a high gallery
+# that rings the vault; stairs drop from it to the colonnade, and steps
+# drop again into the sunken court at the centre, where the moss over the
+# Verdant Colossus breathes round four flooded corners. Off the west
+# gallery, the Root Archive: its floor long since fallen into the dark, four
+# root trunks of the Genesis root rising out of the pit, and the Wardens'
+# narrow walks still running between them; off the east, the Flooded
+# Cloister a step down, its pools full of rainwater. The stair up leaves
+# from the south gallery.
+#
+# The follow camera looks south from the north side: each room's north edge
+# is a low parapet, the vault's far and side walls stand full height.
+
+name = "Genesis Tower 4F - Verdant Vault"
+size = [49, 37]
+base = { scene = { kind = "scene", name = "concnow" }, geometry = "none" }
+# Sound-test track 3, "Path of Secrets" (the underground path to Octam):
+# walks over a pit, and a quiet that the keeper below only waits in.
+bgm = { kind = "bgm", id = 3 }
+camera = "far"
+# Tier 2 the landing, galleries and the Root Archive's walks; tier 1 the
+# colonnade and the Flooded Cloister; tier 0 the sunken court.
+floor_heights = [0, 72, 144]
+
+# Past the vault's edge, rainwater pooled at the foot of its walls; under
+# the Root Archive the pit (the region below) goes down into the dark.
+[surround]
+ground = { tpage = 9, clut = 32206, tile = 3 }
+side = { tpage = 25, clut = 32199, tile = 0 }
+depth = 384
+shade = 56
+fade = 10
+# The tower's outer wall stands round the drop on every side but the
+# camera's, so the view over the far walls ends on stone, fading into the
+# dark, rather than on the clear colour.
+backdrop = { tpage = 25, clut = 32199, tile = 0, height = 1152, distance = 2, shade = 96 }
+
+[[surround.regions]]
+rect = [1, 13, 7, 23]   # the Root Archive's pit
+depth = 1792
+shade = 64
+fade = 4
+
+[tiles]
+origin = [20, 20]
+rows = [
+  "                   ___________                   ",
+  "                   #:::::::::#                   ",
+  "                   >:::::::::#                   ",
+  "                   #:::::::::#                   ",
+  "                   #:::::::::#                   ",
+  "        ____________:::::::::____________        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #::::eeeeeeeeDDDDDDDeeeeeeee::::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,e:::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
+  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
+  "_________:::e,,,,,,,,,,,,,,,,,,,,,,,b:::_________",
+  "#   a   #:::e,,,,fffffuuuuufffff,,,,b:::#kkkkkkkg",
+  "#   a   #:::e,,,,fww.........wwf,,,,b:::#kkkkkkkg",
+  "#  aaa  #:::e,,c,fww.........wwf,c,,b:::#kkpppkkg",
+  "#  aaa  #:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#   a   a:::e,,,,f.............h,,,,b:::kkkpppkkg",
+  "#aaaaaaaa:::e,,,,f.............h,,,,b:::kkkkkkkkg",
+  "#   a   a:::D,,,,f.....MMM.....h,,,,d:::kkkkkkkkg",
+  "#  aaa  #:::D,,,,f.....MMM.....h,,,,d:::#kkkkkkkg",
+  "#  aaa  #:::D,,,,f.....MMM.....h,,,,d:::#kkpppkkg",
+  "#   a   #:::e,,,,f.............h,,,,e:::#kkpppkkg",
+  "#   a   #:::e,,,,f.............h,,,,b:::#kkpppkkg",
+  "#########:::e,,,,f.............h,,,,b:::#kkkkkkkg",
+  "        #:::e,,c,fww.........wwh,c,,b:::#kkkkkkkg",
+  "        #:::e,,,,fww.........wwf,,,,b:::#gggggggg",
+  "        #:::e,,,,fffhhuuuuufhhff,,,,b:::#        ",
+  "        #:::e,,,,,,,,,,,,,,,,,,,,,,,b:::#        ",
+  "        #:::e,,c,,,c,,,,,,,,,c,,,c,,b:::#        ",
+  "        #:::e,,,,,,,,UUUUUUU,,,,,,,,b:::#        ",
+  "        #::::ebbbbbbb:::::::ebbbbbbb::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        #:::::::::::::::::::::::::::::::#        ",
+  "        ################<################        ",
+  "                                                 ",
+]
+
+[tiles.legend]
+# A wall takes the tier of the floor on its north or west side: tiers are
+# corner heights, so a wall on another tier would tilt that floor's last
+# row into it. Its box reaches on down to the lower floor beside it.
+"#" = { label = "wall", height = 2, walls = "all", wall = { kind = "box", height = 320, tpage = 25, clut = 32199, tile = 0 } }
+"g" = { label = "wall (cloister)", height = 1, walls = "all", wall = { kind = "box", height = 320, tpage = 25, clut = 32199, tile = 0 } }
+"_" = { label = "parapet", height = 2, walls = "all", wall = { kind = "box", height = 48, tpage = 24, clut = 32258, tile = 28 } }
+":" = { label = "gallery", height = 2, ground = { kind = "texture", tpage = 10, clut = 32070, tile = 48 } }
+"e" = { label = "gallery ledge", height = 2, walls = "all", wall = { kind = "box", height = 40, tpage = 24, clut = 32258, tile = 28 } }
+"b" = { label = "gallery ledge (colonnade side)", height = 1, walls = "all", wall = { kind = "box", height = 40, tpage = 24, clut = 32258, tile = 28 } }
+"D" = { label = "stair down", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"d" = { label = "stair down (east)", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"," = { label = "colonnade", height = 1, ground = { kind = "texture", tpage = 5, clut = 30785, tile = 33 } }
+"U" = { label = "stair up", height = 1, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"c" = { label = "column", height = 1, walls = "all", ground = { kind = "texture", tpage = 5, clut = 30785, tile = 33 } }
+"f" = { label = "court rim", height = 1, walls = "all", wall = { kind = "box", height = 32, tpage = 9, clut = 32196, tile = 41 } }
+"h" = { label = "court rim (court side)", walls = "all", wall = { kind = "box", height = 32, tpage = 9, clut = 32196, tile = 41 } }
+"u" = { label = "court steps", height = 1, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"." = { label = "sunken court", ground = { kind = "texture", tpage = 10, clut = 32070, tile = 40 } }
+"w" = { label = "court pool", walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
+# The moss over the sleeping Colossus: a low mound, examined from the court.
+"M" = { label = "moss mound", walls = "all", wall = { kind = "box", height = 40, tpage = 10, clut = 32192, tile = 43 } }
+# The Root Archive's walks: what is left of its floor, over the pit.
+"a" = { label = "archive walk", height = 2, ground = { kind = "texture", tpage = 24, clut = 32258, tile = 28 } }
+"k" = { label = "cloister", height = 1, ground = { kind = "texture", tpage = 9, clut = 32198, tile = 28 } }
+"p" = { label = "cloister pool", height = 1, walls = "all", ground = { kind = "texture", tpage = 9, clut = 32206, tile = 3 } }
+">" = { label = "stair down", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+"<" = { label = "stair up", height = 2, ground = { kind = "texture", tpage = 9, clut = 32194, tile = 30 } }
+
+[[spawns]]
+id = "from_below"
+tile = [24, 2]
+facing = 4
+
+[[spawns]]
+id = "from_above"
+tile = [24, 33]
+
+[[exits]]
+id = "stair_down"
+rect = [19, 2, 19, 2]
+to = { kind = "map", map = "genesis_3f", spawn = "from_above" }
+
+[[exits]]
+id = "stair_up"
+rect = [24, 35, 24, 35]
+to = { kind = "map", map = "genesis_5f", spawn = "from_below" }
+
+[[triggers]]
+id = "arrival"
+rect = [20, 3, 28, 3]
+event = { kind = "toast", line = "floor_4f_intro" }
+once = true
+
+# The moss mound in the sunken court: the Verdant Colossus's quest giver,
+# examined from the court round it.
+[[triggers]]
+id = "sunken_court"
+rect = [23, 19, 25, 21]
+event = { kind = "talk", npc = "vault_heart" }
+press = true
+
+[[triggers]]
+id = "sunken_court_still"
+rect = [23, 19, 25, 21]
+event = { kind = "dialog", line = "vault_after" }
+press = true
+requires = { bosses = ["verdant_colossus"] }
+once = true
+
+[[encounters]]
+id = "west_gallery"
+rect = [9, 9, 11, 31]
+table = "tower_4f"
+
+[[encounters]]
+id = "east_gallery"
+rect = [37, 9, 39, 31]
+table = "tower_4f"
+
+[[encounters]]
+id = "colonnade"
+rect = [13, 9, 35, 30]
+table = "tower_4f"
+
+# ---------------------------------------------------------------------------
+# The court: a ring of green light (`concnow` mesh 127) turns on the floor
+# round the moss, the vault's heart hangs over it in two brass armillary
+# rings, and the court drips into the dark.
+# ---------------------------------------------------------------------------
+
+[[props]]
+id = "verdant_ring"
+mesh = { object = 127 }
+tile = [24, 18]
+hangs = true
+offset = [0, 24, 128]
+rotation = [90.0, 0.0, 0.0]
+scale = 0.75
+animate = [{ kind = "spin", period = -720 }, { kind = "pulse", amount = 0.08, period = 120 }]
+light = { color = [120, 255, 150], radius = 1300, height = 40, flicker = 0.12, period = 50 }
+
+[[props]]
+id = "vault_heart"
+mesh = { asset = "models/ember_crystal.glb" }
+tile = [24, 17]
+hangs = true
+offset = [0, 220, 384]
+scale = 2.2
+animate = [{ kind = "spin", period = 400 }, { kind = "bob", amplitude = 18, period = 200 }]
+light = { color = [120, 255, 140], radius = 1000, height = 0, flicker = 0.12, period = 40 }
+
+[[props]]
+id = "heart_ring_a"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [23, 17]
+hangs = true
+offset = [128, 220, 384]
+scale = 1.1
+animate = [{ kind = "spin", axis = "x", period = 360 }, { kind = "bob", amplitude = 18, period = 200 }]
+
+[[props]]
+id = "heart_ring_b"
+mesh = { asset = "models/armillary_ring.glb" }
+tile = [25, 17]
+hangs = true
+offset = [-128, 220, 384]
+scale = 1.3
+animate = [{ kind = "spin", axis = "z", period = -480 }, { kind = "bob", amplitude = 18, period = 200 }]
+
+# The colonnade's columns (`concnow` mesh 10), each on its own closed tile.
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [19, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [29, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 11]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [19, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [29, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 29]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 15]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [15, 25]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 15]
+
+[[decor]]
+mesh = { object = 10 }
+tile = [33, 25]
+
+# The Root Archive: four trunks of the Genesis root (the Thornwood's tall
+# bare trunk, `vell` mesh 7) rising out of the pit's dark from the water
+# far below, past the walks, each with a rootlight shrub on the ledge at its
+# foot; the last tablet at the end of the cross walk, a broken pillar at
+# the end of the spine, a pale lamp at its head.
+[[decor]]
+id = "root_trunk_nw"
+mesh = { scene = "vell", object = 7 }
+tile = [2, 15]
+offset = [-24, -1152, -24]
+scale = 1.7
+rotation = [0.0, 20.0, 0.0]
+
+[[decor]]
+id = "root_trunk_ne"
+mesh = { scene = "vell", object = 7 }
+tile = [6, 15]
+offset = [24, -1152, -24]
+scale = 1.6
+rotation = [0.0, 110.0, 0.0]
+
+[[decor]]
+id = "root_trunk_sw"
+mesh = { scene = "vell", object = 7 }
+tile = [2, 21]
+offset = [-24, -1152, 24]
+scale = 1.65
+rotation = [0.0, 200.0, 0.0]
+
+[[decor]]
+id = "root_trunk_se"
+mesh = { scene = "vell", object = 7 }
+tile = [6, 21]
+offset = [24, -1152, 24]
+scale = 1.75
+rotation = [0.0, 290.0, 0.0]
+
+[[props]]
+id = "archive_tablet"
+mesh = { object = 110 }
+tile = [1, 18]
+offset = [-30, 15, 0]
+rotation = [0.0, 80.0, 0.0]
+solid = true
+
+[[props]]
+id = "archive_pillar"
+mesh = { object = 122 }
+tile = [4, 23]
+solid = true
+
+# The archive's lamp: a lantern standing on a white marble pedestal
+# (`concnow` mesh 69); its light is the `archive_lamp` lamp below.
+[[decor]]
+id = "archive_pedestal"
+mesh = { object = 69 }
+tile = [4, 13]
+offset = [0, 0, 40]
+solid = true
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [4, 13]
+offset = [0, 0, 40]
+on = "archive_pedestal"
+
+# The Flooded Cloister, laid out round its two pools: an urn on its column
+# between them, a lantern on a marble pedestal against the east wall
+# facing the door, planters (`concnow` mesh 41) in the four corners and a
+# smaller one (mesh 77) at the middle of the north and south walls, and
+# ferns (mesh 17) against the side walls by each pool. The walks round the
+# pools and the door from the gallery stay clear.
+[[props]]
+id = "cloister_urn_n"
+mesh = { object = 44 }
+tile = [44, 19]
+solid = true
+
+[[decor]]
+id = "cloister_pedestal"
+mesh = { object = 69 }
+tile = [47, 19]
+offset = [24, 0, 0]
+solid = true
+
+[[decor]]
+mesh = { asset = "models/lantern.glb" }
+tile = [47, 19]
+offset = [24, 0, 0]
+on = "cloister_pedestal"
+
+[[decor]]
+mesh = { object = 41 }
+tile = [41, 13]
+scale = 0.55
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [47, 13]
+scale = 0.55
+rotation = [0.0, 90.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [41, 25]
+scale = 0.55
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 41 }
+tile = [47, 25]
+scale = 0.55
+rotation = [0.0, 270.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 77 }
+tile = [44, 13]
+scale = 0.7
+solid = true
+
+[[decor]]
+mesh = { object = 77 }
+tile = [44, 25]
+scale = 0.7
+rotation = [0.0, 180.0, 0.0]
+solid = true
+
+[[decor]]
+mesh = { object = 17 }
+tile = [41, 16]
+offset = [-24, 0, 0]
+rotation = [0.0, -90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [41, 22]
+offset = [-24, 0, 0]
+rotation = [0.0, -90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [47, 16]
+offset = [24, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.4
+
+[[decor]]
+mesh = { object = 17 }
+tile = [47, 22]
+offset = [24, 0, 0]
+rotation = [0.0, 90.0, 0.0]
+scale = 0.4
+
+# Planters along the galleries, urns at their corners.
+[[edges]]
+id = "gallery_planters"
+mesh = { object = 41 }
+walls = "#"
+on = ":"
+every = 5
+inset = 50
+scale_range = [0.5, 0.7]
+seed = 405
+
+[[props]]
+id = "urn_nw"
+mesh = { object = 44 }
+tile = [10, 7]
+solid = true
+
+[[props]]
+id = "urn_ne"
+mesh = { object = 44 }
+tile = [38, 7]
+solid = true
+
+[[props]]
+id = "urn_sw"
+mesh = { object = 44 }
+tile = [10, 33]
+solid = true
+
+[[props]]
+id = "urn_se"
+mesh = { object = 44 }
+tile = [38, 33]
+solid = true
+
+# Moss over the court floor.
+[[decals]]
+id = "court_moss"
+cell = { tpage = 10, clut = 32192, tile = 43 }
+rect = [18, 14, 30, 26]
+on = "."
+density = 0.5
+seed = 407
+size = [110, 110]
+size_jitter = 0.4
+sides = 8
+jitter = 40
+
+[[emitters]]
+kind = "drips"
+rect = [17, 13, 31, 27]
+count = 32
+seed = 401
+
+[[emitters]]
+kind = "drips"
+rect = [41, 13, 47, 25]
+count = 20
+seed = 408
+
+[[emitters]]
+kind = "dust"
+rect = [9, 6, 39, 34]
+count = 60
+color = [170, 210, 150]
+seed = 402
+
+[[emitters]]
+kind = "sparkles"
+rect = [18, 14, 30, 26]
+height = [10, 120]
+count = 30
+color = [140, 255, 150]
+seed = 403
+
+[[emitters]]
+kind = "sparkles"
+rect = [1, 13, 7, 23]
+height = [20, 140]
+count = 16
+color = [200, 255, 170]
+seed = 409
+
+[lighting]
+mood = "dusk"
+lamps = [
+  { id = "court_glow", tile = [24, 20], offset = [0, 60, 0], color = [90, 220, 120], radius = 900, flicker = 0.15, period = 60 },
+  # A pale shaft over the heart, so the vault is not one green (the beam
+  # below, once the engine reads it).
+  { id = "heart_shaft", tile = [24, 20], offset = [0, 360, 0], color = [235, 245, 210], radius = 560, flicker = 0.05, period = 90 },
+  { id = "archive", tile = [4, 18], offset = [0, 160, 0], color = [200, 255, 190], radius = 600, breathe = 0.2, breathe_period = 360 },
+  # The root's glow far down the archive's pit, coming up the trunks.
+  { id = "archive_deep", tile = [4, 18], offset = [0, -900, 0], color = [110, 255, 150], radius = 1200, breathe = 0.5, breathe_period = 300 },
+  # The lanterns on their pedestals in the archive and the cloister.
+  { id = "archive_lamp", tile = [4, 13], offset = [0, 150, 40], color = [210, 255, 200], radius = 520, flicker = 0.1, period = 40 },
+  { id = "cloister_lamp", tile = [47, 19], offset = [24, 150, 0], color = [200, 240, 255], radius = 520, flicker = 0.1, period = 45 },
+  { id = "cloister", tile = [44, 19], offset = [0, 180, 0], color = [180, 220, 255], radius = 700, flicker = 0.05, period = 80 },
+  # Rootlight: a breathing green over each shrub on the Genesis root.
+  { id = "rootlight_0", tile = [3, 16], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+  { id = "rootlight_1", tile = [5, 16], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 260 },
+  { id = "rootlight_2", tile = [3, 20], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 280 },
+  { id = "rootlight_3", tile = [5, 20], offset = [0, 40, 0], color = [120, 255, 160], radius = 340, breathe = 0.6, breathe_period = 240 },
+]
+
+# Light through the vault's broken roof onto the court, and the root's
+# glow rising round the archive's trunks. Drawn only under enhanced
+# lighting; the `heart_shaft` and `archive_deep` lamps do the lighting.
+[[beams]]
+id = "heart_shaft"
+tile = [24, 20]
+height = 1500
+tilt = 8.0
+angle = 90.0
+width = [110, 240]
+color = [235, 245, 210]
+intensity = 95
+profile = "fall"
+pool = true
+breathe = 0.12
+period = 540
+motes = 16
+seed = 401
+
+[[beams]]
+id = "archive_light"
+tile = [4, 18]
+height = 1200
+tilt = 12.0
+angle = 270.0
+width = [50, 110]
+color = [230, 255, 220]
+intensity = 80
+profile = "fall"
+pool = true
+period = 480
+motes = 6
+seed = 402
+
+[[beams]]
+id = "archive_root_glow"
+tile = [2, 22]
+offset = [0, -250, 64]
+height = 900
+width = [160, 100]
+color = [120, 255, 160]
+intensity = 80
+profile = "rise"
+pool = false
+breathe = 0.35
+period = 300
+motes = 18
+seed = 403
+
+# Rootlight motes drift up the trunks out of the archive's pit.
+[[emitters]]
+id = "archive_motes"
+kind = "dust"
+rect = [1, 13, 7, 23]
+height = [-900, 120]
+count = 44
+life = 420
+velocity = [0.0, 0.6, 0.0]
+spread = [0.1, 0.2, 0.1]
+sway = 14.0
+size = [10, 6]
+color = [120, 255, 160]
+color_end = [60, 200, 110]
+additive = true
+with_lighting = true
+seed = 411
+
+[fog]
+regions = [{ rect = [18, 14, 30, 26], angle = 0.0, spread = 180.0, speed = 8 }]
+
+[[audio.ambient]]
+id = "court_drips"
+sound = { kind = "sound", id = "drips" }
+tile = [24, 20]
+radius = 900
+inner = 256
+volume = 0.6
+
+[[audio.ambient]]
+id = "cloister_drips"
+sound = { kind = "sound", id = "drips" }
+tile = [44, 19]
+radius = 640
+inner = 128
+volume = 0.5
+
+[[audio.ambient]]
+id = "cloister_water"
+sound = { kind = "sound", id = "water" }
+tile = [44, 22]
+radius = 520
+inner = 96
+volume = 0.35
+
+[[audio.ambient]]
+id = "archive_wind"
+sound = { kind = "sound", id = "wind" }
+tile = [4, 18]
+radius = 640
+inner = 128
+volume = 0.3
+
+[[audio.ambient]]
+id = "archive_water"
+sound = { kind = "sound", id = "drips" }
+tile = [4, 18]
+radius = 560
+inner = 96
+volume = 0.3
+
+[[audio.ambient]]
+id = "heart_hum"
+sound = { kind = "sound", id = "drone" }
+tile = [24, 20]
+radius = 700
+inner = 160
+volume = 0.35
+
+# ---------------------------------------------------------------------------
+# Rootlight. In the Root Archive the root's own trunks rise out of the
+# pit, and a shrub glows on the ledge beside each.
+# Each is a leafy sapling (`vell` mesh 41) with a breathing lamp of its
+# own (`[lighting]`, `rootlight_*`); its motes draw only under enhanced
+# lighting (`with_lighting`), so the retail-faithful look keeps the plain shrub.
+# ---------------------------------------------------------------------------
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [3, 16]
+rotation = [0.0, 0.0, 0.0]
+scale = 1.60
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [5, 16]
+rotation = [0.0, 137.0, 0.0]
+scale = 1.70
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [3, 20]
+rotation = [0.0, 274.0, 0.0]
+scale = 1.80
+
+[[decor]]
+mesh = { scene = "vell", object = 41 }
+tile = [5, 20]
+rotation = [0.0, 51.0, 0.0]
+scale = 1.60
+
+# What the player can stop and look at (dialog.toml).
+[[triggers]]
+id = "journal_4f"
+rect = [4, 19, 4, 19]
+event = { kind = "dialog", line = "journal_4f" }
+press = true
+once = true
+

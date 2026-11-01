@@ -115,6 +115,13 @@ pub fn instance_map(section: &ModeSection, id: &str) -> Option<(String, String)>
     r.map.clone().map(|m| (m, r.spawn.clone()))
 }
 
+/// The retail scene instance `id` is played on, when it is a race run on a
+/// kingdom overworld (`scene = "map01"`).
+pub fn instance_scene(section: &ModeSection, id: &str) -> Option<String> {
+    let r = section.races.iter().find(|r| r.id == id)?;
+    r.scene.clone().filter(|_| r.map.is_none())
+}
+
 const BUILTIN_MODES: &str = include_str!("../builtin/modes.toml");
 const BUILTIN_CARDS: &str = include_str!("../builtin/cards.toml");
 
@@ -217,6 +224,9 @@ pub struct ActiveMode {
     duel_table: Option<DuelTableFrame>,
     /// A poker table on its pack map.
     poker_table: Option<PokerTableFrame>,
+    /// The names the instance gives its AI seats (a race's rivals), by
+    /// seat; read under [`Self::seat_names`].
+    rival_names: Vec<String>,
 }
 
 /// A view of whichever session is running. A per-frame snapshot, built
@@ -266,6 +276,7 @@ impl ActiveMode {
     ) -> Result<Self, BuildError> {
         let book = CardBook::new(cards.clone());
         let mut race_frame = None;
+        let mut rival_names = Vec::new();
         let mut duel_table = None;
         let mut poker_table = None;
         let invalid = |e: &dyn std::fmt::Debug| BuildError::Invalid(format!("{id}: {e:?}"));
@@ -295,8 +306,14 @@ impl ActiveMode {
             .map_err(|e| invalid(&e))?;
             (&c.name, ModeRunner::Golf(Box::new(GolfSession::new(cfg))))
         } else if let Some(r) = modes.races.iter().find(|r| r.id == id) {
-            let cfg = match &r.map {
-                Some(map) => {
+            let cfg = match (&r.map, &r.scene) {
+                (None, Some(scene)) => {
+                    let (cfg, frame) =
+                        RaceConfig::from_scene(r, scene, seed).map_err(|e| invalid(&e))?;
+                    race_frame = Some(frame);
+                    cfg
+                }
+                (Some(map), _) => {
                     let def = maps.get(map).ok_or_else(|| {
                         BuildError::Invalid(format!("{id}: the pack has no map `{map}`"))
                     })?;
@@ -305,8 +322,17 @@ impl ActiveMode {
                     race_frame = Some(frame);
                     cfg
                 }
-                None => RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?,
+                (None, None) => RaceConfig::from_def(r, seed).map_err(|e| invalid(&e))?,
             };
+            rival_names = (0..cfg.seats.len())
+                .map(|s| {
+                    if s == 0 {
+                        String::new()
+                    } else {
+                        crate::racing::rival_name(r, s)
+                    }
+                })
+                .collect();
             (&r.name, ModeRunner::Race(Box::new(RaceSession::new(cfg))))
         } else if let Some(a) = modes.prop_hunt.iter().find(|a| a.id == id) {
             let cfg = PropHuntConfig::from_arena(a, seed).map_err(|e| invalid(&e))?;
@@ -336,12 +362,14 @@ impl ActiveMode {
             race_frame,
             duel_table,
             poker_table,
+            rival_names,
         })
     }
 
-    /// Where the session is played on its pack map: the golf hole in play,
-    /// or the race track. `None` for an instance with no map, which a host
-    /// draws as its top-down screen.
+    /// Where the session is played on its pack map (or, for a race run on
+    /// an overworld, its retail scene - [`MapFrame::scene`]): the golf hole
+    /// in play, or the race track. `None` for an instance with no map, which
+    /// a host draws as its top-down screen.
     pub fn map_frame(&self) -> Option<&MapFrame> {
         match &self.runner {
             ModeRunner::Golf(s) => s.frame(),
@@ -506,7 +534,8 @@ impl ActiveMode {
 
     /// Seat `seat` as this machine's player reads it: "You" for
     /// [`Self::local_seat`] (unless [`Self::watching`]), else the name a
-    /// table gives its NPC, else the seat's player name, else "Seat N".
+    /// table gives its NPC, else the seat's player name, else the name the
+    /// instance gives the seat (a race's rivals), else "Seat N".
     pub fn seat_name(&self, seat: usize) -> String {
         self.seat_label(seat, &format!("Seat {}", seat + 1))
     }
@@ -547,7 +576,10 @@ impl ActiveMode {
         }
         match self.seat_names.get(seat) {
             Some(n) if !n.is_empty() => n.clone(),
-            _ => fallback.to_string(),
+            _ => match self.rival_names.get(seat) {
+                Some(n) if !n.is_empty() && seat != self.local_seat => n.clone(),
+                _ => fallback.to_string(),
+            },
         }
     }
 
@@ -826,6 +858,10 @@ fn race_line(e: &RaceEvent, n: &Namer<'_>) -> Option<String> {
         RaceEvent::Finished { seat, place, .. } => {
             format!("{} finished #{place}", n.name(*seat))
         }
+        RaceEvent::Used {
+            seat,
+            kind: crate::racing::PowerKind::Slow,
+        } => format!("{} slowed the field", n.name(*seat)),
         RaceEvent::RaceOver => "Race over".to_string(),
         _ => return None,
     })

@@ -18,6 +18,7 @@
 //! bank must not wrap around them.
 
 use crate::field_env::EnvDraw;
+use crate::mesh_memo::{ContentKey, MeshMemo};
 use crate::scene_resources::SceneResources;
 use legaia_render_kernels::fog_volume::{FogGround, FogGroundBuilder};
 use legaia_scene_formats::field_objects::WalkHeightfield;
@@ -55,8 +56,10 @@ impl FogSurfaces {
         res: &SceneResources,
     ) -> Self {
         use std::collections::HashMap;
-        type Split = (Vec<[f32; 3]>, Vec<u32>, Vec<u32>);
-        let mut cache: HashMap<usize, Split> = HashMap::new();
+        use std::sync::Arc;
+        SPLIT_MEMO.begin_build();
+        let vram_key = ContentKey::of_vram(&res.vram);
+        let mut cache: HashMap<usize, Arc<Split>> = HashMap::new();
         let mut out = Self::default();
         let draws = terrain.iter().map(|d| (d, 1.0)).chain(
             placements
@@ -68,19 +71,21 @@ impl FogSurfaces {
             if d.anim_id != 0 || scale <= 0.0 {
                 continue;
             }
-            let (positions, solid, see) = match cache.entry(d.res_tmd) {
-                std::collections::hash_map::Entry::Occupied(e) => {
-                    let (p, s, t) = e.into_mut();
-                    (&*p, &*s, &*t)
-                }
+            let split = match cache.entry(d.res_tmd) {
+                std::collections::hash_map::Entry::Occupied(e) => e.into_mut(),
                 std::collections::hash_map::Entry::Vacant(e) => {
                     let Some(rt) = res.tmds.get(d.res_tmd) else {
                         continue;
                     };
-                    let (p, s, t) = e.insert(split_mesh(&rt.tmd, &rt.raw, res));
-                    (&*p, &*s, &*t)
+                    let key = ContentKey::pair(ContentKey::of_bytes(&rt.raw), vram_key);
+                    e.insert(SPLIT_MEMO.get_or(key, || {
+                        let s = split_mesh(&rt.tmd, &rt.raw, res);
+                        let bytes = s.0.len() * 12 + (s.1.len() + s.2.len()) * 4;
+                        (s, bytes)
+                    }))
                 }
             };
+            let (positions, solid, see) = (&split.0, &split.1, &split.2);
             let xf =
                 |v: [f32; 3]| d.place_point([v[0] * scale, v[1] * scale, v[2] * scale], [0.0; 3]);
             for (idx, dst) in [(solid, &mut out.solid), (see, &mut out.see_through)] {
@@ -104,6 +109,13 @@ impl FogSurfaces {
         self.solid.is_empty() && self.see_through.is_empty()
     }
 }
+
+/// One mesh's positions with its solid and see-through triangles.
+type Split = (Vec<[f32; 3]>, Vec<u32>, Vec<u32>);
+
+/// Each mesh's [`split_mesh`], by its bytes and the VRAM it was gated
+/// against ([`crate::mesh_memo`]).
+static SPLIT_MEMO: MeshMemo<Split> = MeshMemo::new(64 << 20);
 
 /// One mesh's textured and untextured halves as one position stream, its
 /// drawn triangles split into opaque and semi-transparent index lists.

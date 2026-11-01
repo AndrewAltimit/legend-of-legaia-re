@@ -381,3 +381,12 @@ fn a_particle_is_a_pure_function_of_the_frame() {
     // Two particles of one emitter differ.
     assert_ne!(e.particle(0, 1, 500, centre), e.particle(0, 2, 500, centre));
 }
+
+#[test]
+fn an_emitter_draws_always_unless_it_rides_the_lighting() {
+    assert!(!EmitterDef::default().resolved().with_lighting);
+    let e: EmitterDef =
+        toml::from_str("kind = \"dust\"\nrect = [1, 1, 2, 2]\nwith_lighting = true")
+            .expect("emitter parses");
+    assert!(e.resolved().with_lighting);
+}

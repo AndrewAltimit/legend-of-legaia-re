@@ -368,6 +368,7 @@ impl Course {
                 spawn: course.spawn.clone(),
                 origin,
                 unit: GOLF_UNIT,
+                scene: false,
             },
         ))
     }

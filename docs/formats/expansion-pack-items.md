@@ -36,14 +36,14 @@ An id the retail side already uses (a patched disc that named one) is skipped. A
 ## `items.toml`
 
 ```toml
-[items.rebirth_blade]
-name = "Rebirth Blade"
+[items.vigil_blade]
+name = "Vigil Blade"
 description = "Forged where the Mist|was torn away."
 kind = "weapon"
 icon = { kind = "item", id = 0x27 }
 characters = ["vahn"]
 attack = 112
-set = "rebirth"
+set = "vigil"
 
 [items.phoenix_plume]
 name = "Phoenix Plume"
@@ -53,14 +53,14 @@ price = 12000
 effect = { kind = "revive", percent = 50 }
 all_party = true
 
-[sets.rebirth]
-name = "Rebirth"
+[sets.vigil]
+name = "Vigil"
 bonuses = [{ pieces = 2, attack = 10 }, { pieces = 4, passives = [0x24] }]
 
 [[shops]]
 id = "tower_armory"
 name = "Tower Armory"
-stock = ["phoenix_plume", 0x79, { item = "rebirth_crown", requires = { bosses = ["iron_regent"] } }]
+stock = ["phoenix_plume", 0x79, { item = "vigil_crown", requires = { bosses = ["iron_regent"] } }]
 ```
 
 ### `[items.<key>]`
@@ -116,7 +116,7 @@ Everywhere a pack names an item it writes an `ItemRef`:
 |---|---|---|
 | An integer | `0x79` | Retail item id |
 | An item coordinate | `{ kind = "item", id = 0x79 }` | The same retail item |
-| A string | `"rebirth_blade"`, `"rebirth:rebirth_blade"` | A pack item; `other:item` names a required pack's |
+| A string | `"vigil_blade"`, `"rebirth:vigil_blade"` | A pack item; `other:item` names a required pack's |
 
 The form is accepted in `battle.toml` monster `drop` and `steal` and boss `reward_items`, `progression.toml` `level_rewards`, `quests.toml` `rewards.items` and `collect_item` objectives, and shop `stock`. A pack key must be defined in `items.toml`; a retail id is a disc coordinate the resolver checks.
 
@@ -183,20 +183,20 @@ It is written only while the player holds or wears a pack item, so a block witho
 - The retail Items and Equip screens list no pack items (their rows are the retail bag's slots); the pack item screen and the Journal list them. A slot a pack item fills shows that item's name on the retail Equip and Status screens (`World::pack_worn_item_name`), though the record's byte under it stays `0`.
 - A pack weapon's `icon` picks its battle mesh and swing costs from the retail weapon it names.
 
-## Rebirth's gear
+## The flagship pack's gear
 
 [`packs/rebirth/items.toml`](../../packs/rebirth/items.toml) is set against retail's endgame, the Ra-Seru set from the static equipment table (`DAT_80074F68`, [equipment-table.md](equipment-table.md)):
 
-| Slot | Retail best | Rebirth |
+| Slot | Retail best | Rebirth pack |
 |---|---|---|
-| Vahn's weapon | Ra-Seru Blade ATK 98; shop Chaos Breaker 72 | Rebirth Blade ATK 112 (Iron Regent) |
-| Noa's weapon | Ra-Seru Fangs 96; Golden Claw 86 | Rebirth Talon 110 (Azure Seraph) |
-| Gala's weapon | Ra-Seru Club 100; Great Axe 88 | Rebirth Maul 114 (Verdant Colossus) |
-| Body | Ra-Seru Armor 83/82, Robe 84/78, Plate 75/84; Triumph Armor 70/69 for 50,000 G | Warden tier 69-77 (sold from the start); Rebirth Mail 94/94, Robe 95/88, Plate 86/96 |
-| Head | Ra-Seru Seal / Plume / Helmet UDF 62-64, INT 60-64 | Rebirth Crown UDF 71, INT 70 |
-| Feet | Ra-Seru Boots / Shoes / Thongs ATK 86-90, LDF 60-64, SPD 28-32 | Rebirth Greaves ATK 98, LDF 70, SPD 35 |
+| Vahn's weapon | Ra-Seru Blade ATK 98; shop Chaos Breaker 72 | Vigil Blade ATK 112 (Iron Regent) |
+| Noa's weapon | Ra-Seru Fangs 96; Golden Claw 86 | Vigil Talon 110 (Azure Seraph) |
+| Gala's weapon | Ra-Seru Club 100; Great Axe 88 | Vigil Maul 114 (Verdant Colossus) |
+| Body | Ra-Seru Armor 83/82, Robe 84/78, Plate 75/84; Triumph Armor 70/69 for 50,000 G | Warden tier 69-77 (sold from the start); Vigil Mail 94/94, Robe 95/88, Plate 86/96 |
+| Head | Ra-Seru Seal / Plume / Helmet UDF 62-64, INT 60-64 | Vigil Crown UDF 71, INT 70 |
+| Feet | Ra-Seru Boots / Shoes / Thongs ATK 86-90, LDF 60-64, SPD 28-32 | Vigil Greaves ATK 98, LDF 70, SPD 35 |
 
-Each Rebirth piece is about 12-15% above its Ra-Seru twin, and the set adds +10 ATK at two pieces, +12 defence at three and All Guard (`0x24`) at four. Its accessories pair two retail passives at the pair's price: Ysolde's Seal (Master Guard + HP Boost 1), Tower Sigil (AP Boost 2 + HP After), Mist Lantern (EXP Boost + Items Up), Sovereign's Eye (Attack x2 + Arts Power), Ember Heart (Fire Guard, +15 ATK). The consumables extend the retail line: Tower Draught (2500 HP), Mist Tonic (300 MP), Phoenix Plume (party revive at 50%), Sovereign Nectar (full HP, party). The 5F Tower Armory sells the consumables and the Warden tier at once and opens the rest boss by boss.
+Each Vigil piece is about 12-15% above its Ra-Seru twin, and the set adds +10 ATK at two pieces, +12 defence at three and All Guard (`0x24`) at four. Its accessories pair two retail passives at the pair's price: Ysolde's Seal (Master Guard + HP Boost 1), Tower Sigil (AP Boost 2 + HP After), Mist Lantern (EXP Boost + Items Up), Sovereign's Eye (Attack x2 + Arts Power), Ember Heart (Fire Guard, +15 ATK). The consumables extend the retail line: Tower Draught (2500 HP), Mist Tonic (300 MP), Phoenix Plume (party revive at 50%), Sovereign Nectar (full HP, party). The 5F Tower Armory sells the consumables and the Warden tier at once and opens the rest boss by boss.
 
 ## See also
 

@@ -336,6 +336,7 @@ mod expansion_audio;
 mod expansion_battle;
 mod expansion_boss;
 mod expansion_cards;
+mod expansion_ground_motion;
 mod expansion_hosts;
 mod expansion_items;
 mod expansion_live_arm;

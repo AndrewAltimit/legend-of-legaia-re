@@ -162,6 +162,10 @@ class TmdRenderer {
     this.locHazeFar     = gl.getUniformLocation(this.program, 'u_haze_far');
     this.locUseFlatColors = gl.getUniformLocation(this.program, 'u_use_flat_colors');
     this.locGhost   = gl.getUniformLocation(this.program, 'u_ghost');
+    /* SSAO pre-pass (webgl-ssao.js, driven by renderAssembled). */
+    this.locGbuf     = gl.getUniformLocation(this.program, 'u_gbuf');
+    this.locGbufK    = gl.getUniformLocation(this.program, 'u_gbuf_k');
+    this.locGbufView = gl.getUniformLocation(this.program, 'u_gbuf_view');
     this.locGrade   = gl.getUniformLocation(this.program, 'u_grade');
     this.locCue     = gl.getUniformLocation(this.program, 'u_cue');
     this.locCueFar  = gl.getUniformLocation(this.program, 'u_cue_far');

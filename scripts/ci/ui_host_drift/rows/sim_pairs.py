@@ -1087,11 +1087,13 @@ SIM_PAIRS: list[dict[str, object]] = [
         "browser play page (angle-dependently - invisible in a diff and in "
         "any single screenshot taken from the lucky angle)",
         "sites": {
-            "native": ("crates/engine-shell/src/window/field_render/placements.rs", "compute_coplanar_env_offsets"),
+            "native": ("crates/engine-shell/src/window/field_render/placements.rs", "build_static_env_products"),
             "web": (WEB_PLAY, "build_field_render"),
         },
         "mode": "symbols_all",
-        "symbols": ["draw_plane_summaries", "coplanar_draw_offsets"],
+        # The native window walks the distinct meshes on its thread pool
+        # through the executor-taking twin; the kernel is the same.
+        "symbols": [("draw_plane_summaries", "draw_plane_summaries_with"), "coplanar_draw_offsets"],
     },
     {
         "what": "coplanar draw lifts, play page vs field-scene viewer - the "

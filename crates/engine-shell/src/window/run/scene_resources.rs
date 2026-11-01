@@ -60,15 +60,24 @@ pub(in crate::window) fn build_window_scene_resources(
             None
         }
     };
-    let (mut res, _stats) = SceneResources::build_targeted_with_options(
-        s,
-        &shared_refs,
-        BuildOptions {
-            kind: load_kind,
-            upload_all_tims: true,
-            system_ui: system_ui.as_deref(),
-        },
-    )?;
+    // A pack map's entry already made this build (the same scene, override
+    // and options; `SceneHost::expansion_entry_build`), most often on a
+    // worker before the player reached the exit: start from it.
+    let mut res = match session.host.expansion_entry_build() {
+        Some(b) => (**b).clone(),
+        None => {
+            SceneResources::build_targeted_with_options(
+                s,
+                &shared_refs,
+                BuildOptions {
+                    kind: load_kind,
+                    upload_all_tims: true,
+                    system_ui: system_ui.as_deref(),
+                },
+            )?
+            .0
+        }
+    };
     // Field-character atlas upload (PROT 0874 §2, the `FUN_800198e0`
     // chain): entries 1/2/3 are the Vahn/Noa/Gala atlas pages whose
     // palettes live as **flat strips** on CLUT row 478. The generic TIM

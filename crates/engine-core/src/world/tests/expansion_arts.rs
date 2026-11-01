@@ -26,7 +26,7 @@ learn = { level = 10 }
 
 [arts.finale]
 character = "vahn"
-name = "Rebirth Blaze"
+name = "Knell Blaze"
 ap = 20
 segments = [{ art = 0x2A }]
 learn = { level = 80 }

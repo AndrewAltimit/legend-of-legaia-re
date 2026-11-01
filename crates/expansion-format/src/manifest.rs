@@ -13,6 +13,12 @@ pub struct PackManifest {
     pub id: String,
     /// Display name (`Legend of Legaia: Rebirth`).
     pub name: String,
+    /// A short label for places too narrow for [`Self::name`] (the
+    /// launcher's Expansion button, a picker row): one line of at most
+    /// [`MAX_SHORT_NAME_LEN`] characters (`Rebirth`). Unset, those places
+    /// show the name. Schema 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub short_name: Option<String>,
     /// Pack version, semver text.
     pub version: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -61,15 +67,19 @@ pub struct PackManifest {
 
 /// The newest pack schema (pack-format version) this crate reads, and the
 /// one a new pack is written against.
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 /// The oldest pack schema this crate still reads. Every schema from here to
-/// [`SCHEMA_VERSION`] loads; schema 2 only added optional manifest keys.
+/// [`SCHEMA_VERSION`] loads; schemas 2 and 3 only added optional manifest
+/// keys (2: `cover`, `min_engine`; 3: `short_name`).
 pub const MIN_SCHEMA_VERSION: u32 = 1;
 
 /// This engine's version, as a pack's `min_engine` is compared against: the
 /// workspace version every engine crate shares.
 pub const ENGINE_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The longest [`PackManifest::short_name`] accepted, in characters.
+pub const MAX_SHORT_NAME_LEN: usize = 24;
 
 /// The largest cover image accepted.
 pub const MAX_COVER_LEN: usize = 1 << 20;
@@ -301,6 +311,15 @@ pub fn check_compatibility(schema: u32, min_engine: Option<&str>) -> Result<(), 
 }
 
 impl PackManifest {
+    /// The label for a narrow place: [`Self::short_name`] when set, else
+    /// [`Self::name`].
+    pub fn short_label(&self) -> &str {
+        match self.short_name.as_deref().map(str::trim) {
+            Some(s) if !s.is_empty() => s,
+            _ => &self.name,
+        }
+    }
+
     /// Can this engine load the pack ([`check_compatibility`]).
     pub fn compatibility(&self) -> Result<(), Incompatible> {
         check_compatibility(self.schema, self.min_engine.as_deref())

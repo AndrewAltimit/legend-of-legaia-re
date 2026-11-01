@@ -22,7 +22,22 @@
       this._fieldFx = { fxMeshes: new Map(), packMeshes: new Map() };
       this._dynActors = new Set();
       const rt = this.rt;
-      this.renderer.clearScene();
+      /* The static env meshes the last build uploaded, by content key
+       * (`field_mesh_key`: the TMD's bytes and the VRAM it samples): a slot
+       * whose key is unchanged keeps its upload instead of being built
+       * again - a pack map rebuilt after an edit (the expansion workbench's
+       * preview) re-enters mostly the same meshes. Every other mesh is
+       * freed once the static layers are up. */
+      const keyOf = (typeof rt.field_mesh_key === 'function'
+        && typeof this.renderer.detachSceneMeshes === 'function')
+        ? (slot) => rt.field_mesh_key(slot) : null;
+      const prev = this._envMeshKeys && this._envMeshKeys.renderer === this.renderer
+        ? this._envMeshKeys.byKey : new Map();
+      const detached = keyOf ? this.renderer.detachSceneMeshes() : null;
+      if (!keyOf) this.renderer.clearScene();
+      const envByKey = new Map();
+      const adopted = new Set();
+      this._envMeshKeys = { renderer: this.renderer, byKey: envByKey };
       this.staticDraws = [];
       this._terrainByIdx = null;
       this._terrainFacingLive = null;
@@ -65,6 +80,17 @@
         const key = meshId;
         if (used.has(key)) return meshId;
         if (empty.has(key)) return -1;
+        const content = (!anim && keyOf) ? keyOf(slot) : '';
+        const kept = content ? prev.get(content) : null;
+        if (kept) {
+          /* Each kept record has one owner. */
+          prev.delete(content);
+          adopted.add(kept);
+          this.renderer.adoptSceneMesh(meshId, kept);
+          envByKey.set(content, kept);
+          used.add(key);
+          return meshId;
+        }
         try { rt.field_mesh_posed(slot, anim || 0); }
         catch (e) { empty.add(key); return -1; }
         const pos = rt.field_mesh_positions();
@@ -73,6 +99,7 @@
         const flat = rt.field_mesh_flat_rgba();
         this.renderer.uploadSceneMesh(meshId, pos, rt.field_mesh_uvs(),
           rt.field_mesh_cba_tsb(), idx, flat.length ? flat : null);
+        if (content && !envByKey.has(content)) envByKey.set(content, this.renderer.sceneMeshRecord(meshId));
         used.add(key);
         return meshId;
       };
@@ -231,6 +258,13 @@
         terrainSlots.length, true,
         rt.field_placement_scales ? rt.field_placement_scales() : null,
         rt.field_decoration_start ? rt.field_decoration_start() : undefined);
+      /* The last build's meshes this one did not keep. */
+      if (detached) {
+        this.renderer.freeSceneMeshRecords(
+          Array.from(detached.values()).filter((m) => !adopted.has(m)));
+        /* Freed: a later model swap's upload must not adopt one. */
+        prev.clear();
+      }
       this._floorWaveLive = false;
       this._objectLive = false;
       this._objectTintsLive = false;

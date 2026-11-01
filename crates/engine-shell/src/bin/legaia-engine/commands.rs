@@ -50,6 +50,8 @@ use std::time::Duration;
 mod export_glb;
 #[path = "commands/info.rs"]
 mod info;
+#[path = "commands/mesh_catalog.rs"]
+mod mesh_catalog;
 #[path = "commands/replay.rs"]
 mod replay;
 #[path = "commands/run.rs"]
@@ -63,6 +65,7 @@ mod vram;
 
 pub(crate) use export_glb::*;
 pub(crate) use info::*;
+pub(crate) use mesh_catalog::*;
 pub(crate) use replay::*;
 pub(crate) use run::*;
 pub(crate) use sessions::*;

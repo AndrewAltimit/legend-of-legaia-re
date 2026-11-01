@@ -3,8 +3,11 @@
 //! animated materials and fog. Called from the map's own rules
 //! ([`crate::map_rules`]).
 
-use crate::map::{MapDef, TileGrid};
-use crate::map_detail::{MAX_DECORATIONS, MaterialFx};
+use crate::map::{MAX_WALL_HEIGHT, MapDef, TileGrid};
+use crate::map_detail::{
+    BACKDROP_MAX_HEIGHT, CEILING_MAX_HEIGHT, CHAIN_MAX_WIDTH, MAX_DECORATIONS, MaterialFx,
+    SURROUND_MAX_REACH, SURROUND_REGION_MAX_DEPTH,
+};
 use crate::map_rules::{check_light, check_mesh};
 use crate::validate::Checker;
 
@@ -31,6 +34,9 @@ pub(crate) fn check_detail(
         }
         check_scale(cx, &format!("{at}.scale"), d.scale);
     }
+    check_surround(m, cx);
+    check_ceiling(m, cx);
+    check_ground_motion(m, cx);
     for (i, s) in m.scatter.iter().enumerate() {
         let at = format!("scatter[{i}]");
         if s.meshes.is_empty() {
@@ -105,7 +111,13 @@ pub(crate) fn check_detail(
                 format!("tile {:?} is off the map", l.tile),
             );
         }
-        check_light(cx, &at, l.radius, l.flicker, l.period);
+        check_light(
+            cx,
+            &at,
+            l.radius,
+            [l.flicker, l.breathe],
+            [l.period, l.breathe_period],
+        );
     }
     for (i, fx) in m.materials.iter().enumerate() {
         let at = format!("materials[{i}]");
@@ -217,6 +229,287 @@ pub(crate) fn check_detail(
         if !on([f.rect[0], f.rect[1]]) || !on([f.rect[2], f.rect[3]]) {
             cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
         }
+    }
+}
+
+/// Living ground ([`crate::ground_motion`]): characters the legend names,
+/// a wave that moves, and rungs enough on the ladder for every phase step.
+fn check_ground_motion(m: &MapDef, cx: &mut Checker<'_>) {
+    use crate::ground_motion::{
+        GroundMotionKind, MAX_GROUND_MOTION_AMPLITUDE, MAX_GROUND_MOTION_PHASES,
+    };
+    if m.ground_motion.is_empty() {
+        return;
+    }
+    if m.terrain.is_some() {
+        cx.error(
+            "ground_motion",
+            "a terrain floors on its heightfield, not the tier ladder ground motion moves",
+        );
+        return;
+    }
+    if m.floor_heights.is_empty() {
+        cx.error(
+            "ground_motion",
+            "ground motion needs the map's own `floor_heights`: its rungs rest at those heights",
+        );
+        return;
+    }
+    let mut claimed = String::new();
+    for (i, d) in m.ground_motion.iter().enumerate() {
+        let at = format!("ground_motion[{i}]");
+        if d.chars.is_empty() {
+            cx.error(
+                &format!("{at}.chars"),
+                "the motion names no legend character",
+            );
+        }
+        for c in d.chars.chars() {
+            if m.style(c).is_none() {
+                cx.error(
+                    &format!("{at}.chars"),
+                    format!("{c:?} is not a legend character"),
+                );
+            } else if claimed.contains(c) {
+                cx.warning(
+                    &format!("{at}.chars"),
+                    format!("{c:?} moves with an earlier motion; this one leaves it"),
+                );
+            }
+        }
+        claimed.push_str(&d.chars);
+        if d.amplitude == 0 {
+            cx.warning(&format!("{at}.amplitude"), "an amplitude of 0 never moves");
+        } else if d.amplitude.unsigned_abs() > MAX_GROUND_MOTION_AMPLITUDE.unsigned_abs() {
+            cx.error(
+                &format!("{at}.amplitude"),
+                format!(
+                    "amplitude {} is past {MAX_GROUND_MOTION_AMPLITUDE} world units",
+                    d.amplitude
+                ),
+            );
+        } else if d.amplitude.unsigned_abs() > 24
+            && d.chars
+                .chars()
+                .filter_map(|c| m.style(c))
+                .any(|s| s.walls.mask() != 0xF)
+        {
+            cx.warning(
+                &format!("{at}.amplitude"),
+                format!(
+                    "the party walks this floor and rides a {}-unit swing; props on it stay put",
+                    d.amplitude
+                ),
+            );
+        }
+        if d.period < 2 {
+            cx.error(
+                &format!("{at}.period"),
+                format!("period {} frames; a cycle is at least 2", d.period),
+            );
+        }
+        if d.kind != GroundMotionKind::Breathe {
+            if !(1..=MAX_GROUND_MOTION_PHASES).contains(&d.phases) {
+                cx.error(
+                    &format!("{at}.phases"),
+                    format!(
+                        "phases {} is outside 1..={MAX_GROUND_MOTION_PHASES}",
+                        d.phases
+                    ),
+                );
+            }
+            if !(d.wavelength.is_finite() && d.wavelength > 0.0) {
+                cx.error(
+                    &format!("{at}.wavelength"),
+                    format!("wavelength {} is not a length in tiles", d.wavelength),
+                );
+            }
+        }
+    }
+    let plan = m.ground_motion_plan();
+    if plan.short > 0 {
+        cx.error(
+            "ground_motion",
+            format!(
+                "the motions need {} ladder rungs more than the map's {} tiers leave free; \
+                 fewer phases or fewer tiers under the moving characters",
+                plan.short,
+                crate::map::FLOOR_TIERS
+            ),
+        );
+    }
+}
+
+/// A surround: a drop at all, within reach of the field grid's margin, and
+/// not on a terrain, which draws its own skirt.
+fn check_surround(m: &MapDef, cx: &mut Checker<'_>) {
+    let Some(s) = &m.surround else {
+        return;
+    };
+    if s.depth == 0 || s.depth > MAX_WALL_HEIGHT * 4 {
+        cx.error(
+            "surround.depth",
+            format!("depth {} is not in 1..={}", s.depth, MAX_WALL_HEIGHT * 4),
+        );
+    }
+    if s.reach > SURROUND_MAX_REACH {
+        cx.error(
+            "surround.reach",
+            format!("reach {} is past {SURROUND_MAX_REACH}", s.reach),
+        );
+    }
+    if let Some(b) = &s.backdrop {
+        if b.height == 0 || b.height > BACKDROP_MAX_HEIGHT {
+            cx.error(
+                "surround.backdrop.height",
+                format!("height {} is not in 1..={BACKDROP_MAX_HEIGHT}", b.height),
+            );
+        }
+        if b.distance == 0 || b.distance > s.reach {
+            cx.error(
+                "surround.backdrop.distance",
+                format!(
+                    "distance {} is not in 1..={} (the surround's reach)",
+                    b.distance, s.reach
+                ),
+            );
+        }
+        if b.tile >= 64 {
+            cx.error(
+                "surround.backdrop.tile",
+                format!("atlas cell {} is past 63", b.tile),
+            );
+        }
+        if let Some(c) = b
+            .sides
+            .chars()
+            .find(|c| !"nesw".contains(c.to_ascii_lowercase()))
+        {
+            cx.error(
+                "surround.backdrop.sides",
+                format!("{c:?} is not one of n, e, s, w"),
+            );
+        } else if b.sides.is_empty() {
+            cx.warning(
+                "surround.backdrop.sides",
+                "no side named: the backdrop is not drawn",
+            );
+        }
+    }
+    for (i, r) in s.regions.iter().enumerate() {
+        let at = format!("surround.regions[{i}]");
+        if r.depth == 0 || r.depth > SURROUND_REGION_MAX_DEPTH {
+            cx.error(
+                &format!("{at}.depth"),
+                format!(
+                    "depth {} is not in 1..={SURROUND_REGION_MAX_DEPTH}",
+                    r.depth
+                ),
+            );
+        }
+        for (what, cell) in [("ground", r.ground), ("side", r.side)] {
+            if let Some(c) = cell
+                && c.tile >= 64
+            {
+                cx.error(
+                    &format!("{at}.{what}.tile"),
+                    format!("atlas cell {} is past 63", c.tile),
+                );
+            }
+        }
+        let size = m.tiles.rows.len();
+        let width = m
+            .tiles
+            .rows
+            .iter()
+            .map(|r| r.chars().count())
+            .max()
+            .unwrap_or(0);
+        if usize::from(r.rect[0].max(r.rect[2])) >= width
+            || usize::from(r.rect[1].max(r.rect[3])) >= size
+        {
+            cx.error(&format!("{at}.rect"), "the rectangle runs off the map");
+        }
+        if let Ok(grid) = m.tile_grid() {
+            let (c0, c1) = (r.rect[0].min(r.rect[2]), r.rect[0].max(r.rect[2]));
+            let (r0, r1) = (r.rect[1].min(r.rect[3]), r.rect[1].max(r.rect[3]));
+            let any_void = (r0..=r1).any(|row| {
+                (c0..=c1).any(|col| {
+                    grid.get(usize::from(col), usize::from(row))
+                        .is_some_and(|t| t.void)
+                })
+            });
+            if !any_void {
+                cx.warning(
+                    &format!("{at}.rect"),
+                    "no void tile inside the rectangle: the region draws nothing",
+                );
+            }
+        }
+    }
+    if m.terrain.is_some() {
+        cx.warning(
+            "surround",
+            "a terrain draws its own skirt past the map's edges; the surround is not drawn",
+        );
+    }
+}
+
+/// A ceiling: a height in range, real atlas cells, a chain with a width,
+/// and something for it to do.
+fn check_ceiling(m: &MapDef, cx: &mut Checker<'_>) {
+    let Some(c) = &m.ceiling else {
+        return;
+    };
+    if c.height == 0 || c.height > CEILING_MAX_HEIGHT {
+        cx.error(
+            "ceiling.height",
+            format!("height {} is not in 1..={CEILING_MAX_HEIGHT}", c.height),
+        );
+    }
+    if let Some(cell) = &c.cell
+        && cell.tile >= 64
+    {
+        cx.error(
+            "ceiling.cell.tile",
+            format!("atlas cell {} is past 63", cell.tile),
+        );
+    }
+    if let Some(ch) = &c.chain {
+        if ch.tile >= 64 {
+            cx.error(
+                "ceiling.chain.tile",
+                format!("atlas cell {} is past 63", ch.tile),
+            );
+        }
+        if ch.width == 0 || ch.width > CHAIN_MAX_WIDTH {
+            cx.error(
+                "ceiling.chain.width",
+                format!("width {} is not in 1..={CHAIN_MAX_WIDTH}", ch.width),
+            );
+        }
+        if !m.props.iter().any(|p| p.hangs) && !m.decor.iter().any(|d| d.hangs) {
+            cx.warning(
+                "ceiling.chain",
+                "no prop or decoration is marked `hangs`: no chain is drawn",
+            );
+        }
+        for (i, id) in ch.items.iter().enumerate() {
+            let hung = m.props.iter().any(|p| p.hangs && p.id == *id)
+                || m.decor.iter().any(|d| d.hangs && d.id == *id);
+            if !hung {
+                cx.error(
+                    &format!("ceiling.chain.items[{i}]"),
+                    format!("{id:?} names no prop or decoration marked `hangs`"),
+                );
+            }
+        }
+    }
+    if c.cell.is_none() && c.chain.is_none() {
+        cx.warning(
+            "ceiling",
+            "neither `cell` nor `chain`: the ceiling draws nothing",
+        );
     }
 }
 

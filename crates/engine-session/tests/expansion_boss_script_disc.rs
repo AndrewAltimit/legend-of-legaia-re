@@ -18,7 +18,7 @@ use legaia_engine_session::native::NativeSession;
 use legaia_engine_session::session::{BootConfig, FieldLiveOpts};
 use legaia_expansion_format::ExpansionPack;
 
-const MAP_ID: &str = "rebirth_tower_1f";
+const MAP_ID: &str = "genesis_1f";
 const BATTLE_TICKS: u32 = 150_000;
 
 fn open() -> Option<NativeSession> {

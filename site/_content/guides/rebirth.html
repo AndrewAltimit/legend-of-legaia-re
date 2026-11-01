@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; guides &middot; <a href="expansion-packs.html">expansion packs</a> &middot; rebirth</div>
   <h1>Legend of Legaia: Rebirth</h1>
-  <p class="lede">The flagship expansion pack for the port. Rebirth gives levelling to 99 a purpose: an endgame tower of new fights and superbosses tuned for a late-game party, a quest chain that threads them through the world you know, custom maps built from the disc's own scenery, trading cards won in battle and traded or sold, and modes the original never had. It is also the worked example of the format - nothing in the engine knows the pack by name, so anything Rebirth does, another pack can do.</p>
+  <p class="lede">The flagship expansion pack for the port. Rebirth gives levelling to 99 a purpose: Genesis Tower, an endgame climb of new fights and superbosses tuned for a late-game party, a quest chain that threads them through the world you know, custom maps built from the disc's own scenery, trading cards won in battle and traded or sold, and modes the original never had. It is also the worked example of the format - nothing in the engine knows the pack by name, so anything Rebirth does, another pack can do.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance" data-doc="-">
@@ -12,6 +12,12 @@
     <dt>Where</dt><dd><a href="https://github.com/AndrewAltimit/legend-of-legaia-re/tree/main/packs/rebirth" target="_blank" rel="noopener"><code>packs/rebirth/</code></a> in the repository; the <a href="../tooling/expansion-workbench.html">workbench</a> offers it as its example.</dd>
     <dt>Aimed at</dt><dd>A late-game party: its entrances open once the party is strong enough (the level gates are in the maps table below), and its fights and rewards grow with the party toward 99.</dd>
   </dl>
+</section>
+
+<section class="doc-section" id="story" data-doc="-">
+  <h2>The story</h2>
+  <p>On the cliffs past Rim Elm stands Genesis Tower, a sea tower older than the Mist. The islanders say its foundation stone was cut from a root of the first Genesis Tree. Its bell once called the fishing boats home through the fog, until the Mist's first breath came in off the sea and the last Warden, Ysolde, sealed it under that stone and bound herself there to hold it. The bell has been silent ever since, and Rim Elm half forgot the tower.</p>
+  <p>Now the Genesis Trees are pushing the Mist back, and what is left of it sinks toward the tower, carrying what it swallowed. Each floor has a keeper that will not let go. The party climbs to make the Mist release the tower floor by floor, crosses to the Lantern Isles behind its sea gate, and at the top meets the Hollow Sovereign. The last step is Ysolde's own: once someone stands ready to meet the First Breath, she can let go of her seal.</p>
 </section>
 
 <section class="doc-section" id="contents" data-doc="-">
@@ -26,14 +32,14 @@
   <table>
     <thead><tr><th>Level</th><th>Where</th><th>What opens it</th></tr></thead>
     <tbody>
-      <tr><td>30-40</td><td>The Rebirth Isles</td><td>Hearing the Warden's Stone; the sea gate in the Atrium's west wall</td></tr>
+      <tr><td>30-40</td><td>The Lantern Isles</td><td>Hearing the Warden's Stone; the sea gate in the Atrium's west wall</td></tr>
       <tr><td>40-48</td><td>1F Atrium, the bell's gauntlet</td><td>The Warden's Trial (three wins, level 40)</td></tr>
       <tr><td>50-60</td><td>2F Ember Stair, 3F Hanging Garden</td><td>The Cinder Warden at 50; the tower's arts at 55</td></tr>
       <tr><td>60-70</td><td>4F Verdant Vault, 5F Gambler's Rest</td><td>The Verdant Colossus at 60</td></tr>
-      <tr><td>70-80</td><td>6F Engine Deep</td><td>The Iron Regent at 70; the Rebirth finishers at 80</td></tr>
+      <tr><td>70-80</td><td>6F Engine Deep</td><td>The Iron Regent at 70; the Knell finishers at 80</td></tr>
       <tr><td>80-88</td><td>7F Sanctum of Echoes</td><td>The Azure Seraph at 80</td></tr>
       <tr><td>88-99</td><td>8F Hollow Throne, the Echo, the challenges</td><td>The Hollow Sovereign at 88</td></tr>
-      <tr><td>99</td><td>Under the Warden's Stone</td><td>Rebirth, then the First Breath</td></tr>
+      <tr><td>99</td><td>Under the Warden's Stone</td><td>The Last Vigil, then the First Breath</td></tr>
     </tbody>
   </table>
 </section>
@@ -41,14 +47,14 @@
 <section class="doc-section" id="play" data-doc="-">
   <h2>How to play it</h2>
   <ol class="steps steps-vertical">
-    <li><b>Get the pack</b><span>Bundle it from a checkout (<code>asset expansion bundle packs/rebirth -o rebirth.lxpack</code>), or open the <a href="../tooling/expansion-workbench.html">workbench</a>, load the Rebirth example and <em>Download .lxpack</em> - or press <em>Play in browser</em> and skip the file entirely.</span></li>
+    <li><b>Get the pack</b><span>It comes with the game: the release archive carries it as <code>packs/rebirth.lxpack</code>, and the play page has it built in. From a checkout, bundle it yourself (<code>asset expansion bundle packs/rebirth -o rebirth.lxpack</code>), or open the <a href="../tooling/expansion-workbench.html">workbench</a>, load the Rebirth example and <em>Download .lxpack</em> - or press <em>Play in browser</em> and skip the file entirely.</span></li>
     <li><b>Load it</b><span>Desktop: the launcher's <em>Expansion pack...</em> button. Browser: the play page's <em>Expansion pack</em> card, once your disc is loaded.</span></li>
-    <li><b>Play to the tower</b><span>Start a new game or continue a late save. The way in is an entrance in the retail world that opens for a strong enough party; until then, the Journal's <em>Travel</em> page enters the pack's maps directly.</span></li>
+    <li><b>Play to the tower</b><span>Continue a late save, or start a new game and play to it. The way in is an entrance in Rim Elm that opens for a party of level 30 or more. From that level the Journal's <em>Travel</em> page (Select on the pause menu) lists the tower too, so you can go straight there from wherever the save stands; once you have been on a map, Travel takes you back to it from anywhere. To look around sooner: <code>--map genesis_1f</code> on the desktop, the pack's section of the play page's Scenes list, or the <em>Unlock all Travel maps</em> cheat.</span></li>
     <li><b>Follow the Journal</b><span>Select on the pause menu: the quest chain, the challenges with their best scores, your cards.</span></li>
   </ol>
 <pre><code># Native, straight onto the tower's first floor
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map rebirth_tower_1f</code></pre>
+    --expansion packs/rebirth --map genesis_1f</code></pre>
   <p>More on loading, the Journal and saves: <a href="playing-expansion-packs.html">playing an expansion pack</a>.</p>
 </section>
 

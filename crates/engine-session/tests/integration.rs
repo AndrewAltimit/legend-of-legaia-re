@@ -25,6 +25,7 @@ mod expansion_battle_stage_disc;
 mod expansion_boss_script_disc;
 mod expansion_map_resume_disc;
 mod expansion_new_game_disc;
+mod expansion_rebirth_main_line_disc;
 mod expansion_refill_wave_disc;
 mod field_actor_guard_skip;
 mod field_ambient_ring_cue;

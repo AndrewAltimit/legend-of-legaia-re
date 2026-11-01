@@ -113,6 +113,13 @@ impl Vram {
         bytemuck::cast_slice(&self.pixels)
     }
 
+    /// The written-cell bitmap ([`Self::is_written`]) as words, bit `i % 64`
+    /// of word `i / 64` for pixel `i`, viewed as bytes: with
+    /// [`Self::as_bytes`], everything a reader of this VRAM can see.
+    pub fn written_bytes(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.written)
+    }
+
     /// Upload a TIM's image block (and CLUT, if present) at the positions
     /// stored in the TIM header. Out-of-bounds writes are clipped.
     pub fn upload_tim(&mut self, tim: &Tim) {

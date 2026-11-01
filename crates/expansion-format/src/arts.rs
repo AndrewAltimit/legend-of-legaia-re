@@ -13,16 +13,16 @@
 //! rider = { status = "venom", chance = 40 }
 //! learn = { level = 30 }
 //!
-//! [arts.rebirth_blaze]
+//! [arts.knell_blaze]
 //! character = "vahn"
-//! name = "Rebirth Blaze"
+//! name = "Knell Blaze"
 //! segments = [{ art = "Tornado Flame (Miracle)" }]
 //! damage_pct = 160
 //!
-//! [chains.rebirth_blaze]
+//! [chains.knell_blaze]
 //! character = "vahn"
 //! arts = ["ember_cascade", 0x27]   # a pack art then retail Somersault
-//! finisher = "rebirth_blaze"
+//! finisher = "knell_blaze"
 //! ```
 //!
 //! A pack art is performed with the character's **own retail art clips**:

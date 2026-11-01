@@ -12,7 +12,7 @@
  * round-trips through the page.
  */
 import { h, grid, listEd, gateBox } from './expansion-workbench-forms.js';
-import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd, tileField } from './expansion-workbench-detail-forms.js';
+import { decorEd, scatterEd, edgesEd, decalsEd, materialsEd, animatorsEd, tileField, surroundEd } from './expansion-workbench-detail-forms.js';
 import { helpLink } from './expansion-workbench-help.js';
 
 const MESH_KINDS = [
@@ -93,6 +93,8 @@ export function propDetail(mctx, prop, path) {
       { k: 'height', t: 'int', label: 'Height', hint: 'above the prop' },
       { k: 'flicker', t: 'float', label: 'Flicker 0..1' },
       { k: 'period', t: 'int', label: 'Flicker period (frames)' },
+      { k: 'breathe', t: 'float', label: 'Breathe 0..1', hint: 'a slow, even swell' },
+      { k: 'breathe_period', t: 'int', label: 'Breath period (frames)' },
     ], `${path}.light`));
   }
   return box;
@@ -130,6 +132,7 @@ export function renderDetail(ctx, mctx, side, map, tools) {
   lightingEd(dctx, box, map);
   fogEd(mctx, box, map);
   emittersEd(mctx, box, map);
+  surroundEd(dctx, box, map);
   if (ctx.assetPaths) {
     const paths = ctx.assetPaths();
     box.append(h('p', { class: 'xw-note' }, paths.length ? `Pack assets: ${paths.join(', ')}` : 'No pack assets yet: import a glTF model on a prop to add one.'));
@@ -158,6 +161,8 @@ function lightingEd(mctx, box, map) {
       { k: 'radius', t: 'int', label: 'Reach' },
       { k: 'flicker', t: 'float', label: 'Flicker 0..1' },
       { k: 'period', t: 'int', label: 'Flicker period (frames)' },
+      { k: 'breathe', t: 'float', label: 'Breathe 0..1', hint: 'a slow, even swell' },
+      { k: 'breathe_period', t: 'int', label: 'Breath period (frames)' },
     ], p)),
   });
   box.append(sec);
@@ -206,6 +211,7 @@ function emittersEd(mctx, box, map) {
       { k: 'color', t: 'otuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour' },
       { k: 'color_end', t: 'otuple', n: 3, names: ['r', 'g', 'b'], label: 'Colour at death' },
       { k: 'additive', t: 'osel', bool: true, opts: [['true', 'additive (glows)'], ['false', 'averaged']], label: 'Blend', none: '(the kind\'s)' },
+      { k: 'with_lighting', t: 'osel', bool: true, opts: [['true', 'with enhanced lighting only'], ['false', 'always']], label: 'Drawn', none: '(always)' },
     ], p)),
   });
   box.append(sec);

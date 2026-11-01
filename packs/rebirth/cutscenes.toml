@@ -10,15 +10,16 @@
 
 # --- 1F: the tower wakes ------------------------------------------------------
 
-# The first arrival in the Atrium (maps/rebirth_tower_1f.toml
+# The first arrival in the Atrium (maps/genesis_1f.toml
 # `enter_cutscenes`): the camera rises up the hall toward the stair above,
 # the Warden's familiar pads down off the dais to meet the party, and
 # Ysolde's voice calls them to the stone. It leaves the party where it
 # arrived, so stepping toward the dais still raises the stone's own talk
-# (`tower_rumour`).
+# (`tower_rumour`). One line is said: the shot and the familiar carry the
+# rest.
 [cutscenes.tower_intro]
 title = "The Tower Wakes"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 letterbox = true
 
 [[cutscenes.tower_intro.steps]]
@@ -43,10 +44,6 @@ track = "crane"
 [[cutscenes.tower_intro.steps]]
 do = "wait"
 frames = 150
-
-[[cutscenes.tower_intro.steps]]
-do = "say"
-line = "intro_hall"
 
 [[cutscenes.tower_intro.steps]]
 do = "join"
@@ -91,10 +88,6 @@ actor = "player"
 toward = "warden_familiar"
 
 [[cutscenes.tower_intro.steps]]
-do = "say"
-line = "intro_familiar"
-
-[[cutscenes.tower_intro.steps]]
 do = "camera"
 focus = { tile = [7, 6] }
 pitch = 4.0
@@ -137,12 +130,12 @@ frames = 300
 
 # --- 5F: the hollow stirs ----------------------------------------------------
 
-# The middle of the climb (maps/rebirth_tower_5f.toml `enter_cutscenes`,
+# The middle of the climb (maps/genesis_5f.toml `enter_cutscenes`,
 # once the Verdant Vault is won): the voice on the throne speaks for the
 # first time, and the tower shudders under it.
 [cutscenes.hollow_stirs]
 title = "The Hollow Stirs"
-map = "rebirth_tower_5f"
+map = "genesis_5f"
 letterbox = true
 
 [[cutscenes.hollow_stirs.steps]]
@@ -151,7 +144,7 @@ frames = 30
 
 [[cutscenes.hollow_stirs.steps]]
 do = "camera"
-focus = { tile = [8, 1] }
+focus = { tile = [23, 28] }
 pitch = -10.0
 zoom = 1.6
 frames = 150
@@ -185,21 +178,17 @@ do = "camera_reset"
 frames = 80
 
 [[cutscenes.hollow_stirs.steps]]
-do = "say"
-line = "hollow_stirs_reply"
-
-[[cutscenes.hollow_stirs.steps]]
 do = "set_flag"
 flag = "hollow_heard"
 
 # --- 8F: the throne ----------------------------------------------------------
 
-# Before the superboss (maps/rebirth_tower_8f.toml, the `throne_approach`
+# Before the superboss (maps/genesis_8f.toml, the `throne_approach`
 # trigger): the Sovereign rises on its throne and speaks, then the Hollow
 # Throne quest starts, whose offer is the fight.
 [cutscenes.sovereign_rises]
 title = "The Hollow Sovereign"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 
 [[cutscenes.sovereign_rises.steps]]
@@ -209,12 +198,12 @@ track = "shot"
 [[cutscenes.sovereign_rises.steps]]
 do = "move"
 actor = "player"
-to = [8, 4]
+to = [15, 30]
 
 [[cutscenes.sovereign_rises.steps]]
 do = "face"
 actor = "player"
-facing = 0
+facing = 4
 
 [[cutscenes.sovereign_rises.steps]]
 do = "join"
@@ -250,29 +239,26 @@ do = "camera_reset"
 frames = 60
 
 [[cutscenes.sovereign_rises.steps]]
-do = "say"
-line = "sovereign_rises_reply"
-
-[[cutscenes.sovereign_rises.steps]]
 do = "start_quest"
 quest = "tower_sovereign"
 
-# The shot turns round to look up the carpet from behind the party at the
-# throne, which faces the approach (8F `hollow_throne_seat`).
+# The shot looks up the dais from behind the party at the throne, which
+# faces the approach (8F `hollow_throne_seat`).
 [[cutscenes.sovereign_rises.tracks.shot.steps]]
 do = "camera"
-focus = { tile = [8, 2] }
-yaw = 180.0
+focus = { tile = [15, 33] }
 pitch = -12.0
 zoom = 0.85
 frames = 160
 
 # After the superboss falls (`tower_sovereign`'s `complete_cutscene`): the
-# throne breaks, the light goes out of the tower, and Ysolde speaks her
-# last at the top of it.
+# throne breaks, the light goes out of the tower, and Ysolde's voice comes
+# up to the top of it: the bell stirred but did not ring, because one
+# thing is still held under her stone. The bell rings at the very end
+# (`breath_fallen`).
 [cutscenes.sovereign_falls]
 title = "The Throne Breaks"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 
 [[cutscenes.sovereign_falls.steps]]
@@ -281,7 +267,7 @@ to = "white"
 
 [[cutscenes.sovereign_falls.steps]]
 do = "camera"
-focus = { tile = [8, 2] }
+focus = { tile = [15, 33] }
 pitch = -8.0
 zoom = 1.1
 
@@ -310,10 +296,6 @@ pitch = 24.0
 zoom = 2.4
 frames = 240
 wait = false
-
-[[cutscenes.sovereign_falls.steps]]
-do = "say"
-line = "sovereign_falls_after"
 
 [[cutscenes.sovereign_falls.steps]]
 do = "fade"
@@ -349,10 +331,10 @@ flag = "throne_broken"
 
 [cutscenes.warden_intro]
 title = "The Cinder Warden"
-map = "rebirth_tower_2f"
+map = "genesis_2f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [10, 13] }, pitch = -10.0, zoom = 0.7, frames = 70 },
+    { do = "camera", focus = { tile = [18, 32] }, pitch = -10.0, zoom = 0.7, frames = 70 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 12, frames = 45 },
     { do = "flash", color = [255, 110, 30], frames = 36 },
@@ -364,10 +346,10 @@ steps = [
 
 [cutscenes.warden_fallen]
 title = "The Ember Stair Goes Cold"
-map = "rebirth_tower_2f"
+map = "genesis_2f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [10, 13] }, pitch = -6.0, zoom = 0.85, frames = 60 },
+    { do = "camera", focus = { tile = [18, 32] }, pitch = -6.0, zoom = 0.85, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [255, 240, 220], frames = 50 },
     { do = "banner", line = "fallen_cinder_warden" },
@@ -377,10 +359,10 @@ steps = [
 
 [cutscenes.colossus_intro]
 title = "The Verdant Colossus"
-map = "rebirth_tower_4f"
+map = "genesis_4f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [16, 13] }, pitch = -14.0, zoom = 0.9, frames = 80 },
+    { do = "camera", focus = { tile = [24, 20] }, pitch = -14.0, zoom = 0.9, frames = 80 },
     { do = "shake", amplitude = 6, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 16, frames = 50 },
@@ -393,10 +375,10 @@ steps = [
 
 [cutscenes.colossus_fallen]
 title = "The Vault Sleeps"
-map = "rebirth_tower_4f"
+map = "genesis_4f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [16, 13] }, pitch = -8.0, zoom = 1.0, frames = 60 },
+    { do = "camera", focus = { tile = [24, 20] }, pitch = -8.0, zoom = 1.0, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [230, 255, 230], frames = 50 },
     { do = "banner", line = "fallen_verdant_colossus" },
@@ -406,12 +388,12 @@ steps = [
 
 [cutscenes.regent_intro]
 title = "The Iron Regent"
-map = "rebirth_tower_6f"
+map = "genesis_6f"
 letterbox = true
 steps = [
     # From the hall, high and back, down into the alcove's mouth: the
     # alcove's own walls would fill a closer shot.
-    { do = "camera", focus = { tile = [8, 13] }, pitch = 22.0, zoom = 1.4, frames = 70 },
+    { do = "camera", focus = { tile = [17, 31] }, pitch = 22.0, zoom = 1.4, frames = 70 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 10, frames = 40 },
     { do = "flash", color = [255, 200, 120], frames = 30 },
@@ -423,10 +405,10 @@ steps = [
 
 [cutscenes.regent_fallen]
 title = "The Engine Is Still"
-map = "rebirth_tower_6f"
+map = "genesis_6f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 13] }, pitch = 18.0, zoom = 1.3, frames = 60 },
+    { do = "camera", focus = { tile = [17, 31] }, pitch = 18.0, zoom = 1.3, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "shake", amplitude = 8, frames = 60 },
     { do = "flash", color = [255, 240, 220], frames = 50 },
@@ -437,10 +419,10 @@ steps = [
 
 [cutscenes.seraph_intro]
 title = "The Azure Seraph"
-map = "rebirth_tower_7f"
+map = "genesis_7f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [11, 10] }, pitch = 14.0, zoom = 0.8, frames = 90 },
+    { do = "camera", focus = { tile = [16, 19] }, pitch = 14.0, zoom = 0.8, frames = 90 },
     { do = "sound", sound = { kind = "sound", id = "chime" } },
     { do = "wait", frames = 30 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
@@ -453,10 +435,10 @@ steps = [
 
 [cutscenes.seraph_fallen]
 title = "The Sanctum Falls Silent"
-map = "rebirth_tower_7f"
+map = "genesis_7f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [11, 10] }, pitch = 10.0, zoom = 1.0, frames = 60 },
+    { do = "camera", focus = { tile = [16, 19] }, pitch = 10.0, zoom = 1.0, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [220, 235, 255], frames = 60 },
     { do = "banner", line = "fallen_azure_seraph" },
@@ -469,10 +451,10 @@ steps = [
 # fight, once the offer is taken.
 [cutscenes.sovereign_intro]
 title = "The Hollow Sovereign"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -16.0, zoom = 0.7, frames = 60 },
+    { do = "camera", focus = { tile = [15, 33] }, pitch = -16.0, zoom = 0.7, frames = 60 },
     { do = "sound", sound = { kind = "sound", id = "sting_boss" } },
     { do = "shake", amplitude = 20, frames = 60 },
     { do = "flash", color = [200, 30, 30], frames = 40 },
@@ -484,10 +466,10 @@ steps = [
 
 [cutscenes.echo_intro]
 title = "Echo of the Throne"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -10.0, zoom = 0.8, frames = 50 },
+    { do = "camera", focus = { tile = [15, 33] }, pitch = -10.0, zoom = 0.8, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "chime" } },
     { do = "flash", color = [160, 120, 255], frames = 30 },
     { do = "banner", line = "banner_throne_echo" },
@@ -496,10 +478,10 @@ steps = [
 
 [cutscenes.echo_fallen]
 title = "The Echo Fades"
-map = "rebirth_tower_8f"
+map = "genesis_8f"
 letterbox = true
 steps = [
-    { do = "camera", focus = { tile = [8, 2] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },
+    { do = "camera", focus = { tile = [15, 33] }, pitch = -6.0, zoom = 0.85, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [230, 220, 255], frames = 40 },
     { do = "banner", line = "fallen_throne_echo" },
@@ -510,9 +492,11 @@ steps = [
 # --- 1F: the First Breath ------------------------------------------------------
 
 # The pack's last fight opens on the Warden's Stone, the seal lifting.
+# It closes on the bell: the chime is the tower's bell ringing once, for
+# the first time since the Mist came, as Ysolde lets go.
 [cutscenes.breath_intro]
 title = "The First Breath"
-map = "rebirth_tower_1f"
+map = "genesis_1f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -12.0, zoom = 0.8, frames = 60 },
@@ -523,13 +507,16 @@ steps = [
 ]
 
 [cutscenes.breath_fallen]
-title = "The Seal Sleeps"
-map = "rebirth_tower_1f"
+title = "The Bell Rings Once"
+map = "genesis_1f"
 letterbox = true
 steps = [
     { do = "camera", focus = { tile = [7, 7] }, yaw = 180.0, pitch = -6.0, zoom = 0.85, frames = 50 },
     { do = "sound", sound = { kind = "sound", id = "sting_fall" } },
     { do = "flash", color = [255, 255, 255], frames = 50 },
+    { do = "wait", frames = 40 },
+    { do = "sound", sound = { kind = "sound", id = "chime" } },
+    { do = "shake", amplitude = 4, frames = 40 },
     { do = "banner", line = "fallen_first_breath" },
     { do = "wait", frames = 120 },
     { do = "camera_reset", frames = 50 },

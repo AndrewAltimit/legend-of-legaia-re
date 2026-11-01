@@ -33,6 +33,9 @@ pub struct LaunchFidelity {
     pub occlusion_fade: bool,
     /// The volumetric ground fog.
     pub volumetric_fog: bool,
+    /// Screen-space ambient occlusion (`--no-ssao` turns it off for the
+    /// session).
+    pub ssao: bool,
     /// Pin every persisted engine-only option to its retail value for the
     /// session (`OptionsState::pin_retail`): the framing, the movement
     /// decode, the photosensitivity slew, the tile windows.
@@ -87,6 +90,7 @@ impl LaunchFidelity {
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::default(),
             occlusion_fade: true,
             volumetric_fog: true,
+            ssao: true,
             retail: false,
             psx_render: false,
             window: WindowLaunch::default(),
@@ -105,6 +109,7 @@ impl LaunchFidelity {
             tweaks: legaia_engine_session::session_switches::GameplayTweaks::retail(),
             occlusion_fade: false,
             volumetric_fog: false,
+            ssao: false,
             retail: true,
             psx_render: false,
             window: WindowLaunch::default(),
@@ -537,7 +542,7 @@ impl ExpansionLaunch {
     /// (`legaia_expansion_format::read_files`).
     ///
     /// A `pack` that is not a path names an installed pack by id, looked up
-    /// in the packs folder (`crate::launcher::resolve_pack`).
+    /// an installed or bundled pack (`crate::launcher::resolve_pack`).
     pub fn load(&self) -> Result<legaia_expansion_format::ExpansionPack> {
         let path = self.resolve_path()?;
         legaia_expansion_format::read_files(&path)
@@ -546,15 +551,20 @@ impl ExpansionLaunch {
     }
 
     /// The pack folder or `.lxpack` file `pack` names: a path, or the id of
-    /// an installed pack in the packs folder (`crate::launcher::resolve_pack`).
+    /// an installed or bundled pack (`crate::launcher::resolve_pack`).
     pub fn resolve_path(&self) -> Result<std::path::PathBuf> {
-        let dir = crate::launcher::packs_dir();
-        crate::launcher::resolve_pack(&self.pack, dir.as_deref()).with_context(|| {
+        let dirs = crate::launcher::pack_dirs();
+        crate::launcher::resolve_pack(&self.pack, &dirs).with_context(|| {
+            let searched: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
             format!(
-                "--expansion {}: no such file or folder, and no installed pack has that id{}",
+                "--expansion {}: no such file or folder, and no installed or bundled pack has \
+                 that id{}",
                 self.pack.display(),
-                dir.map(|d| format!(" (packs folder {})", d.display()))
-                    .unwrap_or_default()
+                if searched.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (searched {})", searched.join(", "))
+                }
             )
         })
     }
@@ -601,6 +611,8 @@ pub struct PlayCheats {
     pub max_items: bool,
     /// `--cheat-noclip`: walk through walls.
     pub noclip: bool,
+    /// `--cheat-travel`: the Journal's Travel page lists every pack map.
+    pub travel: bool,
 }
 
 impl PlayCheats {
@@ -626,6 +638,9 @@ impl PlayCheats {
         }
         if self.noclip {
             out.push(PlayerCheat::WalkThroughWalls(true));
+        }
+        if self.travel {
+            out.push(PlayerCheat::UnlockTravel(true));
         }
         out.extend(self.gold.map(|g| PlayerCheat::Gold(i64::from(g))));
         out.extend(self.coins.map(|c| PlayerCheat::Coins(u64::from(c))));
@@ -1143,6 +1158,8 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F9" => KeyCode::F9,
         // `F10` bloom.
         "F10" => KeyCode::F10,
+        // The SSAO toggle (`option_keys::key_ssao`).
+        "HOME" => KeyCode::Home,
         // The hotkey help panel (`help_key`): `F12`, or the `?` key.
         "F12" => KeyCode::F12,
         // The pack reload (`window::pack_reload`).
@@ -1326,6 +1343,7 @@ mod key_script_tests {
         names.push("/".to_string());
         names.push("Tab".to_string());
         names.push("End".to_string());
+        names.push("Home".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names
@@ -1475,5 +1493,32 @@ mod key_binding_tests {
                 "{code:?} -> {name} must be Start"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod ssao_launch_tests {
+    use super::LaunchFidelity;
+
+    /// SSAO is on in an interactive launch and off under `--retail`, the
+    /// switch every retail-compare image child and every replay passes; the
+    /// retail pin lowers the persisted option the renderer reads, too.
+    #[test]
+    fn retail_launches_render_without_ssao() {
+        assert!(LaunchFidelity::enhanced().ssao);
+        assert!(!LaunchFidelity::retail().ssao);
+        let mut o = legaia_engine_menus::options::OptionsState::default();
+        assert!(o.ssao);
+        o.pin_retail();
+        assert!(!o.ssao);
+    }
+
+    /// `Home`, the toggle, is scriptable like the other render keys.
+    #[test]
+    fn the_ssao_key_is_nameable() {
+        assert_eq!(
+            super::key_from_name("HOME"),
+            Some(winit::keyboard::KeyCode::Home)
+        );
     }
 }

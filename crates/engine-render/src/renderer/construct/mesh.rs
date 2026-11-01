@@ -189,7 +189,7 @@ pub(super) fn build_textured_mesh(
 /// whose vertices carry their cell's four corners so the overworld
 /// draws each cell at its ordering-table bucket's depth
 /// (`legaia_engine_field::overworld_draw_order`).
-pub(super) fn vram_vertex_attributes() -> [wgpu::VertexAttribute; 11] {
+pub(in crate::renderer) fn vram_vertex_attributes() -> [wgpu::VertexAttribute; 11] {
     [
         wgpu::VertexAttribute {
             offset: 0,
@@ -238,7 +238,7 @@ pub(super) fn vram_vertex_attributes() -> [wgpu::VertexAttribute; 11] {
 /// pipeline that draws a VRAM mesh takes this one layout rather than
 /// restating it, so they cannot drift (a hand-rolled copy once omitted the
 /// prim-colour attribute and failed pipeline validation).
-pub(super) fn vram_vertex_layout(
+pub(in crate::renderer) fn vram_vertex_layout(
     attributes: &[wgpu::VertexAttribute],
 ) -> wgpu::VertexBufferLayout<'_> {
     wgpu::VertexBufferLayout {

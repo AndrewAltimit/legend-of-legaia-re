@@ -71,7 +71,21 @@ fn rebirth_modes_convert_to_sessions() {
         assert_eq!(g.holes.len(), c.holes.len(), "{}", c.id);
     }
     for r in m.races.iter().filter(|r| r.map.is_none()) {
-        RaceConfig::from_def(r, 0).unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+        match &r.scene {
+            Some(scene) => {
+                let (cfg, frame) = RaceConfig::from_scene(r, scene, 0)
+                    .unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+                assert!(
+                    frame.scene && !cfg.track.closed,
+                    "{}: an overworld sprint",
+                    r.id
+                );
+                assert_eq!(cfg.pickups.len(), r.pickups.len(), "{}", r.id);
+            }
+            None => {
+                RaceConfig::from_def(r, 0).unwrap_or_else(|e| panic!("{}: {e:?}", r.id));
+            }
+        }
     }
     for a in &m.prop_hunt {
         let ph = PropHuntConfig::from_arena(a, 0).unwrap_or_else(|e| panic!("{}: {e:?}", a.id));
@@ -120,7 +134,7 @@ fn rebirth_map_courses_build_from_their_maps() {
 /// builds (its map rounds on the tower's maps), for a night alone and for a
 /// full room.
 #[test]
-fn rebirth_tower_game_night_builds_every_round() {
+fn genesis_game_night_builds_every_round() {
     use legaia_engine_modes::active::{ActiveMode, BuildOptions, ModeKind};
     use legaia_engine_modes::party::{PartyNight, round_section, solo_players};
     let pack = legaia_expansion_format::ExpansionPack::from_dir(&crate::common::pack_dir())
@@ -149,5 +163,25 @@ fn rebirth_tower_game_night_builds_every_round() {
             )
             .unwrap_or_else(|e| panic!("{} for {seats}: {e}", r.mode));
         }
+    }
+}
+
+#[test]
+fn rebirth_racers_carry_their_names() {
+    use legaia_engine_modes::active::{ActiveMode, BuildOptions};
+    let (m, c) = (rebirth_modes(), rebirth_cards());
+    let race = ActiveMode::build(&m, &c, "drake-circuit", 1, &BuildOptions::default()).unwrap();
+    let names: Vec<String> = (0..4).map(|s| race.seat_name(s)).collect();
+    assert_eq!(names, ["You", "Lysa", "Brannoc", "Old Pell"]);
+    // A race naming no rivals falls back on the stock names, never "Seat N".
+    let mut bare = m.clone();
+    bare.races.iter_mut().for_each(|r| r.rivals.clear());
+    let race = ActiveMode::build(&bare, &c, "spiral-circuit", 1, &BuildOptions::default()).unwrap();
+    for s in 1..6 {
+        assert!(
+            !race.seat_name(s).starts_with("Seat"),
+            "{}",
+            race.seat_name(s)
+        );
     }
 }

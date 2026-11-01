@@ -8,12 +8,19 @@
 //! program, `legaia-engine` among them, sits in [`TOOLS_DIR`] below it. A
 //! `cargo build` puts every binary side by side in `target/<profile>/`
 //! instead; [`find_engine`] accepts both.
+//!
+//! The expansion packs the archive ships (the Rebirth pack) sit in
+//! [`PACKS_DIR`] at the archive's top level, beside the game;
+//! [`find_bundled_packs`] finds that folder from any program in the archive.
 
 use std::path::{Path, PathBuf};
 use std::string::String;
 
 /// The release archive's folder of command-line programs.
 pub const TOOLS_DIR: &str = "command-line-tools";
+
+/// The release archive's folder of bundled expansion packs (`.lxpack`).
+pub const PACKS_DIR: &str = "packs";
 
 /// The macOS app bundle the game ships as.
 pub const GAME_APP: &str = "Legend of Legaia.app";
@@ -41,6 +48,20 @@ pub fn find_engine(exe: &Path) -> Option<PathBuf> {
             ]
         })
         .find(|p| p.is_file())
+}
+
+/// The [`PACKS_DIR`] folder of bundled expansion packs that belongs with
+/// the program at `exe`: the first of the four folders above `exe` (the
+/// same walk as [`find_engine`]) holding a `packs` folder. In the release
+/// archive that is the top level, found from `command-line-tools/` and from
+/// inside a macOS `.app`; from a `cargo build` in `target/<profile>/` it is
+/// the checkout's own `packs/`, where the pack sources live.
+pub fn find_bundled_packs(exe: &Path) -> Option<PathBuf> {
+    exe.ancestors()
+        .skip(1)
+        .take(4)
+        .map(|d| d.join(PACKS_DIR))
+        .find(|p| p.is_dir())
 }
 
 #[cfg(test)]
@@ -121,5 +142,26 @@ mod tests {
             .join("MacOS")
             .join("legaia-explorer");
         assert_eq!(find_engine(&explorer), Some(engine));
+    }
+
+    #[test]
+    fn finds_the_bundled_packs_from_every_program_in_the_archive() {
+        let s = Scratch::new("packs");
+        let root = &s.0;
+        let tools_engine = root.join(TOOLS_DIR).join(engine_file_name());
+        assert_eq!(find_bundled_packs(&tools_engine), None);
+        let packs = root.join(PACKS_DIR);
+        touch(&packs.join("rebirth.lxpack"));
+        assert_eq!(find_bundled_packs(&tools_engine), Some(packs.clone()));
+        assert_eq!(
+            find_bundled_packs(&root.join("Legend of Legaia")),
+            Some(packs.clone())
+        );
+        let in_app = root
+            .join(GAME_APP)
+            .join("Contents")
+            .join("MacOS")
+            .join(engine_file_name());
+        assert_eq!(find_bundled_packs(&in_app), Some(packs));
     }
 }

@@ -115,6 +115,52 @@ pub struct TerrainDef {
     pub water: Option<WaterDef>,
     /// A horizon ring around the map ([`SkyDef`]).
     pub sky: Option<SkyDef>,
+    /// Darkening with depth ([`AbyssDef`]): a pit's walls fade into the
+    /// dark as they go down.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub abyss: Option<AbyssDef>,
+}
+
+/// Darkening with depth: ground below `from` darkens toward `shade` (a
+/// brightness factor) at `to` and below, so a sculpted pit's walls fade
+/// into the dark rather than holding the brightness of the floor above.
+///
+/// ```toml
+/// abyss = { from = -60, to = -700, shade = 0.06 }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AbyssDef {
+    /// The height, world units up, where the darkening starts.
+    pub from: f32,
+    /// The height where it reaches `shade`; below `from`.
+    pub to: f32,
+    /// The brightness factor at `to` and below, `0..=1`.
+    pub shade: f32,
+}
+
+impl Default for AbyssDef {
+    fn default() -> Self {
+        Self {
+            from: -60.0,
+            to: -700.0,
+            shade: 0.06,
+        }
+    }
+}
+
+impl AbyssDef {
+    /// The brightness factor at height `h`: `1` at and above `from`,
+    /// easing to `shade` at `to`.
+    pub fn factor(&self, h: f32) -> f32 {
+        let span = self.from - self.to;
+        if span <= 0.0 || h >= self.from {
+            return 1.0;
+        }
+        let t = ((self.from - h) / span).clamp(0.0, 1.0);
+        let t = t * t * (3.0 - 2.0 * t);
+        1.0 - t * (1.0 - self.shade.clamp(0.0, 1.0))
+    }
 }
 
 impl Default for TerrainDef {
@@ -137,6 +183,7 @@ impl Default for TerrainDef {
             cliff: None,
             water: None,
             sky: None,
+            abyss: None,
         }
     }
 }
@@ -903,13 +950,30 @@ impl MapDef {
 
     /// The map's terrain resolved for drawing ([`TerrainSurface`]), `None`
     /// with no `[terrain]`.
+    ///
+    /// The surface is a pure function of the map's `terrain`, `tiles`,
+    /// `size` and `floor_heights`, and building it is the costly half of a
+    /// terrain map's preparation, which asks for it several times over (the
+    /// validator, the rest checks, the mesh library); the last few built are
+    /// kept ([`SURFACE_MEMO`]) and handed back for an equal input.
     pub fn terrain_surface(&self) -> Result<Option<TerrainSurface>> {
         let Some(t) = &self.terrain else {
             return Ok(None);
         };
+        let key = SurfaceKey {
+            terrain: t.clone(),
+            tiles: self.tiles.clone(),
+            size: self.size,
+            floor_heights: self.floor_heights.clone(),
+        };
+        if let Some(s) = surface_memo_get(&key) {
+            return Ok(Some((*s).clone()));
+        }
         let grid = self.tile_grid()?;
         let field = heightfield(self, t, &grid)?;
-        Ok(Some(surface(self, t, &grid, field)))
+        let s = surface(self, t, &grid, field);
+        surface_memo_put(key, std::sync::Arc::new(s.clone()));
+        Ok(Some(s))
     }
 
     /// The wall quarters the terrain adds to each tile (row-major, the
@@ -917,12 +981,31 @@ impl MapDef {
     /// than `max_step`, or under more than `wade` of water. All zero with no
     /// `[terrain]`.
     pub fn terrain_walls(&self, grid: &TileGrid) -> Result<Vec<u8>> {
-        let mut out = vec![0u8; grid.width * grid.height];
         let Some(t) = &self.terrain else {
-            return Ok(out);
+            return Ok(vec![0u8; grid.width * grid.height]);
         };
         let field = heightfield(self, t, grid)?;
+        Ok(self.terrain_walls_in(grid, &field))
+    }
+
+    /// [`MapDef::terrain_walls`] over a heightfield already built for this
+    /// map ([`MapDef::terrain_heightfield`]), so a caller that wants both
+    /// builds it once.
+    pub fn terrain_walls_in(&self, grid: &TileGrid, field: &Heightfield) -> Vec<u8> {
+        let mut out = vec![0u8; grid.width * grid.height];
+        let Some(t) = &self.terrain else {
+            return out;
+        };
         let res = field.res as f32;
+        // A standable top over the water (a jetty, a stilt deck) keeps the
+        // water from walling the sub-cells under its footprint.
+        let tops = self.floor_tops();
+        let decked = |i: f32, j: f32, w: &WaterDef| -> bool {
+            let x = field.origin[0] + (i * field.step as f32) as i32;
+            let z = field.origin[1] + (j * field.step as f32) as i32;
+            tops.iter()
+                .any(|t| f32::from(t.top) >= w.level - w.wade && t.contains(x, z))
+        };
         for row in 0..grid.height {
             for col in 0..grid.width {
                 let mut walls = 0u8;
@@ -944,7 +1027,9 @@ impl MapDef {
                     }
                     let centre = field.sample_vertex(i0 + res / 4.0, j0 + res / 4.0);
                     let steep = hi - lo > t.max_step;
-                    let drowned = t.water.as_ref().is_some_and(|w| centre < w.level - w.wade);
+                    let drowned = t.water.as_ref().is_some_and(|w| {
+                        centre < w.level - w.wade && !decked(i0 + res / 4.0, j0 + res / 4.0, w)
+                    });
                     if steep || drowned {
                         walls |= 1 << q;
                     }
@@ -952,7 +1037,7 @@ impl MapDef {
                 out[row * grid.width + col] = walls;
             }
         }
-        Ok(out)
+        out
     }
 }
 
@@ -990,6 +1075,47 @@ fn tile_heights(def: &MapDef, t: &TerrainDef, grid: &TileGrid) -> Vec<f32> {
         }
     }
     out
+}
+
+/// Everything [`MapDef::terrain_surface`] reads of a map.
+#[derive(PartialEq)]
+struct SurfaceKey {
+    terrain: TerrainDef,
+    tiles: crate::map::TileLayer,
+    size: Option<[u16; 2]>,
+    floor_heights: Vec<i16>,
+}
+
+/// How many built surfaces [`MapDef::terrain_surface`] keeps: room for every
+/// terrain map of a pack the size of Rebirth, which a validation pass walks
+/// before the entry asks for its own.
+const SURFACE_MEMO: usize = 8;
+
+type SurfaceMemo = Vec<(SurfaceKey, std::sync::Arc<TerrainSurface>)>;
+
+fn surface_memo() -> std::sync::MutexGuard<'static, SurfaceMemo> {
+    static MEMO: std::sync::Mutex<SurfaceMemo> = std::sync::Mutex::new(Vec::new());
+    MEMO.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+fn surface_memo_get(key: &SurfaceKey) -> Option<std::sync::Arc<TerrainSurface>> {
+    let mut memo = surface_memo();
+    let i = memo.iter().position(|(k, _)| k == key)?;
+    // Most recently used last.
+    let hit = memo.remove(i);
+    let s = hit.1.clone();
+    memo.push(hit);
+    Some(s)
+}
+
+fn surface_memo_put(key: SurfaceKey, s: std::sync::Arc<TerrainSurface>) {
+    let mut memo = surface_memo();
+    memo.retain(|(k, _)| *k != key);
+    memo.push((key, s));
+    while memo.len() > SURFACE_MEMO {
+        memo.remove(0);
+    }
 }
 
 fn heightfield(def: &MapDef, t: &TerrainDef, grid: &TileGrid) -> Result<Heightfield> {
@@ -1460,7 +1586,10 @@ fn surface(def: &MapDef, t: &TerrainDef, grid: &TileGrid, field: Heightfield) ->
             let shade = (1.0 + t.shading * (ndl - sun[1]) / sun[1].max(0.2)).clamp(0.45, 1.45);
             let macro_v =
                 1.0 + t.variation * (fbm(t.seed ^ 0x4D41_4352, u / 3.0, v / 3.0, 3) - 0.5) * 2.0;
-            let k = shade * macro_v;
+            let mut k = shade * macro_v;
+            if let Some(a) = &t.abyss {
+                k *= a.factor(f32::from(field.at(ii, jj)));
+            }
             colors.push(tint.map(|c| (c * k).round().clamp(0.0, 255.0) as u8));
         }
     }

@@ -59,7 +59,7 @@ fn an_edit_round_trips_and_touches_only_its_file() {
         "hp": 9000,
     });
     // The painter: one more spawn and a repainted tile.
-    let map = &mut pack["maps"]["rebirth_tower_1f"];
+    let map = &mut pack["maps"]["genesis_1f"];
     map["spawns"]
         .as_array_mut()
         .unwrap()
@@ -77,7 +77,7 @@ fn an_edit_round_trips_and_touches_only_its_file() {
 
     for (path, b) in &back {
         let changed = files.get(path) != Some(b);
-        let edited_file = path == "battle.toml" || path == "maps/rebirth_tower_1f.toml";
+        let edited_file = path == "battle.toml" || path == "maps/genesis_1f.toml";
         assert_eq!(changed, edited_file, "{path}");
     }
 
@@ -91,16 +91,19 @@ fn an_edit_round_trips_and_touches_only_its_file() {
 fn the_tower_map_previews_with_the_corner_rule() {
     let mut core = Core::new();
     let (_, pack) = load(&mut core);
-    let map = &pack["maps"]["rebirth_tower_1f"];
+    let map = &pack["maps"]["genesis_1f"];
     let p = core.map_preview(&map.to_string());
     assert!(p["error"].is_null(), "{p}");
     let (w, h) = (p["width"].as_u64().unwrap(), p["height"].as_u64().unwrap());
-    assert_eq!((w, h), (15, 13));
+    // The Atrium (columns 0..=14) and the Hall of Trials east of it.
+    assert_eq!((w, h), (29, 13));
     let at = |k: &str, c: u64, r: u64| p[k][(r * w + c) as usize].clone();
-    // The wall ring is all four quarters; the dais is tier 1 at 48 up.
+    // The wall ring is all four quarters; the dais stands 48 up, on a
+    // rung of its own (its living-ground ripple swings that rung).
     assert_eq!(at("walls", 0, 0), 0xF);
-    assert_eq!(at("tier", 6, 5), 1);
-    assert_eq!(p["ladder"][1], 48);
+    let dais = at("tier", 6, 5).as_u64().unwrap();
+    assert_ne!(dais, 0);
+    assert_eq!(p["ladder"][dais as usize], 48);
     // The dais spans columns 5..=9, rows 4..=8: flat inside, and its last
     // column and row slope down to the arena floor.
     assert_eq!(at("flat", 6, 5), true);
@@ -239,10 +242,7 @@ fn an_edit_then_its_revert_exports_the_loaded_bytes() {
             "cutscenes.toml",
             &["cutscenes", "cutscenes", "tower_intro", "title"],
         ),
-        (
-            "maps/rebirth_tower_1f.toml",
-            &["maps", "rebirth_tower_1f", "name"],
-        ),
+        ("maps/genesis_1f.toml", &["maps", "genesis_1f", "name"]),
     ];
     for (file, path) in edits {
         let mut edited = pack.clone();
@@ -426,7 +426,7 @@ fn the_diff_panel_reads_an_older_bundle() {
     assert_eq!(d["same_pack"], true);
     assert_eq!(d["counts"], serde_json::json!([1, 0, 1]));
     assert_eq!(d["bump"], "minor");
-    assert_eq!(d["suggested_version"], "0.2.0");
+    assert_eq!(d["suggested_version"], "0.3.0");
     let log = d["changelog"].as_str().unwrap();
     assert!(
         log.contains("- monster `mist_hound` (battle.toml)"),
@@ -519,7 +519,7 @@ fn the_detail_forms_open_without_an_edit() {
 
     // A Duplicate and its Remove, a reorder and its reverse: the loaded bytes.
     let mut edited = pack.clone();
-    let map = &mut edited["maps"]["rebirth_tower_1f"];
+    let map = &mut edited["maps"]["genesis_1f"];
     let decals = map["decals"].as_array_mut().unwrap();
     let copy = decals[0].clone();
     decals.insert(1, copy);
@@ -529,10 +529,10 @@ fn the_detail_forms_open_without_an_edit() {
     let bytes = core.export_bundle(&edited.to_string()).unwrap();
     let back = bundle::read_bundle(&bytes).unwrap();
     for (path, body) in &back {
-        let touched = path == "maps/rebirth_tower_1f.toml" || path == "modes.toml";
+        let touched = path == "maps/genesis_1f.toml" || path == "modes.toml";
         assert_eq!(files.get(path) != Some(body), touched, "{path}");
     }
-    edited["maps"]["rebirth_tower_1f"]["decals"]
+    edited["maps"]["genesis_1f"]["decals"]
         .as_array_mut()
         .unwrap()
         .remove(1);
@@ -545,17 +545,28 @@ fn the_detail_forms_open_without_an_edit() {
     // The material kind switch rebuilds the item: a scroll turned into a
     // cycle and back keeps the cell only if the form carries it, so the
     // revert is the loaded scroll exactly.
+    let (scrolled, at) = pack["maps"]
+        .as_object()
+        .unwrap()
+        .iter()
+        .find_map(|(id, m)| {
+            let i = m["materials"]
+                .as_array()?
+                .iter()
+                .position(|x| x["kind"] == "scroll")?;
+            Some((id.clone(), i))
+        })
+        .expect("a Rebirth map with a scroll material");
     let mut edited = pack.clone();
-    let m = &mut edited["maps"]["rebirth_tower_1f"]["materials"][0];
+    let m = &mut edited["maps"][&scrolled]["materials"][at];
     let before = m.clone();
-    assert_eq!(before["kind"], "scroll");
     *m = serde_json::json!({ "kind": "cycle", "clut": before["cell"]["clut"], "start": 0, "count": 16, "period": 8, "reverse": false });
     assert!(
         core.validate(&edited.to_string())
             .iter()
             .all(|i| i.severity != "error")
     );
-    edited["maps"]["rebirth_tower_1f"]["materials"][0] = before;
+    edited["maps"][&scrolled]["materials"][at] = before;
     assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
 
     // The podium box and the boss cutscene pickers: unticked / cleared and
@@ -602,7 +613,7 @@ fn the_stage_and_tint_forms_round_trip() {
         .find(|(_, b)| b["stage"].is_null())
         .map(|(k, _)| k.clone())
         .expect("a Rebirth boss on the room's stage");
-    let map = "rebirth_tower_2f";
+    let map = "genesis_2f";
     let tint_at = pack["maps"][map]["materials"]
         .as_array()
         .unwrap()
@@ -694,4 +705,37 @@ fn the_stage_and_tint_forms_round_trip() {
     );
     edited["maps"][map]["materials"][tint_at] = before;
     assert_eq!(core.export_bundle(&edited.to_string()).unwrap(), cli);
+}
+
+#[test]
+fn beams_and_surround_regions_round_trip_through_the_json() {
+    let mut core = Core::new();
+    let (_, mut pack) = load(&mut core);
+    let map = &mut pack["maps"]["genesis_1f"];
+    map["beams"] = serde_json::json!([
+        { "tile": [3, 3], "tilt": 12.0, "angle": 200.0, "motes": 8 },
+        { "tile": [5, 5], "offset": [0, -600, 0], "profile": "rise", "pool": false }
+    ]);
+    map["surround"] = serde_json::json!({
+        "ground": { "tpage": 5, "clut": 30720, "tile": 0 },
+        "depth": 448,
+        "fade": 20,
+        "regions": [{ "rect": [0, 0, 2, 2], "depth": 1600, "fade": 4 }]
+    });
+    let json = pack.to_string();
+    let edited = core.pack_from_json(&json).unwrap();
+    let m = &edited.maps["genesis_1f"];
+    assert_eq!(m.beams.len(), 2);
+    assert_eq!(m.beams[0].motes, 8);
+    assert_eq!(m.beams[0].height, 900, "the defaults fill in");
+    assert_eq!(
+        m.beams[1].profile,
+        legaia_expansion_format::map_beams::BeamProfile::Rise
+    );
+    let s = m.surround.as_ref().unwrap();
+    assert_eq!(s.fade, Some(20));
+    assert_eq!(s.regions[0].depth, 1600);
+    let bytes = core.export_bundle(&json).unwrap();
+    let back = bundle::read_bundle(&bytes).unwrap();
+    assert_eq!(ExpansionPack::from_files(&back).unwrap(), edited);
 }

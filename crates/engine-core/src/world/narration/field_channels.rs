@@ -55,6 +55,10 @@ impl World {
     /// alone says where a placed object *can* stand, the bind record's
     /// prologue says whether it currently *does*.
     // REF: FUN_8003A55C (bind-time prologue pre-run seats/parks the actor)
+    ///
+    /// On a pack map it also holds the props an open mode seat's table hides
+    /// ([`Self::pack_mode_hidden_prop_records`]): the draws both hosts skip
+    /// per frame through this one set.
     pub fn hidden_object_records(&self) -> std::collections::HashSet<usize> {
         let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ as u16;
         self.field_vm
@@ -63,6 +67,7 @@ impl World {
             .filter(|c| c.object_bind)
             .filter(|c| (c.ctx.world_x == hide && c.ctx.world_z == hide) || c.ctx.field_72 == 0)
             .map(|c| c.placement_index)
+            .chain(self.pack_mode_hidden_prop_records())
             .collect()
     }
 

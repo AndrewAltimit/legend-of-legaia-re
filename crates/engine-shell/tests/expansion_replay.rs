@@ -387,7 +387,7 @@ fn map_replay(with_action: bool) -> ReplayFile {
     r.push_switch(
         0,
         SwitchChange::Map {
-            map: "rebirth_tower_2f".into(),
+            map: "genesis_2f".into(),
             spawn: "from_below".into(),
         },
     );
@@ -426,8 +426,7 @@ fn a_pack_map_walk_with_action_jumps_replays_bit_identical() {
     let a = map_trace(&replay, &extracted);
     assert_eq!(a, map_trace(&replay, &extracted), "two runs diverged");
     assert!(
-        a.iter()
-            .all(|l| l.contains("map=Some(\"rebirth_tower_2f\")")),
+        a.iter().all(|l| l.contains("map=Some(\"genesis_2f\")")),
         "the walk stays on the pack map"
     );
     // The player left the floor: some frame stands higher (smaller Y) than

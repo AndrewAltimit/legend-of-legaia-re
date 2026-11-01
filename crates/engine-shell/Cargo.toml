@@ -55,6 +55,7 @@ legaia-seq.workspace = true
 legaia-vab.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
+rayon.workspace = true
 legaia-font.workspace = true
 legaia-mdec.workspace = true
 legaia-mednafen.workspace = true

@@ -681,12 +681,24 @@ fn select_opens_the_journal_only_with_a_pack() {
 }
 
 /// The Travel page's pick closes the menu and leaves the request for the
-/// scene host; the Challenges page arms its pick.
+/// scene host; the Challenges page arms its pick. Travel offers a map once
+/// the party has entered it (or under the Unlock Travel cheat).
 #[test]
 fn the_journal_travels_and_arms_challenges() {
     let mut world = expansion_world();
     let mut menu = FieldMenuSession::new();
+    let unvisited = journal_on_select(PadButton::Select.mask(), &world).unwrap();
+    assert!(unvisited.maps.is_empty(), "no map entered yet");
+    assert_eq!(unvisited.maps_total, 1);
+    world.toggles.travel_all_maps = true;
+    let unlocked = journal_on_select(PadButton::Select.mask(), &world).unwrap();
+    assert_eq!(unlocked.maps.len(), 1, "the cheat lists every map");
+    world.toggles.travel_all_maps = false;
+    world.expansion_notify(legaia_engine_expansion::quest::QuestEvent::SceneEntered(
+        "hall".into(),
+    ));
     let view = journal_on_select(PadButton::Select.mask(), &world).unwrap();
+    assert_eq!(view.maps.len(), 1, "entered once, offered from then on");
     let mut sub = open_journal(&mut menu, view.clone()).unwrap();
     // Left wraps from Quests to the last page (Arts), then Items, then
     // Travel.

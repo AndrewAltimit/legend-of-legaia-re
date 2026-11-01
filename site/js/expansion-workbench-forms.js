@@ -47,6 +47,69 @@ export function h(tag, attrs, ...kids) {
 
 const joinPath = (base, k) => (base ? (typeof k === 'number' ? `${base}[${k}]` : `${base}.${k}`) : String(k));
 
+// A picker's <option>s, built once per distinct list and cloned after: a tab
+// holds dozens of pickers over the same few hundred disc names, and building
+// each option afresh was most of a tab switch's time.
+//
+// A long list (more than LAZY_OPTIONS) is not even cloned until it is used:
+// the closed picker holds only its chosen option, and the whole list goes in
+// the first time it is pressed, focused or keyed. A shop's stock rows each
+// pick from every item, and a few hundred options a row was most of the
+// Items tab's build and its layout.
+const OPTION_CACHE = new Map();
+const LAZY_OPTIONS = 48;
+export function fillOptions(sel, opts, val) {
+  const key = opts.map((o) => `${o[0]}\u0001${o[1]}`).join('\u0002');
+  let tpl = OPTION_CACHE.get(key);
+  if (!tpl) {
+    if (OPTION_CACHE.size > 96) OPTION_CACHE.clear();
+    tpl = document.createDocumentFragment();
+    for (const [v, l] of opts) {
+      const o = document.createElement('option');
+      o.value = String(v);
+      o.textContent = l;
+      tpl.append(o);
+    }
+    OPTION_CACHE.set(key, tpl);
+  }
+  const want = val == null ? null : String(val);
+  if (opts.length > LAZY_OPTIONS) {
+    const at = sel.options.length;
+    const hit = want == null ? null : opts.find((o) => String(o[0]) === want);
+    let stub = null;
+    if (hit) {
+      stub = document.createElement('option');
+      stub.value = String(hit[0]);
+      stub.textContent = hit[1];
+      stub.selected = true;
+      sel.append(stub);
+    } else if (at === 0 && opts.length) {
+      // Nothing chosen and nothing before: the list's first, as a full
+      // picker would show it.
+      stub = document.createElement('option');
+      stub.value = String(opts[0][0]);
+      stub.textContent = opts[0][1];
+      sel.append(stub);
+    }
+    const expand = () => {
+      for (const t of ['pointerdown', 'focus', 'keydown']) sel.removeEventListener(t, expand);
+      const keep = sel.value;
+      const full = tpl.cloneNode(true);
+      if (stub) stub.replaceWith(full);
+      else sel.insertBefore(full, sel.options[at] || null);
+      sel.value = keep;
+    };
+    for (const t of ['pointerdown', 'focus', 'keydown']) sel.addEventListener(t, expand);
+    return !!hit;
+  }
+  sel.append(tpl.cloneNode(true));
+  if (want == null) return false;
+  for (const o of sel.options) {
+    if (o.value === want) { o.selected = true; return true; }
+  }
+  return false;
+}
+
 function intOr(v, dflt) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) ? n : dflt;
@@ -106,12 +169,7 @@ export function field(ctx, obj, spec, path) {
   const select = (opts, val, opt, onSet) => {
     input = h('select', {});
     if (opt) input.append(h('option', { value: '' }, spec.none || '(none)'));
-    let found = false;
-    for (const [v, l] of opts) {
-      const o = h('option', { value: v }, l);
-      if (String(val) === String(v)) { o.selected = true; found = true; }
-      input.append(o);
-    }
+    const found = fillOptions(input, opts, val);
     if (val != null && val !== '' && !found) {
       input.append(h('option', { value: String(val), selected: true }, `${val} (not defined)`));
     }
@@ -425,11 +483,25 @@ export function listEd(ctx, parent, owner, key, path, o) {
   // `o.fold`: each item is a fold, shut but for the one opened, added, or
   // holding a pending jump (the page opens a jump's folds), so a long list
   // reads as its labels.
+  // A shut fold builds its body when it is first opened: a boss's phases
+  // and moves are hundreds of fields, most never looked at.
   const opened = ctx.sel ? (ctx.sel.__open = ctx.sel.__open || {}) : {};
+  const jf = (ctx.jumpField && ctx.jumpField()) || '';
   arr.forEach((item, i) => {
     const ip = joinPath(p, i);
+    if (o.fold && jf && (jf === ip || jf.startsWith(ip + '.') || jf.startsWith(ip + '['))) opened[ip] = true;
     const box = h(o.fold ? 'details' : 'div', { class: 'xw-box' + (o.fold ? ' xw-fold' : ''), 'data-path': ip, open: o.fold && opened[ip] ? true : null });
-    if (o.fold) box.addEventListener('toggle', () => { if (box.open) opened[ip] = true; else delete opened[ip]; });
+    let built = !o.fold || !!opened[ip];
+    if (o.fold) {
+      box.addEventListener('toggle', () => {
+        if (box.open) opened[ip] = true; else delete opened[ip];
+        if (box.open && !built) {
+          built = true;
+          o.render(box, item, ip, i);
+          if (ctx.markIssues) ctx.markIssues();
+        }
+      });
+    }
     const head = h(o.fold ? 'summary' : 'div', { class: 'xw-box-head' }, o.label ? o.label(item, i) : `#${i + 1}`, h('span', { class: 'xw-sp' }));
     if (i > 0) head.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move up', onclick: () => { arr.splice(i - 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↑'));
     if (o.dup && i < arr.length - 1) head.append(h('button', { type: 'button', class: 'wb-mini', title: 'Move down', onclick: () => { arr.splice(i + 1, 0, arr.splice(i, 1)[0]); ctx.changed(true); } }, '↓'));
@@ -447,7 +519,7 @@ export function listEd(ctx, parent, owner, key, path, o) {
     }
     head.append(h('button', { type: 'button', class: 'wb-mini', onclick: () => { arr.splice(i, 1); ctx.changed(true); } }, 'Remove'));
     box.append(head);
-    o.render(box, item, ip, i);
+    if (built) o.render(box, item, ip, i);
     wrap.append(box);
   });
   if (!(o.max && arr.length >= o.max)) {
@@ -468,12 +540,7 @@ export function refListEd(ctx, parent, owner, key, path, o) {
   const opts = o.opts();
   arr.forEach((v, i) => {
     const sel = h('select', { 'aria-label': `${o.title || key} ${i + 1}`, 'data-path': joinPath(p, i) });
-    let found = false;
-    for (const [val, label] of opts) {
-      const op = h('option', { value: val }, label);
-      if (String(val) === String(v)) { op.selected = true; found = true; }
-      sel.append(op);
-    }
+    const found = fillOptions(sel, opts, v);
     if (!found) sel.append(h('option', { value: v, selected: true }, `${v} (not defined)`));
     sel.addEventListener('change', () => { arr[i] = sel.value; ctx.changed(); });
     const row = h('div', { class: 'xw-list-row' }, h('span', { class: 'xw-dim' }, `${i + 1}.`), sel);
@@ -542,7 +609,26 @@ export function splitEd(ctx, parent, owner, key, path, o) {
       ctx.changed(true);
     },
   }, `+ ${o.add || 'Add'}`);
-  const left = h('div', {}, list, add);
+  // A long list gets a filter over its labels; the text survives re-renders.
+  let filter = null;
+  if (keys.length > 12) {
+    const qKey = `${selKey}:filter`;
+    filter = h('input', { type: 'search', class: 'xw-list-filter', placeholder: `Filter ${keys.length} ...`, 'aria-label': `Filter ${key}`, value: ctx.sel[qKey] || '' });
+    const apply = () => {
+      const q = filter.value.trim().toLowerCase();
+      ctx.sel[qKey] = filter.value;
+      for (const b of list.children) b.hidden = !!q && !b.textContent.toLowerCase().includes(q) && !b.classList.contains('is-active');
+    };
+    filter.addEventListener('input', apply);
+    filter.addEventListener('keydown', (ev) => {
+      // Enter opens the first match.
+      if (ev.key !== 'Enter') return;
+      const first = [...list.children].find((b) => !b.hidden && !b.classList.contains('is-active'));
+      if (first) { ev.preventDefault(); first.click(); }
+    });
+    if (filter.value) queueMicrotask(apply);
+  }
+  const left = h('div', {}, filter, list, add);
   const right = h('div', {});
   if (cur == null) {
     right.append(h('div', { class: 'wb-empty' }, o.empty || `No ${(o.add || 'item').toLowerCase()} yet: + ${o.add || 'Add'} makes one.`));
@@ -662,12 +748,7 @@ function monsterRefSlot(ctx, f, i, path) {
   for (const id of ctx.ids('monster')) opts.push([`p:${id}`, `${id} (pack)`]);
   for (const m of catList(ctx, 'monsters')) opts.push([`d:${m.id}`, `#${m.id} ${m.name} (retail)`]);
   const val = cur == null ? '' : (typeof cur === 'string' ? `p:${cur}` : `d:${cur.id}`);
-  let found = false;
-  for (const [v, l] of opts) {
-    const o = h('option', { value: v }, l);
-    if (v === val) { o.selected = true; found = true; }
-    sel.append(o);
-  }
+  const found = fillOptions(sel, opts, val);
   if (!found && val) sel.append(h('option', { value: val, selected: true }, `${val.slice(2)} (not defined)`));
   sel.addEventListener('change', () => {
     const v = sel.value;
@@ -763,7 +844,7 @@ function summonEd(ctx, box, ph, p) {
     for (const id of ctx.ids('monster')) opts.push([`p:${id}`, `${id} (pack)`]);
     for (const m of catList(ctx, 'monsters')) opts.push([`d:${m.id}`, `#${m.id} ${m.name} (retail)`]);
     const val = cur == null ? '' : (typeof cur === 'string' ? `p:${cur}` : `d:${cur.id}`);
-    for (const [v, l] of opts) sel.append(h('option', { value: v, selected: v === val }, l));
+    fillOptions(sel, opts, val);
     sel.addEventListener('change', () => {
       const v = sel.value;
       if (!v) ph.summon.splice(i, 1);
@@ -806,6 +887,7 @@ function phaseEd(ctx, box, ph, p, base, opts) {
   listEd(ctx, box, ph, 'moves', p, {
     title: 'Moves',
     hint: opts.first ? 'picked by weight each turn' : 'empty keeps the moves before',
+    fold: true,
     add: 'Move',
     max: 12,
     make: () => ({ attack: 0, weight: 1, charge: false, cooldown: 0 }),
@@ -874,6 +956,7 @@ function bossScriptEd(ctx, box, m, p, base) {
   listEd(ctx, wrap, sc, 'phases', sp, {
     title: 'Phases',
     hint: 'in order; the first opens the fight',
+    fold: true,
     add: 'Phase',
     max: 8,
     make: () => ({ when: { hp_below_pct: 50 }, moves: [], summon: [] }),
@@ -1002,8 +1085,9 @@ export function renderBattle(ctx, el) {
     title: 'Encounter overrides',
     hint: 'per retail scene',
     add: 'Encounter override',
+    fold: true,
     make: () => ({ scene: (catList(ctx, 'scenes')[0] || { name: 'town01' }).name, formations: [], retail_weight: 0 }),
-    label: (e) => e.scene,
+    label: (e) => `${e.scene}: ${(e.formations || []).length} formation(s)${e.retail_weight ? `, retail weight ${e.retail_weight}` : ''}`,
     render: (box, e, p) => {
       box.append(grid(ctx, e, [
         { k: 'scene', t: 'scenename', label: 'Scene' },
@@ -1621,6 +1705,10 @@ export function renderModes(ctx, el) {
       render: (box, it, p) => {
         box.append(grid(ctx, it, specs, p));
         const onMap = it.map && ctx.pack.maps && ctx.pack.maps[it.map];
+        // The instance as a player meets it: its map built, the seat taken.
+        box.append(preview3dButton(ctx, onMap ? (key === 'poker' || key === 'card_duels' ? 'Sit at the table in 3D' : 'Play on the map in 3D') : 'Play in 3D',
+          `Start ${it.name || it.id} in the 3D preview (above)${onMap ? `, on ${it.map} where its seats stand` : ''}: the engine's own mode seat and camera. Start leaves it.`,
+          (pv) => pv.mode(it.id, onMap ? it.map : null)));
         if (onMap && key !== 'prop_hunt') box.append(grid(ctx, it, [spawnSpec(onMap)], p));
         if ((key === 'card_duels' || key === 'poker') && onMap) tableEd(ctx, box, it, p, onMap, key === 'poker');
         if (key === 'golf') {
@@ -1734,6 +1822,7 @@ function tableEd(ctx, box, it, p, map, poker) {
     ]).concat([
       { k: 'draw_table', t: 'dbool', label: 'Draw a table (off when a prop is the table)' },
     ]), tp));
+    tb.append(tableHideEd(ctx, t, tp, map));
     const npcs = npcOpts(map);
     // A seat: who sits there, then its clips side by side (short number
     // boxes in one row, so a seat stays a few lines tall on a phone).
@@ -1795,6 +1884,92 @@ function tableEd(ctx, box, it, p, map, poker) {
     tb.append(sb);
   }
   box.append(tb);
+}
+
+// A table's `hide`: the map's props whose draw goes while the seat is
+// taken (the decor table the built-in one stands in for, its chairs). The
+// props round the table are drawn on a small map, nearest first in a list;
+// a click on either toggles one. A prop needs an id to be named; picking
+// one without gives it one.
+function tableHideEd(ctx, t, tp, map) {
+  const hp = joinPath(tp, 'hide');
+  const box = h('div', { class: 'xw-box', 'data-path': hp });
+  if (!Array.isArray(t.hide)) t.hide = [];
+  const props = (map.props || []).map((x, i) => ({ x, i }));
+  const pos = (x) => {
+    const o = x.offset || [0, 0, 0];
+    return [x.tile[0] + 0.5 + (o[0] || 0) / 128, x.tile[1] + 0.5 + (o[2] || 0) / 128];
+  };
+  const tc = [t.tile[0] + 0.5 + ((t.offset || [0])[0] || 0) / 128, t.tile[1] + 0.5 + ((t.offset || [0, 0, 0])[2] || 0) / 128];
+  const dist = (x) => { const [a, b] = pos(x); return Math.hypot(a - tc[0], b - tc[1]); };
+  const near = props.filter((q) => q.x.tile).sort((a, b) => dist(a.x) - dist(b.x));
+  const hidden = (q) => !!q.x.id && t.hide.includes(q.x.id);
+  const toggle = (q) => {
+    if (!q.x.id) q.x.id = freshId('prop', (map.props || []).map((x) => x.id).filter(Boolean));
+    const k = t.hide.indexOf(q.x.id);
+    if (k >= 0) t.hide.splice(k, 1); else t.hide.push(q.x.id);
+    ctx.changed(true);
+  };
+  box.append(h('div', { class: 'xw-box-head' }, `Hidden while seated (${t.hide.length})`,
+    h('span', { class: 'xw-hint' }, ' props whose draw goes while the game is seated - a decor table the built-in one stands in for, its chairs; their collision stays'),
+    h('span', { class: 'xw-sp' }),
+    h('button', {
+      type: 'button', class: 'wb-mini', title: 'Hide every prop within a tile and a half of the table\'s centre',
+      onclick: () => { for (const q of near) if (dist(q.x) <= 1.5 && !hidden(q)) toggle(q); },
+    }, 'Hide what stands at the table')));
+  // The props within five tiles, drawn round the table: click to toggle.
+  const R = 5, cs = 22;
+  const cv = h('canvas', { class: 'xw-hide-map', width: (2 * R + 1) * cs, height: (2 * R + 1) * cs, 'aria-label': 'Props round the table: click one to hide or show it' });
+  const local = (x) => { const [a, b] = pos(x); return [(a - tc[0] + R + 0.5) * cs, (b - tc[1] + R + 0.5) * cs]; };
+  const inView = near.filter((q) => dist(q.x) <= R + 0.5);
+  const paint = () => {
+    const g = cv.getContext('2d');
+    const css = getComputedStyle(cv);
+    g.clearRect(0, 0, cv.width, cv.height);
+    g.strokeStyle = css.getPropertyValue('--border') || '#888';
+    g.lineWidth = 1;
+    // Tile edges: world tile line `n` sits at `(n - centre + R + 0.5) * cs`.
+    for (let n = Math.floor(tc[0] - R - 1); n <= tc[0] + R + 1; n++) {
+      const o = Math.round((n - tc[0] + R + 0.5) * cs);
+      g.beginPath(); g.moveTo(o + 0.5, 0); g.lineTo(o + 0.5, cv.height); g.stroke();
+    }
+    for (let n = Math.floor(tc[1] - R - 1); n <= tc[1] + R + 1; n++) {
+      const o = Math.round((n - tc[1] + R + 0.5) * cs);
+      g.beginPath(); g.moveTo(0, o + 0.5); g.lineTo(cv.width, o + 0.5); g.stroke();
+    }
+    // The table's felt or board.
+    g.fillStyle = 'rgba(62,207,142,0.35)';
+    g.fillRect((R + 0.5) * cs - cs * 0.8, (R + 0.5) * cs - cs * 0.6, cs * 1.6, cs * 1.2);
+    for (const q of inView) {
+      const [x, y] = local(q.x);
+      g.beginPath();
+      g.arc(x, y, cs * 0.3, 0, Math.PI * 2);
+      g.fillStyle = hidden(q) ? '#e0605a' : '#d9c46a';
+      g.fill();
+      if (hidden(q)) { g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(x - 4, y - 4); g.lineTo(x + 4, y + 4); g.moveTo(x + 4, y - 4); g.lineTo(x - 4, y + 4); g.stroke(); }
+    }
+  };
+  cv.addEventListener('click', (ev) => {
+    const r = cv.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) * (cv.width / r.width), my = (ev.clientY - r.top) * (cv.height / r.height);
+    let best = null, bd = cs * 0.6;
+    for (const q of inView) { const [x, y] = local(q.x); const d = Math.hypot(x - mx, y - my); if (d < bd) { bd = d; best = q; } }
+    if (best) toggle(best);
+  });
+  const list = h('div', { class: 'xw-hide-list' });
+  for (const q of near.slice(0, 24)) {
+    const cb = h('input', { type: 'checkbox' });
+    cb.checked = hidden(q);
+    cb.addEventListener('change', () => toggle(q));
+    list.append(h('label', { class: 'xw-check xw-field' }, cb, `${q.x.id || `prop ${q.i + 1} (no id yet)`}`, h('span', { class: 'xw-hint' }, ` ${dist(q.x).toFixed(1)} tiles`)));
+  }
+  const gone = t.hide.filter((id) => !props.some((q) => q.x.id === id));
+  box.append(h('div', { class: 'xw-hide' }, cv, list));
+  if (!near.length) box.append(h('p', { class: 'xw-note' }, 'The map has no props to hide.'));
+  if (gone.length) box.append(h('p', { class: 'xw-note is-warn' }, `Not props of the map: ${gone.join(', ')}.`));
+  if (t.hide.length && t.draw_table === false) box.append(h('p', { class: 'xw-note' }, 'The built-in table is off, so a hidden prop leaves the game laid on no table: hide the props that stand in its way, keep the one that is the table.'));
+  requestAnimationFrame(paint);
+  return box;
 }
 
 // A map course's legend characters and the surface each plays as.

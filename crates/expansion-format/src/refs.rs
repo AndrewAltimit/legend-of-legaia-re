@@ -140,6 +140,21 @@ pub trait DiscResolver {
     fn battle_stage_count(&self, _scene: &str) -> Option<usize> {
         None
     }
+
+    /// The placed shape of a map's mesh (`base_scene` is the map's base,
+    /// which a `{ object = N }` indexes) turned by `rotation` (degrees) and
+    /// scaled: what the resting check reads
+    /// ([`crate::map_rest::rest_issues`]). `None` when the resolver cannot
+    /// tell, which leaves the item unjudged.
+    fn mesh_shape(
+        &self,
+        _base_scene: &str,
+        _mesh: &crate::map::PropMesh,
+        _rotation: [f32; 3],
+        _scale: f32,
+    ) -> Option<crate::map_rest::Shape> {
+        None
+    }
 }
 
 #[cfg(test)]

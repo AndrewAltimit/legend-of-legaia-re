@@ -39,7 +39,7 @@ impl LegaiaRuntime {
     }
 
     /// The notice for a hotkey press [`Self::play_host_hotkey`] refused
-    /// (`"Camera distance: only while walking around"`), the line the native
+    /// (`"Camera zoom: only while walking around"`), the line the native
     /// window shows instead of leaving the press looking dead. `""` when
     /// `code` is no hotkey or is not refused now.
     pub fn play_host_hotkey_refusal(&self, code: &str) -> String {

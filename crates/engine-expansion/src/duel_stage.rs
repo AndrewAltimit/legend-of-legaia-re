@@ -173,6 +173,31 @@ pub struct DuelNpcPose {
     pub clip: Option<u8>,
 }
 
+/// A chair the stage draws at a seat whose NPC sits
+/// ([`legaia_expansion_format::modes::DuelSeatNpc::sit`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StageChair {
+    /// The seat's centre, world `(X, Z)`.
+    pub pos: [f32; 2],
+    /// Unit ground vector from the chair toward the table: the way its
+    /// sitter faces; the back stands on the other side.
+    pub toward: [f32; 2],
+    /// The seat's height above the floor, world units (the table's `lift`
+    /// included).
+    pub seat: f32,
+}
+
+impl StageChair {
+    /// The chair a sitter at `pos` facing `look_at` sits on: centred on its
+    /// anchor (a seated clip puts the hips over the actor origin).
+    pub fn under(pos: [f32; 2], look_at: [f32; 2], seat: f32) -> Self {
+        let d = [look_at[0] - pos[0], look_at[1] - pos[1]];
+        let l = d[0].hypot(d[1]).max(1e-3);
+        let toward = [d[0] / l, d[1] / l];
+        Self { pos, toward, seat }
+    }
+}
+
 /// One frame of the table.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DuelStageFrame {
@@ -193,6 +218,8 @@ pub struct DuelStageFrame {
     pub cells: [[f32; 2]; CELLS],
     /// The NPCs at the table.
     pub npcs: Vec<DuelNpcPose>,
+    /// The chairs under the seated NPCs.
+    pub chairs: Vec<StageChair>,
     /// Sounds to play this frame (retail cues or pack sounds).
     pub cues: Vec<SoundRef>,
     /// The opponent's seat position, for a reaction shot or a host's use.
@@ -819,9 +846,18 @@ impl DuelStage {
             DuelPhase::PickCard { seat } | DuelPhase::PickCell { seat, .. } => seat != self.local,
             _ => false,
         };
+        let mut chairs = Vec::new();
         if let Some(o) = &t.opponent {
-            let clip =
-                mood_clip(o, self.opponent_mood).or(if opponent_thinks { o.think } else { None });
+            let clip = mood_clip(o, self.opponent_mood)
+                .or(if opponent_thinks { o.think } else { None })
+                .or(o.sit);
+            if o.sit.is_some() {
+                chairs.push(StageChair::under(
+                    opp_seat,
+                    board_centre,
+                    t.lift + t.chair_height,
+                ));
+            }
             npcs.push(DuelNpcPose {
                 npc: o.npc.clone(),
                 pos: Some(opp_seat),
@@ -859,6 +895,7 @@ impl DuelStage {
             bursts,
             cells,
             npcs,
+            chairs,
             cues,
             opponent_seat: opp_seat,
             outro,
@@ -870,8 +907,13 @@ impl DuelStage {
     pub fn leader(&self, t: &DuelTableFrame) -> StagePose {
         let (across, right) = t.axes(self.local);
         let c = t.centre();
-        // Beside the near corner of the table, clear of the hand.
-        let (r, a) = (-(t.board * 0.5 + 44.0), -t.board_depth() * 0.5 - 36.0);
+        // Beside the table's left side near its corner, clear of the hand
+        // and of the top.
+        let (hw, hd) = t.table_half_extent();
+        let (r, a) = (
+            -(hw + legaia_engine_modes::cards::table::SEAT_CLEARANCE),
+            -(hd - 40.0).max(0.0),
+        );
         let pos = [
             c[0] + right[0] * r + across[0] * a,
             c[1] + right[1] * r + across[1] * a,
@@ -882,6 +924,7 @@ impl DuelStage {
             pos,
             facing: ang.rem_euclid(4096.0) as u16,
             clip: LeaderClip::Idle,
+            lift: 0.0,
         }
     }
 

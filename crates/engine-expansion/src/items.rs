@@ -447,7 +447,7 @@ pub struct ItemRuntime {
     pub aliases: BattleAliases,
     /// The item screen while it owns the frame.
     pub seat: Option<Box<crate::item_screen::ItemSeat>>,
-    /// Notices ("Got Rebirth Blade") for the host's toast.
+    /// Notices ("Got Vigil Blade") for the host's toast.
     pub notices: Vec<String>,
 }
 
@@ -610,8 +610,8 @@ bonuses = [{ pieces = 2, attack = 10, passives = [0x24] }]
 
     #[test]
     fn interned_names_are_shared() {
-        let a = intern("Rebirth Blade");
-        let b = intern(&String::from("Rebirth Blade"));
+        let a = intern("Vigil Blade");
+        let b = intern(&String::from("Vigil Blade"));
         assert!(std::ptr::eq(a, b));
     }
 }

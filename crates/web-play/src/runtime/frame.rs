@@ -17,6 +17,11 @@ impl LegaiaRuntime {
         // lands and loads in one call (`BootSession::resume_save`) and parks
         // nothing.
         self.pending_card_resume = None;
+        // A tick may animate the scene VRAM: the env meshes' content keys
+        // (`field_mesh_key`) take it afresh.
+        if let Some(f) = self.field.as_mut() {
+            f.mesh_key_vram = None;
+        }
         // The same for a score hand-off armed alongside it: with no entry to
         // run it, it runs now, over the scene still open.
         self.run_pending_bgm_handoff();
@@ -194,7 +199,38 @@ impl LegaiaRuntime {
             self.build_player_rig();
         }
         self.drive_npc_clips();
+        self.step_expansion_preload_when_idle(!entered.is_empty());
         Ok(entered)
+    }
+}
+
+/// Field ticks with no button held before the page spends a tick preparing a
+/// neighbouring pack map: half a second of standing still.
+const PRELOAD_IDLE_TICKS: u32 = 30;
+
+impl LegaiaRuntime {
+    /// One phase of the next neighbouring pack map's preparation, run once
+    /// the player has stood on the map's field for [`PRELOAD_IDLE_TICKS`]
+    /// with no button held: the slice of work lands where a long frame
+    /// shows least. Reads nothing of the world beyond that gate.
+    fn step_expansion_preload_when_idle(&mut self, entered: bool) {
+        let Some(h) = self.scene_host.host_mut() else {
+            return;
+        };
+        let idle = !entered
+            && h.world.mode == SceneMode::Field
+            && h.active_expansion_map().is_some()
+            && h.world.input.pad() == 0
+            && h.world.dialog.current.is_none();
+        self.preload_idle_ticks = if idle {
+            self.preload_idle_ticks.saturating_add(1)
+        } else {
+            0
+        };
+        if self.preload_idle_ticks >= PRELOAD_IDLE_TICKS && !h.step_expansion_preload() {
+            // Nothing left to prepare: wait for the next entry's requests.
+            self.preload_idle_ticks = 0;
+        }
     }
 }
 

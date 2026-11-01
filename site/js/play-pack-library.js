@@ -10,7 +10,11 @@
  *                 conflicts, bytes, cover, installedAt }   (`bytes` the
  *                 .lxpack, `cover` PNG bytes or null; `requires` /
  *                 `conflicts` the manifest's entries, `id` or `id@range`)
- *   `active`    the active pack's id, loaded when the play page has a disc
+ *   `active`    the id of the pack last enabled here. Nothing loads it
+ *               on its own: every visit starts with no pack (the game as
+ *               it shipped) until the player presses a row's Enable, so
+ *               the rows show the engine's loaded pack as "on", never
+ *               this key
  *
  * The page never trusts the stored copy: every load goes back through the
  * engine (`load_expansion`), which re-runs the import gates and the
@@ -26,8 +30,24 @@
  * a time (docs/formats/expansion-pack.md#one-active-pack), so a met
  * requirement is listed but not loaded beside it.
  *
+ * Built-in packs (BUILTIN): the packs the site itself serves - Rebirth -
+ * listed whether or not anything is installed. The site serves the pack
+ * tree (`packs/<id>.json`, written by site/_gen.py from packs/<id>/ on
+ * every site build, so it is never older than the page) and the engine
+ * bundles it (`LegaiaRuntime.expansion_bundle_from_files`, the writer
+ * `asset expansion bundle` uses for the release archive). A built-in is
+ * never copied into the library: `active` names it by id and every load
+ * fetches the site's current tree. An installed pack with the same id hides
+ * the built-in row. The tree holds disc coordinates and the pack's own art
+ * and audio, no disc bytes (the validator's no-disc-bytes rule refuses
+ * anything else).
+ *
+ * A row's Enable loads the pack into the engine: its maps and custom game
+ * modes join the page's Scenes list and New Game plays with it; the
+ * card's Disable turns it off.
+ *
  * Classic script: `window.LegaiaPackLibrary` = { list, get, put, remove,
- * active, setActive, recordFor, attach }. The workbench calls `put` /
+ * active, setActive, recordFor, attach, BUILTIN }. The workbench calls `put` /
  * `recordFor` for "Add to library"; the play page calls `attach(api)` once:
  *   runtime()           the live LegaiaRuntime (or null)
  *   load(bytes, from)   load + activate a pack; the engine's info JSON
@@ -41,6 +61,16 @@
   const STORE = 'packs';
   const PREFIX = 'lib:';
   const ACTIVE = 'active';
+
+  /* The packs the site serves itself. */
+  const BUILTIN = [{
+    id: 'rebirth',
+    name: 'Legend of Legaia: Rebirth',
+    by: 'built in',
+    blurb: 'The tower that rose where the Mist died: a climb from level 60 to 99, new quests, bosses and game modes.',
+    tree: 'packs/rebirth.json',
+  }];
+  const builtin = (id) => BUILTIN.find((b) => b.id === id) || null;
 
   function tx(mode, fn) {
     return new Promise((resolve) => {
@@ -187,18 +217,69 @@
       return out;
     }
 
+    /* A built-in pack's `.lxpack` bytes: the site's tree, bundled by the
+     * engine. Fetched again on every load (the browser's cache decides
+     * whether that costs a request). */
+    async function builtinBytes(b) {
+      const rt = api.runtime();
+      const Ctor = rt && rt.constructor;
+      if (!Ctor || typeof Ctor.expansion_bundle_from_files !== 'function') {
+        throw new Error('this build of the engine cannot open built-in packs');
+      }
+      const res = await fetch(new URL(b.tree, document.baseURI).href, { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`could not fetch ${b.tree} (${res.status})`);
+      const doc = await res.json();
+      const enc = new TextEncoder();
+      const paths = [];
+      const data = [];
+      for (const f of doc.files || []) {
+        paths.push(f.path);
+        data.push(f.text != null ? enc.encode(f.text) : Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0)));
+      }
+      return Ctor.expansion_bundle_from_files(paths, data);
+    }
+
+    /* Play built-in pack `id`: bundle the site's copy and load it. */
+    async function playBuiltin(id) {
+      const b = builtin(id);
+      if (!b) return false;
+      api.status(`Opening ${b.name} ...`);
+      let bytes;
+      try { bytes = await builtinBytes(b); } catch (e) {
+        api.status(`${b.name} could not be opened: ${e && e.message ? e.message : e}`, true);
+        return false;
+      }
+      const info = api.load(bytes, b.name);
+      const ok = !!(info && info.ok);
+      if (ok) await setActive(id);
+      await render();
+      return ok;
+    }
+
     let lastReport = {};
     async function render() {
       if (!mount) return;
       for (const u of urls) URL.revokeObjectURL(u);
       urls = [];
       const packs = await list();
-      const on = await active();
+      const on = loadedId();
       for (const p of packs) await backfill(p);
       const byId = {};
       for (const p of packs) byId[p.id] = p;
       lastReport = check(packs, on);
       mount.innerHTML = '';
+      /* Built-in rows first, unless an installed pack has the same id. */
+      for (const b of BUILTIN) {
+        if (byId[b.id]) continue;
+        const isOn = on === b.id;
+        mount.append(el('div', { class: 'play-lib-row is-builtin' + (isOn ? ' is-active' : ''), 'data-pack': b.id },
+          el('div', { class: 'play-lib-cover is-blank', 'aria-hidden': 'true' }, b.name.replace(/^Legend of Legaia: /, '').slice(0, 1)),
+          el('div', { class: 'play-lib-meta', title: b.blurb },
+            el('div', { class: 'play-lib-name' }, b.name),
+            el('div', { class: 'play-lib-by' }, b.by + (isOn ? ' - on' : ' - off'))),
+          el('div', { class: 'play-lib-actions' },
+            el('button', { type: 'button', title: isOn ? `Reload ${b.name} from this site` : `Turn on ${b.name} (experimental, incomplete), served by this site: its maps and custom game modes join the Scenes list and New Game plays with it`, onclick: () => playBuiltin(b.id) }, isOn ? 'Reload' : 'Enable'))));
+      }
       if (!packs.length) {
         mount.append(el('div', { class: 'play-lib-empty' }, 'No packs installed in this browser yet.'));
         return;
@@ -217,9 +298,9 @@
           img,
           el('div', { class: 'play-lib-meta' },
             el('div', { class: 'play-lib-name' }, p.name, ' ', el('span', { class: 'play-lib-ver' }, p.version)),
-            el('div', { class: 'play-lib-by' }, (by ? by.slice(4) : p.id) + (p.id === on ? ' - active' : ''))),
+            el('div', { class: 'play-lib-by' }, (by ? by.slice(4) : p.id) + (p.id === on ? ' - on' : ' - off'))),
           el('div', { class: 'play-lib-actions' },
-            el('button', { type: 'button', title: `Make ${p.name} the active pack and play with it`, onclick: () => play(p.id) }, p.id === on ? 'Reload' : 'Play'),
+            el('button', { type: 'button', title: `Turn on ${p.name}: its maps and custom game modes join the Scenes list and New Game plays with it`, onclick: () => play(p.id) }, p.id === on ? 'Reload' : 'Enable'),
             el('button', { type: 'button', title: `Remove ${p.name} from this browser (your saves keep its progress)`, onclick: () => drop(p.id, p.name) }, 'Remove')));
         const lines = depLines(lastReport[p.id], byId);
         if (lines.length) {
@@ -232,6 +313,7 @@
 
     async function play(id) {
       const rec = await get(id);
+      if ((!rec || !rec.bytes) && builtin(id)) return playBuiltin(id);
       if (!rec || !rec.bytes) {
         api.status('That pack is no longer stored in this browser.', true);
         return render();
@@ -266,8 +348,15 @@
      * notice the native window shows (`pack_reload_notice`'s wording). */
     async function reloadActive(live) {
       const notice = (t) => { if (typeof window.__playShowNotice === 'function') window.__playShowNotice(t); };
-      const id = await active();
-      const rec = id ? await get(id) : null;
+      /* The pack the engine is playing, not the library's choice: with
+       * none loaded (a retail New game or Scene picker), End loads none. */
+      const id = loadedId();
+      let rec = id ? await get(id) : null;
+      if ((!rec || !rec.bytes) && builtin(id) && live) {
+        try {
+          rec = { id, version: 'built in', name: builtin(id).name, bytes: await builtinBytes(builtin(id)) };
+        } catch (e) { rec = null; }
+      }
       if (!rec || !rec.bytes || !live) { notice('Reload pack: no expansion pack is loaded'); return false; }
       const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes);
       const r = live.reload(bytes, `${rec.name} ${rec.version}`);
@@ -313,16 +402,14 @@
       return !!(loaded && loaded.ok);
     }
 
-    /* The disc is up: play with the active pack, if one is set. */
-    async function loadActive() {
-      const id = await active();
-      if (!id) return false;
-      const rec = await get(id);
-      if (!rec || !rec.bytes) { await setActive(null); return false; }
-      const bytes = rec.bytes instanceof Uint8Array ? rec.bytes : new Uint8Array(rec.bytes);
-      const info = api.load(bytes, `${rec.name} ${rec.version}`);
-      await render();
-      return !!(info && info.ok);
+    /* The pack the engine has loaded now (its id), or null. */
+    function loadedId() {
+      try {
+        const rt = api.runtime();
+        return rt ? (JSON.parse(rt.expansion_info_json()).pack || {}).id || null : null;
+      } catch (e) {
+        return null;
+      }
     }
 
     /* The player unloaded the pack: none is active next visit either. */
@@ -332,8 +419,8 @@
     }
 
     render();
-    return { install, loadActive, loadId, reloadActive, deactivate, render };
+    return { install, loadId, playBuiltin, reloadActive, deactivate, render };
   }
 
-  window.LegaiaPackLibrary = { list, get, put, remove, active, setActive, recordFor, attach };
+  window.LegaiaPackLibrary = { list, get, put, remove, active, setActive, recordFor, attach, BUILTIN };
 })();

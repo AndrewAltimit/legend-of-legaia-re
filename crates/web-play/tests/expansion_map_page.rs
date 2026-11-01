@@ -26,15 +26,12 @@ fn a_pack_map_names_itself_and_rolls_its_zones() {
         serde_json::from_str(&rt.load_expansion_core(&rebirth_bundle())).unwrap();
     assert_eq!(v["ok"], true, "{v}");
     let state: serde_json::Value = serde_json::from_str(
-        &rt.enter_expansion_map_core("rebirth_tower_1f", "")
+        &rt.enter_expansion_map_core("genesis_1f", "")
             .expect("enter the pack map"),
     )
     .unwrap();
-    assert_eq!(state["expansion_map"]["id"], "rebirth_tower_1f");
-    assert_eq!(
-        state["expansion_map"]["name"],
-        "Tower of Rebirth 1F - Atrium"
-    );
+    assert_eq!(state["expansion_map"]["id"], "genesis_1f");
+    assert_eq!(state["expansion_map"]["name"], "Genesis Tower 1F - Atrium");
     assert!(rt.scene_rolls_encounters(), "the Atrium's zones roll");
 
     // A retail town is unchanged: no map in the state, and Rim Elm rolls

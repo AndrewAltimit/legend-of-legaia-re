@@ -199,6 +199,7 @@ impl PlayWindowApp {
             r.set_dyn_shadows(self.options_state.light_shadows);
             r.set_occlusion_fade(self.options_state.occlusion_fade);
             r.set_bloom(self.options_state.bloom);
+            r.set_ssao(self.options_state.ssao);
         }
     }
 }

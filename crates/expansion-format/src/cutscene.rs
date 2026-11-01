@@ -12,7 +12,7 @@
 //! ```toml
 //! [cutscenes.tower_intro]
 //! title = "The Tower Wakes"
-//! map = "rebirth_tower_1f"
+//! map = "genesis_1f"
 //!
 //! [[cutscenes.tower_intro.steps]]
 //! do = "fade"

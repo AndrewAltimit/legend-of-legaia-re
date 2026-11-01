@@ -15,7 +15,7 @@
 //! ```toml
 //! [[quests]]
 //! id = "tower_intro"
-//! title = "The Rebirth Tower"
+//! title = "The Genesis Tower"
 //! giver = "tower_guide"
 //! start_dialog = "guide_offer"
 //! prerequisites = { min_level = 20 }

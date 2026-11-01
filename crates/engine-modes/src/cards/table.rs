@@ -32,6 +32,15 @@ pub fn sector_to_mode_angle(sector: u8) -> u16 {
 /// too (height over width).
 pub const CELL_ASPECT: f32 = 1.36;
 
+/// How far the drawn table's top reaches past the board's side and its
+/// near / far edge, world units (`pack_mode_world`'s `duel` table).
+pub const TABLE_MARGIN: [f32; 2] = [58.0, 64.0];
+
+/// How far a seated or standing body keeps from the table's edge, world
+/// units: a townsfolk model's half depth, knees included, so no part of
+/// the body reaches into the top.
+pub const SEAT_CLEARANCE: f32 = 46.0;
+
 /// The table's placement on the field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DuelTableFrame {
@@ -54,6 +63,10 @@ pub struct DuelTableFrame {
     /// The map NPC across the board and the spectators, with their clips.
     pub opponent: Option<legaia_expansion_format::modes::DuelSeatNpc>,
     pub spectators: Vec<legaia_expansion_format::modes::DuelSeatNpc>,
+    /// The seat height of a chair the stage draws for a seated NPC, world
+    /// units above the floor (`lift` not included).
+    #[serde(default)]
+    pub chair_height: f32,
 }
 
 /// Why a duel's table could not be placed.
@@ -88,18 +101,44 @@ impl DuelTableFrame {
                 spawn: duel.spawn.clone(),
                 origin: [cx + t.offset[0], cz + t.offset[2]],
                 unit: 1,
+                scene: false,
             },
             facing: sector_to_mode_angle(t.facing),
             lift: t.offset[1] as f32,
             height: f32::from(t.height),
             board: f32::from(t.board.max(48)),
-            seat_distance: f32::from(t.seat_distance.max(40)),
+            seat_distance: Self::clear_seat_distance(
+                f32::from(t.seat_distance.max(40)),
+                f32::from(t.board.max(48)),
+                t.draw_table,
+            ),
             draw_table: t.draw_table,
             surface: t.surface,
             sfx: t.sfx.clone(),
             opponent: t.opponent.clone(),
             spectators: t.spectators.clone(),
+            chair_height: f32::from(t.chair_height),
         }))
+    }
+
+    /// `seat_distance` pushed out past the drawn table's edge: a seat the
+    /// pack set inside the table would stand its NPC in the top (the
+    /// reaction shot frames the opponent there). A table the map's own
+    /// prop draws (`draw_table = false`) keeps the pack's distance.
+    fn clear_seat_distance(seat_distance: f32, board: f32, draw_table: bool) -> f32 {
+        if !draw_table {
+            return seat_distance;
+        }
+        seat_distance.max(board * CELL_ASPECT * 0.5 + TABLE_MARGIN[1] + SEAT_CLEARANCE)
+    }
+
+    /// The drawn table top's half extent `(right, across)` from the board's
+    /// centre, world units.
+    pub fn table_half_extent(&self) -> (f32, f32) {
+        (
+            self.board * 0.5 + TABLE_MARGIN[0],
+            self.board_depth() * 0.5 + TABLE_MARGIN[1],
+        )
     }
 
     /// The board's centre, world `(X, Z)`.
@@ -178,6 +217,7 @@ mod tests {
                 spawn: String::new(),
                 origin: [1000, 2000],
                 unit: 1,
+                scene: false,
             },
             facing: sector_to_mode_angle(facing),
             lift: 0.0,
@@ -189,6 +229,7 @@ mod tests {
             sfx: DuelSfx::default(),
             opponent: None,
             spectators: Vec::new(),
+            chair_height: 34.0,
         }
     }
 

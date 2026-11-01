@@ -177,6 +177,23 @@ fn an_in_world_golf_hole_stands_the_leader_at_the_ball() {
     assert_eq!(leader.clip, LeaderClip::Idle);
     // The aim arrow starts at the ball.
     assert_eq!(stage.aim.unwrap().from, ball.pos);
+    // The hole is laid on the ground for the hosts to tint: its playable
+    // tiles are map tiles inside the hole, the ball's and the cup's among
+    // them, and its tee is where the ball starts.
+    let course = stage.course.as_ref().expect("the hole is laid out");
+    assert!(
+        (course.tile - 128.0).abs() < 1e-3,
+        "a golf tile is a map tile"
+    );
+    let tile_of = |p: [f32; 2]| tile_at("links_green", p[0] as i32, p[1] as i32);
+    let played: Vec<_> = course
+        .tiles
+        .iter()
+        .map(|t| tile_of([t.at[0] + course.tile * 0.5, t.at[1] + course.tile * 0.5]))
+        .collect();
+    assert!(played.contains(&Some((2, 2))) && played.contains(&Some((11, 2))));
+    assert_eq!(tile_of(course.tee), Some((2, 2)));
+    assert!(stage.track.is_none());
 }
 
 #[test]
@@ -268,6 +285,18 @@ fn a_scripted_race_plays_to_completion_in_the_world() {
             continue;
         };
         countdown |= stage.banner.as_deref() == Some("3");
+        // The track is the session's corridor, in world units.
+        let m = w.expansion.mode_seat.as_deref().unwrap().active().unwrap();
+        let session = m.race_track().unwrap();
+        let track = stage.track.as_ref().expect("the track is laid out");
+        assert_eq!(track.points.len(), session.points.len());
+        assert_eq!(track.points[0], stage.frame.to_world_f(session.points[0]));
+        assert_eq!(
+            track.half_width,
+            stage.frame.len_to_world(session.half_width)
+        );
+        assert_eq!(track.boost_segments, session.boost_segments);
+        assert!(stage.course.is_none());
         ran |= stage.leader.is_some_and(|l| l.clip == LeaderClip::Run);
         assert_eq!(stage.bodies.len(), 2, "two AI racers");
         // Each AI racer is a map NPC (Noa, Gala), its anchor the racer's.

@@ -11,7 +11,7 @@
 //!   crystal than across the room.
 //!
 //! With `LEGAIA_PACK_AUDIO_DUMP=<dir>` the 7F hand-over is also written to
-//! `<dir>/rebirth_7f_sanctum.wav` (Sony-derived output; never commit it).
+//! `<dir>/genesis_7f_sanctum.wav` (Sony-derived output; never commit it).
 //! Skips (and passes) when `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;
@@ -97,7 +97,7 @@ fn the_games_room_cross_fades_to_the_casino_theme() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    s.enter_expansion_map_live("rebirth_tower_5f", "from_below", &FieldLiveOpts::default())
+    s.enter_expansion_map_live("genesis_5f", "from_below", &FieldLiveOpts::default())
         .expect("enter 5F");
     let mut rec = Rec {
         seen: s.bgm.as_ref().expect("audio").commands().count(),
@@ -107,7 +107,7 @@ fn the_games_room_cross_fades_to_the_casino_theme() {
     assert!(rec.has(AudioCommand::BgmStartOwned(2024)), "{:?}", rec.cmds);
     assert!(!bar.is_silent(), "the bar tune sounds");
     // Into the games room (5F `[[audio.zones]]`, 40-frame fade).
-    stand(&mut s, [62, 56], (10, 8));
+    stand(&mut s, [20, 20], (32, 9));
     let fading = steps(&mut s, &mut rec, 20);
     assert!(rec.has(AudioCommand::BgmFade(2018, 40)), "{:?}", rec.cmds);
     assert!(
@@ -133,7 +133,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    s.enter_expansion_map_live("rebirth_tower_7f", "from_below", &FieldLiveOpts::default())
+    s.enter_expansion_map_live("genesis_7f", "from_below", &FieldLiveOpts::default())
         .expect("enter 7F");
     let dump = std::env::var_os("LEGAIA_PACK_AUDIO_DUMP");
     let mut pcm: Vec<i16> = Vec::new();
@@ -168,7 +168,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         retail.merge(frame(&mut s, &mut pcm));
     }
     assert!(!retail.is_silent(), "7F's own score sounds");
-    stand(&mut s, [26, 17], (12, 9));
+    stand(&mut s, [20, 20], (12, 19));
     for _ in 0..120 {
         frame(&mut s, &mut pcm);
     }
@@ -194,7 +194,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         "the normalised drone sits near the retail score's level"
     );
     // Back out of the sanctum: the floor's score returns.
-    stand(&mut s, [26, 17], (9, 20));
+    stand(&mut s, [20, 20], (4, 20));
     for _ in 0..200 {
         frame(&mut s, &mut pcm);
     }
@@ -204,10 +204,10 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
         "{:?}",
         rec.cmds
     );
-    assert!(rec.has(AudioCommand::BgmFade(2011, 90)), "{:?}", rec.cmds);
+    assert!(rec.has(AudioCommand::BgmFade(2025, 90)), "{:?}", rec.cmds);
     assert!(s.bgm.as_ref().unwrap().is_attached());
     if let Some(dir) = dump {
-        let path = std::path::Path::new(&dir).join("rebirth_7f_sanctum.wav");
+        let path = std::path::Path::new(&dir).join("genesis_7f_sanctum.wav");
         let wav = legaia_expansion_format::audio_clip::encode_wav(SPU_INTERNAL_RATE, 2, &pcm, None);
         std::fs::write(&path, wav).expect("write the dump");
         eprintln!("wrote {}", path.display());
@@ -215,21 +215,20 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
 }
 
 #[test]
-fn the_ember_crystals_crackle_by_distance() {
+fn the_niche_braziers_crackle_by_distance() {
     let Some(mut s) = session() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
     };
-    s.enter_expansion_map_live("rebirth_tower_1f", "", &FieldLiveOpts::default())
+    s.enter_expansion_map_live("genesis_1f", "", &FieldLiveOpts::default())
         .expect("enter 1F");
     let mut rec = Rec {
         seen: s.bgm.as_ref().expect("audio").commands().count(),
         ..Rec::default()
     };
     steps(&mut s, &mut rec, 10);
-    // Beside the north-west crystal: its loop (and the Warden's Stone hum,
-    // two tiles off) on the bus.
-    stand(&mut s, [16, 16], (3, 5));
+    // Below the bell niche's west brazier: its crackle on the bus.
+    stand(&mut s, [16, 16], (21, 2));
     steps(&mut s, &mut rec, 30);
     let near: Vec<_> = s.host.world.expansion_ambient_levels().to_vec();
     assert!(near.iter().any(|l| l.sound == "torch"), "{near:?}");
@@ -239,7 +238,7 @@ fn the_ember_crystals_crackle_by_distance() {
         .filter(|l| l.sound == "torch")
         .map(|l| l.pan.0 + l.pan.1)
         .fold(0.0f32, f32::max);
-    // Across the room, by the south stair: nothing in reach.
+    // Across the root shaft, by the Atrium's south stair: nothing in reach.
     stand(&mut s, [16, 16], (7, 11));
     steps(&mut s, &mut rec, 30);
     let far: f32 = s

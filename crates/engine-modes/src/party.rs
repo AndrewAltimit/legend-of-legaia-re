@@ -283,11 +283,13 @@ fn round_info(r: &PartyRound, base: &ModeSection) -> Result<RoundInfo, PartyErro
         )
     } else if let Some(t) = base.races.iter().find(|t| t.id == id) {
         let laps = r.laps.unwrap_or(t.laps).max(1);
-        (
-            ModeKind::Race,
-            pick_name(&r.name, &t.name, id),
-            plural(u32::from(laps), "lap", "laps"),
-        )
+        let what = match t.course {
+            legaia_expansion_format::modes::RaceCourse::Sprint => "a sprint".to_string(),
+            legaia_expansion_format::modes::RaceCourse::Circuit => {
+                plural(u32::from(laps), "lap", "laps")
+            }
+        };
+        (ModeKind::Race, pick_name(&r.name, &t.name, id), what)
     } else if let Some(a) = base.prop_hunt.iter().find(|a| a.id == id) {
         let rounds = r.rounds.unwrap_or(a.rounds).max(1);
         (

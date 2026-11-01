@@ -89,7 +89,7 @@ fn golf_soak() {
 fn racing_soak() {
     let modes = rebirth_modes();
     for seed in 0..SEEDS {
-        let mut cfg = RaceConfig::from_def(&modes.races[0], seed).unwrap();
+        let (mut cfg, _) = RaceConfig::from_scene(&modes.races[0], "map01", seed).unwrap();
         cfg.seats[1] = SeatKind::Human;
         cfg.time_limit = 60 * 60 * 6;
         let (_, s) = run(

@@ -5,7 +5,7 @@ use legaia_engine_modes::active::ActiveMode;
 use legaia_engine_modes::golf::course::{Surface, TILE};
 use legaia_engine_modes::golf::{GolfPhase, GolfView};
 
-use super::{Canvas, Fit, footer, fx, ink, pen, seat_color};
+use super::{Align, Canvas, Fit, STAGE_W, footer, fx, ink, pen, seat_color};
 
 /// The course viewport.
 const VIEW: (i32, i32, i32, i32) = (6, 20, 224, 176);
@@ -150,7 +150,9 @@ pub(super) fn draw(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[Strin
 /// The in-world HUD: the hole and whose stroke at the top, a compact
 /// scorecard at the right, the power meter and the hint at the bottom. The
 /// course itself is the field under it.
-pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String]) {
+/// Returns the bottom of the HUD's top band (the hole plate and the
+/// scorecard), where a banner may start.
+pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String]) -> i32 {
     let holes = v.scorecard.first().map_or(0, Vec::len);
     let to_play = match v.phase {
         GolfPhase::Aim { seat } | GolfPhase::Power { seat, .. } | GolfPhase::Rolling { seat } => {
@@ -160,24 +162,31 @@ pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String
     };
     let plate = [10, 14, 24, 190];
     c.panel(4, 4, 150, 32, plate, ink::PANEL_EDGE);
-    c.text(
+    c.text_in(
         format!("Hole {}/{holes}  Par {}", v.hole + 1, v.par),
         8,
         5,
+        142,
         pen::GOLD,
+        Align::Left,
     );
     if let Some(seat) = to_play {
         let b = &v.balls[seat];
         c.dot(10, 26, 2, seat_color(seat));
-        c.text(
+        c.text_in(
             format!("{} - stroke {}", mode.seat_name(seat), b.strokes + 1),
             16,
             19,
+            134,
             pen::WHITE,
+            Align::Left,
         );
     }
     // The scorecard: this hole's strokes and the running total per seat.
-    let (x, w) = (226, 90);
+    // The name column and the strokes column side by side, each in its own
+    // box, so a long seat name is cut short of the count.
+    let (x, w) = (196, 120);
+    const COUNT_W: i32 = 40;
     let h = 6 + v.balls.len() as i32 * 14;
     c.panel(x, 4, w, h, plate, ink::PANEL_EDGE);
     for (seat, b) in v.balls.iter().enumerate() {
@@ -193,19 +202,33 @@ pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String
             pen::WHITE
         };
         c.dot(x + 6, y + 7, 2, seat_color(seat));
-        c.text(mode.seat_name(seat), x + 12, y, ink);
+        c.text_in(
+            mode.seat_name(seat),
+            x + 12,
+            y,
+            w - 12 - 4 - COUNT_W - 2,
+            ink,
+            Align::Left,
+        );
         let now = if b.done {
             format!("{}*", b.strokes)
         } else {
             b.strokes.to_string()
         };
-        c.text_right(format!("{now} ({total})"), x + w - 4, y, ink);
+        c.text_in(
+            format!("{now} ({total})"),
+            x + w - 4,
+            y,
+            COUNT_W,
+            ink,
+            Align::Right,
+        );
     }
     // The power meter while it runs.
     if let GolfPhase::Power { meter, .. } = v.phase {
         let (mx, my, mw) = (60, 202, 200);
         c.panel(mx - 4, my - 14, mw + 8, 24, plate, ink::PANEL_EDGE);
-        c.text("Power", mx, my - 14, pen::DIM);
+        c.text_in("Power", mx, my - 14, 60, pen::DIM, Align::Left);
         c.panel(mx, my, mw, 8, [20, 24, 36, 255], ink::PANEL_EDGE);
         let fill = (mw - 2) * meter.min(100) as i32 / 100;
         let col = if meter > 85 {
@@ -215,7 +238,14 @@ pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String
         };
         c.rect(mx + 1, my + 1, fill, 6, col);
     } else if let Some(last) = log.last() {
-        c.text_centre(last.clone(), 160, 196, pen::WHITE);
+        c.text_in(
+            last.clone(),
+            160,
+            196,
+            STAGE_W - 16,
+            pen::WHITE,
+            Align::Centre,
+        );
     }
     footer(
         c,
@@ -227,6 +257,7 @@ pub(super) fn hud(c: &mut Canvas, mode: &ActiveMode, v: &GolfView, log: &[String
             _ => "Start: leave",
         },
     );
+    (4 + 32).max(4 + h)
 }
 
 fn scorecard(c: &mut Canvas, mode: &ActiveMode, v: &GolfView) {

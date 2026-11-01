@@ -346,9 +346,10 @@ struct LauncherApp {
     /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
     /// or why it could not be read.
     expansion: Option<Result<ExpansionInfo, String>>,
-    /// How many packs the packs folder holds ([`launcher::scan_packs`]),
-    /// counted once when the window opens.
-    installed_packs: usize,
+    /// The playable packs found in the installed and bundled packs folders
+    /// ([`launcher::discover_packs`]), read once when the window opens: the
+    /// Expansion button steps through them before it opens a file dialog.
+    packs: Vec<ExpansionInfo>,
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
@@ -398,9 +399,11 @@ impl LauncherApp {
                 .expansion
                 .as_deref()
                 .map(launcher::inspect_expansion),
-            installed_packs: launcher::packs_dir()
-                .map(|d| launcher::scan_packs(&d).len())
-                .unwrap_or(0),
+            packs: launcher::discover_packs(&launcher::pack_dirs())
+                .into_iter()
+                .flatten()
+                .filter(ExpansionInfo::playable)
+                .collect(),
             settings,
             settings_file,
             options,
@@ -608,6 +611,22 @@ impl LauncherApp {
         self.win.request_redraw();
     }
 
+    /// The Expansion button: the next found pack ([`Self::packs`]) after
+    /// the chosen one, and past the last one (or with none found) the file
+    /// dialog.
+    fn next_expansion(&mut self) {
+        let at = self.settings.expansion.as_deref().and_then(|cur| {
+            self.packs
+                .iter()
+                .position(|p| p.path == cur || same_file(&p.path, cur))
+        });
+        let next = at.map_or(0, |i| i + 1);
+        match self.packs.get(next).map(|p| p.path.clone()) {
+            Some(path) => self.try_expansion(&path),
+            None => self.browse_expansion(),
+        }
+    }
+
     fn browse_expansion(&mut self) {
         let mut dialog = rfd::FileDialog::new()
             .set_title("Choose an expansion pack (.lxpack, or pack.toml in a pack folder)")
@@ -787,7 +806,7 @@ impl LauncherApp {
             Item::Online => self.play(evl, true),
             Item::ChooseDisc => self.browse(),
             Item::Expansion if dir < 0 => self.clear_expansion(),
-            Item::Expansion => self.browse_expansion(),
+            Item::Expansion => self.next_expansion(),
             Item::Panel => {
                 self.panel = match self.panel {
                     Panel::Options => Panel::Controls,
@@ -934,7 +953,8 @@ impl LauncherApp {
         let expansion_label = match &self.expansion {
             None => "Expansion pack...".to_string(),
             Some(Ok(info)) if info.playable() => {
-                c.ellipsize_left(&format!("Pack: {}", info.name), LEFT_W - 12)
+                // A name reads from its start: a long one keeps its head.
+                c.ellipsize_right(&format!("Pack: {}", info.short_name), LEFT_W - 12)
             }
             Some(_) => "Pack: has errors".to_string(),
         };
@@ -1254,22 +1274,32 @@ impl LauncherApp {
                              room code. Tab opens the same screen in play."
                 .into(),
             Item::Expansion => match &self.expansion {
-                None => {
-                    let installed = self.installed_packs;
-                    let mut s = "Play with an expansion pack: new maps, quests and fights made \
-                                 for the port. Choose an .lxpack file, or the pack.toml in a pack \
-                                 folder."
-                        .to_string();
-                    if installed > 0 {
-                        s.push_str(&format!(
-                            " {installed} installed in the packs folder (`legaia-engine packs`)."
-                        ));
-                    }
-                    s
-                }
+                None => match self.packs.as_slice() {
+                    [] => "Play with an expansion pack: new maps, quests and fights made for \
+                           the port. Choose an .lxpack file, or the pack.toml in a pack folder."
+                        .into(),
+                    [one] => format!(
+                        "Play with an expansion pack: new maps, quests and fights made for the \
+                         port. Enter picks {}, which came with the game; press again to choose \
+                         an .lxpack file.",
+                        one.name
+                    ),
+                    many => format!(
+                        "Play with an expansion pack: new maps, quests and fights made for the \
+                         port. Enter steps through the {} packs found (`legaia-engine packs`), \
+                         then offers a file.",
+                        many.len()
+                    ),
+                },
                 Some(Ok(info)) if info.playable() => format!(
-                    "{}. New Game and Continue play with it. Delete or right-click: none.",
-                    info.summary()
+                    "{}. New Game and Continue play with it. Enter: {}. Delete or right-click: \
+                     none.",
+                    info.summary(),
+                    if self.packs.len() > 1 {
+                        "the next pack"
+                    } else {
+                        "choose another file"
+                    }
                 ),
                 Some(_) => self.expansion_problem().unwrap_or_default(),
             },
@@ -1740,6 +1770,22 @@ impl Canvas<'_> {
         }
         "...".into()
     }
+
+    /// `text` cut to `max_w` pixels by dropping characters from its end
+    /// behind `...` - for a name, whose start says what it is.
+    fn ellipsize_right(&self, text: &str, max_w: i32) -> String {
+        if self.width(text) <= max_w {
+            return text.to_string();
+        }
+        let chars: Vec<char> = text.chars().collect();
+        for end in (1..chars.len()).rev() {
+            let s = format!("{}...", chars[..end].iter().collect::<String>().trim_end());
+            if self.width(&s) <= max_w {
+                return s;
+            }
+        }
+        "...".into()
+    }
 }
 
 // --- The game process --------------------------------------------------
@@ -2043,6 +2089,12 @@ fn clean_typed_path(s: &str) -> String {
     t.to_string()
 }
 
+/// Whether two paths name one file (a remembered pack path written before a
+/// folder moved under a symlink, say).
+fn same_file(a: &Path, b: &Path) -> bool {
+    matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2086,6 +2138,11 @@ mod tests {
         assert!(s.ends_with(".bin"));
         assert!(c.width(&s) <= 120);
         assert_eq!(c.ellipsize_left("short", 120), "short");
+        let s = c.ellipsize_right("Pack: Legend of Legaia: A Long Subtitle", 120);
+        assert!(s.starts_with("Pack: "), "{s}");
+        assert!(s.ends_with("..."));
+        assert!(c.width(&s) <= 120);
+        assert_eq!(c.ellipsize_right("short", 120), "short");
     }
 
     #[test]

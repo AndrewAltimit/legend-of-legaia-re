@@ -148,8 +148,16 @@ def sim_pair_divergence(pair: dict) -> tuple[list[str], list[str]]:
         return f"{rel}::{fn_name}" if fn_name else rel
 
     if mode in ("symbols_all", "symbols_same"):
-        for sym in pair.get("symbols", []):  # type: ignore[union-attr]
-            seen = {h: re.search(rf"\b{re.escape(sym)}\b", bodies[h]) is not None for h in hosts}
+        for entry in pair.get("symbols", []):  # type: ignore[union-attr]
+            # An entry is one symbol, or a tuple of interchangeable spellings
+            # of the same kernel call (a serial entry point and its
+            # executor-taking twin): any one of them counts as the call.
+            alts = list(entry) if isinstance(entry, (list, tuple)) else [entry]
+            sym = " / ".join(alts)
+            seen = {
+                h: any(re.search(rf"\b{re.escape(a)}\b", bodies[h]) for a in alts)
+                for h in hosts
+            }
             if mode == "symbols_all" and not all(seen.values()):
                 missing = [h for h in hosts if not seen[h]]
                 diffs.append(

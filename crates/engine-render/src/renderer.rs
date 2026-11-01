@@ -18,6 +18,7 @@ mod fog_volume;
 mod letterbox;
 mod native_target;
 mod render;
+pub mod ssao;
 mod state;
 mod upload;
 mod uploaded;

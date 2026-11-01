@@ -29,12 +29,12 @@ use cli::{Cli, Cmd};
 use commands::{cmd_audio_trace, cmd_mode_trace, cmd_pcm_trace, cmd_sim_trace, cmd_vram_oracle};
 use commands::{
     cmd_chain_editor, cmd_clut_trace, cmd_config, cmd_encounter, cmd_equip, cmd_export_glb,
-    cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts, cmd_play,
-    cmd_replay, cmd_save, cmd_save_select, cmd_scenarios, cmd_seru_capture, cmd_target_pick,
-    cmd_title,
+    cmd_gte_replay, cmd_info, cmd_inventory, cmd_list_scenes, cmd_load, cmd_man_scripts,
+    cmd_mesh_catalog, cmd_play, cmd_replay, cmd_save, cmd_save_select, cmd_scenarios,
+    cmd_seru_capture, cmd_target_pick, cmd_title,
 };
 use legaia_engine_shell::window::{self, cmd_play_str, cmd_play_window, cmd_record};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The subcommands behind the `oracles` feature, named so a build without it
 /// says what to rebuild instead of clap's bare "unrecognized subcommand".
@@ -167,6 +167,23 @@ fn main() -> Result<()> {
             no_props,
             items,
             party,
+            &extracted_root,
+            disc.as_deref(),
+        ),
+        Cmd::MeshCatalog {
+            scene,
+            catalog,
+            sheet_dir,
+            cell,
+            singles,
+            extracted_root,
+            disc,
+        } => cmd_mesh_catalog(
+            &scene,
+            catalog.as_deref(),
+            sheet_dir.as_deref(),
+            cell,
+            singles,
             &extracted_root,
             disc.as_deref(),
         ),
@@ -436,6 +453,7 @@ fn main() -> Result<()> {
             save_anywhere,
             action_movement,
             no_occlusion_fade,
+            no_ssao,
             no_volumetric_fog,
             psx_render,
             fullscreen,
@@ -467,6 +485,7 @@ fn main() -> Result<()> {
             cheat_arts,
             cheat_max_items,
             cheat_noclip,
+            cheat_travel,
         } => cmd_play_window(
             &scene,
             &extracted_root,
@@ -547,6 +566,7 @@ fn main() -> Result<()> {
                         action_movement,
                     },
                     occlusion_fade: !no_occlusion_fade,
+                    ssao: !no_ssao,
                     volumetric_fog: !no_volumetric_fog,
                     retail: false,
                     psx_render,
@@ -577,6 +597,7 @@ fn main() -> Result<()> {
                     arts: cheat_arts,
                     max_items: cheat_max_items,
                     noclip: cheat_noclip,
+                    travel: cheat_travel,
                 }),
         ),
         Cmd::Save {
@@ -750,15 +771,19 @@ fn decode_str_frame_count(str_path: &Path) -> Result<usize> {
     Ok(decoded)
 }
 
-/// `legaia-engine packs`: the installed expansion packs with their metadata.
+/// `legaia-engine packs`: the installed and bundled expansion packs with
+/// their metadata.
 fn cmd_packs(dir: Option<&Path>, json: bool) -> Result<()> {
     use legaia_engine_shell::launcher;
-    let dir = match dir {
-        Some(d) => d.to_path_buf(),
-        None => launcher::packs_dir()
-            .ok_or_else(|| anyhow::anyhow!("no data directory is known; pass --dir"))?,
+    let dirs: Vec<PathBuf> = match dir {
+        Some(d) => vec![d.to_path_buf()],
+        None => launcher::pack_dirs(),
     };
-    let list = launcher::scan_packs(&dir);
+    anyhow::ensure!(
+        !dirs.is_empty(),
+        "no data directory is known and no bundled packs folder was found; pass --dir"
+    );
+    let list = launcher::discover_packs(&dirs);
     if json {
         let rows: Vec<serde_json::Value> = list
             .iter()
@@ -775,16 +800,18 @@ fn cmd_packs(dir: Option<&Path>, json: bool) -> Result<()> {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
-                "dir": dir,
+                "dir": dirs[0],
+                "dirs": dirs,
                 "engine": legaia_expansion_format::manifest::ENGINE_VERSION,
                 "packs": rows,
             }))?
         );
         return Ok(());
     }
+    let shown: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
     println!(
         "Expansion packs in {} (engine {}):",
-        dir.display(),
+        shown.join(" and "),
         legaia_expansion_format::manifest::ENGINE_VERSION
     );
     if list.is_empty() {

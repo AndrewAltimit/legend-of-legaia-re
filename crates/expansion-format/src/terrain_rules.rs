@@ -10,6 +10,20 @@ pub(crate) fn check_terrain(m: &MapDef, cx: &mut Checker<'_>, grid: Option<&Tile
     let Some(t) = &m.terrain else {
         return;
     };
+    if let Some(a) = &t.abyss {
+        if !(a.from.is_finite() && a.to.is_finite() && a.to < a.from) {
+            cx.error(
+                "terrain.abyss.to",
+                format!("to {} is not below from {}", a.to, a.from),
+            );
+        }
+        if !(a.shade.is_finite() && (0.0..=1.0).contains(&a.shade)) {
+            cx.error(
+                "terrain.abyss.shade",
+                format!("shade {} is not in 0..=1", a.shade),
+            );
+        }
+    }
     if !RESOLUTIONS.contains(&t.resolution) {
         cx.error(
             "terrain.resolution",

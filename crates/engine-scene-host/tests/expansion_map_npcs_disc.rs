@@ -6,8 +6,10 @@
 //! generated box, and a standable crate. The NPC spawns as a field NPC,
 //! resolves a non-empty mesh through the live-scene catalog both hosts
 //! draw from, blocks the walking player, and talking to it runs its pack
-//! line and raises the quest talk event. Skips when `LEGAIA_DISC_BIN` is
-//! unset.
+//! line and raises the quest talk event. A second map over the West Voz
+//! Forest (`vell`) borrows the same townsperson from Rim Elm: its model is
+//! carried into the pool past the forest's own and it poses from Rim Elm's
+//! clip bank. Skips when `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;
 
@@ -314,4 +316,103 @@ fn walls_draw_generated_boxes_and_a_crate_is_a_floor_top() {
         "on the crate: x = {lx}"
     );
     assert!((i32::from(cz) - 64..i32::from(cz) + 64).contains(&i32::from(lz)));
+}
+
+/// A map over the West Voz Forest (`vell`, which has no townsfolk) that
+/// borrows a Rim Elm talk placement.
+fn borrowed_map_toml(placement: u16) -> String {
+    format!(
+        r##########"
+name = "Forest Camp"
+base = {{ scene = {{ kind = "scene", name = "vell" }}, geometry = "none" }}
+floor_heights = [0]
+
+[tiles]
+origin = [20, 20]
+rows = [
+  "#######",
+  "#.....#",
+  "#.....#",
+  "#.....#",
+  "#######",
+]
+[tiles.legend]
+"#" = {{ walls = "all" }}
+"." = {{}}
+
+[[spawns]]
+id = "start"
+tile = [3, 3]
+facing = 0
+
+[[npcs]]
+id = "camp_hermit"
+model = {{ kind = "npc", scene = "town01", index = {placement} }}
+tile = [3, 1]
+facing = 4
+line = "elder_hello"
+"##########
+    )
+}
+
+#[test]
+fn townsfolk_borrowed_from_another_scene_draw_and_pose() {
+    let Some(mut host) = host() else {
+        return;
+    };
+    let placement = talk_placement(&host);
+    let mut files = PackFiles::default();
+    files.insert("pack.toml".into(), PACK.as_bytes().to_vec());
+    files.insert("dialog.toml".into(), DIALOG.as_bytes().to_vec());
+    files.insert(
+        "maps/forest_camp.toml".into(),
+        borrowed_map_toml(placement).into_bytes(),
+    );
+    let pack = ExpansionPack::from_files(&files).expect("the fixture parses");
+    let issues = validate(&pack);
+    assert!(!has_errors(&issues), "{issues:#?}");
+    let def = pack.maps["forest_camp"].clone();
+    host.activate_expansion_pack(Arc::new(pack))
+        .expect("the fixture activates");
+    host.enter_expansion_map("forest_camp", "start")
+        .expect("enter the pack map");
+
+    let scene = host.scene.as_ref().unwrap();
+    let res = host.resources.as_ref().unwrap();
+    let o = scene.overrides.as_ref().unwrap();
+    assert_eq!(o.npc_tmds.len(), 1, "the borrowed model is carried in");
+    let cat = catalog_live_scene_npcs(&host.index, scene, res, Some(&host.world.field_head_pool))
+        .expect("catalog");
+    assert_eq!(cat.entries.len(), 1);
+    let e = &cat.entries[0];
+    assert_eq!(
+        usize::from(e.placement.model_index),
+        o.npc_model_base,
+        "the model takes the first index past the base scene's own"
+    );
+    let t = &res.tmds[usize::from(e.placement.model_index)];
+    assert_eq!(
+        t.raw, o.npc_tmds[0].1,
+        "the pool holds the carried-in model"
+    );
+    assert!(t.tmd.objects.len() > 1, "a jointed townsperson");
+    assert!(
+        !legaia_tmd::mesh::tmd_to_vram_mesh(&t.tmd, &t.raw)
+            .indices
+            .is_empty()
+    );
+
+    // Its clips are Rim Elm's: the map's bundle is town01's, and the
+    // placement's clip names one of its records.
+    let town = legaia_engine_scene::scene::Scene::load(&host.index, "town01").unwrap();
+    let theirs = legaia_engine_scene::npc_catalog::scene_anm_bundle(&town).expect("town01 clips");
+    let ours = legaia_engine_scene::npc_catalog::scene_anm_bundle(scene).expect("the map's clips");
+    assert_eq!(ours.record_count, theirs.record_count);
+    let rec = usize::from(e.placement.anim_id)
+        .checked_sub(1)
+        .expect("a clip");
+    assert!(!ours.record_bytes(rec).is_empty());
+    let slot = npc_slot(0).unwrap();
+    let at = tile_centre_world(&def, 3, 1);
+    assert!(host.world.field_npc_draw_pose(slot, at).is_some());
 }

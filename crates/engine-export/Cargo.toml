@@ -11,6 +11,7 @@ name = "legaia_engine_export"
 path = "src/lib.rs"
 
 [dependencies]
+anyhow.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-scene.workspace = true
 legaia-actor-formats.workspace = true
@@ -25,6 +26,8 @@ serde_json.workspace = true
 [dev-dependencies]
 # The disc-gated export test assembles its scene through `scene_staging`.
 legaia-engine-world-views.workspace = true
+# The mesh-catalog test checks the committed catalog against the disc.
+legaia-expansion-format.workspace = true
 
 [[test]]
 name = "integration"

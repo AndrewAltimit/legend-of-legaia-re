@@ -18,7 +18,7 @@ use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::cutscene::seen_flag;
 use legaia_expansion_format::map::npc_slot;
 
-const MAP: &str = "rebirth_tower_1f";
+const MAP: &str = "genesis_1f";
 const HIDE: i16 = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
 
 fn host() -> Option<SceneHost> {

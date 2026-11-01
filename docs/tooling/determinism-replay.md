@@ -228,7 +228,7 @@ runs, and each has a control that must move the trace.
 | a three-wave pack formation fought to victory | synthetic `World` | another RNG seed |
 | [`builtin_poker_hand`](../../scripts/replays/expansion/builtin_poker_hand.replay.toml): the built-in table, hands folded until the fifth is dealt | synthetic `World` | another RNG seed |
 | [`builtin_golf_hole`](../../scripts/replays/expansion/builtin_golf_hole.replay.toml): the picker opened, golf picked, the first hole played out | synthetic `World` | the switches removed |
-| a walk into the Rebirth tower map with action-movement jumps (it reaches the arena's encounter zone) | `SceneHost` over the disc | the action-movement switch removed |
+| a walk into the Genesis Tower map with action-movement jumps (it reaches the arena's encounter zone) | `SceneHost` over the disc | the action-movement switch removed |
 
 The battle and both mode replays are disc-free; the map walk is disc-gated.
 A pack content edit moves its hash, so the two pack replays build their

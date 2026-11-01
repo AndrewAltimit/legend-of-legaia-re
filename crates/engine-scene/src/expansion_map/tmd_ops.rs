@@ -118,42 +118,101 @@ pub struct Placed<'a> {
 /// Fails on a part that does not parse, a vertex the move carries out of the
 /// `i16` range, or more than 1024 objects.
 pub fn bake(parts: &[Placed<'_>]) -> Result<Vec<u8>> {
-    struct Obj {
-        prims: Vec<u8>,
-        n_prim: u32,
-        verts: Vec<[i16; 3]>,
-        normals: Vec<[i16; 3]>,
-        scale: i32,
+    bake_cached(parts, &mut BakeCache::default())
+}
+
+/// One object of a part as [`bake`] copies it, before the move.
+struct SrcObj {
+    prims: Vec<u8>,
+    n_prim: u32,
+    verts: Vec<[i16; 3]>,
+    normals: Vec<[i16; 3]>,
+    scale: i32,
+}
+
+/// The parts [`bake_cached`] has read, by their bytes: a map's decorations
+/// place the same few meshes thousands of times, and reading a mesh's
+/// primitive sections is most of a bake.
+#[derive(Default)]
+pub struct BakeCache {
+    parts: std::collections::HashMap<(usize, u64), Vec<ReadPart>>,
+}
+
+/// A part's bytes and its objects as [`read_part`] read them.
+type ReadPart = (Vec<u8>, std::sync::Arc<Vec<SrcObj>>);
+
+impl BakeCache {
+    fn objects(&mut self, pi: usize, raw: &[u8]) -> Result<std::sync::Arc<Vec<SrcObj>>> {
+        let key = (raw.len(), bytes_hash(raw));
+        let bucket = self.parts.entry(key).or_default();
+        if let Some((_, objs)) = bucket.iter().find(|(r, _)| r.as_slice() == raw) {
+            return Ok(objs.clone());
+        }
+        let objs = std::sync::Arc::new(read_part(pi, raw)?);
+        bucket.push((raw.to_vec(), objs.clone()));
+        Ok(objs)
     }
-    let mut objs: Vec<Obj> = Vec::new();
+}
+
+/// A fast hash of a byte string (the FxHash mix over 8-byte words), for
+/// [`BakeCache`]'s buckets; a hit still compares the bytes.
+fn bytes_hash(raw: &[u8]) -> u64 {
+    let mut h = 0u64;
+    let (words, tail) = raw.as_chunks::<8>();
+    for w in words {
+        h = (h.rotate_left(5) ^ u64::from_le_bytes(*w)).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    for &b in tail {
+        h = (h.rotate_left(5) ^ u64::from(b)).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    h
+}
+
+/// Every object of part `pi`'s TMD `raw`, its primitive sections copied.
+fn read_part(pi: usize, raw: &[u8]) -> Result<Vec<SrcObj>> {
+    let tmd = legaia_tmd::parse(raw).with_context(|| format!("part {pi}"))?;
+    let mut out = Vec::with_capacity(tmd.objects.len());
+    for (oi, o) in tmd.objects.iter().enumerate() {
+        // The primitive section up to and including its terminator.
+        let groups =
+            legaia_prims::iter_groups(raw, o.primitives_byte_offset, o.primitives_byte_size)
+                .with_context(|| format!("part {pi} object {oi}"))?;
+        let len: usize = groups.iter().map(|g| g.header.total_bytes()).sum::<usize>() + 4;
+        let start = o.primitives_byte_offset;
+        let Some(prims) = raw.get(start..start + len) else {
+            bail!("part {pi} object {oi}: primitive section runs past the file");
+        };
+        let mut prims = prims.to_vec();
+        // A section that ran to the end of its buffer may lack the zero
+        // terminator's bytes; make sure it ends in one.
+        let tail = prims.len() - 4;
+        prims[tail..].fill(0);
+        out.push(SrcObj {
+            prims,
+            n_prim: groups.iter().map(|g| u32::from(g.header.count)).sum(),
+            verts: o.vertices.iter().map(|v| [v.x, v.y, v.z]).collect(),
+            normals: o.normals.iter().map(|n| [n.x, n.y, n.z]).collect(),
+            scale: o.header.scale,
+        });
+    }
+    Ok(out)
+}
+
+/// [`bake`] reading each distinct part once through `cache`, which can be
+/// kept across bakes: the output is byte-identical.
+pub fn bake_cached(parts: &[Placed<'_>], cache: &mut BakeCache) -> Result<Vec<u8>> {
+    let mut objs: Vec<SrcObj> = Vec::new();
     for (pi, part) in parts.iter().enumerate() {
-        let tmd = legaia_tmd::parse(part.raw).with_context(|| format!("part {pi}"))?;
+        let src = cache.objects(pi, part.raw)?;
         let rot = rotation_deg(part.rotation);
-        for (oi, o) in tmd.objects.iter().enumerate() {
-            // The primitive section up to and including its terminator.
-            let groups = legaia_prims::iter_groups(
-                part.raw,
-                o.primitives_byte_offset,
-                o.primitives_byte_size,
-            )
-            .with_context(|| format!("part {pi} object {oi}"))?;
-            let len: usize = groups.iter().map(|g| g.header.total_bytes()).sum::<usize>() + 4;
-            let start = o.primitives_byte_offset;
-            let Some(prims) = part.raw.get(start..start + len) else {
-                bail!("part {pi} object {oi}: primitive section runs past the file");
-            };
-            let mut prims = prims.to_vec();
-            // A section that ran to the end of its buffer may lack the zero
-            // terminator's bytes; make sure it ends in one.
-            let tail = prims.len() - 4;
-            prims[tail..].fill(0);
+        for (oi, o) in src.iter().enumerate() {
             let verts = o
-                .vertices
+                .verts
                 .iter()
                 .map(|v| {
                     let p = apply(
                         &rot,
-                        [f32::from(v.x), f32::from(v.y), f32::from(v.z)].map(|c| c * part.scale),
+                        [f32::from(v[0]), f32::from(v[1]), f32::from(v[2])].map(|c| c * part.scale),
                     );
                     let mut w = [0, 1, 2].map(|i| p[i] + part.offset[i]);
                     if let Some((m, t)) = &part.frame {
@@ -170,20 +229,19 @@ pub fn bake(parts: &[Placed<'_>]) -> Result<Vec<u8>> {
                 .normals
                 .iter()
                 .map(|n| {
-                    let mut p = apply(&rot, [f32::from(n.x), f32::from(n.y), f32::from(n.z)]);
+                    let mut p = apply(&rot, [f32::from(n[0]), f32::from(n[1]), f32::from(n[2])]);
                     if let Some((m, _)) = &part.frame {
                         p = apply(m, p);
                     }
                     p.map(|c| c.round().clamp(-32768.0, 32767.0) as i16)
                 })
                 .collect();
-            let n_prim = groups.iter().map(|g| u32::from(g.header.count)).sum();
-            objs.push(Obj {
-                prims,
-                n_prim,
+            objs.push(SrcObj {
+                prims: o.prims.clone(),
+                n_prim: o.n_prim,
                 verts,
                 normals,
-                scale: o.header.scale,
+                scale: o.scale,
             });
         }
     }

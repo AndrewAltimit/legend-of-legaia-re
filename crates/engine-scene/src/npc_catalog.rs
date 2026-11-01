@@ -106,9 +106,16 @@ pub fn scene_anm_prot(scene: &Scene) -> Option<u32> {
 /// section of a player-LZS container in one of the scene's PROT slots (the
 /// descriptor-count seed varies per scene, so the spread is tried), else the
 /// type-`0x05` chunk of a DATA_FIELD stream (`rikuroa`).
+///
+/// A pack map that borrows its townsfolk from another scene poses them from
+/// that scene's bundle instead
+/// ([`crate::expansion_map::SceneOverride::npc_clips`]).
 pub fn scene_anm_bundle(
     scene: &Scene,
 ) -> Option<legaia_actor_formats::player_anm::PlayerAnmBundle> {
+    if let Some(clips) = scene.overrides.as_ref().and_then(|o| o.npc_clips.as_ref()) {
+        return legaia_actor_formats::player_anm::parse(clips).ok();
+    }
     scene_anm_bundle_with_prot(scene).map(|(_, b)| b)
 }
 

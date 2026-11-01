@@ -509,7 +509,7 @@ fn a_pack_formation_resolves_through_the_world() {
 /// The Rebirth pack's quest chain parses, every line it names compiles, and
 /// the chain plays through on the events it waits for.
 #[test]
-fn the_rebirth_tower_chain_plays_through() {
+fn the_genesis_chain_plays_through() {
     let mut files = legaia_expansion_format::PackFiles::new();
     files.insert(
         "pack.toml".into(),

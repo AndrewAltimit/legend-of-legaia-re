@@ -76,6 +76,9 @@ pub struct ExpansionState {
     /// A map the pause menu's Travel page picked, `(map id, spawn)`, for the
     /// scene host to enter on its next tick.
     pub travel: Option<(String, String)>,
+    /// A closed mode seat's way back ([`modes::PackModeSeat::return_place`]),
+    /// for the scene host to enter on its next tick.
+    pub mode_return: Option<modes::ModeReturnPlace>,
     /// The Journal's Cards page asked for the card menu, opened once the
     /// pause menu has closed and the player walks again.
     pub open_cards: bool,

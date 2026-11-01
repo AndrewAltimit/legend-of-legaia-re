@@ -114,8 +114,10 @@ impl<'a> HostView<'a> {
     /// A pack map's particle emitters ride the same pass
     /// (`World::expansion_particle_quads`, through the follow frame): they
     /// are sheets of the same shape, and drawing them here puts them on both
-    /// hosts at once.
-    pub fn fog_prims(&self) -> Vec<ScreenPrim> {
+    /// hosts at once. `enhanced_lighting` is the host's enhanced-lighting
+    /// switch: an emitter that belongs to the lighting layer (a glow's
+    /// motes) draws only while it is on.
+    pub fn fog_prims(&self, enhanced_lighting: bool) -> Vec<ScreenPrim> {
         let world = self.world;
         let mut out: Vec<ScreenPrim> = Vec::new();
         if World::fog_mode(world.mode) && world.fog.gate {
@@ -130,12 +132,31 @@ impl<'a> HostView<'a> {
         {
             let fx = world.field_fx_view(&view);
             out.extend(
-                world.expansion_particle_quads(&fx).iter().map(|q| {
-                    fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth)
-                }),
+                world
+                    .expansion_particle_quads(&fx, enhanced_lighting)
+                    .iter()
+                    .map(|q| {
+                        fog_puff_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth)
+                    }),
             );
         }
         out
+    }
+
+    /// A pack map's light beams (`[[beams]]`, `World::expansion_beam_prims`)
+    /// through the follow frame: additive shafts with dust in them, an
+    /// enhancement drawn only under `enhanced_lighting` - with it off this
+    /// is empty and the frame stays retail-faithful. Both hosts append it to
+    /// the field screen-effect pass beside [`Self::fog_prims`].
+    pub fn beam_prims(&self, enhanced_lighting: bool) -> Vec<ScreenPrim> {
+        let world = self.world;
+        if !enhanced_lighting || world.expansion.map.is_none() {
+            return Vec::new();
+        }
+        let Some(view) = self.follow_frame().field_view() else {
+            return Vec::new();
+        };
+        world.expansion_beam_prims(&world.field_fx_view(&view))
     }
 
     /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
@@ -231,7 +252,7 @@ impl<'a> HostView<'a> {
     /// depth-tested at the far plane, so it fills only what the terrain left
     /// clear - retail's farthest-bucket draw order.
     pub fn world_map_sky_prims(&self) -> Vec<ScreenPrim> {
-        if self.world.mode != SceneMode::WorldMap {
+        if !self.world.shows_overworld() {
             return Vec::new();
         }
         sky_band_prims(&crate::world_map_sky::sky_band(
@@ -361,7 +382,7 @@ mod tests {
         let world = World::default();
         let cam = Camera::default();
         let v = HostView::new(&world, &cam, AABB);
-        assert!(v.fog_prims().is_empty());
+        assert!(v.fog_prims(true).is_empty());
         assert!(v.drop_shadow_prims().is_empty());
         assert!(v.move_strip_prims().is_empty());
         assert!(v.light_prims().is_empty());

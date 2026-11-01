@@ -23,6 +23,8 @@ struct Play {
     rt: QuestRuntime,
     started: BTreeSet<String>,
     completed: BTreeSet<String>,
+    /// Every line the tracker asked to show, in order.
+    lines: Vec<String>,
 }
 
 impl Play {
@@ -45,6 +47,7 @@ impl Play {
             rt: QuestRuntime::default(),
             started: BTreeSet::new(),
             completed: BTreeSet::new(),
+            lines: Vec::new(),
         }
     }
 
@@ -52,12 +55,15 @@ impl Play {
         self.rt.handle(&self.pack, &self.world, e);
         for n in self.rt.notices.drain(..) {
             match n {
-                QuestNotice::Started { quest, .. } => {
+                QuestNotice::Started { quest, dialog } => {
                     self.started.insert(quest);
+                    self.lines.extend(dialog);
                 }
-                QuestNotice::Completed { quest, .. } => {
+                QuestNotice::Completed { quest, dialog } => {
                     self.completed.insert(quest);
+                    self.lines.extend(dialog);
                 }
+                QuestNotice::Reminder { dialog, .. } => self.lines.push(dialog),
                 _ => {}
             }
         }
@@ -122,7 +128,7 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
     p.level(29);
     assert!(!p.started.contains("tower_rumour"), "nothing below 30");
     p.level(30);
-    p.enter("rebirth_tower_1f");
+    p.enter("genesis_1f");
     p.talk("tower_guide");
     assert!(p.done("tower_rumour"));
     assert!(p.started.contains("tower_trial"));
@@ -131,8 +137,13 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
     p.enter("isles_beach");
     p.talk("isles_ferrywoman");
     p.enter("isles_village");
+    let before = p.lines.len();
     p.talk("isles_elder");
     assert!(p.done("isles_landfall"), "landfall at 30");
+    // The elder's welcome also sends the party into the Thornwood: one
+    // talk, one line, the next quest already under way.
+    assert!(p.started.contains("isles_thornwood"));
+    assert_eq!(p.lines[before..], ["isles_elder_hello".to_string()]);
     p.talk("isles_fisher");
     for _ in 0..3 {
         p.win("isles_shore");
@@ -151,7 +162,7 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
 
     // The Warden's Trial at 40 (the three wins came on the Isles).
     p.level(40);
-    p.enter("rebirth_tower_1f");
+    p.enter("genesis_1f");
     p.talk("tower_guide");
     assert!(p.done("tower_trial"), "trial at 40");
 
@@ -170,13 +181,13 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
 
     // 2F at 50: the Cinder Warden.
     p.level(50);
-    p.enter("rebirth_tower_2f");
+    p.enter("genesis_2f");
     p.talk("ember_brazier");
     p.boss("cinder_warden");
     assert!(p.done("ember_stair"));
 
     // 3F: the garden starts on its own; three herds.
-    p.enter("rebirth_tower_3f");
+    p.enter("genesis_3f");
     p.win("garden_gauntlet");
     assert!(p.done("hanging_garden"));
     for _ in 0..3 {
@@ -186,20 +197,20 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
 
     // 4F at 60: the Colossus.
     p.level(60);
-    p.enter("rebirth_tower_4f");
+    p.enter("genesis_4f");
     p.talk("vault_heart");
     p.boss("verdant_colossus");
     assert!(p.done("verdant_vault"));
 
     // 5F: the keeper, his tables.
-    p.enter("rebirth_tower_5f");
+    p.enter("genesis_5f");
     p.talk("rest_keeper");
     assert!(p.done("gamblers_rest"));
     p.talk("rest_keeper");
     for m in [
         "tower-high-table",
         "wardens-duel",
-        "rebirth-links",
+        "genesis-links",
         "spiral-circuit",
         "old-vault",
         "tower-high-table",
@@ -212,7 +223,7 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
 
     // 6F at 70: the gauntlet and the Regent, then the sentinel bounty.
     p.level(70);
-    p.enter("rebirth_tower_6f");
+    p.enter("genesis_6f");
     p.talk("regent_seat");
     p.win("engine_gauntlet");
     p.boss("iron_regent");
@@ -226,22 +237,22 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
 
     // 7F at 80: the Seraph.
     p.level(80);
-    p.enter("rebirth_tower_7f");
+    p.enter("genesis_7f");
     p.talk("sanctum_echo");
     p.boss("azure_seraph");
     assert!(p.done("sanctum_echoes"), "the Seraph at 80");
 
     // 8F at 88: the Sovereign, then its cutscene, then the echo.
     p.level(88);
-    p.enter("rebirth_tower_8f");
+    p.enter("genesis_8f");
     assert!(p.done("every_floor"));
     p.talk("hollow_throne");
     p.boss("hollow_sovereign");
     assert!(p.done("tower_sovereign"));
-    assert!(!p.started.contains("rebirth"), "not under the cutscene");
+    assert!(!p.started.contains("last_vigil"), "not under the cutscene");
     // The ending cutscene's last step raises `throne_broken`.
     p.send(QuestEvent::FlagSet("throne_broken".into()));
-    assert!(p.started.contains("rebirth"));
+    assert!(p.started.contains("last_vigil"));
     for _ in 0..5 {
         p.world.play_seconds += 700;
         p.talk("hollow_throne");
@@ -280,7 +291,7 @@ fn every_rebirth_quest_is_reachable_and_the_chain_completes() {
     // 99: Rebirth, and under the stone the First Breath.
     p.level(99);
     p.talk("tower_guide");
-    assert!(p.done("rebirth"));
+    assert!(p.done("last_vigil"));
     assert!(p.started.contains("first_breath"));
     p.boss("first_breath");
     assert!(p.done("first_breath"));

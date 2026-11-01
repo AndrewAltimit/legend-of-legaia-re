@@ -858,7 +858,7 @@ active_scene = "town01"
         file.push_switch(
             10,
             SwitchChange::Map {
-                map: "rebirth_tower_1f".into(),
+                map: "genesis_1f".into(),
                 spawn: "entrance".into(),
             },
         );
