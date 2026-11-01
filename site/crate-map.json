@@ -3092,6 +3092,7 @@
     "items",
     "manifest",
     "map",
+    "map_beams",
     "map_detail",
     "map_detail_rules",
     "map_rest",
