@@ -514,6 +514,8 @@ pub(super) fn displayed_module_cam_live(
 /// The strike loop's framing case (`jal 0x801D5854` with `a1 = 7` at
 /// `0x801E36E8`), armed on every `0x1E` pass.
 const STRIKE_LOOP_STATE: u8 = 0x1E;
+/// A monster's walk clip `+0x1D9` (the tag-`1` entry, `ActionSteer::walk_clock`).
+const WALK_CLIP: u8 = 1;
 /// The anim-cursor ring (`+0x17A`, one halfword a pass, slot `0` live).
 const CURSOR_RING: u32 = 0x17A;
 /// Case 7's focus endpoint off the midpoint the RAM's arm read, within which
@@ -538,7 +540,7 @@ const STRIKE_FOCUS_FIT: i32 = 4;
 /// re-faced onto), but only by a few units, and is left on the RAM's: the
 /// image child tests its yaw on the gate tick's framing, which is the RAM's.
 ///
-/// `None` off the strike loop, on a seat that has not moved over those
+/// `None` off the strike loop, off a monster's walk clip, on a seat that has not moved over those
 /// slots, or when the RAM's focus endpoint is not the midpoint of the body
 /// pair slot `1` names and the target's (another framing owns the table).
 pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
@@ -547,7 +549,14 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     }
     let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
     let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
-    if seat > 7 || !in_ram(actor) {
+    // A monster on its walk clip: a swing's own root motion moves the body
+    // pair too, but the frame of a seat on its strike clip is drawn from
+    // the replay's pose (`battle_map03_grude_strike` read `.982` to `.980`
+    // walked back against it).
+    if !(3..=7).contains(&seat)
+        || !in_ram(actor)
+        || game_anchors::u8_at(ram, actor + 0x1D9) != WALK_CLIP
+    {
         return None;
     }
     let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));

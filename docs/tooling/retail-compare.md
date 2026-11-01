@@ -1526,13 +1526,13 @@ every ailment the captured word does not carry
 (`BattleState::capture_reseat_bars`), and takes back the HP and MP the
 replay's rounds dealt off a combatant standing on both sides, whose bar the HUD
 draws (`battle_tower_guardian_strike`'s Vahn read `258` where retail's reads
-`498`). Medusa's frame reads `.885` to `.978` with both. What the Spirit
-rounds still leave apart is the camera's own history: the focus is the one
-component the strike framing's moving endpoint keeps off retail's, and the
-replay's glide reaches it from wherever its rounds left it.
-`battle_retona_king_frog_strike` reads `.957` to `.928` on that alone (focus z
-`541` against `528` before and retail's displayed `512`), its Noa on retail's
-displayed keyframe and her body pair two units closer to retail's.
+`498`). Medusa's frame reads `.885` to `.978` with both. The camera's own
+history the Spirit rounds leave apart is the focus of a strike framing whose
+endpoint moves with a walker: tested against the RAM's endpoint, the child's
+framing on the displayed ground missed it by the walker's half step and kept
+its own glide's focus (`battle_retona_king_frog_strike`, focus z `541` against
+retail's displayed `512`, `image` `.928`). Tested against the displayed pass's
+own endpoint ([the walker's camera](#a-recentre-the-capture-already-holds)), it reads `.984`.
 
 ### The Mystic Shield a capture already holds
 
