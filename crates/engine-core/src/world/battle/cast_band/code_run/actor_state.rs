@@ -60,7 +60,13 @@ impl World {
             hp_bar_delta: a.battle.hp_bar_pending,
             hp: a.battle.hp,
             flags: a.battle.field_flags,
-            playing_anim: a.battle.current_anim,
+            // `+0x1D9` is the clip the body is playing, a hit reaction
+            // included: the engine plays those on the reaction channel
+            // (`World::battle_current_anim`). Reading the action channel
+            // alone left a reacting seat at `0`, so a sweep's `+0x1D9 == 0`
+            // guard (PROT 0904 arm 12) struck it again every pass and its
+            // reaction cue fired on each.
+            playing_anim: self.battle_current_anim(slot as usize),
             staged_anim: a.battle.queued_anim,
             restage: 0,
             target_code: a.battle.active_target,
