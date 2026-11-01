@@ -373,8 +373,9 @@ function zoneForKey(key) {
 /* Explore sidebar: every interactive page, grouped like the home launcher,
    so each one is reachable from the left nav on any explore page. */
 const EXPLORE_GROUPS = [
-  { label: 'play',           title: 'Play', keys: ['play', 'minigames', 'modes'] },
-  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench', 'tooling/expansion-workbench'] },
+  { label: 'play',           title: 'Play', keys: ['play', 'minigames'] },
+  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
+  { label: 'expansion packs', title: 'Expansion Packs', keys: ['modes', 'tooling/expansion-workbench'] },
   { label: 'browse the disc', title: 'Explore the game data', keys: [
     '#Viewers', 'viewer', 'media', 'world-overview', 'disc-map',
     '#Game guide', 'world', 'characters', 'npcs', 'monsters', 'arts', 'magic', 'shops',
