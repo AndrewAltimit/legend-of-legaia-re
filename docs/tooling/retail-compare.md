@@ -1476,7 +1476,13 @@ Two limits are measured rather than argued:
   replays its turn ahead of the caster - sat out, the lone Vahn of the three
   `koru_*_mid_cast` captures left the yaw counter some `1650` units off
   retail's (`camera` `1.0` to `.875` on each). Under a strike it commits
-  Attack, so it sits out with the spent monsters.
+  Attack, so it sits out with the spent monsters. The HUD's HP readout is
+  the measured win (Viguro's Gala on `875` where the extra swing left
+  `846`, `battle_korb2_aluru_strike`'s on `1287`, not `1129`); the frame
+  scores barely move and not one way (`image` `.637` to `.611` on Viguro,
+  whose difference is the cast's particle placement, `.946` to `.922` on
+  Aluru, whose stream and swing frame changed, `.982` to `.996` on
+  `battle_rugi_slippery_poisonous_breath_mid_cast`).
 - **A live key keeps its key.** A combatant whose key the capture holds
   live ranks behind the acting seat - the turn pick took the seat over it -
   so retail had not run it yet. `battle_melee_hit_spark`'s Gimard holds `26`
