@@ -75,7 +75,7 @@ impl RetailBattle {
                     facing: None,
                     defeat_lanes: None,
                     status: 0,
-                    spent_key: false,
+                    init_key: None,
                 })
             })
             .collect()
@@ -321,6 +321,106 @@ impl RetailBattle {
             *o = s != acting
                 && alive
                 && (counter || self.init_keys.get(pool).copied().flatten() == Some(0));
+        }
+        out
+    }
+
+    /// Per engine battle slot, the initiative key the seed stands the
+    /// combatant on for the replayed round ([`BarSeed::init_key`]).
+    ///
+    /// A party action capture sits out its spent combatants
+    /// ([`Self::engine_spent_keys`]) and keeps the engine's roll for the
+    /// rest.
+    ///
+    /// A capture of a **monster's** action is taken inside the round the
+    /// pick `FUN_801DABA4` ordered by its keys, and every key the capture
+    /// holds is that round's remainder: `0` for each combatant that already
+    /// dispatched (the action SM's `0x0C` stores it, `sh zero,0x16c(s3)` at
+    /// `0x801E2CDC`), live for each still to act. The acting monster was
+    /// that round's maximum when it was picked (the pick only ever takes
+    /// the running maximum, `0x801DACA0..0x801DAD08`), and its own key is
+    /// already spent. So the replayed round stands every combatant on its
+    /// captured key (a downed one on `0`) and the actor on one above them
+    /// all: the spent monsters sit out, the actor acts ahead of everyone
+    /// still to act, and the rest follow in retail's order. Under a monster's
+    /// cast a spent party member is the exception: it replays its turn first.
+    /// The drive commits it Spirit there, which moves no bar, and the turn swings the camera the way
+    /// the capture's frame was taken under (sat out, the lone Vahn of the
+    /// three `koru_*_mid_cast` captures left the yaw counter some `1650`
+    /// units off retail's).
+    /// Left to the engine's own roll, a monster that had already struck
+    /// (`battle_retona_viguro_lv2_thunder_break_mid_cast`'s seat `4`, whose
+    /// hit the captured HP already holds) struck again ahead of the caster,
+    /// and live keys above the caster's put `battle_map01_lippian_kiss_of_death_mid_cast`'s
+    /// other two monsters ahead of it.
+    ///
+    /// A counterattack capture keeps the party rule: its drive reaches the
+    /// counterer's strike through the member's own turn.
+    pub fn engine_init_keys(
+        &self,
+    ) -> [Option<u16>; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS] {
+        let mut out = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
+        let SeedPlan::Action { seat, .. } = self.seed_plan() else {
+            return out;
+        };
+        if seat < 3 {
+            for (o, spent) in out.iter_mut().zip(self.engine_spent_keys()) {
+                *o = spent.then_some(0);
+            }
+            return out;
+        }
+        let pc = usize::from(self.party_count);
+        let acting = usize::from(engine_seat(self.active_actor, self.party_count));
+        let key_of = |s: usize| {
+            let pool = if s < pc { s } else { 3 + (s - pc) };
+            let alive = if s < pc {
+                self.party.get(s).copied().flatten()
+            } else {
+                self.monsters.get(s - pc).copied().flatten()
+            }
+            .is_some_and(|c| c.hp != 0);
+            // A combatant the capture holds down - a victim the replay
+            // revives for its kill among them - is out of this round.
+            if alive {
+                self.init_keys.get(pool).copied().flatten()
+            } else {
+                Some(0)
+            }
+        };
+        // Retail's compare is mixed-sign: a key of `0x8000` or more never
+        // wins (`FUN_801DABA4`), so the actor's key stays below it.
+        let top = (0..out.len())
+            .filter(|&s| s != acting)
+            .filter_map(key_of)
+            .filter(|&k| k < 0x8000)
+            .max()
+            .unwrap_or(0);
+        let caster = top.saturating_add(1).min(0x7FFE);
+        // The drive commits the party Spirit only under a monster's cast
+        // (`BattleDrive::Action`); under its strike a member commits Attack,
+        // and a replayed swing would land twice.
+        let spirit = self.queued_category == 2;
+        for (s, o) in out.iter_mut().enumerate() {
+            *o = match key_of(s) {
+                _ if s == acting => Some(caster),
+                // A party member that already acted replays its turn ahead
+                // of the actor: the drive commits it Spirit, which moves no
+                // bar, and the camera its turn swings is the one retail's
+                // frame was taken under.
+                Some(0)
+                    if spirit
+                        && s < pc
+                        && self
+                            .party
+                            .get(s)
+                            .copied()
+                            .flatten()
+                            .is_some_and(|c| c.hp != 0) =>
+                {
+                    Some(caster + 1)
+                }
+                k => k,
+            };
         }
         out
     }

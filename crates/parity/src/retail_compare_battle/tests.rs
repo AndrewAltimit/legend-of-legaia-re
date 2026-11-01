@@ -360,6 +360,46 @@ fn spent_combatants_keep_their_heading_until_the_strike_commits() {
     );
 }
 
+/// A monster's action capture replays the rest of its round on the
+/// captured keys: the actor goes first, a combatant still to act keeps its
+/// key, a spent monster sits out, and a spent party member replays its turn
+/// first only under a cast, where the drive commits it Spirit.
+#[test]
+fn a_monster_capture_replays_its_round_on_the_captured_keys() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 3);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x2B);
+    put8(&mut ram, ctx + 0x13, 4);
+    for c in 0..3 {
+        put8(&mut ram, FORMATION_CELL + c, 0x0D);
+    }
+    for (slot, base) in [
+        (0u32, 0x800E_C9E8u32),
+        (3, 0x800E_D000),
+        (4, 0x800E_D800),
+        (5, 0x800E_E000),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.active_actor = 4;
+    b.queued_category = 2;
+    b.init_keys = vec![Some(0), None, None, Some(40), Some(0), Some(0)];
+    // Party seat 0 spent (replays Spirit first), monster 3 still to act,
+    // the caster (retail 4, engine 2) above it, monster 5 spent.
+    let k = b.engine_init_keys();
+    assert_eq!(&k[..4], &[Some(42), Some(40), Some(41), Some(0)]);
+    // Under a strike the member's replayed Attack would land twice.
+    b.queued_category = 3;
+    assert_eq!(b.engine_init_keys()[0], Some(0));
+}
+
 /// A counterattack capture - a party seat's strike loop inside a monster's
 /// turn (`ctx[+0x274]`) - sits out every other living combatant, the live
 /// keys included: they rank behind the turn the round has reached.

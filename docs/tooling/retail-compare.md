@@ -982,7 +982,7 @@ for a reason that is not a port defect:
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
-| [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_spent_keys`, the `:k` tail of `LEGAIA_BATTLE_BARS` |
+| [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_init_keys`, the `:k[<key>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
 | [Seat the per-pass parts](#parts-a-module-seats-on-every-pass) | the live parts of every record a module seats on every pass | `SummonScene::install_part_snapshot`, `LEGAIA_SEAT_CAST_PARTS` |
 | [Stand the effect billboards](#the-effect-pools-billboards-are-stream-history) | the live effect-pool children `_DAT_8007BD30 + 0x10` | `World::install_effect_child_snapshot`, `LEGAIA_SEAT_EFFECT_CHILDREN` |
@@ -1445,9 +1445,9 @@ does:
 
 So on a pad-driven capture of a **party** seat, every other living combatant
 whose key the capture holds spent has its engine key zeroed on the first
-battle tick (`RetailBattle::engine_spent_keys`; the `:k` tail of a
-`LEGAIA_BATTLE_BARS` entry carries it to the image child, and
-`apply_bar_seeds` clears `init_key`). The setup seeder has drawn by then, so
+battle tick (`RetailBattle::engine_init_keys` over
+`RetailBattle::engine_spent_keys`; the `:k` tail of a `LEGAIA_BATTLE_BARS`
+entry carries it to the image child, and `apply_bar_seeds` sets `init_key`). The setup seeder has drawn by then, so
 the stream is unchanged; the capture's seat keeps the key it rolled and the
 round is its own. Six captures move, none down:
 
@@ -1460,11 +1460,23 @@ round is its own. Six captures move, none down:
 
 Two limits are measured rather than argued:
 
-- **A monster's action keeps every key.** Its drive plays the party's turns
-  on purpose (the Spirit commits that keep a caster standing until its turn).
-  With the party sat out the three parked-Gaza frames score worse (`image`
-  `.718` to `.551`, `.620` to `.595`, `.608` to `.503`) and two Delilas casts
-  read their depth a step early (`camera` `1.0` to `.999`).
+- **A monster's action replays the round's remainder.** The turn pick
+  `FUN_801DABA4` only takes the running maximum, so the acting monster held
+  the round's highest key when it was picked, and the capture's keys are the
+  rest of that round: `0` for each combatant that already dispatched, live
+  for each still to act. The seed stands every combatant on its captured key
+  (a downed one on `0`) and the actor on one above them all
+  (`RetailBattle::engine_init_keys`; `:k<key>` in the child env). Left to the
+  engine's own roll, `battle_retona_viguro_lv2_thunder_break_mid_cast`'s
+  seat `4`, whose swing the captured HP already holds, struck a second time
+  ahead of the caster, and `battle_map01_lippian_kiss_of_death_mid_cast`'s
+  other two monsters, whose live keys the engine had rolled above the
+  caster's, acted first. Under a monster's **cast** a spent party member is
+  the exception: the drive commits it Spirit, which moves no bar, and it
+  replays its turn ahead of the caster - sat out, the lone Vahn of the three
+  `koru_*_mid_cast` captures left the yaw counter some `1650` units off
+  retail's (`camera` `1.0` to `.875` on each). Under a strike it commits
+  Attack, so it sits out with the spent monsters.
 - **A live key keeps its key.** A combatant whose key the capture holds
   live ranks behind the acting seat - the turn pick took the seat over it -
   so retail had not run it yet. `battle_melee_hit_spark`'s Gimard holds `26`

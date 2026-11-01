@@ -13,7 +13,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: None,
             defeat_lanes: None,
             status: 0,
-            spent_key: false,
+            init_key: None,
         },
         BarSeed {
             slot: 4,
@@ -23,7 +23,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: Some(0x9F0),
             defeat_lanes: Some(0),
             status: 0,
-            spent_key: false,
+            init_key: None,
         },
         BarSeed {
             slot: 2,
@@ -33,7 +33,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: None,
             defeat_lanes: None,
             status: 0x1,
-            spent_key: true,
+            init_key: Some(0),
         },
         BarSeed {
             slot: 3,
@@ -43,7 +43,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             facing: None,
             defeat_lanes: Some(0xd0d),
             status: 0x1C10,
-            spent_key: true,
+            init_key: Some(154),
         },
     ];
     assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
@@ -69,7 +69,7 @@ fn an_empty_seat_seed_stands_the_seat() {
         facing: None,
         defeat_lanes: None,
         status: 0,
-        spent_key: false,
+        init_key: None,
     };
     let back = bar_seeds_from_env(&bar_seeds_to_env(&[seed]));
     assert_eq!(back, vec![seed]);
@@ -95,7 +95,7 @@ fn a_ground_seed_holds_the_seed_recentre() {
         facing: None,
         defeat_lanes: None,
         status: 0,
-        spent_key: false,
+        init_key: None,
     };
     apply_bar_seeds(&mut world, &[bars]);
     assert!(!world.battle.seed_recentre_held);
