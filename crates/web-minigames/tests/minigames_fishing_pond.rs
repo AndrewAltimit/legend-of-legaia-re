@@ -262,3 +262,36 @@ fn exchange_buy_spends_the_session_pool_and_latches_one_time_rows() {
     let prizes = mg.fishing_prizes_json();
     assert!(prizes.contains(r#""qty":1"#), "{prizes}");
 }
+
+/// The page frames the pond through the venue's scripted camera, not a
+/// visitor orbit: the shore view while idle, then the cast press and the
+/// wind-up move it out over the water, and a recast brings the shore view
+/// back. Retail gives the player no camera control in the fishing mode.
+#[test]
+fn the_page_camera_follows_the_cast() {
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    assert!(mg.fishing_pond_start(0, 1, 2, 60, 0, 0, 0, 0, 0xBADF00D));
+    let aspect = 4.0 / 3.0;
+    let before = mg.fishing_venue_vp(0, aspect);
+    assert_eq!(before.len(), 16);
+    mg.fishing_pond_tick(0, false, 0);
+    let shore = mg.fishing_venue_vp(0, aspect);
+    assert_eq!(shore, before, "the idle frame is the seat framing");
+    mg.fishing_pond_tick(0, true, 0);
+    for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES {
+        mg.fishing_pond_tick(0, false, 0);
+    }
+    let cast = mg.fishing_venue_vp(0, aspect);
+    assert_eq!(cast.len(), 16);
+    assert_ne!(cast, shore, "the wind-up moves the camera");
+    // The sky strip is re-seated with the camera.
+    assert!(!mg.fishing_sky_positions(0).is_empty());
+    eprintln!(
+        "[ran] shore vp {:?}\n      cast vp {:?}",
+        &shore[12..16],
+        &cast[12..16]
+    );
+}

@@ -41,6 +41,7 @@ mod pre_hook;
 mod rod;
 mod segment_clip;
 mod tracked_points;
+mod venue_camera;
 mod walk_grid_probe;
 mod wander;
 
@@ -51,6 +52,7 @@ pub use pre_hook::*;
 pub use rod::*;
 pub use segment_clip::*;
 pub use tracked_points::*;
+pub use venue_camera::*;
 pub use walk_grid_probe::*;
 pub use wander::*;
 

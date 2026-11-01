@@ -20,8 +20,10 @@
 //!   `0..=2`) at [`crate::fishing_venue::party_placements`], the lead on his
 //!   party-bank idle, the others on their venue-bank clips; the lead's
 //!   facing is the aim the D-pad turns (the venue's lead actor);
-//! - the **camera** is [`crate::fishing_venue::venue_camera_view`] over the
-//!   lead;
+//! - the **camera** is the venue's scripted camera
+//!   ([`crate::fishing_venue::venue_view`]): the shore view over the lead, the
+//!   dolly out over the water on the cast, the in-water view, the catch
+//!   close-up and showcase;
 //! - the **water** heaves: the walk ground's corners are re-resolved every
 //!   frame through the venue's live floor-height ladder
 //!   ([`crate::fishing_venue::FishingVenue::floor_ladder`]), whose head the
@@ -767,8 +769,14 @@ impl FishingSurface {
             );
         }
         let (x, y, z, facing) = lead_pose.unwrap_or((seats[0].x, 0, seats[0].z, seats[0].facing));
-        scene.camera = venue_camera_view(x, y, z, facing);
-        let sky = sky_positions(&scene.camera, x, fa_yaw(facing));
+        // The venue's scripted camera (shore view, cast dolly, in-water view,
+        // catch close-up and showcase); the lead's shore view until it arms.
+        let (camera, yaw) = match (lead, crate::fishing_venue::venue_view(mg)) {
+            (Some(_), Some(view)) => (view, mg.fishing_venue.camera.camera().rot[1]),
+            _ => (venue_camera_view(x, y, z, facing), fa_yaw(facing)),
+        };
+        scene.camera = camera;
+        let sky = sky_positions(&scene.camera, x, yaw);
         let base = scene.sky_base;
         scene.positions[base..base + sky.len()].copy_from_slice(&sky);
         if let Some((_, hf)) = assets.ground.as_ref() {
