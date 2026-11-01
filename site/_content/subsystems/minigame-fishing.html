@@ -364,7 +364,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
     <p>Measured over the ten species, three rods and twenty seeds each, holding reel A (Cross) from the hook breaks the line in about two fights of three, and reel B (Square) in nine of ten. Reeling only while the gauge is under half breaks none of the 600 and lands every one. Reel A divides harder and recovers line faster, so it is still the better button.</p>
   </div>
   <h3 id="port-fight">The port&rsquo;s fight model</h3>
-  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. What stays engine-side is the fish&rsquo;s position, which retail measures the line record from; the port pays line out by the swim on a slack reel and reels it in at fixed rates, listed under <a href="#internals">Internals</a>.</p>
+  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. A fish run out past record <code>0x899</code> adds <code>step * 300</code> to the gauge each frame, so a slack line far out climbs to the ceiling instead of bleeding off. What stays engine-side is the fish&rsquo;s position, which retail measures the line record from; the port pays line out by the swim on a slack reel and reels it in at fixed rates, listed under <a href="#internals">Internals</a>.</p>
   <p class="dg-note">Provenance: gauge <code>DAT_801D9168</code> updated at the tail of <code>FUN_801D4004</code>; exits in <code>FUN_801D26CC</code> at <code>0x801D3AFC..0x801D3CD4</code>.</p>
 </section>
 
@@ -536,7 +536,7 @@ power % = power * 100 &gt;&gt; 12</code></pre>
     <summary>Open: what the port still reconstructs</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Line break.</strong> The ceiling roll and the spent lure are ported; the off-screen latch, the far-record strain and the no-lure screen after the last lure are not.</li>
+        <li><strong>Line break.</strong> The ceiling roll, the spent lure and the far-record strain are ported; the off-screen latch and the no-lure screen after the last lure are not.</li>
         <li><strong>Cast camera.</strong> Retail cuts from behind the party to a low shot over the water; those camera writes are not decoded, so the port keeps the shore view throughout.</li>
         <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
         <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
