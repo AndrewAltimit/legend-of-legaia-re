@@ -544,7 +544,9 @@ engine verdict:
   no live sheet is spawned fresh from its stager record and its first slice
   run (`World::spawn_sprite_arm_sheet`), then seated like the others;
   `kor_field_route_walk` reads `.909` (`.862` before), the band of steam
-  across the stair rail drawn where retail's frame has it.
+  across the stair rail drawn where retail's frame has it, and the two other
+  Sol Tower stair walks `kor3_field_route_walk` / `kor4_field_route_walk`
+  `.988` / `.984` (`.954` / `.953`).
 
   A mesh-bearing ambient part that turns is a clock of the same kind. The
   part tick adds its bank rates `+0x80..+0x84` to the render banks every
