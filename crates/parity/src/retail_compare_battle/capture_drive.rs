@@ -863,6 +863,18 @@ impl RetailBattle {
                             && self.caster_clip > 1
                             && self.span_gate == SpanGate::Age { accum: 0 }))
                     .then_some(self.strike_cursor),
+                    // On a dynamic art slot the cursor cannot tell a starter
+                    // from the art the loop staged behind it - both install
+                    // into slot `0x11` - so the latched raw id names which
+                    // commit the capture's age counts from.
+                    latched: (seat < 3
+                        && self.queued_category == 3
+                        && self.arts_queue
+                        && matches!(state, 0x1E | 0x1F)
+                        && matches!(self.caster_clip, 0x10 | 0x11)
+                        && self.caster_latched >= 0x10
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.caster_latched),
                     // A party swing captured after its victim's death commit:
                     // the close-up accumulator restarts on every idle cycle
                     // of the attacker (its natural-end re-commit), so the

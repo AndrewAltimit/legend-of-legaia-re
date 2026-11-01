@@ -237,6 +237,17 @@ pub struct ActionSteer {
     /// adaptive frame step drifts the counter faster - so the capture's
     /// word is taken outright rather than only within [`YAW_CLOCK_SLACK`].
     pub rung: Option<u16>,
+    /// The acting seat's latched raw staged id `+0x1DB` on an
+    /// [`SpanGate::Age`] capture on a dynamic art slot: the byte the anim
+    /// commit copies off `+0x1DA` before it rewrites an id `>= 0x10` to slot
+    /// `0x10` / `0x11` (`0x8004AEB0..0x8004AEB8`). A starter and the art
+    /// behind it install into the same slot, and once the strike loop has
+    /// staged the art the strike cursor names both, so an `accum 0` capture
+    /// met on clip and cursor alone takes the starter's commit for the art's
+    /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: retail latched on
+    /// the Hyper Art `0x1E` at accumulator `0`, the engine still on its
+    /// SpecialStarter `0x1A`).
+    pub latched: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -789,6 +800,9 @@ impl BattleDrive {
                 if let Some(n) = steer.rung {
                     s.push_str(&format!(",n{n}"));
                 }
+                if let Some(l) = steer.latched {
+                    s.push_str(&format!(",l{l}"));
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -850,6 +864,8 @@ impl BattleDrive {
                 steer.drift_step = Some(r.parse().ok()?);
             } else if let Some(n) = last.strip_prefix('n') {
                 steer.rung = Some(n.parse().ok()?);
+            } else if let Some(l) = last.strip_prefix('l') {
+                steer.latched = Some(l.parse().ok()?);
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -1179,6 +1195,11 @@ impl BattleDrive {
                                     .actors
                                     .get(usize::from(engine_seat(seat, pc)))
                                     .is_some_and(|a| a.battle.strike_index == u)
+                            }) && steer.latched.is_none_or(|l| {
+                                world
+                                    .actors
+                                    .get(usize::from(engine_seat(seat, pc)))
+                                    .is_some_and(|a| a.battle.latched_anim == l)
                             }) && (!steer.spoils
                                 || world.battle_ctx.message_id
                                     == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT)

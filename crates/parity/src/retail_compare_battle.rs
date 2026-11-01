@@ -414,6 +414,9 @@ pub struct RetailBattle {
     pub cam_accum: u32,
     /// The active seat's committed clip `+0x1D9`.
     pub caster_clip: u8,
+    /// The active seat's latched raw staged id `+0x1DB` - the byte its last
+    /// commit installed, before an art id was rewritten to a dynamic slot.
+    pub caster_latched: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
     /// Whether the active party seat's action-entry table

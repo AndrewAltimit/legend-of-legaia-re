@@ -2163,6 +2163,15 @@ same state byte. Three refinements:
   turn's first clip that runs as long (`battle_vahn_tri_somersault_super`'s
   Somersault sits at cursor `5`; the age alone takes the first Down swing at
   `3`).
+- **Latched id.** The same captures also gate the acting seat's latched raw
+  staged id `+0x1DB`, the byte the anim commit copies before it rewrites an
+  id `>= 0x10` to its dynamic slot (`0x8004AEB0..0x8004AEB8`). A starter and
+  the art behind it both install into slot `0x11`, and once the strike loop
+  has staged the art and hit the terminator the cursor names both:
+  `minigame_muscle_dome_retail_skeleton_hyper_arts` holds Vahn on the Hyper
+  Art `0x1E` at accumulator `0`, the pass it committed, and on clip and cursor
+  alone the drive took the first `0x1F` pass, with the SpecialStarter `0x1A`
+  still playing (`image` `.184` to `.642`).
 
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the

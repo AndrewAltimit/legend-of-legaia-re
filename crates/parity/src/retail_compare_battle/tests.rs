@@ -1444,3 +1444,45 @@ fn an_attacks_yaw_rung_holds_without_a_reseed_entry() {
     put8(&mut ram, 0x8018_8000 + 0x10 * 0x100 + 0x87, 2);
     assert_eq!(rung(&ram), None);
 }
+
+/// A party arts capture on a dynamic art slot names the latched raw id
+/// `+0x1DB` its last commit installed: the SpecialStarter and the Hyper Art
+/// behind it both play in slot `0x11`, and once the strike loop has staged
+/// the art the cursor names both, so the drive's age gate also waits for the
+/// engine to latch the capture's id.
+#[test]
+fn an_arts_capture_on_the_art_slot_gates_on_the_latched_id() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1F);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, ctx + 0x15, 5);
+    put8(&mut ram, FORMATION_CELL, 0x0D);
+    let actor = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, actor);
+    put8(&mut ram, actor + 0x1DD, 3);
+    put8(&mut ram, actor + 0x1DE, 3);
+    for (i, b) in [0x0C, 0x0F, 0x0F, 0x1A, 0x1E].into_iter().enumerate() {
+        put8(&mut ram, actor + 0x1DF + i as u32, b);
+    }
+    put8(&mut ram, actor + 0x1D9, 0x11);
+    put8(&mut ram, actor + 0x1DA, 0x11);
+    put8(&mut ram, actor + 0x1DB, 0x1E);
+    let steer = |ram: &[u8]| {
+        let b = RetailBattle::from_ram(ram).expect("seedable");
+        match b.battle_drive() {
+            Some(BattleDrive::Action { steer, .. }) => steer,
+            other => panic!("not an action drive: {other:?}"),
+        }
+    };
+    let s = steer(&ram);
+    assert_eq!((s.clip, s.cursor, s.latched), (None, Some(5), Some(0x1E)));
+    // A swing clip is placed by the clip gate and the age alone.
+    put8(&mut ram, actor + 0x1D9, 0x0F);
+    put8(&mut ram, actor + 0x1DB, 0x0F);
+    assert_eq!(steer(&ram).latched, None);
+}
