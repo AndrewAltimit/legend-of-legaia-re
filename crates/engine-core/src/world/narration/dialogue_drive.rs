@@ -971,6 +971,17 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // Op `0x35` held by the swap poller - a sub-op `0xA` commit
+                // before bit 3, a sub-op 9 behind a walk in flight - re-runs
+                // its own PC (`0x801DEE4C`) until the walk lets it through:
+                // a timed park like the others. Ending the talk here dropped
+                // everything a cutscene talk does after its commit (`rayman`
+                // P1[44..46] raise `0x1FD`..`0x1FF` behind theirs).
+                // REF: FUN_801DE840 (`0x801E0238`, `0x801E0288`)
+                FieldStepResult::Halt { final_pc } if (b & 0x7F) == 0x35 => {
+                    id.pc = final_pc;
+                    break;
+                }
                 // Any other halt/hold, an unhandled op, or an end: stop.
                 // (Unlike the cutscene timeline the runner does not force-
                 // advance past these - an inline script that can't proceed
