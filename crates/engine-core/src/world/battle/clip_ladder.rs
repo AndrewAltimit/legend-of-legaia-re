@@ -232,12 +232,27 @@ impl World {
             // black reads the same `0`: re-stamping it there restarted the
             // fade, so the body never went and state `0x20`'s reaction hold
             // never let go.
-            if a.battle.render_flag != legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE
-                && a.battle.render_color == 0
-            {
+            let first_pass =
+                a.battle.render_flag != legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
+            if first_pass && a.battle.render_color == 0 {
                 a.battle.render_color = legaia_engine_battle_vm::battle_formulas::TINT_NEUTRAL;
             }
             a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
+            // The defeat cue: static `0x0D` stored straight into ring slot
+            // `ctx[+0x09]` (`li v1,0xd` / `sh v1,0x0(v0)` at `0x8004B27C`,
+            // cursor `+1` mod 4 at `0x8004B25C..0x8004B298`), once - the arm
+            // raises `+0x1DC` bit 3 at its end (`0x8004B670`) and the cue
+            // sits behind `+0x1DC & 8 == 0` (`0x8004B200`). It is skipped
+            // with a Seru staged (`ctx[+0x269]`, `0x8004B214`) and, for a
+            // monster, in a scripted fight (`ctx[+0x287]`, `0x8004B224`)
+            // unless `gp+0x9F5` is up, a byte the engine does not carry.
+            if first_pass && !seru_staged && !self.battle.no_escape {
+                let c = self.battle.defeat_cue_cursor;
+                self.battle.defeat_cue_cursor = if c + 1 >= 4 { 0 } else { c + 1 };
+                self.audio.sfx_ring_ops.push(
+                    legaia_engine_system::sound_state::SfxRingOp::WriteSlot(c, 0x0D),
+                );
+            }
             if slot >= party {
                 self.resolve_monster_death_spoils(slot);
             }

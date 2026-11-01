@@ -902,6 +902,11 @@ pub struct BattleState {
     /// entry is kept (hosts and tests use it to pin a fight). Cleared by
     /// `World::finish_battle`.
     pub no_escape: bool,
+    /// The cue-ring cursor `ctx[+0x09]` the clip commit `FUN_8004AD80`'s
+    /// monster-death arm writes its defeat cue through (`0x8004B24C..
+    /// 0x8004B298`): its own round-robin over the four ring slots, apart
+    /// from the producer's `gp+0x158`.
+    pub defeat_cue_cursor: u8,
     // The formation advantage (`ctx+0x290`) and its latched copy (`ctx+0x291`)
     // are **not** fields here. Retail has exactly one of each, both inside the
     // battle context the action SM owns, so the engine keeps them on
@@ -1217,6 +1222,7 @@ impl BattleState {
             buffs: Vec::new(),
             escaped: false,
             scripted_fight: false,
+            defeat_cue_cursor: 0,
             no_escape: false,
             intro: None,
             intro_effects: Vec::new(),
