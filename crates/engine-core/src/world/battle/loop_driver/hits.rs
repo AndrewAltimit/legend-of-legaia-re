@@ -36,31 +36,41 @@ impl World {
     /// REF: FUN_801EC3E4 (head guard chain ported as
     /// `legaia_engine_battle_vm::battle_action::hit_event_admits`)
     pub(in crate::world) fn tick_battle_hit_events(&mut self) {
+        self.begin_battle_hit_pass();
+        for i in 0..self.actors.len() {
+            self.tick_battle_hit_events_seat(i);
+        }
+    }
+
+    /// The pass-wide head of [`Self::tick_battle_hit_events`]: a fresh
+    /// action starts a fresh combo total on every target, and the pass's
+    /// post-commit re-walk list starts empty.
+    pub(in crate::world) fn begin_battle_hit_pass(&mut self) {
         use legaia_engine_battle_vm::battle_action::ActionState;
-        let state = self.battle_ctx.action_state;
-        // A fresh action starts a fresh combo total on every target.
-        if state == ActionState::Begin.as_byte() {
+        if self.battle_ctx.action_state == ActionState::Begin.as_byte() {
             for a in self.actors.iter_mut() {
                 a.battle.damage_accum = 0;
             }
         }
         self.battle.hit_commit_rewalk.clear();
-        for i in 0..self.actors.len() {
-            let commits_before: Vec<u32> =
-                self.actors.iter().map(|a| a.battle_clip_commits).collect();
-            self.tick_battle_hit_events_for(i);
-            // Retail runs this walk inside actor `i`'s own anim tick, so a
-            // commit it lands on `i` itself or on a seat whose tick comes
-            // later in the pass is that seat's own-tick commit - walked
-            // again at the new clip's first frame (`0x80047BC4..0x80047C38`).
-            // One landed on an earlier seat waits for that seat's next tick.
-            for (k, before) in commits_before.into_iter().enumerate() {
-                if k >= i
-                    && self.actors.get(k).map(|a| a.battle_clip_commits) != Some(before)
-                    && !self.battle.hit_commit_rewalk.contains(&k)
-                {
-                    self.battle.hit_commit_rewalk.push(k);
-                }
+    }
+
+    /// Actor `i`'s hit walk and event-path commit, as its own anim tick runs
+    /// them, and the re-walk bookkeeping of the commits it lands.
+    pub(in crate::world) fn tick_battle_hit_events_seat(&mut self, i: usize) {
+        let commits_before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
+        self.tick_battle_hit_events_for(i);
+        // Retail runs this walk inside actor `i`'s own anim tick, so a
+        // commit it lands on `i` itself or on a seat whose tick comes
+        // later in the pass is that seat's own-tick commit - walked
+        // again at the new clip's first frame (`0x80047BC4..0x80047C38`).
+        // One landed on an earlier seat waits for that seat's next tick.
+        for (k, before) in commits_before.into_iter().enumerate() {
+            if k >= i
+                && self.actors.get(k).map(|a| a.battle_clip_commits) != Some(before)
+                && !self.battle.hit_commit_rewalk.contains(&k)
+            {
+                self.battle.hit_commit_rewalk.push(k);
             }
         }
     }

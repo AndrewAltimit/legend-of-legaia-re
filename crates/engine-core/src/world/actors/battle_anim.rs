@@ -199,6 +199,23 @@ impl World {
     /// since battle-init actors keep their `tmd_binding` without the field
     /// `.active` flag.
     pub fn tick_battle_animations(&mut self) {
+        self.tick_battle_animations_walk(false);
+    }
+
+    /// [`Self::tick_battle_animations`], with each actor's hit walk and
+    /// event-path commit (`World::tick_battle_hit_events_seat`) run inside
+    /// its own slice of the walk when `hits` is set - retail's order, where
+    /// both sit in the node's own tick `FUN_80047430` right after its
+    /// advance (`0x8004787C..0x80047A44`). Returns the clip commits each
+    /// actor's own slice landed (advance, natural end, staged commit, its
+    /// own hit walk), per actor, against the hit walks' commits on other
+    /// seats.
+    pub(in crate::world) fn tick_battle_animations_walk(&mut self, hits: bool) -> Vec<bool> {
+        let start: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
+        let mut foreign = vec![0u32; self.actors.len()];
+        if self.battle.anim_slice_commits.len() != self.actors.len() {
+            self.battle.anim_slice_commits = start.clone();
+        }
         // The vsyncs this pass spans (`World::battle_anim_pass_vsyncs`):
         // `1` on the per-vsync cadence and from a direct call.
         let vsyncs = self.battle.anim_pass_vsyncs.max(1);
@@ -229,7 +246,10 @@ impl World {
         if self.mode == SceneMode::Battle {
             self.tick_mystic_shield();
         }
+        let mut fresh = vec![false; self.actors.len()];
         for i in 0..self.actors.len() {
+            fresh[i] = self.actors[i].battle_clip_commits
+                != self.battle.anim_slice_commits.get(i).copied().unwrap_or(0);
             // Hit-reaction chaining first: a finished reaction clip takes the
             // natural-end path and the next commit's reaction arms - the
             // `FUN_8004AD80` clip-tag ladder's staged entry (get-up behind a
@@ -320,6 +340,7 @@ impl World {
                 && self.actors[i].battle.current_anim == 0
                 && self.actors[i].battle_reaction.is_none();
             if frozen_idle {
+                self.finish_battle_node_slice(i, commit_after, hits, &mut foreign);
                 continue;
             }
             self.stamp_rage_delegation(i);
@@ -334,6 +355,16 @@ impl World {
                 && self.casting.summon_actor_slot == Some(i as u8);
             let module_phase = self.casting.module_phase;
             let mirrors_loop = self.mirrors_loop_counter(i);
+            // A clip committed on this seat since its own slice of the last
+            // walk (the SM's pass, a cast module's seat write, another
+            // seat's hit walk) is, in retail, only staged there - `+0x1DA`
+            // with `+0x1DC` bit 0 (the damage arm, `FUN_800402F4`
+            // `0x80042118..0x80042170`; the module bump) - and this seat's
+            // own tick advances first and then commits it, zeroing the
+            // cursor (`sh zero,0x68` at `0x8004B068`), so the clip starts the
+            // next pass on its first keyframe. The engine installed it
+            // already, so this pass's advance is skipped.
+            let fresh_from_hit = commit_after && fresh.get(i).copied().unwrap_or(false);
             // The `>> 2` branch of the cursor advance is taken only by a
             // **Slowed** actor on idle: `andi v0,v0,0x1000` on `+0x16E` at
             // `0x800476E0`, then `+0x1D9 == 0` at `0x800476EC`. Every other
@@ -352,7 +383,13 @@ impl World {
                 // scales by the per-actor anim-rate byte `+0x21D` - the
                 // arts slow-motion channel - and a Slowed actor's idle runs
                 // at half the shift (`>> 2` vs `>> 1`).
-                let rate = actor.battle.anim_rate;
+                let rate = if fresh_from_hit {
+                    legaia_engine_battle_vm::battle_anim_rate::AnimRate(
+                        legaia_engine_battle_vm::battle_anim_rate::RATE_FROZEN,
+                    )
+                } else {
+                    actor.battle.anim_rate
+                };
                 let slowed_idle =
                     slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
                 let pose = player.tick_rated_vsyncs(rate, slowed_idle, vsyncs);
@@ -559,13 +596,66 @@ impl World {
                 // (`FUN_800508DC`, same arguments).
                 self.step_actor_anim_cues(i, frame);
             }
+            self.finish_battle_node_slice(i, commit_after, hits, &mut foreign);
         }
         // The cast tick's effect-child drive. On retail's cadence the cast tick's drive runs with the frame
         // driver's pass instead (`World::tick_battle_cast_drive`).
         if !commit_after {
             self.tick_battle_cast_drive(vsyncs);
-        } else {
-            self.commit_staged_battle_anims();
+        }
+        self.actors
+            .iter()
+            .enumerate()
+            .map(|(k, a)| {
+                let moved = a
+                    .battle_clip_commits
+                    .wrapping_sub(start.get(k).copied().unwrap_or(a.battle_clip_commits));
+                moved > foreign.get(k).copied().unwrap_or(0)
+            })
+            .collect()
+    }
+
+    /// The tail of actor `i`'s slice of the anim walk on retail's cadence:
+    /// its staged commit, then (with `hits`) its hit walk and event-path
+    /// commit. Retail makes every commit of a node inside that node's own
+    /// tick, after its advance, and the actor list walks the nodes in seat
+    /// order (`FUN_8002519C` calling each node's `+0x0C` handler
+    /// `FUN_80047430`; `minigame_muscle_dome_retail_skeleton_hyper_arts`
+    /// lists Vahn's node ahead of the Skeleton's). So a commit's
+    /// battle-wide rate arm reaches a later seat in the same pass: Vahn's
+    /// event-path cut into the SpecialStarter `0x1A` freezes every slot
+    /// (`0x8004B728..0x8004B750`) before the Skeleton's advance that pass,
+    /// and its reaction holds keyframe 3 (cursor `48`, the capture's
+    /// history ring) where cutting after the whole walk let it reach
+    /// keyframe 4. `foreign` counts, per seat, the commits a hit walk
+    /// landed on a seat other than the walker.
+    // PORT: FUN_80047430 (the per-node hit walk and commits after the advance)
+    fn finish_battle_node_slice(
+        &mut self,
+        i: usize,
+        commit_after: bool,
+        hits: bool,
+        foreign: &mut [u32],
+    ) {
+        if commit_after {
+            self.commit_staged_battle_anim(i);
+        }
+        if hits {
+            let before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
+            self.tick_battle_hit_events_seat(i);
+            for (k, b) in before.into_iter().enumerate() {
+                if k != i
+                    && let (Some(a), Some(f)) = (self.actors.get(k), foreign.get_mut(k))
+                {
+                    *f += a.battle_clip_commits.wrapping_sub(b);
+                }
+            }
+        }
+        if let (Some(a), Some(c)) = (
+            self.actors.get(i),
+            self.battle.anim_slice_commits.get_mut(i),
+        ) {
+            *c = a.battle_clip_commits;
         }
     }
 

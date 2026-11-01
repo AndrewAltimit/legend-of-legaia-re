@@ -735,6 +735,13 @@ pub struct BattleState {
     /// attacker's (`World::tick_battle_hit_events` records them,
     /// `World::tick_battle_anim_pass` walks them again).
     pub hit_commit_rewalk: Vec<usize>,
+    /// Each actor's clip-commit count as its own slice of the last anim
+    /// walk left it (retail's cadence; `World::tick_battle_animations_walk`).
+    /// A commit landed on the seat after that - by the SM's pass, a cast
+    /// module's seat write, a later seat's hit walk - is one retail only
+    /// stages and makes inside the seat's next tick after its advance, so
+    /// that pass's advance is skipped. Empty until the first walk.
+    pub anim_slice_commits: Vec<u32>,
     /// Each actor's display trio as the previous pass's draw stored it - the
     /// anchor the value readout projects a landed hit's numeral from
     /// (`World::battle_readout_trio`). Retail's readout `FUN_801DF6B8` runs
@@ -1280,6 +1287,7 @@ impl BattleState {
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
             hit_commit_rewalk: Vec::new(),
+            anim_slice_commits: Vec::new(),
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
             sm_ran_state: None,

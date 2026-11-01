@@ -327,21 +327,25 @@ impl World {
         self.battle.readout_trios = (0..self.actors.len())
             .map(|i| self.battle_display_trio(i))
             .collect();
-        let commits_before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
-        self.tick_battle_animations();
-        // Every commit the advance made is the committing actor's own.
-        let mut rewalk: Vec<usize> = commits_before
+        // Each actor's hit walk runs inside its own slice of the anim walk
+        // (`World::tick_battle_animations_walk`), ahead of the pass's root
+        // motion, as in the node tick (`0x8004787C..0x80047A44` ahead of
+        // `0x80047D20`).
+        let hits = self.battle.anim_slot_reached;
+        let events_before = self.pending_battle_events.len();
+        if hits {
+            self.begin_battle_hit_pass();
+        }
+        let own = self.tick_battle_animations_walk(hits);
+        // Every commit an actor's own slice made is walked again.
+        let mut rewalk: Vec<usize> = own
             .into_iter()
             .enumerate()
-            .filter(|&(k, before)| {
-                self.actors.get(k).map(|a| a.battle_clip_commits) != Some(before)
-            })
+            .filter(|&(_, moved)| moved)
             .map(|(k, _)| k)
             .collect();
-        if self.battle.anim_slot_reached {
-            let events_before = self.pending_battle_events.len();
+        if hits {
             self.tick_battle_locomotion_dt(self.battle.anim_pass_vsyncs);
-            self.tick_battle_hit_events();
             self.fold_new_battle_events(events_before);
             for k in std::mem::take(&mut self.battle.hit_commit_rewalk) {
                 if !rewalk.contains(&k) {
