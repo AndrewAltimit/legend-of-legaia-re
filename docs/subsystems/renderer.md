@@ -2297,15 +2297,20 @@ The port arms the rejection through one kernel both hosts read,
 | World map | both sides (its continent terrain's winding parity is the world-map pass's) |
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
-| Battle **draw-kind-4 nodes** (default-arm and sprite-arm meshes) and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake) |
-| Battle **mesh parts** (summon and move-FX parts drawing an effect-library mesh) | the same, per part (`FxPartModel::single_sided`): the native pass culls the resolved mesh before upload, the play page bakes it culled |
+| **Draw-kind-4 nodes** (default-arm and sprite-arm meshes) in battle and the field-shaped passes, and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake and draw what is left both-sided) |
+| **Mesh parts** (summon and move-FX parts drawing an effect-library mesh) in the same passes | the same, per part (`FxPartModel::single_sided`): the native pass culls the resolved mesh before upload, the play page bakes it culled |
 
-A move-VM part is the one field draw whose word can carry the bit. The
-field FX parts (`World::active_field_fx_part_draws`) hand it on as
+A move-VM part or node is the one field draw whose word can carry the bit.
+The field FX parts (`World::active_field_fx_part_draws`) hand it on as
 `ColourWord::double_sided`; the native window marks such a draw both-sided
-(`FxFrame::push_draws`) and the play page draws its baked effect mesh
-both-sided, so `opdeene`'s light cone (`0xC9000000`) is not dropped by the
-field pass's cull.
+(`FxFrame::push_draws`) and the play page drops a single-sided part's back
+faces before baking its both-sided effect mesh, so `opdeene`'s light cone
+(`0xC9000000`) is not dropped by the field pass's cull. The field's
+draw-kind-4 sheets take the battle rule: `kor`'s camera-facing steam sheets
+carry `0xC9000000` and keep both faces on both hosts, where the native
+field pass's own cull used to judge them by winding and the play page drew
+every node both-sided.
+The overworld and the minigame venues keep drawing these both-sided.
 
 A draw-kind-4 node is built by its emitter and then falls into the ordinary
 model draw (`0x8001B160`), so its packets reach the dispatcher with the node's
