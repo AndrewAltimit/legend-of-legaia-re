@@ -298,8 +298,9 @@ first pass: the router logged it as cue `0x80`, category `3`, from
 PROT 0908's arm 9 drops the **victim's** clip to entry `0`
 (`sb zero,0x1da(s6)` at `0x801F787C`, `s6` the latched victim), which the
 engine had applied to the creature. With the seat put right the cue still
-does not sound: the engine's anim cue walk (`World::step_actor_anim_cues`)
-does not take the victim's return to entry `0` as a new clip's track. Static cue `0x0D`, late in the last
+does not sound, and why is not traced yet; the anim cue walk
+(`World::step_actor_anim_cues`) re-arming on the victim's return to entry
+`0` is the first place to look. Static cue `0x0D`, late in the last
 module phase of every summon recorded there, comes through none of the four
 entries: an inline ring store, not yet located.
 
