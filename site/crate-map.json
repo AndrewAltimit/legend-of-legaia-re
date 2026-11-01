@@ -3693,8 +3693,7 @@
     "render-kernels",
     "scene-formats",
     "ui-formats",
-    "web-minigames",
-    "web-play"
+    "web-minigames"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/overlay-images/README.md"
   },
@@ -4705,7 +4704,6 @@
     "mdec",
     "minigame-formats",
     "netplay",
-    "overlay-images",
     "render-kernels",
     "save",
     "scene-formats",
@@ -4717,6 +4715,7 @@
     "xa"
    ],
    "dev_deps": [
+    "overlay-images",
     "prot"
    ],
    "bins": [],

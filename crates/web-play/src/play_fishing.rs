@@ -210,23 +210,10 @@ impl LegaiaRuntime {
     /// (`World::minigames.fishing_points` and siblings), so leaving and
     /// re-entering keeps the running total and the cast counter.
     pub fn play_fishing_start(&mut self) -> bool {
-        use legaia_minigame_formats::fishing_species;
-        use legaia_overlay_images::static_overlay;
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        let Some(rec) = static_overlay::overlay_map()
-            .by_prot_index(fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
-        else {
-            return false;
-        };
-        let Ok(raw) = host.index.entry_bytes_extended(rec.prot_index) else {
-            return false;
-        };
-        let Ok(loaded) = static_overlay::as_loaded(&raw, rec) else {
-            return false;
-        };
-        if !host.enter_fishing_from_overlay(&loaded) {
+        if !host.enter_fishing_from_disc() {
             return false;
         }
         // The two point-exchange venue pages were decoded by the shared entry

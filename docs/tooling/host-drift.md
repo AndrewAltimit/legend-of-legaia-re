@@ -1203,7 +1203,12 @@ Each scenario runs at three cadences - one tick per display frame, two (a
 between the redraw and the tick is invisible at 60 Hz. Each also asserts what
 it exercised (the lead moved, a menu opened and closed, a battle opened, a
 fight was won through to the overworld, the naming prompt came up, a dialogue
-opened), so agreement on a world that never moved fails. A pad that steers off
+opened, each of the five minigames was entered from its launcher and left on
+Start, the game-mode seat was opened and left, the pause menu closed on Start
+and stayed closed), so agreement on a world that never moved fails. A
+minigame launch is the window's own key natively (`O`, `B`, `K`, `L`, `M`,
+backquote for the mode picker) and the picker's export on the page
+(`play_mg_debug_warp`, `play_fishing_start`, `play_pack_mode_picker`). A pad that steers off
 the world comes from the native run and is replayed to the page; the fight is
 driven off the native world's own command phase and pulsed, because a held
 word is one press to the command screens and a held drive parks on the round
@@ -1245,20 +1250,35 @@ table; a switch with no page twin is a host difference, not a world default.
 
 | Native switch | Page twin |
 |---|---|
-| `--retail`, `--psx-render`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog` | the retail box (`set_retail_mode`) and the render checkboxes |
+| `--retail`, `--psx-render`, `--dynamic-lighting`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog`, `--no-ssao` | the retail box (`set_retail_mode`) and the render checkboxes |
 | `--learn-spell`, `--set-flag` | `learn_spell`, `set_system_flag` at runtime |
-| `--cheat-*`, `--cheat-file` | `cheat_*`, `cheat_apply_codes` |
+| `--cheat-*`, `--cheat-file`, `--cheat-strict` | `cheat_*`, `cheat_apply_codes` (its `strict` argument is the Strict box) |
 | `--battle-bgm` | `set_battle_bgm` |
 | `--no-live-loop` | `set_live_battles` |
 | `--party` | `set_active_party_spec` |
 | `--card`, `--resume-save`, `--boot-ui`, `--world-map` | the card rack, a card Load, the boot title, the scene picker |
+| `--disc`, `--extracted-root`, `--scene` | the disc picker (`load_disc`; the page reads a `.bin` only) and the scene picker (`enter_field`) |
+| `--save-dir` | none: the page keeps its card rack in browser storage (`localStorage["legaia.card.v1.browser"]`) |
+| `--no-audio` | the sound button (`LegaiaSound`); the page opens no audio output before a user gesture in any case |
+| `--expansion`, `--map`, `--spawn` | the pack library (`load_expansion`) and its map entry (`enter_expansion_map`) |
+| `--expansion-watch` | none: a page cannot watch a folder. `End` reloads the pack on both hosts, from the library's copy on the page (`reload_expansion`) |
+| `--play-cutscene` | the workbench preview's `expansion_preview_cutscene`; a debug entry on both |
+| `--mode` | the Modes and Cards controls (`play_pack_mode_enter`, `play_cards_open`). Its item-screen arms (`items`, `items-gear`, `shop[:ID]`) have no page control; in play both hosts reach the pack bag and shops through the pack's own NPCs and quests (`World::open_item_bag`, `open_item_shop`) |
+| `--join`, `--room`, `--name`, `--multiplayer` | the Online panel (`play_net_join`) |
+| `--host` | none: a page cannot listen on a socket ([netplay](../subsystems/netplay.md)) |
 | `--smart-monsters` (the launcher's Smarter monsters row), `LEGAIA_SMART_MONSTERS`, `LEGAIA_WORLD_MAP_MARKERS` | `set_smart_monsters`, `set_world_map_markers`; the retail mode holds all three off on both hosts |
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `--arts-saved-list` (the launcher's Saved-chain Arts list row) or `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
-| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere`, `--action-movement` and the battle-tuning sliders (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
+| `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere`, `--action-movement` and the battle-tuning sliders `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`, `--enemy-attack-count`, `--enemy-stat-scale` (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
 | `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map`, `--play-record` | none: native capture tooling |
-| `--fullscreen`, `--windowed`, `--window-scale` | none: window chrome; the browser sizes the page's canvas |
+| `--fullscreen`, `--windowed`, `--window-scale` | the page's fullscreen button (`requestFullscreen`); the browser sizes the canvas |
+
+Every `play-window` switch has a row: the binary's
+`launch_switch_table_names_every_play_window_flag` test reads the table and
+fails on a switch it does not name or a name the window no longer takes, so a
+new switch lands with its answer for the page (a name ending in `*` covers a
+family).
 
 ### Remembered between runs
 
@@ -1427,6 +1447,7 @@ decidable per instance, not from a source pattern.
 | <a id="one-decision-two-inputs"></a>**One decision, two inputs.** A predicate both hosts run, fed from different state. | The occlusion-fade arming gate: native excluded boot UI, world map, cutscene camera and debug orbit; the page only battle and minigames. | Split into the half the world can answer (`field_occlusion::fade_armed`, with `player_body_centre` as both ray target and shader focus) and the half only the host can (master toggle, a UI owning the screen, debug vantage, VR eye). |
 | **A rule spelled beside the shared predicate.** A host calls the predicate and adds its own clause. | Native asked `field_menu_open_allowed` *and* `!menu_runtime.is_open()` *and* its narration local; the page asked only the predicate, so Start opened the pause menu over a shop. | Move the clause into the kernel; a copy is two spellings again. |
 | **A shared builder starved by its caller's slice.** The output degrades instead of failing. | Battle HUD status badges: `Stone` / `Rage` / `Faint` decode with the CLUT-only TIM one file *before* the system-UI sheet (`save_menu_atlas::SYSTEM_UI_CLUT_EXT_TIM_OFFSET`). Rooted at the sheet, 6 of 9 resolve; rooted at the extension, 9 of 9. | Run the builder both ways and assert they differ (`crates/web-play/tests/battle_hud_badges.rs`). |
+| **A session default one host never overrides.** The session runs a step itself unless the host declares it owns it. | `BootSession::tick` opens the pause menu off the world's pad edge unless `set_host_owns_pause_menu` is raised. The page raised it; the window did not, so the menu had two openers natively, and the session's one read an edge the menu's ticks never advance: a Start held across the tick that closed the menu reopened it on the next field tick. | Both hosts raise the flag; `pause_menu_start_close_frames_match_across_hosts` holds the press across the close. |
 | **An input contract one host does not honour.** | `MenuRuntime::tick` filters no repeats; the native window handed it the *held* word, so one press stepped several rows. | `menu_runtime::menu_input_from_pad_edges` on both. |
 | **A raw word into a packed-mask reader.** | `World::input` holds the raw PSX word (Cross `0x4000`); the op-`0x49` submode family tests the packed masks `FUN_8001822C` builds (Cross `0x0040`). Cross did nothing on a coin cabinet on both hosts, and the tests fed the packed constant so they asserted the defect. | `World::submode_pad_words` through `dev_menu::retail_packed`. |
 | **A typed channel narrowed at one host.** | The web strike-SFX scheduler was `u8` end to end and dropped every cue above `0xFF` through a `try_from`. | Widen to the event's `u16`. |
@@ -1511,6 +1532,9 @@ reverse-engineering questions, so they are not on
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
+| VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
+| netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
+| pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
 | absent on both | The Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
@@ -2310,7 +2334,8 @@ built a Qualifier floor of its own until it took the warp, so the dance it
 opened ignored the story flags the hall's floor is read from. Two launchers
 stay direct on purpose: `U` (the how-to floor, which no flag state in a
 launcher reaches) and fishing (`L`, and the page picker's Fishing row through
-`play_fishing_start`, alike). The picker offers every playable slot
+`play_fishing_start`, alike: both open the pond through
+`SceneHost::enter_fishing_from_disc`, the overlay read the door warp makes). The picker offers every playable slot
 (`play_minigames::tests::the_page_picker_offers_every_playable_minigame`); it
 lacked fishing, whose export no page control called.
 

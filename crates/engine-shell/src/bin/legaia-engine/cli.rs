@@ -1899,3 +1899,71 @@ mod locomotion_flag_tests {
         assert!(parse(&["--host", "--join", "x:1", "--room", "ABCDEF"]).is_err());
     }
 }
+
+#[cfg(test)]
+mod launch_switch_table_tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    /// The `--flag` tokens of the host-drift page's "Launch switches against
+    /// page settings" table: exact names, and `--prefix*` families.
+    fn table_flags() -> (Vec<String>, Vec<String>) {
+        let page = include_str!("../../../../../docs/tooling/host-drift.md");
+        let start = page
+            .find("### Launch switches against page settings")
+            .expect("the launch-switch section");
+        let rest = &page[start..];
+        let end = rest[4..].find("\n### ").map_or(rest.len(), |i| i + 4);
+        let (mut exact, mut families) = (Vec::new(), Vec::new());
+        for tok in rest[..end].split('`') {
+            let Some(name) = tok.strip_prefix("--") else {
+                continue;
+            };
+            if let Some(prefix) = name.strip_suffix('*') {
+                families.push(prefix.to_string());
+            } else if name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                exact.push(name.to_string());
+            }
+        }
+        (exact, families)
+    }
+
+    /// Every `play-window` switch has a row saying what the play page has in
+    /// its place (`docs/tooling/host-drift.md`), so a switch added to one host
+    /// lands with its answer for the other.
+    #[test]
+    fn launch_switch_table_names_every_play_window_flag() {
+        let cmd = Cli::command();
+        let play = cmd
+            .find_subcommand("play-window")
+            .expect("the play-window subcommand");
+        let (exact, families) = table_flags();
+        let missing: Vec<&str> = play
+            .get_arguments()
+            .filter_map(|a| a.get_long())
+            .filter(|long| {
+                !exact.iter().any(|e| e == long)
+                    && !families.iter().any(|p| long.starts_with(p.as_str()))
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "play-window switches with no row in host-drift.md's launch-switch table: {missing:?}"
+        );
+        // The table names no switch the window has dropped.
+        let stale: Vec<&String> = exact
+            .iter()
+            .filter(|e| {
+                play.get_arguments()
+                    .all(|a| a.get_long() != Some(e.as_str()))
+            })
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "rows naming no play-window switch: {stale:?}"
+        );
+    }
+}
