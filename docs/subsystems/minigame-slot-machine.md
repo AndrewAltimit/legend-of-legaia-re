@@ -214,16 +214,20 @@ Port: `SlotMachine::latch_spin_up`, called by the per-frame kernel `SlotMachine:
 
 ### Reel landing - `FUN_801d2114` / `FUN_801d2440`
 
-When a reel is told to stop, `FUN_801d2114(reel)` (`overlay_slot_machine_801d2114.txt`) picks a target *symbol* and a search depth keyed on the **feature mode** `DAT_801d3cac` (**Confirmed** switch 0..6):
+When a reel is told to stop, `FUN_801d2114(reel)` (`overlay_slot_machine_801d2114.txt`) clears the reel's stop-still-open flag, seeds its **roll-in budget** `DAT_801d3cf0[reel]`, and picks a search depth and a target *symbol* keyed on the **feature mode** `DAT_801d3cac` (switch 0..6 through the jump table at `0x801CEC78`; every `rand` is the slot LCG `FUN_801d30cc`) *(disassembly)*:
 
-| `DAT_801d3cac` | Behaviour (search depth + biased target symbol) |
-|---|---|
-| `0` | normal: scan `rand%3 + 2` rows, target `DAT_801d3cb8` |
-| `1` / `2` | "reach" / tease modes: scan `(rand&3)+6` rows, target symbol `9` / `8` (the two jackpot symbols) |
-| `3` | hot mode: random target `rand%7 + 0x18`, landing offset `rand%7 + 10` |
-| `4` | guaranteed-hit mode: drives the reel to a winning symbol, decrementing a guarantee counter `DAT_801d3c90` |
-| `5` | hold variant: depth `0x14`, target `rand%10 + 8` |
-| `6` | **the bonus round: depth `0`, target `-1`**, a free stop |
+| `DAT_801d3cac` | Budget | Search depth | Target symbol |
+|---|---|---|---|
+| `0` normal | `0x13` | `rand%3 + 2` | `DAT_801d3cb8` |
+| `1` / `2` reach | `0x16` | `(rand&3) + 6` | `9` / `8` (the two jackpot symbols) |
+| `3` hot | `rand%7 + 0x18` | `rand%7 + 10` (a second draw) | `DAT_801d3cb8 % 3` |
+| `4` | `0x14` | `rand%10 + 6`, then again | `DAT_801d3cb8`, then `7` |
+| `5` | `0x14` | `rand%10 + 8` | `7` |
+| `6` | `0x14` | **`0`** | **`-1`**: the bonus round's free stop |
+
+Mode `4` lands once on the normal target, decrements the spin timer `DAT_801d3c90`, and while that timer is negative draws again and re-lands on symbol `7` (`bgez a0` at `0x801D2354`). State `2` leaves for state `3` only once it has run the timer below zero (`0x801CF660..0x801CF670`), and nothing raises it before the stops, so the re-land always runs and symbol `7` is the target that holds.
+
+The budget is the reel's roll-in. After a stop the per-frame integrator `FUN_801d0554` creeps the reel `0x66` a frame (two-fifths of a row), decrementing the budget, and snaps it on the frame it reaches the landing row - or wherever it stands once the budget runs out (`0x801D05C4..0x801D0600`). A landing farther than the budget carries stops short of its target.
 
 `FUN_801d2440(reel, depth, target_symbol)` (`overlay_slot_machine_801d2440.txt`) is the landing search. With `cur` = reel position `>> 8`:
 
@@ -414,7 +418,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3c84` | **state word** (reel state machine dispatch) |
 | `DAT_801d3c88` | last message id `FUN_801d069c` drew (scroll reset) |
 | `DAT_801d3c8c` | winning payline index (for the highlight) |
-| `DAT_801d3c90` | spin timer / guaranteed-hit countdown (`0x18` on a bonus spin, and on the first spin after one) |
+| `DAT_801d3c90` | spin timer (`0x18` on a bonus spin and on the first spin after one, `0` otherwise); state `2` runs it below zero, and a mode-`4` stop decrements it again |
 | `DAT_801d3c94` | payout-tally / prompt frame counter |
 | `DAT_801d3c98` | screen-fade level (`0..=0xFF`) |
 | `DAT_801d3c9c`/`DAT_801d3ca0` | animation tick counters (blink, marquee scroll) |
@@ -424,7 +428,7 @@ All overlay-local; the block clusters in `0x801d3c80..0x801d4140`. **Confirmed**
 | `DAT_801d3cb8` | normal-mode target symbol (`rand%6 + 2`) |
 | `DAT_801d3cc0`/`+4`/`+8` | live reel positions (fixed-point, 3 reels) |
 | `DAT_801d3cd0..` | reel velocities |
-| `DAT_801d3ce0..`/`DAT_801d3cf0..` | per-reel landing offset + search depth |
+| `DAT_801d3ce0..`/`DAT_801d3cf0..` | per-reel landing row + roll-in budget (frames the reel may creep before it snaps) |
 | `DAT_801d3d00`/`+4`/`+8` | per-reel stop-still-open flags (set by the bet charge, cleared by that reel's Stop) |
 | `DAT_801d3d10`/`14`/`18` | per-reel landed / line-match masks (filled at stop time; read by the reach scanner) |
 | `DAT_801d3d20`/`+4`/`+8` | per-reel **claimed value**: `payline value + 1`, latched at the snap (`FUN_801d0554`), cleared at the bet charge |
@@ -507,7 +511,7 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 | render-tail display refill | `SlotMachine::tick`, `DISPLAY_REFRESH_LEAD` = 9, `BONUS_SPIN_UP_FRAMES` = `0x18` |
 | `FUN_801d258c` | `feature_roll` (exact draw order + bracket edges) |
 | state-1 bet charge | flat charge + net-take accrual (3 / +6 normal, 1 / +1 feature) in `SlotMachine::spin` |
-| `FUN_801d2114` / `FUN_801d2440` | `stop_plan` / `land_row`, including mode 6's free stop |
+| `FUN_801d2114` / `FUN_801d2440` | `stop_plan` / `land_row`: every mode's depth, target and draw count, mode 6's free stop included |
 | `FUN_801d0554` + `FUN_801cfff0` | the claimed latch and tally: `SlotMachine::claimed` / `tally` / `tally_product` |
 | `FUN_801cfff0` + `FUN_801d3230` + `FUN_801d069c` | `SlotMachine::marquee` / `marquee_placements` over `minigame_slot_scene`'s `compose_marquee_frame` / `place_message` / `clear_dots` / `render_marquee` |
 | `FUN_801d13e8` | `SlotMachine::evaluate_spin`: five paylines, payout, bonus product, centre winning line, product subtracted from the net take |
@@ -519,7 +523,7 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 
 - The spin-up pacing constants (`SPIN_UP_FRAMES`, `SPIN_VELOCITY`) are engine-chosen; the retail magnitudes are not pinned.
 - The BIOS-`rand` stream is a deterministic LCG (`BiosRand`), so replays stay bit-identical.
-- Feature modes 3 (hot) and 5 (hold) fall back to the normal landing plan; their bonus-strip value targeting is not modelled.
+- A stopped reel snaps to its landing row at once (`stop_plan` / `land_row`); retail's roll-in (`FUN_801d0554`) creeps it there under the per-reel budget and can stop it short.
 - A host press collects the rest of a payout tally at once (`SlotMachine::collect`).
 - The submenu's cancel + confirm collision and the last-frame spin-up latch are not reproduced (see their sections).
 

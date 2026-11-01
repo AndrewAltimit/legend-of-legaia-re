@@ -329,22 +329,46 @@ fn feature_roll_shapes() {
 #[test]
 fn stop_plan_by_mode() {
     let mut rng = SlotRng::new(3);
-    let (d, t) = stop_plan(&mut rng, 0, 4, None);
+    let (d, t) = stop_plan(&mut rng, 0, 4);
     assert!((2..5).contains(&d), "mode 0 depth = rand%3 + 2");
     assert_eq!(t, Some(4));
-    let (d, t) = stop_plan(&mut rng, 1, 4, None);
+    let (d, t) = stop_plan(&mut rng, 1, 4);
     assert!((6..10).contains(&d), "reach depth = (rand&3) + 6");
     assert_eq!(t, Some(9));
-    let (_, t) = stop_plan(&mut rng, 2, 4, None);
+    let (_, t) = stop_plan(&mut rng, 2, 4);
     assert_eq!(t, Some(8));
-    // Guaranteed mode drives to the already-landed symbol.
-    let (d, t) = stop_plan(&mut rng, 4, 4, Some(6));
-    assert_eq!((d, t), (STRIP_LEN, Some(6)));
-    // The bonus round steers nothing: no target, no search.
-    assert_eq!(
-        stop_plan(&mut rng, FEATURE_MODE_BONUS, 4, Some(6)),
-        (0, None)
-    );
+    // The bonus round steers nothing: no target, no search, no draw.
+    let before = rng;
+    assert_eq!(stop_plan(&mut rng, FEATURE_MODE_BONUS, 4), (0, None));
+    let mut before = before;
+    assert_eq!(rng.next_u32(), before.next_u32());
+}
+
+/// Modes 3, 4 and 5 read off `FUN_801d2114`'s jump table: the hot mode
+/// spends a draw on the roll-in budget and targets the normal symbol `% 3`
+/// at depth `rand % 7 + 10`; mode 4 spends one draw on the landing its
+/// expired timer replaces and re-lands on symbol `7` at `rand % 10 + 6`;
+/// mode 5 targets symbol `7` at `rand % 10 + 8`.
+#[test]
+fn hot_and_symbol_seven_modes_follow_the_retail_plan() {
+    for seed in 0..64u32 {
+        let mut rng = SlotRng::new(seed);
+        let mut mirror = rng;
+        let (d, t) = stop_plan(&mut rng, 3, 7);
+        let _budget = mirror.next_u32();
+        assert_eq!(d, (mirror.next_u32() % 7 + 10) as usize);
+        assert_eq!(t, Some(1), "7 % 3");
+
+        let (d, t) = stop_plan(&mut rng, 4, 5);
+        let _first = mirror.next_u32();
+        assert_eq!(d, (mirror.next_u32() % 10 + 6) as usize);
+        assert_eq!(t, Some(FEATURE_STOP_SYMBOL));
+
+        let (d, t) = stop_plan(&mut rng, 5, 5);
+        assert_eq!(d, (mirror.next_u32() % 10 + 8) as usize);
+        assert_eq!(t, Some(FEATURE_STOP_SYMBOL));
+        assert_eq!(rng.next_u32(), mirror.next_u32(), "draw counts agree");
+    }
 }
 
 /// `FUN_801d1af4`: two landed reels showing a punch pair on a payline

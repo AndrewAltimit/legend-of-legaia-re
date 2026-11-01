@@ -915,7 +915,7 @@ so the player hears one cue. The port raises the final cue of a tick from
 `MenuRuntime::tick` (`MenuRuntime::take_ui_cue`) and both play hosts key it
 through their SFX channel. The quantity commit sounds one tick after the press
 in the port, on the tick the transaction lands. The casino prize counter's
-cues are not modelled.
+cues are its own session's ([above](#row-layout-whose-list-this-is)).
 
 ## Key data structures
 
