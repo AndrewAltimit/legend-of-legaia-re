@@ -77,7 +77,26 @@ struct Scenario {
     /// command phase replaces [`Self::pad`]'s word (the native word is
     /// recorded and replayed to the page like any other).
     battle_pad: Option<fn(&legaia_engine_core::world::World) -> u16>,
+    /// `(tick, sub_id, key)`: launch minigame `sub_id` ahead of the display
+    /// frame that reaches `tick` - natively through the window's own
+    /// minigame key (`key`, which arms the mode-24 door warp, or opens the
+    /// pond for fishing), on the page through its picker's
+    /// `play_mg_debug_warp` (`play_fishing_start` for sub-id `0`). Two
+    /// ids past the warp space stand for the game-mode seat:
+    /// [`MODE_PICKER`] opens its picker and [`MODE_LEAVE`] leaves it (the
+    /// backquote key natively, `play_pack_mode_picker` / `_exit` on the
+    /// page).
+    warps: &'static [(u32, u8, &'static str)],
+    /// Casino coins seated on both hosts before the first frame
+    /// (`WorldCheats::cheat_set_coins`, the page's `cheat_apply("coins")`);
+    /// `0` seats none.
+    coins: u64,
 }
+
+/// [`Scenario::warps`] id: open the game-mode picker.
+const MODE_PICKER: u8 = 100;
+/// [`Scenario::warps`] id: leave the game-mode seat.
+const MODE_LEAVE: u8 = 101;
 
 const UP: u16 = 0x0010;
 const RIGHT: u16 = 0x0020;
@@ -176,10 +195,16 @@ struct NativeRun {
     arm_frame: Option<u32>,
     /// `(display frame, code)` for every hotkey pressed.
     key_frames: Vec<(u32, &'static str)>,
+    /// `(display frame, sub_id)` for every minigame launched.
+    warp_frames: Vec<(u32, u8)>,
 }
 
 fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
     let mut w = HeadlessPlayWindow::open(std::path::Path::new(disc), sc.scene).expect("open");
+    if sc.coins > 0 {
+        use legaia_engine_cheats::cheats::WorldCheats;
+        w.session_mut().host.world.cheat_set_coins(sc.coins);
+    }
     let mut out = vec![host_trace::sample_with_overlay(
         w.session(),
         w.menu_runtime(),
@@ -189,6 +214,8 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
     let mut arm_frame = None;
     let mut key_frames = Vec::new();
     let mut next_key = 0usize;
+    let mut warp_frames = Vec::new();
+    let mut next_warp = 0usize;
     let (mut t, mut f) = (0u32, 0u32);
     while t < sc.ticks {
         let n = cadence.ticks(f).min(sc.ticks - t);
@@ -198,6 +225,13 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
             assert!(w.press_key(code), "native key {code}");
             key_frames.push((f, code));
             next_key += 1;
+        }
+        while let Some(&(at, sub_id, key)) = sc.warps.get(next_warp)
+            && t + 1 >= at
+        {
+            assert!(w.press_key(key), "native minigame key {key}");
+            warp_frames.push((f, sub_id));
+            next_warp += 1;
         }
         if let Some((at, idx)) = sc.arm_shop
             && arm_frame.is_none()
@@ -233,6 +267,7 @@ fn native_trace(disc: &str, sc: &Scenario, cadence: Cadence) -> NativeRun {
         pads,
         arm_frame,
         key_frames,
+        warp_frames,
     }
 }
 
@@ -315,6 +350,9 @@ fn page_trace(
     // drops every command until its director exists.
     assert!(rt.debug_attach_audio(), "page audio director");
     rt.enter_field(sc.scene).expect("enter_field");
+    if sc.coins > 0 {
+        let _ = rt.cheat_apply("coins", sc.coins as f64, "");
+    }
     let mut d = PageDriver {
         rt,
         prev: 0,
@@ -338,6 +376,19 @@ fn page_trace(
         }
         for &(_, code) in run.key_frames.iter().filter(|(kf, _)| *kf == f) {
             d.hotkey(code);
+        }
+        for &(_, sub_id) in run.warp_frames.iter().filter(|(wf, _)| *wf == f) {
+            // The picker's Fishing row opens the pond directly, as `L` does;
+            // every other row arms the door warp.
+            if sub_id == 0 {
+                assert!(d.rt.play_fishing_start(), "page fishing start");
+            } else if sub_id == MODE_PICKER {
+                assert!(d.rt.play_pack_mode_picker(), "page mode picker");
+            } else if sub_id == MODE_LEAVE {
+                d.rt.play_pack_mode_exit();
+            } else {
+                assert!(d.rt.play_mg_debug_warp(sub_id), "page warp {sub_id}");
+            }
         }
         d.frame(run.pads[f as usize], n);
         t += n;
@@ -429,6 +480,8 @@ fn town01_walk_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -444,6 +497,8 @@ fn town01_pause_menu_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -459,6 +514,8 @@ fn fogged_field_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -474,6 +531,8 @@ fn encounter_and_battle_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, &[Cadence::Hz60, Cadence::Hz30]);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -553,6 +612,8 @@ fn prologue_skip_and_naming_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -568,6 +629,8 @@ fn village_dialogue_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -607,6 +670,8 @@ fn shop_frames_match_across_hosts() {
         arm_shop: Some((30, 0)),
         hotkeys: &[],
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -654,6 +719,8 @@ fn option_hotkey_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: OPTION_HOTKEYS,
         battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
@@ -708,6 +775,190 @@ fn battle_to_exit_frames_match_across_hosts() {
         arm_shop: None,
         hotkeys: &[],
         battle_pad: Some(fight_pad),
+        warps: &[],
+        coins: 0,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// The play inside a minigame: the face buttons in turn (they spin, stop
+/// reels, throw the duel's attacks, hit the dance's arrows), then Start,
+/// which leaves whichever minigame is live (`World::poll_minigame_escape`).
+fn minigame_pad(t: u32, _: &HostTraceFrame) -> u16 {
+    const SQUARE: u16 = 0x8000;
+    if t >= 700 {
+        return tap(t, 700, START) | tap(t, 760, START);
+    }
+    if t < 40 || t % 16 >= 3 {
+        return 0;
+    }
+    match (t / 16) % 3 {
+        0 => CROSS,
+        1 => SQUARE,
+        _ => CIRCLE,
+    }
+}
+
+/// The run entered the minigame `mode` names and came back out of it.
+fn entered_and_left(tr: &[HostTraceFrame], mode: &str) -> Result<(), String> {
+    let Some(open) = tr.iter().position(|f| f.mode == mode) else {
+        return Err(format!("{mode} never opened"));
+    };
+    if tr[open..].iter().any(|f| f.mode != mode) {
+        Ok(())
+    } else {
+        Err(format!("{mode} was never left"))
+    }
+}
+
+fn slots_entered_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    entered_and_left(tr, "SlotMachine")
+}
+
+fn baka_entered_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    entered_and_left(tr, "BakaFighter")
+}
+
+fn dance_entered_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    entered_and_left(tr, "Dance")
+}
+
+fn fishing_entered_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    entered_and_left(tr, "Fishing")
+}
+
+fn dome_entered_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    entered_and_left(tr, "MuscleDome")
+}
+
+/// Launch one minigame on `town01` 20 ticks in, with coins in the bank.
+fn minigame_scenario(
+    warp: &'static [(u32, u8, &'static str)],
+    exercised: fn(&[HostTraceFrame]) -> Result<(), String>,
+) -> Scenario {
+    Scenario {
+        scene: "town01",
+        pad: minigame_pad,
+        ticks: 840,
+        exercised,
+        arm_shop: None,
+        hotkeys: &[],
+        battle_pad: None,
+        warps: warp,
+        coins: 300,
+    }
+}
+
+#[test]
+fn slot_machine_frames_match_across_hosts() {
+    let parted = run(
+        &minigame_scenario(&[(20, 3, "KeyO")], slots_entered_and_left),
+        ALL,
+    );
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn baka_fighter_frames_match_across_hosts() {
+    let parted = run(
+        &minigame_scenario(&[(20, 4, "KeyB")], baka_entered_and_left),
+        ALL,
+    );
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn dance_frames_match_across_hosts() {
+    let parted = run(
+        &minigame_scenario(&[(20, 6, "KeyK")], dance_entered_and_left),
+        ALL,
+    );
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn fishing_frames_match_across_hosts() {
+    let parted = run(
+        &minigame_scenario(&[(20, 0, "KeyL")], fishing_entered_and_left),
+        ALL,
+    );
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+#[test]
+fn muscle_dome_frames_match_across_hosts() {
+    let parted = run(
+        &minigame_scenario(&[(20, 5, "KeyM")], dome_entered_and_left),
+        ALL,
+    );
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+fn mode_seat_entered_and_left(tr: &[HostTraceFrame]) -> Result<(), String> {
+    entered_and_left(tr, "Expansion")
+}
+
+/// The game-mode picker with no pack (the built-in practice set): open it,
+/// play the first mode on the face buttons, leave the seat.
+#[test]
+fn game_mode_seat_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: minigame_pad,
+        ticks: 840,
+        exercised: mode_seat_entered_and_left,
+        arm_shop: None,
+        hotkeys: &[],
+        battle_pad: None,
+        warps: &[
+            (20, MODE_PICKER, "Backquote"),
+            (680, MODE_LEAVE, "Backquote"),
+        ],
+        coins: 0,
+    };
+    let parted = run(&sc, ALL);
+    assert!(parted.is_empty(), "hosts diverge: {parted:#?}");
+}
+
+/// Open the pause menu with Start and close it with Start, each press held
+/// over four ticks as a player's key or button is.
+fn start_close_pad(t: u32, _: &HostTraceFrame) -> u16 {
+    tap(t, 50, START) | tap(t, 200, START)
+}
+
+/// The menu opened, closed on the second press, and stayed closed while
+/// that press was still held.
+fn closed_and_stayed_closed(tr: &[HostTraceFrame]) -> Result<(), String> {
+    let Some(open) = tr.iter().position(|f| f.mode == "Menu") else {
+        return Err("the pause menu never opened".into());
+    };
+    let Some(closed) = tr[open..].iter().position(|f| f.mode != "Menu") else {
+        return Err("the pause menu never closed".into());
+    };
+    if tr[open + closed..].iter().any(|f| f.mode == "Menu") {
+        return Err("the pause menu opened again after the press that closed it".into());
+    }
+    Ok(())
+}
+
+/// Start closes the pause menu, and the same press held over the next ticks
+/// does not open it again. The native window used to leave the session's own
+/// open path on (`BootSession::set_host_owns_pause_menu`), which reads the
+/// world's pad edge; the menu's ticks never advance that edge, so the held
+/// Start read as a fresh press and the menu reopened on the next field tick.
+#[test]
+fn pause_menu_start_close_frames_match_across_hosts() {
+    let sc = Scenario {
+        scene: "town01",
+        pad: start_close_pad,
+        ticks: 300,
+        exercised: closed_and_stayed_closed,
+        arm_shop: None,
+        hotkeys: &[],
+        battle_pad: None,
+        warps: &[],
+        coins: 0,
     };
     let parted = run(&sc, ALL);
     assert!(parted.is_empty(), "hosts diverge: {parted:#?}");

@@ -162,6 +162,13 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     // The window drains every per-tick world queue itself, right after each
     // session tick (`drain_and_log_battle_events` / `drain_and_route_field_events`).
     session.set_host_drains_queues(true);
+    // The window opens and drives the pause menu itself (`claim_tick` on the
+    // tick's Start edge, the boot-UI arm after the wipe), as the play page
+    // does. Left to the session, `tick`'s own open path fired as well, off
+    // the world's pad edge, which the menu's ticks never advance: Start held
+    // across the tick that closed the menu read as a fresh press on the next
+    // field tick and opened it again.
+    session.set_host_owns_pause_menu(true);
     // The scene-entry VDF pulse (enhancement) gate is written by the shared
     // switch set below - it must land before the first `enter_field_scene`,
     // which is where the installer runs.

@@ -410,9 +410,12 @@ impl<S: AudioSink> BootSession<S> {
         // here is what previously made the Save row - legal only on those
         // overworlds - unreachable by pad anywhere in the port.
         //
-        // The windowed host never reaches this auto-path (it handles the
-        // Start edge itself and skips `tick` while its boot-UI owns the
-        // frame), so the two hosts can't double-drive the session.
+        // Both play hosts opt out of this auto-path
+        // (`set_host_owns_pause_menu`): they handle the Start edge in
+        // `claim_tick` and skip `tick` while the menu owns the frame. A host
+        // that left it on would open the menu twice over - here the edge is
+        // the world's, which no menu tick advances, so a Start held across
+        // the close reads as a new press. Headless drivers keep it.
         //
         // REF: FUN_801D01B0 (`0x801D0250`, the menu-open accept)
         // A script's op-`0x49` save point / ready check is a menu-button press
