@@ -215,7 +215,7 @@ fn the_sanctum_hands_the_music_to_the_packs_drone() {
 }
 
 #[test]
-fn the_ember_crystals_crackle_by_distance() {
+fn the_niche_braziers_crackle_by_distance() {
     let Some(mut s) = session() else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
         return;
@@ -227,9 +227,8 @@ fn the_ember_crystals_crackle_by_distance() {
         ..Rec::default()
     };
     steps(&mut s, &mut rec, 10);
-    // Beside the north-west crystal: its loop (and the Warden's Stone hum,
-    // two tiles off) on the bus.
-    stand(&mut s, [16, 16], (3, 5));
+    // Below the bell niche's west brazier: its crackle on the bus.
+    stand(&mut s, [16, 16], (21, 2));
     steps(&mut s, &mut rec, 30);
     let near: Vec<_> = s.host.world.expansion_ambient_levels().to_vec();
     assert!(near.iter().any(|l| l.sound == "torch"), "{near:?}");
@@ -239,7 +238,7 @@ fn the_ember_crystals_crackle_by_distance() {
         .filter(|l| l.sound == "torch")
         .map(|l| l.pan.0 + l.pan.1)
         .fold(0.0f32, f32::max);
-    // Across the room, by the south stair: nothing in reach.
+    // Across the root shaft, by the Atrium's south stair: nothing in reach.
     stand(&mut s, [16, 16], (7, 11));
     steps(&mut s, &mut rec, 30);
     let far: f32 = s
