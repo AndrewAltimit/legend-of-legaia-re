@@ -32,16 +32,21 @@ ground = { tpage = 9, clut = 31110, tile = 19 }
 side = { tpage = 9, clut = 31176, tile = 3 }
 depth = 1280
 shade = 40
-# 9F: fade = 6                      # the shaft's walls darken toward its foot
-# 9F: [[surround.regions]]          # the shaft deeper still than the drop past the walls
-# 9F: rect = [11, 5, 23, 35]
-# 9F: depth = 1800
-# 9F: shade = 48
-# 9F: fade = 4
+# The walls darken as they go down, into the dark at the foot.
+fade = 8
 # The tower's outer wall stands round the drop on every side but the
 # camera's, so the view over the far walls ends on stone, fading into the
 # dark, rather than on the clear colour.
 backdrop = { tpage = 8, clut = 30979, tile = 27, height = 1152, distance = 2, shade = 96 }
+
+# The shaft itself: its floor, the engine's bed, lies shallower than the
+# drop past the tower's walls, so the cogs on it stay in the follow
+# camera's view over the decks' rims.
+[[surround.regions]]
+rect = [11, 5, 23, 35]
+depth = 640
+shade = 56
+fade = 10
 
 # The vault overhead: the lever's lamp hang on chains from it. The follow camera
 # looks down from under it, so only the chains show, rising out of the
@@ -228,7 +233,7 @@ id = "deep_cog_n"
 mesh = { asset = "models/cog.glb" }
 tile = [13, 9]
 hangs = true
-offset = [0, -560, 0]
+offset = [0, -600, 0]
 scale = 3.2
 solid = true
 animate = [{ kind = "spin", axis = "y", period = 900 }]
@@ -238,7 +243,7 @@ id = "deep_cog_mid"
 mesh = { asset = "models/cog.glb" }
 tile = [21, 19]
 hangs = true
-offset = [0, -480, 0]
+offset = [0, -600, 0]
 scale = 3.2
 solid = true
 animate = [{ kind = "spin", axis = "y", period = -1000 }]
@@ -248,7 +253,7 @@ id = "deep_cog_s"
 mesh = { asset = "models/cog.glb" }
 tile = [13, 20]
 hangs = true
-offset = [0, -620, 0]
+offset = [0, -600, 0]
 scale = 3.0
 solid = true
 animate = [{ kind = "spin", axis = "y", period = 800 }]
@@ -466,30 +471,41 @@ lamps = [
   { id = "pit_s", tile = [19, 22], offset = [0, -420, 0], color = [255, 110, 40], radius = 900, flicker = 0.15, period = 44, breathe = 0.4, breathe_period = 220 },
 ]
 
-# 9F: the furnace glow rising out of the shaft, the light the decks are
-# 9F: lit by from beneath:
-# 9F: [[beams]]
-# 9F: id = "pit_glow_n"
-# 9F: tile = [14, 10]
-# 9F: offset = [0, -1200, 0]
-# 9F: height = 1100
-# 9F: width = [260, 140]
-# 9F: color = [255, 140, 60]
-# 9F: intensity = 70
-# 9F: profile = "rise"
-# 9F: breathe = 0.3
-# 9F: motes = 24
-# 9F: [[beams]]
-# 9F: id = "pit_glow_s"
-# 9F: tile = [20, 22]
-# 9F: offset = [0, -1200, 0]
-# 9F: height = 1100
-# 9F: width = [260, 140]
-# 9F: color = [255, 130, 50]
-# 9F: intensity = 70
-# 9F: profile = "rise"
-# 9F: breathe = 0.3
-# 9F: motes = 24
+# The furnace glow rising out of the shaft at the far side of each pit,
+# the light the decks are lit by from beneath (enhanced lighting only).
+[[beams]]
+id = "pit_glow_nw"
+tile = [13, 11]
+offset = [0, -300, 0]
+height = 800
+tilt = 6.0
+angle = 90.0
+width = [220, 120]
+color = [255, 140, 60]
+intensity = 80
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 200
+motes = 20
+seed = 61
+
+[[beams]]
+id = "pit_glow_se"
+tile = [21, 23]
+offset = [0, -300, 0]
+height = 800
+tilt = 6.0
+angle = 270.0
+width = [220, 120]
+color = [255, 130, 50]
+intensity = 80
+profile = "rise"
+pool = false
+breathe = 0.3
+period = 220
+motes = 20
+seed = 62
 
 [[audio.ambient]]
 id = "engine_north"

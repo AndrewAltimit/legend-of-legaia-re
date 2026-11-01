@@ -579,51 +579,62 @@ lamps = [
   # Pale light falls from the vault's high windows onto the heart and the
   # causeway, breathing slowly as cloud passes over the sea outside.
   { id = "skylight_heart", tile = [16, 19], offset = [0, 620, 0], color = [170, 195, 240], radius = 720, breathe = 0.2, breathe_period = 420 },
-  { id = "skylight_causeway", tile = [16, 9], offset = [0, 560, 0], color = [200, 220, 255], radius = 760, breathe = 0.2, breathe_period = 460 },
+  { id = "skylight_causeway", tile = [16, 9], offset = [0, 560, 0], color = [170, 195, 240], radius = 600, breathe = 0.2, breathe_period = 460 },
 ]
 
-# 9F: shafts of pale light from the high windows, motes turning in them:
-# 9F: [[beams]]
-# 9F: id = "heart"
-# 9F: tile = [16, 19]
-# 9F: height = 1200
-# 9F: tilt = 10.0
-# 9F: angle = 200.0
-# 9F: width = [120, 240]
-# 9F: color = [210, 228, 255]
-# 9F: intensity = 75
-# 9F: breathe = 0.2
-# 9F: motes = 20
-# 9F: [[beams]]
-# 9F: id = "causeway"
-# 9F: tile = [16, 9]
-# 9F: height = 1100
-# 9F: tilt = 10.0
-# 9F: angle = 200.0
-# 9F: width = [90, 180]
-# 9F: color = [210, 228, 255]
-# 9F: intensity = 60
-# 9F: motes = 12
-# 9F: [[beams]]
-# 9F: id = "jetty_w"
-# 9F: tile = [3, 19]
-# 9F: height = 1000
-# 9F: tilt = 14.0
-# 9F: angle = 120.0
-# 9F: width = [80, 170]
-# 9F: color = [220, 230, 255]
-# 9F: intensity = 50
-# 9F: motes = 8
-# 9F: [[beams]]
-# 9F: id = "jetty_e"
-# 9F: tile = [29, 19]
-# 9F: height = 1000
-# 9F: tilt = 14.0
-# 9F: angle = 240.0
-# 9F: width = [80, 170]
-# 9F: color = [220, 230, 255]
-# 9F: intensity = 50
-# 9F: motes = 8
+# Shafts of pale light from the high windows, motes turning in them
+# (enhanced lighting only).
+[[beams]]
+id = "heart"
+tile = [16, 19]
+height = 1200
+tilt = 10.0
+angle = 250.0
+width = [120, 240]
+color = [210, 228, 255]
+intensity = 75
+breathe = 0.2
+motes = 20
+seed = 71
+
+[[beams]]
+id = "causeway"
+tile = [16, 9]
+height = 1100
+tilt = 10.0
+angle = 250.0
+width = [90, 180]
+color = [210, 228, 255]
+intensity = 45
+breathe = 0.0
+motes = 12
+seed = 72
+
+[[beams]]
+id = "jetty_w"
+tile = [3, 19]
+height = 1000
+tilt = 14.0
+angle = 90.0
+width = [80, 170]
+color = [210, 228, 255]
+intensity = 50
+breathe = 0.0
+motes = 8
+seed = 73
+
+[[beams]]
+id = "jetty_e"
+tile = [29, 19]
+height = 1000
+tilt = 14.0
+angle = 270.0
+width = [80, 170]
+color = [210, 228, 255]
+intensity = 50
+breathe = 0.0
+motes = 8
+seed = 74
 
 # The water: the vault's ribbed cyan light-strip (a palette nothing else on
 # the floor draws through), turned to a dark sea green and drifting slowly,

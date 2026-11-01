@@ -39,7 +39,8 @@ shade = 32
 # The tower's outer wall rises only on the west, behind the Hall of Fallen
 # Crowns; to the east and south the summit is open to the night sky.
 backdrop = { tpage = 24, clut = 31168, tile = 0, height = 1152, distance = 2, sides = "w", shade = 96 }
-# 9F: fade = 4                      # the shaft's walls darken into the dark below
+# The shaft's walls darken into the dark below.
+fade = 4
 
 # The vault overhead: the narthex lanterns hang on chains from it. The follow camera
 # looks down from under it, so only the chains show, rising out of the
@@ -592,25 +593,29 @@ press = true
 once = true
 requires = { flags = ["throne_broken"] }
 
-# 9F: moonlight falling on the throne and the bell from the open sky:
-# 9F: [[beams]]
-# 9F: id = "moon_throne"
-# 9F: tile = [15, 32]
-# 9F: height = 1400
-# 9F: tilt = 14.0
-# 9F: angle = 200.0
-# 9F: width = [140, 260]
-# 9F: color = [190, 200, 255]
-# 9F: intensity = 70
-# 9F: breathe = 0.1
-# 9F: motes = 12
-# 9F: [[beams]]
-# 9F: id = "moon_bell"
-# 9F: tile = [15, 37]
-# 9F: height = 1500
-# 9F: tilt = 10.0
-# 9F: angle = 200.0
-# 9F: width = [120, 220]
-# 9F: color = [200, 210, 255]
-# 9F: intensity = 60
-# 9F: motes = 8
+# Moonlight falling on the throne and the bell from the open sky
+# (enhanced lighting only).
+[[beams]]
+id = "moon_throne"
+tile = [15, 32]
+height = 1400
+tilt = 14.0
+angle = 250.0
+width = [140, 260]
+color = [190, 200, 255]
+intensity = 70
+breathe = 0.1
+motes = 12
+seed = 81
+
+[[beams]]
+id = "moon_bell"
+tile = [15, 37]
+height = 1500
+tilt = 10.0
+angle = 250.0
+width = [120, 220]
+color = [200, 210, 255]
+intensity = 60
+motes = 8
+seed = 82

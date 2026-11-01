@@ -882,26 +882,30 @@ lamps = [
   { id = "stage", tile = [13, 24], offset = [0, 220, 0], color = [255, 240, 210], radius = 520, flicker = 0.03, period = 60 },
 ]
 
-# 9F: warm evening light falling through the tower's high windows onto the
-# 9F: High Table and the piano stage, dust turning in it:
-# 9F: [[beams]]
-# 9F: id = "window_high_table"
-# 9F: tile = [18, 11]
-# 9F: height = 1100
-# 9F: tilt = 16.0
-# 9F: angle = 160.0
-# 9F: width = [90, 200]
-# 9F: color = [255, 220, 170]
-# 9F: intensity = 60
-# 9F: breathe = 0.1
-# 9F: motes = 14
-# 9F: [[beams]]
-# 9F: id = "window_stage"
-# 9F: tile = [13, 24]
-# 9F: height = 1300
-# 9F: tilt = 12.0
-# 9F: angle = 160.0
-# 9F: width = [80, 180]
-# 9F: color = [255, 230, 190]
-# 9F: intensity = 55
-# 9F: motes = 10
+# Warm evening light falls through the tower's high windows onto the High
+# Table and the piano stage, dust turning in it (drawn with enhanced
+# lighting only).
+[[beams]]
+id = "window_high_table"
+tile = [18, 11]
+height = 1100
+tilt = 16.0
+angle = 250.0
+width = [90, 200]
+color = [255, 220, 170]
+intensity = 60
+breathe = 0.1
+motes = 14
+seed = 51
+
+[[beams]]
+id = "window_stage"
+tile = [13, 24]
+height = 1300
+tilt = 14.0
+angle = 250.0
+width = [80, 180]
+color = [255, 230, 190]
+intensity = 55
+motes = 10
+seed = 52
