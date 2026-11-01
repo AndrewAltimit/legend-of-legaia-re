@@ -223,7 +223,8 @@ pub fn stamp_battle_faces(
 ///
 /// * **Status CLUT recolour** - the fourth pass of `FUN_8004CE2C`: an actor
 ///   whose Stone latch fired has its party CLUT row (`481 + slot`) restaged
-///   grey from the pristine palette copy
+///   grey from the pristine palette copy, and a fired Rot limb latch tints
+///   that limb's palette window blue
 ///   ([`legaia_engine_battle::battle_status_clut`]). The latch is armed by
 ///   `BattleHud::sync_status`, which each host's battle-event step runs.
 /// * **Effect CLUT stages** - the palette arm of the action-effect script's
@@ -248,6 +249,7 @@ pub fn step_battle_vram_edits(
         world.discard_battle_vram_edits();
         return false;
     };
+    status_clut.set_rot_windows(world.battle_rot_clut_windows());
     let mut dirty = status_clut.armed() && status_clut.step(vram);
     for x in stages {
         dirty |= legaia_engine_battle::battle_effect_clut::stage_effect_clut(vram, x);

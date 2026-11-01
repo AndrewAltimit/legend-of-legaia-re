@@ -987,9 +987,9 @@ not carry the others.
 The wire's own limits, stated so the next reader does not re-derive them:
 
 - The **Rot** arm of the same pass (status bits `0x08`/`0x10`/`0x20`, latches
-  `+0x221..=+0x223`) is still out. It applies its ramp over a per-character
-  index window read from the 3-pair table at `DAT_80078630`, and no crate in
-  the workspace parses that table.
+  `+0x221..=+0x223`) rides the same wire since its window table
+  (`DAT_80078630`) got a reader: `RotClutWindows`, seated per seat by
+  `step_battle_vram_edits`.
 - The pass is live but **does not fire in ordinary play**, for a reason that
   sits upstream of every address on this page: the port has no monster-side
   `enemy_effect` source. The only production art-record lookup for a status

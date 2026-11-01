@@ -44,6 +44,7 @@ mod player_tilt_live_disc;
 mod rayman_collapse_audio_disc;
 mod restore_field_bgm_disc;
 mod resume_landing;
+mod rot_clut_disc;
 mod save_gate_field_menu;
 mod save_roundtrip_library;
 mod scene_encounter_rollable;

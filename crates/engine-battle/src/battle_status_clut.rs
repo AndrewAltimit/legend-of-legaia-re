@@ -1,7 +1,7 @@
 //! Battle **status CLUT recolour** - the fourth pass of the per-frame actor
 //! maintenance sweep `FUN_8004CE2C`.
 //!
-//! PORT: FUN_8004CE2C (the Stone arm; the Rot arm is disclosed below)
+//! PORT: FUN_8004CE2C (the Stone and Rot arms of the status CLUT pass)
 //! REF: FUN_800583C8 - `LoadImage`; the 240x1 rect the staged row uploads through.
 //! REF: FUN_80053B9C - the battle loader's CLUT upload that seeds row `481 + slot`.
 //!
@@ -44,20 +44,28 @@
 //! retail: the pass writes only the staging buffer, never `ctx[+0x894]`, so a
 //! second fire re-greys the *original* colours instead of compounding.
 //!
-//! # What is not ported
+//! # The Rot arm
 //!
-//! The sibling arm on status bits `0x08`/`0x10`/`0x20` (Rot, latched via
-//! `actor[+0x221..=+0x223]`, `0x8004D7A8..0x8004D98C`) builds the same
-//! luminance plus `b = (l * 3) >> 1` and sets the STP bit, but applies it only
-//! over a **per-character index window** read from the 3-pair byte table at
-//! `DAT_80078630` (stride 6, indexed by the 1-based character id
-//! `DAT_8007BD10[slot]`, pair `s2` selecting the limb). No crate in this
-//! workspace parses that table - `DAT_80078630` appears in
-//! `docs/subsystems/battle.md` and nowhere in `crates/` - so the arm has a
-//! ramp but no window to apply it to. It stays out until the table has a
-//! reader.
+//! The sibling arm on status bits `0x08`/`0x10`/`0x20` (Rot, one bit per
+//! limb, `0x8004D7A8..0x8004D98C`) runs after the Stone arm, once per limb
+//! `n = 0..3`:
+//!
+//! - `lhu v1,0x16e(s0) ; sllv v0,0x8,s2` - limb `n`'s bit; clear skips.
+//! - `lbu v0,0x221(v1)` with `v1 = actor + n` - the limb's own latch at
+//!   `actor[+0x221 + n]`, cleared by the pass that fires (`sb zero`).
+//! - the window is the byte pair `[lo, hi)` at `DAT_80078630 + (id - 1) * 6 +
+//!   n * 2` ([`RotClutWindows`]), `id` the seat's 1-based character id
+//!   `DAT_8007BD10[slot]`.
+//! - each entry `lo..hi` of the same pristine copy takes the blue ramp
+//!   [`bgr555_to_rot_blue`] into the staging buffer, and a `(hi - lo) x 1`
+//!   rect at `(lo, 481 + slot)` uploads just that span.
+//!
+//! So a rotted limb's palette span turns blue and the rest of the row keeps
+//! whatever it last held, which is how a stoned-then-rotted seat ends up grey
+//! with one blue limb. The windows split the party's 240-entry rows at the
+//! 16-entry CLUT boundaries of the limb textures.
 
-use legaia_engine_battle_vm::bgr555_grey::bgr555_to_grey;
+use legaia_engine_battle_vm::bgr555_grey::{bgr555_to_grey, bgr555_to_rot_blue};
 
 /// First VRAM CLUT row of the battle party palettes - retail's
 /// `addiu v0,s3,0x1e1` (`0x8004D77C`), the same `481 + ordinal` the
@@ -71,6 +79,47 @@ pub const PARTY_CLUT_ENTRIES: usize = 240;
 /// Party slots the recolour covers. `ctx[+0xE34] - ctx[+0x894] = 3 * 0x1E0`,
 /// so the retail palette window is exactly three actors wide.
 pub const PARTY_CLUT_SLOTS: usize = 3;
+
+/// VA of the per-character Rot CLUT window table in `SCUS_942.54`
+/// (`addiu s7,v0,-0x79d0` at `0x8004D698`).
+pub const ROT_CLUT_WINDOW_VA: u32 = 0x8007_8630;
+/// Bytes per character row: three `[lo, hi)` byte pairs, one per limb bit.
+pub const ROT_CLUT_ROW_LEN: usize = 6;
+/// Rows the port reads: roster ids `1..=4`, the same span as the draw's
+/// limb table (`legaia_engine_battle_vm::battle_actor_draw::RotLimbTable`).
+pub const ROT_CLUT_ROWS: usize = 4;
+/// Status bits (`+0x16E`) of the three Rot limbs, in window-pair order
+/// (`li v0,0x8 ; sllv v0,v0,s2` at `0x8004D7AC`).
+pub const ROT_CLUT_LIMB_BITS: [u16; 3] = [0x0008, 0x0010, 0x0020];
+
+/// The per-character palette windows the Rot arm tints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RotClutWindows {
+    /// `rows[id - 1]` for roster id `id`.
+    pub rows: [[u8; ROT_CLUT_ROW_LEN]; ROT_CLUT_ROWS],
+}
+
+impl RotClutWindows {
+    /// Decode the table from a `SCUS_942.54` image. `None` when the image is
+    /// not a PSX-EXE or is too short to hold the rows.
+    pub fn from_scus(scus: &[u8]) -> Option<Self> {
+        let off = legaia_game_tables::new_game::scus_file_offset(scus, ROT_CLUT_WINDOW_VA)?;
+        let bytes = scus.get(off..off + ROT_CLUT_ROW_LEN * ROT_CLUT_ROWS)?;
+        let mut rows = [[0u8; ROT_CLUT_ROW_LEN]; ROT_CLUT_ROWS];
+        for (row, chunk) in rows.iter_mut().zip(bytes.as_chunks::<ROT_CLUT_ROW_LEN>().0) {
+            *row = *chunk;
+        }
+        Some(Self { rows })
+    }
+
+    /// The row for a 1-based roster id, `None` outside `1..=4` (retail
+    /// indexes `id - 1` unchecked).
+    pub fn row(&self, roster_id: u8) -> Option<[u8; ROT_CLUT_ROW_LEN]> {
+        self.rows
+            .get(usize::from(roster_id).checked_sub(1)?)
+            .copied()
+    }
+}
 
 /// The engine's stand-in for the three things retail's pass reads that the
 /// port's battle context has never carried: the per-actor palette copy
@@ -93,6 +142,13 @@ pub struct StatusClutState {
     /// applier-side latch write. A cure followed by a re-petrify re-arms,
     /// which is what the retail applier does too.
     seen: [bool; PARTY_CLUT_SLOTS],
+    /// `actor[+0x221..=+0x223]`: one latch per Rot limb.
+    rot_latch: [[bool; 3]; PARTY_CLUT_SLOTS],
+    /// Last-seen Rot limb bits (`+0x16E & 0x38`), the edge detector.
+    rot_seen: [u16; PARTY_CLUT_SLOTS],
+    /// Each slot's [`RotClutWindows`] row, set by the host from the seat's
+    /// character id ([`Self::set_rot_windows`]).
+    windows: [Option<[u8; ROT_CLUT_ROW_LEN]>; PARTY_CLUT_SLOTS],
 }
 
 impl StatusClutState {
@@ -111,9 +167,48 @@ impl StatusClutState {
         self.seen[i] = stoned;
     }
 
+    /// Fold this frame's status word for `slot` into the three Rot limb
+    /// latches. Each limb bit's rising edge arms its own latch, as the
+    /// applier's per-limb latch write does; a limb already rotted does not
+    /// re-arm.
+    pub fn arm_rot(&mut self, slot: u8, status: u16) {
+        let i = slot as usize;
+        if i >= PARTY_CLUT_SLOTS {
+            return;
+        }
+        for (n, &bit) in ROT_CLUT_LIMB_BITS.iter().enumerate() {
+            if status & bit != 0 && self.rot_seen[i] & bit == 0 {
+                self.rot_latch[i][n] = true;
+            }
+        }
+        self.rot_seen[i] = status & ROT_CLUT_LIMB_BITS.iter().fold(0, |m, b| m | b);
+    }
+
+    /// Seat the Rot windows the next [`Self::step`] tints over, one row per
+    /// party slot (`None` for an empty seat or a host without the table).
+    pub fn set_rot_windows(&mut self, windows: [Option<[u8; ROT_CLUT_ROW_LEN]>; PARTY_CLUT_SLOTS]) {
+        self.windows = windows;
+    }
+
     /// Whether any slot's latch is waiting for a [`Self::step`].
     pub fn armed(&self) -> bool {
-        self.latch.iter().any(|&l| l)
+        self.latch.iter().any(|&l| l) || self.rot_latch.iter().flatten().any(|&l| l)
+    }
+
+    /// The pristine palette for `slot`, snapshotted off VRAM on first use.
+    /// `None` while the row is still blank (not resident yet).
+    fn pristine_row(&mut self, vram: &legaia_tim::Vram, slot: usize) -> Option<&Vec<u16>> {
+        if self.pristine[slot].is_none() {
+            let row = PARTY_CLUT_ROW_BASE + slot as u16;
+            let words: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
+                .map(|x| vram.pixel(x, row as usize))
+                .collect();
+            if words.iter().all(|&w| w == 0) {
+                return None;
+            }
+            self.pristine[slot] = Some(words);
+        }
+        self.pristine[slot].as_ref()
     }
 
     /// Drop the latches, the edge state and the palette copies - the battle
@@ -136,31 +231,51 @@ impl StatusClutState {
     pub fn step(&mut self, vram: &mut legaia_tim::Vram) -> bool {
         let mut wrote = false;
         for slot in 0..PARTY_CLUT_SLOTS {
-            if !self.latch[slot] {
-                continue;
-            }
             let row = PARTY_CLUT_ROW_BASE + slot as u16;
-            if self.pristine[slot].is_none() {
-                let words: Vec<u16> = (0..PARTY_CLUT_ENTRIES)
-                    .map(|x| vram.pixel(x, row as usize))
+            // The Stone arm (`0x8004D6C0..0x8004D79C`): the whole row grey.
+            if self.latch[slot]
+                && let Some(src) = self.pristine_row(vram, slot)
+            {
+                let staged: Vec<u8> = src
+                    .iter()
+                    .flat_map(|&c| bgr555_to_grey(c).to_le_bytes())
                     .collect();
-                if words.iter().all(|&w| w == 0) {
-                    // Palette not resident yet - hold the latch.
+                vram.write_clut_row(0, row, &staged);
+                // retail `sb zero,0x220(s0)` - the latch is spent.
+                self.latch[slot] = false;
+                wrote = true;
+            }
+            // (A latched slot whose palette is not resident yet holds its
+            // latch for the next frame.)
+
+            // The Rot arm (`0x8004D7A8..0x8004D98C`), limb by limb after
+            // the Stone arm: the limb's window of the pristine copy, blue.
+            for limb in 0..3 {
+                if !self.rot_latch[slot][limb] {
                     continue;
                 }
-                self.pristine[slot] = Some(words);
+                let Some(w) = self.windows[slot] else {
+                    // No character row for the seat: the window is unknown,
+                    // so the latch waits rather than tinting a guessed span.
+                    continue;
+                };
+                let lo = usize::from(w[limb * 2]).min(PARTY_CLUT_ENTRIES);
+                let hi = usize::from(w[limb * 2 + 1]).min(PARTY_CLUT_ENTRIES);
+                let Some(src) = self.pristine_row(vram, slot) else {
+                    continue;
+                };
+                // `sb zero,0x221(v1)` - spent whether or not the span is
+                // empty; an empty `[lo, hi)` uploads a zero-width rect.
+                if lo < hi {
+                    let staged: Vec<u8> = src[lo..hi]
+                        .iter()
+                        .flat_map(|&c| bgr555_to_rot_blue(c).to_le_bytes())
+                        .collect();
+                    vram.write_clut_row(lo as u16, row, &staged);
+                    wrote = true;
+                }
+                self.rot_latch[slot][limb] = false;
             }
-            let Some(src) = self.pristine[slot].as_ref() else {
-                continue;
-            };
-            let staged: Vec<u8> = src
-                .iter()
-                .flat_map(|&c| bgr555_to_grey(c).to_le_bytes())
-                .collect();
-            vram.write_clut_row(0, row, &staged);
-            // retail `sb zero,0x220(s0)` - the latch is spent.
-            self.latch[slot] = false;
-            wrote = true;
         }
         wrote
     }
@@ -252,6 +367,82 @@ mod tests {
         assert!(st.step(&mut vram));
         let expect: Vec<u16> = base.iter().map(|&c| bgr555_to_grey(c)).collect();
         assert_eq!(read_row(&vram, PARTY_CLUT_ROW_BASE + 2), expect);
+    }
+
+    const WINDOWS: [u8; ROT_CLUT_ROW_LEN] = [0xD0, 0xF0, 0xB0, 0xD0, 0x70, 0x90];
+
+    #[test]
+    fn a_rot_limb_tints_only_its_window_blue_once() {
+        let mut vram = legaia_tim::Vram::new();
+        let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE);
+        let mut st = StatusClutState::default();
+        st.set_rot_windows([Some(WINDOWS), None, None]);
+
+        // Limb 1 (`0x10`) rots: entries 0xB0..0xD0 turn blue, the rest stay.
+        st.arm_rot(0, 0x0010);
+        assert!(st.armed());
+        assert!(st.step(&mut vram));
+        let row = read_row(&vram, PARTY_CLUT_ROW_BASE);
+        for (i, (&got, &was)) in row.iter().zip(&base).enumerate() {
+            if (0xB0..0xD0).contains(&i) {
+                assert_eq!(got, bgr555_to_rot_blue(was), "entry {i:#x}");
+            } else {
+                assert_eq!(got, was, "entry {i:#x} outside the window");
+            }
+        }
+        // The latch is spent; a steady Rot does not re-run.
+        st.arm_rot(0, 0x0010);
+        assert!(!st.armed());
+
+        // A second limb arms on its own edge and leaves the first in place.
+        st.arm_rot(0, 0x0030);
+        assert!(st.step(&mut vram));
+        let row = read_row(&vram, PARTY_CLUT_ROW_BASE);
+        assert_eq!(row[0x70], bgr555_to_rot_blue(base[0x70]));
+        assert_eq!(row[0xB0], bgr555_to_rot_blue(base[0xB0]));
+        assert_eq!(row[0x60], base[0x60]);
+    }
+
+    #[test]
+    fn stone_then_rot_leaves_a_grey_row_with_a_blue_limb() {
+        let mut vram = legaia_tim::Vram::new();
+        let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE + 2);
+        let mut st = StatusClutState::default();
+        st.set_rot_windows([None, None, Some(WINDOWS)]);
+        st.arm(2, true);
+        st.arm_rot(2, 0x0008);
+        assert!(st.step(&mut vram));
+        let row = read_row(&vram, PARTY_CLUT_ROW_BASE + 2);
+        // The Rot arm runs after the Stone arm off the pristine copy.
+        assert_eq!(row[0xD0], bgr555_to_rot_blue(base[0xD0]));
+        assert_eq!(row[0x10], bgr555_to_grey(base[0x10]));
+    }
+
+    #[test]
+    fn a_rot_latch_waits_for_its_window() {
+        let mut vram = legaia_tim::Vram::new();
+        let base = seed_row(&mut vram, PARTY_CLUT_ROW_BASE + 1);
+        let mut st = StatusClutState::default();
+        st.arm_rot(1, 0x0020);
+        assert!(!st.step(&mut vram), "no window, no write");
+        assert!(st.armed());
+        st.set_rot_windows([None, Some(WINDOWS), None]);
+        assert!(st.step(&mut vram));
+        assert_eq!(
+            read_row(&vram, PARTY_CLUT_ROW_BASE + 1)[0x80],
+            bgr555_to_rot_blue(base[0x80])
+        );
+    }
+
+    #[test]
+    fn rot_windows_decode_from_a_scus_shaped_image() {
+        assert!(RotClutWindows::from_scus(&[0u8; 16]).is_none());
+        let t = RotClutWindows {
+            rows: [WINDOWS; ROT_CLUT_ROWS],
+        };
+        assert_eq!(t.row(1), Some(WINDOWS));
+        assert_eq!(t.row(0), None);
+        assert_eq!(t.row(5), None);
     }
 
     #[test]

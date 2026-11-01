@@ -20,10 +20,11 @@
 //! `BattleHud::sync_status` arms it, and both play hosts run the pass against
 //! their battle VRAM through `engine-session::battle_vram::step_battle_vram_edits`.
 //!
-//! Two limits on that wire. The **Rot arm** is out: it tints over a
-//! per-character index window from `DAT_80078630`, which no crate parses.
+//! The **Rot arm**'s ramp is [`bgr555_to_rot_blue`]; it tints only a
+//! per-character index window of the row, read from `DAT_80078630`
+//! (`engine-battle::battle_status_clut::RotClutWindows`).
 //!
-//! And the pass, though live, does not fire in ordinary play. Retail's
+//! The Stone arm, though live,, though live, does not fire in ordinary play. Retail's
 //! enemy-special status source is the **move-power record's `+0x0A`
 //! impact-effect selector**, which `FUN_801DEA50` parks at `ctx+0x1014` and
 //! `FUN_801E09F8` branches on at the impact phase;
@@ -61,8 +62,7 @@
 /// - repack `lum | (lum << 5) | (lum << 10)`.
 ///
 /// The top `STP` bit (`0x8000`) is **not** set by this variant - it is added
-/// by the sibling brightened path (`lum * 3 / 2`), which is a separate ramp
-/// and not reproduced here. The surrounding routine (packet build via
+/// by the sibling Rot ramp ([`bgr555_to_rot_blue`]). The surrounding routine (packet build via
 /// `_DAT_1f8003a0`, `FUN_800583c8` submit) is render-track; see
 /// `docs/subsystems/battle.md`.
 pub fn bgr555_to_grey(pixel: u16) -> u16 {
@@ -73,9 +73,45 @@ pub fn bgr555_to_grey(pixel: u16) -> u16 {
     lum | (lum << 5) | (lum << 10)
 }
 
+/// The Rot arm's blue ramp - the sibling of [`bgr555_to_grey`] in the same
+/// pass of `FUN_8004CE2C` (`0x8004D830..0x8004D8A4`).
+///
+/// PORT: FUN_8004CE2C (the Rot arm's per-entry ramp)
+///
+/// The same luminance `l = (r + g + b) >> 2`, then `b' = (l * 3) >> 1`
+/// (`sll v0,a0,0x1 / addu / srl v1,v0,0x1`), each clamped to `0x1F`
+/// (`sltiu ..,0x20` on both), and the repack sets the STP bit
+/// (`ori v0,v0,0x8000`): red and green take `l`, blue takes `b'`. The
+/// luminance tops out at `0x17`, so neither clamp fires on a 15-bit input.
+pub fn bgr555_to_rot_blue(pixel: u16) -> u16 {
+    let r = pixel & 0x1F;
+    let g = (pixel >> 5) & 0x1F;
+    let b = (pixel >> 10) & 0x1F;
+    let l = (r + g + b) >> 2;
+    let blue = ((l * 3) >> 1).min(0x1F);
+    let l = l.min(0x1F);
+    (blue << 10) | 0x8000 | (l << 5) | l
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rot_blue_lifts_blue_over_the_grey_and_sets_stp() {
+        // White: l = 93 >> 2 = 23, blue = 34 clamped to 31.
+        assert_eq!(
+            bgr555_to_rot_blue(0x7FFF),
+            0x8000 | (31 << 10) | (23 << 5) | 23
+        );
+        // Black stays black but carries STP.
+        assert_eq!(bgr555_to_rot_blue(0), 0x8000);
+        // The STP bit of the source is ignored, like the grey ramp.
+        assert_eq!(bgr555_to_rot_blue(0x8421), bgr555_to_rot_blue(0x0421));
+        // r = g = b = 8: l = 6, blue = 9.
+        let c = 8 | (8 << 5) | (8 << 10);
+        assert_eq!(bgr555_to_rot_blue(c), 0x8000 | (9 << 10) | (6 << 5) | 6);
+    }
 
     #[test]
     fn grey_replicates_luminance_into_all_channels() {

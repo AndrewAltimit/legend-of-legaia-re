@@ -206,9 +206,10 @@ impl BattleHud {
     /// Pull the active status icons for `slot` from a tracker. Replaces
     /// any previously stored icons.
     ///
-    /// Also folds the slot's Stone bit into [`Self::status_clut`] - retail's
-    /// applier writes the `actor[+0x220]` latch that `FUN_8004CE2C`'s fourth
-    /// pass consumes, and this is the one per-slot-per-frame call every host
+    /// Also folds the slot's Stone bit and Rot limb bits into
+    /// [`Self::status_clut`] - retail's appliers write the
+    /// `actor[+0x220..=+0x223]` latches that `FUN_8004CE2C`'s fourth pass
+    /// consumes, and this is the one per-slot-per-frame call every host
     /// already makes with the tracker in hand.
     pub fn sync_status(&mut self, slot: u8, tracker: &StatusEffectTracker) {
         if (slot as usize) >= self.slots.len() {
@@ -217,6 +218,7 @@ impl BattleHud {
         let icons: Vec<StatusKind> = tracker.statuses(slot).iter().map(|s| s.kind).collect();
         self.status_clut
             .arm(slot, icons.contains(&StatusKind::Stone));
+        self.status_clut.arm_rot(slot, tracker.display_flags(slot));
         self.slots[slot as usize].set_status_icons(icons);
     }
 
