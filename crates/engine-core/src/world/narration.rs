@@ -608,6 +608,14 @@ impl World {
     pub fn dialogue_owns_input(&self) -> bool {
         self.dialog.current.is_some()
             || self.dialog.inline.is_some()
+            // A modal cutscene record parked on its text segment shows the
+            // same box, and the stepper pages it on the pad (town0e
+            // `P2[6]`'s ending line at `+0x61`).
+            || self
+                .cutscene
+                .timeline
+                .as_ref()
+                .is_some_and(|tl| tl.dialog.is_some())
             // A spawned helper record parked on its text segment shows the
             // one shared box ([`Self::script_dialog_panel`]).
             || self

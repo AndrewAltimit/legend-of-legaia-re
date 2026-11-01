@@ -1736,6 +1736,7 @@ phase = "field"
 expected_game_mode = 0x03
 description = "End credits: Vahn walking away from Rim Elm (scene pool slot0 = 85). No widget actors live in this moment."
 topics = ["ending", "cutscene", "screen widgets"]
+arrival = { from = "town0e", door = 6 }
 
 [[scenarios]]
 slot = 4
@@ -1786,6 +1787,7 @@ phase = "field"
 expected_game_mode = 0x03
 description = "End credits: Biron Monastery vignette (scene pool slot0 = 785). Live mask widget at the border rect (0,16,320,204) on a second vignette scene."
 topics = ["ending", "screen widgets", "mask"]
+arrival = { from = "edteien" }
 
 [[scenarios]]
 slot = 8

@@ -3089,12 +3089,12 @@ word `2015`); the sweep counts those as one track.
 
 | Channel | Scores | Result |
 |---|---|---|
-| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 66 of 70 walkable states |
-| `playing` | that sequence is playing exactly when the engine's gate is open | 68 of 70 |
-| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 62 of 62 |
-| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 65 of 65 |
-| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 17 of 18 |
-| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 122 of 122 battle states |
+| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 84 of 85 walkable states |
+| `playing` | that sequence is playing exactly when the engine's gate is open | 84 of 85 |
+| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 80 of 80 |
+| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 80 of 80 |
+| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 19 of 20 |
+| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 129 of 129 battle states |
 
 Battle states are not seeded - the battle half of the corpus is
 `retail_compare_battle`'s - so their channel tests the rule on retail's
@@ -3118,16 +3118,26 @@ logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
 disabled the first three fail again (the head start replaces the kept
 track), while `retockin` passes either way because its entry parks.
 
+The credits vignettes are the same shape on a scripted chain. Their entries
+park on `0x1000`, so what sounds is what the chain's earlier scenes started.
+`town0e`'s `P2[6]` (the ending's walk out of Rim Elm) selects and commits
+`2001` (sub-ops `9` / `0xA`), raises sub-op 6 and changes scene to `map01`,
+whose entry parks: `ending_vignette_rimelm_walkaway` plays `2001` under the
+word `0x1000`. `edteien`'s entry starts `2068` on the ending source, and its
+`P2[0]` raises sub-op 6 and changes scene to `edbylon`, which parks:
+`ending_vignette_biron` plays `2068` under the same word. Both are seeded
+from the scene before (`arrival = { from = "town0e", door = 6 }`,
+`arrival = { from = "edteien" }`) and match retail on every channel.
+`P2[6]` opens on a line of text at `+0x61`, which the replay pages because
+`World::dialogue_owns_input` counts a modal cutscene record's box as it
+counts the other channels'.
+
 The sweep found the sub-op 9 defect: the port started a cutscene's new track
 at the select where retail holds it to the commit
 ([`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track)),
 the two `chapter2_garmel` states catching retail inside that window. What it
 still reports:
 
-- **`ending_vignette_biron`, `ending_vignette_rimelm_walkaway`** - the
-  credits vignettes park on `0x1000`, and what plays (`2068` on the ending
-  source, `2001` on the field source) is the music the ending chain started
-  scenes earlier. A card-load seed does not replay it.
 - **`kor5_post_436_organic`** - captured between a commit and the install
   (flags `0x19`, no field-BGM source open, requested `1009` against loaded
   `1023`): the poller attaches `2019` a call or two later; the engine has it
@@ -3183,10 +3193,9 @@ still reports:
   *script* (restore-PC at `0x801E0288`) until that settle has passed. The
   engine installs at once and never stalls, so a scene's track and a
   cutscene's beats after a `0xA` start earlier than retail's.
-- **The sweep's open rows** ([above](#the-audio-state-sweep)) are the
-  credits chain's carried music, a capture instant, and `tower`'s lift
-  cue, which sounded on a contact before the capture: seeding it means
-  resuming the lift's context mid-record (`+0xF4`) with its cue voice
+- **The sweep's open rows** ([above](#the-audio-state-sweep)) are a
+  capture instant and `tower`'s lift cue, which sounded on a contact
+  before the capture: seeding it means resuming the lift's context mid-record (`+0xF4`) with its cue voice
   still keyed, which no seed does yet.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
