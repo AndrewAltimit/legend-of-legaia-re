@@ -1462,6 +1462,28 @@ Two limits are measured rather than argued:
   `rim_elm_gimard_seru_capture_*` drives frame Vahn's last swing some fifty
   yaw units further off (`camera` `.962` to `.932`, `.953` to `.918`).
 
+A monster's Attack is replayed with the party on Spirit when the capture's
+round shows the whole party on Spirit (`+0x1DE == 4` on every seat,
+`RetailBattle::party_spirit_round`, the drive's `spare`). Every monster-strike
+capture in the library holds such a round with each monster on its full HP:
+the party sat the fight out. A drive whose party swings instead strikes down a
+monster the capture holds standing - `battle_tunnelb_warman_strike`'s Warman A
+and `battle_retona_king_frog_strike`'s second monster sank through the floor in
+the replay's fade while retail's idle behind the fight. The replay's rounds
+still hand the monsters theirs, and those can land an ailment the capture's
+fight never took: `battle_korb2_medusa_strike`'s replayed Medusa petrified
+Vahn in an earlier round, so the frame drew him an opaque grey Stone body
+where retail's status word reads `0` and its near-camera ghost is a faint
+trace. So when the capture's seat seeds its action, the re-seat also strips
+every ailment the captured word does not carry
+(`BattleState::capture_reseat_bars`), and takes back the HP and MP the
+replay's rounds dealt off a combatant standing on both sides, whose bar the HUD
+draws (`battle_tower_guardian_strike`'s Vahn read `258` where retail's reads
+`498`). Medusa's frame reads `.885` to `.978` with both. What the Spirit
+rounds still leave apart is clocks no word pins: `battle_retona_king_frog_strike`
+reads `.957` to `.928` on the stage mist's phase alone, its Noa on retail's
+displayed keyframe.
+
 ### The Mystic Shield a capture already holds
 
 Cort raises his Mystic Shield on an earlier turn (PROT 0940's arm 4), and the
@@ -1816,7 +1838,11 @@ predates the hit and is left alone. The action's own clips start with the
 approach `0x14` stages, so on the seed's own passes - the seed `0x0C`, and an
 Attack arm `0x14` whose body has not run (the yaw counter still on the seed's
 `0x200` rung) - both bodies still sway on their idle loops and are seated
-too (`super_queue_replace_*` `image` `.926` to `.938`).
+too (`super_queue_replace_*` `image` `.926` to `.938`). So does a monster
+melee's target from the approach `0x14` through the strike loop `0x1E` while
+it idles: the hit that stages its reaction has not landed, and nothing else
+in the action touches its loop (`battle_korb2_warhalf_strike`'s Vahn, walked
+onto at idle cursor `0` on the displayed frame).
 
 A monster target is seated on one reaction: the get-up a killed monster
 rises on for the absorb, with a Seru staged in `ctx[+0x269]` (the commit's

@@ -627,10 +627,23 @@ impl RetailBattle {
                 // clock, re-committing at each cycle end, and the frame on
                 // screen shows the cycle two game frames back.
                 let walking = clip == 1 && slot == self.active_actor && self.walk_clock_capture();
+                // ... and a monster melee's target still idling ahead of the
+                // hit: its loop is a clock of its own until the strike lands
+                // and stages its reaction (`battle_korb2_warhalf_strike`'s
+                // Vahn, walked onto at idle cursor `0` on the displayed
+                // frame). A target idling in the RAM was not struck inside
+                // the display lag either, so the walk back holds (a wrap of
+                // the loop included).
+                let melee_target_idle = clip == 0
+                    && slot == self.target_code
+                    && self.active_actor >= 3
+                    && self.queued_category == 3
+                    && (0x14..=0x1E).contains(&self.action_state);
                 !in_flight
                     || capture_band_idle
                     || parked_idle
                     || walking
+                    || melee_target_idle
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
@@ -830,6 +843,22 @@ impl RetailBattle {
         })
     }
 
+    /// A monster's Attack captured in a round every party seat committed
+    /// Spirit (`+0x1DE == 4` on each): the party sat that round out, so the
+    /// drive's party commits Spirit as well ([`BattleDrive::Action`]'s
+    /// `spare`) rather than Attack. Every monster-strike capture in the
+    /// library holds that round with each monster on its full HP - the
+    /// harvest script's opening Spirit rounds - and a replay that swings
+    /// instead kills a monster the capture holds standing
+    /// (`battle_tunnelb_warman_strike`'s Warman A, struck down where
+    /// retail's idles behind the fight).
+    pub fn party_spirit_round(&self) -> bool {
+        self.active_actor >= 3
+            && self.queued_category == 3
+            && !self.party_categories.is_empty()
+            && self.party_categories.iter().all(|&c| c == 4)
+    }
+
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
     /// (`ActionSteer::walk_clock`).
     pub fn walk_clock_capture(&self) -> bool {
@@ -852,7 +881,7 @@ impl RetailBattle {
                 state,
                 category: self.queued_category,
                 queued: self.queued_action,
-                spare: !self.action_victims().is_empty(),
+                spare: !self.action_victims().is_empty() || self.party_spirit_round(),
                 absorbed: if seat < 3 { self.absorbed_seru } else { 0 },
                 end: self.span_gate,
                 style: Some(self.cam_style),

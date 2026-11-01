@@ -1056,6 +1056,16 @@ pub struct BattleState {
     /// attacker keeps the ground its own walk starts from. Set by
     /// `legaia_engine_capture::bar_seeds::arm_capture_reseat`; never in play.
     pub capture_reseat: Option<CaptureReseat>,
+    /// Beside [`Self::capture_reseat`]: each combatant's captured bars as
+    /// the action found them - HP and MP before its hits, and the status
+    /// word `+0x16E` (the seedable ailment bits) - as
+    /// [`CaptureReseatBars`]. The replayed rounds deal their own damage
+    /// and can land an ailment the capture's fight never did
+    /// (`battle_korb2_medusa_strike`: the replay's Medusa petrified Vahn in
+    /// an earlier round, retail's word reads `0`), so when that seat seeds,
+    /// a combatant standing on both sides takes the captured HP and MP back
+    /// and every ailment the word does not carry is stripped. Never in play.
+    pub capture_reseat_bars: Vec<CaptureReseatBars>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1126,6 +1136,16 @@ fn capture_approach_env_round_trips() {
     };
     assert_eq!(CaptureApproach::from_env(&a.to_env()), Some(a));
     assert_eq!(CaptureApproach::from_env("656:2:168"), None);
+}
+
+/// One combatant of [`BattleState::capture_reseat_bars`]: engine slot, HP,
+/// MP and the seedable status bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureReseatBars {
+    pub slot: u8,
+    pub hp: u16,
+    pub mp: u16,
+    pub status: u16,
 }
 
 /// [`BattleState::capture_reseat`]: the engine slot whose action seeds the
@@ -1298,6 +1318,7 @@ impl BattleState {
             seed_recentre_held: false,
             arrival_spawn_anchor: None,
             capture_reseat: None,
+            capture_reseat_bars: Vec::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

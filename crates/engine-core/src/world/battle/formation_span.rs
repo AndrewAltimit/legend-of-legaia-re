@@ -114,6 +114,44 @@ impl World {
         });
     }
 
+    /// Put one combatant back on the bars the capture's action found it on
+    /// ([`BattleState::capture_reseat_bars`]): HP and MP, when it stands on
+    /// both sides (a body the replay felled, or one the capture holds down,
+    /// keeps its state), and every tracked ailment the captured status word
+    /// does not carry stripped. Confuse and Faint are left alone: the seed
+    /// carries neither.
+    fn reseat_capture_bars(
+        &mut self,
+        bars: legaia_engine_battle_loop::battle_state::CaptureReseatBars,
+    ) {
+        use legaia_engine_battle_vm::status_effects::StatusKind;
+        let slot = bars.slot;
+        let word = bars.status;
+        if let Some(a) = self.actors.get_mut(usize::from(slot))
+            && a.battle.hp != 0
+            && bars.hp != 0
+        {
+            a.battle.hp = bars.hp.min(a.battle.max_hp.max(1));
+            a.battle.liveness = a.battle.hp;
+            if a.battle.hp_display.is_some() {
+                a.battle.hp_display = Some(a.battle.hp);
+            }
+            a.battle.mp = bars.mp;
+        }
+        let stray: Vec<StatusKind> = self
+            .battle
+            .status_effects
+            .statuses(slot)
+            .iter()
+            .map(|s| s.kind)
+            .filter(|k| !matches!(k, StatusKind::Confuse | StatusKind::Faint))
+            .filter(|k| word & k.display_bit() == 0)
+            .collect();
+        for k in stray {
+            self.battle.status_effects.strip(slot, k);
+        }
+    }
+
     /// Run the action seed's formation recentre `FUN_801EFE44` for the
     /// acting engine slot `actor`: the round-start squash, then the formation
     /// moved so the action's box - the target alone for an Attack - sits on
@@ -144,6 +182,11 @@ impl World {
                     a.move_state.world_x = x;
                     a.move_state.world_z = z;
                 }
+            }
+            // ... on the captured bars, with no ailment the capture's word
+            // does not carry.
+            for bars in self.battle.capture_reseat_bars.clone() {
+                self.reseat_capture_bars(bars);
             }
             self.refresh_battle_body_pairs_now();
             self.battle.capture_approach_due = self.battle.capture_approach_yaw.is_some();

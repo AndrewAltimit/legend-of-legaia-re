@@ -221,5 +221,17 @@ pub fn arm_capture_reseat(
     if !ground.is_empty() {
         world.battle.capture_reseat = Some((seat, ground));
         world.battle.capture_approach_yaw = approach_yaw;
+        world.battle.capture_reseat_bars = seeds
+            .iter()
+            .filter(|s| s.slot < EMPTY_SEAT_SLOT_BASE)
+            .map(
+                |s| legaia_engine_battle_loop::battle_state::CaptureReseatBars {
+                    slot: s.slot,
+                    hp: s.hp,
+                    mp: s.mp,
+                    status: seedable_status_bits(s.status),
+                },
+            )
+            .collect();
     }
 }

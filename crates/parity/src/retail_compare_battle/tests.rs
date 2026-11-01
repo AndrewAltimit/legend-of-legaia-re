@@ -1504,6 +1504,23 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
         b.engine_image_displayed_clips().is_empty(),
         "no commit in the window"
     );
+
+    // The strike's target still idles: its loop is seated, as no hit has
+    // staged its reaction yet; a cast's target keeps the replay's clock.
+    b.span_gate = SpanGate::Age { accum: 0 };
+    b.target_code = 0;
+    b.clip_cursors = vec![(0, 0, 12)];
+    let seats: Vec<u8> = b.engine_clip_cursors().iter().map(|s| s.slot).collect();
+    assert_eq!(seats, vec![0], "the melee target's idle");
+    b.queued_category = 2;
+    assert!(b.engine_clip_cursors().is_empty(), "a cast's target");
+    b.queued_category = 3;
+
+    // Every party seat sat the round out on Spirit: the drive's party does.
+    b.party_categories = vec![4];
+    assert!(b.party_spirit_round());
+    b.party_categories = vec![0];
+    assert!(!b.party_spirit_round(), "a member swung or acted otherwise");
 }
 
 /// A round prompt caught on its far framing's arm: `gaza2_card_first_menu`'s

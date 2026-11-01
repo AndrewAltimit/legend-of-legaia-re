@@ -69,7 +69,11 @@ pub enum BattleDrive {
     /// (`RetailBattle::action_victims`): the victim is replayed at `1` HP,
     /// so any member's swing would kill it, and the members other than the
     /// capture's seat commit Spirit instead of Attack - the kill is then the
-    /// seat's own, whatever order initiative put them in.
+    /// seat's own, whatever order initiative put them in. It is also set on
+    /// a monster's Attack captured in a round the whole party sat out on
+    /// Spirit (`RetailBattle::party_spirit_round`): the replay's party then
+    /// commits Spirit too, and strikes down no monster the capture holds
+    /// standing.
     ///
     /// `absorbed` is the Seru a capture on the Done band already staged
     /// (`ctx[+0x269]`, `RetailBattle::absorbed_seru`). Retail's grant ran
