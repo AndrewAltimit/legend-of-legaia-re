@@ -846,6 +846,7 @@
     "bgm_tail",
     "duck",
     "host_resample",
+    "mix_pump",
     "note_trace",
     "pcm_bus",
     "seq_calc",

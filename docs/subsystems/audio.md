@@ -47,7 +47,7 @@ flowchart TD
 | Sound effects | four-slot cue ring, static table + runtime bank | `SfxScheduler`, `SfxBank`, `BgmTail`, `SfxBankResidency` |
 | Voice clips | CD-XA one-shots through `FUN_8003D53C` | `XaClipBank`, `ArtsShoutBank`, mixed beside the SPU output |
 | Sound state | `_DAT_8007B750` flag word, timed release `FUN_800267FC` | `AudioState` (`engine-core::world`), `sound_state` (`crates/engine-system`) |
-| Output | SPU DAC | `AudioOut` (cpal) and `WebAudioOut`, one `StreamResampler` core |
+| Output | SPU DAC | `AudioOut` (cpal) and [`WebAudioOut`](#the-browsers-output-path), one `StreamResampler` core |
 | Parity | - | `legaia_parity::audio_trace_oracle`, `mednafen-state spu`, key-on census |
 
 Three facts that catch people out:
@@ -3326,18 +3326,55 @@ at `-44` dB. Which one the hardware does is not something this oracle can settle
 
 A device not at 44.1 kHz goes through
 [`host_resample`](../../crates/engine-audio/src/host_resample.rs), on both hosts:
-one mix core drives the cpal stream and the `ScriptProcessorNode`. The linear
+one mix core drives the cpal stream and the browser's output. The linear
 interpolator it replaced lost `1.5` dB at 10 kHz and `3.5` dB at 15 kHz at 48 kHz, with
 the images of a 5 to 10 kHz tone folding back at `-36` to `-23` dB; the windowed
 sinc is flat within `0.1` dB to 15 kHz with its images below `-60` dB (its own
 tests). A 44.1 kHz device still takes the mix untouched.
 
-The browser's real difference is latency, not level: the `ScriptProcessorNode`
-runs on a 4096-frame buffer, about `93` ms against a few ms on cpal, and a cue
-queued between two callbacks lands at the next one, so browser cues sit on a `93` ms
-grid while the sequencer inside the callback stays sample-exact. An `AudioWorkletNode`
-or a shorter buffer would close it; neither is measured here, since underrun
-behaviour needs a running page.
+### The browser's output path
+
+The browser's real difference from cpal is latency, not level. The mix runs on the
+page's main thread, because the engine does: a cue keys the SPU directly and sounds
+in the next block mixed, behind every block already handed over. So how blocks reach
+the device decides how late a cue is.
+
+[`WebAudioOut`](../../crates/engine-audio/src/webaudio.rs) hands them to an
+`AudioWorkletProcessor` by `postMessage`, which needs no `SharedArrayBuffer` and so
+no COOP / COEP headers, which a static host cannot set. The processor's source is
+inlined and loaded from a blob URL. It plays what it holds and reports every third
+render quantum: frames played, frames it played as silence, and the fewest it held.
+Each report tops the queue up to [`MixPump`](../../crates/engine-audio/src/mix_pump.rs)'s
+target, and each moves the target: a low point under 6 ms raises it at once by the
+shortfall and any dry frames, a clear 4-second window gives half the excess back,
+between a 25 ms floor and a 190 ms cap. A page's depth is what its own longest frames
+need. The main thread's arithmetic cannot supply that low point, because reports stack
+up behind a stall and read stale.
+
+Where `audioWorklet` is missing (an insecure origin) or its module will not load, the
+output takes the 4096-frame `ScriptProcessorNode`. `__LEGAIA_AUDIO_PATH = 'script'`
+on the page forces it, which is how the two are compared. `LegaiaRuntime::audio_stats_json`
+reports the path and the queue.
+
+Measured in Chromium on the play page at 48 kHz, cue fired from a frame callback,
+onset read off a tap on the output node against `AudioContext.currentTime`, device
+latency excluded. The tap's clock steps with the device buffer, which is part of
+each spread, and the columns are separate runs on a shared machine.
+
+| Main-thread load | `ScriptProcessorNode`: mean, SD, range | Worklet: mean, SD, range | Worklet target at end |
+|---|---|---|---|
+| Idle page | `168`, `28`, `104..232` ms | `75`, `16`, `52..124` ms | `33` ms |
+| 8 ms frames | `159`, `29`, `115..223` ms | `86`, `16`, `52..125` ms | `62` ms |
+| 14 ms frames | `151`, `26`, `92..199` ms | `80`, `23`, `42..126` ms | `55` ms |
+
+The script processor's buffering is deep enough to ride anything: six stalls of 250 ms
+through it left no gap in the music. The worklet holds through 60 ms stalls with no gap,
+pays a few frames at 120 ms, and the first stalls of 250 ms cost silence (`24128` frames
+over six) until the cap; a page under a software rasteriser, frames near a second, gapped
+twice in ten seconds once the target was up. That is the trade the numbers buy, and the
+page pays it only when its frames demand it. A backgrounded tab, its frame callbacks throttled to 1
+Hz, played `9.98` s of `10` with no dry frame: reports are message events, which background
+timer throttling does not touch.
 
 <a id="whats-left"></a>
 

@@ -18,7 +18,7 @@ default = ["cli"]
 # keeps clap out of library-only builds (the wasm bundle among them).
 cli = ["dep:clap", "dep:legaia-prot"]
 # Activates the WebAudio backend for wasm32 targets. Enables a
-# `WebAudioOut` struct (ScriptProcessorNode-based) that mirrors the
+# `WebAudioOut` struct (AudioWorklet, ScriptProcessorNode fallback) that mirrors the
 # `AudioOut` cpal API. Must be initialised from a user-gesture handler.
 audio-webaudio = []
 
@@ -54,6 +54,17 @@ features = [
     "AudioDestinationNode",
     "AudioParam",
     "GainNode",
+    "BaseAudioContext",
+    "AudioWorklet",
+    "Worklet",
+    "AudioWorkletNode",
+    "AudioWorkletNodeOptions",
+    "MessagePort",
+    "MessageEvent",
+    "Blob",
+    "BlobPropertyBag",
+    "Url",
+    "console",
 ]
 
 [[bin]]

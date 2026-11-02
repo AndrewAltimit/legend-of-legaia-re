@@ -39,7 +39,7 @@ sequencer and restores the master - a score leaving with nothing in its
 place.
 
 The `audio-webaudio` cargo feature (off by default) adds `WebAudioOut`, a
-`ScriptProcessorNode`-backed twin of the `AudioOut` API for `wasm32` targets.
+Twin of the `AudioOut` API for `wasm32` targets: an `AudioWorkletNode` playing blocks the page mixes ahead ([`mix_pump`](src/mix_pump.rs) holds the queue's target), with a `ScriptProcessorNode` fallback.
 It must be opened from inside a user-gesture handler; the browser play page
 enables the feature and drives it. `AudioOut` (in `src/native_out.rs`) and its `cpal` dependency exist only
 off `wasm32`, so the browser bundle never links cpal.
@@ -151,8 +151,8 @@ verified across several extracted banks.
 - **SPU-level pitch modulation, noise, FM.** None of these *hardware* voice
   modes are used by Legaia (verified against the libspu calls in the SCUS
   dumps). Sequencer-level **MIDI pitch-bend** (`0xEn`) *is* used and *is*
-  handled - the [`Sequencer`](src/sequencer.rs) applies it by scaling the
-  voice's pitch register over the tone's own `pbmin`/`pbmax` range, alongside
+  handled - the [`Sequencer`](src/sequencer.rs) re-pitches the program's voices
+  over the tone's own `pbmin`/`pbmax` range and holds no wheel, alongside
   dynamic channel volume (CC7) and pan (CC10). See the audio subsystem doc.
 - **Asynchronous DMA timing.** The transfer engine here is synchronous;
   the API shape (`set_transfer_start_units_8` / `set_direction` /

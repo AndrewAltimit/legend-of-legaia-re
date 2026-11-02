@@ -672,7 +672,7 @@ editor's alone (`PlayView.editorNoPlayer`): the lead is not drawn, the pad
 word the engine ticks with is zero, and every key but the function keys is
 taken by the editor before the page's pad and hotkeys see it, so nothing an
 editor presses walks anyone. The preview is also silent until its first
-Test play: the BGM mixer runs in a ScriptProcessorNode on the page's main
+Test play: the BGM mixer runs on the page's main
 thread, which the framed page shares with the workbench.
 
 **Orientation.** The game draws the world with screen X mirrored (the

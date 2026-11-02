@@ -29,6 +29,7 @@ use native_out::pcm_to_silence_padded_adpcm;
 pub mod bgm_tail;
 pub mod duck;
 pub mod host_resample;
+pub mod mix_pump;
 pub mod note_trace;
 pub mod pcm_bus;
 pub mod seq_calc;

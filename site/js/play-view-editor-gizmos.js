@@ -1415,7 +1415,7 @@ void main() {
 
   const P = window.PlayView.prototype;
   /* The workbench's preview stays silent while it is an editor: the BGM
-   * mixer runs in a ScriptProcessorNode on this page's main thread - the
+   * mixer runs on this page's main thread - the
    * workbench's own, the frame being same-origin - and was most of a drag's
    * cost (the frame's own time under a drag, measured). Its first Test play
    * (`editorAudio`) brings the sound up. */

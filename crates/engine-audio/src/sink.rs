@@ -1,7 +1,7 @@
 //! [`AudioSink`]: the control surface every audio output shares.
 //!
 //! The native [`crate::AudioOut`] (a cpal stream) and the browser's
-//! [`crate::WebAudioOut`] (a `ScriptProcessorNode`) both drive one
+//! [`crate::WebAudioOut`] (an `AudioWorkletNode`) both drive one
 //! [`StreamResampler`] mix core from their device callback and differ only in
 //! how they lock it - a `Mutex` shared with the real-time thread, or a
 //! `RefCell` on the page's single thread. Everything a host asks of an output

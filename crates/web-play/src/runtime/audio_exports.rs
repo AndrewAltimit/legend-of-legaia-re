@@ -138,6 +138,15 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The output's path, queue and latencies as JSON, `null` with audio down
+    /// ([`legaia_engine_audio::WebAudioOut::stats_json`]).
+    #[cfg(target_arch = "wasm32")]
+    pub fn audio_stats_json(&self) -> String {
+        self.audio_out
+            .as_ref()
+            .map_or_else(|| "null".to_string(), |o| o.stats_json())
+    }
+
     /// Whether the WebAudio backend is live (`audio_init` succeeded). The play
     /// page reads this to decide whether it still needs the user's audio-enable
     /// gesture.
