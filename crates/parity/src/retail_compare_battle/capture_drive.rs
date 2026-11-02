@@ -510,12 +510,17 @@ impl RetailBattle {
         // the arm the RAM is in, after the frame on screen was built, so
         // the display still shows the run clip the walk-in played.
         let walked_cast = self.walk_in_shot_aligned();
-        if pool < 3 || !(strike || walked_cast) {
+        // A monster cast's accumulator gate: the frame the gate stops on
+        // carries the clip the RAM's accumulator pairs with, two passes past
+        // the keyframe the screen shows, and the cast clip is a one-shot the
+        // cursor seat leaves alone.
+        let magic_band = self.monster_magic_band_age();
+        if pool < 3 || !(strike || walked_cast || magic_band) {
             return None;
         }
         let (clip, cursor) = (*self.displayed_clips.get(pool)?)?;
         let committed = clip != self.caster_clip;
-        if !committed && (walked_cast || !self.walk_clock_capture()) {
+        if !committed && !magic_band && (walked_cast || !self.walk_clock_capture()) {
             return None;
         }
         let m = pool - 3;

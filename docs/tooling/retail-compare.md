@@ -4652,6 +4652,17 @@ slot and the run entry `1` at `136` on the displayed one, the run clip the
 walk-in played, with the gold ground ring around it (`image` `.943` to
 `.976` each).
 
+A monster cast's accumulator gate takes the same seat, commit or no commit. The
+gate stops where the replay's accumulator reads the RAM's, so its frame carries
+the RAM's keyframe, two passes past the screen, and the cursor seat refuses a
+one-shot. The pair at the gate is right: `battle_gimard_tail_fire_a` holds
+accumulator `432` beside cursor `224` on both sides once the `0x2A` exit pass
+adds nothing to the accumulator ([the camera's prologue](../subsystems/battle-action.md)).
+Before that fix the replay stood a pass behind retail at that accumulator,
+cursor `216`, and so a pass closer to the displayed `208`, which is the whole of
+what the `.982` it scored rested on. On the ring's slot the two Tail Fire frames
+read `.985` and `.979`, and Gimard's tail lands on retail's.
+
 The cases that led here, each a start no word records, and what still
 separates them where an endpoint is off the engine's
 (`battle_noa_miracle_art_combo`'s yaw endpoint stays unaligned: it carries

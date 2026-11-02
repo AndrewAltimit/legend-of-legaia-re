@@ -1627,6 +1627,15 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
         b.engine_image_displayed_clips().is_empty(),
         "no commit in the window"
     );
+    // A monster cast's accumulator gate poses the caster on the displayed
+    // slot whether or not a commit stands in the window: the gate's own frame
+    // carries the RAM's keyframe (`battle_gimard_tail_fire_a`: `224` against
+    // the displayed `208`).
+    b.action_state = 0x2B;
+    b.queued_category = 2;
+    let clips = b.engine_image_displayed_clips();
+    assert_eq!(clips.len(), 1, "the magic band");
+    assert_eq!((clips[0].slot, clips[0].clip, clips[0].cursor), (pc, 0, 0));
 
     // A walked-in charge cast past its walk (`koru_blade_breath_mid_cast`):
     // the wind-up committed inside the lag, the display shows the run.
