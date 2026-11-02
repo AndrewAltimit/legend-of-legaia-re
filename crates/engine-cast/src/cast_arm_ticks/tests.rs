@@ -425,6 +425,22 @@ fn blade_breath_skips_the_walk_when_the_caster_has_arrived() {
 }
 
 #[test]
+fn the_strike_arm_stores_the_impact_selector_whoever_owns_the_roll() {
+    for (shape, selector) in [
+        (&BLADE_BREATH_A, 1),
+        (&BLADE_BREATH_B, 2),
+        (&BLADE_BREATH_C, 0),
+    ] {
+        let mut ctx = ctx_with(3, 4, 1);
+        let mut caster = actor(500);
+        let mut victim = actor(700);
+        blade_breath_tick(&mut ctx, shape, &mut caster, &mut victim, true, None);
+        assert_eq!(victim.render_21f, selector);
+        assert_eq!(victim.hp, 700, "the fold owns the HP");
+    }
+}
+
+#[test]
 fn blade_breath_applies_its_0x200_hit_and_latches_ff() {
     let mut ctx = ctx_with(3, 4, 1);
     let mut caster = actor(500);
