@@ -210,6 +210,9 @@ impl BakaFight {
             });
         }
         self.tick_cameo(frame_step);
+        if let Some(a) = self.clear_fighter.as_mut() {
+            crate::baka_fighter_chrome::clear_fighter_tick(a, frame_step);
+        }
         if let Some(st) = self.strike.as_ref() {
             for (m, t) in self.motion.iter_mut().zip(st.iter()) {
                 let r = m

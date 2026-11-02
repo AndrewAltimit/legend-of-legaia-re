@@ -207,6 +207,25 @@ pub fn baka_pause_shade(
     )
 }
 
+/// The all-clear beats' full-screen quad: `FUN_80024EE4(0xA, 2, level *
+/// 0x010101)`, an untextured semi-transparent quad on ordering-table layer
+/// `0xA` under blend mode `2` (`B - F`), which darkens by `level`.
+///
+/// REF: FUN_801CF388 (`0x801D1B40..0x801D1B54`), FUN_80024EE4
+pub fn baka_clear_fade(level: u8) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    legaia_render_kernels::screen_prim::ScreenPrim::Flat(
+        legaia_render_kernels::screen_prim::FlatQuad {
+            xy: [(0, 0), (320, 0), (0, 240), (320, 240)],
+            color: [level, level, level, 0xFF],
+            gouraud: None,
+            semi_transparent: true,
+            abr_mode: 2,
+            ot_index: 0xA,
+            depth: None,
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

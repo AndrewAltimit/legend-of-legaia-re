@@ -79,7 +79,7 @@ Eight `0x18`-byte prototype records tile `0x801D75DC..0x801D769C`, ending immedi
 | `0x801D760C` | `FUN_801D3390` | player-select lineup tick | `0x801CF8A0` |
 | `0x801D7624` | `FUN_801D6310` | round-start cameo | `0x801D01C4` |
 | `0x801D763C` | `FUN_801D3F44` | fighter combat tick | `0x801CFBC0`, `0x801CFD98` |
-| `0x801D7654` | `FUN_801D6F18` | effect-part flag setter | `0x801D1ACC` |
+| `0x801D7654` | `FUN_801D6F18` | [all-clear fighter](#the-all-clear-fighter) tick | `0x801D1ACC` |
 | `0x801D766C` | `FUN_801D4FC8` | developer keyframe editor | `0x801D1D68` |
 | `0x801D7684` | `FUN_801D49E8` | special afterimage | `0x801D4558` |
 
@@ -794,6 +794,40 @@ State `DAT_801DC134` walks `0 -> 1` (`XA33` channel `0x0A`), `1 -> 2` (channel `
 
 The port runs it from the cabinet (`BakaCabinet::tick`, the five all-clear beats), not from the round chrome. Run beside every round banner, its `0x0C` line started about fifty frames into the banner's `0x48`-vsync `XA32` line and cut the round number off. `each_round_banner_plays_its_own_line_uninterrupted` (engine) and `each_round_announcement_plays_its_own_xa32_channel_uncut` (the minigames page, disc-gated) pin each round's line as `(0x1F, round, 0x48)`, the index of the round about to start, with nothing starting inside its span.
 
+### The all-clear fighter
+
+The all-clear's beats retire both duel actors and stand another in their place:
+
+| Edge | Disassembly | What it does |
+|---|---|---|
+| `0xFA -> 0xFB` | `0x801D1A20..0x801D1A40` | retires the opponent (`DAT_801DBFA4 +0x10 \|= 8`) |
+| `0xFB -> 0xFC` | `0x801D1A84..0x801D1B3C` | retires the player, loads `FUN_801D4C50(6)`, spawns the fighter unless `DAT_801DC110 == 0xE` |
+| `0xFE -> 0x1F4` | `0x801D1CB8..0x801D1CD8` | retires the fighter |
+
+`FUN_801D4C50(6)` reads PROT `0x4B6 + 6 - 3` in the raw TOC's numbering: ladder
+entry `1207`, roster id `4`, one of the post-clear opponents the art promises.
+Its atlas lands over the opponent's page. The spawn takes prototype `0x801D7654`
+on the opponent's mesh slot and stands it at `X = -(player stand-off + 200)`,
+`y = z = 0`, yaw `0x400`, on `+0x5C = 0x401`: the `>= 0x400` bank's record `0`, the
+idle, at the allocator's rate `+0x6A = 0x10`. The tick is two lines: raise `+0x10`
+bit `0x200000`, which opts out of the field drop shadow (`FUN_8001B964` tests it
+before `FUN_8001C394`), and run the clip selector.
+
+The beats `0xFB..=0xFE` each end on `FUN_80024EE4(0xA, 2, level * 0x010101)`, a
+full-screen subtractive quad: rising to `0xFF` on `0xFB`, `0xFF` on `0xFC`,
+falling to `0x50` on `0xFD` and rising to `0xFF` on `0xFE`. So the fighter is only
+ever seen darkened, behind the announcer's art, and only on `0xFD` / `0xFE`.
+
+A run that met both secret opponents reads `0xE` there and ends on the bare arena.
+**Confirmed** (disassembly; no retail capture reaches this beat).
+
+Port: `baka_fighter_chrome::clear_fighter_tick`, spawned by `BakaFight` off
+`CabinetFrame::spawn_clear_fighter`, posed by `BakaDuelScene::pose_clear_fighter`
+over the shared `BakaDuelSurface` on both play hosts and by `minigame-baka.js` on the
+minigames page, off `baka_cabinet_json`'s `clear_fighter`. The quad is
+`CabinetFrame::clear_fade`. The port's duel draws no field drop shadow, so the bit
+has no reader there.
+
 ### Score tally (`FUN_801D239C`)
 
 The end-of-match tally animates four counters, each a row with its own fade-in:
@@ -1046,7 +1080,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `FUN_801D6910` / `FUN_801D693C` / `FUN_801D6968` / `FUN_801D6994` | setters of the camera-glide record at `0x80070764`: angles, eye trio, focus, `H` |
 | `FUN_801D6480` / `FUN_801D6770` | raw GPU quad emitters into the OT scratch `_DAT_1F8003A0` (gouraud code `0x3A` / flat `0x28`; `FUN_801D6770` links through `FUN_8003D2C4`) |
 | `FUN_801D657C` | vertex-colour packet build (two packed RGBs -> 6 components) + GTE submit `FUN_80024E80`; the fade actor |
-| `FUN_801D6F18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204F8`) |
+| `FUN_801D6F18` | the [all-clear fighter](#the-all-clear-fighter)'s tick (`actor +0x10 \|= 0x200000`, then the clip selector `FUN_800204F8`) |
 | `FUN_801D6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
 | `FUN_801D4FC8` | developer keyframe editor tick |
 | `FUN_801D57BC` / `FUN_801D58E0` | editor "add frame" / "delete frame" |

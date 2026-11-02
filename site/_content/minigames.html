@@ -1723,10 +1723,12 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       $('baka-start').textContent = 'Restart run';
       /* A new pairing (the select's pick, or the cabinet's next rung):
        * stand the view's duel scene up for it. */
-      if (bakaView && (!bakaViewDuel || cab.opponent !== bakaSeatedFoe)) {
-        try { bakaViewDuel = bakaView.load(api, cab.player, cab.opponent); }
+      /* The all-clear fighter's pack takes the opponent's seat. */
+      const seatFoe = cab.clear_fighter ? cab.clear_fighter.roster : cab.opponent;
+      if (bakaView && (!bakaViewDuel || seatFoe !== bakaSeatedFoe)) {
+        try { bakaViewDuel = bakaView.load(api, cab.player, seatFoe); }
         catch (err) { console.warn('baka duel view failed:', err); bakaViewDuel = false; }
-        bakaSeatedFoe = cab.opponent;
+        bakaSeatedFoe = seatFoe;
         $('baka-duel').hidden = !bakaViewDuel;
         $('baka-p1-name').textContent = bakaName(cab.opponent);
         const rung = bakaLadder.findIndex(r => r.roster === cab.opponent);
@@ -1736,12 +1738,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         bakaLive = true;
       }
       if (bakaView && bakaView.ok && bakaViewDuel) {
+        bakaView.cabinetClear = { retired: cab.seat_retired, fighter: cab.clear_fighter };
         /* The engine's round chrome and the cabinet's own cells (the NEXT
          * GAME / PAY OUT sheet after a win) ride along with the stage meta. */
         bakaView.frame(st.live ? st : null,
           Object.assign({}, bakaMeta, {
             chrome, cells: cab.cells || [], hud: cab.draws_hud !== false, potDigits: cab.pot_digits || [],
-            pause: cab.pause || null,
+            pause: cab.pause || null, clearFade: cab.clear_fade,
           }));
       }
     }

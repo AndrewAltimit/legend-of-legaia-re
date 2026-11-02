@@ -157,6 +157,8 @@ pub struct BakaFight {
     /// The round-start cameo's actor, while it walks: its phase `+0x22` and
     /// the clip cursor `+0x68` its clip selector advances.
     pub(super) cameo: Option<CameoActor>,
+    /// The all-clear fighter, from the `0xFB -> 0xFC` edge to the exit.
+    pub(super) clear_fighter: Option<crate::baka_fighter_chrome::ClearFighter>,
     /// `DAT_801DBF50` - raised by a special's commit (`0x801D4578`), cleared
     /// by the round setup (`0x801CFFD8`). The impact pair reads it for its
     /// Z lift.
@@ -231,6 +233,7 @@ impl BakaFight {
             setup_pending: true,
             select_clock: 0,
             cameo: None,
+            clear_fighter: None,
             special_latch: false,
             impact: crate::baka_impact_fx::ImpactFx::default(),
             pause_text: None,
@@ -345,6 +348,30 @@ impl BakaFight {
     /// sends the ring girl on.
     pub fn set_held_pad(&mut self, packed: u16) {
         self.held_pad = packed;
+    }
+
+    /// [`crate::baka_cabinet::BakaCabinet::enter_all_clear`].
+    #[doc(hidden)]
+    pub fn enter_all_clear(&mut self, stage_display: i32) {
+        self.cabinet.enter_all_clear(stage_display);
+    }
+
+    /// The all-clear fighter, while it is on stage.
+    pub fn clear_fighter(&self) -> Option<crate::baka_fighter_chrome::ClearFighter> {
+        self.clear_fighter
+    }
+
+    /// Whether the all-clear has retired duel seat `slot`: the opponent's
+    /// actor on the `0xFA -> 0xFB` edge (`+0x10 |= 8`, `0x801D1A20..0x801D1A40`),
+    /// the player's on `0xFB -> 0xFC` (`0x801D1A84..0x801D1AA4`).
+    pub fn seat_retired(&self, slot: usize) -> bool {
+        use crate::baka_cabinet::{ST_CLEAR_B, ST_CLEAR_C, ST_CLEAR_E};
+        let first = if slot & 1 == 1 {
+            ST_CLEAR_B
+        } else {
+            ST_CLEAR_C
+        };
+        (first..=ST_CLEAR_E).contains(&self.cabinet.state())
     }
 
     /// The round-start cameo, while it is on stage.

@@ -1413,3 +1413,19 @@ fn each_round_banner_plays_its_own_line_uninterrupted() {
         "the stage-clear lines never fire in a match"
     );
 }
+
+/// The all-clear fighter's tick: the shadow-off bit, and a clock on the
+/// frame step.
+#[test]
+fn the_clear_fighter_tick_raises_its_flag_and_runs_its_clip() {
+    use crate::baka_fighter_chrome::{ACTOR_FLAG_NO_SHADOW, ClearFighter, clear_fighter_tick};
+    let mut a = ClearFighter {
+        x: -300,
+        flags: 8,
+        clock: 0,
+    };
+    clear_fighter_tick(&mut a, 2);
+    clear_fighter_tick(&mut a, 3);
+    assert_eq!(a.flags, 8 | ACTOR_FLAG_NO_SHADOW);
+    assert_eq!(a.clock, 5);
+}

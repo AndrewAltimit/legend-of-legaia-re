@@ -894,6 +894,13 @@ impl LegaiaMinigames {
             "opponent": f.opponent_roster(),
             "cells": cells,
             "pause": pause,
+            "clear_fighter": f.clear_fighter().map(|a| serde_json::json!({
+                "roster": legaia_engine_minigames::baka_fighter_chrome::CLEAR_FIGHTER_ROSTER,
+                "x": a.x,
+                "clock": a.clock,
+            })),
+            "seat_retired": [f.seat_retired(0), f.seat_retired(1)],
+            "clear_fade": f.cabinet_frame().clear_fade,
             // Whether this cabinet state's epilogue draws the duel HUD
             // (not under the result screens or the NEXT GAME / PAY OUT
             // sheet), and the sheet's pot numeral over the run's winnings

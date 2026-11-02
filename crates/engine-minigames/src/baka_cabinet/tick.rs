@@ -310,7 +310,13 @@ impl BakaCabinet {
                 if self.state_timer >= 0x100 {
                     self.state_timer = 0xFF;
                     self.state = ST_CLEAR_C;
+                    // `0x801D1AB4..0x801D1AC0`: a run whose displayed stage
+                    // reads `0xE` (the score gate inserted both secret
+                    // opponents) ends on no fighter.
+                    f.spawn_clear_fighter =
+                        self.stage_display != crate::baka_fighter_chrome::CLEAR_FINAL_STAGE;
                 }
+                f.clear_fade = Some(self.state_timer.clamp(0, 0xFF) as u8);
             }
             ST_CLEAR_C => {
                 self.clear_fade_in = (self.clear_fade_in - step * 2).max(0);
@@ -319,6 +325,7 @@ impl BakaCabinet {
                     self.clear_fade_out = 0x100;
                     self.state = ST_CLEAR_D;
                 }
+                f.clear_fade = Some(0xFF);
             }
             ST_CLEAR_D => {
                 self.state_timer -= step;
@@ -326,6 +333,7 @@ impl BakaCabinet {
                     self.state_timer = 0x50;
                     self.state = ST_CLEAR_E;
                 }
+                f.clear_fade = Some(self.state_timer.clamp(0, 0xFF) as u8);
             }
             ST_CLEAR_E => {
                 self.clear_fade_out = (self.clear_fade_out - step * 2).max(0);
@@ -336,6 +344,7 @@ impl BakaCabinet {
                     self.exit_timer = 0;
                     self.state = ST_EXIT;
                 }
+                f.clear_fade = Some(self.state_timer.clamp(0, 0xFF) as u8);
             }
             ST_DEV_EDITOR => {
                 self.state = ST_DEV_EDITOR_RUN;

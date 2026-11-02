@@ -63,6 +63,15 @@ pub struct CabinetFrame {
     /// all-clear announcer's lines. The chrome's own lines (intro, round
     /// banner, results) are the chrome's.
     pub xa: Option<crate::baka_fighter_chrome::XaCue>,
+    /// The `0xFB -> 0xFC` edge spawned the all-clear fighter
+    /// ([`crate::baka_fighter_chrome::clear_fighter_tick`]).
+    pub spawn_clear_fighter: bool,
+    /// The level of the full-screen subtractive quad the all-clear beats
+    /// `0xFB..=0xFE` end on (`FUN_80024EE4(0xA, 2, level * 0x010101)`):
+    /// `0xFF` is black, `0x50` the lightest the fighter is seen through.
+    ///
+    /// REF: FUN_80024EE4
+    pub clear_fade: Option<u8>,
 }
 
 /// Per-frame inputs the cabinet reads out of shared globals.
@@ -283,6 +292,18 @@ impl BakaCabinet {
     pub fn secret_opponent(&self) -> SecretOpponent {
         self.secret
     }
+    /// Stand the cabinet on the all-clear's first beat at displayed stage
+    /// `stage_display`, the arm the ladder's last tally stores: a seam for what
+    /// no fixture plays twelve rungs to reach.
+    #[doc(hidden)]
+    pub fn enter_all_clear(&mut self, stage_display: i32) {
+        self.stage_display = stage_display;
+        self.clear_fade_in = 0;
+        self.clear_fade_out = 0;
+        self.state_timer = 0;
+        self.state = ST_CLEAR_A;
+    }
+
     pub fn all_clear(&self) -> bool {
         self.all_clear
     }

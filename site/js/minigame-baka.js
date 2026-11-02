@@ -686,8 +686,19 @@
        * way on a wrong "opposite intrinsic facing" assumption, so both looked
        * left. */
       const fp = this.facing.player, fo = this.facing.opponent;
-      poseFighter(0, S.P, 0, fp.side * this.gap / 2, fp.facing * Math.PI / 2);
-      poseFighter(1, S.O, S.nP, fo.side * this.gap / 2, fo.facing * Math.PI / 2);
+      /* The all-clear (BakaFight::seat_retired / clear_fighter): the seats
+       * retire one beat apart, and the fighter that replaces them takes the
+       * opponent's mesh, loaded for it, on the player's mark and facing. */
+      const cb = this.cabinetClear || {};
+      const retired = cb.retired || [false, false];
+      if (retired[0]) this._collapse(0, S.nP);
+      else poseFighter(0, S.P, 0, fp.side * this.gap / 2, fp.facing * Math.PI / 2);
+      if (cb.fighter) {
+        const c = this.clipFor(1, ACT.IDLE);
+        if (c) poseInto(S.out, S.base, S.O.oid, c, cb.fighter.clock % c.frameCount, S.nP,
+                        cb.fighter.x, fp.facing * Math.PI / 2);
+      } else if (retired[1]) this._collapse(S.nP, S.nO);
+      else poseFighter(1, S.O, S.nP, fo.side * this.gap / 2, fo.facing * Math.PI / 2);
       poseGhosts(0, S.P, S.nP, fp.side * this.gap / 2, fp.facing * Math.PI / 2);
       poseGhosts(1, S.O, S.nO, fo.side * this.gap / 2, fo.facing * Math.PI / 2);
       /* Stage verts stay at their TMD coordinates (already world-framed). */
@@ -810,6 +821,14 @@
         /* Attract: the cabinet's own PRESS START strip. */
         this._widget(g, 0, 160, 204);
         return;
+      }
+
+      /* The all-clear beats' subtractive quad (FUN_80024EE4 mode 2): a canvas
+       * over WebGL has no B - F, so black at the same strength stands in. It
+       * lies under the art the beats draw. */
+      if (meta && meta.clearFade != null) {
+        g.fillStyle = `rgba(0,0,0,${meta.clearFade / 255})`;
+        g.fillRect(0, 0, HUD_W, HUD_H);
       }
 
       /* The duel HUD (stage strip, bars, pips, combo, attack icons) draws

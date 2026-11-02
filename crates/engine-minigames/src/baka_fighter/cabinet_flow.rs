@@ -83,6 +83,16 @@ impl BakaFight {
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
+        if self.cabinet_frame.spawn_clear_fighter {
+            self.clear_fighter = Some(crate::baka_fighter_chrome::ClearFighter {
+                x: (-(self.stand_off[0] + 200)) as i16,
+                flags: 0,
+                clock: 0,
+            });
+        }
+        if self.cabinet.state() == crate::baka_cabinet::ST_EXIT {
+            self.clear_fighter = None;
+        }
         if let Some(roster) = self
             .cabinet_frame
             .install_player

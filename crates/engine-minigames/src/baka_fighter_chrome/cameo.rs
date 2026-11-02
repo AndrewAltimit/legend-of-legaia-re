@@ -123,3 +123,51 @@ pub fn cameo_pose(phase: i16) -> Option<CameoPose> {
 pub fn cameo_spawns(held_pad: u16) -> bool {
     held_pad & CAMEO_HOLD_MASK != 0
 }
+
+// ---------------------------------------------------------------------------
+// The all-clear fighter (FUN_801D6F18)
+// ---------------------------------------------------------------------------
+
+/// Displayed stage (`DAT_801DC110`) on which the `0xFB -> 0xFC` edge spawns no
+/// fighter (`li v0,0xe` / `beq` at `0x801D1ABC`).
+pub const CLEAR_FINAL_STAGE: i32 = 0xE;
+/// The roster id the all-clear fighter is: `FUN_801D4C50(6)` at `0x801D1AA0`
+/// reads PROT `0x4B6 + 6 - 3` in the raw TOC's numbering, which is ladder
+/// entry `1207` of the `3 + n -> 1206 + n` fold, a post-clear opponent.
+pub const CLEAR_FIGHTER_ROSTER: usize = 4;
+/// Bank record the fighter plays: `+0x5C = 0x401` (`0x801D1AE8..0x801D1AF4`),
+/// the `>= 0x400` bank's first clip, the idle.
+pub const CLEAR_FIGHTER_RECORD: usize = 0;
+/// `+0x6A` as the allocator seeds it (`FUN_80020DE0`, `0x80020F38`): whole
+/// frames per tick, in sixteenths.
+pub const CLEAR_FIGHTER_RATE: i32 = 0x10;
+/// Yaw the spawn stores (`sh s2,0x26(v0)` with `s2 = 0x400`).
+pub const CLEAR_FIGHTER_YAW: i32 = 0x400;
+/// `+0x10` bit that opts an actor out of the field drop shadow: the actor draw
+/// `FUN_8001B964` calls `FUN_8001C394` unless it is up (`0x8001BE34..0x8001BE48`).
+pub const ACTOR_FLAG_NO_SHADOW: u32 = 0x0020_0000;
+
+/// The fighter that stands on the player's mark behind the "ALL STAGE CLEAR"
+/// art: the opponent's actor prototype `0x801D7654`, spawned on the
+/// `0xFB -> 0xFC` edge at `X = -(player stand-off + 200)`, retired on the
+/// `0xFE -> 0x1F4` edge (`0x801D1CB8..0x801D1CD8`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClearFighter {
+    /// `+0x14`.
+    pub x: i16,
+    /// `+0x10`.
+    pub flags: u32,
+    /// Vsyncs the clip selector has run, which the host folds through the
+    /// record's own step and length as it does the lineup's.
+    pub clock: i32,
+}
+
+/// PORT: FUN_801D6F18, overlay_baka_fighter_0976_801d6f18 - the all-clear
+/// fighter's tick: raise [`ACTOR_FLAG_NO_SHADOW`] and run the clip selector
+/// `FUN_800204F8`, whose cursor [`ClearFighter::clock`] carries.
+///
+/// REF: FUN_801D4C50, FUN_80020DE0, FUN_8001B964, FUN_8001C394, FUN_800204F8
+pub fn clear_fighter_tick(actor: &mut ClearFighter, frame_step: i32) {
+    actor.flags |= ACTOR_FLAG_NO_SHADOW;
+    actor.clock += frame_step;
+}

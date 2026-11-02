@@ -293,3 +293,57 @@ fn the_finishing_specials_ghosts_run_out_inside_the_round_over_hold() {
     assert!(moved > 0, "the ghosts pose on through the hold");
     eprintln!("[ok] the special's ghosts ran out {held} frames into the hold, {moved} moving");
 }
+
+/// The all-clear on the shared surface: the seats retire a beat apart, the
+/// fighter stands on the player's mark in roster 4's mesh under its atlas, and
+/// a run that met both secret opponents reads `0xE` and gets none.
+#[test]
+fn the_all_clear_stands_its_fighter_on_the_surface() {
+    use legaia_engine_minigames::baka_fighter_chrome::CLEAR_FIGHTER_ROSTER;
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let Ok(host) = SceneHost::open_disc(&disc) else {
+        eprintln!("[skip] open_disc failed");
+        return;
+    };
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka_opponents::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = host
+        .index
+        .entry_bytes_extended(rec.prot_index)
+        .expect("read PROT 0976");
+    let loaded = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let opponents = baka_opponents::parse(&loaded).expect("roster parses");
+    let actions = baka_opponents::parse_actions(&loaded).expect("actions parse");
+    let read = |i: usize| host.index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+    let opponent = legaia_engine_minigames::baka_fighter::first_rung_roster();
+    for (stage, want) in [(12, true), (0xE, false)] {
+        let mut fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0x5EED)
+            .expect("fight builds")
+            .with_roster_clip_headers(roster_clip_headers(read));
+        let mut surface = BakaDuelSurface::default();
+        fight.enter_all_clear(stage);
+        let mut seen = false;
+        for _ in 0..0x800 {
+            fight.tick(1);
+            let cell = surface
+                .frame(read, Some(&fight))
+                .map(|s| s.clear_fighter_extent())
+                .expect("the surface stays live");
+            seen |= cell > 1.0;
+            if fight.clear_fighter().is_some() {
+                assert!(fight.seat_retired(0) && fight.seat_retired(1));
+                assert!(cell > 1.0, "the fighter's vertices are posed");
+                let opp = fight.opponent_roster();
+                assert_ne!(opp, CLEAR_FIGHTER_ROSTER, "its atlas is the one to load");
+            }
+            if fight.cabinet().exit_done() {
+                break;
+            }
+        }
+        assert_eq!(seen, want, "stage {stage}");
+    }
+}
