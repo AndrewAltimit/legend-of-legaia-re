@@ -207,7 +207,7 @@ namespace LegaiaWorld
                     " - run `asset slot-art` first.");
                 return;
             }
-            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object m = LegaiaManifestFrame.Load(manifestPath);
             Directory.CreateDirectory(GEN_DIR);
             LegaiaWorldBuilder.EnsureUdonProgramAssets();
 

@@ -29,6 +29,7 @@ your disc ──legaia-extract──▶ extracted/ ──legaia-engine export-gl
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaCampProps.cs` | The **Camp props** pass: a carry-able settings panel (world-space buttons - local music mute, synced day/night jumps; grab collider confined to a bottom handle so it can't shadow the UI) plus two carry-able torches and two campfires near spawn, all primitives + generated materials, in a top-level container outside the mirrored root (mirrored UI text would render backwards). Each prop takes its place from `prefab_transforms` under its own name (`torch_1`, `campfire_2`, `menu`) when the settings file pins one, and from a spawn-relative offset snapped to the ground otherwise. |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaAudioGen.cs` | Synthesized ambience: the long day / night / base / wind-gust beds, the shore-wave, tree-bird, night-wildlife and windmill emitter clips, and the camp fire crackle - seeded Poisson events under multi-octave value-noise envelopes, seam-crossfaded, no disc audio. Also the `VRC_SpatialAudioSource` compliance helper (the SDK deprecates bare AudioSources; 2D beds get the disabled component its Auto Fix adds, spatial sources a configured one). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaRealism.cs` | The builder's "Realism enhancements" foldout: lit materials + generated normals + sun, day/night wiring (+ the moon light) + night doorway lamps, the `Legaia/Sky` dome + fog, procedural grass, interior room shells, texture smoothing, synthesized ambience, wander wiring. Every pass defaults on; untick for the faithful look. |
+| `world-project/Assets/LegaiaWorld/Editor/LegaiaManifestFrame.cs` | Reads a scene manifest and brings a current export's numbers and world nodes into the kit's frame ([the kit's frame](#the-kits-frame)). |
 | `world-project/Assets/LegaiaWorld/Editor/LegaiaSceneSettings.cs` | Per-scene refinements from `Settings/<scene>.settings.json` (see "Per-scene settings" below): delete named objects after the build, keep listed NPCs static (idle clip, no wandering), drop listed NPCs entirely, override the spawn point in Unity world space, and point the VRC Scene Descriptor's `Spawns[0]` at LegaiaSpawn automatically. |
 | `world-project/Assets/LegaiaWorld/Settings/town01.settings.json` | The town01 refinements (kit-authored tuning data, no game content). |
 | `world-project/Assets/LegaiaWorld/Editor/MiniJson.cs` | Dependency-free JSON reader for `manifest.json` (so the builder compiles in any project). |
@@ -164,11 +165,8 @@ the VCC setup in more detail if this is your first worlds project.
    up every `.glb`, and the baked NEAREST samplers keep the PSX
    point-sampled look without any material fixup.
 2. Menu **Legaia > Build Scene From Manifest...**, browse to the copied
-   `manifest.json`, and **Build scene**. Two default-on options worth
-   knowing: **Match explorer orientation** mirrors the finished root on X
-   so the scene reads the way the site's field-scene viewer presents it
-   (the raw import genuinely is mirrored - see the troubleshooting entry
-   for the landmark test that settled it), and **Merged + welded**
+   `manifest.json`, and **Build scene**. One default-on option worth
+   knowing: **Merged + welded**
    builds one welded collision mesh for the whole world instead of a
    collider per mesh (closes the hairline seams between tile colliders a
    player capsule can slip through, and client builds stop needing
@@ -677,8 +675,8 @@ its autonomous stroll and its measured-facing recipe unchanged, and adds a
 command API (`GoTo` / `FaceToward` / `Arrived` / `Blocked` / `Stop` /
 `Teleport` / `SetIdle`). A commanded walk is **routed over a navmesh**:
 the pass bakes one from the world's physics colliders (the merged
-double-sided collider, so the X-mirrored root's flipped winding cannot
-turn every floor into a ceiling - a bake from render meshes would), sized
+double-sided collider, so a mesh's winding under the kit frame's mirrors
+cannot turn every floor into a ceiling - a bake from render meshes could), sized
 for a villager (radius 0.2 m, height 0.8 m, **Step height** and **Max
 slope** in the panel), and `LegaiaNavMeshLoader` registers it at load.
 `GoTo` asks `NavMesh.CalculatePath` for the route and the walk follows its
@@ -1144,8 +1142,8 @@ and the SDK's own components - no third-party package, no game data:
   knee's angle below level, `sitArm` the hand's angle forward of
   straight down), read through the rendered transform chain against
   the face as `VisualForward` reads it - so a villager who rests in a
-  crouch (town01's Val) sits like one who rests upright. The builder's
-  handedness mirror on the instance scale makes `transform.forward` and
+  crouch (town01's Val) sits like one who rests upright. The kit frame's
+  mirror on the instance scale makes `transform.forward` and
   `TransformDirection` disagree with what is on screen, and the first
   cut, which compared those two, sat every rig with its knees behind
   it. (The cut before that sank the whole rig a third of its height
@@ -1944,6 +1942,22 @@ file - a CC-BY clip needs attribution in your world description, and the
 kit itself ships no third-party audio.
 
 
+## The kit's frame
+
+The builder works in one frame whatever export it is given: a `-1` X scale on
+the `Legaia_<scene>` root and a `-1` Z on each glb under it. Those two mirrors
+multiply to a 180-degree turn about Y, so the finished scene is a rotation of
+the game, never a reflection. Settings files, snapshots and the passes are all
+written against this frame, so a value you pasted from the Inspector stays right
+across re-exports.
+
+A current export (`conventions.world_frame: "psx_rx180"`) is right-handed from
+end to end. `LegaiaManifestFrame.cs` meets it at the door: it re-expresses the
+manifest's numbers in the kit's frame and gives the world glb's nodes the same Z
+mirror the NPCs and props take. An older export passes through untouched, and
+its X mirror alone (**Match explorer orientation**) is what puts it right. Both
+stand in the same place with the same `object_transforms`.
+
 ## Troubleshooting
 
 - **Villagers sit with their feet on the seat, or measure a third of
@@ -1966,21 +1980,16 @@ kit itself ships no third-party audio.
   `placement_spawn_relocation`), places the runners at their real spots,
   and hides the dev records retail parks off-map. Re-run `export-glb` and
   rebuild the scene.
-- **Everything looks mirrored**: it is - the raw import is X-mirrored
-  relative to the site's field-scene viewer, and the builder's **Match
-  explorer orientation** option (default on) mirrors the built root to
-  compensate. This was settled *empirically* with a landmark test on
-  town01, after deriving it from the shader reflection chain
-  (`u_pair_front` in `site/js/webgl-shaders.js`) produced confident wrong
-  answers in **both** directions: stand at the sea looking at the village
-  (the sea-to-gate axis pins the viewpoint, so only parity can differ) -
-  the raw glb puts the big terrace house left and the paired small huts
-  right, the explorer page shows the opposite sides, and no rotation
-  swaps sides across a content-pinned axis. Re-run that test rather than
-  re-counting reflections. The double-sided merged collider keeps physics
-  solid under the negative scale. A prop facing backward on a *different*
-  importer is the separate handedness convention - flip `YAW_SIGN` in
-  `LegaiaWorldBuilder.cs`.
+- **Everything looks mirrored**: a current export cannot be, since the world
+  glb has the game's own layout and the builder ignores **Match explorer
+  orientation** for it. That option is for an older export (a manifest with no
+  `conventions.world_frame`), whose world glb is the mirror image of the game:
+  leave it ticked, or re-export. A town that reads mirrored in a current build
+  means a stale `manifest.json` beside a new glb, or the reverse. The landmark
+  test is in
+  [`vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md#the-landmark-test).
+  A prop facing backward on a *different* importer is that importer's own
+  handedness convention - flip `YAW_SIGN` in `LegaiaWorldBuilder.cs`.
 - **Individual buildings face the wrong way** (windmill blades edge-on,
   a hut's door on the wrong side) while the overall layout is right: two
   separate causes, and each was fixed once - re-export with a current

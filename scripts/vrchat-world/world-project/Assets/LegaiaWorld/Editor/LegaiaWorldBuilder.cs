@@ -23,31 +23,27 @@
 // mapped through the same inversion here, and yaw flips sign. If a prop
 // faces mirrored in your importer, flip YAW_SIGN.
 //
-// Handedness note (the trap that ate three yaw-sign attempts): the WORLD
-// glb bakes the site viewers' Y-mirror into its vertices (determinant -1
-// geometry), while the NPC / prop glbs are proper-rotation models (root
-// node Rx(180deg), determinant +1, raw PSX units). Opposite handedness
-// means NO yaw value can make a placed prop coincide with its baked
-// frame-0 twin - a mirrored building has its door on the wrong side at
-// every angle. The fix is PROP_NPC_SCALE_Z = -1: a negative Z on each
-// instance's scale supplies the missing mirror (algebra: the required
-// instance transform is Ry(yaw) * diag(1,-1,1) * Rx(pi)^-1
-// = Ry(yaw) * diag(1,1,-1)). Materials are exported double-sided, so the
-// flipped winding doesn't cull.
+// Frame note: the kit builds in its own frame, a root with a -1 X scale and
+// a -1 Z on every glb under it. The two mirrors multiply to a 180 degree
+// turn about Y, so what stands in the finished scene is a rotation of the
+// game, never a reflection. Settings files, positions and every pass are
+// written against that frame.
 //
-// Orientation note: the raw import IS mirrored relative to the site's
-// field-scene viewer, and the fix is a -1 X root scale. This was settled
-// EMPIRICALLY with a landmark test on town01 - stand at the sea looking at
-// the village (the sea-to-gate axis pins the viewpoint, so only parity can
-// differ): the raw glb shows the big house left / huts right / gate
-// slightly right of the animated gate doors' wall, the explorer shows the
-// exact opposite sides. No rotation swaps sides across a content-pinned
-// axis. Do NOT re-derive this from the shader reflection chain
+// A current export (conventions.world_frame == "psx_rx180") has its world
+// glb, NPC / prop glbs and manifest in one right-handed frame, the game's own
+// layout. LegaiaManifestFrame re-expresses its numbers and its world nodes in
+// the kit's frame; nothing downstream can tell which export it was given.
+//
+// An older export has a world glb that is the mirror image of the game
+// (x, -y, z) and already carries the kit frame's numbers, so the frame's X
+// mirror alone puts it right. "Match explorer orientation" is that mirror:
+// it only means something for such an export, and a current export ignores
+// it.
+//
+// Do NOT re-derive handedness from the shader reflection chain
 // (webgl-shaders.js u_pair_front) - counting reflections there produced
-// confident wrong answers in BOTH directions before the landmark test
-// settled it. The double-sided merged collider keeps physics correct under
-// the negative scale, and the shared material is double-sided so the
-// flipped winding doesn't cull.
+// confident wrong answers in BOTH directions. Landmark-test it instead:
+// docs/tooling/vrchat-world-export.md has the method.
 
 using System.Collections.Generic;
 using System.IO;
@@ -62,10 +58,8 @@ namespace LegaiaWorld
     {
         const float YAW_SIGN = -1f;
 
-        // NPC / prop instances need a Z-mirror to match the world glb's
-        // baked (mirror-handed) geometry - see the handedness note in the
-        // header. Set to +1 only for an importer whose world glb is
-        // handedness-corrected on import.
+        // The kit frame's Z mirror on an NPC / prop instance (see the frame
+        // note in the header). The root's X mirror pairs with it.
         const float PROP_NPC_SCALE_Z = -1f;
 
         string manifestPath = "";
@@ -131,10 +125,10 @@ namespace LegaiaWorld
 
             matchExplorerOrientation = EditorGUILayout.Toggle(
                 new GUIContent("Match explorer orientation",
-                    "Mirror the built root on X so the scene reads the way the " +
-                    "site's field-scene viewer presents it (verified by landmark " +
-                    "test on town01: the raw import puts known buildings on the " +
-                    "wrong side of the sea-to-gate axis)"),
+                    "Older exports only (a manifest without conventions.world_frame): " +
+                    "mirror the built root on X, since their world glb is the mirror " +
+                    "image of the game. A current export is built right either way " +
+                    "and ignores this."),
                 matchExplorerOrientation);
             addWorldColliders = EditorGUILayout.Toggle("World mesh colliders", addWorldColliders);
             using (new EditorGUI.DisabledScope(!addWorldColliders))
@@ -353,7 +347,7 @@ namespace LegaiaWorld
         /// root (so moving the TV doesn't force a full scene rebuild).
         void PlaceCommonPrefabs()
         {
-            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object m = LegaiaManifestFrame.Load(manifestPath);
             string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
             var root = GameObject.Find("Legaia_" + sceneName);
             var spawnT = root != null ? root.transform.Find("LegaiaSpawn") : null;
@@ -432,7 +426,7 @@ namespace LegaiaWorld
         /// physics never fights a parent mirror.
         void PlaceEquipmentProps()
         {
-            object sm = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object sm = LegaiaManifestFrame.Load(manifestPath);
             string sceneName = MiniJson.AsStr(MiniJson.Get(sm, "scene")) ?? "scene";
             var sceneRoot = GameObject.Find("Legaia_" + sceneName);
             if (sceneRoot == null)
@@ -933,7 +927,7 @@ namespace LegaiaWorld
         /// pass is idempotent - rerunning refreshes rather than stacks.
         void ApplyRealismToExisting()
         {
-            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object m = LegaiaManifestFrame.Load(manifestPath);
             string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
             var root = GameObject.Find("Legaia_" + sceneName);
             if (root == null)
@@ -978,7 +972,7 @@ namespace LegaiaWorld
         void Build()
         {
             string dir = Path.GetDirectoryName(manifestPath).Replace('\\', '/');
-            object m = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object m = LegaiaManifestFrame.Load(manifestPath);
             string sceneName = MiniJson.AsStr(MiniJson.Get(m, "scene")) ?? "scene";
             string worldGlb = MiniJson.AsStr(MiniJson.Get(m, "world_glb"));
 
@@ -990,7 +984,7 @@ namespace LegaiaWorld
             // Current exports bake the scale onto each NPC / prop glb's own
             // root node (conventions.npc_prop_units == "scaled") so a file
             // dragged into the scene by hand is already world-sized;
-            // instances then carry only the handedness mirror. An older
+            // instances then carry only the kit frame's mirror. An older
             // manifest without the flag shipped raw-PSX-unit files whose
             // instances need the full scale here.
             bool scaledAssets = MiniJson.AsStr(MiniJson.Get(
@@ -1019,6 +1013,7 @@ namespace LegaiaWorld
 
             // --- World ---
             var world = InstantiateGlb(dir + "/" + worldGlb, root.transform);
+            bool rotationFrame = LegaiaManifestFrame.IsRotationFrame(m);
             if (world == null)
             {
                 EditorUtility.DisplayDialog("Legaia World Builder",
@@ -1028,6 +1023,8 @@ namespace LegaiaWorld
                 return;
             }
             world.name = "world";
+            if (rotationFrame)
+                LegaiaManifestFrame.WorldToKitFrame(world.transform);
             if (addWorldColliders)
             {
                 if (mergedWorldCollider)
@@ -1150,8 +1147,8 @@ namespace LegaiaWorld
                     {
                     var go = InstantiateGlb(dir + "/" + file, propRoot.transform);
                     if (go == null) continue;
-                    // Negative Z: the handedness mirror (see header note) -
-                    // without it no yaw can align a prop with its baked twin.
+                    // Negative Z: the kit frame's instance mirror (see the
+                    // frame note in the header).
                     go.transform.localScale =
                         new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);
                     go.transform.localPosition = G2U(MiniJson.GetVec3(inst, "position"));
@@ -1323,12 +1320,10 @@ namespace LegaiaWorld
                 }
             }
 
-            // Mirror the whole assembly at the very end: children keep their
-            // manifest-frame local transforms, the root flips them into the
-            // explorer pages' presentation as one unit (see the orientation
-            // note in the header - this is empirically a mirror, not a
-            // rotation).
-            if (matchExplorerOrientation)
+            // The root's half of the kit frame, at the very end: children keep
+            // their local transforms and the root carries them into the
+            // finished frame as one unit (see the frame note in the header).
+            if (rotationFrame || matchExplorerOrientation)
                 root.transform.localScale = new Vector3(-1f, 1f, 1f);
 
             // Resolve arrival facings AFTER the final mirror stands: a
@@ -1598,7 +1593,7 @@ namespace LegaiaWorld
         /// Instantiate the glTFast-imported prefab at `assetPath` (null when
         /// the asset is missing or not yet imported).
         /// Place one manifest NPC entry under `npcRoot`: the glb the entry
-        /// renders with (its own, or a model override's), the handedness
+        /// renders with (its own, or a model override's), the kit frame's
         /// mirror, the manifest position, an optional Inspector yaw, the
         /// looping idle clip and the capsule. Shared by the full build
         /// and the apply-to-built-root path.
@@ -1616,7 +1611,8 @@ namespace LegaiaWorld
                         " did not load as a model - is the export imported?");
                 return null;
             }
-            // Negative Z: the handedness mirror (see header note);
+            // Negative Z: the kit frame's instance mirror (see the frame
+            // note in the header);
             // instScale covers legacy raw-PSX-unit exports.
             go.transform.localScale =
                 new Vector3(instScale, instScale, PROP_NPC_SCALE_Z * instScale);

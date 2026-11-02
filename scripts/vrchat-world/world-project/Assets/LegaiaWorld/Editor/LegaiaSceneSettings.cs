@@ -933,7 +933,7 @@ namespace LegaiaWorld
                     r.scene + " --out <dir> --no-props` and copy manifest.json + npcs/ there.");
                 return null;
             }
-            object sm = MiniJson.Parse(File.ReadAllText(mp));
+            object sm = LegaiaManifestFrame.Load(mp);
             Dictionary<string, object> best = null;
             foreach (object n in MiniJson.AsList(MiniJson.Get(sm, "npcs")) ?? new List<object>())
             {
