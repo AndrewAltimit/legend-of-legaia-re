@@ -33,6 +33,11 @@ impl PlayWindowApp {
         }) {
             return self.screenshot.is_some() && self.tick_no >= t;
         }
+        self.capture_gate_met()
+    }
+
+    /// The capture's own gate, whatever `LEGAIA_DIAG_CAPTURE_TICK` says.
+    pub(super) fn capture_gate_met(&self) -> bool {
         let world = &self.session.host.world;
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))

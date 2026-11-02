@@ -51,6 +51,11 @@
 --
 -- Env:
 --   LEGAIA_SPELL         action id to force (required; e.g. 0x86)
+--   LEGAIA_PHYSICAL      1 = no inject: record the action a catalogued
+--                        mid-strike state already holds, from the first vsync
+--                        in the strike loop (action state 0x1E) to past the
+--                        Done band, for whichever seat is acting. The cue
+--                        channel of a monster's physical attack.
 --   LEGAIA_CASTER_SEAT   seat whose queued action is rewritten (0); 255
 --                        writes every party seat. A monster seat (3..7) is
 --                        written on the first 0x0A of any seat: state 0x0C
@@ -128,6 +133,7 @@ local CAST_QUEUE = {}
 for v in string.gmatch(probe.getenv("LEGAIA_CAST_QUEUE", ""), "[^,]+") do
     CAST_QUEUE[#CAST_QUEUE + 1] = tonumber(v, 16)
 end
+local PHYSICAL     = probe.getenv_num("LEGAIA_PHYSICAL", 0) ~= 0
 local SAVE_INJECT  = probe.getenv_num("LEGAIA_SAVE_INJECT", 0) ~= 0
 local inject_saved = false
 local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
@@ -382,7 +388,7 @@ probe.run({
         local cs = actor(CASTER_SEAT == 255 and 0 or CASTER_SEAT)
         probe.pad_release(probe.BTN.CROSS)
         if cx == nil or cs == nil then return end
-        if not injected and elapsed < PRESS_UNTIL then
+        if not injected and not PHYSICAL and elapsed < PRESS_UNTIL then
             local sub = elapsed % PRESS_PERIOD
             if sub >= PRESS_PERIOD / 2 and sub < PRESS_PERIOD / 2 + 4 then
                 probe.pad_force(probe.BTN.CROSS)
@@ -403,6 +409,10 @@ probe.run({
             PCSX.log(string.format("[flow t%d] ctx6=0x%02X ctx7=0x%02X acting=%d",
                 elapsed, u8(cx + 6), st7, acting))
             last_flow = flow
+        end
+        if PHYSICAL and not injected and in_battle then
+            injected = true
+            inject_vsync = elapsed
         end
         if not injected and not MONSTER_PICK and in_battle and st7 == INJECT_STATE
             and (CASTER_SEAT == 255 or CASTER_SEAT >= 3 or acting == CASTER_SEAT) then
@@ -457,8 +467,8 @@ probe.run({
         -- Cast begin (0x28) is the state every Magic action passes through
         -- first - a party summon, a monster spell, a capture-class cast - and
         -- the engine recorder starts on the same one.
-        if not cast_seen and st7 == 0x28
-            and ((CASTER_SEAT == 255 and acting < 3) or acting == CASTER_SEAT) then
+        if not cast_seen and ((PHYSICAL and st7 == 0x1E) or (not PHYSICAL and st7 == 0x28
+            and ((CASTER_SEAT == 255 and acting < 3) or acting == CASTER_SEAT))) then
             cast_seen = true
             cast_vsync = elapsed
             ground_at_cast = ground_pairs()

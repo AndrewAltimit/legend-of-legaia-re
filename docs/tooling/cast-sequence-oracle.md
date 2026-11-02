@@ -273,6 +273,45 @@ frames past the arm's entry holds retail's rise older than the engine's
 the whole arm-4 segment scores low on the brighter retail frame. The
 `vera_summon_mid_cast` still, gated on the rise's own age, matches it.
 
+## A monster's physical attack
+
+`--physical` records the strike a harvested state already holds instead of
+injecting a cast (`battle_*_strike`: a monster eight vsyncs into its strike loop
+`0x1E`). Neither side is steered onto an action:
+
+```bash
+scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --every 8
+```
+
+- **Retail.** `LEGAIA_PHYSICAL=1`: the probe loads the state and records from
+  its first vsync to past the Done band.
+- **Engine.** The child keeps the state's own pad drive, so its strike is the
+  round `BattleDrive::reached` accepts, and starts recording on that gate
+  (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`). `LEGAIA_DIAG_CAPTURE_TICK` pushes the
+  child's frame past the recording. A first `0x1E` is not that round: the drive
+  may replay rounds until its target and clip match, and a recording started on
+  an earlier one reads as a strike that "lands nothing".
+
+Once the capture's own instant is passed, nothing holds the two rounds together:
+the block roll, the monster's next queue byte and any later pick draw on each
+side's own stream. So the channel's number mixes rule differences with deals.
+`scripts/asset-investigation/cue_by_clip.py <dir>` takes the deal out: it files each
+cue under the seat and clip it landed in, with its offset from the clip's commit,
+on both sides, so a clip both sides played can be read cue for cue.
+
+What thirteen strike states show (`warhalf`, `warman`, `frog`, `spoon`,
+`gilium_lv2`, `hells_rat`, `gizam`, `wolf`, `guardian`, `freed`, `barra`,
+`chitei2_gilium`, `mad_ogre`): every clip both sides played carries the same ids
+within two vsyncs. Vahn's flinch `0x54` and block `0x51` + `0x0C`, Noa's block
+`0x249`, Gala's block `0x58` + `0x0C`, and each monster's swing (`0x2D0` Frog,
+`0x2E4` / `0x311` Warhalf, `0x2E3` Mad Ogre, `0x19` Gilium, `0x308` Freed) agree.
+`gizam` and `warhalf` play the same ids throughout, and every other difference is
+a block roll or queue byte the two streams dealt apart, not a wrong cue. A cue on
+a walk clip (`warhalf`'s `0x311`) sits on that seat's walk cycle, which the
+capture's instant does not fix. A hit
+that lands keeps its hit count: `frog`'s retail swings land, block, land and fold
+one HP drop; the engine's land, land, knock down and fold one.
+
 ## The sound channel
 
 Both sides also write `sfx.csv`, one row per sound cue played:

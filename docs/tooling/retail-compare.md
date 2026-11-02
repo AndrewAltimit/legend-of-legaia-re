@@ -2660,7 +2660,9 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   (`FUN_8004E13C`'s `+0x21C = 1` sweep over the bystanders, `0x8004E15C..0x8004E24C`,
   which `FUN_80050120` arm 1 eases toward `0x20` a lane); the port does not model
   the sweep, and why the body leaves the table at a non-zero word is open.
-
+  The hit count is not the cause: a
+  [`--physical` recording](cast-sequence-oracle.md#a-monsters-physical-attack) of
+  the strike folds one HP drop on each side.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
 - **A fading body retail does not draw.** `player_steal_skeleton_banner` holds

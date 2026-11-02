@@ -297,6 +297,12 @@ struct CastSeqRecorder {
     /// Only a cast by this acting seat starts the recording
     /// (`LEGAIA_DIAG_CAST_SEQ_SEAT`); any seat when unset.
     seat: Option<u8>,
+    /// `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`: start on the tick the capture's own
+    /// gate holds instead of on cast begin, for a retail state that holds an
+    /// action already running (a monster's strike): both recordings then open
+    /// on the same instant. The child takes its frame later
+    /// (`LEGAIA_DIAG_CAPTURE_TICK`).
+    begin_on_gate: bool,
     start: Option<u64>,
     done: Option<u64>,
     shots: u64,
@@ -370,6 +376,7 @@ impl PlayWindowApp {
                 seat: std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT")
                     .ok()
                     .and_then(|v| v.parse().ok()),
+                begin_on_gate: std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate"),
                 dir,
                 meta,
                 start: None,
@@ -419,6 +426,14 @@ impl PlayWindowApp {
         let tick = self.tick_no;
         let start = match rec.start {
             Some(s) => s,
+            None if rec.begin_on_gate => {
+                if !self.capture_gate_met() {
+                    return;
+                }
+                eprintln!("cast sequence: the capture's gate at tick {tick} (seat {acting})");
+                rec.start = Some(tick);
+                tick
+            }
             None if st == CAST_BEGIN_STATE && rec.seat.is_none_or(|s| s == acting) => {
                 eprintln!("cast sequence: cast begin at tick {tick} (seat {acting})");
                 rec.start = Some(tick);
