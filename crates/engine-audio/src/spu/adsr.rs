@@ -196,7 +196,15 @@ impl AdsrState {
             ),
             Phase::Release => env_step(cfg.release_exp, true, cfg.release_shift, 0, self.level),
         };
-        self.level = (i32::from(self.level) + spec.step).clamp(0, 0x7FFF) as u16;
+        // Rate `0x7F` (shift `0x1F`, step `3`) holds: a sustain written with it
+        // never moves. Every sustaining `0x...5Fxx` tone in the save-state
+        // library sits at its decay's end level however long it has rung.
+        let held = matches!(self.phase, Phase::Sustain)
+            && cfg.sustain_shift == 0x1F
+            && cfg.sustain_step == 3;
+        if !held {
+            self.level = (i32::from(self.level) + spec.step).clamp(0, 0x7FFF) as u16;
+        }
         self.wait = spec.cycles.saturating_sub(1);
         match self.phase {
             Phase::Attack => {
@@ -581,5 +589,21 @@ mod tests {
         assert!(cfg.sustain_decrease);
         assert_eq!(cfg.sustain_shift, 10);
         assert_eq!(cfg.release_shift, 12);
+    }
+
+    /// Rate `0x7F` is a hold: the library's sustaining voices never leave the
+    /// level their decay ended on.
+    #[test]
+    fn a_sustain_at_rate_0x7f_holds() {
+        let cfg = AdsrConfig::from_words(0x80FF, 0x5FCF);
+        let mut s = AdsrState {
+            phase: Phase::Sustain,
+            level: 0x7FF7,
+            wait: 0,
+        };
+        for _ in 0..(1 << 21) + 8 {
+            s.tick(&cfg);
+        }
+        assert_eq!(s.level, 0x7FF7);
     }
 }

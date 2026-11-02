@@ -48,6 +48,7 @@ const ORACLE_SUBCOMMANDS: &[&str] = &[
     "retail-compare",
     "cast-sequence-score",
     "audio-sweep",
+    "pcm-retail",
 ];
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
@@ -120,6 +121,8 @@ fn main() -> Result<()> {
         Cmd::CastSequenceScore(args) => legaia_parity::cast_sequence::run(args),
         #[cfg(feature = "oracles")]
         Cmd::AudioSweep(args) => legaia_parity::audio_sweep::run(args),
+        #[cfg(feature = "oracles")]
+        Cmd::PcmRetail(args) => legaia_parity::pcm_retail::run(args),
         Cmd::Info {
             scene,
             extracted_root,

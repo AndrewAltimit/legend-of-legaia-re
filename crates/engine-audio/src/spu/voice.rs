@@ -49,6 +49,25 @@ impl VoiceBus {
     }
 }
 
+/// Where [`Voice::resume`] stands a voice.
+#[derive(Debug, Clone)]
+pub struct VoiceResume {
+    /// The block the decoder stands in, bytes.
+    pub block_addr: u32,
+    /// Index in that block of the newest interpolator tap.
+    pub sample_idx: u8,
+    /// `Some`: the newest tap is still in the block before, and these are the
+    /// samples of that block from the newest tap on. The next block is
+    /// [`Self::block_addr`].
+    pub before_block: Option<Vec<i16>>,
+    /// Pitch counter, `1 / 0x1000` of a sample.
+    pub sample_frac: u32,
+    /// The interpolator's four taps, oldest first.
+    pub hist: [i16; 4],
+    /// Decoder history entering [`Self::block_addr`]'s block: `(prev1, prev2)`.
+    pub prev: (i32, i32),
+}
+
 #[derive(Debug, Clone)]
 pub struct Voice {
     /// Base address (bytes) into SPU RAM where this voice's ADPCM stream
@@ -98,6 +117,9 @@ pub struct Voice {
     /// Gaussian interpolator (`[0]` = oldest .. `[3]` = newest = the sample
     /// at the current pitch-counter position). Survives block boundaries.
     hist: [i16; 4],
+    /// Set by [`Self::resume`] when the interpolator is still inside the block
+    /// before the one the decoder stands in: where that block's tail hands on.
+    resume_next: Option<u32>,
     /// Key-ons since construction. An owner that remembers the count at its
     /// own key-on can tell whether someone else has re-keyed the voice since.
     key_on_count: u32,
@@ -122,6 +144,7 @@ impl Default for Voice {
             decoder: AdpcmDecoder::new(),
             has_block: false,
             hist: [0; 4],
+            resume_next: None,
             key_on_count: 0,
         }
     }
@@ -146,6 +169,7 @@ impl Voice {
         self.cur_block_addr = self.start_addr;
         self.sample_idx = 0;
         self.sample_frac = 0;
+        self.resume_next = None;
         self.decoder.reset();
         self.fetch_block(ram);
         // Interpolator history starts silent; the stream's first sample is
@@ -153,6 +177,31 @@ impl Voice {
         self.hist = [0, 0, 0, if self.has_block { self.block_pcm[0] } else { 0 }];
         self.adsr.key_on();
         self.key_on_count = self.key_on_count.wrapping_add(1);
+    }
+
+    /// Stand a voice mid-note where a retail capture has it, so a parity oracle
+    /// can resume the capture sample for sample rather than re-key it. The
+    /// caller has already set the registers, the envelope and
+    /// [`Self::loop_addr`].
+    pub fn resume(&mut self, ram: &SpuRam, at: VoiceResume) {
+        self.sample_frac = at.sample_frac & 0xFFF;
+        self.hist = at.hist;
+        self.decoder.prev1 = at.prev.0;
+        self.decoder.prev2 = at.prev.1;
+        self.cur_block_addr = at.block_addr;
+        match at.before_block {
+            Some(tail) => {
+                let start = SAMPLES_PER_BLOCK - tail.len();
+                self.block_pcm[start..].copy_from_slice(&tail);
+                self.sample_idx = start as u8;
+                self.has_block = true;
+                self.resume_next = Some(at.block_addr);
+            }
+            None => {
+                self.fetch_block(ram);
+                self.sample_idx = at.sample_idx;
+            }
+        }
     }
 
     /// How many times this voice has been keyed on. The sequencer stamps
@@ -197,7 +246,12 @@ impl Voice {
 
         // Advance fractional pitch counter and walk forward through samples,
         // pushing each newly-reached sample into the interpolator history.
-        self.sample_frac += self.pitch as u32;
+        // A register past `0x3FFF` steps at `0x4000` (no$psx "Pitch Counter").
+        self.sample_frac += if self.pitch > 0x3FFF {
+            0x4000
+        } else {
+            self.pitch as u32
+        };
         while self.sample_frac >= PITCH_UNITY as u32 {
             self.sample_frac -= PITCH_UNITY as u32;
             self.sample_idx += 1;
@@ -232,8 +286,9 @@ impl Voice {
             self.has_block = false;
             return;
         }
-        // Latch loop address if we don't have one yet and this block sets it.
-        if self.loop_addr.is_none() && flags.loop_start {
+        // The hardware latches the repeat address at every block carrying the
+        // loop-start flag, so a sample with two of them loops to the later.
+        if flags.loop_start {
             self.loop_addr = Some(self.cur_block_addr);
         }
         self.block_pcm = pcm;
@@ -243,6 +298,11 @@ impl Voice {
     /// Decide what comes after the current block: jump to loop, advance to
     /// next sequential block, or stop.
     fn advance_to_next_block(&mut self, ram: &SpuRam) {
+        if self.resume_next.take().is_some() {
+            // A resumed voice: `block_pcm` held the previous block's tail.
+            self.fetch_block(ram);
+            return;
+        }
         let bytes = ram.slice(self.cur_block_addr, BLOCK_BYTES as u32);
         let flag = if bytes.len() >= 2 { bytes[1] } else { 0 };
         let end = flag & 0x01 != 0;
@@ -412,5 +472,48 @@ mod tests {
             v.tick(&ram);
         }
         assert!(!v.is_off());
+    }
+
+    /// The hardware latches the repeat address at every block carrying the
+    /// loop-start flag: a voice standing on a stale address re-enters the
+    /// later block, not the address it held.
+    #[test]
+    fn every_loop_start_block_moves_the_repeat_address() {
+        let mut stream = vec![0u8; 3 * BLOCK_BYTES];
+        stream[1] = 0x04;
+        stream[BLOCK_BYTES + 1] = 0x04;
+        stream[2 * BLOCK_BYTES + 1] = 0x03;
+        let mut ram = SpuRam::new();
+        ram.write_at(0x1000, &stream);
+        let mut v = Voice {
+            start_addr: 0x1000,
+            loop_addr: Some(0x2000),
+            adsr_cfg: AdsrConfig::from_words(0x000F, 0x1F00),
+            ..Voice::default()
+        };
+        v.key_on(&ram);
+        assert_eq!(v.loop_addr, Some(0x1000));
+        for _ in 0..40 {
+            v.tick(&ram);
+        }
+        assert_eq!(v.loop_addr, Some(0x1000 + BLOCK_BYTES as u32));
+    }
+
+    /// A pitch register past `0x3FFF` steps at `0x4000`: four input samples an
+    /// output tick, whatever the register says.
+    #[test]
+    fn the_pitch_step_tops_out_at_four_samples() {
+        let stream = synth_silence_stream(40, true);
+        let mut ram = SpuRam::new();
+        ram.write_at(0x1000, &stream);
+        let mut v = Voice {
+            start_addr: 0x1000,
+            pitch: 0xFFFF,
+            ..Voice::default()
+        };
+        v.key_on(&ram);
+        v.tick(&ram);
+        assert_eq!(v.sample_idx, 4);
+        assert_eq!(v.sample_frac, 0);
     }
 }

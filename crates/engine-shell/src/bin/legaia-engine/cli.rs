@@ -1716,6 +1716,11 @@ pub(crate) enum Cmd {
     #[command(display_order = 31)]
     #[cfg(feature = "oracles")]
     AudioSweep(legaia_parity::audio_sweep::AudioSweepArgs),
+    /// The engine's mix against mednafen's own output from a library state
+    /// (`docs/subsystems/audio.md`, "Real retail PCM").
+    #[command(display_order = 32)]
+    #[cfg(feature = "oracles")]
+    PcmRetail(legaia_parity::pcm_retail::PcmRetailArgs),
 }
 
 #[derive(Subcommand, Debug)]

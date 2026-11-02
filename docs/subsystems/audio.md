@@ -76,7 +76,7 @@ separate retail chunks.
 - **Music**: [BGM dispatch](#bgm-dispatch) · [which track a scene plays](#which-track-a-scene-plays) · [swap handshake](#the-track-swap-handshake-fun_800243f0--op-0x35-sub-op-0xa) · [stop / pause / replay](#the-control-words-stop-pause-replay) · [movies](#movies-and-the-score) · [cold scene entry](#the-cold-scene-entry-sequence-and-what-each-missing-step-sounds-like) · [battle track](#the-battle-sound-set-picks-the-fights-track) · [`music_01` bank](#global-pool-bgm-the-music_01-bank)
 - **libsnd**: [SsAPI sequencer](#ssapi-sequencer-0x80061-0x80067-cluster) · [tempo](#where-wall-clock-tempo-becomes-an-integer-tick-step) · [event decode](#the-decoder-does-not-consume-a-whole-event) · [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center) · [voice allocator](#voice-allocator--key-onoff-flush-the-middle-tier)
 - **libspu**: [SPU control](#libspu--spu-control-0x80068-0x8006d-cluster) · [DMA transfer engine](#spu-dma-transfer-engine) · [reverb](#reverb-model-engine-audio) · [Gaussian resampler](#voice-resampler---4-point-gaussian-interpolation-engine-audio) · [seq-management layer](#ssapi-seq-management-layer-above-libspu)
-- **Measured**: [audio-trace oracle](#audio-trace-parity-oracle) · [audio state sweep](#the-audio-state-sweep)
+- **Measured**: [audio-trace oracle](#audio-trace-parity-oracle) · [audio state sweep](#the-audio-state-sweep) · [real retail PCM](#real-retail-pcm)
 - **Port**: [Sequencer](#engine-audio-model---sequencer-port) · [SPU](#engine-audio-model---from-scratch-spu-port) · [SFX bank + scheduler](#sfx-bank--scheduler) · [battle command blips](#the-battle-command-surfaces-blips) · [sustained cues](#sustained-cues-loop-until-the-teardown-releases-them) · [XA-ADPCM](#xa-adpcm)
 - **Voice**: [arts shout](#battle-arts-voice-shout-path-engine) · [animation cue track](#the-second-shout-trigger---the-animation-cue-track-fun_800508dc) · [XA dispatchers and census](#cd-xa-voice-clip-dispatchers-and-static-cue-census) · [a normal attack](#what-a-normal-attack-sounds-like)
 - **Measurement**: [audio-trace parity oracle](#audio-trace-parity-oracle) · [open items](#open-items)
@@ -1804,15 +1804,13 @@ Channel and polyphonic aftertouch (`0xDn` / `0xAn`) are parsed but the
 expressive-event sweep confirms the retail score never emits them, so they
 have no consumer to drive.
 
-**Loop points.** SEQ loop markers are read from the stream: the NRPN-style
-control changes on `0xB0` (controller 99 value 20 = Loop Start, value 30 =
-Loop Forever; see [`formats/seq.md`](../formats/seq.md)). A Loop Start records
-the position immediately after the marker; a later Loop Forever - or an
-end-of-track that follows a Loop Start - rewinds there rather than to event 0,
-so looped BGM repeats from the correct bar instead of restarting the whole
-track. The rewind resets the integer sample-clock, so the looped body re-fires
-on the same sample offset every pass. `set_loop_to` is the fallback for the
-four retail tracks with no markers.
+**Loop points.** SEQ loop markers are read from the stream, with the count retail's
+handlers keep: a Loop Start with a counted data entry repeats from the last Loop
+Start, an uncounted one runs on, and end-of-track stops the score, because the field
+BGM attach plays with a count of `1`
+([`formats/seq.md`](../formats/seq.md#loop-markers)). The rewind resets the integer
+sample-clock, so the looped body re-fires on the same sample offset every pass.
+`set_loop_to` is a viewer's choice to repeat a score at its end.
 
 `Sequencer::loop_count` exposes a monotonic rewind counter (bumped on every
 `rewind_to`), and `render_bgm_loop_region` (in `legaia-engine-audio`) uses it
@@ -1982,7 +1980,7 @@ tests named above run it over real scores.
 | [`spu::adpcm`](../../crates/engine-audio/src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder (28 samples per 16-byte block). One stateful instance per voice carries the inter-block `prev1`/`prev2` history. |
 | [`spu::ram`](../../crates/engine-audio/src/spu/ram.rs) | 512 KB SPU RAM model + libspu-shaped transfer engine (`SpuRam::set_direction` / `write` / `read` + `SpuAllocator` for `SsSpuMalloc` / `SpuFree`). |
 | [`vab_bind::VabBank`](../../crates/engine-audio/src/vab_bind.rs) | Bridges `legaia_vab::VabReport` into the SPU: `upload(spu, alloc, report, buf)` drops every VAG body into SPU RAM through the allocator - resolving the body origin off the stream first, see [`vab.md`](../formats/vab.md#two-wrongs-that-cancel-and-the-six-entries-where-they-do-not) - and `play_note(spu, voice, prog, note, velocity)` translates a MIDI key into voice config + key-on. Pitch is the [key-on pitch law](#the-key-on-pitch-law---note-against-the-tones-center); key-on volume and pans are the `FUN_80067550` chain ([above](#voice--mixer-audible-output-critical-path)). |
-| [`AudioOut`](../../crates/engine-audio/src/lib.rs) | Owns a single cpal output stream that drains the `Spu` at 44.1 kHz and resamples to the host device rate (linear). Engines call `with_spu(|spu| ...)` from outside the audio thread to push voice attributes / key-on masks. |
+| [`AudioOut`](../../crates/engine-audio/src/lib.rs) | Owns a single cpal output stream that drains the `Spu` at 44.1 kHz and resamples to the host device rate ([`host_resample`](../../crates/engine-audio/src/host_resample.rs)). Engines call `with_spu(|spu| ...)` from outside the audio thread to push voice attributes / key-on masks. |
 
 Decay ends on the step that takes the envelope below `(SL + 1) * 0x800`
 (`level >> 11 <= SL`), and the envelope keeps the level that step left: it is
@@ -3223,6 +3221,120 @@ What it still reports:
   capture holds (the record's context at `+0xF4`, the cue voice keyed) and
   a seat does not replay it.
 
+## Real retail PCM
+
+Everything above compares registers and notes. This compares sound: mednafen's
+own output, recorded while it plays on from a library state, against the
+engine's mix of the same bars. The older [`pcm_oracle`](../../crates/parity/src/pcm_oracle.rs)
+cannot do this, because its "retail" window is the engine's mixer seeded from
+a snapshot, which has no way to disagree with the mixer. Driver
+`scripts/ci/audio-pcm.py`, CLI `legaia-engine pcm-retail`, module
+[`legaia_parity::pcm_retail`](../../crates/parity/src/pcm_retail.rs). No listening
+is involved: every statement here is a number off the two waveforms.
+
+**The recording.** `mednafen -autosave 1` loads a state before its first frame,
+so sample 0 of `-soundrecord` is the state, and the run is deterministic in
+emulated time however slowly it goes (a headless `softfb` window runs near half
+speed here). At `-sound.rate 44100` the emulator's rate converter is close to the
+identity. A resumed SPU fits the recording at correlation `1.0000`, lag `0`, level
+**`0.750`**, in every band, in every state tried, which puts that factor in the
+recorder and not in the console; the oracle divides it out
+(`MEDNAFEN_RECORD_GAIN`). The WAVs are Sony-derived and stay under `captures/`.
+
+**Two channels.**
+
+- **`core`: the SPU model alone.** A scratch copy of the state has the open
+  sequence bitmap `_DAT_801CD2B8` zeroed, so no sequence writes a voice while the
+  emulator plays on. `Spu` is stood exactly where the state's SPU stands (decoder
+  ring, block position, pitch counter, envelope, reverb tank and both resampler
+  histories, `pcm_retail::spu_resumed_from_retail`) and renders with no sequencer.
+- **`track`: sequencer and SPU.** The engine starts the state's track and steps
+  vsync by vsync until its sequencer stands where the state's libsnd record stands:
+  the event the read cursor `+0x00` waits on, with `+0x90` tenths of a tick left.
+  From there it renders with no world, so a state's own cues are retail's alone.
+
+| State | `core` corr | `track` corr | Level (retail / engine) | Reading |
+|---|---|---|---|---|
+| `terra_party_battle` | | `0.982` | `-0.01` dB | battle theme |
+| `minigame_fishing` | | `0.985` | `0.00` dB | |
+| `minigame_baka_fighter` | | `0.978` | `0.00` dB | |
+| `keikoku_chest_pre` | `1.000` | `0.973` | `+0.02` dB | |
+| `mei_house_inside` | `1.000` | `0.970` | `-0.19` dB | |
+| `title_screen_new_game` | `1.000` | `0.932` | `-0.06` dB | first 10 s; it then times out into the attract sequence |
+| `sebucus_overworld_resident` | | `0.948` | `-0.04` dB | |
+| `rimelm_wall_press_left` | | `0.896` | `+0.39` dB | retail's river emitter is in the recording |
+| `menu_status_town` | | `0.903` | `-0.19` dB | the score's body, past its first pass |
+| `minigame_slot_machine` | | `0.842` | `-0.22` dB | retail's cabinet cues are in the recording |
+| `party_battle_gobu_gobu` | | `0.743` | `-0.03` dB | see below; no cue voice is sounding in the state |
+
+Per octave band the level difference is under `0.1` dB wherever no retail cue is
+in the window. Mix level, panning, pitch, envelope and reverb topology are not
+where the two sides differ.
+
+**What the residual is.** The `track` channel's `-12` to `-15` dB residual is not
+in the voices. Paired by pitch and ADSR word at nine moments of one track, every
+sounding voice carries the same pitch, ADSR word and L/R volume on both sides,
+and the `core` channel holds those same voices to correlation `0.99998`. It is
+sub-vsync timing: a voice's phase against its neighbours depends on the sample
+its key-on landed on. Retail's vsync is `737.13` samples and a key-on lands where
+the CPU's write meets the SPU's tick, four samples later than the port's
+(`DecodePlayDelay`); two voices on one pitch sum differently a few samples apart.
+The bars with a held flute over a repeating one drop to `0.9`, and no constant moves
+them (`--vsync-samples`, tried from `737` to `737.46`). What would close it is the
+retail key-on write time per note against the SPU's sample clock; nothing here
+says the difference can be heard. Track `2026` in `party_battle_gobu_gobu` is the
+worst of it and is not settled: its windows run from `0.998` down to `0.6` with the
+loss below 150 Hz, and its best lag wanders by `16` samples where a field state's
+holds within a few, so the reading is the same timing on layered bass voices during
+a busier frame, not a measured cause. `terra_party_battle`, another battle state on
+another track, reads `0.982`.
+
+**The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is
+`59.826` Hz (fitted, the drift zeroes at `737.13` samples) and the port's frame is a
+flat 60 Hz. Note for note the score is the same; a track reaches any bar `0.29 %`
+early, by the same factor the port's whole simulation runs ahead of the console,
+so the music stays locked to the game. The oracle renders at the console's rate
+(`Sequencer::step_vsync`); the hosts stay at 60 Hz.
+
+**What the second-pass hunt found above the SPU.** A state's cursor on a later pass
+of its score could not be reached on some tracks, which is what led to
+[how a score really ends](../formats/seq.md#loop-markers): the port restarted every
+score at its end, from a marker where one existed, while retail plays four of them once
+and stops, and it cut every note held across a loop end, where retail's jump leaves
+the voices alone. The fix cannot be heard in a 45-second window of a looping track, so the
+capture that pins it is the seq-end watch, not this oracle.
+
+**What it found in the SPU.** With `core` as the gate: the hardware latches the
+repeat address at **every** block carrying the loop-start flag (the port latched
+the first only, wrong for a voice that re-enters a later loop start); the
+reverb's up-sampler reads its interpolated phase on the tick that steps the network
+(the port read it a tick late, a one-sample delay on every wet sample, correlation
+`0.9936` against `1.0000` on the wet signal alone); rate `0x7F` holds a sustain
+outright, where the port stepped it `-5` every `2^20` samples; and the page's own
+`0x4000` pitch cap was not in the code.
+
+Still open on the core: ADPCM's rounding. The port rounds the predictor
+(`(a*f0 + b*f1 + 32) >> 6`, the published formula), mednafen floors each term, and a
+small model that floors matches the recording exactly while the port's residual sits
+at `-44` dB. Which one the hardware does is not something this oracle can settle.
+
+### Below the mix: the output stage
+
+A device not at 44.1 kHz goes through
+[`host_resample`](../../crates/engine-audio/src/host_resample.rs), on both hosts:
+one mix core drives the cpal stream and the `ScriptProcessorNode`. The linear
+interpolator it replaced lost `1.5` dB at 10 kHz and `3.7` dB at 15 kHz at 48 kHz, with
+the images of everything above 5 kHz folding back at around `-30` dB; the windowed
+sinc is flat within `0.1` dB to 15 kHz with its images below `-60` dB (its own
+tests). A 44.1 kHz device still takes the mix untouched.
+
+The browser's real difference is latency, not level: the `ScriptProcessorNode`
+runs on a 4096-frame buffer, about `93` ms against a few ms on cpal, and a cue
+queued between two callbacks lands at the next one, so browser cues sit on a `93` ms
+grid while the sequencer inside the callback stays sample-exact. An `AudioWorkletNode`
+or a shorter buffer would close it; neither is measured here, since underrun
+behaviour needs a running page.
+
 <a id="whats-left"></a>
 
 ## Open items
@@ -3236,6 +3348,14 @@ What it still reports:
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
+- **The direct-key blind spot is empty for battle.** `FUN_80065034`, the one cue
+  key-on, has 14 `jal` sites disc-wide: the ring drainer (twice), the emitter arm, and
+  the fishing, slot, dance and arena overlays, each documented on its page and ported.
+  `FUN_800250D4` releases voices and keys none, so a battle cue is on the ring or it
+  is a CD-XA clip (`FUN_8003D53C`), and only the ring half is in the cast oracle's
+  sound channel.
+- **Sub-vsync key-on timing and ADPCM rounding** are the two remaining differences
+  [real retail PCM](#real-retail-pcm) can see.
 - **Two emitter inputs are constants.** The per-row scale pair is set once:
   the boot-time mode initialiser `FUN_8001DCF8` stores `0x80`, `0x80`, `0` at
   `0x80091658..0x80091660` (`0x8001DD60..0x8001DD74`), the pair's only writer

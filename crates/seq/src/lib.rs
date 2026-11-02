@@ -212,7 +212,7 @@ impl Seq {
     /// cannot.
     pub fn parse(buf: &[u8]) -> Result<Self> {
         let (header, header_len) = parse_header_with_len(buf)?;
-        let (events, termination) = parse_events(&buf[header_len..])?;
+        let (events, termination) = parse_events(&buf[header_len..], &mut Vec::new())?;
         Ok(Self {
             header,
             events,
@@ -371,13 +371,26 @@ pub fn read_vlq(buf: &[u8], pos: usize) -> Result<(u32, usize)> {
     Ok((value, consumed))
 }
 
-fn parse_events(stream: &[u8]) -> Result<(Vec<Event>, Termination)> {
+/// Byte offset of each event of [`Seq::events`] past its delta-time, from the
+/// start of `buf`: where retail's read cursor rests while it waits out that
+/// delta (`FUN_80063CEC` reads the next delta straight after an event), so a
+/// sequence record's `+0x00` names the event it is waiting on.
+pub fn event_stream_offsets(buf: &[u8]) -> Result<Vec<usize>> {
+    let (_, header_len) = parse_header_with_len(buf)?;
+    let mut offsets = Vec::new();
+    parse_events(&buf[header_len..], &mut offsets)?;
+    offsets.iter_mut().for_each(|o| *o += header_len);
+    Ok(offsets)
+}
+
+fn parse_events(stream: &[u8], offsets: &mut Vec<usize>) -> Result<(Vec<Event>, Termination)> {
     let mut events = Vec::new();
     let mut pos = 0;
     let mut running_status: Option<u8> = None;
     while pos < stream.len() {
         let (delta, n) = read_vlq(stream, pos)?;
         pos += n;
+        offsets.push(pos);
         if pos >= stream.len() {
             bail!("event stream ended after delta-time at +{}", pos);
         }

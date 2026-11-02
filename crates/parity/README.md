@@ -31,6 +31,7 @@ mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
   VRAM dump (per-tile overlap + texpage-region byte-exactness).
 - [`mode_trace_oracle`](src/mode_trace_oracle.rs) - `(scene_mode,
   active_scene)` per frame.
+- [`pcm_retail`](src/pcm_retail.rs) - the engine's mix against mednafen's own recorded output from a library state: the SPU resumed sample for sample, and the track from the state's libsnd read cursor on, scored by correlation and level. Driver `scripts/ci/audio-pcm.py`.
 - [`audio_trace_oracle`](src/audio_trace_oracle.rs) - `(voice_mask,
   voices[24], master_volume)` per frame, vs. the SPU section.
 - [`pcm_oracle`](src/pcm_oracle.rs) - rendered stereo PCM windows from both

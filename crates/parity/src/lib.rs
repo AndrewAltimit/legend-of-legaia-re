@@ -31,6 +31,7 @@ pub mod cast_sequence;
 pub mod cast_sequence_sound;
 pub mod mode_trace_oracle;
 pub mod pcm_oracle;
+pub mod pcm_retail;
 pub mod retail_compare;
 pub mod retail_compare_battle;
 pub mod retail_compare_cli;
