@@ -193,11 +193,7 @@ impl World {
     /// other clip), else the committed `current_anim`. A downed party seat
     /// holds the engine's defeat pose rather than clip `8`, so a finished
     /// defeat pose reads as settled too.
-    pub(in crate::world::battle::cast_band) fn chain_seat_settled(
-        &self,
-        slot: usize,
-        faded: bool,
-    ) -> bool {
+    pub(in crate::world::battle) fn chain_seat_settled(&self, slot: usize, faded: bool) -> bool {
         let Some(a) = self.actors.get(slot) else {
             return true;
         };

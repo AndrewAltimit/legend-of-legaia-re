@@ -336,3 +336,18 @@ fn the_landed_icon_grows_while_the_others_open_out() {
         assert_eq!(p.place.iter().filter(|o| o.is_some()).count(), 7);
     }
 }
+
+#[test]
+fn the_wheel_ticks_once_per_slot_as_the_angle_falls() {
+    let mut st = FatalDecisionState::default();
+    let mut ticks = 0;
+    for _ in 0..(16 * 8) {
+        st.rot -= 32;
+        let rem = st.wheel_tick_rem(WHEEL_TICK_SPAN);
+        if st.tick_rem < rem {
+            ticks += 1;
+        }
+        st.tick_rem = rem;
+    }
+    assert_eq!(ticks, 8);
+}

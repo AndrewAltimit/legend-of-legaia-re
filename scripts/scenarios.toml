@@ -4495,3 +4495,264 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "nilboa"
 topics = ["battle", "enemy attack", "Lava Face", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "balden_devil_pump_pre_multi_cutter"
+backup_fingerprint = "3415843abe81a75712e92db2719a45c4cf2702b79264116eff3fb45cb96302a8"
+description = "balden battle: Devil Pump (monster id 47) is about to cast Multi Cutter (spell 0x65) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 14468 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy cast", "Devil Pump", "Multi Cutter", "balden", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_balden_devil_pump_multi_cutter_mid_cast"
+backup_fingerprint = "653b8a18ad09521db8cde11bcd58f96ada5573f2f51ee27217d830450efa652a"
+description = "balden battle: Devil Pump (monster id 47) mid-cast Multi Cutter (spell 0x65): category 2, action state 0x2B. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 14483 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy cast", "Devil Pump", "Multi Cutter", "balden", "harvest"]
+
+[[scenarios]]
+label = "battle_balden_devil_pump_strike"
+backup_fingerprint = "2354ce2004c37294c7c889e45a1cacc76bace68fdb2be738a7c986106bb4e729"
+description = "balden battle: Devil Pump (monster id 47) mid physical attack: category 3, action state 0x1E. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 12324 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy attack", "Devil Pump", "balden", "harvest"]
+
+[[scenarios]]
+label = "balden_orb_v2_pre_jewel_beam"
+backup_fingerprint = "a11b64d33cf6b3a6686a099f4f3b89c458d9c32d0c92fe0d83890826e10f7e39"
+description = "balden battle: Orb $2 (monster id 84) is about to cast Jewel Beam (spell 0x2D) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 5423 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy cast", "Orb $2", "Jewel Beam", "balden", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_balden_orb_v2_jewel_beam_mid_cast"
+backup_fingerprint = "30d697f5f2cfd8a72bf522f188c47c0118d1b1074efa632fc58a25978f7ca24b"
+description = "balden battle: Orb $2 (monster id 84) mid-cast Jewel Beam (spell 0x2D): category 2, action state 0x2B. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 5438 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy cast", "Orb $2", "Jewel Beam", "balden", "harvest"]
+
+[[scenarios]]
+label = "battle_balden_orb_v2_strike"
+backup_fingerprint = "4cad43e483e59db064dc2751d4899f86f301fb8f22e7989a7ef1241c44f2f854"
+description = "balden battle: Orb $2 (monster id 84) mid physical attack: category 3, action state 0x1E. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 3042 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy attack", "Orb $2", "balden", "harvest"]
+
+[[scenarios]]
+label = "battle_balden_swordie_v2_strike"
+backup_fingerprint = "ffd5e06625388f9a9f384d6baf7c26b729c1f0925b6806ac46dcbd2bb0b58deb"
+description = "balden battle: Swordie $2 (monster id 87) mid physical attack: category 3, action state 0x1E. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 3753 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy attack", "Swordie $2", "balden", "harvest"]
+
+[[scenarios]]
+label = "balden_verial_pre_cross_beam"
+backup_fingerprint = "a0c63c881700e65b7205022de1281115ae3a6da9f8f43d7af5ab68c0a7373c05"
+description = "balden battle: Verial (monster id 117) is about to cast Cross Beam (spell 0x58, module 0948) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 11376 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy cast", "Verial", "Cross Beam", "balden", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_balden_verial_cross_beam_mid_cast"
+backup_fingerprint = "467597e8c130d7f525207660e21f64f8c685ab953a6e6d17ec61e94e7fada21a"
+description = "balden battle: Verial (monster id 117) mid-cast Cross Beam (spell 0x58, module 0948): category 2, action state 0x70. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 11525 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy cast", "Verial", "Cross Beam", "balden", "harvest"]
+
+[[scenarios]]
+label = "taiku_terror_face_pre_fissure"
+backup_fingerprint = "d226c1f6f9f5092db9429b8794da9d4f519e1ada2b5dd836eaa6bb466be429a3"
+description = "taiku battle: Terror Face (monster id 127) is about to cast Fissure (spell 0x32) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 2903 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Terror Face", "Fissure", "taiku", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_taiku_terror_face_fissure_mid_cast"
+backup_fingerprint = "4e87a4d380452477cdf3ae3095e6e78f4feb82a31e4df4f294f5a400ff441b62"
+description = "taiku battle: Terror Face (monster id 127) mid-cast Fissure (spell 0x32): category 2, action state 0x2B. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 2918 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Terror Face", "Fissure", "taiku", "harvest"]
+
+[[scenarios]]
+label = "taiku_terror_face_pre_terror_scream"
+backup_fingerprint = "da74d105e9e46f87a9a49449f7d154bdd6704301b50720d5f7cdc57b14852b1d"
+description = "taiku battle: Terror Face (monster id 127) is about to cast Terror Scream (spell 0x70, module 0955) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 1055 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Terror Face", "Terror Scream", "taiku", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_taiku_terror_face_terror_scream_mid_cast"
+backup_fingerprint = "761c81da46422179edd349e24db9f376ee8a2f780ffd976a2b7f2916e722d9e8"
+description = "taiku battle: Terror Face (monster id 127) mid-cast Terror Scream (spell 0x70, module 0955): category 2, action state 0x70. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 1204 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Terror Face", "Terror Scream", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_terror_face_strike"
+backup_fingerprint = "1bf24439282ad36fc878493ced402898b86e9f4a8b8aaa8dbb9e3f72e21f1055"
+description = "taiku battle: Terror Face (monster id 127) mid physical attack: category 3, action state 0x1E. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 5463 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Terror Face", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_mad_mantis_strike"
+backup_fingerprint = "5bc32d3040a81920dd49d099d756d06d6752441248905104b5c77a0d4f7eabdd"
+description = "ropeway battle: Mad Mantis (monster id 53) mid physical attack: category 3, action state 0x1E. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 12790 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy attack", "Mad Mantis", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "ropeway_orb_pre_jewel_beam"
+backup_fingerprint = "08e58994fdeb74757936711e6b5cac0660bbc5c6661c9b2251f225db22272131"
+description = "ropeway battle: Orb (monster id 83) is about to cast Jewel Beam (spell 0x2D) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 5174 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy cast", "Orb", "Jewel Beam", "ropeway", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_ropeway_orb_jewel_beam_mid_cast"
+backup_fingerprint = "37d3279d3e071f5e31a5889e2f0ce7d47ea7df16ea4384dd7973edff7b009825"
+description = "ropeway battle: Orb (monster id 83) mid-cast Jewel Beam (spell 0x2D): category 2, action state 0x2B. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 5189 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy cast", "Orb", "Jewel Beam", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_ropeway_orb_strike"
+backup_fingerprint = "a14c3247211ae253559a21ef13758bd23b585337f3fda1d67b155cb7ef7e2b45"
+description = "ropeway battle: Orb (monster id 83) mid physical attack: category 3, action state 0x1E. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1971 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy attack", "Orb", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "ropeway_curry_devil_pre_cross_beam"
+backup_fingerprint = "4bfe583537cc966457a61005337cd901a47e6097e1c57a9dbf2163f80d44c2b3"
+description = "ropeway battle: Curry Devil (monster id 116) is about to cast Cross Beam (spell 0x58, module 0948) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 14666 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy cast", "Curry Devil", "Cross Beam", "ropeway", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_ropeway_curry_devil_cross_beam_mid_cast"
+backup_fingerprint = "9c85cc7783e0232900b2838e6f56031f1b2efcdddc652cc90ab01b1085dfff01"
+description = "ropeway battle: Curry Devil (monster id 116) mid-cast Cross Beam (spell 0x58, module 0948): category 2, action state 0x70. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 14815 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy cast", "Curry Devil", "Cross Beam", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_retockin_skull_knight_strike"
+backup_fingerprint = "cf893223fb5b6cb86a349e6fdc9cc2bc34eda177521c8114a4bdd8803c7199f3"
+description = "retockin battle: Skull Knight (monster id 14) mid physical attack: category 3, action state 0x1E. RETAIL disc: retockin_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1442 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retockin"
+topics = ["battle", "enemy attack", "Skull Knight", "retockin", "harvest"]
+
+[[scenarios]]
+label = "battle_retockin_evil_shadow_strike"
+backup_fingerprint = "104d1577b326773287a9218e740a27bbc9531e2a166db61b79daf031502e9a01"
+description = "retockin battle: Evil Shadow (monster id 119) mid physical attack: category 3, action state 0x1E. RETAIL disc: retockin_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1736 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retockin"
+topics = ["battle", "enemy attack", "Evil Shadow", "retockin", "harvest"]
+
+[[scenarios]]
+label = "deene_ironman_pre_jagged_earth"
+backup_fingerprint = "40ea86d9195a4a25056a126aab0cea2e1faa16488961aede69c49634f7d4cbb5"
+description = "deene battle: Ironman (monster id 129) is about to cast Jagged Earth (spell 0x35) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 3540 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy cast", "Ironman", "Jagged Earth", "deene", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_deene_ironman_jagged_earth_mid_cast"
+backup_fingerprint = "5568fb7fca4e8c302d68d445606f2ef7652b6875ff7c368c124d083eeedc8127"
+description = "deene battle: Ironman (monster id 129) mid-cast Jagged Earth (spell 0x35): category 2, action state 0x2B. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 3555 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy cast", "Ironman", "Jagged Earth", "deene", "harvest"]
+
+[[scenarios]]
+label = "battle_deene_ironman_strike"
+backup_fingerprint = "bd0598ac70cd2b11472f7ad9241c09da760beb26013086d01e91d1c7149ea30e"
+description = "deene battle: Ironman (monster id 129) mid physical attack: category 3, action state 0x1E. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1950 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy attack", "Ironman", "deene", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_gel_frog_strike"
+backup_fingerprint = "6f271db2b9d2d4ae8e45f9d83a6dbb7ac642894be607f4372e36430d7f7aa857"
+description = "tunnelb battle: Gel Frog (monster id 44) mid physical attack: category 3, action state 0x1E. RETAIL disc: tunnelb_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 2132 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "Gel Frog", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "tunnelb_nova_pre_scythe_wind"
+backup_fingerprint = "e3a194e10dba4d96e6491b177479b49c25b307e5c38526c74f81fa876fe48d8a"
+description = "tunnelb battle: Nova (monster id 95) is about to cast Scythe Wind (spell 0x5B, module 0951) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: tunnelb_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 2990 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy cast", "Nova", "Scythe Wind", "tunnelb", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_tunnelb_nova_scythe_wind_mid_cast"
+backup_fingerprint = "3d2952f57c6887e6449a588067530788efa2908a24ae404843e3453ce6557d7d"
+description = "tunnelb battle: Nova (monster id 95) mid-cast Scythe Wind (spell 0x5B, module 0951): category 2, action state 0x70. RETAIL disc: tunnelb_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 3139 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy cast", "Nova", "Scythe Wind", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelb_nova_strike"
+backup_fingerprint = "454af40987de0c195c0fc3f3bc5e7ab003a920a0bba4235d9b91656cbbffe6ed"
+description = "tunnelb battle: Nova (monster id 95) mid physical attack: category 3, action state 0x1E. RETAIL disc: tunnelb_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 4962 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelb"
+topics = ["battle", "enemy attack", "Nova", "tunnelb", "harvest"]
