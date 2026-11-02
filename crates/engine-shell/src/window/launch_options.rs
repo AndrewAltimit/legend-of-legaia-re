@@ -256,6 +256,11 @@ pub struct ScreenshotConfig {
     /// captured frame closes the engine's (`BattleState::move_label_closed`).
     /// Set by the retail-compare image channel.
     pub seat_move_label_unseen: bool,
+    /// `LEGAIA_SEAT_CAM_BEHIND_COMMIT`: the capture stands on the pass its
+    /// art committed, so the frame takes the RAM's camera outright
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_commit_pass`]).
+    /// Set by the retail-compare image channel.
+    pub seat_cam_behind_commit: bool,
     /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
     /// HUD widget glides still in flight, each at the elapsed its displayed
     /// frame shows; the captured frame seats the engine's on them
@@ -948,6 +953,7 @@ impl ScreenshotConfig {
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
             seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),
+            seat_cam_behind_commit: std::env::var_os("LEGAIA_SEAT_CAM_BEHIND_COMMIT").is_some(),
             seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")
                 .ok()
                 .and_then(|v| {

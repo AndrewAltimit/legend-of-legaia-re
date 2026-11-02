@@ -2288,6 +2288,15 @@ same state byte. Three refinements:
   (zeroed by the same commit, `8` a vsync) is younger than the display lag
   (`RetailBattle::move_label_unseen`), the image child closes the engine's
   label on the captured frame (`LEGAIA_SEAT_MOVE_LABEL_UNSEEN`).
+- **Camera behind the commit.** The same pass's framing ran ahead of the
+  commit, so the RAM's step table still walks the clip before's arm (TR z
+  `1945`, where the art's own arm reads `1817`) and no glide of the engine's
+  agrees with its endpoints. The capture takes the live pose outright
+  (`RetailBattle::camera_behind_commit`, `LEGAIA_SEAT_CAM_BEHIND_COMMIT`,
+  `BattleCamera::align_commit_pass`): `image` `.678` to `.706`, `camera`
+  `.986` to `1.0`. What remains is Vahn on the art's first key where the
+  displayed frame still holds the starter's last, and the rays' own `rand()`
+  stream.
 
 **Target.** A party attack capture's target byte `+0x1DD` is the monster the
 player picked. The drive walks the target cursor (the command picker's, or the

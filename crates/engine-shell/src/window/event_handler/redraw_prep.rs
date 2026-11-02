@@ -421,6 +421,17 @@ impl PlayWindowApp {
                 }
                 _ => 0,
             };
+            let mask = if self
+                .screenshot
+                .as_ref()
+                .is_some_and(|sc| sc.seat_cam_behind_commit)
+                && let Some(cam) = world.battle.camera.as_mut()
+            {
+                cam.align_commit_pass(live);
+                0xFF
+            } else {
+                mask
+            };
             // The near-camera ghost bits are derived from the pose, and the
             // tick computed them on the unaligned one. Re-derive them only
             // when every component took retail's value: a partly aligned

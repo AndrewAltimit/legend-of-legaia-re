@@ -911,6 +911,16 @@ impl RetailBattle {
             && self.cam_accum / 8 < u32::from(self.display_phase_lag)
     }
 
+    /// Whether the capture stands on the pass its art committed: the commit
+    /// zeroes the accumulator after that pass's framing ran
+    /// (`0x8004BF74`, [`Self::move_label_unseen`]), so the RAM's camera
+    /// still walks the clip before's table
+    /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: TR z `1945` where
+    /// the art's own arm reads `1817`).
+    pub fn camera_behind_commit(&self) -> bool {
+        self.move_label_unseen() && self.cam_accum == 0
+    }
+
     /// Whether this capture's approach waits on a measured string
     /// ([`Self::party_combo_vsyncs`]): a party Attack in its Done band.
     pub fn wants_party_combo(&self) -> bool {

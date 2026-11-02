@@ -797,6 +797,9 @@ pub(super) fn battle_image(
     if battle.move_label_unseen() {
         env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
     }
+    if battle.camera_behind_commit() {
+        env.push(("LEGAIA_SEAT_CAM_BEHIND_COMMIT", "1".to_string()));
+    }
     // Glides still in flight: each seated on the elapsed the displayed
     // frame shows (`HudGlideSeat`).
     if !battle.hud_glides.is_empty() && !displayed_menu {

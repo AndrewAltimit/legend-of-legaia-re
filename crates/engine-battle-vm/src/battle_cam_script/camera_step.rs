@@ -636,6 +636,16 @@ impl BattleCamera {
         true
     }
 
+    /// Take a capture's live pose outright. A capture on the very pass an art
+    /// committed (close-up accumulator `0`: the commit `FUN_8004AD80` zeroes
+    /// it after the pass's framing ran) holds a step table armed on the clip
+    /// before, which the engine's framing, reading the new clip, cannot agree
+    /// with on any endpoint, so [`Self::align_glide_origin`] refuses it.
+    pub fn align_commit_pass(&mut self, live: BattleCamPose) {
+        self.pose = live;
+        self.glides.clear();
+    }
+
     /// Whether the glide in flight heads for retail's framing on every
     /// component: its endpoint agrees with `end` (retail's tween-table
     /// endpoints) within [`Self::align_glide_origin`]'s per-component

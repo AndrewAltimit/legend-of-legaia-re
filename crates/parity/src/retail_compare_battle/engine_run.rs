@@ -853,6 +853,12 @@ pub fn run_engine_battle(
             }
             _ => 0,
         };
+        // A capture on the pass its art committed: the RAM's camera outright.
+        if battle.camera_behind_commit()
+            && let Some(cam) = world.battle.camera.as_mut()
+        {
+            cam.align_commit_pass(battle.cam_tween.0);
+        }
         // A capture-class shot armed past a walk-in the replay skipped
         // (`RetailBattle::walk_in_shot_aligned`).
         if battle.walk_in_shot_aligned()
