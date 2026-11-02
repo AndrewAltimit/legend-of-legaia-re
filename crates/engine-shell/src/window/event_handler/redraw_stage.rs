@@ -309,7 +309,7 @@ impl PlayWindowApp {
         }
         // For each active actor with a tmd_binding and a current
         // pose_frame, regenerate and re-upload the posed mesh.
-        // posed_overrides[i] replaces meshes[i] when present.
+        // posed_overrides[slot] replaces the slot's meshes[tmd_binding] when present.
         let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
         // Arts after-image ghosts: the actor's mesh at rate-scheduled
         // historical poses, flat-coloured additive (retail FUN_80049348;

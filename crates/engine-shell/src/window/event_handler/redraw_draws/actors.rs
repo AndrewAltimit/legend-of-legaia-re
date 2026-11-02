@@ -377,7 +377,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 continue;
             }
             let mesh = posed_overrides
-                .get(tmd_idx)
+                .get(i)
                 .and_then(|o| o.as_ref())
                 .or_else(|| store.meshes.get(tmd_idx));
             if let Some(mesh) = mesh {

@@ -215,7 +215,7 @@ impl<'m> DrawCtx<'_, 'm> {
             });
             if let Some((slot, tmd_idx)) = player {
                 let mesh = posed_overrides
-                    .get(tmd_idx)
+                    .get(slot)
                     .and_then(|o| o.as_ref())
                     .or_else(|| store.meshes.get(tmd_idx));
                 if let Some(mesh) = mesh {

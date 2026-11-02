@@ -361,8 +361,14 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> (Vec<Option<UploadedVramMesh>>, Option<UploadedColorMesh>) {
+        // Keyed by actor slot, not by TMD: two bodies on one TMD (a formation's
+        // twin monsters, a scene's NPCs on one model) each carry their own
+        // frame, relocation and blend word, and retail posts each its own
+        // packets.
         let mut posed_overrides: Vec<Option<UploadedVramMesh>> =
-            (0..self.scene_tmd_data.len()).map(|_| None).collect();
+            (0..self.session.host.world.actors.len())
+                .map(|_| None)
+                .collect();
         // The player's untextured colour half follows the same
         // per-frame pose - rebuilt below alongside the textured
         // override, drawn instead of the static rest-pose colour
@@ -381,7 +387,7 @@ impl PlayWindowApp {
             // so the mesh is rebuilt de-indexed this frame, posed or not.
             if let Some(input) = self.body_draw_plan(ai).and_then(|p| p.shatter) {
                 if let Some(m) = self.shattered_battle_mesh(r, ai, actor, tmd_idx, &input) {
-                    posed_overrides[tmd_idx] = Some(m);
+                    posed_overrides[ai] = Some(m);
                 }
                 continue;
             }
@@ -405,7 +411,7 @@ impl PlayWindowApp {
                         &rest.colors,
                         &rest.indices,
                     ) {
-                        Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                        Ok(m) => posed_overrides[ai] = Some(m),
                         Err(e) => log::warn!("blended rest mesh upload: {e:#}"),
                     }
                 }
@@ -536,7 +542,7 @@ impl PlayWindowApp {
                 &vmesh.colors,
                 &vmesh.indices,
             ) {
-                Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                Ok(m) => posed_overrides[ai] = Some(m),
                 Err(e) => log::warn!("posed mesh upload: {e:#}"),
             }
         }
