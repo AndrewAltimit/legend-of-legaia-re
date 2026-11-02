@@ -275,6 +275,58 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
+/// `battle_korb2_warhalf_strike`'s words: the walk's last pass stood the
+/// attacker on `(-96, 287)`, ring slot `2`, heading `1838` onto the target's
+/// live pair. The loop's first arm read that heading, so the endpoint the
+/// displayed frame's pass chased stood `112` short of the RAM's (the heading
+/// `1730` onto the body pair, a counter step at step `3`), and the walk back
+/// lands on yaw `795` where the RAM's endpoint alone gives `759`.
+#[test]
+fn the_strike_loops_first_arm_chased_the_walks_heading() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D264u32, 0x800E_C9E8u32);
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x15, 1);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE, target);
+    put16(&mut ram, attacker + 0x46, 1730);
+    for (k, (x, z)) in [(-106i32, 309i32), (-101, 298), (-96, 287), (-112, 332)]
+        .into_iter()
+        .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    // Frame step `3`.
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
+    assert_eq!(frame_step(&ram), 3);
+    let shift = camera_align::first_strike_pass_yaw_shift(&ram, ctx).expect("second pass");
+    assert_eq!(shift, -112);
+
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 4135);
+    put16(&mut ram, rec(1), 103);
+    put16(&mut ram, rec(1) + 2, 3218);
+    let mut end_shift = [0; 9];
+    end_shift[1] = shift;
+    let walked =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], end_shift);
+    assert_eq!(walked.yaw, 795.0);
+
+    // A nearest slot `3` is the loop's third pass: the displayed frame's
+    // arm already read the loop's own heading.
+    put32(&mut ram, attacker + POSITION_RING + 3 * 8 + 4, 200);
+    assert_eq!(camera_align::first_strike_pass_yaw_shift(&ram, ctx), None);
+}
+
 /// A `0x32` capture on the summon route's first pass: the eye depth walks
 /// back one pass along the close-up table (`2 * 183`) and then one `0x29`
 /// step short of that table's endpoint `prescale(0xC00)`, not on past it.

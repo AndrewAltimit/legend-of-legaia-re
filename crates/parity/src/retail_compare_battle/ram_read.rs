@@ -919,7 +919,11 @@ impl RetailBattle {
                         &steps,
                         confirmed,
                         summon_route_prior_end(ram, ctx, action_state),
-                        walker_end_shift(ram, ctx).unwrap_or([0; 9]),
+                        {
+                            let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
+                            shift[1] = first_strike_pass_yaw_shift(ram, ctx).unwrap_or(0);
+                            shift
+                        },
                     )
                 }
             },

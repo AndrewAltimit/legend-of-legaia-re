@@ -607,3 +607,73 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     shift[8] = -((b2[1] - b1[1]) / 2);
     Some(shift)
 }
+
+/// Case 7's yaw endpoint on the strike loop's **first** pass, off the RAM's -
+/// [`displayed_cam_live_steps`]'s `end_shift` for the yaw component - when
+/// that first pass is the one before the RAM's.
+///
+/// Case 7 subtracts the attacker's heading `+0x46` (`0x801D65DC..`), and the
+/// strike loop arms it (`0x801E36E8`) ahead of its own re-face
+/// (`0x801E36F0..0x801E371C`), so each pass reads the heading the pass before
+/// wrote. Every pass of the loop writes the bearing onto the target's **body**
+/// pair `+0x3C` / `+0x40`, but the walk states that lead into it write the
+/// bearing onto its **live** pair `+0x34` / `+0x38` (`0x801E3568..0x801E3588`).
+/// So the loop's first arm chased an endpoint set off every later one by the
+/// target's body sway, on a table the ease walks at its fastest:
+/// `battle_korb2_warhalf_strike`'s RAM reads heading `1730` where the walk
+/// left `1837`, its endpoint stood `106` further, and the frame on screen
+/// stands yaw `795` where the RAM's own endpoint walks back to `759`.
+///
+/// The arrival is read off the attacker's position ring: the last walk pass
+/// stands it nearest the target, and the loop's first pass moves it away again,
+/// so a nearest slot `2` means the RAM holds the loop's second pass and the
+/// pass before it armed on the walk's heading. Most harvested strikes stand
+/// nearest on slot `3`, a pass later: their displayed frame already read the
+/// loop's own heading, and walked back against this shift they fall away
+/// (`battle_noaru_gilium_lv2_strike` `.904` to `.585` on `12` units of yaw).
+/// `None` for any other pass, a party attacker (whose first swing commit
+/// re-seeds the yaw counter, `FUN_8004E13C`) or a later swing.
+pub(super) fn first_strike_pass_yaw_shift(ram: &[u8], ctx: u32) -> Option<i32> {
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE
+        || game_anchors::u8_at(ram, ctx + 0x15) != 1
+    {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if !(3..=7).contains(&seat) || !in_ram(actor) {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot.min(7) * 4);
+    if target_slot > 7 || !in_ram(target) {
+        return None;
+    }
+    let ring = |a: u32, k: u32| {
+        let at = a + POSITION_RING + k * 8;
+        [
+            f64::from(game_anchors::u32_at(ram, at) as i32 as i16),
+            f64::from(game_anchors::u32_at(ram, at + 4) as i32 as i16),
+        ]
+    };
+    // The live pair each slot stood on, onto the target's own at that slot.
+    let dist = |k: u32| {
+        let (a, t) = (ring(actor, k), ring(target, k));
+        (a[0] - t[0]).hypot(a[1] - t[1])
+    };
+    // The last walk pass: slot `2` on the second pass of the loop.
+    let walk_pass = 2;
+    if dist(walk_pass) >= dist(walk_pass - 1) || dist(walk_pass) >= dist(walk_pass + 1) {
+        return None;
+    }
+    let (a, t) = (ring(actor, walk_pass), ring(target, walk_pass));
+    // The heading the walk stored: `(FUN_80019B28(..) + 0x800) & 0xFFF`, the
+    // bearing from the attacker's live pair onto the target's.
+    let walk_heading =
+        (f64::atan2(t[0] - a[0], t[1] - a[1]) * 4096.0 / std::f64::consts::TAU).round() as i32;
+    let heading = i32::from(game_anchors::u16_at(ram, actor + 0x46));
+    let turn = (heading - walk_heading + 2048).rem_euclid(4096) - 2048;
+    // The counter the endpoint adds climbs `max(1, 4 * step / 3)` a pass.
+    let step = i32::from(frame_step(ram));
+    Some(turn - (4 * step / 3).max(1))
+}
