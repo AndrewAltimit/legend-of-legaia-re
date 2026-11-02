@@ -116,7 +116,9 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             if counted(st, P) {
                 return ArmDirection::HOLD;
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F7208..0x801F721C`).
             st.creature_stage = Some(3);
+            st.creature_restage = true;
             caption(
                 cut([0x400, 0x900], [0, 0, 0x800], on(c), 0xC0),
                 ModuleCaption::AttackName,

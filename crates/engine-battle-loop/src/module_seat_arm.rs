@@ -178,7 +178,11 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F6E3C..0x801F6E60`.
         931 => seat(Lit(0), Lit(-0x800), 0).rate(4),
         // `0x801F6EC4..0x801F6EE8`.
-        932 => seat(Lit(-0x96), Lit(-0x1C0), 0).rate(0x10),
+        // ... and `li v0,0x1800; sh v0,0x72(v1)` at `0x801F6EF4`: half as big
+        // again.
+        932 => seat(Lit(-0x96), Lit(-0x1C0), 0)
+            .rate(0x10)
+            .render_scale(0x1800),
         // `0x801F6D90..0x801F6DA8`.
         933 => seat(Lit(0), Lit(0), 0).rate(4),
         // `0x801F7048..0x801F7060`.

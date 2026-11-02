@@ -144,7 +144,9 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0xC0) {
                 return ArmDirection::HOLD;
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F750C`).
             st.creature_stage = Some(2);
+            st.creature_restage = true;
             caption(
                 cut([0x100, 0xA00], [0, 0x880, 0xD48], [0x96, 0, 0x1C0], 1),
                 ModuleCaption::AttackName,
@@ -160,7 +162,9 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x100) {
                 return held(d(0, 0, D, 0, 0));
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F7708`).
             st.creature_stage = Some(3);
+            st.creature_restage = true;
             with_drift(
                 cut([0, 0x800], [-0x23C, 0xA00, 0x800], at, 1),
                 d(0, 0, D, 0, 0),
@@ -175,12 +179,21 @@ pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
                 cut([0xDC, 0x198], [-0x23C, 0x968, 0x870], at, 1),
             )
         }
-        0xE => arm(
-            st,
-            0x140,
-            d(D, -D, D, 0, 2 * D),
-            cut([-0x100, 0xA30], [0x260, 0xA08, 0x200], at, 1),
-        ),
+        0xE => {
+            let dir = arm(
+                st,
+                0x140,
+                d(D, -D, D, 0, 2 * D),
+                cut([-0x100, 0xA30], [0x260, 0xA08, 0x200], at, 1),
+            );
+            // The pass past its countdown cuts to clip `4`, which arm `0xD`
+            // staged bare (`0x801F78C8..0x801F78E0`).
+            if !dir.hold {
+                st.creature_stage = Some(4);
+                st.creature_restage = true;
+            }
+            dir
+        }
         0xF => {
             st.creature_stage = Some(5);
             arm(

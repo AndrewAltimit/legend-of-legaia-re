@@ -937,6 +937,21 @@ through its chain (`BladeBreathShape::strike_sub_flag`), and PROT 0903 and 0904
 through their tick ports. PROT 0964's five stores (the Element Strike body) are
 not carried: their seats are read off a computed row this table cannot name.
 
+### A bare stage byte waits for the clip's end
+
+A creature's `+0x1DA` store with no `+0x1DC` bump commits at the playing clip's
+natural end (`FUN_80047430` -> `FUN_8004AD80` at `0x80047B54`), a looping clip's
+included; the bump cuts at once. The arms that wait on a cursor or on a clip read
+the difference. PROT 0914 stages clip `1` bare beside the installer on arm 3, so
+Gola Gola's fall from the sky (appear clip `0`, 75 keyframes at the installer's
+rate `2`) carries arms 4 to 7. Committed at once, the fall never played, and arm 8
+parked out its wait on the wrong clip. `CLIP_GATED_MODULES` lists the modules whose
+directors carry their bumps (`creature_restage`). PROT 0932 is one: its arms `0xA`,
+`0xC` and `0xE` bump, `0xD` and `0xF` do not, and it also seats its creature at
+scale `0x1800` (`0x801F6EF4`). Modules outside the list keep the at-once commit
+until their stage stores are read the same way: enlarging the list without the
+bumps parks the arms that wait on a cut.
+
 ### One owner per hit
 
 **The flurry lands in the module, not in the hit kernel.** A cast clip's hit
