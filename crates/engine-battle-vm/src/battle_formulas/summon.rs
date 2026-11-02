@@ -108,14 +108,19 @@ pub fn apply_status_weaken(roll: u32, status: u16) -> u32 {
     r
 }
 
-/// Per-character magic-power scale, `FUN_801dd864` summon arm: `roll + roll *
-/// (power_byte - 1) >> 3` (i.e. `roll * (7 + power_byte) / 8`). `power_byte` is
-/// the caster's recovery/magic-power stat from the SC-block table at
-/// `0x80084140 + 0x729`, matched against the cast spell-id at `+0x705`. A
-/// `power_byte` of 0 or 1 leaves the roll unchanged.
+/// The caster's magic-level scale, `FUN_801dd864` summon arm: `roll + (roll *
+/// (level - 1) >>> 3)`, `level` the byte at `0x80084140 + 0x729` parallel to
+/// the spell id at `+0x705`.
+///
+/// The shift is logical over the signed product (`mult`, `mflo`, `srl 3` at
+/// `0x801DDB14..0x801DDB1C`), so a level of `0` wraps: `roll * -1` shifts down
+/// to about `0x1FFFFFFF` and the finisher's cap takes the hit to `9999`. A
+/// learned spell's level is at least `1`; the `0` comes from a spell the
+/// caster has not learned ([`crate::battle_formulas`]'s caller reads list
+/// slot `0x20` then).
 pub fn apply_magic_power(roll: u32, power_byte: u8) -> u32 {
-    let extra = roll.saturating_mul(power_byte.saturating_sub(1) as u32) >> 3;
-    roll + extra
+    let extra = roll.wrapping_mul(u32::from(power_byte).wrapping_sub(1)) >> 3;
+    roll.wrapping_add(extra)
 }
 
 /// Conditional re-roll bonus, `FUN_801dd0ac` summon branch second arm. After

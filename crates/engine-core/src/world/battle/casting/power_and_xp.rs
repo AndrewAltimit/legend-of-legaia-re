@@ -236,6 +236,35 @@ impl World {
             .unwrap_or(1)
     }
 
+    /// The level byte `FUN_801DD864`'s scale stage itself reads
+    /// (`0x801DDAE0..0x801DDB08`). Its search leaves the index at `0x20` when
+    /// the id is not among the first `0x20` entries, and the `lbu 0x729` after
+    /// the loop then reads list slot `0x20`, normally `0`, which
+    /// [`vm::battle_formulas::apply_magic_power`] wraps into a capped hit. The
+    /// heal and side-effect readers keep [`Self::caster_magic_power_byte`].
+    pub(in crate::world) fn caster_scale_level(&self, caster: u8, spell_id: u8) -> u8 {
+        const LIST_END: usize = 0x20;
+        if let Some(level) = self.expansion_cast_level(caster, spell_id) {
+            return level;
+        }
+        let Some(record) = self
+            .party
+            .roster
+            .members
+            .get(self.party_roster_slot(caster as usize))
+        else {
+            return 1;
+        };
+        let list = record.spell_list();
+        let i = list
+            .ids
+            .iter()
+            .take(LIST_END)
+            .position(|&id| id == spell_id)
+            .unwrap_or(LIST_END);
+        list.levels[i]
+    }
+
     /// The restore a player Seru **heal** cast lands, straight off the owning
     /// module's own tick kernel, or `None` for a cast whose module computes no
     /// restore.

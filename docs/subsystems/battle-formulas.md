@@ -669,7 +669,20 @@ if (attacker_slot == 7)                                 // summon only
 | party element (slot `< 3`) | per-character table `0x801F5480`, indexed by 1-based char id: Vahn fire, Noa wind, Gala thunder, Terra wind |
 | other slots (`>= 3`: monsters **and** the slot-7 summon body) | monster record `+0x1D`, through the record-pointer table `0x801C9348[slot - 3]` (not the live-actor table `0x801C9370`); `lbu ..,0x1d(record)` at `0x801DD8C4` / `0x801DD8DC`. No copy of the element exists in the live actor. |
 | status | actor `+0x16E` bits `0x1` Venom, `0x2` Toxic |
-| `magic_level` | the caster record's 32-entry spell-id list at `+0x13D` with parallel level bytes at `+0x161` (live `0x80084845` / `0x80084869`, the save window's `+0x705` / `+0x729`); `1..9`, identity `1` when the spell is absent |
+| `magic_level` | the caster record's 32-entry spell-id list at `+0x13D` with parallel level bytes at `+0x161` (live `0x80084845` / `0x80084869`, the save window's `+0x705` / `+0x729`); `1..9`. A spell not on the list leaves the search index at `0x20` and reads list slot `0x20`, [below](#a-spell-the-caster-has-not-learned) |
+
+#### A spell the caster has not learned
+
+The shift in `atk * (magic_level - 1) >> 3` is logical over a signed product
+(`mult`, `mflo`, `srl 3` at `0x801DDB14..0x801DDB1C`). The search loop
+(`0x801DDAE0..0x801DDB08`) falls out with its index at `0x20`, so a spell absent
+from the list reads the byte at `+0x161 + 0x20`, normally `0`. `0 - 1` negates
+the roll and the shift turns it into about `0x1FFFFFFF`, which the finisher's
+cap takes to `9999`. A learned spell's level is floored at `1`, so play does not
+reach this; an injected cast of an unlearned spell does, and that is why the
+cast-sequence oracle reads `9998` / `9999` hits (a `2499` popup from PROT 0908's
+quartered opener) on casts Vahn has not learned. Measured on
+`party_basic_attack_vs_gobu_gobu`.
 
 **The matrix.** Static data in PROT 0898: matrix at file `0x26BD0`, character
 table at file `0x26C68`. Values are a nudge, not a x0 / x2 weakness table:
