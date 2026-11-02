@@ -311,7 +311,14 @@ with `ot-raster.py`, stand `0`, `6` and `13` px apart, one pass each. Seated
 two steps back it reads `.994` (from `.725`), and `jou_field_card_walk` `.993`
 (from `.894`). A capture whose player stood still on its last pass
 (`+0x14/+0x18` equal to `+0x1C/+0x20`) is not rewound even with the pad held,
-since nothing in the RAM says how far the pass before it walked.
+since nothing in the RAM says how far the pass before it walked, with one
+exception. A state saved inside the actor pass has the pair re-latched and the
+player's tick still to run, so it reads still over a walking pad.
+`tower_field_walk` holds `-X +Z` on the walk clip with the step deltas
+`_DAT_8007BDE0` / `E4` up, and its two framebuffers stand `(5, 3)` px apart; a
+wall press (`noaru_field_card_walk`) holds the same pad with the deltas down and
+both framebuffers on one pose. That state's step comes from the controller's
+speed law (`mid_pass_walk_step`).
 
 The snap composes from the state's own camera parameter block
 (`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
@@ -640,6 +647,16 @@ engine verdict:
   engaged, because the talk snap turns a placement to the bearing from its
   own seat: `town01_npc16_dialogue_first_page`'s `P1[16]` had wandered off
   its `4C 51` tile before the press.
+
+  So is the player's own. A seat stands the player idle, and a capture the pad
+  was running holds the run clip mid-stride: `+0x5C = 3`, with the cursor
+  wherever the walk left it. The player's node ticks through its own handler,
+  so the object-clip list below does not name it. Its party-bank clip word and
+  cursor (`retail_player_clip`, taken back the display lag, the `+0x10` bit
+  `0x01000000` naming the bank) go to the child as `LEGAIA_SEAT_PLAYER_CLIP` and
+  stand the body there on the capture frame (`World::seed_player_clip`):
+  `dohaty_field_card_walk` `.994` to `1.000`, `jou_field_card_walk` `.993` to
+  `.998`, `kor4_field_route_walk` `.984` to `.994`.
 
   So are the placed objects' clips. Which frame of a door's swing is up is
   touch history: `door_warp_rim_elm_to_mei_house` and `mei_house_door_pcsx`
@@ -2974,15 +2991,15 @@ Only a phase the warp itself reaches is seeded:
   before it is scored (`Frame::from_vram_display_hires`, minigame class
   only).
 
+The strips are not history: the LCG starts on a literal, so the machine the warp
+builds stands on retail's symbols, and the frame needs no seat.
+
 What stays unseeded, and what each needs:
 
 - **A decided spin** (`minigame_slot_machine_retail_spin_decided`, state
   `4`): the reel stops and feature rolls are `rand()` history after entry.
   Seeding it means writing the reel positions `DAT_801D3CC0..` and the
   stopped-reel count over the engine machine's.
-- **The at-rest reels themselves**: the init builds the strips after a BIOS
-  `rand()` reseed, so the symbols on screen differ (`image` `0.922`) until
-  the strip offsets are seeded the same way.
 - **Baka Fighter, the dance, fishing, the Muscle Dome hub**: no path yet. Each
   needs its session's phase word mapped the way `SlotMachine::retail_state`
   maps the slot's - the round state machine `FUN_801D3468`, the beat clock
@@ -3003,7 +3020,7 @@ measured channels.
 | `mode` | 1 when the engine's mode is `Field` (field class) / `WorldMap` (overworld class) / `Battle` (battle class) |
 | `position` | player `(X, Z)` after settling: 1 within 4 units, linear to 0 at 256 |
 | `footing` | engine floor sample at retail's `(X, Z)` vs retail's footing: 1 within 2, 0 at 128 (field and overworld classes; not scored while a script holds retail's player height, [below](#a-script-held-height-is-not-a-footing)) |
-| `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024) |
+| `camera` | mean of eight parts: pitch and yaw (1 within 16, 0 at 256, wrapped), `H` (1 within 4, 0 at 128), each eye word and each focus word (1 within 16, 0 at 1024); against the live pose or, on a field state, the [staging descriptor](#the-staging-descriptor), whichever the engine stands nearer |
 | `facing` | field class only: mean over the player and every placement standing on its retail seat, each heading 1 within 32, 0 at 512, wrapped ([below](#the-facing-channel)) |
 | `npcs` | field class only: mean over every placement retail draws or parks that no ambient stream walks: 0 when one side parks it on the off-map seat and the other draws it, exact coordinates when both park it, else its `(X, Z)` distance, 1 within 8, 0 at 128 ([below](#the-npcs-channel)) |
 | `bgm` | 1 when the engine's track-select word (`SceneHost::bgm_track_word`, the park sentinel `0x1000` included) equals retail's; the detail marks a held track on either side ([below](#a-held-track)) |
@@ -4028,8 +4045,8 @@ composes. The image child therefore lands retail's eye translation after its
 snap too (`RetailObs::seat_eye`, `LEGAIA_SEAT_EYE`,
 `ZoneFollow::seat_eye_after_snap`), and the engine's ease carries on from it
 the next frame the player moves. The two chest frames read `.958` to `.994`
-and `.966` to `.998`. The headless `camera` channel keeps the snap's eye, so
-it goes on scoring the compose.
+and `.966` to `.998`. The headless `camera` channel keeps the snap's eye and
+scores it against the staging descriptor ([below](#the-staging-descriptor)).
 
 Pitch, yaw and `H` sit on the same descriptor list and the same moved-frame
 legs, so they freeze with the eye. `rimelm_wall_press_left` walked a mode-1
@@ -4040,6 +4057,8 @@ well (`RetailObs::seat_angles`, `LEGAIA_SEAT_ANGLES`,
 `ZoneFollow::seat_angles_after_snap`); the frame reads `.979` to `1.000`.
 The `camera` channel's yaw tolerance absorbs a 13-unit miss, which is why it
 read `1.000` against a frame that did not.
+
+<a id="the-staging-descriptor"></a>
 
 The staging descriptor `0x801F3580` holds the pose the ease is heading for,
 and it settles which side a remaining `camera` miss is on. In
@@ -4064,10 +4083,15 @@ side. The engine's seat composes the descriptor to the unit in every one:
 | `deene_field_card_walk` | eye `(-76, -1894, 9770)` | eye `(-76, -1837, 9769)` |
 | `retockin_field_route_walk` | eye `(-124, 2040, 15897)` | eye `(-124, 1999, 15895)` |
 
-The headless `camera` channel keeps the snap's pose, so it scores these as
-misses by design; the image child seats the live pose, taken back two ease
-steps for a player who moved on its last pass ([the seeding
-model](#the-seeding-model), `walk_rewind`).
+The live pose is history no seat replays, and scoring the seat's compose
+against it would read as a camera defect that is not there. So the `camera`
+channel takes the nearer of retail's two poses (`RetailObs::camera_staging`):
+the live globals, which a script's shot owns and the engine lands on, or the
+staging descriptor, which the follow compose answers for. A pose that misses
+both still scores its miss, and the detail names the pose it was scored on. The
+image child seats the live pose, taken back two ease steps for a player who
+moved on its last pass ([the seeding model](#the-seeding-model),
+`walk_rewind`).
 
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat

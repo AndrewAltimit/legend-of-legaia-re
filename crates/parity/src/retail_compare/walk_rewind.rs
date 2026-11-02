@@ -19,6 +19,12 @@
 //! **inference**: the staging target is the newest pass's, and the walk step
 //! is assumed constant over the two passes. Neither is recorded in RAM.
 //!
+//! A capture saved inside the actor pass reads a still pair over a walking
+//! pad ([`mid_pass_walk_step`]). `tower_field_walk` holds `+0x14/+0x18` equal
+//! to `+0x1C/+0x20`, with `-X +Z` held: its two framebuffers stand `(5, 3)` px
+//! apart and a frame seated on the RAM's player is `(9, 6)` px off the
+//! displayed one, two walk steps.
+//!
 //! The player is rewound whether or not the camera is still easing. A
 //! follow camera already on its staging pose (`dohaty_field_card_walk`,
 //! `jou_field_card_walk`: a yaw-`0` block whose target does not turn) keeps
@@ -35,6 +41,13 @@ use legaia_engine_field::camera_zone::{CameraTarget, CameraZoneConfig, ComposeIn
 const FOLLOW_STAGING: u32 = 0x801F_3580;
 /// The ease-shift byte `B60B` of the camera block (`0x801DB5C4`).
 const EASE_SHIFT_BYTE: u32 = 0x8007_B60B;
+/// The held pad word the pad remap rewrites (`_DAT_8007B850`).
+const HELD_PAD: u32 = 0x8007_B850;
+/// The controller's last committed step deltas.
+const STEP_DELTA_X: u32 = 0x8007_BDE0;
+const STEP_DELTA_Z: u32 = 0x8007_BDE4;
+/// The party leader's character id (`_DAT_8007B8F8`).
+const PARTY_LEADER: u32 = 0x8007_B8F8;
 
 /// The player and follow-camera pose the displayed frame was drawn under.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,14 +106,75 @@ pub struct WalkHistory {
     pub half_eye_y: bool,
 }
 
+/// The walk step of a capture saved inside the actor pass: the iterator
+/// `FUN_8002519C` has copied `+0x14/+0x18` to `+0x1C/+0x20` for this pass
+/// (`0x800251D4..0x800251F0`) and the player's own tick has not run, so the
+/// pair reads still while the pad is walking it. It shows as a held direction
+/// (`_DAT_8007B850`, camera-remapped by then) on a moving clip with the step
+/// deltas `_DAT_8007BDE0` / `_DAT_8007BDE4` left up, where a wall press clears
+/// them. The step itself is the controller's: `(base * +0x72 >> 12)` times the
+/// frame step, x0.75 on a diagonal under camera mode 4 (`FUN_801D01B0`).
+/// `None` for a player the pad is not walking.
+fn mid_pass_walk_step(ram: &[u8], p: u32, block: Option<&CameraZoneConfig>) -> Option<[i16; 2]> {
+    use legaia_engine_field::field_player_clip::{BANK_STRIDE, BASE_RUN, BASE_WALK};
+    let pad = game_anchors::u32_at(ram, HELD_PAD);
+    if rd16(ram, STEP_DELTA_X) == 0 && rd16(ram, STEP_DELTA_Z) == 0 {
+        return None;
+    }
+    let leader = game_anchors::u16_at(ram, PARTY_LEADER);
+    let base = game_anchors::u16_at(ram, p + 0x5C).checked_sub(leader * BANK_STRIDE)?;
+    let base_step = match base {
+        BASE_WALK => 8,
+        BASE_RUN => 0xC,
+        _ => return None,
+    };
+    let dir = |plus: u32, minus: u32| match (pad & plus != 0, pad & minus != 0) {
+        (true, false) => 1,
+        (false, true) => -1,
+        _ => 0,
+    };
+    let (sx, sz) = (dir(0x2000, 0x8000), dir(0x1000, 0x4000));
+    if sx == 0 && sz == 0 {
+        return None;
+    }
+    let mult = i32::from(game_anchors::u16_at(ram, p + 0x72));
+    let mut speed =
+        ((base_step * mult) >> 12) * i32::from(crate::retail_compare_battle::frame_step(ram));
+    if sx != 0 && sz != 0 && block.is_some_and(|b| b.mode >> 4 == 4) {
+        speed -= speed >> 2;
+    }
+    Some([(sx * speed) as i16, (sz * speed) as i16])
+}
+
+/// The staging pose at [`FOLLOW_STAGING`] as a camera observation, on `live`'s
+/// focus: the staging focus is the player, and the focus pair has its own
+/// seat and gate.
+pub(super) fn follow_staging_pose(ram: &[u8], live: &CameraObs) -> CameraObs {
+    let st = FOLLOW_STAGING;
+    CameraObs {
+        pitch: rd16(ram, st + 0x02),
+        yaw: rd16(ram, st + 0x06),
+        h: rd16(ram, st + 0x26),
+        eye: [
+            i32::from(rd16(ram, st + 0x0E)),
+            i32::from(rd16(ram, st + 0x12)),
+            i32::from(rd16(ram, st + 0x16)),
+        ],
+        focus: live.focus,
+    }
+}
+
 /// The [`WalkHistory`] of a capture whose player moved on its last pass;
 /// `None` for a player who stood still on it.
 pub(super) fn walk_history(ram: &[u8], camera: &CameraObs) -> Option<WalkHistory> {
     let p = game_anchors::player_ptr(ram)?;
     let at = |o: u32| [rd16(ram, p + o), rd16(ram, p + o + 2), rd16(ram, p + o + 4)];
-    let (cur, prev) = (at(0x14), at(0x1C));
+    let (cur, mut prev) = (at(0x14), at(0x1C));
+    let block = camera_block_bytes(ram).and_then(|b| CameraZoneConfig::from_retail_block(&b));
     if [cur[0], cur[2]] == [prev[0], prev[2]] {
-        return None;
+        let [dx, dz] = mid_pass_walk_step(ram, p, block.as_ref())?;
+        prev[0] = cur[0].wrapping_sub(dx);
+        prev[2] = cur[2].wrapping_sub(dz);
     }
     let code = legaia_engine_field::camera_zone::EASE_SHIFT_TABLE
         [usize::from(game_anchors::u8_at(ram, EASE_SHIFT_BYTE) >> 4)];
@@ -127,7 +201,7 @@ pub(super) fn walk_history(ram: &[u8], camera: &CameraObs) -> Option<WalkHistory
         staging,
         angles,
         eye: camera.eye,
-        block: camera_block_bytes(ram).and_then(|b| CameraZoneConfig::from_retail_block(&b)),
+        block,
         half_eye_y: game_anchors::u32_at(ram, SAVE_ALLOW) != 0,
     })
 }

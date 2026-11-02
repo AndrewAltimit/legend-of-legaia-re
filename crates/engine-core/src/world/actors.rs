@@ -734,6 +734,40 @@ impl World {
         actor.pose_frame = Some(pose);
     }
 
+    /// Stand the player on a state's party-bank clip words, on the frame the
+    /// retail comparison's image child captures: which frame of the run a
+    /// pad-driven capture stands on is walk history the seat never replayed.
+    /// `clip` is retail's `+0x5C`, record `clip - 1` of the party bank; one
+    /// outside the leader's seven records is left alone.
+    pub fn seed_player_clip(&mut self, clip: u8, cursor: i16, flags: u16, rate: i16) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(anim) = self.locomotion.player_anim.as_mut() else {
+            return;
+        };
+        let first = anim.leader * legaia_engine_field::field_player_clip::BANK_STRIDE;
+        let Some(bank_slot) = u16::from(clip)
+            .checked_sub(1)
+            .and_then(|record| record.checked_sub(first))
+            .filter(|&s| s < legaia_engine_field::field_player_clip::BANK_STRIDE)
+        else {
+            return;
+        };
+        let clamp = flags & legaia_engine_vm::actor_tick::CLIP_CLAMP != 0;
+        let Some(pose) = anim.seat_bank_clip(usize::from(bank_slot), cursor.max(0) as u32, clamp)
+        else {
+            return;
+        };
+        if rate != 0 {
+            self.locomotion.player_clip_rate = rate;
+        }
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.local_flags = flags;
+            actor.pose_frame = Some(pose);
+        }
+    }
+
     /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`
     /// with the supplied opcode `budget`. Returns the typed outcome -
     /// engines route `Halted` to their halt-handler, `EndOfBuffer` to "clear

@@ -217,6 +217,12 @@ impl PlayWindowApp {
                         c.rate,
                     );
                 }
+                if let Some(c) = sc.seat_player_clip {
+                    self.session
+                        .host
+                        .world
+                        .seed_player_clip(c.clip, c.cursor, c.flags, c.rate);
+                }
                 for &(record, model) in &sc.seat_object_models {
                     self.session
                         .host

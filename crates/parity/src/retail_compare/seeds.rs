@@ -424,6 +424,45 @@ pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
         .collect()
 }
 
+/// The player's party-bank clip words as the displayed frame stood them. The
+/// player's node ticks through its own handler `FUN_801D2298`, so
+/// [`retail_object_clips`] does not list it, and a seat stands it idle; a
+/// capture the pad was running holds the run clip `3` mid-stride
+/// (`+0x10 & PARTY_BANK_FLAG` selects the bank, `lw v0,0x10(s0)` at
+/// `0x80020534`). `None` for a clip outside the party bank.
+pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
+    let p = game_anchors::player_ptr(ram)?;
+    if game_anchors::u32_at(ram, p + 0x10) & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
+        == 0
+    {
+        return None;
+    }
+    let clip = game_anchors::u16_at(ram, p + 0x5C);
+    let flags = game_anchors::u16_at(ram, p + 0x62);
+    let rate = game_anchors::i16_at(ram, p + 0x6A);
+    let rec = game_anchors::u32_at(ram, p + 0x4C);
+    let frames = game_anchors::u16_at(ram, rec + 2);
+    let gated = game_anchors::u8_at(ram, rec + 1) & 1 != 0;
+    let div = game_anchors::u8_at(ram, rec + 6);
+    let cursor = rewind_clip_cursor(
+        game_anchors::i16_at(ram, p + 0x68),
+        flags,
+        frames,
+        clip_display_lag_units(
+            legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div),
+            crate::retail_compare_battle::frame_step(ram).max(1),
+            crate::retail_compare_battle::DISPLAY_LAG_PASSES,
+        ),
+    );
+    (1..0x100).contains(&clip).then_some(ObjectClipSeed {
+        record: 0,
+        clip: clip as u8,
+        cursor,
+        flags,
+        rate,
+    })
+}
+
 /// How far a clip cursor moved over the display lag: one anim tick
 /// (`FUN_800204F8`) adds the clip step times the frame-step scalar
 /// `DAT_1F800393` (`mult a0,v0` at `0x80020660` / `0x80020680`), so each of

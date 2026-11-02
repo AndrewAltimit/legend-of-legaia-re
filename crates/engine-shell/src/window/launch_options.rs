@@ -316,6 +316,10 @@ pub struct ScreenshotConfig {
     /// the matching placed props' clips on the capture frame
     /// (`World::seed_object_prop_clip`).
     pub seat_object_clips: Vec<legaia_engine_capture::field_seeds::ObjectClipSeed>,
+    /// `LEGAIA_SEAT_PLAYER_CLIP=<record>:<clip>:<cursor>:<flags>:<rate>`: the
+    /// player's clip words (`legaia_parity::retail_compare::retail_player_clip`),
+    /// stood on the capture frame (`World::seed_player_clip`).
+    pub seat_player_clip: Option<legaia_engine_capture::field_seeds::ObjectClipSeed>,
     /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
     /// over the engine's on the capture frame (`World::seed_field_morph`).
@@ -1035,6 +1039,11 @@ impl ScreenshotConfig {
             seat_object_clips: std::env::var("LEGAIA_SEAT_OBJECT_CLIPS")
                 .map(|v| legaia_engine_capture::field_seeds::object_clips_from_env(&v))
                 .unwrap_or_default(),
+            seat_player_clip: std::env::var("LEGAIA_SEAT_PLAYER_CLIP").ok().and_then(|v| {
+                legaia_engine_capture::field_seeds::object_clips_from_env(&v)
+                    .first()
+                    .copied()
+            }),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')

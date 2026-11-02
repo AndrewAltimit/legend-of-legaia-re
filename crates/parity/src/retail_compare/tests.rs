@@ -542,3 +542,40 @@ fn a_parked_pair_scores_its_exact_coordinates() {
     assert_eq!(npc_pair_score((4160, 11968), (4160, 11964)), 1.0);
     assert_eq!(npc_pair_score((4160, 11968), (4160, 11840)), 0.0);
 }
+
+/// The player's clip words are read off its own node, party-bank bit up, and
+/// the cursor is taken back to the displayed frame.
+#[test]
+fn the_player_clip_is_the_displayed_frame_of_the_party_bank() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let put16 = |ram: &mut Vec<u8>, va: u32, v: u16| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    };
+    let put32 = |ram: &mut Vec<u8>, va: u32, v: u32| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    };
+    let (p, rec) = (0x8008_3794u32, 0x8015_93C4u32);
+    put32(&mut ram, game_anchors::PLAYER_PTR_VA, p);
+    put32(&mut ram, p + 0x4C, rec);
+    put16(&mut ram, rec + 2, 12);
+    put16(&mut ram, p + 0x5C, 3);
+    put16(&mut ram, p + 0x62, 0x15);
+    put16(&mut ram, p + 0x68, 112);
+    put16(&mut ram, p + 0x6A, 8);
+    // Bit down: a scene-bank clip, not one the party bank can stand.
+    assert_eq!(retail_player_clip(&ram), None);
+    put32(
+        &mut ram,
+        p + 0x10,
+        legaia_engine_field::field_player_clip::PARTY_BANK_FLAG,
+    );
+    let c = retail_player_clip(&ram).expect("party clip");
+    assert_eq!((c.clip, c.flags, c.rate), (3, 0x15, 8));
+    // One game frame of `8` a pass, over the two-frame display lag.
+    assert_eq!(
+        c.cursor,
+        112 - 8 * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16
+    );
+}
