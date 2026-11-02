@@ -585,7 +585,11 @@ at the angle the last keeping fight left.
 The ribbon needs no special place in the ordering table. Its quads are
 linked at their own mean depth like every other backdrop packet, and a
 depth-tested mesh draws the same band once the arc stands where retail's
-does.
+does - except across a large shell quad, whose own mean decides the whole
+quad. `battle_korb2_warhalf_strike`'s older table links a band quad at bucket
+`776` and the wall quad `0x7640` at `775`, so the wall paints over the band
+where its pixels stand behind it. The hosts test depth per pixel and draw the
+band there ([open](../reference/open-rev-eng-threads.md#battle--rendering)).
 
 **Which side of the ribbon draws.** The backdrop arm hands the prim
 dispatcher `FUN_80043390` the node's colour word ORed with `0x40000000` for
