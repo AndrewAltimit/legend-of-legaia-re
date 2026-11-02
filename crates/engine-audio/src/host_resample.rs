@@ -4,9 +4,10 @@
 //! port's and only has to stay out of the way. A device at 44.1 kHz takes the
 //! mix untouched. Any other rate goes through a Kaiser-windowed sinc, because
 //! the linear interpolator it replaces costs what can be heard: at 44.1 to 48
-//! kHz it loses 1.5 dB at 10 kHz and 3.7 dB at 15 kHz and folds the images of
-//! everything above 5 kHz back into the band at -30 dB or so. The windowed sinc
-//! is flat within 0.1 dB to 18 kHz with its images below -70 dB (see the tests).
+//! kHz it loses 1.5 dB at 10 kHz and 3.5 dB at 15 kHz (`sinc^2`) and folds the
+//! images of a 5 to 10 kHz tone back into the band at -36 to -23 dB. The windowed
+//! sinc is flat within 0.1 dB to 15 kHz with its images below -60 dB (see the
+//! tests).
 
 /// Kernel length, input samples.
 pub const TAPS: usize = 16;

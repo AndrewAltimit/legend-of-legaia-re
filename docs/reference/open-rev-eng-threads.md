@@ -318,6 +318,15 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 No open threads. Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
+### Sub-vsync key-on timing against the mix
+
+*Status:* open
+
+[Real retail PCM](../subsystems/audio.md#real-retail-pcm) puts a track's residual at `-12`
+to `-15` dB with every sounding voice's registers equal, and `2026` lower still (`0.74`).
+The reading is the sample a retail key-on lands on; what would close it is the KON write
+time per note against the SPU's sample clock, on a battle state and a field state.
+
 ## Title / boot / overlays
 
 No open threads. Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).

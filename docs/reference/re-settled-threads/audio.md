@@ -319,3 +319,23 @@ C3 00` occurs in 221 entries, always at offset `≡ 0x1C (mod 0x20)` (`VagAtr +
 - reliable, but a foreign row's field. 1062 as a whole is a SEQ-only `music_01`
 entry (sound-test track 72) borrowing another entry's bank. See
 [`bse-dat.md`](../../formats/bse-dat.md).
+
+### How a score ends, and what a loop end does
+
+*Status:* resolved - grade `disassembly`, `capture`
+
+`FUN_8006139C` (CC 99) jumps back only while the count a
+data entry stored lasts, and `FUN_80063AA8` (end-of-track) never reads a Loop Start: it
+restarts from the score head or, with the play count spent, stops. The field BGM attach
+plays with a count of `1`, so `2050`, `2057`, `2070` and `2071` play once; a capture of
+`2050` runs off its end with its flags at `0`. A jump touches no voice. See
+[`seq.md`](../../formats/seq.md#loop-markers).
+
+### The level of the port's mix against retail's
+
+*Status:* resolved - grade `capture`
+
+Against mednafen's recorded output, the SPU model resumed sample for sample
+reads correlation `1.000` and level within `0.003` dB, and a track from the state's read
+cursor reads within `0.2` dB, under `0.1` dB per band. The recorder's own `0.75` is divided
+out. See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).

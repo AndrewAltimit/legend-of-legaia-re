@@ -3323,8 +3323,8 @@ at `-44` dB. Which one the hardware does is not something this oracle can settle
 A device not at 44.1 kHz goes through
 [`host_resample`](../../crates/engine-audio/src/host_resample.rs), on both hosts:
 one mix core drives the cpal stream and the `ScriptProcessorNode`. The linear
-interpolator it replaced lost `1.5` dB at 10 kHz and `3.7` dB at 15 kHz at 48 kHz, with
-the images of everything above 5 kHz folding back at around `-30` dB; the windowed
+interpolator it replaced lost `1.5` dB at 10 kHz and `3.5` dB at 15 kHz at 48 kHz, with
+the images of a 5 to 10 kHz tone folding back at `-36` to `-23` dB; the windowed
 sinc is flat within `0.1` dB to 15 kHz with its images below `-60` dB (its own
 tests). A 44.1 kHz device still takes the mix untouched.
 
