@@ -1636,6 +1636,8 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     let clips = b.engine_image_displayed_clips();
     assert_eq!(clips.len(), 1, "the magic band");
     assert_eq!((clips[0].slot, clips[0].clip, clips[0].cursor), (pc, 0, 0));
+    b.action_state = 0x1E;
+    b.queued_category = 3;
 
     // A walked-in charge cast past its walk (`koru_blade_breath_mid_cast`):
     // the wind-up committed inside the lag, the display shows the run.
