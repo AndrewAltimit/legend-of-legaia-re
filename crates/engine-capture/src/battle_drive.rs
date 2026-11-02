@@ -626,7 +626,10 @@ fn capture_body(world: &legaia_engine_core::world::World, seat: u8) -> Option<(u
 /// a [`PHASE_ONLY`] gate; another body's engine phase is not retail's clock.
 fn capture_phase_directed(world: &legaia_engine_core::world::World, seat: u8) -> bool {
     capture_body(world, seat).is_some_and(|(entry, body)| {
-        legaia_engine_cast::cast_module_camera::capture_camera_director(entry, body).is_some()
+        // PROT 0954 has no director: its whole body runs retail's arms.
+        entry == 954
+            || legaia_engine_cast::cast_module_camera::capture_camera_director(entry, body)
+                .is_some()
     })
 }
 

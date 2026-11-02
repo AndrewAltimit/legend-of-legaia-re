@@ -59,6 +59,9 @@ pub enum CasterClipRule {
     /// The literal depends on the caster seat's own monster id
     /// (`0x8007BD0C[ctx[+0x13] - 3]`): `hit` when it equals `id`, else `miss`.
     SeatMonster { id: u8, hit: u8, miss: u8 },
+    /// The literal by the band the caster seat's monster id falls in, as
+    /// `(first, last, clip)`; a caster in no band stages nothing.
+    SeatMonsterBands(&'static [(u8, u8, u8)]),
     /// The literal depends on the battle's **first** monster id
     /// (`0x8007BD0C[0]`, `lbu -0x42F4(0x80080000)`).
     FirstMonster { id: u8, hit: u8, miss: u8 },
@@ -158,7 +161,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x08]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0951 `0x36` (`0x801F6A20`): walk, then `8` at `0x801F6D64`.
     CasterStageRow {
@@ -174,7 +177,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x5B],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: true,
-        arms: None,
+        arms: Some(&[2]),
     },
     // PROT 0952 `0x5C` (`0x801F7118`): walk, then `9` at `0x801F7494` and
     // `0x0A` at `0x801F7538`.
@@ -203,13 +206,19 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: true,
         arms: None,
     },
-    // PROT 0955 `0x70` (`0x801F767C`): `8` at `0x801F79FC`.
+    // PROT 0955 `0x70` (`0x801F767C`), arm 0, by the caster's monster id:
+    // `7` for `0x7F`, `9` for `0x28..=0x2A`, `8` for `0x83..=0x85`
+    // (`0x801F78C4..0x801F7A0C`, the shared store at `0x801F79FC`).
     CasterStageRow {
         prot_entry: 955,
         action_ids: &[0x70],
-        rule: CasterClipRule::Fixed(&[0x08]),
+        rule: CasterClipRule::SeatMonsterBands(&[
+            (0x7F, 0x7F, 0x07),
+            (0x28, 0x2A, 0x09),
+            (0x83, 0x85, 0x08),
+        ]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0955 `0x72` (`0x801F7158`): `0x0A` at `0x801F72AC`.
     CasterStageRow {
@@ -422,6 +431,12 @@ pub fn capture_caster_stages(
         CasterClipRule::SeatMonster { id, hit, miss } => {
             vec![if seat_monster == id { hit } else { miss }]
         }
+        CasterClipRule::SeatMonsterBands(bands) => bands
+            .iter()
+            .find(|(a, b, _)| (*a..=*b).contains(&seat_monster))
+            .map(|&(_, _, clip)| clip)
+            .into_iter()
+            .collect(),
         CasterClipRule::FirstMonster { id, hit, miss } => {
             vec![if first_monster == id { hit } else { miss }]
         }

@@ -133,6 +133,8 @@ pub struct CastFxState {
     pub module_hit_arm: Option<u8>,
     /// PROT 0962 `0xA4`'s debris ring, drawn ahead of the arm's hit as
     /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
+    /// A director's per-pass scatter ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::scatter`]).
+    pub module_scatter: Option<(u32, u8)>,
     pub module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
@@ -440,6 +442,7 @@ impl CastFxState {
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,
+            module_scatter: None,
             module_debris: Vec::new(),
             module_rumble_alternate: 0,
             module_mule_backdrop_follow: false,

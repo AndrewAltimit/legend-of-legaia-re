@@ -338,6 +338,7 @@ impl World {
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
         let mut capture_held = false;
         let mut capture_arm = None;
+        let mut capture_vram_move = None;
         let phase_in = ctx.phase;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
@@ -373,9 +374,15 @@ impl World {
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
-            self.casting
-                .module_debris
-                .extend(arm.pass_spawns.iter().flatten().copied());
+            self.casting.module_debris.extend(
+                arm.pass_spawns
+                    .iter()
+                    .chain(&arm.charge_spawns)
+                    .flatten()
+                    .copied(),
+            );
+            self.casting.module_scatter = arm.scatter;
+            capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
         }
         // A director arm that names the body's damage-wrapper call folds the
@@ -565,7 +572,7 @@ impl World {
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.arm_point = direction.and_then(|d| d.arm_point);
-        run.vram_move = direction.and_then(|d| d.vram_move);
+        run.vram_move = direction.and_then(|d| d.vram_move).or(capture_vram_move);
         run.caption = direction.and_then(|d| d.caption);
         run.fades = direction.map_or(&[], |d| d.fades);
         run.kills_fades = direction.is_some_and(|d| d.kills_fades);
@@ -1465,7 +1472,9 @@ impl World {
             if !arm.others_write.is_empty() && !capture_held {
                 let monsters = self.party.party_count..self.actors.len() as u8;
                 for slot in 0..self.party.party_count {
-                    self.apply_capture_seat_writes(slot, arm.others_write);
+                    if !arm.others_live_only || self.actors[usize::from(slot)].battle.hp > 0 {
+                        self.apply_capture_seat_writes(slot, arm.others_write);
+                    }
                 }
                 for slot in monsters {
                     if self.actors[usize::from(slot)].battle.hp > 0 {

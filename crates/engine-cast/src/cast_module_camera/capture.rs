@@ -97,9 +97,21 @@ pub struct CaptureCamArm {
     /// 0947 hides the field, then shows the caster). Waits for the band's
     /// settle on a finishing arm.
     pub others_write: CaptureSeatWrite,
+    /// [`Self::others_write`] skips a downed party seat as it does a downed
+    /// monster (PROT 0955 `0x70` walks seven seats behind one HP test).
+    pub others_live_only: bool,
+    /// The `MoveImage` (`FUN_80058490`) the arm issues on this pass.
+    pub vram_move: Option<super::ModuleVramMove>,
+    /// `(record, count)`: this pass seats `count` copies of a record each on
+    /// five `rand()` draws (PROT 0951's arm 4, `0x801F7E34..0x801F7F14`:
+    /// `x = r % 64 - 32`, `y = r % 64 - 16`, `z = 0x100`, then the angle trio
+    /// roll, pitch, yaw, each `r % 4095`).
+    pub scatter: Option<(u32, u8)>,
     /// The `FUN_80021B04` calls this pass makes at points the arm works out,
     /// held or not. Seated on the tick that opens a battle frame.
     pub pass_spawns: [Option<super::ModuleSpawn>; 5],
+    /// A passing arm's larger run of the same calls (PROT 0948's arm 1).
+    pub charge_spawns: [Option<super::ModuleSpawn>; 8],
     /// The arm stores `0x800` into both backdrop records' `+0x78`, the
     /// indoor ceiling: the pair back on the draw (PROT 0965 arms 7, `0x0B`).
     pub backdrop_on: bool,
@@ -199,6 +211,9 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (965, super::DOOMSDAY_BODY) => Some(super::doomsday_camera),
         (955, super::KISS_OF_DEATH_BODY) => Some(super::kiss_of_death_camera),
         (947, SINGLE_BODY) => Some(super::v_windhash_camera),
+        (948, SINGLE_BODY) => Some(super::cross_beam_camera),
+        (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
+        (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
         _ => None,
     }
 }
@@ -261,6 +276,11 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
+        0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
+        // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
+        0x5F => Some(0x801F_9018),
+        0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),
+        0x70 => Some(super::KISS_OF_DEATH_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),

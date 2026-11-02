@@ -29,12 +29,12 @@ const NEO_RECORD: u32 = 0x801F_7A88;
 const BLADE_Y: i16 = -0x12C;
 /// `+0x04` a shown seat holds (`lui 0x2008` / `ori 0x200`).
 const SHOWN_COLOUR: u32 = 0x2008_0200;
-const SHOWN: CaptureSeatWrite = CaptureSeatWrite {
+pub(super) const SHOWN: CaptureSeatWrite = CaptureSeatWrite {
     colour: Some(SHOWN_COLOUR),
     render_flag: Some(0),
     ..EMPTY_WRITE
 };
-const HIDDEN: CaptureSeatWrite = CaptureSeatWrite {
+pub(super) const HIDDEN: CaptureSeatWrite = CaptureSeatWrite {
     colour: Some(0),
     render_flag: Some(0xFF),
     ..EMPTY_WRITE
@@ -55,7 +55,7 @@ const EMPTY_WRITE: CaptureSeatWrite = CaptureSeatWrite {
     cursor_reset: false,
 };
 
-const fn seat(record: u32, pos: [i16; 3], rot: [i16; 3]) -> ModuleSpawn {
+pub(super) const fn seat(record: u32, pos: [i16; 3], rot: [i16; 3]) -> ModuleSpawn {
     ModuleSpawn {
         record: SpawnRecord::Module(record),
         anchor: SpawnAnchor::LiteralScaled {
@@ -133,6 +133,8 @@ pub fn v_windhash_camera(
                 ..SHOWN
             };
             arm.others_write = HIDDEN;
+            // `0x801F6CB4..0x801F6CF0`.
+            arm.vram_move = Some(super::GIMARD_BREATH_CLUT_MOVE);
             arm.shot = Some(ModuleShot {
                 angles: [-0x20, 0x750_i16.wrapping_sub(facing as i16), 0],
                 tr: [0, 0x500, (i32::from(seats.depth_raw as i16) / 3) as i16],

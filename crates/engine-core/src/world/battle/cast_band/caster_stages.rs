@@ -130,6 +130,36 @@ impl World {
                 }
                 self.casting.module_pass_counter = n.wrapping_add(1);
             }
+            if let Some(m) = run.vram_move {
+                self.battle.vram_moves.push(
+                    legaia_engine_field::script_vram_move::ScriptVramMove {
+                        src: (m.src.0 as i16, m.src.1 as i16),
+                        size: (m.size.0 as i16, m.size.1 as i16),
+                        dst: (m.dst.0 as i16, m.dst.1 as i16),
+                    },
+                );
+            }
+            if let Some((record, count)) = self.casting.module_scatter.take()
+                && opens_pass
+            {
+                let mut seated = Vec::with_capacity(usize::from(count));
+                for _ in 0..count {
+                    let x = (self.next_rand() % 64) as i16 - 32;
+                    let y = (self.next_rand() % 64) as i16 - 16;
+                    let roll = (self.next_rand() % 4095) as i16;
+                    let pitch = (self.next_rand() % 4095) as i16;
+                    let yaw = (self.next_rand() % 4095) as i16;
+                    seated.push(cmc::ModuleSpawn {
+                        record: cmc::SpawnRecord::Module(record),
+                        anchor: cmc::SpawnAnchor::LiteralScaled {
+                            pos: [x, y, 0x100],
+                            rot: [pitch, yaw, roll],
+                            scale: 0x1000,
+                        },
+                    });
+                }
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
             if run.phase != arm || !run.busy {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
                     self.casting.flush_module_part_pool();

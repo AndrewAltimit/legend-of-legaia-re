@@ -76,6 +76,7 @@ impl World {
             self.route_battle_cue(fd::WHEEL_TICK_CUE, caster);
         }
         st.tick_rem = rem;
+        self.casting.module_cam.countdown.0 = st.countdown;
         self.casting.fatal_decision = Some(st);
         self.apply_fatal_pass(&pass, caster, victim, ctx.party_count);
         self.casting.module_phase = ctx.phase;

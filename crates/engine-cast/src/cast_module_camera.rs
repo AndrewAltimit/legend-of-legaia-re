@@ -964,6 +964,7 @@ pub mod capture_countdown;
 mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
+mod cross_beam;
 mod doomsday;
 mod evil_seru_magic;
 mod freed;
@@ -980,10 +981,12 @@ mod nova;
 mod orb;
 mod plasma_strike;
 mod puera;
+mod scythe_wind;
 mod seru;
 mod spoon;
 pub mod summon_holds;
 mod swordie;
+mod terror_scream;
 mod theeder_gizam;
 mod ultimate_rave;
 mod v_windhash;
@@ -1002,6 +1005,7 @@ pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture
 pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
+pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,
@@ -1026,9 +1030,11 @@ pub use plasma_strike::{
     PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
 };
 pub use puera::*;
+pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
 pub use spoon::*;
 pub use swordie::*;
+pub use terror_scream::{TERROR_SCREAM_BODY, terror_scream_camera};
 pub use theeder_gizam::*;
 pub use ultimate_rave::*;
 pub use v_windhash::{V_WINDHASH_COUNTDOWN, v_windhash_camera};
