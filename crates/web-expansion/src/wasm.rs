@@ -77,6 +77,30 @@ impl ExpansionWorkbench {
         self.core.scene_objects_json(scene).map_err(err)
     }
 
+    /// A scene's meshes and VRAM, packed
+    /// ([`crate::catalog::pack_scene_meshes`]): what the palette's thumbnails
+    /// and the placement ghost draw. Disc-derived; stays in the tab.
+    pub fn scene_meshes(&self, scene: &str) -> Result<Vec<u8>, JsValue> {
+        self.core.scene_meshes(scene).map_err(err)
+    }
+
+    /// A key for the disc the palette's thumbnails were drawn from.
+    pub fn disc_key(&self) -> String {
+        self.core.disc_key()
+    }
+
+    /// The borrowed-mesh catalog (JSON): `[{ scene, object, label, kind,
+    /// size, solid, tris, note }]`.
+    pub fn mesh_catalog(&self) -> String {
+        self.core.mesh_catalog_json()
+    }
+
+    /// The map **+ New map** adds (JSON, `MapDef`'s form): sculpted ground,
+    /// a few props by disc coordinate, a start point.
+    pub fn starter_map(&self, name: &str) -> String {
+        crate::starter::starter_map(name).to_string()
+    }
+
     /// A scene's NPC placements: `{ scene, npcs: [{ index, model_index,
     /// anim_id, special, kind, label }] }`.
     pub fn scene_npcs(&self, scene: &str) -> Result<String, JsValue> {

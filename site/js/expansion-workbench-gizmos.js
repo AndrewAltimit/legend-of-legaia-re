@@ -33,6 +33,7 @@ import { layoutTools, layoutSummary, nudge } from './expansion-workbench-layout.
 // module: the names are only called at run time).
 import { registerBuildTools, syncBuildMode, setBuildMode, buildMode, BUILD_MODES } from './expansion-workbench-shell.js';
 import { setPainterTool } from './expansion-workbench-map.js';
+import { helpLink, PALETTE_HELP } from './expansion-workbench-help.js';
 
 const UNIT = 128;
 const TYPES = ['props', 'decor', 'npcs', 'spawns', 'lamps', 'emitters', 'triggers', 'exits', 'encounters'];
@@ -344,9 +345,24 @@ function sceneObjects(scene) {
 /** The extent `[x, y, z]` of mesh source `mesh` on `map` (scaled by
  * nothing), or null when the catalog does not know it yet. */
 export function meshSize(map, mesh) {
+  // The mesh catalog knows it without assembling the scene.
+  const named = meshEntry(sceneOf(map, mesh), mesh && mesh.object);
+  if (named) return [named.size[0], named.size[2], named.size[1]];
   const sc = sceneObjects(sceneOf(map, mesh));
   const o = sc && sc.objects && sc.objects.find((x) => x.index === mesh.object);
   return o ? o.size : null;
+}
+
+/* The mesh catalog's entry for `scene`'s mesh `object` (its label, kind and
+ * measured size; `size` is width X, depth Z, height), or null. */
+function meshEntry(scene, object) {
+  if (!scene || object == null || !G.api || !G.api.meshCatalog) return null;
+  if (!G.meshIdx) {
+    const rows = G.api.meshCatalog();
+    if (!rows.length) return null;
+    G.meshIdx = new Map(rows.map((e) => [`${e.scene}|${e.object}`, e]));
+  }
+  return G.meshIdx.get(`${scene}|${object}`) || null;
 }
 
 function sceneNpcs(scene) {
@@ -364,19 +380,51 @@ function sceneNpcs(scene) {
 const stem = (id) => String(id || '').replace(/(_[a-z]?\d+)+$/i, '').replace(/_/g, ' ') || 'prop';
 const sizeClass = (w) => (w >= 384 ? 'Buildings' : w >= 160 ? 'Large props' : 'Small props');
 
+/* The palette's categories, in tab order: the mesh catalog's kinds. */
+const KIND_GROUPS = [
+  ['building', 'Buildings'], ['plant', 'Plants & trees'], ['rock', 'Rocks'], ['furniture', 'Furniture'],
+  ['structure', 'Walls & structures'], ['light', 'Lights'], ['vehicle', 'Vehicles'], ['other', 'Odds & ends'], ['terrain', 'Ground pieces'],
+];
+// What "All" leaves out: pieces of ground and scenery shells read as nothing
+// on their own.
+const NOT_IN_ALL = new Set(['terrain', 'other']);
+
+/* Whether a piece stands in the player's way by default: the mesh catalog's
+ * measure, or anything the walk-through hint would flag (wider than half a
+ * tile both ways and taller than a step, expansion-workbench-hints.js). */
+function wantsSolid(size, named) {
+  return named || (size[0] > 64 && size[1] > 64 && size[2] > 16);
+}
+
+/* A palette item for `scene`'s mesh `object` on `map`. */
+function meshItem(map, base, scene, object, o) {
+  const size = o.size;
+  const solid = !!o.solid;
+  const mesh = scene === base ? { object } : { scene, object };
+  return {
+    id: 'prop:' + JSON.stringify([scene, object]), label: o.label, kind: 'prop', group: o.group, scene, object, note: o.note || '',
+    mesh, size: [size[0], size[1]], hgt: Math.max(24, size[2]), solid,
+    hint: `${scene}, ${size[0]} x ${size[1]} units${o.note ? `; ${o.note}` : ''}`,
+    make: () => ({ mesh: { ...mesh }, offset: [0, 0, 0], rotation: [0, 0, 0], scale: null, solid }),
+  };
+}
+
 /** The catalog for the open map: `[{ id, label, items }]`, each item
- * `{ id, label, kind, size, hgt, hint, make }`. */
+ * `{ id, label, kind, size, hgt, hint, make }`, a prop's also `{ scene, object }`. */
 export function catalog() {
   const api = G.api;
   const map = api && api.map();
   if (!map) return [];
   if (G.catalog && G.catalog.map === map) return G.catalog.groups;
   const pack = api.pack ? api.pack() : null;
-  const groups = { Buildings: [], 'Large props': [], 'Small props': [], People: [], Markers: [] };
+  const groups = { 'On your maps': [] };
+  for (const [, label] of KIND_GROUPS) groups[label] = [];
+  groups.People = [];
+  groups.Markers = [];
   const seen = new Set();
   const base = sceneOf(map, { object: 0 });
-  // Props the pack already uses, on any map (a mesh named by its scene so
-  // it builds on this one too).
+  const kindLabel = Object.fromEntries(KIND_GROUPS);
+  // What the pack's maps already use, on any map, with the pack's own settings.
   const uses = [];
   for (const [mid, m] of Object.entries((pack && pack.maps) || { here: map })) {
     for (const p of m.props || []) uses.push([mid, m, p]);
@@ -385,33 +433,43 @@ export function catalog() {
   for (const [, m, p] of uses) {
     if (!p.mesh) continue;
     const scene = sceneOf(m, p.mesh);
-    const mesh = p.mesh.object != null && scene ? { scene, object: p.mesh.object } : p.mesh;
-    const k = JSON.stringify(mesh.object != null ? [mesh.scene, mesh.object] : mesh);
+    const onDisc = p.mesh.object != null && scene;
+    const k = JSON.stringify(onDisc ? [scene, p.mesh.object] : p.mesh);
     if (seen.has(k)) continue;
     seen.add(k);
-    const sz = mesh.object != null ? meshSize(map, mesh) : null;
+    const named = onDisc ? meshEntry(scene, p.mesh.object) : null;
+    const sz = onDisc ? meshSize(map, { scene, object: p.mesh.object }) : null;
     const sc = p.scale || 1;
-    const w = sz ? Math.max(sz[0], sz[2]) * sc : 96;
-    groups[sizeClass(w)].push({
-      id: 'prop:' + k, label: stem(p.id), kind: 'prop', mesh, size: sz ? [sz[0] * sc, sz[2] * sc] : [96, 96],
-      hgt: sz ? Math.max(24, sz[1] * sc) : 72, solid: !!p.solid, foot: footOf(map, mesh),
+    const mesh = onDisc ? (scene === base ? { object: p.mesh.object } : { scene, object: p.mesh.object }) : p.mesh;
+    groups['On your maps'].push({
+      id: 'use:' + k, label: (named && named.label) || stem(p.id), kind: 'prop', group: 'On your maps', scene: onDisc ? scene : null, object: onDisc ? p.mesh.object : null,
+      mesh, size: sz ? [sz[0] * sc, sz[2] * sc] : [96, 96], hgt: sz ? Math.max(24, sz[1] * sc) : 72, solid: !!p.solid, scale: sc,
       hint: `as ${p.id}${sz ? `, ${Math.round(sz[0] * sc)} x ${Math.round(sz[2] * sc)} units` : ''}`,
-      make: () => { const o = JSON.parse(JSON.stringify(p)); delete o.id; delete o.on; o.mesh = mesh.object != null && mesh.scene === base ? { object: mesh.object } : mesh; return o; },
+      make: () => { const o = JSON.parse(JSON.stringify(p)); delete o.id; delete o.on; o.mesh = JSON.parse(JSON.stringify(mesh)); return o; },
     });
   }
-  // The base scene's geometry the pack does not use yet.
-  const so = sceneObjects(base);
-  for (const o of (so && so.objects) || []) {
-    const k = JSON.stringify([base, o.index]);
-    if (seen.has(k) || !o.prims) continue;
-    const w = Math.max(o.size[0], o.size[2]);
-    groups[sizeClass(w)].push({
-      id: 'prop:' + k, label: `${base} #${o.index}`, kind: 'prop', mesh: { object: o.index }, size: [o.size[0], o.size[2]],
-      hgt: Math.max(24, o.size[1]), solid: w >= 160, foot: o.footprint,
-      hint: `${o.size[0]} x ${o.size[2]} units, ${o.prims} prims${o.placed ? `, placed ${o.placed}x in ${base}` : ''}`,
-      make: () => ({ mesh: { object: o.index }, offset: [0, 0, 0], rotation: [0, 0, 0], scale: null, solid: w >= 160 }),
-    });
+  // The named meshes of the mesh catalog, by what they are; the map's own
+  // scene first, so a palette's first row sits with the map's textures.
+  const seenMesh = new Set();
+  const rows = api.meshCatalog ? api.meshCatalog() : [];
+  for (const e of rows.slice().sort((a, b) => (a.scene === base ? 0 : 1) - (b.scene === base ? 0 : 1))) {
+    if (!e.tris) continue;
+    seenMesh.add(`${e.scene}|${e.object}`);
+    const group = kindLabel[e.kind] || 'Odds & ends';
+    groups[group].push(meshItem(map, base, e.scene, e.object, { label: e.label, size: e.size, solid: wantsSolid(e.size, e.solid), note: e.note, group }));
   }
+  // The rest of the scene being browsed (and the base scene): no name but
+  // its picture.
+  const browse = [base, G.catScene].filter(Boolean);
+  if (base && api.hasDisc && api.hasDisc() && !(G.sceneList && G.sceneList[base]) && G.loadingScene !== base) listScene(base);
+  for (const sc of browse) {
+    for (const o of (G.sceneList && G.sceneList[sc]) || []) {
+      if (seenMesh.has(`${sc}|${o.index}`)) continue;
+      seenMesh.add(`${sc}|${o.index}`);
+      groups['Odds & ends'].push(meshItem(map, base, sc, o.index, { label: `${sc} #${o.index}`, size: o.size, solid: wantsSolid(o.size, false), group: 'Odds & ends' }));
+    }
+  }
+  for (const k of Object.keys(groups)) groups[k].sort((a, b) => (a.scene === base ? 0 : 1) - (b.scene === base ? 0 : 1) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   // People: the pack's NPCs, then the base scene's placements.
   const npcSeen = new Set();
   for (const [, m] of Object.entries((pack && pack.maps) || { here: map })) {
@@ -445,7 +503,6 @@ export function catalog() {
     { id: 'encounter', label: 'Encounter zone', kind: 'zone', zone: [4, 4], list: 'encounters', hint: 'random battles inside it (4 x 4)', make: () => ({ table: '' }) },
     { id: 'exit', label: 'Exit', kind: 'zone', zone: [1, 1], list: 'exits', hint: 'a way off the map', make: () => ({ to: { kind: 'retail', scene: { kind: 'scene', name: base || 'town01' }, facing: 0 } }) },
   );
-  for (const k of ['Buildings', 'Large props', 'Small props']) groups[k].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   // Two meshes one name (two cottages): numbered, so each reads apart.
   const seenLabel = new Map();
   for (const items of Object.values(groups)) {
@@ -455,15 +512,9 @@ export function catalog() {
       if (n > 1) it.label = `${it.label} ${n}`;
     }
   }
-  const out = Object.entries(groups).filter(([, items]) => items.length).map(([label, items]) => ({ id: label.toLowerCase().replace(/ /g, '-'), label, items }));
+  const out = Object.entries(groups).filter(([, items]) => items.length).map(([label, items]) => ({ id: label.toLowerCase().replace(/[^a-z]+/g, '-'), label, items }));
   G.catalog = { map, groups: out };
   return out;
-}
-
-function footOf(map, mesh) {
-  const sc = sceneObjects(sceneOf(map, mesh));
-  const o = sc && sc.objects && sc.objects.find((x) => x.index === mesh.object);
-  return o ? o.footprint : null;
 }
 
 function findItem(id) {
@@ -551,8 +602,9 @@ function placeAt(t, yaw) {
   sync(true);
 }
 
-/* A catalog tile's picture: the mesh's footprint from above (its convex
- * hull, the painter's prop outline), else a glyph for its kind. */
+/* A person's or a marker's tile: a glyph for its kind (a prop's is a picture
+ * of the mesh, `paletteEl`). A mesh off no disc coordinate (a glTF model) has
+ * a square. */
 function thumb(it) {
   const c = h('canvas', { width: 44, height: 44, class: 'xw-piece-thumb', 'aria-hidden': 'true' });
   const g = c.getContext && c.getContext('2d');
@@ -562,18 +614,7 @@ function thumb(it) {
   const tone = { prop: '#d8c06a', npc: '#9b6bf0', spawn: '#3ccf8f', lamp: '#ffd75a', zone: '#e8a33d' }[it.kind] || '#ccc';
   g.fillStyle = tone;
   g.strokeStyle = tone;
-  if (it.kind === 'prop' && it.foot && it.foot.length > 2) {
-    let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
-    for (const [x, z] of it.foot) { lo = [Math.min(lo[0], x), Math.min(lo[1], z)]; hi = [Math.max(hi[0], x), Math.max(hi[1], z)]; }
-    const k = 36 / Math.max(hi[0] - lo[0], hi[1] - lo[1], 1);
-    g.beginPath();
-    it.foot.forEach(([x, z], i) => { const px = 4 + (x - lo[0]) * k, py = 4 + (z - lo[1]) * k; if (i) g.lineTo(px, py); else g.moveTo(px, py); });
-    g.closePath();
-    g.globalAlpha = 0.55;
-    g.fill();
-    g.globalAlpha = 1;
-    g.stroke();
-  } else if (it.kind === 'npc' || it.kind === 'spawn') {
+  if (it.kind === 'npc' || it.kind === 'spawn') {
     g.beginPath(); g.arc(22, 13, 6, 0, Math.PI * 2); g.fill();
     g.fillRect(15, 21, 14, 16);
   } else if (it.kind === 'lamp') {
@@ -643,6 +684,115 @@ function installCatalogCss() {
   st.id = 'xw-pieces-css';
   st.textContent = CATALOG_CSS;
   document.head.append(st);
+}
+
+/* The object palette: Sims-style. A search box and a scene picker, category
+ * tabs, a row of pictures. Kept across re-renders of the tab (`G.pal`), so a
+ * selection or an edit does not rebuild it or lose its scroll. */
+function paletteEl() {
+  installCatalogCss();
+  const api = G.api;
+  if (!api.hasDisc || !api.hasDisc()) {
+    return h('div', { class: 'xw-pal-msg' }, 'The objects you can place come from your own disc. Choose your disc image under "Disc and pack" at the top of this page, and they appear here.');
+  }
+  const groups = catalog();
+  if (G.pal && G.pal.groups === groups) {
+    refreshPalette();
+    return G.pal.el;
+  }
+  const props = groups.filter((g) => g.items.length && g.items[0].kind === 'prop');
+  const all = props.flatMap((g) => g.items);
+  const allGroup = { id: 'all', label: 'All', items: all.filter((it) => !NOT_IN_ALL.has((KIND_GROUPS.find(([, l]) => l === it.group) || [])[0]) && it.group !== 'On your maps') };
+  const tabs = [allGroup].concat(props);
+  if (!tabs.some((g) => g.id === G.catGroup)) G.catGroup = 'all';
+  const el = h('div', { class: 'xw-pal', role: 'region', 'aria-label': 'Objects to place' });
+  const tabRow = h('div', { class: 'xw-pal-tabs', role: 'tablist', 'aria-label': 'Object categories' });
+  const items = h('div', { class: 'xw-pal-items' });
+  // A vertical wheel scrolls the row.
+  items.addEventListener('wheel', (e) => {
+    if (e.deltaX || !e.deltaY) return;
+    items.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+  const q = h('input', { type: 'search', placeholder: 'Find: tree, bed, wall', 'aria-label': 'Find an object', value: G.catFind || '' });
+  const scene = h('select', { 'aria-label': 'Which scene\'s objects' }, h('option', { value: '' }, 'All named objects'),
+    ...(api.scenes ? api.scenes() : []).map((s) => h('option', { value: s.name, selected: s.name === G.catScene }, `${s.display || s.name} (${s.name})`)));
+  scene.addEventListener('change', () => browseScene(scene.value));
+  const paint = () => {
+    tabRow.innerHTML = '';
+    const f = (G.catFind || '').trim().toLowerCase();
+    const inScene = (it) => !G.catScene || it.scene === G.catScene;
+    for (const g of tabs) {
+      const n = g.items.filter(inScene).length;
+      if (!n && g.id !== 'all') continue;
+      const on = !f && g.id === G.catGroup;
+      tabRow.append(h('button', {
+        type: 'button', role: 'tab', class: 'wb-mini' + (on ? ' is-on' : ''), 'aria-selected': String(on),
+        onclick: () => { G.catGroup = g.id; G.catFind = ''; q.value = ''; paint(); },
+      }, `${g.label} ${n}`));
+    }
+    items.innerHTML = '';
+    const list = (f ? all.filter((it) => `${it.label} ${it.hint} ${it.group}`.toLowerCase().includes(f)) : (tabs.find((g) => g.id === G.catGroup) || allGroup).items).filter(inScene);
+    const thumbs = api.thumbs ? api.thumbs() : null;
+    for (const it of list.slice(0, 500)) {
+      const tile = h('button', {
+        type: 'button', class: 'xw-tile', 'data-item': it.id,
+        title: `${it.label} (${it.hint}). Click, then click on the ground to place it.`,
+        onclick: () => { if (G.mode === 'place' && G.armed === it.id) disarm(); else arm(it.id); },
+      });
+      if (it.scene != null && it.object != null && thumbs) {
+        const img = h('img', { class: 'xw-tile-img', alt: '', width: 128, height: 128, draggable: 'false', 'data-scene': it.scene, 'data-object': it.object });
+        tile.append(img);
+        thumbs.watch(img);
+      } else {
+        tile.append(thumb(it));
+      }
+      tile.append(h('span', { class: 'xw-tile-name' }, it.label));
+      items.append(tile);
+    }
+    if (!list.length) {
+      items.append(h('span', { class: 'xw-pal-msg' }, G.catScene && G.loadingScene === G.catScene ? 'Reading that scene ...' : f ? `Nothing matches "${f}".` : 'No objects here.'));
+    }
+    refreshPalette();
+  };
+  q.addEventListener('input', () => { G.catFind = q.value; paint(); });
+  el.append(h('div', { class: 'xw-pal-side' }, tabRow, q, scene, helpLink(...PALETTE_HELP)), items);
+  G.pal = { el, groups, paint, items };
+  paint();
+  return el;
+}
+
+/* The tile of the armed object is marked. */
+function refreshPalette() {
+  if (!G.pal) return;
+  for (const t of G.pal.items.children) {
+    if (t.dataset && t.dataset.item) t.classList.toggle('is-on', G.mode === 'place' && t.dataset.item === G.armed);
+  }
+}
+
+/* Show one scene's objects (read off the disc by the worker, names where the
+ * mesh catalog has them), or every named object with `scene` empty. */
+function browseScene(scene) {
+  G.catScene = scene || '';
+  G.catalog = null;
+  if (scene && !(G.sceneList && G.sceneList[scene])) listScene(scene);
+  fillIfShown();
+}
+
+/* Read one scene's objects off the disc (the worker), then redraw. */
+function listScene(scene) {
+  if (!G.api.thumbs) return;
+  G.sceneList = G.sceneList || {};
+  G.loadingScene = scene;
+  G.api.thumbs().objects(scene).then((list) => { G.sceneList[scene] = list; }, () => { G.sceneList[scene] = []; }).then(() => {
+    if (G.loadingScene === scene) G.loadingScene = null;
+    G.catalog = null;
+    fillIfShown();
+  });
+}
+
+function fillIfShown() {
+  if (G.shellCat && G.shellCat.el.isConnected) fillShellCatalog();
 }
 
 /** The current selection (`{ type, i }` list). */
@@ -1015,3 +1165,15 @@ export function setEditMode(mode) {
   renderBar();
   sync();
 }
+    } else if (mode === 'objects') {
+      if (pv && pv.open) pv.open();
+      G.armed = null;
+      G.mode = 'select';
+  if (mode === 'objects') {
+    const pal = paletteEl();
+    const row = G.pal && G.pal.items;
+    const left = row ? row.scrollLeft : 0;
+    el.append(pal);
+    if (row) row.scrollLeft = left;
+    return;
+  }

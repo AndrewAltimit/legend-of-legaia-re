@@ -37,6 +37,7 @@ import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
+import { createThumbs } from './expansion-workbench-palette.js';
 import { createFind, locate } from './expansion-workbench-xref.js';
 import { renderFlow } from './expansion-workbench-graph.js';
 import { attachShare } from './expansion-workbench-share.js';
@@ -253,6 +254,11 @@ const ctx = {
       return { error: errText(e) };
     }
   },
+  // The object palette's pictures and names (expansion-workbench-palette.js).
+  thumbs: () => S.thumbs || (S.thumbs = createThumbs({ ask: askSceneMeshes, discKey: () => (S.wb && S.wb.disc_key ? S.wb.disc_key() : '') })),
+  meshCatalog: () => {
+    if (!S.meshCat && S.wb && S.wb.mesh_catalog) { try { S.meshCat = JSON.parse(S.wb.mesh_catalog()); } catch (e) { S.meshCat = []; } }
+    return S.meshCat || [];
   sceneObjects: (scene) => {
     if (!S.sceneObj[scene]) S.sceneObj[scene] = JSON.parse(S.wb.scene_objects(scene));
     return S.sceneObj[scene];
@@ -719,7 +725,7 @@ function placeParseError(issue) {
  * answer for a pack that has changed since is dropped (a newer one is on
  * its way). Without the worker (an older bundle, a worker that failed) it
  * runs here. An export or a hand-off still validates here, at once. */
-const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [] };
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [], meshAsks: new Map() };
 
 // Count every change to the session's own files (the loaded tree, assets,
 // documents), so the worker is handed them again before its next check.
@@ -891,6 +897,12 @@ function runValidate() {
     issues = JSON.parse(S.wb.validate(JSON.stringify(S.pack)));
   } catch (e) {
     issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
+    } else if (m.type === 'scene_meshes') {
+      const a = V.meshAsks.get(m.seq);
+      if (!a) return;
+      V.meshAsks.delete(m.seq);
+      if (m.error != null) a.rej(new Error(m.error));
+      else a.res(m.bytes.buffer);
   }
   applyIssues(issues);
 }
@@ -1474,6 +1486,27 @@ function quickPack() {
   saveDel('source');
   showPack(pack, 'new pack', 'Started a new pack with one small map to build on, a monster, a fight, a line and a quest. Name it under Pack settings.', { tab: 'maps' });
 }
+/* A scene's meshes for the palette and the ghost: off this thread when the
+ * worker is up, else a moment later on the page. */
+function askSceneMeshes(scene) {
+  return new Promise((res, rej) => {
+    const go = (tries) => {
+      if (V.worker && V.ready) {
+        V.meshSeq = (V.meshSeq || 0) + 1;
+        V.meshAsks.set(V.meshSeq, { res, rej });
+        V.worker.postMessage({ type: 'scene_meshes', seq: V.meshSeq, scene });
+      } else if (V.worker && tries > 0) {
+        setTimeout(() => go(tries - 1), 400);
+      } else {
+        setTimeout(() => {
+          try { res(S.wb.scene_meshes(scene).buffer); } catch (e) { rej(e); }
+        }, 30);
+      }
+    };
+    go(40);
+  });
+}
+
 
 function openNewForm() {
   const box = $('xw-new');

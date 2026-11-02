@@ -169,7 +169,7 @@ const CATALOG_LISTS = {
 const CATALOG_HINTS = {
   build: 'Click anything in the 3D view or on the tile map to pick it up. Drag to move it; W, E and R switch between move, turn and scale; Delete removes it; Ctrl+Z takes any change back.',
   terrain: 'Choose a ground type in the palette beside the tile map, then paint. On a map with sculpted terrain the 3D view raises, lowers and smooths the ground with a brush ([ and ] size it).',
-  objects: 'Choose an object from the base scene in the tile map\'s side panel, then click a tile to place it. Click a placed one below to select it.',
+  objects: 'Click an object in the palette, then click on the ground in the 3D view to place it.',
   npcs: 'Click a tile to place a person, then pick who they are and what they say in the form that opens. Click one below to select it.',
   zones: 'Exits lead to another map or a retail scene; start points are where the player arrives; step-on events show a line, a notice or start a fight; monster zones roll random battles.',
   test: 'Walk the map as the player, in the 3D view or in a play tab of its own. Edits made while a play tab is open reload there.',

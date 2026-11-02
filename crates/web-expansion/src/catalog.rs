@@ -404,6 +404,49 @@ impl DiscCatalog {
         })
     }
 
+    /// A scene's geometry pack as the renderer draws it, packed for the page
+    /// ([`pack_scene_meshes`]): the scene's VRAM and each mesh's vertex
+    /// streams, the arrays the play page's `uploadSceneMesh` takes. The
+    /// palette's thumbnails and the placement ghost draw these. Disc-derived
+    /// bytes: they stay in the tab, in memory or in its own IndexedDB cache.
+    pub fn scene_meshes(&self, name: &str) -> Result<Vec<u8>> {
+        let assembled = legaia_engine_scene::scene_assembly::assemble_field_scene_with(
+            &self.index,
+            name,
+            &|_, _| Default::default(),
+        )
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let meshes: Vec<_> = assembled
+            .env_tmds
+            .iter()
+            .map(|&i| {
+                legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(
+                    &assembled.res.tmds[i],
+                    &assembled.res.vram,
+                )
+            })
+            .collect();
+        Ok(pack_scene_meshes(assembled.res.vram.as_bytes(), &meshes))
+    }
+
+    /// A key for the disc the thumbnails were drawn from: its PROT table of
+    /// contents and the catalog's scene list, as hex. Not a hash of the whole
+    /// image (too slow to take at every open); a disc patched in place with
+    /// the same layout keeps its key, and shows the old pictures until the
+    /// palette's cache is cleared.
+    pub fn disc_key(&self) -> String {
+        use legaia_engine_scene::mesh_memo::ContentKey;
+        let toc: Vec<u8> = self
+            .index
+            .entries()
+            .iter()
+            .flat_map(|e| [e.byte_offset, e.size_bytes])
+            .flat_map(u64::to_le_bytes)
+            .collect();
+        let names: String = self.lists.scenes.iter().map(|s| s.name.as_str()).collect();
+        ContentKey::of(&[&toc, names.as_bytes()]).to_hex()
+    }
+
     /// The base scene's own field map and floor ladder, for a map preview
     /// that keeps the base geometry or borrows its floor heights.
     pub fn base_field(&self, name: &str) -> Option<BaseField> {
@@ -413,6 +456,40 @@ impl DiscCatalog {
             scene.field_floor_height_lut(&self.index).ok().flatten(),
         ))
     }
+}
+
+/// The wire form of [`DiscCatalog::scene_meshes`], little-endian: `"LXMS"`,
+/// the mesh count, the VRAM's byte length; per mesh its vertex count, index
+/// count and flat-colour byte count; then the VRAM, and per mesh its positions
+/// (`f32` x 3), UVs (`u8` x 2), CBA / TSB words (`u16` x 2), indices (`u32`)
+/// and flat colours (`u8` x 4), each section padded to four bytes.
+pub fn pack_scene_meshes(vram: &[u8], meshes: &[(legaia_tmd::mesh::VramMesh, Vec<u8>)]) -> Vec<u8> {
+    fn pad(out: &mut Vec<u8>) {
+        while !out.len().is_multiple_of(4) {
+            out.push(0);
+        }
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(b"LXMS");
+    out.extend_from_slice(&(meshes.len() as u32).to_le_bytes());
+    out.extend_from_slice(&(vram.len() as u32).to_le_bytes());
+    for (m, flat) in meshes {
+        out.extend_from_slice(&(m.positions.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(m.indices.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(flat.len() as u32).to_le_bytes());
+    }
+    out.extend_from_slice(vram);
+    pad(&mut out);
+    for (m, flat) in meshes {
+        out.extend(m.positions.iter().flatten().flat_map(|v| v.to_le_bytes()));
+        out.extend(m.uvs.iter().flatten());
+        pad(&mut out);
+        out.extend(m.cba_tsb.iter().flatten().flat_map(|v| v.to_le_bytes()));
+        out.extend(m.indices.iter().flat_map(|v| v.to_le_bytes()));
+        out.extend_from_slice(flat);
+        pad(&mut out);
+    }
+    out
 }
 
 /// A scene's NPC placements, for the NPC model picker.

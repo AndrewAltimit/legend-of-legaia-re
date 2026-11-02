@@ -4558,6 +4558,7 @@
     "catalog",
     "npc_posture",
     "session",
+    "starter",
     "wasm",
     "xref"
    ],

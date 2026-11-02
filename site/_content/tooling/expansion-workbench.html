@@ -315,6 +315,22 @@
   .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
 
   /* Tile painter */
+  /* The object palette (expansion-workbench-gizmos.js): category tabs and a
+     row of pictures of the objects, each drawn from the visitor's disc. */
+  .xw-pal { display: flex; flex-direction: column; gap: 0.25rem; min-height: 0; }
+  .xw-pal-side { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+  .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 0 0 auto; width: 11rem; padding: 0.1rem 0.35rem; font-size: 0.8em; }
+  .xw-pal-tabs { flex: 1 1 auto; min-width: 0; display: flex; gap: 0.2rem; overflow-x: auto; scrollbar-width: none; }
+  .xw-pal-tabs .wb-mini { flex: none; white-space: nowrap; font-size: 0.8em; }
+  .xw-pal-items { display: flex; gap: 0.3rem; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.2rem; scrollbar-width: thin; align-items: flex-start; min-height: 6.6rem; }
+  .xw-pal-msg { padding: 0.5rem 0.2rem; color: var(--text-muted); }
+  .xw-tile { flex: 0 0 auto; width: 5.2rem; display: grid; justify-items: center; gap: 0.15rem; padding: 0.2rem; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-raised); color: inherit; cursor: pointer; font: inherit; font-size: 0.74rem; line-height: 1.15; }
+  .xw-tile:hover, .xw-tile:focus-visible { border-color: var(--accent); }
+  .xw-tile.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .xw-tile.is-blank { display: none; }
+  .xw-tile-img { display: block; width: 4.8rem; height: 4.8rem; border-radius: 5px; background: var(--bg-code); opacity: 0.25; }
+  .xw-tile-img.is-ready { opacity: 1; }
+  .xw-tile-name { width: 100%; height: 2.3em; overflow: hidden; text-align: center; overflow-wrap: anywhere; }
   .xw-painter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); gap: 0.6rem; }
   .xw-tools { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; margin-bottom: 0.3rem; }
   .xw-tools .xw-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
@@ -436,6 +452,9 @@
   body.xw-view-split .xw-work .xw-edpane > .xw-catalog { grid-column: 1; grid-row: 3; }
   body.xw-view-split .xw-work .xw-edpane > .xw-panel { grid-row: 4; }
   body.xw-view-split .xw-work .xw-edpane > .xw-3d:not([hidden]) { grid-row: 3 / span 2; }
+    .xw-pal-side { flex-wrap: wrap; }
+    .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 1 1 8rem; width: auto; min-width: 0; }
+    .xw-pal-tabs { flex: 1 1 100%; order: 2; }
   body.xw-view-split .xw-work .xw-edpane > .xw-split-handle { grid-row: 3 / span 2; }
   /* The 3D view on the Build area leaves room for the pack bar, the map
      strip and the mode toolbar above it in one screen. */
@@ -476,6 +495,11 @@
   @container (max-width: 46rem) {
     .xw-painter { grid-template-columns: minmax(0, 1fr); }
   }
+<script src="../js/webgl-shaders.js"></script>
+<script src="../js/webgl-math.js"></script>
+<script src="../js/webgl-tmd.js"></script>
+<script src="../js/webgl-tmd-frame-state.js"></script>
+<script src="../js/webgl-tmd-assembled-scene.js"></script>
 
   /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
      or tap (tap toggles; Escape and tapping elsewhere close). */

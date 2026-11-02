@@ -19,5 +19,6 @@
 pub mod catalog;
 pub mod npc_posture;
 pub mod session;
+pub mod starter;
 pub mod wasm;
 pub mod xref;
