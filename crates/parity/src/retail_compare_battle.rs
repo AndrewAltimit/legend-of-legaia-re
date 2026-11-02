@@ -388,6 +388,9 @@ pub struct RetailBattle {
     /// The active seat's committed action category `+0x1DE` (`1` item, `2`
     /// magic, `3` attack, `4` spirit, `5` run).
     pub queued_category: u8,
+    /// The active seat's first shot byte `+0x1E1`, the case the magic band's
+    /// `0x2B` calls `FUN_801DC0A0` on.
+    pub queued_shot: u8,
     /// The summon band's live flash, when one is up ([`RetailFade`]).
     pub summon_fade: Option<RetailFade>,
     /// `ctx[+0x279]` - the resident summon module's phase byte.

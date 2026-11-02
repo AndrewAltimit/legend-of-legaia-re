@@ -423,6 +423,10 @@ pub struct ScreenshotConfig {
     /// the gate's frame shows a different shot than the display did
     /// (`RetailBattle::retake_on_shot_only` in `legaia-parity`).
     pub retake_shot_only: bool,
+    /// `LEGAIA_CAPTURE_RETAKE_YAW=<yaw>`: on a shot retake, the yaw the frame
+    /// before a turning shot stood on (`RetailBattle::retake_turning_yaw` in
+    /// `legaia-parity`).
+    pub retake_yaw: Option<f32>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
     /// pass before the band's first arm spawned its parts, and it stands on
@@ -1084,6 +1088,9 @@ impl ScreenshotConfig {
                 .unwrap_or(0),
             retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
                 .is_ok_and(|v| v.trim() == "1"),
+            retake_yaw: std::env::var("LEGAIA_CAPTURE_RETAKE_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
             retake_across_entry: std::env::var("LEGAIA_CAPTURE_RETAKE_ENTRY")
                 .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),

@@ -1839,3 +1839,39 @@ fn a_wrapped_damage_ring_reads_its_newest_eight_pushes() {
     assert_eq!(seq[2], (3, 102));
     assert_eq!(&seq[8..], &[(3, 100), (3, 101)]);
 }
+
+/// A monster's turning case `0xE` shot: three step-`3` passes past the commit
+/// read accumulator `48`, two of them on the shot, so its yaw walks back
+/// `2 * 3 * 4` onto the case-6 yaw (`battle_tower_guardian_windhash_mid_cast`
+/// `1321` to `1297`). Two step-`4` passes read `32`, one on the shot
+/// (`battle_korb2_aluru_cannon_mid_cast` `3841` to `3825`).
+#[test]
+fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 4;
+    b.action_state = 0x2B;
+    b.queued_category = 2;
+    b.queued_shot = 0x0E;
+    b.span_gate = SpanGate::Age { accum: 48 };
+    b.step_run = (3, 3);
+    b.cam_tween.0.yaw = 1321.0;
+    assert_eq!(b.retake_turning_yaw(), Some(1297));
+    b.span_gate = SpanGate::Age { accum: 32 };
+    b.step_run = (4, 3);
+    b.cam_tween.0.yaw = 3841.0;
+    assert_eq!(b.retake_turning_yaw(), Some(3825));
+    b.queued_shot = 0x07;
+    assert_eq!(b.retake_turning_yaw(), None, "not a turning shot");
+}

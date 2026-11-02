@@ -931,6 +931,9 @@ pub(super) fn battle_image(
                     battle.drive_display_lag().to_string(),
                 ));
                 env.push(("LEGAIA_CAPTURE_RETAKE_SHOT", "1".to_string()));
+                if let Some(yaw) = battle.retake_turning_yaw() {
+                    env.push(("LEGAIA_CAPTURE_RETAKE_YAW", yaw.to_string()));
+                }
             } else {
                 env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
             }

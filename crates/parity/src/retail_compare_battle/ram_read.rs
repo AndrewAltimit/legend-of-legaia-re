@@ -810,6 +810,7 @@ impl RetailBattle {
             queued_action: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF)),
             target_code: active.map_or(0, |p| seed_target_code(ram, ctx, p)),
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
+            queued_shot: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1E1)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
             display_phase_lag: displayed_lag_vsyncs(ram),

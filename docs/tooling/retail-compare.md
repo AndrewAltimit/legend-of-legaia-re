@@ -3624,6 +3624,14 @@ history of the replay's own earlier rounds. A shot still walking (the group
 breaths' six-frame case 9) leaves retail's table in the RAM, so the retake
 stands on the pose walked back along it (`BattleCamera::stand_on_pose`).
 
+A turning case `0xE` shot leaves the framing it replaced in its own yaw: the
+case aims the live yaw `step * 4` on every pass (`0x801DCB18`), and the
+accumulator counts its passes, so the RAM's yaw walks back onto the case-6 yaw
+(`RetailBattle::retake_turning_yaw`, `LEGAIA_CAPTURE_RETAKE_YAW`). Retail's own
+recording of Aluru Cannon reads `629` on the pass before the shot and `645` on
+its first. On a step-`4` capture the display is one pass older again, a case-6
+step off that yaw.
+
 A monster's capture-band gate within the lag of the band's entry retakes the
 same way (`RetailBattle::retake_across_band_entry`,
 `LEGAIA_CAPTURE_RETAKE_ENTRY`): its displayed frame is the pass before the

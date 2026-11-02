@@ -453,6 +453,15 @@ impl PlayWindowApp {
             {
                 cam.stand_on_pose(live);
             }
+            // A turning shot's retake: the yaw it took over.
+            if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.retake_yaw)
+                && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                let mut pose = cam.framing_pose();
+                pose.yaw = yaw;
+                cam.stand_on_pose(pose);
+            }
             let world = &mut self.session.host.world;
             // The near-camera ghost bits are derived from the pose, and the
             // tick computed them on the unaligned one. Re-derive them only

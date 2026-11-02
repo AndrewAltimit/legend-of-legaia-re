@@ -189,6 +189,26 @@ impl RetailBattle {
                 .contains(&self.action_state)
     }
 
+    /// The yaw the frame before a turning case `0xE` shot stood on. Case `0xE`
+    /// aims the live yaw `step * 4` on from wherever it stands, every pass
+    /// (`0x801DCB18`), and its accumulator counts the passes it has run, so
+    /// the RAM's yaw walks back onto the case-6 yaw it took over: the one
+    /// retail's frame holds where the replay's own case 6 carries the yaw
+    /// history of its own rounds. A step-`4` capture displays one pass
+    /// earlier still, a case-6 step off this yaw.
+    pub fn retake_turning_yaw(&self) -> Option<u16> {
+        if !self.retake_on_shot_only() || self.action_state != 0x2B || self.queued_shot != 0x0E {
+            return None;
+        }
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (step, _) = self.step_run;
+        let step = u16::from(step.max(1));
+        let (live, _) = self.cam_tween;
+        Some((live.yaw as i32 - i32::from(accum / (8 * step) * step * 4)).rem_euclid(4096) as u16)
+    }
+
     /// A monster's capture-band gate ([`SpanGate::CaptureFade`]): captured
     /// within the display lag of the band's entry, its displayed frame is a
     /// pass before the band's first arm, whose parts retail had not spawned
