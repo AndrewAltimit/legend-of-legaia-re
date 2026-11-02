@@ -109,6 +109,13 @@ body.xw-studio .wb-toolbar-pack .wb-actions { flex-wrap: nowrap; flex: none; pos
 body.xw-studio .xw-more-btn { display: inline-block; align-self: stretch; }
 body.xw-studio .xw-more-items { display: none; }
 body.xw-studio .xw-more-items.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; position: absolute; z-index: 30; right: 0; top: calc(100% + 0.3rem); min-width: 12rem; padding: 0.5rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
+/* Fullscreen: over everything of the site's, with or without the Fullscreen
+   API (the class does the layout). */
+body.xw-fs #xw-main { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; padding: 0.2rem 0.3rem; background: var(--bg, #0b0d12); }
+body.xw-fs #xw-main:fullscreen { background: var(--bg, #0b0d12); }
+body.xw-fs .xw-work { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+body.xw-fs.xw-studio .xw-edpane { height: 100%; min-height: 0; }
+body.xw-fs .xw-issues { position: static; max-height: 100%; }
 body.xw-split-drag, body.xw-split-drag * { cursor: col-resize !important; user-select: none; }
 body.xw-split-drag .xw-3d-frame { pointer-events: none; }
 .xw-split-handle { display: none; }
@@ -119,13 +126,6 @@ body.xw-studio.xw-view-split .xw-edpane > .xw-split-handle { display: block; gri
 .xw-3d-views .wb-mini { border-radius: 0; margin: 0; }
 .xw-3d-views .wb-mini:first-child { border-radius: 4px 0 0 4px; }
 .xw-3d-views .wb-mini:last-child { border-radius: 0 4px 4px 0; }
-`;
-
-function installViewCss() {
-  if (document.getElementById('xw-view-css')) return;
-  const st = document.createElement('style');
-  st.id = 'xw-view-css';
-  st.textContent = VIEW_CSS;
 /* The view options fold: a popover over the picture. */
 .xw-3d-more { position: relative; display: inline-block; }
 .xw-3d-more > summary { list-style: none; cursor: pointer; }
@@ -165,6 +165,13 @@ function installViewCss() {
   .xw-selpanel { width: 11.5rem; }
   .xw-firsthint { bottom: 0.4rem; }
 }
+`;
+
+function installViewCss() {
+  if (document.getElementById('xw-view-css')) return;
+  const st = document.createElement('style');
+  st.id = 'xw-view-css';
+  st.textContent = VIEW_CSS;
   document.head.append(st);
 }
 
@@ -426,16 +433,16 @@ export function createPreview3d(env) {
     lab.append(cb, document.createTextNode(label));
     layerBox.append(lab);
   }
+  toggleBtn.classList.add('xw-3d-toggle');
   const title = document.createElement('strong');
+  title.className = 'xw-3d-title';
   title.textContent = '3D preview';
   const viewBox = document.createElement('span');
   viewBox.className = 'xw-3d-views';
   viewBox.setAttribute('role', 'group');
   viewBox.setAttribute('aria-label', 'Map view');
   const viewBtns = {};
-  toggleBtn.classList.add('xw-3d-toggle');
   for (const [k, label, tip] of VIEWS) {
-  title.className = 'xw-3d-title';
     const b = btn(label, tip, () => setView(k));
     b.dataset.view = k;
     viewBtns[k] = b;
@@ -503,6 +510,10 @@ export function createPreview3d(env) {
   el.append(status);
   body.before(editSlot);
   layerBox.hidden = true;
+  /* Over the picture: the editor's panels (setFloat). */
+  const float = document.createElement('div');
+  float.className = 'xw-float';
+  body.append(float);
 
   /* The status line: the last build's or action's message, then the
    * frame's cost (refreshed each second without losing the message). */
@@ -510,10 +521,6 @@ export function createPreview3d(env) {
   let msgBad = false;
   function setStatus(text, bad) {
     msg = text || '';
-  /* Over the picture: the editor's panels (setFloat). */
-  const float = document.createElement('div');
-  float.className = 'xw-float';
-  body.append(float);
     msgBad = !!bad;
     paintStatus();
   }
@@ -562,6 +569,7 @@ export function createPreview3d(env) {
   function applyView() {
     const on = P.visible && P.mapsTab !== false;
     applySplit();
+    document.body.classList.toggle('xw-studio', on && P.open && P.view !== '2d');
     document.body.classList.toggle('xw-view-split', on && P.view === 'split');
     document.body.classList.toggle('xw-view-3d', on && P.view === '3d');
     for (const [k, b] of Object.entries(viewBtns)) b.classList.toggle('is-on', k === P.view);
@@ -569,7 +577,6 @@ export function createPreview3d(env) {
   }
 
   function setOpen(on) {
-    document.body.classList.toggle('xw-studio', on && P.open && P.view !== '2d');
     P.open = on;
     toggleBtn.textContent = on ? 'Close 3D preview' : 'Open 3D preview';
     body.hidden = !on;
@@ -586,6 +593,7 @@ export function createPreview3d(env) {
       P.dirty = true;
       body.append(f);
       setStatus('Starting the engine and reading your disc ...');
+      applyView();
     } else if (!on && P.frame) {
       // Closing frees the frame's engine and its copy of the disc.
       P.frame.remove();
@@ -593,10 +601,10 @@ export function createPreview3d(env) {
       P.ready = false;
       P.sent = null;
       setStatus('');
-      applyView();
       // No picture to lay out beside the painter.
       if (P.view !== '2d') { P.view = '2d'; applyView(); }
     }
+    applyView();
     setMode(P.mode);
   }
 
@@ -604,7 +612,6 @@ export function createPreview3d(env) {
 
   /* The pack's stripped JSON (strippedJson) as it is now: made once an
    * edit (the pack serialised is the cost; a decision and its flush ask
-    applyView();
    * for the same text). */
   function stripped() {
     if (P.stripAt && P.stripAt.edits === P.edits && P.stripAt.map === P.map && P.stripAt.pack === pack()) return P.stripAt.json;
@@ -997,6 +1004,10 @@ export function createPreview3d(env) {
       P.edit = Object.assign(P.edit || {}, msg);
       if (P.ready) post(Object.assign({ type: 'xw-edit' }, msg, P.editOff ? { mode: 'view' } : {}));
     },
+    /* The real model of the piece being placed, for the frame's ghost. */
+    ghost(msg) {
+      if (P.ready) post(Object.assign({ type: 'xw-ghost' }, msg));
+    },
     /* Off the Maps tab the 3D editor stands down: the frame drops to the
      * view mode and the edit bar hides; back on the tab both come back as
      * they were. */
@@ -1004,10 +1015,6 @@ export function createPreview3d(env) {
       off = !!off;
       // The view switch belongs to the Maps tab as the editor does.
       P.mapsTab = !off;
-    /* The real model of the piece being placed, for the frame's ghost. */
-    ghost(msg) {
-      if (P.ready) post(Object.assign({ type: 'xw-ghost' }, msg));
-    },
       applyView();
       if (!off && P.visible && P.view !== '2d' && !P.open) setOpen(true);
       if (P.editOff === off) return;
@@ -1022,13 +1029,6 @@ export function createPreview3d(env) {
       if (bar && bar.parentNode !== editSlot) { editSlot.innerHTML = ''; editSlot.append(bar); }
       editSlot.hidden = !bar || !P.open || !!P.editOff;
     },
-    isOpen: () => P.open,
-    /* A line on the preview's status (the editor's notes). */
-    note: (text, bad) => setStatus(text, bad),
-    /* Test play on / off (the party on the map, the game's keys), and
-     * whether it is running. */
-    testPlay: (on) => testPlay(on === undefined ? P.mode !== 'player' : !!on),
-    testing: () => P.mode === 'player',
     /* The panels over the picture (the editor's). */
     setFloat(node) {
       if (node.parentNode !== float) { float.innerHTML = ''; float.append(node); }
@@ -1039,6 +1039,13 @@ export function createPreview3d(env) {
     setDrawer: (on) => setView(on ? 'split' : '3d'),
     drawerOpen: () => P.view === 'split',
     view: () => P.view,
+    isOpen: () => P.open,
+    /* A line on the preview's status (the editor's notes). */
+    note: (text, bad) => setStatus(text, bad),
+    /* Test play on / off (the party on the map, the game's keys), and
+     * whether it is running. */
+    testPlay: (on) => testPlay(on === undefined ? P.mode !== 'player' : !!on),
+    testing: () => P.mode === 'player',
     /* The editor camera straight down (`on`) or tilted back. */
     topDown(on) {
       P.top = !!on;

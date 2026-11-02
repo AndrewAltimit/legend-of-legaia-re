@@ -417,6 +417,7 @@ void main() {
       if (ctrl) return;
       if (k === 'Delete' || k === 'Backspace') { post({ type: 'xw-key', key: 'Delete' }); return; }
       if (k === '[' || k === ']') { post({ type: 'xw-key', key: k }); return; }
+      if (k === 'F11') { e.preventDefault(); post({ type: 'xw-key', key: 'fullscreen' }); return; }
       if (k === 'Escape') {
         if (E.mode === 'place') post({ type: 'xw-key', key: 'cancel-place' });
         else post({ type: 'xw-key', key: 'deselect' });

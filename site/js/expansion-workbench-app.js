@@ -255,6 +255,11 @@ const ctx = {
     }
   },
   // The object palette's pictures and names (expansion-workbench-palette.js).
+  starterMap: (name) => starterMap(name),
+  pageKey: (k) => {
+    if (k === 'fullscreen') setFullscreen(!S.fs);
+    else if (k === 'deselect' && S.fs) setFullscreen(false);
+  },
   thumbs: () => S.thumbs || (S.thumbs = createThumbs({ ask: askSceneMeshes, discKey: () => (S.wb && S.wb.disc_key ? S.wb.disc_key() : '') })),
   meshCatalog: () => {
     if (!S.meshCat && S.wb && S.wb.mesh_catalog) { try { S.meshCat = JSON.parse(S.wb.mesh_catalog()); } catch (e) { S.meshCat = []; } }
@@ -361,11 +366,60 @@ function renderBuild() {
     },
     errorsOf: (id) => S.issues.filter((i) => i.severity === 'error' && i.path === `maps/${id}.toml`).length,
     catalog: cat,
+    tools: buildTools,
     env: () => ({
       map: openMapId(), preview: S.preview, pack: S.pack, rerender, jump: jumpTo, playHere, playPack: playInBrowser,
     }),
   });
 }
+
+/* The Build head's right end: the drawer with the forms. */
+function buildTools() {
+  const pv = S.preview;
+  const open = pv && pv.drawerOpen && pv.drawerOpen();
+  return h('div', { class: 'xw-build-tools' },
+    h('button', {
+      type: 'button', class: 'wb-mini' + (open ? ' is-on' : ''), 'aria-pressed': String(!!open),
+      title: 'The tile painter and every form for this map, in a drawer beside the 3D view',
+      onclick: () => { pv.setDrawer(!pv.drawerOpen()); rerender(); },
+    }, open ? 'Hide map settings' : 'Map settings'),
+    h('button', {
+      type: 'button', class: 'wb-mini' + (S.fs ? ' is-on' : ''), 'aria-pressed': String(!!S.fs),
+      title: 'Give the whole screen to the map builder (F11). Escape puts down what you are placing, then the selection, then leaves.',
+      onclick: () => setFullscreen(!S.fs),
+    }, S.fs ? 'Exit fullscreen' : 'Fullscreen'));
+}
+
+/* Fullscreen: the workbench's own bar and the editor take the whole screen.
+ * The class does the layout, so a browser without the Fullscreen API (or one
+ * that refuses it) still gets the whole window. Where the Keyboard Lock API
+ * holds Escape, Escape stays the editor's: placing, then the selection, then
+ * leaving. Elsewhere the browser takes Escape and leaves at once, and placing
+ * stops with it. */
+function setFullscreen(on) {
+  S.fs = !!on;
+  document.body.classList.toggle('xw-fs', S.fs);
+  const root = $('xw-main');
+  if (S.fs) {
+    if (root.requestFullscreen && !document.fullscreenElement) {
+      root.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+        if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+      }).catch(() => { /* the class fills the window */ });
+    }
+  } else {
+    if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+  renderBuild();
+}
+
+document.addEventListener('fullscreenchange', () => {
+  // The browser left fullscreen by itself (Escape, F11, a tab switch).
+  if (!document.fullscreenElement && S.fs) {
+    if (window.xwBuild) window.xwBuild.disarm();
+    setFullscreen(false);
+  }
+});
 
 // Open map `id` on the Build area, without a jump's scroll and flash.
 function openMap(id) {
@@ -1552,8 +1606,26 @@ function jumpIssue(dir) {
 }
 
 // The keyboard list, a panel over the page (`?`, the pack bar's Keys).
+function onShortcutFs(ev) {
+  if (ev.key === 'F11' && S.pack && S.tab === 'maps') {
+    ev.preventDefault();
+    setFullscreen(!S.fs);
+    return true;
+  }
+  // Escape with nothing left to put down leaves fullscreen.
+  if (ev.key === 'Escape' && S.fs && !ev.defaultPrevented && window.xwBuild) {
+    const st = window.xwBuild.state();
+    if (st.mode !== 'place' && !st.sel.length && !document.querySelector('#xw-keyhelp:not([hidden])')) {
+      setFullscreen(false);
+      return true;
+    }
+  }
+  return false;
+}
+
 function toggleKeys(on) {
   const box = $('xw-keyhelp');
+  if (onShortcutFs(ev)) return;
   const show = on == null ? box.hidden : on;
   box.hidden = !show;
   if (show) box.focus({ preventScroll: true });
