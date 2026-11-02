@@ -296,7 +296,7 @@ impl World {
             return true;
         }
         self.props.colliders.iter().any(|c| {
-            if !c.solid || self.collider_arrival_exempt(c) || self.prop_collider_exempt(c) {
+            if !c.solid {
                 return false;
             }
             let ((cx, cz), half) = if c.moving_box {
@@ -304,7 +304,12 @@ impl World {
             } else {
                 (c.center, FIELD_PROP_BOX_HALF)
             };
-            (px - cx).abs() < half && (pz - cz).abs() < half
+            // The exemptions are lookups; the box test is two compares, so
+            // it goes first (both are pure: the order changes no result).
+            (px - cx).abs() < half
+                && (pz - cz).abs() < half
+                && !self.collider_arrival_exempt(c)
+                && !self.prop_collider_exempt(c)
         })
     }
 
@@ -414,7 +419,7 @@ impl World {
             let px = x.saturating_add(dx) as i32;
             let pz = z.saturating_sub(dz) as i32;
             for c in &self.props.colliders {
-                if !c.solid || self.collider_arrival_exempt(c) || self.prop_collider_exempt(c) {
+                if !c.solid {
                     continue;
                 }
                 let ((cx, cz), half) = if c.moving_box {
@@ -422,7 +427,13 @@ impl World {
                 } else {
                     (c.center, FIELD_PROP_BOX_HALF)
                 };
-                if (px - cx).abs() < half && (pz - cz).abs() < half {
+                // The box test before the exemption lookups: both are pure,
+                // so testing the cheap one first changes no result.
+                if (px - cx).abs() < half
+                    && (pz - cz).abs() < half
+                    && !self.collider_arrival_exempt(c)
+                    && !self.prop_collider_exempt(c)
+                {
                     out.blocked = true;
                     if !c.interact && out.touch.is_none() {
                         out.touch = c.anchor;
