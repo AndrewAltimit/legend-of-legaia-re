@@ -489,6 +489,11 @@ impl Font {
         self.sprite_cells.get(&id).copied()
     }
 
+    /// Whether the kind-4 list's page triangles have their own 8x8 cells.
+    pub fn has_page_arrow_cells(&self) -> bool {
+        self.sprite_cells.contains_key(&sprite_cell_ids::PAGE_NEXT)
+    }
+
     /// The atlas cell of escape operand `index`, when the sprites are
     /// attached ([`Font::with_escape_icons`]).
     pub fn escape_cell(&self, index: u8) -> Option<EscapeCell> {

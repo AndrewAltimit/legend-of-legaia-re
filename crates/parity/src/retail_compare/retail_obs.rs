@@ -185,6 +185,9 @@ pub struct RetailObs {
     /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
     /// the image child as `LEGAIA_SEAT_MORPHS`.
     pub morphs: Vec<MorphSeed>,
+    /// The `4C D8` morph-weight actors' envelopes ([`retail_morph_weights`]),
+    /// handed to the image child as `LEGAIA_SEAT_MORPH_WEIGHTS`.
+    pub morph_weights: Vec<legaia_engine_capture::field_seeds::MorphWeightSeed>,
     /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
     /// child as `LEGAIA_SEAT_WALKERS`.
     pub walkers: Vec<WalkerSeed>,
@@ -400,6 +403,11 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            morph_weights: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_morph_weights(ram)
+            } else {
+                Vec::new()
+            },
             object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_models(ram)
             } else {
@@ -594,6 +602,12 @@ impl RetailObs {
         }
         if !self.morphs.is_empty() {
             env.push(("LEGAIA_SEAT_MORPHS", morphs_env(&self.morphs)));
+        }
+        if !self.morph_weights.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_MORPH_WEIGHTS",
+                legaia_engine_capture::field_seeds::morph_weights_env(&self.morph_weights),
+            ));
         }
         if !self.walkers.is_empty() {
             env.push(("LEGAIA_SEAT_WALKERS", walkers_env(&self.walkers)));

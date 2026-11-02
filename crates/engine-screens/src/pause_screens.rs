@@ -668,6 +668,7 @@ pub fn magic_draws(
             mp_cost: i.mp_cost,
         });
         let view = ui::PauseMagicView {
+            arrows_blink: list_arrows_blink(world),
             casters: &casters,
             rows: &rows,
             page: model.page,
@@ -838,6 +839,7 @@ pub fn items_draws(
         detail: None,
     });
     let view = ui::PauseItemsView {
+        arrows_blink: list_arrows_blink(world),
         rows: &rows,
         page: model.page,
         pages: model.pages,
@@ -985,6 +987,7 @@ pub fn equip_draws(
         })
         .unwrap_or_default();
     let mut input = equip_compose_input(&model, !ctx.chrome_present());
+    input.arrows_blink = list_arrows_blink(world);
     if let (Some(info), Some(d)) = (
         input.info.as_mut(),
         model.info.as_ref().and_then(|i| i.detail.as_ref()),
@@ -995,6 +998,19 @@ pub fn equip_draws(
         });
     }
     equip_screen_compose(ctx, &input)
+}
+
+/// The kind-4 kernel's blink gate on the frame word retail reads
+/// (`0x80084570 & 0x18`), the play clock's vsync counter.
+fn list_arrows_blink(world: Option<&World>) -> bool {
+    world.is_none_or(|w| {
+        let vsyncs = w
+            .clock
+            .play_time_seconds
+            .wrapping_mul(60)
+            .wrapping_add(u32::from(w.clock.play_tick_phase));
+        ui::shop_screen::page_arrows_blink_on(vsyncs)
+    })
 }
 
 /// Borrow the shared Equip screen model into the shared `engine-ui` compose
@@ -1022,6 +1038,7 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,
         text_cursor,
+        arrows_blink: true,
         info: m.info.as_ref().map(|i| ui::pause_menu::EquipInfoInput {
             name: i.name.as_str(),
             count: i.count,

@@ -619,6 +619,39 @@ pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
         .collect()
 }
 
+/// Every `4C D8` morph-weight actor's envelope (`+0x0C == 0x8002174C`,
+/// [`legaia_engine_field::morph_weight_apply::MorphWeightEnvelope`]), taken back
+/// by the display lag the way [`retail_morphs`] takes its lanes: the frame on
+/// screen was built before the state's tick stepped the ramp.
+pub fn retail_morph_weights(
+    ram: &[u8],
+) -> Vec<legaia_engine_capture::field_seeds::MorphWeightSeed> {
+    let step = i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    let lag = crate::retail_compare_battle::DISPLAY_LAG_PASSES as i32;
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8002_174C)
+        .map(|n| {
+            let up_rate = game_anchors::i16_at(ram, n + 0x3C);
+            let down_rate = game_anchors::i16_at(ram, n + 0x3E);
+            let weight = game_anchors::i16_at(ram, n + 0x6E);
+            let descending = game_anchors::u16_at(ram, n + 0x40) != 0;
+            let rate = i32::from(if descending { down_rate } else { up_rate });
+            let back = if descending {
+                i32::from(weight) + rate * step * lag
+            } else {
+                i32::from(weight) - rate * step * lag
+            };
+            legaia_engine_capture::field_seeds::MorphWeightSeed {
+                up_rate,
+                down_rate,
+                weight: back.clamp(0, 0x1000) as i16,
+                descending,
+            }
+        })
+        .collect()
+}
+
 /// Take a morph envelope's lane weights back `frames` game frames of
 /// `step` vsyncs each - the displayed frame's weights, not the RAM's.
 ///

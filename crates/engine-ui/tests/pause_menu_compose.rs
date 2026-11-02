@@ -334,6 +334,7 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
         },
     ];
     let view = PauseItemsView {
+        arrows_blink: true,
         rows: &rows,
         page: 1,
         pages: 6,
@@ -429,6 +430,7 @@ fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         ink: None,
     }];
     let view = PauseMagicView {
+        arrows_blink: true,
         casters: &casters,
         rows: &rows,
         page: 1,
@@ -472,6 +474,7 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
             slot_items: &slot_items,
             candidate_names: &candidate_names,
             candidate_icons: &[0x24, 0x24],
+            arrows_blink: true,
             stat_compare: &stat_compare,
             best_changes: &[],
             phase,

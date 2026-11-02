@@ -635,6 +635,18 @@ drives at `+0x6E` - its **rise and fall rates**. `+0x56` (render mode),
 `+0x68` and `+0x6E` (live weight) are zeroed, so a fresh morph actor starts at
 rest.
 
+#### The blend lands on the resident model
+
+`FUN_8002174C`'s only call is the GTE blend `FUN_8005B038`, and it writes through
+the object table of the resident TMD at `+0x48`: the actor sits on list 0 with
+`+0x10` clear and draws nothing itself. What shows the blend is every environment
+instance of that model, since those draws read the same vertices. `jagaroom`'s
+flesh corridor is six of these actors (rates 34 to 68), so the walls heave on
+their own ramps. The port's scene meshes are separate uploads of the same bytes,
+so each morph-weight frame re-uploads the posed mesh over the instances of that
+model (native `redraw_stage`, browser `play_morph_env_slots`), and
+`World::actor_slot_drawn` leaves the actor out.
+
 #### The model operand is a scene-bank index
 
 The `0x4C` arm adds the scene-bank base before the call - `lhu s0,-0x4908(v1)`

@@ -290,6 +290,9 @@ pub struct PauseDetailStat {
 
 /// Plain-data view of the Items screen for [`items_screen_draws_for_with`].
 pub struct PauseItemsView<'a> {
+    /// The list kernel's blink gate this frame
+    /// ([`crate::shop_screen::page_arrows_blink_on`]).
+    pub arrows_blink: bool,
     /// Current page's visible rows (at most
     /// [`PAUSE_LIST_VISIBLE_ROWS`]).
     pub rows: &'a [PauseItemsRow<'a>],
@@ -628,8 +631,8 @@ pub fn items_screen_sprites_for(
     phase: PauseItemsPhase,
     command_cursor: u8,
     list_cursor: u8,
-    page: u16,
-    pages: u16,
+    pages: (u16, u16),
+    arrows: bool,
     cmd_pen: (i32, i32),
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
@@ -661,8 +664,8 @@ pub fn items_screen_sprites_for(
     }
     out.extend(page_arrow_sprites(
         rects,
-        page,
         pages,
+        arrows,
         list_pen,
         stage_origin,
         stage_scale,
@@ -827,6 +830,9 @@ pub struct PauseMagicInfo<'a> {
 
 /// Plain-data view of the Magic screen for [`magic_screen_draws_for_with`].
 pub struct PauseMagicView<'a> {
+    /// The list kernel's blink gate this frame
+    /// ([`crate::shop_screen::page_arrows_blink_on`]).
+    pub arrows_blink: bool,
     pub casters: &'a [PauseMagicCaster<'a>],
     /// Current page's visible spell rows.
     pub rows: &'a [PauseMagicRow<'a>],
@@ -1016,8 +1022,8 @@ pub fn magic_screen_sprites_for(
     phase: PauseMagicPhase,
     caster_cursor: u8,
     list_cursor: u8,
-    page: u16,
-    pages: u16,
+    pages: (u16, u16),
+    arrows: bool,
     caster_pen: (i32, i32),
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
@@ -1064,8 +1070,8 @@ pub fn magic_screen_sprites_for(
     }
     out.extend(page_arrow_sprites(
         rects,
-        page,
         pages,
+        arrows,
         list_pen,
         stage_origin,
         stage_scale,
@@ -1081,29 +1087,28 @@ pub(crate) fn list_hand_pos(list_pen: (i32, i32), row: u8) -> (i32, i32) {
     )
 }
 
-/// Content height of the id-15 / id-18 list windows (descriptor `h`).
-const LIST_CONTENT_H: i32 = 182;
-
-/// Page-turn arrow sprites for a list page: the right arrow at
-/// `(X+0x84, Y + (182-16)/2)` while more pages follow (capture-pinned);
-/// the left arrow mirrored at `X-0x14` on later pages (inferred - not
-/// yet captured).
+/// The page triangles' fallback when the font carries no sprite cells: the
+/// 16x16 atlas pager cells with the triangle centred, so 4 px left of / above
+/// the kernel's 8x8 spot ([`list_page_arrow_spot`]). Drawn only through
+/// `gate` (the list has the pad and the blink is on).
 pub(crate) fn page_arrow_sprites(
     rects: &SaveMenuAtlasRects,
-    page: u16,
-    pages: u16,
+    (page, pages): (u16, u16),
+    gate: bool,
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
     let mut out = Vec::new();
-    let (lx, ly) = list_pen;
-    let arrow_y = ly + (LIST_CONTENT_H - 16) / 2;
+    if !gate {
+        return out;
+    }
+    let (right, left) = list_page_arrow_spots(list_pen);
     if page < pages {
         push_stage_sprite(
             &mut out,
             rects.pager_right,
-            (lx + 0x84, arrow_y),
+            (right.0 - 4, right.1 - 4),
             stage_origin,
             stage_scale,
         );
@@ -1112,10 +1117,54 @@ pub(crate) fn page_arrow_sprites(
         push_stage_sprite(
             &mut out,
             rects.pager_left,
-            (lx - 0x14, arrow_y),
+            (left.0 - 4, left.1 - 4),
             stage_origin,
             stage_scale,
         );
+    }
+    out
+}
+
+/// The kernel's two 8x8 page-triangle spots, right then left: ICO `0x28` at
+/// `(WX + w + 4, WY + h/2 - 3)` and ICO `0x27` at `(WX - 0xC, ..)`, on the live
+/// list rect (`0x80032FE4..0x8003304C`). Off the pen that is `(X + 0x84, Y + 0x53)`
+/// and `(X - 0xC, Y + 0x53)`.
+pub(crate) fn list_page_arrow_spots(list_pen: (i32, i32)) -> ((i32, i32), (i32, i32)) {
+    let (lx, ly) = list_pen;
+    ((lx + 0x84, ly + 0x53), (lx - 0x0c, ly + 0x53))
+}
+
+/// The page triangles as retail draws them, the font's 8x8 ICO `0x27` / `0x28`
+/// cells, when it carries them; empty otherwise, and [`page_arrow_sprites`]
+/// stands in. `gate` is the kernel's: `beq s4,zero` (mode 1, the list has the
+/// pad) and the frame word's blink at `0x80032FC0`.
+///
+/// PORT: FUN_80032A44 (page triangles, `0x80032FB8..0x8003304C`)
+pub(crate) fn list_page_arrow_draws(
+    font: &legaia_font::Font,
+    (page, pages): (u16, u16),
+    gate: bool,
+    list_pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    if !gate {
+        return out;
+    }
+    let (right, left) = list_page_arrow_spots(list_pen);
+    let mut tri = |id: u16, at: (i32, i32)| {
+        if let Some(c) = font.sprite_cell(id) {
+            out.push(TextDraw {
+                dst: (at.0, at.1, c.w, c.h),
+                src: (c.atlas_x, c.atlas_y, c.w, c.h),
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+        }
+    };
+    if page < pages {
+        tri(legaia_font::sprite_cell_ids::PAGE_NEXT, right);
+    }
+    if page > 1 {
+        tri(legaia_font::sprite_cell_ids::PAGE_PREV, left);
     }
     out
 }
@@ -1208,6 +1257,7 @@ mod pause_list_tests {
 
     fn items_view<'a>(rows: &'a [PauseItemsRow<'a>], phase: PauseItemsPhase) -> PauseItemsView<'a> {
         PauseItemsView {
+            arrows_blink: true,
             rows,
             page: 1,
             pages: 6,
@@ -1412,6 +1462,7 @@ mod pause_list_tests {
         phase: PauseMagicPhase,
     ) -> PauseMagicView<'a> {
         PauseMagicView {
+            arrows_blink: true,
             casters,
             rows,
             page: 1,
@@ -1702,8 +1753,8 @@ mod pause_list_tests {
             PauseItemsPhase::Command,
             1,
             0,
-            1,
-            1,
+            (1, 1),
+            true,
             (32, 44),
             (174, 22),
             (0, 0),
@@ -1719,8 +1770,8 @@ mod pause_list_tests {
             PauseItemsPhase::List,
             0,
             2,
-            1,
-            6,
+            (1, 6),
+            true,
             (32, 44),
             (174, 22),
             (0, 0),
@@ -1732,13 +1783,13 @@ mod pause_list_tests {
                 .any(|d| d.dst.0 == 174 - 0x0c && d.dst.1 == 22 + 0x0c + 2 * 0x0e)
         );
         // Page 1 of 6 -> right arrow at the pinned spot, no left arrow.
-        let arrow_y = 22 + (LIST_CONTENT_H - 16) / 2;
+        let arrow_y = 22 + 0x53 - 4;
         assert!(
             items_list
                 .iter()
-                .any(|d| d.dst.0 == 174 + 0x84 && d.dst.1 == arrow_y)
+                .any(|d| d.dst.0 == 174 + 0x84 - 4 && d.dst.1 == arrow_y)
         );
-        assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x14));
+        assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x0c - 4));
         // Single page -> no arrows at the arrow row besides the hand.
         assert!(!items_cmd.iter().any(|d| d.dst.1 == arrow_y));
     }

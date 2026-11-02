@@ -340,6 +340,7 @@ pub fn equip_candidate_sprites_for(
     rects: &SaveMenuAtlasRects,
     icons: &[u8],
     cursor: u16,
+    arrow_fallback: bool,
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
@@ -382,8 +383,11 @@ pub fn equip_candidate_sprites_for(
     );
     out.extend(page_arrow_sprites(
         rects,
-        (top / PAUSE_LIST_VISIBLE_ROWS) as u16 + 1,
-        icons.len().div_ceil(PAUSE_LIST_VISIBLE_ROWS) as u16,
+        (
+            (top / PAUSE_LIST_VISIBLE_ROWS) as u16 + 1,
+            icons.len().div_ceil(PAUSE_LIST_VISIBLE_ROWS) as u16,
+        ),
+        arrow_fallback,
         list_pen,
         stage_origin,
         stage_scale,
@@ -705,7 +709,8 @@ mod tests {
         );
         assert_eq!(on(0).map(|d| d.dst.0).min(), Some(lx + EQUIP_ROW_NAME_X));
         assert_eq!(
-            on(1).map(|d| d.dst.0).min(),
+            // Past the text cursor, which marks the hovered row at the pen.
+            on(1).map(|d| d.dst.0).filter(|&x| x > lx).min(),
             Some(lx + EQUIP_ROW_ICON_NAME_X)
         );
     }

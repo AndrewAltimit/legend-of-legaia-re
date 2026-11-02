@@ -213,11 +213,17 @@ impl World {
     /// dispatcher walks only the allocated list - so drawing them paints every
     /// scene-pack mesh at world `(0, 0, 0)`.
     // REF: FUN_8001E890 (scene TMD registration - no actor allocation)
+    ///
+    /// A `4C D8` morph-weight actor draws nothing either: its handler
+    /// `FUN_8002174C` only re-blends the resident TMD in place (its one call
+    /// is the GTE blend `FUN_8005B038`), and what shows the blend is the
+    /// environment instances of that model.
+    // REF: FUN_8002174C
     // REF: FUN_8001D140 (the render dispatcher's allocated-list walk)
     pub fn actor_slot_drawn(&self, slot: usize) -> bool {
         self.actors
             .get(slot)
-            .is_some_and(|a| a.tmd_binding.is_some() && a.active)
+            .is_some_and(|a| a.tmd_binding.is_some() && a.active && a.morph_weights.is_none())
     }
 
     /// Whether the scene hides actor `slot` outright: the opening prologue
@@ -1219,6 +1225,33 @@ impl World {
                 out
             })
             .collect()
+    }
+
+    /// Capture harness (`LEGAIA_SEAT_MORPH_WEIGHTS`): write a retail state's
+    /// live envelopes over the `4C D8` morph-weight actors. An actor is known by
+    /// its two rates; several sharing a pair take the seeds in slot order. Where
+    /// a ping-pong stands is time since the scene entered, which a seed cannot
+    /// reach by running.
+    pub fn seed_morph_weight_actors(
+        &mut self,
+        seeds: impl IntoIterator<Item = (i16, i16, i16, bool)>,
+    ) {
+        let mut taken = vec![false; self.actors.len()];
+        for (up, down, weight, descending) in seeds {
+            let slot = self.actors.iter().enumerate().position(|(i, a)| {
+                a.active
+                    && !taken[i]
+                    && a.morph_weights
+                        .as_ref()
+                        .is_some_and(|m| m.envelope.up_rate == up && m.envelope.down_rate == down)
+            });
+            let Some(slot) = slot else { continue };
+            taken[slot] = true;
+            if let Some(m) = self.actors[slot].morph_weights.as_mut() {
+                m.envelope.weight = weight;
+                m.envelope.descending = descending;
+            }
+        }
     }
 
     /// Actor slots carrying live morph-weight state, with each one's current

@@ -175,6 +175,49 @@ pub struct MorphSeed {
     pub env: u16,
 }
 
+/// One `4C D8` morph-weight actor's live envelope, the actor being known by its
+/// two rates (`+0x3C` / `+0x3E`): where its ping-pong stands is time since the
+/// scene entered, so a seed writes it on the frame it captures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MorphWeightSeed {
+    pub up_rate: i16,
+    pub down_rate: i16,
+    pub weight: i16,
+    pub descending: bool,
+}
+
+/// `retail_morph_weights` as `LEGAIA_SEAT_MORPH_WEIGHTS`:
+/// `up:down:weight:descending` per actor, `;`-joined.
+pub fn morph_weights_env(m: &[MorphWeightSeed]) -> String {
+    m.iter()
+        .map(|s| {
+            format!(
+                "{}:{}:{}:{}",
+                s.up_rate,
+                s.down_rate,
+                s.weight,
+                u8::from(s.descending)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`morph_weights_env`].
+pub fn morph_weights_from_env(v: &str) -> Vec<MorphWeightSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.split(':');
+            Some(MorphWeightSeed {
+                up_rate: f.next()?.parse().ok()?,
+                down_rate: f.next()?.parse().ok()?,
+                weight: f.next()?.parse().ok()?,
+                descending: f.next()? == "1",
+            })
+        })
+        .collect()
+}
+
 /// `retail_morphs` as `LEGAIA_SEAT_MORPHS`:
 /// `flat:w0/w1/..:done:env` per actor, `;`-joined, numbers in hex.
 pub fn morphs_env(m: &[MorphSeed]) -> String {

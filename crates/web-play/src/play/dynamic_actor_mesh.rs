@@ -42,6 +42,37 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// The env slots whose model a morph-weight actor blends. Retail blends the
+    /// resident TMD in place (`FUN_8002174C`), so what shows the blend is every
+    /// environment instance of that model, and the actor itself draws nothing:
+    /// the page uploads the staged mesh over each of these and skips the actor.
+    ///
+    /// REF: FUN_8002174C
+    pub fn play_morph_env_slots(&self, slot: u32) -> Vec<u32> {
+        let Some(h) = self.scene_host.host() else {
+            return Vec::new();
+        };
+        let Some(raw) = h
+            .world
+            .actors
+            .get(slot as usize)
+            .filter(|a| a.morph_weights.is_some())
+            .and_then(|a| a.tmd_ref.as_ref())
+            .map(|g| &g.raw)
+        else {
+            return Vec::new();
+        };
+        let (Some(f), Some(res)) = (self.field.as_ref(), h.resources.as_ref()) else {
+            return Vec::new();
+        };
+        f.env_tmds
+            .iter()
+            .enumerate()
+            .filter(|&(_, &i)| res.tmds.get(i).is_some_and(|t| t.raw == *raw))
+            .map(|(k, _)| k as u32)
+            .collect()
+    }
+
     /// Stage actor `slot`'s spawned mesh (its `tmd_ref` from the global
     /// pool) for the `play_dynamic_mesh_*` reads. `false` when the slot
     /// carries no drawable mesh.

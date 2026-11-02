@@ -552,8 +552,10 @@
          * never the one already uploaded. The native window re-uploads the
          * same slots in its redraw pass. */
         let restage = fresh;
+        const morphSlots = new Set();
         if (typeof rt.play_morph_weight_slots === 'function') {
           const morph = rt.play_morph_weight_slots();
+          for (let i = 0; i < morph.length; i++) morphSlots.add(morph[i]);
           if (morph.length) restage = Array.from(new Set([...fresh, ...morph]));
         }
         for (let i = 0; i < restage.length; i++) {
@@ -567,6 +569,19 @@
             this.renderer.uploadSceneMesh(DYN_ACTOR_MESH_BASE + slot, pos,
               rt.play_dynamic_mesh_uvs(), rt.play_dynamic_mesh_cba_tsb(), idx,
               flat.length ? flat : null);
+            /* Retail blends the resident model in place: the blend shows on
+             * the environment's instances of it, and the actor draws nothing. */
+            if (morphSlots.has(slot) && typeof rt.play_morph_env_slots === 'function') {
+              const envSlots = rt.play_morph_env_slots(slot);
+              for (let k = 0; k < envSlots.length; k++) {
+                const meshId = this._ensureEnvMesh ? this._ensureEnvMesh(envSlots[k]) : -1;
+                if (meshId >= 0) {
+                  this.renderer.uploadSceneMesh(meshId, pos, rt.play_dynamic_mesh_uvs(),
+                    rt.play_dynamic_mesh_cba_tsb(), idx, flat.length ? flat : null);
+                }
+              }
+              continue;
+            }
             this._dynActors.add(slot);
           } catch (e) { /* a slot with no drawable mesh just stays unlisted */ }
         }

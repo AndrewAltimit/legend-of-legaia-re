@@ -233,24 +233,70 @@ impl PlayWindowApp {
             else {
                 continue;
             };
-            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&posed, &raw);
+            // The environment's own mesh build (`EnvMeshPrep::build`) over the
+            // posed vertices: the VRAM filter, the coplanar resolution and the
+            // emissive tags are all per-mesh and the blend moves none of them
+            // out of true.
+            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&posed, &raw);
+            let mut vmesh = match self.cpu_vram_base.as_ref() {
+                Some(vram) => {
+                    legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit_vertices(
+                        &posed,
+                        &raw,
+                        |cba, tsb, uvs| vram.prim_has_texture_data(cba, tsb, uvs),
+                    )
+                    .0
+                }
+                None => legaia_tmd::mesh::tmd_to_vram_mesh(&posed, &raw),
+            };
+            let _ = legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+            if let Some(vram) = self.cpu_vram_base.as_ref() {
+                let _ = legaia_render_kernels::scene_lighting::tag_emissive_meshes(
+                    &raw, &mut vmesh, &mut cmesh, vram,
+                );
+            }
             if vmesh.indices.is_empty() {
                 continue;
             }
-            match r.upload_vram_mesh(
-                &vmesh.positions,
-                &vmesh.uvs,
-                &vmesh.cba_tsb,
-                &vmesh.normals,
-                &vmesh.colors,
-                &vmesh.indices,
-            ) {
-                Ok(m) => {
-                    if let Some(entry) = self.meshes.get_mut(mesh_idx) {
-                        *entry = m;
+            // Retail blends in place: the actor's `+0x48` is the resident TMD
+            // itself, so every environment instance of that model draws the
+            // blend. The engine's scene meshes are separate uploads of the same
+            // bytes, and each takes the posed mesh.
+            let rest = self
+                .session
+                .host
+                .world
+                .actors
+                .get(slot as usize)
+                .and_then(|a| a.tmd_ref.as_ref())
+                .map(std::sync::Arc::clone);
+            let targets: Vec<usize> = std::iter::once(mesh_idx)
+                .chain(
+                    self.scene_tmd_data
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, (_, b))| {
+                            (i != mesh_idx && rest.as_ref().is_some_and(|g| g.raw == *b))
+                                .then_some(i)
+                        }),
+                )
+                .collect();
+            for target in targets {
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        if let Some(entry) = self.meshes.get_mut(target) {
+                            *entry = m;
+                        }
                     }
+                    Err(e) => log::warn!("morph mesh upload: {e:#}"),
                 }
-                Err(e) => log::warn!("morph mesh upload: {e:#}"),
             }
         }
     }
