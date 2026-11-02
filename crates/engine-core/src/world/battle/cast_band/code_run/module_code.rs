@@ -1536,6 +1536,15 @@ impl World {
             }
             if entry == 915 {
                 self.apply_mushura_writes(phase_in, victim_slot);
+                self.apply_mushura_run(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    victim_slot,
+                    seat_slot,
+                    caster_slot,
+                    spell_id,
+                );
             }
             if entry == 929 {
                 self.apply_mule_writes(
@@ -1551,6 +1560,22 @@ impl World {
             }
             if entry == 914 && ctx.phase != phase_in {
                 self.apply_gola_gola_writes(phase_in, ctx.monster_count, caster_slot, seat_slot);
+            }
+            if entry == 919 {
+                self.apply_spoon_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 921 {
+                self.apply_iota_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
             }
             if entry == 932 {
                 self.apply_meta_writes(

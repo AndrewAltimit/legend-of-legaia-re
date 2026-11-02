@@ -11,6 +11,7 @@ mod module_ctx;
 mod module_hits;
 mod module_impact;
 mod module_rumble;
+mod mushura_writes;
 mod puera_writes;
 mod ra_seru_writes;
 mod seru_cam_feed;

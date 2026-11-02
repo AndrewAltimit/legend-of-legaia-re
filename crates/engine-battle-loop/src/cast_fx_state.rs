@@ -186,6 +186,10 @@ pub struct CastFxState {
     pub module_ozma_word: i32,
     /// PROT 0934's hit threshold `0x801FA408` on arm `0x18`.
     pub module_ozma_ladder: i32,
+    /// PROT 0915's spin word `0x801F8150`.
+    pub module_mushura_spin: i32,
+    /// PROT 0915's chase target `0x801F8154`, an engine slot.
+    pub module_mushura_target: u8,
     /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
     /// `-0x100` and arm 16 walks it toward the row.
     pub module_mule_front: i32,
@@ -446,6 +450,8 @@ impl CastFxState {
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
             module_ozma_ladder: 0,
+            module_mushura_spin: 0,
+            module_mushura_target: 0,
             module_mule_front: 0,
             module_terra_orbit: (0, 0),
             module_meta_tail: 0,

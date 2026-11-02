@@ -409,11 +409,6 @@ fn direct(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> ArmDirection
     super::gate(hold_step(table, st, phase))
 }
 
-/// PROT 0919's director: [`SPOON`].
-pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
-    direct(SPOON, st, phase)
-}
-
 /// PROT 0924's director: [`ULTIMATE_RAVE`].
 pub fn ultimate_rave_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
     direct(ULTIMATE_RAVE, st, phase)
@@ -487,7 +482,11 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
             5,
         ),
         // The heal arm; the seat at arm 2's pass (`0x801F6DA8`).
-        919 => (spoon_direct, crate::seru_magic_ticks::SPOON_HEAL_ARM, 3),
+        919 => (
+            super::spoon_direct,
+            crate::seru_magic_ticks::SPOON_HEAL_ARM,
+            3,
+        ),
         // The damage arm 23 (`0x801F8E1C`); the seat at arm 3's pass
         // (`0x801F6DFC`).
         922 => (super::puera_direct, PUERA_DAMAGE_ARM, 4),
@@ -514,7 +513,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         owns_phase: false,
         // A director that reports its arms' spawn calls (PROT 0918's, 0922's, 0927's) seats
         // them per arm; the others leave the stager to seat the record set.
-        stages_spawns: matches!(prot_entry, 918 | 922 | 927),
+        stages_spawns: matches!(prot_entry, 918 | 919 | 922 | 927),
         seat_arm: Some(seat_arm),
         director_body: false,
     })
@@ -531,14 +530,19 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
 /// ramp), and PROT 0930's last arm 11 (`0x801F7CAC`): an arm with no phase
 /// write reads as `Every`, but its pool flush and fade-out run once the
 /// countdown lets the arm finish, and on the first tick they ended the two
-/// held whites arm 10 parked a whole arm early.
+/// held whites arm 10 parked a whole arm early. PROT 0931's arm `0x1E`, 0932's
+/// arm `0x16` and 0934's arm `0x19` are last arms of the same shape: flushed on
+/// the first tick, they took the fire and the rays down for the whole closing arm.
 pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
     Some(match (prot_entry, arm) {
         (919, 7) => 0x801F_7C64,
         (930, 0x0B) => 0x801F_7CAC,
         (922, 14) => 0x801F_7AA0,
         (922, 15) => 0x801F_7CAC,
-        // Arm `0x19`'s flush sits past its countdown test (`0x801F91D0`).
+        // The last arms of the Ra-Seru and of Jedo: the flush and fades sit past
+        // the countdown test.
+        (931, 0x1E) => 0x801F_87B0,
+        (932, 0x16) => 0x801F_8218,
         (934, 0x19) => 0x801F_91D0,
         _ => return None,
     })

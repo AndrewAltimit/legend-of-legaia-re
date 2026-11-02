@@ -979,6 +979,7 @@ mod orb;
 mod plasma_strike;
 mod puera;
 mod seru;
+mod spoon;
 pub mod summon_holds;
 mod swordie;
 mod theeder_gizam;
@@ -1022,6 +1023,7 @@ pub use plasma_strike::{
 };
 pub use puera::*;
 pub use seru::*;
+pub use spoon::*;
 pub use swordie::*;
 pub use theeder_gizam::*;
 pub use viguro::*;

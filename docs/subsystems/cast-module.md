@@ -2165,8 +2165,8 @@ their own image and open most arms on it: drain, store, return busy while it
 is positive, and on the tick it is not run the arm's writes, re-arm the word
 and advance. Their tick bodies are ported; the holds are
 `cast_module_camera::summon_holds`, one table per module, run as a director
-ahead of the body. For 0919 and 0924 the hold is the whole director: it
-arms no camera, so the band keeps its framing. 0925's adds the body's
+ahead of the body. For 0924 the hold is the whole director: it
+arms no camera, so the band keeps its framing. 0919's is `spoon_direct`. 0925's adds the body's
 camera writes (`spikefish_direct`), all literal: arm 0 cuts to pitch `0`,
 TR `(0, 0x500, 0x300)`; arm 3 drifts TR y `-2` and TR z `+8` a frame step;
 arm 5 drifts TR y `+12`, TR z `+8`, yaw `+8` and pitch `-1` a step and
@@ -2366,6 +2366,17 @@ Gola Gola's closing arms tint the creature (`+0x21C = 7`, arm `0xB`), blank the 
 (colour `0`, `+0x21C = 7`, arm `0xC`), show the row turned away from the caster and
 park the creature on `0x3FF` (arm `0xD`), and hide the creature (arm `0xE`):
 `World::apply_gola_gola_writes`.
+Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
+down the victim's lane (arms 6..8), the soft-red then parked-red word (arms 9, `0xA`)
+and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
+quartered roll and the creature closes on a target at eight units a tick, trading it
+for another once in reach. The port clamps those hits to `HP - 1` and leaves the kill
+to the band's fold; retail's own writes can kill.
+Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
+2 and 7 over its holds; the twenty parts of arm 4 ride the creature's decoded pose
+objects `ctx+0x6F4`, which no director can read, and are not carried.
+Iota hides its creature until arm 3's seat and again from arm 8, and shrinks the row
+into the eye of its vortex on arm 9 (`World::apply_iota_writes`).
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with

@@ -19,6 +19,12 @@ const FLAG_PARKED: u8 = 0xFF;
 const META_TAIL_TICKS: u32 = 4;
 /// The colour word PROT 0934's arm `0x18` keeps on the row.
 const OZMA_HIT_WORD: u32 = 0x3FF0_03FF;
+/// The word PROT 0919's arm 2 gives the creature.
+const SPOON_SEAT_WORD: u32 = 0x000F_FFFF;
+/// The engine's stand-in for a retail `+0x04 = 0` under an idle tint arm:
+/// retail's first ease takes it off zero, and the engine's zero is its resting
+/// neutral.
+const NEAR_BLACK_WORD: u32 = 0x0010_0401;
 /// Arm `0x17`'s store into the threshold `0x801FA408` (`0x801F8B58`).
 const OZMA_LADDER_FIRST: i32 = 0x60;
 /// Each hit's fall of that threshold (`0x801F90E8`).
@@ -28,7 +34,7 @@ const OZMA_LADDER_FADE_SITE: u32 = 0x801F_907C;
 
 impl World {
     /// `(engine slot, row index)` of each living monster, in seat order.
-    fn ra_seru_row(&self, monster_count: u8) -> Vec<(usize, usize)> {
+    pub(super) fn ra_seru_row(&self, monster_count: u8) -> Vec<(usize, usize)> {
         let map = self.cast_seat_map();
         (0..usize::from(monster_count))
             .filter_map(|i| map.engine(3 + i as u8).map(|e| (usize::from(e), i)))
@@ -466,6 +472,18 @@ impl World {
         {
             p.set_loop_frames(0x22, 0x2C);
         }
+        // Arm `0x19` raises every pool part's level `+0x78` off one word,
+        // `0x14` a frame up to `0x1000`, which the arm's exit from `0x18` left
+        // at `0` (`0x801F9144..0x801F91C0`).
+        if phase == 0x19 {
+            let level = (self.casting.module_ozma_ladder + 0x14).min(0x1000);
+            self.casting.module_ozma_ladder = level;
+            if let Some(scene) = self.casting.active_summon.as_mut() {
+                for part in &mut scene.parts {
+                    part.state.field_78 = level as u16;
+                }
+            }
+        }
         let fading = phase == 0x19 && self.casting.module_cam.countdown.0 < 0x81;
         if (phase == 0x11 || fading)
             && let Some(a) = self.actors.get_mut(usize::from(creature))
@@ -546,6 +564,140 @@ impl World {
                 slot: None,
                 state,
             });
+        }
+    }
+
+    /// PROT 0919 (Spoon).
+    ///
+    /// | Arm | Edge | Store |
+    /// |---|---|---|
+    /// | 0 (`0x801F6BA0..0x801F6C80`) | pass | every present party seat and living monster hidden |
+    /// | 2 (`0x801F6DB0`) | pass | the creature's word `0xFFFFF`, which the idle tint arm eases to neutral |
+    /// | 7 (`0x801F7DCC..0x801F7E54`) | pass | the creature hidden, the party shown |
+    pub(in crate::world::battle::cast_band) fn apply_spoon_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        creature: u8,
+    ) {
+        if !passed {
+            return;
+        }
+        let party = usize::from(self.party.party_count);
+        match phase {
+            0 => {
+                for a in self.actors.iter_mut().take(party) {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+                self.ra_seru_row_word(monster_count, 0, FLAG_PARKED);
+            }
+            2 => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = SPOON_SEAT_WORD;
+                    a.battle.render_flag = 0;
+                }
+            }
+            7 => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+                for a in self.actors.iter_mut().take(party) {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = 0;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// PROT 0921 (Iota).
+    ///
+    /// | Arm | Edge | Store |
+    /// |---|---|---|
+    /// | 0 (`0x801F6BB8..0x801F6C04`) | pass | the row parked and re-seated at half its alternate seat, `0x400` further on, facing `0x800` |
+    /// | 0..=3 | every pass | the creature not drawn, its word `0` until arm 3's seat (`0x801F6FCC`), from which the idle tint arm eases it up |
+    /// | 7 (`0x801F7470`) | pass | the row shown |
+    /// | 8 (`0x801F75F4`) | pass | the creature hidden |
+    /// | 9 (`0x801F76C8..0x801F77E4`) | every pass | the row rising, `+0x36 -= step / 4`, its plane pair closing on the origin by as much, its scale falling by `4 * step` |
+    /// | `0xA` (`0x801F7C6C..0x801F7D10`) | pass | the row at full scale on the floor of its half seat, turned from `(0, 0x400)` |
+    /// | `0xB` (`0x801F7F6C`) | pass | the row put back |
+    pub(in crate::world::battle::cast_band) fn apply_iota_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        creature: u8,
+    ) {
+        use legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK as STEP;
+        if phase <= 3
+            && let Some(a) = self.actors.get_mut(usize::from(creature))
+        {
+            if phase == 3 && passed {
+                a.battle.render_color = NEAR_BLACK_WORD;
+                a.battle.render_flag = 0;
+            } else {
+                a.battle.render_color = 0;
+                a.battle.render_flag = FLAG_PARKED;
+            }
+        }
+        match (phase, passed) {
+            (0, true) => {
+                self.ra_seru_row_seat(monster_count, |x, z| (x / 2, z / 2 + 0x400), None);
+            }
+            (7, true) => self.ra_seru_row_word(monster_count, 0, 0),
+            (8, true) => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+            }
+            (9, _) => {
+                let quarter = (STEP / 4) as i16;
+                for (e, _) in self.ra_seru_row(monster_count) {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        let m = &mut a.move_state;
+                        m.world_y -= quarter;
+                        m.world_x -= m.world_x.signum() * quarter.min(m.world_x.abs());
+                        m.world_z -= m.world_z.signum() * quarter.min(m.world_z.abs());
+                        let scale = i32::from(a.battle.render_scale.unwrap_or(0x1000));
+                        a.battle.render_scale = Some((scale - 4 * STEP).max(0) as u16);
+                    }
+                }
+            }
+            (0xA, true) => {
+                for (e, i) in self.ra_seru_row(monster_count) {
+                    let s =
+                        legaia_engine_battle::battle_seats::monster_seat(monster_count, i, true);
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.render_scale = None;
+                        let m = &mut a.move_state;
+                        m.world_y = 0;
+                        m.world_x = s.x / 2;
+                        m.world_z = s.z / 2 + 0x400;
+                        let from = legaia_engine_cast::cast_module_camera::ModuleSeat {
+                            x: 0,
+                            y: 0,
+                            z: 0x400,
+                            facing: 0,
+                        };
+                        let to = legaia_engine_cast::cast_module_camera::ModuleSeat {
+                            x: m.world_x,
+                            y: 0,
+                            z: m.world_z,
+                            facing: 0,
+                        };
+                        a.battle.facing_angle =
+                            legaia_engine_cast::cast_module_camera::heading(from, to)
+                                .wrapping_add(0x800)
+                                & 0xFFF;
+                    }
+                }
+            }
+            (0xB, true) => self.ra_seru_row_restore(monster_count, true),
+            _ => {}
         }
     }
 }
