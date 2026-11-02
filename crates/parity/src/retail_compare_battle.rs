@@ -474,6 +474,9 @@ pub struct RetailBattle {
     /// the display frames of its arm the displayed frame had left
     /// ([`displayed_menu_glide_left`]).
     pub menu_glide_left: Option<f32>,
+    /// The same arm's frames left on the RAM's own instant, which is what
+    /// the headless camera channel reads.
+    pub menu_glide_left_live: Option<f32>,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /

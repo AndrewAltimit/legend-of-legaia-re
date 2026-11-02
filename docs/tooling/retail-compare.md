@@ -2152,7 +2152,9 @@ the captured frame (`LEGAIA_SEAT_MENU_GLIDE_LEFT`,
 the fixed settle tick the engine's arm had landed long before, framing the
 whole formation where retail's frame is still behind the leader's back:
 `gaza2_card_first_menu` `0.634` to `0.921`, `cort_evolved_card_first_menu`
-`0.338` to `0.930`.
+`0.338` to `0.930`. The headless `camera` channel takes the same seat at the
+RAM's own instant, with no display lag (`RetailBattle::menu_glide_left_live`),
+since it reads the live pose rather than the frame on screen.
 
 **The arrival's columns date a prompt capture.** A round-prompt capture of the
 evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns

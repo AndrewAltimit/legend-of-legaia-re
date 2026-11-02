@@ -723,6 +723,16 @@ pub fn run_engine_battle(
     {
         cam.align_orbit_yaw(f32::from(retail.camera.yaw));
     }
+    // A round prompt caught with its far framing still walking: the fixed
+    // settle tick has landed the engine's case-9 arm long before, so stand it
+    // as far along as the RAM's own table reads, no display lag (the image
+    // child's seat takes that lag, `LEGAIA_SEAT_MENU_GLIDE_LEFT`).
+    if battle.seed_plan() == SeedPlan::Prompt
+        && let Some(left) = battle.menu_glide_left_live
+        && let Some(cam) = session.host.world.battle.camera.as_mut()
+    {
+        cam.align_menu_glide_frames_left(left);
+    }
     // A capture inside an action reads its camera part-way along a glide
     // whose start is the previous framing's leftover - an earlier action's
     // side-and-tilt coin, the orbit's clock at the commit - which the replay
