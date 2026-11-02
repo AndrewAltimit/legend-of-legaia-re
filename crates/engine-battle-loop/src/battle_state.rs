@@ -550,6 +550,10 @@ pub struct BattleState {
     pub action_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
     pub target_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The seat the target plaque opened on: the record holds its name from
+    /// there, so a module rewriting `+0x1DD` to a row code mid-cast (PROT
+    /// 0909's arm 9) leaves it up.
+    pub target_plaque_seat: Option<u8>,
     /// The active-actor bar's raise glide (placement record 7, `(16, 234)`
     /// -> `(16, 192)`), started where retail opens the record with mode `0`:
     /// the action seed for a party target (`0x801E2F24..0x801E2F44`) and
@@ -1258,6 +1262,7 @@ impl BattleState {
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
+            target_plaque_seat: None,
             readout_bar_glide: None,
             message_bar_glide: None,
             spirit_gauge_glide: None,

@@ -568,7 +568,12 @@ pub fn battle_target_plaque(
     {
         return None;
     }
-    let t = actor.battle.active_target;
+    // A row code (`>= 8`) a module wrote after the record opened: the record
+    // still holds the name it opened on.
+    let t = match actor.battle.active_target {
+        t if t >= 8 => world.battle.target_plaque_seat.unwrap_or(t),
+        t => t,
+    };
     if t < pc {
         return None;
     }
