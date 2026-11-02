@@ -401,3 +401,49 @@ reason = "Bisected to 87b01887d (1.000 at its parent): a 0x70 capture past arm 0
 changes = [
   ["states/zeto_call_wave_mid_cast/image", 0.998, 0.996],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to be3b50b5e (windcutter .863 at its parent; Viguro and slippery measured on the same change against its base): a monster capture's round is now replayed on its captured initiative keys, so a combatant that already dispatched sits out and the actor holds the maximum, as FUN_801DABA4 ordered it. Viguro's seat 4 no longer strikes again ahead of the caster and its HUD HP reads retail's 875 (846 before); the frame that remains sits about 10 px right of retail's over background and orbs alike, a displayed-frame offset the state camera does not show (it matches at the capture tick). Barra's windcutter loses the same kind of blocks on its cast frame. Slippery's breath trades camera for picture on the same change: image .982 -> .996, camera .982 -> .943; which camera component moves is not yet traced."
+changes = [
+  ["states/battle_retona_viguro_lv2_thunder_break_mid_cast/image", 0.637, 0.61],
+  ["states/battle_rugi_barra_windcutter_mid_cast/image", 0.863, 0.855],
+  ["states/battle_rugi_slippery_poisonous_breath_mid_cast/camera", 0.982, 0.943],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 121cb6b73 (.999 at its parent): a monster strike gated on its clip age is now posed on the clip its displayed frame shows (slot two of the clip-record ring +0x234 and the cursor ring +0x17A) rather than the strike entry the RAM holds, which the frame on screen never showed. On the mage strike the posed body moves by one 8x8 block's worth."
+changes = [
+  ["states/battle_korb2_mage_strike/image", 0.999, 0.998],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to c5f171981 (.957 at its parent): every monster-strike capture holds a round the party sat out on Spirit, and the replay's party now commits Spirit too instead of swinging and felling monsters the capture holds standing. Twin Tomb's attacker is still walking at the capture, where the displayed-camera walk-back leaves the backdrop about 2 px sideways of retail's with the floor aligned; with the replay's round now retail's, that offset costs a few more blocks."
+changes = [
+  ["states/battle_vozz_twin_tomb_strike/image", 0.957, 0.953],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to 205e899f3 (.953 at its parent): each battle actor's staged commit and hit walk now run inside its own anim tick, in seat order, as retail's actor-list walk does. The tri-somersault state is a resident-patch capture (seeded on a patched disc, not a retail score); under it Vahn and the struck monster end about 27 units further along -x than the capture. Recorded so the patched number does not mask a retail move."
+changes = [
+  ["states/battle_vahn_tri_somersault_super/image", 0.953, 0.941],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Bisected to fffb9169e (.999 at its parent): a draw-kind-4 node or mesh part is now marked single-sided from its own colour word on the field passes too (FUN_80043390 lowers its NCLIP mask only for words carrying 0x08000000), so back faces of single-sided nodes drop where the field pass had judged them by winding. One block on rikuroa's post-Caruban frame, a patched-disc state."
+changes = [
+  ["states/rikuroa_post_caruban/image", 0.999, 0.998],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Mod-disc states (the Delilas party swap and the shiny Seru refactor patch), not retail captures and not bisected: they moved with the battle animation-slice and capture-seat changes above, which retail states pin. Recorded so the mod numbers track the engine."
+changes = [
+  ["states/delilas_gi_spirit_streaks_v2/image", 0.986, 0.976],
+  ["states/shiny_refactor_gimard_levelup/camera", 0.984, 0.979],
+  ["states/shiny_refactor_gimard_levelup/image", 0.845, 0.828],
+]
