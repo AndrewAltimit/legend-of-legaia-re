@@ -90,6 +90,7 @@
             <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
             <button type="button" id="xw-toml" class="wb-mini" title="The pack's files, to copy or download one at a time">Files</button>
             <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys ?</button>
+            <button type="button" id="xw-open-setup" class="wb-mini" title="Open another pack, or change the disc">Disc and pack</button>
             <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Save .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has problems; the checks button says how many and opens them. Your work is also autosaved in this browser.</p><p><strong>Play pack</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play this map</strong> puts you on the map you are building. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p><p><strong>Files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder.</p></span></span>
           </span>
         </div>
@@ -413,23 +414,18 @@
   .xw-area.is-aside.is-active { font-weight: 600; }
   .xw-pages { display: flex; flex-wrap: wrap; gap: 0.15rem; padding: 0 0.4rem; }
   .xw-page-lead { margin: 0; padding: 0.35rem 0.8rem; font-size: 0.85em; color: var(--text-muted); border-top: 1px solid var(--line-soft); }
-  .xw-build { padding: 0.5rem 0.8rem 0.4rem; background: var(--bg-card); }
+  .xw-build { padding: 0.25rem 0.5rem; background: var(--bg-card); }
   .xw-build[hidden], .xw-catalog[hidden] { display: none; }
-  .xw-maps-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; margin-bottom: 0.25rem; }
-  .xw-maps { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.3rem; scrollbar-width: thin; }
-  .xw-map-card { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.1rem; min-width: 10.5rem; max-width: 15rem; padding: 0.4rem 0.6rem; text-align: left; font: inherit; font-size: 0.86em; color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
-  .xw-map-card:hover, .xw-map-card:focus-visible { border-color: var(--accent); }
-  .xw-map-card.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
-  .xw-map-card.has-err { border-left: 3px solid var(--open); }
-  .xw-map-card.is-add { border-style: dashed; color: var(--text-muted); }
-  .xw-map-card strong { color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .xw-map-card .xw-badge { position: absolute; top: 0.3rem; right: 0.35rem; }
-  .xw-map-meta { color: var(--text-dim); font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .xw-modebar { display: flex; gap: 0.35rem; margin-top: 0.45rem; overflow-x: auto; scrollbar-width: thin; }
-  .xw-mode { flex: 1 0 5.6rem; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0.45rem 0.4rem 0.35rem; font: inherit; font-size: 0.84em; font-weight: 600; color: var(--text-muted); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+  .xw-build { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; }
+  .xw-map-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+  .wb .xw-map-pick { max-width: 15rem; font-weight: 600; }
+  .xw-map-add { white-space: nowrap; }
+  .xw-modebar { display: flex; flex: 0 1 auto; min-width: 0; gap: 0.2rem; overflow-x: auto; scrollbar-width: none; }
+  .xw-mode { flex: none; display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.18rem 0.55rem; font: inherit; font-size: 0.84em; font-weight: 600; color: var(--text-muted); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; }
   .xw-mode:hover, .xw-mode:focus-visible { color: var(--text-bright); border-color: var(--border-hi); }
-  .xw-mode.is-on { color: var(--text-bright); border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 -3px 0 var(--accent); }
-  .xw-mode-ico { width: 1.7rem; height: 1.7rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .xw-mode.is-on { color: var(--text-bright); border-color: var(--accent); background: var(--accent-soft); }
+  .xw-mode-ico { width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .xw-build-tools { display: flex; align-items: center; gap: 0.25rem; margin-left: auto; }
   .xw-mode-label { white-space: nowrap; }
   .xw-catalog { padding: 0.45rem 0.8rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg-card); font-size: 0.88em; }
   .xw-cat-head { margin-bottom: 0.3rem; }
@@ -444,22 +440,6 @@
   .xw-start-card.is-main { border-color: var(--accent); }
   .xw-start-ico { display: inline-flex; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 1.2em; font-weight: 700; }
   .xw-keyhelp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
-
-  /* The Split view (expansion-workbench-preview3d.js lays the picture and
-     the forms side by side): the nav and the Build head span the width,
-     the catalog heads the forms column. Prefixed to outrank its rules. */
-  body.xw-view-split .xw-work .xw-edpane > .xw-nav { grid-column: 1 / -1; grid-row: 1; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-build { grid-column: 1 / -1; grid-row: 2; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-catalog { grid-column: 1; grid-row: 3; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-panel { grid-row: 4; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-3d:not([hidden]) { grid-row: 3 / span 2; }
-    .xw-pal-side { flex-wrap: wrap; }
-    .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 1 1 8rem; width: auto; min-width: 0; }
-    .xw-pal-tabs { flex: 1 1 100%; order: 2; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-split-handle { grid-row: 3 / span 2; }
-  /* The 3D view on the Build area leaves room for the pack bar, the map
-     strip and the mode toolbar above it in one screen. */
-  body.xw-view-3d.xw-on-build .xw-work .xw-edpane > .xw-3d .xw-3d-frame { width: min(100%, calc((100vh - var(--topbar-h, 0px) - 24rem) * 4 / 3)); min-width: min(100%, 22rem); }
 
   /* The pack bar's secondary buttons: inline on a wide screen, folded
      under More on a phone (the rule below). */
@@ -486,7 +466,6 @@
     .xw-area { padding: 0.35rem 0.7rem; font-size: 0.9em; }
     .xw-crumbs, .xw-saved { display: none; }
     .xw-area.is-aside { margin-left: 0; }
-    .xw-mode { flex-basis: 4.6rem; font-size: 0.78em; }
     .xw-build, .xw-catalog { padding-left: 0.45rem; padding-right: 0.45rem; }
     .xw-stat { grid-template-columns: 4.5rem minmax(0, 1fr); }
   }

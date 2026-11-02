@@ -113,6 +113,9 @@ body.play-embedded { margin: 0; padding: 0; background: #000; overflow: hidden; 
 body.play-embedded .play-screen { max-width: calc(100vh * 4 / 3); margin: 0 auto; }
 body.play-embedded .play-canvas-wrap { max-width: none; }
 body.play-embedded .play-canvas { border: 0; }
+/* The expansion workbench's 3D preview takes the frame's own shape: its view
+   is as wide as its window, not 4:3. */
+body.play-embedded.xw-preview .play-screen, body.play-embedded.xw-preview .play-canvas-wrap { position: fixed; inset: 0; max-width: none; margin: 0; }
 .play-canvas {
   width: 100%; aspect-ratio: 4 / 3; display: block;
   background: #05070c; border: 1px solid var(--border); outline: none;
@@ -127,6 +130,9 @@ body.play-embedded .play-canvas { border: 0; }
 /* The expansion workbench's 3D preview (`?xwpreview=1`): the picture is
    looked at and clicked to pick tiles, so no veil dims it. */
 body.xw-preview .play-focus-veil { display: none; }
+body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
+/* The picture takes the frame's own shape: the workbench's view is as wide
+   as its window, not 4:3. */
 
 /* Dialogue box, drawn over the canvas the way the game does. Colors
    mirror the retail FUN_8002C69C window fill: two-pass mode-0

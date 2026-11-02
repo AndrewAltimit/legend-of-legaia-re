@@ -253,24 +253,6 @@ export function renderBuildHead(el, o) {
   B.catalog = o.catalog;
   const maps = (o.pack && o.pack.maps) || {};
   const ids = Object.keys(maps);
-  const pick = h('div', { class: 'xw-maps', role: 'listbox', 'aria-label': 'Your maps' });
-  for (const id of ids) {
-    const m = maps[id];
-    const [w, ht] = mapSize(m);
-    const errs = o.errorsOf(id);
-    const scene = m.base && m.base.scene && m.base.scene.name;
-    pick.append(h('button', {
-      type: 'button', role: 'option', class: 'xw-map-card' + (id === o.open ? ' is-on' : '') + (errs ? ' has-err' : ''),
-      'aria-selected': String(id === o.open), title: `Open ${m.name || id} (maps/${id}.toml)`, onclick: () => o.choose(id),
-    }, h('strong', {}, m.name || id),
-    h('span', { class: 'xw-map-meta' }, `${w} x ${ht} tiles${scene ? ' - on ' + scene : ''}`),
-    h('span', { class: 'xw-map-meta' }, `${(m.npcs || []).length} people, ${(m.props || []).length} objects, ${(m.exits || []).length} exits`),
-    errs ? h('span', { class: 'xw-badge' }, errs) : null));
-  }
-  pick.append(h('button', { type: 'button', class: 'xw-map-card is-add', title: 'Add a small walled room to build on', onclick: () => o.add() },
-    h('strong', {}, '+ New map'), h('span', { class: 'xw-map-meta' }, 'a small room to start from')));
-  el.append(h('div', { class: 'xw-maps-head' }, h('span', { class: 'wb-label' }, 'Your maps'),
-    h('span', { class: 'xw-hint' }, ids.length ? 'pick one to build on' : 'none yet: add one to start building')), pick);
   if (!ids.length) {
     el.append(h('div', { class: 'xw-emptybig' }, h('strong', {}, 'This pack has no maps yet.'),
       h('span', {}, 'A map is a place the player can walk around: a room, a village, a cave. It is laid out tile by tile over a scene from your disc.'),
@@ -280,8 +262,21 @@ export function renderBuildHead(el, o) {
     return;
   }
   B.bar = h('div', { class: 'xw-modebar', role: 'toolbar', 'aria-label': 'Build modes' });
+  /* The map picker: one compact row. What a card said (size, scene, how many
+   * of what) is each option's tooltip and the Pack files page. */
+  const pick = h('select', { class: 'xw-map-pick', 'aria-label': 'Map being built', title: 'The map you are building' }, ...ids.map((id) => {
+    const m = maps[id];
+    const [w, ht] = mapSize(m);
+    const errs = o.errorsOf(id);
+    return h('option', { value: id, selected: id === o.open }, `${errs ? '! ' : ''}${m.name || id} (${w} x ${ht})`);
+  }));
+  pick.addEventListener('change', () => o.choose(pick.value));
+  const errs = o.open ? o.errorsOf(o.open) : 0;
+  el.append(h('div', { class: 'xw-map-row' }, pick, errs ? h('span', { class: 'xw-badge', title: `${errs} problem(s) on this map` }, errs) : null,
+    h('button', { type: 'button', class: 'wb-mini xw-map-add', title: 'Add a small new map, with some ground and a few objects already on it', onclick: () => o.add() }, '+ New map')));
   el.append(B.bar);
   drawBar();
+  if (o.tools) el.append(o.tools());
   drawCatalog();
 }
 

@@ -24,13 +24,13 @@
  * over the engine's reading
  * of the last build, until the rebuild lands and replaces it.
  *
- * The view switch lays the editor out: **2D** (the dock above the tab, the
- * painter under it), **Split** (the picture in a column beside the tab,
- * sticky while the forms scroll) and **3D** (the picture as large as the
- * window allows, the painter's canvas put away and its forms under it).
- * The frame is never moved in the page - moving an iframe reloads it - so
- * the layouts are classes on the page (`xw-view-split`, `xw-view-3d`) and
- * the style below.
+ * The view switch lays the editor out: **3D** (the default: the picture is
+ * the working surface, filling the page, with the catalog docked along its
+ * bottom and the forms put away), **Split** (the same with the painter and
+ * the forms in a drawer beside it) and **2D** (the painter first, the
+ * picture a dock above it). The frame is never moved in the page - moving an
+ * iframe reloads it - so the layouts are classes on the page (`xw-studio`,
+ * `xw-view-split`, `xw-view-3d`) and the style below.
  *
  * Play here posts the same bytes on BroadcastChannel `legaia-expansion-live`:
  * an open play tab on the pack hot-reloads in place and answers; with no
@@ -48,9 +48,9 @@ const RELOAD_MS = 450;
 // The pause after an edit before the preview decides how to show it.
 const DECIDE_MS = 30;
 const VIEWS = [
-  ['2d', '2D', 'The painter, with the 3D preview docked above the tab'],
-  ['split', 'Split', 'The painter and the 3D view side by side: the picture stays in view while the forms scroll'],
-  ['3d', '3D', 'The 3D view as large as the window allows; the painter\'s canvas is put away and its forms sit under the picture'],
+  ['3d', '3D', 'The 3D view fills the page, the object catalog along its bottom'],
+  ['split', 'Split', 'The 3D view with the tile painter and the forms in a drawer beside it'],
+  ['2d', '2D', 'The tile painter and the forms first, with the 3D preview docked above them'],
 ];
 // (A new key: the working surface is the 3D view by default now, whatever
 // an older visit left in the old one.)
@@ -63,21 +63,58 @@ const SPLIT_MIN = 0.22, SPLIT_MAX = 0.7;
  * the dock for 2D; these rules only rearrange it, so the page keeps one
  * place for its look. */
 const VIEW_CSS = `
-body.xw-view-split .xw-edpane { display: grid; grid-template-columns: minmax(0, 1fr) var(--xw-split-col, minmax(0, 1.3fr)); column-gap: 0.6rem; align-items: start; }
-.xw-split-handle { display: none; }
-body.xw-view-split .xw-edpane > .xw-split-handle { display: block; grid-column: 2; grid-row: 2; justify-self: start; align-self: start; position: sticky; top: calc(var(--topbar-h, 0px) + 0.4rem); z-index: 3; width: 0.6rem; margin-left: -0.6rem; height: calc(100vh - var(--topbar-h, 0px) - 0.8rem); max-height: 40rem; cursor: col-resize; touch-action: none; background: none; border: 0; padding: 0; }
-.xw-split-handle::after { content: ''; position: absolute; left: calc(50% - 1px); top: 35%; height: 30%; width: 3px; border-radius: 2px; background: var(--border-hi); }
-.xw-split-handle:hover::after, .xw-split-handle:focus-visible::after, .xw-split-handle.is-drag::after { background: var(--accent); }
+/* The studio: the page's own chrome stands back and the editor fills what is
+   left of the window. Rows: navigation, the Build head, the picture, the
+   catalog. The drawer (the tab's panel, with the painter and the forms) is a
+   column of its own in Split, and put away in 3D. */
+body.xw-studio .sidebar, body.xw-studio .wb-header, body.xw-studio #xw-setup:not([open]), body.xw-studio .xw-page-lead { display: none; }
+body.xw-studio .app { display: block; }
+body.xw-studio .content { padding: 0.3rem 0.5rem 0.4rem; max-width: none; }
+body.xw-studio #workbench { margin: 0; }
+body.xw-studio .wb-toolbar-pack { position: static; padding: 0.15rem 0.5rem; margin: 0 0 0.25rem; box-shadow: none; }
+body.xw-studio .wb-toolbar-pack .wb-actions { margin: 0; gap: 0.25rem; }
+body.xw-studio .wb-toolbar-pack .wb-button { padding: 0.15rem 0.6rem; }
+body.xw-studio .xw-crumbs { display: none; }
+body.xw-studio .xw-areas { padding: 0.2rem 0.3rem; }
+body.xw-studio .xw-area { padding: 0.12rem 0.6rem; font-size: 0.84em; }
+body.xw-studio .xw-edpane { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; height: calc(100dvh - var(--topbar-h, 0px) - 3.2rem); min-height: 30rem; overflow: hidden; }
+body.xw-studio.xw-view-split .xw-edpane { grid-template-columns: minmax(0, 1fr) var(--xw-split-col, min(28rem, 40%)); }
+body.xw-studio .xw-edpane > .xw-nav { grid-column: 1 / -1; grid-row: 1; }
+body.xw-studio .xw-edpane > .xw-build { grid-column: 1 / -1; grid-row: 2; }
+body.xw-studio .xw-edpane > .xw-3d { grid-column: 1; grid-row: 3; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 0 0.4rem; padding: 0.15rem 0.3rem 0; position: relative; border-bottom: 0; }
+body.xw-studio .xw-edpane > .xw-catalog { grid-column: 1; grid-row: 4; padding: 0.25rem 0.4rem 0.1rem; border-bottom: 0; }
+body.xw-studio .xw-edpane > .xw-panel { display: none; }
+body.xw-studio.xw-view-split .xw-edpane > .xw-panel { display: block; grid-column: 2; grid-row: 3 / span 2; min-height: 0; overflow: auto; border-left: 1px solid var(--border); border-radius: 0; }
+body.xw-studio .xw-3d-head { grid-column: 1; grid-row: 1; flex-wrap: nowrap; white-space: nowrap; }
+body.xw-studio .xw-3d-editslot { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
+body.xw-studio .xw-3d-body { grid-column: 1 / -1; grid-row: 2; margin-top: 0.15rem; min-height: 0; position: relative; }
+body.xw-studio .xw-3d-body .xw-3d-frame { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; aspect-ratio: auto; margin: 0; }
+body.xw-studio .xw-3d-title, body.xw-studio .xw-3d-toggle, body.xw-studio .xw-3d-edit > .wb-label, body.xw-studio .xw-3d-edit > .xw-hint, body.xw-studio .xw-3d-keys, body.xw-studio .xw-3d-edit > .xw-layout { display: none; }
+body.xw-studio .xw-3d-modebtn, body.xw-studio .xw-3d-seltools, body.xw-studio .xw-3d-edit > .xw-sep, body.xw-studio .xw-3d-ctrl-mode { display: none; }
+body.xw-studio .xw-checks-btn.is-warn { border-color: var(--border); color: var(--text-muted); }
+body.xw-studio .xw-3d-edit { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0; }
+body.xw-studio .xw-3d-edit > * { flex: none; }
+body.xw-studio .xw-3d-status { position: absolute; z-index: 3; left: 0.8rem; bottom: 0.35rem; max-width: 60%; pointer-events: none; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #dfe6ee; text-shadow: 0 1px 2px #000; opacity: 0.75; }
+body.xw-studio .xw-painter { grid-template-columns: minmax(0, 1fr); }
+body.xw-studio .xw-canvas-wrap { height: min(40vh, 26rem); }
+/* A status line would push the picture about: it floats over the catalog. */
+body.xw-studio #xw-status, body.xw-studio #xw-export-status { position: fixed; z-index: 40; left: 50%; bottom: 0.6rem; transform: translateX(-50%); max-width: 80vw; margin: 0; padding: 0.2rem 0.7rem; border-radius: 6px; background: var(--bg-raised); border: 1px solid var(--border-hi); pointer-events: none; }
+body.xw-studio #xw-status:not(.is-err) { display: none; }
+/* Pack bar: what is not used while building folds under More; the state
+   of the checks stays, quietly. */
+body.xw-studio .wb-toolbar-pack { flex-wrap: nowrap; }
+body.xw-studio .xw-packname { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.xw-studio #xw-saved { display: none; }
+body.xw-studio .wb-toolbar-pack .wb-actions { flex-wrap: nowrap; flex: none; position: relative; }
+body.xw-studio .xw-more-btn { display: inline-block; align-self: stretch; }
+body.xw-studio .xw-more-items { display: none; }
+body.xw-studio .xw-more-items.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; position: absolute; z-index: 30; right: 0; top: calc(100% + 0.3rem); min-width: 12rem; padding: 0.5rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
 body.xw-split-drag, body.xw-split-drag * { cursor: col-resize !important; user-select: none; }
 body.xw-split-drag .xw-3d-frame { pointer-events: none; }
-body.xw-view-split .xw-edpane > .xw-tabs { grid-column: 1 / -1; }
-body.xw-view-split .xw-edpane > .xw-panel { grid-column: 1; grid-row: 2; min-width: 0; }
-body.xw-view-split .xw-edpane > .xw-3d:not([hidden]) { grid-column: 2; grid-row: 2; position: sticky; top: calc(var(--topbar-h, 0px) + 0.4rem); z-index: 2; max-height: calc(100vh - var(--topbar-h, 0px) - 0.8rem); overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
-body.xw-view-split .xw-edpane > .xw-3d .xw-3d-frame { max-width: none; width: min(100%, calc((100vh - var(--topbar-h, 0px) - 12rem) * 4 / 3)); }
-body.xw-view-3d .xw-edpane > .xw-3d .xw-3d-frame { max-width: none; width: min(100%, calc((100vh - var(--topbar-h, 0px) - 9rem) * 4 / 3)); }
-body.xw-view-split .xw-painter { grid-template-columns: minmax(0, 1fr); }
-body.xw-view-split .xw-canvas-wrap { height: min(48vh, 32rem); }
-body.xw-view-3d .xw-painter .xw-canvas-wrap, body.xw-view-3d .xw-painter .xw-canvas-wrap ~ .xw-note { display: none; }
+.xw-split-handle { display: none; }
+body.xw-studio.xw-view-split .xw-edpane > .xw-split-handle { display: block; grid-column: 2; grid-row: 3 / span 2; justify-self: start; z-index: 4; width: 0.6rem; margin-left: -0.3rem; cursor: col-resize; touch-action: none; background: none; border: 0; padding: 0; position: relative; }
+.xw-split-handle::after { content: ''; position: absolute; left: calc(50% - 1px); top: 40%; height: 20%; width: 3px; border-radius: 2px; background: var(--border-hi); }
+.xw-split-handle:hover::after, .xw-split-handle:focus-visible::after, .xw-split-handle.is-drag::after { background: var(--accent); }
 .xw-3d-views { display: inline-flex; gap: 0; }
 .xw-3d-views .wb-mini { border-radius: 0; margin: 0; }
 .xw-3d-views .wb-mini:first-child { border-radius: 4px 0 0 4px; }
@@ -89,6 +126,45 @@ function installViewCss() {
   const st = document.createElement('style');
   st.id = 'xw-view-css';
   st.textContent = VIEW_CSS;
+/* The view options fold: a popover over the picture. */
+.xw-3d-more { position: relative; display: inline-block; }
+.xw-3d-more > summary { list-style: none; cursor: pointer; }
+.xw-3d-more > summary::-webkit-details-marker { display: none; }
+.xw-3d-more-box { position: absolute; z-index: 20; top: calc(100% + 0.2rem); left: 0; width: max-content; max-width: min(24rem, 80vw); display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; padding: 0.5rem 0.6rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); white-space: normal; }
+.xw-3d-more-box .xw-check { display: inline-flex; flex-direction: row; gap: 0.25rem; color: var(--text-muted); }
+/* What floats over the picture: the piece being placed, the selection, a first-run hint. */
+.xw-float { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
+.xw-float > * { pointer-events: auto; }
+.xw-float-pill { position: absolute; left: 50%; top: 0.5rem; transform: translateX(-50%); max-width: 92%; padding: 0.2rem 0.75rem; border-radius: 999px; background: rgba(8, 12, 18, 0.82); color: #eef3f8; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.xw-float-pill.is-bad { background: rgba(92, 16, 16, 0.9); }
+.xw-float-pill kbd { font: inherit; font-weight: 700; color: var(--accent-hi); }
+.xw-selpanel { position: absolute; right: 0.5rem; top: 0.5rem; width: 14rem; padding: 0.45rem; border: 1px solid var(--border-hi); border-radius: 8px; background: color-mix(in srgb, var(--bg-raised) 93%, transparent); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); font-size: 0.84rem; }
+.xw-selpanel-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.35rem; min-width: 0; }
+.xw-selpanel-head img { width: 2.6rem; height: 2.6rem; border-radius: 5px; flex: none; }
+.xw-selpanel-head strong { color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xw-selpanel-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.25rem; }
+.xw-selpanel-btns .wb-mini { padding: 0.2rem 0.3rem; }
+.xw-selpanel-btns .is-danger:hover { border-color: var(--open); color: var(--open); }
+.xw-selpanel details { margin-top: 0.3rem; }
+.xw-selpanel summary { cursor: pointer; color: var(--text-muted); font-size: 0.9em; }
+.xw-firsthint { position: absolute; left: 0.6rem; bottom: 1.8rem; max-width: min(23rem, 80%); padding: 0.55rem 0.7rem; border: 1px solid var(--accent-line); border-radius: 8px; background: rgba(8, 12, 18, 0.88); color: #eef3f8; font-size: 0.86rem; line-height: 1.45; }
+.xw-firsthint strong { color: #fff; }
+.xw-firsthint .wb-mini { margin-top: 0.35rem; }
+@media (max-width: 44rem) {
+  /* A phone: the page scrolls again: the picture, the catalog under it, the
+     drawer's forms under that. */
+  body.xw-studio .wb-toolbar-pack, body.xw-studio .wb-toolbar-pack .wb-actions { flex-wrap: wrap; }
+  body.xw-studio .wb-toolbar-pack .wb-actions { flex: 1 1 auto; }
+  body.xw-studio .xw-edpane, body.xw-studio.xw-view-split .xw-edpane { display: block; height: auto; overflow: visible; }
+  body.xw-studio .xw-edpane > .xw-3d { display: block; }
+  body.xw-studio .xw-3d-body { height: 58vh; }
+  body.xw-studio .xw-3d-head { flex-wrap: wrap; white-space: normal; }
+  body.xw-studio .xw-3d-editslot { margin: 0.2rem 0; }
+  body.xw-studio.xw-view-split .xw-edpane > .xw-panel { border-left: 0; overflow: visible; }
+  body.xw-studio.xw-view-split .xw-edpane > .xw-split-handle { display: none; }
+  .xw-selpanel { width: 11.5rem; }
+  .xw-firsthint { bottom: 0.4rem; }
+}
   document.head.append(st);
 }
 
@@ -357,7 +433,9 @@ export function createPreview3d(env) {
   viewBox.setAttribute('role', 'group');
   viewBox.setAttribute('aria-label', 'Map view');
   const viewBtns = {};
+  toggleBtn.classList.add('xw-3d-toggle');
   for (const [k, label, tip] of VIEWS) {
+  title.className = 'xw-3d-title';
     const b = btn(label, tip, () => setView(k));
     b.dataset.view = k;
     viewBtns[k] = b;
@@ -401,11 +479,28 @@ export function createPreview3d(env) {
     post({ type: 'xw-arrival', on });
     if (on && P.sent) { P.sent = null; P.dirty = true; flush(); }
   });
-  ctrls.append(orbitBtn, playerBtn, topBtn, fitBtn, reloadBtn, autoLab, painterLab, arrivalLab);
+  /* What most sessions never touch folds under one button. */
+  const more = document.createElement('details');
+  more.className = 'xw-3d-more';
+  const moreSum = document.createElement('summary');
+  moreSum.className = 'wb-mini';
+  moreSum.textContent = 'Show';
+  moreSum.title = 'Layers over the picture (grid, walls, zones, collision), and how the preview rebuilds';
+  const moreBox = document.createElement('div');
+  moreBox.className = 'xw-3d-more-box';
+  layerBox.classList.add('xw-3d-more-box-layers');
+  moreBox.append(layerBox, autoLab, painterLab, arrivalLab, reloadBtn);
+  more.append(moreSum, moreBox);
+  // The mode toolbar's Test-play is the way into a test on the Build area.
+  orbitBtn.classList.add('xw-3d-ctrl-mode');
+  playerBtn.classList.add('xw-3d-ctrl-mode');
+  ctrls.append(orbitBtn, playerBtn, topBtn, fitBtn, more);
+  document.addEventListener('click', (ev) => { if (more.open && !more.contains(ev.target)) more.open = false; });
   // The map editor's bar (expansion-workbench-gizmos.js), under the head.
   const editSlot = document.createElement('div');
   editSlot.className = 'xw-3d-editslot';
-  head.append(title, viewBox, toggleBtn, ctrls, layerBox, status);
+  head.append(title, viewBox, toggleBtn, ctrls);
+  el.append(status);
   body.before(editSlot);
   layerBox.hidden = true;
 
@@ -415,11 +510,16 @@ export function createPreview3d(env) {
   let msgBad = false;
   function setStatus(text, bad) {
     msg = text || '';
+  /* Over the picture: the editor's panels (setFloat). */
+  const float = document.createElement('div');
+  float.className = 'xw-float';
+  body.append(float);
     msgBad = !!bad;
     paintStatus();
   }
   function paintStatus() {
-    status.textContent = msg + (P.stats && P.open ? statsText() : '');
+    // The frame's cost is for the 2D view's status line, not over the picture.
+    status.textContent = msg + (P.stats && P.open && P.view === '2d' ? statsText() : '');
     status.classList.toggle('is-err', msgBad);
   }
 
@@ -457,7 +557,7 @@ export function createPreview3d(env) {
     if (view !== '2d' && !P.open) setOpen(true);
     applyView();
     if (P.onView) P.onView(view);
-    if (view !== '2d' && P.open) el.scrollIntoView({ block: 'nearest' });
+    if (P.onLayout) P.onLayout(view);
   }
   function applyView() {
     const on = P.visible && P.mapsTab !== false;
@@ -469,6 +569,7 @@ export function createPreview3d(env) {
   }
 
   function setOpen(on) {
+    document.body.classList.toggle('xw-studio', on && P.open && P.view !== '2d');
     P.open = on;
     toggleBtn.textContent = on ? 'Close 3D preview' : 'Open 3D preview';
     body.hidden = !on;
@@ -492,6 +593,7 @@ export function createPreview3d(env) {
       P.ready = false;
       P.sent = null;
       setStatus('');
+      applyView();
       // No picture to lay out beside the painter.
       if (P.view !== '2d') { P.view = '2d'; applyView(); }
     }
@@ -502,6 +604,7 @@ export function createPreview3d(env) {
 
   /* The pack's stripped JSON (strippedJson) as it is now: made once an
    * edit (the pack serialised is the cost; a decision and its flush ask
+    applyView();
    * for the same text). */
   function stripped() {
     if (P.stripAt && P.stripAt.edits === P.edits && P.stripAt.map === P.map && P.stripAt.pack === pack()) return P.stripAt.json;
@@ -901,6 +1004,10 @@ export function createPreview3d(env) {
       off = !!off;
       // The view switch belongs to the Maps tab as the editor does.
       P.mapsTab = !off;
+    /* The real model of the piece being placed, for the frame's ghost. */
+    ghost(msg) {
+      if (P.ready) post(Object.assign({ type: 'xw-ghost' }, msg));
+    },
       applyView();
       if (!off && P.visible && P.view !== '2d' && !P.open) setOpen(true);
       if (P.editOff === off) return;
@@ -922,6 +1029,16 @@ export function createPreview3d(env) {
      * whether it is running. */
     testPlay: (on) => testPlay(on === undefined ? P.mode !== 'player' : !!on),
     testing: () => P.mode === 'player',
+    /* The panels over the picture (the editor's). */
+    setFloat(node) {
+      if (node.parentNode !== float) { float.innerHTML = ''; float.append(node); }
+    },
+    /* The layout moved (the page's head follows). */
+    onLayout(fn) { P.onLayout = fn; },
+    /* The Split view's drawer, open or put away. */
+    setDrawer: (on) => setView(on ? 'split' : '3d'),
+    drawerOpen: () => P.view === 'split',
+    view: () => P.view,
     /* The editor camera straight down (`on`) or tilted back. */
     topDown(on) {
       P.top = !!on;
@@ -945,7 +1062,3 @@ export function createPreview3d(env) {
     state: () => ({ split, lastMove: P.lastMove, bundleMs: P.bundleMs, building: !!P.building, stale: !!P.stale, view: P.view, open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
   };
 }
-    /* The real model of the piece being placed, for the frame's ghost. */
-    ghost(msg) {
-      if (P.ready) post(Object.assign({ type: 'xw-ghost' }, msg));
-    },

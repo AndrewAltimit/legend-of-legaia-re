@@ -283,6 +283,9 @@ const errText = (e) => (e && e.message ? e.message : String(e));
 // --- Rendering ----------------------------------------------------------------------
 // Per page: its checks' error and warning counts (a check on no page's file
 // counts on the Pack files page).
+  // A good word goes by itself; a problem stays until the next message.
+  clearTimeout(el._xwClear);
+  if (kind === 'ok' && id === 'xw-export-status') el._xwClear = setTimeout(() => { el.textContent = ''; }, 4000);
 function tabCounts(tab) {
   const t = TABS.find((x) => x[0] === tab);
   const file = t && t[2];
@@ -1647,3 +1650,11 @@ window.__xwState = S;
 window.__xwValidator = V;
 // ... and the editors' context: `__xwCtx.changed(true)` after a scripted edit.
 window.__xwCtx = ctx;
+  // The disc and pack pickers, folded away while building.
+  $('xw-open-setup').addEventListener('click', () => {
+    if (S.fs) setFullscreen(false);
+    const setup = $('xw-setup');
+    setup.open = true;
+    setup.scrollIntoView({ block: 'start' });
+  });
+  S.preview.onLayout(() => renderBuild());
