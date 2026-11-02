@@ -71,9 +71,13 @@ impl<'a> HostView<'a> {
         resolve_field_camera(self.world, self.camera, cutscene, self.centre())
     }
 
-    /// The non-scripted frame every screen pass projects through. Never
-    /// advances the cutscene glide, so a draw pass may ask as often as it
-    /// likes.
+    /// The non-scripted frame: the camera this frame would have without a
+    /// scripted shot. Never advances the cutscene glide, so a draw pass may
+    /// ask as often as it likes. A pass whose retail draw goes through the
+    /// GTE camera of the frame (the drop shadows, the light pools, the move
+    /// strips) projects through [`Self::frame`] with the host's glided shot
+    /// instead: under a scripted shot this one is a different camera, and
+    /// everything projected through it lands shifted off the meshes.
     pub fn follow_frame(&self) -> FieldCameraFrame {
         self.frame(None)
     }
@@ -160,15 +164,24 @@ impl<'a> HostView<'a> {
     }
 
     /// This frame's actor drop shadows (`legaia_render_kernels::drop_shadow`,
-    /// retail's `FUN_8001C394` blob) through the follow frame, wrapped by
-    /// `drop_shadow_prim`. Each cell carries its corners' scene depth, so a
-    /// host depth-tests it against the scene already drawn: under the actor
-    /// standing on it, over the ground. Empty outside game mode 3.
-    pub fn drop_shadow_prims(&self) -> Vec<ScreenPrim> {
+    /// retail's `FUN_8001C394` blob) through the frame the meshes draw
+    /// through, wrapped by `drop_shadow_prim`. Each cell carries its corners'
+    /// scene depth, so a host depth-tests it against the scene already drawn:
+    /// under the actor standing on it, over the ground. Empty outside game
+    /// mode 3.
+    ///
+    /// `cutscene` is the host's glided scripted shot when one owns the frame
+    /// (the same view its scene pass draws through), `None` otherwise.
+    /// Retail projects the blob from inside the actor renderer
+    /// (`FUN_8001C394` hands `actor+0x14` to `FUN_800460AC` under the GTE
+    /// camera the frame loaded), so the blob and the body share one camera;
+    /// projecting through the follow frame instead shifted every blob off its
+    /// body by the same screen offset during a scripted event.
+    pub fn drop_shadow_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
         if !World::fog_mode(self.world.mode) && self.world.pack_mode_stage().is_none() {
             return Vec::new();
         }
-        let Some(view) = self.follow_frame().field_view() else {
+        let Some(view) = self.frame(cutscene).field_view() else {
             return Vec::new();
         };
         self.world
@@ -183,14 +196,15 @@ impl<'a> HostView<'a> {
     /// `MoveVmGlobals::strip_frame`), projected through the follow frame by
     /// `move_strip_prims`. The set is the latest tick's and is not drained, so
     /// a redraw with no tick draws it again. Field scenes only - the
-    /// extension dispatcher exists only in the field overlay.
-    pub fn move_strip_prims(&self) -> Vec<ScreenPrim> {
+    /// extension dispatcher exists only in the field overlay. `cutscene` is
+    /// the host's glided scripted shot, as for [`Self::drop_shadow_prims`].
+    pub fn move_strip_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
         let requests = self.world.move_vm.strip_frame();
         if requests.is_empty() || self.world.mode != SceneMode::Field {
             return Vec::new();
         }
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) =
-            self.follow_frame()
+            self.frame(cutscene)
         else {
             return Vec::new();
         };
@@ -201,14 +215,15 @@ impl<'a> HostView<'a> {
     /// pools (`World::field_light_draws`, the `FUN_801E4470` draw feeding
     /// `FUN_801E3984`) - wrapped by `light_pool_prims`, which owns the blend
     /// class, vertex order and triangle split. Empty outside a field scene or
-    /// with no light live.
-    pub fn light_prims(&self) -> Vec<ScreenPrim> {
+    /// with no light live. `cutscene` is the host's glided scripted shot, as
+    /// for [`Self::drop_shadow_prims`].
+    pub fn light_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
         let world = self.world;
         if world.mode != SceneMode::Field || world.script_actors.lights.is_empty() {
             return Vec::new();
         }
         let (FieldCameraFrame::Follow(view) | FieldCameraFrame::Cutscene(view)) =
-            self.follow_frame()
+            self.frame(cutscene)
         else {
             return Vec::new();
         };
@@ -383,13 +398,79 @@ mod tests {
         let cam = Camera::default();
         let v = HostView::new(&world, &cam, AABB);
         assert!(v.fog_prims(true).is_empty());
-        assert!(v.drop_shadow_prims().is_empty());
-        assert!(v.move_strip_prims().is_empty());
-        assert!(v.light_prims().is_empty());
+        assert!(v.drop_shadow_prims(None).is_empty());
+        assert!(v.move_strip_prims(None).is_empty());
+        assert!(v.light_prims(None).is_empty());
         assert!(v.world_map_marker_prims(true).is_empty());
         assert!(v.world_map_sky_prims().is_empty());
         assert_eq!(v.curve_scale(None), 0.0);
         assert!(weapon_trail_prims(&world, &glam::Mat4::IDENTITY.to_cols_array(), 4.0).is_empty());
         assert!(move_fx_streak_quads(&world, &glam::Mat4::IDENTITY).is_empty());
+    }
+
+    /// Under a scripted shot each blob's centre grid point (`FUN_800460AC`'s
+    /// middle `RTPT` point, the shared corner of the four cells) is the
+    /// body's own origin projected through the shot the scene pass draws -
+    /// for the player and for a placement the scripted mover walked off its
+    /// channel's anchor alike. Through the follow frame instead, both blobs
+    /// shift by one screen offset and keep their spacing: the formation
+    /// drawn beside the bodies.
+    #[test]
+    fn a_scripted_shot_lays_each_blob_under_its_body() {
+        use legaia_engine_field::field_channels::FieldChannel;
+        let mut world = World {
+            mode: SceneMode::Field,
+            ..World::default()
+        };
+        let a = world.spawn_actor(0);
+        a.move_state.world_x = 1000;
+        a.move_state.world_z = 600;
+        world.player_actor_slot = Some(0);
+        // A placement whose channel still holds its seat while the scripted
+        // mover has walked it on (`npcs.positions`, what its mesh draws at).
+        let mut c = FieldChannel {
+            placement_index: 3,
+            ctx: Default::default(),
+            record_offset: 0,
+            pc: 0,
+            done: false,
+            object_bind: false,
+        };
+        c.ctx.move_id = 1;
+        c.ctx.world_x = 200;
+        c.ctx.world_z = 200;
+        c.ctx.field_72 = 0x1000;
+        world.field_vm.channels.push(c);
+        world.npcs.positions.insert(3, (1300, 900));
+        let cam = Camera::default();
+        let v = HostView::new(&world, &cam, AABB);
+        let follow = v.follow_frame().field_view().expect("follow view");
+        let shot = FieldCameraView {
+            focus: [
+                follow.focus[0] + 300.0,
+                follow.focus[1],
+                follow.focus[2] + 500.0,
+            ],
+            ..follow
+        };
+        let player = [1000, world.actors[0].move_state.world_y.into(), 600];
+        let npc = world
+            .field_npc_draw_pose(3, (200, 200))
+            .expect("drawn")
+            .pos
+            .map(|c| c as i32);
+        let centre = |view: &FieldCameraView, p: [i32; 3]| {
+            let (sx, sy, _) = world.field_fx_view(view).project_gte(p).expect("in front");
+            (sx, sy)
+        };
+        let prims = v.drop_shadow_prims(Some(shot));
+        assert_eq!(prims.len(), 8, "four cells per caster");
+        let drawn = v.frame(Some(shot)).field_view().expect("shot");
+        assert_eq!(prims[0].corners()[3], centre(&drawn, player));
+        assert_eq!(prims[4].corners()[3], centre(&drawn, npc));
+        // The follow frame is a different camera: its blobs sit elsewhere.
+        let stale = v.drop_shadow_prims(None);
+        assert_eq!(stale[0].corners()[3], centre(&follow, player));
+        assert_ne!(stale[0].corners()[3], prims[0].corners()[3]);
     }
 }

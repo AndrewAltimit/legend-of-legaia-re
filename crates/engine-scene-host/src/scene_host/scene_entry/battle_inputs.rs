@@ -251,12 +251,33 @@ impl SceneHost {
             return;
         }
         self.cast_effect_pool_loaded = true;
-        let mut pool = CastEffectPool::new();
-        for entry in CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST {
-            if let Ok(bytes) = self.index.entry_bytes(entry) {
-                pool.insert(entry, &bytes);
+        let images: Vec<(u32, Arc<Vec<u8>>)> = (CAST_MODULE_PROT_FIRST..=CAST_MODULE_PROT_LAST)
+            .filter_map(|entry| Some((entry, self.index.entry_bytes(entry).ok()?)))
+            .collect();
+        // A process that opens many hosts over one disc (the soak harness,
+        // the retail comparison, the ladder's reloads) parses the same 64
+        // images every time; the pool is a pure function of them and shared
+        // read-only, so the last band's parse is reused when every byte
+        // matches.
+        type Band = Vec<(u32, Arc<Vec<u8>>)>;
+        static LAST: std::sync::Mutex<Option<(Band, Arc<CastEffectPool>)>> =
+            std::sync::Mutex::new(None);
+        let cached = LAST.lock().ok().and_then(|last| {
+            last.as_ref()
+                .filter(|(k, _)| *k == images)
+                .map(|(_, p)| p.clone())
+        });
+        let pool = cached.unwrap_or_else(|| {
+            let mut pool = CastEffectPool::new();
+            for (entry, bytes) in &images {
+                pool.insert(*entry, bytes);
             }
-        }
+            let pool = Arc::new(pool);
+            if let Ok(mut last) = LAST.lock() {
+                *last = Some((images, pool.clone()));
+            }
+            pool
+        });
         if pool.is_empty() {
             eprintln!(
                 "[scene] cast-effect pool (PROT {CAST_MODULE_PROT_FIRST}..{CAST_MODULE_PROT_LAST}) \
@@ -264,8 +285,7 @@ impl SceneHost {
             );
             return;
         }
-        self.world
-            .install_cast_effect_pool(std::sync::Arc::new(pool));
+        self.world.install_cast_effect_pool(pool);
         // The evolved Cort's arrival module, for the in-image records its
         // phases spawn on the boss seat (`World::install_stage_module_image`).
         let arrival = legaia_engine_core::world::ARRIVAL_MODULE_PROT;

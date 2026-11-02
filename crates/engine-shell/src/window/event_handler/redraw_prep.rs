@@ -71,6 +71,15 @@ impl PlayWindowApp {
             // (`LEGAIA_SEAT_BALLOON`).
             if due && let Some(b) = sc.seat_balloon.take() {
                 self.session.host.world.cutscene.text_balloon = b;
+                // A seated balloon arrives unmeasured, as a spawned one
+                // does, and the tick's own measure pass has already run
+                // this frame: retail's spawner measures before the first
+                // draw (`FUN_8003C764` -> `FUN_80035F04`), so measure now
+                // or the captured frame shows the window without its line.
+                legaia_engine_screens::field_messages::commit_text_balloon_measure(
+                    &mut self.session.host.world,
+                    &self.font,
+                );
             }
             // ... and a captured cast's parts where retail's passes had put
             // them (`LEGAIA_SEAT_CAST_PARTS`).
@@ -132,6 +141,9 @@ impl PlayWindowApp {
             }
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.battle.land_battle_hud_glides();
+            }
+            if due && sc.seat_move_label_unseen {
+                self.session.host.world.battle.move_label_closed = true;
             }
             if due {
                 for g in &sc.seat_hud_glides {
@@ -215,7 +227,7 @@ impl PlayWindowApp {
                     self.session
                         .host
                         .world
-                        .seed_placement_seat(w.flat, w.x, w.z);
+                        .seed_placement_seat(w.flat, w.x, w.z, w.heading);
                 }
                 for w in &sc.seat_walkers {
                     self.session
@@ -372,7 +384,14 @@ impl PlayWindowApp {
             let mask = match (world.battle.camera.as_mut(), target) {
                 (Some(cam), Some(target)) => {
                     let shown = match displayed {
-                        Some((shown, _)) if cam.glide_endpoint_matches_to(end, target) => shown,
+                        // Judged on the components the walk back moved: one
+                        // retail holds still reads the same either way
+                        // (`BattleCamera::glide_endpoint_matches_walked`).
+                        Some((shown, _))
+                            if cam.glide_endpoint_matches_walked(end, target, live, shown) =>
+                        {
+                            shown
+                        }
                         _ => live,
                     };
                     // A capture-band module's own shot still walking (`0x70`
@@ -431,9 +450,17 @@ impl PlayWindowApp {
                 .as_ref()
                 .map(|sc| sc.battle_displayed_seat.clone())
                 .unwrap_or_default();
-            if !seats.is_empty() {
+            // ... and posed on the clip that frame shows
+            // (`LEGAIA_SEAT_DISPLAYED_CLIPS`).
+            let clips = self
+                .screenshot
+                .as_ref()
+                .map(|sc| sc.seat_displayed_clips.clone())
+                .unwrap_or_default();
+            if !seats.is_empty() || !clips.is_empty() {
                 let world = &mut self.session.host.world;
                 let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &seats);
+                legaia_engine_capture::clip_cursors::apply_displayed_clips(world, &clips);
                 if mask == 0xFF {
                     world.refresh_battle_camera_ghost();
                 }

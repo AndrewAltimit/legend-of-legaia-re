@@ -264,12 +264,9 @@ impl BakaFight {
             self.f[winner].round_wins += 1;
         }
         self.accumulate_round_score(winner);
-        // The result banners rise first (retail's banner tail runs ahead of
-        // the round setup), so the round banner asked for here waits out
-        // their hold rather than drawing over them.
+        // The result banners rise here (retail's banner tail); the next
+        // round's banner is the cabinet's, from its round setup on.
         self.tick_result_banner();
-        self.chrome
-            .start_round_banner(crate::baka_fighter_chrome::ROUND_BANNER_SPRITE);
         if self.f[winner].round_wins >= ROUND_WIN_TARGET {
             self.phase = MatchPhase::MatchOver(winner);
             if winner == 0 {

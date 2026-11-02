@@ -68,6 +68,26 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **The `0x75EA` CD input volume has a writer.** `FUN_8003D764` state `6`
+  sets `a0 = 0x75` at `0x8003D92C` and reaches the shared `jal 0x8003EE7C` at
+  `0x8003D9F4`; a scan for `117` loaded just before a call missed it, and the
+  audio page's open item said the port mixed every line at unity while the
+  port already mixed cues at that level ([settled](re-settled-threads/audio.md)).
+- **`.MAP` and `.PCH` are field files, not sound-tool intermediates.** The
+  two strings in the sound-driver cluster are referenced once each, by the
+  field-file loader `FUN_8001F7C0` (`0x8001F834`, `0x8001F8CC`): they name a
+  scene's walkability map and walk-on trigger sidecar, both on the retail disc
+  ([settled](re-settled-threads/audio.md),
+  [falsified](re-do-not-re-walk.md#audio--sound-driver)).
+- **No retail entry is a truncated TMD.** The `tmd_size_prefix` class matches
+  nothing on the corrected extraction: all 182 TMD-led stream entries hold the
+  whole mesh, so there was never a tail for a loader to supply
+  ([settled](re-settled-threads/measurement-corpus.md),
+  [falsified](re-do-not-re-walk.md#containers--placeholder-slots)).
+- **The captured "four-level jump" is one level.** Record `+0x00` is the
+  cumulative XP and `+0x04` the next threshold, which `FUN_801E9504` rewrites
+  (`0x801E9FA0`); the diff's `365 -> 730` is Vahn's L3 to L4 threshold beside a
+  level byte `2 -> 3` ([settled](re-settled-threads/battle.md)).
 - **A four-slot event list's beat is decided by the disc, and is rarely
   `0`.** The read index is the low byte of the entry's RAM address, and the
   battle heap places each monster block by a fixed law: ids load upward

@@ -5,9 +5,9 @@ The browser minigames page's runtime: `LegaiaMinigames`, the
 shell over the minigame rules engines (`engine-minigames`, `engine-fishing`,
 `engine-battle-menus`' Muscle Dome session) and holds no `World`: each game
 runs straight off the tables decoded from the visitor's own disc. It also carries
-`LegaiaModes` (`modes_page`), the game-modes page's runtime behind
-`site/modes.html`: the port's own modes on the mode seat
-(`engine-expansion`), with no disc at all. Module by
+`LegaiaModes` (`modes_page`): the port's own modes on the mode seat
+(`engine-expansion`), with no disc at all. `site/modes.html` uses its pack
+loader to list the instances it plays in 3D; its flat seat draws on no page. Module by
 module, the exports are in
 [`docs/subsystems/browser-host.md`](../../docs/subsystems/browser-host.md#playable-minigames-legaia-web-minigames).
 

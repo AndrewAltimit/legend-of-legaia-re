@@ -7,23 +7,23 @@
 <section class="doc-section" id="desktop" data-doc="-">
   <h2>On the desktop</h2>
   <ol class="steps steps-vertical">
-    <li><b>Pick the pack</b><span>The launcher's <em>Expansion pack...</em> button steps through the packs it finds - Rebirth, which the release archive carries in its <code>packs/</code> folder, and any you drop in the <code>packs/</code> folder of your saves folder - and past the last one opens a file dialog for an <code>.lxpack</code> file or the <code>pack.toml</code> inside a pack folder. Dropping either on the window works too.</span></li>
-    <li><b>It is checked</b><span>The launcher runs the same validator the game does. A pack with errors is refused and the help box lists the first few; a good one shows on the button by its short name (<em>Pack: Rebirth</em>), with its full name, version and authors in the help box.</span></li>
+    <li><b>Pick the pack</b><span>The launcher's <em>Expansion pack...</em> button steps through the packs it finds - the sample pack, which the release archive carries in its <code>packs/</code> folder, and any you drop in the <code>packs/</code> folder of your saves folder - and past the last one opens a file dialog for an <code>.lxpack</code> file or the <code>pack.toml</code> inside a pack folder. Dropping either on the window works too.</span></li>
+    <li><b>It is checked</b><span>The launcher runs the same validator the game does. A pack with errors is refused and the help box lists the first few; a good one shows on the button by its short name (<em>Pack: Sample</em>), with its full name, version and authors in the help box.</span></li>
     <li><b>Play</b><span>New Game and Continue now play with the pack. The choice is remembered (<code>expansion = "..."</code> in <code>launcher.toml</code>); <em>Delete</em> or a right-click on the button goes back to no pack.</span></li>
   </ol>
   <p>The launcher hands the pack to the game as <code>--expansion</code>, which works by hand too:</p>
 <pre><code># New Game and Continue play with the pack
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
-    --expansion packs/rebirth
+    --expansion packs/sample
 # Straight onto one of its maps (a folder or an .lxpack)
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion rebirth.lxpack --map genesis_1f [--spawn dais]</code></pre>
+    --expansion sample.lxpack --map genesis_1f [--spawn dais]</code></pre>
   <p>With <code>--resume-save</code>, a save made on one of the pack's maps lands back on that map instead of <code>--map</code>.</p>
 </section>
 
 <section class="doc-section" id="browser" data-doc="-">
   <h2>In the browser</h2>
-  <p>On the <a href="../play.html">play page</a>, load your disc first: a pack activates against it. Every visit starts with no pack - New game and the Scene picker are the game as it shipped. Packs are experimental and incomplete, so one is turned on only from the <strong>Expansion pack</strong> card in the side panel: it lists the Rebirth pack the site serves first and takes any other <code>.lxpack</code>, and a row's <em>Enable</em> loads it. While a pack is on, the Scenes list opens with a section under the pack's name, marked experimental, listing its maps and custom game modes, a click walks you straight onto one, and New Game plays with the pack; <em>Disable</em> goes back to the game as it shipped. Installed packs stay in the page's pack library, each with its cover, version and authors; a pack that needs a pack you have not installed, or conflicts with one you have, says so under its row (one pack plays at a time). The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s <em>Play in browser</em> button installs the pack it is editing in that library and opens the play page on it; <code>End</code> on the play page reloads the library's copy in place.</p>
+  <p>On the <a href="../play.html">play page</a>, load your disc first: a pack activates against it. Every visit starts with no pack - New game and the Scene picker are the game as it shipped. Packs are experimental and incomplete, so one is turned on only from the <strong>Expansion pack</strong> card in the side panel: it lists the sample pack the site serves first and takes any other <code>.lxpack</code>, and a row's <em>Enable</em> loads it. While a pack is on, the Scenes list opens with a section under the pack's name, marked experimental, listing its maps and custom game modes, a click walks you straight onto one, and New Game plays with the pack; <em>Disable</em> goes back to the game as it shipped. Installed packs stay in the page's pack library, each with its cover, version and authors; a pack that needs a pack you have not installed, or conflicts with one you have, says so under its row (one pack plays at a time). The <a href="../tooling/expansion-workbench.html">expansion workbench</a>'s <em>Play in browser</em> button installs the pack it is editing in that library and opens the play page on it; <code>End</code> on the play page reloads the library's copy in place.</p>
   <p class="callout callout-tip">The browser takes the bundled <code>.lxpack</code> form only. A pack kept as a folder becomes one with <code>asset expansion bundle</code>, or on the workbench (load the folder, <em>Download .lxpack</em>).</p>
 </section>
 
@@ -45,7 +45,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     <li><strong>Quests</strong> lists the started quests, active first, with each objective's progress and the reward.</li>
     <li><strong>Challenges</strong> lists the challenges with their best scores; Cross arms one for the next battle.</li>
     <li><strong>Cards</strong> shows the trading-card collection and opens the card menu (binder, boosters, selling, the duel deck).</li>
-    <li><strong>Travel</strong> lists the pack maps you have been to on this save and takes you straight back to one. A map whose entrance is open to your party (Rebirth's tower, from level 30) is listed before your first visit, however you started the game. The <em>Unlock all Travel maps</em> cheat (<code>--cheat-travel</code>, the play page's Cheats panel) lists every map - the way in for testing a map whose entrance is out of reach.</li>
+    <li><strong>Travel</strong> lists the pack maps you have been to on this save and takes you straight back to one. A map whose entrance is open to your party (the sample pack's tower, from level 30) is listed before your first visit, however you started the game. The <em>Unlock all Travel maps</em> cheat (<code>--cheat-travel</code>, the play page's Cheats panel) lists every map - the way in for testing a map whose entrance is out of reach.</li>
   </ul>
   <p>The pack's name and version head the screen, with the count of new cards.</p>
   <h3 id="modes">Game modes and cards</h3>
@@ -63,7 +63,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
   <h2>Saves</h2>
   <p>A save made with a pack carries that pack's progress - quests, pack flags, challenge records, beaten bosses, the map you stood on, your cards - in a block of its own, and reloads it. A save made without a pack has no such block and is the same bytes it always was.</p>
   <ul class="bullets">
-    <li><strong>A save naming a pack that is not loaded</strong> still loads, says so ("Saved with expansion 'rebirth' - not loaded"), and keeps the pack's progress to write back on the next save, so playing a while without the pack loses nothing.</li>
+    <li><strong>A save naming a pack that is not loaded</strong> still loads, says so ("Saved with expansion 'sample' - not loaded"), and keeps the pack's progress to write back on the next save, so playing a while without the pack loses nothing.</li>
     <li><strong>A save made on a pack map</strong> returns to the map with the player where they stood; without the pack it lands in the map's base scene.</li>
   </ul>
   <p>The block's layout is on <a href="../formats/expansion-pack-quests.html#saves">quests and saves</a>.</p>
@@ -73,7 +73,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
   <h2>Next</h2>
   <div class="see-also">
     <span class="see-also-label">Guides</span>
-    <a href="rebirth.html">Rebirth: what is in it</a>
+    <a href="sample-pack.html">the sample pack: what is in it</a>
     <a href="making-expansion-packs.html">Making a pack</a>
     <a href="playing-online.html">Playing online</a>
   </div>

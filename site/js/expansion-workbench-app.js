@@ -25,7 +25,7 @@
  * `play.html?expansion=1` (docs/tooling/expansion-workbench.md).
  *
  * Imports resolve relative to THIS file (site/js/); the published example is
- * `../packs/rebirth.json`, written by site/_gen.py from packs/rebirth/.
+ * `../packs/sample.json`, written by site/_gen.py from packs/sample/.
  */
 
 import {
@@ -713,7 +713,7 @@ function placeParseError(issue) {
 }
 
 /* The validator runs a moment after each edit. It costs a few hundred
- * milliseconds on a pack of Rebirth's size, so it runs in a worker
+ * milliseconds on a pack of the sample pack's size, so it runs in a worker
  * (expansion-workbench-validate-worker.js) on a second session built from
  * this one's disc files and pack files: typing never waits for it. An
  * answer for a pack that has changed since is dropped (a newer one is on
@@ -1181,32 +1181,32 @@ async function loadTree(tree, label) {
   await loadResult(JSON.parse(quick ? S.wb.finish_files_unchecked() : S.wb.finish_files()), label, tree);
 }
 
-async function loadRebirth(as) {
+async function loadSamplePack(as) {
   if (needDisc()) return;
-  setStatus('Fetching the Rebirth example ...');
+  setStatus('Fetching the sample pack ...');
   try {
-    const res = await fetch(new URL('../packs/rebirth.json', import.meta.url).href);
-    if (!res.ok) throw new Error(`could not load rebirth.json (${res.status})`);
+    const res = await fetch(new URL('../packs/sample.json', import.meta.url).href);
+    if (!res.ok) throw new Error(`could not load sample.json (${res.status})`);
     const doc = await res.json();
     const enc = new TextEncoder();
     const tree = {};
     for (const f of doc.files) {
       tree[f.path] = f.text != null ? enc.encode(f.text) : Uint8Array.from(atob(f.base64), (c) => c.charCodeAt(0));
     }
-    await loadTree(tree, as && as.id ? `clone of Rebirth` : 'Rebirth example');
+    await loadTree(tree, as && as.id ? `clone of the sample pack` : 'the sample pack');
     if (as && as.id && S.pack) {
       // A clone: the same content as a pack of the modder's own.
       Object.assign(S.pack.manifest, { id: as.id, name: as.name, version: '0.1.0' });
       ctx.changed(true);
       // A clone has never been downloaded: it starts unsaved, and its first
-      // step (the new manifest) is not an undo back into Rebirth.
+      // step (the new manifest) is not an undo back into the sample pack.
       S.hist.past = [];
       S.hist.bytes = 0;
       S.clean = '';
-      S.label = 'clone of Rebirth';
+      S.label = 'clone of the sample pack';
       updateDirty();
       updateSetup();
-      setStatus(`Started ${as.name} as a clone of Rebirth: every section is Rebirth's, the manifest is yours. Unchanged files keep Rebirth's comments.`, 'ok');
+      setStatus(`Started ${as.name} as a clone of the sample pack: every section is the sample pack's, the manifest is yours. Unchanged files keep the sample pack's comments.`, 'ok');
     }
   } catch (e) {
     setStatus('Error: ' + errText(e), 'err');
@@ -1336,13 +1336,13 @@ function init() {
       if (f) openDisc(f);
     });
   }
-  $('xw-rebirth').addEventListener('click', () => whenDisc('the Rebirth example opens', () => loadRebirth(), 'rebirth'));
+  $('xw-sample').addEventListener('click', () => whenDisc('the sample pack opens', () => loadSamplePack(), 'sample'));
   // The start panel's cards.
   $('xw-empty').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-start]');
     if (!b) return;
     const what = b.dataset.start;
-    if (what === 'rebirth') whenDisc('the Rebirth example opens', () => loadRebirth(), 'rebirth');
+    if (what === 'sample') whenDisc('the sample pack opens', () => loadSamplePack(), 'sample');
     else if (what === 'quick') whenDisc('your pack is created', quickPack, 'quick');
     else if (what === 'new') openNewForm();
     else if (what === 'bundle') { if (!needDisc()) $('xw-bundle-file').click(); }
@@ -1493,8 +1493,8 @@ async function newPack() {
   const name = $('xw-new-name').value.trim() || 'My expansion';
   const tpl = $('xw-new-tpl').value;
   $('xw-new').hidden = true;
-  if (tpl === 'rebirth') {
-    await loadRebirth({ id, name });
+  if (tpl === 'sample') {
+    await loadSamplePack({ id, name });
     return;
   }
   let pack = JSON.parse(S.wb.start_fresh(id, name));

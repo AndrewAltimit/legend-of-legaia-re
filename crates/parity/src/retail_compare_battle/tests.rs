@@ -360,6 +360,46 @@ fn spent_combatants_keep_their_heading_until_the_strike_commits() {
     );
 }
 
+/// A monster's action capture replays the rest of its round on the
+/// captured keys: the actor goes first, a combatant still to act keeps its
+/// key, a spent monster sits out, and a spent party member replays its turn
+/// first only under a cast, where the drive commits it Spirit.
+#[test]
+fn a_monster_capture_replays_its_round_on_the_captured_keys() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 3);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x2B);
+    put8(&mut ram, ctx + 0x13, 4);
+    for c in 0..3 {
+        put8(&mut ram, FORMATION_CELL + c, 0x0D);
+    }
+    for (slot, base) in [
+        (0u32, 0x800E_C9E8u32),
+        (3, 0x800E_D000),
+        (4, 0x800E_D800),
+        (5, 0x800E_E000),
+    ] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 50);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.active_actor = 4;
+    b.queued_category = 2;
+    b.init_keys = vec![Some(0), None, None, Some(40), Some(0), Some(0)];
+    // Party seat 0 spent (replays Spirit first), monster 3 still to act,
+    // the caster (retail 4, engine 2) above it, monster 5 spent.
+    let k = b.engine_init_keys();
+    assert_eq!(&k[..4], &[Some(42), Some(40), Some(41), Some(0)]);
+    // Under a strike the member's replayed Attack would land twice.
+    b.queued_category = 3;
+    assert_eq!(b.engine_init_keys()[0], Some(0));
+}
+
 /// A counterattack capture - a party seat's strike loop inside a monster's
 /// turn (`ctx[+0x274]`) - sits out every other living combatant, the live
 /// keys included: they rank behind the turn the round has reached.
@@ -412,6 +452,62 @@ fn the_displayed_camera_walks_back_no_further_than_the_seed_arm() {
     // A pass of `0x14` has drifted the counter: its own re-arms span the lag.
     assert_eq!(tween_passes_back(0x14, 0x202, 2), 2);
     assert_eq!(tween_passes_back(0x1E, 0x200, 2), 2);
+}
+
+/// The Done arm `0x50` seeds the tail countdown and stores `0x51` in one
+/// pass, so a `0x51` capture on the seed with every HP bar settled is that
+/// pass; a bar still draining freezes the countdown on later passes too.
+#[test]
+fn a_done_capture_on_the_seeded_countdown_is_the_arm_pass() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let gala = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, gala);
+    put16(&mut ram, gala + 0x14C, 1446);
+    put16(&mut ram, gala + 0x172, 1446);
+    put16(&mut ram, ctx + 0x6D8, 0x3C);
+    assert!(done_arm_pass(&ram, ctx, 0x51));
+    assert!(!done_arm_pass(&ram, ctx, 0x52), "only the fade-down band");
+    put16(&mut ram, ctx + 0x6D8, 0x96);
+    assert!(done_arm_pass(&ram, ctx, 0x51), "the Spirit-turn seed");
+    put16(&mut ram, ctx + 0x6D8, 0x39);
+    assert!(!done_arm_pass(&ram, ctx, 0x51), "a later pass stepped it");
+    put16(&mut ram, ctx + 0x6D8, 0x3C);
+    put16(&mut ram, gala + 0x172, 1500);
+    assert!(!done_arm_pass(&ram, ctx, 0x51), "the settle gate holds it");
+}
+
+/// A PROT 0962 charge body waiting in arm 3 walks the wind-up shot arm 2
+/// built once over `0xC` units: `koru_blade_breath_mid_cast` holds it two
+/// units in (yaw `99` a unit, `979` to go), so a walk back of two step-`2`
+/// passes stops at the shot's origin, one pass back.
+#[test]
+fn a_charge_body_shot_walks_back_no_further_than_its_origin() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let koru = 0x800E_D264;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x70);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x279, 3);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, koru);
+    put8(&mut ram, koru + 0x1DF, 0xA2);
+    // Live yaw `2366` walking to `3345` at `99` a unit; TR z `7285` to
+    // `3276` at `402`.
+    put16(&mut ram, 0x8007_B792, 2366);
+    put32(&mut ram, 0x8008_40C0, 7285);
+    put16(&mut ram, ctx + TWEEN_TABLE + 4, 99);
+    put16(&mut ram, ctx + TWEEN_TABLE + 4 + 2, 3345);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4, 402);
+    put16(&mut ram, ctx + TWEEN_TABLE + 5 * 4 + 2, 3276);
+    assert_eq!(module_shot_frames(&ram, ctx), Some(0xC));
+    let shown = displayed_module_cam_live(&ram, ctx, &[2, 2]);
+    assert_eq!(shown.yaw, 2366.0 - 2.0 * 99.0);
+    // Another module's table walks the whole lag back.
+    put8(&mut ram, koru + 0x1DF, 0xA6);
+    assert_eq!(module_shot_frames(&ram, ctx), None);
+    let shown = displayed_module_cam_live(&ram, ctx, &[2, 2]);
+    assert_eq!(shown.yaw, 2366.0 - 4.0 * 99.0);
 }
 
 /// The magic band rewrites a party-wide `8` to the lone member's slot
@@ -1379,6 +1475,117 @@ fn a_recommitted_swing_stands_on_the_displayed_pair() {
     );
 }
 
+/// A monster strike captured on the strike loop's first pass: the RAM holds
+/// the strike entry at cursor `0`, the rings the arrival's idle committed a
+/// pass before it, which is what the displayed frame shows
+/// (`battle_noaru_gilium_lv2_strike`). The image child poses the attacker on
+/// the idle at the ring's cursor and stands it on the ring's pair; off a
+/// clip-age gate, or where the rings show the RAM's own clip, it does neither.
+#[test]
+fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x0A);
+    let (vahn, gilium, record) = (0x800E_C9E8u32, 0x800E_D000u32, 0x800A_8158u32);
+    for (slot, base) in [(0u32, vahn), (3, gilium)] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 60);
+    }
+    put32(&mut ram, 0x801C_9348, record);
+    let (idle, walk, strike) = (0x800A_C698u32, 0x800A_DF44u32, 0x800B_5754u32);
+    for (i, e) in [idle, walk].into_iter().enumerate() {
+        put32(&mut ram, record + 0x4C + 4 * i as u32, e);
+    }
+    put32(&mut ram, record + 0x4C + 4 * 8, strike);
+    for (k, (e, cur, x, z)) in [
+        (strike, 0u16, -39i32, 287i32),
+        (idle, 24, -39, 291),
+        (idle, 0, -39, 291),
+        (walk, 448, -39, 267),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        put32(&mut ram, gilium + 0x234 + 4 * k, e);
+        put16(&mut ram, gilium + 0x17A + 2 * k, cur);
+        put32(&mut ram, gilium + POSITION_RING + 8 * k, x as u32);
+        put32(&mut ram, gilium + POSITION_RING + 8 * k + 4, z as u32);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    assert_eq!(b.displayed_clips.get(3), Some(&Some((0, 0))));
+    assert_eq!(b.displayed_clips.first(), Some(&None), "a party seat");
+    b.active_actor = 3;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.caster_clip = 8;
+    b.span_gate = SpanGate::Age { accum: 0 };
+    let pc = b.party_count.clamp(1, 3);
+    let clips = b.engine_image_displayed_clips();
+    assert_eq!(clips.len(), 1);
+    assert_eq!((clips[0].slot, clips[0].clip, clips[0].cursor), (pc, 0, 0));
+    let seats = b.engine_image_displayed_seats();
+    assert_eq!(seats.len(), 1);
+    assert_eq!((seats[0].slot, seats[0].x, seats[0].z), (pc, -39, 291));
+    b.span_gate = SpanGate::None;
+    assert!(
+        b.engine_image_displayed_clips().is_empty(),
+        "not a clip-age gate"
+    );
+    b.span_gate = SpanGate::Age { accum: 0 };
+    b.caster_clip = 0;
+    assert!(
+        b.engine_image_displayed_clips().is_empty(),
+        "no commit in the window"
+    );
+
+    // A walked-in charge cast past its walk (`koru_blade_breath_mid_cast`):
+    // the wind-up committed inside the lag, the display shows the run.
+    {
+        let mut c = b.clone();
+        c.action_state = 0x70;
+        c.module_phase = 3;
+        c.cam_landed = false;
+        c.queued_action = 0xA2;
+        c.queued_category = 2;
+        c.span_gate = SpanGate::None;
+        c.caster_clip = 5;
+        c.displayed_clips[3] = Some((1, 136));
+        assert!(c.walk_in_shot_aligned());
+        let clips = c.engine_image_displayed_clips();
+        assert_eq!(clips.len(), 1, "the walked cast's run clip");
+        assert_eq!((clips[0].clip, clips[0].cursor), (1, 136));
+        c.caster_clip = 1;
+        assert!(
+            c.engine_image_displayed_clips().is_empty(),
+            "still on the run"
+        );
+    }
+
+    // The strike's target still idles: its loop is seated, as no hit has
+    // staged its reaction yet; a cast's target keeps the replay's clock.
+    b.span_gate = SpanGate::Age { accum: 0 };
+    b.target_code = 0;
+    b.clip_cursors = vec![(0, 0, 12)];
+    let seats: Vec<u8> = b.engine_clip_cursors().iter().map(|s| s.slot).collect();
+    assert_eq!(seats, vec![0], "the melee target's idle");
+    b.queued_category = 2;
+    assert!(b.engine_clip_cursors().is_empty(), "a cast's target");
+    b.queued_category = 3;
+
+    // Every party seat sat the round out on Spirit: the drive's party does.
+    b.party_categories = vec![4];
+    assert!(b.party_spirit_round());
+    b.party_categories = vec![0];
+    assert!(!b.party_spirit_round(), "a member swung or acted otherwise");
+}
+
 /// A round prompt caught on its far framing's arm: `gaza2_card_first_menu`'s
 /// table (TR z `353` a frame with `1050` to go, TR y `19` with `47`, pitch
 /// landed) has three frames left, and the displayed frame six vsyncs more.
@@ -1406,4 +1613,146 @@ fn a_prompt_on_its_far_framing_arm_names_the_frames_left() {
     put32(&mut ram, 0x8008_40BC, 1280);
     put32(&mut ram, 0x8008_40C0, 7800);
     assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
+}
+
+/// A party Attack capture's yaw counter climbs from the Attack arm's
+/// `0x200` unless one of the acting seat's action entries carries the
+/// `+0x87 == 2` byte the swing re-seed fires on (`FUN_8004E13C`); the drive
+/// pins the counter only on a rung both sides stand on.
+#[test]
+fn an_attacks_yaw_rung_holds_without_a_reseed_entry() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x51);
+    put8(&mut ram, ctx + 0x13, 0);
+    put16(&mut ram, ctx + 0x6DA, 1114);
+    put8(&mut ram, FORMATION_CELL, 0xB5);
+    let actor = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, actor);
+    put8(&mut ram, actor + 0x1DE, 3);
+    let table = 0x8018_7A14;
+    put32(&mut ram, PARTY_ENTRY_TABLES, table);
+    for slot in 0..PARTY_ENTRY_SLOTS {
+        put32(&mut ram, table + slot * 4, 0x8018_8000 + slot * 0x100);
+    }
+    let rung = |ram: &[u8]| {
+        let b = RetailBattle::from_ram(ram).expect("seedable");
+        match b.battle_drive() {
+            Some(BattleDrive::Action { steer, .. }) => steer.rung,
+            other => panic!("not an action drive: {other:?}"),
+        }
+    };
+    assert_eq!(rung(&ram), Some(0x200));
+    // An art entry that re-seeds the counter leaves the rung unknown.
+    put8(&mut ram, 0x8018_8000 + 0x10 * 0x100 + 0x87, 2);
+    assert_eq!(rung(&ram), None);
+}
+
+/// A party arts capture on a dynamic art slot names the latched raw id
+/// `+0x1DB` its last commit installed: the SpecialStarter and the Hyper Art
+/// behind it both play in slot `0x11`, and once the strike loop has staged
+/// the art the cursor names both, so the drive's age gate also waits for the
+/// engine to latch the capture's id.
+#[test]
+fn an_arts_capture_on_the_art_slot_gates_on_the_latched_id() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1F);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, ctx + 0x15, 5);
+    put8(&mut ram, FORMATION_CELL, 0x0D);
+    let actor = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, actor);
+    put8(&mut ram, actor + 0x1DD, 3);
+    put8(&mut ram, actor + 0x1DE, 3);
+    for (i, b) in [0x0C, 0x0F, 0x0F, 0x1A, 0x1E].into_iter().enumerate() {
+        put8(&mut ram, actor + 0x1DF + i as u32, b);
+    }
+    put8(&mut ram, actor + 0x1D9, 0x11);
+    put8(&mut ram, actor + 0x1DA, 0x11);
+    put8(&mut ram, actor + 0x1DB, 0x1E);
+    let steer = |ram: &[u8]| {
+        let b = RetailBattle::from_ram(ram).expect("seedable");
+        match b.battle_drive() {
+            Some(BattleDrive::Action { steer, .. }) => steer,
+            other => panic!("not an action drive: {other:?}"),
+        }
+    };
+    let s = steer(&ram);
+    assert_eq!((s.clip, s.cursor, s.latched), (None, Some(5), Some(0x1E)));
+    // A swing clip is placed by the clip gate and the age alone.
+    put8(&mut ram, actor + 0x1D9, 0x0F);
+    put8(&mut ram, actor + 0x1DB, 0x0F);
+    assert_eq!(steer(&ram).latched, None);
+}
+
+/// A party Attack's Done-band capture places its walk once a first run has
+/// measured the string: the counter's span from the Attack arm's `0x200`,
+/// turned into vsyncs at the ring's rate, less the replay's string, is the
+/// walk (`RetailBattle::party_approach`).
+#[test]
+fn a_party_done_capture_places_its_walk_from_the_measured_string() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x51);
+    put8(&mut ram, ctx + 0x13, 0);
+    put8(&mut ram, FORMATION_CELL, 0xB5);
+    let actor = 0x800E_C9E8;
+    put32(&mut ram, ACTOR_TABLE, actor);
+    put8(&mut ram, actor + 0x1DD, 3);
+    put8(&mut ram, actor + 0x1DE, 3);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.ring_steps = [3; 16];
+    // 60 vsyncs of walk and a 400-vsync string at step 3: `4 / 3` a vsync.
+    b.walk_yaw_base = 0x200 + 460 * 4 / 3;
+    b.captured = vec![None; 8];
+    b.captured[0] = Some(([-125, -254], [0, 0], 0, 0));
+    b.captured[3] = Some(([170, 375], [0, 0], 0, 0));
+    assert!(b.wants_party_combo());
+    assert_eq!(b.capture_approach_yaw(), None, "unmeasured");
+    let app = b
+        .with_party_combo(400)
+        .capture_approach_yaw()
+        .expect("a walk to place");
+    assert_eq!(app.arrive, 0x200 + 60);
+    assert_eq!((app.strike, app.target_ground), ([-125, -254], [170, 375]));
+    // A string as long as the whole span leaves no walk to place.
+    assert_eq!(b.with_party_combo(458).capture_approach_yaw(), None);
+}
+
+/// A string longer than the damage ring has wrapped it: the newest eight
+/// pushes sit at `i mod 8`, each older one is an unknown amount
+/// (`ram_read::action_hit_sequence`).
+#[test]
+fn a_wrapped_damage_ring_reads_its_newest_eight_pushes() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x51);
+    put8(&mut ram, ctx + 0x273, 10);
+    for e in 0..8u32 {
+        put16(&mut ram, ctx + 0x318 + e * 2, 3);
+        put16(&mut ram, ctx + 0x83C + e * 4, 100 + e as u16);
+    }
+    let seq = ram_read::action_hit_sequence(&ram, ctx);
+    assert_eq!(seq.len(), 10);
+    assert_eq!(
+        &seq[..2],
+        &[(3, 0), (3, 0)],
+        "overwritten by pushes 8 and 9"
+    );
+    assert_eq!(seq[2], (3, 102));
+    assert_eq!(&seq[8..], &[(3, 100), (3, 101)]);
 }

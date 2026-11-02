@@ -586,7 +586,7 @@ pub fn region_encounter_table_from_man(
             formation_base: region.formation_range_base,
             formation_count: region.formation_range_count,
             setup: RegionSetupBytes {
-                byte5: region.reserved_5,
+                byte5: region.return_map_high,
                 byte8: raw(8).unwrap_or(0),
                 ext: (stride >= 0xC)
                     .then(|| Some([raw(9)?, raw(10)?, raw(11)?]))

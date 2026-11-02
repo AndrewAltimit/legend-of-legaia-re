@@ -342,7 +342,7 @@ impl Core {
 
     fn load_files_with(&mut self, files: PackFiles, check: bool) -> Value {
         // A folder picked in the browser arrives under its own name
-        // (`rebirth/pack.toml`): strip one shared leading directory.
+        // (`sample/pack.toml`): strip one shared leading directory.
         let files = strip_common_root(files);
         let list: Vec<Value> = files
             .iter()
@@ -1087,8 +1087,8 @@ mod tests {
     #[test]
     fn a_folder_pick_loses_its_root_directory() {
         let mut f = PackFiles::new();
-        f.insert("rebirth/pack.toml".into(), b"x".to_vec());
-        f.insert("rebirth/maps/a.toml".into(), b"y".to_vec());
+        f.insert("sample/pack.toml".into(), b"x".to_vec());
+        f.insert("sample/maps/a.toml".into(), b"y".to_vec());
         let s = strip_common_root(f);
         assert!(s.contains_key("pack.toml") && s.contains_key("maps/a.toml"));
     }

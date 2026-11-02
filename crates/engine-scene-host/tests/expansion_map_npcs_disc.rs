@@ -1,7 +1,7 @@
 //! Disc-gated: a pack map's NPC, standable prop and visible wall, entered
 //! as a live field scene over Rim Elm (`town01`).
 //!
-//! The pack is a fixture built here (no Rebirth content): one map whose NPC
+//! The pack is a fixture built here (no sample-pack content): one map whose NPC
 //! borrows the model of a Rim Elm talk placement, a wall run drawn with a
 //! generated box, and a standable crate. The NPC spawns as a field NPC,
 //! resolves a non-empty mesh through the live-scene catalog both hosts

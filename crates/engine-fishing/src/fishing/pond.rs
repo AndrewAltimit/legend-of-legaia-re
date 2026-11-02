@@ -460,6 +460,11 @@ impl PondSession {
                     ReelInput::ReelB => self.line_record -= 2 * fs,
                     ReelInput::Idle => self.line_record += (-along).max(0) >> 8,
                 }
+                // The lure tick's tail measures the record, then a fish run
+                // far out strains the line (`record >= 0x899`:
+                // `tension += step * 300`, `0x801D3B34..0x801D3B8C`) before
+                // the ceiling test below.
+                self.gauge.far_record_strain(self.line_record, fs);
                 // The lure tick's tail: tension at the ceiling is clamped
                 // there and rolls `rand() % 10 == 0` once a frame for the
                 // break latch `DAT_801D91A4 = 2` (`0x801D3B9C..0x801D3BE4`;

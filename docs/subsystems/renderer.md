@@ -1182,11 +1182,23 @@ channel whose clip id `+0x5C` is non-zero - the port's stand-in for draw kind
 through `screen_prim::drop_shadow_prim` into their field screen-prim pass
 with each corner's scene depth taken six units above the floor, so the depth
 test does the job retail's ordering does: under the actor, over the ground.
+
+The blob and the body share one camera: the matrix `FUN_800460AC` projects
+through is the frame's, the one the actor's mesh just drew with, scripted
+shot or not. The shared pass `HostView::drop_shadow_prims` therefore takes
+the host's glided scripted shot and projects through the same frame the
+scene pass draws (`HostView::frame`); the light pools and the move strips
+take it the same way. Projected through the follow frame instead, every
+blob of a scripted event moves by one common screen offset while keeping
+its spacing to the others - the party's formation drawn beside the party.
+`crates/engine-session/tests/taiku_security_door_camera.rs` checks every
+blob of Zora Castle's door shot against a body's projection.
 `crates/parity/tests/drop_shadow_retail_capture_disc.rs` rebuilds the
 packets from `town01`, `map01` and `map03` states and matches every retail
 blob packet exactly (vertices and UVs), and checks the blob's texels and
 palette in the engine's scene VRAM against the state's VRAM word for word.
 See `ghidra/scripts/funcs/8001c394.txt`, `800460ac.txt` and `8001b964.txt`.
+
 ## The field view matrix: where `TR` comes from
 
 The field camera's ten globals become GTE control registers once a frame in
@@ -1810,6 +1822,17 @@ row 485 on `dolk` / `ropeway`). On the four with a retail state in the library
 equals retail's VRAM and none did before. Both hosts build field VRAM through
 this kernel. Test: `engine-core/tests/scene_clut_over_shared_layer.rs`.
 
+**The merge is one rect's race, not a row's.** The over-collected race the
+merge settles is one palette rect written by several TIMs. A 16-colour palette
+laid inside another scene TIM's wider CLUT block is a palette of its own, and
+`LoadImage` lands it whole, its transparent entry 0 included; only a zero of
+the same rect, or of a slot the later block leaves empty, keeps the earlier
+word. `retockin` (Ratayu) uploads an 8bpp TIM whose 256-entry CLUT covers
+`(64..320, 485)` with `0x8021` at `x = 80`, then the plants' 4bpp TIM with its
+palette at `(80, 485)`, entry 0 `0x0000`: retail's VRAM holds the zero, and
+under the row-wide merge the fronds' cutouts drew as near-black wedges. Test:
+`legaia_tmd::vram_targeted`'s `a_palette_inside_another_scene_block_lands_its_zero`.
+
 #### Field static-object placement (town01)
 
 The field static-object table (`FUN_8003A55C`, `legaia_scene_formats::field_objects`)
@@ -2286,15 +2309,20 @@ The port arms the rejection through one kernel both hosts read,
 | World map | both sides (its continent terrain's winding parity is the world-map pass's) |
 | Battle stage, other minigame venues | both sides |
 | Battle **bodies** | culled per draw under the field's parity, word `2` (`BattleActorDrawPlan::nclip_mode`; `Renderer::set_draw_nclip` natively, the placement `nclip` on the play page) |
-| Battle **draw-kind-4 nodes** (default-arm and sprite-arm meshes) and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake) |
-| Battle **mesh parts** (summon and move-FX parts drawing an effect-library mesh) | the same, per part (`FxPartModel::single_sided`): the native pass culls the resolved mesh before upload, the play page bakes it culled |
+| **Draw-kind-4 nodes** (default-arm and sprite-arm meshes) in battle and the field-shaped passes, and the ground shadows | front faces only when the colour word lacks the double-sided bit (`FxMeshModel::single_sided`; both hosts drop the rest through `effect_draws::retail_front_faces` before upload / bake and draw what is left both-sided) |
+| **Mesh parts** (summon and move-FX parts drawing an effect-library mesh) in the same passes | the same, per part (`FxPartModel::single_sided`): the native pass culls the resolved mesh before upload, the play page bakes it culled |
 
-A move-VM part is the one field draw whose word can carry the bit. The
-field FX parts (`World::active_field_fx_part_draws`) hand it on as
+A move-VM part or node is the one field draw whose word can carry the bit.
+The field FX parts (`World::active_field_fx_part_draws`) hand it on as
 `ColourWord::double_sided`; the native window marks such a draw both-sided
-(`FxFrame::push_draws`) and the play page draws its baked effect mesh
-both-sided, so `opdeene`'s light cone (`0xC9000000`) is not dropped by the
-field pass's cull.
+(`FxFrame::push_draws`) and the play page drops a single-sided part's back
+faces before baking its both-sided effect mesh, so `opdeene`'s light cone
+(`0xC9000000`) is not dropped by the field pass's cull. The field's
+draw-kind-4 sheets take the battle rule: `kor`'s camera-facing steam sheets
+carry `0xC9000000` and keep both faces on both hosts, where the native
+field pass's own cull used to judge them by winding and the play page drew
+every node both-sided.
+The overworld and the minigame venues keep drawing these both-sided.
 
 A draw-kind-4 node is built by its emitter and then falls into the ordinary
 model draw (`0x8001B160`), so its packets reach the dispatcher with the node's

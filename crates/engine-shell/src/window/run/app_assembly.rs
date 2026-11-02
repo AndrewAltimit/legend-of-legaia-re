@@ -113,6 +113,7 @@ impl PlayWindowApp {
             battle_vram: None,
             battle_intro: None,
             last_frame_field_view: None,
+            frame_cutscene_view: None,
             battle_intro_vram: None,
             battle_vram_generation: None,
             battle_faces: Vec::new(),

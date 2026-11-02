@@ -31,6 +31,32 @@ impl World {
         ));
     }
 
+    /// Vsyncs from a start to the swap poller's stage-4 pass on retail:
+    /// stages `0..=2` (three game frames) and the payload read stage 3 waits
+    /// on. `autorun_bgm_swap_latency.lua` measures 62 (`retock`, word `2001`,
+    /// entry 989 of 78 sectors) and 63 (`town01`, word `2045`, entry 1033 of
+    /// 74 sectors) at frame step 2: the read takes 56 vsyncs whatever the
+    /// entry's length, past the 30-vsync settle, so it is what holds the walk.
+    pub const BGM_SWAP_READ_VSYNCS: u16 = 62;
+
+    /// One vsync of the swap poller's clock (`FUN_800243F0`, see
+    /// [`legaia_engine_system::sound_state::BgmSwapPoller`]): stages `4..=6`
+    /// are three passes, two game frames from bit 3 to the attach.
+    pub(crate) fn tick_bgm_swap(&mut self, vsyncs: u16) {
+        let install = 2 * u16::from(self.clock.frame_step.max(1));
+        let commit_owed = self.audio.start_pending_commit;
+        if self.audio.bgm_swap.tick(vsyncs, commit_owed, install)
+            == legaia_engine_system::sound_state::BgmSwapTick::Install
+        {
+            self.audio.bgm_install_due = true;
+        }
+    }
+
+    /// Drain "the swap poller attached the held track" (its stage 6).
+    pub fn take_bgm_install_due(&mut self) -> bool {
+        std::mem::take(&mut self.audio.bgm_install_due)
+    }
+
     /// Drain the "the sound-release deadline expired" event.
     pub fn take_pending_sound_release(&mut self) -> bool {
         std::mem::take(&mut self.audio.pending_sound_release)

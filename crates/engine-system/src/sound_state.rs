@@ -8,6 +8,9 @@
 //! PORT: FUN_800267fc - the timed sound-source auto-release.
 //! PORT: FUN_8002689c - the one-shot sound detach.
 //!
+//! Beside them, the clock of the BGM swap poller `FUN_800243F0` between a
+//! mid-scene track start and its install ([`BgmSwapPoller`]).
+//!
 //! The libsnd calls both of them end in are out of the port's scope; what is
 //! portable is the **scheduling**, which is where the behaviour lives.
 //! REF: FUN_80065440, FUN_80062AA0, FUN_8002657C, FUN_80064370
@@ -96,6 +99,134 @@ impl SoundReleaseTimer {
         self.armed = false;
         SoundReleaseTick::Fired {
             release_voice: source_active && !dual_mode_gate,
+        }
+    }
+}
+
+/// Vsyncs the swap poller's settle delay runs: `gp+0x768 = 0x1E` on the
+/// stage-0 pass (`0x8002460C`), counted down by the frame step on every call
+/// (`0x80024880..0x80024894`). The stage-4 pass waits for it to reach zero.
+pub const BGM_SWAP_SETTLE_VSYNCS: u16 = 0x1E;
+
+/// The swap poller `FUN_800243F0`'s stage walk between a track start and the
+/// slot re-attach, on the vsync clock.
+///
+/// The stage table (`0x800108C8`): `0` wait for CD idle and arm the settle
+/// ([`BGM_SWAP_SETTLE_VSYNCS`]), `1` wait for CD idle, `2` tear the slot down
+/// (unless sound-flag bit 0) and kick the payload read `FUN_8001FC00`, `3`
+/// wait for the read, `4` wait for the settle, set the load-settled bit 3
+/// (`0x800246D0`) and - while bit 0 is up and the release-ack bit 4 is not -
+/// stall there (`0x800246E0..0x800246FC`), `5` install the SEQ
+/// (`FUN_8001E54C`), `6` re-attach the slot (`FUN_80026478`) and latch the
+/// loaded index. One stage per call, one call per game frame; the track is
+/// first heard at stage 6.
+///
+/// The model keeps two clocks from the start: the settle and the read
+/// (stages `0..=3` with the CD read, `read_vsyncs`). Bit 3 rises once both
+/// have run out, and the slot attaches `install_vsyncs` later (stages `4..=6`,
+/// two game frames) - unless a commit is owed, in which case the walk waits on
+/// the commit at bit 3. The field init drives the same poller to completion
+/// in a loop with no vsync wait (`0x801D72D4..0x801D7320` in PROT 0897), so a
+/// scene's entry start installs with the load, and does not run this clock.
+///
+/// PORT: FUN_800243F0 (the start-to-install clock: stages 0..6, 0x800245F0..0x800247BC)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct BgmSwapPoller {
+    state: BgmSwapState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum BgmSwapState {
+    #[default]
+    Idle,
+    /// Stages `0..=4`: the settle and the read both counting.
+    Loading { settle: u16, read: u16 },
+    /// Bit 3 up, the walk stalled on a commit (stage 4).
+    Settled,
+    /// Stages `4..=6` after bit 3: vsyncs to the re-attach.
+    Installing { left: u16 },
+}
+
+/// What one [`BgmSwapPoller::tick`] resolved to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BgmSwapTick {
+    /// No swap in flight.
+    Idle,
+    /// Still loading, settling, or installing.
+    Busy,
+    /// The load-settled bit 3 rose this vsync and the walk now waits on the
+    /// commit.
+    Settled,
+    /// Stage 6 ran: the slot attaches the new track now.
+    Install,
+}
+
+impl BgmSwapPoller {
+    /// A start (the track word changed): the walk begins at stage 0.
+    /// `read_vsyncs` is stages `0..=3` with the CD read.
+    pub fn start(&mut self, read_vsyncs: u16) {
+        self.state = BgmSwapState::Loading {
+            settle: BGM_SWAP_SETTLE_VSYNCS,
+            read: read_vsyncs,
+        };
+    }
+
+    /// Drop the walk (the field init ran the poller to completion).
+    pub fn cancel(&mut self) {
+        self.state = BgmSwapState::Idle;
+    }
+
+    /// A swap is in flight: retail's requested and loaded index differ
+    /// (`_DAT_8007BAB8 != _DAT_8007BA9C`), the condition sub-op 9's barrier
+    /// re-runs its PC on (`0x801E0238`).
+    pub fn in_flight(&self) -> bool {
+        self.state != BgmSwapState::Idle
+    }
+
+    /// Bit 3 of the sound flags is up (load settled, install not yet run):
+    /// the condition sub-op `0xA`'s commit waits for (`0x801E0284..0x801E0288`).
+    pub fn load_settled(&self) -> bool {
+        matches!(
+            self.state,
+            BgmSwapState::Settled | BgmSwapState::Installing { .. }
+        )
+    }
+
+    /// Advance `vsyncs`. `commit_owed` is sound-flag bit 0 without the
+    /// release-ack bit 4 (a sub-op 9 select its `0xA` has not committed);
+    /// `install_vsyncs` is the stage-4-to-6 walk.
+    pub fn tick(&mut self, vsyncs: u16, commit_owed: bool, install_vsyncs: u16) -> BgmSwapTick {
+        match self.state {
+            BgmSwapState::Idle => BgmSwapTick::Idle,
+            BgmSwapState::Loading { settle, read } => {
+                let (settle, read) = (settle.saturating_sub(vsyncs), read.saturating_sub(vsyncs));
+                if settle > 0 || read > 0 {
+                    self.state = BgmSwapState::Loading { settle, read };
+                    return BgmSwapTick::Busy;
+                }
+                if commit_owed {
+                    self.state = BgmSwapState::Settled;
+                    BgmSwapTick::Settled
+                } else {
+                    self.install_after(install_vsyncs)
+                }
+            }
+            BgmSwapState::Settled if commit_owed => BgmSwapTick::Busy,
+            BgmSwapState::Settled => self.install_after(install_vsyncs),
+            BgmSwapState::Installing { left } => {
+                let left = left.saturating_sub(vsyncs);
+                self.install_after(left)
+            }
+        }
+    }
+
+    fn install_after(&mut self, left: u16) -> BgmSwapTick {
+        if left == 0 {
+            self.state = BgmSwapState::Idle;
+            BgmSwapTick::Install
+        } else {
+            self.state = BgmSwapState::Installing { left };
+            BgmSwapTick::Busy
         }
     }
 }
@@ -297,6 +428,48 @@ pub struct XaVoiceClip {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A plain start: the settle, then two frames of install. A slower read
+    /// pushes bit 3 past the settle.
+    #[test]
+    fn bgm_swap_installs_after_the_settle_and_the_read() {
+        let mut p = BgmSwapPoller::default();
+        p.start(10);
+        let mut at = None;
+        for v in 1..=100u16 {
+            if p.tick(1, false, 4) == BgmSwapTick::Install {
+                at = Some(v);
+                break;
+            }
+        }
+        assert_eq!(at, Some(BGM_SWAP_SETTLE_VSYNCS + 4));
+        assert!(!p.in_flight());
+        p.start(50);
+        let n = (1..=100u16)
+            .find(|_| p.tick(1, false, 4) == BgmSwapTick::Install)
+            .unwrap();
+        assert_eq!(n, 54);
+    }
+
+    /// A select owed a commit stops at bit 3 until the commit arrives.
+    #[test]
+    fn bgm_swap_waits_at_bit_3_for_the_commit() {
+        let mut p = BgmSwapPoller::default();
+        p.start(4);
+        let settled = (1..=100u16)
+            .find(|_| p.tick(1, true, 4) == BgmSwapTick::Settled)
+            .unwrap();
+        assert_eq!(settled, BGM_SWAP_SETTLE_VSYNCS);
+        assert!(p.load_settled() && p.in_flight());
+        for _ in 0..200 {
+            assert_eq!(p.tick(1, true, 4), BgmSwapTick::Busy);
+        }
+        let n = (1..=10u16)
+            .find(|_| p.tick(1, false, 4) == BgmSwapTick::Install)
+            .unwrap();
+        // The pass that sees the commit is stage 4's; stages 5 and 6 follow.
+        assert_eq!(n, 5);
+    }
 
     #[test]
     fn a_disarmed_timer_is_a_complete_no_op() {

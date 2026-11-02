@@ -203,25 +203,11 @@ impl SlotMachine {
         if self.phase != SlotPhase::Stopping || reel >= REEL_COUNT || self.stopped[reel].is_some() {
             return false;
         }
-        // The guaranteed-hit mode drives later reels to the first reel's landed
-        // symbol so the line connects. (The bonus round does NOT: its stop plan
-        // has no target at all - the reel lands where you stopped it.)
         // This spin's landing line (`DAT_801d4134` row of the `0x801d3630`
         // table): a forced target lands on that payline, not on the middle row.
         let line = LANDING_LINE_BY_JITTER[self.jitter.rem_euclid(5) as usize];
         let line_offset = |r: usize| PAYLINE_ROW_OFFSETS[line][r];
-        let guarantee = self.stopped.iter().enumerate().find_map(|(r, s)| {
-            s.map(|row| {
-                let at = (row as i32 + line_offset(r)).rem_euclid(STRIP_LEN as i32);
-                self.strips[r][at as usize]
-            })
-        });
-        let (depth, target) = stop_plan(
-            &mut self.rng,
-            self.feature_mode,
-            self.normal_target,
-            guarantee,
-        );
+        let (depth, target) = stop_plan(&mut self.rng, self.feature_mode, self.normal_target);
         let from_row = self.payline_row(reel);
         let row = land_row(
             &self.strips[reel],

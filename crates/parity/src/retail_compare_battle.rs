@@ -128,6 +128,12 @@ const BATTLE_CAMERA_OPTION: u32 = 0x8008_46C0;
 const SELECT_ATTACK_OPTION: u32 = 0x8008_46C4;
 /// Eight-slot battle actor pointer table.
 const ACTOR_TABLE: u32 = 0x801C_9370;
+/// The party seats' action-entry tables (`lui 0x801d; addiu -0x6ca0` at
+/// `0x8004BD7C`): `seat * 4` holds the table, `slot * 4` in it the entry.
+const PARTY_ENTRY_TABLES: u32 = 0x801C_9360;
+/// The entry slots a party commit indexes (`+0x1DA`): the base clips and the
+/// two dynamic art slots `0x10` / `0x11`.
+const PARTY_ENTRY_SLOTS: u32 = 0x12;
 /// A battle actor's position history ring: 32 `(i32 X, i32 Z)` slots
 /// (`FUN_80047430`, `0x80047E58..0x80048060`).
 const POSITION_RING: u32 = 0x4C;
@@ -257,6 +263,7 @@ pub const BATTLE_RNG_SEEDS: [u32; 48] = [
 /// `docs/tooling/retail-compare.md` ("The stream at the entry").
 pub const BATTLE_RNG_PINS: &[(&str, u32)] = &[
     ("battle_melee_hit_spark", 0x9E37_79B9),
+    ("gaza2_pre_neo_star_slash", 0x3C6E_F372),
     ("shiny_refactor_gimard_levelup", 0x1F83_D9AB),
 ];
 
@@ -408,8 +415,28 @@ pub struct RetailBattle {
     pub cam_accum: u32,
     /// The active seat's committed clip `+0x1D9`.
     pub caster_clip: u8,
+    /// The active seat's latched raw staged id `+0x1DB` - the byte its last
+    /// commit installed, before an art id was rewritten to a dynamic slot.
+    pub caster_latched: u8,
     /// `ctx[+0x6DA]` - the yaw base a module walk arm swings.
     pub walk_yaw_base: u16,
+    /// Whether the active party seat's action-entry table
+    /// (`0x801C9360[seat][slot]`) holds an entry whose `+0x87` byte is `2`:
+    /// the only commit `FUN_8004E13C` re-seeds the yaw counter on
+    /// (`0x8004E254..0x8004E2B4`). `false` for a monster seat, which the
+    /// re-seed's `ctx[+0x13] < 3` gate excludes.
+    pub swing_reseed_entry: bool,
+    /// The steps of the capture's last sixteen passes, newest first
+    /// ([`frame_step::recent_pass_steps`]): the rate the yaw counter
+    /// `ctx[+0x6DA]` climbed at near the capture, `max(1, 4 * step / 3)` an
+    /// SM pass of `step` vsyncs (`0x801E29E4..0x801E2A24`).
+    pub ring_steps: [u8; 16],
+    /// A party attack capture's strike string as the replay ran it: vsyncs
+    /// from the acting seat's first strike-loop pass `0x1E` to the capture's
+    /// phase, measured on a first run ([`Self::with_party_combo`]). `None`
+    /// until measured; [`Self::capture_approach_yaw`] needs it for a party
+    /// seat.
+    pub party_combo_vsyncs: Option<u32>,
     /// The backdrop pair's depth-cue weight, the record `ctx[+0x106C]`'s
     /// `+0x78` ([`Self::capture_band_backdrop_cue`]).
     pub backdrop_cue: Option<u16>,
@@ -432,6 +459,10 @@ pub struct RetailBattle {
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// [`Self::cam_tween`]'s endpoints as the displayed frame's own pass
+    /// armed them: the RAM's, moved where a walker moved them
+    /// ([`walker_end_shift`]).
+    pub displayed_cam_end: legaia_engine_camera::projection::BattleCamPose,
     /// [`Self::cam_tween`]'s live pose walked back to the displayed frame
     /// along a table built once, as a slot-B module's shot is
     /// ([`displayed_module_cam_live`]).
@@ -502,6 +533,12 @@ pub struct RetailBattle {
     pub committed_queue: [u8; 16],
     /// `ctx[+0x15]` - the strike cursor into that queue.
     pub strike_cursor: u8,
+    /// A monster strike gated on its first swing clip has its strike stream
+    /// stood on [`Self::committed_queue`] by the drive
+    /// (`ActionSteer::queue`). Not a capture fact: the battle search raises
+    /// it only when no stream reaches the phase on the picks the replay drew
+    /// itself, so every state a stream reaches keeps its own fight.
+    pub strike_stream_steer: bool,
     /// The active seat's live action gauge `+0x154` and its base `+0x156`.
     /// A Spirit turn's round boundary extends the live gauge
     /// (`(base * 7) / 5 + 8`), and the extension decides both the arts
@@ -572,6 +609,17 @@ pub struct RetailBattle {
     /// the bearing to the target in one pass, so a seat that recommitted in
     /// that window drew on the ring's pair, not on the RAM's.
     pub displayed_recommit: Vec<bool>,
+    /// Each pool slot's clip and cursor on the **displayed** frame, read
+    /// off the history rings rather than walked back from the RAM's cursor:
+    /// slot [`DISPLAYED_FRAMES_BACK`] of the clip-record ring `+0x234` (the
+    /// committed entry pointer, a word a frame), resolved to its index in
+    /// the monster record's entry array (at `+0x4C` of the record
+    /// `0x801C9348[slot - 3]`), and the same slot of the cursor ring
+    /// `+0x17A`. A monster
+    /// seat only (`None` for the party and for a pointer the array does not
+    /// hold). It differs from the RAM's clip where the anim node committed
+    /// inside the display lag, which the walk back cannot see.
+    pub displayed_clips: Vec<Option<(u8, u16)>>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

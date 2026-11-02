@@ -1,5 +1,5 @@
 //! Fishing-overlay **chrome kernels** - the small leaf routines the venue's
-//! sub-screens share: the centred panel frame, the idle sway vector, the
+//! sub-screens share: the centred panel frame, the pond swell (the water's floor-ladder rungs), the
 //! catch-slot table reset and the scene camera reset.
 //!
 //! Every routine here is a leaf of the slot-A minigame overlay PROT 0972
@@ -12,34 +12,51 @@
 
 /// Steps of the shared sine table (`*_DAT_8007B81C`), a full turn.
 pub const SINE_TURN: i32 = 0x1000;
-/// Quarter turn - the phase offset between the sway triple's components.
+/// Quarter turn - the phase offset between the swell's three rungs.
 pub const SINE_QUARTER: i32 = 0x400;
-/// Constant bias subtracted from every sway component after the shift.
-pub const SWAY_BIAS: i32 = 0xA;
+/// Constant bias subtracted from every swelling rung after the shift.
+pub const SWELL_BIAS: i32 = 0xA;
 /// Angle advance per tick, before the frame-step multiply.
-pub const SWAY_STEP_SHIFT: u32 = 4;
+pub const SWELL_STEP_SHIFT: u32 = 4;
+/// Rungs of the floor-height ladder the swell owns: rung `0` (cleared) and
+/// the three swelling rungs `1..=3`.
+pub const SWELL_RUNGS: usize = 4;
 
-/// The three-component sway offset plus the (unused) leading halfword the
-/// routine clears, in the order retail stores them into the render scratch
-/// block at `0x1F80035C`.
+/// One frame of the pond swell: the four ladder rungs `FUN_801D03B0` stores
+/// at the head of the floor-height ladder (`0x1F80035C`, base register
+/// `0x1F800314 + 0x48`), in the scratchpad frame the ground pass reads them
+/// in (Y down, so a negative rung stands higher).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SwayVector {
-    /// `+0x48` - cleared every call.
-    pub pad: i16,
-    /// `+0x4A` - sample at the current angle.
-    pub x: i16,
-    /// `+0x4C` - sample a quarter turn on.
-    pub y: i16,
-    /// `+0x4E` - sample a half turn on.
-    pub z: i16,
+pub struct WaterSwell {
+    /// `rungs[0]` is cleared every call (`sh zero,0x48(a1)`); `rungs[1..4]`
+    /// are the samples at the angle, a quarter turn on and a half turn on
+    /// (`+0x4A` / `+0x4C` / `+0x4E`).
+    pub rungs: [i16; SWELL_RUNGS],
 }
 
-// Wired: the play window's fishing sub-screen (the point-exchange list) runs
-// the sway each frame and offsets its panel by the triple's x/y - the host's
-// equivalent of the `0x1F80035C` render-block consumer. The sine table is the
-// host's own synthesized 4096-step table (the shared `*_DAT_8007B81C` table
-// is runtime data the port does not read).
-/// PORT: FUN_801D03B0 - the sub-screen idle sway.
+impl WaterSwell {
+    /// Store the rungs over the head of a 16-rung floor-height ladder, as
+    /// retail's stores land on `0x1F80035C..0x1F800362`. Rungs `4..16` are
+    /// left alone.
+    pub fn apply(&self, ladder: &mut [i16; 16]) {
+        ladder[..SWELL_RUNGS].copy_from_slice(&self.rungs);
+    }
+}
+
+// PORT: FUN_801D03B0 - the pond swell.
+// Wired: `engine-minigame-scenes::fishing_venue::tick_venue_actors` runs it on
+// every venue frame (all three hosts) into `FishingVenue::floor_ladder`; the
+// pond's ground (`fishing_scene::FishingSurface`, the minigames page's
+// `fishing_scene_ground_positions`) re-reads that ladder per vertex, as the
+// field ground pass does, so the water cells heave.
+/// One frame of the pond swell (`FUN_801D03B0`, called from the fishing
+/// driver's shared tail at `0x801D037C`, so every running state).
+///
+/// The venue's water cells sit on floor tiers `1..=3`; the ground pass
+/// resolves each cell corner's tier through the ladder at `0x1F80035C` every
+/// frame it draws, so rewriting rungs `1..=3` with three phases of one sine
+/// heaves the water surface while the shore (tier `0`, the rung this clears)
+/// stays put.
 ///
 /// `sine` is the shared 4096-step table the overlay reads through
 /// `*_DAT_8007B81C`; `angle` is the running phase (`0x801D9118`) and
@@ -48,25 +65,27 @@ pub struct SwayVector {
 /// The routine samples the table three times - at `angle`, `angle + 0x400`
 /// and `angle + 0x800`, i.e. sine, cosine and negated sine - and scales each
 /// with the same round-toward-zero shift retail spells as
-/// `bgez / addiu 0xFF / sra 8`, then subtracts [`SWAY_BIAS`]. It returns the
+/// `bgez / addiu 0xFF / sra 8`, then subtracts [`SWELL_BIAS`]. It returns the
 /// advanced angle: `angle + (frame_step << 4)`, with the *unmasked* value
 /// carried forward (only the table index is masked to [`SINE_TURN`]).
-pub fn sway_vector(sine: &[i16], angle: i32, frame_step: i32) -> (SwayVector, i32) {
+pub fn water_swell(sine: &[i16], angle: i32, frame_step: i32) -> (WaterSwell, i32) {
     let sample = |phase: i32| -> i16 {
         let raw = sine
             .get((phase & (SINE_TURN - 1)) as usize)
             .copied()
             .unwrap_or(0) as i32;
         let raw = if raw >= 0 { raw } else { raw + 0xFF };
-        ((raw >> 8) - SWAY_BIAS) as i16
+        ((raw >> 8) - SWELL_BIAS) as i16
     };
-    let v = SwayVector {
-        pad: 0,
-        x: sample(angle),
-        y: sample(angle + SINE_QUARTER),
-        z: sample(angle + 2 * SINE_QUARTER),
+    let v = WaterSwell {
+        rungs: [
+            0,
+            sample(angle),
+            sample(angle + SINE_QUARTER),
+            sample(angle + 2 * SINE_QUARTER),
+        ],
     };
-    (v, angle + (frame_step << SWAY_STEP_SHIFT))
+    (v, angle + (frame_step << SWELL_STEP_SHIFT))
 }
 
 /// Records in the ring the reset clears.
@@ -365,31 +384,58 @@ mod tests {
     }
 
     #[test]
-    fn sway_is_three_quarter_turn_samples() {
+    fn swell_is_three_quarter_turn_samples() {
         let t = table();
-        let (v, next) = sway_vector(&t, 0, 2);
+        let (v, next) = water_swell(&t, 0, 2);
         // sin(0) = 0 -> 0 - bias; cos = +4096 -> 16 - bias; -sin = 0.
-        assert_eq!(v.pad, 0);
-        assert_eq!(v.x, -(SWAY_BIAS as i16));
-        assert_eq!(v.y, 16 - SWAY_BIAS as i16);
-        assert_eq!(v.z, -(SWAY_BIAS as i16));
-        assert_eq!(next, 2 << SWAY_STEP_SHIFT);
+        let b = SWELL_BIAS as i16;
+        assert_eq!(v.rungs, [0, -b, 16 - b, -b]);
+        assert_eq!(next, 2 << SWELL_STEP_SHIFT);
     }
 
     #[test]
-    fn sway_rounds_negative_samples_toward_zero() {
+    fn swell_matches_the_retail_ladder_head() {
+        // `minigame_fishing_retail_ready` run forward under PCSX-Redux
+        // (`DAT_1F800393 = 3`): each snapshot pairs the stored angle
+        // `0x801D9118` with the scratchpad ladder head. The store follows the
+        // samples, so the head is the swell of the angle one step (`3 << 4`)
+        // back.
+        let t = table();
+        for (stored, want) in [
+            (0x1570, [0, 4, -17, -24]),
+            (0x15D0, [0, 2, -19, -22]),
+            (0x1750, [0, -5, -25, -15]),
+        ] {
+            let (v, next) = water_swell(&t, stored - 0x30, 3);
+            assert_eq!(v.rungs, want, "stored angle {stored:#x}");
+            assert_eq!(next, stored);
+        }
+    }
+
+    #[test]
+    fn swell_owns_only_the_ladder_head() {
+        let t = table();
+        let mut ladder = [77i16; 16];
+        let (v, _) = water_swell(&t, 0x1540, 1);
+        v.apply(&mut ladder);
+        assert_eq!(&ladder[..4], &[0, 4, -17, -24]);
+        assert!(ladder[4..].iter().all(|&r| r == 77));
+    }
+
+    #[test]
+    fn swell_rounds_negative_samples_toward_zero() {
         // A negative table entry takes the `+0xFF` arm before the shift, so
         // -4096 >> 8 lands on -16 and not -17.
         let mut t = vec![0i16; SINE_TURN as usize];
         t[0] = -4096;
-        let (v, _) = sway_vector(&t, 0, 0);
-        assert_eq!(v.x, -16 - SWAY_BIAS as i16);
+        let (v, _) = water_swell(&t, 0, 0);
+        assert_eq!(v.rungs[1], -16 - SWELL_BIAS as i16);
     }
 
     #[test]
-    fn sway_angle_is_not_masked_between_calls() {
+    fn swell_angle_is_not_masked_between_calls() {
         let t = table();
-        let (_, a) = sway_vector(&t, SINE_TURN - 1, 1);
+        let (_, a) = water_swell(&t, SINE_TURN - 1, 1);
         assert_eq!(a, SINE_TURN - 1 + 16);
     }
 

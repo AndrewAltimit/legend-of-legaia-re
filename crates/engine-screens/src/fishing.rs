@@ -152,9 +152,9 @@ pub fn fishing_line_screen_prims(
 ///
 /// The pen is the venue sub-screen's panel frame (`FUN_801d74b0`): the retail
 /// menu-picker rect, centre-x converted to a left edge with the two-left /
-/// six-down skin bias, swaying on the overlay's idle sway triple
-/// (`FUN_801d03b0`), which the shared venue step advances on the world. Each
-/// row carries the live bag count of its prize. `legend` is the host's own
+/// six-down skin bias. The panel holds still: `FUN_801d74b0` reads no offset,
+/// and the scratchpad triple once read as its sway is the pond swell's
+/// floor-ladder head (`FUN_801d03b0`). Each row carries the live bag count of its prize. `legend` is the host's own
 /// key line; `ink` / `dim` are its pens for live and unavailable rows.
 pub fn fishing_exchange_draws(
     world: &World,
@@ -167,9 +167,8 @@ pub fn fishing_exchange_draws(
     let Some(ex) = world.minigames.fishing_exchange.as_ref() else {
         return Vec::new();
     };
-    let sway = world.minigames.fishing_venue.sway_offset;
     let pen = legaia_engine_fishing::fishing_chrome::centred_panel(0xA0, 0x50, 0x68, 0x50)
-        .map(|p| (p.x as i32 + sway.0 as i32, p.y as i32 + sway.1 as i32))
+        .map(|p| (p.x as i32, p.y as i32))
         .unwrap_or((8, 98));
     let names: Vec<String> = ex
         .rows

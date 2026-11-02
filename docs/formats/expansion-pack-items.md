@@ -11,7 +11,7 @@
 | Referenced from | `battle.toml` drops, steals and boss rewards; `progression.toml` level rewards; `quests.toml` rewards and `collect_item` objectives; map `shop` triggers and shop NPCs |
 | Storage | Beside the retail bag, keyed by item id; saved as tail record `4` of the [expansion block](expansion-pack-quests.md#saves) |
 | Screens | The pack item screen (shop counter, bag, equip compare) and the Journal's Items page |
-| Sample | [`packs/rebirth/items.toml`](../../packs/rebirth/items.toml) |
+| Sample | [`packs/sample/items.toml`](../../packs/sample/items.toml) |
 
 ## Where pack items live
 
@@ -116,7 +116,7 @@ Everywhere a pack names an item it writes an `ItemRef`:
 |---|---|---|
 | An integer | `0x79` | Retail item id |
 | An item coordinate | `{ kind = "item", id = 0x79 }` | The same retail item |
-| A string | `"vigil_blade"`, `"rebirth:vigil_blade"` | A pack item; `other:item` names a required pack's |
+| A string | `"vigil_blade"`, `"sample:vigil_blade"` | A pack item; `other:item` names a required pack's |
 
 The form is accepted in `battle.toml` monster `drop` and `steal` and boss `reward_items`, `progression.toml` `level_rewards`, `quests.toml` `rewards.items` and `collect_item` objectives, and shop `stock`. A pack key must be defined in `items.toml`; a retail id is a disc coordinate the resolver checks.
 
@@ -183,11 +183,11 @@ It is written only while the player holds or wears a pack item, so a block witho
 - The retail Items and Equip screens list no pack items (their rows are the retail bag's slots); the pack item screen and the Journal list them. A slot a pack item fills shows that item's name on the retail Equip and Status screens (`World::pack_worn_item_name`), though the record's byte under it stays `0`.
 - A pack weapon's `icon` picks its battle mesh and swing costs from the retail weapon it names.
 
-## The flagship pack's gear
+## The sample pack's gear
 
-[`packs/rebirth/items.toml`](../../packs/rebirth/items.toml) is set against retail's endgame, the Ra-Seru set from the static equipment table (`DAT_80074F68`, [equipment-table.md](equipment-table.md)):
+[`packs/sample/items.toml`](../../packs/sample/items.toml) is set against retail's endgame, the Ra-Seru set from the static equipment table (`DAT_80074F68`, [equipment-table.md](equipment-table.md)):
 
-| Slot | Retail best | Rebirth pack |
+| Slot | Retail best | Sample pack |
 |---|---|---|
 | Vahn's weapon | Ra-Seru Blade ATK 98; shop Chaos Breaker 72 | Vigil Blade ATK 112 (Iron Regent) |
 | Noa's weapon | Ra-Seru Fangs 96; Golden Claw 86 | Vigil Talon 110 (Azure Seraph) |

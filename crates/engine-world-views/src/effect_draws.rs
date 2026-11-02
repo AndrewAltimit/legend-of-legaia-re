@@ -162,9 +162,9 @@ pub struct FxPartModel {
     pub model: [f32; 16],
     /// The part's mesh keeps retail's `NCLIP` winding rejection: the model
     /// draw (`0x8001B160`) hands the prim dispatcher the part's own colour
-    /// word, so a word without `0x08000000` draws front faces only. Set in
-    /// the battle pass, which draws both sides; a host resolves the mesh and
-    /// drops its back faces with [`retail_front_faces`]. PROT 0922's crystals
+    /// word, so a word without `0x08000000` draws front faces only. A host
+    /// resolves the mesh, drops its back faces with [`retail_front_faces`]
+    /// and draws what is left both-sided, in every pass. PROT 0922's crystals
     /// (`0x801F989C`, word `0xC1000000`, additive) are one: both-sided, each
     /// added its far wall over its near one and drew white, not pink.
     pub single_sided: bool,
@@ -179,10 +179,13 @@ pub struct FxMeshModel {
     /// Column-major model matrix in the draw frame.
     pub model: [f32; 16],
     /// The draw keeps retail's `NCLIP` winding rejection
-    /// ([`legaia_engine_effects::effect_ribbon::RibbonDraw::single_sided`]),
-    /// in a frame whose pass draws both sides: the battle pass. A host draws
-    /// only its front faces, the battle bodies' parity
-    /// ([`legaia_engine_core::world::BATTLE_BODY_NCLIP`]).
+    /// ([`legaia_engine_effects::effect_ribbon::RibbonDraw::single_sided`]).
+    /// A host draws only its front faces, the battle bodies' parity
+    /// ([`legaia_engine_core::world::BATTLE_BODY_NCLIP`]), and the rest
+    /// both-sided: a node whose word carries `0x08000000` keeps every face
+    /// on the field too, where the pass's own cull would drop the
+    /// camera-facing sheets that wind away from the eye. Clear on the
+    /// overworld and the minigame venues, which draw both sides.
     pub single_sided: bool,
 }
 
@@ -256,6 +259,16 @@ pub fn effect_model_draws(
 ) -> FxModelDraws {
     let battle = world.mode == SceneMode::Battle;
     let overworld = world.mode == SceneMode::WorldMap;
+    // The passes whose draws keep retail's per-word winding test: battle and
+    // the field-shaped ones. The prim dispatcher `FUN_80043390` lowers its
+    // `NCLIP` mask only for a word carrying `0x08000000`
+    // (`0x80043520..0x80043540`); the overworld swaps the prim handlers
+    // (PROT 0901) and the minigame venues draw both sides.
+    let per_word_cull = battle
+        || matches!(
+            world.mode,
+            SceneMode::Field | SceneMode::Cutscene | SceneMode::Dance
+        );
     let model_flip = if battle { WORLD_FLIP } else { IDENTITY };
     // A node's placement: `T(F world_pos)`, or - for a `+0x52 & 0x780`
     // node - the camera-relative prefix `FUN_8001CF50` resolves to; then
@@ -283,7 +296,7 @@ pub fn effect_model_draws(
             .chain(world.active_move_fx_part_draws())
             .map(|draw| FxPartModel {
                 model: node(draw.flags_52, draw.world_pos, draw.rot),
-                single_sided: battle && !draw.colour.double_sided,
+                single_sided: per_word_cull && !draw.colour.double_sided,
                 draw,
             })
             .collect();
@@ -293,7 +306,7 @@ pub fn effect_model_draws(
         .into_iter()
         .map(|rb| FxMeshModel {
             model: node(rb.flags_52, rb.world_pos, rb.rot),
-            single_sided: battle && rb.single_sided,
+            single_sided: per_word_cull && rb.single_sided,
             mesh: rb.mesh,
         })
         .collect();
@@ -326,8 +339,10 @@ pub fn effect_model_draws(
                     &place,
                     &mat4_mul(&part_rotation(fp.rot, false), &model_flip),
                 ),
-                // The field pass culls back faces itself (`nclip_cull_mode`).
-                single_sided: false,
+                // The native field pass culls these on the GPU under the
+                // part's own double-sided bit (`FxFrame::push_draws`); the
+                // play page bakes them, so it drops the back faces itself.
+                single_sided: per_word_cull && !fp.colour.double_sided,
                 draw: fp,
             }
         })
@@ -414,6 +429,53 @@ mod tests {
         assert_eq!(tr, [12.0, -19.0, 30.0]);
         assert_eq!(bl, [8.0, -21.0, 30.0]);
         assert_eq!(br, [12.0, -21.0, 30.0]);
+    }
+
+    /// A field ambient sprite-arm sheet (move-VM op `0x23`) with colour
+    /// word `word`.
+    fn field_sheet(word: u32) -> legaia_engine_core::world::ambient::AmbientPart {
+        let mut st = legaia_engine_vm::move_vm::ActorState::new();
+        st.move_substate = 4;
+        st.field_9e = 0x4000;
+        st.field_72 = 0x1000;
+        st.field_74 = word;
+        st.set_actor_u16(0xB4, 0x200);
+        st.set_actor_u16(0xB6, 0x60);
+        legaia_engine_core::world::ambient::AmbientPart {
+            record_off: 0,
+            model_sel: 0x4000,
+            reserved: 0,
+            buf: Vec::new(),
+            state: st,
+            finished: false,
+            cell_fx: None,
+            scroll_fx: Vec::new(),
+            prev_morph_weights: Vec::new(),
+        }
+    }
+
+    /// The prim dispatcher lowers its `NCLIP` mask only for a word carrying
+    /// `0x08000000`, whatever the pass: a field sheet with the bit
+    /// (`kor`'s steam, `0xC9000000`) keeps both faces, one without keeps its
+    /// front faces, and the overworld draws both sides as before.
+    #[test]
+    fn a_kind4_nodes_word_decides_its_faces_on_the_field() {
+        for (mode, word, single) in [
+            (SceneMode::Field, 0xC900_0000, false),
+            (SceneMode::Field, 0xC100_0000, true),
+            (SceneMode::Cutscene, 0xC100_0000, true),
+            (SceneMode::WorldMap, 0xC100_0000, false),
+            (SceneMode::Fishing, 0xC100_0000, false),
+        ] {
+            let mut w = World {
+                mode,
+                ..World::default()
+            };
+            w.ambient.fx.push(field_sheet(word));
+            let lists = effect_model_draws(&w, None, |_| None);
+            assert_eq!(lists.kind4.len(), 1, "{mode:?}");
+            assert_eq!(lists.kind4[0].single_sided, single, "{mode:?} {word:#x}");
+        }
     }
 
     #[test]

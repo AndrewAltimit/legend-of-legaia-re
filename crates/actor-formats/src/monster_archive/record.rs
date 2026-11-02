@@ -179,6 +179,16 @@ pub struct MonsterRecord {
     /// those gate the AGL cost, these carry the on-screen name. Pinned from the
     /// AI spell picker `FUN_801E9FD4` (`overlay_0898`).
     pub magic_attacks: Vec<u8>,
+    /// The record bytes `+0x20..+0x28` as stored - the magic slots
+    /// `+0x21..=+0x23` unfiltered, with their neighbours. The AI picker
+    /// `FUN_801E9FD4` indexes this window by a running counter rather than by
+    /// live slot: its gate counts the **non-zero** slots (`0x801EA068..
+    /// 0x801EA08C`) and tests the one it rolled against `< 2` (`lbu v0,
+    /// 0x20(v0)` at `0x801EA168`), and its tag-`0x23` walk reads `+0x21 + s1
+    /// - 1` with `s1` counted down, or left at the seated monster count by a
+    /// target-class arm (`0x801EA4E0..0x801EA4E8`), so it can land on `+0x20`
+    /// or `+0x24`. [`Self::magic_attacks`] is the filtered list.
+    pub ai_bytes: [u8; 8],
 }
 
 impl MonsterRecord {
@@ -379,6 +389,10 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         .filter_map(|o| block.get(o).copied())
         .filter(|&b| b > 1)
         .collect();
+    let mut ai_bytes = [0u8; 8];
+    for (i, b) in ai_bytes.iter_mut().enumerate() {
+        *b = *block.get(0x20 + i)?;
+    }
     Some(MonsterRecord {
         id,
         name,
@@ -399,6 +413,7 @@ pub(super) fn parse_block(id: u16, block: &[u8]) -> Option<MonsterRecord> {
         magic_count,
         spells,
         magic_attacks,
+        ai_bytes,
         plaque_badge,
     })
 }
@@ -656,6 +671,7 @@ mod tests {
             magic_count: 0,
             spells: vec![],
             magic_attacks: vec![],
+            ai_bytes: [0; 8],
             plaque_badge: None,
         };
         assert_eq!(rec.battle_stats(), [128, 360, 444, 400, 247, 146]);

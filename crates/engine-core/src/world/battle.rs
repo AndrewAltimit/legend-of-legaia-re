@@ -27,6 +27,7 @@ mod formation_span;
 mod frame_clock;
 mod homing;
 mod initiative;
+pub use initiative::ParkedTurn;
 mod intro_names;
 mod locomotion;
 pub(in crate::world) use locomotion::stream_pose;

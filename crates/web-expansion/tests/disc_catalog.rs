@@ -18,7 +18,7 @@ fn disc() -> Option<Vec<u8>> {
 }
 
 #[test]
-fn catalog_and_rebirth_against_the_disc() {
+fn catalog_and_sample_pack_against_the_disc() {
     let Some(image) = disc() else {
         eprintln!("LEGAIA_DISC_BIN unset; skipping");
         return;
@@ -63,8 +63,8 @@ fn catalog_and_rebirth_against_the_disc() {
     }
     assert!(staged > 40, "{staged} blocks with a battle stage");
 
-    // Rebirth resolves on the disc: no coordinate error.
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    // The sample pack resolves on the disc: no coordinate error.
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
     let loaded = core.load_files(read_dir_files(&root).unwrap());
     let errors: Vec<_> = loaded["issues"]
         .as_array()
@@ -104,7 +104,7 @@ fn the_workbench_measures_where_things_rest() {
     };
     let mut core = Core::new();
     core.open_disc(&image).unwrap();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
     let loaded = core.load_files(read_dir_files(&root).unwrap());
     let mut pack = loaded["pack"].clone();
     let rest_warnings = |issues: &[legaia_web_expansion::session::IssueRow]| {

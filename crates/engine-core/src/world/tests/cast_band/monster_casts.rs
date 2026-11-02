@@ -40,14 +40,17 @@ fn a_monster_cast_plays_the_tag_0x23_entry_its_magic_slot_walks_to() {
     world.actors[1].battle_action_clips = Some(Arc::new(tags.iter().map(|&t| clip(t)).collect()));
     assert_eq!(world.monster_cast_clip(1, 0x27), Some(8));
 
-    // Two slots: the first tag-0x23 entry belongs to the LAST slot.
+    // Two slots: the first tag-0x23 entry belongs to the LAST slot, but the
+    // walk does not stop on a match (the stores fall through to the loop
+    // bottom `0x801EA948`), so every later tag-0x23 entry re-matches and the
+    // last one is the clip either slot stages.
     world.tables.monster_catalog.insert(
         legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Gimard", 99, 60)
             .with_magic([0x27, 0x28]),
     );
     let tags = [0x00, 0x01, 0x23, 0x04, 0x23];
     world.actors[1].battle_action_clips = Some(Arc::new(tags.iter().map(|&t| clip(t)).collect()));
-    assert_eq!(world.monster_cast_clip(1, 0x28), Some(2));
+    assert_eq!(world.monster_cast_clip(1, 0x28), Some(4));
     assert_eq!(world.monster_cast_clip(1, 0x27), Some(4));
 }
 

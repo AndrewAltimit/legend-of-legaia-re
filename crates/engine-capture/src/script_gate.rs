@@ -61,12 +61,10 @@ pub fn engine_contexts(world: &legaia_engine_core::world::World) -> Vec<EngineCo
             dialog_open: h.dialog.is_some(),
         });
     }
-    if let Some(id) = world
-        .dialog
-        .inline
-        .as_ref()
-        .filter(|id| id.prop_anchor.is_none())
-    {
+    // A placed object's touched record runs on the same runner with a prop
+    // binding ([`legaia_engine_core::world::World::start_prop_interaction`]):
+    // retail's touched object is an engaged context like a talk.
+    if let Some(id) = world.dialog.inline.as_ref() {
         out.push(EngineContext {
             kind: EngineContextKind::Inline,
             head: head_of(&id.bytecode),
@@ -389,8 +387,7 @@ impl ScriptGate {
                 .panel
                 .as_ref()
                 .is_some_and(|p| p.row_leads().contains(&self.pc));
-            id.prop_anchor.is_none()
-                && !id.done
+            !id.done
                 && head_of(&id.bytecode) == self.head
                 && (((id.pc == self.pc || on_page)
                     && id.ctx.wait_accum >= self.wait
@@ -614,6 +611,16 @@ pub fn resume_record(
 ) -> bool {
     if let Some(c) = gate.context(&host.world) {
         return match c.kind {
+            EngineContextKind::Channel(i)
+                if host
+                    .world
+                    .field_vm
+                    .channels
+                    .get(i)
+                    .is_some_and(|c| c.object_bind) =>
+            {
+                touch_object(&mut host.world, gate)
+            }
             EngineContextKind::Channel(_) => engage_placement(&mut host.world, gate),
             _ => false,
         };
@@ -708,6 +715,45 @@ fn engage_placement(world: &mut legaia_engine_core::world::World, gate: &ScriptG
     }
     world.trigger_field_interact(0, slot);
     true
+}
+
+/// Touch the placed object whose record is the gate's: the partition-0
+/// object retail's player walked into, its record engaged on the touched
+/// actor (`FUN_801D5B5C` raises `+0x10 |= 0x100`). The engine holds the
+/// object's idle body on its object-bind channel and runs a touch on the
+/// inline runner with a prop binding
+/// ([`legaia_engine_core::world::World::start_prop_interaction`]); the
+/// seat stands the player where retail's stood, so no movement contact posts
+/// the touch. `tower_field_walk` is caught in the lift's record `P0[17]` at
+/// `+0xF4`, the player's walk onto the platform (`C7 F8 1F 0F 02`) landed.
+fn touch_object(world: &mut legaia_engine_core::world::World, gate: &ScriptGate) -> bool {
+    if world.dialog.inline.is_some() || world.dialog.current.is_some() {
+        return false;
+    }
+    let mut anchors: Vec<(u8, u8)> = world
+        .props
+        .bank
+        .props
+        .iter()
+        .filter(|(_, p)| {
+            p.record == usize::from(gate.flat_index) && head_of(&p.record_body) == gate.head
+        })
+        .map(|(&a, _)| a)
+        .collect();
+    anchors.sort_unstable();
+    let Some(&anchor) = anchors.first() else {
+        return false;
+    };
+    if let Some(body) = world
+        .props
+        .bank
+        .props
+        .get(&anchor)
+        .map(|p| p.record_body.to_vec())
+    {
+        roll_back_run_latches(world, &body, gate.pc);
+    }
+    world.start_prop_interaction(anchor)
 }
 
 /// The PC a placement's talk resumes at when the capture is past a fight the

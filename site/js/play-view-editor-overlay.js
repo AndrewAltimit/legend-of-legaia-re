@@ -72,7 +72,8 @@ void main() {
   };
   /* Default layer set: every volume but the props (the props draw as
    * themselves), and the tile grid. */
-  const DEFAULT_LAYERS = { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false, collision: false };
+  // Every layer starts off: the picture first, the volumes when asked for.
+  const DEFAULT_LAYERS = { grid: false, walls: false, zones: false, triggers: false, npcs: false, spawns: false, props: false, collision: false };
   /* What a workbench draft may replace in the engine's reading of the map
    * (`defs`, see `setEditorOverlay`). */
   const DRAFT_LISTS = ['spawns', 'exits', 'triggers', 'encounters', 'props', 'npcs'];

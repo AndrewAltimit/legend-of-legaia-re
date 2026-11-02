@@ -16,10 +16,10 @@
         </label>
         <div class="wb-tool" id="xw-pack-tool">
           <span class="wb-label">Pack
-            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Open the Rebirth example (the project's own flagship pack), a <code>.lxpack</code> or a pack folder of your own, or start a new pack: empty, from the minimal template (a monster, a fight, a line, a quest and a small map wired together), or as a clone of Rebirth under your own id.</p><p>A pack folder is the directory holding <code>pack.toml</code>; the browser reads every file in it.</p></span></span>
+            <span class="info-tip" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p>Open the sample pack (the project's example pack, written to learn from), a <code>.lxpack</code> or a pack folder of your own, or start a new pack: empty, from the minimal template (a monster, a fight, a line, a quest and a small map wired together), or as a clone of the sample pack under your own id.</p><p>A pack folder is the directory holding <code>pack.toml</code>; the browser reads every file in it.</p></span></span>
           </span>
           <div class="wb-inline">
-            <button type="button" id="xw-rebirth" class="wb-button wb-button-ghost">Rebirth example</button>
+            <button type="button" id="xw-sample" class="wb-button wb-button-ghost">the sample pack</button>
             <label class="wb-button wb-button-ghost wb-file-button">Open .lxpack<input type="file" id="xw-bundle-file" accept=".lxpack,application/octet-stream" hidden></label>
             <label class="wb-button wb-button-ghost wb-file-button">Open folder<input type="file" id="xw-dir-file" webkitdirectory multiple hidden></label>
             <button type="button" id="xw-fresh" class="wb-button wb-button-ghost" aria-controls="xw-new">New pack ...</button>
@@ -39,7 +39,7 @@
         <select id="xw-new-tpl">
           <option value="minimal">Minimal template: one of everything, wired together</option>
           <option value="empty">Empty: only the manifest</option>
-          <option value="rebirth">Clone Rebirth: the flagship pack under your id</option>
+          <option value="sample">Clone the sample pack under your id</option>
         </select>
       </label>
       <div class="wb-inline"><button type="button" id="xw-new-go" class="wb-button">Create</button><button type="button" id="xw-new-cancel" class="wb-button wb-button-ghost">Cancel</button></div>
@@ -53,9 +53,9 @@
       <p class="xw-start-step" id="xw-start-disc"><span class="xw-step-n">1</span> <span id="xw-start-disc-text">Choose your disc image above. It is read in this tab and never uploaded.</span></p>
       <p class="xw-start-step"><span class="xw-step-n">2</span> Pick a starting point - each opens straight onto a map in 3D:</p>
       <div class="xw-start-cards">
-        <button type="button" class="xw-start-card is-main" data-start="rebirth">
+        <button type="button" class="xw-start-card is-main" data-start="sample">
           <span class="xw-start-ico" aria-hidden="true">&#9670;</span>
-          <strong>Open the Rebirth example</strong>
+          <strong>Open the sample pack</strong>
           <span>The project's own pack: maps, quests, bosses, cards and cutscenes, all wired together. The quickest way to see what a pack can do - nothing is saved until you download it.</span>
         </button>
         <button type="button" class="xw-start-card" data-start="quick">
@@ -69,7 +69,7 @@
           <span>A pack someone shared with you, or one you downloaded before. You can also drop it anywhere on the page.</span>
         </button>
       </div>
-      <p class="xw-dim">More ways in: <button type="button" class="wb-linkbtn" data-start="new">a new pack with options</button> (empty, or a copy of Rebirth under your own id) or <button type="button" class="wb-linkbtn" data-start="folder">a pack folder</button> (the one holding <code>pack.toml</code>).</p>
+      <p class="xw-dim">More ways in: <button type="button" class="wb-linkbtn" data-start="new">a new pack with options</button> (empty, or a copy of the sample pack under your own id) or <button type="button" class="wb-linkbtn" data-start="folder">a pack folder</button> (the one holding <code>pack.toml</code>).</p>
     </div>
 
     <div id="xw-main" hidden>
@@ -213,7 +213,7 @@
   button.xw-start-card:hover, button.xw-start-card:focus-visible { border-color: var(--accent); background: var(--bg-card-hi); }
   .xw-start-card strong { color: var(--text-bright); font-size: 1.05em; }
   .xw-start-card > span { color: var(--text-muted); line-height: 1.45; }
-  .xw-start-card[data-start="rebirth"] { border-color: var(--accent-line); }
+  .xw-start-card[data-start="sample"] { border-color: var(--accent-line); }
   .xw-start.is-waiting .xw-start-card.is-queued { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   /* The disc and pack pickers fold to one line once a pack is open. */
   .xw-setup { margin: 0 0 0.3rem; }

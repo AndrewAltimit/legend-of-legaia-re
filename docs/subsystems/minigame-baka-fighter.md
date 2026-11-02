@@ -782,7 +782,17 @@ The card belongs to the cabinet, not the duel: its only two `jal` sites (`0x801C
 
 **Round banner (`FUN_801D5C7C`).** Two mirrored halves (widget 3, drawn through `FUN_801D5ED0` / `FUN_801D69A8`) converging on `x = 0x90`: offset `0xB4 - 6t` while `t < 30`, `0` through the hold, then `6 * (t - 90)` on the way out. The level ramps `0x80 + (t - 30) * 127 / 30` in (reaching `0xFF` at `t = 60`) and `0xC8 - (t - 90) * 127 / 30` out, clamped to `0..=0xFF`. The parted poses draw at half level and set the two banner sprite flags; the joined pose clears them. Frame `0` fires the round-announce voice line, and **its channel is the round index itself** - `FUN_8003D53C(0x1F, DAT_801DBF8C, 0x48)` - while the digit drawn beside the caption is that index plus one.
 
-**READY / FIGHT countdown (`FUN_801D21FC`).** State `DAT_801DC134` walks `0 -> 1` (`XA33` channel `0x0A`), `1 -> 2` (channel `0x0B`, seeding the timer `DAT_801DC138 = 0x20`), then waits for the banner level `DAT_801DBEB4` to reach `0x11` before decaying the timer by `DAT_1F800393`. Running out fires channel `0x0D` on the final round (`DAT_801DC110 == 0x0E`) or `0x0C` otherwise. The scene-load flag `_DAT_8007BC20` freezes the walk but not the two draws, which always run at half level: widget `0x1A` at `(0xA0, 0x60)` and `0x1D` / `0x1C` at `(0xA0, 0xA0)`. `DAT_801DC134` is read and written nowhere else in the overlay, so the sequence is presentation only.
+The banner runs on the cabinet's clock, like the title card. Its four `jal` sites (`0x801D01D8`, `0x801D0290`, `0x801D0344`, `0x801D0468`) are the banner arms `0x33..0x36`, each calling it with `DAT_801DC128` and then stepping that clock by the frame step; the round setup `0x32` zeroes the clock (`0x801D0188`).
+
+`DAT_801DBF8C` is zeroed when a rung starts (`0x801CFDB0`) and stepped by the duel arm on the way to the round setup (`0x801D0640`, clamped to `9` at `0x801D0648`), so the line on the first banner frame names the round about to start: round 1 reads channel `0`, round 2 channel `1`. Draws advance the index like any other round. **Confirmed** (disassembly). The port draws the banner on exactly those frames (`CabinetFrame::round_banner`, `BakaChrome::round_banner_step`) with the cabinet's round index.
+
+**All-clear announcer (`FUN_801D21FC`).** Long read as a per-round "READY / FIGHT countdown", it belongs to the all-clear sequence: its four `jal` sites (`0x801D1B5C`, `0x801D1BD0`, `0x801D1C24`, `0x801D1C90`) are the tails of the cabinet arms `0xFA` / `0xFB` (which share the first), `0xFC`, `0xFD` and `0xFE`, each after the arm has moved its fades. The round banner states `0x33..0x36` call only `FUN_801D5C7C`.
+
+State `DAT_801DC134` walks `0 -> 1` (`XA33` channel `0x0A`), `1 -> 2` (channel `0x0B`, seeding the timer `DAT_801DC138 = 0x20`; outside a scene load both steps run on one frame, so `0x0B` is the line that sounds), then waits for the all-clear's second fade `DAT_801DBEB4` to reach `0x11` before decaying the timer by `DAT_1F800393`. Running out fires channel `0x0D` on the final stage (`DAT_801DC110 == 0x0E`) or `0x0C` otherwise. The scene-load flag `_DAT_8007BC20` freezes the walk but not the two draws, which always run at half level: widget `0x1A` at `(0xA0, 0x60)` and `0x1D` / `0x1C` at `(0xA0, 0xA0)`.
+
+`DAT_801DC134` is read and written nowhere else in the overlay, so the walk runs once per overlay load. **Confirmed** (disassembly).
+
+The port runs it from the cabinet (`BakaCabinet::tick`, the five all-clear beats), not from the round chrome. Run beside every round banner, its `0x0C` line started about fifty frames into the banner's `0x48`-vsync `XA32` line and cut the round number off. `each_round_banner_plays_its_own_line_uninterrupted` (engine) and `each_round_announcement_plays_its_own_xa32_channel_uncut` (the minigames page, disc-gated) pin each round's line as `(0x1F, round, 0x48)`, the index of the round about to start, with nothing starting inside its span.
 
 ### Score tally (`FUN_801D239C`)
 
@@ -853,7 +863,7 @@ Baka Fighter fires **no** runtime-bank cue (`>= 0x200`): every cue is a **static
 
 The round-start READY / FIGHT banner, the KO, a drawn exchange's trade, the round-result banners and the victory flourish fire no cue; the only fight sound effect is the hit. Because the ring write sits at the top of `FUN_801D3B18`, a draw (which applies damage twice) queues the hit cue twice. Voice lines are separate: they are XA clips through `FUN_8003D53C`.
 
-The overlay has thirteen `FUN_8003D53C` sites. Ten belong to the chrome (the intro card's two `XA33` lines, the countdown's four, the round banner's `XA32` line, the four result lines). Three sit in the cabinet dispatcher itself, each on its arm's first frame:
+The overlay has thirteen `FUN_8003D53C` sites. Ten belong to the chrome (the intro card's two `XA33` lines, the all-clear announcer's four, the round banner's `XA32` line, the four result lines). Three sit in the cabinet dispatcher itself, each on its arm's first frame:
 
 | Arm | Line | Site |
 |---|---|---|
@@ -915,16 +925,16 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `DAT_801DBF70` / `DAT_801DBF74` | player-select cursor (slot 0's roster id) / second lineup focus id |
 | `DAT_801DBED0` | round-win **target = 2**; also the drawn pip count |
 | `DAT_801DBF20` | round index |
-| `DAT_801DBF8C` | round index the round banner announces |
+| `DAT_801DBF8C` | round index the round banner announces; zeroed per rung, stepped at each round setup, clamped to `9` |
 | `DAT_801DBF84` | round-end banner sub-state |
 | `DAT_801DBF88` | round-over hold timer in `0x64` (runs to `0xB5`); the choice sheet draws only while it is zero |
 | `DAT_801DBF24` | player-untouched flag (PERFECT) |
 | `DAT_801DBF28` | dropped-round tally |
-| `DAT_801DC110` | round timer digit value; `0xE` flags the last round |
-| `DAT_801DC128` | attract blink phase |
+| `DAT_801DC110` | displayed stage counter (the HUD draws it `+ 1`); `0xE` picks the final-stage all-clear line |
+| `DAT_801DC128` | the cabinet's scene clock: attract blink phase, round banner clock (zeroed by the round setup), the FIGHT flash's first-frame test |
 | `DAT_801DBE94` | title-card clock |
-| `DAT_801DC134` / `DAT_801DC138` | READY / FIGHT state / timer |
-| `DAT_801DBEB4` | banner level (fade threshold `0x11`) |
+| `DAT_801DC134` / `DAT_801DC138` | all-clear announcer state / timer |
+| `DAT_801DBEB4` | the all-clear's second fade (announcer gate `0x11`) |
 | `DAT_801DBEC0` | screen-shake amplitude the epilogue decays toward zero |
 | `DAT_801DBED4` | suppresses both epilogue draw passes |
 | `_DAT_8007B868` | non-zero routes the in-duel menu to the developer menu; retail boots it to zero and never sets it |
@@ -998,7 +1008,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `FUN_801D239C` | score tally |
 | `FUN_801D2A28` | per-exchange score accumulator |
 | `FUN_801D6710` | tally drain step |
-| `FUN_801D21FC` | READY / FIGHT countdown |
+| `FUN_801D21FC` | all-clear announcer (cabinet states `0xFA..0xFE`) |
 | `FUN_801D5C7C` | round banner fly-in / hold / fly-out |
 | `FUN_801D59D4` | title card animator |
 | `FUN_801D4DF8` | impact effect pair spawn |

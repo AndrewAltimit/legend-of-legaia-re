@@ -197,6 +197,18 @@ pub struct BattleState {
     /// stream by its arming. Empty when the catalog carries no aligned
     /// entry list.
     pub monster_strike_entries: Vec<u8>,
+    /// The cast clips the AI picker's generic core stored for the cast it
+    /// picked: `(slot, spell, +0x1E0, +0x1E7)`, as the walk's last match left
+    /// them (`legaia_engine_battle::monster_ai::generic_core`). The cast arm
+    /// stages them in place of its own walk; a cast armed for another seat
+    /// or spell (a scripted override) ignores them.
+    pub monster_core_clip: Option<(u8, u8, u8, u8)>,
+    /// The monster seat whose swing budget the AI picker's core already
+    /// rolled (its physical arm runs the budget loop before the flee
+    /// checkpoint and the switch, `FUN_801E9FD4` `0x801EA1FC..0x801EA3CC`):
+    /// [`Self::monster_strike_budget`] / [`Self::monster_strike_entries`]
+    /// hold its picks, and the strike arm takes them rather than roll again.
+    pub monster_budget_armed: Option<u8>,
     /// "Previous action cleared" gate - toggled by the engine when an
     /// animation transition completes.
     pub prev_action_cleared: bool,
@@ -723,6 +735,13 @@ pub struct BattleState {
     /// attacker's (`World::tick_battle_hit_events` records them,
     /// `World::tick_battle_anim_pass` walks them again).
     pub hit_commit_rewalk: Vec<usize>,
+    /// Each actor's clip-commit count as its own slice of the last anim
+    /// walk left it (retail's cadence; `World::tick_battle_animations_walk`).
+    /// A commit landed on the seat after that - by the SM's pass, a cast
+    /// module's seat write, a later seat's hit walk - is one retail only
+    /// stages and makes inside the seat's next tick after its advance, so
+    /// that pass's advance is skipped. Empty until the first walk.
+    pub anim_slice_commits: Vec<u32>,
     /// Each actor's display trio as the previous pass's draw stored it - the
     /// anchor the value readout projects a landed hit's numeral from
     /// (`World::battle_readout_trio`). Retail's readout `FUN_801DF6B8` runs
@@ -883,14 +902,11 @@ pub struct BattleState {
     /// entry is kept (hosts and tests use it to pin a fight). Cleared by
     /// `World::finish_battle`.
     pub no_escape: bool,
-    /// One-per-pass latch for the monster flee roll (`FUN_801EC0DC`). Retail's
-    /// action picker `FUN_801E9FD4` keeps a balance counter (`s8`, cleared at
-    /// entry) and attempts the flee roll exactly once per picker pass, at the
-    /// first monster iteration that reaches the loop-bottom checkpoint with the
-    /// counter still zero. The engine picks per-slot, so the latch lives here
-    /// and `crate::battle_round::BattleRound::boundary` re-arms it each round
-    /// (retail re-enters the picker per round from `FUN_801DABA4`).
-    pub monster_flee_attempted: bool,
+    /// The cue-ring cursor `ctx[+0x09]` the clip commit `FUN_8004AD80`'s
+    /// monster-death arm writes its defeat cue through (`0x8004B24C..
+    /// 0x8004B298`): its own round-robin over the four ring slots, apart
+    /// from the producer's `gp+0x158`.
+    pub defeat_cue_cursor: u8,
     // The formation advantage (`ctx+0x290`) and its latched copy (`ctx+0x291`)
     // are **not** fields here. Retail has exactly one of each, both inside the
     // battle context the action SM owns, so the engine keeps them on
@@ -1056,6 +1072,16 @@ pub struct BattleState {
     /// attacker keeps the ground its own walk starts from. Set by
     /// `legaia_engine_capture::bar_seeds::arm_capture_reseat`; never in play.
     pub capture_reseat: Option<CaptureReseat>,
+    /// Beside [`Self::capture_reseat`]: each combatant's captured bars as
+    /// the action found them - HP and MP before its hits, and the status
+    /// word `+0x16E` (the seedable ailment bits) - as
+    /// [`CaptureReseatBars`]. The replayed rounds deal their own damage
+    /// and can land an ailment the capture's fight never did
+    /// (`battle_korb2_medusa_strike`: the replay's Medusa petrified Vahn in
+    /// an earlier round, retail's word reads `0`), so when that seat seeds,
+    /// a combatant standing on both sides takes the captured HP and MP back
+    /// and every ailment the word does not carry is stripped. Never in play.
+    pub capture_reseat_bars: Vec<CaptureReseatBars>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1128,6 +1154,16 @@ fn capture_approach_env_round_trips() {
     assert_eq!(CaptureApproach::from_env("656:2:168"), None);
 }
 
+/// One combatant of [`BattleState::capture_reseat_bars`]: engine slot, HP,
+/// MP and the seedable status bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureReseatBars {
+    pub slot: u8,
+    pub hp: u16,
+    pub mp: u16,
+    pub status: u16,
+}
+
 /// [`BattleState::capture_reseat`]: the engine slot whose action seeds the
 /// re-seat, and each combatant's `(slot, x, z)` live pair.
 pub type CaptureReseat = (u8, Vec<(u8, i16, i16)>);
@@ -1164,6 +1200,8 @@ impl BattleState {
             evasion: [0; 8],
             monster_strike_budget: 1,
             monster_strike_entries: Vec::new(),
+            monster_core_clip: None,
+            monster_budget_armed: None,
             prev_action_cleared: true,
             end: None,
             hit_fx: Vec::new(),
@@ -1184,8 +1222,8 @@ impl BattleState {
             buffs: Vec::new(),
             escaped: false,
             scripted_fight: false,
+            defeat_cue_cursor: 0,
             no_escape: false,
-            monster_flee_attempted: false,
             intro: None,
             intro_effects: Vec::new(),
             intro_mode_handoff: false,
@@ -1255,6 +1293,7 @@ impl BattleState {
             anim_pass_vsyncs: 1,
             anim_slot_reached: false,
             hit_commit_rewalk: Vec::new(),
+            anim_slice_commits: Vec::new(),
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
             sm_ran_state: None,
@@ -1298,6 +1337,7 @@ impl BattleState {
             seed_recentre_held: false,
             arrival_spawn_anchor: None,
             capture_reseat: None,
+            capture_reseat_bars: Vec::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

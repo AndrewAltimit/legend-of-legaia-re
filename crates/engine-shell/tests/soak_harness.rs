@@ -34,7 +34,7 @@
 //!   CI-shaped gate.
 //! - `soak_long` - opt-in, runs only when `LEGAIA_SOAK_SEEDS` or
 //!   `LEGAIA_SOAK_FRAMES` is set. Report-only unless `LEGAIA_SOAK_STRICT=1`.
-//! - `soak_expansion` - the expansion runs (`xp:` labels: the Rebirth pack's
+//! - `soak_expansion` - the expansion runs (`xp:` labels: the sample pack's
 //!   maps, action movement, every mode-seat instance, the card menu, the
 //!   Journal) on a fixed budget; `LEGAIA_SOAK_EXPANSION=1` is the long form.
 //! - `soak_replay` - opt-in, runs only when `LEGAIA_SOAK_REPLAY=<file>` is set:

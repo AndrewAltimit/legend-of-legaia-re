@@ -162,7 +162,7 @@ pub fn library_dependency_report(library: &serde_json::Value) -> serde_json::Val
 /// `.lxpack` bytes `asset expansion bundle` writes for it: only the pack
 /// layout's files ([`legaia_expansion_format::is_known_path`]), through the
 /// format's one deterministic writer. The play page builds the built-in
-/// Rebirth this way from the tree the site serves (`packs/rebirth.json`), so
+/// the sample pack this way from the tree the site serves (`packs/sample.json`), so
 /// the browser plays the same bytes the release archive ships.
 pub fn bundle_pack_tree(
     files: impl IntoIterator<Item = (String, Vec<u8>)>,
@@ -424,18 +424,18 @@ fn camera_distance(
 mod tests {
     use super::*;
 
-    fn rebirth_bundle() -> Vec<u8> {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    fn sample_pack_bundle() -> Vec<u8> {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
         let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
         legaia_expansion_format::bundle::write_bundle(&files).expect("bundle")
     }
 
-    /// The page's built-in Rebirth: every file of the pack folder (README
-    /// included, as the site's `packs/rebirth.json` carries it) bundles to
+    /// The page's built-in sample pack: every file of the pack folder (README
+    /// included, as the site's `packs/sample.json` carries it) bundles to
     /// the bytes `asset expansion bundle` writes for the release archive.
     #[test]
     fn the_page_tree_bundles_like_the_release_cli() {
-        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth"));
+        let dir = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample"));
         let mut all = legaia_expansion_format::read_dir_files(dir).expect("read");
         // A stray file outside the layout is dropped, as the CLI drops it.
         all.insert("notes.txt".into(), b"scratch".to_vec());
@@ -453,22 +453,22 @@ mod tests {
         let info: serde_json::Value =
             serde_json::from_str(&rt.expansion_bundle_info(&got)).unwrap();
         assert_eq!(info["ok"], true, "{info}");
-        assert_eq!(info["summary"]["id"], "rebirth");
+        assert_eq!(info["summary"]["id"], "sample");
     }
 
-    /// The library's read of a bundle: Rebirth's summary and cover, and a
+    /// The library's read of a bundle: the sample pack's summary and cover, and a
     /// newer-format pack refused with its gate named.
     #[test]
     fn bundle_info_reads_the_library_fields() {
         let rt = LegaiaRuntime::new();
         let info: serde_json::Value =
-            serde_json::from_str(&rt.expansion_bundle_info(&rebirth_bundle())).unwrap();
+            serde_json::from_str(&rt.expansion_bundle_info(&sample_pack_bundle())).unwrap();
         assert_eq!(info["ok"], true, "{info}");
-        assert_eq!(info["summary"]["id"], "rebirth");
+        assert_eq!(info["summary"]["id"], "sample");
         assert_eq!(info["summary"]["cover"], "assets/cover.png");
         assert!(info["errors"].as_array().unwrap().is_empty());
         assert!(
-            rt.expansion_bundle_cover(&rebirth_bundle())
+            rt.expansion_bundle_cover(&sample_pack_bundle())
                 .starts_with(b"\x89PNG")
         );
         let mut f = legaia_expansion_format::PackFiles::new();
@@ -521,16 +521,16 @@ mod tests {
         assert_eq!(rt.expansion_library_check("not json"), "{}");
     }
 
-    /// The Rebirth bundle reads and validates; with no disc loaded it is
+    /// The sample pack's bundle reads and validates; with no disc loaded it is
     /// refused for activation (the pack info still comes back), and junk
     /// bytes are refused as not a bundle.
     #[test]
-    fn load_expansion_reads_the_rebirth_bundle() {
+    fn load_expansion_reads_the_sample_pack_bundle() {
         let mut rt = LegaiaRuntime::new();
         let v: serde_json::Value =
-            serde_json::from_str(&rt.load_expansion_core(&rebirth_bundle())).unwrap();
-        assert_eq!(v["pack"]["id"], "rebirth");
-        assert_eq!(v["pack"]["name"], "Legend of Legaia: Rebirth");
+            serde_json::from_str(&rt.load_expansion_core(&sample_pack_bundle())).unwrap();
+        assert_eq!(v["pack"]["id"], "sample");
+        assert_eq!(v["pack"]["name"], "Sample Expansion Pack");
         assert!(
             v["pack"]["maps"]
                 .as_array()
@@ -549,7 +549,7 @@ mod tests {
         assert!(none["pack"].is_null());
     }
 
-    /// Disc-gated: on a loaded disc the Rebirth bundle activates, its map
+    /// Disc-gated: on a loaded disc the sample pack's bundle activates, its map
     /// enters as a live field scene with a scene build the page draws, and
     /// unloading drops it.
     #[test]
@@ -562,7 +562,7 @@ mod tests {
         let mut rt = LegaiaRuntime::new();
         assert!(rt.load_disc(bytes, String::new()).is_ok(), "load the disc");
         let v: serde_json::Value =
-            serde_json::from_str(&rt.load_expansion_core(&rebirth_bundle())).unwrap();
+            serde_json::from_str(&rt.load_expansion_core(&sample_pack_bundle())).unwrap();
         assert_eq!(v["ok"], true, "{v}");
         rt.enter_expansion_map_core("genesis_1f", "")
             .expect("enter the pack map");

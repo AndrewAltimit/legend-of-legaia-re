@@ -84,7 +84,10 @@ The merge applies among the scene's own TIMs only. The shared `init_data`
 block's TIMs form a lower layer, and a scene CLUT's zeros replace their words
 as `LoadImage` would; see
 [`renderer.md`](../subsystems/renderer.md#engine-side-targeted-upload--shared-blocks)
-for the row-484 case that rule settles.
+for the row-484 case that rule settles. Nor does it reach across two scene
+blocks of different rects: a 16-colour palette laid inside another TIM's wider
+CLUT block lands whole, entry 0 included, as `LoadImage` lands it (`retockin`'s
+plant palette at `(80, 485)`).
 
 Without merge semantics, the partial TIMs' trailing zeros clobber the
 full TIMs' slots 8..14 and the town01 prim keep-ratio collapses from

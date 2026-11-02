@@ -1,5 +1,5 @@
 //! Disc-gated: pack maps prepared ahead of their entry
-//! (`legaia_engine_scene_host::expansion_preload`) on the flagship pack.
+//! (`legaia_engine_scene_host::expansion_preload`) on the sample pack.
 //!
 //! - A map entered from the cache, or prepared on a worker by the map whose
 //!   exit leads to it, plays bit-identically to the same map built cold: the
@@ -7,7 +7,7 @@
 //!   a stretch of walking.
 //! - Entering a map asks for exactly the maps its exits lead to, and the
 //!   cache stays bounded.
-//! - The timing report: every Rebirth map entered cold, then again through
+//! - The timing report: every sample-pack map entered cold, then again through
 //!   the cache (printed with `--nocapture`; no timing is asserted).
 //!
 //! Skips when `LEGAIA_DISC_BIN` is unset.
@@ -23,8 +23,8 @@ use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_system::input::PadButton;
 use legaia_expansion_format::ExpansionPack;
 
-fn rebirth() -> Arc<ExpansionPack> {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+fn sample_pack() -> Arc<ExpansionPack> {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
     Arc::new(ExpansionPack::from_files(&files).expect("the pack parses"))
 }
@@ -36,7 +36,7 @@ fn host(pack: &Arc<ExpansionPack>) -> Option<SceneHost> {
     };
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
     host.activate_expansion_pack(pack.clone())
-        .expect("Rebirth activates");
+        .expect("the sample pack activates");
     Some(host)
 }
 
@@ -85,7 +85,7 @@ fn walk(host: &mut SceneHost) {
 
 #[test]
 fn a_prepared_map_plays_as_one_built_cold() {
-    let pack = rebirth();
+    let pack = sample_pack();
     let Some(mut cold) = host(&pack) else {
         return;
     };
@@ -149,7 +149,7 @@ fn a_prepared_map_plays_as_one_built_cold() {
 
 #[test]
 fn an_entry_asks_for_its_exits_and_the_cache_stays_bounded() {
-    let pack = rebirth();
+    let pack = sample_pack();
     let Some(mut host) = host(&pack) else {
         return;
     };
@@ -184,7 +184,7 @@ fn an_entry_asks_for_its_exits_and_the_cache_stays_bounded() {
 /// map and keeps the rest, and the map built again plays as one built cold.
 #[test]
 fn a_reload_keeps_the_maps_it_left_unchanged() {
-    let pack = rebirth();
+    let pack = sample_pack();
     let Some(mut host) = host(&pack) else {
         return;
     };
@@ -219,8 +219,8 @@ fn a_reload_keeps_the_maps_it_left_unchanged() {
 }
 
 #[test]
-fn time_rebirth_map_entries() {
-    let pack = rebirth();
+fn time_sample_pack_map_entries() {
+    let pack = sample_pack();
     let Some(mut host) = host(&pack) else {
         return;
     };
@@ -244,14 +244,14 @@ fn time_rebirth_map_entries() {
     }
 }
 
-/// The cold preparation of every Rebirth map phase by phase (library, field
+/// The cold preparation of every sample-pack map phase by phase (library, field
 /// image, NPCs, resource build), then the entry from the cache: where a
 /// map's entry time goes (printed with `--nocapture`; no timing is
 /// asserted).
 #[test]
-fn time_rebirth_map_phases() {
+fn time_sample_pack_map_phases() {
     use legaia_engine_scene_host::expansion_preload::PrepareJob;
-    let pack = rebirth();
+    let pack = sample_pack();
     let Some(mut host) = host(&pack) else {
         return;
     };

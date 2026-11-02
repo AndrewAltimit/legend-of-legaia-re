@@ -30,6 +30,11 @@ pub struct EngineBattle {
     /// the ticks from the first prompt to the capture's phase, `None` inside
     /// when the engine never reached it.
     pub driven: Option<Option<u32>>,
+    /// A party Attack capture in its Done band
+    /// ([`RetailBattle::wants_party_combo`]): ticks from the acting seat's
+    /// first strike-loop pass `0x1E` to the capture's phase - the string as
+    /// the replay ran it, a vsync a tick.
+    pub party_combo_ticks: Option<u32>,
     /// The world stream's state at the encounter entry
     /// ([`BATTLE_RNG_SEEDS`]).
     pub rng_seed: u32,
@@ -406,7 +411,7 @@ pub fn run_engine_battle(
     let facing = battle.seeded_facing();
     let defeat_lanes = battle.engine_defeat_lanes();
     let status = battle.engine_status();
-    let spent = battle.engine_spent_keys();
+    let keys = battle.engine_init_keys();
     let hp_seed: Vec<BarSeed> = {
         let world = &session.host.world;
         let pc = world.party.party_count.clamp(1, 3) as usize;
@@ -435,7 +440,7 @@ pub fn run_engine_battle(
                         .then(|| status.get(slot).copied().flatten())
                         .flatten()
                         .map_or(0, seedable_status_bits),
-                    spent_key: spent.get(slot).copied().unwrap_or(false),
+                    init_key: keys.get(slot).copied().flatten(),
                 })
             })
             .collect::<Vec<_>>()
@@ -513,6 +518,7 @@ pub fn run_engine_battle(
     let mut phase_tick = None;
     let mut idle_advance = [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS];
     let mut driven = None;
+    let mut party_combo_ticks = None;
     // A driven capture plays rounds the retail history did not (a Spirit
     // here, a strike there), so its combatant, bag, flag and track channels
     // are read at the first prompt, before the drive - the moment the seed
@@ -642,12 +648,21 @@ pub fn run_engine_battle(
                     &battle.melee_hit_seeds(),
                 );
                 let pushes_before = session.host.world.battle.party_melee_pushes;
+                let strike_seat = battle
+                    .wants_party_combo()
+                    .then(|| battle.reseat_engine_seat(battle.party_count))
+                    .flatten();
+                let mut strike_entry = None;
                 driven = Some(run_drive(
                     &mut session,
                     &mut director,
                     drive,
                     &mut age_short,
+                    strike_seat.map(|s| (s, &mut strike_entry)),
                 )?);
+                if let (Some(Some(end)), Some(start)) = (driven, strike_entry) {
+                    party_combo_ticks = end.checked_sub(start);
+                }
                 action_pushes = Some(
                     session
                         .host
@@ -875,6 +890,7 @@ pub fn run_engine_battle(
         prompt_tick,
         inflight: seed.map(|_| phase_tick),
         driven,
+        party_combo_ticks,
         win_pose: world.battle.victory.and_then(|v| v.pose_id),
         action_pushes,
         action_state: world.battle_ctx.action_state,

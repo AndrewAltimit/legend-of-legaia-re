@@ -143,3 +143,79 @@ fn the_ambient_ripple_is_the_overlays_ring_part() {
     assert!(retired, "the ring never retired");
     eprintln!("[ran] ripple ring drew for {seen} frames");
 }
+
+/// The pond's water heaves (`FUN_801D03B0`, the pond swell): every venue frame
+/// rewrites the head of the floor-height ladder, and the drawn ground re-reads
+/// it per corner. The shore (tier `0`) holds still; the water corners (tiers
+/// `1..=3`) move inside the swell's `-26..=+6` band, out of phase with one
+/// another. Retail logs no VRAM transfer while its water moves, so nothing
+/// here touches the pond VRAM.
+#[test]
+fn the_pond_water_heaves_on_the_swell() {
+    let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    use legaia_engine_fishing::fishing_chrome::water_swell;
+    use legaia_engine_minigame_scenes::fishing_venue::swell_sine_table;
+    let mut host = SceneHost::open_disc(&disc).expect("open disc");
+    host.load_scene("town01").expect("town01");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
+        .expect("fishing overlay in static map");
+    let raw = host.index.entry_bytes_extended(rec.prot_index).unwrap();
+    let loaded = static_overlay::as_loaded(&raw, rec).unwrap();
+    assert!(host.enter_fishing_from_overlay(&loaded));
+
+    let mut surface = FishingSurface::default();
+    let mut frames: Vec<Vec<f32>> = Vec::new();
+    let sink = legaia_engine_scene::coplanar_draws::GROUND_SINK;
+    for tick in 1..=64 {
+        legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(&mut host);
+        // Frame `n` runs the swell at angle `(n - 1) * 0x10`.
+        let ladder = host.world.minigames.fishing_venue.floor_ladder;
+        let (want, _) = water_swell(swell_sine_table(), (tick - 1) * 0x10, 1);
+        assert_eq!(&ladder[..4], &want.rungs, "tick {tick}");
+        let scene = surface
+            .frame(&host.index, &host.world.minigames, true)
+            .expect("the pond decodes");
+        let (base, n) = scene.ground_span;
+        assert!(n > 0, "the pond has a walk ground");
+        frames.push(
+            scene.positions[base..base + n]
+                .iter()
+                .map(|p| p[1])
+                .collect(),
+        );
+    }
+    let first = &frames[0];
+    let n = first.len();
+    let mut moved = 0usize;
+    let mut held = 0usize;
+    for i in 0..n {
+        let ys: Vec<f32> = frames.iter().map(|f| f[i]).collect();
+        let (lo, hi) = ys
+            .iter()
+            .fold((f32::MAX, f32::MIN), |(a, b), &y| (a.min(y), b.max(y)));
+        if hi > lo {
+            moved += 1;
+            assert!(
+                lo - sink >= -26.0 && hi - sink <= 6.0,
+                "a water corner left the swell band: {lo}..{hi}"
+            );
+        } else {
+            held += 1;
+            assert_eq!(lo - sink, 0.0, "a still corner off the shore rung");
+        }
+    }
+    assert!(
+        moved > n / 2,
+        "the water dominates the pond ({moved} of {n})"
+    );
+    assert!(held > 0, "the shore holds still");
+    // Out of phase: two tiers' corners do not move together.
+    let distinct: std::collections::BTreeSet<i32> =
+        frames[16].iter().map(|y| (y - sink) as i32).collect();
+    assert!(distinct.len() >= 3, "phases {distinct:?}");
+    eprintln!("[ran] pond swell: {moved} of {n} ground corners heave, {held} hold");
+}

@@ -1249,6 +1249,7 @@ impl World {
     pub fn step_field_frame_slice(&mut self) -> Option<FieldStepResult> {
         let last = self.run_field_frame_slice();
         self.audio.bgm_entry_latch = false;
+        self.audio.bgm_field_init_open = false;
         last
     }
 
@@ -1422,6 +1423,7 @@ impl World {
                 // the install's slice, which ends the entry latch.
                 self.field_vm.system_pass_open = false;
                 self.audio.bgm_entry_latch = false;
+                self.audio.bgm_field_init_open = false;
                 passes += 1;
                 if spawned || passes >= ENTRY_SCRIPT_PASS_LIMIT {
                     break;
@@ -1442,6 +1444,7 @@ impl World {
         }
         // The load-frame run is the install's slice: the entry latch ends.
         self.audio.bgm_entry_latch = false;
+        self.audio.bgm_field_init_open = false;
     }
 
     /// Drain a queued scripted-encounter install (set by the `+0x94`

@@ -35,7 +35,7 @@ pub(super) struct FxFrame {
     pub effect_model_draws: Vec<(UploadedVramMesh, Mat4)>,
     /// The summon / move-FX parts, then the draw-kind-4 nodes and the
     /// battle ground shadows (a single-sided node's back faces already
-    /// dropped, `effect_draws::retail_front_faces`).
+    /// dropped, `effect_draws::retail_front_faces`), drawn both-sided.
     pub summon_part_draws: Vec<(UploadedVramMesh, Mat4)>,
     /// The field move-VM parts, each with its colour word's double-sided bit
     /// (`ColourWord::double_sided`).
@@ -80,7 +80,15 @@ impl FxFrame {
                 cue: None,
             });
         }
+        // Every one of these already holds only the faces retail draws: a
+        // single-sided part or node lost its back faces on the CPU
+        // (`effect_draws::retail_front_faces`), and a double-sided word
+        // (`0x08000000`) culls nothing (`FUN_80043390` lowers its `NCLIP`
+        // mask for that word, `0x80043520..0x80043540`). So none takes the
+        // field pass's winding cull, which would judge a double-sided node
+        // by its winding.
         for (mesh, model) in summon_part_draws {
+            nclip_marks.push((draws.len(), 0));
             draws.push(SceneDraw {
                 mesh,
                 mvp: fx_cam * *model,

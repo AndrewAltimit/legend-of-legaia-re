@@ -2,8 +2,7 @@
 //!
 //! The venue's prize counter is its own screen over the pond: retail frames
 //! it with the overlay's menu-picker rect (`FUN_801d74b0`, centre `(0xA0,
-//! 0x50)`, `0x68 x 0x50`) swaying on the idle sway triple (`FUN_801d03b0`),
-//! and lists the rows the venue's page decodes with the unaffordable ones
+//! 0x50)`, `0x68 x 0x50`), which holds still, and lists the rows the venue's page decodes with the unaffordable ones
 //! greyed.
 //!
 //! The native window built that list inline in its HUD pass and the browser
@@ -88,8 +87,7 @@ pub fn exchange_row_line(row: &ExchangeRowView<'_>, on_cursor: bool) -> String {
 }
 
 /// Compose the whole sub-screen into [`TextDraw`]s at `pen`, the panel's
-/// resolved top-left (sway already applied by the caller, which is the host
-/// that holds the overlay's sway triple).
+/// resolved top-left.
 ///
 /// `prompt` is the host's own input legend - the two hosts bind different
 /// keys - and is appended to the header rather than given a line of its own,

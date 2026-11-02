@@ -130,6 +130,33 @@ pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16)
     }
 }
 
+/// The Done tail's countdown `ctx[+0x6D8]` and the two values the Done arm
+/// `0x50` seeds it with (`li v0,0x3c` / `sh v0,0x2(s7)` at `0x801E5F24..28`,
+/// `0x96` when `ctx[+0x15]` is set, `0x801E5F38..3C`).
+const DONE_TIMER: u32 = 0x6D8;
+const DONE_TIMER_SEEDS: [u16; 2] = [0x3C, 0x96];
+
+/// Whether a `0x51` capture holds the Done arm's own pass: the arm `0x50`
+/// frames the tail (`jal 0x801D5854` at `0x801E5EDC` / `0x801E5EF0`), seeds
+/// the countdown and stores `0x51` in the same pass (`0x801E5F5C`), and every
+/// `0x51` pass after it steps the countdown down by the frame step unless
+/// the HP-bar settle gate `FUN_801E7250` holds it (`0x801E604C`; a live HP
+/// `+0x14C` still apart from its bar `+0x172`). A countdown on its seed with
+/// every bar settled is therefore the arm's pass, the first that walked the
+/// Done table: the pass before walked the strike band's own framing, so the
+/// displayed frame stands one pass back along the table and no further
+/// ([`tween_passes_back`]'s rule). `koru_pre_*` (Gala's Lightning Storm
+/// tail, countdown `60`) reads `image` `.667` two passes back and `.740` one.
+pub(super) fn done_arm_pass(ram: &[u8], ctx: u32, action_state: u8) -> bool {
+    action_state == 0x51
+        && DONE_TIMER_SEEDS.contains(&game_anchors::u16_at(ram, ctx + DONE_TIMER))
+        && (0..8u32).all(|slot| {
+            let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+            !in_ram(p)
+                || game_anchors::u16_at(ram, p + 0x14C) == game_anchors::u16_at(ram, p + 0x172)
+        })
+}
+
 /// The eye depth the case-6 table chased before a `0x32` capture's table was
 /// armed, as [`displayed_cam_live`]'s `prior_end` (component 5, the eye
 /// translation's Z).
@@ -210,6 +237,7 @@ pub(super) fn displayed_cam_live(
         &vec![frame_step; usize::from(passes)],
         false,
         prior_end,
+        [0; 9],
     )
 }
 
@@ -225,12 +253,18 @@ pub(super) fn displayed_cam_live(
 /// on `12`). It goes with steps the floor confirmed
 /// ([`older_table_step`]); the history-max steps keep the largest
 /// increment's own estimate, which they were measured with.
+///
+/// `end_shift` is how far each component's endpoint stood from the RAM's on
+/// the pass before it, in the walker's raw space ([`walker_end_shift`]): a
+/// framing re-armed on a body still walking chased an endpoint that moved
+/// with it. Pass `n` back walks against `n` such shifts.
 pub(super) fn displayed_cam_live_steps(
     ram: &[u8],
     ctx: u32,
     steps: &[u8],
     shot_divisor: bool,
     prior_end: [Option<i32>; 9],
+    end_shift: [i32; 9],
 ) -> legaia_engine_camera::projection::BattleCamPose {
     let (live, _) = retail_cam_tween(ram, ctx);
     let passes = steps.len();
@@ -315,7 +349,8 @@ pub(super) fn displayed_cam_live_steps(
                 moved += earlier(p);
                 continue;
             }
-            let wide = g.abs() + moved;
+            // The gap pass `n` armed, to the endpoint it chased.
+            let wide = (g.abs() + moved + dir * end_shift[k as usize] * n as i32).max(0);
             let step = (wide + (d - fs_n) - 1) / (d - fs_n);
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
@@ -372,6 +407,33 @@ pub(super) fn module_shot_walking(ram: &[u8], ctx: u32) -> bool {
     })
 }
 
+/// The tween length of the module shot a `0x70` capture's table holds, where
+/// a module arm built one shot of a known length: PROT 0962's charge bodies
+/// (`0xA2..=0xA4`) waiting in arm 3, whose table is the wind-up shot arm 2
+/// built ([`legaia_engine_cast::cast_module_camera::WIND_UP_SHOT_FRAMES`]);
+/// arm 3 only drifts it until its own pass frames through case 8. `None`
+/// elsewhere: the walk back is not bounded.
+///
+/// `koru_blade_breath_mid_cast` holds that table two frame-step units in
+/// (yaw `99` a unit with `979` to go, TR z `402` with `4009`): one pass at
+/// step `2`. Walked back two passes (yaw `1970`) its frame read `image`
+/// `.823`; at the shot's origin (yaw `2168`, where the doc's walk-in film
+/// swings the framing) `.943`.
+pub(super) fn module_shot_frames(ram: &[u8], ctx: u32) -> Option<i32> {
+    if game_anchors::u8_at(ram, ctx + 7) != 0x70 || game_anchors::u8_at(ram, ctx + 0x279) != 3 {
+        return None;
+    }
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(seat.min(7)) * 4);
+    if !in_ram(actor) {
+        return None;
+    }
+    let action = game_anchors::u8_at(ram, actor + 0x1DF);
+    (0xA2..=0xA4).contains(&action).then_some(i32::from(
+        legaia_engine_cast::cast_module_camera::WIND_UP_SHOT_FRAMES,
+    ))
+}
+
 /// A slot-B arm calls the builder `FUN_801D829C` on the pass it runs and
 /// never again, so the table the RAM holds is the one every pass since has
 /// walked: each pass moved a component `increment * frame_step` toward its
@@ -388,7 +450,7 @@ pub(super) fn displayed_module_cam_live(
     steps: &[u8],
 ) -> legaia_engine_camera::projection::BattleCamPose {
     let (live, _) = retail_cam_tween(ram, ctx);
-    let vsyncs: i32 = steps.iter().map(|&s| i32::from(s.max(1))).sum();
+    let mut vsyncs: i32 = steps.iter().map(|&s| i32::from(s.max(1))).sum();
     let raw_live: [i32; 9] = [
         i32::from(game_anchors::u16_at(ram, 0x8007_B790) as i16),
         i32::from(game_anchors::u16_at(ram, 0x8007_B792) as i16),
@@ -400,12 +462,33 @@ pub(super) fn displayed_module_cam_live(
         game_anchors::u32_at(ram, 0x8008_911C) as i32,
         game_anchors::u32_at(ram, 0x8008_9120) as i32,
     ];
-    let mut back = [0i32; 9];
-    for k in (0..9u32).filter(|&k| k != 2) {
+    let table = |k: u32| {
         let at = ctx + TWEEN_TABLE + k * 4;
         let inc = i32::from(game_anchors::u16_at(ram, at) as i16).abs();
         let end = game_anchors::u16_at(ram, at + 2) as i16;
-        let gap = i32::from(end.wrapping_sub(raw_live[k as usize] as i16));
+        (
+            inc,
+            i32::from(end.wrapping_sub(raw_live[k as usize] as i16)),
+        )
+    };
+    // A shot whose length is known has walked `frames - ceil(gap / inc)`
+    // frame-step units since its arm built it (the builder's `inc =
+    // ceil(gap / frames)`, read on the component that moves furthest a
+    // unit); the frame before the arm stood on the framing the shot set out
+    // from, which is the table's own origin, so the walk back stops there.
+    if let Some(frames) = module_shot_frames(ram, ctx)
+        && let Some((inc, gap)) = (0..9u32)
+            .filter(|&k| k != 2)
+            .map(table)
+            .filter(|&(inc, gap)| inc > 0 && gap != 0)
+            .max_by_key(|&(inc, _)| inc)
+    {
+        let left = (gap.abs() + inc - 1) / inc;
+        vsyncs = vsyncs.min((frames - left).max(0));
+    }
+    let mut back = [0i32; 9];
+    for k in (0..9u32).filter(|&k| k != 2) {
+        let (inc, gap) = table(k);
         if inc == 0 || gap == 0 {
             continue;
         }
@@ -426,4 +509,101 @@ pub(super) fn displayed_module_cam_live(
             live.focus[2] + back[8] as f32,
         ],
     }
+}
+
+/// The strike loop's framing case (`jal 0x801D5854` with `a1 = 7` at
+/// `0x801E36E8`), armed on every `0x1E` pass.
+const STRIKE_LOOP_STATE: u8 = 0x1E;
+/// A monster's walk clip `+0x1D9` (the tag-`1` entry, `ActionSteer::walk_clock`).
+const WALK_CLIP: u8 = 1;
+/// The anim-cursor ring (`+0x17A`, one halfword a pass, slot `0` live).
+const CURSOR_RING: u32 = 0x17A;
+/// Case 7's focus endpoint off the midpoint the RAM's arm read, within which
+/// the walker's body pair is taken as the one the framing read.
+const STRIKE_FOCUS_FIT: i32 = 4;
+
+/// How far the strike loop's focus endpoint stood, on the pass before the
+/// RAM's, from the RAM's own - [`displayed_cam_live_steps`]'s `end_shift`,
+/// in the walker's raw space - while the acting seat still walks.
+///
+/// State `0x1E` re-arms case 7 every pass, its focus the midpoint of the
+/// attacker's and the target's body pairs (`post_action::recover_framing`).
+/// A pass frames the body pair the previous pass's decode left
+/// ([`super::framing_body`]), so the RAM's arm read the attacker on the
+/// position ring's slot `1` with the pose at the cursor ring's slot `1`,
+/// and the pass before it slot `2`. A monster captured still on its walk
+/// clip moves between the two, and the endpoint that pass chased stood half
+/// that move from the RAM's: `battle_retona_king_frog_strike`'s Frog walked
+/// `32` units of z between them, its focus endpoint `16` off.
+///
+/// The yaw endpoint moves too (the counter's drift, the heading the walker
+/// re-faced onto), but only by a few units, and is left on the RAM's: the
+/// image child tests its yaw on the gate tick's framing, which is the RAM's.
+///
+/// `None` off the strike loop, off a monster's walk clip, on a seat that has not moved over those
+/// slots, or when the RAM's focus endpoint is not the midpoint of the body
+/// pair slot `1` names and the target's (another framing owns the table).
+pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    // A monster on its walk clip: a swing's own root motion moves the body
+    // pair too, but the frame of a seat on its strike clip is drawn from
+    // the replay's pose (`battle_map03_grude_strike` read `.982` to `.980`
+    // walked back against it).
+    if !(3..=7).contains(&seat)
+        || !in_ram(actor)
+        || game_anchors::u8_at(ram, actor + 0x1D9) != WALK_CLIP
+    {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot.min(7) * 4);
+    if target_slot > 7 || !in_ram(target) {
+        return None;
+    }
+    let ring = |k: u32| {
+        let at = actor + POSITION_RING + k * 8;
+        [
+            game_anchors::u32_at(ram, at) as i32 as i16 as i32,
+            game_anchors::u32_at(ram, at + 4) as i32 as i16 as i32,
+        ]
+    };
+    if ring(1) == ring(2) {
+        return None;
+    }
+    let live = [
+        i32::from(game_anchors::i16_at(ram, actor + 0x34)),
+        i32::from(game_anchors::i16_at(ram, actor + 0x38)),
+    ];
+    // The body pair the decode of cursor-ring slot `k` left, on the live
+    // pair position-ring slot `k` holds.
+    let body = |k: u32| {
+        let cursor = game_anchors::u16_at(ram, actor + CURSOR_RING + k * 2);
+        let b = super::framing_body::body_pair_at(ram, actor, cursor)?;
+        let p = ring(k);
+        Some([
+            i32::from(b[0]) - live[0] + p[0],
+            i32::from(b[1]) - live[1] + p[1],
+        ])
+    };
+    let target_body = [
+        i32::from(game_anchors::i16_at(ram, target + 0x3C)),
+        i32::from(game_anchors::i16_at(ram, target + 0x40)),
+    ];
+    let (b1, b2) = (body(1)?, body(2)?);
+    // The focus records hold the midpoint negated.
+    let end = |k: u32| i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4 + 2) as i16);
+    let fits = [(6u32, 0usize), (8, 1)]
+        .iter()
+        .all(|&(k, i)| (-end(k) - (b1[i] + target_body[i]) / 2).abs() <= STRIKE_FOCUS_FIT);
+    if !fits {
+        return None;
+    }
+    let mut shift = [0i32; 9];
+    shift[6] = -((b2[0] - b1[0]) / 2);
+    shift[8] = -((b2[1] - b1[1]) / 2);
+    Some(shift)
 }

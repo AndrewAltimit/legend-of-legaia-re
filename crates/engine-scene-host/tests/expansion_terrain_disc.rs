@@ -1,4 +1,4 @@
-//! Disc-gated: the Rebirth pack's outdoor Isles maps, built on a sculpted
+//! Disc-gated: the sample pack's outdoor Isles maps, built on a sculpted
 //! terrain (`docs/formats/expansion-pack-maps.md`, "Terrain"), entered as
 //! live field scenes.
 //!
@@ -20,14 +20,14 @@ const TERRAIN_MAPS: [&str; 4] = [
     "isles_thornwood",
 ];
 
-fn rebirth_host() -> Option<SceneHost> {
+fn sample_pack_host() -> Option<SceneHost> {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return None;
     };
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
-    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("Rebirth loads");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
+    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("the sample pack loads");
     let issues = validate(&pack);
     assert!(!has_errors(&issues), "{issues:#?}");
     host.activate_expansion_pack(Arc::new(pack))
@@ -37,7 +37,7 @@ fn rebirth_host() -> Option<SceneHost> {
 
 #[test]
 fn the_isles_maps_floor_on_their_terrain() {
-    let Some(mut host) = rebirth_host() else {
+    let Some(mut host) = sample_pack_host() else {
         return;
     };
     for map in TERRAIN_MAPS {
@@ -90,7 +90,7 @@ fn the_isles_maps_floor_on_their_terrain() {
 /// VRAM, so none is dropped as a hole.
 #[test]
 fn the_isles_terrain_meshes_draw_whole_against_the_maps_vram() {
-    let Some(mut host) = rebirth_host() else {
+    let Some(mut host) = sample_pack_host() else {
         return;
     };
     let mut bad = Vec::new();
@@ -137,7 +137,7 @@ fn the_isles_terrain_meshes_draw_whole_against_the_maps_vram() {
 fn borrowed_terrain_cells_copy_the_source_scenes_vram() {
     use legaia_engine_scene::expansion_map::detail::{field_resources, resolve_mesh_library};
     use legaia_engine_scene::scene::Scene;
-    let Some(host) = rebirth_host() else {
+    let Some(host) = sample_pack_host() else {
         return;
     };
     let pack = host.world.expansion.pack.as_ref().unwrap();

@@ -11,7 +11,7 @@ pub fn every_message() -> Vec<Message> {
             engine_build: "legaia-engine 0.1.0+abc".into(),
             player_name: "Vahn".into(),
             pack: Some(PackIdentity {
-                id: "rebirth".into(),
+                id: "sample".into(),
                 content_hash: [0xA5; 32],
             }),
             room: RoomRequest::Create { seats: 4 },

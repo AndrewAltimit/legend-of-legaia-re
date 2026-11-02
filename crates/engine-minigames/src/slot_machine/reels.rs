@@ -145,40 +145,66 @@ pub fn feature_roll(
     }
 }
 
+/// The symbol feature modes `4` and `5` steer every reel to
+/// (`li a2,0x7` at `0x801D236C` / `0x801D23C4`).
+pub const FEATURE_STOP_SYMBOL: u8 = 7;
+
 /// The per-reel stop plan (`FUN_801d2114`): how many rows ahead to search
 /// (`depth`) and which symbol to bias toward (`target`), keyed on the active
-/// feature mode.
+/// feature mode. Read off the jump table at `0x801CEC78`, every case drawing
+/// from the slot LCG `FUN_801d30cc`:
 ///
-/// Confirmed: mode `0` scans `rand%3 + 2` rows for the normal-mode target;
-/// modes `1` / `2` scan `(rand&3) + 6` rows for the jackpot symbols `9` / `8`;
-/// mode `4` (guaranteed-hit) drives the reel to a winning symbol; and mode `6`,
-/// the **bonus round**, passes depth `0` with target `-1`, which searches
-/// nothing and lands the reel on the next row. That is the bonus round's whole
-/// character: the machine does not steer it, so the three numbers you multiply
-/// are your own timing. Modes `3` (hot, bonus-strip value targeting) and `5`
-/// (hold) are folded to the normal plan here (reconstruction - see the module
-/// docs). Draws from the slot LCG - retail uses it for reel-landing selection
-/// (the BIOS-`rand` stream feeds only the feature/jitter rolls).
+/// | mode | draws | depth | target |
+/// |---|---|---|---|
+/// | `0` | 1 | `rand % 3 + 2` | the spin's normal target `DAT_801d3cb8` |
+/// | `1` / `2` | 1 | `(rand & 3) + 6` | the jackpot symbols `9` / `8` |
+/// | `3` | 2 | `rand % 7 + 10` (the second draw) | `DAT_801d3cb8 % 3` |
+/// | `4` | 2 | `rand % 10 + 6` | `DAT_801d3cb8`, then [`FEATURE_STOP_SYMBOL`] |
+/// | `5` | 1 | `rand % 10 + 8` | [`FEATURE_STOP_SYMBOL`] |
+/// | `6` | 0 | `0` | none - the bonus round's free stop |
+///
+/// Mode `3`'s first draw seeds the reel's roll-in budget
+/// `DAT_801d3cf0[reel] = rand % 7 + 0x18` (`0x801D2224..0x801D226C`); the
+/// other modes seed it with a literal. Mode `4` lands once on the normal
+/// target, decrements the spin timer `DAT_801d3c90`, and while the timer is
+/// negative draws again and re-lands on [`FEATURE_STOP_SYMBOL`]
+/// (`bgez a0` at `0x801D2354`). State `3` is entered only once state `2` has
+/// run that timer below zero (`0x801CF660..0x801CF670`) and nothing raises it
+/// before the stops, so the re-land always runs: the second landing is the
+/// one the reel keeps, and the plan returns it with both draws spent.
+///
+/// The bonus round (`6`) passes depth `0` with target `-1`, which searches
+/// nothing and lands the reel on the next row: the three numbers you
+/// multiply are your own timing.
 // PORT: FUN_801d2114 (per-reel stop: target symbol + search depth by feature mode)
-pub fn stop_plan(
-    rng: &mut SlotRng,
-    feature_mode: u8,
-    normal_target: u8,
-    guarantee_target: Option<u8>,
-) -> (usize, Option<u8>) {
+pub fn stop_plan(rng: &mut SlotRng, feature_mode: u8, normal_target: u8) -> (usize, Option<u8>) {
     match feature_mode {
+        0 => (((rng.next_u32() % 3 + 2) as usize), Some(normal_target)),
         1 => ((((rng.next_u32() & 3) + 6) as usize), Some(9)),
         2 => ((((rng.next_u32() & 3) + 6) as usize), Some(8)),
+        3 => {
+            // The roll-in budget's draw (`0x801D2224`), then the depth's.
+            let _budget = rng.next_u32() % 7 + 0x18;
+            let depth = rng.next_u32() % 7 + 10;
+            (depth as usize, Some(normal_target % 3))
+        }
+        4 => {
+            // The first landing on the normal target is replaced by the
+            // timer-expired re-land (`0x801D235C..0x801D2394`).
+            let _first = rng.next_u32() % 10 + 6;
+            let depth = rng.next_u32() % 10 + 6;
+            (depth as usize, Some(FEATURE_STOP_SYMBOL))
+        }
+        5 => (
+            ((rng.next_u32() % 10 + 8) as usize),
+            Some(FEATURE_STOP_SYMBOL),
+        ),
         // The bonus round: no search, no target - the reel stops where you
         // stopped it (`FUN_801d2114` case 6 passes depth 0 / target -1).
         FEATURE_MODE_BONUS => (0, None),
-        4 => match guarantee_target {
-            // Drive the reel all the way to the guaranteed symbol.
-            Some(t) => (STRIP_LEN, Some(t)),
-            None => (STRIP_LEN, Some(normal_target)),
-        },
-        // Modes 0, 3, 5 (and anything unmapped): the normal scan.
-        _ => (((rng.next_u32() % 3 + 2) as usize), Some(normal_target)),
+        // `sltiu v0,v1,0x7` at `0x801D214C` skips the plan for a mode past
+        // `6`; the feature roll writes only `0..=6`, so no spin reaches it.
+        _ => (0, None),
     }
 }
 

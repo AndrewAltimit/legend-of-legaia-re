@@ -572,7 +572,7 @@ reaches `ws://` directly. A standalone `legaia-relay --bind 0.0.0.0:7462`
 hosts rooms without a game window.
 
 **Party night.** The host's Game row lists party nights first
-(**Practice Night** with no pack, **Tower Game Night** with Rebirth): a
+(**Practice Night** with no pack, **Tower Game Night** with the sample pack): a
 playlist of short rounds - a golf hole, a few poker hands, one lap, a Grid
 Duel ladder, a prop hunt round - scored by placement on one scoreboard.
 Between rounds a card shows the next round, the standings and the last
@@ -582,7 +582,7 @@ next game. The podium hands out each player's prize in their own game
 (gold, boosters). A player who drops keeps their score; a round that
 desyncs is void and the night goes on. The number keys `1` to `5` send a
 quick reaction (wave, cheer, bow, dance, laugh) even mid-round. Played
-alone, Rebirth's 5F games-room table runs Tower Game Night against the
+alone, the sample pack's 5F games-room table runs Tower Game Night against the
 keeper and two regulars.
 
 Everyone in a room runs the same engine build and the same expansion pack
@@ -741,11 +741,11 @@ stale bundle looks exactly like a fix that had no effect. See
 
 An expansion pack adds content made for the port - maps, quests, fights,
 challenges - and plays beside your own disc; it carries no game data of its
-own ([`expansion-pack.md`](../formats/expansion-pack.md)). The flagship pack is
-[`packs/rebirth/`](../../packs/rebirth/README.md).
+own ([`expansion-pack.md`](../formats/expansion-pack.md)). The example pack is
+[`packs/sample/`](../../packs/sample/README.md).
 
-**On the desktop**, Rebirth comes with the game: the release archive carries it
-as `packs/rebirth.lxpack` beside the launcher
+**On the desktop**, the sample pack comes with the game: the release archive carries it
+as `packs/sample.lxpack` beside the launcher
 ([`releases.md`](../tooling/releases.md#the-bundled-expansion-pack)). The
 launcher's *Expansion pack...* button steps through the packs it finds - the
 archive's `packs/` folder and the `packs/` folder in your saves folder, where
@@ -754,7 +754,7 @@ you can drop more - and past the last one opens a file dialog for any other
 the window works too). The pack is checked the way the game checks it; one
 with errors is refused, and the help box lists the first few. A good pack is
 remembered in `launcher.toml` (`expansion = "..."`) and shown on the button by
-its short name (*Pack: Rebirth*; the manifest's `short_name`, else its name cut
+its short name (*Pack: Sample*; the manifest's `short_name`, else its name cut
 at the end); its full name, version and authors are in the help box. *Delete* or a right-click
 on the button goes back to no pack. The launcher passes the pack to the game
 as `--expansion`, which also works by hand, with a path or the id of a pack in
@@ -762,12 +762,12 @@ either folder (`legaia-engine packs` lists them):
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" --boot-ui \
-    --expansion rebirth                 # New Game and Continue play with it
+    --expansion sample                 # New Game and Continue play with it
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion rebirth.lxpack --map genesis_1f   # straight onto a map
+    --expansion sample.lxpack --map genesis_1f   # straight onto a map
 ```
 
-**Where Rebirth starts.** Rebirth is made for a late-game party: its way in is
+**Where the sample pack starts.** The sample pack is made for a late-game party: its way in is
 an entrance in Rim Elm that opens at party level 30, so *Continue* a late save
 (or play a New Game up to it). From level 30 the Journal's *Travel* page
 (Select on the pause menu) lists the tower's Atrium, so you can go straight
@@ -785,7 +785,7 @@ changes, so a map edited in a text editor shows a moment after it is saved:
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map genesis_1f --expansion-watch
+    --expansion packs/sample --map genesis_1f --expansion-watch
 ```
 
 A pack with an error is refused and the running one stays; the notice line
@@ -793,11 +793,11 @@ says why (*Reload pack refused: ...*, the whole line in the log). In a fight or
 a menu the reload waits until you are back on the map; a cutscene running on
 the map ends with the reload.
 
-**In the browser**, Rebirth is built in: once the disc is up, the play page's
-*Legend of Legaia: Rebirth* boot mode loads it and opens the title screen, and
+**In the browser**, the sample pack is built in: once the disc is up, the play page's
+*Sample Expansion Pack* boot mode loads it and opens the title screen, and
 the *Expansion pack* card lists it first with a *Play* button. The page fetches
-the pack tree the site serves (`packs/rebirth.json`, regenerated from
-`packs/rebirth/` on every site build) and the engine bundles it, so it is
+the pack tree the site serves (`packs/sample.json`, regenerated from
+`packs/sample/` on every site build) and the engine bundles it, so it is
 always the site's current version and is never copied into the browser's
 library. The same card loads any other `.lxpack`. While a pack is active, the
 Scenes list opens with a section under the pack's name listing its maps; a
@@ -815,11 +815,11 @@ With a pack loaded:
 - **New Game** starts the pack fresh with the new game; **Continue** loads a
   save with the pack's progress. A save made with a pack carries that pack's
   progress and reloads it; a save naming a pack that is not loaded still
-  loads, says so ("Saved with expansion 'rebirth' - not loaded"), and keeps
+  loads, says so ("Saved with expansion 'sample' - not loaded"), and keeps
   the pack's progress to write back on the next save.
 - **Entrances** lead from the retail game into the pack's maps: a tile in a
   retail scene that enters a map when stepped on, often only once a story
-  point, quest or party level is reached. Rebirth's opens in Rim Elm, behind the
+  point, quest or party level is reached. The sample pack's opens in Rim Elm, behind the
   woodpile by the south gate, for a party of level 30 or more.
 - **Journal**: Select on the pause menu opens it (the hint under the menu
   says so). *Quests* lists the started quests, active first, with each

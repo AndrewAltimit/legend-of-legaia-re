@@ -212,6 +212,90 @@ pub(super) fn run_battle(
         reached = Some(e);
         reached_victims = victims;
     }
+    // A monster strike gated on its first swing clip that no stream reached
+    // on the picks the replay drew: the streams again, with the attacker's
+    // strike stream stood on the capture's (`RetailBattle::strike_stream_steer`).
+    // Only here, so every state a stream reaches keeps the fight it had.
+    let steered;
+    let battle = if reached.is_none() && battle.strike_stream_steerable() {
+        let mut b = battle.clone();
+        b.strike_stream_steer = true;
+        for &seed in &seeds {
+            let run = crate::retail_compare_battle::run_engine_battle(
+                opts.extracted,
+                retail,
+                &b,
+                seed,
+                false,
+            );
+            if seed_trace()
+                && let Ok(e) = &run
+            {
+                eprintln!(
+                    "[seed] {} strike-stream seed={seed:#010X} driven={:?}",
+                    entry.label, e.driven
+                );
+            }
+            if let Ok(e) = run
+                && e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                && e.prompt_tick.is_some()
+                && !e.surprise_opening
+                && e.driven.is_some_and(|d| d.is_some())
+            {
+                reached = Some(e);
+                reached_victims = false;
+                break;
+            }
+        }
+        steered = b;
+        &steered
+    } else {
+        battle
+    };
+    // A party Attack's Done-band capture walked from where its seed's
+    // recentre stood it, and the replay, seated near its end-of-string pair,
+    // barely walks: with the string measured on the first run, the same
+    // stream runs again from the walk's start
+    // (`RetailBattle::party_approach`) and is kept when it still reaches.
+    let walked;
+    let (battle, reached) = match reached {
+        Some(first_run) if battle.wants_party_combo() => {
+            let b = first_run
+                .party_combo_ticks
+                .map(|t| battle.with_party_combo(t))
+                .filter(|b| b.capture_approach_yaw().is_some());
+            let rerun = b.as_ref().map(|b| {
+                crate::retail_compare_battle::run_engine_battle(
+                    opts.extracted,
+                    retail,
+                    b,
+                    first_run.rng_seed,
+                    reached_victims,
+                )
+            });
+            if seed_trace() {
+                eprintln!(
+                    "[seed] {} party walk: string {:?} ticks, approach {:?}, re-run driven {:?}",
+                    entry.label,
+                    first_run.party_combo_ticks,
+                    b.as_ref().and_then(|b| b.capture_approach_yaw()),
+                    rerun.as_ref().map(|r| r.as_ref().ok().map(|e| e.driven)),
+                );
+            }
+            match (b, rerun) {
+                (Some(b), Some(Ok(e)))
+                    if e.mode == legaia_engine_mode::mode::SceneMode::Battle
+                        && e.driven.is_some_and(|d| d.is_some())
+                        && e.age_short.is_none() =>
+                {
+                    walked = b;
+                    (&walked, Some(e))
+                }
+                _ => (battle, Some(first_run)),
+            }
+        }
+        r => (battle, r),
+    };
     // A driven action replays the pushes its capture already holds; run the
     // same stream once more from the ground the replay says retail started
     // on (`RetailBattle::undrift`), under each rule for the acting seat, and
@@ -492,6 +576,15 @@ pub(super) fn battle_image(
             legaia_engine_capture::clip_cursors::clip_cursors_to_env(&seeds),
         ));
     }
+    // ... and a body the display shows on the clip before a commit the
+    // RAM already holds.
+    let shown = battle.engine_image_displayed_clips();
+    if !shown.is_empty() {
+        env.push((
+            "LEGAIA_SEAT_DISPLAYED_CLIPS",
+            legaia_engine_capture::clip_cursors::clip_cursors_to_env(&shown),
+        ));
+    }
     // A party melee capture's landed hits, so the replayed combo deals
     // retail's amounts (`legaia_engine_capture::melee_hits`).
     let hits = battle.melee_hit_seeds();
@@ -646,7 +739,14 @@ pub(super) fn battle_image(
         env.push((
             "LEGAIA_BATTLE_CAM_ALIGN",
             legaia_engine_capture::camera_align::cam_align_to_env(&if battle.displayed_camera() {
-                (battle.displayed_cam_live, battle.cam_tween.1)
+                // A walker the child stands on the displayed ground arms the
+                // displayed pass's endpoints, not the RAM's.
+                let end = if battle.walk_clock_capture() {
+                    battle.displayed_cam_end
+                } else {
+                    battle.cam_tween.1
+                };
+                (battle.displayed_cam_live, end)
             } else {
                 battle.cam_tween
             }),
@@ -693,6 +793,9 @@ pub(super) fn battle_image(
     let displayed_menu = battle.displayed_menu_flow().is_some();
     if battle.hud_glides_landed || displayed_menu {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
+    }
+    if battle.move_label_unseen() {
+        env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
     }
     // Glides still in flight: each seated on the elapsed the displayed
     // frame shows (`HudGlideSeat`).

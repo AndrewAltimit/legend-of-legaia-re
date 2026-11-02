@@ -4,6 +4,39 @@
 
 use super::*;
 
+/// The flag sites of partition `part`
+/// ([`legaia_engine_field::man_field_scripts::walk_partition_gflag_sites`]),
+/// kept per MAN image: the beats and the walk ask for the same partitions
+/// of the same scene over and over, and each answer is a disassembly of
+/// every record. A pure function of the MAN bytes (`mf` is their parse), so
+/// the copy is the walk's own answer.
+pub(super) fn walk_partition_gflag_sites(
+    mf: &legaia_scene_formats::man_section::ManFile,
+    man: &[u8],
+    part: usize,
+) -> Vec<legaia_engine_field::man_field_scripts::GFlagSite> {
+    type Sites = Vec<legaia_engine_field::man_field_scripts::GFlagSite>;
+    thread_local! {
+        static WALKED: std::cell::RefCell<HashMap<(usize, Vec<u8>), Sites>> =
+            std::cell::RefCell::new(HashMap::new());
+    }
+    let key = (part, man.to_vec());
+    if let Some(hit) = WALKED.with(|w| w.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    let sites = legaia_engine_field::man_field_scripts::walk_partition_gflag_sites(mf, man, part);
+    WALKED.with(|w| {
+        let mut w = w.borrow_mut();
+        // A run visits scenes in stretches; a bounded memory of the last
+        // few dozen partitions holds every repeat.
+        if w.len() >= 96 {
+            w.clear();
+        }
+        w.insert(key, sites.clone());
+    });
+    sites
+}
+
 /// Does the next anchor carry `flag`? `true` when there is no anchor to ask.
 pub(super) fn next_anchor_has(flag: u16) -> bool {
     NEXT_ANCHOR_FLAGS.with(|a| a.borrow().as_ref().is_none_or(|f| f.contains(&flag)))
@@ -22,9 +55,7 @@ pub(super) fn box_poll_beats(
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<(u8, Vec<(u8, u8)>)> {
-    use legaia_engine_field::man_field_scripts::{
-        FlagBank, partition_record_span, walk_partition_gflag_sites,
-    };
+    use legaia_engine_field::man_field_scripts::{FlagBank, partition_record_span};
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let w = &session.host.world;
     let tested2: BTreeSet<u16> = walk_partition_gflag_sites(mf, man, 2)
@@ -105,9 +136,7 @@ pub(super) fn talk_box_gate(
     man: &[u8],
     slot: u8,
 ) -> Option<TalkBox> {
-    use legaia_engine_field::man_field_scripts::{
-        FlagBank, partition_record_span, walk_partition_gflag_sites,
-    };
+    use legaia_engine_field::man_field_scripts::{FlagBank, partition_record_span};
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker};
     let w = &session.host.world;
     let sites = walk_partition_gflag_sites(mf, man, 1);
@@ -181,7 +210,7 @@ pub(super) fn bands_testing(
     man: &[u8],
     flags: &BTreeSet<u16>,
 ) -> BTreeSet<u8> {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     walk_partition_gflag_sites(mf, man, 2)
         .iter()
         .filter(|s| {
@@ -208,9 +237,7 @@ pub(super) fn overreaching_records(
     man: &[u8],
     partition: usize,
 ) -> BTreeSet<usize> {
-    use legaia_engine_field::man_field_scripts::{
-        FlagBank, partition2_record_gates, walk_partition_gflag_sites,
-    };
+    use legaia_engine_field::man_field_scripts::{FlagBank, partition2_record_gates};
     let n2 = mf.partitions.get(2).map_or(0, Vec::len);
     let latches: BTreeSet<u16> = (0..n2)
         .filter_map(|r| partition2_record_gates(mf, man, r))
@@ -385,9 +412,7 @@ pub(super) fn handoff_cleared(
     part: usize,
     rec: usize,
 ) -> BTreeSet<u16> {
-    use legaia_engine_field::man_field_scripts::{
-        FlagBank, partition_record_span, walk_partition_gflag_sites,
-    };
+    use legaia_engine_field::man_field_scripts::{FlagBank, partition_record_span};
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
     let Some((start, pc0, len)) = partition_record_span(mf, man, part, rec) else {
         return BTreeSet::new();
@@ -463,7 +488,7 @@ pub(super) fn record_overreaches(
     record: usize,
     follow_fight: bool,
 ) -> bool {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let sites: Vec<_> = (0..3)
         .flat_map(|p| walk_partition_gflag_sites(mf, man, p))
         .filter(|s| s.bank == FlagBank::System && s.clean && !s.text_alias && !s.debug_menu)
@@ -680,9 +705,7 @@ pub(super) fn hands_off_to_entry_script(
     man: &[u8],
     rec: usize,
 ) -> bool {
-    use legaia_engine_field::man_field_scripts::{
-        FlagBank, partition_record_span, walk_partition_gflag_sites,
-    };
+    use legaia_engine_field::man_field_scripts::{FlagBank, partition_record_span};
     use legaia_scene_formats::field_disasm::{InsnInfo, LinearWalker, scene_change_name};
     let w = &session.host.world;
     let sets: BTreeSet<u16> = walk_partition_gflag_sites(mf, man, 1)

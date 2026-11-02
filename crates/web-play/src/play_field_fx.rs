@@ -110,6 +110,25 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// The glided scripted shot the page last drew through
+    /// ([`Self::play_camera_vp`]'s resolved frame), while a timeline still
+    /// owns the camera; `None` otherwise. The screen passes retail draws
+    /// under the frame's GTE camera (drop shadows, light pools, move strips)
+    /// project through it, the native window's `frame_cutscene_view`. Read
+    /// from the last drawn frame because the glide is a per-frame step the
+    /// page's camera export owns; a query must not advance it.
+    pub(crate) fn drawn_cutscene_view(
+        &self,
+    ) -> Option<legaia_engine_camera::psx_camera::FieldCameraView> {
+        if !self.cutscene_owns_frame() {
+            return None;
+        }
+        match self.engine_camera {
+            Some((_, legaia_engine_field::camera_frame::FieldCameraFrame::Cutscene(v))) => Some(v),
+            _ => None,
+        }
+    }
+
     /// This tick's actor drop shadows (retail's `FUN_8001C394` blob) as
     /// screen primitives: the shared pass both hosts draw
     /// (`legaia_engine_world_views::screen_passes::HostView::drop_shadow_prims`).
@@ -118,8 +137,9 @@ impl LegaiaRuntime {
     /// on the menu-glyph atlas page `(960, 256)`, resident in the field VRAM
     /// through the boot system-UI underlay.
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
+        let cutscene = self.drawn_cutscene_view();
         self.host_view_at(self.field_pass_box())
-            .map(|v| v.drop_shadow_prims())
+            .map(|v| v.drop_shadow_prims(cutscene))
             .unwrap_or_default()
     }
 
@@ -138,8 +158,9 @@ impl LegaiaRuntime {
     /// `FUN_801D31B0`) as screen primitives - the shared pass both hosts draw
     /// (`legaia_engine_world_views::screen_passes::HostView::move_strip_prims`).
     pub(crate) fn tick_move_strip_prims(&mut self) -> Vec<ScreenPrim> {
+        let cutscene = self.drawn_cutscene_view();
         self.host_view_at(self.field_pass_box())
-            .map(|v| v.move_strip_prims())
+            .map(|v| v.move_strip_prims(cutscene))
             .unwrap_or_default()
     }
 
@@ -147,8 +168,9 @@ impl LegaiaRuntime {
     /// pools) as screen primitives - the shared pass both hosts draw
     /// (`legaia_engine_world_views::screen_passes::HostView::light_prims`).
     pub(crate) fn field_light_prims(&self) -> Vec<ScreenPrim> {
+        let cutscene = self.drawn_cutscene_view();
         self.host_view_at(self.field_pass_box())
-            .map(|v| v.light_prims())
+            .map(|v| v.light_prims(cutscene))
             .unwrap_or_default()
     }
 }

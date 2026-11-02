@@ -480,17 +480,31 @@ fn the_walk_rounds_a_chunk_length_down_to_a_word() {
 #[test]
 fn the_duel_ticks_the_round_chrome() {
     let mut f = fight();
-    // No banner is running before a round ends.
+    // No banner is running mid-duel, nor at the round end: the next round's
+    // banner is the cabinet's banner arms', after the round-over hold.
     f.tick(1);
     assert!(!f.chrome().busy());
     f.end_round(0, false);
-    assert!(f.chrome().busy());
-    assert_eq!(f.chrome().sprites().len(), 1);
-    f.tick(1);
+    assert!(!f.chrome().busy());
+    let mut first = None;
+    for _ in 0..0x400 {
+        f.tick(1);
+        if f.chrome().busy() {
+            first = Some(f.cabinet().state());
+            break;
+        }
+    }
+    // The first banner arm `0x33` ran this tick and stepped on to `0x34`.
     assert_eq!(
-        f.chrome_frame().xa.map(|x| x.clip),
-        Some(0x1F),
-        "the round-announce line fires on the banner's first frame"
+        first,
+        Some(crate::baka_cabinet::ST_ROUND_BANNER_B),
+        "the banner starts on the first banner arm"
+    );
+    assert_eq!(f.chrome().sprites().len(), 1);
+    assert_eq!(
+        f.chrome_frame().xa,
+        Some(crate::baka_fighter_chrome::round_banner_xa(1)),
+        "the round-announce line names the round about to start"
     );
 }
 
@@ -1221,4 +1235,59 @@ fn the_finishing_specials_afterimage_runs_out_after_the_round_is_decided() {
     // The nearer ghost expires first, then the farther, then the actor goes.
     assert!(drawn_per_tick.contains(&1), "{drawn_per_tick:?}");
     assert_eq!(drawn_per_tick.last(), Some(&0));
+}
+
+/// Every round's announcement is its own `XA32` line and nothing else
+/// speaks over it. The round banner (`FUN_801D5C7C`, cabinet states
+/// `0x33..0x36`) starts `FUN_8003D53C(0x1F, DAT_801DBF8C, 0x48)` with the
+/// index the round setup has already advanced, so round `n + 1` reads
+/// channel `n`; and no other line starts until it has finished: the
+/// all-clear announcer (`FUN_801D21FC`, `XA33` channels `0x0A..0x0D`) runs
+/// only in the all-clear beats `0xFA..0xFE`, so it never cuts a round line
+/// short. (This duel starts mid-round, so its first banner is round 2's.)
+#[test]
+fn each_round_banner_plays_its_own_line_uninterrupted() {
+    use crate::baka_fighter_chrome::{
+        ROUND_BANNER_XA_CLIP, ROUND_BANNER_XA_DURATION, XaCue, round_banner_xa,
+    };
+    let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), 1);
+    f.ai_controlled = [true, true];
+    let mut fired: Vec<(usize, XaCue)> = Vec::new();
+    for t in 0..20_000 {
+        if f.match_over() {
+            break;
+        }
+        f.tick(1);
+        if let Some(c) = f.chrome_frame().xa {
+            if c.clip == ROUND_BANNER_XA_CLIP {
+                assert_eq!(c.chan as u32, f.round(), "the round about to start");
+                assert_eq!(f.cabinet().round(), f.round() as i32);
+            }
+            fired.push((t, c));
+        }
+    }
+    let banners: Vec<(usize, XaCue)> = fired
+        .iter()
+        .copied()
+        .filter(|(_, c)| c.clip == ROUND_BANNER_XA_CLIP)
+        .collect();
+    assert!(!banners.is_empty(), "a match announces its later rounds");
+    for (k, (t, c)) in banners.iter().enumerate() {
+        let n = k + 1;
+        assert_eq!(*c, round_banner_xa(n as i32), "round {} line", n + 1);
+        assert_eq!(c.dur, ROUND_BANNER_XA_DURATION);
+        // Nothing else starts inside the line's read span.
+        let end = t + usize::from(ROUND_BANNER_XA_DURATION);
+        let cut: Vec<_> = fired
+            .iter()
+            .filter(|(u, o)| *u > *t && *u < end && o != c)
+            .collect();
+        assert!(cut.is_empty(), "round {} line cut by {cut:?}", n + 1);
+    }
+    assert!(
+        fired
+            .iter()
+            .all(|(_, c)| !(c.clip == 0x20 && (0x0A..=0x0D).contains(&c.chan))),
+        "the stage-clear lines never fire in a match"
+    );
 }

@@ -139,7 +139,7 @@ pub(super) fn older_table_step(ram: &[u8], ctx: u32) -> Option<u8> {
         .map(|s| {
             (
                 s,
-                displayed_cam_live_steps(ram, ctx, &[s], false, [None; 9]),
+                displayed_cam_live_steps(ram, ctx, &[s], false, [None; 9], [0; 9]),
             )
         })
         .collect();

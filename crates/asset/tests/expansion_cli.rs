@@ -1,4 +1,4 @@
-//! `asset expansion ...` over the committed flagship pack: validate it,
+//! `asset expansion ...` over the committed sample pack: validate it,
 //! bundle it, unbundle the bundle, and get the same tree back; and refuse a
 //! pack that carries a disc-format asset. Disc-free.
 
@@ -15,8 +15,8 @@ fn asset(args: &[&Path]) -> Output {
         .expect("spawn the asset CLI")
 }
 
-fn rebirth() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth")
+fn sample_pack() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample")
 }
 
 fn scratch(name: &str) -> PathBuf {
@@ -36,19 +36,19 @@ fn ok(out: &Output) -> String {
 }
 
 #[test]
-fn bundle_unbundle_round_trips_rebirth() {
+fn bundle_unbundle_round_trips_sample_pack() {
     let dir = scratch("roundtrip");
-    let lxpack = dir.join("rebirth.lxpack");
+    let lxpack = dir.join("sample.lxpack");
     let copy = dir.join("copy");
     let text = ok(&asset(&[
         Path::new("validate"),
-        &rebirth(),
+        &sample_pack(),
         Path::new("--strict"),
     ]));
     assert!(text.contains("0 error(s), 0 warning(s)"), "{text}");
     ok(&asset(&[
         Path::new("bundle"),
-        &rebirth(),
+        &sample_pack(),
         Path::new("-o"),
         &lxpack,
     ]));
@@ -60,11 +60,11 @@ fn bundle_unbundle_round_trips_rebirth() {
     ]));
     assert_eq!(
         read_dir_files(&copy).unwrap(),
-        read_dir_files(&rebirth()).unwrap()
+        read_dir_files(&sample_pack()).unwrap()
     );
     let text = ok(&asset(&[Path::new("info"), &lxpack]));
     assert!(
-        text.contains("Legend of Legaia: Rebirth 0.2.0 (rebirth)"),
+        text.contains("Sample Expansion Pack 0.2.0 (sample)"),
         "{text}"
     );
     ok(&asset(&[Path::new("validate"), &lxpack]));

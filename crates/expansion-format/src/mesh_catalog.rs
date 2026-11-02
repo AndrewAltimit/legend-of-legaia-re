@@ -3,7 +3,7 @@
 //!
 //! A map names a disc mesh by coordinate, `{ scene = "town01", object = 47 }`,
 //! and nothing in the coordinate says that object 47 is a bed and object 48
-//! the stern of a boat. The catalog says so, for the scenes the flagship
+//! the stern of a boat. The catalog says so, for the scenes the sample
 //! pack borrows from: per `(scene, object)` a human label, a kind, the
 //! mesh's measured size and whether it stands in the player's way (the
 //! `solid` a placement of it wants). It is labels and numbers only, no disc

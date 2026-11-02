@@ -9,7 +9,7 @@ directly (`legaia_engine_fishing::fishing`).
 | Module | Covers |
 |---|---|
 | `fishing` | `PondSession`: the pond state machine, cast and reel, tension gauges, species and bite rolls, catch scoring, the rod / lure menu and the prize list. |
-| `fishing_actors` | The rod, lure and line actors, the rod mesh faces, the bite kernels and the celebration burst. |
+| `fishing_actors` | The rod, lure and line actors, the rod mesh faces, the bite kernels, the celebration burst and the scripted venue camera (`VenueCamera`, `VenueCameraDriver`). |
 | `fishing_chrome` | The venue chrome: the float actor, splash and ripple spawn geometry, the reel cadence ring. |
 | `fishing_hub` | The hub screen a venue's idle shore opens. |
 

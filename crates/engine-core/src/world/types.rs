@@ -826,7 +826,7 @@ pub(crate) enum MonsterAction {
     /// Cast `spell_id` against the resolved absolute `targets` slots.
     Cast { spell_id: u8, targets: Vec<u8> },
     /// The monster breaks off and flees - the `FUN_801EC0DC` roll succeeded at
-    /// the picker's once-per-pass checkpoint. Routes to action category 5,
+    /// the picker's flee checkpoint. Routes to action category 5,
     /// whose monster arm is the state-`0x68` leave-battle band.
     Flee,
     /// The monster spends its turn charging a telegraphed move (an

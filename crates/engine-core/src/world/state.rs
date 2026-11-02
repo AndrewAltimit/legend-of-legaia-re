@@ -279,6 +279,11 @@ pub struct World {
     /// Summon / cast-module / move-FX scene-graph state: the active summon scene, the cast stager and phase bytes, and the move-effect spawns and trails.
     pub casting: CastFxState,
 
+    /// The turn the initiative pick made ahead of its dispatch: the round
+    /// start's pick and a picked monster's decided action
+    /// ([`crate::world::battle::ParkedTurn`]).
+    pub parked_turn: crate::world::battle::ParkedTurn,
+
     /// Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
     pub ambient: AmbientFxState,
 
@@ -400,6 +405,7 @@ impl World {
             script_actors: FieldScriptActorState::default(),
             rng_state: 0x1234_5678,
             casting: CastFxState::new(),
+            parked_turn: Default::default(),
             sin_lut: legaia_engine_system::rotation_lut::retail_rotation_lut()
                 .sin_table()
                 .to_vec(),

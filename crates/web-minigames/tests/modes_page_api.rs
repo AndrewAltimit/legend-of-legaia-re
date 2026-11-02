@@ -1,5 +1,5 @@
 //! The modes page's runtime (`LegaiaModes`): every mode of the built-in
-//! practice set and of the Rebirth pack starts, plays a stretch of pad input
+//! practice set and of the sample pack starts, plays a stretch of pad input
 //! and draws, with no disc.
 
 use legaia_engine_system::pad::PadButton;
@@ -126,8 +126,8 @@ fn picker_enters_a_mode_and_backs_out() {
 }
 
 #[test]
-fn rebirth_tree_plays_every_mode() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
+fn sample_pack_tree_plays_every_mode() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
     let mut files = legaia_expansion_format::PackFiles::new();
     let mut stack = vec![root.clone()];
     while let Some(dir) = stack.pop() {

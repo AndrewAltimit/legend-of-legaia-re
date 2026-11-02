@@ -405,6 +405,39 @@ pub(super) fn retail_action_fx_parts(
 const RING_ID: u32 = 0x1FB;
 /// Its anim-cursor history `+0x17A`: one halfword a battle frame.
 const RING_CURSOR: u32 = 0x17A;
+/// The clip-record history ring: the committed entry pointer, a word a
+/// battle frame, slot 0 the live one (`FUN_80047430`, `0x80047E58..0x80048060`).
+const RING_RECORD: u32 = 0x234;
+/// Entries the displayed-clip lookup searches in a monster record's entry
+/// array (`+0x4C`): the archive's own action count bound.
+const MONSTER_ENTRY_SEARCH: u32 = 64;
+
+/// Pool slot `slot`'s clip and cursor on the displayed frame
+/// ([`RetailBattle::displayed_clips`]): slot [`DISPLAYED_FRAMES_BACK`] of the
+/// clip-record ring resolved through the monster record's entry array, and
+/// the same slot of the cursor ring. `None` for a party slot, an empty seat,
+/// or a pointer the array does not hold.
+fn displayed_monster_clip(ram: &[u8], slot: u32) -> Option<(u8, u16)> {
+    if slot < 3 {
+        return None;
+    }
+    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+    if !in_ram(p) {
+        return None;
+    }
+    let record = game_anchors::u32_at(ram, 0x801C_9348 + (slot - 3) * 4);
+    if !in_ram(record) {
+        return None;
+    }
+    let shown = game_anchors::u32_at(ram, p + RING_RECORD + DISPLAYED_FRAMES_BACK * 4);
+    if !in_ram(shown) {
+        return None;
+    }
+    let idx = (0..MONSTER_ENTRY_SEARCH)
+        .find(|&i| game_anchors::u32_at(ram, record + 0x4C + i * 4) == shown)?;
+    let cursor = game_anchors::u16_at(ram, p + RING_CURSOR + DISPLAYED_FRAMES_BACK * 2);
+    Some((idx as u8, cursor))
+}
 /// The ring's depth (`0x1F` shifts and slot 0).
 const RING_SLOTS: u32 = 32;
 /// The lowest ring id the ghost walk draws (`sltiu v0,v0,0x11` at
@@ -603,26 +636,44 @@ const COMBO_TOTAL: u32 = 0x8007_BD14;
 /// HP). What the bank still holds is taken off the slot's sum.
 /// The ring's pushes in order, `(pool slot, amount)` - the hits the action
 /// in flight resolved, each as the melee kernel landed it, `0` where the
-/// number has left the screen and the ring no longer holds it. Empty where
-/// [`action_hits`] is (outside an action, or a ring that has wrapped).
+/// number has left the screen and the ring no longer holds it. Empty outside
+/// an action.
+///
+/// A string longer than the ring has wrapped it: push `i` sits in entry
+/// `i mod 8` (the cursor `ctx[+0x262]` folds `mod 8` from the seed's zero),
+/// so the newest eight are still read there and each older push is an
+/// unknown amount on the slot its overwriter struck
+/// (`cort_evolved_card_pre_doomsday`: ten pushes, `TOTAL 1978`). The count
+/// still names the string, and the total its closing hit completes.
 pub(super) fn action_hit_sequence(ram: &[u8], ctx: u32) -> Vec<(u8, u16)> {
     let state = game_anchors::u8_at(ram, ctx + 7);
     let count = game_anchors::u8_at(ram, ctx + RING_PUSHES);
     if game_anchors::u8_at(ram, ctx + 6) != 0xFF
         || PRE_SEED_STATES.contains(&state)
         || state == 0x0C
-        || count > RING_LEN
+        || count > RING_WRAP_MAX
     {
         return Vec::new();
     }
-    (0..u32::from(count))
+    let count = u32::from(count);
+    (0..count)
         .filter_map(|i| {
-            let value = game_anchors::u16_at(ram, ctx + RING_VALUE + i * 4) as i16;
-            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + i * 2);
+            let e = i % u32::from(RING_LEN);
+            let value = if i + u32::from(RING_LEN) < count {
+                0
+            } else {
+                game_anchors::u16_at(ram, ctx + RING_VALUE + e * 4) as i16
+            };
+            let seat = game_anchors::u16_at(ram, ctx + RING_SEAT + e * 2);
             (seat < 8).then_some((seat as u8, value.max(0) as u16))
         })
         .collect()
 }
+
+/// The longest string [`action_hit_sequence`] reads through a wrapped
+/// ring: a party string's hits are its queue's swings and art beats, well
+/// under this.
+const RING_WRAP_MAX: u8 = 0x20;
 
 /// `ctx[+0x85C + i * 4]` - ring entry `i`'s timer, `0x10 * step` a pass
 /// (`0x801DF7B8..0x801DF7C8`).
@@ -800,7 +851,19 @@ impl RetailBattle {
             }),
             cam_accum: game_anchors::u32_at(ram, ctx + 0x87C),
             caster_clip: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1D9)),
+            caster_latched: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DB)),
             walk_yaw_base: game_anchors::u16_at(ram, ctx + 0x6DA),
+            swing_reseed_entry: active_actor < 3 && {
+                let table =
+                    game_anchors::u32_at(ram, PARTY_ENTRY_TABLES + u32::from(active_actor) * 4);
+                in_ram(table)
+                    && (0..PARTY_ENTRY_SLOTS).any(|slot| {
+                        let e = game_anchors::u32_at(ram, table + slot * 4);
+                        in_ram(e) && game_anchors::u8_at(ram, e + 0x87) == 2
+                    })
+            },
+            ring_steps: recent_pass_steps(ram),
+            party_combo_vsyncs: None,
             backdrop_cue: {
                 let rec = game_anchors::u32_at(ram, ctx + 0x106C);
                 in_ram(rec).then(|| game_anchors::u16_at(ram, rec + 0x78))
@@ -818,6 +881,11 @@ impl RetailBattle {
                     game_anchors::u16_at(ram, ctx + 0x6DA),
                     DISPLAY_LAG_PASSES,
                 );
+                let passes = if done_arm_pass(ram, ctx, action_state) {
+                    passes.min(1)
+                } else {
+                    passes
+                };
                 // Each pass on its own step where the older ordering table's
                 // floor confirms the newest one; the history's largest entry
                 // for every pass otherwise.
@@ -851,8 +919,26 @@ impl RetailBattle {
                         &steps,
                         confirmed,
                         summon_route_prior_end(ram, ctx, action_state),
+                        walker_end_shift(ram, ctx).unwrap_or([0; 9]),
                     )
                 }
+            },
+            displayed_cam_end: {
+                // The endpoints the displayed frame's own pass chased, where
+                // a walker moved them ([`walker_end_shift`]): the image child
+                // stands the walker on the displayed ground, and its framing
+                // arms those.
+                let (_, end) = retail_cam_tween(ram, ctx);
+                walker_end_shift(ram, ctx).map_or(end, |s| {
+                    legaia_engine_camera::projection::BattleCamPose {
+                        focus: [
+                            end.focus[0] - s[6] as f32,
+                            end.focus[1] - s[7] as f32,
+                            end.focus[2] - s[8] as f32,
+                        ],
+                        ..end
+                    }
+                })
             },
             displayed_module_cam_live: displayed_module_cam_live(
                 ram,
@@ -921,6 +1007,7 @@ impl RetailBattle {
             absorbed_seru: game_anchors::u8_at(ram, ctx + 0x269),
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
+            strike_stream_steer: false,
             committed_queue: std::array::from_fn(|i| {
                 active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
             }),
@@ -1049,6 +1136,9 @@ impl RetailBattle {
                         ]
                     })
                 })
+                .collect(),
+            displayed_clips: (0..8u32)
+                .map(|slot| displayed_monster_clip(ram, slot))
                 .collect(),
             displayed_recommit: (0..8u32)
                 .map(|slot| {

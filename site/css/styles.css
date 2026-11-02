@@ -3779,6 +3779,8 @@ a.stat-link:hover .lbl { color: var(--text); }
 
 /* Large tiles (Play group): collage of one main + two stacked shots */
 .tile.lg { grid-column: span 2; }
+/* Three collages in a row (the home page's Play group). */
+.tiles.cols3 > .tile.lg { grid-column: auto; }
 /* A 2:1 collage of a 2fr main cell and two stacked 1fr cells makes every
    cell 4:3, the shape of the captures, so cover no longer crops them. */
 .tile.lg .collage { aspect-ratio: 2 / 1; }
@@ -3814,11 +3816,11 @@ a.stat-link:hover .lbl { color: var(--text); }
 
 @media (max-width: 1180px) {
   .tiles, .tiles.cols3 { grid-template-columns: repeat(2, 1fr); }
-  .tile.lg { grid-column: span 2; }
+  .tile.lg, .tiles.cols3 > .tile.lg { grid-column: span 2; }
 }
 @media (max-width: 640px) {
   .tiles, .tiles.cols3 { grid-template-columns: 1fr; }
-  .tile.lg { grid-column: auto; }
+  .tile.lg, .tiles.cols3 > .tile.lg { grid-column: auto; }
   .tile.wide { flex-direction: column; }
   .tile.wide .shot { width: 100%; aspect-ratio: 3 / 2; border-right: none; border-bottom: 1px solid var(--line-soft); }
   .hero-tile { grid-template-columns: 1fr; }

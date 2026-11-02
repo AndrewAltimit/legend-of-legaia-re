@@ -3,5 +3,5 @@
 mod common;
 mod determinism;
 mod map_modes;
-mod rebirth_pack;
+mod sample_pack;
 mod soak;

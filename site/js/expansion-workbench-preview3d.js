@@ -218,7 +218,7 @@ export function createPreview3d(env) {
   // env: { exportBundle() -> Uint8Array (throws on errors), pack(), storePlay(bytes, map) -> Promise, playUrl(map) }
   const P = {
     open: false, ready: false, visible: false, frame: null, map: null, spawn: '',
-    dirty: true, timer: null, sent: null, layers: { grid: true, walls: true, zones: true, triggers: true, npcs: true, spawns: true, props: false, collision: false },
+    dirty: true, timer: null, sent: null, layers: { grid: false, walls: false, zones: false, triggers: false, npcs: false, spawns: false, props: false, collision: false },
     select: null, path: null, marker: null, mode: 'orbit', onPick: null, stats: null, last: null, live: false, liveTimer: null,
     auto: true, painter: true, arrival: false, edits: 0, builtEdits: -1, view: '2d', grid: null, defs: null, overlayKey: '',
   };

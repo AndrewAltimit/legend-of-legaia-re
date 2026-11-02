@@ -30,8 +30,8 @@ pub const ZENOIR_STRIKE_ARM: u8 = 7;
 /// The neutral colour word `0x20080200` PROT 0908 writes to show a seat.
 pub const ZENOIR_NEUTRAL_COLOUR: u32 = 0x2008_0200;
 
-/// The arm PROT 0908 lifts the creature in and drops its clip back to `0`
-/// (`0x801F787C`).
+/// The arm PROT 0908 lifts the creature in and drops the victim's clip back
+/// to `0` (`0x801F787C`).
 pub const ZENOIR_RISE_ARM: u8 = 9;
 
 /// The arm PROT 0908's quarter-strength opening hit fires in.
@@ -155,11 +155,16 @@ pub fn zenoir_tick(
             }
             CastArmStep::Advance
         }
-        // `sb zero,0x1da(s6)` at `0x801F787C`: the creature drops back to
-        // its first entry as it rises over the victim.
+        // `sb zero,0x1da(s6)` at `0x801F787C`: `s6` is the victim the
+        // prologue reads back out of `0x801F8BA8` (`0x801F6A5C..0x801F6A98`),
+        // not the creature (`s7`, actor-table slot 7), so the victim drops
+        // back to its first entry as the creature rises over it. Its clip's
+        // cue track sounds there: Gobu Gobu's cue `0x80` (ring `0x21C`)
+        // through `FUN_800508DC` on arm 10's first pass, in the retail
+        // cast-sequence capture.
         ZENOIR_RISE_ARM => {
-            if let Some(s) = seats.get_mut(who.summon as usize) {
-                s.staged_anim = 0;
+            if let Some(v) = seats.get_mut(who.victim as usize) {
+                v.staged_anim = 0;
             }
             CastArmStep::Advance
         }

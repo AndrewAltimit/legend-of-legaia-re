@@ -20,7 +20,7 @@ type-specific handler; the payload is LZS-compressed (`FUN_8001A55C`, via
 | `efect_pack` | The *runtime* `efect.dat` 2-pack (`[u32 pack0_off][u32 pack1_off][sprite atlas][pack0][pack1]`), recognised on the pack tables' own self-consistency. Distinct from `effect_bundle`; see [`docs/formats/effect.md`](../../docs/formats/effect.md). |
 | `data_field_truncated` | Retired class (produced by nothing): its one hit, 0892, is a `pack` of two TIMs whose header words the streaming reader took for chunk headers, and the three entries once named as members are ordinary four-chunk bundles. Pinned at zero in the validation suite. |
 | `anm_detect` | On-disc ANM (asset type 0x06) shape check wrapping `legaia_anm::parse`. |
-| `tmd_size_prefix` | Sister of `scene_tmd_stream`: `[u32 prefix][TMD]` with no trailing stream. |
+| `tmd_size_prefix` | Sister of `scene_tmd_stream` whose leading word claims more than the entry holds. Matches no retail entry; a regression guard pinned at zero. |
 | `tim_scan` / `tmd_scan` | Brute-force magic search for TIMs / Legaia TMDs inside an entry, raw or behind LZS. |
 | `sound_pack` | Per-scene `.dpk` / `sound_data2`: a VAB + SEQ bundle in the type-2-terminated streaming container (chunk 0 = VAB header, chunk 1 = VAB sample pool, chunk 2 = SEQ). `extract` reconstitutes the contiguous VAB + slices the SEQ. |
 | `scene_vab_stream` | `[u32 chunk0][VABp ...]`: the chunk stream whose leading chunk is a VAB header. See [`vab.md`](../../docs/formats/vab.md). |

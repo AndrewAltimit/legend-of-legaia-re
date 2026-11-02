@@ -560,8 +560,11 @@ impl LegaiaRuntime {
             .map(|v| legaia_render_kernels::gte::PartCameraPose::from_field_view(&v));
         let lists = effect_model_draws(world, part_cam.as_ref(), |_| None);
         let outer = WORLD_FLIP;
-        // The field pass culls back faces itself: no part is single-sided here.
-        push_fx_models(&mut frame, world, &lists, &outer, None);
+        // The page draws this frame both-sided (`nclip: 0`), so a
+        // single-sided part or node drops its back faces here, as the native
+        // pass does before upload. `cull` times a native model is its MVP.
+        let cull = mat4_mul(&vp, &outer);
+        push_fx_models(&mut frame, world, &lists, &outer, Some(&cull));
         // Field move-VM stager parts resolve against the SCENE's TMD pack
         // (`model_sel` relative to the spawn base = pack slot), not the
         // effect library - the page holds that pack as its env meshes.
@@ -579,6 +582,12 @@ impl LegaiaRuntime {
             {
                 let mut m = legaia_tmd::mesh::tmd_to_vram_mesh(&rtmd.tmd, &rtmd.raw);
                 fp.draw.apply_render_state(&mut m);
+                if fp.single_sided {
+                    legaia_engine_world_views::effect_draws::retail_front_faces(
+                        &mut m,
+                        &mat4_mul(&cull, &fp.model),
+                    );
+                }
                 bake_mesh(&mut frame, &model, &m);
                 // The untextured prims take the same state - the native
                 // field-FX pass's colour half. The map display's pointer is
@@ -595,7 +604,16 @@ impl LegaiaRuntime {
             });
         }
         for n in &lists.kind4 {
-            bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &n.mesh);
+            if n.single_sided {
+                let mut m = n.mesh.clone();
+                legaia_engine_world_views::effect_draws::retail_front_faces(
+                    &mut m,
+                    &mat4_mul(&cull, &n.model),
+                );
+                bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &m);
+            } else {
+                bake_mesh(&mut frame, &mat4_mul(&outer, &n.model), &n.mesh);
+            }
         }
         self.battle_fx = frame;
     }

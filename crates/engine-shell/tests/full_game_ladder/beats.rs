@@ -99,7 +99,7 @@ pub(super) fn play_beats(
     // same run, and replaying a seat-and-release beat walks the player off
     // the route another beat set up.
     let tested: BTreeMap<usize, BTreeSet<u16>> = {
-        use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+        use legaia_engine_field::man_field_scripts::FlagBank;
         let mut m: BTreeMap<usize, BTreeSet<u16>> = BTreeMap::new();
         for site in walk_partition_gflag_sites(&mf, &man, 2) {
             if site.clean && site.bank == FlagBank::System && site.kind == FlagKind::Test {
@@ -115,7 +115,7 @@ pub(super) fn play_beats(
     // room marker is raised on the way in and cleared on the way out, and
     // crossing a dungeon for one costs fights and buys nothing.
     let story_bands: Option<BTreeSet<usize>> = PROACTIVE.with(std::cell::Cell::get).then(|| {
-        use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+        use legaia_engine_field::man_field_scripts::FlagBank;
         let w = &session.host.world;
         let sites: Vec<_> = (0..3)
             .flat_map(|part| walk_partition_gflag_sites(&mf, &man, part))
@@ -969,7 +969,7 @@ pub(super) fn object_door_beats(
     man: &[u8],
 ) -> Vec<(u8, (i16, i16))> {
     use legaia_engine_field::man_field_scripts::{
-        FlagBank, WalkTouchEvent, resolve_walk_touch_event, walk_partition_gflag_sites,
+        FlagBank, WalkTouchEvent, resolve_walk_touch_event,
     };
     let w = &session.host.world;
     let wanted = |part: usize| -> BTreeSet<usize> {
@@ -1034,7 +1034,7 @@ pub(super) fn prop_beats(
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<PropBeat> {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let w = &session.host.world;
     // A placed chest (a partition-0 record that gives an item) the retail
     // run had opened a few milestones on is opened where the continuous
@@ -1199,7 +1199,7 @@ pub(super) fn talk_beats(
     mf: &legaia_scene_formats::man_section::ManFile,
     man: &[u8],
 ) -> Vec<u8> {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let w = &session.host.world;
     let wanted = |s: &legaia_engine_field::man_field_scripts::GFlagSite| {
         s.bank == FlagBank::System
@@ -1404,7 +1404,7 @@ pub(super) fn band_is_closer(
     man: &[u8],
     rec: usize,
 ) -> bool {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let n0 = mf.partitions.first().map_or(0, Vec::len);
     let n1 = mf.partitions.get(1).map_or(0, Vec::len);
     let mut recs = spawned_p2(mf, man, 2, rec, n0 + n1, 3);
@@ -1453,7 +1453,7 @@ pub(super) fn band_is_bare_link(
     rec: u8,
     band: &BTreeMap<u8, Vec<(u8, u8)>>,
 ) -> bool {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let Some(tiles) = band.get(&rec).filter(|t| !t.is_empty()) else {
         return false;
     };

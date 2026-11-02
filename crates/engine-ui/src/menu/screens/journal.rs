@@ -51,7 +51,7 @@ const JOURNAL_WIDTH: i32 = 272;
 /// sub-window frame (an engine extension; no retail screen draws it).
 ///
 /// ```text
-/// JOURNAL - Legend of Legaia: Rebirth 0.1.0
+/// JOURNAL - Sample Expansion Pack 0.1.0
 /// Quests  Challenges  Cards  Travel     New cards: 1
 /// > The Genesis Tower                           Active
 ///     The guide will open the tower to a party that

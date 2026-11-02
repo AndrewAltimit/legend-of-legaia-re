@@ -1474,6 +1474,17 @@ impl World {
                 let flag_wait = op == 0x4C
                     && target.is_none()
                     && matches!(tl.bytecode.get(pc + 1), Some(&(0xC5 | 0xC6)));
+                // Op `0x35` held by the BGM swap poller re-runs its own PC
+                // (`0x801DEE4C`): sub-op `0xA` until the load-settled bit 3,
+                // sub-op 9 while a walk is in flight. Its release is the
+                // poller's clock, not a flag a sub-context raises, so it is a
+                // timed wait to hold. Stepping it by width skipped the commit:
+                // the select's bit 0 then held the poller at stage 4 for the
+                // rest of the scene, and every later sub-op 9 parked behind it
+                // (`geremi` P2[1]'s closing `35 FF 07 09` / `35 00 00 0A`, then
+                // the warp tiles' P0[14..16] selects).
+                // REF: FUN_801DE840 (`0x801E0238`, `0x801E0284..0x801E0288`), FUN_800243F0
+                let bgm_wait = op == 0x35 && target.is_none();
                 // NPC end-latch spin (`AD <id> 08`): the record re-tests the
                 // poked actor's `+0x62 & 0x100` every frame until its clip
                 // tick latches it - the clip's remaining length for a
@@ -1513,6 +1524,7 @@ impl World {
                     && op != 0x49
                     && !glide_wait
                     && !flag_wait
+                    && !bgm_wait
                     && (target.is_none() || is_flag_test_handshake)
                 {
                     // By the op's own width: the flag tests are two bytes
@@ -1630,7 +1642,12 @@ impl World {
                     // A `4C CD` camera-glide wait is the same kind of hold:
                     // bounded by the glide's own frame count, which the
                     // mover spends one display frame at a time.
-                    if ((opcode_byte & 0x7F) == 0x4A || glide_wait)
+                    // A commit (`35 .. 0A`) waiting out the swap poller's
+                    // read is bounded the same way: the walk reaches bit 3
+                    // on its own clock. A select's hold (sub-op 9) can wait on
+                    // a commit another context owes, and keeps counting.
+                    let commit_wait = bgm_wait && tl.bytecode.get(pc + 3) == Some(&0x0A);
+                    if ((opcode_byte & 0x7F) == 0x4A || glide_wait || commit_wait)
                         && matches!(
                             kind,
                             legaia_engine_field::cutscene_timeline::TraceResult::Halt

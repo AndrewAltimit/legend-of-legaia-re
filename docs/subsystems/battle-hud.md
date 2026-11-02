@@ -708,17 +708,26 @@ The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in
 `engine-battle-vm::battle_value_readout`.
 
-**Every landed hit restarts the cluster slide.** The melee kernel's HP write
-raises `DAT_8007B64C = 0x78` and stores the hit's damage in `DAT_8007BD14`
-(`FUN_801EC3E4`, `0x801EEA64..0x801EEA78`). The readout pass `FUN_801E805C`,
-which the action SM's prologue calls on every pass (`0x801E2A70`), answers a
-raised flag with a non-zero damage word by calling `FUN_801D8DE8(0x50, 0)` and
-clearing the flag (`0x801E808C..0x801E80B0`). Mode `0` spawns record 80 at seat
-A and registers a fresh glide to seat B (`0x801D92E8..0x801D93D8`).
-`battle_melee_hit_spark` is such a frame: the cluster reads `3 HIT` /
-`TOTAL 29` beside the third hit's `15`, at elapsed 12 of 16, `x = 208` - the
-`+40` every `HIT` / `TOTAL` packet of that frame shows. Port:
-`BattleHud::push_popup` restarts the cluster's `age` on each landed damage hit.
+**A melee string opens the cluster when its total lands.** The melee kernel
+banks each hit's damage in the target's word `+0x00` and writes the bank to
+live HP in one arm (`FUN_801EC3E4`, `0x801EEA10..0x801EEA78`, selected by the
+apply mode - [battle-action-queue](battle-action-queue.md)). That arm is the
+kernel's only store to the readout flag: it raises `DAT_8007B64C = 0x78` and
+stores the bank in `DAT_8007BD14` (`0x801EEA64..0x801EEA78`). A hit the mode
+leaves banked pushes its numeral and writes neither. The readout pass
+`FUN_801E805C`, which the action SM's prologue calls on every pass
+(`0x801E2A70`), answers a raised flag with a non-zero damage word by calling
+`FUN_801D8DE8(0x50, 0)` and clearing the flag (`0x801E808C..0x801E80B0`). Mode
+`0` spawns record 80 at seat A and registers a fresh glide to seat B
+(`0x801D92E8..0x801D93D8`). `battle_melee_hit_spark` is such a frame: the
+Somersault's parked last beat landed the string, and the cluster reads `3 HIT`
+/ `TOTAL 29` beside its `15`, at elapsed 12 of 16, `x = 208`.
+`minigame_muscle_dome_retail_skeleton_hyper_arts` is the other side: three
+swings' `430` sit in the Skeleton's bank at full HP, `DAT_8007BD14` reads `0`,
+and no cluster is up as the Hyper Art commits. Port: `BattleHud::push_popup`
+counts a melee hit hidden and `BattleHud::land_combo_total` opens (or
+restarts) the cluster on the hit event whose `applied` is set; a cast's hit
+opens it as it lands (below).
 
 **A hit that clears the flag counts without opening.** PROT 0959's wrapper
 hits store `0` into `DAT_8007B64C` beside each HP write

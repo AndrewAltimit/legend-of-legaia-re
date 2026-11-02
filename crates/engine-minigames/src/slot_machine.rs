@@ -42,9 +42,11 @@
 //!   casino coin bank (default [`ENTRY_DEFAULT_BALANCE`] = 70 when the
 //!   battle-return flag `_DAT_8007B8B8` is clear - a dev-launch fallback),
 //!   slot LCG seeded with the literal [`ENTRY_LCG_SEED`];
-//! - the per-reel stop plan: depth `rand%3 + 2` targeting the normal-mode
-//!   symbol in mode 0, depth `(rand&3) + 6` targeting the jackpot symbols
-//!   `9` / `8` in the reach modes 1 / 2 (`FUN_801d2114`, [`stop_plan`]);
+//! - the per-reel stop plan of every feature mode (`FUN_801d2114`,
+//!   [`stop_plan`]): depth `rand%3 + 2` targeting the normal-mode symbol in
+//!   mode 0, depth `(rand&3) + 6` targeting the jackpot symbols `9` / `8` in
+//!   the reach modes 1 / 2, the normal target `% 3` at depth `rand%7 + 10` in
+//!   the hot mode 3, and symbol `7` in modes 4 and 5;
 //! - the landing search: walk up to `depth` rows ahead for the target symbol,
 //!   else stop on the next natural row (`FUN_801d2440`, [`land_row`]);
 //! - the win evaluation: five paylines - three horizontal and two diagonal
@@ -66,8 +68,10 @@
 //! spin-up velocity/timer magnitudes (visual pacing, not pinned), and the
 //! BIOS-`rand` feature stream substituted with a second deterministic
 //! [`BiosRand`] LCG so replays stay bit-identical.
-//! Feature modes 3 (hot) and 5 (hold) are documented but folded to the
-//! normal landing plan here - their bonus-strip value targeting is not modeled.
+//! The reel's roll-in after a stop is not modelled: retail's integrator
+//! `FUN_801d0554` creeps a stopped reel `0x66` a frame toward its landing row
+//! and snaps it there, or wherever it stands once the per-reel budget
+//! `DAT_801d3cf0` runs out; the port snaps it to the landing row at once.
 //!
 //! Chain: retail `FUN_801cf0d8` (reel SM) -> `FUN_801d258c` (feature roll) ->
 //! `FUN_801d2114` / `FUN_801d2440` (stop) -> `FUN_801d0554` (snap + claim) ->

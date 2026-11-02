@@ -275,6 +275,7 @@ impl SceneHost {
                     };
                     self.bgm_track_word = Some(text_id);
                     self.pending_bgm_swap = None;
+                    self.pending_bgm_install = None;
                     self.bgm_latched = None;
                     if legaia_engine_expansion::audio::is_pack_track(text_id) {
                         let pack = self.world.expansion.pack.clone();
@@ -304,6 +305,7 @@ impl SceneHost {
                         super::BGM_SUB_OP_ENGINE_LATCH => {
                             self.bgm_track_word = Some(text_id);
                             self.pending_bgm_swap = None;
+                            self.pending_bgm_install = None;
                             self.bgm_latched = Some(text_id);
                             acted += 1;
                         }
@@ -322,6 +324,7 @@ impl SceneHost {
                             // A later request replaces a held one (the poller
                             // re-reads the word on every call).
                             self.pending_bgm_swap = None;
+                            self.pending_bgm_install = None;
                             // Past a latch the slot still holds the earlier
                             // track; the poller's teardown (`0x80024648..`)
                             // releases it and the load starts this one afresh,
@@ -340,6 +343,15 @@ impl SceneHost {
                             {
                                 if sub_op == 9 {
                                     self.pending_bgm_swap = Some((text_id, entry));
+                                } else if self.world.audio.bgm_swap_in_flight() {
+                                    // A mid-scene start: the poller's stage 2
+                                    // tears the slot down a few frames in
+                                    // (`0x80024648..0x8002465C`) and stage 6
+                                    // attaches the new track a settle and a
+                                    // read after the start.
+                                    director.stop();
+                                    self.bgm_ending_source = false;
+                                    self.pending_bgm_install = Some((text_id, entry));
                                 } else {
                                     director.start_owned_vab(text_id, &entry);
                                     self.bgm_ending_source = u32::from(text_id)
@@ -372,6 +384,12 @@ impl SceneHost {
                         // every vignette's init.
                         super::BGM_SUB_OP_ENGINE_FIELD_CLOSE => {
                             self.bgm_latched = None;
+                            // The init runs the poller to completion: a track
+                            // still walking toward its install loads now,
+                            // unless the entry's own start replaces it.
+                            if let Some(held) = self.pending_bgm_install.take() {
+                                self.pending_bgm_swap = Some(held);
+                            }
                             if !self.bgm_ending_source {
                                 director.stop();
                             }
@@ -402,8 +420,15 @@ impl SceneHost {
                                 // poller attaches the held select.
                                 Some((id, entry)) => {
                                     director.stop();
-                                    director.start_owned_vab(id, &entry);
                                     self.bgm_ending_source = false;
+                                    if self.world.audio.bgm_swap_in_flight() {
+                                        // The release-ack lets the poller
+                                        // past its stage-4 stall; stages 5
+                                        // and 6 install and attach.
+                                        self.pending_bgm_install = Some((id, entry));
+                                    } else {
+                                        director.start_owned_vab(id, &entry);
+                                    }
                                     started_this_drain = true;
                                 }
                                 None => director.unhalt_pause(),
@@ -422,6 +447,15 @@ impl SceneHost {
                 }
                 other => leftover.push(other),
             }
+        }
+        // The poller's stage 6 ran: attach the start it was walking.
+        if self.world.take_bgm_install_due()
+            && let Some((id, entry)) = self.pending_bgm_install.take()
+        {
+            director.start_owned_vab(id, &entry);
+            self.bgm_ending_source =
+                u32::from(id) == legaia_engine_system::mode_entry_init::FIELD_BGM_TWO_PART_ID;
+            acted += 1;
         }
         // The window ended with the select uncommitted (a scene load cleared
         // bit 0): the poller installs what it holds.

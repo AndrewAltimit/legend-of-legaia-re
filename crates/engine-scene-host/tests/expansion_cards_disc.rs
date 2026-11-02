@@ -1,4 +1,4 @@
-//! Disc-gated: the Rebirth pack's trading cards against the player's own
+//! Disc-gated: the sample pack's trading cards against the player's own
 //! disc - every card's art names a real monster-archive record, every one of
 //! them renders a portrait, and opening the card screen through the scene
 //! host builds the portrait cache the binder draws.
@@ -17,18 +17,18 @@ use legaia_engine_scene_host::scene_host::expansion_cards::{
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::refs::DiscRef;
 
-fn rebirth() -> Arc<ExpansionPack> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
-    Arc::new(ExpansionPack::from_dir(&dir).expect("the Rebirth pack loads"))
+fn sample_pack() -> Arc<ExpansionPack> {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
+    Arc::new(ExpansionPack::from_dir(&dir).expect("the sample pack loads"))
 }
 
 #[test]
-fn every_rebirth_card_names_a_real_monster_and_renders_its_portrait() {
+fn every_sample_pack_card_names_a_real_monster_and_renders_its_portrait() {
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let pack = rebirth();
+    let pack = sample_pack();
     let mut host = SceneHost::open_disc(&disc).expect("open the disc");
     let archive = host.monster_archive_bytes().expect("the monster archive");
     let ids: BTreeSet<u16> = pack
@@ -103,7 +103,7 @@ fn every_rebirth_card_names_a_real_monster_and_renders_its_portrait() {
     assert!(host.world.open_card_binder());
     host.tick().expect("tick");
     let built = &host.world.expansion.cards.portraits;
-    assert_eq!(built.pack_id, "rebirth");
+    assert_eq!(built.pack_id, "sample");
     assert_eq!(built.by_monster.len(), ids.len());
     // The starter deck arrived with the first opening.
     assert_eq!(

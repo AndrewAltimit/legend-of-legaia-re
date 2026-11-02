@@ -506,24 +506,24 @@ fn a_pack_formation_resolves_through_the_world() {
     assert_eq!(rt.quest("q").unwrap().status, QuestStatus::Completed);
 }
 
-/// The Rebirth pack's quest chain parses, every line it names compiles, and
+/// The sample pack's quest chain parses, every line it names compiles, and
 /// the chain plays through on the events it waits for.
 #[test]
 fn the_genesis_chain_plays_through() {
     let mut files = legaia_expansion_format::PackFiles::new();
     files.insert(
         "pack.toml".into(),
-        b"id = \"rebirth\"\nname = \"Rebirth\"\nversion = \"0.1.0\"\n".to_vec(),
+        b"id = \"sample\"\nname = \"Sample\"\nversion = \"0.1.0\"\n".to_vec(),
     );
     files.insert(
         "quests.toml".into(),
-        include_bytes!("../../../packs/rebirth/quests.toml").to_vec(),
+        include_bytes!("../../../packs/sample/quests.toml").to_vec(),
     );
     files.insert(
         "dialog.toml".into(),
-        include_bytes!("../../../packs/rebirth/dialog.toml").to_vec(),
+        include_bytes!("../../../packs/sample/dialog.toml").to_vec(),
     );
-    let p = ExpansionPack::from_files(&files).expect("rebirth parses");
+    let p = ExpansionPack::from_files(&files).expect("sample parses");
     for (id, line) in &p.dialog.lines {
         legaia_expansion_format::dialog::compile_line(line)
             .unwrap_or_else(|e| panic!("{id}: {e:?}"));

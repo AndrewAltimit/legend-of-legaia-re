@@ -112,11 +112,11 @@
       <tr><td class="hex">0x0A</td><td>Run-loop init: tension, line depth and the spawn latch are zeroed, the cast power is seeded at <code>0x40</code>.</td></tr>
       <tr><td class="hex">0x0B</td><td>Fade in; jumps to the no-lure screen when the party owns no lure.</td></tr>
       <tr><td class="hex">0x0C</td><td>Idle shore. Cross or Square starts the cast; Triangle or Select opens the hub menu. The D-pad turns the lead angler (and the camera) in <code>0x40</code> steps between <code>0x700</code> and <code>0x900</code>.</td></tr>
-      <tr><td class="hex">0x0D</td><td>Wind-up: the camera pans for about 12 frames.</td></tr>
+      <tr><td class="hex">0x0D</td><td>Wind-up: for thirteen frames the camera dollies in over the water and tilts down, leaving the shore party behind the eye.</td></tr>
       <tr><td class="hex">0x14</td><td>Power meter bounces between <code>0x20</code> and <code>0x1000</code>; Cross or Square locks it and spawns the rod, lure and line.</td></tr>
       <tr><td class="hex">0x15</td><td>Lure in flight. Landing raises the splash cue and adds one to the lifetime cast counter.</td></tr>
       <tr><td class="hex">0x19</td><td>Lure in water: the bite, the fight and every exit happen here.</td></tr>
-      <tr><td class="hex">0x1E, 0x20..0x22</td><td>Rod recover swing, then the landing and the result plate; the plate&rsquo;s accept word moves on.</td></tr>
+      <tr><td class="hex">0x1E, 0x20..0x22</td><td>The catch: the rod recover swing and the close-up of the landed fish, then a fixed shot of the party that tilts up and holds for the result plate; the plate&rsquo;s accept word moves on.</td></tr>
       <tr><td class="hex">0x28</td><td>Waits on the converging LINE BREAK banner, then back to the run-loop init.</td></tr>
       <tr><td class="hex">0x96</td><td>The no-lure end screen; a button press goes to the exit fade.</td></tr>
       <tr><td class="hex">0xC8</td><td>Exit: fade to white, the leaving cue, mode teardown and the return warp.</td></tr>
@@ -364,7 +364,7 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
     <p>Measured over the ten species, three rods and twenty seeds each, holding reel A (Cross) from the hook breaks the line in about two fights of three, and reel B (Square) in nine of ten. Reeling only while the gauge is under half breaks none of the 600 and lands every one. Reel A divides harder and recovers line faster, so it is still the better button.</p>
   </div>
   <h3 id="port-fight">The port&rsquo;s fight model</h3>
-  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. What stays engine-side is the fish&rsquo;s position, which retail measures the line record from; the port pays line out by the swim on a slack reel and reels it in at fixed rates, listed under <a href="#internals">Internals</a>.</p>
+  <p>The port runs the whole fish tick as retail does, in its random-draw order: the pull and its bias, the four behaviours, the depth and its ceiling, the load, the reel arms and the re-roll. The line break is retail&rsquo;s: a hooked frame at the ceiling draws one <code>rand() % 10</code>, and a zero breaks the line and spends one equipped lure from the bag. A fish run out past record <code>0x899</code> adds <code>step * 300</code> to the gauge each frame, so a slack line far out climbs to the ceiling instead of bleeding off. What stays engine-side is the fish&rsquo;s position, which retail measures the line record from; the port pays line out by the swim on a slack reel and reels it in at fixed rates, listed under <a href="#internals">Internals</a>.</p>
   <p class="dg-note">Provenance: gauge <code>DAT_801D9168</code> updated at the tail of <code>FUN_801D4004</code>; exits in <code>FUN_801D26CC</code> at <code>0x801D3AFC..0x801D3CD4</code>.</p>
 </section>
 
@@ -468,13 +468,15 @@ credit = (band countdown + 2)          0x40 on the frame a rhythm matches
     <div class="disclosure-body">
       <ul class="bullets">
         <li><strong>The shore party.</strong> Setup spawns three actors on the venue&rsquo;s anchor tile: Vahn in the middle, the second member <code>0x60</code> to his right, the third <code>0x60</code> to his left and a step nearer the camera. The lead&rsquo;s tick rolls a point out in the water every so often and spawns a ripple there; nothing moves him.</li>
-        <li><strong>The camera</strong> is a level view behind the party with <code>H = 0x140</code> in place of the field&rsquo;s <code>0x200</code>; its yaw and focus follow the lead as the D-pad aims him.</li>
+        <li><strong>The camera</strong> is never the player&rsquo;s. At the shore it is a level view behind the party with <code>H = 0x140</code> in place of the field&rsquo;s <code>0x200</code>, its yaw and focus following the lead as the D-pad aims him. The cast press takes it from him: the wind-up pulls <code>TR.z</code> from <code>0x974</code> to <code>0x514</code>, drops <code>TR.y</code> to <code>0x5DC</code>, tilts it down to <code>0x50</code> and walks the focus out over the water; in the water its pitch tips further down as the line record shortens (<code>0x50 + (0x7D0 - record) &times; 0x17E / 2000</code>) and its yaw turns a quarter of the way toward the lure. A catch swings it round the landed fish, then cuts to a fixed shot of the party. The retail <code>lure_cast</code> state reads exactly that pose. Every host runs the one engine camera; the minigames page has no free camera.</li>
+        <li><strong>The rod and the party never share the frame.</strong> The rod exists only while the cast camera is out over the water, with the party behind the eye, so its draw order against Vahn is never tested; it draws over the water and the line.</li>
         <li><strong>The sky is not geometry.</strong> It is a screen-space strip of six 128 &times; 256 textured quads drawn behind everything, positioned on the projected horizon and scrolled by the lead&rsquo;s aim, over a blue clear colour <code>(0x17, 0x50, 0xA0)</code>.</li>
         <li><strong>The rod</strong> is one of three untextured 42-vertex models (scene models <code>0x19..0x1B</code>, one per rod), posed in view space and bent by a morph. D-pad down lifts it, the sides roll it, a held reel or a fish on bends it; a hooked rod bent past its cap creaks.</li>
         <li><strong>The line</strong> is one Gouraud line packet a frame from the lure (dark end) to the rod model&rsquo;s vertex 37 (light end), clipped to the 320 &times; 224 drawing area.</li>
         <li><strong>The floor</strong> is the shared minigame ground solver: a 128-unit cell grid with a 16-step height ramp, bilinear blending and step-layer patches, also used by the slot machine and the dance floor.</li>
+        <li><strong>The water heaves through the height ramp.</strong> Every frame the driver rewrites the first four steps of that ramp: step 0 to zero, steps 1 to 3 to one sine wave at three phases, each swinging between about 26 units up and 6 down. The pond&rsquo;s water cells sit on steps 1 to 3 and the shore on step 0, and the ground is redrawn from the ramp every frame, so neighbouring corners rise and fall out of step while the shore stays put. No texture or palette moves.</li>
       </ul>
-      <p class="dg-note">Rod actor <code>FUN_801D1C5C</code>, lead <code>FUN_801D2050</code> / <code>FUN_801D2278</code>, flanking members <code>FUN_801D70EC</code>, line / landed-fish actor <code>FUN_801D4948</code>, sky <code>FUN_801D24EC</code>, floor pass <code>FUN_801D6BBC</code>, ground solver <code>FUN_801D6028</code>.</p>
+      <p class="dg-note">Rod actor <code>FUN_801D1C5C</code>, lead <code>FUN_801D2050</code> / <code>FUN_801D2278</code>, flanking members <code>FUN_801D70EC</code>, line / landed-fish actor <code>FUN_801D4948</code>, sky <code>FUN_801D24EC</code>, floor pass <code>FUN_801D6BBC</code>, ground solver <code>FUN_801D6028</code>, pond swell <code>FUN_801D03B0</code> (ramp at <code>0x1F80035C</code>, angle <code>0x801D9118</code>).</p>
     </div>
   </details>
 
@@ -536,11 +538,10 @@ power % = power * 100 &gt;&gt; 12</code></pre>
     <summary>Open: what the port still reconstructs</summary>
     <div class="disclosure-body">
       <ul class="bullets">
-        <li><strong>Line break.</strong> The ceiling roll and the spent lure are ported; the off-screen latch, the far-record strain and the no-lure screen after the last lure are not.</li>
-        <li><strong>Cast camera.</strong> Retail cuts from behind the party to a low shot over the water; those camera writes are not decoded, so the port keeps the shore view throughout.</li>
+        <li><strong>Line break.</strong> The ceiling roll, the spent lure and the far-record strain are ported; the off-screen latch and the no-lure screen after the last lure are not.</li>
         <li><strong>Fish position.</strong> Retail moves the fish by its swim and the reel and measures the line record from it; the port&rsquo;s record moves by the swim on a slack reel and by fixed reel-in rates.</li>
         <li><strong>Cast.</strong> The meter&rsquo;s per-frame step (hosts use <code>0x80</code>), the flight timing and the power-to-line mapping are approximations.</li>
-        <li><strong>Result plate.</strong> The fish&rsquo;s lift before the plate and the recast gate on the plate&rsquo;s accept word are not modelled.</li>
+        <li><strong>Result plate.</strong> The landed fish&rsquo;s lift is modelled only as the camera reads it; the fish model&rsquo;s own rise and the recast gate on the plate&rsquo;s accept word are not.</li>
         <li><strong>State <code>0x2D</code></strong> has no writer anywhere on the disc; every store to the state word resolves to another value.</li>
       </ul>
     </div>

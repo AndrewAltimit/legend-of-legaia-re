@@ -27,7 +27,7 @@
       <tr><td><a href="#scene-event-scripts-prescript-only"><code>scene_event_scripts</code></a></td><td>Move-VM stager records for the scene's ambient props</td><td><code>[u16 count][u16 offsets]</code> at 0</td><td>101</td></tr>
       <tr><td><a href="#scene-asset-table-count-prefixed-asset-bundle"><code>scene_asset_table</code></a></td><td>The town / dungeon bundle: MAN script, meshes, textures</td><td><code>u32 count</code>, descriptor 0 at <code>8 + count*8</code></td><td>88 (+17 classed <code>lzs_container</code>)</td></tr>
       <tr><td><a href="#scene-scripted-asset-table-scripted-prefix-canonical-bundle"><code>scene_scripted_asset_table</code></a></td><td>Nothing - a composite retail does not ship</td><td>Prescript + table at the next sector</td><td>0</td></tr>
-      <tr><td><a href="#tmd-size-prefix-truncated-tmd-prefix"><code>tmd_size_prefix</code></a></td><td>A truncated mesh prefix</td><td>Claimed size larger than the entry</td><td>34</td></tr>
+      <tr><td><a href="#tmd-size-prefix-truncated-tmd-prefix"><code>tmd_size_prefix</code></a></td><td>Nothing - a regression guard</td><td>Claimed size larger than the entry</td><td>0</td></tr>
     </tbody>
   </table>
   <figure class="overlay-strip">
@@ -211,7 +211,7 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
 
 <section class="doc-section" id="tmd-size-prefix-truncated-tmd-prefix">
   <h2>tmd_size_prefix - truncated TMD-prefix</h2>
-  <p>Sister of <code>scene_tmd_stream</code> for the truncated case: same header, but the claimed total size is larger than the on-disc payload. All object pointers fall inside the claimed size, so the file is a genuine prefix of a larger resource, not a broken header. 34 entries, all 12 KB (6 sectors), 2 or 4 objects each.</p>
+  <p>Sister of <code>scene_tmd_stream</code> for the truncated case: same header, but the claimed total size is larger than the entry. <strong>It matches no retail entry</strong>: all 182 entries that open with a type-0 chunk header and the TMD magic hold their whole mesh inside their own sectors, and no 12 KB entry carries the magic at all. The 34-entry figure this class once carried does not reproduce on the corrected extraction. The detector is kept as a guard that must match nothing.</p>
   <div class="byte-map">
     <div class="bm-cell bm-accent" style="--w:4"><span class="bm-off">+0x00</span><span class="bm-name">total_size (&gt; entry)</span><span class="bm-size">u32</span></div>
     <div class="bm-cell bm-accent" style="--w:6"><span class="bm-off">+0x04</span><span class="bm-name">TMD header, 1..=8 objects</span><span class="bm-size"></span></div>
@@ -219,7 +219,6 @@ for c in scene_tmd_stream::battle_tim_chunks(&amp;buf) {
     <div class="bm-cell bm-dim" style="--w:10"><span class="bm-off"></span><span class="bm-name">primitives, cut at the sector boundary</span><span class="bm-size"></span></div>
   </div>
 
-  <p>Confidence: the shape is Confirmed, the consumer Unknown - the loader probably allocates <code>total_size</code> and either zero-fills the tail or streams the rest from another entry.</p>
 </section>
 
 <section class="doc-section" id="scene-event-scripts-prescript-only">

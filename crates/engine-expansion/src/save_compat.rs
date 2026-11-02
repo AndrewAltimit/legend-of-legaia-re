@@ -65,7 +65,7 @@ impl CompatReport {
     }
 
     /// The one-line notice a host shows, `None` when there is nothing to
-    /// say: `Rebirth 0.2.0: 2 saved entries are gone from the pack and were
+    /// say: `sample 0.2.0: 2 saved entries are gone from the pack and were
     /// dropped`.
     pub fn notice(&self) -> Option<String> {
         if self.dropped.is_empty() {

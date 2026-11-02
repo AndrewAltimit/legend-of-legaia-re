@@ -11,7 +11,7 @@
 | Assets | `.wav` (8/16/24/32-bit PCM, 32-bit float) and `.ogg` (Vorbis), mono or stereo, 8-96 kHz, at most 360 s |
 | Referenced from | Map `[audio]`, map `sound` triggers, boss `music`, boss-script phase `music` / `sound` and move `charge_sound` |
 | Hosts | The native window (cpal) and the browser page (WebAudio) through one director, `AudioDirector` |
-| Sample | [`packs/rebirth/audio.toml`](../../packs/rebirth/audio.toml) |
+| Sample | [`packs/sample/audio.toml`](../../packs/sample/audio.toml) |
 
 ## Music and sound references
 
@@ -182,9 +182,9 @@ For cutscene steps (`sound`, `music`, `music_release` in [`cutscenes.toml`](expa
 | `World::expansion_set_music(Some(&MusicRef), fade_frames)` | Plays music and holds it over the map's zones; `None` hands the music back to them |
 | `World::expansion_music_id(&MusicRef)` | The music id a reference plays against the active pack |
 
-## Rebirth
+## The sample pack
 
-[`packs/rebirth`](../../packs/rebirth/) keeps each floor's retail music and lays its own soundscape over it:
+[`packs/sample`](../../packs/sample/) keeps each floor's retail music and lays its own soundscape over it:
 
 | Floor | Sound |
 |---|---|
@@ -202,4 +202,4 @@ For cutscene steps (`sound`, `music`, `music_release` in [`cutscenes.toml`](expa
 
 Each tower boss opens on its intro cutscene's entrance sting, rings the phase-change shimmer as its script changes phase, and closes on the falling knell in its outro; the Hollow Sovereign's phases also turn the music (Apostles of the Mist, then Apocalypse, then the Wild Arms battle theme for its unbound form), with a chime on its ultimate's telegraph, and every tower boss's results play the title theme.
 
-Its WAV files are synthesised by [`scripts/models/generate_rebirth_audio.py`](../../scripts/models/generate_rebirth_audio.py) - sine partials and seeded noise, no disc audio.
+Its WAV files are synthesised by [`scripts/models/generate_sample_pack_audio.py`](../../scripts/models/generate_sample_pack_audio.py) - sine partials and seeded noise, no disc audio.

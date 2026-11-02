@@ -30,6 +30,58 @@ pub(super) const DOOR_APPROACH_SLACK: i32 = 6;
 pub(super) const PHASE_WAIT_COST: i32 = 40;
 pub(super) type Cell = (i16, i16);
 
+/// The hasher behind the planner's per-cell tables ([`FastMap`] /
+/// [`FastSet`]): a multiply-rotate word hash (the Fx scheme). The A* probes
+/// those tables several times per expanded cell, and with the default
+/// SipHash the hashing outweighed the rest of the search. The tables are
+/// only looked up and counted, never iterated in an order a decision
+/// reads, so the hasher changes no route.
+#[derive(Default, Clone, Copy)]
+pub(super) struct FastHasher(u64);
+
+impl FastHasher {
+    #[inline]
+    fn add(&mut self, v: u64) {
+        self.0 = (self.0.rotate_left(5) ^ v).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+}
+
+impl std::hash::Hasher for FastHasher {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.add(u64::from(b));
+        }
+    }
+    #[inline]
+    fn write_u8(&mut self, v: u8) {
+        self.add(u64::from(v));
+    }
+    #[inline]
+    fn write_u16(&mut self, v: u16) {
+        self.add(u64::from(v));
+    }
+    #[inline]
+    fn write_u32(&mut self, v: u32) {
+        self.add(u64::from(v));
+    }
+    #[inline]
+    fn write_u64(&mut self, v: u64) {
+        self.add(v);
+    }
+    #[inline]
+    fn write_usize(&mut self, v: usize) {
+        self.add(v as u64);
+    }
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+pub(super) type FastMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<FastHasher>>;
+pub(super) type FastSet<K> = HashSet<K, std::hash::BuildHasherDefault<FastHasher>>;
+
 pub(super) fn cell_of(x: i16, z: i16) -> Cell {
     ((x + SUBCELL / 2) / SUBCELL, (z + SUBCELL / 2) / SUBCELL)
 }
@@ -163,15 +215,28 @@ pub(super) fn field_step_press(azimuth: u16, dwx: i16, dwz: i16) -> (i16, i16) {
     best.map_or((0, 0), |(_, s)| s)
 }
 
+/// A body box: centre `(x, z)` and half-extent.
+pub(super) type BodyBox = (i32, i32, i32);
+
 /// The actor-collision boxes one plan tests against, bucketed by the
 /// 128-unit tiles each overlaps: every field NPC at its live position
 /// (±40) and every solid placed prop (±80 static, ±40 moving). The
 /// planner's copy of `World::field_actor_dir_blocked`, built once per plan
-/// so a whole-map search does not re-walk every body per probe.
-/// A body box: centre `(x, z)` and half-extent.
-pub(super) type BodyBox = (i32, i32, i32);
-
-pub(super) struct Blockers(HashMap<(i32, i32), Vec<BodyBox>>);
+/// so a whole-map search does not re-walk every body per probe. The
+/// buckets are a dense tile grid over the boxes' bounding rectangle, so a
+/// probe is an index, not a hash lookup.
+pub(super) struct Blockers {
+    /// Tile `(x0, z0)`, the grid's low corner.
+    origin: (i32, i32),
+    /// Tiles per grid row.
+    width: i32,
+    /// Grid rows.
+    height: i32,
+    /// Tile `i` (row-major) holds `boxes[starts[i]..starts[i + 1]]`.
+    starts: Vec<u32>,
+    /// The boxes overlapping each tile, tile by tile, in build order.
+    boxes: Vec<BodyBox>,
+}
 
 impl Blockers {
     pub(super) fn build(
@@ -197,30 +262,85 @@ impl Blockers {
                 (c.center.0, c.center.1, TOUCH_BOX_HALF)
             });
         }
-        let mut map: HashMap<(i32, i32), Vec<BodyBox>> = HashMap::new();
-        for b in boxes {
-            let (x, z, h) = b;
-            for tz in ((z - h) >> 7)..=((z + h) >> 7) {
-                for tx in ((x - h) >> 7)..=((x + h) >> 7) {
-                    map.entry((tx, tz)).or_default().push(b);
-                }
+        // A box's tile span: every tile its +-half square overlaps.
+        let span = |b: &BodyBox| {
+            let (x, z, h) = *b;
+            ((x - h) >> 7, (z - h) >> 7, (x + h) >> 7, (z + h) >> 7)
+        };
+        let Some((x0, z0, x1, z1)) = boxes
+            .iter()
+            .map(span)
+            .reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
+        else {
+            return Self {
+                origin: (0, 0),
+                width: 0,
+                height: 0,
+                starts: vec![0],
+                boxes: Vec::new(),
+            };
+        };
+        let (width, height) = (x1 - x0 + 1, z1 - z0 + 1);
+        let tiles = |b: &BodyBox| {
+            let (bx0, bz0, bx1, bz1) = span(b);
+            (bz0..=bz1).flat_map(move |tz| {
+                (bx0..=bx1).map(move |tx| ((tz - z0) * width + (tx - x0)) as usize)
+            })
+        };
+        // Count per tile, prefix-sum the counts into starts, then place.
+        let mut starts = vec![0u32; (width * height) as usize + 1];
+        for b in &boxes {
+            for i in tiles(b) {
+                starts[i + 1] += 1;
             }
         }
-        Self(map)
+        let mut run = 0;
+        for s in &mut starts {
+            run += *s;
+            *s = run;
+        }
+        let mut fill = starts.clone();
+        let mut placed = vec![(0, 0, 0); run as usize];
+        for b in &boxes {
+            for i in tiles(b) {
+                placed[fill[i] as usize] = *b;
+                fill[i] += 1;
+            }
+        }
+        Self {
+            origin: (x0, z0),
+            width,
+            height,
+            starts,
+            boxes: placed,
+        }
+    }
+
+    /// The boxes overlapping tile `(tx, tz)`.
+    fn at(&self, tx: i32, tz: i32) -> &[BodyBox] {
+        let (x, z) = (tx - self.origin.0, tz - self.origin.1);
+        if !(0..self.width).contains(&x) || !(0..self.height).contains(&z) {
+            return &[];
+        }
+        let i = (z * self.width + x) as usize;
+        &self.boxes[self.starts[i] as usize..self.starts[i + 1] as usize]
+    }
+
+    /// Whether any box overlaps tile `(tx, tz)`.
+    pub(super) fn covers_tile(&self, tx: i32, tz: i32) -> bool {
+        !self.at(tx, tz).is_empty()
     }
 
     /// Whether a body box covers `(px, pz)`, ignoring the static boxes
     /// centred on `skip` (the platforms under the arrival bracket).
     pub(super) fn hit_except(&self, px: i32, pz: i32, skip: &[(i16, i16)]) -> bool {
-        self.0.get(&(px >> 7, pz >> 7)).is_some_and(|v| {
-            v.iter().any(|&(x, z, h)| {
-                (px - x).abs() < h
-                    && (pz - z).abs() < h
-                    && !(h == TOUCH_BOX_HALF
-                        && skip
-                            .iter()
-                            .any(|&(sx, sz)| (i32::from(sx), i32::from(sz)) == (x, z)))
-            })
+        self.at(px >> 7, pz >> 7).iter().any(|&(x, z, h)| {
+            (px - x).abs() < h
+                && (pz - z).abs() < h
+                && !(h == TOUCH_BOX_HALF
+                    && skip
+                        .iter()
+                        .any(|&(sx, sz)| (i32::from(sx), i32::from(sz)) == (x, z)))
         })
     }
 
@@ -268,40 +388,163 @@ pub(super) fn adjacent(a: Cell, b: Cell) -> bool {
     (a.0 - b.0).abs() + (a.1 - b.1).abs() <= 1
 }
 
+/// Side of the square of lattice cells [`Nodes`] holds densely: every cell
+/// an `i16` world position falls in (`cell_of` of `0..=i16::MAX`). A cell
+/// outside it (a step past the far edge) goes to the overflow map.
+const NODE_SIDE: usize = 1025;
+
+/// The search's per-cell record - parent link and path cost - for every
+/// cell it has reached. A dense table over the lattice, stamped per search
+/// so a new search starts empty without clearing it, and kept per thread
+/// between searches: a hash map here cost more than the rest of the A*.
+pub(super) struct Nodes {
+    /// The search a slot's record belongs to; a slot with an older stamp is
+    /// empty.
+    stamp: Vec<u32>,
+    parent: Vec<Cell>,
+    g: Vec<i32>,
+    now: u32,
+    /// The cells reached, in first-reached order.
+    reached: Vec<Cell>,
+    /// Records for cells outside the dense square.
+    overflow: FastMap<Cell, (Cell, i32)>,
+}
+
+thread_local! {
+    /// The node table between searches ([`Nodes::take`] / [`Nodes::put`]).
+    static NODES: std::cell::RefCell<Option<Box<Nodes>>> = const { std::cell::RefCell::new(None) };
+}
+
+impl Nodes {
+    /// An empty table: the thread's kept one when it is free, else a new
+    /// one.
+    pub(super) fn take() -> Box<Nodes> {
+        let mut n = NODES.with(|t| t.borrow_mut().take()).unwrap_or_else(|| {
+            Box::new(Nodes {
+                stamp: vec![0; NODE_SIDE * NODE_SIDE],
+                parent: vec![(0, 0); NODE_SIDE * NODE_SIDE],
+                g: vec![0; NODE_SIDE * NODE_SIDE],
+                now: 0,
+                reached: Vec::new(),
+                overflow: FastMap::default(),
+            })
+        });
+        n.now = n.now.wrapping_add(1);
+        if n.now == 0 {
+            n.stamp.fill(0);
+            n.now = 1;
+        }
+        n.reached.clear();
+        n.overflow.clear();
+        n
+    }
+
+    /// Hand the table back for the thread's next search.
+    pub(super) fn put(n: Box<Nodes>) {
+        NODES.with(|t| *t.borrow_mut() = Some(n));
+    }
+
+    fn slot(c: Cell) -> Option<usize> {
+        let (x, z) = (usize::try_from(c.0).ok()?, usize::try_from(c.1).ok()?);
+        (x < NODE_SIDE && z < NODE_SIDE).then_some(z * NODE_SIDE + x)
+    }
+
+    /// `c`'s record, `(parent, g)`.
+    pub(super) fn get(&self, c: Cell) -> Option<(Cell, i32)> {
+        match Self::slot(c) {
+            Some(i) => (self.stamp[i] == self.now).then(|| (self.parent[i], self.g[i])),
+            None => self.overflow.get(&c).copied(),
+        }
+    }
+
+    pub(super) fn parent(&self, c: Cell) -> Option<Cell> {
+        self.get(c).map(|(p, _)| p)
+    }
+
+    pub(super) fn g(&self, c: Cell) -> Option<i32> {
+        self.get(c).map(|(_, g)| g)
+    }
+
+    pub(super) fn contains(&self, c: Cell) -> bool {
+        self.get(c).is_some()
+    }
+
+    /// Cells reached.
+    pub(super) fn len(&self) -> usize {
+        self.reached.len()
+    }
+
+    /// The cells reached, in first-reached order.
+    pub(super) fn cells(&self) -> &[Cell] {
+        &self.reached
+    }
+
+    fn set(&mut self, c: Cell, parent: Cell, g: i32) {
+        match Self::slot(c) {
+            Some(i) => {
+                if self.stamp[i] != self.now {
+                    self.stamp[i] = self.now;
+                    self.reached.push(c);
+                }
+                self.parent[i] = parent;
+                self.g[i] = g;
+            }
+            None => {
+                if self.overflow.insert(c, (parent, g)).is_none() {
+                    self.reached.push(c);
+                }
+            }
+        }
+    }
+}
+
 /// One step of [`plan_path`]'s search: reach `to` from `cur` at `cost`,
 /// through the waypoint `via` when the step is a teleport.
 pub(super) struct Search {
-    pub(super) parent: HashMap<Cell, Cell>,
-    pub(super) g: HashMap<Cell, i32>,
+    pub(super) nodes: Box<Nodes>,
     pub(super) open: std::collections::BinaryHeap<std::cmp::Reverse<(i32, i32, Cell)>>,
     pub(super) goal: Cell,
 }
 
 impl Search {
+    /// A search from `from` toward `goal`, with `from` reached at cost 0
+    /// (its own parent).
+    pub(super) fn new(from: Cell, goal: Cell) -> Self {
+        let mut nodes = Nodes::take();
+        nodes.set(from, from, 0);
+        Self {
+            nodes,
+            open: std::collections::BinaryHeap::new(),
+            goal,
+        }
+    }
+
+    /// End the search, handing its table back for the next one.
+    pub(super) fn finish(self) {
+        Nodes::put(self.nodes);
+    }
+
     pub(super) fn h(&self, c: Cell) -> i32 {
         i32::from((c.0 - self.goal.0).abs() + (c.1 - self.goal.1).abs())
     }
 
     pub(super) fn step(&mut self, via: Option<Cell>, cur: Cell, to: Cell, cost: i32) {
-        if self.g.get(&to).is_some_and(|&old| old <= cost) {
+        if self.nodes.g(to).is_some_and(|old| old <= cost) {
             return;
         }
-        match via {
+        let parent = match via {
             Some(v) => {
                 // The waypoint's cost is recorded too: every parent edge
                 // must run from a cheaper cell to a dearer one, or a later
                 // plain step into `v` (from a cell descended from `to`)
                 // overwrites `parent[v]` and closes a cycle that the path
                 // walk-back follows forever.
-                self.parent.insert(v, cur);
-                self.g.insert(v, cost - 1);
-                self.parent.insert(to, v);
+                self.nodes.set(v, cur, cost - 1);
+                v
             }
-            None => {
-                self.parent.insert(to, cur);
-            }
-        }
-        self.g.insert(to, cost);
+            None => cur,
+        };
+        self.nodes.set(to, parent, cost);
         let f = cost + self.h(to);
         self.open.push(std::cmp::Reverse((f, cost, to)));
     }
@@ -447,7 +690,7 @@ pub(super) fn plan_path(
                         'A'
                     } else if tiles.contains(&(tx, tz)) {
                         'o'
-                    } else if bl.0.contains_key(&(tx, tz)) {
+                    } else if bl.covers_tile(tx, tz) {
                         'b'
                     } else if session
                         .host
@@ -470,7 +713,7 @@ pub(super) fn plan_path(
             if u.len() > 64 {
                 u.clear();
             }
-            u.insert(key, (seen, best));
+            u.insert(key, (seen.into_iter().collect(), best));
         });
     }
     (!path.is_empty()).then_some(path)
@@ -490,7 +733,7 @@ thread_local! {
     pub(super) static NPC_BODIES_OFF: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// Failed plans: the cells the search reached and the one nearest the
     /// goal, by [`PlanKey`].
-    pub(super) static UNREACHED: std::cell::RefCell<HashMap<PlanKey, (HashSet<Cell>, Cell)>> =
+    pub(super) static UNREACHED: std::cell::RefCell<HashMap<PlanKey, (FastSet<Cell>, Cell)>> =
         std::cell::RefCell::new(HashMap::new());
 }
 
@@ -519,7 +762,7 @@ pub(super) fn plan_search(
     goal: (i16, i16),
     target: Option<Cell>,
     avoid: &HashSet<(i32, i32)>,
-) -> Option<(Vec<Cell>, HashSet<Cell>, bool)> {
+) -> Option<(Vec<Cell>, Vec<Cell>, bool)> {
     let w = &session.host.world;
     let gw = tile_center(goal);
     // A goal tile whose centre is wall (a door band set in a wall strip)
@@ -544,6 +787,10 @@ pub(super) fn plan_search(
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
     let phased = phased_pads(session);
+    // The per-step membership tests, against fast-hashed copies (the
+    // tables themselves stay keyed the callers' way).
+    let pad_tiles: FastSet<(i32, i32)> = phased.keys().chain(warps.keys()).copied().collect();
+    let avoid_tiles: FastSet<(i32, i32)> = avoid.iter().copied().collect();
     let doors = object_doors(session);
     // The platforms under the engine's live arrival bracket: a plan that
     // starts on one (a re-plan just after a ride) may walk off it.
@@ -581,7 +828,7 @@ pub(super) fn plan_search(
             .iter()
             .find_map(|&p| w.sealed_arrival_walk_off(corner, p))
             .map_or(land, |(x, z)| cell_of(x, z));
-        let mut dist: HashMap<Cell, i32> = HashMap::from([(start, 0)]);
+        let mut dist: FastMap<Cell, i32> = FastMap::from_iter([(start, 0)]);
         let mut q = VecDeque::from([start]);
         let mut exits = Vec::new();
         if !inside(start) {
@@ -650,19 +897,14 @@ pub(super) fn plan_search(
                             && (c.center.1 - i32::from(z)).abs() <= 128
                     })))
     });
-    let mut s = Search {
-        parent: HashMap::from([(from, from)]),
-        g: HashMap::from([(from, 0)]),
-        open: std::collections::BinaryHeap::new(),
-        goal: gc,
-    };
+    let mut s = Search::new(from, gc);
     s.open.push(std::cmp::Reverse((s.h(from), 0, from)));
     let mut best = from;
     while let Some(std::cmp::Reverse((_, gcur, cur))) = s.open.pop() {
-        if s.g.get(&cur).is_some_and(|&v| v < gcur) {
+        if s.nodes.g(cur).is_some_and(|v| v < gcur) {
             continue;
         }
-        if s.parent.len() > MAX_PLAN_NODES {
+        if s.nodes.len() > MAX_PLAN_NODES {
             break;
         }
         if s.h(cur) < s.h(best) {
@@ -723,7 +965,7 @@ pub(super) fn plan_search(
                         })
                     })
             {
-                if land != next && !s.parent.contains_key(&next) {
+                if land != next && !s.nodes.contains(next) {
                     for (to, d) in arrivals(contact, land) {
                         if to != next {
                             s.step(Some(next), cur, to, gcur + 2 + d);
@@ -748,9 +990,7 @@ pub(super) fn plan_search(
             // place: both are edges, the phase the flag is not in now dearer
             // by the wait for it ([`phased_pads`]; the follower times the
             // step, [`phase_ready`]).
-            let pad_tile = nt != ct
-                && nt != goal_tile
-                && (phased.contains_key(&nt) || warps.contains_key(&nt));
+            let pad_tile = nt != ct && nt != goal_tile && pad_tiles.contains(&nt);
             let lands: Vec<(Cell, i32)> = if !pad_tile {
                 Vec::new()
             } else if let Some(lands) = phased.get(&nt) {
@@ -776,7 +1016,7 @@ pub(super) fn plan_search(
                 // tile itself is a waypoint the follower steps into, never a
                 // cell the walk continues from.
                 let press = tile_center((nt.0 as i16, nt.1 as i16));
-                if !s.parent.contains_key(&next) {
+                if !s.nodes.contains(next) {
                     let mut any = false;
                     for (land, wait) in lands {
                         if land != next {
@@ -787,7 +1027,7 @@ pub(super) fn plan_search(
                     if any {
                         PRESS_AT.with(|m| m.borrow_mut().insert(next, press));
                     }
-                } else if phased.contains_key(&nt) && s.parent.get(&cur) != Some(&next) {
+                } else if phased.contains_key(&nt) && s.nodes.parent(cur) != Some(next) {
                     // The tile's cells are already reached - the walker
                     // landed on the tile, as on a pad its partner pad sends
                     // it to (`rugi` P2[40] / P2[41]): crossing into it again
@@ -828,7 +1068,7 @@ pub(super) fn plan_search(
             if next != gc && blockers.dir_blocked_except(nx, nz, dir, &skip) {
                 continue;
             }
-            if nt != ct && avoid.contains(&nt) {
+            if nt != ct && avoid_tiles.contains(&nt) {
                 continue;
             }
             s.step(None, cur, next, gcur + 1);
@@ -836,28 +1076,36 @@ pub(super) fn plan_search(
     }
     PLAN_STATS.with(|p| {
         let (n, cells) = p.get();
-        p.set((n + 1, cells + s.parent.len() as u64));
+        p.set((n + 1, cells + s.nodes.len() as u64));
     });
     let reached = best == gc;
     let path = if best == from {
-        Vec::new()
+        Some(Vec::new())
     } else {
-        walk_back(&s.parent, from, best)?
+        walk_back(|c| s.nodes.parent(c), s.nodes.len(), from, best)
     };
-    Some((path, s.parent.into_keys().collect(), reached))
+    let seen = s.nodes.cells().to_vec();
+    s.finish();
+    Some((path?, seen, reached))
 }
 
 /// The route from `from` to `to` along `parent` links. A chain longer than
-/// the map holds is a cycle: `None`, never an unbounded walk.
-pub(super) fn walk_back(parent: &HashMap<Cell, Cell>, from: Cell, to: Cell) -> Option<Vec<Cell>> {
+/// the map holds (`links` cells) is a cycle: `None`, never an unbounded
+/// walk.
+pub(super) fn walk_back(
+    parent: impl Fn(Cell) -> Option<Cell>,
+    links: usize,
+    from: Cell,
+    to: Cell,
+) -> Option<Vec<Cell>> {
     let mut path = vec![to];
     let mut c = to;
     while c != from {
-        c = *parent.get(&c)?;
+        c = parent(c)?;
         if c != from {
             path.push(c);
         }
-        if path.len() > parent.len() {
+        if path.len() > links {
             return None;
         }
     }

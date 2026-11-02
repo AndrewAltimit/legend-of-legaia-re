@@ -245,19 +245,39 @@ impl App {
                     })
                     .collect();
                 let rows = flow_rows(&widths, ui.available_width());
-                for row in rows {
-                    ui.horizontal(|ui| {
-                        for s in row {
-                            let ids = &cat.sections[s].1;
-                            egui::ComboBox::from_id_salt(("equip", c, s))
-                                .selected_text(texts[s].clone())
-                                .show_ui(ui, |ui| {
-                                    for (id, n) in ids {
-                                        ui.selectable_value(&mut st.equipment[c][s], *id, n);
-                                    }
-                                });
-                        }
-                    });
+                let changed = st.equipment[c]
+                    .iter()
+                    .take(cat.sections.len())
+                    .filter(|&&id| id != 0)
+                    .count();
+                let mut pickers = |ui: &mut egui::Ui| {
+                    // Flowed again in this `Ui`: under the header it is
+                    // indented, so narrower.
+                    for row in flow_rows(&widths, ui.available_width()) {
+                        ui.horizontal(|ui| {
+                            for s in row {
+                                let ids = &cat.sections[s].1;
+                                egui::ComboBox::from_id_salt(("equip", c, s))
+                                    .selected_text(texts[s].clone())
+                                    .show_ui(ui, |ui| {
+                                        for (id, n) in ids {
+                                            ui.selectable_value(&mut st.equipment[c][s], *id, n);
+                                        }
+                                    });
+                            }
+                        });
+                    }
+                };
+                if rows.len() <= 1 {
+                    pickers(ui);
+                } else {
+                    // Pickers that need two rows or more fold under one
+                    // header, closed by default, so a narrow window keeps
+                    // its height for the model view; the header says how
+                    // much of the loadout is not the default.
+                    egui::CollapsingHeader::new(equipment_header(changed))
+                        .id_salt(("equip_fold", c))
+                        .show(ui, pickers);
                 }
             }
             if !a.clips.is_empty() {
@@ -366,6 +386,16 @@ fn flow_rows(widths: &[f32], max: f32) -> Vec<Vec<usize>> {
     rows
 }
 
+/// The folded equipment header: how many of the character's sections
+/// carry something other than the default piece.
+fn equipment_header(changed: usize) -> String {
+    match changed {
+        0 => "Equipment (all default)".to_string(),
+        1 => "Equipment (1 piece changed)".to_string(),
+        n => format!("Equipment ({n} pieces changed)"),
+    }
+}
+
 /// A section picker's label without its index: `Section 2 (Weapon)` reads
 /// `Weapon`, so the five pickers flow two or three to a row.
 fn short_section(label: &str) -> &str {
@@ -395,5 +425,12 @@ mod tests {
         assert_eq!(super::short_section("Section 2 (Weapon)"), "Weapon");
         assert_eq!(super::short_section("Section 3 (Ra-Seru)"), "Ra-Seru");
         assert_eq!(super::short_section("Body"), "Body");
+    }
+
+    #[test]
+    fn folded_equipment_header_counts_the_changed_pieces() {
+        assert_eq!(super::equipment_header(0), "Equipment (all default)");
+        assert_eq!(super::equipment_header(1), "Equipment (1 piece changed)");
+        assert_eq!(super::equipment_header(3), "Equipment (3 pieces changed)");
     }
 }

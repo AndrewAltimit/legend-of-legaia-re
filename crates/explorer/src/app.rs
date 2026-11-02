@@ -1424,16 +1424,47 @@ impl App {
         } else {
             self.tab
         };
-        // Wraps, so a narrow window keeps every tab reachable.
+        // Ctrl+Tab / Ctrl+Shift+Tab (and Ctrl+Page Down / Up) step through
+        // the tabs this entry has something for.
+        let step = ui.input_mut(|i| {
+            let back = [egui::Key::Tab, egui::Key::PageUp].map(|k| {
+                let m = if k == egui::Key::Tab {
+                    egui::Modifiers::COMMAND | egui::Modifiers::SHIFT
+                } else {
+                    egui::Modifiers::COMMAND
+                };
+                i.consume_shortcut(&egui::KeyboardShortcut::new(m, k))
+            });
+            let fwd = [egui::Key::Tab, egui::Key::PageDown].map(|k| {
+                i.consume_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, k))
+            });
+            match (back.contains(&true), fwd.contains(&true)) {
+                (true, _) => Some(false),
+                (false, true) => Some(true),
+                _ => None,
+            }
+        });
+        if let Some(forward) = step {
+            self.tab = cycle_tab(shown, forward, |t| count(t).is_none_or(|n| n > 0));
+        }
+        // Wraps, so a narrow window keeps every tab reachable; an empty
+        // tab drops its "(0)" (it is greyed out anyway), which keeps the
+        // row to one line at the minimum window width.
         ui.horizontal_wrapped(|ui| {
+            // Tabs sit closer than ordinary buttons: a selectable tab needs
+            // no gap to read as separate, and the six fit one row of the
+            // narrowest pane.
+            ui.spacing_mut().item_spacing.x = 2.0;
             for t in Tab::ALL {
                 let n = count(t);
-                let label = match n {
-                    Some(n) => format!("{} ({n})", t.name()),
-                    None => t.name().to_string(),
-                };
+                let label = tab_label(t.name(), n);
                 let enabled = n.is_none_or(|n| n > 0);
-                let resp = ui.add_enabled(enabled, egui::Button::selectable(shown == t, label));
+                let resp = ui
+                    .add_enabled(enabled, egui::Button::selectable(shown == t, label))
+                    .on_disabled_hover_text(format!(
+                        "Nothing for the {} tab in this entry",
+                        t.name()
+                    ));
                 if resp.clicked() {
                     self.tab = t;
                 }
@@ -1539,12 +1570,19 @@ impl App {
             return;
         }
         self.tim_sel = self.tim_sel.min(a.tims.len() - 1);
+        // Wide enough for one unwrapped row ("#0   320x8 4bpp lzs#0 @0x4F00")
+        // when the pane has room, but never more than half of it: at the
+        // minimum window width a 270-point list left the CLUT and zoom
+        // sliders clipped off the pane's right edge.
+        let (list_default, list_max) = tim_list_width(ui.available_width());
         egui::Panel::left("tim_list")
             .resizable(true)
-            // Wide enough for one unwrapped row ("#0   320x8 4bpp lzs#0 @0x4F00").
-            .default_size(270.0)
+            .default_size(list_default)
+            .min_size(list_default.min(TIM_LIST_MIN))
+            .max_size(list_max)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical().show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
                     for (i, t) in a.tims.iter().enumerate() {
                         let text = format!(
                             "#{i:<3} {}x{} {}bpp {} @0x{:X}",
@@ -1555,7 +1593,11 @@ impl App {
                             t.offset
                         );
                         if ui
-                            .selectable_label(self.tim_sel == i, RichText::new(text).monospace())
+                            .selectable_label(
+                                self.tim_sel == i,
+                                RichText::new(text.as_str()).monospace(),
+                            )
+                            .on_hover_text(text)
                             .clicked()
                         {
                             self.tim_sel = i;
@@ -1565,8 +1607,11 @@ impl App {
                 });
             });
         let t = a.tims[self.tim_sel].clone();
-        // Wraps rather than clipping the export buttons off a narrow pane.
+        // Wraps rather than clipping the export buttons off a narrow pane;
+        // the sliders shrink so a label, its slider and its value box fit
+        // one row of the narrowest pane.
         ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().slider_width = (ui.available_width() - 110.0).clamp(60.0, 140.0);
             if t.palettes > 1 {
                 ui.label("CLUT:");
                 ui.add(egui::Slider::new(&mut self.clut, 0..=t.palettes - 1));
@@ -1829,15 +1874,20 @@ impl App {
             );
             match (&scene, &status) {
                 (Some((_, v)), _) => {
-                    ui.label(
-                        RichText::new(format!(
-                            "{:?} load: {} TIMs ({} shared) + {} host layers",
-                            v.kind,
-                            v.tims,
-                            v.shared_tims,
-                            v.layers.len()
-                        ))
-                        .weak(),
+                    // One line, ending in an ellipsis on a narrow pane (the
+                    // full text and the host layers show on hover).
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(format!(
+                                "{:?} load: {} TIMs ({} shared) + {} host layers",
+                                v.kind,
+                                v.tims,
+                                v.shared_tims,
+                                v.layers.len()
+                            ))
+                            .weak(),
+                        )
+                        .truncate(),
                     )
                     .on_hover_text(v.layers.join("\n"));
                 }
@@ -2543,85 +2593,104 @@ fn third_party_licenses() -> Option<PathBuf> {
 impl App {
     fn about_window(&mut self, ctx: &egui::Context) {
         let mut open = self.about_open;
+        let max_h = about_max_height(ctx.content_rect().height());
         egui::Window::new("About Legaia Explorer")
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .max_height(max_h)
             .show(ctx, |ui| {
-                ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
-                ui.label(
-                    "Browse, preview and extract the assets on your own Legend of Legaia disc.",
-                );
-                ui.add_space(6.0);
-                ui.label(format!("License: {}", env!("CARGO_PKG_LICENSE")));
-                ui.label(
-                    "The third-party crates this program is built from keep their own \
-                     licenses; their texts and notices ship in THIRD-PARTY-LICENSES.txt \
-                     next to the program.",
-                );
-                match third_party_licenses() {
-                    Some(p) => {
-                        ui.horizontal(|ui| {
-                            ui.monospace(p.display().to_string());
-                            if ui.small_button("Copy path").clicked() {
-                                ui.ctx().copy_text(p.display().to_string());
+                // Scrolls when the window is shorter than the box (the
+                // minimum window at a large zoom pushed its title bar and
+                // last rows off the screen).
+                egui::ScrollArea::vertical()
+                    .max_height(max_h - ABOUT_CHROME_H)
+                    .show(ui, |ui| {
+                    ui.heading(format!("Legaia Explorer {}", env!("CARGO_PKG_VERSION")));
+                    ui.label(
+                        "Browse, preview and extract the assets on your own Legend of Legaia disc.",
+                    );
+                    ui.add_space(6.0);
+                    ui.label(format!("License: {}", env!("CARGO_PKG_LICENSE")));
+                    ui.label(
+                        "The third-party crates this program is built from keep their own \
+                         licenses; their texts and notices ship in THIRD-PARTY-LICENSES.txt \
+                         next to the program.",
+                    );
+                    match third_party_licenses() {
+                        Some(p) => {
+                            ui.horizontal(|ui| {
+                                ui.monospace(p.display().to_string());
+                                if ui.small_button("Copy path").clicked() {
+                                    ui.ctx().copy_text(p.display().to_string());
+                                }
+                            });
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new(
+                                    "(not found beside this binary - it is part of every release \
+                                     archive; a source build can generate it with \
+                                     scripts/ci/third-party-licenses.py)",
+                                )
+                                .weak(),
+                            );
+                        }
+                    }
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new(
+                            "No game data ships with this program; it reads only the disc image you \
+                             choose, and writes only into folders you pick.",
+                        )
+                        .weak(),
+                    );
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Keyboard").strong());
+                    egui::Grid::new("about_keys")
+                        .num_columns(2)
+                        .spacing([16.0, 3.0])
+                        .show(ui, |ui| {
+                            for (keys, what) in [
+                                ("Ctrl+O", "open a disc image"),
+                                ("Ctrl+L", "type a path to open"),
+                                ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
+                                ("F5", "play the open disc"),
+                                ("Ctrl+F, Esc", "search the archive, clear the search"),
+                                ("Ctrl+Tab, Ctrl+Shift+Tab", "next, previous preview tab"),
+                                (
+                                    "Up / Down, PgUp / PgDn, Home / End",
+                                    "walk the archive tree",
+                                ),
+                                (
+                                    "Ctrl+= / Ctrl+- / Ctrl+0",
+                                    "zoom in, out, reset (also View)",
+                                ),
+                                ("F1", "this box"),
+                            ] {
+                                // Key names in the palette's key ink, as the
+                                // launcher's Controls panel and the play
+                                // window's F12 panel draw them.
+                                let ink = crate::theme::c(crate::theme::palette(ui).info);
+                                ui.label(RichText::new(keys).monospace().color(ink));
+                                ui.label(what);
+                                ui.end_row();
                             }
                         });
-                    }
-                    None => {
-                        ui.label(
-                            RichText::new(
-                                "(not found beside this binary - it is part of every release \
-                                 archive; a source build can generate it with \
-                                 scripts/ci/third-party-licenses.py)",
-                            )
-                            .weak(),
-                        );
-                    }
-                }
-                ui.add_space(6.0);
-                ui.label(
-                    RichText::new(
-                        "No game data ships with this program; it reads only the disc image you \
-                         choose, and writes only into folders you pick.",
-                    )
-                    .weak(),
-                );
-                ui.add_space(6.0);
-                ui.label(RichText::new("Keyboard").strong());
-                egui::Grid::new("about_keys")
-                    .num_columns(2)
-                    .spacing([16.0, 3.0])
-                    .show(ui, |ui| {
-                        for (keys, what) in [
-                            ("Ctrl+O", "open a disc image"),
-                            ("Ctrl+L", "type a path to open"),
-                            ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
-                            ("F5", "play the open disc"),
-                            ("Ctrl+F, Esc", "search the archive, clear the search"),
-                            (
-                                "Up / Down, PgUp / PgDn, Home / End",
-                                "walk the archive tree",
-                            ),
-                            (
-                                "Ctrl+= / Ctrl+- / Ctrl+0",
-                                "zoom in, out, reset (also View)",
-                            ),
-                            ("F1", "this box"),
-                        ] {
-                            // Key names in the palette's key ink, as the
-                            // launcher's Controls panel and the play
-                            // window's F12 panel draw them.
-                            let ink = crate::theme::c(crate::theme::palette(ui).info);
-                            ui.label(RichText::new(keys).monospace().color(ink));
-                            ui.label(what);
-                            ui.end_row();
-                        }
                     });
             });
         self.about_open = open;
     }
+}
+
+/// Points the About box's title bar and frame take beyond its body.
+const ABOUT_CHROME_H: f32 = 40.0;
+
+/// The About box's tallest size in a window `screen_h` points tall: the
+/// window less a margin, with room for at least a few lines.
+fn about_max_height(screen_h: f32) -> f32 {
+    (screen_h - 40.0).max(ABOUT_CHROME_H + 80.0)
 }
 
 fn theme_preference(t: crate::settings::Theme) -> egui::ThemePreference {
@@ -2641,11 +2710,14 @@ impl App {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                let side = ((ui.available_width() - COLUMN) / 2.0).max(12.0);
+                // The column narrows with the window, keeping a margin on
+                // both sides; a fixed 700-point column ran its wrapped text
+                // and the footer past the right edge at the minimum width.
+                let (side, column) = start_column(ui.available_width(), COLUMN);
                 ui.horizontal(|ui| {
                     ui.add_space(side);
                     ui.vertical(|ui| {
-                        ui.set_max_width(COLUMN);
+                        ui.set_max_width(column);
                         ui.add_space(28.0);
                         ui.label(RichText::new("Legaia Explorer").size(30.0).color(accent));
                         ui.label(
@@ -2760,6 +2832,51 @@ impl App {
     }
 }
 
+/// The preview tab after (or before) `from`, skipping the ones `enabled`
+/// rules out and wrapping at the ends; `from` itself when no other is.
+fn cycle_tab(from: Tab, forward: bool, enabled: impl Fn(Tab) -> bool) -> Tab {
+    let n = Tab::ALL.len();
+    let at = Tab::ALL.iter().position(|&t| t == from).unwrap_or(0);
+    (1..n)
+        .map(|k| {
+            let i = if forward { at + k } else { at + n - k };
+            Tab::ALL[i % n]
+        })
+        .find(|&t| enabled(t))
+        .unwrap_or(from)
+}
+
+/// A preview tab's label: its name with the count of what it shows, the
+/// count left out when there is nothing (the tab is disabled then).
+pub(crate) fn tab_label(name: &str, count: Option<usize>) -> String {
+    match count {
+        Some(n) if n > 0 => format!("{name} ({n})"),
+        _ => name.to_string(),
+    }
+}
+
+/// The texture list's smallest width, in points.
+const TIM_LIST_MIN: f32 = 140.0;
+
+/// The texture list's default and largest width in a preview pane `avail`
+/// points wide: 270 points (one unwrapped row) at most, and never more
+/// than half the pane, so the controls beside it keep their room.
+pub(crate) fn tim_list_width(avail: f32) -> (f32, f32) {
+    let max = (avail * 0.5).max(TIM_LIST_MIN);
+    (270.0f32.min(max), max)
+}
+
+/// The start page's left margin and column width for a pane `avail`
+/// points wide: the column is centred at up to `max` points and never
+/// leaves less than [`START_MARGIN`] on either side.
+pub(crate) fn start_column(avail: f32, max: f32) -> (f32, f32) {
+    let column = max.min(avail - 2.0 * START_MARGIN).max(0.0);
+    (((avail - column) / 2.0).max(START_MARGIN), column)
+}
+
+/// The start page's smallest side margin, in points.
+const START_MARGIN: f32 = 16.0;
+
 /// The texture source a model view opens on: the entry's own TIMs when they
 /// cover every textured prim of the mesh (`Model::texture_coverage`), else
 /// the scene's VRAM, where the missing pages and CLUTs are uploaded.
@@ -2832,4 +2949,56 @@ fn hex_view(ui: &mut egui::Ui, bytes: &[u8]) {
                 ui.monospace(s);
             }
         });
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+
+    #[test]
+    fn start_column_keeps_a_margin_at_the_minimum_width() {
+        // The minimum window is 720 points wide; the column used to stay
+        // 700 wide behind a 12-point margin and ran past the right edge.
+        let (side, column) = start_column(720.0, 700.0);
+        assert!(side >= START_MARGIN);
+        assert!(side * 2.0 + column <= 720.0 + 0.01);
+        // A wide window centres the full column.
+        let (side, column) = start_column(1280.0, 700.0);
+        assert_eq!(column, 700.0);
+        assert_eq!(side, 290.0);
+    }
+
+    #[test]
+    fn tim_list_leaves_half_the_pane_to_the_controls() {
+        let (default, max) = tim_list_width(400.0);
+        assert!(default <= 200.0 && max <= 200.0);
+        let (default, _) = tim_list_width(1000.0);
+        assert_eq!(default, 270.0);
+        // Never below the floor, however narrow.
+        assert_eq!(tim_list_width(100.0).1, TIM_LIST_MIN);
+    }
+
+    #[test]
+    fn tab_cycling_skips_empty_tabs_and_wraps() {
+        let has = |t: Tab| !matches!(t, Tab::Audio | Tab::Text);
+        assert_eq!(cycle_tab(Tab::Model, true, has), Tab::Hex);
+        assert_eq!(cycle_tab(Tab::Hex, true, has), Tab::Overview);
+        assert_eq!(cycle_tab(Tab::Overview, false, has), Tab::Hex);
+        assert_eq!(cycle_tab(Tab::Hex, false, has), Tab::Model);
+        assert_eq!(cycle_tab(Tab::Hex, true, |t| t == Tab::Hex), Tab::Hex);
+    }
+
+    #[test]
+    fn about_box_fits_a_short_window() {
+        // 480 points at 1.25 zoom is 384 points tall.
+        assert!(about_max_height(384.0) <= 384.0 - 20.0);
+        assert!(about_max_height(50.0) > ABOUT_CHROME_H);
+    }
+
+    #[test]
+    fn empty_tabs_drop_their_count() {
+        assert_eq!(tab_label("Textures", Some(2)), "Textures (2)");
+        assert_eq!(tab_label("Audio", Some(0)), "Audio");
+        assert_eq!(tab_label("Hex", None), "Hex");
+    }
 }

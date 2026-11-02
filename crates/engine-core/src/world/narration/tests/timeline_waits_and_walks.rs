@@ -621,3 +621,42 @@ fn a_spawn_prologue_cross_context_compass_walk_moves_its_target() {
     assert_eq!(w.npcs.positions.get(&9), Some(&(2176, 2304)));
     assert_eq!(w.npcs.positions.get(&3), Some(&(1000, 1000)));
 }
+
+/// A cutscene's closing swap (`geremi` P2[1]: `35 FF 07 09` then
+/// `35 00 00 0A` on the same frame) holds its commit until the swap poller's
+/// load settles: the commit re-runs its own PC (`0x801E0288` ->
+/// `0x801DEE4C`) and is not stepped past by width. Stepped past, the select's
+/// bit 0 stayed up with no commit, the poller held at stage 4 for the rest of
+/// the scene and every later sub-op 9 re-ran forever.
+#[test]
+fn a_timeline_commit_waits_for_the_swap_poller_instead_of_stepping_past() {
+    use legaia_engine_field::cutscene_timeline::CutsceneTimeline;
+
+    let mut w = World::new();
+    w.clock.frame_step = 2;
+    let bc = vec![
+        0x35, 0xFF, 0x07, 0x09, // select 2047 behind the load barrier
+        0x35, 0x00, 0x00, 0x0A, // commit
+        0x4A, 0xFF, 0x7F, // WAIT_FRAMES 0x7FFF keeps the timeline installed
+    ];
+    w.cutscene.timeline = Some(CutsceneTimeline::new(bc, 0));
+    w.step_cutscene_timeline();
+    let pc = |w: &World| w.cutscene.timeline.as_ref().expect("installed").pc;
+    assert_eq!(pc(&w), 4, "the commit holds before bit 3");
+    assert!(w.audio.start_pending_commit, "the select owes its commit");
+    let mut vsyncs = 0u16;
+    while pc(&w) == 4 {
+        w.tick_bgm_swap(1);
+        vsyncs += 1;
+        assert!(vsyncs <= 200, "the commit never ran");
+        w.step_cutscene_timeline();
+    }
+    assert_eq!(pc(&w), 8, "past the commit onto the wait");
+    assert_eq!(vsyncs, crate::world::World::BGM_SWAP_READ_VSYNCS);
+    assert!(!w.audio.start_pending_commit, "the commit ran");
+    // The poller installs and goes idle, so a later select is not held.
+    for _ in 0..10 {
+        w.tick_bgm_swap(1);
+    }
+    assert!(!w.audio.bgm_swap_in_flight());
+}

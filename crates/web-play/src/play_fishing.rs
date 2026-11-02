@@ -89,7 +89,7 @@ impl LegaiaRuntime {
     /// window's `tick_fishing_actors`, through the same engine kernel
     /// ([`legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host`]):
     /// the wander fish and its retarget ripple, the floor solve, the reeling
-    /// line and its catch bursts, the sub-screen sway, and the venue camera
+    /// line and its catch bursts, the pond swell, and the venue camera
     /// writes, applied here to this page's engine camera. The ripples and
     /// bursts land in `World::minigames.fx`, which this page already draws.
     pub(crate) fn tick_fishing_actors(&mut self) {
@@ -210,23 +210,10 @@ impl LegaiaRuntime {
     /// (`World::minigames.fishing_points` and siblings), so leaving and
     /// re-entering keeps the running total and the cast counter.
     pub fn play_fishing_start(&mut self) -> bool {
-        use legaia_minigame_formats::fishing_species;
-        use legaia_overlay_images::static_overlay;
         let Some(host) = self.scene_host.host_mut() else {
             return false;
         };
-        let Some(rec) = static_overlay::overlay_map()
-            .by_prot_index(fishing_species::FISHING_OVERLAY_PROT_INDEX as u32)
-        else {
-            return false;
-        };
-        let Ok(raw) = host.index.entry_bytes_extended(rec.prot_index) else {
-            return false;
-        };
-        let Ok(loaded) = static_overlay::as_loaded(&raw, rec) else {
-            return false;
-        };
-        if !host.enter_fishing_from_overlay(&loaded) {
+        if !host.enter_fishing_from_disc() {
             return false;
         }
         // The two point-exchange venue pages were decoded by the shared entry
@@ -456,7 +443,7 @@ impl LegaiaRuntime {
 
     /// The open point-exchange sub-screen's draws, through the composition
     /// both hosts share (`legaia_engine_screens::fishing_exchange_draws`: the
-    /// swaying venue panel, the rows and their live bag counts).
+    /// venue panel, the rows and their live bag counts).
     fn fishing_exchange_draws(&self, font: &legaia_font::Font) -> Vec<TextDraw> {
         let Some(world) = self.scene_host.host().map(|h| &h.world) else {
             return Vec::new();

@@ -19,7 +19,7 @@
 
 <section class="doc-section" id="ids" data-doc="ids">
   <h2>Ids</h2>
-  <p>Every key in these files is local to the pack. The engine qualifies it with the pack id: key <code>ash_court</code> in pack <code>rebirth</code> is <code>rebirth:ash_court</code>. A reference may use either form; a reference into another pack is refused.</p>
+  <p>Every key in these files is local to the pack. The engine qualifies it with the pack id: key <code>ash_court</code> in pack <code>sample</code> is <code>sample:ash_court</code>. A reference may use either form; a reference into another pack is refused.</p>
   <p>Disc content is named only by coordinate (<a href="expansion-pack.html#disc-references"><code>DiscRef</code></a>): a retail monster by its 1-based monster-archive id (<code>{ kind = "monster", id = 73 }</code>), an item by its item id (<code>{ kind = "item", id = 12 }</code>), a music cue by its sound-test index (<code>{ kind = "bgm", id = 30 }</code>).</p>
 </section>
 
@@ -116,7 +116,7 @@ max_standing = 3</code></pre>
       <text class="dg-edge-label" x="12" y="314">One arrival per freed seat as a round opens, 6 in all.</text>
       <text class="dg-edge-label" x="12" y="332">Last wave down: one victory pays every monster.</text>
     </svg>
-    <figcaption>The four monster seats of the Rebirth <em>Tower Gauntlet</em>. A <code>wipe</code> wave seats together when the side is empty; a <code>refill</code> wave trickles in, capped by <code>max_standing</code>, until it has sent its <code>count</code>.</figcaption>
+    <figcaption>The four monster seats of the sample pack's <em>Tower Gauntlet</em>. A <code>wipe</code> wave seats together when the side is empty; a <code>refill</code> wave trickles in, capped by <code>max_standing</code>, until it has sent its <code>count</code>.</figcaption>
   </figure>
   <table>
     <thead><tr><th>Field</th><th>Effect</th></tr></thead>
@@ -213,7 +213,7 @@ moves = [
     <li><code>attack = n</code> is the <code>n</code>th (0-based) swing of the base monster's attack list: its archive swing records, the entries the retail picker rolls over (tags <code>0x0C..=0x1F</code> with an AGL cost, listed by <code>asset monster-archive --id N</code> and by the workbench's swing picker). It stages through the ordinary attack band, so the clip, the hit events and the power byte are the disc's. <code>hits</code> chains it up to eight times.</li>
     <li><code>spell = id</code> is a spell-table id, cast through the retail cast path as a pack monster's <code>spells</code> list is: MP debit, cast band, the move-power record and impact status. A capture-class special resolves off the disc table as the retail AI's own scripted casts do. A cast the monster cannot afford falls back to a physical strike, as in retail.</li>
   </ul>
-  <p>A swing index past the base's list, or a spell id the disc does not hold, makes that turn fall back to the retail pick; the disc-gated test <code>expansion_boss_script_disc</code> checks every Rebirth move against the disc.</p>
+  <p>A swing index past the base's list, or a spell id the disc does not hold, makes that turn fall back to the retail pick; the disc-gated test <code>expansion_boss_script_disc</code> checks every sample-pack move against the disc.</p>
 
   <h3 id="boss-phases">Phases</h3>
   <p><code>phases</code> is an ordered list. The first opens the fight and takes no <code>when</code>; each later one begins when any condition its <code>when</code> sets holds. Phases run forward only, and one check may begin several in order.</p>

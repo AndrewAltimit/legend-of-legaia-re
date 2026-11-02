@@ -186,6 +186,7 @@ namespace LegaiaWorld
         const int SPIN_UP_FRAMES = 30;
         const int BONUS_SPIN_UP_FRAMES = 0x18;     // buys the strip-swap travel
         const int FEATURE_MODE_BONUS = 6;
+        const int FEATURE_STOP_SYMBOL = 7; // modes 4 / 5 steer to it (li a2,0x7)
         const int BONUS_VALUE_BASE = 0x10;
         const int PAYOUT_HOLD_FRAMES = 110;        // payout tally display before auto-collect
 
@@ -606,23 +607,20 @@ namespace LegaiaWorld
             // picks): a forced target lands on that payline, not the middle.
             int line = LANDING_LINE_BY_JITTER[((syncJitter % 5) + 5) % 5];
 
-            // Guaranteed-hit mode drives later reels to the first landed
-            // symbol on that line; the bonus round does NOT (no target at all).
-            int guarantee = -1;
-            for (int r = 0; r < REEL_COUNT; r++)
-                if (localStopRow[r] != -1)
-                {
-                    guarantee = LineSymbol(r, line);
-                    break;
-                }
-
+            // FUN_801d2114's per-mode plan (engine `stop_plan`). Mode 3 spends
+            // a draw on the roll-in budget before its depth; mode 4's first
+            // landing on the normal target is always replaced by the re-land
+            // on symbol 7, so its first draw is spent too. The bonus round
+            // searches nothing (no target at all).
             int depth;
             int target;
             int mode = syncFeatureMode;
             if (mode == 1) { depth = (NextRng() & 3) + 6; target = punchSymbol; }
             else if (mode == 2) { depth = (NextRng() & 3) + 6; target = kickSymbol; }
+            else if (mode == 3) { NextRngMod(7); depth = NextRngMod(7) + 10; target = syncNormalTarget % 3; }
+            else if (mode == 4) { NextRngMod(10); depth = NextRngMod(10) + 6; target = FEATURE_STOP_SYMBOL; }
+            else if (mode == 5) { depth = NextRngMod(10) + 8; target = FEATURE_STOP_SYMBOL; }
             else if (mode == FEATURE_MODE_BONUS) { depth = 0; target = -1; } // the free stop
-            else if (mode == 4) { depth = STRIP_LEN; target = guarantee >= 0 ? guarantee : syncNormalTarget; }
             else { depth = NextRngMod(3) + 2; target = syncNormalTarget; }
 
             int fromRow = (reelPos[reel] >> 8) % STRIP_LEN;

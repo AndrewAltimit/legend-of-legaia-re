@@ -29,6 +29,23 @@
 --                steps). `shot` names the frame taken on that vsync, if any.
 --   r_<vsync>.raw  PCSX.GPU.takeScreenShot() pixels (BGR555, or BGR888 when
 --                `bpp` says 24); width / height / bpp are on the meta row.
+--   sfx.csv      one row per sound cue the drainer FUN_80016B6C plays: the
+--                cue ring DAT_8007B6D8[4] (i16 ids) with its countdowns
+--                DAT_8007C338[4] (u32, vsyncs), sampled every vsync. A slot
+--                plays when its countdown is zero and its id >= 0
+--                (0x80016BF8..0x80016C20) and the next frame's ager clears
+--                it, so the edge into that condition is one cue. `drain`
+--                is the drainer's own gate (0x8007BABC == 0x8007BAA0,
+--                0x80016BC0..0x80016BD4).
+--   sfxcall.csv  with LEGAIA_SFX_CALLERS=1 (breakpoint core): every call
+--                into the cue producers FUN_80035B50 / FUN_80035BD0, the
+--                battle router FUN_8004FE5C and the dispatcher FUN_8004FCC8,
+--                with a0, a1 and ra - who fired each sfx.csv cue.
+--                A `store` row is a write into the ring's ids
+--                (0x8007B6D8..DF): `a0` is the storing pc.
+--   seats.csv    per vsync from the cast, seats 0..7: clip +0x1D9, staged
+--                +0x1DA, cue-track cursor +0x1F6 (the anim cue walk
+--                FUN_800508DC's).
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -78,6 +95,15 @@
 --                        inject: a pre-cast state with the cast already
 --                        queued, which replays on its own (back it up to the
 --                        save library with manage-states.py)
+--   LEGAIA_PRE_TRACE     1 = also write pre.csv, one row per vsync BEFORE the
+--                        inject: the action state, the acting seat, the frame
+--                        step, the yaw counter ctx[+0x6DA], the strike cursor
+--                        ctx[+0x15], and per seat 0..3 the committed / staged
+--                        clip (+0x1D9 / +0x1DA), the rate +0x21D, the node's
+--                        anim cursor (+0x22C -> +0x68), the ground pair and
+--                        the per-action damage total +0x00: the retail
+--                        timeline of whatever the party played on the way to
+--                        the cast (a combo's per-clip cadence)
 --   LEGAIA_PARK          quit when the action state and the module phase
 --                        have not moved for this
 --                        many vsyncs after the inject (900): a cast the
@@ -109,6 +135,7 @@ local SHOT_EVERY   = probe.getenv_num("LEGAIA_SHOT_EVERY", 2)
 local MAX_SHOTS    = probe.getenv_num("LEGAIA_MAX_SHOTS", 1500)
 local TAIL         = probe.getenv_num("LEGAIA_TAIL", 60)
 local PARK         = probe.getenv_num("LEGAIA_PARK", 900)
+local PRE_TRACE    = probe.getenv_num("LEGAIA_PRE_TRACE", 0) ~= 0
 local RAM_AT = {}
 for v in string.gmatch(probe.getenv("LEGAIA_RAM_AT", ""), "[^,]+") do
     RAM_AT[tonumber(v)] = true
@@ -164,7 +191,16 @@ local function tou32(v)
     return v
 end
 
-local meta, body, cam
+local meta, body, cam, pre
+-- The cue ring's sampler, hung off `probe` (on_capture already sits at
+-- Lua's 60-upvalue cap, so it takes no new upvalue).
+probe.cast_sfx = {
+    ring = 0x8007B6D8,     -- i16 ids[4]
+    timers = 0x8007C338,   -- u32 countdowns[4]
+    ready = { false, false, false, false },
+    prev = { -1, -1, -1, -1 },
+    csv = nil,
+}
 local injected, cast_seen, done_seen = false, false, false
 local inject_vsync, cast_vsync, done_vsync = -1, -1, -1
 local forced_row = false
@@ -180,6 +216,28 @@ local caster_at_cast = -1
 -- the engine's inflight seed seats every combatant there at its dispatch, so
 -- an action retail ran before the cast (a monster that struck first and was
 -- not walked home) leaves the same stage.
+probe.cast_seats = {
+    csv = nil,
+    row = function(self, elapsed, actor_of)
+        if self.csv == nil then
+            self.csv = probe.csv_open(probe.out_path("seats.csv"),
+                "vsync,s0clip,s0stg,s0cue,s1clip,s1stg,s1cue,s2clip,s2stg,s2cue,s3clip,s3stg,s3cue," ..
+                "s4clip,s4stg,s4cue,s5clip,s5stg,s5cue,s6clip,s6stg,s6cue,s7clip,s7stg,s7cue")
+        end
+        local cols = {}
+        for k = 0, 7 do
+            local a = actor_of(k)
+            if a ~= nil then
+                cols[#cols + 1] = string.format("%d,%d,%d", probe.read_u8(a + 0x1D9) or 0,
+                    probe.read_u8(a + 0x1DA) or 0, probe.read_u8(a + 0x1F6) or 0)
+            else
+                cols[#cols + 1] = "-1,-1,-1"
+            end
+        end
+        self.csv:row("%d,%s", elapsed, table.concat(cols, ","))
+    end,
+}
+
 local function ground_pairs()
     local t = {}
     for s = 0, 7 do
@@ -233,6 +291,35 @@ probe.run({
         -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
         cam = probe.csv_open(probe.out_path("cam.csv"),
             "vsync,st7,phase,step,pitch,yaw,trx,try,trz,yaw_inc,yaw_end,trz_inc,trz_end")
+        probe.cast_sfx.csv = probe.csv_open(probe.out_path("sfx.csv"), "vsync,frame,st7,phase,slot,id,drain")
+        if PRE_TRACE then
+            pre = probe.csv_open(probe.out_path("pre.csv"),
+                "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
+                "s0clip,s0stg,s0rate,s0cur,s0x,s0z,s0tot,s1clip,s1stg,s1rate,s1cur,s1x,s1z,s1tot," ..
+                "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp")
+        end
+        if probe.getenv_num("LEGAIA_SFX_CALLERS", 0) ~= 0 then
+            -- Who fills the cue ring: the producer FUN_80035B50 / its
+            -- replace FUN_80035BD0, the battle router FUN_8004FE5C and the
+            -- dispatcher FUN_8004FCC8, each with a0 / a1 and ra.
+            local calls = probe.csv_open(probe.out_path("sfxcall.csv"), "vsync,fn,a0,a1,ra")
+            for _, f in ipairs({ { 0x80035B50, "push" }, { 0x80035BD0, "replace" },
+                                  { 0x8004FE5C, "router" }, { 0x8004FCC8, "dispatch" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, f[2], function()
+                    local r = PCSX.getRegisters()
+                    calls:row("%d,%s,%d,%d,0x%08X", last_elapsed, f[2], tou32(r.GPR.n.a0),
+                        tou32(r.GPR.n.a1), tou32(r.GPR.n.ra))
+                end)
+            end
+            -- Every store into the ring's id half (four i16 slots): an
+            -- inline writer no entry above sees. `fn` is `store`, `a0` the
+            -- pc of the store, `a1` the value the slot holds after it.
+            probe.arm_breakpoint(0x8007B6D8, "Write", 8, "ringw", function()
+                local r = PCSX.getRegisters()
+                calls:row("%d,store,%d,%d,0x%08X", last_elapsed, tou32(r.pc),
+                    -1, tou32(r.GPR.n.ra))
+            end)
+        end
         if FORCE_ROW ~= "" then
             -- FUN_801DA600 returns the formation row in v0; rewriting its
             -- bytes on the return seats the forced monsters.
@@ -327,6 +414,27 @@ probe.run({
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
         end
+        if pre ~= nil and not injected and in_battle then
+            local cols = {}
+            for s = 0, 3 do
+                local a = actor(s)
+                if a ~= nil then
+                    local node = u32(a + 0x22C)
+                    local x, z = u16(a + 0x34), u16(a + 0x38)
+                    if x >= 0x8000 then x = x - 0x10000 end
+                    if z >= 0x8000 then z = z - 0x10000 end
+                    local last = s == 3 and u16(a + 0x14C) or u16(a)
+                    cols[#cols + 1] = string.format("%d,%d,%d,%d,%d,%d,%d",
+                        u8(a + 0x1D9), u8(a + 0x1DA), u8(a + 0x21D),
+                        ptr_ok(node) and u16(node + 0x68) or -1, x, z, last)
+                else
+                    cols[#cols + 1] = "-1,-1,-1,-1,0,0,0"
+                end
+            end
+            pre:row("%d,%d,%d,%d,%d,%d,%d,%d,%s", elapsed, u8(cx + 6), st7, acting,
+                probe.read_scratch_u8(0x1F800393), u16(cx + 0x6DA), u8(cx + 0x15),
+                u32(cx + 0x87C), table.concat(cols, ","))
+        end
         if not injected then return end
         if SAVE_INJECT and not inject_saved then
             inject_saved = true
@@ -382,6 +490,17 @@ probe.run({
             u8(LOADER_ID), hp[1], hp[2], hp[3], hp[4], hp[5], hp[6], hp[7], hp[8],
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
+        if cast_seen then probe.cast_seats:row(elapsed, actor) end
+        -- The cue ring's ready edges (see sfx.csv in the header).
+        for i = 0, 3 do
+            local id = s16(probe.cast_sfx.ring + i * 2)
+            local ready = id >= 0 and u32(probe.cast_sfx.timers + i * 4) == 0
+            if ready and (not probe.cast_sfx.ready[i + 1] or probe.cast_sfx.prev[i + 1] ~= id) then
+                probe.cast_sfx.csv:row("%d,%d,%d,%d,%d,%d,%d", elapsed, u32(FRAME_COUNTER), st7, u8(cx + 0x279),
+                    i, id, u32(0x8007BABC) == u32(0x8007BAA0) and 1 or 0)
+            end
+            probe.cast_sfx.ready[i + 1], probe.cast_sfx.prev[i + 1] = ready, id
+        end
         local function sh(a)
             local v = u16(a)
             if v >= 0x8000 then v = v - 0x10000 end
@@ -426,6 +545,8 @@ probe.run({
         if meta then meta:close() end
         if body then body:close() end
         if cam then cam:close() end
+        if probe.cast_sfx.csv then probe.cast_sfx.csv:close() end
+        if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
             fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\nground=%s\nparked=%d\n",

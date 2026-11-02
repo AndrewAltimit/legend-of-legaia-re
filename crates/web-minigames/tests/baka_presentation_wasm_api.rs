@@ -396,3 +396,83 @@ fn duel_draws_through_the_engine_surface_with_the_picked_fighter() {
         "the picked fighter's mesh is drawn: {verts:?}"
     );
 }
+
+/// The page plays each round's announcement as exactly the line the round
+/// banner asks for - `FUN_8003D53C(0x1F, round, 0x48)`: `XA32.XA`, channel
+/// = the 0-based index of the round about to start - cut at the retail read
+/// span, and no other line starts inside that span. The all-clear
+/// announcer's `XA33` `0x0A..0x0D` lines used to start under every banner
+/// and cut it short, and the banner used to read the index of the round
+/// just ended. (This duel starts mid-round, so its first banner is round
+/// 2's.)
+#[test]
+fn each_round_announcement_plays_its_own_xa32_channel_uncut() {
+    use legaia_engine_audio::xa_clip_bank::{MONO_FRAMES_PER_SECTOR, read_span_sectors};
+    let Some(mut mg) = loaded() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    eprintln!("[ran] round announcement lines");
+    assert!(mg.baka_start_as(0, 5, 0x1234));
+    // `XA32.XA` interleaves 16 channels, so the 0x48-vsync read span holds
+    // 1/16 of its physical sectors per channel.
+    const XA32_CHANNELS: u32 = 16;
+    let expect_frames =
+        (read_span_sectors(0x48) / XA32_CHANNELS) as u64 * MONO_FRAMES_PER_SECTOR as u64;
+    let mut fired = 0u64;
+    let mut played: Vec<(u32, [u64; 3], u64)> = Vec::new();
+    for t in 0..30_000u32 {
+        mg.baka_choose((1 + t % 3) as u8);
+        mg.baka_tick(1);
+        let st: serde_json::Value = serde_json::from_str(&mg.baka_state_json()).unwrap();
+        let xa: serde_json::Value = serde_json::from_str(&mg.baka_xa_state_json()).unwrap();
+        let now = xa["fired"].as_u64().unwrap();
+        if now != fired {
+            assert_eq!(now, fired + 1, "one line per tick");
+            fired = now;
+            let last: Vec<u64> = xa["last"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_u64().unwrap())
+                .collect();
+            if last[0] == 0x1F {
+                assert_eq!(
+                    last[1],
+                    st["round"].as_u64().unwrap(),
+                    "the round about to start"
+                );
+            }
+            played.push((
+                t,
+                [last[0], last[1], last[2]],
+                xa["last_frames"].as_u64().unwrap(),
+            ));
+        }
+        if st["phase"] == "match_over" {
+            break;
+        }
+    }
+    let banners: Vec<_> = played.iter().filter(|(_, c, _)| c[0] == 0x1F).collect();
+    eprintln!("[ok] lines played {played:?}");
+    assert!(
+        !banners.is_empty(),
+        "the match announced its later rounds: {played:?}"
+    );
+    for (k, (t, cue, frames)) in banners.iter().enumerate() {
+        let n = k + 1;
+        assert_eq!(*cue, [0x1F, n as u64, 0x48], "round {} line", n + 1);
+        assert_eq!(*frames, expect_frames, "round {} read span", n + 1);
+        let cut: Vec<_> = played
+            .iter()
+            .filter(|(u, c, _)| *u > *t && *u < *t + 0x48 && c != cue)
+            .collect();
+        assert!(cut.is_empty(), "round {} line cut by {cut:?}", n + 1);
+    }
+    assert!(
+        played
+            .iter()
+            .all(|(_, c, _)| !(c[0] == 0x20 && (0x0A..=0x0D).contains(&c[1]))),
+        "no all-clear line in an ordinary match: {played:?}"
+    );
+}

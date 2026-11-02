@@ -115,7 +115,10 @@ pub fn celebration_bursts(score: i32) -> impl Iterator<Item = &'static Celebrati
 
 /// Frame counts on the celebration actor's `+0x22` timer at which the
 /// celebration advances stage: `(fire the bursts, fire the two flashes,
-/// hand the actor back)`.
+/// hand the actor back)`. Each test is `stage < timer` on the timer as the
+/// frame **starts** (the `+= frame_step` is the arm's last store), so a stage
+/// fires on the first frame whose starting timer is past it - frame `0xD4`
+/// of the close-up hands back, at step `1`.
 pub const CELEBRATION_STAGE_FRAMES: (i16, i16, i16) = (0x72, 0x87, 0xD2);
 
 /// What one [`LineActorSim::tick`] asks the host to do.
@@ -178,9 +181,12 @@ impl LineActorSim {
             }
             LinePhase::Track => {}
             LinePhase::Celebrate => {
+                // Retail tests the timer as the frame starts and adds the
+                // step last (`0x801D4948` sub-state 4).
                 let before = self.timer;
                 self.timer = self.timer.saturating_add(frame_step);
-                let crossed = |at: i16| before < at && at <= self.timer;
+                let crossed =
+                    |at: i16| before > at && before.saturating_sub(frame_step.max(1)) <= at;
                 if crossed(CELEBRATION_STAGE_FRAMES.0) {
                     out.cue = Some(CELEBRATE_CUE);
                     out.bursts = celebration_bursts(self.score).copied().collect();

@@ -143,7 +143,7 @@ Two readings on this list are easy to get wrong:
 | [`bse.dat` battle SFX bank](bse-dat.md) | Confirmed | The battle occupant of the runtime SFX bank (cue ids `>= 0x200`), loaded per battle by `FUN_8001FA88`. |
 | [Sound-driver path strings](sound-driver.md) | Confirmed | The string-builder cluster at `0x8007B38C` and the eight file extensions it resolves. |
 
-The dispatch chain *into* these files is fully traced. The byte-level layout of the individual `.spk` / `.dpk` / `.MAP` / `.PCH` sound-driver files is Unknown.
+The dispatch chain *into* these files is fully traced. The per-scene `.dpk` is a VAB + SEQ pair in a streaming-chunk container; the `.MAP` / `.PCH` strings beside it are field files (the [field map](field-map.md) and the [walk-on trigger sidecar](scene-v12-table.md)), not sound data. No retail load builds a `.spk` path: only the dev branch of `FUN_8001FC00` names one (`0x8001FC44..0x8001FCB0`, taken when `_DAT_8007B8C2 == 0`); retail reads the same data by PROT index.
 
 ## Text
 

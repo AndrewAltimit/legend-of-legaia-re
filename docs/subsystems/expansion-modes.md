@@ -14,11 +14,11 @@ This page covers the session contract every mode keeps, why it is shaped for loc
 | RNG | `session::ModeRng` (SplitMix64), one per session, seeded from the config |
 | Modes | `poker`, `cards` + `cards::duel` (and the economy: `cards::economy`, `cards::screen`, `cards::trade`), `golf`, `racing`, `prop_hunt`; `party` chains them into a party night |
 | Pack schema | `[[poker]]`, `[[card_duels]]`, `[[golf]]`, `[[races]]`, `[[prop_hunt]]`, `[[party_nights]]` in `modes.toml`; `[[cards]]`, `starter`, `[[boosters]]`, `[[dealers]]`, `[[rewards]]` in `cards.toml` |
-| Example pack | `packs/rebirth/modes.toml`, `packs/rebirth/cards.toml` |
+| Example pack | `packs/sample/modes.toml`, `packs/sample/cards.toml` |
 | Built-in set | `crates/engine-modes/builtin/` - one practice instance per mode, offered with no pack |
 | Host seat | `legaia_engine_expansion::modes::PackModeSeat` on `World::expansion`, under `SceneMode::Expansion`; the World-free modes page holds one directly |
 | Screens | `legaia_engine_ui::expansion_modes`; `seat_screen` projects a seat, `legaia_engine_screens::expansion_modes` the world's |
-| Tests | per-module rule tests; `crates/engine-modes/tests/` determinism, random-pad soak and Rebirth conversion |
+| Tests | per-module rule tests; `crates/engine-modes/tests/` determinism, random-pad soak and the sample pack conversion |
 
 ## The session contract
 
@@ -282,7 +282,7 @@ itself a few frames later (`World::age_net_podium`).
 
 ## Hosts
 
-Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page runs the same seat with no `World` and no disc, and draws the same composition through `seat_screen`.
+Both play hosts run the modes inside the running game, through one seat on the `World` and one screen composition. The site's game-modes page plays the instances laid out in the world by framing the browser play host; `LegaiaModes` can also run the seat with no `World` and no disc, drawing the same composition through `seat_screen`, which no site page draws.
 
 ### The seat
 
@@ -302,7 +302,7 @@ When a session finishes, the seat settles it: the session's own rewards, plus, w
 |---|---|
 | Native window | `` ` `` (backquote) on the field or overworld opens the picker; pressed again inside, it leaves. `--mode <INSTANCE>` enters an instance once the launch scene is entered, `--mode picker` opens the picker |
 | Browser play page | The Game mode select in the play tools: the picker, every instance by name, and Leave the mode |
-| Browser modes page | `site/modes.html`: the instances laid out on a pack map first, played in 3D in the play page's runtime framed with `?embed=1&mode=<id>` off the site's disc cache; then every instance flat, with no disc and no `World` (`LegaiaModes`, [`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)) |
+| Browser modes page | `site/modes.html`: the instances laid out on a pack map or an overworld, each played in 3D in the play page's runtime framed with `?embed=1&mode=<id>` off the site's disc cache; the instance list comes from `LegaiaModes::modes_json` ([`browser-host.md`](browser-host.md#the-game-modes-page-modes_page)). Instances laid out nowhere play from the play page's select |
 | Card screens | Native: `\` (backslash) opens the card menu and closes it; `--mode cards`, `--mode cards-binder` and `--mode cards-dealer[:ID]` open a card screen at launch. Browser: `play_cards_open("menu" / "binder" / "dealer:ID")`, `play_cards_close`, with `play_cards_json` (counts, completion) and `play_card_notices_json`. A pack map opens a dealer through its `card_dealer` trigger |
 
 ### Controls
@@ -409,7 +409,7 @@ legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
     --map links_green --mode links-golf
 ```
 
-`--mode links-race` with `--map links_ring` runs the race; `--expansion packs/rebirth --mode drake-circuit` runs Rebirth's Drake Dash across `map01`. The test pack's maps draw their walls as boxes (`wall = { kind = "box" }`) and seat Noa and Gala as map NPCs, the AI golfer and racers. Entered from anywhere else (the picker, `--mode` without `--map`), the scene host takes the player to the instance's map first. A headless capture (`--screenshot-every`) presses the pad through `--pad-script`, e.g. `--pad-script 120:Cross,150:Cross` to start the meter and strike.
+`--mode links-race` with `--map links_ring` runs the race; `--expansion packs/sample --mode drake-circuit` runs the sample pack's Drake Dash across `map01`. The test pack's maps draw their walls as boxes (`wall = { kind = "box" }`) and seat Noa and Gala as map NPCs, the AI golfer and racers. Entered from anywhere else (the picker, `--mode` without `--map`), the scene host takes the player to the instance's map first. A headless capture (`--screenshot-every`) presses the pad through `--pad-script`, e.g. `--pad-script 120:Cross,150:Cross` to start the meter and strike.
 
 ### Racing on the overworld
 
@@ -421,7 +421,7 @@ A race that names a kingdom overworld (`scene`, one of `map01`, `map02`, `map03`
 - **Drawing the overworld.** While a seat holds the frame over an overworld (`World::pack_mode_on_overworld`), `World::shows_overworld` is true, and the native window draws the overworld - its heightfield ground, landmarks and decorations, the sky band - exactly as in `SceneMode::WorldMap`; the browser play page draws a kingdom scene's ground by the scene, in either mode. The overworld's walk does not run under the seat (`SceneMode::Expansion` suspends it), so no random encounter, entrance or map display fires during a race.
 - **Rivals.** An overworld has no map NPCs, so its rivals draw as stand-in figures.
 
-The racers keep to the session's corridor, not the overworld's walls, so a course is laid along walkable tiles: Rebirth's two overworld sprints are checked against `map01`'s collision grid by the disc-gated `engine-scene-host` test `overworld_race_disc`, which also runs a sprint to its finish over the scene.
+The racers keep to the session's corridor, not the overworld's walls, so a course is laid along walkable tiles: the sample pack's two overworld sprints are checked against `map01`'s collision grid by the disc-gated `engine-scene-host` test `overworld_race_disc`, which also runs a sprint to its finish over the scene.
 
 ### Gaps
 
@@ -491,10 +491,10 @@ The HUD is the score plates, the turn prompt and the selected card's panel, clea
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map genesis_5f --mode wardens-duel
+    --expansion packs/sample --map genesis_5f --mode wardens-duel
 ```
 
-The Rebirth pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
+The sample pack plays the Warden's Duel at the card room's table on its 5F floor; the `duel_table` test pack (`crates/engine-modes/tests/fixtures/duel_table`, `--map duel_room --mode table-duel`) is the minimal case.
 
 ### Hidden props
 
@@ -563,17 +563,17 @@ Every label of the in-world HUDs sits in a box of its own (`Label::max_w`): the 
 
 ```bash
 legaia-engine play-window --disc "Legend of Legaia (USA).bin" \
-    --expansion packs/rebirth --map genesis_5f --mode tower-high-table
+    --expansion packs/sample --map genesis_5f --mode tower-high-table
 ```
 
-The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt, with the hall's own card table put away while it plays (`hide = ["high_table"]`); the Mist Lantern Table and the Village Duel do the same with Tolva's Haven's plank tables.
+The sample pack deals the Tower High Table in the Gambler's Rest hall, five named regulars at the felt, with the hall's own card table put away while it plays (`hide = ["high_table"]`); the Mist Lantern Table and the Village Duel do the same with Tolva's Haven's plank tables.
 
 ## Tests
 
 - **Rules.** Each module tests its rules directly: hand categories, kickers, ties, the wheel and the exhaustive five-card census; blinds, the big blind's option, minimum raises, short all-ins, side pots and odd chips; booster guarantees, reward chances, trade atomicity and binder order; captures, chains and elemental cells; golf surfaces, walls, hazards, slopes and turn order; checkpoint order, edge sliding and boost; inspect, misses, taunts and role rotation.
-- **Determinism.** `tests/determinism.rs` runs each mode from the Rebirth pack twice with the same seed and the same scripted pad stream and asserts identical `state_hash` sequences and results, then asserts a different seed diverges so the hash cannot be vacuous.
+- **Determinism.** `tests/determinism.rs` runs each mode from the sample pack twice with the same seed and the same scripted pad stream and asserts identical `state_hash` sequences and results, then asserts a different seed diverges so the hash cannot be vacuous.
 - **Soak.** `tests/soak.rs` drives every mode with random pads over many seeds (all-human poker tables included) and asserts no panic, termination within a frame bound, chip conservation, a full duel grid, a complete golf scorecard within the stroke cap, and no avatar inside a wall.
-- **Pack.** `tests/rebirth_pack.rs` parses the Rebirth `cards.toml` / `modes.toml`, converts every instance into a session config, and builds every round of Tower Game Night for a night alone and a full room.
+- **Pack.** `tests/sample_pack.rs` parses the sample pack's `cards.toml` / `modes.toml`, converts every instance into a session config, and builds every round of Tower Game Night for a night alone and a full room.
 - **Party night.** `engine-modes` `party` tests the placement table with ties, double points, the wager pot, the duel ladder, voiding, leaving, the last-place pick (and an AI rival's), seed-determined shuffles, serde round trips and the prize rules; `engine-ui` `expansion_modes::party` checks the intro, scoreboard and podium labels and the confetti's motion; `engine-core` `tests/expansion_party_world.rs` plays the built-in night alone through `World::tick` to its prize, and ends one early.
 - **Seat.** `engine-modes` `active` builds every built-in instance and rolls a won mode's reward rules; `engine-expansion` `modes` drives the picker, the quit prompt and the results card.
 - **World.** `engine-core` `tests/expansion_modes_world.rs` enters each built-in instance from the field, drives it to its end through `World::tick` with scripted pads, and checks the coin bank, the pending card rewards and the restored field.
@@ -585,4 +585,4 @@ The Rebirth pack deals the Tower High Table in the Gambler's Rest hall, five nam
 - **Card economy.** `engine-modes` `cards::economy`, `cards::screen` and `cards::trade` test buying, opening (the same saved stream opens the same pack), selling at a dealer's rate, the starter, the duel deck, every screen stage driven by pad, and the trade table's revisions, atomicity and codec. Further:
   - `engine-expansion` tests the grant drain, the battle sources, stakes, the toasts, and the save block's card record (round trip, and no record without card state).
   - `engine-core` `world::tests::expansion_cards` checks that drops leave the retail spoils and RNG word untouched while crediting the collection, that a no-reward fight drops nothing, the grant drain, stakes both ways, a dealer purchase through `World::tick`, the duel deck and the save block.
-  - The disc-gated `engine-scene-host` `expansion_cards_disc` checks every Rebirth card's art against a real monster record, renders every portrait, and builds the cache through the scene host.
+  - The disc-gated `engine-scene-host` `expansion_cards_disc` checks every sample-pack card's art against a real monster record, renders every portrait, and builds the cache through the scene host.

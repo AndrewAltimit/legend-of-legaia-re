@@ -286,6 +286,14 @@ struct CastSeqRecorder {
     cam: std::io::BufWriter<std::fs::File>,
     /// `body.csv`: the acting seat's clip, cursor and live pair per tick.
     body: std::io::BufWriter<std::fs::File>,
+    /// `sfx.csv`: the sound cues that came due each tick (the audio
+    /// director's command record), the engine half of the retail probe's
+    /// cue-ring file. Empty without an audio director (`--no-audio`).
+    sfx: std::io::BufWriter<std::fs::File>,
+    /// Director commands already read ([`AudioCommandLog::count`]).
+    ///
+    /// [`AudioCommandLog::count`]: legaia_engine_session::audio_director::AudioCommandLog::count
+    sfx_seen: u64,
     /// Only a cast by this acting seat starts the recording
     /// (`LEGAIA_DIAG_CAST_SEQ_SEAT`); any seat when unset.
     seat: Option<u8>,
@@ -343,9 +351,19 @@ impl PlayWindowApp {
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
             let mut body = std::io::BufWriter::new(std::fs::File::create(dir.join("body.csv")).ok()?);
             let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
+            let mut sfx = std::io::BufWriter::new(std::fs::File::create(dir.join("sfx.csv")).ok()?);
+            let _ = writeln!(sfx, "tick,st7,phase,id,kind");
+            if self.session.bgm.is_none() {
+                eprintln!(
+                    "cast sequence: no audio director (--no-audio) - sfx.csv stays empty \
+                     (LEGAIA_AUDIO_DETACHED=1 without --no-audio routes audio to no device)"
+                );
+            }
             Some(std::sync::Mutex::new(CastSeqRecorder {
                 cam,
                 body,
+                sfx,
+                sfx_seen: 0,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
                 tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
                 max: num("LEGAIA_DIAG_CAST_SEQ_MAX", 2000),
@@ -364,6 +382,29 @@ impl PlayWindowApp {
         let Ok(mut rec) = rec.lock() else {
             return;
         };
+        // The cues the director was handed since the last tick: the due
+        // halves (`SfxDue` off the delay scheduler, `RingDue` off the retail
+        // ring, `SfxNow` a blip), read before any early return so a cue
+        // before the cast never lands on its first tick.
+        let mut due: Vec<(i32, &'static str)> = Vec::new();
+        if let Some(d) = self.session.bgm.as_ref() {
+            let log = d.commands();
+            let fresh = log.count().saturating_sub(rec.sfx_seen);
+            rec.sfx_seen = log.count();
+            let recent: Vec<_> = log.recent().copied().collect();
+            if fresh as usize > recent.len() {
+                eprintln!("cast sequence: {fresh} audio commands in one tick, the oldest unread");
+            }
+            use legaia_engine_session::audio_director::AudioCommand as C;
+            for c in &recent[recent.len().saturating_sub(fresh as usize)..] {
+                match *c {
+                    C::SfxDue(id) => due.push((i32::from(id), "queue")),
+                    C::RingDue(id) => due.push((i32::from(id), "ring")),
+                    C::SfxNow(id) => due.push((i32::from(id), "now")),
+                    _ => {}
+                }
+            }
+        }
         let w = &self.session.host.world;
         if w.mode != SceneMode::Battle {
             return;
@@ -515,6 +556,13 @@ impl PlayWindowApp {
                 );
             }
         }
+        for (id, kind) in &due {
+            let _ = writeln!(
+                rec.sfx,
+                "{tick},{st},{},{id},{kind}",
+                w.casting.module_phase
+            );
+        }
         // The live camera pose each tick (`cam.csv`), the series the retail
         // probe writes beside it: a module shot's tween reads off it.
         {
@@ -549,11 +597,38 @@ impl PlayWindowApp {
                 a.move_state.world_z,
             );
         }
+        // `seats.csv` (no header): per tick, then per retail seat 0..7 the
+        // clip, staged byte and cue-track cursor (`+0x1D9` / `+0x1DA` /
+        // `+0x1F6`) and the reaction channel's entry - the engine half of the
+        // probe's file: a missing anim cue is read off it.
+        if let Ok(f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(rec.dir.join("seats.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            // A fourth column per seat: the reaction channel's entry (`-1`
+            // idle), where a staged hit reaction plays in the engine.
+            let mut cols = vec!["-1,-1,-1,-1".to_string(); 8];
+            for (i, a) in w.actors.iter().enumerate().take(pc + 5) {
+                if let Some(c) = cols.get_mut(seat_of(i)) {
+                    *c = format!(
+                        "{},{},{},{}",
+                        a.battle.current_anim,
+                        a.battle.queued_anim,
+                        a.battle_anim_cue_cursor,
+                        a.battle_reaction_entry.map_or(-1, i32::from)
+                    );
+                }
+            }
+            let _ = writeln!(f, "{tick},{}", cols.join(","));
+        }
         // A `--screenshot` child exits on its capture tick without reaching
         // the recorder's own end: keep the files whole on every tick.
         let _ = rec.meta.flush();
         let _ = rec.cam.flush();
         let _ = rec.body.flush();
+        let _ = rec.sfx.flush();
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();
             let _ = rec.cam.flush();

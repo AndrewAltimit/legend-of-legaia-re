@@ -63,7 +63,7 @@ const NAV = [
       { href: 'guides/playing-expansion-packs.html', text: 'Playing a pack', key: 'guides/playing-expansion-packs', indent: true },
       { href: 'guides/making-expansion-packs.html', text: 'Making a pack', key: 'guides/making-expansion-packs', indent: true },
       { href: 'guides/playing-online.html', text: 'Playing online', key: 'guides/playing-online', indent: true },
-      { href: 'guides/rebirth.html', text: 'Rebirth', key: 'guides/rebirth', indent: true },
+      { href: 'guides/sample-pack.html', text: 'Sample pack', key: 'guides/sample-pack', indent: true },
     ],
   },
   {
@@ -373,8 +373,9 @@ function zoneForKey(key) {
 /* Explore sidebar: every interactive page, grouped like the home launcher,
    so each one is reachable from the left nav on any explore page. */
 const EXPLORE_GROUPS = [
-  { label: 'play',           title: 'Play', keys: ['play', 'minigames', 'modes'] },
-  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench', 'tooling/expansion-workbench'] },
+  { label: 'play',           title: 'Play', keys: ['play', 'minigames'] },
+  { label: 'modding',        title: 'Mod your disc', keys: ['tooling/rom-patcher', 'tooling/translation-workbench'] },
+  { label: 'expansion packs', title: 'Expansion Packs', keys: ['modes', 'tooling/expansion-workbench'] },
   { label: 'browse the disc', title: 'Explore the game data', keys: [
     '#Viewers', 'viewer', 'media', 'world-overview', 'disc-map',
     '#Game guide', 'world', 'characters', 'npcs', 'monsters', 'arts', 'magic', 'shops',

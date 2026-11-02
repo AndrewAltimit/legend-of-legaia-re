@@ -297,7 +297,7 @@ pub enum PackReloadOutcome {
     /// The pack activated again; `map` is the pack map re-entered with the
     /// player where they stood, `None` when they were not on one.
     Reloaded {
-        /// The pack's id and version (`"rebirth 0.3.0"`).
+        /// The pack's id and version (`"sample 0.3.0"`).
         pack: String,
         /// The map re-entered.
         map: Option<String>,
@@ -313,7 +313,7 @@ pub enum PackReloadOutcome {
     Refused(String),
 }
 
-/// The notice line after a pack reload (`"Reload pack: rebirth 0.3.0
+/// The notice line after a pack reload (`"Reload pack: sample 0.3.0
 /// (180 ms)"`), the one wording both hosts show.
 pub fn pack_reload_notice(outcome: &PackReloadOutcome) -> String {
     let label = HostHotkey::ReloadPack.label();
@@ -401,14 +401,11 @@ mod tests {
     #[test]
     fn pack_reload_notices_name_the_outcome() {
         let r = PackReloadOutcome::Reloaded {
-            pack: "rebirth 0.3.0".into(),
+            pack: "sample 0.3.0".into(),
             map: Some("genesis_1f".into()),
             ms: 180,
         };
-        assert_eq!(
-            pack_reload_notice(&r),
-            "Reload pack: rebirth 0.3.0 (180 ms)"
-        );
+        assert_eq!(pack_reload_notice(&r), "Reload pack: sample 0.3.0 (180 ms)");
         let long = PackReloadOutcome::Refused(format!("{}\nsecond", "x".repeat(300)));
         let s = pack_reload_notice(&long);
         assert!(s.len() <= 56 && s.ends_with("..."), "{s}");

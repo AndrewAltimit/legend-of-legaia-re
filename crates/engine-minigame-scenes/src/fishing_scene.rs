@@ -20,8 +20,15 @@
 //!   `0..=2`) at [`crate::fishing_venue::party_placements`], the lead on his
 //!   party-bank idle, the others on their venue-bank clips; the lead's
 //!   facing is the aim the D-pad turns (the venue's lead actor);
-//! - the **camera** is [`crate::fishing_venue::venue_camera_view`] over the
-//!   lead.
+//! - the **camera** is the venue's scripted camera
+//!   ([`crate::fishing_venue::venue_view`]): the shore view over the lead, the
+//!   dolly out over the water on the cast, the in-water view, the catch
+//!   close-up and showcase;
+//! - the **water** heaves: the walk ground's corners are re-resolved every
+//!   frame through the venue's live floor-height ladder
+//!   ([`crate::fishing_venue::FishingVenue::floor_ladder`]), whose head the
+//!   pond swell rewrites, as retail's ground pass re-reads the ladder on
+//!   every frame it draws.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,6 +61,9 @@ struct Body {
 pub struct FishingSceneAssets {
     env: VramMesh,
     env_flat: Vec<u8>,
+    /// The walk ground baked into `env` and its first vertex there, kept for
+    /// the per-frame swell (its corner tiers).
+    ground: Option<(usize, legaia_scene_formats::field_objects::WalkHeightfield)>,
     bodies: Vec<Body>,
     vram: legaia_tim::Vram,
 }
@@ -147,7 +157,7 @@ impl FishingSceneAssets {
         )
         .ok()?;
         let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
-        let (env, env_flat) = bake_env(index, &scene, &res, anm.as_ref());
+        let (env, env_flat, ground) = bake_env(index, &scene, &res, anm.as_ref());
         if env.indices.is_empty() {
             return None;
         }
@@ -213,6 +223,7 @@ impl FishingSceneAssets {
         Some(Self {
             env,
             env_flat,
+            ground,
             bodies,
             vram,
         })
@@ -226,13 +237,19 @@ impl FishingSceneAssets {
 
 /// Bake the venue's static map into one world-space hybrid mesh: placed
 /// objects + terrain tiles (coplanar-ranked, as every host ranks a field)
-/// and the walk ground, sunk under the authored floor art.
+/// and the walk ground, sunk under the authored floor art. The ground comes
+/// back too, with its first vertex in the mesh, for the per-frame swell.
+#[allow(clippy::type_complexity)]
 fn bake_env(
     index: &ProtIndex,
     scene: &Scene,
     res: &SceneResources,
     anm: Option<&PlayerAnmBundle>,
-) -> (VramMesh, Vec<u8>) {
+) -> (
+    VramMesh,
+    Vec<u8>,
+    Option<(usize, legaia_scene_formats::field_objects::WalkHeightfield)>,
+) {
     use legaia_engine_scene::field_env;
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
@@ -299,6 +316,7 @@ fn bake_env(
         }
         append(&mut out, &mut flat_out, &placed, flat);
     }
+    let mut ground = None;
     if let Some(hf) = scene
         .walk_heightfield(index)
         .ok()
@@ -321,8 +339,26 @@ fn bake_env(
             flat_out.extend_from_slice(&[c[0], c[1], c[2], 255]);
         }
         out.indices.extend(hf.indices.iter().map(|i| i + base));
+        ground = Some((base as usize, hf));
     }
-    (out, flat_out)
+    (out, flat_out, ground)
+}
+
+/// The pond ground's drawn positions under the venue's live floor-height
+/// ladder: every corner re-resolved from its tier, sunk like the bake
+/// ([`legaia_engine_scene::field_ground::live_render_positions`], the kernel
+/// the field's animated ladders draw through). Retail's ground pass reads the
+/// ladder at `0x1F80035C` for each cell's four corners on every frame it
+/// draws, so the water cells (tiers `1..=3`) ride the pond swell
+/// ([`legaia_engine_fishing::fishing_chrome::water_swell`]) while the shore
+/// (tier `0`) holds. The minigames page draws its ground through this too.
+///
+/// REF: FUN_801D03B0 (the swell the ladder carries)
+pub fn swell_ground_positions(
+    hf: &legaia_scene_formats::field_objects::WalkHeightfield,
+    ladder: &[i16; 16],
+) -> Vec<[f32; 3]> {
+    legaia_engine_scene::field_ground::live_render_positions(hf, ladder)
 }
 
 /// The sky strip's texture pages: two 8bpp pages side by side at VRAM
@@ -522,6 +558,9 @@ pub struct FishingScene {
     pub bases: Vec<usize>,
     /// Vertex offset of the backdrop ([`sky_mesh`]), the last span.
     pub sky_base: usize,
+    /// Vertex offset and count of the walk ground inside the map span - the
+    /// vertices the pond swell moves each frame (`(0, 0)` with no ground).
+    pub ground_span: (usize, usize),
 }
 
 impl FishingScene {
@@ -639,10 +678,15 @@ impl FishingSurface {
             session
                 .venue_map()
                 .map(|v| {
-                    let ramp = legaia_engine_field::minigame_floor::height_ramp();
                     let grid = legaia_engine_field::minigame_floor::FloorGrid::new(&v.map);
-                    legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
-                        as f32
+                    legaia_engine_fishing::fishing_chrome::float_actor_tick(
+                        grid,
+                        x,
+                        z,
+                        0,
+                        &mg.fishing_venue.floor_ladder,
+                    )
+                    .y as f32
                 })
                 .unwrap_or(0.0)
         };
@@ -654,7 +698,12 @@ impl FishingSurface {
                 bases.push(m.positions.len());
                 append(&mut m, &mut flat, &b.mesh, &b.flat);
             }
+            let env_base = m.positions.len();
             append(&mut m, &mut flat, &assets.env, &assets.env_flat);
+            let ground_span = assets
+                .ground
+                .as_ref()
+                .map_or((0, 0), |(b, hf)| (env_base + b, hf.positions.len()));
             let sky_base = m.positions.len();
             let cam = venue_camera_view(seats[0].x, 0, seats[0].z, seats[0].facing);
             let (sky, sky_flat) = sky_mesh(&cam, seats[0].x, fa_yaw(seats[0].facing));
@@ -676,6 +725,7 @@ impl FishingSurface {
                 camera: cam,
                 bases,
                 sky_base,
+                ground_span,
             }
         });
         self.cursors.resize(assets.bodies.len(), 0);
@@ -719,10 +769,21 @@ impl FishingSurface {
             );
         }
         let (x, y, z, facing) = lead_pose.unwrap_or((seats[0].x, 0, seats[0].z, seats[0].facing));
-        scene.camera = venue_camera_view(x, y, z, facing);
-        let sky = sky_positions(&scene.camera, x, fa_yaw(facing));
+        // The venue's scripted camera (shore view, cast dolly, in-water view,
+        // catch close-up and showcase); the lead's shore view until it arms.
+        let (camera, yaw) = match (lead, crate::fishing_venue::venue_view(mg)) {
+            (Some(_), Some(view)) => (view, mg.fishing_venue.camera.camera().rot[1]),
+            _ => (venue_camera_view(x, y, z, facing), fa_yaw(facing)),
+        };
+        scene.camera = camera;
+        let sky = sky_positions(&scene.camera, x, yaw);
         let base = scene.sky_base;
         scene.positions[base..base + sky.len()].copy_from_slice(&sky);
+        if let Some((_, hf)) = assets.ground.as_ref() {
+            let (base, n) = scene.ground_span;
+            let live = swell_ground_positions(hf, &mg.fishing_venue.floor_ladder);
+            scene.positions[base..base + n].copy_from_slice(&live);
+        }
         self.scene.as_ref()
     }
 

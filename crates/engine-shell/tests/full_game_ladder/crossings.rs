@@ -613,19 +613,19 @@ pub(super) fn crossing_plan(
         .collect();
     let avoid = hazards(session, "");
     let w = &session.host.world;
-    let flood = |from: Cell| -> HashSet<Cell> {
+    let flood = |from: Cell| -> FastSet<Cell> {
         plan_search(session, from, (-64, -64), None, &avoid)
-            .map(|(_, seen, _)| seen)
+            .map(|(_, seen, _)| seen.into_iter().collect())
             .unwrap_or_default()
     };
-    let touches = |side: &HashSet<Cell>, t: (i16, i16)| {
+    let touches = |side: &FastSet<Cell>, t: (i16, i16)| {
         tile_nbrs(t)
             .into_iter()
             .any(|n| tile_cells(n).any(|c| side.contains(&c)))
     };
     let here = scene_name(session);
     let (px, pz) = player_xz(session);
-    let mut sides: Vec<HashSet<Cell>> = vec![flood(cell_of(px, pz))];
+    let mut sides: Vec<FastSet<Cell>> = vec![flood(cell_of(px, pz))];
     // The first crossing of the chain that reached each side, and the
     // landing of that first round trip (when the side was seeded by one).
     let mut first: Vec<FirstHop> = vec![None];

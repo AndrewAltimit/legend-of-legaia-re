@@ -126,8 +126,9 @@ voice, `+0x90` / `+0x92` its left / right level, and `+0x9C` / `+0xA0` /
 `_DAT_80089118` / `_DAT_80089120` against the box, scales each level by how
 deep inside the box the focus sits on each axis, and turns it into a **raw
 voice volume**, `((_DAT_80084580 >> 1) * level * falloff >> 7) * scale >> 7`
-clamped `0x3F80` (`scale` the per-row pair at `0x80091658`, `0x80` in every
-captured state). The first tick in range keys the descriptor's voices through
+clamped `0x3F80` (`scale` the per-row pair at `0x80091658 + row * 0x10`,
+`row` the part's `+0x22`; row 0 is `0x80, 0x80`, stored once at boot by
+`FUN_8001DCF8`). The first tick in range keys the descriptor's voices through
 `FUN_80065034` with that volume `>> 7`; every later tick writes it straight to
 the voices (`FUN_800657D0`), so the register a capture reads is the law, not
 the key-on chain; leaving the box, or the side-band request going unsettled,
@@ -453,6 +454,68 @@ window a scene load ends (the MAN loader clears bit 0) is attached at the
 next drain, unless a start in that drain replaces it, as the poller reads the
 latest word. `see
 ghidra/scripts/funcs/800243f0.txt`, `800266e0.txt`, `80026520.txt`.
+
+### The swap takes a settle and a read
+
+The poller walks one stage per call, one call per game frame, through the
+table at `0x800108C8`:
+
+| Stage | Arm | Does |
+|---|---|---|
+| 0 | `0x800245F0` | wait for CD idle (`FUN_8003DE7C(1)`), arm the settle `gp+0x768 = 0x1E` (`0x8002460C`) |
+| 1 | `0x80024818` | wait for CD idle |
+| 2 | `0x8002461C` | unless bit 0: detach and close the field-BGM slot (`0x80024648..0x8002465C`); kick the payload read `FUN_8001FC00`; under `cdmode == 2` the settle becomes 60 (`0x800246A4`) |
+| 3 | `0x80024818` | wait for the read |
+| 4 | `0x800246B4` | wait for the settle to reach zero, set bit 3, stall while bit 0 is up and bit 4 is not, then clear bits 0 / 3 / 4 |
+| 5 | `0x80024778` | install the SEQ (`FUN_8001E54C`) |
+| 6 | `0x80024790` | unless bit 1: re-attach the slot (`FUN_80026478`); latch loaded = requested |
+
+The settle counts down by the frame step on every call from stage 0 on
+(`0x80024880..0x80024894`; under `cdmode == 2` by one, with a `VSync`), so a
+mid-scene start sounds at stage 6, the settle or the read, whichever is
+longer, plus two frames after the start. The two script arms that wait on
+the walk re-run their own PC (`0x801DEE4C`): sub-op 9 while a swap is in
+flight (`0x801E0238`, requested against loaded) and sub-op `0xA` until bit
+3 (`0x801E0288`). Sub-op 1 waits on nothing: it stores the word
+(`0x801E012C`) and the next poller call starts the walk.
+
+A scene's entry start does not take this time on screen. The field init
+calls the poller in a loop with no `VSync` until requested and loaded agree
+(`0x801D72D4..0x801D7320`), so the settle runs down in microseconds and the
+read is part of the load; the first field frame comes after the install.
+
+Measured on retail with
+[`autorun_bgm_swap_latency.lua`](../../scripts/pcsx-redux/autorun_bgm_swap_latency.lua),
+which makes sub-op 1's store into the track word from a field state and logs
+the poller every vsync (frame step 2 throughout):
+
+| State, word | Entry | Stages 0..2 | Stage 3 (read) | Stage 4 | Stage 6 (attach) | Playing |
+|---|---|---|---|---|---|---|
+| `retock_field_card_boot`, `2001` | 989, 78 sectors | +1..+5 | +6..+61 | +62 | +66 | +69 |
+| `town01_field_card_boot`, `2045` | 1033, 74 sectors | +2..+6 | +7..+62 | +63 | +67 | +69 |
+
+The old track's slot closes at stage 2, about six vsyncs in. The read, not
+the settle, holds the walk: stage 3 waits 56 vsyncs on both entries, so the
+settle has long run out when stage 4 is reached, and a new track is first
+heard a little over a second after the op.
+
+Engine side: `legaia_engine_system::sound_state::BgmSwapPoller` is the walk
+on the vsync clock, seated at `AudioState::bgm_swap`, with the measured
+stage-4 time as `World::BGM_SWAP_READ_VSYNCS` (62) and two game frames to
+the attach. An op-`0x35` sub-op 1
+or 9 that changes the word outside the field init's install slice starts it
+(the park sentinel and the same word do not), `World::tick_bgm_swap` runs it
+once a tick, and `FieldAudioHost::bgm_ready` holds sub-ops 9 and `0xA` as
+retail does. Every port runner that steps a record holds the re-run as a
+timed park, the cutscene timeline's slice included: stepped past by width,
+a commit is lost, bit 0 outlives its select, the walk stays at stage 4 for
+the rest of the scene and every later sub-op 9 re-runs forever (`geremi`'s
+P2[1] closing commit, then its warp tiles' P0[14..16] selects).
+`SceneHost::route_bgm_events` tears the old track down at the
+start and holds the new one (`pending_bgm_install`) until
+`World::take_bgm_install_due` reports stage 6; a committed sub-op 9 select
+moves there at the commit. A field init ends the walk and attaches what it
+held, unless the entry starts another track.
 
 ### A door keeps its music only behind sub-op 6
 
@@ -1396,7 +1459,7 @@ and the library states pin each:
 | Register | Retail | Port |
 |---|---|---|
 | `SPUCNT` bit 0, CD audio enable | set in every state | XA is always mixed |
-| `0x1F801DB0/B2`, CD input volume | `0` between lines, `0x7FFE` while one plays, `0x75EA` in some battle states | every stream at unity (`XA_GAIN_UNITY`) |
+| `0x1F801DB0/B2`, CD input volume | `0` between lines, `0x75EA` while a one-shot cue plays, `0x7FFE` for a movie | cues at `XA_CUE_GAIN`, movies at `XA_GAIN_UNITY` ([the CD input volume](#the-cd-input-volume)) |
 | `SPUCNT` bit 2, CD audio reverb | set in the Baka Fighter duel and the Muscle Dome hub only | `Spu::cd_reverb`, from `World::cd_input_reverb` |
 
 The volume is libsnd's `SsSetSerialVol` (`FUN_800643C4`): `vol * 0x102`,
@@ -1404,11 +1467,13 @@ The volume is libsnd's `SsSetSerialVol` (`FUN_800643C4`): `vol * 0x102`,
 under mask `0xC0`. The clip starter `FUN_8003D53C` mutes it through
 `FUN_8003EE7C(0)` at `0x8003D6DC` while it seeks; the audio-context re-apply
 `FUN_8002614C` and `FUN_8002657C` raise it to `127` (`li a1,0x3fff`, clamped).
-`127 * 0x102 = 0x7FFE` is one LSB under unity, the gain the port mixes at.
-`0x75EA = 117 * 0x102` has no located writer: no `jal` to `FUN_800643C4`,
-`FUN_8003EE7C` or `SpuSetCommonAttr` (`FUN_8006BCB4`) on the disc, and no
-direct store to `0x1F801DB0`, passes `117`
-([open item](#open-items)).
+`127 * 0x102 = 0x7FFE` is one LSB under unity. `0x75EA = 117 * 0x102` is
+the one-shot cue level, written by the clip player's CD-ready state machine
+`FUN_8003D764`: state `6` loads `addiu a0,zero,0x75` at `0x8003D92C` once the
+drive status shows a read (bit `0x20`) and jumps to the state machine's one
+shared `jal 0x8003EE7C` at `0x8003D9F4`. The argument is set on a branch the
+call does not sit on, which is why a scan for `117` loaded just before a
+`jal` misses it ([the CD input volume](#the-cd-input-volume)).
 
 The reverb bit is `SpuCommonAttr.cd.reverb` under mask `0x100`. libsnd's
 wrapper `SsSetSerialAttr` (`FUN_80062A0C`) could write it, but every call site
@@ -3089,12 +3154,12 @@ word `2015`); the sweep counts those as one track.
 
 | Channel | Scores | Result |
 |---|---|---|
-| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 66 of 70 walkable states |
-| `playing` | that sequence is playing exactly when the engine's gate is open | 68 of 70 |
-| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 62 of 62 |
-| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 65 of 65 |
-| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 17 of 18 |
-| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 122 of 122 battle states |
+| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 85 of 85 walkable states |
+| `playing` | that sequence is playing exactly when the engine's gate is open | 85 of 85 |
+| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 80 of 80 |
+| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 80 of 80 |
+| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 19 of 20 |
+| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 129 of 129 battle states |
 
 Battle states are not seeded - the battle half of the corpus is
 `retail_compare_battle`'s - so their channel tests the rule on retail's
@@ -3118,20 +3183,30 @@ logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
 disabled the first three fail again (the head start replaces the kept
 track), while `retockin` passes either way because its entry parks.
 
+The credits vignettes are the same shape on a scripted chain. Their entries
+park on `0x1000`, so what sounds is what the chain's earlier scenes started.
+`town0e`'s `P2[6]` (the ending's walk out of Rim Elm) selects and commits
+`2001` (sub-ops `9` / `0xA`), raises sub-op 6 and changes scene to `map01`,
+whose entry parks: `ending_vignette_rimelm_walkaway` plays `2001` under the
+word `0x1000`. `edteien`'s entry starts `2068` on the ending source, and its
+`P2[0]` raises sub-op 6 and changes scene to `edbylon`, which parks:
+`ending_vignette_biron` plays `2068` under the same word. Both are seeded
+from the scene before (`arrival = { from = "town0e", door = 6 }`,
+`arrival = { from = "edteien" }`) and match retail on every channel.
+`P2[6]` opens on a line of text at `+0x61`, which the replay pages because
+`World::dialogue_owns_input` counts a modal cutscene record's box as it
+counts the other channels'.
+
 The sweep found the sub-op 9 defect: the port started a cutscene's new track
 at the select where retail holds it to the commit
 ([`script-vm.md`](script-vm.md#sub-op-9-selects-its-commit-starts-the-track)),
-the two `chapter2_garmel` states catching retail inside that window. What it
-still reports:
+the two `chapter2_garmel` states catching retail inside that window. The
+swap walk ([above](#the-swap-takes-a-settle-and-a-read)) settles
+`kor5_post_436_organic`, captured between a commit and the install (flags
+`0x19`, no field-BGM source open, requested `1009` against loaded `1023`):
+the engine seeded there holds the committed track as retail's poller does.
+What it still reports:
 
-- **`ending_vignette_biron`, `ending_vignette_rimelm_walkaway`** - the
-  credits vignettes park on `0x1000`, and what plays (`2068` on the ending
-  source, `2001` on the field source) is the music the ending chain started
-  scenes earlier. A card-load seed does not replay it.
-- **`kor5_post_436_organic`** - captured between a commit and the install
-  (flags `0x19`, no field-BGM source open, requested `1009` against loaded
-  `1023`): the poller attaches `2019` a call or two later; the engine has it
-  attached already.
 - **`tower_field_walk`** - the one-shot on voice 22 reads as cue `0x30`
   (inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 /
   6 and its note is 63, which is static row `0x30` (program 2, tone 3, note
@@ -3161,14 +3236,14 @@ still reports:
   engine counterpart: the port has no drive to seek.
 - **SPU transfer timing** is not modelled, which is the one-key-on residual on
   `dolk2_market_noa`.
-- **The `0x75EA` CD input volume.** Seven battle states hold the CD input at
-  `117 * 0x102` against `127 * 0x102` everywhere else a line plays; the
-  writer is not located and the port mixes every XA stream at unity
-  ([above](#the-cd-input-enable-volume-and-reverb-send)). A write-watch on
-  `0x1F801DB0` across a battle voice cue names it.
-- **Two emitter inputs are constants.** The per-row scale pair `0x80091658`
-  reads `0x80` in every captured state and has no traced writer
-  ([above](#positional-sound-emitters)).
+- **Two emitter inputs are constants.** The per-row scale pair is set once:
+  the boot-time mode initialiser `FUN_8001DCF8` stores `0x80`, `0x80`, `0` at
+  `0x80091658..0x80091660` (`0x8001DD60..0x8001DD74`), the pair's only writer
+  in any image, so the `0x80` every state holds is its only value. The arm
+  indexes it by the part's `+0x22` halfword (`lh v0,0x22(s1)`, `sll 4` at
+  `0x800223F0..0x800223FC`); rows past `0` read zeros in every library state,
+  so an emitter whose `+0x22` were non-zero would be silent in retail, where
+  the port always takes row 0 ([above](#positional-sound-emitters)).
   The arm's other input, the options Sound word, reaches it: in Monaural it
   averages the two sides (`0x800224D4..0x800224E8`) and the direct voice
   write keeps that average, so a mono emitter sounds at the mean of its
@@ -3176,17 +3251,9 @@ still reports:
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)); the track it picks is
   checked by the sweep's `battle_track` channel.
-- **The swap poller's latency is not modelled.** Retail arms a 30-vsync
-  settle (`gp+0x768 = 0x1E` at `0x8002460C`; 60 in one mode,
-  `0x800246A4`) and a CD read between a start and the install, so a track
-  sounds half a second or more after its op; and the commit stalls the
-  *script* (restore-PC at `0x801E0288`) until that settle has passed. The
-  engine installs at once and never stalls, so a scene's track and a
-  cutscene's beats after a `0xA` start earlier than retail's.
-- **The sweep's open rows** ([above](#the-audio-state-sweep)) are the
-  credits chain's carried music, a capture instant, and `tower`'s lift
-  cue, which sounded on a contact before the capture: seeding it means
-  resuming the lift's context mid-record (`+0xF4`) with its cue voice
+- **The sweep's open row** ([above](#the-audio-state-sweep)) is
+  `tower`'s lift cue, which sounded on a contact
+  before the capture: seeding it means resuming the lift's context mid-record (`+0xF4`) with its cue voice
   still keyed, which no seed does yet.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on

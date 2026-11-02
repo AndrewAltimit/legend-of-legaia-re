@@ -1,6 +1,6 @@
 # Sound-driver path-string cluster
 
-The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the file extensions the sound subsystem appends to scene-asset paths. The dispatch chain *into* these formats is traced; the one retail file format among them, the per-scene `.dpk` pack, is a VAB + SEQ pair in a streaming-chunk container ([below](#the-dpk--sound_data2-payload-is-a-vab--seq-bundle)). The `.MAP` / `.PCH` intermediates are not on the retail disc.
+The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the file extensions the sound subsystem appends to scene-asset paths. The dispatch chain *into* these formats is traced; the one retail file format among them, the per-scene `.dpk` pack, is a VAB + SEQ pair in a streaming-chunk container ([below](#the-dpk--sound_data2-payload-is-a-vab--seq-bundle)). The `.MAP` / `.PCH` strings are not sound at all: they are the field-file loader's extensions for a scene's walkability map and walk-on trigger sidecar ([below](#map-and-pch-are-field-files)).
 
 ## Cluster layout
 
@@ -13,8 +13,8 @@ The SCUS string cluster at RAM `0x8007B380` (file offset `0x6BB80`) holds the fi
 | `0x8007B3A4` | 8 bytes | **Not sound data.** This window holds the per-character equipment-swap selector bytes (3 equip-condition offsets at `0x8007B3A4` + 3 group indices at `0x8007B3A8`) consumed by the graphics-side `FUN_8001EBEC` - see [character-mesh.md § equipment-conditional group-transform swap](character-mesh.md#10-group-cap--equipment-conditional-swap). Adjacent to the path cluster in BSS but unrelated to it. |
 | `0x8007B3AC` | `"bse.dat"` | Battle SFX descriptor-bank file name (loaded at battle init, see [`bse-dat.md`](bse-dat.md)). |
 | `0x8007B3B4` | `".dpk"` | Per-scene sound pack - the format `FUN_8001FA88` loads. |
-| `0x8007B3BC` | `".MAP"` | Sound bank map (PsyQ SoundArtist output). |
-| `0x8007B3C4` | `".PCH"` | Patch / instrument data (PsyQ output). |
+| `0x8007B3BC` | `".MAP"` | **Not sound.** The field map, `DATA\FIELD\<scene>.MAP` ([`field-map.md`](field-map.md)); `FUN_8001F7C0`. |
+| `0x8007B3C4` | `".PCH"` | **Not sound.** The walk-on trigger sidecar `<scene>.PCH` ([`scene-v12-table.md`](scene-v12-table.md)); `FUN_8001F7C0`. |
 | `0x8007B3CC` | `".LZS"` | Duplicate, fallback. |
 | `0x8007B3D4` | `".pac"` | Per-scene generic pack. |
 | `0x8007B3DC` | `"STR"` | Streaming audio (raw PSX `.STR` containers). |
@@ -88,10 +88,29 @@ form). Decoder: [`legaia_container_formats::sound_pack`](../../crates/container-
 container: the VAG samples are the type-1 section *of a VAB*, indexed by the
 type-0 header, not a header-less stream.
 
-The `.MAP` (sample-address map) and `.PCH` (patch / program data) PsyQ
-SoundArtist intermediates are the dev-side inputs that *produce* this VAB.
-The retail disc does not carry them as separate chunks, so there is nothing
-further to parse.
+## `.MAP` and `.PCH` are field files
+
+The cluster is not a sound table: it is a run of short path strings several
+SCUS loaders share. Its only references (`lui`+`addiu` pairs; there is no
+pointer word to any of them) are `.spk` in the streaming-asset loader
+`FUN_8001FC00` (`0x8001FCA8`, on the dev branch only: `sound\` + name + `.spk`, skipped when `_DAT_8007B8C2 != 0` at `0x8001FC4C`), the first `.LZS` in the field-load step
+`FUN_80020118` (`0x80020170`), the second in the transition streamer
+`FUN_80021934` (`0x80021AAC`), `.pac` in `FUN_800255B8` (`0x800256D0`), and
+`.MAP` / `.PCH` in the **field-file loader** `FUN_8001F7C0`:
+
+- the dev branch builds `DATA\FIELD\` (`0x80010490`) + the scene name +
+  `.MAP` (`0x8001F834..0x8001F83C`) and reads it into the caller's buffer, then
+  the same stem + `.PCH` (`0x8001F8CC..0x8001F8D4`) into buffer `+0x12000`,
+  zero-filling `0x800` bytes there when the open fails (`0x8001F8F0..0x8001F908`),
+  then `h:\PROT\FIELD\<scene>\efect.dat` into `_DAT_8007B8D0`;
+- the retail branch (`0x8001F9A4..0x8001F9B4`) reads `0x28` sectors from the
+  scene block's base in one call - the `0x12000`-byte map, the one-sector
+  `.PCH` and the prescript after it.
+
+So `.MAP` is the [field map](field-map.md) (slot 0 of every scene block, the
+fixed `0x12000` footprint) and `.PCH` the
+[walk-on trigger sidecar](scene-v12-table.md) (slot 1, one `0x800` sector).
+Neither is a PsyQ SoundArtist intermediate, and both are on the retail disc.
 
 ## See also
 

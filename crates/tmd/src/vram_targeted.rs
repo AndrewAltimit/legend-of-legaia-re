@@ -442,8 +442,8 @@ where
     (vram, stats)
 }
 
-/// The cells the **upper** (scene) DMA layer has written so far, for the
-/// layered builders' CLUT pass.
+/// The cells the **upper** (scene) DMA layer has written so far, and which
+/// block wrote each, for the layered builders' CLUT pass.
 ///
 /// Merge-zeros exists for the scene's own over-collected TIMs: several of them
 /// fill different slots of one CLUT row and leave the rest `0x0000` on disc, and
@@ -456,14 +456,30 @@ where
 /// `(192, 484)` and `(208, 484)`, an opaque near-black - and every vine and
 /// grass quad drew its cutout background as a dark-brown card.
 ///
+/// Nor does it reach across two scene blocks of different rects. The
+/// over-collected race is one palette rect written by several TIMs; a 16-colour
+/// palette laid inside another TIM's wider block is a palette of its own, and
+/// `LoadImage` lands it whole. `retockin` uploads an 8bpp TIM whose 256-entry
+/// CLUT covers `(64..320, 485)` (`0x8021` at `x = 80`) and then the plants'
+/// 4bpp TIM with its palette at `(80, 485)`, entry 0 `0x0000`: retail's VRAM
+/// holds the zero, and kept under the merge the fronds' cutouts drew as
+/// near-black wedges.
+///
 /// So a scene CLUT halfword lands unless it is `0x0000` **and** the scene layer
-/// already owns the cell (an earlier scene CLUT's colour, or a scene image).
-/// Lower-layer CLUT blocks keep the plain merge among themselves.
-struct LayerMask(Vec<bool>);
+/// already owns the cell - through a scene image, or through a CLUT block of
+/// the same rect, or through another rect while this halfword's 16-colour
+/// palette is empty (a slot the block leaves unpopulated). Lower-layer CLUT
+/// blocks keep the plain merge among themselves.
+struct LayerMask(Vec<u32>);
+
+/// [`LayerMask`] owner of a cell no scene block has written.
+const OWNER_NONE: u32 = 0;
+/// [`LayerMask`] owner of a cell a scene image block wrote.
+const OWNER_IMAGE: u32 = 1;
 
 impl LayerMask {
     fn new() -> Self {
-        Self(vec![false; legaia_tim::VRAM_PIXELS])
+        Self(vec![OWNER_NONE; legaia_tim::VRAM_PIXELS])
     }
 
     fn mark_image(&mut self, tim: &legaia_tim::Tim) {
@@ -474,10 +490,18 @@ impl LayerMask {
             for x in img.fb_x as usize
                 ..(img.fb_x as usize + img.fb_w as usize).min(legaia_tim::VRAM_WIDTH)
             {
-                self.0[y * legaia_tim::VRAM_WIDTH + x] = true;
+                self.0[y * legaia_tim::VRAM_WIDTH + x] = OWNER_IMAGE;
             }
         }
     }
+}
+
+/// A CLUT block's [`LayerMask`] owner key: its origin and run length, never
+/// [`OWNER_NONE`] or [`OWNER_IMAGE`].
+fn clut_owner(clut: &legaia_tim::Clut) -> u32 {
+    let run = u32::from(clut.w.saturating_mul(clut.h)) & 0x7FF;
+    let key = (u32::from(clut.fb_x) & 0x3FF) | ((u32::from(clut.fb_y) & 0x1FF) << 10) | (run << 19);
+    key.max(OWNER_IMAGE + 1)
 }
 
 /// Write one TIM's CLUT block as a linear run along its row (the layout
@@ -495,18 +519,26 @@ fn upload_clut_layered(vram: &mut Vram, tim: &legaia_tim::Tim, upper: bool, laye
     if y >= legaia_tim::VRAM_HEIGHT {
         return;
     }
-    let run = usize::from(clut.w.saturating_mul(clut.h));
-    for (i, &val) in clut.entries.iter().take(run).enumerate() {
+    let owner = clut_owner(clut);
+    let run = usize::from(clut.w.saturating_mul(clut.h)).min(clut.entries.len());
+    let entries = &clut.entries[..run];
+    for (i, &val) in entries.iter().enumerate() {
         let x = clut.fb_x as usize + i;
         if x >= legaia_tim::VRAM_WIDTH {
             break;
         }
         let cell = y * legaia_tim::VRAM_WIDTH + x;
-        if val == 0 && layer.0[cell] {
-            continue;
+        if val == 0 {
+            let held = layer.0[cell];
+            let palette = &entries[i - i % 16..(i - i % 16 + 16).min(run)];
+            let own_palette =
+                held != OWNER_IMAGE && held != owner && palette.iter().any(|&e| e != 0);
+            if held != OWNER_NONE && !own_palette {
+                continue;
+            }
         }
         vram.write_clut_row(x as u16, y as u16, &val.to_le_bytes());
-        layer.0[cell] = true;
+        layer.0[cell] = owner;
     }
 }
 
@@ -732,5 +764,43 @@ mod tests {
             &needs,
         );
         assert_eq!(merged_scene.pixel(3, 484), 0x1003);
+    }
+
+    /// A 16-colour palette laid inside an earlier scene TIM's wider CLUT block
+    /// lands whole, its transparent entry 0 included: `retockin`'s plant
+    /// palette at `(80, 485)` over the 8bpp block `(64..320, 485)`. An empty
+    /// slot of the later block, and a zero of the same rect, still merge.
+    #[test]
+    fn a_palette_inside_another_scene_block_lands_its_zero() {
+        // An 8bpp-shaped block: 32 non-zero entries from x = 64.
+        let mut wide = tim_4bpp_at(/*img*/ 700, 0, /*clut*/ 64, 485);
+        wide[8..12].copy_from_slice(&(12u32 + 32 * 2).to_le_bytes());
+        wide[16..18].copy_from_slice(&32u16.to_le_bytes());
+        let tail: Vec<u8> = (16..32u16)
+            .flat_map(|i| (0x2000 | i).to_le_bytes())
+            .collect();
+        wide.splice(52..52, tail);
+        let plant = tim_4bpp_zero_head(/*img*/ 600, 0, /*clut*/ 80, 485, 1);
+        let (full, _) = build_vram_full_layered([wide.as_slice(), plant.as_slice()], 0);
+        assert_eq!(full.pixel(80, 485), 0, "the plant palette's entry 0 lands");
+        assert_eq!(full.pixel(81, 485), 0x1001);
+        assert_eq!(
+            full.pixel(64, 485),
+            0x1000,
+            "the wide block's own slot stays"
+        );
+
+        // The other order: the wide block's non-zero words land over the
+        // palette (LoadImage order), and its zeros of an empty slot do not.
+        let mut wide_hole = wide.clone();
+        for i in 16..32 {
+            wide_hole[20 + 2 * i..22 + 2 * i].copy_from_slice(&0u16.to_le_bytes());
+        }
+        let (rev, _) = build_vram_full_layered([plant.as_slice(), wide_hole.as_slice()], 0);
+        assert_eq!(
+            rev.pixel(81, 485),
+            0x1001,
+            "an empty slot keeps the palette"
+        );
     }
 }

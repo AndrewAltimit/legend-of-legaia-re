@@ -170,6 +170,27 @@ impl TensionGauge {
         }
         self.tension = t.clamp(TENSION_MIN, TENSION_MAX);
     }
+
+    /// The lure tick's far-record strain: a hooked fish whose line record
+    /// (`DAT_801D927C`) is at or past [`FAR_RECORD_STRAIN_FROM`] adds
+    /// [`FAR_RECORD_STRAIN`] per frame step to the gauge, after the reel
+    /// arms and ahead of the ceiling test (`0x801D3B34..0x801D3B8C`), which
+    /// clamps to [`TENSION_MAX`] (`0x801D3B9C..0x801D3BAC`).
+    ///
+    /// Retail gates it on `DAT_801D91B4` (hooked) and `DAT_801D91B0 == 0`.
+    /// The only non-zero store to `DAT_801D91B0` is the line actor's
+    /// landed-lift arm (`FUN_801D4948` state `4`, `0x801D4AEC`), which runs
+    /// after the reel-in has ended the fight, so the gate is open for the
+    /// whole hooked phase. Returns whether the strain applied.
+    // PORT: FUN_801d26cc (the far-record tension strain, `0x801D3B34..0x801D3B8C`)
+    pub fn far_record_strain(&mut self, line_record: i32, frame_step: i32) -> bool {
+        if line_record < FAR_RECORD_STRAIN_FROM {
+            return false;
+        }
+        let fs = frame_step.max(1);
+        self.tension = (self.tension + FAR_RECORD_STRAIN * fs).min(TENSION_MAX);
+        true
+    }
 }
 
 /// The persistent fishing record (`_DAT_8008444c` / `_DAT_80084458` /

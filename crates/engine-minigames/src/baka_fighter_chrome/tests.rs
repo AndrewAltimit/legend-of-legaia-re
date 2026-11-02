@@ -34,19 +34,24 @@ fn a_won_round_raises_you_win_split_about_the_centre_with_its_line() {
     assert!(c.step(&ChromeTick::default(), (&[], &[])).draws.is_empty());
 }
 
-/// The result stands for the round-over hold; the next round's banner
-/// asked for meanwhile waits and starts when the hold ends.
+/// The result stands for the round-over hold, and the next round's banner
+/// (the cabinet's, from its round setup on) takes the screen from it.
 #[test]
-fn the_round_banner_waits_out_the_result_hold() {
+fn the_round_banner_takes_the_screen_from_the_result() {
     let mut c = BakaChrome::default();
     c.raise_result(RoundResult::Lose);
-    c.start_round_banner(ROUND_BANNER_SPRITE);
-    assert!(!c.busy(), "the round banner waits for the result");
+    c.step(&ChromeTick::default(), (&[], &[]));
+    assert!(!c.result_sprites().is_empty());
+    let f = c.round_banner_step(0, 1);
+    assert!(c.result_sprites().is_empty(), "the banner takes the centre");
+    assert_eq!(f.xa, Some(round_banner_xa(1)));
+
+    let mut d = BakaChrome::default();
+    d.raise_result(RoundResult::Lose);
     for _ in 0..RESULT_HOLD_FRAMES {
-        c.step(&ChromeTick::default(), (&[], &[]));
+        d.step(&ChromeTick::default(), (&[], &[]));
     }
-    assert!(c.result_sprites().is_empty(), "the hold is over");
-    assert!(c.busy(), "the deferred round banner runs");
+    assert!(d.result_sprites().is_empty(), "the hold is over");
 }
 
 #[test]
@@ -543,7 +548,7 @@ fn actor_hold_sets_one_bit() {
 fn the_runner_spawns_a_banner_actor_and_drives_the_timeline() {
     let mut c = BakaChrome::default();
     assert!(!c.busy());
-    c.start_round_banner(ROUND_BANNER_SPRITE);
+    let f = c.round_banner_step(0, 0);
     assert!(c.busy());
     assert_eq!(c.sprites().len(), 1);
     // The spawn goes through the shared screen-centre wrapper.
@@ -551,18 +556,24 @@ fn the_runner_spawns_a_banner_actor_and_drives_the_timeline() {
     assert_eq!(c.sprites()[0].actor.y, 0x78);
     assert_eq!(c.sprites()[0].flags & ACTOR_FLAG_HOLD, ACTOR_FLAG_HOLD);
 
-    let tick = ChromeTick::default();
-    let f = c.step(&tick, (&[], &[]));
-    // Frame 0 fires the banner's announce line and draws the banner's
-    // four quads plus the countdown's two.
-    assert_eq!(f.xa.map(|x| x.clip), Some(0x1F));
-    assert!(f.draws.len() >= 6);
+    // Clock 0 fires the banner's announce line and draws the banner's four
+    // quads - and nothing of the all-clear announcer, which is the
+    // cabinet's (`0xFA..0xFE`), not the banner's.
+    assert_eq!(f.xa, Some(round_banner_xa(0)));
+    assert_eq!(f.draws.len(), 4);
+    assert!(
+        f.draws
+            .iter()
+            .all(|d| ![0x1A, 0x1C, 0x1D].contains(&d.widget))
+    );
+    // Later clocks draw without restarting the line.
+    assert_eq!(c.round_banner_step(1, 0).xa, None);
 }
 
 #[test]
 fn the_runner_retires_its_banner_actors_once_the_match_ends() {
     let mut c = BakaChrome::default();
-    c.start_round_banner(ROUND_BANNER_SPRITE);
+    c.round_banner_step(0, 0);
     let tick = ChromeTick {
         match_phase: 1,
         ..ChromeTick::default()
@@ -572,14 +583,14 @@ fn the_runner_retires_its_banner_actors_once_the_match_ends() {
 }
 
 #[test]
-fn the_banner_timeline_runs_out_and_disarms() {
+fn the_banner_runs_only_on_the_frames_the_cabinet_draws_it() {
     let mut c = BakaChrome::default();
-    c.start_round_banner(ROUND_BANNER_SPRITE);
     let tick = ChromeTick::default();
-    for _ in 0..BANNER_END {
-        c.step(&tick, (&[], &[]));
-    }
-    assert!(!c.busy());
+    c.step(&tick, (&[], &[]));
+    c.round_banner_step(0, 0);
+    assert!(c.busy());
+    c.step(&tick, (&[], &[]));
+    assert!(!c.busy(), "no banner arm ran this frame");
 }
 
 #[test]

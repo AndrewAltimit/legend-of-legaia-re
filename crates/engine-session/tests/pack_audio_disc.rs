@@ -1,4 +1,4 @@
-//! Disc-gated: the Rebirth pack's soundscape on the session both play hosts
+//! Disc-gated: the sample pack's soundscape on the session both play hosts
 //! run, over the device-free sink, measured at the mixer's output.
 //!
 //! * 5F: the floor's bar tune (`2024`) starts on entry; walking into the
@@ -32,12 +32,12 @@ fn session() -> Option<BootSession<TestAudioSink>> {
         Ok(TestAudioSink::new(SPU_INTERNAL_RATE))
     })
     .expect("boot session");
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    let pack = ExpansionPack::from_files(&files).expect("the Rebirth pack parses");
+    let pack = ExpansionPack::from_files(&files).expect("the sample pack parses");
     s.host
         .activate_expansion_pack(Arc::new(pack))
-        .expect("the Rebirth pack activates");
+        .expect("the sample pack activates");
     Some(s)
 }
 

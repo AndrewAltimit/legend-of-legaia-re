@@ -1,5 +1,5 @@
 //! Disc-gated: a save made on an expansion-pack map resumes on that map.
-//! The pack is the committed `packs/rebirth`; the session is the native one
+//! The pack is the committed `packs/sample`; the session is the native one
 //! `play-window` runs (`NativeSession::resume_save`). Skips when
 //! `LEGAIA_DISC_BIN` is unset.
 
@@ -30,13 +30,13 @@ fn open() -> Option<NativeSession> {
         enable_audio: false,
     };
     let mut session = NativeSession::open(&extracted, &cfg).expect("open boot session");
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    let pack = ExpansionPack::from_files(&files).expect("the Rebirth pack parses");
+    let pack = ExpansionPack::from_files(&files).expect("the sample pack parses");
     session
         .host
         .activate_expansion_pack(Arc::new(pack))
-        .expect("the Rebirth pack activates");
+        .expect("the sample pack activates");
     Some(session)
 }
 

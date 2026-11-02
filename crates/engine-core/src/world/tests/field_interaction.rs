@@ -1365,6 +1365,27 @@ fn dialogue_owns_input_covers_both_channels() {
     assert!(w.dialogue_owns_input(), "the simplified request counts too");
 }
 
+/// A modal cutscene record parked on its text segment owns the pad as the
+/// other channels do: the stepper pages its box on a press (town0e `P2[6]`,
+/// the ending's walk out of Rim Elm, parks on its first line at `+0x61`).
+#[test]
+fn dialogue_owns_input_covers_a_modal_timeline_box() {
+    let mut w = World::new();
+    let bytes = vec![0x1F, b'a', 0x00, 0x48];
+    let mut tl = legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(bytes.clone(), 0);
+    w.cutscene.timeline = Some(tl.clone());
+    assert!(
+        !w.dialogue_owns_input(),
+        "a timeline with no box open owns no input"
+    );
+    tl.dialog = Some(legaia_engine_dialog::dialog::OwnedDialogPanel::at_segment(
+        std::sync::Arc::new(bytes),
+        0,
+    ));
+    w.cutscene.timeline = Some(tl);
+    assert!(w.dialogue_owns_input(), "its open box does");
+}
+
 /// The capture seed's clip word lands on a placement's actor too - the
 /// per-slot cursor a record's `A2 <id> <clip>` bound, found by the channel
 /// whose script id is the retail record - and only while that slot plays the

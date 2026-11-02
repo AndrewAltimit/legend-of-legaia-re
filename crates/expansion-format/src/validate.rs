@@ -153,7 +153,7 @@ impl<'a> Checker<'a> {
         self.push(Severity::Warning, &file, field, message.into());
     }
 
-    /// The pack-qualified form of a local content id (`rebirth:tower`).
+    /// The pack-qualified form of a local content id (`sample:tower`).
     pub fn qualified(&self, id: &str) -> String {
         format!("{}:{id}", self.pack.manifest.id)
     }

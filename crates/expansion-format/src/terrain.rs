@@ -1087,7 +1087,7 @@ struct SurfaceKey {
 }
 
 /// How many built surfaces [`MapDef::terrain_surface`] keeps: room for every
-/// terrain map of a pack the size of Rebirth, which a validation pass walks
+/// terrain map of a pack the size of the sample pack, which a validation pass walks
 /// before the entry asks for its own.
 const SURFACE_MEMO: usize = 8;
 

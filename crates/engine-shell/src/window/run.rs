@@ -162,6 +162,13 @@ fn apply_launch_toggles(session: &mut NativeSession, toggles: LaunchToggles) {
     // The window drains every per-tick world queue itself, right after each
     // session tick (`drain_and_log_battle_events` / `drain_and_route_field_events`).
     session.set_host_drains_queues(true);
+    // The window opens and drives the pause menu itself (`claim_tick` on the
+    // tick's Start edge, the boot-UI arm after the wipe), as the play page
+    // does. Left to the session, `tick`'s own open path fired as well, off
+    // the world's pad edge, which the menu's ticks never advance: Start held
+    // across the tick that closed the menu read as a fresh press on the next
+    // field tick and opened it again.
+    session.set_host_owns_pause_menu(true);
     // The scene-entry VDF pulse (enhancement) gate is written by the shared
     // switch set below - it must land before the first `enter_field_scene`,
     // which is where the installer runs.
@@ -401,7 +408,10 @@ pub(super) fn cmd_play_window_with_record(
         extracted_root,
         disc,
         enable_audio,
-        audio_detached: false,
+        // `LEGAIA_AUDIO_DETACHED=1`: the director over a device-less output,
+        // so a capture child (the cast-sequence recorder's `sfx.csv`) routes
+        // every cue on a machine whose sound device it must not hold.
+        audio_detached: std::env::var_os("LEGAIA_AUDIO_DETACHED").is_some_and(|v| v != "0"),
         world_map,
         boot_ui,
         save_dir,
@@ -538,6 +548,15 @@ pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayW
                 enable_audio,
             },
         )?,
+        None if audio_detached && extracted_root.join("PROT.DAT").exists() => {
+            NativeSession::open_extracted_detached_audio(
+                extracted_root,
+                &legaia_engine_session::BootConfig {
+                    scene: scene.to_string(),
+                    enable_audio,
+                },
+            )?
+        }
         _ => crate::host_setup::open_boot_session(scene, enable_audio, extracted_root, disc)?,
     };
     apply_launch_toggles(

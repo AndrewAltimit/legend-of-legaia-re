@@ -1,4 +1,4 @@
-//! Disc-gated: Rebirth's races across Drake's overworld (`scene = "map01"`).
+//! Disc-gated: the sample pack's races across Drake's overworld (`scene = "map01"`).
 //!
 //! - Every course lies on walkable ground: each centerline, sampled every
 //!   sixteen world units, and every power-up spot stand on `map01` tiles
@@ -20,10 +20,10 @@ use legaia_engine_scene_host::scene_host::{SceneHost, SceneTickEvent};
 use legaia_expansion_format::ExpansionPack;
 use legaia_expansion_format::modes::RaceCourse;
 
-fn rebirth() -> ExpansionPack {
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+fn sample_pack() -> ExpansionPack {
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
-    ExpansionPack::from_files(&files).expect("Rebirth parses")
+    ExpansionPack::from_files(&files).expect("the sample pack parses")
 }
 
 fn host() -> Option<SceneHost> {
@@ -32,8 +32,8 @@ fn host() -> Option<SceneHost> {
         return None;
     };
     let mut host = SceneHost::open_disc(disc).expect("open the disc");
-    host.activate_expansion_pack(Arc::new(rebirth()))
-        .expect("Rebirth activates");
+    host.activate_expansion_pack(Arc::new(sample_pack()))
+        .expect("the sample pack activates");
     Some(host)
 }
 
@@ -44,18 +44,21 @@ fn walls(grid: &[u8], x: f64, z: f64) -> u8 {
 }
 
 #[test]
-fn rebirths_overworld_courses_lie_on_walkable_ground() {
+fn sample_packs_overworld_courses_lie_on_walkable_ground() {
     let Some(mut host) = host() else {
         return;
     };
-    let pack = rebirth();
+    let pack = sample_pack();
     let races: Vec<_> = pack
         .modes
         .races
         .iter()
         .filter(|r| r.scene.is_some())
         .collect();
-    assert!(races.len() >= 2, "Rebirth runs its races on the overworld");
+    assert!(
+        races.len() >= 2,
+        "the sample pack runs its races on the overworld"
+    );
     for r in races {
         let scene = r.scene.as_deref().unwrap();
         host.enter_world_map_scene(scene)

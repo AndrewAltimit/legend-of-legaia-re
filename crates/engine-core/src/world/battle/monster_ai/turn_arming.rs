@@ -4,11 +4,66 @@
 use super::*;
 
 impl World {
+    /// What the turn pick `FUN_801DABA4` decides for a monster it picks, with
+    /// every draw that goes with it: the AI picker (`jal 0x801E9FD4` at
+    /// `0x801DAF48`), the dead-target redirect `FUN_801DB124` it runs after
+    /// it for every category (`0x801DAF50`), and a strike's counter roll
+    /// (`0x801DAF74..0x801DB050`). The dispatch arms the result
+    /// ([`Self::take_monster_turn`]).
+    ///
+    /// PORT: FUN_801DABA4 (the monster arm, `0x801DAF38..0x801DB0A0`)
+    pub(in crate::world) fn decide_monster_turn(&mut self, slot: u8) -> MonsterAction {
+        let mut action = self.pick_monster_action(slot);
+        match &mut action {
+            // A cast is category `2` with the spell id in `+0x1DF`; the kernel
+            // re-rolls a fallen single target on its own side whenever the
+            // spell's class byte is `>= 0x0A`, which every monster-reachable
+            // record is. An all-side class (`8` / `9`) fails the kernel's
+            // `target < 8` test and is left alone - the engine's resolved list
+            // already holds only the living.
+            MonsterAction::Cast { spell_id, targets } => {
+                if let [single] = targets.as_mut_slice()
+                    && *single != slot
+                {
+                    *single = self.redirect_dead_battle_target(*single, 2, *spell_id);
+                }
+            }
+            // A strike aimed at a party member who has fallen since the pick
+            // re-rolls a living one, so the approach never walks at a corpse
+            // (the short step `0x19` has no timeout); the counter roll
+            // follows the redirect.
+            MonsterAction::Physical { target } => {
+                *target = self.redirect_dead_battle_target(*target, 3, 0);
+                self.roll_counterattack(slot, *target);
+            }
+            MonsterAction::Wait | MonsterAction::Flee => {}
+        }
+        action
+    }
+
+    /// Arm a monster's turn at its dispatch: the action its pick decided
+    /// ([`Self::decide_monster_turn`], parked since the pick), or one decided
+    /// now for a seat no pick parked (a debug seed's forced turn, a test).
     pub(in crate::world) fn take_monster_turn(&mut self, slot: u8) {
         use legaia_engine_battle_vm::battle_action::ActionState;
 
         self.battle_ctx.active_actor = slot;
-        match self.pick_monster_action(slot) {
+        // A debug seed's forced cast armed after the pick (the capture seed
+        // primes it on the first battle tick, which can follow the round
+        // start's pick) names this turn's action; the pick re-decides.
+        let forced = self.battle.forced_monster_cast.filter(|(s, _)| *s == slot);
+        let action = match self.parked_turn.monster.take() {
+            Some((s, a))
+                if s == slot
+                    && forced.is_none_or(|(_, spell)| {
+                        matches!(a, MonsterAction::Cast { spell_id, .. } if spell_id == spell)
+                    }) =>
+            {
+                a
+            }
+            _ => self.decide_monster_turn(slot),
+        };
+        match action {
             // A silenced/petrified caster can't cast - fall back to a physical
             // strike (mirrors the affordability fallback below).
             MonsterAction::Cast { .. } if self.battle.actor_blocked_from_magic(slot) => {
@@ -18,20 +73,6 @@ impl World {
                 spell_id,
                 mut targets,
             } => {
-                // The turn picker's monster arm runs the dead-target redirect
-                // after the AI pick for every category, not just strikes
-                // (`jal 0x801DB124` at `0x801DAF50`, no gate in front of it).
-                // A cast is category `2` with the spell id in `+0x1DF`; the
-                // kernel re-rolls a fallen single target on its own side
-                // whenever the spell's class byte is `>= 0x0A`, which every
-                // monster-reachable record is. An all-side class (`8` / `9`)
-                // fails the kernel's `target < 8` test and is left alone -
-                // the engine's resolved list already holds only the living.
-                if let [single] = targets.as_mut_slice()
-                    && *single != slot
-                {
-                    *single = self.redirect_dead_battle_target(*single, 2, spell_id);
-                }
                 // A confused caster's spell lands on the opposite side.
                 self.confuse_retarget_cast(slot, &mut targets);
                 // The seed is spent by the cast it names.
@@ -63,18 +104,22 @@ impl World {
             MonsterAction::Physical { target } => {
                 // AGL-driven multi-action budget: how many swings this monster
                 // lands this turn (single swing when it has no AGL / swing data).
-                self.arm_monster_strike_budget(slot);
+                // The picker's core ran it already when its physical arm
+                // picked; the `0xB3` arm's cut, stored by the switch after
+                // it, applies to those picks now.
+                if self.battle.monster_budget_armed.take() == Some(slot) {
+                    if std::mem::take(&mut self.battle.monster_ai_state.cut_strike_stream) {
+                        self.battle.monster_strike_entries.truncate(1);
+                        self.battle.monster_strike_budget = 1;
+                    }
+                } else {
+                    self.arm_monster_strike_budget(slot);
+                }
                 self.clear_action_stream(slot);
                 self.battle_ctx.queued_action = 3;
                 self.battle_ctx.action_state = ActionState::Begin.as_byte();
-                // The turn picker's monster arm runs the dead-target redirect
-                // straight after the AI picker, unconditionally
-                // (`jal 0x801E9FD4` then `jal 0x801DB124` at `0x801DAF48..
-                // 0x801DAF50`): a strike aimed at a party member who has
-                // fallen since the pick re-rolls a living one, so the
-                // approach never walks at a corpse (the short step `0x19`
-                // has no timeout).
-                let target = self.redirect_dead_battle_target(target, 3, 0);
+                // The pick redirected the target off a fallen member
+                // (`Self::decide_monster_turn`).
                 let picks = std::mem::take(&mut self.battle.monster_strike_entries);
                 if let Some(a) = self.actors.get_mut(slot as usize) {
                     a.battle.active_target = target;
@@ -92,9 +137,6 @@ impl World {
                     a.battle.params[..n].copy_from_slice(&picks[..n]);
                     a.battle.params[n] = 0;
                 }
-                // The picker's counter roll follows the redirect
-                // (`0x801DAF74..0x801DB050`, `World::roll_counterattack`).
-                self.roll_counterattack(slot, target);
                 self.maybe_confuse_retarget(slot);
             }
             // A scripted boss charging: the turn passes with no action

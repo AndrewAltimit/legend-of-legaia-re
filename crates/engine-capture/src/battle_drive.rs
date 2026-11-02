@@ -69,7 +69,11 @@ pub enum BattleDrive {
     /// (`RetailBattle::action_victims`): the victim is replayed at `1` HP,
     /// so any member's swing would kill it, and the members other than the
     /// capture's seat commit Spirit instead of Attack - the kill is then the
-    /// seat's own, whatever order initiative put them in.
+    /// seat's own, whatever order initiative put them in. It is also set on
+    /// a monster's Attack captured in a round the whole party sat out on
+    /// Spirit (`RetailBattle::party_spirit_round`): the replay's party then
+    /// commits Spirit too, and strikes down no monster the capture holds
+    /// standing.
     ///
     /// `absorbed` is the Seru a capture on the Done band already staged
     /// (`ctx[+0x269]`, `RetailBattle::absorbed_seru`). Retail's grant ran
@@ -170,6 +174,12 @@ pub enum BattleDrive {
 /// when neither saved band holds them, writes them into both, so the replay
 /// tokenizes the captured turn.
 ///
+/// On a monster seat `queue` is the attacker's strike stream instead - its
+/// swing picks as archive entry indices - on a capture gated on the first
+/// swing's clip ([`Self::clip`]): [`BattleDrive::steer`] stands the stream
+/// on it from the seed to the approach's end, so the gate does not hang on
+/// which picks the replay's stream drew.
+///
 /// `cursor` is that queue's strike cursor `ctx[+0x15]` on an
 /// [`SpanGate::Age`] capture inside the strike loop. With the queue
 /// replayed byte for byte, the age alone matches the first clip of the turn
@@ -226,6 +236,28 @@ pub struct ActionSteer {
     /// `yaw` places the capture instead: met once the engine's counter has
     /// run to retail's, and not pinned to it before.
     pub walk_clock: bool,
+    /// The rung of the per-action yaw ladder retail's counter `yaw` climbed
+    /// from, when the capture pins it: an Attack's `0x200`
+    /// (`0x801E2F20`) with no swing re-seed possible since - a monster seat
+    /// (the re-seed is gated on `ctx[+0x13] < 3`) or a party seat none of
+    /// whose action entries carries the `+0x87 == 2` byte `FUN_8004E13C`
+    /// re-seeds on. With the engine's counter on the same rung, the two are
+    /// one clock read at different instants, however far apart they have
+    /// run - retail's action can take longer than the engine's, and its
+    /// adaptive frame step drifts the counter faster - so the capture's
+    /// word is taken outright rather than only within [`YAW_CLOCK_SLACK`].
+    pub rung: Option<u16>,
+    /// The acting seat's latched raw staged id `+0x1DB` on an
+    /// [`SpanGate::Age`] capture on a dynamic art slot: the byte the anim
+    /// commit copies off `+0x1DA` before it rewrites an id `>= 0x10` to slot
+    /// `0x10` / `0x11` (`0x8004AEB0..0x8004AEB8`). A starter and the art
+    /// behind it install into the same slot, and once the strike loop has
+    /// staged the art the strike cursor names both, so an `accum 0` capture
+    /// met on clip and cursor alone takes the starter's commit for the art's
+    /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: retail latched on
+    /// the Hyper Art `0x1E` at accumulator `0`, the engine still on its
+    /// SpecialStarter `0x1A`).
+    pub latched: Option<u8>,
 }
 
 /// Where inside a state that spans many frames a capture sits.
@@ -775,6 +807,12 @@ impl BattleDrive {
                 if steer.walk_clock {
                     s.push_str(",w");
                 }
+                if let Some(n) = steer.rung {
+                    s.push_str(&format!(",n{n}"));
+                }
+                if let Some(l) = steer.latched {
+                    s.push_str(&format!(",l{l}"));
+                }
                 if let Some(q) = steer.queue {
                     s.push_str(",q");
                     for b in q {
@@ -834,6 +872,10 @@ impl BattleDrive {
                 steer.walk_clock = true;
             } else if let Some(r) = last.strip_prefix('r') {
                 steer.drift_step = Some(r.parse().ok()?);
+            } else if let Some(n) = last.strip_prefix('n') {
+                steer.rung = Some(n.parse().ok()?);
+            } else if let Some(l) = last.strip_prefix('l') {
+                steer.latched = Some(l.parse().ok()?);
             } else if let Some(g) = last.strip_prefix('g') {
                 steer.gauge = Some(g.parse().ok()?);
             } else if let Some(k) = last.strip_prefix('k') {
@@ -1163,6 +1205,11 @@ impl BattleDrive {
                                     .actors
                                     .get(usize::from(engine_seat(seat, pc)))
                                     .is_some_and(|a| a.battle.strike_index == u)
+                            }) && steer.latched.is_none_or(|l| {
+                                world
+                                    .actors
+                                    .get(usize::from(engine_seat(seat, pc)))
+                                    .is_some_and(|a| a.battle.latched_anim == l)
                             }) && (!steer.spoils
                                 || world.battle_ctx.message_id
                                     == legaia_engine_battle::battle_steal::STEAL_CAPTION_ELEMENT)
@@ -1280,11 +1327,19 @@ impl BattleDrive {
                             sr,
                         ))
                     });
+                    // The same rung on both sides ([`ActionSteer::rung`]):
+                    // retail's word is this counter further along.
+                    let same_rung = steer.rung.is_some_and(|r| {
+                        let rung = i32::from(r);
+                        cam.action_yaw_base() - cam.action_yaw_drift() == rung
+                            && i32::from(yaw) >= rung
+                    });
                     let clock_held =
                         steer.walk_clock && i32::from(yaw) - cam.action_yaw_base() > WALK_CLOCK_DUE;
                     if !clock_held
                         && ((state == want && (steer.park || near(cam.action_yaw_base())))
-                            || rescaled)
+                            || rescaled
+                            || same_rung)
                     {
                         // Retail's word is the one its last pass left, after
                         // that pass's prologue drift. On retail's cadence the
@@ -1311,6 +1366,20 @@ impl BattleDrive {
         let ours = world.mode == SceneMode::Battle
             && world.battle_ctx.active_actor == engine_seat(seat, pc);
         let state = world.battle_ctx.action_state;
+        // A monster strike gated on its first swing clip
+        // ([`ActionSteer::queue`] on a monster seat): from the seed to the
+        // approach's end, the stream the strike loop stages its swings from
+        // is the capture's own. The picker drew its picks already, so the
+        // stream moves no draw.
+        if seat >= 3
+            && ours
+            && (0x0C..0x1E).contains(&state)
+            && let Some(queue) = steer.queue
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+        {
+            let n = a.battle.params.len().min(queue.len());
+            a.battle.params[..n].copy_from_slice(&queue[..n]);
+        }
         // The parked approach ([`ActionSteer::park`]): from the seat's Attack
         // arm `0x14` to the poll, its walk is held where it stands.
         world.battle.approach_hold =

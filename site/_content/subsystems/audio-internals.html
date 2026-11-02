@@ -72,6 +72,36 @@
   </div>
   <p>After setting bit 3 the poller stalls while bit 0 is set and bit 4 is not, so a swap started by sub-op 9 keeps the old track until the script commits with sub-op <code>0xA</code>, which detaches and closes the old occupant, sets bit 4 and clears bit 1. A port that honours the sub-op 2 pause but drops the <code>0xA</code> commit leaves the music paused after the cutscene.</p>
   <p><strong>A door keeps its music only behind sub-op 6.</strong> Every scene load decides the music on bit 2. With it clear, the initializer fades the field track out while the map reads, closes it, and loads the new scene's track afresh - even the same one, so a plain door restarts the score. With it set, the track keeps playing and the new scene's start is marked as loaded without loading: the track word names the new scene's music while the old one plays on. The new scene's first script slice runs inside the load, before the bit is cleared, so its opening start is the one that gets marked. The disc uses it as the "same area" mark: town interiors, the kingdom maps' doors and the Sol tower floors raise it on their doors. A retail state leaving the opening shows it: on the overworld the word is the overworld theme while the opening's track still plays.</p>
+  <p>The walk takes time on screen. One stage runs per game frame, the 30-vsync settle counts down from the first, and stage 3 waits on the CD read of the track's bank. Measured on retail from a field state, the read is the longer of the two: about 56 vsyncs whatever the bank's length, so a track started mid-scene is first heard 66 to 69 vsyncs (a little over a second) after the op, with the old track's slot closed about six vsyncs in. The commit <code>0xA</code> re-runs its own instruction until bit 3 rises, and a second sub-op 9 waits while a swap is in flight, so the script stalls on the same clock. A scene's entry track is the exception: the field init calls the poller in a loop with no vsync wait, so the settle runs out at once and the read is part of the load. The port runs the same walk on its vsync clock.</p>
+  <figure class="diagram">
+    <svg viewBox="-40 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Timeline of a mid-scene track change on retail, in vsyncs after the script stores the new track id. The old track plays until the poller closes its slot about six vsyncs in. The poller's stages 0 to 2 run from vsync 1 to 5 and arm a 30-vsync settle, which runs out near vsync 31. The CD read of the new bank, stage 3, holds the walk from vsync 6 to 61. Stage 4 passes at 62, the slot re-attaches at 66 and the new track is first heard at 69. Silence runs from about 6 to 69.">
+      <path d="M60 254 L760 254" class="dg-edge-dim"/>
+      <text x="60" y="274" class="dg-sub">0</text><text x="160" y="274" class="dg-sub">10</text><text x="260" y="274" class="dg-sub">20</text><text x="360" y="274" class="dg-sub">30</text><text x="460" y="274" class="dg-sub">40</text><text x="560" y="274" class="dg-sub">50</text><text x="660" y="274" class="dg-sub">60</text><text x="760" y="274" class="dg-sub">70</text>
+      <text x="410" y="294" class="dg-sub">vsyncs after the op's store (frame step 2)</text>
+      <path d="M60 20 L60 254" class="dg-edge"/>
+      <text x="66" y="16" class="dg-edge-label">op 0x35 sub-op 1 stores the track word</text>
+      <text x="50" y="47" class="dg-sub" style="text-anchor:end">old track</text>
+      <rect x="60" y="34" width="60" height="20" rx="3" class="dg-node-ok"/>
+      <text x="128" y="48" class="dg-edge-label">slot closed at stage 2</text>
+      <text x="50" y="87" class="dg-sub" style="text-anchor:end">stages 0..2</text>
+      <rect x="70" y="74" width="40" height="20" rx="3" class="dg-node"/>
+      <text x="128" y="88" class="dg-edge-label">CD idle, arm the settle, kick the read</text>
+      <text x="50" y="127" class="dg-sub" style="text-anchor:end">settle</text>
+      <rect x="70" y="114" width="300" height="20" rx="3" class="dg-group"/>
+      <text x="220" y="128" class="dg-sub">30 vsyncs, run out long before the read</text>
+      <text x="50" y="167" class="dg-sub" style="text-anchor:end">stage 3</text>
+      <rect x="120" y="154" width="550" height="20" rx="3" class="dg-node-accent"/>
+      <text x="395" y="168" class="dg-sub">CD read of the new bank: about 56 vsyncs, whatever its length</text>
+      <text x="50" y="207" class="dg-sub" style="text-anchor:end">stages 4..6</text>
+      <rect x="680" y="194" width="40" height="20" rx="3" class="dg-node"/>
+      <text x="672" y="208" class="dg-edge-label" text-anchor="end">settle check, install, re-attach at +66</text>
+      <text x="50" y="243" class="dg-sub" style="text-anchor:end">new track</text>
+      <rect x="750" y="230" width="10" height="20" rx="2" class="dg-node-ok"/>
+      <rect x="120" y="230" width="630" height="20" rx="3" class="dg-node-warn"/>
+      <text x="435" y="244" class="dg-sub">silence: no slot sounds between the close and the first note at +69</text>
+    </svg>
+    <figcaption>One mid-scene start, measured on retail from <code>retock</code> (word <code>2001</code>); <code>town01</code> with <code>2045</code> lands within a vsync of it. The read, not the settle, sets the wait, and a script that commits with sub-op <code>0xA</code> or issues a second sub-op 9 stalls on the same clock.</figcaption>
+  </figure>
   <p>The libsnd calls under the control words settle their meaning: the pause raises a status flag and keeps the cursor; the play core rewinds the cursor to the start for every mode before it plays - which is why sub-op 4 is a replay from the first event, not a resume.</p>
 </section>
 

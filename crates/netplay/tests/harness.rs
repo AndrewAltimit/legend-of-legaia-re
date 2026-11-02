@@ -116,7 +116,7 @@ pub fn hello(name: &str, room: RoomRequest) -> Message {
         engine_build: BUILD.into(),
         player_name: name.into(),
         pack: Some(PackIdentity {
-            id: "rebirth".into(),
+            id: "sample".into(),
             content_hash: [7; 32],
         }),
         room,

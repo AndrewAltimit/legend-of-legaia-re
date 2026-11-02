@@ -980,6 +980,48 @@ fn the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure() {
     assert!((5..=20).contains(&mean), "mean frames to break {mean}");
 }
 
+/// A hooked fish run out past record `0x899` strains the line by
+/// `step * 300` a frame on top of the reel arms (`FUN_801D26CC`,
+/// `0x801D3B34..0x801D3B8C`): a slack reel that bleeds the gauge everywhere
+/// else climbs it out there, and one record short of the threshold it does
+/// not.
+#[test]
+fn a_fish_run_far_out_strains_the_line() {
+    let mut g = TensionGauge::new(0);
+    assert!(!g.far_record_strain(FAR_RECORD_STRAIN_FROM - 1, 1));
+    assert_eq!(g.tension(), 0);
+    assert!(g.far_record_strain(FAR_RECORD_STRAIN_FROM, 2));
+    assert_eq!(g.tension(), 2 * FAR_RECORD_STRAIN);
+    g.tension = TENSION_MAX - 1;
+    g.far_record_strain(FAR_RECORD_STRAIN_FROM, 1);
+    assert_eq!(g.tension(), TENSION_MAX, "the ceiling test clamps it");
+
+    // Through the session: a slack reel near the rod bleeds to zero, the
+    // same slack reel far out climbs until the ceiling roll breaks it.
+    for (record, expect_break) in [(0x600, false), (0x2000, true)] {
+        let mut p = pond();
+        p.fight_species = Some(9);
+        p.phase = PondPhase::Hooked;
+        p.line_record = record;
+        let mut peak = 0;
+        for _ in 0..600 {
+            if p.phase() != PondPhase::Hooked {
+                break;
+            }
+            // Hold the fish's distance: only the strain is under test.
+            p.line_record = record;
+            p.tick(PondInput::default(), 1, 0x80);
+            peak = peak.max(p.gauge.tension());
+        }
+        if expect_break {
+            assert_eq!(p.phase(), PondPhase::Snapped, "far run breaks the line");
+        } else {
+            assert_eq!(p.phase(), PondPhase::Hooked, "near slack line holds");
+            assert_eq!(peak, 0, "near slack line never takes tension");
+        }
+    }
+}
+
 #[test]
 fn entry_rod_scan_keeps_a_held_rod_and_falls_back_to_zero() {
     // The saved rod is held: the scan keeps it and probes nothing else.

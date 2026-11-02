@@ -550,8 +550,8 @@ fn now_ms() -> f64 {
 mod tests {
     use super::*;
 
-    fn rebirth_files() -> legaia_expansion_format::PackFiles {
-        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    fn sample_pack_files() -> legaia_expansion_format::PackFiles {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
         legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read")
     }
 
@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn reload_without_a_disc_refuses() {
         let mut rt = LegaiaRuntime::new();
-        let v = rt.reload_expansion_core(&bundle(&rebirth_files()));
+        let v = rt.reload_expansion_core(&bundle(&sample_pack_files()));
         assert_eq!(v["ok"], false);
         assert_eq!(v["reentered"], false);
         assert!(rt.expansion_overlay().is_null());
@@ -601,7 +601,7 @@ mod tests {
             return;
         };
         let bytes = std::fs::read(disc).expect("read the disc");
-        let files = rebirth_files();
+        let files = sample_pack_files();
         let pack = bundle(&files);
         let map = "genesis_1f";
 
@@ -700,7 +700,7 @@ mod tests {
             return;
         };
         let bytes = std::fs::read(disc).expect("read the disc");
-        let files = rebirth_files();
+        let files = sample_pack_files();
         let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
         // A map with a standing (no patrol, not scenery) NPC that is
         // always present (a presence gate parks it off the map).
@@ -713,7 +713,7 @@ mod tests {
                     .position(|x| !x.scenery && x.patrol.is_empty() && x.present.is_empty())
                     .map(|n| (id.clone(), n))
             })
-            .expect("a standing NPC in Rebirth");
+            .expect("a standing NPC in the sample pack");
         let def = &pack.maps[&map];
         let [c, r] = def.npcs[n].tile;
         // One tile over, inside the rectangle.
@@ -778,7 +778,7 @@ mod tests {
             return;
         };
         let bytes = std::fs::read(disc).expect("read the disc");
-        let files = rebirth_files();
+        let files = sample_pack_files();
         let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
         let mut rt = LegaiaRuntime::new();
         assert!(rt.load_disc(bytes, String::new()).is_ok());
@@ -841,7 +841,7 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked > 0, "no Rebirth map has a solid prop to move");
+        assert!(checked > 0, "no sample-pack map has a solid prop to move");
     }
 
     /// Disc-gated: a solid prop, a standable prop, a lamp and a spawn moved
@@ -855,7 +855,7 @@ mod tests {
             return;
         };
         let bytes = std::fs::read(disc).expect("read the disc");
-        let files = rebirth_files();
+        let files = sample_pack_files();
         let pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
         let mut rt = LegaiaRuntime::new();
         assert!(rt.load_disc(bytes, String::new()).is_ok());
@@ -969,7 +969,7 @@ mod tests {
             assert_eq!(moved.3, rebuilt.3, "{map}: spawns");
             checked += 1;
         }
-        assert!(checked > 0, "Rebirth has a map with a solid prop");
+        assert!(checked > 0, "the sample pack has a map with a solid prop");
         assert!(!rt.expansion_place_prop_core(9999, 0, 0, 0, 0, 0.0));
     }
 
@@ -986,7 +986,7 @@ mod tests {
             return;
         };
         let bytes = std::fs::read(disc).expect("read the disc");
-        let files = rebirth_files();
+        let files = sample_pack_files();
         let mut pack = legaia_expansion_format::ExpansionPack::from_files(&files).unwrap();
         let mut m = pack.maps["genesis_1f"].clone();
         let wall = m
@@ -1093,7 +1093,7 @@ mod tests {
             return;
         };
         let bytes = std::fs::read(disc).expect("read the disc");
-        let pack = bundle(&rebirth_files());
+        let pack = bundle(&sample_pack_files());
         let mut rt = LegaiaRuntime::new();
         assert!(rt.load_disc(bytes, String::new()).is_ok());
         let v: Value = serde_json::from_str(&rt.load_expansion_core(&pack)).unwrap();

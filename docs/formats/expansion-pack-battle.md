@@ -6,7 +6,7 @@ With no pack active every hook is the identity, and the retail game plays bit fo
 
 ## Ids
 
-Every key in these files is local to the pack. The engine qualifies it with the pack id: key `ash_court` in pack `rebirth` is `rebirth:ash_court`. A reference may use either form; a reference into another pack is refused.
+Every key in these files is local to the pack. The engine qualifies it with the pack id: key `ash_court` in pack `sample` is `sample:ash_court`. A reference may use either form; a reference into another pack is refused.
 
 Disc content is named only by coordinate ([`DiscRef`](../../crates/expansion-format/src/refs.rs)): a retail monster by its 1-based monster-archive id (`{ kind = "monster", id = 73 }`), an item by its item id (`{ kind = "item", id = 12 }`), a music cue by its sound-test index (`{ kind = "bgm", id = 30 }`).
 
@@ -199,7 +199,7 @@ A move names retail content by index and never carries a number of its own:
 - `attack = n` is the `n`th (0-based) swing of the base monster's attack list: its archive swing records, the entries the retail picker rolls over (tags `0x0C..=0x1F` with an AGL cost, listed by `asset monster-archive --id N` and by the workbench's swing picker). The move stages that entry through the ordinary attack band, so the clip, the hit events and the swing's power byte are the disc's. `hits` chains the swing up to eight times in one turn.
 - `spell = id` is a spell-table id, cast through the retail cast path as a pack monster's `spells` list is: MP debit, cast band, the move-power record and impact status. A capture-class special (a streamed cast module) resolves off the disc table as the retail monster AI's own scripted casts do. A cast the monster cannot afford from its live MP falls back to a physical strike, as in retail.
 
-A swing index past the base's list, or a spell id the disc does not hold, makes that turn fall back to the retail pick; the disc-gated test `expansion_boss_script_disc` checks every Rebirth move against the disc.
+A swing index past the base's list, or a spell id the disc does not hold, makes that turn fall back to the retail pick; the disc-gated test `expansion_boss_script_disc` checks every sample-pack move against the disc.
 
 ### Phases
 

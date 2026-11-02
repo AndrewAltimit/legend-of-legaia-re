@@ -1289,14 +1289,14 @@ pub(crate) enum Cmd {
         /// DEBUG affordance, not a player surface: once the scene (or
         /// `--map`) is entered, play the active expansion pack's cutscene
         /// `ID` (`cutscenes.toml`), the way a trigger, an arrival or a quest
-        /// starts one - e.g. `--expansion packs/rebirth --map
+        /// starts one - e.g. `--expansion packs/sample --map
         /// genesis_8f --play-cutscene sovereign_falls`. It runs against
         /// the launch's flags.
         #[arg(long, value_name = "ID", requires = "expansion")]
         play_cutscene: Option<String>,
         /// Load an expansion pack (a pack directory or an `.lxpack` bundle,
-        /// or the id of an installed or bundled pack: `--expansion rebirth`
-        /// finds the Rebirth the release archive ships) before anything else
+        /// or the id of an installed or bundled pack: `--expansion sample`
+        /// finds the sample pack the release archive ships) before anything else
         /// runs: New Game, Continue and `--resume-save`
         /// all play with it (a save made on a pack map returns there). With
         /// `--map`, boot straight into one of its maps in place of the
@@ -1538,7 +1538,7 @@ pub(crate) enum Cmd {
     },
     /// List the expansion packs: every `.lxpack` and pack folder in the
     /// packs folder (`packs/` under the data directory) and in the `packs/`
-    /// folder the game ships beside it (the release archive's Rebirth), with
+    /// folder the game ships beside it (the release archive's sample pack), with
     /// its version, authors, pack format and whether it plays on this
     /// engine. `play-window --expansion <id>` plays one by its id.
     #[command(display_order = 5)]
@@ -1847,7 +1847,7 @@ mod locomotion_flag_tests {
             argv.extend_from_slice(args);
             Cli::try_parse_from(argv)
         };
-        let cli = parse(&["--expansion", "packs/rebirth", "--map", "m", "--spawn", "s"])
+        let cli = parse(&["--expansion", "packs/sample", "--map", "m", "--spawn", "s"])
             .expect("the pair parses");
         match cli.cmd.expect("subcommand") {
             Cmd::PlayWindow {
@@ -1857,12 +1857,12 @@ mod locomotion_flag_tests {
                 ..
             } => assert_eq!(
                 (expansion, map.as_deref(), spawn.as_deref()),
-                (Some("packs/rebirth".into()), Some("m"), Some("s"))
+                (Some("packs/sample".into()), Some("m"), Some("s"))
             ),
             other => panic!("parsed {other:?}"),
         }
-        assert!(parse(&["--expansion", "packs/rebirth"]).is_ok());
-        assert!(parse(&["--expansion", "packs/rebirth", "--expansion-watch"]).is_ok());
+        assert!(parse(&["--expansion", "packs/sample"]).is_ok());
+        assert!(parse(&["--expansion", "packs/sample", "--expansion-watch"]).is_ok());
         assert!(parse(&["--expansion-watch"]).is_err());
         assert!(parse(&["--map", "m"]).is_err());
         assert!(parse(&["--spawn", "s"]).is_err());
@@ -1897,5 +1897,73 @@ mod locomotion_flag_tests {
         );
         assert!(parse(&["--join", "127.0.0.1:7462"]).is_err());
         assert!(parse(&["--host", "--join", "x:1", "--room", "ABCDEF"]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod launch_switch_table_tests {
+    use super::Cli;
+    use clap::CommandFactory;
+
+    /// The `--flag` tokens of the host-drift page's "Launch switches against
+    /// page settings" table: exact names, and `--prefix*` families.
+    fn table_flags() -> (Vec<String>, Vec<String>) {
+        let page = include_str!("../../../../../docs/tooling/host-drift.md");
+        let start = page
+            .find("### Launch switches against page settings")
+            .expect("the launch-switch section");
+        let rest = &page[start..];
+        let end = rest[4..].find("\n### ").map_or(rest.len(), |i| i + 4);
+        let (mut exact, mut families) = (Vec::new(), Vec::new());
+        for tok in rest[..end].split('`') {
+            let Some(name) = tok.strip_prefix("--") else {
+                continue;
+            };
+            if let Some(prefix) = name.strip_suffix('*') {
+                families.push(prefix.to_string());
+            } else if name
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                exact.push(name.to_string());
+            }
+        }
+        (exact, families)
+    }
+
+    /// Every `play-window` switch has a row saying what the play page has in
+    /// its place (`docs/tooling/host-drift.md`), so a switch added to one host
+    /// lands with its answer for the other.
+    #[test]
+    fn launch_switch_table_names_every_play_window_flag() {
+        let cmd = Cli::command();
+        let play = cmd
+            .find_subcommand("play-window")
+            .expect("the play-window subcommand");
+        let (exact, families) = table_flags();
+        let missing: Vec<&str> = play
+            .get_arguments()
+            .filter_map(|a| a.get_long())
+            .filter(|long| {
+                !exact.iter().any(|e| e == long)
+                    && !families.iter().any(|p| long.starts_with(p.as_str()))
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "play-window switches with no row in host-drift.md's launch-switch table: {missing:?}"
+        );
+        // The table names no switch the window has dropped.
+        let stale: Vec<&String> = exact
+            .iter()
+            .filter(|e| {
+                play.get_arguments()
+                    .all(|a| a.get_long() != Some(e.as_str()))
+            })
+            .collect();
+        assert!(
+            stale.is_empty(),
+            "rows naming no play-window switch: {stale:?}"
+        );
     }
 }

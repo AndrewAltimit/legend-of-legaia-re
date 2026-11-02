@@ -114,6 +114,25 @@ impl SceneHost {
         }
     }
 
+    /// Open a fishing session straight off the disc, outside a door warp:
+    /// PROT 0972 read in its loaded form, then
+    /// [`Self::enter_fishing_from_overlay`]. The play hosts' fishing
+    /// launchers (the native window's `L`, the play page's picker row
+    /// through `play_fishing_start`) both call this, so the overlay read is
+    /// spelt once beside the warp's own. `false` when the overlay does not
+    /// read or its tables do not decode.
+    pub fn enter_fishing_from_disc(&mut self) -> bool {
+        let Some(loaded) = self.minigame_overlay_bytes(MinigameSubId::Fishing) else {
+            log::warn!("fishing: PROT 0972 did not read in its loaded form");
+            return false;
+        };
+        if !self.enter_fishing_from_overlay(&loaded) {
+            log::warn!("fishing: species / spawn / cadence tables did not decode");
+            return false;
+        }
+        true
+    }
+
     /// PROT 0972's species / spawn / cadence tables -> a live
     /// [`legaia_engine_fishing::fishing::PondSession`] through
     /// [`legaia_engine_core::world::World::enter_fishing_session`], which runs the

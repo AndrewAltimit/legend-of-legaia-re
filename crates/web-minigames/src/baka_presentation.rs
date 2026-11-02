@@ -891,9 +891,12 @@ impl LegaiaMinigames {
 
 // ------------------------------------------------------------ announcer XA
 
-/// Rounds whose banner line is staged (`XA32` channel = round index). A
-/// best-of-three ends by the third, and a drawn round only repeats one.
-const ANNOUNCER_ROUNDS: i32 = 4;
+/// Rounds whose banner line is staged (`XA32` channel = round index).
+/// Each list also names the round after its own, so this covers indices
+/// `0..=9`: every value of `DAT_801DBF8C`, which the round setup clamps to
+/// `9` (`0x801D0648`). Drawn rounds advance the index too, so a
+/// best-of-three can run past its third.
+const ANNOUNCER_ROUNDS: i32 = 9;
 
 /// Every announcer line the duel's chrome can start, one per `(clip,
 /// channel)`: [`legaia_engine_minigames::baka_fighter_chrome::announcer_xa_prestage`]
@@ -959,6 +962,12 @@ impl LegaiaMinigames {
             return;
         };
         self.baka_xa_fired = self.baka_xa_fired.wrapping_add(1);
+        let frames = if pcm.stereo {
+            pcm.pcm.len() / 2
+        } else {
+            pcm.pcm.len()
+        };
+        self.baka_xa_last = Some((xa, frames));
         #[cfg(target_arch = "wasm32")]
         if let Some(out) = self.audio_out.as_ref() {
             // Every line this lane starts is the duel's or the dome hub's,
@@ -986,10 +995,11 @@ impl LegaiaMinigames {
 #[wasm_bindgen]
 impl LegaiaMinigames {
     /// The announcer lane: lines staged off the disc out of those the chrome
-    /// can start, and lines the duel has started.
+    /// can start, lines the duel has started, and the last one started -
+    /// its `[clip, channel, dur]` request and the PCM frames played.
     ///
     /// ```json
-    /// { "staged": 11, "lines": 11, "fired": 3 }
+    /// { "staged": 11, "lines": 11, "fired": 3, "last": [31, 1, 72], "last_frames": 44352 }
     /// ```
     pub fn baka_xa_state_json(&self) -> String {
         let cues = announcer_cues();
@@ -997,8 +1007,12 @@ impl LegaiaMinigames {
             .iter()
             .filter(|c| self.baka_xa.is_staged(c.clip, c.chan))
             .count();
+        let (last, last_frames) = match self.baka_xa_last {
+            Some((c, n)) => (format!("[{},{},{}]", c.clip, c.chan, c.dur), n.to_string()),
+            None => ("null".to_string(), "null".to_string()),
+        };
         format!(
-            r#"{{"staged":{staged},"lines":{},"fired":{}}}"#,
+            r#"{{"staged":{staged},"lines":{},"fired":{},"last":{last},"last_frames":{last_frames}}}"#,
             cues.len(),
             self.baka_xa_fired
         )

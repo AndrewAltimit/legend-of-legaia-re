@@ -147,7 +147,8 @@ impl BakaFight {
     }
 
     /// The cabinet's own widget draws this frame - the attract prompt, the
-    /// "PLAYER SELECT" banner and the "NEXT GAME / PAY OUT" sheet - as one
+    /// "PLAYER SELECT" banner, the "NEXT GAME / PAY OUT" sheet and the
+    /// all-clear captions - as one
     /// list every host draws the same way.
     pub fn cabinet_cells(&self) -> Vec<crate::baka_cabinet::SheetCell> {
         let mut out = self.cabinet_frame.widgets.clone();

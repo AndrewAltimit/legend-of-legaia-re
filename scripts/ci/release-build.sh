@@ -27,11 +27,11 @@
 #     Windows   "Legend of Legaia.exe" (the stub), "Legaia Explorer.exe"
 #     macOS     "Legend of Legaia.app", "Legaia Explorer.app"
 #
-# packs/rebirth.lxpack beside them is the Rebirth expansion pack, bundled
-# from packs/rebirth/ by `asset expansion bundle` (deterministic, and refused
+# packs/sample.lxpack beside them is the Sample Expansion Pack, bundled
+# from packs/sample/ by `asset expansion bundle` (deterministic, and refused
 # unless the pack validates - the validator's no-disc-bytes rule included,
 # so it carries disc coordinates and the pack's own art and audio only). The
-# game lists it in the launcher and `--expansion rebirth` resolves it
+# game lists it in the launcher and `--expansion sample` resolves it
 # (legaia_app_theme::release_layout::find_bundled_packs).
 #
 # Every command-line program - legaia-engine itself, asset-viewer and the
@@ -87,7 +87,7 @@ STUB_BIN=legaia-launch
 # go, and the icon sources.
 TOOLS_DIR="command-line-tools"
 PACKS_DIR="packs"
-BUNDLED_PACKS=(rebirth)
+BUNDLED_PACKS=(sample)
 ICONS="crates/app-theme/icons"
 
 # Oldest glibc the cross-built x86_64 Linux binaries must run against.
@@ -473,8 +473,8 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'stops with an error, the launcher comes back and shows it; the full\n'
     printf 'log is legaia-engine-game.log in the saves folder.\n\n'
     printf 'EXPANSION PACK\n\n'
-    printf 'The %s folder holds Legend of Legaia: Rebirth (rebirth.lxpack), an\n' "$PACKS_DIR"
-    printf 'expansion pack made for the port: a new tower to climb past level 60,\n'
+    printf 'The %s folder holds the Sample Expansion Pack (sample.lxpack), an\n' "$PACKS_DIR"
+    printf 'example expansion pack made for the port: a new tower to climb past level 60,\n'
     printf 'quests, bosses and game modes. In the launcher, click the Expansion\n'
     printf 'pack button (or select it and press Enter) to play with it; New Game\n'
     printf 'and Continue then use it. Delete (or a right-click) on the button goes\n'
@@ -482,9 +482,9 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf 'opens for a party of level 30 or more, so Continue a late save. Select\n'
     printf 'on the pause menu opens the pack'"'"'s Journal: quests, challenges, cards,\n'
     printf 'and Travel back to any of its maps you have been to. From a terminal:\n'
-    printf '    %s/legaia-engine play-window --disc <disc.bin> --boot-ui --expansion rebirth\n' "$TOOLS_DIR"
+    printf '    %s/legaia-engine play-window --disc <disc.bin> --boot-ui --expansion sample\n' "$TOOLS_DIR"
     printf 'and to look around first (straight onto a map, every map on Travel):\n'
-    printf '    %s/legaia-engine play-window --disc <disc.bin> --expansion rebirth \\\n' "$TOOLS_DIR"
+    printf '    %s/legaia-engine play-window --disc <disc.bin> --expansion sample \\\n' "$TOOLS_DIR"
     printf '        --map genesis_1f --cheat-travel\n'
     printf 'Other packs (.lxpack files) can be dropped in the same folder, or in\n'
     printf 'the packs folder of your saves folder, and show up the same way.\n'

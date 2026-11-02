@@ -58,7 +58,7 @@ fn a_patrolling_village_npc_walks_in_its_walk_clip_and_rests_in_its_idle() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
     let files = legaia_expansion_format::read_files(std::path::Path::new(dir)).expect("read");
     let pack = ExpansionPack::from_files(&files).expect("the pack parses");
     let def = pack.maps["isles_village"].clone();

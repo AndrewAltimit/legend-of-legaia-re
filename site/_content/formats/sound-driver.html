@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">formats</a> &middot; sound-driver path-string cluster</div>
   <h1>Sound-driver path-string cluster <span class="tag tag-done">Confirmed</span></h1>
-  <p class="lede">When a scene starts and its music and sound effects load, the game builds a file path out of a small set of extensions its developers' sound tools used - <code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code> - still sitting in the executable. Are these exotic sound formats to reverse? Mostly no. The per-scene <code>.dpk</code> sound pack is an ordinary <a href="vab.html">VAB</a> + <a href="seq.html">SEQ</a> pair in a chunked wrapper, and the <code>.MAP</code> / <code>.PCH</code> intermediates never made it onto the retail disc.</p>
+  <p class="lede">When a scene starts and its music and sound effects load, the game builds a file path out of a small set of extensions still sitting in the executable - <code>.dpk</code>, <code>.spk</code>, <code>.MAP</code>, <code>.PCH</code>. Are these exotic sound formats to reverse? No. The per-scene <code>.dpk</code> sound pack is an ordinary <a href="vab.html">VAB</a> + <a href="seq.html">SEQ</a> pair in a chunked wrapper, and <code>.MAP</code> / <code>.PCH</code> are not sound at all: they are a field scene's walkability map and walk-on trigger file.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance">
@@ -54,7 +54,7 @@
     <li><strong>Decisive invariant:</strong> type-0 + type-1 reconstitute one contiguous VAB whose header <code>total_size</code> equals <code>chunk[0].size + chunk[1].size</code>. Holds across <code>0877</code>&ndash;<code>0885</code> (PROT 0877: <code>0x2820 + 0x1BA90 = 0x1E2B0</code>).</li>
     <li><strong>Same walker, different terminator.</strong> The chunk walker is the one the <a href="data-field.html">DATA_FIELD</a> dispatcher models, but it ends on a type-<code>0x02</code> chunk (non-zero size) where DATA_FIELD ends on a zero-size header - so the DATA_FIELD parser mis-reads a <code>.dpk</code>. Use <code>StreamTerminator::TypeTwo</code>.</li>
     <li><strong>Type-1 depends on the consumer.</strong> On the graphics battle-init walk, the type-1 handler is the TIM/CLUT upload; in a sound pack it is the VAB's sample pool.</li>
-    <li>The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper; only the container differs. The <code>.MAP</code> (sample-address map) and <code>.PCH</code> (patch data) are the PsyQ SoundArtist dev-side inputs that <em>produce</em> this VAB - the retail disc does not carry them, so no dedicated parser is warranted.</li>
+    <li>The content shape matches the <a href="scene-bundles.html">scene_vab_stream</a> BGM wrapper; only the container differs.</li>
   </ul>
 </section>
 
@@ -70,14 +70,20 @@
       <tr><td><code>0x8007B3A4</code></td><td>8 bytes</td><td><strong>Not sound data</strong> - the per-character equipment-swap selector bytes read by a graphics-side routine; adjacent in BSS but unrelated (<a href="#not-a-sound-consumer">trap below</a>).</td></tr>
       <tr><td><code>0x8007B3AC</code></td><td><code>"bse.dat"</code></td><td>Battle SFX descriptor-bank file name (loaded at battle init).</td></tr>
       <tr><td><code>0x8007B3B4</code></td><td><code>".dpk"</code></td><td>Per-scene sound pack - the VAB + SEQ bundle above.</td></tr>
-      <tr><td><code>0x8007B3BC</code></td><td><code>".MAP"</code></td><td>Sound bank map (PsyQ SoundArtist output; dev-only).</td></tr>
-      <tr><td><code>0x8007B3C4</code></td><td><code>".PCH"</code></td><td>Patch / instrument data (PsyQ output; dev-only).</td></tr>
+      <tr><td><code>0x8007B3BC</code></td><td><code>".MAP"</code></td><td><strong>Not sound.</strong> The <a href="field-map.html">field map</a> <code>DATA\FIELD\&lt;scene&gt;.MAP</code>, loaded by <code>FUN_8001F7C0</code>.</td></tr>
+      <tr><td><code>0x8007B3C4</code></td><td><code>".PCH"</code></td><td><strong>Not sound.</strong> The <a href="scene-v12-table.html">walk-on trigger sidecar</a> <code>&lt;scene&gt;.PCH</code>, loaded by <code>FUN_8001F7C0</code>.</td></tr>
       <tr><td><code>0x8007B3CC</code></td><td><code>".LZS"</code></td><td>Duplicate, fallback.</td></tr>
       <tr><td><code>0x8007B3D4</code></td><td><code>".pac"</code></td><td>Per-scene generic pack.</td></tr>
       <tr><td><code>0x8007B3DC</code></td><td><code>"STR"</code></td><td>Streaming audio (raw PSX <code>.STR</code> containers).</td></tr>
     </tbody>
   </table>
   <p class="hint" id="not-a-sound-consumer"><strong>Trap:</strong> a third routine reads the <code>0x8007B3A4</code>/<code>0x8007B3A8</code> bytes and looks like a sound consumer, but it is the character-TMD equipment-conditional group-transform swap - a graphics function. See <a href="character-mesh.html">character-mesh</a> and <a href="#how-we-know">how we know</a>.</p>
+</section>
+
+<section class="doc-section" id="map-and-pch-are-field-files">
+  <h2><code>.MAP</code> and <code>.PCH</code> are field files</h2>
+  <p>The cluster is a run of short path strings several loaders share, not a sound table. <code>.MAP</code> and <code>.PCH</code> are referenced once each, by the field-file loader <code>FUN_8001F7C0</code>. Its dev branch builds <code>DATA\FIELD\</code> + scene name + <code>.MAP</code> into the caller's buffer, the same stem + <code>.PCH</code> into buffer <code>+0x12000</code> (zero-filling one sector when the open fails), then the scene's <code>efect.dat</code>. Its retail branch (<code>0x8001F9A4..0x8001F9B4</code>) reads <code>0x28</code> sectors from the scene block in one call: the <code>0x12000</code>-byte <a href="field-map.html">field map</a>, the one-sector <a href="scene-v12-table.html">walk-on trigger sidecar</a> and the prescript after it. Both files are on the retail disc; neither is a PsyQ SoundArtist intermediate.</p>
+  <p>The other strings: <code>.spk</code> is built only on the dev branch of <code>FUN_8001FC00</code>; the two <code>.LZS</code> belong to the field-load step <code>FUN_80020118</code> and the transition streamer <code>FUN_80021934</code>; <code>.pac</code> to <code>FUN_800255B8</code>.</p>
 </section>
 
 <section class="doc-section" id="bse-dat-header">

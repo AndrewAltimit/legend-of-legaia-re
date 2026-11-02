@@ -21,8 +21,8 @@ impl PlayWindowApp {
 impl PlayWindowApp {
     /// The fishing venue's actor-side frame: the free-swimming fish wander
     /// and its retarget ripple, the venue floor solve, the retail camera
-    /// publish, the reeling-line actor and its catch bursts, and the
-    /// sub-screen idle sway.
+    /// publish, the reeling-line actor and its catch bursts, and the pond
+    /// swell.
     ///
     /// All of it is the shared engine kernel
     /// ([`legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host`]),
@@ -175,38 +175,13 @@ impl PlayWindowApp {
 impl PlayWindowApp {
     /// Load the fishing overlay (PROT 0972) and start a fishing session in the
     /// world (suspending the current scene) through the same engine entry the
-    /// mode-24 door warp takes (`SceneHost::enter_fishing_from_overlay`): the
+    /// mode-24 door warp takes (`SceneHost::enter_fishing_from_disc`): the
     /// species / spawn / cadence tables, the bring-up's rod and lure ownership
     /// scans, the persistent save-block words and the venue the cast lure
     /// lands in. Returns `false` (and logs) when no disc is attached or the
     /// tables can't decode. Mirrors [`Self::start_dance_minigame_mode`]'s overlay
     /// path.
     pub(in crate::window) fn start_fishing_minigame(&mut self) -> bool {
-        use legaia_overlay_images::static_overlay;
-        let Some(rec) = static_overlay::overlay_map().by_prot_index(
-            legaia_minigame_formats::fishing_species::FISHING_OVERLAY_PROT_INDEX as u32,
-        ) else {
-            log::warn!("fishing: overlay 0972 absent from the static-overlay map");
-            return false;
-        };
-        let raw = match self.session.host.index.entry_bytes_extended(rec.prot_index) {
-            Ok(b) => b,
-            Err(e) => {
-                log::warn!("fishing: PROT {} read failed: {e:#}", rec.prot_index);
-                return false;
-            }
-        };
-        let loaded = match static_overlay::as_loaded(&raw, rec) {
-            Ok(b) => b,
-            Err(e) => {
-                log::warn!("fishing: as_loaded failed: {e:#}");
-                return false;
-            }
-        };
-        if !self.session.host.enter_fishing_from_overlay(&loaded) {
-            log::warn!("fishing: species / spawn / cadence tables did not decode");
-            return false;
-        }
-        true
+        self.session.host.enter_fishing_from_disc()
     }
 }

@@ -13,7 +13,7 @@ Identify the shape before picking a walker. Two of the shapes (`scene_tmd_stream
 | [`scene_v12_table`](#scene_v12_table---the-per-scene-pch-walk-on-trigger-sidecar) | `u16` sub-table directory | 97 | Walk-on trigger records (`.PCH`) | see [`scene-v12-table.md`](scene-v12-table.md) | `scene_v12_table.rs` |
 | [`scene_event_scripts`](#scene_event_scripts---prescript-only) | `u16 count`, `u16 offsets[]` | 101 | Move-VM stager records (the "prescript") | `FUN_800252EC` | `scene_event_scripts.rs` |
 | [`scene_asset_table`](#scene_asset_table---count-prefixed-asset-bundle) | `u32 count`, descriptors | 88 (+17 classed `lzs_container`) | The scene bundle: TIMs, meshes, MAN, MES, moves, ANM | `FUN_80020224` | `scene_asset_table.rs` |
-| [`tmd_size_prefix`](#tmd_size_prefix---truncated-tmd-prefix) | `u32 total`, TMD magic at `+4` | 34 | A TMD truncated on disc | not located | `tmd_size_prefix.rs` |
+| [`tmd_size_prefix`](#tmd_size_prefix---truncated-tmd-prefix) | `u32 total`, TMD magic at `+4` | **0** | Nothing - a regression detector | - | `tmd_size_prefix.rs` |
 | [`scene_scripted_asset_table`](#scene_scripted_asset_table---a-shape-retail-does-not-have) | prescript + table | **0** | Nothing - a regression detector | - | `scene_scripted_asset_table.rs` |
 
 A scene block seats these as **separate entries**, in order:
@@ -353,22 +353,19 @@ The detector gates on both halves:
 
 ## tmd_size_prefix - truncated TMD-prefix
 
-Sister to `scene_tmd_stream` for the truncated case: the on-disc payload is **shorter than the prefix claims**. 34 entries match, all 12 KB (6 sectors).
+Sister to `scene_tmd_stream` for the truncated case: the leading word claims more bytes than the entry holds. **It matches no retail entry.** Every entry that opens with a type-`0` chunk header and the TMD magic at `+4` - the 182 [`scene_tmd_stream`](#scene_tmd_stream---bare-tmd-prefix) entries - holds its whole TMD chunk inside its own sectors (`(header & 0xFFFFFF) + 4 <= len` in all 182), and no 12 KB entry carries the magic at all. There is no truncated mesh for a runtime consumer to complete, so no loader zero-fills or streams a tail. The 34-entry figure this class once carried does not reproduce on the corrected extraction ([`prot.md`](prot.md)).
 
-| Offset | Size | Field | Meaning | Confidence |
-|---|---|---|---|---|
-| `+0x00` | 4 | `total_size` | Claimed in-memory size, greater than the on-disc length | Confirmed |
-| `+0x04` | 4 | magic | `0x80000002` | Confirmed |
-| `+0x08` | 4 | flags | `0` on disc | Confirmed |
-| `+0x0C` | 4 | `nobj` | Typically 2 or 4 | Confirmed |
-| `+0x10` | `nobj * 0x1C` | object table | 28 bytes per object (PsyQ TMD layout) | Confirmed |
-| `+0x10 + nobj*0x1C` | var | primitive data | Truncated at the sector boundary | Confirmed |
+The shape it tests for:
 
-Every object's `vert_top` / `norm_top` / `prim_top` range lies within the claimed total, so the file is a prefix of a larger logical resource rather than a malformed header.
+| Offset | Size | Field | Meaning |
+|---|---|---|---|
+| `+0x00` | 4 | `total_size` | Claimed size, greater than the entry |
+| `+0x04` | 4 | magic | `0x80000002` |
+| `+0x08` | 4 | flags | `0` on disc |
+| `+0x0C` | 4 | `nobj` | `1..=8` |
+| `+0x10` | `nobj * 0x1C` | object table | Every object's ranges inside the claimed total |
 
-Detection: TMD magic at `+4`; flags `0`; `1 <= nobj <= 8`; `claimed_total > buf.len()` (what separates it from `scene_tmd_stream`); the object table fits on disc; each object's ranges fit within the claimed total.
-
-**Unknown:** the runtime consumer is not located. Whether the loader zero-fills the missing tail or streams the remainder from another entry is open.
+The detector and the class stay, pinned at zero by `crates/extract/tests/validation_suite.rs`, so an extraction or reader regression that cuts a `scene_tmd_stream` entry short fails a test instead of reading as a new format.
 
 ## scene_event_scripts - prescript-only
 

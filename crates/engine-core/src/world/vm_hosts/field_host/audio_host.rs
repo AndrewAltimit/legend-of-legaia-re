@@ -15,6 +15,10 @@ impl<'a> FieldAudioHost for FieldHostImpl<'a> {
     fn bgm(&mut self, text_id: u16, sub_op: u8) {
         Self::bgm(self, text_id, sub_op)
     }
+
+    fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        Self::bgm_ready(self, sub_op)
+    }
 }
 
 #[cfg(test)]
@@ -38,5 +42,73 @@ mod tests {
         let after = w.party.roster.members[1].displayed_skills();
         assert_eq!(after.count, before.count + 1);
         assert!(after.ids[..usize::from(after.count)].contains(&0x0F));
+    }
+
+    fn op35(w: &mut World, id: u16, sub_op: u8) -> legaia_engine_vm::field::StepResult {
+        let [lo, hi] = id.to_le_bytes();
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: w };
+        field_step_routed(&mut host, &mut ctx, &[0x35, lo, hi, sub_op], 0)
+    }
+
+    /// A mid-scene sub-op 1 runs the swap poller's walk: the track attaches
+    /// the read (longer than the settle) plus stages 4..6 (two frames at the
+    /// field step) later, and the same word again is no change.
+    #[test]
+    fn a_mid_scene_start_installs_after_the_poller_walk() {
+        let mut w = World::new();
+        w.clock.frame_step = 2;
+        assert!(matches!(
+            op35(&mut w, 2001, 1),
+            legaia_engine_vm::field::StepResult::Advance { .. }
+        ));
+        assert!(w.audio.bgm_swap_in_flight());
+        let due = (1..=100u16)
+            .find(|_| {
+                w.tick_bgm_swap(1);
+                w.take_bgm_install_due()
+            })
+            .unwrap();
+        // Retail's measured walk: the attach 66 vsyncs after the store.
+        assert_eq!(due, 66);
+        op35(&mut w, 2001, 1);
+        assert!(!w.audio.bgm_swap_in_flight(), "the same word is no change");
+    }
+
+    /// The commit re-runs its PC until bit 3 (`0x801E0288`), and a second
+    /// select waits out the walk in flight (`0x801E0238`).
+    #[test]
+    fn the_commit_waits_for_the_load_to_settle() {
+        use legaia_engine_vm::field::StepResult;
+        let mut w = World::new();
+        w.clock.frame_step = 2;
+        assert!(matches!(op35(&mut w, 2033, 9), StepResult::Advance { .. }));
+        assert!(matches!(op35(&mut w, 2040, 9), StepResult::Halt { .. }));
+        let mut passes = 0;
+        while matches!(op35(&mut w, 0, 0xA), StepResult::Halt { .. }) {
+            w.tick_bgm_swap(1);
+            passes += 1;
+            assert!(
+                !w.take_bgm_install_due(),
+                "nothing installs before the commit"
+            );
+        }
+        assert_eq!(passes, World::BGM_SWAP_READ_VSYNCS);
+        let due = (1..=10u16)
+            .find(|_| {
+                w.tick_bgm_swap(1);
+                w.take_bgm_install_due()
+            })
+            .unwrap();
+        assert_eq!(due, 5);
+    }
+
+    /// The field init's install slice loads with the init: no walk.
+    #[test]
+    fn an_entry_start_does_not_run_the_walk() {
+        let mut w = World::new();
+        w.release_field_init_voices();
+        op35(&mut w, 2001, 1);
+        assert!(!w.audio.bgm_swap_in_flight());
     }
 }

@@ -71,6 +71,10 @@ fn walk_in(arm: &mut CaptureCamArm, phase: u8, caster_facing: u16) {
     arm.follow_caster = true;
 }
 
+/// The tween length of arm 2's wind-up shot, in display frames (`a3 = 0xC`
+/// handed to the builder by all three bodies).
+pub const WIND_UP_SHOT_FRAMES: u16 = 0xC;
+
 /// Arm 2's shot, the one the three bodies make (`a3 = 0xC`): pitch `pitch`,
 /// yaw `k - facing`, TR `(0, 0x400, 0x800)`, focus the victim's live pair.
 fn wind_up_shot(pitch: i16, k: i32, caster_facing: u16, victim: ModuleSeat) -> ModuleShot {
@@ -78,7 +82,7 @@ fn wind_up_shot(pitch: i16, k: i32, caster_facing: u16, victim: ModuleSeat) -> M
         angles: [pitch, yaw_from(k, caster_facing), 0],
         tr: [0, 0x400, 0x800],
         focus: focus_on(victim),
-        frames: 0xC,
+        frames: WIND_UP_SHOT_FRAMES,
     }
 }
 

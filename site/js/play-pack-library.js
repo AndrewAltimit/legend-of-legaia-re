@@ -30,7 +30,7 @@
  * a time (docs/formats/expansion-pack.md#one-active-pack), so a met
  * requirement is listed but not loaded beside it.
  *
- * Built-in packs (BUILTIN): the packs the site itself serves - Rebirth -
+ * Built-in packs (BUILTIN): the packs the site itself serves - the sample pack -
  * listed whether or not anything is installed. The site serves the pack
  * tree (`packs/<id>.json`, written by site/_gen.py from packs/<id>/ on
  * every site build, so it is never older than the page) and the engine
@@ -64,11 +64,11 @@
 
   /* The packs the site serves itself. */
   const BUILTIN = [{
-    id: 'rebirth',
-    name: 'Legend of Legaia: Rebirth',
+    id: 'sample',
+    name: 'Sample Expansion Pack',
     by: 'built in',
     blurb: 'The tower that rose where the Mist died: a climb from level 60 to 99, new quests, bosses and game modes.',
-    tree: 'packs/rebirth.json',
+    tree: 'packs/sample.json',
   }];
   const builtin = (id) => BUILTIN.find((b) => b.id === id) || null;
 
@@ -111,7 +111,16 @@
 
   const get = (id) => tx('readonly', (s) => s.get(PREFIX + id));
   const put = (rec) => tx('readwrite', (s) => s.put(rec, PREFIX + rec.id));
-  const active = () => tx('readonly', (s) => s.get(ACTIVE));
+  /* Built-in ids the site has renamed (the sample pack was `rebirth`): a
+   * stored `active` choice or a `?lib=` hand-off naming the old id opens
+   * the built-in under its current id, unless a pack is installed under
+   * the old one. */
+  const RENAMED = { rebirth: 'sample' };
+  async function currentId(id) {
+    if (typeof id !== 'string' || !RENAMED[id] || (await get(id))) return id;
+    return RENAMED[id];
+  }
+  const active = async () => currentId(await tx('readonly', (s) => s.get(ACTIVE)));
   const setActive = (id) => tx('readwrite', (s) => (id ? s.put(id, ACTIVE) : s.delete(ACTIVE)));
   async function remove(id) {
     await tx('readwrite', (s) => s.delete(PREFIX + id));
@@ -339,8 +348,8 @@
     }
 
     /* Play installed pack `id` (the workbench's hand-off, `?lib=<id>`). */
-    function loadId(id) {
-      return play(id);
+    async function loadId(id) {
+      return play(await currentId(id));
     }
 
     /* `End` on the play page: reload the active pack from its library copy

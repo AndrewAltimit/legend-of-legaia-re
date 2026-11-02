@@ -401,11 +401,11 @@ fn a_widened_pack_spell_strikes_every_monster() {
     host.world.deactivate_expansion();
 }
 
-/// Rebirth's combos keep clear of every retail combo on the disc's arts
+/// The sample pack's combos keep clear of every retail combo on the disc's arts
 /// table: none equals one, and none contains one (the retail walk would take
 /// those arrows first).
 #[test]
-fn rebirth_combos_avoid_the_discs_retail_combos() {
+fn sample_pack_combos_avoid_the_discs_retail_combos() {
     use legaia_engine_scene::vfs::Vfs;
     let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") else {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
@@ -416,8 +416,8 @@ fn rebirth_combos_avoid_the_discs_retail_combos() {
         .read("SCUS_942.54")
         .expect("SCUS_942.54 present");
     let oracle = legaia_art::ArtsOracle::from_scus(&scus).expect("the arts table");
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/rebirth");
-    let pack = ExpansionPack::from_dir(&root).expect("Rebirth loads");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packs/sample");
+    let pack = ExpansionPack::from_dir(&root).expect("the sample pack loads");
     let mut checked = 0;
     for (key, art) in &pack.arts.arts {
         let mine = art.command_bytes().unwrap();

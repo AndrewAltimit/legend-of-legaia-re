@@ -241,6 +241,9 @@ pub struct DiscTables {
     /// Installed by [`crate::world::World::install_menu_text`]; while `None`
     /// (disc-free) no rotted limb dims.
     pub(crate) rot_limb_table: Option<legaia_engine_battle_vm::battle_actor_draw::RotLimbTable>,
+    /// The status CLUT pass's Rot palette windows (`0x80078630`), read by
+    /// [`crate::world::World::battle_rot_clut_windows`].
+    pub(crate) rot_clut_windows: Option<legaia_engine_battle::battle_status_clut::RotClutWindows>,
 }
 
 impl DiscTables {
@@ -281,6 +284,7 @@ impl DiscTables {
             victory_pose_table: None,
             inline_names: Vec::new(),
             rot_limb_table: None,
+            rot_clut_windows: None,
         }
     }
 }

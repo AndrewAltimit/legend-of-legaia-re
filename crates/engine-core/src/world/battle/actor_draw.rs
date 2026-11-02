@@ -269,6 +269,37 @@ impl World {
         )
     }
 
+    /// The Rot palette window row of each party CLUT slot (`481 + slot`),
+    /// keyed by the seat's 1-based character id as `FUN_8004CE2C` keys it
+    /// (`DAT_8007BD10[slot]`, `0x8004D7D4`). `None` for a slot with no
+    /// party seat, a monster in it, or no table installed.
+    pub fn battle_rot_clut_windows(
+        &self,
+    ) -> [Option<[u8; legaia_engine_battle::battle_status_clut::ROT_CLUT_ROW_LEN]>;
+        legaia_engine_battle::battle_status_clut::PARTY_CLUT_SLOTS] {
+        let mut out = [None; legaia_engine_battle::battle_status_clut::PARTY_CLUT_SLOTS];
+        let Some(table) = self.tables.rot_clut_windows.as_ref() else {
+            return out;
+        };
+        for (slot, w) in out.iter_mut().enumerate() {
+            if slot >= usize::from(self.party.party_count) {
+                break;
+            }
+            if self
+                .actors
+                .get(slot)
+                .is_some_and(|a| a.battle_monster_id.is_some())
+            {
+                continue;
+            }
+            let Ok(id) = u8::try_from(self.party_roster_slot(slot) + 1) else {
+                continue;
+            };
+            *w = table.row(id);
+        }
+        out
+    }
+
     /// This frame's draw decision for battle body `actor_idx` - `None` for an
     /// actor that is not a battle combatant (party seat or seated monster).
     ///

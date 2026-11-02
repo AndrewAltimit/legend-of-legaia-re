@@ -251,6 +251,11 @@ pub struct ScreenshotConfig {
     /// (`BattleState::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
+    /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
+    /// label opened on a commit younger than its displayed frame, so the
+    /// captured frame closes the engine's (`BattleState::move_label_closed`).
+    /// Set by the retail-compare image channel.
+    pub seat_move_label_unseen: bool,
     /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
     /// HUD widget glides still in flight, each at the elapsed its displayed
     /// frame shows; the captured frame seats the engine's on them
@@ -320,9 +325,10 @@ pub struct ScreenshotConfig {
     /// on the capture frame (`World::seed_ambient_walker`).
     pub seat_walkers: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
     /// `LEGAIA_SEAT_PLACEMENTS=<fields>`: placements a finished cutscene
-    /// beat left on a script-literal tile
-    /// (`legaia_parity::retail_compare::scripted_seats`), stood there,
-    /// position only, on the capture frame (`World::seed_placement_seat`).
+    /// beat left on a script-literal tile or parked off-map
+    /// (`legaia_parity::retail_compare::scripted_seats`), stood there on the
+    /// capture frame (`World::seed_placement_seat`: position only on a tile,
+    /// with the heading on the park seat).
     pub seat_placements: Vec<legaia_engine_capture::field_seeds::WalkerSeed>,
     /// `LEGAIA_SEAT_PANEL=<fields>`: a retail state's live image-panel
     /// widget (`legaia_parity::retail_compare::retail_panel`), installed on
@@ -468,6 +474,10 @@ pub struct ScreenshotConfig {
     /// clip cursor as the capture held it, landed on the capture frame
     /// ([`legaia_engine_capture::clip_cursors`]).
     pub seat_battle_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
+    /// `LEGAIA_SEAT_DISPLAYED_CLIPS=slot:clip:cursor,...`: a body the
+    /// displayed frame shows on another clip than the RAM's, posed on it
+    /// after the camera is aligned (`RetailBattle::engine_image_displayed_clips`).
+    pub seat_displayed_clips: Vec<legaia_engine_capture::clip_cursors::ClipCursorSeed>,
     /// `LEGAIA_SEAT_GHOST_RING=slot:clip:depth:drawn:cursor:x:z,...`: each after-image
     /// ghost as the capture's history ring holds it, seated on the capture
     /// frame ([`legaia_engine_capture::ghost_ring`]); taken once.
@@ -933,6 +943,7 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),
             seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")
                 .ok()
                 .and_then(|v| {
@@ -1069,6 +1080,9 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             battle_bars_seeded: std::cell::Cell::new(false),
             seat_battle_clips: std::env::var("LEGAIA_SEAT_BATTLE_CLIPS")
+                .map(|v| legaia_engine_capture::clip_cursors::clip_cursors_from_env(&v))
+                .unwrap_or_default(),
+            seat_displayed_clips: std::env::var("LEGAIA_SEAT_DISPLAYED_CLIPS")
                 .map(|v| legaia_engine_capture::clip_cursors::clip_cursors_from_env(&v))
                 .unwrap_or_default(),
             battle_melee_hits: std::env::var("LEGAIA_BATTLE_MELEE_HITS")

@@ -44,7 +44,7 @@ pub const BGM_GLOBAL_BASE: u16 = 2000;
 /// One compiled pack formation.
 #[derive(Debug, Clone)]
 pub struct CompiledFormation {
-    /// The qualified key (`rebirth:ash_court`).
+    /// The qualified key (`sample:ash_court`).
     pub key: String,
     /// The engine formation, its slots on base monster ids.
     pub def: FormationDef,
@@ -674,7 +674,7 @@ reward_items = [{ item = { kind = "item", id = 5 }, count = 2 }]
         };
         sec.formations.get_mut("b_court").unwrap().stage = Some(stage("jou"));
         sec.bosses.get_mut("king").unwrap().stage = Some(stage("map01"));
-        let c = CompiledBattle::compile("rebirth", &sec).unwrap();
+        let c = CompiledBattle::compile("sample", &sec).unwrap();
         let court = c.formation_id("b_court").unwrap();
         let pair = c.formation_id("a_pair").unwrap();
         let at = |f: u16, b: Option<&str>| c.battle_stage(f, b).map(|s| s.scene.clone());
@@ -688,10 +688,10 @@ reward_items = [{ item = { kind = "item", id = 5 }, count = 2 }]
 
     #[test]
     fn formations_take_ids_in_key_order_on_base_monster_ids() {
-        let c = CompiledBattle::compile("rebirth", &section()).unwrap();
+        let c = CompiledBattle::compile("sample", &section()).unwrap();
         assert_eq!(c.formation_id("a_pair"), Some(EXPANSION_FORMATION_BASE));
         assert_eq!(
-            c.formation_id("rebirth:b_court"),
+            c.formation_id("sample:b_court"),
             Some(EXPANSION_FORMATION_BASE + 1)
         );
         let court = c.formation(EXPANSION_FORMATION_BASE + 1).unwrap();
@@ -737,7 +737,7 @@ max_standing = 2
         )
         .unwrap();
         s.formations.insert("c_gauntlet".into(), waves);
-        let c = CompiledBattle::compile("rebirth", &s).unwrap();
+        let c = CompiledBattle::compile("sample", &s).unwrap();
         let id = c.formation_id("c_gauntlet").unwrap();
         let f = c.formation(id).unwrap();
         // The engine formation is the first wave alone.
@@ -779,7 +779,7 @@ max_standing = 2
             formation: "missing".into(),
             weight: 1,
         });
-        let err = CompiledBattle::compile("rebirth", &s).unwrap_err();
+        let err = CompiledBattle::compile("sample", &s).unwrap_err();
         assert!(err[0].contains("unknown formation `missing`"));
     }
 
@@ -851,7 +851,7 @@ max_standing = 2
 
     #[test]
     fn the_plan_swaps_variants_and_scaled_retail_slots_only() {
-        let c = CompiledBattle::compile("rebirth", &section()).unwrap();
+        let c = CompiledBattle::compile("sample", &section()).unwrap();
         let lookup = |id: u16| Some(record_backed(id));
         let court = c
             .formation(EXPANSION_FORMATION_BASE + 1)

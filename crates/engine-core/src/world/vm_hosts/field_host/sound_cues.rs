@@ -47,6 +47,21 @@ impl FieldHostImpl<'_> {
             return;
         }
         if sub_op == 1 || sub_op == 9 {
+            // A new word outside the field init starts the swap poller's
+            // walk: the requested index parts from the loaded one
+            // (`0x80024584`) and the install comes a settle and a read later.
+            // The same word is no change, and the park sentinel never loads
+            // (`0x80024558`). Inside the init the init's own loop runs the
+            // poller to completion with the load.
+            if self.world.audio.current_bgm != Some(text_id)
+                && text_id != crate::world::BGM_PARK_SENTINEL
+                && !self.world.audio.bgm_field_init_open
+            {
+                self.world
+                    .audio
+                    .bgm_swap
+                    .start(crate::world::World::BGM_SWAP_READ_VSYNCS);
+            }
             self.world.audio.current_bgm = Some(text_id);
             // Sub-op 9 also raises the script-owned start bit 0 of
             // `_DAT_8007B750` (`0x801E0260`): the poller holds the outgoing
@@ -98,6 +113,19 @@ impl FieldHostImpl<'_> {
         self.world
             .pending_field_events
             .push(FieldEvent::Bgm { text_id, sub_op });
+    }
+
+    /// Op 0x35's re-run barriers against the swap poller's clock (see
+    /// `FieldAudioHost::bgm_ready`). Only a walk
+    /// this world's clock runs holds a pass: a sub-op `0xA` with no select in
+    /// flight would wait on a bit 3 nothing raises, and is let through.
+    pub(super) fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        let swap = &self.world.audio.bgm_swap;
+        match sub_op {
+            9 => !swap.in_flight(),
+            0xA => !swap.in_flight() || swap.load_settled(),
+            _ => true,
+        }
     }
 
     /// A free-roam picker staging's entry window

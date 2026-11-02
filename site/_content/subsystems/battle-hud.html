@@ -114,6 +114,37 @@
   <p><strong>Parked is below the screen, not gone.</strong> When the bar takes over, retail moves the whole panel cluster to <code>y = 230</code>, just under the 228-line display window. The port&rsquo;s stage is 240 lines tall, so it simply emits no panel draws while retail parks them. Inside an action the panels come back for a party-wide target, and a cast module can raise them itself - Orb&rsquo;s heal glides them up so its HP readout counts up in them.</p>
 </section>
 
+<section class="doc-section" id="combo-cluster" data-doc="-">
+  <h2>When the HIT / TOTAL cluster opens</h2>
+  <p>The combo cluster - the <code>3 HIT</code> / <code>TOTAL 29</code> pair beside the damage numerals - is not opened by each hit. A melee string <strong>banks</strong> its hits: each swing&rsquo;s damage is added to a word on the target and its numeral pops, but live HP is untouched. One arm of the melee kernel then writes the whole bank to HP, and that arm is the kernel&rsquo;s only store to the readout flag. The readout pass, which runs at the top of every action-machine pass, answers the raised flag by spawning the cluster at its off-screen seat and gliding it in. So the cluster appears once, as the string&rsquo;s total lands, already reading the full count.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 236" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A three-hit melee string. Hits one and two each pop a damage numeral and add to the target's bank; live HP does not move and no cluster is shown. The third hit's apply arm writes the bank to live HP, raises the readout flag and stores the total. On the next action pass the readout pass spawns the cluster at x 328 and glides it to x 168 over sixteen frames, reading 3 HIT, TOTAL 29. At the end of the action the fade-down band glides it back out.">
+      <defs><marker id="hud-cl-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect x="20" y="20" width="150" height="56" rx="4" class="dg-node"/><text x="95" y="43" class="dg-label">hit 1</text><text x="95" y="61" class="dg-sub">numeral, banked</text>
+      <rect x="190" y="20" width="150" height="56" rx="4" class="dg-node"/><text x="265" y="43" class="dg-label">hit 2</text><text x="265" y="61" class="dg-sub">numeral, banked</text>
+      <rect x="360" y="20" width="170" height="56" rx="4" class="dg-node-accent"/><text x="445" y="43" class="dg-label">hit 3: 15</text><text x="445" y="61" class="dg-sub">bank 29 written to HP</text>
+      <rect x="550" y="20" width="290" height="56" rx="4" class="dg-node-ok"/><text x="695" y="43" class="dg-label">cluster: 3 HIT / TOTAL 29</text><text x="695" y="61" class="dg-sub">glides 328 to 168 over 16 frames</text>
+      <path d="M170 48 L188 48" class="dg-edge" marker-end="url(#hud-cl-ah)"/>
+      <path d="M340 48 L358 48" class="dg-edge" marker-end="url(#hud-cl-ah)"/>
+      <path d="M530 48 L548 48" class="dg-edge" marker-end="url(#hud-cl-ah)"/>
+      <path d="M20 100 L340 100" class="dg-edge-dim"/>
+      <text x="180" y="118" class="dg-edge-label" text-anchor="middle">live HP unchanged, readout flag down: no cluster</text>
+      <path d="M360 100 L840 100" class="dg-edge"/>
+      <text x="600" y="118" class="dg-edge-label" text-anchor="middle">flag raised with the total; the next action pass opens the cluster</text>
+      <rect x="20" y="146" width="400" height="70" rx="4" class="dg-group"/>
+      <text x="36" y="168" class="dg-sub dg-start">Cast hits store their own flag. Megaton Press clears it</text>
+      <text x="36" y="186" class="dg-sub dg-start">at every hit and raises it once on the barrage's last pass,</text>
+      <text x="36" y="204" class="dg-sub dg-start">so its cluster opens already reading 11 HIT.</text>
+      <rect x="440" y="146" width="400" height="70" rx="4" class="dg-group"/>
+      <text x="456" y="168" class="dg-sub dg-start">A party-wide monster sweep (Neo Star Slash, Doomsday)</text>
+      <text x="456" y="186" class="dg-sub dg-start">never raises the flag, so no cluster opens; a one-hit</text>
+      <text x="456" y="204" class="dg-sub dg-start">cast keeps the single DAMAGE readout.</text>
+    </svg>
+    <figcaption>The string&rsquo;s hits push numerals as they land; only the apply arm that writes the bank opens the cluster. The fade-down band at the end of the action re-spawns it at rest and glides it back out the way it came, when the action landed damage.</figcaption>
+  </figure>
+  <p>Two library states pin both sides. A Somersault capture shows the cluster gliding in beside the third hit&rsquo;s <code>15</code>, twelve frames into its sixteen. A Muscle Dome capture holds three swings&rsquo; <code>430</code> in the Skeleton&rsquo;s bank at full HP, the total word at zero and no cluster up as the Hyper Art commits. The port counts a melee hit hidden and opens (or restarts) the cluster on the hit event that applies the bank; a cast hit opens it as it lands.</p>
+</section>
+
 <section class="doc-section" id="placement" data-doc="screen-element-placement-table-0x80076c10-and-its-copy-helpers">
   <h2>The placement record</h2>
   <p>Each record is one element's <strong>pair of seats</strong> plus a shared content box. The two seats are the element's from and to: which one is the parked seat is per record, so some elements slide in from the right and others from the left or the top.</p>

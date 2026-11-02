@@ -248,7 +248,7 @@ impl Canvas {
 pub enum ModeScreen<'a> {
     /// The instance list.
     Picker {
-        /// "Rebirth modes" / "Practice modes".
+        /// "Sample modes" / "Practice modes".
         heading: &'a str,
         entries: &'a [ModeEntry],
         cursor: usize,

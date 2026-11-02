@@ -16,7 +16,7 @@
 //! pass reads.
 //!
 //! [`rename`] rewrites every site of one id in place: values keep their
-//! qualification (`rebirth:ogre`) and the engine flags derived from an id
+//! qualification (`sample:ogre`) and the engine flags derived from an id
 //! (`cutscene.<id>`, `map.<id>.<trigger>`) follow the id.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -178,7 +178,7 @@ pub struct Site {
     /// a trigger is on, the NPC a line is said by.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub owner: Option<(Kind, String)>,
-    /// Text stored before the id (`rebirth:`, `cutscene.`).
+    /// Text stored before the id (`sample:`, `cutscene.`).
     #[serde(skip)]
     pub prefix: String,
     /// Text stored after it (`.arrival` of `map.<id>.arrival`).

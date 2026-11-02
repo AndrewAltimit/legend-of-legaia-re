@@ -53,7 +53,6 @@ legaia-game-tables.workspace = true
 legaia-iso.workspace = true
 legaia-mdec.workspace = true
 legaia-minigame-formats.workspace = true
-legaia-overlay-images.workspace = true
 legaia-render-kernels.workspace = true
 legaia-save.workspace = true
 legaia-scene-formats.workspace = true
@@ -81,4 +80,6 @@ features = [
 [dev-dependencies]
 # Named only by the disc-gated tests that read PROT.DAT directly.
 legaia-prot.workspace = true
+# The disc-gated battle ladders load cast overlays in their loaded form.
+legaia-overlay-images.workspace = true
 toml.workspace = true

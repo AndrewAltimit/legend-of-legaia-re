@@ -206,8 +206,10 @@ pub struct PondVenue {
     pub rod_mesh: Option<crate::fishing_actors::RodMesh>,
 }
 
-/// Wind-up frames before the power meter opens (state `0xd`: ~12 frames).
-pub const WINDUP_FRAMES: i32 = 12;
+/// Wind-up frames before the power meter opens: state `0xd` adds the frame
+/// step to `DAT_801D9054` and leaves once it exceeds `0xC` (`slti v0,v0,0xd`
+/// at `0x801CFA40`), so thirteen frames at step `1`.
+pub const WINDUP_FRAMES: i32 = 13;
 
 /// Flight frames before the lure settles (state `0x1e` waits for the line
 /// animation counter to reach `0x14`).

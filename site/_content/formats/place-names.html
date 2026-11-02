@@ -77,7 +77,7 @@
     <tr><td>name</td><td>24 bytes including the terminating NUL, so at most 23 characters - the shared rename cap</td></tr>
   </tbody>
   </table>
-  <p>The per-frame label pass in the map display module (PROT 0981, game mode <code>0x0D</code> - the screen L1 opens on a kingdom map) draws each record whose region matches the current kingdom and whose discovery flag is set (or the show-all debug flag is on): project the map position to the screen, draw the name, measure it, and draw a dialog-skin window as wide as the name around it. So the name is drawn <strong>at the place's own map position</strong>, gated on having discovered it, inside a box of its own width (the screen around the loop is on <a href="../subsystems/world-map.html#map-display">world map</a>) (<a href="#how-we-know">how we know</a>).</p>
+  <p>The per-frame label pass in the map display module (PROT 0981, game mode <code>0x0D</code> - the screen L1 opens on a kingdom map) draws each record whose region matches the current kingdom and whose discovery flag is set (or the show-all debug flag is on): project the map position to the screen, draw the name, measure it, and draw a class-0 window (opaque blue marble under the gold border) as wide as the name around it. So the name is drawn <strong>at the place's own map position</strong>, gated on having discovered it, inside a box of its own width (the screen around the loop is on <a href="../subsystems/world-map.html#map-display">world map</a>) (<a href="#how-we-know">how we know</a>).</p>
 </section>
 
 <section class="doc-section" id="site-3">

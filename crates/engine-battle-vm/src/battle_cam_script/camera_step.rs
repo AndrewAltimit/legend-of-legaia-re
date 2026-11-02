@@ -664,6 +664,37 @@ impl BattleCamera {
             })
     }
 
+    /// [`Self::glide_endpoint_matches_to`] over the components the displayed
+    /// pose `shown` walked back off retail's live pose `live` only. A
+    /// component retail's table holds still reads the same on the displayed
+    /// frame as on the RAM's, so whether the engine's glide would walk it the
+    /// same way says nothing about the walk back; it is the components that
+    /// moved whose table has to be the engine's. `koru_pre_*`'s Done tail
+    /// holds its pitch at `-23` (the strike's residue) where the replay's
+    /// case 8 holds `-26`, while yaw, depth and focus walk to retail's
+    /// endpoints exactly.
+    pub fn glide_endpoint_matches_walked(
+        &self,
+        end: BattleCamPose,
+        target: BattleCamPose,
+        live: BattleCamPose,
+        shown: BattleCamPose,
+    ) -> bool {
+        if self.phase == BattleCamPhase::Menu {
+            return false;
+        }
+        let ang = |a: f32, b: f32| ((a - b).rem_euclid(4096.0)).min((b - a).rem_euclid(4096.0));
+        let held_ang = |a: f32, b: f32| ang(a, b) == 0.0;
+        (held_ang(live.pitch, shown.pitch) || ang(target.pitch, end.pitch) <= ALIGN_ANGLE_TOLERANCE)
+            && (held_ang(live.yaw, shown.yaw) || ang(target.yaw, end.yaw) <= ALIGN_ANGLE_TOLERANCE)
+            && (0..3).all(|k| {
+                (live.tr[k] == shown.tr[k]
+                    || (target.tr[k] - end.tr[k]).abs() <= ALIGN_TR_TOLERANCE)
+                    && (live.focus[k] == shown.focus[k]
+                        || (target.focus[k] - end.focus[k]).abs() <= ALIGN_FOCUS_TOLERANCE)
+            })
+    }
+
     /// Phase-align the glide's **origin** to a retail instant: every driven
     /// component whose framing endpoint agrees with retail's (`end`, the
     /// endpoints of retail's tween table `ctx[+0x118C]`) takes retail's live

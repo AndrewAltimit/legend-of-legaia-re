@@ -1,0 +1,543 @@
+# The sample pack game-mode instances. Rules live in the engine; these pick the
+# numbers and the layout.
+
+[[poker]]
+id = "mist-lantern-table"
+name = "Mist Lantern Table"
+seats = 4
+buy_in = 1000
+small_blind = 10
+big_blind = 20
+currency = "coins"
+chip_value = 1
+ai_tier = "regular"
+blind_double_every = 10
+# Dealt by lantern light on the meadow below the lodge in Tolva's Haven:
+# three islanders round a plank table, the player's place at its south
+# edge, looking up at the lodge's hedge.
+map = "isles_village"
+spawn = "from_thornwood"
+
+[poker.table]
+tile = [56, 32]
+facing = 0
+radius = 90
+# The game is dealt on the table's own felt; the plank table that stands
+# on that tile between games (the map's `lantern_table` prop) is put away
+# while the seat is taken.
+hide = ["lantern_table"]
+height = 90
+# Reactions (cheer on a won pot, slump on a lost one) are clips picked
+# from front renders of each NPC's own rig: the islanders throw their arms
+# out (25) or hang their heads (22).
+players = [
+  { npc = "lantern_wenna", name = "Wenna", sit = 34, cheer = 35, slump = 53 },
+  { npc = "lantern_harl", name = "Harl", cheer = 25, slump = 22 },
+  { npc = "lantern_ysel", name = "Ysel", cheer = 25, slump = 22 },
+]
+
+[[card_duels]]
+id = "haven-duel"
+name = "Village Duel"
+deck = ["burrow-pup", "ember-moth", "fen-lurker", "storm-ram", "hollow-shell"]
+ai_tier = "novice"
+elemental_cells = true
+chain = false
+stakes = false
+win_booster = "genesis-starter"
+# Played at the plank table under the great tree in Tolva's Haven's west
+# meadow, Brin across the board and two islanders looking on.
+map = "isles_village"
+spawn = "from_beach"
+
+[card_duels.table]
+tile = [11, 10]
+facing = 6
+# The duel lays its own table; the map's `duel_table` prop on that tile
+# is put away while the duel is played.
+hide = ["duel_table"]
+height = 64
+seat_distance = 200
+# Brin reacts in his chair: 35 throws his hands up when he takes the
+# duel, 53 folds his arms when he loses it.
+opponent = { npc = "duel_brin", name = "Brin", sit = 34, cheer = 35, slump = 53 }
+# The onlookers cheer the player's captures and win (25) and hang their
+# heads at a loss (22); the second onlooker's rig has only two plain idles.
+spectators = [{ npc = "duel_onlooker_a", cheer = 25, slump = 22 }, { npc = "duel_onlooker_b" }]
+
+[[golf]]
+id = "windmill-links"
+name = "Windmill Links"
+location = { kind = "scene", name = "town01" }
+
+[[golf.holes]]
+par = 2
+rows = [
+  "############",
+  "#T........O#",
+  "############",
+]
+
+[[golf.holes]]
+par = 3
+rows = [
+  "###########",
+  "#T....,,,,#",
+  "######.,,.#",
+  "#O..ww....#",
+  "#..sss.>>.#",
+  "###########",
+]
+
+[[golf.holes]]
+par = 3
+rows = [
+  "##########",
+  "#T.......#",
+  "#........#",
+  "#...##...#",
+  "#...##...#",
+  "#.......O#",
+  "##########",
+]
+heights = [
+  "0000000000",
+  "0444332210",
+  "0443322110",
+  "0432002110",
+  "0321002100",
+  "0211110000",
+  "0000000000",
+]
+
+# A sprint across Drake's overworld (map01), from the fields under Rim Elm
+# to the water gate: out east round the bluff, a hairpin back west along
+# the northern plain, past Hunter's Spring and down the western strip.
+# Every waypoint is a checkpoint gate. A hop at the hairpin cuts it; the
+# boost two tiles off the plain's long straight needs one.
+[[races]]
+id = "drake-circuit"
+name = "Drake Dash"
+scene = "map01"
+course = "sprint"
+half_width = 70
+racers = 4
+ai_tier = "regular"
+rivals = ["Lysa", "Brannoc", "Old Pell"]
+waypoints = [
+  [91, 20], [94, 28], [98, 31], [102, 32], [92, 36],
+  [80, 38], [70, 40], [60, 46], [57, 51], [57, 56],
+]
+boost_segments = [5]
+pickups = [
+  { kind = "shield", at = [96, 30] },
+  { kind = "hop", at = [99, 31] },
+  { kind = "boost", at = [86, 35] },
+  { kind = "boost", at = [75, 39] },
+  { kind = "slow", at = [65, 43] },
+  { kind = "shield", at = [58, 48] },
+]
+
+[[prop_hunt]]
+id = "storehouse"
+name = "Storehouse"
+players = 4
+hunters = 1
+rounds = 4
+bounds = [0, 0, 960, 640]
+blockers = [[300, 200, 420, 440], [600, 100, 700, 200]]
+hide_frames = 1800
+round_frames = 10800
+hunter_health = 100
+miss_penalty = 10
+ai_tier = "regular"
+props = [
+  { id = "barrel", radius = 14 },
+  { id = "crate", radius = 18 },
+  { id = "sack", radius = 12 },
+]
+decoys = [
+  { prop = "barrel", x = 80, y = 80 },
+  { prop = "barrel", x = 120, y = 90 },
+  { prop = "crate", x = 860, y = 560 },
+  { prop = "crate", x = 820, y = 80 },
+  { prop = "sack", x = 500, y = 600 },
+  { prop = "sack", x = 140, y = 520 },
+  { prop = "barrel", x = 480, y = 300 },
+]
+
+# --- The Gambler's Rest (Genesis Tower, 5F) ----------------------------------
+#
+# Keeper Odalric's five tables. The keeper's quests (quests.toml,
+# `keeper_tables`, `high_roller`) count wins at each of them by id.
+
+# High stakes for a late-game purse: buy in for 5,000 gold, five expert
+# opponents, blinds doubling every eight hands.
+[[poker]]
+id = "tower-high-table"
+name = "Tower High Table"
+location = { kind = "scene", name = "koin1" }
+seats = 6
+buy_in = 5000
+small_blind = 50
+big_blind = 100
+currency = "gold"
+chip_value = 1
+ai_tier = "expert"
+max_hands = 60
+blind_double_every = 8
+# Dealt at the High Table in the Gambler's Rest hall: five of the tower's
+# regulars round the felt, the player's chair at its south edge.
+map = "genesis_5f"
+spawn = "from_below"
+
+[poker.table]
+tile = [18, 10]
+facing = 0
+radius = 92
+# Dealt on the table's own felt; the hall's card table that stands there
+# between games (the map's `high_table` prop) is put away while the seat
+# is taken.
+hide = ["high_table"]
+height = 84
+# Reactions picked from front renders of each regular's rig. Odile reacts
+# in his chair (29 chin in hand while he thinks, 30 a fist on a win, 33 a
+# hand over his face on a loss); Brann's rig has one seated clip, his sit,
+# so he takes his results sitting still.
+players = [
+  { npc = "high_table_odile", name = "Odile", sit = 31, think = 29, cheer = 30, slump = 33 },
+  { npc = "high_table_brann", name = "Brann", sit = 46 },
+  { npc = "high_table_sefa", name = "Sefa", cheer = 27, slump = 28 },
+  { npc = "high_table_corwin", name = "Corwin", cheer = 35, slump = 37 },
+  { npc = "high_table_mott", name = "Old Mott", cheer = 25, slump = 28 },
+]
+
+# The keeper plays the tower's own breed, hands face up, captures chaining
+# and the loser's best card on the line.
+[[card_duels]]
+id = "wardens-duel"
+name = "The Warden's Duel"
+deck = ["ironhide-brute", "rune-sentinel", "ember-scale", "iron-colossus", "frost-maw"]
+ai_tier = "expert"
+elemental_cells = true
+chain = true
+stakes = true
+win_booster = "mistborn"
+# Played at the card room's table on the Gambler's Rest floor, the
+# Warden's second across the board and two regulars looking on.
+map = "genesis_5f"
+spawn = "from_below"
+
+[card_duels.table]
+tile = [3, 12]
+offset = [64, 0, 0]
+facing = 0
+# The duel lays its own table; the card room's `card_table` that stands
+# there between duels is put away while it is played.
+hide = ["card_table"]
+# The second spreads his arms wide on a win (35) and bows his head over
+# the board on a loss (37).
+opponent = { npc = "duel_second", name = "The Warden's Second", cheer = 35, slump = 37 }
+# The watcher throws his arms out for the player (25) and folds them
+# against (13); the regular's rig has only two plain idles.
+spectators = [{ npc = "duel_regular" }, { npc = "duel_watcher", cheer = 25, slump = 13 }]
+
+# Six holes up the tower's side. Each is a real-looking golf hole in
+# miniature: bunkers guarding the green, a dogleg, an island green,
+# terraces, a run of ramps, and a long finishing hole with a sloped green.
+[[golf]]
+id = "genesis-links"
+name = "The Genesis Links"
+location = { kind = "scene", name = "teien" }
+
+# 1 - Atrium Approach: straight in, with a bunker either side of the green.
+[[golf.holes]]
+par = 3
+rows = [
+  "##############",
+  "#,,,,,,,ss,,,#",
+  "#T.........O.#",
+  "#,,,,,,,ss,,,#",
+  "##############",
+]
+
+# 2 - Ember Dogleg: the fairway turns left; cutting the corner means rough.
+[[golf.holes]]
+par = 4
+rows = [
+  "#############",
+  "#O..,,,,,,,,#",
+  "#...,,,,,,,,#",
+  "#ss.,,,,,,,,#",
+  "#,..,,,,,,,,#",
+  "#,...,,,,,,,#",
+  "#,,.........#",
+  "#,,,,,.....T#",
+  "#############",
+]
+
+# 3 - Garden Island: the green is an island; one narrow bridge crosses
+# the water, and the bunker behind punishes a long shot.
+[[golf.holes]]
+par = 3
+rows = [
+  "###############",
+  "#wwwwwwwwwwwww#",
+  "#wwwwwww...sww#",
+  "#T....,ww..O.w#",
+  "#,....,....s.w#",
+  "#wwwwwwwww...w#",
+  "#wwwwwwwwwwwww#",
+  "###############",
+]
+
+# 4 - Vault Terraces: three terraces stepping down to the cup; the ball
+# runs off each step, so aim short.
+[[golf.holes]]
+par = 4
+rows = [
+  "##############",
+  "#T...........#",
+  "#............#",
+  "#,,,,,,,,,,,,#",
+  "#............#",
+  "#....s..s....#",
+  "#,,,,,,,,,,,,#",
+  "#.....O......#",
+  "##############",
+]
+heights = [
+  "00000000000000",
+  "06666666666660",
+  "06666666666660",
+  "05555555555550",
+  "03333333333330",
+  "03333333333330",
+  "02222222222220",
+  "01111111111110",
+  "00000000000000",
+]
+
+# 5 - Engine Ramps: conveyor ramps push the ball sideways; let them carry
+# it round the wall.
+[[golf.holes]]
+par = 4
+rows = [
+  "##############",
+  "#T....#......#",
+  "#.....#......#",
+  "#.....#..O...#",
+  "#>>>>>#......#",
+  "#.....#,,,,,,#",
+  "#..........<<#",
+  "#............#",
+  "##############",
+]
+
+# 6 - Throne Green: a long par 5 past water and sand to a green that
+# slopes away from the approach.
+[[golf.holes]]
+par = 5
+rows = [
+  "##################",
+  "#T.....,,,,,.....#",
+  "#......ww,,,.....#",
+  "#,,....ww,,..ss..#",
+  "#,,....ww,.......#",
+  "#......,,,....,,.#",
+  "#ss...,,,,.....O.#",
+  "##################",
+]
+heights = [
+  "000000000000000000",
+  "011111111111111110",
+  "011111111111111110",
+  "011111111111111110",
+  "011111111111112210",
+  "011111111111123210",
+  "011111111111123210",
+  "000000000000000000",
+]
+max_strokes = 9
+
+# The keeper's race, run on Drake's overworld (map01) for six expert
+# racers: from the water gate's southern landing to the Biron Monastery -
+# across the southern plain and back, out over the narrow neck into the
+# eastern valley, round its northern hairpin and down to the monastery's
+# gate. Picked at the table, it takes the party out onto the overworld and
+# back to the 5F when it is over. The id keeps the keeper's quests and
+# card reward.
+[[races]]
+id = "spiral-circuit"
+name = "The Monastery Run"
+scene = "map01"
+course = "sprint"
+half_width = 70
+racers = 6
+ai_tier = "expert"
+rivals = ["Sable", "Hask", "Mirela", "Ivo", "Old Tobin"]
+waypoints = [
+  [62, 63], [67, 56], [67, 52], [80, 50], [88, 60], [91, 51],
+  [93, 50], [99, 50], [103, 43], [102, 51], [100, 57], [101, 61],
+]
+boost_segments = [2, 6]
+pickups = [
+  { kind = "shield", at = [65, 59] },
+  { kind = "hop", at = [67, 54] },
+  { kind = "boost", at = [74, 51] },
+  { kind = "boost", at = [74, 49] },
+  { kind = "slow", at = [84, 55] },
+  { kind = "hop", at = [90, 55] },
+  { kind = "boost", at = [96, 50] },
+  { kind = "slow", at = [101, 47] },
+  { kind = "shield", at = [101, 54] },
+]
+
+# Hide and seek among the Old Vault's urns and crates: a wide hall broken
+# by pillar rows, two hunters against four hiders.
+[[prop_hunt]]
+id = "old-vault"
+name = "The Old Vault"
+location = { kind = "scene", name = "korb3" }
+players = 6
+hunters = 2
+rounds = 6
+bounds = [0, 0, 1280, 896]
+blockers = [
+  [200, 160, 260, 220], [200, 420, 260, 480], [200, 680, 260, 740],
+  [1020, 160, 1080, 220], [1020, 420, 1080, 480], [1020, 680, 1080, 740],
+  [560, 360, 720, 540],
+]
+hide_frames = 1500
+round_frames = 9000
+hunter_health = 100
+miss_penalty = 15
+ai_tier = "expert"
+props = [
+  { id = "urn", radius = 14 },
+  { id = "crate", radius = 18 },
+  { id = "chest", radius = 16 },
+  { id = "brazier", radius = 12 },
+]
+decoys = [
+  { prop = "urn", x = 120, y = 120 },
+  { prop = "urn", x = 150, y = 760 },
+  { prop = "urn", x = 640, y = 300 },
+  { prop = "crate", x = 400, y = 100 },
+  { prop = "crate", x = 880, y = 800 },
+  { prop = "crate", x = 1160, y = 300 },
+  { prop = "chest", x = 640, y = 620 },
+  { prop = "chest", x = 330, y = 560 },
+  { prop = "chest", x = 950, y = 560 },
+  { prop = "brazier", x = 300, y = 300 },
+  { prop = "brazier", x = 980, y = 300 },
+  { prop = "brazier", x = 640, y = 820 },
+]
+
+# --- Played on the tower itself ----------------------------------------------
+# In-world courses: the map's own tiles are the course or track
+# (docs/subsystems/expansion-modes.md#in-world-golf-and-racing).
+
+# One hole across the 1F dais, tee at its south-west corner, cup at the
+# north-east, the Warden's Stone in between.
+[[golf]]
+id = "tower-green"
+name = "Tower Green"
+map = "genesis_1f"
+spawn = "dais"
+
+[[golf.holes]]
+par = 3
+tee = [5, 8]
+cup = [9, 4]
+area = [5, 4, 9, 8]
+
+# Three laps of the 1F arena floor, round the dais between the pillars: the
+# tower's own warm-up circuit, a power-up on each side.
+[[races]]
+id = "sol-ring"
+name = "Sol Ring"
+map = "genesis_1f"
+spawn = "entrance"
+laps = 3
+racers = 3
+half_width = 90
+ai_tier = "regular"
+rivals = ["Mirela", "Old Tobin"]
+waypoints = [[4, 3], [10, 3], [10, 9], [4, 9]]
+boost_segments = [0, 2]
+pickups = [
+  { kind = "boost", at = [7, 3] },
+  { kind = "shield", at = [10, 6] },
+  { kind = "slow", at = [7, 9] },
+  { kind = "hop", at = [4, 6] },
+]
+
+
+# --- Tower Game Night ---------------------------------------------------------
+# The Gambler's Rest's party night: six short rounds of the tower's own
+# games, scored by placement. Played alone from the 5F games-room table
+# (against the keeper and two regulars), or hosted for a room of friends
+# from the room screen. Last place picks the next game; the final round
+# scores double; the Hold'em round is a wager.
+[[party_nights]]
+id = "tower-game-night"
+name = "Tower Game Night"
+location = { kind = "scene", name = "koin1" }
+points = [10, 6, 4, 2]
+last_place_picks = true
+double_final = true
+players = 4
+rivals = ["Keeper Odalric", "Mirela", "Old Tobin"]
+ai_tier = "regular"
+# The night ends on a podium in the Rest's hall (5F), facing the stair the
+# party came up: the top three's leaders on the blocks, the rivals played
+# by the Rest's regulars.
+podium = { map = "genesis_5f", tile = [24, 10], facing = 0, bodies = ["card_room_dealer", "high_table_odile", "high_table_mott"] }
+
+[[party_nights.rounds]]
+mode = "tower-green"
+name = "Tower Green"
+
+[[party_nights.rounds]]
+mode = "mist-lantern-table"
+name = "Lantern Hold'em"
+hands = 3
+stack = 300
+wager = 25
+
+[[party_nights.rounds]]
+mode = "sol-ring"
+laps = 1
+
+[[party_nights.rounds]]
+mode = "haven-duel"
+name = "Duel on the Hill"
+
+[[party_nights.rounds]]
+mode = "storehouse"
+name = "Storehouse Hide and Seek"
+rounds = 1
+
+[[party_nights.rounds]]
+mode = "windmill-links"
+name = "Windmill Putt-off"
+holes = [2]
+
+[[party_nights.rounds]]
+mode = "drake-circuit"
+name = "Drake Dash"
+
+[[party_nights.prizes]]
+place = 1
+gold = 1500
+boosters = ["mistborn", "genesis-starter"]
+
+[[party_nights.prizes]]
+place = 2
+gold = 800
+boosters = ["genesis-starter"]
+
+[[party_nights.prizes]]
+place = 3
+gold = 400

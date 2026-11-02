@@ -642,7 +642,7 @@ impl crate::validate::SectionRules for ItemSection {
     }
 }
 
-/// The local part of a pack key (`rebirth:x` -> `x` in pack `rebirth`).
+/// The local part of a pack key (`sample:x` -> `x` in pack `sample`).
 fn local<'k>(cx: &crate::validate::Checker<'_>, key: &'k str) -> &'k str {
     match key.split_once(':') {
         Some((p, k)) if p == cx.pack().manifest.id => k,
@@ -740,10 +740,10 @@ stock = ["vigil_blade", 0x79, { item = "plume", requires = { flags = ["f"] }, pr
             c: ItemRef,
         }
         let w: W =
-            toml::from_str("a = 121\nb = { kind = \"item\", id = 5 }\nc = \"rebirth:x\"").unwrap();
+            toml::from_str("a = 121\nb = { kind = \"item\", id = 5 }\nc = \"sample:x\"").unwrap();
         assert_eq!(w.a.retail_id(), Some(121));
         assert_eq!(w.b.retail_id(), Some(5));
-        assert_eq!(w.c.pack_key(), Some("rebirth:x"));
+        assert_eq!(w.c.pack_key(), Some("sample:x"));
         assert!(!ItemRef::Disc(DiscRef::Monster { id: 1 }).is_item());
     }
 

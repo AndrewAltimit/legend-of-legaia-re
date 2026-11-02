@@ -7,7 +7,7 @@ What the site's wasm bundle exports, one section per module family: the play run
 The browser side is five crates:
 
 - [`legaia-web-play`](../../crates/web-play/README.md) - the browser hosts of the port: `runtime`, `play` and every `play_*` module, `boot_title`, `cards`, `resume`, `session_save`, `host_slot`, `pad_bindings`, the field actor layer (`field_actors`, `field_npc`, `field_scene_anim`). In-memory disc access is the format layer's: `legaia_iso::image` and `legaia_prot::toc_index`.
-- [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames` (the play page holds one for the art it draws over an in-world minigame) and the game-modes page's `LegaiaModes`.
+- [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames` (the play page holds one for the art it draws over an in-world minigame) and `LegaiaModes`, whose pack loader lists the game-modes page's instances.
 - [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
 - [`legaia-web-expansion`](../../crates/web-expansion/README.md) - the expansion workbench (`catalog`, `session`, `wasm`): an engine-layer crate whose previews are the engine's own kernels.
 - [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the `cdylib` the site loads.
@@ -616,7 +616,7 @@ gate:
 | Options screen | Closed. The page persists `OptionsState` to `localStorage` (`legaia.options`, `runtime/options.rs`) through the same serde impl the native window writes to `legaia-options.toml`, and both save `OptionsPins::persistable` on an Options close. |
 | Remembered launch switches | Closed. PSX rasterisation, retail-faithful, the entry pulse, smart monsters and the gameplay tweaks persist to `localStorage` (`legaia.switches`, `play_toggles`) as `PersistedSwitches`, the type the native launcher flattens into its settings file ([`host-drift.md`](../tooling/host-drift.md#remembered-between-runs)). |
 | Inn prompt | Closed. Neither host opens an inn session (the retail inn is an ordinary field-VM dialogue), and both draw the prompt when one is up: `play_shop`'s inn arm ports the native `window/hud.rs` arm. |
-| Load / Save rows | Closed at the model. This host browses the console's two memory-card ports; the native window writes LGSF files to `saves/` - but both build the slot from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
+| Load / Save rows | Closed. Both hosts browse the console's two memory-card ports, each a mounted card image (the page's port 1 in browser storage, the window's `memcard1.mcr` in its save directory), and every Save / Load goes through one card kernel (`write_save_into_card`, `save_at`); the slot is built from one `legaia_save` summary (leader name, level, HP/MP, resume scene + location), and the card block carries the engine ext (play clock, saved chains) in the tail retail never reads. |
 | Dance / Baka / Muscle / slots | Closed in-world. Both hosts enter them from the scene's own door warps; this host draws them through `play_minigames` (below) with the standalone page's renderers, and the standalone page stays as the free-play surface. |
 | Field BGM / SFX / XA | Closed. `play_bgm` carries the native director's guard and volume policy, `play_sfx` the full u16 cue space with the duck and the reward bank, `play_xa` the shout and clip banks. The cast-cue band's voice (the item-use shout) resolves in the world onto the XA channel and plays through `play_xa` on both hosts. |
 
@@ -1188,23 +1188,23 @@ Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
 
 ## The game-modes page (`modes_page`)
 
-`LegaiaModes` runs the port's own game modes flat for `site/modes.html`, with no disc and no `World`. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own.
+`LegaiaModes` loads a pack's game modes and can run any instance flat, with no disc and no `World`. `site/modes.html` uses only its loader - `load_pack_tree` / `load_pack_bundle` and `modes_json` list the instances laid out in the world, which the page plays in 3D (below); the seat, tick and frame exports draw on no site page and stay as the World-free test surface for the seat. The modes are `World`-free ([`expansion-modes.md`](expansion-modes.md)), and so is the seat that runs one: the class holds one `legaia_engine_expansion::modes::PackModeSeat` and steps it once a frame with `PackModeSeat::step`, the call `World::tick_pack_mode` makes on the play hosts, so the quit prompt, the event log and the results card are the seat's own.
 
 The screen is the one projection every host draws, `legaia_engine_ui::expansion_modes::seat_screen`; `frame_json` hands its flat quads (in draw order, each with its blend mode and, for a gradient, its four corner colours) and its labels unmeasured (`mode_screen_labels`), and the page fills the quads - a gradient as a linear fill from its top edge's colour to its bottom edge's, an additive blend lighter, a subtractive one darker - and sets the labels in a web font, since the dialog font is disc data. A duel's cards are textured off its card page (`legaia_engine_modes::cards::table_art`); `card_page_rgba` composes that page as the play hosts write it into VRAM, minus the portraits a disc would give, and the page stretches each card prim's page rectangle over the card.
 
-The page's 3D section is not this class: it frames the play page (`play.html?embed=1&expansion=1&lib=<pack>&map=<map>&mode=<id>`), whose `LegaiaRuntime` boots off the site's disc cache and seats the instance at its table or course (`World::enter_pack_mode`, the scene host entering the mode's map); the pack report's `world_modes` lists which instances have one.
+The page's play is not this class: it frames the play page (`play.html?embed=1&expansion=1&lib=<pack>&map=<map>|scene=<scene>&mode=<id>`), whose `LegaiaRuntime` boots off the site's disc cache and seats the instance at its table or course (`World::enter_pack_mode`, the scene host entering the mode's map); the pack report's `world_modes` lists which instances have one.
 
 | Export | Does |
 |---|---|
 | `new()` / `set_seed(seed)` | A runtime on the built-in practice set; the page seed every later session's seed mixes in. |
-| `use_builtin()` / `load_pack_tree(paths, data)` / `load_pack_bundle(bytes)` | The rules: the practice set, a pack tree (Rebirth as the site serves it, `packs/rebirth.json`), or `.lxpack` bytes through `share::import_bundle`. A pack contributes its `modes.toml`, its `cards.toml` as the duel's book and its maps. `""` or the reason. |
-| `modes_json()` | `{ source, pack, modes: [{ id, name, kind, map }] }`; `map` names the pack map an instance is laid out on. |
+| `use_builtin()` / `load_pack_tree(paths, data)` / `load_pack_bundle(bytes)` | The rules: the practice set, a pack tree (the sample pack as the site serves it, `packs/sample.json`), or `.lxpack` bytes through `share::import_bundle`. A pack contributes its `modes.toml`, its `cards.toml` as the duel's book and its maps. `""` or the reason. |
+| `modes_json()` | `{ source, pack, modes: [{ id, name, kind, map, scene }] }`; `map` names the pack map an instance is laid out on, `scene` the overworld a race runs across. |
 | `enter(id)` / `open_picker()` / `leave()` | Seat an instance, the in-game picker, or nothing. |
 | `tick(pad)` | One frame off a `PadButton` word; returns the stage (`closed`, `picker`, `playing`, `results`). |
 | `state_json()` / `frame_json()` | The seat's stage, instance and quit prompt; the screen's quads and labels in the 320x240 stage. |
 | `card_page_info()` / `card_page_rgba()` | An open duel's card page: its key (changing with the faces) and size, and its RGBA8 texels. |
 
-A golf course, race or table laid out on a pack map builds from that map (`ActiveMode::build_with_maps`) and, with no world to stage it in, draws as its top-down screen. Nothing is granted: a page session has no save. Netplay stays on the play page, which joins rooms through `engine-netplay` over a running `World`. Tests: `crates/web-minigames/tests/modes_page_api.rs` plays every instance of the practice set and of Rebirth through the seat.
+Run flat, a golf course, race or table laid out on a pack map builds from that map (`ActiveMode::build_with_maps`) and, with no world to stage it in, draws as its top-down screen; nothing is granted, since the class holds no save. Netplay stays on the play page, which joins rooms through `engine-netplay` over a running `World`. Tests: `crates/web-minigames/tests/modes_page_api.rs` plays every instance of the practice set and of the sample pack through the seat.
 
 ## Session saves + retail cards (`session_save`)
 

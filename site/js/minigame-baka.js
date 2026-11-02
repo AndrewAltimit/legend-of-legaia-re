@@ -903,8 +903,8 @@
 
       }
 
-      /* The engine's round chrome (BakaChrome - intro card, ROUND banner,
-       * READY / FIGHT countdown), drawn at retail's emitter arguments. While
+      /* The engine's round chrome (BakaChrome - intro card, ROUND banner),
+       * drawn at retail's emitter arguments. While
        * it is up it owns the round framing, so the page's own round banner
        * stands down. */
       const chrome = (meta && Array.isArray(meta.chrome)) ? meta.chrome : [];

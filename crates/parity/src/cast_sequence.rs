@@ -533,6 +533,10 @@ pub struct Report {
     pub engine_frames: usize,
     pub segments: Vec<SegmentReport>,
     pub pairs: Vec<Pair>,
+    /// The sound channel ([`crate::cast_sequence_sound`]), when both sides
+    /// carry an `sfx.csv`.
+    #[serde(default)]
+    pub sound: Option<crate::cast_sequence_sound::SoundReport>,
 }
 
 /// Pair the two recordings and score every pair. `keep` receives each
@@ -743,6 +747,7 @@ pub fn compare(
         engine_frames: engine_shots.len(),
         segments,
         pairs,
+        sound: None,
     })
 }
 
@@ -916,12 +921,17 @@ pub struct CastSequenceArgs {
     /// Worst pairs listed in the report.
     #[arg(long, default_value_t = 10)]
     pub worst: usize,
+    /// Sound channel: ticks either side of its projected time a cue still
+    /// matches at.
+    #[arg(long, default_value_t = crate::cast_sequence_sound::DEFAULT_TOLERANCE)]
+    pub sound_tolerance: u64,
 }
 
 pub fn run(a: CastSequenceArgs) -> Result<()> {
     let retail = Side::read(&a.retail)?;
     let engine = Side::read(&a.engine)?;
-    let report = compare(&a.label, &retail, &engine, a.retail_lag, |_, _, _| {})?;
+    let mut report = compare(&a.label, &retail, &engine, a.retail_lag, |_, _, _| {})?;
+    report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
     let strip = strip_pairs(&report, a.strip);
     std::fs::create_dir_all(&a.out)?;
     if !strip.is_empty() {
@@ -937,7 +947,23 @@ pub fn run(a: CastSequenceArgs) -> Result<()> {
         a.out.join("report.json"),
         serde_json::to_string_pretty(&report)?,
     )?;
-    std::fs::write(a.out.join("report.md"), markdown(&report, a.worst, &strip))?;
+    let mut md = markdown(&report, a.worst, &strip);
+    if let Some(s) = &report.sound {
+        md.push_str(&crate::cast_sequence_sound::markdown(s));
+        println!(
+            "{}: sound cue score {:.3} (id {:.3}): retail {} engine {} matched {} timing {} missing {} extra {}",
+            report.label,
+            s.score,
+            s.id_score,
+            s.retail_cues,
+            s.engine_cues,
+            s.matched.len(),
+            s.timing.len(),
+            s.missing.len(),
+            s.extra.len()
+        );
+    }
+    std::fs::write(a.out.join("report.md"), md)?;
     println!(
         "{}: mean within {:.3} over {} scene pairs (min {:.3}); white {} dark {} unpaired {}",
         report.label,

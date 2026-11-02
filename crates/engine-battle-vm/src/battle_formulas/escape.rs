@@ -272,7 +272,7 @@ pub fn monster_escape_side_scores(
 /// PORT: FUN_801EC0DC
 ///
 /// Wired at the retail call site's mirror: the monster action picker's
-/// once-per-pass flee checkpoint (`FUN_801E9FD4`, `jal 0x801ec0dc` at
+/// flee checkpoint (`FUN_801E9FD4`, `jal 0x801ec0dc` at
 /// `0x801ea980`) is `engine-core`'s `World::pick_monster_action`, which calls
 /// this through `World::monster_flee_roll` and seeds action category
 /// `+0x1DE == 5` on success - the monster arm of the Run band (the state-0x68

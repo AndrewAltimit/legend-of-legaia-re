@@ -25,11 +25,15 @@ pub struct BarSeed {
     /// The ailments the capture's status word `+0x16E` carries
     /// ([`seedable_status_bits`]); `0` for none.
     pub status: u16,
-    /// The capture holds this combatant's initiative key `+0x16C` spent: it
-    /// had already dispatched in the round the capture was taken in
-    /// (`sh zero,0x16c(s3)` at `0x801E2CDC`, the action SM's `0x0C`), so it
-    /// sits out the first round the seed plays.
-    pub spent_key: bool,
+    /// The initiative key `+0x16C` the seed stands this combatant on for the
+    /// first round it plays, or `None` to keep the engine's own roll.
+    ///
+    /// `Some(0)` is a key the capture holds spent: the combatant had already
+    /// dispatched in the round the capture was taken in (`sh zero,0x16c(s3)`
+    /// at `0x801E2CDC`, the action SM's `0x0C`), so it sits out that round.
+    /// A live key orders the replayed round as the capture's own remainder:
+    /// the pick `FUN_801DABA4` takes the highest key first.
+    pub init_key: Option<u16>,
 }
 
 /// The status-word bits a seed carries over: the ailments the engine tracks
@@ -78,6 +82,10 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
     if seeds.iter().any(|s| s.ground.is_some()) {
         world.battle.seed_recentre_held = true;
     }
+    // A round start that already picked did so on the engine's own keys.
+    if seeds.iter().any(|s| s.init_key.is_some()) {
+        world.forget_parked_turn();
+    }
     for s in seeds {
         if let Some(pool) = s.slot.checked_sub(EMPTY_SEAT_SLOT_BASE) {
             if let Some([x, z]) = s.ground {
@@ -110,8 +118,8 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
             a.battle.render_flag = legaia_engine_battle_vm::battle_formulas::STATE_DEFEAT_FADE;
             a.battle.render_color = lanes;
         }
-        if s.spent_key {
-            a.battle.init_key = 0;
+        if let Some(k) = s.init_key {
+            a.battle.init_key = k;
         }
         // A party member seeded down kneels, as the capture's does: the
         // seat skips the fall that leads there.
@@ -124,7 +132,7 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
     }
 }
 
-/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k],...` for
+/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]],...` for
 /// `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
@@ -143,10 +151,10 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 0 => head,
                 w => format!("{head}:s{w:x}"),
             };
-            if s.spent_key {
-                format!("{head}:k")
-            } else {
-                head
+            match s.init_key {
+                Some(0) => format!("{head}:k"),
+                Some(k) => format!("{head}:k{k}"),
+                None => head,
             }
         })
         .collect::<Vec<_>>()
@@ -157,9 +165,11 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
 pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
-            let (e, spent_key) = match e.trim().strip_suffix(":k") {
-                Some(head) => (head, true),
-                None => (e.trim(), false),
+            let e = e.trim();
+            let (e, init_key) = match e.rsplit_once(":k") {
+                Some((head, "")) => (head, Some(0)),
+                Some((head, k)) => (head, Some(k.parse().ok()?)),
+                None => (e, None),
             };
             let (e, status) = match e.rsplit_once(":s") {
                 Some((head, w)) => (head, u16::from_str_radix(w, 16).ok()?),
@@ -189,7 +199,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 facing,
                 defeat_lanes,
                 status,
-                spent_key,
+                init_key,
             })
         })
         .collect()
@@ -221,5 +231,17 @@ pub fn arm_capture_reseat(
     if !ground.is_empty() {
         world.battle.capture_reseat = Some((seat, ground));
         world.battle.capture_approach_yaw = approach_yaw;
+        world.battle.capture_reseat_bars = seeds
+            .iter()
+            .filter(|s| s.slot < EMPTY_SEAT_SLOT_BASE)
+            .map(
+                |s| legaia_engine_battle_loop::battle_state::CaptureReseatBars {
+                    slot: s.slot,
+                    hp: s.hp,
+                    mp: s.mp,
+                    status: seedable_status_bits(s.status),
+                },
+            )
+            .collect();
     }
 }

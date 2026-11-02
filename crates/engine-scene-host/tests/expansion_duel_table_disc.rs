@@ -1,5 +1,5 @@
 //! Disc-gated: a Grid Duel played at a table in the world. The `duel_table`
-//! fixture pack's duel and the Rebirth pack's Warden's Duel are entered as
+//! fixture pack's duel and the sample pack's Warden's Duel are entered as
 //! modes; the scene host enters each one's pack map under the running seat,
 //! builds the cards' portraits, and the world writes the card page into the
 //! scene's VRAM while the table stage seats the opponent across the board.
@@ -111,7 +111,7 @@ fn the_test_packs_duel_plays_at_its_table() {
 
 #[test]
 fn the_wardens_duel_plays_at_the_card_room_table() {
-    let Some(mut host) = host("../../packs/rebirth") else {
+    let Some(mut host) = host("../../packs/sample") else {
         return;
     };
     enter(&mut host, "wardens-duel", "genesis_5f");

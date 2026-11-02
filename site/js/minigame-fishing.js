@@ -76,8 +76,11 @@ window.MgFishing = (function () {
      * the camera), and frames them through the venue camera - behind the
      * party, looking with them across the water. The seats come from
      * `fishing_party_json` (engine-core fishing_venue::party_placements) and
-     * the frame from `fishing_venue_vp` (venue_camera_view). A drag hands the
-     * frame to the orbit; dblclick gives it back. */
+     * the frame from `fishing_venue_vp`: the venue's scripted camera, which
+     * dollies out over the water on the cast, holds the in-water view through
+     * the fight and turns to the catch close-up and showcase. Retail gives the
+     * player no camera control in the fishing mode, so neither does the page:
+     * there is no drag, wheel or double-click on the stage. */
     function facingOf(anchor) {
       return [-Math.sin(anchor.yaw || 0), -Math.cos(anchor.yaw || 0)];
     }
@@ -108,7 +111,7 @@ window.MgFishing = (function () {
       const lead = b.members.length ? b.members[0].anchor : { x: 0, y: 0, z: 0, yaw: 0 };
       b.anchor = Object.assign({}, lead);
       const [fx, fz] = facingOf(b.anchor);
-      b.defCam = { yaw: -lead.yaw, pitch: 0.22, distance: 0.55, orbit: false };
+      b.defCam = { yaw: -lead.yaw, pitch: 0.22, distance: 0.55 };
       b.cam = Object.assign({}, b.defCam);
       b.center = [
         b.anchor.x + fx * 700,
@@ -217,17 +220,21 @@ window.MgFishing = (function () {
         out: pos,
         members,
         skyBase,
+        /* The walk ground's first vertex in `out`: the span the pond swell
+         * re-heights each frame (engine fishing_scene::swell_ground_positions). */
+        groundBase: (api.fishing_scene_ground_base && api.fishing_scene_ground_positions
+          && api.fishing_scene_ground_base() >= 0)
+          ? pCount + api.fishing_scene_ground_base() : -1,
         anchor: { x: 0, y: 0, z: 0, yaw: 0 },
         venue: -1,
         aabb: info.aabb,
-        defCam: { yaw: 0, pitch: 0.22, distance: 0.55, orbit: false },
-        cam: { yaw: 0, pitch: 0.22, distance: 0.55, orbit: false },
+        defCam: { yaw: 0, pitch: 0.22, distance: 0.55 },
+        cam: { yaw: 0, pitch: 0.22, distance: 0.55 },
         center: [0, 0, 0],
         radius,
         fov: 0.8,
         vp: null,
       };
-      attachOrbit(scene_);
       return scene_;
     }
 
@@ -242,11 +249,11 @@ window.MgFishing = (function () {
       return !!(api.fishing_pond_ready && api.fishing_pond_ready());
     }
 
-    /* The venue camera's view-projection for this canvas, or null while the
-     * visitor orbits. */
+    /* The venue camera's view-projection for this canvas (null on a build
+     * without the export, which falls back to the seat framing). */
     function engineVp() {
       const b = scene;
-      if (!b || b.cam.orbit || !api.fishing_venue_vp) return null;
+      if (!b || !api.fishing_venue_vp) return null;
       const c = glCanvas;
       const vp = api.fishing_venue_vp(b.venue < 0 ? 0 : b.venue,
                                       c.width / Math.max(c.height, 1));
@@ -267,41 +274,31 @@ window.MgFishing = (function () {
         poseWorld(b.out, b.base, m.oid, c, frame, m.anchor, m.base);
         posed = true;
       }
+      /* The pond swell: the water cells ride the venue's live floor ladder. */
+      if (b.groundBase >= 0) {
+        const g = api.fishing_scene_ground_positions();
+        if (g.length) {
+          b.out.set(g, b.groundBase * 3);
+          posed = true;
+        }
+      }
+      /* The sky strip follows the scripted camera (FUN_801D24EC re-projects
+       * it every frame), so it is re-seated with the view. */
+      if (b.skyBase >= 0 && api.fishing_sky_positions) {
+        const sp = api.fishing_sky_positions(b.venue < 0 ? 0 : b.venue);
+        if (sp.length) {
+          b.out.set(sp, b.skyBase * 3);
+          posed = true;
+        }
+      }
       if (posed) b.renderer.updatePositions(b.out);
       b.vp = engineVp();
       b.renderer.mvpOverride = b.vp;
-      /* The engine projection and the orbit framing share one parity (neither
-       * mirrors the model), so one front-face winding serves both. */
+      /* The engine projection and the fallback seat framing share one parity
+       * (neither mirrors the model), so one front-face winding serves both. */
       b.renderer.render(b.cam.yaw, b.cam.pitch, b.cam.distance,
                         0, 0, b.center, b.radius, b.fov);
       b.renderer.mvpOverride = null;
-    }
-
-    function attachOrbit(sc) {
-      const c = glCanvas;
-      let drag = false, lx = 0, ly = 0;
-      c.addEventListener('pointerdown', (e) => {
-        drag = true; lx = e.clientX; ly = e.clientY;
-        c.setPointerCapture(e.pointerId);
-      });
-      c.addEventListener('pointerup', (e) => {
-        drag = false; try { c.releasePointerCapture(e.pointerId); } catch (_) { /* */ }
-      });
-      c.addEventListener('pointermove', (e) => {
-        if (!drag) return;
-        sc.cam.orbit = true;
-        sc.cam.yaw -= (e.clientX - lx) * 0.006;
-        sc.cam.pitch = Math.max(-1.0, Math.min(1.2,
-          sc.cam.pitch - (e.clientY - ly) * 0.006));
-        lx = e.clientX; ly = e.clientY;
-      });
-      c.addEventListener('dblclick', () => { sc.cam = Object.assign({}, sc.defCam); });
-      c.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        sc.cam.orbit = true;
-        sc.cam.distance = Math.max(0.4, Math.min(6,
-          sc.cam.distance * (e.deltaY > 0 ? 1.1 : 0.9)));
-      }, { passive: false });
     }
 
     /* Project a world-space point through the same MVP the 3D pass uses;
@@ -713,8 +710,6 @@ window.MgFishing = (function () {
               party: scene.members.map((m) => Object.assign({}, m.anchor)) }
           : null;
       },
-      setCam(c) { if (scene && c) Object.assign(scene.cam, c); },
-      setCenter(c) { if (scene && c) scene.center = c.slice(); },
     };
   }
 

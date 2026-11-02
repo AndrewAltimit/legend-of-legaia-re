@@ -80,6 +80,12 @@ impl World {
         if let Some(t) = legaia_engine_battle_vm::battle_actor_draw::RotLimbTable::from_scus(scus) {
             self.tables.rot_limb_table = Some(t);
         }
+        // The status CLUT pass's Rot palette windows (`0x80078630`), the
+        // sibling of that table for `FUN_8004CE2C`'s Rot arm, read through
+        // [`Self::battle_rot_clut_windows`] by both hosts' battle VRAM step.
+        if let Some(t) = legaia_engine_battle::battle_status_clut::RotClutWindows::from_scus(scus) {
+            self.tables.rot_clut_windows = Some(t);
+        }
     }
 
     /// Install the menu-overlay data tables (PROT 0899 as-loaded image):

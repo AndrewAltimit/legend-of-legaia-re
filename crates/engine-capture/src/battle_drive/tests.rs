@@ -88,6 +88,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                 message: Some((0x801C_ED18, 25)),
                 plate_cleared: true,
                 walk_clock: true,
+                rung: Some(0x200),
                 ..ActionSteer::default()
             },
         },
@@ -110,6 +111,7 @@ fn the_battle_drive_round_trips_through_its_env_form() {
                     0x0D, 0x0F, 0x0E, 0x19, 0x27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 ]),
                 cursor: Some(5),
+                latched: Some(0x27),
                 fading: Some((3, 0xF0)),
                 spoils: true,
                 park: true,

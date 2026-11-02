@@ -107,6 +107,14 @@ pub const REEL_RELEASE_MUL: i32 = 0x40;
 /// Additive term of the reel-released decrement.
 pub const REEL_RELEASE_ADD: i32 = 0x4a;
 
+/// Line record (`DAT_801D927C`) at or past which a hooked fish strains the
+/// line: the lure tick's tail adds [`FAR_RECORD_STRAIN`] per frame step
+/// (`slti v0,v0,0x899` at `0x801D3B5C`).
+pub const FAR_RECORD_STRAIN_FROM: i32 = 0x899;
+/// Tension a far-out fish adds per frame step (`step * 300`,
+/// `0x801D3B68..0x801D3B8C`).
+pub const FAR_RECORD_STRAIN: i32 = 300;
+
 /// Packed-pad bit of the reel-A button (Cross) in the retail held word
 /// `_DAT_8007b850` - the mask [`ReelInput::from_pad_mask`] decodes.
 pub const REEL_A_PAD_BIT: u32 = 0x40;

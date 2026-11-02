@@ -1,7 +1,7 @@
 # The engine tests' fixture map (`tests/expansion_map_disc.rs`,
 # `tests/expansion_entrance_disc.rs`): a walled arena with a raised dais, a
 # few props from the base scene's geometry pack, a Rim Elm entrance and the
-# stair back down. Frozen so the flagship pack's content can change without
+# stair back down. Frozen so the sample pack's content can change without
 # moving these tests. The base scene is the retail `tower`; every texture and
 # mesh below is a coordinate into the player's own disc.
 

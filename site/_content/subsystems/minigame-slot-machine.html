@@ -200,14 +200,15 @@ mode 3 if rand % (widen + 600) == 0</code></pre>
       <tr><td><code>0</code> normal</td><td><code>rand % 3 + 2</code> rows</td><td>the spin&rsquo;s target, symbols 2..7</td></tr>
       <tr><td><code>1</code> reach</td><td><code>(rand &amp; 3) + 6</code> rows</td><td>symbol 9, the red punch</td></tr>
       <tr><td><code>2</code> reach</td><td><code>(rand &amp; 3) + 6</code> rows</td><td>symbol 8, the blue kick</td></tr>
-      <tr><td><code>3</code> hot</td><td>landing offset <code>rand % 7 + 10</code></td><td>random, <code>rand % 7 + 0x18</code>; a <code>rand % 150 == 0</code> roll can end the mode</td></tr>
-      <tr><td><code>4</code> guaranteed hit</td><td>-</td><td>drives each reel onto a winning symbol, counting down a guarantee</td></tr>
-      <tr><td><code>5</code> hold</td><td>20 rows</td><td><code>rand % 10 + 8</code></td></tr>
+      <tr><td><code>3</code> hot</td><td><code>rand % 7 + 10</code> rows</td><td>the spin&rsquo;s target <code>% 3</code>; a <code>rand % 150 == 0</code> roll can end the mode</td></tr>
+      <tr><td><code>4</code></td><td><code>rand % 10 + 6</code> rows</td><td>symbol 7 (a first landing on the spin&rsquo;s target is always replaced)</td></tr>
+      <tr><td><code>5</code></td><td><code>rand % 10 + 8</code> rows</td><td>symbol 7</td></tr>
       <tr><td><code>6</code> bonus round</td><td><strong>0</strong></td><td>none: a free stop</td></tr>
     </tbody>
   </table>
   </div>
-  <p class="dg-note">Provenance: per-reel stop <code>FUN_801D2114</code>, landing search <code>FUN_801D2440</code> over the five-row landing-line table at <code>0x801D3630</code>. Confirmed from the disassembly.</p>
+  <p>Each stop also gives the reel a roll-in budget (19 to 30 frames by mode). The reel creeps two-fifths of a row a frame toward its landing row and snaps there, or wherever it stands when the budget runs out, so a far target can be missed.</p>
+  <p class="dg-note">Provenance: per-reel stop <code>FUN_801D2114</code>, roll-in <code>FUN_801D0554</code>, landing search <code>FUN_801D2440</code> over the five-row landing-line table at <code>0x801D3630</code>. Confirmed from the disassembly.</p>
 </section>
 
 <section class="doc-section" id="paylines" data-doc="payout--win-evaluation">
@@ -403,7 +404,7 @@ screen = (320 + 1024 * vx / vz, 114 + 1024 * vy / vz)</code></pre>
     <ul class="bullets">
       <li>The spin-up length and reel speed are engine-chosen; retail&rsquo;s magnitudes are not pinned.</li>
       <li>The BIOS <code>rand</code> stream is a deterministic generator, so replays stay bit-identical.</li>
-      <li>Hot (3) and hold (5) feature modes fall back to the normal landing plan.</li>
+      <li>A stopped reel snaps to its landing row at once; retail&rsquo;s roll-in, which can stop it short, is not modelled.</li>
       <li>A press collects the rest of a payout tally at once.</li>
       <li>The picker&rsquo;s cancel + confirm collision and a press latched on the spin-up&rsquo;s last frame are not reproduced.</li>
     </ul>

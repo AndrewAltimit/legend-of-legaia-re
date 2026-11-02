@@ -3,11 +3,11 @@
 //!
 //! The fixture map names meshes from two other scenes (the Rogue's Tower's
 //! torch, Rim Elm's barrel) and a glTF model the fixture carries (the
-//! Rebirth pack's crystal, read from the repo), scatters a base-pack mesh,
+//! sample pack's crystal, read from the repo), scatters a base-pack mesh,
 //! animates one prop and places a lamp. Entering it relocates the foreign
 //! textures into free VRAM without touching a word the base scene wrote,
 //! bakes the decorations into cell meshes, and drives the animated prop's
-//! draw through the world's turn and move tables. The Rebirth floors this
+//! draw through the world's turn and move tables. The sample pack's floors this
 //! lane dresses (1F, 2F) enter too. Skips when `LEGAIA_DISC_BIN` is unset.
 
 use std::sync::Arc;
@@ -102,9 +102,9 @@ fn host() -> Option<SceneHost> {
 fn crystal() -> Vec<u8> {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../packs/rebirth/assets/models/ember_crystal.glb"
+        "/../../packs/sample/assets/models/ember_crystal.glb"
     );
-    std::fs::read(path).expect("the Rebirth crystal model")
+    std::fs::read(path).expect("the sample pack's crystal model")
 }
 
 fn fixture() -> ExpansionPack {
@@ -218,10 +218,10 @@ fn an_animated_prop_turns_and_moves_over_frames() {
 }
 
 #[test]
-fn the_dressed_rebirth_floors_enter() {
+fn the_dressed_sample_pack_floors_enter() {
     let Some(mut host) = host() else { return };
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
-    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("Rebirth loads");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
+    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("the sample pack loads");
     let issues = validate(&pack);
     assert!(!has_errors(&issues), "{issues:#?}");
     host.activate_expansion_pack(Arc::new(pack))
@@ -361,7 +361,7 @@ scenery = true
 #[test]
 fn a_kept_room_seats_its_animated_scenery() {
     let Some(mut host) = host() else { return };
-    // A kept Rogue's Tower hall (the Rebirth floors are laid out from
+    // A kept Rogue's Tower hall (the sample pack's floors are laid out from
     // scratch, so the fixture keeps the retail room itself).
     let map = r#"
 name = "Kept Hall"
@@ -401,16 +401,16 @@ tile = [2, 1]
     }
 }
 
-/// Every Rebirth map leaves its base scene's texels as the base scene wrote
+/// Every sample-pack map leaves its base scene's texels as the base scene wrote
 /// them: the foreign meshes, models, decals and the particle sheet all land
 /// in VRAM the base left free. Pins the 4F Verdant Vault's pink-veined green
 /// stone (`concnow`'s own 4bpp camouflage texture, CLUT row 509) as the
 /// retail texel, not a relocation collision.
 #[test]
-fn no_rebirth_map_overwrites_its_base_scenes_texels() {
+fn no_sample_pack_map_overwrites_its_base_scenes_texels() {
     let Some(mut host) = host() else { return };
-    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/rebirth");
-    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("Rebirth loads");
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../packs/sample");
+    let pack = ExpansionPack::from_dir(std::path::Path::new(dir)).expect("the sample pack loads");
     let maps: Vec<(String, String)> = pack
         .maps
         .iter()
