@@ -88,17 +88,9 @@ impl Sequencer {
                 self.note_off(spu, ch as u8, key);
             }
             ChannelMessage::PitchBend { value } => {
-                self.channels[ch].pitch_bend = value;
-                for note in self
-                    .active
-                    .iter()
-                    .filter(|n| n.channel as usize == ch && n.pending.is_none())
-                {
-                    if let Some(v) = spu.voices.get_mut(note.voice as usize) {
-                        let (down, up) = note.bend_range;
-                        v.pitch = bend_pitch(note.base_pitch, pitch_bend_factor(value, down, up));
-                    }
-                }
+                // The decoder skips the first operand unread; the handler's
+                // one byte is the wheel's high seven bits.
+                self.bend_program(spu, ch, (value >> 7) as u8);
             }
             // Aftertouch (channel + poly) is recognized but unused by the
             // retail score (corpus sweep), so there is nothing to drive.

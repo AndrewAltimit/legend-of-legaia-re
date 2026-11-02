@@ -1157,7 +1157,7 @@ Between the sequencer event loop and the raw voice registers sits a band of SsAP
 | `FUN_80067A1C(voice, seq, note, prog, wheel)` | **Pitch-bend apply** - offsets the key by the sounding tone's own bend range (`tone+0xD` = pbmax for `wheel > 0x40`, `tone+0xC` = pbmin for `wheel < 0x40`), calls `FUN_80066E50` (`_SsPitchFromKey`), writes the SPU PITCH to `&DAT_801CE084[voice]` and ORs flag `0x4` into `&DAT_801CE060`. |
 | `FUN_80066F4C(voice)` | **Per-voice vol/pan/reverb recompute** - re-derives one sounding voice's L/R from the current channel vol (`prog_attr +0x58/+0x5A`), prog/tone vol, three pan attenuations and the `_DAT_801CE330` mono fold, commits reverb depth via `FUN_8006AA90(_DAT_801CE34A - _DAT_801CE358)`, and stages the result into `&DAT_801CE080/082[voice]` with flags `0x3`. |
 
-`FUN_80067A1C` is the retail source for the per-tone pitch-bend range the engine ports as `VabBank::pitch_bend_range`: the wheel scales by the *sounding tone's* own `pbmin`/`pbmax` bytes, so a `(0,0)`-range tone does not bend - exactly the law [`engine-audio`'s sequencer](#engine-audio-model---sequencer-port) applies. `FUN_80066F4C` is the retail twin of `sequencer.rs`'s `remix_channel` (re-derive every sounding voice on a mid-note CC7/CC10 change) - the same vol/pan chain as `FUN_80067550`, run standalone rather than at note-on. Provenance: `see ghidra/scripts/funcs/80064cf0.txt`, `80064df8.txt`, `800655cc.txt`, `8006861c.txt`, `80067a1c.txt`, `80066f4c.txt`.
+`FUN_80067A1C` is the retail source for the per-tone pitch-bend range the engine ports as `VabBank::bent_pitch`: the wheel scales by the *sounding tone's* own `pbmin`/`pbmax` bytes, so a `(0,0)`-range tone does not bend above centre - exactly the law [`engine-audio`'s sequencer](#engine-audio-model---sequencer-port) applies. `FUN_80066F4C` is the retail twin of `sequencer.rs`'s `remix_channel` (re-derive every sounding voice on a mid-note CC7/CC10 change) - the same vol/pan chain as `FUN_80067550`, run standalone rather than at note-on. Provenance: `see ghidra/scripts/funcs/80064cf0.txt`, `80064df8.txt`, `800655cc.txt`, `8006861c.txt`, `80067a1c.txt`, `80066f4c.txt`.
 
 ### The key-on pitch law - `note` against the tone's `center`
 
@@ -1779,26 +1779,35 @@ With the pump, `s3_rimelm_freeroam` matches all `292` census key-ons and
 a vsync boundary into the neighbouring flush after any tempo change.
 `set_exact_tempo(true)` keeps the sample clock at the written tempo.
 
-**Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus
-sweep (`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands
-of `0xEn` events concentrated in a handful of music banks - so the
-sequencer acts on it: a bend sets the channel's 14-bit wheel
-(`ChannelState::pitch_bend`, center `0x2000`), re-pitches every voice
-already sounding on that channel, and is folded into subsequent NoteOns.
-Each `ActiveNote` keeps its unbent base pitch so repeated bends scale the
-base rather than compounding.
+**Pitch bend (`0xEn`).** The retail score uses pitch bend - the corpus sweep
+(`engine-audio/tests/real_seq_expressive_events.rs`) finds thousands of `0xEn`
+events concentrated in a handful of music banks - and retail **stores no
+wheel**. The decoder skips the first operand unread; `FUN_8006166C` reads the
+second and hands it to `FUN_80067C1C`, which scans every voice through
+`FUN_80067A1C`; the handler's only writes are the cursor and the next wait. So
+a bend re-pitches what is sounding and is gone, and the next note on the channel
+keys at its own pitch whatever the score last bent to. Track `2026` glides
+channel 0 down to wheel `0x0F` and never recentres; a port that held the wheel
+played the channel's every later note nine semitones flat
+(`party_battle_gobu_gobu`'s voices read `0x80E`, the port's `0x4C2`).
 
-The bend **range is a per-tone disc value**, not a global constant: each VAB
-tone carries `pbmin`/`pbmax` (downward/upward bend in semitones), and the
-wheel scales by the sounding tone's own range - `+pbmax` semitones at
-full-up, `-pbmin` at full-down (`VabBank::pitch_bend_range`, captured into
-the `ActiveNote` at NoteOn). A tone with a `(0, 0)` range does not respond
-to the wheel at all, exactly as libsnd applies the per-tone range. A
-disc-wide tone census (`engine-audio/tests/real_vab_tone_attributes.rs`)
-pins this: the common non-zero range is 2 semitones (the GM default, which
-is why a global `±2` would approximate it), with a few tones at 4/12/24/40;
-vibrato (`vibw`/`vibt`) and portamento (`porw`/`port`) are zero on every
-tone, so the voice model needs no LFO.
+`FUN_80067A1C` selects by the voice's driver record, `0x801CDB50 + voice*0x36`:
+the sequence, the VAB and the program. Not the channel, and not whether the note
+is held, so another channel on the program and a releasing voice bend too; a cue's
+record names sequence `0x21`, so a voice a cue took does not. The pitch is the
+note's, through the tone's own range: `+pbmax` semitones at wheel `0x7F`, `-pbmin`
+at `0`, the remainder passed to `FUN_80066E50` as `fine` in 1/128 semitones. Below
+centre the arm is `key + whole - 1` with `fine + 0x7F` whatever the range, so a
+`(0, 0)` tone still drops a sixteenth of a semitone under its note there. Port:
+`Sequencer::bend_program`, `VabBank::bent_pitch`, over a per-voice `VoiceNote`.
+
+A bend between a note's staging and its flush reaches the shadow pitch register
+the flush writes, so that note keys bent (`VoiceNote::staged_wheel`).
+
+A disc-wide tone census (`engine-audio/tests/real_vab_tone_attributes.rs`) pins
+the ranges: the common non-zero range is 2 semitones, with a few tones at
+4/12/24/40; vibrato (`vibw`/`vibt`) and portamento (`porw`/`port`) are zero on
+every tone, so the voice model needs no LFO.
 
 Channel and polyphonic aftertouch (`0xDn` / `0xAn`) are parsed but the
 expressive-event sweep confirms the retail score never emits them, so they
@@ -1882,8 +1891,8 @@ town, battle, summon, minigame, menu and ending, every sounding sequence voice's
 pitch, ADSR words, left and right volume and reverb send is one the engine
 programs for that track at that volume. Two conditions are load-bearing:
 
-- **The engine trace covers the score twice.** Channel state - a bend wheel, a
-  pan, a CC7 - carries across the loop point, so a track's second pass keys
+- **The engine trace covers the score twice.** Channel state - a pan, a CC7 -
+  carries across the loop point, so a track's second pass keys
   notes its first never does (`2009` under `cort_evil_seru_magic_mid_cast`).
   `build_pinned_track_trace` stops two loops in.
 - **A ramping duck reads one step behind.** In a state captured mid-ramp the
@@ -3265,7 +3274,7 @@ recorder and not in the console; the oracle divides it out
 | `rimelm_wall_press_left` | | `0.896` | `+0.39` dB | retail's river emitter is in the recording |
 | `menu_status_town` | | `0.903` | `-0.19` dB | the score's body, past its first pass |
 | `minigame_slot_machine` | | `0.842` | `-0.22` dB | retail's cabinet cues are in the recording |
-| `party_battle_gobu_gobu` | | `0.743` | `-0.03` dB | see below; no cue voice is sounding in the state |
+| `party_battle_gobu_gobu` | | `0.987` | `-0.01` dB | battle theme; [the bend](#engine-audio-model---sequencer-port) it found |
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
@@ -3282,12 +3291,7 @@ the CPU's write meets the SPU's tick, four samples later than the port's
 The bars with a held flute over a repeating one drop to `0.9`, and no constant moves
 them (`--vsync-samples`, tried from `737` to `737.46`). What would close it is the
 retail key-on write time per note against the SPU's sample clock; nothing here
-says the difference can be heard. Track `2026` in `party_battle_gobu_gobu` is the
-worst of it and is not settled: its windows run from `0.998` down to `0.6` with the
-loss below 150 Hz, and its best lag wanders by `16` samples where a field state's
-holds within a few, so the reading is the same timing on layered bass voices during
-a busier frame, not a measured cause. `terra_party_battle`, another battle state on
-another track, reads `0.982`.
+says the difference can be heard.
 
 **The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is
 `59.826` Hz (fitted, the drift zeroes at `737.13` samples) and the port's frame is a

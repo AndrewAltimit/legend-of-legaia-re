@@ -87,18 +87,22 @@ impl Sequencer {
             channel,
             key,
             voice,
-            base_pitch: 0x1000,
-            bend_range: self.bank.pitch_bend_range_at(program, tone),
             velocity,
             program,
             tone,
             key_on_stamp,
             pending: Some(id),
         });
+        self.voice_note[voice as usize] = Some(VoiceNote {
+            program,
+            tone,
+            key,
+            stamp: None,
+            staged_wheel: None,
+        });
         self.pending.push(PendingKey {
             id,
             voice,
-            channel,
             key,
             velocity,
             program,
@@ -121,7 +125,6 @@ impl Sequencer {
                 continue;
             };
             let voice = p.voice as usize;
-            let cs = self.channels[p.channel as usize];
             // Give the layer the master × velocity effective velocity only -
             // NOT the channel volume. The channel volume (CC7) and pan (CC10)
             // are applied afterward as dynamic channel-expression
@@ -135,16 +138,18 @@ impl Sequencer {
                 self.active.swap_remove(idx);
                 continue;
             }
-            // The layer set the voice's base pitch; remember it so later
-            // bends re-scale the unbent value, then fold in any bend already
-            // held on this channel.
-            let base_pitch = spu.voices.get(voice).map(|v| v.pitch).unwrap_or(0x1000);
-            let bend_range = self.active[idx].bend_range;
-            if cs.pitch_bend != PITCH_BEND_CENTER
-                && let Some(v) = spu.voices.get_mut(voice)
-            {
-                let (down, up) = bend_range;
-                v.pitch = bend_pitch(base_pitch, pitch_bend_factor(cs.pitch_bend, down, up));
+            // A key-on carries the note's own pitch: retail keeps no channel
+            // wheel. Only a bend that reached this note since it was staged
+            // shows, through the shadow register the flush hands over.
+            if let Some(n) = self.voice_note[voice].as_mut() {
+                let wheel = n.staged_wheel.take();
+                n.stamp = spu.voices.get(voice).map(|v| v.key_on_count());
+                if let (Some(pitch), Some(v)) = (
+                    wheel.and_then(|w| self.bank.bent_pitch(n.program, n.tone, n.key, w)),
+                    spu.voices.get_mut(voice),
+                ) {
+                    v.pitch = pitch;
+                }
             }
             // The voice volume through the full retail chain: CC7 folded into
             // the velocity, head, sequence volume, tone / program / channel
@@ -156,9 +161,35 @@ impl Sequencer {
                 v.vol_right = r;
             }
             let note = &mut self.active[idx];
-            note.base_pitch = base_pitch;
             note.key_on_stamp = spu.voices.get(voice).map_or(0, |v| v.key_on_count());
             note.pending = None;
+        }
+    }
+
+    /// `0xEn`, `FUN_8006166C` -> `FUN_80067C1C`: re-pitch every voice whose
+    /// driver record names this sequence and the channel's program, whichever
+    /// channel keyed it and whether or not it was released. Nothing is stored:
+    /// the next key-on on the channel plays at its own pitch.
+    ///
+    /// PORT: FUN_80067C1C
+    pub(super) fn bend_program(&mut self, spu: &mut Spu, ch: usize, wheel: u8) {
+        let program = self.channels[ch].program as usize;
+        for (voice, slot) in self.voice_note.iter_mut().enumerate() {
+            let Some(n) = slot.as_mut().filter(|n| n.program == program) else {
+                continue;
+            };
+            let Some(stamp) = n.stamp else {
+                n.staged_wheel = Some(wheel);
+                continue;
+            };
+            let Some(v) = spu.voices.get_mut(voice) else {
+                continue;
+            };
+            if v.key_on_count() == stamp
+                && let Some(pitch) = self.bank.bent_pitch(n.program, n.tone, n.key, wheel)
+            {
+                v.pitch = pitch;
+            }
         }
     }
 

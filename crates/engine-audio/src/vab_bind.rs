@@ -453,24 +453,6 @@ impl VabBank {
         true
     }
 
-    /// The tone that would be selected for `(program, note)` carries a
-    /// pitch-bend range in the VAB attributes: `pbmin` semitones of downward
-    /// bend at full-down wheel, `pbmax` semitones up at full-up. Returns
-    /// `(pbmin, pbmax)` so the sequencer can scale a `0xEn` wheel value by the
-    /// note's own range (a tone with `(0, 0)` does not respond to the wheel).
-    /// `(0, 0)` is also the fallback when the program/tone can't be resolved.
-    pub fn pitch_bend_range(&self, program: usize, note: u8) -> (u8, u8) {
-        self.programs
-            .get(program)
-            .and_then(|p| {
-                p.key_range_tones()
-                    .iter()
-                    .find(|t| note >= t.min && note <= t.max)
-            })
-            .map(|t| (t.pbmin, t.pbmax))
-            .unwrap_or((0, 0))
-    }
-
     /// The VAB `prior` byte of the tone that would be selected for
     /// `(program, note)` - the note's requested **allocation priority**.
     ///
@@ -552,11 +534,34 @@ impl VabBank {
             .is_some_and(|t| self.tone_resident(t))
     }
 
-    /// [`Self::pitch_bend_range`] for an explicit tone index.
-    pub fn pitch_bend_range_at(&self, program: usize, tone_index: usize) -> (u8, u8) {
-        self.tone_at(program, tone_index)
-            .map(|t| (t.pbmin, t.pbmax))
-            .unwrap_or((0, 0))
+    /// A sounding note's pitch under the wheel's high byte, `FUN_80067A1C`. The
+    /// tone's own range scales it: `pbmax` semitones at `0x7F`, `pbmin` at `0`,
+    /// so a `(0, 0)` tone sits on its note, through the cue arm's fine index
+    /// with the remainder as `fine`, in 1/128 semitones. `None` when the tone
+    /// does not resolve.
+    ///
+    /// PORT: FUN_80067A1C
+    pub fn bent_pitch(
+        &self,
+        program: usize,
+        tone_index: usize,
+        note: u8,
+        wheel: u8,
+    ) -> Option<u16> {
+        let tone = self.programs.get(program)?.tones.get(tone_index)?;
+        let off = i32::from(wheel) - 0x40;
+        let key = i32::from(note);
+        let (key, fine) = if off > 0 {
+            let v = off * i32::from(tone.pbmax);
+            (key + v / 0x3F, (v % 0x3F) * 2)
+        } else if off < 0 {
+            let v = off * i32::from(tone.pbmin);
+            let whole = v / 0x40;
+            (key + whole - 1, (v - whole * 0x40) * 2 + 0x7F)
+        } else {
+            (key, 0)
+        };
+        Some(pitch_from_key(key, fine as u32, tone))
     }
 
     /// Key one **layer** of a sequencer note: the tone at `tone_index` of
@@ -700,20 +705,34 @@ pub enum PitchPath {
 /// disc-authored pair reaches - the remainder goes negative and retail reads
 /// off the front of its own table; the port clamps the index instead.
 ///
-/// PORT: FUN_80066d8c (sequencer arm), FUN_80066e50 (cue arm, partial)
+/// PORT: FUN_80066d8c (sequencer arm)
 ///
 /// The cue arm's `fine` argument (`andi a1,a1,0xffff` at `0x80066e7c`) is
-/// fixed at `CUE_FINE` rather than taken from the caller.
+/// [`CUE_FINE`] for a key-on; a bend passes its own ([`pitch_from_key`]).
 fn compute_pitch(note: u8, tone: &VagAtr, path: PitchPath) -> u16 {
-    let shift = tone.shift as u32;
-    let (semitone_carry, fine_index) = match path {
-        PitchPath::Sequencer => (0i32, ((shift >> 3) as i32).min(15)),
-        PitchPath::Cue => {
-            let raw = ((CUE_FINE + shift) >> 3) as i32;
-            if raw >= 16 { (1, raw - 16) } else { (0, raw) }
+    match path {
+        PitchPath::Sequencer => {
+            pitch_at_index(i32::from(note), ((tone.shift as i32) >> 3).min(15), tone)
         }
-    };
-    let n = note as i32 + 60 - tone.center as i32 + semitone_carry;
+        PitchPath::Cue => pitch_from_key(i32::from(note), CUE_FINE, tone),
+    }
+}
+
+/// `FUN_80066E50`: `key` and a fine offset in 1/128 semitones, on top of the
+/// tone's `shift`. An index of 16 or more carries a semitone.
+///
+/// PORT: FUN_80066E50
+fn pitch_from_key(key: i32, fine: u32, tone: &VagAtr) -> u16 {
+    let raw = ((fine + tone.shift as u32) >> 3) as i32;
+    if raw >= 16 {
+        pitch_at_index(key + 1, raw - 16, tone)
+    } else {
+        pitch_at_index(key, raw, tone)
+    }
+}
+
+fn pitch_at_index(key: i32, fine_index: i32, tone: &VagAtr) -> u16 {
+    let n = key + 60 - tone.center as i32;
     let octave = n / 12 - 5;
     let mut pitch = pitch_table_entry((n % 12) * 16 + fine_index);
     if octave > 0 {
@@ -840,6 +859,46 @@ mod tests {
         assert!((ratio - 2f64.powf(1.0 / 12.0)).abs() < 0.001);
         assert_eq!(compute_pitch(72, &tone, PitchPath::Sequencer), 0x2000);
         assert_eq!(compute_pitch(48, &tone, PitchPath::Sequencer), 0x800);
+    }
+
+    /// `FUN_80067A1C`: full up is `pbmax` semitones, full down `pbmin`, each
+    /// through `FUN_80066E50`'s fine index; the centre is the note, and a
+    /// `(0, 0)` tone never leaves it.
+    #[test]
+    fn a_bent_pitch_follows_the_tones_own_range() {
+        let bank = |pbmin, pbmax| VabBank {
+            master_vol: 127,
+            samples: vec![],
+            programs: vec![VabProgram {
+                mvol: 127,
+                mpan: 64,
+                tones: vec![VagAtr {
+                    pbmin,
+                    pbmax,
+                    ..tone_with_shift(60, 0)
+                }],
+                key_tones: 1,
+            }],
+        };
+        let semis = |k: i32| pitch_at_index(60 + k, 0, &tone_with_shift(60, 0));
+        let b = bank(12, 2);
+        assert_eq!(b.bent_pitch(0, 0, 60, 0x40), Some(0x1000));
+        assert_eq!(b.bent_pitch(0, 0, 60, 0x7F), Some(semis(2)));
+        // -64 * 12 = -768: twelve whole, then `- 1` with fine 0x7F, sixteenths
+        // index 15: a hair under a semitone above -13.
+        assert_eq!(
+            b.bent_pitch(0, 0, 60, 0),
+            Some(pitch_at_index(47, 15, &tone_with_shift(60, 0)))
+        );
+        let flat = bank(0, 0);
+        assert_eq!(flat.bent_pitch(0, 0, 60, 0x7F), Some(0x1000));
+        // `off < 0` with a zero range: `key - 1 + 127/128`, which truncates a
+        // sixteenth under the note. The retail `- 1` arm does not test the range.
+        assert_eq!(
+            flat.bent_pitch(0, 0, 60, 0),
+            Some(pitch_at_index(59, 15, &tone_with_shift(60, 0)))
+        );
+        assert_eq!(b.bent_pitch(0, 1, 60, 0x40), None);
     }
 
     /// The 192-entry table retail indexes is `floor(0x1000 * 2^(k/192))` - a

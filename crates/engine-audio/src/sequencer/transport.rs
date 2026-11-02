@@ -40,6 +40,7 @@ impl Sequencer {
             master_vol_dirty: false,
             loop_count: 0,
             voice_prio: [0; crate::spu::NUM_VOICES],
+            voice_note: [None; crate::spu::NUM_VOICES],
             voice_age: [0; crate::spu::NUM_VOICES],
             flush_pos: 0,
             pending: Vec::new(),

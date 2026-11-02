@@ -323,7 +323,7 @@ Answered questions: [settled audio](re-settled-threads/audio.md); falsified read
 *Status:* open
 
 [Real retail PCM](../subsystems/audio.md#real-retail-pcm) puts a track's residual at `-12`
-to `-15` dB with every sounding voice's registers equal, and `2026` lower still (`0.74`).
+to `-15` dB with every sounding voice's registers equal.
 The reading is the sample a retail key-on lands on; what would close it is the KON write
 time per note against the SPU's sample clock, on a battle state and a field state.
 

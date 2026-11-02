@@ -183,6 +183,8 @@ pub fn render_aligned(
         bail!("the sequencer never reached {pos:?}; it stands at {seq:?}");
     }
     if verbose {
+        let at = d.sequencer().map(|s| (s.next_event(), s.pump_wait()));
+        println!("engine stands at {at:?}");
         for (i, v) in d.spu().voices.iter().enumerate() {
             if !v.is_off() {
                 println!(
@@ -330,6 +332,25 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
         let (pos, track_bytes) = read_position(&path, &extracted)?;
         if args.verbose {
             println!("{}: {pos:?}", args.label);
+            let st = legaia_mednafen::SaveState::from_path(&path)?;
+            let psx = legaia_mednafen::PsxSpu::new(&st);
+            for (i, v) in psx
+                .voices()
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| v.is_active())
+            {
+                println!(
+                    "retail v{i}: phase {:?} env {:x?} ctl {:x?} pitch {:x?} start {:x?} vol {:?} {:?}",
+                    v.adsr_phase,
+                    v.adsr_env_level,
+                    v.adsr_control,
+                    v.pitch,
+                    v.start_addr,
+                    v.vol_left,
+                    v.vol_right
+                );
+            }
         }
         let pcm = render_aligned(
             &track_bytes,

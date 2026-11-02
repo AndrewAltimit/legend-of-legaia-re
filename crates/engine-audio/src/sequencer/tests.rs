@@ -57,8 +57,6 @@ fn alloc_voice_steal_frees_the_stolen_note_slot() {
             channel: 0,
             key: 60 + v,
             voice: v,
-            base_pitch: 0x1000,
-            bend_range: (2, 2),
             velocity: 127,
             program: 0,
             tone: 0,
@@ -96,8 +94,6 @@ fn a_voice_rekeyed_under_a_note_is_not_keyed_off_by_its_note_off() {
         channel: 0,
         key: 60,
         voice: 23,
-        base_pitch: 0x1000,
-        bend_range: (0, 0),
         velocity: 127,
         program: 0,
         tone: 0,
@@ -126,8 +122,6 @@ fn occupy(seq: &mut Sequencer, voice: u8) {
         channel: 0,
         key: 60 + voice,
         voice,
-        base_pitch: 0x1000,
-        bend_range: (2, 2),
         velocity: 127,
         program: 0,
         tone: 0,
@@ -542,78 +536,6 @@ fn tempo_event_changes_us_per_tick() {
 }
 
 #[test]
-fn pitch_bend_factor_center_is_unity() {
-    // Center wheel = no bend, whatever the tone range.
-    assert!((pitch_bend_factor(PITCH_BEND_CENTER, 2, 2) - 1.0).abs() < 1e-9);
-    // With a ±2-semitone tone range, full up bends sharp, full down flat.
-    assert!(pitch_bend_factor(0x3FFF, 2, 2) > 1.0);
-    assert!(pitch_bend_factor(0x0000, 2, 2) < 1.0);
-    // A tone with a (0, 0) range never responds to the wheel.
-    assert!((pitch_bend_factor(0x3FFF, 0, 0) - 1.0).abs() < 1e-9);
-    assert!((pitch_bend_factor(0x0000, 0, 0) - 1.0).abs() < 1e-9);
-    // Asymmetric range: full up uses `up`, full down uses `down`.
-    let up = pitch_bend_factor(0x3FFF, 1, 12);
-    let down = pitch_bend_factor(0x0000, 1, 12);
-    assert!(up > 1.5); // ~+1 octave
-    assert!(down > 0.94 && down < 1.0); // ~-1 semitone
-}
-
-#[test]
-fn bend_pitch_clamps_to_register_range() {
-    // A large base × a sharp bend saturates at 0x3FFF, never overflows.
-    assert_eq!(
-        bend_pitch(0x3FFF, pitch_bend_factor(0x3FFF, 12, 12)),
-        0x3FFF
-    );
-    // A bend never drives the register below 1.
-    assert!(bend_pitch(1, pitch_bend_factor(0x0000, 12, 12)) >= 1);
-    // Center leaves a mid-range pitch untouched.
-    assert_eq!(
-        bend_pitch(0x1000, pitch_bend_factor(PITCH_BEND_CENTER, 2, 2)),
-        0x1000
-    );
-}
-
-#[test]
-fn pitch_bend_event_repitches_sounding_voice() {
-    let mut spu = Spu::new();
-    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
-    // Seed a sounding note on channel 0, voice 0 at a known base pitch.
-    let base = 0x1000u16;
-    spu.voices[0].pitch = base;
-    seq.active.push(ActiveNote {
-        channel: 0,
-        key: 60,
-        voice: 0,
-        base_pitch: base,
-        bend_range: (2, 2),
-        velocity: 127,
-        program: 0,
-        tone: 0,
-        key_on_stamp: 0,
-        pending: None,
-    });
-
-    // Bend sharp: the voice's live pitch register rises, the channel
-    // state records the wheel, and the stored base is untouched.
-    seq.fire_channel(&mut spu, 0, ChannelMessage::PitchBend { value: 0x3FFF });
-    assert_eq!(seq.channels[0].pitch_bend, 0x3FFF);
-    assert!(spu.voices[0].pitch > base);
-    assert_eq!(seq.active[0].base_pitch, base);
-
-    // Return to center: the voice snaps back to exactly the base pitch
-    // (re-bending the base, not the already-bent value).
-    seq.fire_channel(
-        &mut spu,
-        0,
-        ChannelMessage::PitchBend {
-            value: PITCH_BEND_CENTER,
-        },
-    );
-    assert_eq!(spu.voices[0].pitch, base);
-}
-
-#[test]
 fn apply_channel_pan_attenuates_opposite_side() {
     // Center pan leaves both sides untouched.
     assert_eq!(
@@ -979,4 +901,97 @@ fn the_retail_pump_fires_on_the_vsync_grid() {
         s.tick_sample(&mut spu);
     }
     assert_eq!(s.next, 3, "the 30th vsync reaches the note (and the EOT)");
+}
+
+/// A one-tone bank whose tone bends `pbmin` semitones down and `pbmax` up.
+fn bending_bank(pbmin: u8, pbmax: u8) -> VabBank {
+    let mut bank = one_tone_bank();
+    bank.programs[0].tones[0].pbmin = pbmin;
+    bank.programs[0].tones[0].pbmax = pbmax;
+    bank
+}
+
+fn note(key: u8, velocity: u8) -> ChannelMessage {
+    ChannelMessage::NoteOn { key, velocity }
+}
+
+/// The wheel's value in the stream's 14-bit form (operand bytes `lsb`, `msb`).
+fn wheel(msb: u16) -> ChannelMessage {
+    ChannelMessage::PitchBend { value: msb << 7 }
+}
+
+/// `FUN_8006166C` stores nothing: track 2026 glides channel 0 down to `0x0F` and
+/// never recentres, and every later note on the channel still plays at its own
+/// pitch (`party_battle_gobu_gobu`: `0x80E`, where a held wheel gave `0x4C2`).
+#[test]
+fn a_bend_does_not_reach_the_next_note() {
+    let mut seq = Sequencer::new(synthetic_seq(), bending_bank(12, 12));
+    let mut spu = Spu::new();
+    seq.fire_channel(&mut spu, 0, note(60, 100));
+    seq.flush_key_ons(&mut spu);
+    let v = seq.active[0].voice as usize;
+    let own = spu.voices[v].pitch;
+    seq.fire_channel(&mut spu, 0, wheel(0x0F));
+    assert!(spu.voices[v].pitch < own, "the sounding note bends");
+
+    seq.fire_channel(&mut spu, 0, note(60, 0));
+    seq.fire_channel(&mut spu, 0, note(60, 100));
+    seq.flush_key_ons(&mut spu);
+    let v = seq.active[0].voice as usize;
+    assert_eq!(spu.voices[v].pitch, own);
+}
+
+/// `FUN_80067A1C` tests the voice's driver record only: the sequence, the VAB
+/// and the program. Not the channel, and not whether the note is still held.
+#[test]
+fn a_bend_reaches_every_voice_on_the_program_held_or_released() {
+    let mut seq = Sequencer::new(synthetic_seq(), bending_bank(2, 2));
+    let mut spu = Spu::new();
+    // Channels default to program 0, so these two share one.
+    seq.fire_channel(&mut spu, 0, note(60, 100));
+    seq.fire_channel(&mut spu, 1, note(60, 100));
+    seq.flush_key_ons(&mut spu);
+    let (a, b) = (seq.active[0].voice as usize, seq.active[1].voice as usize);
+    let own = spu.voices[a].pitch;
+    seq.fire_channel(&mut spu, 1, note(60, 0));
+
+    seq.fire_channel(&mut spu, 0, wheel(0x7F));
+    assert!(spu.voices[a].pitch > own);
+    assert_eq!(
+        spu.voices[b].pitch, spu.voices[a].pitch,
+        "released, other channel"
+    );
+
+    seq.fire_channel(&mut spu, 0, wheel(0x40));
+    assert_eq!(
+        spu.voices[a].pitch, own,
+        "the wheel's centre is the note itself"
+    );
+}
+
+/// A cue re-keyed the voice: its record names sequence `0x21`, so no bend finds it.
+#[test]
+fn a_bend_leaves_a_voice_a_cue_took() {
+    let mut seq = Sequencer::new(synthetic_seq(), bending_bank(2, 2));
+    let mut spu = Spu::new();
+    seq.fire_channel(&mut spu, 0, note(60, 100));
+    seq.flush_key_ons(&mut spu);
+    let v = seq.active[0].voice as usize;
+    spu.key_on_mask(1 << v);
+    spu.voices[v].pitch = 0x123;
+    seq.fire_channel(&mut spu, 0, wheel(0x7F));
+    assert_eq!(spu.voices[v].pitch, 0x123);
+}
+
+/// The retail handler writes the shadow pitch register the flush hands over, so
+/// a bend between a note's staging and its flush keys the note bent.
+#[test]
+fn a_bend_before_the_flush_keys_the_note_bent() {
+    let mut seq = Sequencer::new(synthetic_seq(), bending_bank(2, 2));
+    let mut spu = Spu::new();
+    seq.fire_channel(&mut spu, 0, note(60, 100));
+    seq.fire_channel(&mut spu, 0, wheel(0x7F));
+    seq.flush_key_ons(&mut spu);
+    let v = seq.active[0].voice as usize;
+    assert!(spu.voices[v].pitch > 0x1000);
 }
