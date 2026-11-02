@@ -138,6 +138,10 @@ pub fn project_ribbon_corners_mvp(mvp: &Mat4, centre: [f32; 3]) -> Option<[(i16,
     )
 }
 
+/// The battle camera's view units per world unit
+/// (`battle_cam_script::battle_view_depth`'s `4 * p`).
+const VIEW_UNITS_PER_WORLD: f32 = 4.0;
+
 fn project_corners_mvp(
     mvp: &Mat4,
     centre: [f32; 3],
@@ -167,8 +171,11 @@ fn project_corners_mvp(
 
     let cx = (ndc_x * 0.5 + 0.5) * STAGE_W;
     let cy = (0.5 - ndc_y * 0.5) * STAGE_H;
-    let hw_px = gx.length() * half_w.abs() * 0.5 * STAGE_W;
-    let hh_px = gy.length() * half_h.abs() * 0.5 * STAGE_H;
+    // The half sizes are view units (`FUN_800195A8` fans the corners out after
+    // `FUN_8003D344`), and the battle camera's view is `R * 4 * p + tr`, four
+    // view units a world unit.
+    let hw_px = gx.length() * half_w.abs() / VIEW_UNITS_PER_WORLD * 0.5 * STAGE_W;
+    let hh_px = gy.length() * half_h.abs() / VIEW_UNITS_PER_WORLD * 0.5 * STAGE_H;
 
     let clamp = |v: f32| v.clamp(-4096.0, 4096.0) as i16;
     let (l, r) = (clamp(cx - hw_px), clamp(cx + hw_px));

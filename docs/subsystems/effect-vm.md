@@ -463,9 +463,15 @@ texture page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84`
 
 Port: `engine-effects::effect_ribbon`.
 `World::active_effect_ribbons` rebuilds each live ribbon node's mesh every
-frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923). Ozma
-(`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
-not staged as scenes by the engine.
+frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923) and
+**Ozma**'s (`0xA0`, PROT 0934: the ray fans of its arms `0xF` and `0x14`, whose
+seeds `+0xB8` the arm stores as it seats them). The two capture-class carriers
+(PROT 0957, 0964) are not staged as scenes by the engine.
+
+The vertices are pinned against retail: a RAM image of Ozma's arm `0x12` holds
+the last ray in the scratch TMD, and the port's walk from that ray's seed
+reproduces its vertices. Each step's pairs lie square to the walk, on the
+heading `(wander + angle + 0x400) & 0xFFF`.
 
 ### The sprite arm's draw
 
