@@ -1,15 +1,19 @@
 //! The pause menu's blips: which cue a frame's pad edges fire, decided once
 //! for both hosts.
 //!
-//! The three ids are retail's own ring writes in the SCUS-resident list
-//! kernel `FUN_80032A44`, the routine every pause-menu list window is paged
-//! by. Its producer is `FUN_80035B50`'s ring enqueue, inlined, so each
-//! literal sits beside its own store: the cursor step `li a2,0x21` at
-//! `0x80032B9C`, the enabled-row confirm `li a1,0x20` at `0x80032D24`, the
-//! cancel `li a2,0x37` at `0x80032D74`. A disabled row buzzes `0x23` instead
-//! (`li a1,0x23` at `0x80032D0C`), a distinction neither host's edge mapping
-//! has a path for. All three are category `0` in the descriptor table
-//! (`sfx-table.md`), so they sound out of the slot-0 system bank.
+//! The pause menu's rows are paged by the menu overlay's picker `FUN_801D688C`
+//! (21 callers in PROT 0899): a step pushes `0x21` (`0x801D6928`, `0x801D697C`,
+//! ...), Cross `0x36` (`0x801D68C8`), Circle `0x37` (`0x801D68F0`). A screen
+//! that accepts the pick then overwrites the ring's last slot through
+//! `FUN_80035BD0`: `0x20` for most, `0x23` for a refusal. The root picker
+//! `FUN_801D6B20` overwrites only for Load and Save (`0x801D6C98`, `0x801D6CD0`,
+//! `0x801D6CE8`), so Items through Options sound the bare `0x36`. A retail walk
+//! of the menu reads the same (`scripts/pcsx-redux/autorun_keyon_census.lua` with
+//! a pad script): `0x36` on the root's Items row, `0x36` then `0x20` on the
+//! Items window's Use. The cursor steps and cancel keep the list kernel's ids
+//! (`FUN_80032A44`, the widget system's kind-4 list). All are category `0` in
+//! the descriptor table (`sfx-table.md`), so they sound out of the slot-0 system
+//! bank.
 //!
 //! Start closing the whole menu from the root row list is the port's own
 //! edge (retail's menu is closed through its list windows), and it blips as
@@ -20,8 +24,13 @@
 pub const MENU_CURSOR_CUE: u8 = 0x21;
 /// Enabled-row confirm cue (`FUN_80032A44`, `li a1,0x20` at `0x80032D24`).
 pub const MENU_CONFIRM_CUE: u8 = 0x20;
-/// Cancel cue (`FUN_80032A44`, `li a2,0x37` at `0x80032D74`).
+/// Cancel cue (`FUN_801D688C`, `li a0,0x37` at `0x801D68F4`).
 pub const MENU_CANCEL_CUE: u8 = 0x37;
+/// The picker's bare pick (`FUN_801D688C`, `li a0,0x36` at `0x801D68CC`),
+/// which the root's Items through Options rows leave sounding.
+pub const MENU_PICK_CUE: u8 = 0x36;
+/// A refused row (`FUN_801D6B20`, `li a0,0x23` at `0x801D6CEC`).
+pub const MENU_REFUSE_CUE: u8 = 0x23;
 
 use legaia_engine_system::input::PadButton;
 
@@ -40,6 +49,10 @@ pub enum MenuBlip {
     Cursor,
     Confirm,
     Cancel,
+    /// The root picker's rows that overwrite nothing.
+    Pick,
+    /// A gated row.
+    Refuse,
 }
 
 impl MenuBlip {
@@ -49,6 +62,8 @@ impl MenuBlip {
             Self::Cursor => MENU_CURSOR_CUE,
             Self::Confirm => MENU_CONFIRM_CUE,
             Self::Cancel => MENU_CANCEL_CUE,
+            Self::Pick => MENU_PICK_CUE,
+            Self::Refuse => MENU_REFUSE_CUE,
         }
     }
 }
@@ -80,10 +95,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_three_ids_are_the_list_kernel_ring_writes() {
+    fn the_ids_are_the_pickers_ring_writes() {
         assert_eq!(MenuBlip::Cursor.cue(), 0x21);
         assert_eq!(MenuBlip::Confirm.cue(), 0x20);
         assert_eq!(MenuBlip::Cancel.cue(), 0x37);
+        assert_eq!(MenuBlip::Pick.cue(), 0x36);
+        assert_eq!(MenuBlip::Refuse.cue(), 0x23);
     }
 
     /// Start on the root list closes the menu and blips a cancel, whatever

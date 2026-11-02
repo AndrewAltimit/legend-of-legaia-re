@@ -864,6 +864,16 @@ below; the overlay talks to it through globals:
 | `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` | scroll top / selected row / row count |
 | `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` |
 
+### Which cue a confirm sounds
+
+Two pickers page the menu's rows, with different cues. The command windows run the
+overlay's `FUN_801D688C` (21 callers): Cross pushes `0x36`, Circle `0x37`, a step
+`0x21`, and a screen that accepts the row overwrites the ring's last slot through
+`FUN_80035BD0`, `0x20` for most and `0x23` for a refusal. The root picker overwrites
+only for Load and Save, so its first five rows sound the bare `0x36`. The content
+lists run the kernel below, whose confirm is `0x20`. Engine:
+`field_menu::pause_edge_blip`, on both hosts.
+
 ### The kind-4 list kernel (SCUS `FUN_80032A44`)
 
 Runs per frame for each live list window whose content id (live `+0x1C`) is in

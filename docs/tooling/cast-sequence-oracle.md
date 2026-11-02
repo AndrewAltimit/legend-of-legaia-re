@@ -280,8 +280,11 @@ Both sides also write `sfx.csv`, one row per sound cue played:
   The row's `drain` column is the drainer's own gate
   (`0x8007BABC == 0x8007BAA0`, `0x80016BC0..0x80016BD4`); a cue that came due
   behind a closed gate was not played and is not scored. The ring carries
-  every battle cue the router `FUN_8004FE5C` enqueues and every script cue;
-  a voice keyed straight through `FUN_800250D4` is not on it.
+  every battle cue the router `FUN_8004FE5C` enqueues and every script cue.
+  `FUN_800250D4` releases voices, it keys none, and `FUN_80065034`'s only callers
+  outside the drainer are the emitter arm and four minigame overlays, so no battle
+  voice is keyed around the ring. A CD-XA voice clip (`FUN_8003D53C`) is not a ring
+  cue and is not in this channel.
 - **Engine.** The recorder reads the audio director's command record each
   tick: the cues that came due (`SfxDue` off the delay scheduler, `RingDue`
   off the retail ring, `SfxNow`). The driver drops the child's `--no-audio`
