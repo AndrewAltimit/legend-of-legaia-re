@@ -362,3 +362,47 @@ fn vell_fog_density_tracks_the_retail_poll() {
         "vell fog population mean {mean:.1} is outside retail's band (25.9, cap 24)"
     );
 }
+
+/// The render step projects through the shot the host drew while a timeline
+/// owns the camera, and through the follow frame once it does not: a stale
+/// shot never outlives its record.
+#[test]
+fn the_fog_step_follows_the_hosts_scripted_shot() {
+    let Some(extracted) = gated() else { return };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let scene = entry_raising_scene(&index).expect("a gate-raising scene");
+    let cfg = BootConfig {
+        scene: scene.clone(),
+        enable_audio: false,
+    };
+    let mut session = NativeSession::open(&extracted, &cfg).expect("boot session");
+    session
+        .enter_field_live(&scene, &FieldLiveOpts::default())
+        .expect("enter field scene");
+    session.host.world.set_pad(0);
+    let _ = session.tick();
+    let shot = legaia_engine_camera::psx_camera::FieldCameraView {
+        focus: [100.0, 0.0, 200.0],
+        pitch: 0.5,
+        yaw: 0.25,
+        roll: 0.0,
+        h: 400.0,
+        tr_eye: [0.0, 10.0, 900.0],
+    };
+    session.field_fog_shot = Some(shot);
+    // No record: the shot is stale and the follow frame stands.
+    let _ = session.step_field_fog([0.0, 0.0]);
+    session.host.world.fog.gate = true;
+    let _ = session.step_field_fog([0.0, 0.0]);
+    assert_ne!(session.host.world.fog.depth_view, Some(shot));
+    // A record that staged a camera slot owns the frame.
+    session.host.world.cutscene.timeline = Some(
+        legaia_engine_field::cutscene_timeline::CutsceneTimeline::new(vec![0x4A, 0xFF, 0x7F], 0),
+    );
+    session.host.world.camera.state.params = vec![legaia_engine_vm::field::CameraParam {
+        slot: 0,
+        value: 300,
+    }];
+    let _ = session.step_field_fog([0.0, 0.0]);
+    assert_eq!(session.host.world.fog.depth_view, Some(shot));
+}

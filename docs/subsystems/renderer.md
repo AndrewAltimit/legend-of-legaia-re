@@ -2084,6 +2084,12 @@ particle's depth, not a world-space quad
 The records come from the ambient emitter's spawner `FUN_801D629C`
 ([`field-ambient-fx.md`](field-ambient-fx.md#the-fog-pool-spawner-records-render-pass)).
 
+The pass runs under the frame's own matrices, so a scripted shot takes the
+sheets with it. The port's step is per tick and the shot's glide per redraw, so
+`BootSession::step_field_fog` projects through the shot the host last drew
+(`field_fog_shot`), one frame old, while a record owns the camera. A headless
+driver has no glide and keeps the follow frame.
+
 The pass runs once per **game frame**, not once per VSync, and its `dt` is
 the frame step (grade: disassembly). The per-frame mode handler
 `FUN_80025EEC` runs `FUN_8001698C`, then the frame body `FUN_80016444(1)`,

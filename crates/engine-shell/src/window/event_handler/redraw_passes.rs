@@ -29,6 +29,7 @@ impl PlayWindowApp {
     /// tick's framebuffer grabs project through.
     pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
         self.frame_cutscene_view = cutscene_cam.map(cutscene_view);
+        self.session.field_fog_shot = self.frame_cutscene_view;
         self.last_frame_field_view = self
             .host_view()
             .frame(self.frame_cutscene_view)

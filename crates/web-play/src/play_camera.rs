@@ -106,7 +106,14 @@ impl LegaiaRuntime {
             self.cutscene_glide.idle(camera);
             None
         };
-        legaia_engine_world_views::screen_passes::HostView::new(world, camera, aabb).frame(cutscene)
+        // The fog pool's next render step projects through this shot
+        // (`BootSession::step_field_fog`).
+        if let Some(session) = self.scene_host.session_mut() {
+            session.field_fog_shot = cutscene;
+        }
+        let (host, camera) = self.scene_host.host_cam().expect("checked above");
+        legaia_engine_world_views::screen_passes::HostView::new(&host.world, camera, aabb)
+            .frame(cutscene)
     }
 }
 

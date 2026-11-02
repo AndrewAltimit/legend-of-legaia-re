@@ -179,6 +179,7 @@ impl<S: AudioSink> BootSession<S> {
             audio,
             bgm,
             frames: 0,
+            field_fog_shot: None,
             starting_party,
             starting_inventory,
             equip_modifier_table,
