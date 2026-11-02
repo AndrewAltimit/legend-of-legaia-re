@@ -223,6 +223,10 @@ pub(super) fn run_one(
         super::minigame_run::run_minigame(opts, entry, &retail, &mut report);
         return report;
     }
+    if retail.class == StateClass::Cutscene {
+        super::movie_run::run_movie(opts, entry, &retail, &mut report);
+        return report;
+    }
     if !retail.class.seedable() {
         report.unseeded = retail.class.unseeded_reason().to_string();
         return report;

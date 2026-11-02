@@ -55,6 +55,7 @@ the sections after them define the model the scores come from.
 - [Mid-script states](#mid-script-states)
 - [Battle states](#battle-states)
 - [Menu states](#menu-states)
+- [Movie states](#movie-states)
 - [Channels](#channels)
 - [The image channel](#the-image-channel)
 - [Divergence shapes](#divergence-shapes)
@@ -218,7 +219,7 @@ by the game-mode word and the scene label:
 | `battle` | mode `0x14` / `0x15` | yes ([below](#battle-states)) |
 | `menu` | mode `0x17` (title, save screens, the pause menu) | the pause-menu screens and the title front end ([below](#menu-states)) |
 | `minigame` | mode `0x19` | the slot machine at rest on a door entry ([below](#minigame-states)) |
-| `cutscene` | mode `0x1A` / `0x1B` (STR playback) | no |
+| `cutscene` | mode `0x1A` / `0x1B` (STR playback) | the movie frame, image only ([below](#movie-states)) |
 | `other` | anything else | no |
 
 Unseeded states stay in the report with their reason, so the summary counts
@@ -2992,6 +2993,18 @@ roster walk listed Noa, Gala and Terra beside a Vahn still travelling alone.
 Each row's name is the record's own `+0x2A7` display name
 (`PartyState::roster_names`), so a save with a renamed hero shows
 that name, as retail does.
+
+## Movie states
+
+An STR movie (modes `0x1A` / `0x1B`) has nothing to seed: the frame on screen is
+the file's, whatever the story. A movie-class state scores the image channel
+alone, in [`movie_run.rs`](../../crates/parity/src/retail_compare/movie_run.rs).
+Retail's frame reads 24-bit when the dispatch slot's `+0x04` colour flag says so.
+The engine's is the frame the stream word `DAT_801CAD90` names, through
+`legaia_mdec`, centred in the 240-line display; the word runs ahead of the buffer
+on screen (`3` frames at most, the best taken and named in the detail).
+[`autorun_movie_state.lua`](../../scripts/pcsx-redux/autorun_movie_state.lua) makes
+these states with op `4C E2`'s two stores.
 
 ## Minigame states
 

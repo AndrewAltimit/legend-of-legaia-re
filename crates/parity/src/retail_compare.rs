@@ -63,6 +63,7 @@ mod baseline_report;
 mod corpus_run;
 mod engine_run;
 mod minigame_run;
+mod movie_run;
 mod pause_menu_drive;
 pub mod resident_disc;
 mod retail_obs;
@@ -179,16 +180,23 @@ impl StateClass {
     pub fn seedable(self) -> bool {
         matches!(
             self,
-            StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Menu
+            StateClass::Field
+                | StateClass::WorldMap
+                | StateClass::Battle
+                | StateClass::Menu
+                | StateClass::Cutscene
         )
     }
 
     /// The reason a non-seedable class is not seeded.
     pub fn unseeded_reason(self) -> &'static str {
         match self {
-            StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Menu => "",
+            StateClass::Field
+            | StateClass::WorldMap
+            | StateClass::Battle
+            | StateClass::Menu
+            | StateClass::Cutscene => "",
             StateClass::FieldInit => "scene mid-load; no settled frame to reproduce",
-            StateClass::Cutscene => "STR playback is not a seeded state",
             StateClass::Minigame => "no minigame session seeding path",
             StateClass::Other => "boot / unknown mode",
         }

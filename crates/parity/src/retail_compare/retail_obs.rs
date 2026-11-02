@@ -125,6 +125,8 @@ pub struct RetailObs {
     pub minigame: Option<super::RetailMinigame>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
+    /// A movie-class state's fmv id and stream frame word.
+    pub movie: Option<super::movie_run::RetailMovie>,
     /// Battle observables for a battle-class state; `Err` names why the
     /// state cannot seed a battle.
     pub battle: Option<std::result::Result<crate::retail_compare_battle::RetailBattle, String>>,
@@ -393,6 +395,8 @@ impl RetailObs {
             scroll_rects: Vec::new(),
             panel: None,
             scripted_seats: Vec::new(),
+            movie: (class == StateClass::Cutscene)
+                .then(|| super::movie_run::RetailMovie::from_ram(ram)),
             walkers: if matches!(class, StateClass::Field) {
                 retail_walkers(ram)
             } else {
@@ -829,8 +833,13 @@ impl RetailObs {
 /// keeps the 320-wide reader, so no state outside the minigames gains a
 /// frame it was not scored on.
 fn display_frame(ram: &[u8], vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Frame> {
-    if game_anchors::game_mode(ram) == 0x19 {
+    let mode = game_anchors::game_mode(ram);
+    if mode == 0x19 {
         Frame::from_vram_display_hires(vram, rect)
+    } else if matches!(mode, 0x1A | 0x1B)
+        && super::movie_run::RetailMovie::from_ram(ram).is_24bit(ram)
+    {
+        Frame::from_vram_display_24(vram, rect)
     } else {
         Frame::from_vram_display(vram, rect)
     }
