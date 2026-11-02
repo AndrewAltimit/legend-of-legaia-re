@@ -423,6 +423,12 @@ pub struct ScreenshotConfig {
     /// the gate's frame shows a different shot than the display did
     /// (`RetailBattle::retake_on_shot_only` in `legaia-parity`).
     pub retake_shot_only: bool,
+    /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
+    /// the lag into its state may still retake: the displayed frame is the
+    /// pass before the band's first arm spawned its parts, and it stands on
+    /// retail's walked-back pose (`RetailBattle::retake_across_band_entry` in
+    /// `legaia-parity`).
+    pub retake_across_entry: bool,
     /// The first tick of the drive's current run in its action state.
     pub state_since: std::cell::Cell<Option<u64>>,
     /// The framing the battle camera's law armed on the gate tick, kept for
@@ -1077,6 +1083,8 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
             retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
+                .is_ok_and(|v| v.trim() == "1"),
+            retake_across_entry: std::env::var("LEGAIA_CAPTURE_RETAKE_ENTRY")
                 .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),
             battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")

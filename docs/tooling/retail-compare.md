@@ -3624,6 +3624,13 @@ history of the replay's own earlier rounds. A shot still walking (the group
 breaths' six-frame case 9) leaves retail's table in the RAM, so the retake
 stands on the pose walked back along it (`BattleCamera::stand_on_pose`).
 
+A monster's capture-band gate within the lag of the band's entry retakes the
+same way (`RetailBattle::retake_across_band_entry`,
+`LEGAIA_CAPTURE_RETAKE_ENTRY`): its displayed frame is the pass before the
+first arm spawned its parts. `battle_map01_lippian_kiss_of_death_mid_cast`'s
+gate frame draws PROT 0955's shell parts around the caster, and retail's screen
+holds none of them.
+
 ## Divergence shapes
 
 Shapes the corpus separates, each with what it indicates:

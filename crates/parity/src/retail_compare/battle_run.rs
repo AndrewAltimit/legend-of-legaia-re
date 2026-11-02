@@ -922,6 +922,9 @@ pub(super) fn battle_image(
         // where it measures better the child re-runs to it
         // (`RetailBattle::display_retake`).
         if battle.display_retake() {
+            if battle.retake_across_band_entry() {
+                env.push(("LEGAIA_CAPTURE_RETAKE_ENTRY", "1".to_string()));
+            }
             if battle.retake_on_shot_only() {
                 env.push((
                     "LEGAIA_CAPTURE_DISPLAY_LAG",

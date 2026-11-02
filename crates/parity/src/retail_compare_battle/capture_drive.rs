@@ -189,6 +189,18 @@ impl RetailBattle {
                 .contains(&self.action_state)
     }
 
+    /// A monster's capture-band gate ([`SpanGate::CaptureFade`]): captured
+    /// within the display lag of the band's entry, its displayed frame is a
+    /// pass before the band's first arm, whose parts retail had not spawned
+    /// on screen (`battle_map01_lippian_kiss_of_death_mid_cast`: PROT 0955's
+    /// shell parts stand on the gate's frame and on none of retail's).
+    pub fn retake_across_band_entry(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::CaptureFade { .. }) if seat >= 3
+        )
+    }
+
     /// The display lag in the image child's own ticks: two of its passes,
     /// for the shot retake ([`Self::retake_on_shot_only`]). A pad drive runs
     /// the engine's default battle frame step unless the drive seeds

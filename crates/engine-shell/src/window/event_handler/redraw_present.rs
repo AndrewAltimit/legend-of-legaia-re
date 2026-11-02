@@ -672,7 +672,7 @@ impl PlayWindowApp {
         if let Some(want) = self
             .tick_no
             .checked_sub(sc.display_lag)
-            .filter(|&t| t >= since || sc.retake_shot_only)
+            .filter(|&t| t >= since || sc.retake_shot_only || sc.retake_across_entry)
         {
             // A magic-band shot the camera armed after the retake's tick
             // framed none of the frames before it: the retake draws the

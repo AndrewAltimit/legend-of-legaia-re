@@ -38,6 +38,10 @@ environment and arguments, to re-run by hand), and the products: `report.md`,
 `report.json` and `strip.png`. **Every one of them carries retail pixels or
 RAM**: keep the directory out of the repo.
 
+The engine child drops the state's own capture seeds as well as its gate and
+drive, its re-seat among them: a strike state's re-seat left in stood the
+caster `3500` units from the ground retail recorded.
+
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,
 and a binary built without it writes `meta.csv` but no `e_<tick>.png`.
@@ -58,6 +62,7 @@ Flags worth knowing:
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
+| `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
@@ -329,6 +334,14 @@ adds its reaction-channel entry). What the recordings on
   reaction, and a fold past arm 12 staged it a second time, with its cues. The
   fold now lands as arm 12 opens, about 33 ticks ahead of retail's ray. The ids
   and counts match; the four cues stay about 30 ticks early.
+- **A projectile's impact cue.** Aluru Cannon's landing rings `0x49`: the
+  caller log reads `FUN_8004FCC8` from `0x801E185C`, the hit arm's
+  `record[+0x0D]` ([move-power](../formats/move-power.md)). The engine's homing
+  step now rings it per landed slot.
+- **A victim's reaction holding `0x2E`.** The census's `+0x249` counts
+  `+0x1D9`, where a hit reaction commits, so the victim's knockdown and get-up
+  hold the magic band's exit. The engine counted the action channel and left
+  `0x2E` on its second pass, moving the band's closing cues `43` ticks early.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 

@@ -437,12 +437,18 @@ impl PlayWindowApp {
             // is retail's pose walked back onto it along the RAM's table.
             // The replay's own case 6 carries the camera history of its own
             // rounds (`RetailBattle::monster_magic_band_age`).
+            // A capture-band retake across the band's entry reads the same
+            // pose (`RetailBattle::retake_across_band_entry`).
             if live != end
                 && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
-                && self
-                    .screenshot
-                    .as_ref()
-                    .is_some_and(|sc| sc.retake_shot_only)
+                && self.screenshot.as_ref().is_some_and(|sc| {
+                    sc.retake_shot_only
+                        || (sc.retake_across_entry
+                            && sc
+                                .battle_drive
+                                .as_ref()
+                                .is_some_and(|d| !d.in_action_state(&self.session.host.world)))
+                })
                 && let Some(cam) = self.session.host.world.battle.camera.as_mut()
             {
                 cam.stand_on_pose(live);
