@@ -378,7 +378,9 @@ void main() {
         return;
       }
       const pan = arrow || { w: [0, -1], a: [-1, 0], s: [0, 1], d: [1, 0] }[lk];
-      if (pan) this._edPanBy(pan[0] * 60, pan[1] * 60);
+      // A key moves the view the way it points (a drag moves the ground
+      // with the pointer, so the key's step is the drag's reversed).
+      if (pan) this._edPanBy(-pan[0] * 60, -pan[1] * 60);
     }
 
     /* The editor camera's drag: orbit (yaw and tilt) or pan. */

@@ -570,14 +570,14 @@ enhancements.
 
 | Control | Does |
 |---|---|
-| Edit | The editor camera, with no player on the map: right drag orbits, middle drag (or Space with a drag) pans, the wheel zooms; W A S D and the arrows pan, Q / E turn, T looks straight down, F frames the selection. Opens on the whole map. |
+| Edit | The editor camera, with no player on the map: right drag orbits, middle drag (or Space with a drag) pans, the wheel zooms; W A S D and the arrows move the view the way they point, Q / E turn, T looks straight down, F frames the selection. Opens on the whole map. |
 | Match painter | On (the default), the orbit view reads as the painter's grid: row 0 the far edge at the top, columns left to right. Off, the map from its low-Z side with the game's own handedness, as the field camera looks. |
 | Arrival | Off (the default), the preview enters a map without its arrival cutscene and place-name banner. Ticked, the map is entered again at its spawn as a player arrives. |
 | Fit map | Back to the whole map in the orbit camera. |
 | Test play | Stands the party on the selected tile (else the first spawn), switches to the field camera and hands the keys to the game; **Stop test** comes back to Edit. The one time the lead is on the map. |
 | Top view | The editor camera straight down (`T`); again to tilt back. |
 | 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview, in the editor's **Select** mode. |
-| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision: translucent volumes over the picture. |
+| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision: translucent volumes over the picture. All start off; each box turns one on. |
 
 **No player while editing.** Under the editor camera the frame is the
 editor's alone (`PlayView.editorNoPlayer`): the lead is not drawn, the pad
