@@ -109,9 +109,9 @@
           <tr><th>Tile map</th><td>B paint, R fill rect, I pick, V select, S start point, E exit, T step-on event, N monster zone, P object, C person, K sculpt; Ctrl+wheel zooms; Space or right drag pans.</td></tr>
           <tr><th>Selection (tile map or 3D)</th><td>Arrows nudge it a tile, Shift+arrows a quarter tile; Ctrl+D duplicates; Delete removes; Escape drops it.</td></tr>
           <tr><th>3D view, Select</th><td>W move, E rotate, R scale; Shift while dragging places freely; Alt+drag turns the camera; the arrows follow the map axis nearest them on screen.</td></tr>
+          <tr><th>3D view, placing</th><td>Click puts the object down and stays armed; R turns it (Shift+R 15 degrees, Shift+wheel a quarter turn); Escape or a right click stops.</td></tr>
           <tr><th>3D view, Sculpt</th><td>[ and ] size the brush.</td></tr>
         </table>
-          <tr><th>3D view, placing</th><td>Click puts the object down and stays armed; R turns it (Shift+R 15 degrees, Shift+wheel a quarter turn); Escape or a right click stops.</td></tr>
       </div>
       <div id="xw-export-status" class="wb-status"></div>
 
@@ -315,9 +315,6 @@
   .xw-chart text { font-size: 11px; fill: var(--text-muted); }
   .xw-legend { display: flex; gap: 1rem; font-size: 0.82em; color: var(--text-muted); margin: 0.2rem 0; }
   .xw-legend i { display: inline-block; width: 1.2em; height: 2px; vertical-align: middle; margin-right: 0.3em; }
-  .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
-
-  /* Tile painter */
   /* The object palette (expansion-workbench-gizmos.js): category tabs and a
      row of pictures of the objects, each drawn from the visitor's disc. */
   .xw-pal { display: flex; flex-direction: column; gap: 0.25rem; min-height: 0; }
@@ -334,6 +331,9 @@
   .xw-tile-img { display: block; width: 4.8rem; height: 4.8rem; border-radius: 5px; background: var(--bg-code); opacity: 0.25; }
   .xw-tile-img.is-ready { opacity: 1; }
   .xw-tile-name { width: 100%; height: 2.3em; overflow: hidden; text-align: center; overflow-wrap: anywhere; }
+  .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
+
+  /* Tile painter */
   .xw-painter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(14rem, 18rem); gap: 0.6rem; }
   .xw-tools { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; margin-bottom: 0.3rem; }
   .xw-tools .xw-sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 0.2rem; }
@@ -452,6 +452,9 @@
     .xw-painter { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 44rem) {
+    .xw-pal-side { flex-wrap: wrap; }
+    .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 1 1 8rem; width: auto; min-width: 0; }
+    .xw-pal-tabs { flex: 1 1 100%; order: 2; }
     .xw-split { grid-template-columns: minmax(0, 1fr); }
     .xw-list { max-height: 12rem; }
     .xw-panel { padding: 0.5rem 0.45rem; }
@@ -476,11 +479,6 @@
   @container (max-width: 46rem) {
     .xw-painter { grid-template-columns: minmax(0, 1fr); }
   }
-<script src="../js/webgl-shaders.js"></script>
-<script src="../js/webgl-math.js"></script>
-<script src="../js/webgl-tmd.js"></script>
-<script src="../js/webgl-tmd-frame-state.js"></script>
-<script src="../js/webgl-tmd-assembled-scene.js"></script>
 
   /* Info tooltips: a "?" bead that opens a popover on hover, keyboard focus,
      or tap (tap toggles; Escape and tapping elsewhere close). */
@@ -497,4 +495,9 @@
 <script src="../js/rom-cache.js"></script>
 <script src="../js/disc-info.js"></script>
 <script src="../js/play-pack-library.js"></script>
+<script src="../js/webgl-shaders.js"></script>
+<script src="../js/webgl-math.js"></script>
+<script src="../js/webgl-tmd.js"></script>
+<script src="../js/webgl-tmd-frame-state.js"></script>
+<script src="../js/webgl-tmd-assembled-scene.js"></script>
 <script type="module" src="../js/expansion-workbench-app.js"></script>

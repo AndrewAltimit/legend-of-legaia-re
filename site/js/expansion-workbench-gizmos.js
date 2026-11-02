@@ -686,25 +686,6 @@ export function catalogEl(into, only) {
   return el;
 }
 
-const CATALOG_CSS = `
-.xw-pieces { display: grid; gap: 0.3rem; margin: 0.3rem 0; }
-.xw-piece-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
-.xw-piece-find { flex: 1 1 8rem; min-width: 6rem; max-width: 14rem; }
-.xw-piece-items { display: flex; gap: 0.3rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: thin; }
-.xw-piece { flex: 0 0 auto; width: 4.6rem; display: grid; justify-items: center; gap: 0.15rem; padding: 0.25rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2, transparent); color: inherit; cursor: pointer; font-size: 0.72rem; line-height: 1.15; }
-.xw-piece:hover, .xw-piece:focus-visible { border-color: var(--accent); }
-.xw-piece.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-.xw-piece-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.xw-piece-thumb { width: 44px; height: 44px; }
-`;
-function installCatalogCss() {
-  if (typeof document === 'undefined' || document.getElementById('xw-pieces-css')) return;
-  const st = document.createElement('style');
-  st.id = 'xw-pieces-css';
-  st.textContent = CATALOG_CSS;
-  document.head.append(st);
-}
-
 /* The object palette: Sims-style. A search box and a scene picker, category
  * tabs, a row of pictures. Kept across re-renders of the tab (`G.pal`), so a
  * selection or an edit does not rebuild it or lose its scroll. */
@@ -812,6 +793,25 @@ function listScene(scene) {
 
 function fillIfShown() {
   if (G.shellCat && G.shellCat.el.isConnected) fillShellCatalog();
+}
+
+const CATALOG_CSS = `
+.xw-pieces { display: grid; gap: 0.3rem; margin: 0.3rem 0; }
+.xw-piece-tabs { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+.xw-piece-find { flex: 1 1 8rem; min-width: 6rem; max-width: 14rem; }
+.xw-piece-items { display: flex; gap: 0.3rem; overflow-x: auto; padding-bottom: 0.25rem; scrollbar-width: thin; }
+.xw-piece { flex: 0 0 auto; width: 4.6rem; display: grid; justify-items: center; gap: 0.15rem; padding: 0.25rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-2, transparent); color: inherit; cursor: pointer; font-size: 0.72rem; line-height: 1.15; }
+.xw-piece:hover, .xw-piece:focus-visible { border-color: var(--accent); }
+.xw-piece.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.xw-piece-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xw-piece-thumb { width: 44px; height: 44px; }
+`;
+function installCatalogCss() {
+  if (typeof document === 'undefined' || document.getElementById('xw-pieces-css')) return;
+  const st = document.createElement('style');
+  st.id = 'xw-pieces-css';
+  st.textContent = CATALOG_CSS;
+  document.head.append(st);
 }
 
 /** The current selection (`{ type, i }` list). */
@@ -1122,12 +1122,12 @@ function renderBar() {
   bar.append(h('div', { class: 'xw-3d-keys xw-hint' }, 'Camera: right drag orbits, middle drag or Space + drag pans, wheel zooms, W A S D / arrows pan, Q / E turn, T top view, F frame. Ctrl+Z / Ctrl+Y undo and redo, Delete removes.'));
   if ((G.mode === 'place' || G.mode === 'select') && G.catalogShown !== false) bar.append(catalogEl());
   if (G.shellCat && G.shellCat.el.isConnected) fillShellCatalog();
+  renderFloat();
 }
 
 /** Switch the build tool: `view`, `select`, `move` / `rotate` / `scale`
  * (select with that gizmo), `place` (the catalog's last piece, else its
  * first prop), `npc` (the first person), `zone` (a trigger zone), `paint`
-  renderFloat();
  * or `sculpt` (terrain maps). False when the tool does not apply. */
 export function setTool(name) {
   const map = G.api && G.api.map();
@@ -1198,6 +1198,10 @@ const SHELL_TOOLS = {
       G.tool = 'move';
     } else if (mode === 'terrain') {
       G.mode = map && map.terrain ? 'paint' : 'view';
+    } else if (mode === 'objects') {
+      if (pv && pv.open) pv.open();
+      G.armed = null;
+      G.mode = 'select';
     } else if (MODE_GROUPS[mode]) {
       if (pv && pv.open) pv.open();
       const want = MODE_GROUPS[mode];
@@ -1226,6 +1230,14 @@ function fillShellCatalog() {
     el.append(h('div', { class: 'xw-hint' }, 'Click anything in the 3D view to pick it up; drag it to move it (it turns red where it cannot stand), R turns it, Delete removes it, Ctrl+Z takes any change back. Camera: right drag orbits, middle drag or Space + drag pans, the wheel zooms, T looks straight down.'));
     return;
   }
+  if (mode === 'objects') {
+    const pal = paletteEl();
+    const row = G.pal && G.pal.items;
+    const left = row ? row.scrollLeft : 0;
+    el.append(pal);
+    if (row) row.scrollLeft = left;
+    return;
+  }
   el.append(catalogEl(h('div', { class: 'xw-pieces', role: 'region', 'aria-label': 'Build catalog' }), MODE_GROUPS[mode]));
 }
 
@@ -1248,6 +1260,7 @@ export function mountMapEditor(api) {
   G.api = api;
   if (!G.registered) {
     G.registered = true;
+    document.addEventListener('keydown', onPageKey);
     G.catalogShown = false;
     try { registerBuildTools(SHELL_TOOLS); } catch (e) { G.catalogShown = true; }
   }
@@ -1265,7 +1278,6 @@ export function mountMapEditor(api) {
   /* Split and 3D are for working in the picture: they open in Select
    * (unless a mode was picked by hand), 2D in View as before. */
   if (api.preview.onView) {
-    document.addEventListener('keydown', onPageKey);
     const byView = (view) => {
       if (G.picked || view === '2d' || G.mode !== 'view') return;
       G.mode = 'select';
@@ -1310,15 +1322,3 @@ export function setEditMode(mode) {
   renderBar();
   sync();
 }
-    } else if (mode === 'objects') {
-      if (pv && pv.open) pv.open();
-      G.armed = null;
-      G.mode = 'select';
-  if (mode === 'objects') {
-    const pal = paletteEl();
-    const row = G.pal && G.pal.items;
-    const left = row ? row.scrollLeft : 0;
-    el.append(pal);
-    if (row) row.scrollLeft = left;
-    return;
-  }

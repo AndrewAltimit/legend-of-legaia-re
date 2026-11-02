@@ -27,8 +27,14 @@ and a browser; nothing is installed.
    the line and start the fight. The checks panel on the right lists the
    pack's three warnings (no description, authors or licence); the
    Manifest tab fixes them.
-2. **Paint the map and place a character.** On the **Maps** tab, open *Map
-   settings* and pick a base scene: the map borrows its textures, meshes
+2. **Place objects, paint the map and add a character.** A map opens in
+   **Place objects**, with the 3D view as the working surface and a palette
+   of pictures of your disc's objects along the bottom: click one, click the
+   ground to put it down, **R** turns it, **Esc** or a right click stops, and
+   a click on a placed object moves, turns, copies or deletes it. **+ New map**
+   starts from a small sample you can test-play at once. **Map settings** opens
+   the painter and the forms in a drawer: in its *Map settings* box pick a base
+   scene: the map borrows its textures, meshes
    and characters, and the floor stays yours. Paint with the legend's
    characters (`#` wall, `.` floor), then pick the **NPC** tool and click a
    tile. The NPC's form picks its model from the base scene's characters,

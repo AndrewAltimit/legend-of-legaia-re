@@ -533,13 +533,13 @@ void main() {
         const step = E.place.facing ? 45 : 1;
         E.place.yaw = (((Math.round(((E.place.yaw || 0) + deg) / step) * step) % 360) + 360) % 360;
         this._edPost({ type: 'xw-key', key: 'place-yaw', yaw: E.place.yaw });
-        this._edDirty = true;
         // Turned, it may fit where it did not, or the other way round.
         if (E.ghost) {
           const why = this._edBlocked(E.place, E.ghost.tile[0], E.ghost.tile[1], E.place.yaw, null);
           E.ghost.ok = !why;
           E.ghost.why = why;
         }
+        this._edDirty = true;
         return;
       }
       if (E.mode !== 'select' || !E.selected.length) return;
@@ -1241,7 +1241,6 @@ void main() {
           }
         }
       }
-      // The piece being placed: its box at the snapped tile, green where it
       // Placing: where the map ends, drawn on its ground; a terrain's skirt
       // past it looks like more ground.
       if (E.mode === 'place') {
@@ -1255,14 +1254,15 @@ void main() {
         };
         edge(X0, Z0, X1, Z0, m.width); edge(X1, Z0, X1, Z1, m.height); edge(X1, Z1, X0, Z1, m.width); edge(X0, Z1, X0, Z0, m.height);
       }
+      // The piece being placed: its box at the snapped tile, green where it
       // can stand and red where it cannot, its footprint's tiles on the
       // ground and its facing.
       if (E.mode === 'place' && E.ghost && E.place) {
         const g = E.ghost, pl = E.place;
-        const col = g.ok ? COL.okFill : COL.badFill;
         // Say why it cannot stand here, once per reason.
         const why = (!g.ok && g.why) || '';
         if (why !== E.ghostWhy) { E.ghostWhy = why; this._edPost({ type: 'xw-key', key: 'place-why', why }); }
+        const col = g.ok ? COL.okFill : COL.badFill;
         const line = g.ok ? COL.ok : COL.bad;
         const y0 = ground(g.x, g.z);
         if (pl.zone) {
@@ -1431,10 +1431,9 @@ void main() {
   const drawOverlay = P._drawEditorOverlay;
   P._drawEditorOverlay = function () {
     drawOverlay.call(this);
-    this._drawEditorGizmos();
     this._edDrawGhosts();
+    this._drawEditorGizmos();
   };
-  window.LegaiaEditorGizmos = { runShape };
   /* A rebuild draws what was placed: the stand-ins go. */
   const rebuild = P._rebuild;
   if (typeof rebuild === 'function') {
@@ -1443,4 +1442,5 @@ void main() {
       return rebuild.apply(this, arguments);
     };
   }
+  window.LegaiaEditorGizmos = { runShape };
 })();

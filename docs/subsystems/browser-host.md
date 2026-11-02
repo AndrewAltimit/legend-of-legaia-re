@@ -1474,7 +1474,8 @@ reference TIMs sitting in other PROT entries.
 visitor's disc is parsed once for the pickers and the validator's disc
 resolver, the page edits the pack as its JSON form, and the session validates,
 previews and exports it (`validate`, `files_view`, `export_bundle`, `xp_chart`,
-`check_dialog`, `map_preview`, `scene_objects`). The map preview is the
+`check_dialog`, `map_preview`, `scene_objects`, and for the object palette
+`scene_meshes`, `mesh_catalog`, `disc_key` and `starter_map`). The map preview is the
 engine's own synthetic field image read back, and a base scene's geometry
 pack is its scene assembly, so the page shows what the engine would load.
 Exports and page: [`expansion-workbench.md`](../tooling/expansion-workbench.md).

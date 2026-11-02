@@ -11,6 +11,7 @@ tab, and nothing is uploaded.
 | Page | `site/_content/tooling/expansion-workbench.html` |
 | App, state, history, persistence, shortcuts, templates, export | `site/js/expansion-workbench-app.js` |
 | The frame: area and page navigation, breadcrumb, map picker, mode toolbar, catalog strip | `site/js/expansion-workbench-shell.js` |
+| The object palette's pictures (work queue, shared GL context, IndexedDB cache) | `site/js/expansion-workbench-palette.js` |
 | Validation and bundle worker | `site/js/expansion-workbench-validate-worker.js` |
 | Find and cross-reference | `site/js/expansion-workbench-xref.js` |
 | Rename with references | `site/js/expansion-workbench-rename.js` |
@@ -65,6 +66,10 @@ keys as the TOML - and every export runs JSON -> `ExpansionPack` ->
 | `rename_plan(pack, kind, old, new)` / `rename_id(...)` | A rename's changes (`{ file, field, role, key, before, after }`), or the pack with them made: `{ ok, pack, changes }`, or `{ ok: false, error }`. |
 | `flow_graph(pack)` | The flow graph (`flow::graph`): nodes with their place, reachability and findings, and edges by role. |
 | `scene_objects(scene)` | A base scene's geometry pack: per mesh its primitive count, extent, how often the retail scene places it, and its footprint seen from above; and `cells`, every texture cell (`tpage`, `clut`, `tile`) the pack's textured prims sample, most used first. |
+| `scene_meshes(scene)` | A scene's VRAM and every mesh's vertex streams, packed (`catalog::pack_scene_meshes`): what the [palette's pictures](#the-object-palette) and the placement ghost draw. Disc-derived; it stays in the tab. |
+| `mesh_catalog()` | The [mesh catalog](../formats/expansion-pack-maps.md#the-mesh-catalog) as JSON: the palette's names and categories. No disc. |
+| `disc_key()` | The picture cache's key for this disc: its PROT table of contents and scene list, hashed. |
+| `starter_map(name)` | The map **+ New map** adds, as `MapDef`'s JSON form (`starter`): gentle ground, three props by disc coordinate, a start point. |
 
 A file the editor left unchanged exports as the bytes it was loaded from:
 `pack_files` compares each file's canonical form (what `to_files` writes for
@@ -123,10 +128,10 @@ content offer only ids the pack defines.
 
 ## Layout
 
-The page is a map builder first. A pack opens on the **Build** area with its
-first map in the 3D view (`setView('3d')` on the preview); a resumed pack
-returns to the page it was saved on. Every other editor sits one level down,
-so the top row stays short.
+The page is a map builder first. A pack opens on the **Build** area in **Place
+objects**, with its first map in the 3D view (`setView('3d')` on the preview);
+a resumed pack returns to the page it was saved on. Every other editor sits
+one level down, so the top row stays short.
 
 | Area | Pages (the editor tab each is) |
 |---|---|
@@ -142,20 +147,42 @@ and a line under the page row says what the page is for. The pack bar holds
 the pack's name, a breadcrumb (area, page, the open map), Undo and Redo, the
 **checks button** (the validator's count; a click shows or hides the Find and
 problems column, which the Build area hides by default so the 3D view takes
-the width), **Save .lxpack** and **Play pack**; Play this map, Live, Files, Share
-and Keys follow, folded under **More** at phone width.
+the width), **Save .lxpack** and **Play pack**; Play this map, Live, Files,
+Share, Keys and the disc and pack pickers follow, folded under **More** while
+building and at phone width.
 
-**The Build area.** Over the 3D view sit a strip of the pack's maps (name,
-size, base scene, how many people, objects and exits, an error badge) with
-**+ New map** (a walled 11 x 7 room over the disc's first scene), and the mode
-toolbar; under the view a catalog strip; the painter and the map's forms
-follow as before.
+**The Build area.** The editor fills the window under the pack bar
+(`body.xw-studio`, while the preview is open in the 3D or Split view): the
+site's sidebar and the page header stand back, and the rows are the area
+navigation, the Build head (a map picker, **+ New map**, the mode toolbar,
+**Map settings** and **Fullscreen**), a thin bar for the camera and the mode's
+tool, the picture, and the catalog docked along the bottom. A warning leaves
+the checks button quiet; an error still colours it. **Map settings** opens the
+drawer: the tile painter and every form of the map, in a column beside the
+picture (the Split view; the 3D view puts it away). The 2D view is the older
+page: the painter and the forms first, the picture a dock above them. Below
+44rem the page scrolls again: the picture, the catalog, the drawer's forms.
+
+**+ New map** adds the starter (`legaia_web_expansion::starter`): 14 x 10 tiles
+over `town01`, sculpted ground (two rises and a little noise, flattened where
+the player starts), Rim Elm's turf, a tree, a mound and a barrel, and a start
+point in the open, so a new modder has something to look at, move and test-play.
+It is coordinates and numbers only, and a test validates it with and without
+the disc. **Start a new pack** uses it for its first map.
+
+**Fullscreen** (`F11`, or the button; `S.fs`, `setFullscreen` in the app) puts
+the pack bar and the editor over everything through the Fullscreen API on
+`#xw-main`, and the `xw-fs` class does the layout, so a browser that refuses
+the API still gets the whole window. Escape takes one thing away at a time:
+what is being placed, then the selection, then fullscreen itself, where the
+Keyboard Lock API holds Escape for the page. Elsewhere the browser takes Escape
+and leaves at once, and placing stops with it.
 
 | Mode | Fallback tools | Catalog |
 |---|---|---|
-| Build | painter Select, 3D Select | how to pick up, move, turn and scale |
+| Place objects | painter Select, 3D Select until a piece is armed | [the object palette](#the-object-palette) |
+| Select & move | painter Select, 3D Select | how to pick up, move, turn and scale |
 | Paint terrain | painter Paint, 3D Sculpt on a terrain map | Paint tiles, Fill a rectangle, Pick a ground type, Sculpt |
-| Place objects | painter Prop, 3D Select | the map's props, each a jump to its form |
 | NPCs | painter NPC, 3D Select | the map's people |
 | Zones & exits | painter Trigger, 3D Select | add an exit, start point, step-on event or monster zone; the map's own |
 | Test-play | the preview's Test play | walk in 3D, play the map in a tab, play the pack |
@@ -172,6 +199,45 @@ fallback set, which is built on three one-function hooks: `setPainterTool`
 itself through `window.xwBuild` (`expansion-workbench-gizmos.js`):
 `setTool`, `catalog`, `arm`, `disarm`, `testPlay`, `topDown`, `barEl`,
 `catalogEl`, `showCatalogInBar` and `state`.
+
+### The object palette
+
+The catalog of **Place objects** is a palette of real pictures: every object
+in it is drawn from the visitor's own disc by the renderer the 3D preview uses
+(`TmdRenderer`, `site/js/webgl-tmd.js`). The names and categories are the
+[mesh catalog](../formats/expansion-pack-maps.md#the-mesh-catalog)'s kinds
+(Buildings, Plants & trees, Rocks, Furniture, Walls & structures, Lights,
+Vehicles, Odds & ends, Ground pieces), with **On your maps** first (what the
+pack already uses, copied with its settings) and **All** leaving out the odds
+and the ground. The search box looks across every category, and the scene picker
+narrows the palette to one scene or opens any scene on the disc, its unnamed
+meshes listed by their pictures under Odds & ends. With no disc the palette says
+where to choose one.
+
+A picture costs nothing until it is seen. A tile asks for its picture when it
+scrolls into view (an `IntersectionObserver`); the queue holds only what is
+still in view and runs a few milliseconds a turn on the page's thread, one
+scene at a time so the context keeps its VRAM. The worker assembles a scene
+(`scene_meshes`, the same message path as the checks), and one WebGL context
+draws each mesh into a WebP blob. Pictures go to IndexedDB (database
+`legaia-expansion-thumbs`, store `thumbs`, key `<disc_key>|<version>|<scene>|<object>`),
+so a later visit asks the worker for nothing. They are derived from the user's
+disc in the user's browser: never bundled, committed or uploaded, and no pack
+holds them.
+
+**Placing** follows The Sims' loop. A click on a picture arms it: a translucent
+copy of the real model (`xw-ghost`, its streams and its scene's VRAM, drawn with
+`TmdRenderer.drawMeshOver` over the frame) follows the pointer, snapped to the
+tile grid, with its tile outlined; red where it cannot stand and why in the
+status line. A click puts it down as one undo step and stays armed; the piece
+stands there at once as an opaque stand-in until the rebuild draws it. `R` turns
+it a quarter (`Shift+R` 15 degrees, `Shift` + wheel), and Escape or a right click
+puts it away, staying in the mode. Entering the mode arms nothing, so a stray
+click on the map never places. A selected object gets a small panel over the
+picture: **Move**, **Turn**, **Duplicate**, **Delete**, **More settings** (its
+full form in the drawer) and the layout tools under a fold. A first-run hint
+over the picture goes when dismissed or when the first object is placed. NPCs
+and the zone markers keep their glyph tiles: their ghosts are boxes.
 
 **Starting.** With no pack open the page offers three one-click starts, each
 landing on the Build area: **Open the sample pack**, **Start a new pack**
@@ -326,7 +392,7 @@ after an edit's re-render, from the worker's sites.
 **Phone width.** Below 44rem the pack bar keeps Undo, Redo, the checks
 button, Save .lxpack and Play pack and folds Play this map, Live,
 Files, Share and Keys under **More**; the area row wraps, and the
-map strip and the mode toolbar scroll sideways.
+mode toolbar and the palette's categories scroll sideways.
 
 **Undo and redo** cover the whole pack: every edit, a painter stroke as one
 step, a burst of typing as one step (`Ctrl+Z`, `Ctrl+Y` or `Ctrl+Shift+Z`;
@@ -381,12 +447,13 @@ loaded or last downloaded, and the autosave's state (saved at a time, or
 unavailable without browser storage). `Ctrl+S` downloads the `.lxpack`, `F8`
 steps through the checks, `Alt+1` .. `Alt+6` switch areas, `Alt+[` /
 `Alt+]` step through the pages, `1` .. `6` pick a build mode on the Build
-area, and `?` opens the key list over the page.
+area, `F11` toggles fullscreen there, and `?` opens the key list over the
+page.
 
 **New pack** starts empty (the manifest), from the **minimal template** (a
 derived monster in a formation, a dialogue line, a quest to win the fight
-and an 11 x 6 map whose trigger zones show the line and start the fight,
-over the disc's first scene), or as a **clone of the sample pack** under the
+and the starter map with trigger zones that show the line and start the
+fight), or as a **clone of the sample pack** under the
 modder's id, name and version 0.1.0; the clone's other files are the sample pack's
 own bytes until edited.
 
@@ -576,8 +643,8 @@ enhancements.
 | Fit map | Back to the whole map in the orbit camera. |
 | Test play | Stands the party on the selected tile (else the first spawn), switches to the field camera and hands the keys to the game; **Stop test** comes back to Edit. The one time the lead is on the map. |
 | Top view | The editor camera straight down (`T`); again to tilt back. |
-| 2D / Split / 3D | The layout on the Maps tab (kept per browser): the dock above the painter; the picture in a sticky column beside the painter and its forms; or the picture as large as the window allows, the painter's canvas put away and its forms under it. Split and 3D open the preview, in the editor's **Select** mode. |
-| Layers | The tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision: translucent volumes over the picture. All start off; each box turns one on. |
+| 3D / Split / 2D | The layout on the Maps tab (kept per browser): the [Build area](#layout) with the picture filling the page; the same with the painter and the forms in a drawer beside it; or the painter first with the picture a dock above it. 3D and Split open the preview, in the editor's **Select** mode. |
+| Show | A fold holding **Auto**, **Match painter**, **Arrival**, **Reload** and the layers: the tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision, translucent volumes over the picture. All layers start off; each box turns one on. |
 
 **No player while editing.** Under the editor camera the frame is the
 editor's alone (`PlayView.editorNoPlayer`): the lead is not drawn, the pad
@@ -602,14 +669,13 @@ camera is never flipped.
 preview with *Arrival* ticked, play both.
 
 **Layouts.** The frame never moves in the page (moving an iframe reloads
-it): Split and 3D are classes on the page (`xw-view-split`, `xw-view-3d`)
-whose rules `expansion-workbench-preview3d.js` installs, and the framed page
-resizes its canvas to the width it is shown at (4:3, 320 to 960 wide).
-Split's divider sits in the editor's grid beside the picture: a drag, or the
-arrow keys on it, sets the picture column's share of the editor (a quarter
-to three quarters, kept per browser), and a double-click resets it. Split
-and 3D open the 3D editor in **Select** unless a mode was picked by hand; 2D
-opens it in **View**.
+it): the layouts are classes on the page (`xw-studio`, `xw-view-split`,
+`xw-view-3d`) whose rules `expansion-workbench-preview3d.js` installs, and the
+framed page takes the frame's own shape, sizing its canvas to it, up to 1600
+wide. Split's divider sits at the edge of the drawer: a drag, or the arrow keys
+on it, sets the drawer's share of the editor (kept per browser), and a
+double-click resets it. 3D and Split open the 3D editor in **Select** unless a
+mode was picked by hand; 2D opens it in **View**.
 
 **The grid.** The Grid layer draws each tile's edges at its four corner
 heights, and fills a cell whose corners disagree - a ramp, by the
@@ -754,17 +820,17 @@ so it never covers the map being edited; Test play shows it.
 | Mode | Does |
 |---|---|
 | Select | A click picks the object under it - a prop, decoration, NPC, spawn, lamp, emitter, trigger, exit or encounter zone; Shift or Ctrl adds or takes away. The selection gets a gizmo: **Move** (two arrows for one axis, a square for both; dragging an object moves it), **Rotate** (a ring: props and decorations in 15-degree steps, NPCs and spawns by facing sector), **Scale** (a corner handle: props and decorations; a zone's corner resizes it). A drag snaps to the tile or to the 32-unit sub-tile grid (**Snap**); Shift places freely. **Duplicate** (Ctrl+D) copies the selection one tile over (a prop to the nearest free tile); **Delete** removes it. |
-| Place | A piece from the catalog under the bar: a ghost of it follows the pointer snapped to the tile grid, green where it can stand and red where it cannot (off the map or over void, another prop on the tile, a solid footprint over another solid one, a person on a wall block or another person). A click places it (one undo step) and keeps it armed; `R` turns it a quarter turn (`Shift+R` 15 degrees, `Shift` + wheel a quarter turn); Escape or a right click puts it away. |
+| Place | A piece from the catalog under the picture: a ghost of it (the [real model](#the-object-palette) for a mesh off the disc) follows the pointer snapped to the tile grid, red where it cannot stand (off the map or over void, another prop on the tile, a solid footprint over another solid one, a person on a wall block or another person). A click places it (one undo step) and keeps it armed; `R` turns it a quarter turn (`Shift+R` 15 degrees, `Shift` + wheel a quarter turn); Escape or a right click puts it away. |
 | Sculpt | A ring cursor of the brush's radius rides the ground, an inner ring at its strength; `[` and `]` size it. A drag lays one stroke: raise, lower, smooth and flatten write a `stroke` along the drag (a click writes the single-point shape), flatten levelling to the height where the drag starts; ridge and ramp drag from one point to another (a ramp from the ground under its start to the ground under its end plus **Height**); plateau and noise drag a rectangle. |
 | Paint | The tiles under the ring take a legend character: a terrain material's (named by the material) or any walkable style's. |
 
-**The catalog** groups what can be placed: Buildings, Large props and Small
-props (each mesh the pack already uses, named by the prop that uses it, then
-the rest of the base scene's geometry pack, sorted by size), People (the
-pack's NPCs, then the base scene's retail placements by what each first
-says) and Markers (spawn, lamp, trigger zone, encounter zone, exit). A tile
-shows the mesh's footprint from above. A placed piece copies the pack's own
-example where there is one (scale, solid, top, light, clip and line).
+**The catalog** groups what can be placed: the
+[object palette](#the-object-palette) for props, People (the pack's NPCs, then
+the base scene's retail placements by what each first says) and Markers (spawn,
+lamp, trigger zone, encounter zone, exit). A placed piece copies the pack's own
+example where there is one (scale, solid, top, light, clip and line); a piece
+off the palette is `solid` where the mesh catalog says so or the walk-through
+hint would flag it.
 
 **Keys.** With the picture focused in **Select**, `G` picks Move, `R` turns
 the selection a quarter turn (`Shift+R` 15 degrees), `Escape` drops the
