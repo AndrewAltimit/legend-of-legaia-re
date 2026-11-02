@@ -33,6 +33,10 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
         t += MENU_PRESS_GAP;
         out.push((t, b));
     };
+    // The root list is `Start` alone: the hand rests on its first row.
+    if menu.subscreen == MENU_ROOT {
+        return out;
+    }
     for _ in 0..menu.row.index() {
         press(PadButton::Down);
     }
@@ -56,6 +60,8 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
 pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
     let settle = if menu.card_grid {
         CARD_READ_SETTLE_TICKS
+    } else if menu.subscreen == MENU_ROOT {
+        MENU_OPEN_WIPE_TICKS + 2 * MENU_PRESS_GAP
     } else {
         2 * MENU_PRESS_GAP
     };

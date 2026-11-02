@@ -1,6 +1,7 @@
 //! `EquipSession::input`: the per-frame pad step over the slot browse and item list.
 
 use super::*;
+use legaia_engine_system::input::PadButton;
 
 impl EquipSession {
     /// Apply a per-frame input.
@@ -35,12 +36,19 @@ impl EquipSession {
                             self.events.push(EquipEvent::BestEquipmentUnchanged);
                         }
                         SlotBrowseOutcome::OpenCandidates { slot } => {
-                            self.state = EquipState::ItemPicker { slot, cursor: 0 };
+                            // The candidate step opens with the list's
+                            // selection on row 1, the row below Remove
+                            // (`sw s3,-0x4468` at `0x801D9D20`); the allocator
+                            // `FUN_80030104` clamps it to the last row, so a
+                            // list holding only Remove opens on Remove.
+                            let items = self.items_for_slot(slot);
+                            let cursor = 1.min(items.len().saturating_sub(1)) as u16;
+                            self.state = EquipState::ItemPicker { slot, cursor };
                             self.events.push(EquipEvent::EnteredItemPicker { slot });
                             // Retail stages the trial equip as the candidate
                             // list opens, so the stat-compare block is already
-                            // showing the top row's preview on the first frame.
-                            if let Some(item) = self.items_for_slot(slot).first().copied() {
+                            // showing the hovered row's preview on the first frame.
+                            if let Some(item) = items.get(usize::from(cursor)).copied() {
                                 self.preview_candidate(slot, item.id);
                             }
                         }
@@ -53,8 +61,24 @@ impl EquipSession {
             EquipState::ItemPicker { slot, mut cursor } => {
                 let items = self.items_for_slot(slot);
                 let n = items.len();
-                if input.up && cursor > 0 {
-                    cursor -= 1;
+                // The candidate list runs the kind-4 kernel: Up / Down wrap
+                // inside the 12-row page and Left / Right flip it.
+                let mut pressed = 0u16;
+                for (held, button) in [
+                    (input.up, PadButton::Up),
+                    (input.down, PadButton::Down),
+                    (input.left, PadButton::Left),
+                    (input.right, PadButton::Right),
+                ] {
+                    if held {
+                        pressed |= button.mask();
+                    }
+                }
+                let moved =
+                    crate::pause_screens::list_kernel_navigate(usize::from(cursor), n, pressed)
+                        as u16;
+                if moved != cursor {
+                    cursor = moved;
                     self.state = EquipState::ItemPicker { slot, cursor };
                     self.events.push(EquipEvent::CursorMoved {
                         state: EquipStateKind::ItemPicker,
@@ -63,16 +87,6 @@ impl EquipSession {
                     // Retail's candidate list previews the **hovered** row, not
                     // just the confirmed one - the trial equip re-runs on every
                     // cursor move so the stat-compare block tracks the hand.
-                    if let Some(item) = items.get(cursor as usize) {
-                        self.preview_candidate(slot, item.id);
-                    }
-                } else if input.down && (cursor as usize + 1) < n {
-                    cursor += 1;
-                    self.state = EquipState::ItemPicker { slot, cursor };
-                    self.events.push(EquipEvent::CursorMoved {
-                        state: EquipStateKind::ItemPicker,
-                        cursor,
-                    });
                     if let Some(item) = items.get(cursor as usize) {
                         self.preview_candidate(slot, item.id);
                     }

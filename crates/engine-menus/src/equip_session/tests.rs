@@ -536,14 +536,12 @@ fn commit_decrements_new_item_and_restores_old_inventory() {
         cross: true,
         ..Default::default()
     });
-    // The slot is occupied, so the list is [Remove, 0x05, 0x06]. Step
-    // down twice to land on 0x06.
-    for _ in 0..2 {
-        s.input(EquipInput {
-            down: true,
-            ..Default::default()
-        });
-    }
+    // The slot is occupied, so the list is [Remove, 0x05, 0x06], and it opens
+    // on row 1, below Remove. One step down lands on 0x06.
+    s.input(EquipInput {
+        down: true,
+        ..Default::default()
+    });
     s.input(EquipInput {
         cross: true,
         ..Default::default()
@@ -890,4 +888,60 @@ fn best_equipment_skips_non_equipment_wrong_character_and_empty_stacks() {
     let bag = [(0x40, 1), (0x41, 1), (0x42, 0), (0, 5)];
     let best = best_equipment_candidates([0, 0, 0, 0], 1, &bag, table, |_| 0);
     assert_eq!(best, [0, 0, 0, 0]);
+}
+
+/// The armament list ranks best first: a favoured weapon over any other, the
+/// worn row among them, the Remove verb fixed on top. `0x80031614..0x800316E0`.
+#[test]
+fn armament_rows_rank_on_the_key_with_the_worn_row_among_them() {
+    use crate::equipment::DiscEquipInfo;
+    use legaia_game_tables::equip_stats::EquipStatTable;
+    // [INT, ATK, UDF, LDF, SPD, passive, mask, +7 slot bits].
+    let weapon = |atk: u8| [0, atk, 0, 0, 0, 0x40, 7, 0x40];
+    let table = EquipStatTable::from_entries(&[
+        (0x10, weapon(5)),
+        (0x11, weapon(50)),
+        (0x12, weapon(20)),
+        (0x13, weapon(1)),
+    ]);
+    let info = DiscEquipInfo::from_disc(&table);
+    let mut inv = crate::item_bag::ItemBag::new();
+    for id in [0x10, 0x11, 0x13] {
+        inv.insert(id, 1);
+    }
+    let mut record = fresh_record();
+    record.equip[0] = 0x12;
+    let s = EquipSession::new_with_restrictions(
+        record,
+        inv,
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+        info,
+        0,
+    )
+    .with_weapon_category(vec![crate::menu_item_category::CategoryEntry {
+        item_id: 0x13,
+        mask: 0x01,
+    }]);
+    let ids: Vec<u8> = s.items_for_slot(0).iter().map(|r| r.id).collect();
+    assert_eq!(ids, [REMOVE_ROW_ID, 0x13, 0x11, 0x12, 0x10]);
+    assert!(s.items_for_slot(0)[3].equipped);
+}
+
+/// The candidate step opens on the row under Remove, and on Remove when the
+/// list holds nothing else (`FUN_80030104` clamps the selection).
+#[test]
+fn the_candidate_list_opens_below_remove() {
+    let mut s = fresh_session();
+    s.state = EquipState::SlotPicker { cursor: 1 };
+    s.record.equip[0] = 0x05;
+    s.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    assert!(matches!(
+        s.state(),
+        EquipState::ItemPicker { slot: 0, cursor: 1 }
+    ));
 }

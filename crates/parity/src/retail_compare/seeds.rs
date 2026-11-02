@@ -1452,6 +1452,16 @@ impl RetailMenu {
                 game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE)
             ));
         }
+        if subscreen == MENU_ROOT {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+            });
+        }
         let (row, equip_depth) = match subscreen {
             MENU_EQUIP_PICK => (FieldMenuRow::Equip, 0),
             MENU_EQUIP_SLOTS => (FieldMenuRow::Equip, 1),
@@ -1475,6 +1485,9 @@ impl RetailMenu {
         })
     }
 }
+
+/// The root list's own sub-screen id: the pause menu with no row open.
+pub const MENU_ROOT: u8 = 0x01;
 
 /// Prefix of the reason a menu-class state carries when it is not a
 /// pause-menu screen the seed can drive to.

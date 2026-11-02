@@ -226,6 +226,9 @@ pub struct DiscEquipInfo {
     /// item property table's `+1` bonus index, not by item id, because that is
     /// the index the retail renderer applies - see [`Self::row_passive_index`].
     row_passives: Vec<u8>,
+    /// The stat bytes the armament lists rank on, per id:
+    /// `(ATK +1, UDF +2, LDF +3)` ([`Self::armament_rank`]).
+    rank_bytes: std::collections::HashMap<u8, (u8, u8, u8)>,
 }
 
 /// One item's disc-pinned equip restriction.
@@ -251,8 +254,10 @@ impl DiscEquipInfo {
     /// keeps the `+5` column of every parsed row for [`Self::row_passive_index`].
     pub fn from_disc(table: &legaia_game_tables::equip_stats::EquipStatTable) -> Self {
         let mut entries = std::collections::HashMap::new();
+        let mut rank_bytes = std::collections::HashMap::new();
         for id in 0u8..=u8::MAX {
             if let Some(b) = table.bonus(id) {
+                rank_bytes.insert(id, (b.attack(), b.def_up(), b.def_down()));
                 entries.insert(
                     id,
                     DiscEquipEntry {
@@ -269,6 +274,30 @@ impl DiscEquipInfo {
             entries,
             goods: std::collections::BTreeSet::new(),
             row_passives,
+            rank_bytes,
+        }
+    }
+
+    /// The sort key of one row of an armament candidate list, without the
+    /// weapon's favour term: `FUN_800302E4` by the row's category
+    /// (`0x8007B484` per content id, the same value the builder filters on).
+    /// Body ranks on `+2 + +3`, helmet on `+2`, weapon on `+1` and footwear on
+    /// `+1 + +3`. An id with no record ranks `0`.
+    ///
+    /// PORT: FUN_800302E4
+    pub fn armament_rank(
+        &self,
+        id: u8,
+        category: legaia_game_tables::equip_stats::EquipSlot,
+    ) -> u32 {
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
+        let (atk, up, down) = self.rank_bytes.get(&id).copied().unwrap_or_default();
+        let (atk, up, down) = (u32::from(atk), u32::from(up), u32::from(down));
+        match category {
+            Disc::Body => up + down,
+            Disc::Head => up,
+            Disc::Weapon => atk,
+            Disc::Footwear => atk + down,
         }
     }
 
@@ -321,6 +350,7 @@ impl DiscEquipInfo {
             entries: entries.into_iter().collect(),
             goods: std::collections::BTreeSet::new(),
             row_passives: Vec::new(),
+            rank_bytes: std::collections::HashMap::new(),
         }
     }
 

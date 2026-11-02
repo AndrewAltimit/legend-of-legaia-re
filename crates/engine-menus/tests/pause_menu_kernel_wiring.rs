@@ -69,19 +69,19 @@ fn equip_item_picker_previews_the_hovered_candidate() {
     s.input(press(false, true));
     s.input(press(true, false));
 
-    // Opening the list stages the first candidate (0x20, +5 UDF).
+    // The list opens on row 1 and stages that row (0x21, +40 UDF).
     let on_open = s.preview_stats.udf;
     assert_eq!(
         on_open,
-        base_udf + 5,
-        "opening the candidate list must stage the top row's trial equip"
+        base_udf + 40,
+        "opening the candidate list must stage the hovered row's trial equip"
     );
 
-    // Moving the hand down re-runs it for 0x21 (+40 UDF).
+    // The hand wraps inside the page, back to row 0 (0x20, +5 UDF).
     s.input(press(false, true));
     assert_eq!(
         s.preview_stats.udf,
-        base_udf + 40,
+        base_udf + 5,
         "the preview must follow the hand, not stay on the opening row"
     );
 }
@@ -96,7 +96,6 @@ fn equip_confirm_preview_matches_the_picked_row() {
     s.input(press(false, true));
     s.input(press(false, true));
     s.input(press(true, false));
-    s.input(press(false, true));
     s.input(press(true, false));
     assert_eq!(s.preview_stats.udf, base_udf + 40);
 }

@@ -34,6 +34,15 @@ pub struct EquipScreenModel {
     pub candidate_names: Vec<String>,
     /// Bag count per candidate, parallel to [`Self::candidate_names`].
     pub candidate_counts: Vec<u8>,
+    /// ICO code of each candidate row's pictogram, parallel to
+    /// [`Self::candidate_names`]; `0` for none (the Remove row). `0x21` marks
+    /// the worn row (class `0x7000`), `0x46` a Goods row (class `0x9000`), and
+    /// an armament row (class `0x6000`) takes its slot's: `0x24` weapon, `0x22`
+    /// helmet, `0x23` body, `0x25` footwear (`0x80073A90` by the `+7` category,
+    /// which an armament list has filtered to the slot's own).
+    pub candidate_icons: Vec<u8>,
+    /// Page count of the candidate list, `0` when it has no rows.
+    pub candidate_pages: u16,
     /// The three retail compare rows (`FUN_801D21C0`'s stat block) as
     /// `(label, current, preview)`: the live menu block against the block
     /// with the Best Equipment picks installed. Retail draws them only while
@@ -98,6 +107,8 @@ pub struct EquipItemInfoModel {
     pub desc: String,
     /// An accessory's two passive lines.
     pub passive: Option<(String, String)>,
+    /// The detail printer's output, when the disc tables are up.
+    pub detail: Option<ItemDetailText>,
 }
 
 /// Window 25's model - the Equip screen's own stat-compare panel.
@@ -308,24 +319,47 @@ pub fn equip_screen_model(
     };
 
     // Candidates + stat compare only matter past the slot picker.
-    let (candidate_names, candidate_counts, considered_id): (Vec<String>, Vec<u8>, Option<u8>) =
-        if phase == EquipScreenPhase::SlotPicker {
-            (Vec::new(), Vec::new(), None)
-        } else {
-            let items = session.items_for_slot(active_slot);
-            let names: Vec<String> = items.iter().map(|it| name_of(it.id)).collect();
-            let counts: Vec<u8> = items
-                .iter()
-                .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
-                .collect();
-            // The item the compare block previews: the hovered row in the
-            // picker, the pending item in the confirm phase.
-            let considered = match session.state() {
-                EquipState::Confirm { item_id, .. } => Some(item_id),
-                _ => items.get(cursor as usize).map(|it| it.id),
-            };
-            (names, counts, considered)
+    let (candidate_names, candidate_counts, candidate_icons, considered_id): (
+        Vec<String>,
+        Vec<u8>,
+        Vec<u8>,
+        Option<u8>,
+    ) = if phase == EquipScreenPhase::SlotPicker {
+        (Vec::new(), Vec::new(), Vec::new(), None)
+    } else {
+        let items = session.items_for_slot(active_slot);
+        let names: Vec<String> = items.iter().map(|it| name_of(it.id)).collect();
+        let counts: Vec<u8> = items
+            .iter()
+            .map(|it| session.inventory().get(&it.id).copied().unwrap_or(0))
+            .collect();
+        let icons: Vec<u8> = items
+            .iter()
+            .map(|it| {
+                if it.id == crate::equip_session::REMOVE_ROW_ID {
+                    0
+                } else if it.equipped {
+                    0x21
+                } else {
+                    match EquipSlot::from_index(active_slot) {
+                        Some(EquipSlot::Weapon) => 0x24,
+                        Some(EquipSlot::Helmet) => 0x22,
+                        Some(EquipSlot::BodyArmor) => 0x23,
+                        Some(EquipSlot::Boot) => 0x25,
+                        _ => 0x46,
+                    }
+                }
+            })
+            .collect();
+        // The item the compare block previews: the hovered row in the
+        // picker, the pending item in the confirm phase.
+        let considered = match session.state() {
+            EquipState::Confirm { item_id, .. } => Some(item_id),
+            _ => items.get(cursor as usize).map(|it| it.id),
         };
+        (names, counts, icons, considered)
+    };
+    let candidate_pages = candidate_names.len().div_ceil(LIST_PAGE_ROWS) as u16;
 
     // Window 22's second pass (`FUN_801D21C0`, `0x801D23BC..0x801D27F8`):
     // gated on the settled slot-browse sub-screen (`DAT_801E46A4 ==
@@ -381,6 +415,7 @@ pub fn equip_screen_model(
             count: u16::from(session.inventory().get(&id).copied().unwrap_or(0)),
             desc: t.desc,
             passive: t.passive,
+            detail: t.detail,
         }
     });
 
@@ -451,6 +486,8 @@ pub fn equip_screen_model(
         slot_items,
         candidate_names,
         candidate_counts,
+        candidate_icons,
+        candidate_pages,
         stat_compare,
         best_changes,
         phase,

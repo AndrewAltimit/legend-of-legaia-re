@@ -551,8 +551,8 @@ fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
         &SpellCatalog::vanilla(),
         &equip_table,
     );
-    // Row 2 is slot 1. The slot is occupied, so its candidate list
-    // leads with the Remove row - one more step down lands on 0x25.
+    // Row 2 is slot 1. The slot is occupied, so its candidate list leads with
+    // the Remove row and opens one row below it, on 0x25.
     // The Equip row opens on its character picker; confirm hands the pad
     // to the slot browse.
     s.tick_pad_edge(PadButton::Cross.mask());
@@ -560,7 +560,6 @@ fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
         s.tick_pad_edge(PadButton::Down.mask());
     }
     s.tick_pad_edge(PadButton::Cross.mask());
-    s.tick_pad_edge(PadButton::Down.mask());
     for _ in 0..2 {
         s.tick_pad_edge(PadButton::Cross.mask());
     }

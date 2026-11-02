@@ -36,8 +36,8 @@ use legaia_engine_menus::inventory_use::{
 };
 use legaia_engine_menus::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
 use legaia_engine_menus::options::{OptionsInput, OptionsSession, OptionsState};
-use legaia_engine_menus::pause_screens::ItemDisplayText;
 use legaia_engine_menus::pause_screens::stat_record_from_character;
+use legaia_engine_menus::pause_screens::{ItemDetailText, ItemDisplayText};
 use legaia_engine_menus::pause_screens::{PauseItemRow, PauseItemsSession};
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
 use legaia_engine_menus::spell_menu::{

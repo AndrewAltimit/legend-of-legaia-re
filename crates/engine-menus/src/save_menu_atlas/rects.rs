@@ -110,6 +110,7 @@ pub const ATLAS_RECT_ICON_HELMET: (u32, u32, u32, u32) = (54, 216, 12, 12);
 pub const ATLAS_RECT_ICON_ARMOR: (u32, u32, u32, u32) = (68, 216, 12, 12);
 pub const ATLAS_RECT_ICON_BOOT: (u32, u32, u32, u32) = (82, 216, 12, 12);
 pub const ATLAS_RECT_ICON_GOODS: (u32, u32, u32, u32) = (96, 216, 12, 12);
+pub const ATLAS_RECT_ICON_WORN: (u32, u32, u32, u32) = (176, 216, 12, 12);
 
 /// Atlas placement of the top-level pause menu's money/play-time box
 /// icons (UI-icon codes `0x62` / `0x63` / `0x66` - money pictogram,

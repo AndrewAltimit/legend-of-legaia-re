@@ -167,7 +167,18 @@ pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
     ItemDisplayText {
         name: text
             .and_then(|t| t.item_name(id))
-            .map(str::to_string)
+            .map(|name| {
+                // `0x1A`'s string substitutes the hero's record name.
+                match (id, world.party.roster_names().first()) {
+                    (legaia_game_tables::item_names::PARTY_NAMED_ITEM, Some(hero)) => name
+                        .replacen(
+                            legaia_game_tables::item_names::DEFAULT_PARTY_NAMES[0],
+                            hero,
+                            1,
+                        ),
+                    _ => name.to_string(),
+                }
+            })
             .or_else(|| {
                 world
                     .tables
@@ -181,6 +192,32 @@ pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
             .unwrap_or_default()
             .to_string(),
         passive: text.and_then(|t| t.item_passive_text(id)),
+        detail: text.and_then(|t| t.item_detail.as_ref()).map(|tables| {
+            use legaia_engine_menus::shop::{expand_name_escapes_bytes, item_detail_line};
+            let line = item_detail_line(tables, id);
+            let names = world.party.roster_names();
+            ItemDetailText {
+                text: expand_name_escapes_bytes(&line.text, |esc, who| {
+                    (esc == 0xC1).then(|| names.get(usize::from(who)).cloned())?
+                }),
+                stats: line
+                    .stats
+                    .iter()
+                    .map(|st| {
+                        (
+                            tables
+                                .stat_labels
+                                .get(st.label)
+                                .cloned()
+                                .unwrap_or_default(),
+                            st.label_dx,
+                            st.value_dx,
+                            st.value,
+                        )
+                    })
+                    .collect(),
+            }
+        }),
     }
 }
 

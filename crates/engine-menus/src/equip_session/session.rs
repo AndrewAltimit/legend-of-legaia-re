@@ -491,7 +491,54 @@ impl EquipSession {
                     equipped: false,
                 }),
         );
+        self.sort_armament_rows(slot, &mut out);
         out
+    }
+
+    /// The builder's row sort: a selection sort over rows `1..n`, whose swap
+    /// is what a tie's order comes from, so it is kept rather than replaced
+    /// by a library sort. The outer walk stops one short of the last row and
+    /// the scan runs through it (`slt` at `0x80031618` / `0x80031654`); a row
+    /// displaces the running best only when strictly greater.
+    fn sort_armament_rows(&self, slot: u8, rows: &mut [EquipItem]) {
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
+        let (Some(info), Some(engine_slot)) = (&self.restrictions, EquipSlot::from_index(slot))
+        else {
+            return;
+        };
+        let category = match engine_slot {
+            EquipSlot::Weapon => Disc::Weapon,
+            EquipSlot::Helmet => Disc::Head,
+            EquipSlot::BodyArmor => Disc::Body,
+            EquipSlot::Boot => Disc::Footwear,
+            _ => return,
+        };
+        let key = |item: &EquipItem| {
+            let favour = if category == Disc::Weapon {
+                crate::menu_item_category::category_check(
+                    &self.weapon_category,
+                    u32::from(self.active_party_slot),
+                    item.id,
+                    0,
+                )
+            } else {
+                0
+            };
+            info.armament_rank(item.id, category) + favour
+        };
+        let n = rows.len();
+        for i in 1..n.saturating_sub(1) {
+            let mut best = i;
+            let mut best_key = key(&rows[i]);
+            for (j, row) in rows.iter().enumerate().skip(i + 1) {
+                let k = key(row);
+                if best_key < k {
+                    best_key = k;
+                    best = j;
+                }
+            }
+            rows.swap(i, best);
+        }
     }
 
     /// The three **Goods** slots' candidate list, in retail's row order.

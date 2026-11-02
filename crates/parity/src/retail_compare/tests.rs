@@ -240,6 +240,15 @@ fn the_drive_walks_the_root_cursor_onto_the_row() {
     );
 }
 
+/// The root list opens on `Start` alone and settles past the pause wipe.
+#[test]
+fn the_root_list_is_start_alone() {
+    let m = RetailMenu::from_ram(&ram_with_subscreen(MENU_ROOT), "conc").unwrap();
+    let presses = pause_menu_presses(&m);
+    assert_eq!(presses, vec![(0, PadButton::Start)]);
+    assert!(pause_menu_drive_ticks(&m) > MENU_OPEN_WIPE_TICKS);
+}
+
 /// The card screen's sub-mode word marks the grid: a Load / Save screen on
 /// it takes one more `Cross` past its pill row and waits out the card read,
 /// and the title's Continue grid (sub-screen clear) is its own seed.

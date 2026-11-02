@@ -224,6 +224,7 @@ pub(super) fn pinned_save_menu_rects() -> SaveMenuAtlasRects {
         icon_armor: (68, 216, 12, 12),
         icon_boot: (82, 216, 12, 12),
         icon_goods: (96, 216, 12, 12),
+        icon_worn: (176, 216, 12, 12),
         pager_left: (104, 232, 16, 16),
         pager_right: (124, 232, 16, 16),
         tab_cap_l: (144, 232, 8, 20),

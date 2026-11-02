@@ -265,6 +265,27 @@ pub struct PauseItemInfo<'a> {
     /// `+0x48` (`FUN_801D0F1C` reads them from the accessory-passive
     /// table `0x8007625C`). `None` leaves the box empty.
     pub passive: Option<(&'a str, &'a str)>,
+    /// The item-detail printer's output (`FUN_800337B0`) when the disc tables
+    /// are up: raw text in place of [`Self::desc`], plus equipment's stat line.
+    pub detail: Option<PauseItemDetail<'a>>,
+}
+
+/// What `FUN_800337B0` prints at the description pen: its text, with the name
+/// escapes already expanded, and one row down equipment's label / value pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauseItemDetail<'a> {
+    pub text: &'a [u8],
+    pub stats: &'a [PauseDetailStat],
+}
+
+/// One label / value pair of the detail printer's stat line, offsets from the
+/// description pen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PauseDetailStat {
+    pub label: String,
+    pub label_dx: i32,
+    pub value_dx: i32,
+    pub value: u8,
 }
 
 /// Plain-data view of the Items screen for [`items_screen_draws_for_with`].
@@ -292,7 +313,7 @@ pub struct PauseItemsView<'a> {
 /// Shared list-page header + rows: "PAGE cur / total" and the name rows.
 /// `name_inset` positions each row's name pen (`+0xC` for items; the
 /// spell list adds the element-icon advance per row).
-fn list_page_header_draws(
+pub(crate) fn list_page_header_draws(
     font: &legaia_font::Font,
     page: u16,
     pages: u16,
@@ -476,12 +497,8 @@ pub fn item_info_panel_draws_for(
     pen: (i32, i32),
     info: &PauseItemInfo<'_>,
 ) -> Vec<TextDraw> {
-    let mut out = Vec::new();
-    let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
-        out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
-    };
     let (ix, iy) = pen;
-    str_at(&mut out, info.name, ix, iy, MENU_TEXT_GOLD);
+    let mut out = item_info_body_draws(font, pen, info);
     out.extend(num_field_draws(
         font,
         info.count as u64,
@@ -490,11 +507,52 @@ pub fn item_info_panel_draws_for(
         2,
         MENU_TEXT_GOLD,
     ));
+    out
+}
+
+/// `FUN_801D0F1C` itself: the name, the description through the detail printer
+/// and the passive lines. The bag count beside the name is each caller's own
+/// (`FUN_801DCB60` window 17, `FUN_801DCC20` window 24 at `WX + 0x80`).
+///
+/// PORT: FUN_801d0f1c
+pub fn item_info_body_draws(
+    font: &legaia_font::Font,
+    pen: (i32, i32),
+    info: &PauseItemInfo<'_>,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
+        out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
+    };
+    let (ix, iy) = pen;
+    str_at(&mut out, info.name, ix, iy, MENU_TEXT_GOLD);
     // Both description words go through the line-breaking printer
     // (`FUN_800337B0` / `FUN_8003CD00` -> `FUN_80036888`): a break puts the
     // rest one row pitch down.
     let broken = crate::menu::window_painters::broken_text_draws_for;
-    out.extend(broken(font, info.desc, (ix, iy + 0x10), MENU_TEXT_WHITE));
+    let desc_y = iy + 0x10;
+    match &info.detail {
+        Some(detail) => {
+            out.extend(text_draws_for(
+                &font.layout(detail.text),
+                (ix, desc_y),
+                MENU_TEXT_WHITE,
+            ));
+            // The stat line, one row under the printer's pen (`param_4 + 0xD`).
+            let y = desc_y + 0x0d;
+            for st in detail.stats {
+                str_at(&mut out, &st.label, ix + st.label_dx, y, MENU_TEXT_WHITE);
+                out.extend(crate::shop_screen::shop_digit_field_draws(
+                    font,
+                    u32::from(st.value),
+                    (ix + st.value_dx, y),
+                    3,
+                    MENU_TEXT_WHITE,
+                ));
+            }
+        }
+        None => out.extend(broken(font, info.desc, (ix, desc_y), MENU_TEXT_WHITE)),
+    }
     if let Some((line1, line2)) = info.passive {
         str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);
         out.extend(broken(font, line2, (ix, iy + 0x48), MENU_TEXT_WHITE));
@@ -1016,7 +1074,7 @@ pub fn magic_screen_sprites_for(
 }
 
 /// List-window hand-cursor stage position: `(X-0xC, Y+0xC + row*0xE)`.
-fn list_hand_pos(list_pen: (i32, i32), row: u8) -> (i32, i32) {
+pub(crate) fn list_hand_pos(list_pen: (i32, i32), row: u8) -> (i32, i32) {
     (
         list_pen.0 - 0x0c,
         list_pen.1 + PAUSE_LIST_ROWS_TOP + row as i32 * PAUSE_LIST_ROW_PITCH,
@@ -1030,7 +1088,7 @@ const LIST_CONTENT_H: i32 = 182;
 /// `(X+0x84, Y + (182-16)/2)` while more pages follow (capture-pinned);
 /// the left arrow mirrored at `X-0x14` on later pages (inferred - not
 /// yet captured).
-fn page_arrow_sprites(
+pub(crate) fn page_arrow_sprites(
     rects: &SaveMenuAtlasRects,
     page: u16,
     pages: u16,
@@ -1065,7 +1123,7 @@ fn page_arrow_sprites(
 /// Push one atlas sprite at a 320x240 stage position, mapped into surface
 /// pixels with the shared stage transform (matching
 /// [`crate::menu_window_chrome_draws_for`]).
-fn push_stage_sprite(
+pub(crate) fn push_stage_sprite(
     out: &mut Vec<SpriteDraw>,
     src: (u32, u32, u32, u32),
     stage_pos: (i32, i32),
@@ -1130,6 +1188,7 @@ mod pause_list_tests {
             icon_armor: z,
             icon_boot: z,
             icon_goods: z,
+            icon_worn: z,
             pager_left: (104, 232, 16, 16),
             pager_right: (124, 232, 16, 16),
             tab_cap_l: z,
@@ -1327,6 +1386,7 @@ mod pause_list_tests {
         let rows = [];
         let mut view = items_view(&rows, PauseItemsPhase::List);
         view.info = Some(PauseItemInfo {
+            detail: None,
             name: "Medicine",
             count: 15,
             desc: "Cure all status. Ally.",

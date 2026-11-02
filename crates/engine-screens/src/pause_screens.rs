@@ -835,6 +835,7 @@ pub fn items_draws(
         count: i.count,
         desc: &i.desc,
         passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+        detail: None,
     });
     let view = ui::PauseItemsView {
         rows: &rows,
@@ -967,7 +968,33 @@ pub fn equip_draws(
             }
         }
     }
-    equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
+    let stats: Vec<ui::PauseDetailStat> = model
+        .info
+        .as_ref()
+        .and_then(|i| i.detail.as_ref())
+        .map(|d| {
+            d.stats
+                .iter()
+                .map(|(label, label_dx, value_dx, value)| ui::PauseDetailStat {
+                    label: label.clone(),
+                    label_dx: *label_dx,
+                    value_dx: *value_dx,
+                    value: *value,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut input = equip_compose_input(&model, !ctx.chrome_present());
+    if let (Some(info), Some(d)) = (
+        input.info.as_mut(),
+        model.info.as_ref().and_then(|i| i.detail.as_ref()),
+    ) {
+        info.detail = Some(ui::PauseItemDetail {
+            text: &d.text,
+            stats: &stats,
+        });
+    }
+    equip_screen_compose(ctx, &input)
 }
 
 /// Borrow the shared Equip screen model into the shared `engine-ui` compose
@@ -980,7 +1007,7 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
         slot_labels: &m.slot_labels,
         slot_items: &m.slot_items,
         candidate_names: &m.candidate_names,
-        candidate_counts: &m.candidate_counts,
+        candidate_icons: &m.candidate_icons,
         stat_compare: &m.stat_compare,
         best_changes: &m.best_changes,
         phase: match m.phase {
@@ -1000,6 +1027,7 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
             count: i.count,
             desc: i.desc.as_str(),
             passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            detail: None,
         }),
         compare: m.compare.as_ref().map(equip_compare_input),
     }

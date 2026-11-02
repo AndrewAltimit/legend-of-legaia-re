@@ -583,6 +583,7 @@ mod target_panel_tests {
             icon_armor: z,
             icon_boot: z,
             icon_goods: z,
+            icon_worn: z,
             pager_left: z,
             pager_right: z,
             tab_cap_l: z,

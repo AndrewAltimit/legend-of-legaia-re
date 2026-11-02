@@ -145,6 +145,14 @@ moving NPC or a story-gated paint can block a planned leg; the probe then
 sidesteps, and a leg that stays blocked ends the run with the states it
 already saved.
 
+When the walk is not the point, [`autorun_door_hop.lua`](../../scripts/pcsx-redux/autorun_door_hop.lua)
+crosses a chain of doors by holding the player on each door's walk-on tile
+(the `.MAP` kind-1 gate-1 records `plan_walk_route.py` reads). The door's own
+record runs with its gates and its flag writes, so a door the story has not
+opened refuses and ends the run; nothing is poked but the position, and the
+scenario says so. It saves one state per scene it arrives in, once the pad
+moves the player there.
+
 A harvested state is a candidate, not a corpus state, until:
 
 1. its census row (`retail-compare --census` over a scratch manifest naming

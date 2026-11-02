@@ -653,11 +653,11 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
     let candidates = vec![
         EquipCandidateRow {
             name: "Iron Sword",
-            count: 1,
+            icon: 0x24,
         },
         EquipCandidateRow {
             name: "Wood Sword",
-            count: 2,
+            icon: 0x24,
         },
     ];
     let stat_compare = vec![
@@ -687,12 +687,16 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
         EQUIP_MAIN_PEN,
     );
     let (lx, ly) = EQUIP_LIST_PEN;
-    // Candidate rows at (lx+10, ly + 0xD*i).
-    assert!(draws.iter().any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly));
+    // Candidate rows at (lx+0x1C, ly + 0xC + 0xE*i).
     assert!(
         draws
             .iter()
-            .any(|d| d.dst.0 == lx + 10 && d.dst.1 == ly + 0x0d)
+            .any(|d| d.dst.0 == lx + 0x1c && d.dst.1 == ly + 0x0c)
+    );
+    assert!(
+        draws
+            .iter()
+            .any(|d| d.dst.0 == lx + 0x1c && d.dst.1 == ly + 0x0c + 0x0e)
     );
     let (mx, my) = EQUIP_MAIN_PEN;
     // The candidate step closes the main window (22): its open script leads
@@ -751,7 +755,7 @@ fn equip_screen_draws_confirm_phase_shows_yes_no_prompt() {
     }];
     let candidates = vec![EquipCandidateRow {
         name: "Steel Sword",
-        count: 1,
+        icon: 0x24,
     }];
     let mut view = equip_view(&slots, &candidates, &[], EquipDrawPhase::Confirm);
     view.confirm_label = Some("Equip Steel Sword?");
