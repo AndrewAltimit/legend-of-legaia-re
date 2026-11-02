@@ -44,18 +44,17 @@ impl RetailMovie {
     }
 }
 
+/// `(frame number, RGBA, width, height)`.
+type DecodedFrame = (u32, Vec<u8>, usize, usize);
+
 /// Decode the movie's frames whose number lies in `first..=last`, as
-/// `(frame number, RGBA, width, height)`, off the extracted Form-1 file.
-fn decode_frames(
-    path: &std::path::Path,
-    first: u32,
-    last: u32,
-) -> Result<Vec<(u32, Vec<u8>, usize, usize)>> {
+/// [`DecodedFrame`]s, off the extracted Form-1 file.
+fn decode_frames(path: &std::path::Path, first: u32, last: u32) -> Result<Vec<DecodedFrame>> {
     const USER_DATA: usize = legaia_iso::raw::USER_DATA_SIZE;
     let data = std::fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let mut asm = StrFrameAssembler::new();
     let mut out = Vec::new();
-    for sector in data.chunks_exact(USER_DATA) {
+    for sector in data.as_chunks::<USER_DATA>().0 {
         let Ok(Some((hdr, bitstream))) = asm.push_sector(sector) else {
             continue;
         };
