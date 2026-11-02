@@ -338,7 +338,10 @@ impl World {
             }
             SummonPhase::Linger => {
                 st.frames = st.frames.saturating_add(1);
+                // A module still running owns the creature's clip: PROT 0934
+                // holds clip `3` through its closing arm `0x19`.
                 if st.frames == 1
+                    && !module_busy
                     && let Some(slot) = self.casting.summon_actor_slot
                     && let Some(a) = self.actors.get_mut(slot as usize)
                 {

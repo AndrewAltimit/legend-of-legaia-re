@@ -284,8 +284,10 @@ pub fn viguro_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> A
                 focus: row_focus(st),
                 frames: 0x100,
             });
+            // `FUN_800319A8(0)` behind the shot (`0x801F7790`).
             ArmDirection {
                 shot,
+                caption: Some(ModuleCaption::Cleared),
                 ..ArmDirection::PASS
             }
             .drifted(drift(p / 4))

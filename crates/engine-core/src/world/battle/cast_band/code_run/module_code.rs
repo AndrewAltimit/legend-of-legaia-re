@@ -1549,6 +1549,9 @@ impl World {
             if entry == 928 {
                 self.apply_palma_writes(phase_in, ctx.phase != phase_in);
             }
+            if entry == 914 && ctx.phase != phase_in {
+                self.apply_gola_gola_writes(phase_in, ctx.monster_count, caster_slot, seat_slot);
+            }
             if entry == 932 {
                 self.apply_meta_writes(
                     phase_in,
@@ -1571,6 +1574,8 @@ impl World {
                     ctx.phase != phase_in,
                     ctx.monster_count,
                     seat_slot,
+                    caster_slot,
+                    spell_id,
                 );
             }
             if entry == 923 {

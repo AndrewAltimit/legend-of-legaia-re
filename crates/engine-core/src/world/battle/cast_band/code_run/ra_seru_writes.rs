@@ -14,6 +14,17 @@ const WORD_NEUTRAL: u32 = 0x2008_0200;
 /// The render flag that parks the tint machine on its word
 /// (`FUN_80050120`'s default arm).
 const FLAG_PARKED: u8 = 0xFF;
+/// The vsyncs one retail frame takes through PROT 0932's arms: its capture
+/// reads a frame step of `4` on most of them.
+const META_TAIL_TICKS: u32 = 4;
+/// The colour word PROT 0934's arm `0x18` keeps on the row.
+const OZMA_HIT_WORD: u32 = 0x3FF0_03FF;
+/// Arm `0x17`'s store into the threshold `0x801FA408` (`0x801F8B58`).
+const OZMA_LADDER_FIRST: i32 = 0x60;
+/// Each hit's fall of that threshold (`0x801F90E8`).
+const OZMA_LADDER_STEP: i32 = 0x20;
+/// The fade call in arm `0x18`'s hit block.
+const OZMA_LADDER_FADE_SITE: u32 = 0x801F_907C;
 
 impl World {
     /// `(engine slot, row index)` of each living monster, in seat order.
@@ -82,6 +93,61 @@ impl World {
                 if rescale {
                     a.battle.render_scale = None;
                 }
+            }
+        }
+    }
+
+    /// PROT 0914 (Gola Gola).
+    ///
+    /// | Arm | Edge | Store |
+    /// |---|---|---|
+    /// | `0xB` (`0x801F6F8C`) | pass | creature flag `7`, the red ease |
+    /// | `0xC` | pass | row colour `0`, flag `7` |
+    /// | `0xD` | pass | row flag `0`, each facing away from the caster; creature colour `0x3FF`, flag `0xFF` |
+    /// | `0xE` | pass | creature hidden (`+0x04 = 0`, `+0x21C = 0xFF`) |
+    ///
+    /// PORT: FUN_801F69F0 (the row and creature colour stores)
+    pub(in crate::world::battle::cast_band) fn apply_gola_gola_writes(
+        &mut self,
+        phase: u8,
+        monster_count: u8,
+        caster: u8,
+        creature: u8,
+    ) {
+        let (cx, cz) = self
+            .actors
+            .get(usize::from(caster))
+            .map_or((0, 0), |a| (a.move_state.world_x, a.move_state.world_z));
+        match phase {
+            0xC => self.ra_seru_row_word(monster_count, 0, 7),
+            0xD => {
+                for (e, _) in self.ra_seru_row(monster_count) {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.render_flag = 0;
+                        let b = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                            cz,
+                            cx,
+                            a.move_state.world_z,
+                            a.move_state.world_x,
+                        );
+                        a.battle.facing_angle = b.wrapping_add(0x800) & 0xFFF;
+                    }
+                }
+            }
+            _ => {}
+        }
+        if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+            match phase {
+                0xB => a.battle.render_flag = 7,
+                0xD => {
+                    a.battle.render_color = 0x3FF;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+                0xE => {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+                _ => {}
             }
         }
     }
@@ -162,6 +228,41 @@ impl World {
             && let Some(a) = self.actors.get_mut(usize::from(creature))
         {
             a.move_state.world_z = -0x1C0;
+        }
+        self.meta_tail(phase, creature);
+    }
+
+    /// PROT 0932's per-pass tail once arm 4 has seated the creature
+    /// (`0x801F8384..0x801F8420`, behind the word `0x801F8F50`): on its idle
+    /// clip it rides `(cursor - 800) * 16` above its seat, on any other clip
+    /// at `0`; below arm `0x16` a playing clip sheds two effect-`0xB` puffs
+    /// every other pass, at `(word, -0x280, -0x1E3 - word / 2)` and `(-0x96,
+    /// -0x380, -0x240)`, the word `-0x96` until arm `0xF` makes it `-0xD6`.
+    ///
+    /// A pass is a frame and the frame step reads `4` through these arms, so
+    /// the puffs count per [`META_TAIL_TICKS`] engine ticks.
+    fn meta_tail(&mut self, phase: u8, creature: u8) {
+        if phase <= 4 {
+            self.casting.module_meta_tail = 0;
+            return;
+        }
+        let Some(a) = self.actors.get_mut(usize::from(creature)) else {
+            return;
+        };
+        let clip = a.battle.current_anim;
+        a.move_state.world_y = match a.battle_animation.as_ref() {
+            Some(p) if clip == 0 => ((i32::from(p.cursor_sixteenths()) - 800) * 16) as i16,
+            _ => 0,
+        };
+        if phase >= 0x16 || clip == 0 {
+            return;
+        }
+        let tick = self.casting.module_meta_tail;
+        self.casting.module_meta_tail = tick.wrapping_add(1);
+        if tick.is_multiple_of(2 * META_TAIL_TICKS) {
+            let word: i16 = if phase >= 0xF { -0xD6 } else { -0x96 };
+            self.try_spawn_effect(0xB, [word, -0x280, -0x1E3 - word / 2], 0);
+            self.try_spawn_effect(0xB, [-0x96, -0x380, -0x240], 0);
         }
     }
 
@@ -324,6 +425,8 @@ impl World {
         passed: bool,
         monster_count: u8,
         creature: u8,
+        caster: u8,
+        spell_id: u8,
     ) {
         match (phase, passed) {
             (0, true) => {
@@ -342,6 +445,8 @@ impl World {
                     }
                 }
             }
+            (0x17, true) => self.casting.module_ozma_ladder = OZMA_LADDER_FIRST,
+            (0x18, _) => self.ozma_hit_ladder(passed, monster_count, caster, spell_id),
             (0x19, true) => self.ra_seru_row_restore(monster_count, false),
             _ => {}
         }
@@ -370,6 +475,77 @@ impl World {
                 a.battle.capture_state = 2;
                 a.battle.impact_state = 0;
             }
+        }
+    }
+
+    /// PROT 0934's arm `0x18` (`0x801F8D00..0x801F90F0`). Every pass lights
+    /// the row (`+0x04 = 0x3FF003FF`, `+0x0C = 0x1000`, `+0x21F = 2`). The
+    /// arm's word falling to the threshold `0x801FA408`, which arm `0x17`
+    /// leaves at `0x60` and each hit lowers by `0x20`, hits every living,
+    /// targetable monster: the summon roll `FUN_801DD0AC(0x10, 7, seat)`
+    /// quartered, plus `0x40 + rand() % 0x40`, its popup pushed, the HP write
+    /// clamped to `HP - 1`, the flinch `+0x1EF` (else `+0x1F0`) staged with
+    /// the restage bits `5`, and a white fade over `0x10` frames. The fourth
+    /// hit, at threshold `0`, is the band's fold on the arm's pass.
+    ///
+    /// Not carried: the damage tallies the quartered part is booked against
+    /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target).
+    fn ozma_hit_ladder(&mut self, passed: bool, monster_count: u8, caster: u8, spell_id: u8) {
+        use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
+        for (e, _) in self.ra_seru_row(monster_count) {
+            if let Some(a) = self.actors.get_mut(e) {
+                a.battle.render_color = OZMA_HIT_WORD;
+                a.battle.render_blend = legaia_engine_battle_vm::battle_formulas::TINT_BLEND_FULL;
+                a.battle.impact_state = 2;
+            }
+        }
+        let threshold = self.casting.module_ozma_ladder;
+        if passed || threshold <= 0 || self.casting.module_cam.countdown.0 > threshold {
+            return;
+        }
+        self.casting.module_ozma_ladder = threshold - OZMA_LADDER_STEP;
+        for (e, _) in self.ra_seru_row(monster_count) {
+            let s = e as u8;
+            if self.cast_view(s).flags & FLAG_NON_TARGETABLE != 0 {
+                continue;
+            }
+            let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+                continue;
+            };
+            let hit = u32::from(roll >> 2) + 0x40 + self.next_rand() % 0x40;
+            self.battle
+                .hit_fx
+                .push(legaia_engine_battle::battle_events::BattleHitFx {
+                    target_slot: s,
+                    amount: hit.min(u32::from(u16::MAX)) as u16,
+                    is_heal: false,
+                    is_crit: false,
+                });
+            let mut v = self.cast_view(s);
+            legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, hit);
+            v.staged_anim = if v.reaction_alt != 0 {
+                v.reaction_alt
+            } else {
+                v.reaction_alt2
+            };
+            v.restage |= 0x05;
+            self.write_cast_view(s, &v);
+        }
+        let t = legaia_engine_system::fade::FadeTemplate {
+            kind: 1,
+            duration: 0x10,
+            start_rgb: [0x60, 0x60, 0x18],
+            end_rgb: [0, 0, 0],
+            mode: [0, 0, 0],
+        };
+        let mut seat = None;
+        legaia_engine_system::fade::spawn_fade(&mut seat, &t, 0);
+        if let Some(state) = seat {
+            self.casting.module_pres.fades.push(HookFade {
+                site: OZMA_LADDER_FADE_SITE,
+                slot: None,
+                state,
+            });
         }
     }
 }

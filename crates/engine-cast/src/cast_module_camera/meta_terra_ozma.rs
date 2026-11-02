@@ -310,7 +310,9 @@ pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             if gated(st, 0x120) {
                 return ArmDirection::HOLD;
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F7398`, `0x801F73A0`).
             st.creature_stage = Some(2);
+            st.creature_restage = true;
             caption(
                 cut([0, 0x700], [0, 0xA00, 0x400], [0; 3], 1),
                 ModuleCaption::AttackName,
@@ -332,7 +334,9 @@ pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             if gated(st, 0x120) {
                 return held(d(-D, 0, 0, 12 * D, 0));
             }
+            // Together (`0x801F7834`, `0x801F783C`).
             st.creature_stage = Some(3);
+            st.creature_restage = true;
             with_drift(
                 cut([-0x40, 0x800], [0, 0xA3C, 0x240], [0; 3], 1),
                 d(-D, 0, 0, 12 * D, 0),
@@ -355,7 +359,9 @@ pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             if gated(st, 0x100) {
                 return held(d(0, 0, 0, 0, 2 * D));
             }
+            // Together (`0x801F7E24`, `0x801F7E2C`).
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             with_drift(
                 cut([-0x80, 0x800], [0, 0xA00, 0x240], [0; 3], 1),
                 d(0, 0, 0, 0, 2 * D),
@@ -470,7 +476,7 @@ fn live_tr_y(st: &ModuleCamState) -> i32 {
 /// [`ozma_shake_step`], their lightning [`ozma_bolt_ring`]. Arm 0x15's focus,
 /// the last random spawn's point, aims at `(0, 0, 0x400)`.
 ///
-/// PORT: overlay_summon_ozma_0934_801f6a40 (PROT 0934; the whole phase chain's gates, camera writes, captions, creature seat and clips - the other seats are `World::apply_ozma_writes`; the random sprays and the hit ladder's earlier hits not carried)
+/// PORT: overlay_summon_ozma_0934_801f6a40 (PROT 0934; the whole phase chain's gates, camera writes, captions, creature seat and clips - the other seats are `World::apply_ozma_writes`; the hit ladder's earlier hits not carried)
 pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let at = [0, 0, 0x400];
     let d = |pitch: i32, yaw: i32, tr_x: i32, tr_y: i32, tr_z: i32| {
@@ -556,17 +562,28 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         }
         0xD => arm(st, 0x38, None, ArmDirection::PASS),
         0xE => arm(st, 0xA0, d(0, 0, 0, -16 * D, 64 * D), ArmDirection::PASS),
-        0xF => arm(
-            st,
-            0xF0,
-            None,
-            caption(ArmDirection::PASS, ModuleCaption::SpellName),
-        ),
+        0xF => {
+            let dir = arm(
+                st,
+                0xF0,
+                None,
+                caption(ArmDirection::PASS, ModuleCaption::SpellName),
+            );
+            // The bump alone (`0x801F7DAC`) cuts to the clip arm `0xC` staged
+            // bare.
+            if !dir.hold {
+                st.creature_stage = Some(2);
+                st.creature_restage = true;
+            }
+            dir
+        }
         0x10 => {
             if gated(st, 0x200) {
                 return ArmDirection::HOLD;
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F7E7C..0x801F7E94`).
             st.creature_stage = Some(3);
+            st.creature_restage = true;
             caption(
                 cut([0, 0x800], [0, 0xC00, 0x1000], at, 1),
                 ModuleCaption::AttackName,

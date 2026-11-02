@@ -922,7 +922,7 @@ fire comes off Gala's body on the anim tick's accumulator.
 | 0923 Gilium | 20, pass (`0x801F8A24`) | live row | `0x3FF00000` | `1` |
 | 0932 Meta | 18, pass (`0x801F7C78`) | live row | `0x3FF` | `1` |
 | 0934 Ozma | 17, 18, every pass (`0x801F7F38`, `0x801F7F58`) | creature | - | `2` |
-| 0934 Ozma | 21..=24, pass (`0x801F85D4`, `0x801F86CC`, `0x801F8948`, `0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
+| 0934 Ozma | 21..=23, pass (`0x801F85D4`, `0x801F86CC`, `0x801F8948`); 24, every pass, ahead of its countdown (`0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
 | 0937 Hyper Lightning | 7, every pass (`0x801F7580`) | victim | - | `2` |
 | 0948 Cross Beam | 3, pass (`0x801F7044`) | victim | `0x3FF` | `1` |
 | 0950 Rolling Flare | 3, countdown at most `0x40` scalars (`0x801F7F44`, `0x801F7F48`) | both seats | - | `1` |
@@ -2353,6 +2353,19 @@ clips on retail's frames), Terra's orbit of the row, and Ozma's blue ease
 (`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
 into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
 a shake on the low bit of a pass word, and draw eight streak ribbons on a ring.
+Meta's closing arms keep the creature on its idle clip and raise it
+(`y = (cursor - 800) * 16`) with two effect-`0xB` puffs per pair of retail frames.
+Ozma's arm `0x18` hits four times on its way down: the word falling to a threshold
+that arm `0x17` leaves at `0x60` and each hit lowers by `0x20` hits every living,
+targetable monster for a quartered roll plus `0x40 + rand() % 0x40`, clamped to
+`HP - 1`, with a flinch and a `0x10`-frame flash; the fourth, at threshold `0`, is
+the band's fold. Its arm `0x19` flushes the pool only when its countdown runs out
+(`0x801F91D0`), so the rays stay up through the closing fade
+(`summon_holds::gate_va`).
+Gola Gola's closing arms tint the creature (`+0x21C = 7`, arm `0xB`), blank the row
+(colour `0`, `+0x21C = 7`, arm `0xC`), show the row turned away from the caster and
+park the creature on `0x3FF` (arm `0xD`), and hide the creature (arm `0xE`):
+`World::apply_gola_gola_writes`.
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with

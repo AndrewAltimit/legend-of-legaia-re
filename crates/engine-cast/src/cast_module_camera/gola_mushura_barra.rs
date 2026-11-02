@@ -306,7 +306,9 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                 ..creature
             };
             st.creature = Some(c);
+            // `+0x1DA` and `+0x1DC` together (`0x801F75FC`, `0x801F7608`).
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             caption(
                 cut(
                     [0x40, 0x800 - i32::from(c.facing)],

@@ -486,9 +486,21 @@ impl World {
                     anchor_seats,
                 ),
             };
-            let Some((pos, rot)) = point else {
+            let Some((mut pos, rot)) = point else {
                 continue;
             };
+            // PROT 0934's spray: each of the three records its own point,
+            // `rand() % 0x101 - 0x80` on x, then y, at a literal z
+            // (`0x801F825C..0x801F82A0`).
+            if prot_entry == 934
+                && matches!(
+                    spawn.record,
+                    SpawnRecord::Module(0x801F_A320 | 0x801F_A36C | 0x801F_A3B8)
+                )
+            {
+                pos[0] = (self.next_rand() % 0x101) as i16 - 0x80;
+                pos[1] = (self.next_rand() % 0x101) as i16 - 0x80;
+            }
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {
                     let Some(module) = self

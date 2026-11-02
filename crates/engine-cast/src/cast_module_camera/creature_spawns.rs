@@ -2582,10 +2582,19 @@ const S932_7: [ModuleSpawn; 24] = [
         },
     ),
 ];
-const S932_15: [ModuleSpawn; 1] = [
+const S932_15: [ModuleSpawn; 2] = [
     // 0x801F799C
     spawn(
         0x801F8AE4,
+        LiteralScaled {
+            pos: [0, 0, 448],
+            rot: [-256, 2048, 0],
+            scale: 0x1000,
+        },
+    ),
+    // 0x801F79B4: `j 0x801F8124`, the `jal` shared with arm 0x12.
+    spawn(
+        0x801F8B3C,
         LiteralScaled {
             pos: [0, 0, 448],
             rot: [-256, 2048, 0],

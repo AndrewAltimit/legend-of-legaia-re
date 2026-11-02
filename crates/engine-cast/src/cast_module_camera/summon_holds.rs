@@ -538,6 +538,8 @@ pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
         (930, 0x0B) => 0x801F_7CAC,
         (922, 14) => 0x801F_7AA0,
         (922, 15) => 0x801F_7CAC,
+        // Arm `0x19`'s flush sits past its countdown test (`0x801F91D0`).
+        (934, 0x19) => 0x801F_91D0,
         _ => return None,
     })
 }
