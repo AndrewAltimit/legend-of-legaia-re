@@ -160,15 +160,15 @@ pub fn vag_wav(a: &Analysis, v: &VabRef, sample: usize, out: &Path) -> Result<()
 }
 
 /// Every sample of bank `v` as `<stem>_NNN.wav` into `dir`. Returns the count.
-pub fn vab_all_wavs(a: &Analysis, v: &VabRef, dir: &Path, stem: &str) -> Result<usize> {
+pub fn vab_all_wavs(a: &Analysis, v: &VabRef, dir: &Path, stem: &str) -> Result<Vec<String>> {
     std::fs::create_dir_all(dir)?;
-    let mut n = 0;
+    let mut failed = Vec::new();
     for i in 0..v.report.vag_samples.len() {
-        if vag_wav(a, v, i, &dir.join(format!("{stem}_{i:03}.wav"))).is_ok() {
-            n += 1;
+        if let Err(e) = vag_wav(a, v, i, &dir.join(format!("{stem}_{i:03}.wav"))) {
+            failed.push(format!("#{i}: {e:#}"));
         }
     }
-    Ok(n)
+    Ok(failed)
 }
 
 pub fn bytes(data: &[u8], out: &Path) -> Result<()> {

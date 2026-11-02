@@ -25,8 +25,8 @@ runtime, and writes only into folders the user chooses.
 | Movies & voice | The STR movies (`MOV/*.STR`): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock (a movie resumed from a paused frame resumes its soundtrack at that frame's sample), PNG frame export; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export. Disc images only. |
 | Play | Starts `legaia-engine` (in the archive's `command-line-tools/`, or beside a `cargo build`'s binary) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings are shared with a game started directly (`launch`). Its output goes to `legaia-explorer-game.log` there; a failed exit puts the log's last lines on the error line. `F5` presses it; the launcher's switches ride along (below). A start also writes the disc into the engine's `launcher.toml` (`record_disc_for_engine`: the `disc` key only, other keys kept), so the game started directly boots it without its picker. Disabled with the reason on hover for an extracted folder, another region's disc, or a missing engine. |
 | Status line | A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error is a wrapping banner that stays, with *Copy* and *Dismiss* ahead of the text so a long path never pushes them off the window. |
-| View | Light, dark or follow-system theme, and the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0); both remembered. Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels and the title gold for the selection and the primary buttons. |
-| About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the program, or beside the macOS `.app`), the keyboard shortcuts. The box scrolls when the window is shorter than it (`about_max_height`), so its title bar stays on screen. |
+| View | Light, dark or follow-system theme, the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0), both remembered, and the keyboard-shortcuts box (`?`). Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels and the title gold for the selection and the primary buttons. |
+| About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the program, or beside the macOS `.app`). The box scrolls when the window is shorter than it (`about_max_height`), so its title bar stays on screen. |
 | Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder* (progress and outcome: [below](#extraction-progress)); the output folder defaults to one beside the disc image; *Export all textures* adds the every-TIM sweep (`--all-textures`: `tim_scan/` as `asset tim-scan` + `tim convert-dir` write it). |
 
 ## The top bar
@@ -155,7 +155,7 @@ Characters & monsters, Movies & voice and Extract, F5 plays the open disc,
 Ctrl+F focuses the archive search (Escape clears it), Ctrl+Tab /
 Ctrl+Shift+Tab (or Ctrl+Page Down / Up) step through the preview tabs the
 selected entry has something for, F1 toggles the About
-box, Ctrl+= / Ctrl+- / Ctrl+0 zoom, and Up / Down, Page Up / Down, Home / End
+box, `?` (or *View*) opens the shortcuts box, Esc closes either, Ctrl+= / Ctrl+- / Ctrl+0 zoom, and Up / Down, Page Up / Down, Home / End
 walk the archive rows the search shows, opening blocks as they go.
 
 ### Scripted runs
@@ -168,7 +168,7 @@ These environment variables drive a run without a person at the keyboard
 | `LEGAIA_EXPLORER_OPEN` | Disc image or folder to open (same as the first argument). |
 | `LEGAIA_EXPLORER_SELECT` | PROT index to select once loaded. |
 | `LEGAIA_EXPLORER_TMD` | Show this TMD of the selected entry in the 3D model tab (the `TMD #` picker) instead of the first. |
-| `LEGAIA_EXPLORER_TAB` | A preview tab (`overview`, `textures`, `model`, `audio`, `text`, `hex`), a view (`browse`, `actors`, `media`, `extract`), or `about` for the About box. |
+| `LEGAIA_EXPLORER_TAB` | A preview tab (`overview`, `textures`, `model`, `audio`, `text`, `hex`), a view (`browse`, `actors`, `media`, `extract`), `about` for the About box, or `keys` for the shortcuts box. |
 | `LEGAIA_EXPLORER_SEARCH` | Start with this text in the archive search. |
 | `LEGAIA_EXPLORER_MEDIA` | Open *Movies & voice* on an ISO path (`MOV/MV1.STR`, `XA/XA14.XA`), a movie optionally at `@<frame>`. |
 | `LEGAIA_EXPLORER_EXTRACT_TO` | Start an extraction into this folder. |

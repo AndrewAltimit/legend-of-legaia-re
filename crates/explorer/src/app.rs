@@ -183,6 +183,17 @@ pub(crate) fn side_panel_max(ctx: &egui::Context, min: f32) -> f32 {
     (ctx.content_rect().width() * 0.45).max(min)
 }
 
+/// An export that takes long enough to freeze the window if it ran in the
+/// frame: it runs on its own thread, with a line up saying so.
+struct ExportJob {
+    /// What the status line names while it runs.
+    what: String,
+    /// Where the *Show folder* button goes once it has finished.
+    folder: Option<PathBuf>,
+    /// The line to show when it is done, or why it failed.
+    done: std::sync::mpsc::Receiver<Result<String, String>>,
+}
+
 /// How long an informational status line ("... written to ...") stays up.
 /// Errors stay until dismissed.
 const STATUS_TTL: std::time::Duration = std::time::Duration::from_secs(8);
@@ -218,6 +229,10 @@ pub struct App {
     mode: Mode,
     tab: Tab,
     about_open: bool,
+    /// The keyboard-shortcuts box (`?`, or the View menu).
+    keys_open: bool,
+    /// The export running on its own thread, if any.
+    export_job: Option<ExportJob>,
     /// The window's inner size, tracked for the settings file.
     window_size: Option<[f32; 2]>,
     window_pos: Option<[i32; 2]>,
@@ -331,6 +346,8 @@ impl App {
             mode,
             tab,
             about_open: false,
+            keys_open: false,
+            export_job: None,
             window_size: None,
             window_pos: None,
             path_text,
@@ -372,6 +389,8 @@ impl App {
         if let Some(t) = app.auto.tab.clone() {
             if t.eq_ignore_ascii_case("about") {
                 app.about_open = true;
+            } else if t.eq_ignore_ascii_case("keys") {
+                app.keys_open = true;
             } else if let Some(m) = Mode::parse(&t) {
                 app.mode = m;
             } else if let Some(tab) = Tab::parse(&t) {
@@ -435,6 +454,53 @@ impl App {
             self.explorer.save_settings();
         }
         picked
+    }
+
+    /// Run `work` on its own thread; its result becomes the status line (or
+    /// the error banner). A second export waits for the first.
+    fn start_export(
+        &mut self,
+        what: String,
+        folder: Option<PathBuf>,
+        work: impl FnOnce() -> anyhow::Result<String> + Send + 'static,
+    ) {
+        if let Some(job) = &self.export_job {
+            self.explorer.error = Some(format!(
+                "Still writing {}; try again when it is done.",
+                job.what
+            ));
+            return;
+        }
+        let (tx, done) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(work().map_err(|e| format!("{e:#}")));
+        });
+        self.explorer.error = None;
+        self.explorer.status = None;
+        self.export_job = Some(ExportJob { what, folder, done });
+    }
+
+    /// Announce a finished [`ExportJob`].
+    fn poll_export(&mut self, ctx: &egui::Context) {
+        let Some(job) = &self.export_job else { return };
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        let res = match job.done.try_recv() {
+            Ok(res) => res,
+            Err(std::sync::mpsc::TryRecvError::Empty) => return,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                Err("the export thread stopped without a result".to_string())
+            }
+        };
+        let Some(job) = self.export_job.take() else {
+            return;
+        };
+        match res {
+            Ok(line) => {
+                self.explorer.status = Some(line);
+                self.last_written = job.folder;
+            }
+            Err(e) => self.explorer.error = Some(format!("Writing {} failed: {e}", job.what)),
+        }
     }
 
     fn report(&mut self, what: &str, res: anyhow::Result<()>, path: &Path) {
@@ -517,8 +583,12 @@ impl App {
         let extracted = self.auto.extract_to.is_none()
             || !has_lib
             || self.job.as_ref().is_some_and(|j| j.outcome().is_some());
-        let idle =
-            loaded && analysed && extracted && !self.explorer.is_analyzing() && !self.media.busy();
+        let idle = loaded
+            && analysed
+            && extracted
+            && self.export_job.is_none()
+            && !self.explorer.is_analyzing()
+            && !self.media.busy();
         if !idle && self.explorer.error.is_none() {
             self.settle_since = None;
             ctx.request_repaint();
@@ -828,6 +898,12 @@ impl App {
             None => self.status_seen = None,
             _ => {}
         }
+        if let Some(job) = &self.export_job {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label(format!("Writing {}...", job.what));
+            });
+        }
         if let Some(e) = &self.explorer.error {
             // A banner that wraps, with its buttons first so a long message
             // (a path, a log tail) can never push them off the window.
@@ -963,6 +1039,14 @@ impl App {
         ui.separator();
         ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
         egui::gui_zoom::zoom_menu_buttons(ui);
+        ui.separator();
+        if ui
+            .add(egui::Button::new("Keyboard shortcuts").shortcut_text("?"))
+            .clicked()
+        {
+            self.keys_open = true;
+            ui.close();
+        }
         ui.separator();
         ui.label(RichText::new("Audio volume").strong());
         let mut vol = self.player.volume();
@@ -1647,14 +1731,23 @@ impl App {
                 let name = format!("{}_tim00.png", lib.stem(a.index));
                 if let Some(first) = self.export_target(&name, "png") {
                     let dir = first.parent().map(Path::to_path_buf).unwrap_or_default();
-                    let mut n = 0;
-                    for (i, t) in a.tims.iter().enumerate() {
-                        let p = dir.join(format!("{}_tim{i:02}.png", lib.stem(a.index)));
-                        if export::tim_png(a, t, 0, &p).is_ok() {
-                            n += 1;
-                        }
+                    if let Some(a) = self.explorer.analysis.clone() {
+                        let stem = lib.stem(a.index);
+                        self.start_export(
+                            format!("{} PNGs", a.tims.len()),
+                            Some(dir.clone()),
+                            move || {
+                                let mut failed = Vec::new();
+                                for (i, t) in a.tims.iter().enumerate() {
+                                    let p = dir.join(format!("{stem}_tim{i:02}.png"));
+                                    if let Err(e) = export::tim_png(&a, t, 0, &p) {
+                                        failed.push(format!("#{i}: {e:#}"));
+                                    }
+                                }
+                                batch_outcome("PNGs", a.tims.len(), &failed, &dir)
+                            },
+                        );
                     }
-                    self.explorer.status = Some(format!("{n} PNGs written to {}", dir.display()));
                 }
             }
         });
@@ -1687,7 +1780,7 @@ impl App {
             let size = tex.size_vec2() * self.tim_zoom;
             egui::ScrollArea::both().show(ui, |ui| {
                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                checkerboard(ui.painter(), rect);
+                checkerboard(ui, rect);
                 ui.painter().image(
                     tex.id(),
                     rect,
@@ -1824,12 +1917,41 @@ impl App {
                 Some(_) => {
                     let name = format!("{}_tmd{:02}.glb", lib.stem(a.index), self.tmd_sel);
                     let scene = match self.model.as_ref().map(|m| m.source) {
-                        Some(TexSource::Scene) => self.scene_vram(lib, a).ok().map(|(_, v)| v),
-                        _ => None,
+                        Some(TexSource::Scene) => match self.scene_vram(lib, a) {
+                            Ok((_, v)) => Ok(Some(v)),
+                            Err(why) => Err(why),
+                        },
+                        _ => Ok(None),
                     };
-                    if let Some(out) = self.export_target(&name, "glb") {
-                        let res = export::tmd_glb(a, &t, scene.as_ref().map(|v| &v.vram), &out);
-                        self.report("glTF", res, &out);
+                    match scene {
+                        // The view samples the scene's VRAM, and an export
+                        // without it would quietly lose the textures.
+                        Err(why) => {
+                            self.explorer.error = Some(format!(
+                                "Not exported: the scene's textures are not available ({why})."
+                            ));
+                        }
+                        Ok(scene) => {
+                            if let (Some(out), Some(a)) = (
+                                self.export_target(&name, "glb"),
+                                self.explorer.analysis.clone(),
+                            ) {
+                                let t = t.clone();
+                                self.start_export(
+                                    name,
+                                    out.parent().map(Path::to_path_buf),
+                                    move || {
+                                        export::tmd_glb(
+                                            &a,
+                                            &t,
+                                            scene.as_ref().map(|v| &v.vram),
+                                            &out,
+                                        )?;
+                                        Ok(format!("glTF written to {}", out.display()))
+                                    },
+                                );
+                            }
+                        }
                     }
                 }
                 None => {}
@@ -2000,12 +2122,18 @@ impl App {
                         format!("{}_vab{:X}", lib.stem(a.index), a.vabs[self.vab_sel].offset);
                     if let Some(first) = self.export_target(&format!("{stem}_000.wav"), "wav") {
                         let dir = first.parent().map(Path::to_path_buf).unwrap_or_default();
-                        match export::vab_all_wavs(a, &a.vabs[self.vab_sel], &dir, &stem) {
-                            Ok(n) => {
-                                self.explorer.status =
-                                    Some(format!("{n} WAVs written to {}", dir.display()))
-                            }
-                            Err(e) => self.explorer.error = Some(format!("{e:#}")),
+                        let vab_sel = self.vab_sel;
+                        if let Some(a) = self.explorer.analysis.clone() {
+                            let total = a.vabs[vab_sel].report.vag_samples.len();
+                            self.start_export(
+                                format!("{total} WAVs"),
+                                Some(dir.clone()),
+                                move || {
+                                    let failed =
+                                        export::vab_all_wavs(&a, &a.vabs[vab_sel], &dir, &stem)?;
+                                    batch_outcome("WAVs", total, &failed, &dir)
+                                },
+                            );
                         }
                     }
                 }
@@ -2489,6 +2617,7 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(250));
         }
         self.poll_game(ctx);
+        self.poll_export(ctx);
     }
 
     /// Input and drawing. Everything that reads this frame's events (drops,
@@ -2510,6 +2639,21 @@ impl eframe::App for App {
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F1)) {
             self.about_open = !self.about_open;
         }
+        // Typing in a field keeps `?` and Esc for the field.
+        if !ui.ctx().egui_wants_keyboard_input() {
+            if ui.input_mut(|i| {
+                i.consume_key(egui::Modifiers::SHIFT, egui::Key::Questionmark)
+                    || i.consume_key(egui::Modifiers::NONE, egui::Key::Questionmark)
+            }) {
+                self.keys_open = !self.keys_open;
+            }
+            if (self.about_open || self.keys_open)
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                self.about_open = false;
+                self.keys_open = false;
+            }
+        }
 
         if let Some(r) = ui.input(|i| i.viewport().inner_rect) {
             // egui points include the UI zoom; the viewport's inner size at
@@ -2530,6 +2674,7 @@ impl eframe::App for App {
         }
         egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
         self.about_window(ui);
+        self.keys_window(ui);
         match self.mode {
             // Nothing open yet: the start page takes the whole window, in
             // every view that needs a disc to show anything (a view restored
@@ -2647,41 +2792,82 @@ impl App {
                         .weak(),
                     );
                     ui.add_space(6.0);
-                    ui.label(RichText::new("Keyboard").strong());
-                    egui::Grid::new("about_keys")
-                        .num_columns(2)
-                        .spacing([16.0, 3.0])
-                        .show(ui, |ui| {
-                            for (keys, what) in [
-                                ("Ctrl+O", "open a disc image"),
-                                ("Ctrl+L", "type a path to open"),
-                                ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
-                                ("F5", "play the open disc"),
-                                ("Ctrl+F, Esc", "search the archive, clear the search"),
-                                ("Ctrl+Tab, Ctrl+Shift+Tab", "next, previous preview tab"),
-                                (
-                                    "Up / Down, PgUp / PgDn, Home / End",
-                                    "walk the archive tree",
-                                ),
-                                (
-                                    "Ctrl+= / Ctrl+- / Ctrl+0",
-                                    "zoom in, out, reset (also View)",
-                                ),
-                                ("F1", "this box"),
-                            ] {
-                                // Key names in the palette's key ink, as the
-                                // launcher's Controls panel and the play
-                                // window's F12 panel draw them.
-                                let ink = crate::theme::c(crate::theme::palette(ui).info);
-                                ui.label(RichText::new(keys).monospace().color(ink));
-                                ui.label(what);
-                                ui.end_row();
-                            }
-                        });
+                    if ui.button("Keyboard shortcuts (?)").clicked() {
+                        self.keys_open = true;
+                    }
                     });
             });
         self.about_open = open;
     }
+
+    /// Every keyboard shortcut in one box (`?`, or the View menu).
+    fn keys_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.keys_open;
+        egui::Window::new("Keyboard shortcuts")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                egui::Grid::new("keys")
+                    .num_columns(2)
+                    .spacing([16.0, 3.0])
+                    .show(ui, |ui| {
+                        // Key names in the palette's key ink, as the
+                        // launcher's Controls panel and the play window's
+                        // F12 panel draw them.
+                        let ink = crate::theme::c(crate::theme::palette(ui).info);
+                        for (keys, what) in KEYS {
+                            ui.label(RichText::new(*keys).monospace().color(ink));
+                            ui.label(*what);
+                            ui.end_row();
+                        }
+                    });
+            });
+        self.keys_open = open;
+    }
+}
+
+/// The shortcuts box's rows: keys, then what they do.
+const KEYS: &[(&str, &str)] = &[
+    ("Ctrl+O", "open a disc image"),
+    ("Ctrl+L", "type a path to open"),
+    ("Ctrl+1 .. Ctrl+4", "Browse, Characters, Movies, Extract"),
+    ("F5", "play the open disc"),
+    ("Ctrl+F, Esc", "search the archive, clear the search"),
+    ("Ctrl+Tab, Ctrl+Shift+Tab", "next, previous preview tab"),
+    (
+        "Up / Down, PgUp / PgDn, Home / End",
+        "walk the archive tree",
+    ),
+    (
+        "Ctrl+= / Ctrl+- / Ctrl+0",
+        "zoom in, out, reset (also View)",
+    ),
+    ("F1", "the About box"),
+    ("?", "this box"),
+    ("Esc", "close this box or the About box"),
+];
+
+/// The status line for a batch of `total` files, of which `failed` names the
+/// ones that could not be written: a partial batch is a failure to read, not
+/// a smaller success.
+fn batch_outcome(
+    what: &str,
+    total: usize,
+    failed: &[String],
+    dir: &Path,
+) -> anyhow::Result<String> {
+    if failed.is_empty() {
+        return Ok(format!("{total} {what} written to {}", dir.display()));
+    }
+    let written = total - failed.len();
+    let first = &failed[0];
+    anyhow::bail!(
+        "{written} of {total} {what} written to {}; {} failed, first {first}",
+        dir.display(),
+        failed.len()
+    )
 }
 
 /// Points the About box's title bar and frame take beyond its body.
@@ -2897,8 +3083,13 @@ fn human_size(n: u64) -> String {
     }
 }
 
-fn checkerboard(p: &egui::Painter, rect: egui::Rect) {
-    p.rect_filled(rect, 0.0, Color32::from_gray(60));
+fn checkerboard(ui: &egui::Ui, rect: egui::Rect) {
+    // The palette's own pair, so the board sits in either theme: a mid-grey
+    // one was the one dark panel left in the light theme.
+    let pal = crate::theme::palette(ui);
+    let (under, over) = (crate::theme::c(pal.stripe), crate::theme::c(pal.rule));
+    let p = ui.painter();
+    p.rect_filled(rect, 0.0, under);
     let s = 8.0;
     let cols = (rect.width() / s).ceil() as i32;
     let rows = (rect.height() / s).ceil() as i32;
@@ -2910,7 +3101,7 @@ fn checkerboard(p: &egui::Painter, rect: egui::Rect) {
             if (x + y) % 2 == 0 {
                 let min = rect.min + egui::vec2(x as f32 * s, y as f32 * s);
                 let r = egui::Rect::from_min_size(min, egui::vec2(s, s)).intersect(rect);
-                p.rect_filled(r, 0.0, Color32::from_gray(80));
+                p.rect_filled(r, 0.0, over);
             }
         }
     }
@@ -2993,6 +3184,19 @@ mod layout_tests {
         // 480 points at 1.25 zoom is 384 points tall.
         assert!(about_max_height(384.0) <= 384.0 - 20.0);
         assert!(about_max_height(50.0) > ABOUT_CHROME_H);
+    }
+
+    #[test]
+    fn a_partial_batch_is_an_error_naming_the_count_and_the_first_cause() {
+        let dir = Path::new("/out");
+        assert_eq!(
+            batch_outcome("PNGs", 3, &[], dir).unwrap(),
+            "3 PNGs written to /out"
+        );
+        let e = batch_outcome("PNGs", 3, &["#1: empty TIM".into()], dir).unwrap_err();
+        let e = format!("{e:#}");
+        assert!(e.contains("2 of 3 PNGs"), "{e}");
+        assert!(e.contains("#1: empty TIM"), "{e}");
     }
 
     #[test]
