@@ -215,15 +215,28 @@ pub(super) fn field_step_press(azimuth: u16, dwx: i16, dwz: i16) -> (i16, i16) {
     best.map_or((0, 0), |(_, s)| s)
 }
 
+/// A body box: centre `(x, z)` and half-extent.
+pub(super) type BodyBox = (i32, i32, i32);
+
 /// The actor-collision boxes one plan tests against, bucketed by the
 /// 128-unit tiles each overlaps: every field NPC at its live position
 /// (±40) and every solid placed prop (±80 static, ±40 moving). The
 /// planner's copy of `World::field_actor_dir_blocked`, built once per plan
-/// so a whole-map search does not re-walk every body per probe.
-/// A body box: centre `(x, z)` and half-extent.
-pub(super) type BodyBox = (i32, i32, i32);
-
-pub(super) struct Blockers(FastMap<(i32, i32), Vec<BodyBox>>);
+/// so a whole-map search does not re-walk every body per probe. The
+/// buckets are a dense tile grid over the boxes' bounding rectangle, so a
+/// probe is an index, not a hash lookup.
+pub(super) struct Blockers {
+    /// Tile `(x0, z0)`, the grid's low corner.
+    origin: (i32, i32),
+    /// Tiles per grid row.
+    width: i32,
+    /// Grid rows.
+    height: i32,
+    /// Tile `i` (row-major) holds `boxes[starts[i]..starts[i + 1]]`.
+    starts: Vec<u32>,
+    /// The boxes overlapping each tile, tile by tile, in build order.
+    boxes: Vec<BodyBox>,
+}
 
 impl Blockers {
     pub(super) fn build(
@@ -249,30 +262,85 @@ impl Blockers {
                 (c.center.0, c.center.1, TOUCH_BOX_HALF)
             });
         }
-        let mut map: FastMap<(i32, i32), Vec<BodyBox>> = FastMap::default();
-        for b in boxes {
-            let (x, z, h) = b;
-            for tz in ((z - h) >> 7)..=((z + h) >> 7) {
-                for tx in ((x - h) >> 7)..=((x + h) >> 7) {
-                    map.entry((tx, tz)).or_default().push(b);
-                }
+        // A box's tile span: every tile its +-half square overlaps.
+        let span = |b: &BodyBox| {
+            let (x, z, h) = *b;
+            ((x - h) >> 7, (z - h) >> 7, (x + h) >> 7, (z + h) >> 7)
+        };
+        let Some((x0, z0, x1, z1)) = boxes
+            .iter()
+            .map(span)
+            .reduce(|a, b| (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3)))
+        else {
+            return Self {
+                origin: (0, 0),
+                width: 0,
+                height: 0,
+                starts: vec![0],
+                boxes: Vec::new(),
+            };
+        };
+        let (width, height) = (x1 - x0 + 1, z1 - z0 + 1);
+        let tiles = |b: &BodyBox| {
+            let (bx0, bz0, bx1, bz1) = span(b);
+            (bz0..=bz1).flat_map(move |tz| {
+                (bx0..=bx1).map(move |tx| ((tz - z0) * width + (tx - x0)) as usize)
+            })
+        };
+        // Count per tile, prefix-sum the counts into starts, then place.
+        let mut starts = vec![0u32; (width * height) as usize + 1];
+        for b in &boxes {
+            for i in tiles(b) {
+                starts[i + 1] += 1;
             }
         }
-        Self(map)
+        let mut run = 0;
+        for s in &mut starts {
+            run += *s;
+            *s = run;
+        }
+        let mut fill = starts.clone();
+        let mut placed = vec![(0, 0, 0); run as usize];
+        for b in &boxes {
+            for i in tiles(b) {
+                placed[fill[i] as usize] = *b;
+                fill[i] += 1;
+            }
+        }
+        Self {
+            origin: (x0, z0),
+            width,
+            height,
+            starts,
+            boxes: placed,
+        }
+    }
+
+    /// The boxes overlapping tile `(tx, tz)`.
+    fn at(&self, tx: i32, tz: i32) -> &[BodyBox] {
+        let (x, z) = (tx - self.origin.0, tz - self.origin.1);
+        if !(0..self.width).contains(&x) || !(0..self.height).contains(&z) {
+            return &[];
+        }
+        let i = (z * self.width + x) as usize;
+        &self.boxes[self.starts[i] as usize..self.starts[i + 1] as usize]
+    }
+
+    /// Whether any box overlaps tile `(tx, tz)`.
+    pub(super) fn covers_tile(&self, tx: i32, tz: i32) -> bool {
+        !self.at(tx, tz).is_empty()
     }
 
     /// Whether a body box covers `(px, pz)`, ignoring the static boxes
     /// centred on `skip` (the platforms under the arrival bracket).
     pub(super) fn hit_except(&self, px: i32, pz: i32, skip: &[(i16, i16)]) -> bool {
-        self.0.get(&(px >> 7, pz >> 7)).is_some_and(|v| {
-            v.iter().any(|&(x, z, h)| {
-                (px - x).abs() < h
-                    && (pz - z).abs() < h
-                    && !(h == TOUCH_BOX_HALF
-                        && skip
-                            .iter()
-                            .any(|&(sx, sz)| (i32::from(sx), i32::from(sz)) == (x, z)))
-            })
+        self.at(px >> 7, pz >> 7).iter().any(|&(x, z, h)| {
+            (px - x).abs() < h
+                && (pz - z).abs() < h
+                && !(h == TOUCH_BOX_HALF
+                    && skip
+                        .iter()
+                        .any(|&(sx, sz)| (i32::from(sx), i32::from(sz)) == (x, z)))
         })
     }
 
@@ -622,7 +690,7 @@ pub(super) fn plan_path(
                         'A'
                     } else if tiles.contains(&(tx, tz)) {
                         'o'
-                    } else if bl.0.contains_key(&(tx, tz)) {
+                    } else if bl.covers_tile(tx, tz) {
                         'b'
                     } else if session
                         .host
@@ -719,6 +787,10 @@ pub(super) fn plan_search(
     let goal_tile = (i32::from(goal.0), i32::from(goal.1));
     let warps = teleports(session);
     let phased = phased_pads(session);
+    // The per-step membership tests, against fast-hashed copies (the
+    // tables themselves stay keyed the callers' way).
+    let pad_tiles: FastSet<(i32, i32)> = phased.keys().chain(warps.keys()).copied().collect();
+    let avoid_tiles: FastSet<(i32, i32)> = avoid.iter().copied().collect();
     let doors = object_doors(session);
     // The platforms under the engine's live arrival bracket: a plan that
     // starts on one (a re-plan just after a ride) may walk off it.
@@ -918,9 +990,7 @@ pub(super) fn plan_search(
             // place: both are edges, the phase the flag is not in now dearer
             // by the wait for it ([`phased_pads`]; the follower times the
             // step, [`phase_ready`]).
-            let pad_tile = nt != ct
-                && nt != goal_tile
-                && (phased.contains_key(&nt) || warps.contains_key(&nt));
+            let pad_tile = nt != ct && nt != goal_tile && pad_tiles.contains(&nt);
             let lands: Vec<(Cell, i32)> = if !pad_tile {
                 Vec::new()
             } else if let Some(lands) = phased.get(&nt) {
@@ -998,7 +1068,7 @@ pub(super) fn plan_search(
             if next != gc && blockers.dir_blocked_except(nx, nz, dir, &skip) {
                 continue;
             }
-            if nt != ct && avoid.contains(&nt) {
+            if nt != ct && avoid_tiles.contains(&nt) {
                 continue;
             }
             s.step(None, cur, next, gcur + 1);
