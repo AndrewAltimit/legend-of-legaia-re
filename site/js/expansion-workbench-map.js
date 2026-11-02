@@ -486,7 +486,7 @@ export function renderMaps(ctx, el) {
   const addBtn = h('button', {
     type: 'button', class: 'wb-mini', onclick: () => {
       const id = freshId('map', ids);
-      maps[id] = newMap(ctx);
+      maps[id] = ctx.starterMap ? ctx.starterMap(`Map ${Object.keys(maps).length + 1}`) : newMap(ctx);
       V.map = id;
       ctx.changed(true);
     },
@@ -1012,7 +1012,7 @@ export function renderMaps(ctx, el) {
 }
 
 function newMap(ctx) {
-  const scene = (ctx.cat && ctx.cat.scenes && ctx.cat.scenes[0]) ? ctx.cat.scenes[0].name : 'town01';
+  const scene = 'town01';
   return {
     name: 'New map', size: null,
     base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },

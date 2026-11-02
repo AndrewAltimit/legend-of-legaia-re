@@ -264,6 +264,7 @@ const ctx = {
   meshCatalog: () => {
     if (!S.meshCat && S.wb && S.wb.mesh_catalog) { try { S.meshCat = JSON.parse(S.wb.mesh_catalog()); } catch (e) { S.meshCat = []; } }
     return S.meshCat || [];
+  },
   sceneObjects: (scene) => {
     if (!S.sceneObj[scene]) S.sceneObj[scene] = JSON.parse(S.wb.scene_objects(scene));
     return S.sceneObj[scene];
@@ -282,15 +283,15 @@ function setStatus(msg, kind, id) {
   const el = $(id || 'xw-status');
   el.textContent = msg || '';
   el.className = 'wb-status' + (kind ? ' is-' + kind : '');
+  // A good word goes by itself; a problem stays until the next message.
+  clearTimeout(el._xwClear);
+  if (kind === 'ok' && id === 'xw-export-status') el._xwClear = setTimeout(() => { el.textContent = ''; }, 4000);
 }
 const errText = (e) => (e && e.message ? e.message : String(e));
 
 // --- Rendering ----------------------------------------------------------------------
 // Per page: its checks' error and warning counts (a check on no page's file
 // counts on the Pack files page).
-  // A good word goes by itself; a problem stays until the next message.
-  clearTimeout(el._xwClear);
-  if (kind === 'ok' && id === 'xw-export-status') el._xwClear = setTimeout(() => { el.textContent = ''; }, 4000);
 function tabCounts(tab) {
   const t = TABS.find((x) => x[0] === tab);
   const file = t && t[2];
@@ -359,8 +360,7 @@ function renderBuild() {
       let n = ids.length + 1;
       while (maps[`map_${n}`]) n++;
       const id = `map_${n}`;
-      maps[id] = blankMap(S.cat);
-      maps[id].name = `Map ${n}`;
+      maps[id] = starterMap(`Map ${n}`);
       S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
       ctx.changed(true);
     },
@@ -422,6 +422,13 @@ document.addEventListener('fullscreenchange', () => {
 });
 
 // Open map `id` on the Build area, without a jump's scroll and flash.
+function starterMap(name) {
+  if (S.wb && S.wb.starter_map) return JSON.parse(S.wb.starter_map(name));
+  const m = blankMap(S.cat);
+  m.name = name;
+  return m;
+}
+
 function openMap(id) {
   S.tab = 'maps';
   S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
@@ -885,6 +892,12 @@ function startValidator(parts) {
       S.hintLoad = null;
       computeHints();
       renderIssues();
+    } else if (m.type === 'scene_meshes') {
+      const a = V.meshAsks.get(m.seq);
+      if (!a) return;
+      V.meshAsks.delete(m.seq);
+      if (m.error != null) a.rej(new Error(m.error));
+      else a.res(m.bytes.buffer);
     } else if (m.type === 'xref_sites') {
       if (m.seq !== xrefAsk.seq) return;
       const done = xrefAsk.done;
@@ -954,12 +967,6 @@ function runValidate() {
     issues = JSON.parse(S.wb.validate(JSON.stringify(S.pack)));
   } catch (e) {
     issues = [{ severity: 'error', path: '(workbench)', field: '', message: errText(e) }];
-    } else if (m.type === 'scene_meshes') {
-      const a = V.meshAsks.get(m.seq);
-      if (!a) return;
-      V.meshAsks.delete(m.seq);
-      if (m.error != null) a.rej(new Error(m.error));
-      else a.res(m.bytes.buffer);
   }
   applyIssues(issues);
 }
@@ -1474,6 +1481,27 @@ function init() {
   initRest();
 }
 
+/* A scene's meshes for the palette and the ghost: off this thread when the
+ * worker is up, else a moment later on the page. */
+function askSceneMeshes(scene) {
+  return new Promise((res, rej) => {
+    const go = (tries) => {
+      if (V.worker && V.ready) {
+        V.meshSeq = (V.meshSeq || 0) + 1;
+        V.meshAsks.set(V.meshSeq, { res, rej });
+        V.worker.postMessage({ type: 'scene_meshes', seq: V.meshSeq, scene });
+      } else if (V.worker && tries > 0) {
+        setTimeout(() => go(tries - 1), 400);
+      } else {
+        setTimeout(() => {
+          try { res(S.wb.scene_meshes(scene).buffer); } catch (e) { rej(e); }
+        }, 30);
+      }
+    };
+    go(40);
+  });
+}
+
 async function downloadBundle() {
   // Built in the worker when it is up; the export refuses a pack with an
   // error, and only then do the checks run here to open the first one.
@@ -1504,34 +1532,20 @@ async function downloadBundle() {
 function minimalPack(pack) {
   const cat = S.cat || {};
   const mon = (cat.monsters && cat.monsters[0]) || { id: 1 };
-  const scene = (cat.scenes && cat.scenes[0] && cat.scenes[0].name) || 'town01';
   pack.battle.monsters = { first_monster: { base: { kind: 'monster', id: mon.id }, name: 'First Monster', hp: { mul: 1.5 } } };
   pack.battle.formations = { first_fight: { label: 'First Fight', monsters: ['first_monster'] } };
-  pack.dialog.lines = { welcome: { speaker: 'Guide', text: 'Welcome to my expansion.\nStep onto the red tiles to fight.' } };
+  pack.dialog.lines = { welcome: { speaker: 'Guide', text: 'Welcome to my expansion.\nWalk on, and a fight is waiting.' } };
   pack.quests.quests = [{
     id: 'first_quest', title: 'First Quest', description: 'Win the first fight.', auto_start: true, ordered: true,
     objectives: [{ kind: 'defeat_formation', formation: 'first_fight', count: 1, text: 'Win the first fight' }],
     rewards: { gold: 100 },
   }];
-  pack.maps = {
-    first_map: {
-      name: 'First Map', size: null,
-      base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },
-      floor_heights: [0, 64],
-      tiles: {
-        origin: [16, 16],
-        rows: ['###########', '#.........#', '#.........#', '#.........#', '#.........#', '###########'],
-        legend: { '#': { label: 'wall', walls: 'all', height: 0, ground: null }, '.': { label: 'floor', height: 0, ground: null } },
-      },
-      props: [], npcs: [], exits: [], encounters: [],
-      spawns: [{ id: 'start', tile: [2, 2], facing: 0 }],
-      triggers: [
-        { id: 'greeting', rect: [3, 2, 3, 2], event: { kind: 'dialog', line: 'welcome' }, once: true },
-        { id: 'fight', rect: [7, 2, 8, 3], event: { kind: 'battle', formation: 'first_fight' } },
-      ],
-      bgm: null, camera: 'default',
-    },
-  };
+  const first = starterMap('First Map');
+  first.triggers = [
+    { id: 'greeting', rect: [8, 5, 8, 5], event: { kind: 'dialog', line: 'welcome' }, once: true },
+    { id: 'fight', rect: [11, 3, 12, 4], event: { kind: 'battle', formation: 'first_fight' } },
+  ];
+  pack.maps = { first_map: first };
   return pack;
 }
 
@@ -1543,27 +1557,6 @@ function quickPack() {
   saveDel('source');
   showPack(pack, 'new pack', 'Started a new pack with one small map to build on, a monster, a fight, a line and a quest. Name it under Pack settings.', { tab: 'maps' });
 }
-/* A scene's meshes for the palette and the ghost: off this thread when the
- * worker is up, else a moment later on the page. */
-function askSceneMeshes(scene) {
-  return new Promise((res, rej) => {
-    const go = (tries) => {
-      if (V.worker && V.ready) {
-        V.meshSeq = (V.meshSeq || 0) + 1;
-        V.meshAsks.set(V.meshSeq, { res, rej });
-        V.worker.postMessage({ type: 'scene_meshes', seq: V.meshSeq, scene });
-      } else if (V.worker && tries > 0) {
-        setTimeout(() => go(tries - 1), 400);
-      } else {
-        setTimeout(() => {
-          try { res(S.wb.scene_meshes(scene).buffer); } catch (e) { rej(e); }
-        }, 30);
-      }
-    };
-    go(40);
-  });
-}
-
 
 function openNewForm() {
   const box = $('xw-new');
@@ -1606,6 +1599,13 @@ function jumpIssue(dir) {
 }
 
 // The keyboard list, a panel over the page (`?`, the pack bar's Keys).
+function toggleKeys(on) {
+  const box = $('xw-keyhelp');
+  const show = on == null ? box.hidden : on;
+  box.hidden = !show;
+  if (show) box.focus({ preventScroll: true });
+}
+
 function onShortcutFs(ev) {
   if (ev.key === 'F11' && S.pack && S.tab === 'maps') {
     ev.preventDefault();
@@ -1623,16 +1623,9 @@ function onShortcutFs(ev) {
   return false;
 }
 
-function toggleKeys(on) {
-  const box = $('xw-keyhelp');
-  if (onShortcutFs(ev)) return;
-  const show = on == null ? box.hidden : on;
-  box.hidden = !show;
-  if (show) box.focus({ preventScroll: true });
-}
-
 function onShortcut(ev) {
   if (!S.pack || $('xw-main').hidden) return;
+  if (onShortcutFs(ev)) return;
   const k = ev.key.toLowerCase();
   const mod = ev.ctrlKey || ev.metaKey;
   // Undo / redo: a text field keeps the browser's own while it has focus.
@@ -1687,6 +1680,13 @@ function setupMoreMenu() {
 function initRest() {
   setupMoreMenu();
   $('xw-toml').addEventListener('click', () => { S.tab = 'files'; rerender(); });
+  // The disc and pack pickers, folded away while building.
+  $('xw-open-setup').addEventListener('click', () => {
+    if (S.fs) setFullscreen(false);
+    const setup = $('xw-setup');
+    setup.open = true;
+    setup.scrollIntoView({ block: 'start' });
+  });
   $('xw-play').addEventListener('click', playInBrowser);
   $('xw-play-here').addEventListener('click', playHere);
   $('xw-live').addEventListener('change', (ev) => S.preview && S.preview.setLive(ev.target.checked));
@@ -1697,6 +1697,7 @@ function initRest() {
     storePlay,
     playUrl: playLibUrl,
   });
+  S.preview.onLayout(() => renderBuild());
   // The 3D view sits between the Build head and its catalog strip.
   $('xw-catalog').before(S.preview.el);
   S.share = attachShare({
@@ -1722,11 +1723,3 @@ window.__xwState = S;
 window.__xwValidator = V;
 // ... and the editors' context: `__xwCtx.changed(true)` after a scripted edit.
 window.__xwCtx = ctx;
-  // The disc and pack pickers, folded away while building.
-  $('xw-open-setup').addEventListener('click', () => {
-    if (S.fs) setFullscreen(false);
-    const setup = $('xw-setup');
-    setup.open = true;
-    setup.scrollIntoView({ block: 'start' });
-  });
-  S.preview.onLayout(() => renderBuild());

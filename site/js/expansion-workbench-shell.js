@@ -227,7 +227,8 @@ function mapSize(m) {
 
 /** A small room over the disc's first scene: what "New map" adds. */
 export function blankMap(cat) {
-  const scene = cat && cat.scenes && cat.scenes[0] ? cat.scenes[0].name : 'town01';
+  // Rim Elm: the disc's first block holds no field to enter.
+  const scene = cat && cat.scenes && cat.scenes.some((s) => s.name === 'town01') ? 'town01' : (cat && cat.scenes && cat.scenes[0] ? cat.scenes[0].name : 'town01');
   return {
     name: 'New map', size: null,
     base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },
@@ -261,7 +262,6 @@ export function renderBuildHead(el, o) {
     if (B.catalog) B.catalog.innerHTML = '';
     return;
   }
-  B.bar = h('div', { class: 'xw-modebar', role: 'toolbar', 'aria-label': 'Build modes' });
   /* The map picker: one compact row. What a card said (size, scene, how many
    * of what) is each option's tooltip and the Pack files page. */
   const pick = h('select', { class: 'xw-map-pick', 'aria-label': 'Map being built', title: 'The map you are building' }, ...ids.map((id) => {
@@ -274,9 +274,10 @@ export function renderBuildHead(el, o) {
   const errs = o.open ? o.errorsOf(o.open) : 0;
   el.append(h('div', { class: 'xw-map-row' }, pick, errs ? h('span', { class: 'xw-badge', title: `${errs} problem(s) on this map` }, errs) : null,
     h('button', { type: 'button', class: 'wb-mini xw-map-add', title: 'Add a small new map, with some ground and a few objects already on it', onclick: () => o.add() }, '+ New map')));
+  B.bar = h('div', { class: 'xw-modebar', role: 'toolbar', 'aria-label': 'Build modes' });
   el.append(B.bar);
-  drawBar();
   if (o.tools) el.append(o.tools());
+  drawBar();
   drawCatalog();
 }
 
