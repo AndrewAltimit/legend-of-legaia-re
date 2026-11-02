@@ -90,9 +90,7 @@ pub(super) fn pad_avoid(session: &NativeSession, keep: Option<(i16, i16)>) -> Ha
 /// record cleanly clears a C1 latch of the walk-on record on `door` - the
 /// bands that open the way to it.
 pub(super) fn unlatching_bands(session: &NativeSession, door: (i16, i16)) -> Vec<(i32, i32)> {
-    use legaia_engine_field::man_field_scripts::{
-        FlagBank, partition2_record_gates, walk_partition_gflag_sites,
-    };
+    use legaia_engine_field::man_field_scripts::{FlagBank, partition2_record_gates};
     if session.host.world.mode != SceneMode::Field {
         return Vec::new();
     }

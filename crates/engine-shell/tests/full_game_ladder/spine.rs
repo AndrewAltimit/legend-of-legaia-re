@@ -173,6 +173,7 @@ pub(super) const SAVE_WINDOW_SYSTEM_BYTES: usize = legaia_save::card::RETAIL_STO
     + legaia_save::card::RETAIL_STORY_FLAGS_SIZE
     - SC_SYSTEM_FLAGS;
 
+#[derive(Clone)]
 pub(super) struct Anchor {
     pub(super) sc: Vec<u8>,
     pub(super) scene: String,
@@ -212,6 +213,23 @@ pub(super) fn i32_at(b: &[u8], o: usize) -> i32 {
 }
 
 pub(super) fn load_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
+    // Each pass reads the whole spine's anchors, several of them more than
+    // once, and a save state is a compressed RAM image: decode each anchor
+    // once per run. The library is not written while a run reads it.
+    thread_local! {
+        static LOADED: std::cell::RefCell<HashMap<String, Result<Anchor, String>>> =
+            std::cell::RefCell::new(HashMap::new());
+    }
+    let key = format!("{}|{a:?}", lib.display());
+    if let Some(hit) = LOADED.with(|l| l.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    let got = read_anchor(lib, a);
+    LOADED.with(|l| l.borrow_mut().insert(key, got.clone()));
+    got
+}
+
+fn read_anchor(lib: &Path, a: &AnchorRef) -> Result<Anchor, String> {
     match a {
         AnchorRef::Card { card, save } => {
             let path = lib.join("cards").join(card);

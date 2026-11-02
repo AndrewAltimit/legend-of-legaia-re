@@ -1914,7 +1914,7 @@ pub(super) fn rest_flags_key(
     part: usize,
     rec: usize,
 ) -> u64 {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     use legaia_scene_formats::field_disasm::FlagKind;
     use std::hash::{Hash, Hasher};
     let w = &session.host.world;

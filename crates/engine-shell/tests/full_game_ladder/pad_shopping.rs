@@ -1188,7 +1188,7 @@ fn open_counters(
     session: &mut NativeSession,
     closed: &[u8],
 ) -> Result<(BTreeSet<u16>, Option<String>), String> {
-    use legaia_engine_field::man_field_scripts::{FlagBank, walk_partition_gflag_sites};
+    use legaia_engine_field::man_field_scripts::FlagBank;
     let Some((mf, man, triggers)) = scene_man_and_triggers(session) else {
         return Ok((BTreeSet::new(), None));
     };
