@@ -52,10 +52,12 @@ const VIEWS = [
   ['split', 'Split', 'The painter and the 3D view side by side: the picture stays in view while the forms scroll'],
   ['3d', '3D', 'The 3D view as large as the window allows; the painter\'s canvas is put away and its forms sit under the picture'],
 ];
-const VIEW_KEY = 'legaia-xw-view';
-// The Split view's picture column, as a share of the editor's width.
-const SPLIT_KEY = 'legaia-xw-split';
-const SPLIT_MIN = 0.25, SPLIT_MAX = 0.75;
+// (A new key: the working surface is the 3D view by default now, whatever
+// an older visit left in the old one.)
+const VIEW_KEY = 'legaia-xw-view-2';
+// The Split view's drawer, as a share of the editor's width.
+const SPLIT_KEY = 'legaia-xw-drawer';
+const SPLIT_MIN = 0.22, SPLIT_MAX = 0.7;
 
 /* The layouts of the view switch. The page's own style (the HTML) sizes
  * the dock for 2D; these rules only rearrange it, so the page keeps one
@@ -220,9 +222,10 @@ export function createPreview3d(env) {
     open: false, ready: false, visible: false, frame: null, map: null, spawn: '',
     dirty: true, timer: null, sent: null, layers: { grid: false, walls: false, zones: false, triggers: false, npcs: false, spawns: false, props: false, collision: false },
     select: null, path: null, marker: null, mode: 'orbit', onPick: null, stats: null, last: null, live: false, liveTimer: null,
-    auto: true, painter: true, arrival: false, edits: 0, builtEdits: -1, view: '2d', grid: null, defs: null, overlayKey: '',
+    auto: true, painter: true, arrival: false, edits: 0, builtEdits: -1, view: '3d', grid: null, defs: null, overlayKey: '',
   };
-  try { P.view = VIEWS.some(([k]) => k === localStorage.getItem(VIEW_KEY)) ? localStorage.getItem(VIEW_KEY) : '2d'; } catch (e) { P.view = '2d'; }
+  P.view = '3d';
+  try { const kept = localStorage.getItem(VIEW_KEY); if (VIEWS.some(([k]) => k === kept)) P.view = kept; } catch (e) { /* no storage: the default */ }
   installViewCss();
   let channel = null;
   try { channel = new BroadcastChannel(CHANNEL); } catch (e) { channel = null; }

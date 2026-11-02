@@ -1,8 +1,9 @@
 /* Expansion workbench: the frame around the editors.
  *
  * The page opens on the map builder, Sims-style: a strip of the pack's maps
- * to pick from, a mode toolbar (Build, Paint terrain, Place objects, NPCs,
- * Zones & exits, Test-play) over the 3D view, and a catalog strip under it.
+ * to pick from, a mode toolbar (Place objects, Select & move, Paint terrain,
+ * NPCs, Zones & exits, Test-play) over the 3D view, Place objects first, and a
+ * catalog strip under it.
  * Every other section editor sits behind one of five areas (Build, Story,
  * Battle, Items & cards, Modes & music) plus Pack settings, each area a row
  * of plain-named pages. This module draws that frame; the editors stay in
@@ -63,9 +64,9 @@ export const areaOf = (tab) => (AREAS.find((a) => a.tabs.includes(tab)) || AREAS
 
 /** The mode toolbar. `key` is the digit that picks the mode on the Build area. */
 export const BUILD_MODES = [
-  { id: 'build', label: 'Build', key: '1', title: 'Pick up, move, turn and scale anything on the map' },
-  { id: 'terrain', label: 'Paint terrain', key: '2', title: 'Paint floor and walls tile by tile, or sculpt the ground' },
-  { id: 'objects', label: 'Place objects', key: '3', title: 'Put furniture, plants and props on the map' },
+  { id: 'objects', label: 'Place objects', key: '1', title: 'Put furniture, plants and props on the map' },
+  { id: 'build', label: 'Select & move', key: '2', title: 'Pick up, move, turn and scale anything on the map' },
+  { id: 'terrain', label: 'Paint terrain', key: '3', title: 'Paint floor and walls tile by tile, or sculpt the ground' },
   { id: 'npcs', label: 'NPCs', key: '4', title: 'Place people and give them lines' },
   { id: 'zones', label: 'Zones & exits', key: '5', title: 'Doors out, places to start, step-on events and monster zones' },
   { id: 'test', label: 'Test-play', key: '6', title: 'Walk around the map as the player' },
@@ -94,7 +95,7 @@ function icon(id) {
 }
 
 // --- The build tools seam ------------------------------------------------------------
-const B = { mode: 'build', impl: null, bar: null, catalog: null, env: null };
+const B = { mode: 'objects', impl: null, bar: null, catalog: null, env: null };
 
 /** The fallback build tools over the painter, the 3D editor and the preview. */
 const FALLBACK = {

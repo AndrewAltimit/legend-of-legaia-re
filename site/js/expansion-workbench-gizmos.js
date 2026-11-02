@@ -31,7 +31,7 @@ import { h } from './expansion-workbench-forms.js';
 import { layoutTools, layoutSummary, nudge } from './expansion-workbench-layout.js';
 // The page shell's mode toolbar (a cycle with the shell, which imports this
 // module: the names are only called at run time).
-import { registerBuildTools, syncBuildMode, setBuildMode, buildMode } from './expansion-workbench-shell.js';
+import { registerBuildTools, syncBuildMode, setBuildMode, buildMode, BUILD_MODES } from './expansion-workbench-shell.js';
 import { setPainterTool } from './expansion-workbench-map.js';
 
 const UNIT = 128;
@@ -44,7 +44,7 @@ const BRUSHES = [
 
 // Edit state survives the tab re-rendering.
 const G = {
-  mode: 'view', tool: 'move', snap: 'tile', sel: [],
+  mode: 'select', tool: 'move', snap: 'tile', sel: [],
   brush: { kind: 'raise', radius: 2.5, height: 24, strength: 1, char: '' },
   api: null, sentTerrain: undefined, sentObjects: '', bar: null,
   // The layout row's counts and steps (expansion-workbench-layout.js),
@@ -709,7 +709,7 @@ function onFrame(m) {
     placeAt(m.tile, m.yaw || 0);
   } else if (m.type === 'xw-key') {
     if (m.key === 'cancel-place') { disarm(); return; }
-    if (m.key === 'digit') { try { setBuildMode(['build', 'terrain', 'objects', 'npcs', 'zones', 'test'][(m.n | 0) - 1]); } catch (e) { /* no shell */ } return; }
+    if (m.key === 'digit') { try { setBuildMode((BUILD_MODES[(m.n | 0) - 1] || {}).id); } catch (e) { /* no shell */ } return; }
     if (m.key === 'place-yaw') { G.yaw = m.yaw || 0; return; }
     if (m.key === 'blocked') { note(`Not moved: ${m.why || 'a piece was dropped where it cannot stand'}.`, true); return; }
     if (m.key === 'Delete' || m.key === 'Backspace') removeSel();
@@ -879,12 +879,14 @@ export const xwBuild = {
 
 /* --- The shell's mode toolbar (expansion-workbench-shell.js) ---------------------
  *
- * Build: select and move (the gizmo); Paint terrain: the painter's paint
- * tool, and on a terrain map the 3D paint brush; Place objects / NPCs /
- * Zones & exits: Place with that part of the catalog in the shell's strip;
- * Test-play: the party on the map. Escape, a right click and Stop test come
- * back to Build, and the toolbar follows (`syncBuildMode`). */
-const MODE_GROUPS = { objects: ['buildings', 'large-props', 'small-props'], npcs: ['people'], zones: ['markers'] };
+ * Select & move: select and move (the gizmo); Paint terrain: the painter's
+ * paint tool, and on a terrain map the 3D paint brush; Place objects / NPCs /
+ * Zones & exits: select, with that part of the catalog in the shell's strip:
+ * nothing is armed until a piece is clicked, so a stray click on the map never
+ * places. Escape or a right click puts the piece away and stays in the mode.
+ * Test-play: the party on the map; Stop test comes back to the mode it left,
+ * and the toolbar follows (`syncBuildMode`). */
+const MODE_GROUPS = { npcs: ['people'], zones: ['markers'] };
 const PAINTER_TOOL = { build: 'select', terrain: 'paint', objects: 'select', npcs: 'select', zones: 'select' };
 
 function shellMode() { try { return buildMode(); } catch (e) { return null; } }
@@ -906,12 +908,9 @@ const SHELL_TOOLS = {
       if (pv && pv.open) pv.open();
       const want = MODE_GROUPS[mode];
       const groups = catalog().filter((g) => want.includes(g.id));
-      const keep = G.armed && groups.some((g) => g.items.some((it) => it.id === G.armed));
       if (!groups.some((g) => g.id === G.catGroup)) G.catGroup = groups.length ? groups[0].id : G.catGroup;
-      const first = groups.length && groups[0].items[0];
-      if (keep) arm(G.armed);
-      else if (first) arm(first.id);
-      else G.mode = 'select';
+      G.armed = null;
+      G.mode = 'select';
     }
     G.picked = true;
     renderBar();
@@ -940,10 +939,9 @@ function fillShellCatalog() {
 function followShell() {
   const cur = shellMode();
   if (!cur) return;
-  const want = G.mode === 'place' ? (() => {
-    const it = G.armed && findItem(G.armed);
-    return it ? (it.kind === 'npc' ? 'npcs' : it.kind === 'prop' ? 'objects' : 'zones') : cur;
-  })() : (cur === 'objects' || cur === 'npcs' || cur === 'zones') ? 'build' : cur;
+  if (G.mode !== 'place') return;
+  const it = G.armed && findItem(G.armed);
+  const want = it ? (it.kind === 'npc' ? 'npcs' : it.kind === 'prop' ? 'objects' : 'zones') : cur;
   if (want !== cur) syncBuildMode(want);
 }
 
@@ -963,7 +961,7 @@ export function mountMapEditor(api) {
     api.preview.onMode((m) => {
       const cur = shellMode();
       if (m === 'player' && cur !== 'test') syncBuildMode('test');
-      else if (m === 'orbit' && cur === 'test') syncBuildMode('build');
+      else if (m === 'orbit' && cur === 'test') syncBuildMode('objects');
     });
   }
   if (!api.preview) return null;
