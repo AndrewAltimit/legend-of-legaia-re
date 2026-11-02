@@ -324,6 +324,12 @@ fn every_damage_shape_names_a_band_entry_and_at_least_one_power() {
         assert!(s.routine >= CAST_MODULE_LINK_BASE, "{s:?}");
     }
     assert_eq!(baked_power_for(960), Some(0x1C0), "Plasma Strike's burst");
+    assert_eq!(capture_site_power(960, 0xA6), Some(0x2C6), "Neo Star Slash");
+    assert_eq!(
+        capture_site_power(960, 0x7B),
+        None,
+        "Plasma Strike's is the shape's"
+    );
     // Megaton Press: three bypass-wrapper sites, `0x80 / 0x80 / 0x30`,
     // the first being the seed a single-hit fold uses.
     assert_eq!(baked_power_for(959), Some(0x80));

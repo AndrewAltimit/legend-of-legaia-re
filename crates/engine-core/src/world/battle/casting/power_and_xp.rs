@@ -99,8 +99,11 @@ impl World {
         {
             return Some(i32::from(*power));
         }
-        legaia_engine_cast::cast_module_ticks::baked_power_for(entry)
-            .or_else(|| legaia_engine_cast::cast_module_ticks::capture_site_power(entry, move_id))
+        // The site table first: it keys on the action, so PROT 0960's Neo Star
+        // Slash (`0x2C6`, `0x801F7280`) is not read as the image's other body,
+        // Plasma Strike's burst (`0x1C0`), the module's first baked power.
+        legaia_engine_cast::cast_module_ticks::capture_site_power(entry, move_id)
+            .or_else(|| legaia_engine_cast::cast_module_ticks::baked_power_for(entry))
             .map(i32::from)
     }
 
