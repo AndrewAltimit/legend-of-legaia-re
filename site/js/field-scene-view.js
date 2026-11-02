@@ -626,7 +626,7 @@
         const gi = v.scene_export_add_mesh(
           'ground',
           v.field_scene_ground_positions(), v.field_scene_ground_uvs(),
-          v.field_scene_ground_cba_tsb(), v.field_scene_ground_indices(), none);
+          v.field_scene_ground_cba_tsb(), v.field_scene_ground_render_indices(), none);
         v.scene_export_add_instance(gi, 0, 0, 0, 0, 1.0);
       }
       const handles = new Map();

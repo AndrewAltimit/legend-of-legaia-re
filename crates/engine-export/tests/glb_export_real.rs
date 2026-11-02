@@ -228,6 +228,75 @@ fn town01_world_export_bakes_all_three_artifact_families() {
         doors + leaves < insts.len(),
         "windmills and other looping props stay untagged"
     );
+    assert_eq!(m["conventions"]["world_frame"], "psx_rx180");
+
+    // Every prop instance lands on its world twin: the manifest's numbers are
+    // the twin node's own, in one frame, with no mirror between them.
+    let world_nodes = wj["nodes"].as_array().unwrap();
+    let close = |a: &serde_json::Value, b: &serde_json::Value| {
+        a.as_array().zip(b.as_array()).is_some_and(|(a, b)| {
+            a.iter()
+                .zip(b)
+                .all(|(a, b)| (a.as_f64().unwrap() - b.as_f64().unwrap()).abs() < 1e-4)
+        })
+    };
+    for inst in &insts {
+        assert!(
+            world_nodes.iter().any(|n| {
+                close(&n["translation"], &inst["position"])
+                    && close(&n["rotation"], &inst["rotation_xyzw"])
+            }),
+            "no world node at prop instance {inst}"
+        );
+    }
+
+    // The frame map on real data: each retail placement is `(x, -y, -z)`.
+    // Sky shells are filtered out of the file and so have no node.
+    let placed = a
+        .placements
+        .iter()
+        .filter(|d| {
+            let p = a.draw_world_position(d);
+            let want =
+                serde_json::json!([p[0] * opts.scale, -p[1] * opts.scale, -p[2] * opts.scale]);
+            world_nodes.iter().any(|n| close(&n["translation"], &want))
+        })
+        .count();
+    assert!(
+        placed + world.sky_hidden >= a.placements.len(),
+        "{placed} of {} placements have a node, {} sky draws hidden",
+        a.placements.len(),
+        world.sky_hidden
+    );
+
+    // The ground carries the disc meshes' winding: every triangle faces up by
+    // glTF's rule, which is what a viewer that culls keeps.
+    let (root, bin) = legaia_actor_formats::gltf_color::glb_probe::split(&world.glb).unwrap();
+    let ground = &root["meshes"][0]["primitives"][0];
+    let pos_acc = ground["attributes"]["POSITION"].as_u64().unwrap() as usize;
+    let pos = legaia_actor_formats::gltf_color::glb_probe::floats(&root, bin, pos_acc).unwrap();
+    let idx = &root["accessors"][ground["indices"].as_u64().unwrap() as usize];
+    let view = &root["bufferViews"][idx["bufferView"].as_u64().unwrap() as usize];
+    let off = view["byteOffset"].as_u64().unwrap() as usize;
+    let tris: Vec<[usize; 3]> = (0..idx["count"].as_u64().unwrap() as usize / 3)
+        .map(|t| {
+            std::array::from_fn(|k| {
+                let o = off + (t * 3 + k) * 4;
+                u32::from_le_bytes(bin[o..o + 4].try_into().unwrap()) as usize
+            })
+        })
+        .collect();
+    let down = tris
+        .iter()
+        .filter(|t| {
+            let (a, b, c) = (&pos[t[0]], &pos[t[1]], &pos[t[2]]);
+            let (e1, e2) = ([b[0] - a[0], b[2] - a[2]], [c[0] - a[0], c[2] - a[2]]);
+            // Y of (b - a) x (c - a).
+            e1[1] * e2[0] - e1[0] * e2[1] < -1e-6
+        })
+        .count();
+    assert_eq!(down, 0, "of {} ground triangles", tris.len());
+
     assert_eq!(m["npcs"].as_array().map(Vec::len), Some(npcs.len()));
     assert_eq!(
         m["animated_props"].as_array().map(Vec::len),

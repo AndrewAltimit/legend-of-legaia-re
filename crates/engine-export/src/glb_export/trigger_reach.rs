@@ -343,7 +343,9 @@ pub(super) fn reach_extend_box(
     for j in 0..n {
         for i in 0..n {
             let (x, z) = cell_xz(i, j);
-            let (px, pz) = (x / scale, z / scale);
+            // Back to retail's frame for the walk grid: the export's Z is
+            // retail's negated.
+            let (px, pz) = (x / scale, -z / scale);
             if px < 0.0 || pz < 0.0 || px > i16::MAX as f32 || pz > i16::MAX as f32 {
                 continue;
             }

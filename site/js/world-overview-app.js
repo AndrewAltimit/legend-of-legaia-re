@@ -244,11 +244,11 @@
       if (worldExportState.hasGround && (!$showTerrain || $showTerrain.checked)) {
         /* Ground vertices are already in world coords (PSX pre-flip frame);
          * the renderer draws them with diag(1,-1,1) and no translation, so
-         * an identity instance reproduces it (the exporter bakes the flip). */
+         * an identity instance reproduces it (the exporter bakes its frame). */
         const gi = viewer.scene_export_add_mesh(
           'ground',
           viewer.walk_ground_positions(), viewer.walk_ground_uvs(),
-          viewer.walk_ground_cba_tsb(), viewer.walk_ground_indices(), none);
+          viewer.walk_ground_cba_tsb(), viewer.walk_ground_render_indices(), none);
         viewer.scene_export_add_instance(gi, 0, 0, 0, 0, 1.0);
       }
       const meshHandles = new Map();

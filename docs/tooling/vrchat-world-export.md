@@ -211,58 +211,104 @@ objects - the village centre, not the map-grid centre), composition
 - `world_anim` - present when the world glb carries the baked `vdf_pulse`
   morph clip (name + loop length).
 
-Transforms are in the **export frame**: the site renderers' convention
-(mesh-local Y flipped at bake so the model reads +Y-up,
-mirror-handedness and all), already multiplied by `scale`. Rotations
-carry all three authored placement angles: each world-glb instance node
-and each manifest prop instance (`rotation_xyzw`) holds the quaternion
-`legaia_engine_scene::scene_assembly::draw_rotation_quat` builds from the
-record's `Rx * Ry * Rz` composition - the `EnvDraw::rotate` kernel the
-play hosts place with - conjugated by the export frame's Y flip
-(`F * R * F`, `F = diag(1, -1, 1)`), so a pitched or rolled record (a
-leaning plank, a tilted sign, a video wall) keeps its tilt instead of
-standing upright. A yaw-only record's quaternion is the **standard**
-positive rotation about +Y by the authored retail yaw, which is what the
-manifest's legacy `rot_y_radians` encodes; that field is exact only when
-the record has no pitch or roll. It is a sign conversion away from the
-internal `placementModelScaledY` param (the page function's inline rotY
-block is transposed, so its param is the negated yaw); `scene_gltf`
-performs the negation for a yaw-only instance, and the manifest mirrors
-it. A consumer that applies `rotation_xyzw` (or, for a yaw-only record,
-`rot_y_radians` as a plain `Ry`) therefore matches the baked frame-0
-twins exactly. The frame is
-**X-mirrored relative to the site pages' presentation**: a consumer that
-wants the explorer's orientation mirrors the assembled scene once on X
-(the kit builder's default-on toggle). That fact is settled by a
-landmark test, not by the shader chain - viewing town01 from the sea
-(the sea-to-gate axis pins the viewpoint, so only parity can differ),
-the raw glb puts known buildings on the opposite sides from the
-field-scene page, and no rotation swaps sides across a content-pinned
-axis. Counting reflections through the page view chain (`u_pair_front`
-in `site/js/webgl-shaders.js`) gave confident wrong answers in both
-directions before the landmark test - re-run the test, don't re-count.
-The NPC / prop `.glb`s carry the export `scale` **baked on their root
-node** (`conventions.npc_prop_units: "scaled"`), so a file dragged into a
-scene next to the built world is already world-sized - unlike the site's
-character downloads, which stay in raw PSX units. They still differ from
-the world glb in **handedness**: the world bakes the site convention's
-Y-mirror into its vertices (determinant -1), while the NPC / prop files
-are proper-rotation models (root `Rx(180)`, determinant +1). Placing a
-prop into the world therefore needs one mirror in the instance transform -
-`rotation_xyzw * diag(1, 1, -1)` composed onto the file's root - or no
-rotation will ever line it up with its baked frame-0 twin. The kit's builder
-applies this as a negative-Z instance scale (unit magnitude for current
-exports; a manifest without the `npc_prop_units` flag is an older
-raw-units export whose instances get the full `scale`).
+Transforms are in the **export frame**: a PSX point `(x, y, z)` exports as
+`(x, -y, -z)`, a 180-degree turn about X with determinant +1, already
+multiplied by `scale`. PSX is X right, Y down, Z into the screen, which is
+right-handed, and glTF is right-handed with Y up, so a rotation is the whole
+conversion and a raw glb has the game's own layout: stand at the eye retail's
+camera uses, look where it looks, and a glTF viewer draws what retail draws.
+
+The world glb, the NPC and prop files (root node `Rx(180)`, `scale` baked on it,
+`conventions.npc_prop_units: "scaled"`) and every number in the manifest share
+this frame, so a placement needs no compensating mirror. The vertices are baked
+in it; the props and NPCs reach it through their root node. Rotations carry all
+three authored placement angles: each world-glb instance node and each manifest
+prop instance (`rotation_xyzw`) holds the record's `Rx * Ry * Rz` composition
+(`EnvDraw::rotate`, the kernel the play hosts place with) conjugated into the
+frame, so a pitched or rolled record (a leaning plank, a tilted sign, a video
+wall) keeps its tilt. A consumer applies `position`, then `rotation_xyzw`, to a
+prop file and lands on its baked frame-0 twin. The legacy `rot_y_radians` is the
+same rotation's yaw alone, a plain rotation about +Y, exact only for a record
+with no pitch or roll. It is the authored retail yaw with its sign turned: the
+export frame sees the ground from the far side of Z. `facing_dir` and `entry_xz`
+are `[x, z]` pairs in the same frame.
+
+The baker takes [`SceneInstance`](../../crates/actor-formats/src/scene_gltf.rs)
+in the site pages' **render frame** (world Y negated, nothing else) and maps it
+over in one place (`scene_gltf::render_to_export_position` /
+`render_to_export_rotation`), which is why the page downloads, the Explorer's
+model export and `export-glb` agree. `glb_export::export_translation` and
+`export_rotation` are the same maps for the manifest.
+
+`conventions.world_frame: "psx_rx180"` marks this frame. A manifest without it
+is an older export whose world glb was the mirror image of the game, `(x, -y,
+z)`, with NPC and prop files in the frame above. The Unity kit still builds
+those as they always built; see [its frame note](../../scripts/vrchat-world/README.md#the-kits-frame).
+
+### Winding
+
+`SceneMesh::indices` keep retail's order, and a field mesh's front face runs
+clockwise on the Y-down screen (the positive `NCLIP` retail's handlers keep,
+[`renderer.md`](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
+glTF's front face runs counter-clockwise and a rotation leaves on-screen order
+alone, so the bake reverses every triangle. A viewer that honours winding then
+keeps what retail's cull keeps: town01 culled by glTF's rule from three retail
+cameras draws the same picture as the double-sided render.
+
+The walk-ground heightfield is the part with no retail order to keep. It is
+engine-synthesised and its builder winds opposite to the disc meshes, so taken
+raw, `hf.indices` would ship every ground triangle facing down and read as a
+source whose winding is mixed. `world.rs` reverses it the way
+`field_ground::render_indices` does, and the page exports read
+`*_ground_render_indices`. By surface area, 95% of town01's faces point up and
+99.8% of map01's.
+
+What still points down is authored, and is not a mistake to correct: TMD prims
+carry no double-sided flag and no normal. Sidedness is the winding plus a colour
+word bit (`0x08000000`) no placed object sets. A face wound downward is an
+underside or an interior surface retail never draws from above, and a wall
+retail shows from both sides is two prims over one vertex triple
+(`mark_double_sided_pairs`). So materials stay `doubleSided: true`: retail's
+camera never walks around a building, a VR player does, and those back faces are
+what stands between them and an open shell. No `NORMAL` stream ships; a consumer
+that wants one derives it from the winding.
+
+### The landmark test
+
+Handedness questions here are settled by looking, not by counting reflections.
+Counting through a shader chain (`u_pair_front` in `site/js/webgl-shaders.js`)
+gave confident wrong answers in both directions.
+
+Take a retail field state with a lopsided frame: `town01_field_card_boot` (the
+cave mouth is on the left) or `town01_tetsu_topic_prompt` (the rock is on the
+left, the shrine on the right of the wall). Its `retail-compare` report line has
+the camera: pitch, yaw, `H`, the eye trio and the focus. The eye sits at
+`focus - R^T * (trio / 6)`, with `R = Rx(pitch) * Ry(yaw)` and the field's 6x
+base matrix ([`renderer.md`](../subsystems/renderer.md#the-field-view-matrix-where-tr-comes-from)),
+and the view direction is `R`'s third row. Put both through the frame map, take
+the up vector as `-Y` of `R`, and render the raw glb with a standard look-at
+(`right = forward x up`), the camera any glTF viewer builds. There is no parity
+choice left to make, so a mirrored file cannot pass. Compare the picture with
+retail's frame and with its left-right flip: the export must score closer
+unflipped, and a mirrored file scores closer flipped.
 
 ## Verification
+
+The handedness is pinned without disc bytes in
+`crates/engine-export/src/glb_export/handedness_tests.rs` and
+`scene_gltf`'s own tests: a synthetic pitched, rolled and yawed record's
+world vertices land on `EnvDraw::rotate` through the frame map; the prop file
+placed from the manifest's numbers lands on the same points with no mirror
+anywhere; the bake's determinant is +1; a triangle retail's `NCLIP` keeps is
+front-facing by glTF's rule.
 
 Disc-gated oracle `crates/engine-export/tests/glb_export_real.rs`: assembles
 town01, bakes all three families, validates every glb container (magic,
 length, JSON chunk), asserts the sky filter, the bind-resolve that feeds
 the prop split, clip counts against manifest cross-references, both
 doorway-teleport families plus the map01 gate portal, the door tagging,
-and the shoreline morph targets + `vdf_pulse` animation. Skip-passes
+the shoreline morph targets + `vdf_pulse` animation, the ground's up-facing
+winding, and every animated prop instance against its world twin node. Skip-passes
 without `LEGAIA_DISC_BIN`.
 
 ## Faithful vs. approximated

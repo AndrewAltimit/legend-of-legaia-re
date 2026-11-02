@@ -240,6 +240,16 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    /// [`Self::walk_ground_indices`] on the disc meshes' winding parity
+    /// (`field_ground::render_indices`), what a `.glb` export bakes so a
+    /// viewer that culls keeps the floor. The page's own draw is both-sided.
+    pub fn walk_ground_render_indices(&self) -> Vec<u32> {
+        self.walk_ground
+            .as_ref()
+            .map(legaia_engine_scene::field_ground::render_indices)
+            .unwrap_or_default()
+    }
+
     /// Number of ground cells (quads) in the walk-view heightfield. 0 when no
     /// kingdom is loaded or the heightfield couldn't be resolved.
     pub fn walk_ground_quad_count(&self) -> u32 {

@@ -65,8 +65,12 @@ pub fn export_world_glb(
                 .get(q[0] as usize)
                 .is_some_and(legaia_engine_scene::field_ground::is_far_bucket_ref);
             let before = indices.len();
+            // The heightfield's builder winds opposite to the disc meshes.
+            // The same per-triangle reversal as `field_ground::render_indices`
+            // puts the floor on the meshes' parity, so a viewer that culls
+            // keeps it as the field pass does.
             for t in q.as_chunks::<3>().0.iter().filter(|t| !sheet(far, *t)) {
-                indices.extend_from_slice(t);
+                indices.extend_from_slice(&[t[0], t[2], t[1]]);
             }
             ground_quads += usize::from(indices.len() > before);
         }
@@ -192,11 +196,11 @@ pub fn export_world_glb(
         vals.sort_by(f32::total_cmp);
         vals[(vals.len() - 1) / 2]
     };
-    let spawn = [
+    let spawn = render_to_export_position([
         median(0, &spawn_src),
         median(1, &spawn_src),
         median(2, &spawn_src),
-    ];
+    ]);
 
     // --- Ambient VDF morph bake (Rim Elm's shoreline going in and out). ---
     // Recreate the engine's scene-entry pulse (`legaia_engine_field::vdf_pulse` - the same

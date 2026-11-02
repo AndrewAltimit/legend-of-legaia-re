@@ -67,8 +67,8 @@ impl AssembledScene {
     }
 }
 
-/// A draw's placement transform in the **render frame** the site pages and
-/// the `.glb` baker share: world Y negated (the mesh-local `(1, -1, 1)` flip
+/// A draw's placement transform in the **render frame** the site pages hand
+/// the `.glb` baker (which maps it onto the export frame): world Y negated (the mesh-local `(1, -1, 1)` flip
 /// leaves translations untouched, so objects must be re-signed onto their
 /// floor tiles) and the authored yaw converted to radians with the same
 /// negation `placementModelScaledY` applies.

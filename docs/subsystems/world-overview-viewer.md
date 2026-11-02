@@ -549,8 +549,9 @@ stamp on screen - into a single binary glTF via the WASM
 `scene_export_*` session (`legaia_web_viewer::scene_export`, bake in
 `legaia_actor_formats::scene_gltf`). The page hands the exporter the same mesh
 buffers it uploads to WebGL and the same per-draw
-`(translation, rotY, scale)` triples it builds model matrices from, so
-the file matches the render; the PSX VRAM+CLUT texture indirection is
+`(translation, rotY, scale)` triples it builds model matrices from, which
+the baker carries onto the right-handed export frame
+([details](../tooling/vrchat-world-export.md)), so the file matches the render; the PSX VRAM+CLUT texture indirection is
 baked out into one RGBA atlas (one 256x256 tile per distinct
 `(cba, tsb-page)` pair the vertices sample, NEAREST-sampled, `MASK`
 alpha for the PSX word-0 cutout rule). The per-vertex packet-colour
