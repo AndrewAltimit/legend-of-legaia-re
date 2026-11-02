@@ -318,14 +318,13 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
-### Sub-vsync key-on timing against the mix
+### A CD-XA clip's start against a retail trigger
 
 *Status:* open
 
-[Real retail PCM](../subsystems/audio.md#real-retail-pcm) puts a track's residual at `-12`
-to `-15` dB with every sounding voice's registers equal.
-The reading is the sample a retail key-on lands on; what would close it is the KON write
-time per note against the SPU's sample clock, on a battle state and a field state.
+[Real retail PCM](../subsystems/audio.md#real-retail-pcm) scores a clip's rate, level and
+waveform on the CD input alone, on native and on the page. Its start is the modelled
+`SHOUT_CD_RESPONSE_DELAY`; a mednafen state just ahead of a one-shot cue would score it.
 
 ## Title / boot / overlays
 

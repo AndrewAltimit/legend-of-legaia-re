@@ -32,6 +32,7 @@ legaia-engine-expansion.workspace = true
 legaia-engine-menu-runtime.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true
+legaia-xa.workspace = true
 legaia-engine-session.workspace = true
 legaia-mednafen.workspace = true
 legaia-pcsx-redux.workspace = true

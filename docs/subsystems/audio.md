@@ -535,6 +535,9 @@ the initializer's debug print names the bit `meswork music_not_change`):
   track word takes the new scene's id while the slot plays the track the
   door brought; a later start of that id is no change, and any other id
   tears the slot down and loads it.
+  Two more arms take the same copy (`0x80024530..0x8002455C`): the park
+  word `0x1000`, and a warp entry (`_DAT_8007B8B8 != 0`) under a battle sound
+  set below zero, the set that keeps the field track through its fights.
 
 The entry script's head start falls inside that window: the MAN installer
 `FUN_8003AEB0` runs the scene script's first frame slice (`FUN_8003AB2C`,
@@ -3250,7 +3253,7 @@ identity. A resumed SPU fits the recording at correlation `1.0000`, lag `0`, lev
 recorder and not in the console; the oracle divides it out
 (`MEDNAFEN_RECORD_GAIN`). The WAVs are Sony-derived and stay under `captures/`.
 
-**Two channels.**
+**Three channels.**
 
 - **`core`: the SPU model alone.** A scratch copy of the state has the open
   sequence bitmap `_DAT_801CD2B8` zeroed, so no sequence writes a voice while the
@@ -3284,14 +3287,31 @@ where the two sides differ.
 in the voices. Paired by pitch and ADSR word at nine moments of one track, every
 sounding voice carries the same pitch, ADSR word and L/R volume on both sides,
 and the `core` channel holds those same voices to correlation `0.99998`. It is
-sub-vsync timing: a voice's phase against its neighbours depends on the sample
-its key-on landed on. Retail's vsync is `737.13` samples and a key-on lands where
-the CPU's write meets the SPU's tick, four samples later than the port's
-(`DecodePlayDelay`); two voices on one pitch sum differently a few samples apart.
-The bars with a held flute over a repeating one drop to `0.9`, and no constant moves
-them (`--vsync-samples`, tried from `737` to `737.46`). What would close it is the
-retail key-on write time per note against the SPU's sample clock; nothing here
-says the difference can be heard.
+sub-vsync timing, and the sequencer's grid is not coarser than retail's: under
+PCSX-Redux (`autorun_kon_cycle_watch.lua`, 1200 vsyncs each of a field and a battle
+state) the per-frame flush `FUN_80065BAC` holds its vsync phase within `0.2` of a
+sample, the port's flush period, and the KON write falls `8.7` to `20.8` samples
+after the flush's entry, by how much work the flush has that frame (`768` cycles a
+sample). Two voices keyed on different frames land up to `12` samples apart relative
+to each other, and two voices on one pitch sum differently that far apart; a port
+flush keys every frame at one offset. The size fits: the port against its own render
+with a random `0..=12` sample offset on each flush reads `0.965` / `-11.6` dB on
+`mei_house_inside` (retail `0.970` / `-12.1` dB) and `0.987` / `-15.8` dB on
+`terra_party_battle` (retail `0.982` / `-14.4` dB). Closing it would mean modelling the flush's
+cycle cost per voice and note against a CPU that only an emulator's timing pins, so
+it is left: `136` microseconds either way, and no constant moves it
+(`--vsync-samples`, tried from `737` to `737.46`).
+
+**CD-XA.** The silenced recording of a state with a one-shot sounding, the resumed SPU
+subtracted, is the CD input alone (`xa` channel, `--xa-wav`). On
+`battle_melee_hit_spark` it is `XA2` channel 9 from source sample `35889`, and through
+the port's rate converter and cue gain that channel fits it at correlation `0.9955`,
+level `-0.13` dB, residual `-20` dB, with no lag drift across the `0.25` s left of the
+clip. On the page, a shout fired through the live output and read off the output node
+is that channel's sibling (`XA2` channel 14) at correlation `0.993` and no lag drift
+across a second, at the mix's `0.81` of the decoded channel. Its first sample lands
+`205` ms past the call: `SHOUT_CD_RESPONSE_DELAY` plus the queue. The start against a
+retail trigger is not scored, because no library state stands just ahead of a cue.
 
 **The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is
 `59.826` Hz (fitted, the drift zeroes at `737.13` samples) and the port's frame is a
@@ -3299,6 +3319,12 @@ flat 60 Hz. Note for note the score is the same; a track reaches any bar `0.29 %
 early, by the same factor the port's whole simulation runs ahead of the console,
 so the music stays locked to the game. The oracle renders at the console's rate
 (`Sequencer::step_vsync`); the hosts stay at 60 Hz.
+
+**A state's pass.** The tick stream's phase against the vsync differs pass by pass,
+so a track's later pass keys some notes a vsync off its first. `--pass 0` stops where
+the state's `+0x90` wait matches to the tenth of a tick, its own phase: `0.842` to
+`0.971` on `minigame_slot_machine` (its ninth pass), `0.903` to `0.931` on
+`menu_status_town`.
 
 **What the second-pass hunt found above the SPU.** A state's cursor on a later pass
 of its score could not be reached on some tracks, which is what led to
@@ -3395,8 +3421,10 @@ timer throttling does not touch.
   `FUN_800250D4` releases voices and keys none, so a battle cue is on the ring or it
   is a CD-XA clip (`FUN_8003D53C`), and only the ring half is in the cast oracle's
   sound channel.
-- **Sub-vsync key-on timing and ADPCM rounding** are the two remaining differences
-  [real retail PCM](#real-retail-pcm) can see.
+- **ADPCM rounding and the per-frame KON offset** are the two remaining differences
+  [real retail PCM](#real-retail-pcm) can see; the second is CPU cost, not the grid.
+- **A CD-XA clip's start against a retail trigger** is unscored: it wants a mednafen
+  state just ahead of a cue ([above](#real-retail-pcm)).
 - **Two emitter inputs are constants.** The per-row scale pair is set once:
   the boot-time mode initialiser `FUN_8001DCF8` stores `0x80`, `0x80`, `0` at
   `0x80091658..0x80091660` (`0x8001DD60..0x8001DD74`), the pair's only writer

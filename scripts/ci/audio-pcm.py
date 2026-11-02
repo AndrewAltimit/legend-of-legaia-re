@@ -13,6 +13,9 @@ Two channels per state:
     core   the state's SPU resumed sample for sample, with the state's open
            sequence bitmap zeroed in a scratch copy so nothing writes a voice:
            the SPU model alone
+    xa     the same recording of a state with a CD-XA clip sounding, the resumed
+           SPU subtracted: the CD input against the channel through the port's
+           rate converter and cue gain. Rate, level and waveform; not the start.
 
     scripts/ci/audio-pcm.py --capture             # record what is missing, score
     scripts/ci/audio-pcm.py --check               # fail below the baseline
@@ -59,6 +62,9 @@ STATES = [
 CORE_STATES = ["mei_house_inside", "keikoku_chest_pre", "title_screen_new_game"]
 # The title screen times out into the attract sequence past this.
 SHORT_WINDOWS = {"title_screen_new_game": 10}
+# A state with a CD-XA one-shot sounding: the decoded channel it reads, where in
+# that channel the state stands, and the stereo samples before the clip's stop.
+XA_STATES = {"battle_melee_hit_spark": ("XA2_file1_ch9.wav", 35889, 11025)}
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
 CORR_SLACK = 0.002
 LEVEL_SLACK = 0.05
@@ -191,12 +197,13 @@ def main() -> int:
             if not a.capture:
                 continue
             record(state, wav, TRACK_SECONDS, disc)
-        # A state can sit on a later pass of its score (a channel's state
-        # carries across the loop), so take the pass that fits.
+        # A state can sit on a later pass of its score, with its own tick phase
+        # against the vsync. `0` finds the pass whose wait matches the state's;
+        # a state whose wait no pass reproduces takes whichever early pass fits.
         seconds = SHORT_WINDOWS.get(label, TRACK_SECONDS)
         s = max(
             (score(exe, ["--label", label, "--pass", p], wav, seconds * 44100, out / f"{label}.json")
-             for p in ("1", "2")),
+             for p in ("0", "1", "2")),
             key=lambda r: r["corr_median"],
         )
         results[label] = {"track_corr": s["corr_median"], "track_level": s["level_db"]}
@@ -217,6 +224,25 @@ def main() -> int:
                   out / f"{label}.core.json")
         results.setdefault(label, {})
         results[label].update(core_corr=s["corr_median"], core_level=s["level_db"])
+    for label, (channel, start, samples) in XA_STATES.items():
+        if not want(label):
+            continue
+        state = state_file(label, library, manifest)
+        wav = out / f"{label}.core.wav"
+        silent = out / f"{label}.core.mcr"
+        decoded = REPO / "extracted" / "XA_WAV" / channel
+        if state is None or not decoded.exists():
+            continue
+        if not wav.exists():
+            if not a.capture:
+                continue
+            silenced_copy(state, silent)
+            record(silent, wav, CORE_SECONDS, disc)
+        if not silent.exists():
+            silenced_copy(state, silent)
+        s = score(exe, ["--resume-state", str(silent), "--xa-wav", str(decoded),
+                        "--xa-start", str(start)], wav, samples, out / f"{label}.xa.json")
+        results[label] = {"xa_corr": s["corr_median"], "xa_level": s["level_db"]}
 
     if not results:
         print("[skip] no recordings (run with --capture)")

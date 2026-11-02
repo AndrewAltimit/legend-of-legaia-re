@@ -13,11 +13,12 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use legaia_engine_audio::Spu;
 use legaia_engine_audio::spu::adsr::{AdsrConfig, Phase};
 use legaia_engine_audio::spu::ram::SpuRam;
 use legaia_engine_audio::spu::reverb::{RESAMPLE_IN_LEN, RESAMPLE_OUT_LEN};
+use legaia_engine_audio::spu::voice::SPU_INTERNAL_RATE;
 use legaia_engine_audio::spu::voice::VoiceResume;
+use legaia_engine_audio::{OfflineMixer, Spu};
 use legaia_engine_scene_host::scene_host::BgmDirector;
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_ram_image::ScenarioManifest;
@@ -34,6 +35,10 @@ const SEQ_TABLE: u32 = 0x801C_D2C0;
 /// frame is a flat 60 Hz.
 pub const RETAIL_VSYNC_SAMPLES: f64 = 737.13;
 
+/// How many arrivals at a state's event `--pass 0` looks at. An hour of vsyncs
+/// bounds it for a score whose event comes round less often than that.
+pub const EXACT_PASS_SEARCH: u32 = 16;
+
 #[derive(Debug, clap::Args)]
 pub struct PcmRetailArgs {
     /// Scenario label of a mednafen library state.
@@ -44,6 +49,14 @@ pub struct PcmRetailArgs {
     /// whose game code writes no more voices. `--label` is ignored.
     #[arg(long)]
     pub resume_state: Option<PathBuf>,
+    /// With `--resume-state`: a decoded XA channel (mono, as `legaia-extract`
+    /// writes under `XA_WAV/`) the state's CD input is reading. It plays through
+    /// the mix core at the cue gain beside the resumed SPU.
+    #[arg(long, requires = "resume_state")]
+    pub xa_wav: Option<PathBuf>,
+    /// Where in that channel the state stands, source samples.
+    #[arg(long, default_value_t = 0)]
+    pub xa_start: usize,
     /// Stereo samples of the aligned window to render.
     #[arg(long, default_value_t = 44_100 * 45)]
     pub samples: usize,
@@ -65,8 +78,10 @@ pub struct PcmRetailArgs {
     /// Use this state file instead of the library state `--label` names.
     #[arg(long)]
     pub state: Option<PathBuf>,
-    /// Which time through the score to stop on (a channel's state carries
-    /// across the loop, so the second pass need not sound like the first).
+    /// Which time through the score to stop on. The tick stream's phase against
+    /// the vsync differs pass by pass, so which vsync a note lands on does too.
+    /// `0` stops where the state's wait matches to the tenth of a tick: the
+    /// state's own phase, searched over [`EXACT_PASS_SEARCH`] passes.
     #[arg(long, default_value_t = 1)]
     pub pass: u32,
     #[arg(long)]
@@ -160,18 +175,27 @@ pub fn render_aligned(
     };
     let mut carry = 0.0;
     let mut found = false;
-    let mut left = pass;
+    let exact = pass == 0;
+    let mut left = if exact { EXACT_PASS_SEARCH } else { pass };
     let mut prev_next = 0;
-    for _ in 0..60 * 1800 {
+    let budget = if exact { 60 * 3600 } else { 60 * 1800 };
+    for _ in 0..budget {
         let (next, wait) = d
             .sequencer()
             .map_or((0, None), |s| (s.next_event(), s.pump_wait()));
+        if exact && next == pos.event && wait == Some(pos.wait) {
+            found = true;
+            break;
+        }
         // One vsync can fire past the event outright, and a later pass waits
         // it out with its own carry, so the wait need not recur exactly.
         if prev_next < pos.event && next >= pos.event {
             left = left.saturating_sub(1);
+            if exact && left == 0 {
+                break;
+            }
         }
-        if left == 0 && (next != pos.event || wait.is_some_and(|w| w <= pos.wait)) {
+        if !exact && left == 0 && (next != pos.event || wait.is_some_and(|w| w <= pos.wait)) {
             found = true;
             break;
         }
@@ -208,6 +232,104 @@ pub fn render_aligned(
     }
     out.truncate(samples * 2);
     Ok(out)
+}
+
+/// A CD-XA channel alone through the output's own mix core, as a one-shot cue
+/// plays: the stream's rate converter, the cue gain.
+fn render_xa(xa: &Path, start: usize, samples: usize) -> Result<Vec<i16>> {
+    let bytes = std::fs::read(xa).with_context(|| format!("read {}", xa.display()))?;
+    let rate = u32::from_le_bytes(bytes.get(24..28).context("short WAV")?.try_into()?);
+    let source = read_wav(xa)?;
+    let mut mix = OfflineMixer::new(SPU_INTERNAL_RATE);
+    mix.play_xa_shout(
+        source.get(start..).unwrap_or_default().to_vec(),
+        rate,
+        legaia_xa::Channels::Mono,
+        legaia_engine_session::audio_director::XA_CUE_GAIN,
+        0,
+    );
+    let mut pcm = vec![0i16; samples * 2];
+    for f in pcm.as_chunks_mut::<2>().0 {
+        let (l, r) = mix.next_frame();
+        *f = [l, r];
+    }
+    Ok(pcm)
+}
+
+/// How far the CD input lies from the XA channel. `retail` is a silenced state's
+/// recording; the resumed SPU, which fits that recording to `-44` dB on a state
+/// with no CD input, takes the voices out, and what is left is the CD input
+/// (and any cue the game keys in the window, so the window is the caller's to pick).
+fn score_xa(
+    state: &legaia_mednafen::SaveState,
+    retail: &[i16],
+    xa: &Path,
+    start: usize,
+    samples: usize,
+) -> Result<PcmScore> {
+    let mut core = vec![0i16; samples * 2];
+    spu_resumed_from_retail(state)?.render_into(&mut core);
+    let cd: Vec<f64> = retail
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(core.as_chunks::<2>().0)
+        .map(|(r, c)| {
+            (f64::from(r[0]) + f64::from(r[1])) * 0.5 / MEDNAFEN_RECORD_GAIN
+                - (f64::from(c[0]) + f64::from(c[1])) * 0.5
+        })
+        .collect();
+    let ours: Vec<f64> = render_xa(xa, start, samples)?
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|s| (f64::from(s[0]) + f64::from(s[1])) * 0.5)
+        .collect();
+    let (mut corrs, mut residuals, mut lags) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut re, mut ee) = (0.0, 0.0);
+    for at in (XA_WINDOW..cd.len().saturating_sub(XA_WINDOW)).step_by(XA_WINDOW) {
+        let a = &cd[at..at + XA_WINDOW];
+        let energy: f64 = a.iter().map(|x| x * x).sum();
+        let mut best: Option<(f64, i64, f64)> = None;
+        for lag in -XA_LAG..=XA_LAG {
+            let Some(b) =
+                ours.get((at as i64 + lag) as usize..(at as i64 + lag) as usize + XA_WINDOW)
+            else {
+                continue;
+            };
+            let dot: f64 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+            let eb: f64 = b.iter().map(|y| y * y).sum();
+            let c = dot / (energy * eb + 1e-9).sqrt();
+            if best.is_none_or(|(k, ..)| c > k) {
+                best = Some((c, lag, eb));
+            }
+        }
+        let Some((c, lag, eb)) = best else { continue };
+        let b = &ours[(at as i64 + lag) as usize..][..XA_WINDOW];
+        let resid: f64 = a.iter().zip(b).map(|(x, y)| (x - y) * (x - y)).sum();
+        corrs.push(c);
+        residuals.push(10.0 * (resid / energy + 1e-9).log10());
+        lags.push(lag);
+        re += energy;
+        ee += eb;
+    }
+    if corrs.is_empty() {
+        bail!("the window holds no XA");
+    }
+    let windows = corrs.len();
+    let pick = |v: &mut Vec<f64>, q: f64| {
+        v.sort_by(f64::total_cmp);
+        v[((v.len() - 1) as f64 * q) as usize]
+    };
+    lags.sort_unstable();
+    Ok(PcmScore {
+        corr_p10: pick(&mut corrs, 0.1),
+        corr_median: pick(&mut corrs, 0.5),
+        level_db: 10.0 * (re / ee.max(1.0)).log10(),
+        residual_db: pick(&mut residuals, 0.5),
+        lag: lags[lags.len() / 2],
+        windows,
+    })
 }
 
 /// An engine [`Spu`] standing exactly where a mednafen state's SPU stands.
@@ -311,6 +433,28 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
         let st = legaia_mednafen::SaveState::from_path(state)?;
         let mut spu = spu_resumed_from_retail(&st)?;
         let mut pcm = vec![0i16; args.samples * 2];
+        if let Some(xa) = &args.xa_wav {
+            let retail = read_wav(
+                args.retail_wav
+                    .as_deref()
+                    .context("--xa-wav needs --retail-wav")?,
+            )?;
+            let score = score_xa(&st, &retail, xa, args.xa_start, args.samples)?;
+            println!(
+                "{}: xa corr {:.4} (p10 {:.4}) level {:+.2} dB residual {:.1} dB lag {} over {} windows",
+                state.display(),
+                score.corr_median,
+                score.corr_p10,
+                score.level_db,
+                score.residual_db,
+                score.lag,
+                score.windows
+            );
+            if let Some(out) = &args.json {
+                std::fs::write(out, serde_json::to_string_pretty(&score)?)?;
+            }
+            return Ok(());
+        }
         spu.render_into(&mut pcm);
         (pcm, state.display().to_string())
     } else {
@@ -413,6 +557,9 @@ const FIRST_SEARCH: i64 = 3_000;
 const NEXT_SEARCH: i64 = 24;
 /// Below this correlation a window's lag is noise: the next searches in full.
 const CENTER_MIN_CORR: f64 = 0.6;
+/// [`score_xa`]'s window, 50 ms, and how far either way it looks.
+const XA_WINDOW: usize = 2_205;
+const XA_LAG: i64 = 64;
 /// A window below this retail RMS is the state's own silence.
 const SILENT_RMS: f64 = 30.0;
 

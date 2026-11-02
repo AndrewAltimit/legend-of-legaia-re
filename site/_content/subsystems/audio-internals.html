@@ -174,7 +174,7 @@
       <tr><td><code>vab_bind::VabBank</code></td><td>Uploads every VAG into SPU RAM; turns a MIDI key into voice config + key-on. Programs are slot-indexed</td></tr>
       <tr><td id="engine-sequencer"><code>Sequencer</code></td><td>The <code>SsSeqOpen</code> / <code>Play</code> / <code>Close</code> / <code>SetVol</code> / <code>Rewind</code> surface; round-robin voice allocation tracking <code>(channel, key)</code>; pitch bend against per-tone limits; loop markers from CC99 (20 = start, 30 = forever)</td></tr>
       <tr><td><code>sfx</code></td><td>The cue catalog built from the disc's descriptor table, fired against the bank each cue's category names, through a frame-accurate scheduler</td></tr>
-      <tr><td><code>AudioOut</code> / <code>WebAudioOut</code></td><td>One output stream draining the SPU at 44.1 kHz; hard-cut track swaps with a few frames of click guard; CD-XA clips mixed outside the 24 voices</td></tr>
+      <tr><td><code>AudioOut</code> / <code>WebAudioOut</code></td><td>One output stream draining the SPU at 44.1 kHz; hard-cut track swaps with a few frames of click guard; CD-XA clips mixed outside the 24 voices The browser mixes on the page's main thread and posts blocks to an <code>AudioWorkletProcessor</code>, its queue set by how deep the page's own frames drain it (25 to 190&nbsp;ms), with a <code>ScriptProcessorNode</code> fallback; a cue fired from a frame lands in about 80&nbsp;ms against about 160&nbsp;ms through the script processor alone.</td></tr>
     </tbody>
   </table>
   </div>

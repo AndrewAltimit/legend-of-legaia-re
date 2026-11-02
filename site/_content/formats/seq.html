@@ -91,7 +91,7 @@
       <tr><td><code>0x9n</code></td><td>Note On</td><td>key, velocity</td><td>The note event; <code>velocity == 0</code> is Note Off (<code>0x8n</code> is never used)</td></tr>
       <tr><td><code>0xBn</code></td><td>Control Change</td><td>controller, value</td><td>CC7 volume and CC10 pan are dynamic and busy; CC99 carries loop markers</td></tr>
       <tr><td><code>0xCn</code></td><td>Program Change</td><td>program</td><td>Selects a VAB program slot</td></tr>
-      <tr><td><code>0xEn</code></td><td>Pitch Bend</td><td>LSB, MSB</td><td>Heavy use - thousands of events; scaled over the tone's own <code>pbmin</code>/<code>pbmax</code></td></tr>
+      <tr><td><code>0xEn</code></td><td>Pitch Bend</td><td>LSB, MSB</td><td>Heavy use - thousands of events; re-pitches what is sounding over the tone's own <code>pbmin</code>/<code>pbmax</code> and is forgotten: no channel holds a wheel for its next note</td></tr>
       <tr><td><code>0xAn</code> / <code>0xDn</code></td><td>Aftertouch</td><td>2 / 1</td><td>Absent from retail data</td></tr>
       <tr><td><code>FF 51</code></td><td>Set Tempo</td><td>3 bytes, u24 BE</td><td>No length prefix; overrides future events only</td></tr>
       <tr><td><code>FF 2F</code></td><td>End of Track</td><td>none</td><td>Two bytes total; retail writes a trailing <code>00</code> the parser never reads</td></tr>

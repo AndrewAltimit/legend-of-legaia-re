@@ -3044,6 +3044,7 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "legaia-vab",
+ "legaia-xa",
  "log",
  "png",
  "serde",
