@@ -132,3 +132,81 @@ fn a_seated_duel_draws_the_duel_hud() {
         "the font round digit still draws under the duel HUD: {digits:?}"
     );
 }
+
+/// Select in the duel opens the cabinet's pause menu through the real seat:
+/// the disc's text, the shade behind it, the HUD gone, Circle back to the duel.
+#[test]
+fn select_in_a_seated_duel_opens_the_pause_menu() {
+    use legaia_engine_minigames::baka_cabinet::{ST_DUEL, ST_PAUSE_3};
+    let Some(extracted) = extracted_dir() else {
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
+    host.enter_field_scene("koin1", 0).expect("enter koin1");
+    for _ in 0..90 {
+        let _ = host.tick();
+    }
+    host.world.minigames.casino_coins = 100;
+    host.world.toggles.use_vm_dialogue = true;
+    host.world.trigger_field_interact(0, 51);
+    host.world.set_pad(0);
+    for _ in 0..2000 {
+        if host.world.mode == SceneMode::BakaFighter {
+            break;
+        }
+        let _ = host.tick();
+    }
+    let state = |h: &SceneHost| {
+        h.world
+            .minigames
+            .baka_fighter
+            .as_ref()
+            .map(|f| f.cabinet().state())
+    };
+    for i in 0..4000 {
+        if state(&host) == Some(ST_DUEL) {
+            break;
+        }
+        if i % 60 == 0 {
+            host.world.set_pad(PadButton::Cross.mask());
+        }
+        let _ = host.tick();
+        host.world.set_pad(0);
+    }
+    assert_eq!(state(&host), Some(ST_DUEL), "the duel state");
+
+    host.world.set_pad(PadButton::Select.mask());
+    let _ = host.tick();
+    host.world.set_pad(0);
+    assert_eq!(state(&host), Some(ST_PAUSE_3), "Select opens the menu");
+    // The press lands in the duel arm, whose epilogue still draws the HUD that
+    // frame; the menu's own arm leaves the flag clear from the next one.
+    let _ = host.tick();
+    let fight = host.world.minigames.baka_fighter.as_ref().expect("duel");
+    let (_, lines) = fight.pause_panel().expect("the disc's menu text");
+    assert_eq!(lines.len(), 4, "three rows and the cursor");
+    assert!(lines.iter().all(|l| !l.text.is_empty()));
+
+    let index = host.index.clone();
+    let mut surface = BakaDuelSurface::default();
+    let read = |i: usize| index.entry_bytes(i as u32).ok().map(|b| b.to_vec());
+    assert!(surface.frame(read, Some(fight)).is_some(), "duel surface");
+    let prims = legaia_engine_screens::minigame_hud::baka_screen_prims(&surface, fight);
+    assert!(
+        prims
+            .iter()
+            .any(|p| matches!(p, ScreenPrim::Flat(q) if q.semi_transparent)),
+        "the shade behind the menu"
+    );
+    assert!(
+        !prims
+            .iter()
+            .any(|p| matches!(p, ScreenPrim::Flat(q) if q.gouraud.is_some())),
+        "the VITAL bars are off under the menu"
+    );
+
+    host.world.set_pad(PadButton::Circle.mask());
+    let _ = host.tick();
+    host.world.set_pad(0);
+    assert_eq!(state(&host), Some(ST_DUEL), "Circle backs out");
+}
