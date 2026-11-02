@@ -125,6 +125,13 @@ seeded, and the recorder on:
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
 
+The child's mode-3 cycler and mode-4 scroller seats (`LEGAIA_SEAT_CLUT_FX`,
+`LEGAIA_SEAT_VRAM_RECTS`) are dropped with the drive: each holds one capture
+instant, and a whole run under them leaves the evolved-Cort arena's flesh on
+one palette and one scroll where retail's keeps cycling. Their phase is then
+the engine's own: nothing aligns the hue clock with retail's across the
+fight's history.
+
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame
 already cropped and box-filtered to the compared `320 x 224`

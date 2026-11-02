@@ -3229,7 +3229,10 @@ seven records on the caster, arm 3's cut (pitch `0x60`, TR
 `(0, 0x300, 3 depth / 4)`) that also hides every party seat (`+0x04 = 0`,
 `+0x21C = 0xFF`), and arm 4's flush, white and red fades and the party shown
 again. TR z drifts `+s/2` (arms 1, 2), `-s/2` (3), `+8s` (4, 5) and `+4s` (6).
-Arm 5 seats two records on the caster, three on each point of a ten-point
+Its one damage site is `FUN_801DD4B0(0x2C6, ...)` per live party seat at arm
+6 (`0x801F7280`), not the `0x1C0` of the image's other body
+(`capture_site_power`). Arm 5 seats two records on the caster, three on each
+point of a ten-point
 ring about it (`SpawnAnchor::CasterRing`: angle `(i << 12) / 10`, radius
 `0x1000 / 3`) and three on every live party seat. Arm 4's caster rate `0` is
 left out, as the chain leaves it.
