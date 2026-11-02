@@ -3607,25 +3607,22 @@ framing, not a later reading of the same one. The child's first run checks
 when its camera armed the shot it stands on
 (`BattleCamera::spell_shot_armed_at`). On a monster's magic-band clip age
 (`RetailBattle::retake_on_shot_only`, `LEGAIA_CAPTURE_RETAKE_SHOT`) it
-retakes only when that shot was armed after the retake's tick and retail's
-camera already stands on it (its live pose at the tween table's endpoints).
-A one-frame shot lands on its arming pass and keeps nothing of the framing
-before it, so the replay's own case 6 is the only reading of the displayed
-frame; a shot still easing in holds retail's live pose, which the gate's
-frame is aligned to, and the group breaths' six-frame case 9 read lower on
-the replay's case 6 (`battle_chitei2_kemaro_lv2_lava_breath_mid_cast` `.941`
-to `.735`). Anywhere a
-shot armed after the retake's tick leaves the gate's target out of the note,
-so the retake draws the engine's own case 6. The lag of that retake is two of
-the child's own passes (`RetailBattle::drive_display_lag`): a pad drive runs
-the engine's default battle frame step unless the drive seeds retail's, and
-six ticks back from a step-`3` capture's gate is the child's `0x29` exit
-pass, which the state rule refuses.
-`battle_rugi_barra_windcutter_mid_cast` read `.538` on the gate's frame
-(Barra in close-up) and `.864` on the retake (Barra behind Vahn with the whole
-party in view, as on retail's screen);
-`battle_retona_viguro_lv2_thunder_break_mid_cast` `.552` to `.637`,
-`battle_tower_guardian_windhash_mid_cast` `.567` to `.611`.
+retakes when that shot was armed after the retake's tick, and the state rule
+does not refuse the tick: two passes back from a step-`4` capture is the
+commit pass itself, which reads `0x2A`.
+
+The drive runs the capture's own step through `0x2A` and `0x2B`
+(`RetailBattle::frame_step_seed`), since the gate is an accumulator: on the
+engine's default step, accumulator `48` lands a pass later than retail's three
+step-`3` passes, the clip's cursor reads `32` for retail's `36`, and two
+passes back is already on the shot.
+
+What the retake frames depends on the shot. A one-frame shot lands on its
+arming pass and keeps nothing of the framing before it, so the replay's own
+case 6 is the only reading of the displayed frame, and it carries the yaw
+history of the replay's own earlier rounds. A shot still walking (the group
+breaths' six-frame case 9) leaves retail's table in the RAM, so the retake
+stands on the pose walked back along it (`BattleCamera::stand_on_pose`).
 
 ## Divergence shapes
 

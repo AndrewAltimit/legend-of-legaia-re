@@ -164,32 +164,29 @@ impl RetailBattle {
     /// first frames the camera on the first `0x2B` pass (`jal 0x801DC0A0` at
     /// `0x801E4834`; `0x29`'s own call is overridden by the case 6 its pass
     /// ends on, `0x801E474C`), so a capture two passes into `0x2B` holds the
-    /// shot while its display shows the case-6 framing before it
-    /// (`battle_rugi_barra_windcutter_mid_cast` `0.538` to `0.864`). The
-    /// image child retakes only when its own camera armed the shot after
-    /// the retake's tick (`LEGAIA_CAPTURE_RETAKE_SHOT`), and only on a shot
-    /// retail's camera already stands on (live pose at the tween table's
-    /// endpoints): a one-frame shot lands on its arming pass and keeps
-    /// nothing of the framing before it, so the replay's own case 6 is the
-    /// only reading of the displayed frame. A shot still walking holds
-    /// retail's live pose, which the gate's frame is aligned to: the group
-    /// breaths, whose case 9 eases in over six frames, read lower on the
-    /// replay's case 6 (`battle_chitei2_kemaro_lv2_lava_breath_mid_cast`
-    /// `0.941` to `0.735`, `battle_rugi_slippery_poisonous_breath_mid_cast`
-    /// `0.966` to `0.932`). Elsewhere a monster's
-    /// gate keeps the RAM's frame: retaken on every monster `Age` gate the
-    /// strikes split both ways (`battle_jouind_gilium_lv3_strike` `0.850` to
-    /// `0.953`, `battle_vozz_gizam_strike` `0.964` to `0.921`) and Tail
-    /// Fire's rays, which run on the engine's own clock, fell
-    /// (`battle_gimard_tail_fire_b` `0.978` to `0.970`).
+    /// shot while its display shows the case-6 framing before it. The image
+    /// child retakes only when its own camera armed the shot after the
+    /// retake's tick (`LEGAIA_CAPTURE_RETAKE_SHOT`). A shot that lands on its
+    /// arming pass keeps nothing of the framing before it, so the replay's
+    /// own case 6 is the only reading of the displayed frame; a shot still
+    /// walking holds retail's table, and the retake stands on the pose walked
+    /// back along it. Elsewhere a monster's gate keeps the RAM's frame:
+    /// retaken on every monster `Age` gate the strikes split both ways
+    /// (`battle_jouind_gilium_lv3_strike` `0.850` to `0.953`,
+    /// `battle_vozz_gizam_strike` `0.964` to `0.921`).
     pub fn retake_on_shot_only(&self) -> bool {
+        self.monster_magic_band_age()
+    }
+
+    /// A monster's magic-band capture: [`SpanGate::Age`] on a monster seat,
+    /// category `2`, state `0x2A..=0x2E`.
+    pub fn monster_magic_band_age(&self) -> bool {
         matches!(
             (self.seed_plan(), self.span_gate),
             (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
         ) && self.queued_category == 2
             && legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES
                 .contains(&self.action_state)
-            && self.cam_tween.0 == self.cam_tween.1
     }
 
     /// The display lag in the image child's own ticks: two of its passes,

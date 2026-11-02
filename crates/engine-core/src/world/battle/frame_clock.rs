@@ -94,7 +94,12 @@ impl World {
                                 .is_some_and(|p| p.cursor_sixteenths() as i32 >= cursor)
                     })
             });
-        let want = if self.battle_ctx.action_state == state && reached {
+        // A seed on the magic band's sustained state `0x2B` also opens on
+        // `0x2A`: the pass after the clip commit is the `0x2A` pass storing
+        // `0x2B`, and it runs on the step the capture's ring holds for it.
+        let in_state = self.battle_ctx.action_state == state
+            || (state == 0x2B && self.battle_ctx.action_state == 0x2A);
+        let want = if in_state && reached {
             step
         } else {
             DEFAULT_BATTLE_FRAME_STEP

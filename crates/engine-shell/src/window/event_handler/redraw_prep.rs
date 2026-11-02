@@ -432,6 +432,22 @@ impl PlayWindowApp {
             } else {
                 mask
             };
+            // A monster's magic-band retake on a shot still walking: the
+            // displayed frame is the framing the shot replaced, and `live`
+            // is retail's pose walked back onto it along the RAM's table.
+            // The replay's own case 6 carries the camera history of its own
+            // rounds (`RetailBattle::monster_magic_band_age`).
+            if live != end
+                && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
+                && self
+                    .screenshot
+                    .as_ref()
+                    .is_some_and(|sc| sc.retake_shot_only)
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(live);
+            }
+            let world = &mut self.session.host.world;
             // The near-camera ghost bits are derived from the pose, and the
             // tick computed them on the unaligned one. Re-derive them only
             // when every component took retail's value: a partly aligned
