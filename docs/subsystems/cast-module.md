@@ -2546,7 +2546,7 @@ node rotation takes the banks and nothing else
 a non-zero block in retail and a zero one in the engine; nothing draws from
 it, and it reads as words a previous actor left in the reused slot.
 
-The stagers of PROT 0914, 0915, 0917, 0921, 0928, 0929 and 0931..0933 run
+The stagers of PROT 0914..0917, 0919, 0921, 0928, 0929 and 0931..0933 run
 the same way (`cast_module_ticks::creature_stager_spawns`, arm by arm off
 each image's second dump). Most arms seat one record on the caller; the ones
 with more shape are Gola Gola's arm 3 (thirty-two copies turned `0x80` apart

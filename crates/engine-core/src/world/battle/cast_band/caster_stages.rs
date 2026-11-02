@@ -248,7 +248,12 @@ impl World {
         self.casting.module_beam_live = false;
         self.casting.module_hit_arm = None;
         self.casting.module_settle_ticks = 0;
-        self.battle.combo_cluster_held = false;
+        // A module with pre-hits keeps the readout flag down from its first
+        // popup, which the HUD reads a frame late: hold from the start, and let
+        // the band's fold release it.
+        self.battle.combo_cluster_held = self
+            .cast_module_for(spell_id)
+            .is_some_and(|e| matches!(e, 908 | 915 | 928 | 932 | 933 | 934));
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);

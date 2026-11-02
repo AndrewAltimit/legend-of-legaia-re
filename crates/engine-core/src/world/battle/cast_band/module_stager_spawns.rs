@@ -8,11 +8,12 @@
 
 use super::*;
 use legaia_engine_cast::cast_module_ticks::{
-    CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE, MULE_STAGER_FADE_ARM, MULE_STAGER_FADES,
-    blade_breath_cell_stager_spawns, call_wave_stager_spawns, chaos_breath_cell_stager_spawns,
-    dead_end_crisis_stager_spawns, doomsday_stager_spawns, freed_stager_spawns,
-    gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns,
-    nova_stager_spawns, orb_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
+    ALURU_STAGER_FADE_IN, ALURU_STAGER_FADE_OUT, CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE,
+    MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, aluru_stager_spawns, blade_breath_cell_stager_spawns,
+    call_wave_stager_spawns, chaos_breath_cell_stager_spawns, dead_end_crisis_stager_spawns,
+    doomsday_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
+    guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns, nova_stager_spawns,
+    orb_stager_spawns, spoon_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
     zenoir_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
@@ -48,7 +49,9 @@ impl World {
                 | 913
                 | 914
                 | 915
+                | 916
                 | 917
+                | 919
                 | 918
                 | 921
                 | 924
@@ -129,6 +132,8 @@ impl World {
             self.casting.stager_arm_calls_run = self.casting.stager_arm_calls_run.wrapping_add(1);
             let stager_fades: &[_] = match (entry, arm) {
                 (912, 6) => std::slice::from_ref(&FREED_STAGER_FADE),
+                (916, 1) => std::slice::from_ref(&ALURU_STAGER_FADE_IN),
+                (916, 2) => std::slice::from_ref(&ALURU_STAGER_FADE_OUT),
                 (929, MULE_STAGER_FADE_ARM) => &MULE_STAGER_FADES,
                 _ => &[],
             };
@@ -180,6 +185,8 @@ impl World {
                 930 => horn_stager_spawns(arm, caller, &mut rand),
                 914 => gola_gola_stager_spawns(arm, caller),
                 915 => mushura_stager_spawns(arm, caller),
+                916 => aluru_stager_spawns(arm, caller, &mut rand),
+                919 => spoon_stager_spawns(arm, caller),
                 917 => barra_stager_spawns(arm, caller, &mut barra_counter),
                 921 => iota_stager_spawns(arm, caller, &mut rand),
                 928 => palma_stager_spawns(arm, caller, &mut rand),
