@@ -79,12 +79,12 @@
           <span id="xw-saved" class="xw-saved" role="status"></span>
           <nav class="xw-crumbs" id="xw-crumbs" aria-label="You are here"></nav></div>
         <div class="wb-actions">
-          <button type="button" id="xw-undo" class="wb-mini" title="Undo (Ctrl+Z)" disabled>Undo</button>
-          <button type="button" id="xw-redo" class="wb-mini" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
+          <button type="button" id="xw-undo" class="wb-mini" data-ic="&#8630;" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button type="button" id="xw-redo" class="wb-mini" data-ic="&#8631;" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
           <button type="button" id="xw-checks-btn" class="wb-mini xw-checks-btn" aria-controls="xw-aside" title="The pack is checked as you edit: show or hide the problems and Find (F8 steps through them)">Checking ...</button>
-          <button type="button" id="xw-dl" class="wb-button" title="Save the pack as one .lxpack file (Ctrl+S)">Save .lxpack</button>
-          <button type="button" id="xw-play" class="wb-button wb-button-ghost" title="Install the pack in the play page and start it">Play pack</button>
-          <button type="button" id="xw-more" class="wb-mini xw-more-btn" aria-expanded="false" aria-controls="xw-more-items" title="Play this map, Live, files, Share and keys">More</button>
+          <button type="button" id="xw-dl" class="wb-button" data-ic="&#10515;" title="Save the pack as one .lxpack file (Ctrl+S)">Save .lxpack</button>
+          <button type="button" id="xw-play" class="wb-button wb-button-ghost" data-ic="&#9654;" title="Install the pack in the play page and start it">Play pack</button>
+          <button type="button" id="xw-more" class="wb-mini xw-more-btn" data-ic="&#8943;" aria-expanded="false" aria-controls="xw-more-items" title="Play this map, Live, files, Share and keys">More</button>
           <span id="xw-more-items" class="xw-more-items">
             <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map you are building, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play this map</button>
             <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
@@ -117,9 +117,13 @@
 
       <div class="xw-work">
         <div class="xw-edpane">
+          <button type="button" id="xw-fs-menu-btn" class="xw-fs-menu-btn" aria-expanded="false" aria-controls="xw-tabs" title="The pack's other pages: story, battle, items and settings">&#9776;</button>
           <nav class="xw-nav" id="xw-tabs" aria-label="Pack sections"></nav>
           <div id="xw-build" class="xw-build" hidden></div>
-          <div id="xw-catalog" class="xw-catalog" hidden aria-label="Catalog"></div>
+          <div id="xw-catdock" class="xw-catdock" hidden>
+            <button type="button" id="xw-cat-toggle" class="wb-mini xw-cat-toggle" aria-controls="xw-catalog" aria-expanded="true" title="Show or hide the catalog">Hide catalog</button>
+            <div id="xw-catalog" class="xw-catalog" aria-label="Catalog"></div>
+          </div>
           <div id="xw-panel" class="xw-panel"></div>
         </div>
         <aside class="xw-issues" id="xw-aside" aria-label="Find and checks">
@@ -311,7 +315,7 @@
   .xw-3d-body { margin-top: 0.4rem; position: relative; }
   .xw-table tr.is-now td { background: var(--accent-soft); }
   .xw-scrub input[type=range] { flex: 1 1 12rem; min-width: 8rem; }
-  .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
+  .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card-hi); }
   .xw-chart text { font-size: 11px; fill: var(--text-muted); }
   .xw-legend { display: flex; gap: 1rem; font-size: 0.82em; color: var(--text-muted); margin: 0.2rem 0; }
   .xw-legend i { display: inline-block; width: 1.2em; height: 2px; vertical-align: middle; margin-right: 0.3em; }
@@ -322,7 +326,7 @@
   .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 0 0 auto; width: 11rem; padding: 0.1rem 0.35rem; font-size: 0.8em; }
   .xw-pal-tabs { flex: 1 1 auto; min-width: 0; display: flex; gap: 0.2rem; overflow-x: auto; scrollbar-width: none; }
   .xw-pal-tabs .wb-mini { flex: none; white-space: nowrap; font-size: 0.8em; }
-  .xw-pal-items { display: flex; gap: 0.3rem; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.2rem; scrollbar-width: thin; align-items: flex-start; min-height: 6.6rem; }
+  .xw-pal-items { display: flex; gap: 0.3rem; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.2rem; scrollbar-width: thin; align-items: flex-start; min-height: 7.4rem; }
   .xw-pal-msg { padding: 0.5rem 0.2rem; color: var(--text-muted); }
   .xw-tile { flex: 0 0 auto; width: 5.2rem; display: grid; justify-items: center; gap: 0.15rem; padding: 0.2rem; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-raised); color: inherit; cursor: pointer; font: inherit; font-size: 0.74rem; line-height: 1.15; }
   .xw-tile:hover, .xw-tile:focus-visible { border-color: var(--accent); }
@@ -331,6 +335,7 @@
   .xw-tile-img { display: block; width: 4.8rem; height: 4.8rem; border-radius: 5px; background: var(--bg-code); opacity: 0.25; }
   .xw-tile-img.is-ready { opacity: 1; }
   .xw-tile-name { width: 100%; height: 2.3em; overflow: hidden; text-align: center; overflow-wrap: anywhere; }
+  .xw-tile-size { width: 100%; overflow: hidden; white-space: nowrap; text-align: center; font-size: 0.82em; color: var(--text-dim); }
   .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
 
   /* Tile painter */

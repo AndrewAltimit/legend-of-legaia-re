@@ -151,17 +151,30 @@ the width), **Save .lxpack** and **Play pack**; Play this map, Live, Files,
 Share, Keys and the disc and pack pickers follow, folded under **More** while
 building and at phone width.
 
-**The Build area.** The editor fills the window under the pack bar
-(`body.xw-studio`, while the preview is open in the 3D or Split view): the
+**The Build area.** The editor fills the window under the pack bar with no page
+scroll (`body.xw-studio`, while the preview is open in the 3D or Split view): the
 site's sidebar and the page header stand back, and the rows are the area
 navigation, the Build head (a map picker, **+ New map**, the mode toolbar,
-**Map settings** and **Fullscreen**), a thin bar for the camera and the mode's
-tool, the picture, and the catalog docked along the bottom. A warning leaves
-the checks button quiet; an error still colours it. **Map settings** opens the
-drawer: the tile painter and every form of the map, in a column beside the
-picture (the Split view; the 3D view puts it away). The 2D view is the older
-page: the painter and the forms first, the picture a dock above them. Below
-44rem the page scrolls again: the picture, the catalog, the drawer's forms.
+**Map settings** and **Fullscreen**), the picture, and the catalog docked along
+the bottom, which **Hide catalog** folds away. A warning leaves the checks button
+quiet; an error still colours it. **Map settings** opens the drawer: the tile
+painter and every form of the map, in a column beside the picture (the Split
+view; the 3D view puts it away). The 2D view is the older page: the painter and
+the forms first, the picture a dock above them. Below 44rem the page scrolls
+again: the picture, the catalog, the drawer's forms.
+
+What is only sometimes needed floats over the picture. **View** is one menu for
+the layout, Top view, Fit map, the layers and how the preview rebuilds. The bar
+beside it holds what the mode acts with, and only that: Move, Rotate, Scale and
+the snap in Select & move, Sculpt and Paint with their brush in Paint terrain,
+nothing in Place objects, NPCs, Zones & exits or Test-play, where the selection's
+panel has the actions. The tile tools show with the painter, behind **Open the
+tile painter** until then. Messages are toasts that move nothing and go by
+themselves unless they are problems. A rebuild's time and the frame's cost are
+developer text: **Build timings** under View shows them, and the 2D view's status
+line always does. Under the editor camera the picture's backdrop is a calm neutral
+of the page's theme (`xw-backdrop`, in place of the scene's clear); Test play
+and Play draw the scene's own.
 
 **+ New map** adds the starter (`legaia_web_expansion::starter`): 14 x 10 tiles
 over `town01`, sculpted ground (two rises and a little noise, flattened where
@@ -170,13 +183,16 @@ point in the open, so a new modder has something to look at, move and test-play.
 It is coordinates and numbers only, and a test validates it with and without
 the disc. **Start a new pack** uses it for its first map.
 
-**Fullscreen** (`F11`, or the button; `S.fs`, `setFullscreen` in the app) puts
-the pack bar and the editor over everything through the Fullscreen API on
-`#xw-main`, and the `xw-fs` class does the layout, so a browser that refuses
-the API still gets the whole window. Escape takes one thing away at a time:
-what is being placed, then the selection, then fullscreen itself, where the
-Keyboard Lock API holds Escape for the page. Elsewhere the browser takes Escape
-and leaves at once, and placing stops with it.
+**Fullscreen** (`F11`, or the button; `S.fs`, `setFullscreen` in the app) takes
+the picture edge to edge through the Fullscreen API on `#xw-main`, and the `xw-fs`
+class does the layout, so a browser that refuses the API still gets the whole
+window. Everything else floats, translucent: one menu button for the area and
+page tabs (leaving the Maps tab leaves fullscreen), the map picker and the mode
+buttons (icons, the current mode named), Undo, Redo, the check count, Save, Play
+and More as icons with tooltips, and the catalog over the bottom edge, which folds.
+Escape takes one thing away at a time: what is being placed, then the selection,
+then fullscreen itself, where the Keyboard Lock API holds Escape for the page.
+Elsewhere the browser takes Escape and leaves at once, and placing stops with it.
 
 | Mode | Fallback tools | Catalog |
 |---|---|---|
@@ -219,7 +235,12 @@ scrolls into view (an `IntersectionObserver`); the queue holds only what is
 still in view and runs a few milliseconds a turn on the page's thread, one
 scene at a time so the context keeps its VRAM. The worker assembles a scene
 (`scene_meshes`, the same message path as the checks), and one WebGL context
-draws each mesh into a WebP blob. Pictures go to IndexedDB (database
+draws each mesh into a WebP blob: an orthographic three-quarter view framed on the
+model's own silhouette (`thumbMvp`, so a thin palm fills its tile as a cottage
+does), then one exposure for all, a dark model's pixels raised to a common mean
+brightness (`exposePixels`). Meshes that really do look alike, such as the four
+palms, are told apart by their numbered name, the size in tiles on the tile
+and the mesh number in its tooltip. Pictures go to IndexedDB (database
 `legaia-expansion-thumbs`, store `thumbs`, key `<disc_key>|<version>|<scene>|<object>`),
 so a later visit asks the worker for nothing. They are derived from the user's
 disc in the user's browser: never bundled, committed or uploaded, and no pack
@@ -644,7 +665,7 @@ enhancements.
 | Test play | Stands the party on the selected tile (else the first spawn), switches to the field camera and hands the keys to the game; **Stop test** comes back to Edit. The one time the lead is on the map. |
 | Top view | The editor camera straight down (`T`); again to tilt back. |
 | 3D / Split / 2D | The layout on the Maps tab (kept per browser): the [Build area](#layout) with the picture filling the page; the same with the painter and the forms in a drawer beside it; or the painter first with the picture a dock above it. 3D and Split open the preview, in the editor's **Select** mode. |
-| Show | A fold holding **Auto**, **Match painter**, **Arrival**, **Reload** and the layers: the tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision, translucent volumes over the picture. All layers start off; each box turns one on. |
+| View | A menu holding the layout switch, **Top view**, **Fit map**, **Auto**, **Match painter**, **Arrival**, **Reload**, **Build timings** and the layers: the tile grid, walls, encounter zones, triggers and exits, NPCs (with their patrol loops), spawns (with their facing), props, collision, translucent volumes over the picture. All layers start off; each box turns one on. |
 
 **No player while editing.** Under the editor camera the frame is the
 editor's alone (`PlayView.editorNoPlayer`): the lead is not drawn, the pad

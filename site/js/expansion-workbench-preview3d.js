@@ -64,58 +64,93 @@ const SPLIT_MIN = 0.22, SPLIT_MAX = 0.7;
  * place for its look. */
 const VIEW_CSS = `
 /* The studio: the page's own chrome stands back and the editor fills what is
-   left of the window. Rows: navigation, the Build head, the picture, the
-   catalog. The drawer (the tab's panel, with the painter and the forms) is a
-   column of its own in Split, and put away in 3D. */
+   left of the window, with no page scroll. Rows: navigation, the Build head,
+   the picture, the catalog. What is only sometimes needed floats over the
+   picture: the View menu, the mode's tool bar, the selection's panel, toasts.
+   The drawer (the tab's panel: the painter and the forms) is a column in
+   Split, and put away in 3D. */
 body.xw-studio .sidebar, body.xw-studio .wb-header, body.xw-studio #xw-setup:not([open]), body.xw-studio .xw-page-lead { display: none; }
 body.xw-studio .app { display: block; }
-body.xw-studio .content { padding: 0.3rem 0.5rem 0.4rem; max-width: none; }
-body.xw-studio #workbench { margin: 0; }
-body.xw-studio .wb-toolbar-pack { position: static; padding: 0.15rem 0.5rem; margin: 0 0 0.25rem; box-shadow: none; }
-body.xw-studio .wb-toolbar-pack .wb-actions { margin: 0; gap: 0.25rem; }
+body.xw-studio .content { padding: 0.3rem 0.5rem; max-width: none; }
+body.xw-studio #workbench { margin: 0; padding: 0; }
+body.xw-studio #xw-main:not([hidden]) { display: flex; flex-direction: column; height: calc(100dvh - var(--topbar-h, 0px) - 0.6rem); min-height: 28rem; }
+body.xw-studio .wb-toolbar-pack { position: static; flex: none; flex-wrap: nowrap; padding: 0.15rem 0.5rem; margin: 0 0 0.25rem; box-shadow: none; }
+body.xw-studio .wb-toolbar-pack .wb-actions { margin: 0; gap: 0.25rem; flex-wrap: nowrap; flex: none; position: relative; }
 body.xw-studio .wb-toolbar-pack .wb-button { padding: 0.15rem 0.6rem; }
-body.xw-studio .xw-crumbs { display: none; }
+body.xw-studio .xw-packname { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.xw-studio .xw-crumbs, body.xw-studio #xw-saved { display: none; }
+body.xw-studio .xw-more-btn { display: inline-block; align-self: stretch; }
+body.xw-studio .xw-more-items { display: none; }
+body.xw-studio .xw-more-items.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; position: absolute; z-index: 40; right: 0; top: calc(100% + 0.3rem); min-width: 12rem; padding: 0.5rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
+body.xw-studio .xw-checks-btn.is-warn { border-color: var(--border); color: var(--text-muted); }
 body.xw-studio .xw-areas { padding: 0.2rem 0.3rem; }
 body.xw-studio .xw-area { padding: 0.12rem 0.6rem; font-size: 0.84em; }
-body.xw-studio .xw-edpane { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; height: calc(100dvh - var(--topbar-h, 0px) - 3.2rem); min-height: 30rem; overflow: hidden; }
+body.xw-studio .xw-work { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+body.xw-studio .xw-edpane { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr) auto; height: 100%; min-height: 0; overflow: hidden; position: relative; }
 body.xw-studio.xw-view-split .xw-edpane { grid-template-columns: minmax(0, 1fr) var(--xw-split-col, min(28rem, 40%)); }
 body.xw-studio .xw-edpane > .xw-nav { grid-column: 1 / -1; grid-row: 1; }
 body.xw-studio .xw-edpane > .xw-build { grid-column: 1 / -1; grid-row: 2; }
-body.xw-studio .xw-edpane > .xw-3d { grid-column: 1; grid-row: 3; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 0 0.4rem; padding: 0.15rem 0.3rem 0; position: relative; border-bottom: 0; }
-body.xw-studio .xw-edpane > .xw-catalog { grid-column: 1; grid-row: 4; padding: 0.25rem 0.4rem 0.1rem; border-bottom: 0; }
+body.xw-studio .xw-edpane > .xw-3d { grid-column: 1; grid-row: 3; min-height: 0; padding: 0; position: relative; border-bottom: 0; }
+body.xw-studio .xw-edpane > .xw-catdock { grid-column: 1; grid-row: 4; }
+body.xw-studio .xw-catalog { padding: 0.25rem 0.4rem 0.1rem; border-bottom: 0; }
 body.xw-studio .xw-edpane > .xw-panel { display: none; }
 body.xw-studio.xw-view-split .xw-edpane > .xw-panel { display: block; grid-column: 2; grid-row: 3 / span 2; min-height: 0; overflow: auto; border-left: 1px solid var(--border); border-radius: 0; }
-body.xw-studio .xw-3d-head { grid-column: 1; grid-row: 1; flex-wrap: nowrap; white-space: nowrap; }
-body.xw-studio .xw-3d-editslot { grid-column: 2; grid-row: 1; margin-top: 0; min-width: 0; }
-body.xw-studio .xw-3d-body { grid-column: 1 / -1; grid-row: 2; margin-top: 0.15rem; min-height: 0; position: relative; }
-body.xw-studio .xw-3d-body .xw-3d-frame { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; aspect-ratio: auto; margin: 0; }
-body.xw-studio .xw-3d-title, body.xw-studio .xw-3d-toggle, body.xw-studio .xw-3d-edit > .wb-label, body.xw-studio .xw-3d-edit > .xw-hint, body.xw-studio .xw-3d-keys, body.xw-studio .xw-3d-edit > .xw-layout { display: none; }
-body.xw-studio .xw-3d-modebtn, body.xw-studio .xw-3d-seltools, body.xw-studio .xw-3d-edit > .xw-sep, body.xw-studio .xw-3d-ctrl-mode { display: none; }
-body.xw-studio .xw-checks-btn.is-warn { border-color: var(--border); color: var(--text-muted); }
-body.xw-studio .xw-3d-edit { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0; }
-body.xw-studio .xw-3d-edit > * { flex: none; }
-body.xw-studio .xw-3d-status { position: absolute; z-index: 3; left: 0.8rem; bottom: 0.35rem; max-width: 60%; pointer-events: none; flex: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #dfe6ee; text-shadow: 0 1px 2px #000; opacity: 0.75; }
-body.xw-studio .xw-painter { grid-template-columns: minmax(0, 1fr); }
-body.xw-studio .xw-canvas-wrap { height: min(40vh, 26rem); }
-/* A status line would push the picture about: it floats over the catalog. */
-body.xw-studio #xw-status, body.xw-studio #xw-export-status { position: fixed; z-index: 40; left: 50%; bottom: 0.6rem; transform: translateX(-50%); max-width: 80vw; margin: 0; padding: 0.2rem 0.7rem; border-radius: 6px; background: var(--bg-raised); border: 1px solid var(--border-hi); pointer-events: none; }
+/* The picture fills its row; the tool bars float on it. */
+body.xw-studio .xw-3d-body { position: absolute; inset: 0; margin: 0; }
+body.xw-studio .xw-3d-body .xw-3d-frame { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; aspect-ratio: auto; margin: 0; border: 0; border-radius: 0; }
+body.xw-studio .xw-3d-head { position: absolute; z-index: 7; left: 0.5rem; top: 0.5rem; flex-wrap: nowrap; white-space: nowrap; }
+body.xw-studio .xw-3d-editslot { position: absolute; z-index: 6; left: 4.2rem; top: 0.5rem; right: 15rem; margin: 0; }
+body.xw-studio .xw-3d-title, body.xw-studio .xw-3d-toggle, body.xw-studio .xw-3d-ctrl-mode, body.xw-studio .xw-3d-edit > .wb-label, body.xw-studio .xw-3d-edit > .xw-hint, body.xw-studio .xw-3d-keys, body.xw-studio .xw-3d-edit > .xw-layout, body.xw-studio .xw-3d-modebtn, body.xw-studio .xw-3d-seltools, body.xw-studio .xw-3d-edit > .xw-sep { display: none; }
+body.xw-studio .xw-3d-edit { margin: 0; }
+/* A control shows in the modes where it does something. */
+.xw-3d-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.4rem; }
+body.xw-studio .xw-3d-edit:not([data-bm="terrain"]) .xw-only-terrain, body.xw-studio .xw-3d-edit:not([data-bm="build"]) .xw-only-build { display: none; }
+body.xw-studio .xw-3d-edit:not([data-bm="terrain"]) > :not(.xw-3d-group) { display: none; }
+/* Toasts: over the picture, moving nothing. */
+body.xw-studio .xw-3d-status { position: absolute; z-index: 8; left: 50%; bottom: 0.6rem; transform: translateX(-50%); flex: none; max-width: 80%; padding: 0.15rem 0.7rem; border-radius: 999px; background: rgba(8, 12, 18, 0.8); color: #e6ecf2; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.xw-studio .xw-3d-status:empty { display: none; }
+body.xw-studio .xw-3d-status.is-err { background: rgba(92, 16, 16, 0.92); color: #fff; white-space: normal; }
 body.xw-studio #xw-status:not(.is-err) { display: none; }
-/* Pack bar: what is not used while building folds under More; the state
-   of the checks stays, quietly. */
-body.xw-studio .wb-toolbar-pack { flex-wrap: nowrap; }
-body.xw-studio .xw-packname { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-body.xw-studio #xw-saved { display: none; }
-body.xw-studio .wb-toolbar-pack .wb-actions { flex-wrap: nowrap; flex: none; position: relative; }
-body.xw-studio .xw-more-btn { display: inline-block; align-self: stretch; }
-body.xw-studio .xw-more-items { display: none; }
-body.xw-studio .xw-more-items.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; position: absolute; z-index: 30; right: 0; top: calc(100% + 0.3rem); min-width: 12rem; padding: 0.5rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4); }
-/* Fullscreen: over everything of the site's, with or without the Fullscreen
-   API (the class does the layout). */
-body.xw-fs #xw-main { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; padding: 0.2rem 0.3rem; background: var(--bg, #0b0d12); }
-body.xw-fs #xw-main:fullscreen { background: var(--bg, #0b0d12); }
-body.xw-fs .xw-work { flex: 1 1 auto; min-height: 0; grid-template-rows: minmax(0, 1fr); }
-body.xw-fs.xw-studio .xw-edpane { height: 100%; min-height: 0; }
-body.xw-fs .xw-issues { position: static; max-height: 100%; }
+body.xw-studio #xw-status, body.xw-studio #xw-export-status { position: fixed; z-index: 1100; left: 50%; bottom: 11rem; transform: translateX(-50%); max-width: 70vw; margin: 0; padding: 0.15rem 0.7rem; border-radius: 999px; background: rgba(8, 12, 18, 0.8); color: #e6ecf2; font-family: inherit; pointer-events: none; }
+/* The catalog's handle, on the picture's bottom edge. */
+.xw-catdock { position: relative; }
+.xw-catdock[hidden] { display: none; }
+.xw-cat-toggle { display: none; }
+body.xw-studio .xw-cat-toggle { display: block; position: absolute; z-index: 9; right: 0.5rem; top: -1.7rem; }
+body.xw-cat-closed .xw-catalog { display: none; }
+/* Fullscreen: the picture edge to edge and everything else floating on it. */
+.xw-fs-menu-btn { display: none; }
+body.xw-fs #xw-main:not([hidden]) { position: fixed; inset: 0; z-index: 1000; display: block; height: auto; min-height: 0; padding: 0; background: var(--bg, #0b0d12); }
+body.xw-fs .xw-work { display: block; height: 100%; }
+body.xw-fs.xw-studio .xw-edpane { display: block; height: 100%; border: 0; border-radius: 0; }
+body.xw-fs.xw-studio .xw-edpane > .xw-3d { position: absolute; inset: 0; }
+body.xw-fs .wb-toolbar-pack, body.xw-fs.xw-studio .xw-build, body.xw-fs .xw-fs-menu-btn, body.xw-fs.xw-studio .xw-catdock .xw-catalog, body.xw-fs .xw-nav { background: color-mix(in srgb, var(--bg-raised) 78%, transparent); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); border: 1px solid color-mix(in srgb, var(--border-hi) 60%, transparent); }
+body.xw-fs.xw-studio .wb-toolbar-pack { position: absolute; z-index: 30; top: 0.4rem; right: 0.4rem; margin: 0; padding: 0.15rem 0.25rem; border-radius: 9px; }
+body.xw-fs .wb-toolbar-pack .xw-packname, body.xw-fs #xw-export-status:empty { display: none; }
+body.xw-fs .xw-fs-menu-btn { display: block; position: absolute; z-index: 32; top: 0.4rem; left: 0.4rem; padding: 0.15rem 0.5rem; border-radius: 9px; color: var(--text-bright); font: inherit; font-size: 1rem; cursor: pointer; }
+body.xw-fs.xw-studio .xw-edpane > .xw-nav { display: none; position: absolute; z-index: 31; top: 2.5rem; left: 0.4rem; max-width: min(36rem, 90vw); border-radius: 9px; }
+body.xw-fs.xw-fs-menu.xw-studio .xw-edpane > .xw-nav { display: block; }
+body.xw-fs.xw-studio .xw-edpane > .xw-build { position: absolute; z-index: 20; top: 0.4rem; left: 2.9rem; max-width: calc(100% - 17rem); flex-wrap: nowrap; padding: 0.12rem 0.3rem; border-radius: 9px; }
+body.xw-fs .xw-mode { background: transparent; border-color: transparent; }
+body.xw-fs .xw-mode:not(.is-on) .xw-mode-label { display: none; }
+body.xw-fs .xw-mode.is-on { background: var(--accent-soft); border-color: var(--accent); }
+body.xw-fs .xw-build-tools { margin-left: 0.3rem; }
+body.xw-fs.xw-studio .xw-3d-head { top: 2.9rem; left: 0.4rem; }
+body.xw-fs.xw-studio .xw-3d-editslot { top: 2.9rem; left: 4rem; }
+body.xw-fs.xw-studio .xw-edpane > .xw-catdock { position: absolute; z-index: 15; left: 0.4rem; right: 0.4rem; bottom: 0.4rem; }
+body.xw-fs.xw-studio .xw-catdock .xw-catalog { border-radius: 9px; }
+body.xw-fs.xw-studio.xw-view-split .xw-edpane > .xw-panel { position: absolute; z-index: 18; top: 2.9rem; right: 0.4rem; bottom: 0.4rem; width: min(28rem, 44%); border: 1px solid var(--border-hi); border-radius: 9px; }
+body.xw-fs.xw-view-split .xw-edpane > .xw-split-handle { display: none; }
+body.xw-fs .xw-issues { position: absolute; z-index: 25; top: 2.9rem; right: 0.4rem; width: 22rem; max-height: 60%; }
+body.xw-fs .xw-selpanel, body.xw-fs .xw-float-pill { top: 2.9rem; }
+body.xw-fs .xw-firsthint { bottom: 11rem; }
+body.xw-fs.xw-studio .xw-3d-status { bottom: 11rem; }
+body.xw-fs.xw-cat-closed .xw-firsthint, body.xw-fs.xw-cat-closed.xw-studio .xw-3d-status { bottom: 2.6rem; }
+body.xw-fs.xw-studio .xw-cat-toggle { top: -1.8rem; right: 0; }
+body.xw-fs.xw-cat-closed.xw-studio .xw-edpane > .xw-catdock { bottom: 2.3rem; }
+/* The pack bar's words become small icons; their tooltips say the rest. */
+body.xw-fs [data-ic] { font-size: 0; padding: 0.1rem 0.45rem; min-width: 1.8rem; line-height: 1.5; }
+body.xw-fs [data-ic]::before { content: attr(data-ic); font-size: 0.95rem; font-weight: 600; }
 body.xw-split-drag, body.xw-split-drag * { cursor: col-resize !important; user-select: none; }
 body.xw-split-drag .xw-3d-frame { pointer-events: none; }
 .xw-split-handle { display: none; }
@@ -126,18 +161,20 @@ body.xw-studio.xw-view-split .xw-edpane > .xw-split-handle { display: block; gri
 .xw-3d-views .wb-mini { border-radius: 0; margin: 0; }
 .xw-3d-views .wb-mini:first-child { border-radius: 4px 0 0 4px; }
 .xw-3d-views .wb-mini:last-child { border-radius: 0 4px 4px 0; }
-/* The view options fold: a popover over the picture. */
+/* The View menu: a popover over the picture. */
 .xw-3d-more { position: relative; display: inline-block; }
 .xw-3d-more > summary { list-style: none; cursor: pointer; }
 .xw-3d-more > summary::-webkit-details-marker { display: none; }
-.xw-3d-more-box { position: absolute; z-index: 20; top: calc(100% + 0.2rem); left: 0; width: max-content; max-width: min(24rem, 80vw); display: flex; flex-wrap: wrap; gap: 0.25rem 0.6rem; padding: 0.5rem 0.6rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); white-space: normal; }
+.xw-3d-more-box { position: absolute; z-index: 20; top: calc(100% + 0.2rem); left: 0; width: max-content; max-width: min(24rem, 80vw); display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; padding: 0.5rem 0.6rem; background: var(--bg-raised); border: 1px solid var(--border-hi); border-radius: 7px; box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45); white-space: normal; }
 .xw-3d-more-box .xw-check { display: inline-flex; flex-direction: row; gap: 0.25rem; color: var(--text-muted); }
 /* What floats over the picture: the piece being placed, the selection, a first-run hint. */
 .xw-float { position: absolute; z-index: 5; inset: 0; pointer-events: none; }
 .xw-float > * { pointer-events: auto; }
+.xw-float-in { pointer-events: none; }
+.xw-float-in > * { pointer-events: auto; }
 .xw-float-pill { position: absolute; left: 50%; top: 0.5rem; transform: translateX(-50%); max-width: 92%; padding: 0.2rem 0.75rem; border-radius: 999px; background: rgba(8, 12, 18, 0.82); color: #eef3f8; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .xw-float-pill.is-bad { background: rgba(92, 16, 16, 0.9); }
-.xw-float-pill kbd { font: inherit; font-weight: 700; color: var(--accent-hi); }
+.xw-float-pill kbd { font: inherit; font-weight: 700; color: #8fc2ff; }
 .xw-selpanel { position: absolute; right: 0.5rem; top: 0.5rem; width: 14rem; padding: 0.45rem; border: 1px solid var(--border-hi); border-radius: 8px; background: color-mix(in srgb, var(--bg-raised) 93%, transparent); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); font-size: 0.84rem; }
 .xw-selpanel-head { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.35rem; min-width: 0; }
 .xw-selpanel-head img { width: 2.6rem; height: 2.6rem; border-radius: 5px; flex: none; }
@@ -147,23 +184,24 @@ body.xw-studio.xw-view-split .xw-edpane > .xw-split-handle { display: block; gri
 .xw-selpanel-btns .is-danger:hover { border-color: var(--open); color: var(--open); }
 .xw-selpanel details { margin-top: 0.3rem; }
 .xw-selpanel summary { cursor: pointer; color: var(--text-muted); font-size: 0.9em; }
-.xw-firsthint { position: absolute; left: 0.6rem; bottom: 1.8rem; max-width: min(23rem, 80%); padding: 0.55rem 0.7rem; border: 1px solid var(--accent-line); border-radius: 8px; background: rgba(8, 12, 18, 0.88); color: #eef3f8; font-size: 0.86rem; line-height: 1.45; }
+.xw-firsthint { position: absolute; left: 0.6rem; bottom: 2.2rem; max-width: min(23rem, 80%); padding: 0.55rem 0.7rem; border: 1px solid var(--accent-line); border-radius: 8px; background: rgba(8, 12, 18, 0.88); color: #eef3f8; font-size: 0.86rem; line-height: 1.45; }
 .xw-firsthint strong { color: #fff; }
 .xw-firsthint .wb-mini { margin-top: 0.35rem; }
 @media (max-width: 44rem) {
-  /* A phone: the page scrolls again: the picture, the catalog under it, the
-     drawer's forms under that. */
-  body.xw-studio .wb-toolbar-pack, body.xw-studio .wb-toolbar-pack .wb-actions { flex-wrap: wrap; }
-  body.xw-studio .wb-toolbar-pack .wb-actions { flex: 1 1 auto; }
-  body.xw-studio .xw-edpane, body.xw-studio.xw-view-split .xw-edpane { display: block; height: auto; overflow: visible; }
-  body.xw-studio .xw-edpane > .xw-3d { display: block; }
-  body.xw-studio .xw-3d-body { height: 58vh; }
-  body.xw-studio .xw-3d-head { flex-wrap: wrap; white-space: normal; }
-  body.xw-studio .xw-3d-editslot { margin: 0.2rem 0; }
-  body.xw-studio.xw-view-split .xw-edpane > .xw-panel { border-left: 0; overflow: visible; }
+  /* A phone, out of fullscreen: the page scrolls again: the picture, the
+     catalog under it, the drawer's forms under that. */
+  body.xw-studio:not(.xw-fs) #xw-main:not([hidden]) { display: block; height: auto; }
+  body.xw-studio:not(.xw-fs) .wb-toolbar-pack, body.xw-studio:not(.xw-fs) .wb-toolbar-pack .wb-actions { flex-wrap: wrap; }
+  body.xw-studio:not(.xw-fs) .wb-toolbar-pack .wb-actions { flex: 1 1 auto; }
+  body.xw-studio:not(.xw-fs) .xw-edpane, body.xw-studio.xw-view-split:not(.xw-fs) .xw-edpane { display: block; height: auto; overflow: visible; }
+  body.xw-studio:not(.xw-fs) .xw-edpane > .xw-3d { height: 58vh; }
+  body.xw-studio .xw-3d-editslot { right: 0.5rem; }
+  body.xw-studio.xw-view-split:not(.xw-fs) .xw-edpane > .xw-panel { border-left: 0; overflow: visible; }
   body.xw-studio.xw-view-split .xw-edpane > .xw-split-handle { display: none; }
+  body.xw-studio:not(.xw-fs) .xw-cat-toggle { display: none; }
+  body.xw-fs.xw-studio .xw-edpane > .xw-build { flex-wrap: wrap; max-width: calc(100% - 3.4rem); }
+  body.xw-fs.xw-studio .wb-toolbar-pack { top: auto; bottom: 0.4rem; right: 0.4rem; }
   .xw-selpanel { width: 11.5rem; }
-  .xw-firsthint { bottom: 0.4rem; }
 }
 `;
 
@@ -491,22 +529,23 @@ export function createPreview3d(env) {
   more.className = 'xw-3d-more';
   const moreSum = document.createElement('summary');
   moreSum.className = 'wb-mini';
-  moreSum.textContent = 'Show';
-  moreSum.title = 'Layers over the picture (grid, walls, zones, collision), and how the preview rebuilds';
+  moreSum.textContent = 'View';
+  moreSum.title = 'The layout, the camera, layers over the picture (grid, walls, zones, collision), and how the preview rebuilds';
   const moreBox = document.createElement('div');
   moreBox.className = 'xw-3d-more-box';
   layerBox.classList.add('xw-3d-more-box-layers');
-  moreBox.append(layerBox, autoLab, painterLab, arrivalLab, reloadBtn);
+  const debugLab = check('Build timings', 'Show how long each rebuild takes and the frame\'s cost over the picture', false, (on) => { P.debug = on; paintStatus(); });
+  moreBox.append(viewBox, topBtn, fitBtn, layerBox, autoLab, painterLab, arrivalLab, reloadBtn, debugLab);
   more.append(moreSum, moreBox);
   // The mode toolbar's Test-play is the way into a test on the Build area.
   orbitBtn.classList.add('xw-3d-ctrl-mode');
   playerBtn.classList.add('xw-3d-ctrl-mode');
-  ctrls.append(orbitBtn, playerBtn, topBtn, fitBtn, more);
+  ctrls.append(orbitBtn, playerBtn, more);
   document.addEventListener('click', (ev) => { if (more.open && !more.contains(ev.target)) more.open = false; });
   // The map editor's bar (expansion-workbench-gizmos.js), under the head.
   const editSlot = document.createElement('div');
   editSlot.className = 'xw-3d-editslot';
-  head.append(title, viewBox, toggleBtn, ctrls);
+  head.append(title, toggleBtn, ctrls);
   el.append(status);
   body.before(editSlot);
   layerBox.hidden = true;
@@ -519,14 +558,30 @@ export function createPreview3d(env) {
    * frame's cost (refreshed each second without losing the message). */
   let msg = '';
   let msgBad = false;
-  function setStatus(text, bad) {
-    msg = text || '';
-    msgBad = !!bad;
+  let devMsg = '';
+  let msgTimer = null;
+  /* `dev` is developer text (a build's or a move's time): it replaces nothing
+   * the modder needs and shows only with Build timings on, or in the 2D view's
+   * status line. Anything else over the picture is a toast: it goes by itself
+   * unless it is a problem, or `hold` keeps it (the engine still starting). */
+  function setStatus(text, bad, how) {
+    clearTimeout(msgTimer);
+    if (how === 'dev') {
+      devMsg = text || '';
+      status.dataset.dev = devMsg;
+      msg = '';
+      msgBad = false;
+    } else {
+      msg = text || '';
+      msgBad = !!bad;
+      if (msg && !bad && how !== 'hold') msgTimer = setTimeout(() => { msg = ''; paintStatus(); }, 3500);
+    }
     paintStatus();
   }
   function paintStatus() {
-    // The frame's cost is for the 2D view's status line, not over the picture.
-    status.textContent = msg + (P.stats && P.open && P.view === '2d' ? statsText() : '');
+    const shown = P.debug || P.view === '2d';
+    const dev = shown ? devMsg + (P.stats && P.open ? statsText() : '') : '';
+    status.textContent = msg ? msg + (dev ? ` ${dev}` : '') : dev;
     status.classList.toggle('is-err', msgBad);
   }
 
@@ -537,6 +592,20 @@ export function createPreview3d(env) {
     if (s.rect) return [Math.min(s.rect[0], s.rect[2]), Math.min(s.rect[1], s.rect[3])];
     return null;
   }
+
+  /* The picture's backdrop while editing (never in Test play or Play): a calm
+   * neutral of the page's theme, read off the page so it follows the toggle. */
+  function backdrop() {
+    const c = document.createElement('canvas').getContext('2d');
+    c.fillStyle = getComputedStyle(document.body).backgroundColor;
+    c.fillRect(0, 0, 1, 1);
+    const [r, g, b] = c.getImageData(0, 0, 1, 1).data;
+    const dark = 0.299 * r + 0.587 * g + 0.114 * b < 128;
+    return dark ? [0.17, 0.19, 0.22, 1] : [0.78, 0.8, 0.83, 1];
+  }
+  function sendBackdrop() { post({ type: 'xw-backdrop', color: backdrop() }); }
+  new MutationObserver(sendBackdrop).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', sendBackdrop);
 
   function post(msg, transfer) {
     if (P.frame && P.frame.contentWindow && P.ready) {
@@ -592,7 +661,7 @@ export function createPreview3d(env) {
       P.ready = false;
       P.dirty = true;
       body.append(f);
-      setStatus('Starting the engine and reading your disc ...');
+      setStatus('Starting the engine and reading your disc ...', false, 'hold');
       applyView();
     } else if (!on && P.frame) {
       // Closing frees the frame's engine and its copy of the disc.
@@ -680,7 +749,8 @@ export function createPreview3d(env) {
     // An edit after the snapshot the bytes were made from stays dirty.
     P.dirty = P.edits !== snap.edits;
     P.t0 = performance.now();
-    setStatus(first ? `Entering ${snap.map} ...` : `Rebuilding ${snap.map} ...`);
+    if (first) setStatus(`Entering ${snap.map} ...`, false, 'hold');
+    else setStatus(`Rebuilding ${snap.map} ...`, false, 'dev');
     P.lastKind = first ? 'xw-load' : 'xw-reload';
     // What an object-only edit is measured against: this build.
     P.sentStripped = snap.stripped;
@@ -759,6 +829,7 @@ export function createPreview3d(env) {
       P.ready = true;
       P.sent = null;
       post({ type: 'xw-arrival', on: P.arrival });
+      sendBackdrop();
       syncRun();
       sendEdit();
       flush();
@@ -777,7 +848,7 @@ export function createPreview3d(env) {
         setStatus(`The engine refused the pack: ${(m.errors || []).slice(0, 2).join(' | ')}`, true);
         if (!m.map) P.sent = null;
       } else {
-        setStatus(`${m.map}: built in ${ms} ms${m.engineMs != null ? ` (engine ${m.engineMs} ms)` : ''}.`);
+        setStatus(`${m.map}: built in ${ms} ms${m.engineMs != null ? ` (engine ${m.engineMs} ms)` : ''}.`, false, 'dev');
       }
       sendOverlay();
       sendEdit();
@@ -796,7 +867,7 @@ export function createPreview3d(env) {
         // collision where the build put it: rebuild before the player walks.
         if (m.props && !m.collision) P.stale = true;
         const n = (m.props || 0) + (m.npcs || 0) + (m.spawns || 0) + (m.lamps || 0);
-        setStatus(`${P.map}: moved ${n} object(s) in place in ${P.lastMove.ms} ms, no rebuild.${P.stale ? ' A moved prop\'s collision updates on the next rebuild (Reload, Player or Walk).' : (m.props ? ' Its collision moved with it.' : '')}`);
+        setStatus(`${P.map}: moved ${n} object(s) in place in ${P.lastMove.ms} ms, no rebuild.${P.stale ? ' A moved prop\'s collision updates on the next rebuild (Reload, Player or Walk).' : (m.props ? ' Its collision moved with it.' : '')}`, false, 'dev');
       }
     } else if (m.type === 'xw-collision') {
       P.collision = m;

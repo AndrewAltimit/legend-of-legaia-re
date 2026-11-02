@@ -118,6 +118,8 @@
       try { return !!(rt && JSON.parse(rt.play_pack_modes_json()).open); } catch (e) { return false; }
     };
 
+    let editBackdrop = null;
+
     function viewReady() {
       const v = api.view();
       if (!v) return null;
@@ -135,6 +137,16 @@
           clearTimeout(t);
           t = setTimeout(() => sizeCanvas(v), 150);
         });
+      }
+      if (!v._xwClearHooked) {
+        /* The editor's backdrop, under the editor camera only: Test play and
+         * fights draw the scene's own clear. */
+        v._xwClearHooked = true;
+        const sceneClear = v._applySceneClear;
+        v._applySceneClear = function (rt) {
+          if (editBackdrop && this.editorNoPlayer) { this.renderer.clearColor = editBackdrop; return undefined; }
+          return sceneClear.call(this, rt);
+        };
       }
       if (!v._xwFrameHooked) {
         /* Frame cost: the CPU time of each `_frame`, averaged over a second,
@@ -358,6 +370,8 @@
       } else if (m.type === 'xw-edit') {
         if (v && typeof v.setEditorEdit === 'function') v.setEditorEdit(m);
         else pendingEdit = Object.assign(pendingEdit || {}, m);
+      } else if (m.type === 'xw-backdrop') {
+        editBackdrop = m.color;
       } else if (m.type === 'xw-ghost') {
         if (v && typeof v.setEditorGhost === 'function') v.setEditorGhost(m);
       } else if (m.type === 'xw-overlay') {

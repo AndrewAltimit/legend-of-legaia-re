@@ -168,11 +168,11 @@ const CATALOG_LISTS = {
 
 const CATALOG_HINTS = {
   build: 'Click anything in the 3D view or on the tile map to pick it up. Drag to move it; W, E and R switch between move, turn and scale; Delete removes it; Ctrl+Z takes any change back.',
-  terrain: 'Choose a ground type in the palette beside the tile map, then paint. On a map with sculpted terrain the 3D view raises, lowers and smooths the ground with a brush ([ and ] size it).',
+  terrain: 'On a sculpted map, the 3D view takes a brush: Sculpt raises and lowers the ground, Paint lays a material ([ and ] size it). Tile by tile, use the painter.',
   objects: 'Click an object in the palette, then click on the ground in the 3D view to place it.',
   npcs: 'Click a tile to place a person, then pick who they are and what they say in the form that opens. Click one below to select it.',
   zones: 'Exits lead to another map or a retail scene; start points are where the player arrives; step-on events show a line, a notice or start a fight; monster zones roll random battles.',
-  test: 'Walk the map as the player, in the 3D view or in a play tab of its own. Edits made while a play tab is open reload there.',
+  test: 'You are walking the map as the player. Pick another mode to stop. A play tab of its own reloads on later edits.',
 };
 
 function drawCatalog() {
@@ -189,17 +189,21 @@ function drawCatalog() {
   el.append(h('div', { class: 'xw-cat-head' }, h('strong', {}, mode.label), h('span', { class: 'xw-hint' }, ' ' + CATALOG_HINTS[mode.id])));
   const row = h('div', { class: 'xw-cat-row' });
   if (mode.id === 'terrain') {
-    row.append(chip('Paint tiles', 'Paint the chosen ground type (B)', () => { setPainterTool('paint'); env.rerender(); }),
-      chip('Fill a rectangle', 'Drag a rectangle of the chosen ground (R)', () => { setPainterTool('rect'); env.rerender(); }),
-      chip('Pick a ground type', 'Click a tile to take its ground type (I)', () => { setPainterTool('pick'); env.rerender(); }));
-    if (map && map.terrain) row.append(chip('Sculpt the ground', 'Raise, lower and smooth the 3D ground (K)', () => { setPainterTool('sculpt'); setEditMode('sculpt'); env.rerender(); }));
+    // The tile tools act on the painter, so they show with it.
+    const pv = env.preview;
+    if (pv && pv.drawerOpen && !pv.drawerOpen() && pv.view() !== '2d') {
+      row.append(chip('Open the tile painter', 'Paint and fill tiles in a drawer beside the 3D view', () => { pv.setDrawer(true); env.rerender(); }));
+    } else {
+      row.append(chip('Paint tiles', 'Paint the chosen ground type (B)', () => { setPainterTool('paint'); env.rerender(); }),
+        chip('Fill a rectangle', 'Drag a rectangle of the chosen ground (R)', () => { setPainterTool('rect'); env.rerender(); }),
+        chip('Pick a ground type', 'Click a tile to take its ground type (I)', () => { setPainterTool('pick'); env.rerender(); }));
+    }
   } else if (mode.id === 'zones') {
     row.append(chip('Add an exit', 'Drag a rectangle where the player leaves the map (E)', () => { setPainterTool('exit'); env.rerender(); }),
       chip('Add a start point', 'Click where the player arrives (S)', () => { setPainterTool('spawn'); env.rerender(); }),
       chip('Add a step-on event', 'Drag a rectangle that shows a line or starts a fight (T)', () => { setPainterTool('trigger'); env.rerender(); }),
       chip('Add a monster zone', 'Drag a rectangle where random battles roll (N)', () => { setPainterTool('encounter'); env.rerender(); }));
   } else if (mode.id === 'test') {
-    if (env.preview && env.preview.setCamera) row.append(chip('Walk here in 3D', 'Take control of the player in the 3D view; Esc gives the camera back', () => env.preview.setCamera('player')));
     row.append(chip('Play this map in a new tab', 'Open a play tab on this map (it reloads in place on later edits)', () => env.playHere()),
       chip('Play the whole pack', 'Install the pack in the play page and start it', () => env.playPack()));
   } else if (mode.id === 'build') {
@@ -273,7 +277,7 @@ export function renderBuildHead(el, o) {
   pick.addEventListener('change', () => o.choose(pick.value));
   const errs = o.open ? o.errorsOf(o.open) : 0;
   el.append(h('div', { class: 'xw-map-row' }, pick, errs ? h('span', { class: 'xw-badge', title: `${errs} problem(s) on this map` }, errs) : null,
-    h('button', { type: 'button', class: 'wb-mini xw-map-add', title: 'Add a small new map, with some ground and a few objects already on it', onclick: () => o.add() }, '+ New map')));
+    h('button', { type: 'button', class: 'wb-mini xw-map-add', 'data-ic': '+', title: 'Add a small new map, with some ground and a few objects already on it', onclick: () => o.add() }, '+ New map')));
   B.bar = h('div', { class: 'xw-modebar', role: 'toolbar', 'aria-label': 'Build modes' });
   el.append(B.bar);
   if (o.tools) el.append(o.tools());

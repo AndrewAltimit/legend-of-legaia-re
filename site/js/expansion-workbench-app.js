@@ -323,6 +323,8 @@ function renderCheckChip() {
   const warns = S.issues.length - errs;
   el.textContent = S.checking && !S.issues.length ? 'Checking ...' : errs ? `${errs} problem${errs === 1 ? '' : 's'}` : warns ? `${warns} warning${warns === 1 ? '' : 's'}` : 'Pack checks out';
   el.className = 'wb-mini xw-checks-btn' + (errs ? ' is-err' : warns ? ' is-warn' : ' is-ok');
+  el.dataset.ic = errs ? `\u26A0 ${errs}` : warns ? `\u26A0 ${warns}` : '\u2713';
+  el.title = `${el.textContent}: show or hide the problems and Find (F8 steps through them)`;
   el.setAttribute('aria-expanded', String(asideOpen()));
 }
 
@@ -347,7 +349,7 @@ function renderBuild() {
   const cat = $('xw-catalog');
   const on = S.tab === 'maps';
   head.hidden = !on;
-  cat.hidden = !on;
+  $('xw-catdock').hidden = !on;
   if (!on) return;
   const maps = S.pack.maps || (S.pack.maps = {});
   const ids = Object.keys(maps);
@@ -379,13 +381,13 @@ function buildTools() {
   const open = pv && pv.drawerOpen && pv.drawerOpen();
   return h('div', { class: 'xw-build-tools' },
     h('button', {
-      type: 'button', class: 'wb-mini' + (open ? ' is-on' : ''), 'aria-pressed': String(!!open),
-      title: 'The tile painter and every form for this map, in a drawer beside the 3D view',
+      type: 'button', class: 'wb-mini' + (open ? ' is-on' : ''), 'aria-pressed': String(!!open), 'data-ic': '\u2699',
+      title: 'Map settings: the tile painter and every form for this map, in a drawer beside the 3D view',
       onclick: () => { pv.setDrawer(!pv.drawerOpen()); rerender(); },
     }, open ? 'Hide map settings' : 'Map settings'),
     h('button', {
-      type: 'button', class: 'wb-mini' + (S.fs ? ' is-on' : ''), 'aria-pressed': String(!!S.fs),
-      title: 'Give the whole screen to the map builder (F11). Escape puts down what you are placing, then the selection, then leaves.',
+      type: 'button', class: 'wb-mini' + (S.fs ? ' is-on' : ''), 'aria-pressed': String(!!S.fs), 'data-ic': S.fs ? '\u2715' : '\u26F6',
+      title: S.fs ? 'Leave fullscreen (F11, or Escape with nothing selected)' : 'Give the whole screen to the map builder (F11). Escape puts down what you are placing, then the selection, then leaves.',
       onclick: () => setFullscreen(!S.fs),
     }, S.fs ? 'Exit fullscreen' : 'Fullscreen'));
 }
@@ -399,6 +401,7 @@ function buildTools() {
 function setFullscreen(on) {
   S.fs = !!on;
   document.body.classList.toggle('xw-fs', S.fs);
+  document.body.classList.remove('xw-fs-menu');
   const root = $('xw-main');
   if (S.fs) {
     if (root.requestFullscreen && !document.fullscreenElement) {
@@ -444,6 +447,8 @@ function rerender() {
   $('xw-pack-id').textContent = m.id || '';
   $('xw-pack-ver').textContent = `${m.version || ''}${S.label ? ' - ' + S.label : ''}`;
   document.body.classList.toggle('xw-on-build', S.tab === 'maps');
+  // Fullscreen is the map builder's; another page goes back to the page.
+  if (S.fs && S.tab !== 'maps') setFullscreen(false);
   applyAside();
   if (S.preview) {
     S.preview.show(['maps', 'cutscenes', 'battle', 'cards', 'modes'].includes(S.tab));
@@ -1699,7 +1704,18 @@ function initRest() {
   });
   S.preview.onLayout(() => renderBuild());
   // The 3D view sits between the Build head and its catalog strip.
-  $('xw-catalog').before(S.preview.el);
+  $('xw-catdock').before(S.preview.el);
+  $('xw-cat-toggle').addEventListener('click', () => {
+    const closed = document.body.classList.toggle('xw-cat-closed');
+    $('xw-cat-toggle').textContent = closed ? 'Show catalog' : 'Hide catalog';
+    $('xw-cat-toggle').setAttribute('aria-expanded', String(!closed));
+  });
+  // Fullscreen's one control for the pack's other pages.
+  $('xw-fs-menu-btn').addEventListener('click', () => {
+    const open = document.body.classList.toggle('xw-fs-menu');
+    $('xw-fs-menu-btn').setAttribute('aria-expanded', String(open));
+    $('xw-fs-menu-btn').title = `${S.pack ? S.pack.manifest.name || S.pack.manifest.id : ''}: the pack's other pages`;
+  });
   S.share = attachShare({
     S,
     changed: (structural) => ctx.changed(structural),
