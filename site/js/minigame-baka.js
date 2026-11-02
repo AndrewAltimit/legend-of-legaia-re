@@ -947,6 +947,21 @@
         }
       }
 
+      /* The pause menu (engine: BakaFight::pause_panel), retail's pens in
+       * this canvas's 320x240 space; a shade stands in for the window frame. */
+      const pause = meta && meta.pause;
+      if (pause) {
+        const [fx, fy, fw, fh] = pause.frame;
+        g.save();
+        g.fillStyle = 'rgba(0,0,0,0.75)';
+        g.fillRect(fx, fy, fw, fh);
+        g.fillStyle = '#fff';
+        g.font = '11px sans-serif';
+        g.textBaseline = 'top';
+        for (const l of pause.lines) g.fillText(l.t, l.x, l.y);
+        g.restore();
+      }
+
       /* The page's own banners (round / win / lose / match / all-clear),
        * fitted by eye, only for a run with no engine chrome. A cabinet run
        * hands the chrome in (`meta.chrome`, possibly empty) and the cabinet's

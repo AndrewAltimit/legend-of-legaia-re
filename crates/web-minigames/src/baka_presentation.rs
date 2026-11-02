@@ -866,6 +866,25 @@ impl LegaiaMinigames {
             .iter()
             .map(|c| serde_json::json!({ "w": c.widget, "x": c.x, "y": c.y, "b": c.brightness }))
             .collect();
+        // The pause menu: the disc's text with its button icons as the escape
+        // bytes this page's browser font cannot draw (`hub_text_lossy`'s rule),
+        // so it marks them `*` rather than closing the gaps.
+        let pause = f.pause_panel().map(|(frame, lines)| {
+            let lines: Vec<serde_json::Value> = lines
+                .iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "t": baka_pause_text_lossy(&l.text),
+                        "x": l.x,
+                        "y": l.y,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "frame": [frame.x, frame.y, frame.w, frame.h],
+                "lines": lines,
+            })
+        });
         serde_json::json!({
             "live": true,
             "state": f.cabinet().state(),
@@ -874,6 +893,7 @@ impl LegaiaMinigames {
             "player": f.player_roster(),
             "opponent": f.opponent_roster(),
             "cells": cells,
+            "pause": pause,
             // Whether this cabinet state's epilogue draws the duel HUD
             // (not under the result screens or the NEXT GAME / PAY OUT
             // sheet), and the sheet's pot numeral over the run's winnings
@@ -1017,4 +1037,25 @@ impl LegaiaMinigames {
             self.baka_xa_fired
         )
     }
+}
+
+/// A pause line for the page's browser font: printable ASCII kept, each
+/// two-byte `0xCE` icon escape a `*`, other bytes dropped.
+fn baka_pause_text_lossy(bytes: &[u8]) -> String {
+    let mut s = String::new();
+    let mut it = bytes.iter();
+    while let Some(&b) = it.next() {
+        match b {
+            0xCE => {
+                it.next();
+                s.push('*');
+            }
+            0xCF => {
+                it.next();
+            }
+            0x20..=0x7E => s.push(b as char),
+            _ => {}
+        }
+    }
+    s
 }

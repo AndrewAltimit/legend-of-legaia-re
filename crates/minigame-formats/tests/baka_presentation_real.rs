@@ -47,6 +47,29 @@ fn entry_bytes(archive: &mut Archive, index: u32) -> Vec<u8> {
 }
 
 #[test]
+fn pause_text_reads_as_lines_with_its_icon_escapes_whole() {
+    let Some(prot) = prot_dat() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");
+        return;
+    };
+    let mut archive = Archive::open(&prot).expect("open PROT.DAT");
+    let rec = static_overlay::overlay_map()
+        .by_prot_index(baka::BAKA_OVERLAY_PROT_INDEX as u32)
+        .expect("baka overlay in static map");
+    let raw = entry_bytes(&mut archive, rec.prot_index);
+    let overlay = static_overlay::as_loaded(&raw, rec).expect("as-loaded form");
+    let text = baka::parse_pause_text(&overlay).expect("the pause text parses");
+    assert_eq!(text.help.len(), baka::HELP_LINE_COUNT);
+    assert!(text.help[baka::HELP_LINE_COUNT - 1].is_empty(), "the blank");
+    // The second line's three button icons, one of them `CE 00`: a plain
+    // C-string read stops there and loses the rest of the line.
+    let line = &text.help[1];
+    assert_eq!(line.iter().filter(|&&b| b == 0xCE).count(), 3);
+    assert!(line.windows(2).any(|w| w == [0xCE, 0x00]));
+    assert!(line.ends_with(b"."), "the line reads through to its end");
+}
+
+#[test]
 fn hud_widget_table_reproduces() {
     let Some(prot) = prot_dat() else {
         eprintln!("[skip] LEGAIA_DISC_BIN or extracted/PROT.DAT missing");

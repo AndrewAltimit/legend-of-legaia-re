@@ -630,6 +630,16 @@ impl PlayWindowApp {
             // Labels come from the shared kernels
             // (`baka_fighter_chrome::chrome_labels`, `baka_strips`), the
             // same the browser play page draws.
+            if let Some((_, lines)) = f.pause_panel() {
+                let (stage_origin, stage_scale) = self.save_select_stage(w, h);
+                let mut cd = legaia_engine_ui::baka_strips::baka_pause_text_draws_for(
+                    &self.font,
+                    lines.iter().map(|l| (&l.text[..], l.x, l.y)),
+                    [1.0; 4],
+                );
+                legaia_engine_ui::scale_stage_text_draws(&mut cd, stage_origin, stage_scale);
+                out.extend(cd);
+            }
             let sheet = f.cabinet().choice_sheet();
             let cabinet_cells = f.cabinet_cells();
             if !self.baka_chrome_frame.is_empty() || !cabinet_cells.is_empty() {

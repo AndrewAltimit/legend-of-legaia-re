@@ -550,6 +550,86 @@ fn the_round_caption_stands_only_on_the_banner_arms() {
     );
 }
 
+/// A fight with the pause text in, standing in the duel state.
+fn paused_ready_fight() -> BakaFight {
+    let mut f = fight();
+    f.pause_text = Some(legaia_minigame_formats::baka_opponents::BakaPauseText {
+        continue_row: b"C".to_vec(),
+        title_row: b"T".to_vec(),
+        quit_row: b"Q".to_vec(),
+        how_to_row: b"H".to_vec(),
+        help: vec![b"one".to_vec(), b"two".to_vec()],
+    });
+    assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_DUEL);
+    f
+}
+
+#[test]
+fn select_pauses_the_duel_and_nothing_lands_until_it_resumes() {
+    use crate::baka_cabinet::{ST_DUEL, ST_HOWTO, ST_PAUSE_3};
+    use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_UP};
+    const PACK_SELECT: u16 = 0x100;
+    let mut f = paused_ready_fight();
+    let hp = [f.f[0].hp, f.f[1].hp];
+    f.frame(PACK_SELECT, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_PAUSE_3);
+    let (frame, lines) = f.pause_panel().expect("the panel draws");
+    assert_eq!(frame, crate::baka_cabinet::PAUSE_FRAME);
+    assert_eq!(lines.last().map(|l| l.y), Some(0x68), "cursor on Continue");
+    // No HUD under the menu, as the epilogue's flag leaves it in `0xBF`.
+    assert!(!crate::baka_cabinet::draws_hud(f.cabinet().state()));
+
+    // The CPU does not commit and no exchange books while the menu is up.
+    for _ in 0..600 {
+        f.frame(0, 0, 0);
+    }
+    assert_eq!([f.f[0].hp, f.f[1].hp], hp);
+    assert!(f.f[1].chosen.is_none(), "the CPU waits with the fight");
+
+    // Row 2 is How to Play, and any face button comes back.
+    f.frame(PACK_DOWN, 0, 0);
+    f.frame(PACK_DOWN, 0, 0);
+    f.frame(PACK_CROSS, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_HOWTO);
+    assert_eq!(f.pause_panel().map(|(_, l)| l.len()), Some(2));
+    f.frame(PACK_CROSS, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_PAUSE_3);
+
+    // Up from the third row, and Circle cancels back into the duel. Neither
+    // throw reached the fighter.
+    f.frame(PACK_UP, 0, 0);
+    f.frame(PACK_CIRCLE, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_DUEL);
+    assert!(f.f[0].chosen.is_none());
+}
+
+#[test]
+fn quit_on_the_pause_menu_ends_the_visit_through_the_exit_state() {
+    use legaia_engine_system::pad::{PACK_CROSS, PACK_DOWN, PACK_TRIANGLE};
+    let mut f = paused_ready_fight();
+    f.frame(PACK_TRIANGLE, 0x10, 0);
+    f.frame(PACK_DOWN, 0, 0);
+    f.frame(PACK_CROSS, 0, 0);
+    assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_EXIT);
+    let mut exited = false;
+    for _ in 0..0x100 {
+        if f.frame(0, 0, 0).exit {
+            exited = true;
+            break;
+        }
+    }
+    assert!(exited, "the exit state's fade ends the visit");
+}
+
+#[test]
+fn without_the_disc_text_the_pause_edge_stays_shut() {
+    const PACK_SELECT: u16 = 0x100;
+    let mut f = fight();
+    f.frame(PACK_SELECT, 0, 0);
+    assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_DUEL);
+    assert!(f.pause_panel().is_none());
+}
+
 #[test]
 fn the_duel_ticks_the_cabinet_shell_and_its_hud() {
     let mut f = fight();

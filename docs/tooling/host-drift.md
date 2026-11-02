@@ -1526,7 +1526,7 @@ reverse-engineering questions, so they are not on
 | Difference | State |
 |---|---|
 | shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
-| battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
+| battle body blend | Both hosts key a body's posed mesh by actor slot and apply one `apply_body_blend`; the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `WorldCheats::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
@@ -1535,7 +1535,6 @@ reverse-engineering questions, so they are not on
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
-| absent on both | The Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The minigames page has no `World`

@@ -151,3 +151,112 @@ pub fn choice_pot_placements(pot: u32) -> Vec<(i32, i32, u8)> {
         })
         .collect()
 }
+
+// ------------------------------------------------------- the pause menu
+
+/// One positioned line of the pause menu, in stage pixels at the pen retail
+/// hands `FUN_80036888`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PauseLine {
+    /// Dialog-font bytes off the disc, or `>` for the cursor icon.
+    pub text: Vec<u8>,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// The pause menu's frame rect, `FUN_8002C69C(x, y, w, h)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauseFrame {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+}
+
+/// Row pens and frame of the three-row menu `0xBF`
+/// (`0x801D14D8..0x801D1570`): `li a3,0x7C` with `y = 0x68 / 0x78 / 0x88`,
+/// the cursor icon `FUN_8002C488(0x6C, 0x68 + cursor * 0x10, 0x4E)`.
+pub const PAUSE_ROW_X: i32 = 0x7C;
+pub const PAUSE_ROW_Y0: i32 = 0x68;
+pub const PAUSE_ROW_PITCH: i32 = 0x10;
+pub const PAUSE_CURSOR_X: i32 = 0x6C;
+pub const PAUSE_FRAME: PauseFrame = PauseFrame {
+    x: 0x6C,
+    y: 0x68,
+    w: 0x75,
+    h: 0x30,
+};
+/// The two-row variant `0xBE` (`0x801D1384..0x801D13EC`). Nothing enters it
+/// in retail: the duel's edge sets `0xBF`, and `0xBE` has no other writer.
+pub const PAUSE_2_ROW_X: i32 = 0x80;
+pub const PAUSE_2_CURSOR_X: i32 = 0x70;
+pub const PAUSE_2_FRAME: PauseFrame = PauseFrame {
+    x: 0x6C,
+    y: 0x68,
+    w: 0x4E,
+    h: 0x20,
+};
+/// The "How to Play" panel, `FUN_801D6CBC(0x30, 0x20)`: lines from
+/// `(x - 0x10, y)` at a `0xD` pitch, closed by a 240x143 frame.
+pub const HELP_PEN: (i32, i32) = (0x20, 0x20);
+pub const HELP_PITCH: i32 = 0xD;
+pub const HELP_FRAME: PauseFrame = PauseFrame {
+    x: 0x20,
+    y: 0x20,
+    w: 0xF0,
+    h: 0x8F,
+};
+
+/// The lines and frame the pause states draw, or `None` outside them.
+///
+/// PORT: FUN_801D6CBC, and the draw half of the cabinet arms `0xBE` / `0xBF`
+/// (`0x801D131C`, `0x801D145C`)
+pub fn pause_panel(
+    state: u32,
+    cursor: i32,
+    text: &legaia_minigame_formats::baka_opponents::BakaPauseText,
+) -> Option<(PauseFrame, Vec<PauseLine>)> {
+    let row = |t: &[u8], x: i32, i: i32| PauseLine {
+        text: t.to_vec(),
+        x,
+        y: PAUSE_ROW_Y0 + PAUSE_ROW_PITCH * i,
+    };
+    let icon = |x: i32| PauseLine {
+        text: b">".to_vec(),
+        x,
+        y: PAUSE_ROW_Y0 + PAUSE_ROW_PITCH * cursor,
+    };
+    use super::states::{ST_HOWTO, ST_PAUSE_2, ST_PAUSE_3};
+    match state {
+        ST_PAUSE_3 => Some((
+            PAUSE_FRAME,
+            vec![
+                row(&text.continue_row, PAUSE_ROW_X, 0),
+                row(&text.quit_row, PAUSE_ROW_X, 1),
+                row(&text.how_to_row, PAUSE_ROW_X, 2),
+                icon(PAUSE_CURSOR_X),
+            ],
+        )),
+        ST_PAUSE_2 => Some((
+            PAUSE_2_FRAME,
+            vec![
+                row(&text.continue_row, PAUSE_2_ROW_X, 0),
+                row(&text.title_row, PAUSE_2_ROW_X, 1),
+                icon(PAUSE_2_CURSOR_X),
+            ],
+        )),
+        ST_HOWTO => Some((
+            HELP_FRAME,
+            text.help
+                .iter()
+                .enumerate()
+                .map(|(i, t)| PauseLine {
+                    text: t.clone(),
+                    x: HELP_PEN.0,
+                    y: HELP_PEN.1 + HELP_PITCH * i as i32,
+                })
+                .collect(),
+        )),
+        _ => None,
+    }
+}

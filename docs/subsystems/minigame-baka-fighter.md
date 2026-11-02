@@ -208,7 +208,7 @@ flowchart TD
 | `0x6D` | the secret opponent's own tally variant, entered from the tally's exit when `DAT_801DBF06` is non-zero | timer `0xB5` |
 | `0x6E` | teardown + reload for the next rung | immediately |
 | `0x96` / `0x97` | match lost / **"GAME OVER"** | timers |
-| `0xBE` / `0xBF` | in-duel pause menu, 2 / 3 options (vertical cursor) | confirm or cancel |
+| `0xBE` / `0xBF` | in-duel pause menu, 2 / 3 options (vertical cursor); `0xBE` has no writer | confirm or cancel |
 | `0xC0` | "How to Play" screen (`FUN_801D6CBC`) | any face button `0xF0` |
 | `0xC8` | **developer menu**, 5 rows | confirm edge |
 | `0xFA`..`0xFE` | the all-stage-clear sequence, five beats | timers |
@@ -364,7 +364,7 @@ stateDiagram-v2
 | Committed | same | `FUN_801D3A14` has a result; the booking waits for the winner's strike keyframe ([strike clock](#the-strike-clock)) |
 | Finisher | same | the standing fighter auto-commits the type-4 special against a foe at 0 HP |
 | RoundOver | same | finisher latch `+0x2C` or both HPs at zero; the hold timer runs to `0xB5`, result banners rise |
-| Paused | cabinet `0xBE` / `0xBF`, phase `1` | pause menu |
+| Paused | cabinet `0xBF`, phase unchanged | pause menu; the round SM's body is off because the state is not `0x64` |
 
 Per frame, while active, the body:
 
@@ -831,6 +831,22 @@ Both tables are overlay rodata. Their index spaces are what the consumers can pr
 The combo input is the running maximum `DAT_801DBEC8`, which the HUD renderer latches once per frame (`if (DAT_801DBEC8 <= DAT_801DC094) DAT_801DBEC8 = DAT_801DC094;`). `DAT_801DC094` is the hits-taken array `&DAT_801DBFEC[slot * 0x2A]` at slot 1 (`0x801DBFEC + 0xA8`), so the score's combo term tracks how long a streak the player is landing. `DAT_801DBF58` is a second running-max latch fed from the same word.
 
 Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 0976 image; `BakaFight::max_combo` feeds `baka_round_score` at every round end. With no tables supplied the port runs no score channel and the tally opens on the coin prize alone - a host model, since retail always has the tables resident. The full-HP bonus is an immediate in the kernel, not a table cell. See `overlay_baka_fighter_801d2a28.txt`. **Confirmed.**
+
+### The pause menu (`0xBF`, `0xC0`)
+
+The duel state's pad edge `0x110` opens `0xBF` (`0x801D0908..0x801D091C`), or the developer menu when `_DAT_8007B868` is up. Triangle is a bit of that edge and also the button the round setup's cameo test reads held: they do not collide, since the setup reads the level before the duel state is up.
+
+| Arm | Lines through `FUN_80036888` | Cursor `FUN_8002C488(x, 0x68 + cursor * 0x10, 0x4E)` | Frame `FUN_8002C69C` |
+|---|---|---|---|
+| `0xBF` (`0x801D145C`) | `x = 0x7C`, `y = 0x68 / 0x78 / 0x88`: Continue (`0x801CE9C8`), Quit (`0x801CE9DC`), How to Play (`0x801CE9E4`) | `x = 0x6C` | `(0x6C, 0x68, 0x75, 0x30)` |
+| `0xBE` (`0x801D131C`) | `x = 0x80`, `y = 0x68 / 0x78`: Continue, Title (`0x801CE9D4`) | `x = 0x70` | `(0x6C, 0x68, 0x4E, 0x20)` |
+| `0xC0` (`0x801D1608`) | the help panel below, `FUN_801D6CBC(0x30, 0x20)` | none | `(0x20, 0x20, 0xF0, 0x8F)` |
+
+No writer of `0xBE` exists, so the two-row menu is unreached. The fight stands still under the menu because the round SM's body tests `DAT_801DBF44 == 0x64` (`0x801D352C`) and the combat tick falls through to the clip selector and the draw off it (`0x801D4098..0x801D40BC`): clips keep playing, nothing commits or books. The epilogue's HUD flag stays clear, so the duel HUD is gone. Row 1 goes to the exit state `0x1F4`, row 2 to `0xC0`, and any face button in `0xC0` returns to `0xBF`.
+
+The help lines hold button icons as `CE nn` escapes, one of them `CE 00`, so a plain C-string read of the pool stops mid-line. Parser `baka_opponents::parse_pause_text`.
+
+Port: `baka_cabinet::pause_panel` lays both menus out and `BakaFight::pause_panel` gates them on the disc text, the edge staying shut without it. All three hosts draw that one model. The window frame is a half-black shade (`baka_strips::baka_pause_shade`, and the minigames page's canvas fill), not retail's frame sprites. The minigames page's browser font marks an icon `*`.
 
 ### The help panel's pointer table
 

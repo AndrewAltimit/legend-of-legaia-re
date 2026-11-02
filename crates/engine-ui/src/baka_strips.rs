@@ -170,6 +170,43 @@ pub fn baka_bar_prim(
     )
 }
 
+/// The Baka pause menu's lines as text draws, the one composition both play
+/// hosts call (`BakaFight::pause_panel`).
+pub fn baka_pause_text_draws_for<'a>(
+    font: &legaia_font::Font,
+    lines: impl IntoIterator<Item = (&'a [u8], i32, i32)>,
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    crate::text_lines::text_line_draws_for(
+        font,
+        lines.into_iter().map(|(t, x, y)| (t, x, y, false)),
+        color,
+        color,
+    )
+}
+
+/// The shade behind the Baka pause menu, standing in for the window frame
+/// retail closes it with (`FUN_8002C69C`): a half-black quad over the rect, so
+/// the text reads over the arena. Text is drawn above it by the host.
+pub fn baka_pause_shade(
+    rect: (i32, i32, i32, i32),
+    ot_index: u32,
+) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    let (x, y, w, h) = rect;
+    let (x0, y0, x1, y1) = (x as i16, y as i16, (x + w) as i16, (y + h) as i16);
+    legaia_render_kernels::screen_prim::ScreenPrim::Flat(
+        legaia_render_kernels::screen_prim::FlatQuad {
+            xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            color: [0, 0, 0, 0xC0],
+            gouraud: None,
+            semi_transparent: true,
+            abr_mode: 0,
+            ot_index,
+            depth: None,
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

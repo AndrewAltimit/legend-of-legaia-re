@@ -469,7 +469,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         <p class="mg-controls">
           <b>Keys:</b> <kbd>C</kbd> / <kbd>X</kbd> /
           <kbd>Z</kbd> are throws 1 / 2 / 3 - Square, Circle and Cross, the
-          buttons the cabinet reads, laid out side by side. <em>Pot at risk</em> is everything won this run that a loss would wipe;
+          buttons the cabinet reads, laid out side by side. Select (or <kbd>V</kbd>, Triangle) opens the
+          cabinet's pause menu; the arrow keys pick a row, <kbd>Z</kbd> takes it and <kbd>X</kbd> backs out. <em>Pot at risk</em> is everything won this run that a loss would wipe;
           <em>Banked</em> is what PAY OUT has already kept.
         </p>
         <details class="disclosure">
@@ -1740,6 +1741,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         bakaView.frame(st.live ? st : null,
           Object.assign({}, bakaMeta, {
             chrome, cells: cab.cells || [], hud: cab.draws_hud !== false, potDigits: cab.pot_digits || [],
+            pause: cab.pause || null,
           }));
       }
     }
@@ -2424,6 +2426,9 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       } else {
         const row = BAKA_KEYS[e.code];
         if (bakaCameoKey(e)) bakaHeld |= 0x10;
+        /* V is Triangle as an edge too: the duel's pause reads the press, the
+         * round setup's cameo the level. */
+        if (BAKA_KEYS[e.code] === 0 && !e.repeat) bakaCabEdge |= BAKA_PACKED.Triangle;
         const throwBtn = row ? BAKA_THROW_BUTTON[row]
           : (n >= 1 && n <= 3 ? BAKA_THROW_BUTTON[n] : null);
         const btn = throwBtn || (row === undefined ? b : null);
