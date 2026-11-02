@@ -249,6 +249,20 @@ face in `casino_ticket_counter` and a beam and counter in
 keyed by every primitive's own mean, so the per-object linking has to be
 read before an ordering rule is ported.
 
+### The battle shell sorts by prim mean
+
+The battle stage is the case where that rule does hold. The shell and its spun
+slot are one object list linked at each prim's own mean `SZ`, so in PSX mode
+both hosts draw them at their corners' mean `w`: `DRAW_WORD_MEAN_DEPTH` on the
+draw's NCLIP word stages `flags.w = -1` (`prim_mean_depth` over
+`prim_c0..prim_c3` on the vertex stage), and the page's `meanDepth` placement
+keys its log depth on the same mean (`primMeanW`). A wall quad nearer by mean
+now paints over the horizon mist as retail's does. Worked on Sol Tower's stage:
+`battle_kor_dead_bone_strike` `.969` to `.993`, `battle_korb2_kemaro_strike`
+`.971` to `.990`, `battle_kor_spoon_strike` `.966` to `.984`. Clean rendering
+keeps per-pixel depth: a mean pops as the camera turns, which the retail frame
+shows and the clean frame need not.
+
 ## Enhanced lighting (enhancement, NOT retail)
 
 `Renderer::set_dynamic_lighting(true)` shades the VRAM-mesh and colour-mesh

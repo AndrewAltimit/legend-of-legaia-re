@@ -431,6 +431,18 @@ vec2 depthAffine(mat4 m) {
   return vec2(a, m[3].z - a * m[3].w);
 }
 
+/* A battle shell prim's depth in PSX mode: the mean of its corners' w, the key
+ * retail links it by, so one quad's whole area sorts as that mean. Twin of
+ * engine-render's prim_mean_depth; -1 where it keeps the per-pixel depth. */
+uniform float u_prim_mean_depth;
+float primMeanW(mat4 m) {
+  if (u_prim_mean_depth < 0.5 || u_psx.z < 0.5 || a_prim_c0.w < 2.5) return -1.0;
+  float w = (m * vec4(a_prim_c0.xyz, 1.0)).w + (m * vec4(a_prim_c1, 1.0)).w
+    + (m * vec4(a_prim_c2, 1.0)).w;
+  if (a_prim_c0.w > 3.5) return (w + (m * vec4(a_prim_c3, 1.0)).w) / 4.0;
+  return w / 3.0;
+}
+
 /* The flat bucket's representative w for a continent cell (the w whose
  * normalised depth overworldFlatDepth writes), or -1 where it keeps the
  * per-pixel depth. Same gate and same key as overworldFlatDepth. */
@@ -634,6 +646,7 @@ void main() {
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  if (flatW <= 0.0) flatW = primMeanW(u_mvp * u_model);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);

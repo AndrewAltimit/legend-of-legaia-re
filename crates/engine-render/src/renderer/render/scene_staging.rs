@@ -356,7 +356,10 @@ impl Renderer {
             let mut flags = flags_base;
             flags[2] = if occl_allowed { 1.0 } else { 0.0 };
             if let Some(mode) = nclip {
-                flags[0] = mode.min(2) as f32;
+                flags[0] = (mode & !crate::DRAW_WORD_MEAN_DEPTH).min(2) as f32;
+                if mode & crate::DRAW_WORD_MEAN_DEPTH != 0 && psx_params[2] >= 0.5 {
+                    flags[3] = -1.0;
+                }
             }
             let model = match inv_vp {
                 Some(inv) => model_rows(&(inv * mvp)),

@@ -47,6 +47,9 @@ enum FarBucket {
     Sloped,
     /// The flat cell's marker: the z pair swapped.
     Flat,
+    /// No marker: the vertices carry the primitive's corners instead
+    /// (`prim_mean_depth`, a battle shell quad).
+    MeanPrim,
 }
 
 fn render_cell(
@@ -87,8 +90,16 @@ fn render_cell(
         bytes.extend_from_slice(bytemuck::cast_slice(&[0.0f32; 3])); // normal
         bytes.extend_from_slice(&[0x80, 0x80, 0x80, 0]); // prim colour
         bytes.extend_from_slice(bytemuck::cast_slice(&flat));
-        // No primitive-corner record: the near reject never fires.
-        bytes.extend_from_slice(&[0u8; crate::renderer::PRIM_REF_BYTES as usize]);
+        if far_bucket == FarBucket::MeanPrim {
+            let c = [
+                pos[0][0], pos[0][1], pos[0][2], 4.0, pos[1][0], pos[1][1], pos[1][2], pos[2][0],
+                pos[2][1], pos[2][2], pos[3][0], pos[3][1], pos[3][2],
+            ];
+            bytes.extend_from_slice(bytemuck::cast_slice(&c));
+        } else {
+            // No primitive-corner record: the near reject never fires.
+            bytes.extend_from_slice(&[0u8; crate::renderer::PRIM_REF_BYTES as usize]);
+        }
     }
     assert_eq!(bytes.len(), 4 * VRAM_VERTEX_STRIDE as usize);
     let indices: [u32; 6] = [0, 1, 2, 1, 3, 2];
@@ -559,4 +570,28 @@ fn a_sloped_far_bucket_field_cell_draws_in_the_far_slice() {
     // the far-bucket gate: per-pixel depth.
     let ow = render_cell(&device, &queue, 1.0, false, 0x7FFF, FarBucket::Sloped).0;
     assert_eq!(ow, draw_cell(&device, &queue, 1.0, false));
+}
+
+/// A battle shell quad under the mean-depth word (`flags.w < 0`) draws at one
+/// depth, the mean of its corners' `w` (`500` here), the key retail links it
+/// by; the same quad with the word off keeps its per-pixel depth.
+#[test]
+fn a_shell_quad_sorts_as_its_corners_mean() {
+    let Some((device, queue)) = headless_device() else {
+        return;
+    };
+    let (flat, _) = render_cell(&device, &queue, -1.0, false, 0x7FFF, FarBucket::MeanPrim);
+    let drawn: Vec<f32> = flat.iter().copied().filter(|&d| d < 1.0).collect();
+    assert!(!drawn.is_empty());
+    let a = FAR / (FAR - NEAR);
+    let b = -NEAR * FAR / (FAR - NEAR);
+    let want = a + b / 500.0;
+    for d in &drawn {
+        assert!((d - want).abs() < 1.0e-5, "{d} against {want}");
+    }
+    let (perpixel, _) = render_cell(&device, &queue, 0.0, false, 0x7FFF, FarBucket::MeanPrim);
+    let drawn: Vec<f32> = perpixel.iter().copied().filter(|&d| d < 1.0).collect();
+    let spread = drawn.iter().cloned().fold(f32::MIN, f32::max)
+        - drawn.iter().cloned().fold(f32::MAX, f32::min);
+    assert!(spread > 1.0e-4, "per-pixel spread {spread}");
 }

@@ -29,6 +29,39 @@ fn effect_clipped(p: vec3<f32>) -> bool {
 "#;
 
 pub(crate) const PRIM_NEAR_WGSL: &str = r#"
+// The battle shell's painter order (`flags.w < 0`,
+// `Renderer::DRAW_WORD_MEAN_DEPTH`): retail links each shell prim at the mean
+// `SZ` of its corners, so one quad's whole area sorts as that mean. The depth
+// row is `z = a * w + b` in clip space, read as `depth_affine` reads it.
+fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
+    if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w <= 0.0) {
+        return clip;
+    }
+    let m = u.mvp;
+    var w = (m * vec4<f32>(c0.xyz, 1.0)).w + (m * vec4<f32>(c1, 1.0)).w + (m * vec4<f32>(c2, 1.0)).w;
+    var n = 3.0;
+    if (c0.w > 3.5) {
+        w = w + (m * vec4<f32>(c3, 1.0)).w;
+        n = 4.0;
+    }
+    let mean_w = w / n;
+    if (mean_w <= 0.0) {
+        return clip;
+    }
+    var col = m[2];
+    if (abs(m[0].w) > abs(col.w) && abs(m[0].w) >= abs(m[1].w)) {
+        col = m[0];
+    } else if (abs(m[1].w) > abs(col.w)) {
+        col = m[1];
+    }
+    var a = 0.0;
+    if (abs(col.w) > 1.0e-7) {
+        a = col.z / col.w;
+    }
+    let b = m[3].z - a * m[3].w;
+    return vec4<f32>(clip.x, clip.y, (a + b / mean_w) * clip.w, clip.w);
+}
+
 fn prim_sz(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32) -> i32 {
     let w = m[0].w * c.x + m[1].w * c.y + m[2].w * c.z + m[3].w;
     // `SZ_FLOAT_SLACK`: a corner a float's error under an integer floors to it.

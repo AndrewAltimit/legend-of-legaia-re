@@ -50,6 +50,8 @@
  *              frame's for this draw only - the battle bodies' single-sided
  *              rule (BattleActorDrawPlan::nclip_mode) over the both-sided
  *              battle pass.
+ *     meanDepth - in PSX mode the draw's prims take the mean depth of their
+ *              corners, the key retail links a battle shell prim by.
  *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
  *              overriding the frame-global `setDepthCue` for this draw only.
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage
@@ -172,6 +174,7 @@ class TmdRenderer {
     this.locPalette = gl.getUniformLocation(this.program, 'u_palette');
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
+    this.locPrimMeanDepth = gl.getUniformLocation(this.program, 'u_prim_mean_depth');
     this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
     this.locCurveBias = gl.getUniformLocation(this.program, 'u_curve_bias');
     this.locPrimNear = gl.getUniformLocation(this.program, 'u_prim_near');

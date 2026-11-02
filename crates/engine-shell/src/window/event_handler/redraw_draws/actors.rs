@@ -286,7 +286,8 @@ impl<'m> DrawCtx<'_, 'm> {
                     // draws both sides (`backdrop_copy_nclip`).
                     nclip_marks.push((
                         draws.len(),
-                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b),
+                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b)
+                            | legaia_engine_render::DRAW_WORD_MEAN_DEPTH,
                     ));
                     draws.push(SceneDraw { mesh, mvp, cue });
                 }
@@ -296,7 +297,8 @@ impl<'m> DrawCtx<'_, 'm> {
                 {
                     color_nclip_marks.push((
                         color_draws.len(),
-                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b),
+                        legaia_engine_scene_host::scene_host::backdrop_copy_nclip(*second, copy_b)
+                            | legaia_engine_render::DRAW_WORD_MEAN_DEPTH,
                     ));
                     color_draws.push(ColorSceneDraw { mesh, mvp, cue });
                 }

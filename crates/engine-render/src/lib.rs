@@ -22,6 +22,11 @@
 //! REF: FUN_801D0148, FUN_801D5DE0, FUN_801D84D0, FUN_801E08D8, FUN_801E1C1C, FUN_801E36C4
 //! REF: FUN_801E3EE0, FUN_801E3FF0
 
+/// A flag on a per-draw NCLIP word ([`Renderer::set_draw_nclip`]): in PSX mode
+/// the draw's prims take the depth of their corners' mean, the key retail links
+/// a battle shell prim by, so a large quad sorts as one piece.
+pub const DRAW_WORD_MEAN_DEPTH: u32 = 0x100;
+
 pub mod actor_bind;
 pub mod actor_cull;
 pub mod battle_intro;

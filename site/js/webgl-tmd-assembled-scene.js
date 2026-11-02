@@ -667,6 +667,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
            * never dissolve; environment placements may. */
           gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
           nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
+          if (this.locPrimMeanDepth) gl.uniform1f(this.locPrimMeanDepth, p.meanDepth ? 1 : 0);
           eclipOn = this._setEffectClip(p.effectClip, eclipOn);
           /* A far-bucket placement (the battle ground grid) writes its depth
            * into the far slice, behind everything else on the frame. */
@@ -740,6 +741,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         }
         gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
         nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
+        if (this.locPrimMeanDepth) gl.uniform1f(this.locPrimMeanDepth, p.meanDepth ? 1 : 0);
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
@@ -761,6 +763,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (eclipOn) this._setEffectClip(null, true);
     if (hazeOn) this._setHazeDraw(0);
     this._setPlacementNclip(undefined, nclipOn);
+    if (this.locPrimMeanDepth) gl.uniform1f(this.locPrimMeanDepth, 0);
     gl.bindVertexArray(null);
     /* Enhanced lighting's halos + light shafts over the finished scene. */
     this._drawGlow(vp);
