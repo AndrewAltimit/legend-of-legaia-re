@@ -921,7 +921,7 @@ impl RetailBattle {
                         summon_route_prior_end(ram, ctx, action_state),
                         {
                             let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
-                            shift[1] = first_strike_pass_yaw_shift(ram, ctx).unwrap_or(0);
+                            shift[1] = walk_heading(ram, ctx).map_or(0, |h| h.end_shift);
                             shift
                         },
                     )
@@ -1142,6 +1142,7 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            displayed_strike_heading: walk_heading(ram, ctx).map(|h| h.displayed),
             displayed_clips: (0..8u32)
                 .map(|slot| displayed_monster_clip(ram, slot))
                 .collect(),

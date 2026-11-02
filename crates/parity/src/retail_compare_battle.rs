@@ -623,6 +623,9 @@ pub struct RetailBattle {
     /// hold). It differs from the RAM's clip where the anim node committed
     /// inside the display lag, which the walk back cannot see.
     pub displayed_clips: Vec<Option<(u8, u16)>>,
+    /// The attacker's heading on the displayed frame, where that frame is its
+    /// walk's last pass ([`camera_align::walk_heading`]).
+    pub displayed_strike_heading: Option<u16>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

@@ -275,11 +275,11 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
-/// `battle_korb2_warhalf_strike`'s words: the walk's last pass stood the
-/// attacker on `(-96, 287)`, ring slot `2`, heading `1838` onto the target's
-/// live pair. The loop's first arm read that heading, so the endpoint the
-/// displayed frame's pass chased stood `112` short of the RAM's (the heading
-/// `1730` onto the body pair, a counter step at step `3`), and the walk back
+/// `battle_korb2_warhalf_strike`'s words: the walk's last pass read the
+/// attacker off ring slot `3`, heading `1836` onto the target's live pair, and
+/// stood it on `(-96, 287)`, slot `2`. The loop's first arm read that heading,
+/// so the endpoint that pass chased stood `112` short of the RAM's (the bearing
+/// `1728` onto the body pair, a counter step at step `3`), and the walk back
 /// lands on yaw `795` where the RAM's endpoint alone gives `759`.
 #[test]
 fn the_strike_loops_first_arm_chased_the_walks_heading() {
@@ -308,7 +308,11 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     put16(&mut ram, frame_step::STEP_MODE, 0x10);
     put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
     assert_eq!(frame_step(&ram), 3);
-    let shift = camera_align::first_strike_pass_yaw_shift(&ram, ctx).expect("second pass");
+    put16(&mut ram, target + 0x3C, 60);
+    put16(&mut ram, target + 0x40, (-5i16) as u16);
+    let h = camera_align::walk_heading(&ram, ctx).expect("second pass");
+    assert_eq!(h.displayed, 1836);
+    let shift = h.end_shift;
     assert_eq!(shift, -112);
 
     let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
@@ -324,7 +328,8 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     // A nearest slot `3` is the loop's third pass: the displayed frame's
     // arm already read the loop's own heading.
     put32(&mut ram, attacker + POSITION_RING + 3 * 8 + 4, 200);
-    assert_eq!(camera_align::first_strike_pass_yaw_shift(&ram, ctx), None);
+    put32(&mut ram, attacker + POSITION_RING + 4 * 8 + 4, 400);
+    assert!(camera_align::walk_heading(&ram, ctx).is_none());
 }
 
 /// A `0x32` capture on the summon route's first pass: the eye depth walks

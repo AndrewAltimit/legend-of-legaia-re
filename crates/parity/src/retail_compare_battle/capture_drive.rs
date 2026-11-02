@@ -384,14 +384,24 @@ impl RetailBattle {
         // A monster whose strike clip committed inside the display lag drew
         // the clip before it, on the ring's pair
         // ([`Self::engine_image_displayed_clips`]).
-        if let Some((seed, Some(then))) = self.displayed_strike_clip() {
-            return vec![legaia_engine_capture::ground_snap::GroundSnap {
-                slot: seed.slot,
-                x: then[0],
-                z: then[1],
-                facing: None,
-                body: None,
-            }];
+        // A displayed frame that is the walk's last pass drew the walk's
+        // heading ([`RetailBattle::displayed_strike_heading`]).
+        if let Some((seed, then)) = self.displayed_strike_clip() {
+            let then = then.or_else(|| {
+                self.displayed_ground
+                    .get(usize::from(self.active_actor))
+                    .copied()
+                    .flatten()
+            });
+            if let Some(then) = then {
+                return vec![legaia_engine_capture::ground_snap::GroundSnap {
+                    slot: seed.slot,
+                    x: then[0],
+                    z: then[1],
+                    facing: self.displayed_strike_heading,
+                    body: None,
+                }];
+            }
         }
         let pool = usize::from(self.active_actor);
         if pool >= 3

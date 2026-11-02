@@ -3976,3 +3976,66 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "stone"
 topics = ["field", "stone", "Shadow Gate", "scene coverage", "route walk"]
+
+[[scenarios]]
+label = "battle_kor_dead_bone_curse_all_mid_cast"
+backup_fingerprint = "b555edad59de9643b61ef532341dcce59455faa81f5e5a345df9a05d09946577"
+description = "kor battle: Dead Bone (monster id 15) mid-cast Curse All (spell 0x53): category 2, action state 0x70. RETAIL disc, pad only, no pokes: kor_field_route_walk played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 5254 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy cast", "Curse All", "Dead Bone", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_dead_bone_strike"
+backup_fingerprint = "30f6fde9ce4ad1a8b5a0e0c8ae1732e55eaae40f6ae08ac9b09e13ec016e96c3"
+description = "kor battle: Dead Bone (monster id 15) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: kor_field_route_walk played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 2225 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "Dead Bone", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_ghost_knight_windhash_mid_cast"
+backup_fingerprint = "0af1bccc950d289a038ac7a5c299c0b41e231dfcc31e1eba568bccc3c059d69d"
+description = "korb2 battle: Ghost Knight (monster id 18) mid-cast Windhash (spell 0x34): category 2, action state 0x2B. RETAIL disc, pad only, no pokes: kor_field_route_walk played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 23650 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Windhash", "Ghost Knight", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_ghost_knight_neo_windhash_mid_cast"
+backup_fingerprint = "007f0c8a9197c6ee07a0345c8045e756d9c884ad9c7e052530eddfd91d2a276b"
+description = "korb2 battle: Ghost Knight (monster id 18) mid-cast Neo Windhash (spell 0xA7): category 2, action state 0x70. RETAIL disc, pad only, no pokes: kor_field_route_walk played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 17254 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy cast", "Neo Windhash", "Ghost Knight", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_korb2_ghost_knight_strike"
+backup_fingerprint = "c188f163572953c753f5bcc433f7806db55287345ee099e29e75b9c21a2a987d"
+description = "korb2 battle: Ghost Knight (monster id 18) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: kor_field_route_walk played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 18802 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb2"
+topics = ["battle", "enemy attack", "Ghost Knight", "korb2", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_spoon_strike"
+backup_fingerprint = "69981cd6a7d41f3067138918aee48162d1029518166b3458121631a537501955"
+description = "kor battle: Spoon (monster id 147) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: kor_field_route_walk played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 2529 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "Spoon", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_frog_strike"
+backup_fingerprint = "25086acf4f51579efe68a887f911fbda1a5a4a1312335ad1460009b569a91d69"
+description = "map01 battle: Frog (monster id 43) mid physical attack: category 3, action state 0x1E (strike loop). RETAIL disc, pad only, no pokes: vell_fog_field played forward by autorun_battle_harvest.lua (walk until an encounter, Spirit for four rounds then Attack; the walk can leave the source scene first), saved 2370 vsyncs in, 8 vsyncs into the mid-action state."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Frog", "map01", "harvest"]
