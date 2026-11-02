@@ -2652,14 +2652,24 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   prompt instead, the engine frames the prompt's target (case `1` on the
   member's `+0x1DD`) rather than the close-up (`image` `.866` to `.255`),
   so the drive keeps the entry's frame until that framing is settled.
-- **A swing the walk's lock spent.** `battle_map01_frog_strike` holds the queue
-  `06 06 06` at strike cursor `2`, on its first clip `0x06` at accumulator `16`:
-  the rings show the walk playing on across the first stage, which the walk
-  entry's `+0x76` lock refused. The replay commits the first byte, lands its hit
-  and is drawn on Vahn's reaction with his HP down (`image` `.866`), and retail's
-  second Lippian at the left of the frame is missing from it. Whether the port
-  plays a swing retail spends is open; a run counting the hits of that fight on
-  both sides would close it.
+- **A stream that reaches on the wrong swing.** `battle_map01_frog_strike` holds
+  the queue `06 06 06` at strike cursor `2`, on its first clip `0x06` at
+  accumulator `16`. Nothing was spent: the pass after a commit reads the next
+  byte, so a first swing past its commit pass reads `2`, and played forward
+  under `autorun_melee_string_trace.lua` the state runs all three swings
+  (reactions at vsyncs `36`, `108` and `179`). A replay that drew `07 06 ff`
+  stops its cursor on `2` under the second swing and meets clip, age and cursor,
+  drawn on Vahn's reaction with his HP down (`image` `.866`). The gate now also
+  takes the queue under the cursor (`ActionSteer::played`), and a capture no
+  stream reaches on those picks runs the strike-stream fallback at any
+  accumulator: the frame reads `.946`, HP `178` and no spark.
+  What remains is the Lippian left of the Frog: the displayed buffer draws it dim
+  and the undisplayed buffer and both ordering tables have no packet for it. The
+  strike's solo commit is what changes between those passes
+  (`FUN_8004E13C`'s `+0x21C = 1` sweep over the bystanders, `0x8004E15C..0x8004E24C`,
+  which `FUN_80050120` arm 1 eases toward `0x20` a lane); the port does not model
+  the sweep, and why the body leaves the table at a non-zero word is open.
+
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
 - **A fading body retail does not draw.** `player_steal_skeleton_banner` holds
@@ -3645,6 +3655,8 @@ Shapes the corpus separates, each with what it indicates:
 
 | Shape | Indicates |
 |---|---|
+| engine frame far closer to the state's **other** framebuffer than to the displayed one (`koru_pre_*`, `cort_evolved_card_pre_doomsday`) | the capture instant: the engine drew retail's next pass and the RAM does not say what the screen's pass was ([below](#the-other-framebuffer)) |
+| retail `3` to `6` luma brighter on a PCSX-Redux state, evenly over the frame and with a stronger `4 x 4` pattern (`gimard_burning_attack`) | that emulator's dither on Gouraud polygons ([below](#a-pcsx-redux-frame-keeps-what-the-console-floors)) |
 | camera exact, frame smeared by stretched texture planes or one flat colour | a mesh retail does not draw there: a sky dome's back faces ([NCLIP](../subsystems/renderer.md#the-field-pass-culls-back-faces)), a never-spawned actor slot at the origin, a prop at the wrong [render scale](../subsystems/renderer.md#field-static-object-placement-town01), or a window-owned prop outside the region box |
 | engine frame black where retail shows a floor or backdrop, every other channel exact (`noaru_field_card_walk`) | a mesh-bearing ambient part seated off its anchor: noaru's ice floor rides the camera focus through move-VM ext `0x24` ([move-vm-overlay-ext](../subsystems/move-vm-overlay-ext.md#world-position-lerp-0x24--0x2a-and-box-gates-0x06--0x07)) |
 | retail frame black beyond a rectangle, the engine's filled | the visible-tile window (op `0x46`); the port draws the whole scene |
@@ -3661,6 +3673,65 @@ Shapes the corpus separates, each with what it indicates:
 | retail word held by a flag the entry script already consumed (`garmel`'s `0x196`) | script progress: the track was started by a beat that has since cleared its trigger flag, so a card load would not restart it |
 | camera depth and position off on an ending vignette (`ending_vignette_rimelm_walkaway`) | the credits walk against the camera glide: a frame of residue left ([below](#ending-vignettes-are-mid-script)) |
 | a translucent near-camera body brighter or wider in the engine frame (`theeder_summon_mid_cast`, `nivora_duel_pre_megaton_press`) | the near-camera ghost (`0x8300_0000`, bank 2, `B + F/4`) a frame or two off the displayed one, not a blend defect ([below](#a-near-camera-ghost-is-checked-against-retails-own-packets)) |
+
+### The other framebuffer
+
+A state holds two finished pictures: the buffer on screen, and the one the GPU
+drew last. `scripts/ci/retail-compare-buffers.py --report DIR` scores a report's
+engine frames against both, offline. The test separates what the single-frame
+score cannot: a frame near the undisplayed buffer drew retail's next pass
+correctly, so the distance to the displayed one measures the instant the state
+was saved, and a frame far from both measures the engine.
+
+| State | Displayed | Other | Buffers apart |
+|---|---|---|---|
+| `koru_pre_blade_breath`, `_thunder_needle`, `_gigaton_press` | `.740` | `.983` | `.735` |
+| `cort_evolved_card_pre_doomsday` | `.820` | `.995` | `.818` |
+
+These four are Done arm passes (`done_arm_pass`):
+the RAM is the first pass on the Done table, the image child walks the pose one
+pass back along it, and the undisplayed buffer is that pass. The screen is a
+pass older still, on the strike band's own framing, whose table the arm
+overwrote. The RAM holds no second endpoint to walk back against, and the two
+buffers stand as far apart as the engine stands from the screen, which is
+what a swing of the framing between two passes looks like. Closing it needs a
+word the state does not have; retake a state a pass into the Done band instead.
+
+A frame near neither buffer is not cleared by this test, and a seat the child
+already took back reads closer to the displayed one by construction, so only a
+large margin in the other buffer's favour carries weight.
+
+### A PCSX-Redux frame keeps what the console floors
+
+The console adds a `-4..3` offset to a Gouraud polygon's 8-bit channel and floors
+it to 5 bits, losing half a step on the mean. PCSX-Redux's software GPU rounds
+the low three bits up against a `0..7` threshold instead, and blends a
+Gouraud-textured foreground at full precision before it does
+(`src/gpu/soft/soft.cc`: `getTextureTransColShadeXDither`, `applyDither`), so
+nothing is lost, and each stacked layer widens the gap. Rasterising the state's
+own ordering table under each rule (`ot-raster.py`'s walker, with the rule
+swapped) places the capture:
+
+| State | Emulator | Buffer's luma | Console rule | Redux rule |
+|---|---|---|---|---|
+| `gimard_burning_attack` | PCSX-Redux | `60.9` | `56.0` | `61.2` |
+| `battle_noaru_gilium_lv2_strike` | PCSX-Redux | `91.0` | `86.5` | `91.0` |
+| `koru_pre_blade_breath` | PCSX-Redux | `33.3` | `31.1` | `33.4` |
+| `minigame_muscle_dome_retail_skeleton_hyper_arts` | PCSX-Redux | `47.5` | `43.3` | `46.7` |
+| `battle_gimard_tail_fire_a` | Mednafen | `46.4` | `45.1` | `47.9` |
+| `battle_melee_hit_spark` | Mednafen | `48.5` | `47.2` | `50.1` |
+
+So the gap is the capture emulator's and the engine sits on the console's side:
+Burning Attack's frame at luma `55`, under the tunnel's two stacked layers, is
+no missing light. The same split shows across the corpus, where retail less
+engine luma on field states means `-1.6` on Mednafen and `+1.7` on PCSX-Redux.
+
+Reproducing the rule in the image child beside the texel rule (telling a flat
+polygon from a Gouraud one by the colour's screen derivative) closes the mean and
+moves the block score both ways: `gimard_burning_attack` `.863` to `.879`,
+`battle_noaru_gilium_lv2_strike` `.904` to `.882`, `koru_pre_blade_breath` `.740`
+to `.725`. The child does not carry it. A faithful version needs the packet's
+Gouraud bit in the mesh, and the block tolerance forgives most of the gap anyway.
 
 ### A near-camera ghost is checked against retail's own packets
 
