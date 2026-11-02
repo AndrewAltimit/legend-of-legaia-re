@@ -1101,10 +1101,13 @@ impl RetailBattle {
                         // on clip `0x06` at cursor `-24`, the engine's still
                         // on its idle). Clips `0` / `1` are the idle and the
                         // walk, which the engine may hold under another id.
+                        // A later accumulator reads the same way: the walk's
+                        // clock runs that age too (`battle_map01_frog_strike`:
+                        // retail on clip `0x06` at `16`, the engine stopped on
+                        // its walk at the same age, framing the walk's case 6).
                         || (seat >= 3
                             && state == 0x1E
-                            && self.caster_clip > 1
-                            && self.span_gate == SpanGate::Age { accum: 0 })
+                            && self.caster_clip > 1)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
@@ -1133,7 +1136,7 @@ impl RetailBattle {
                             && state == 0x1E
                             && self.queued_category == 3
                             && self.caster_clip > 1
-                            && self.span_gate == SpanGate::Age { accum: 0 }))
+                            && matches!(self.span_gate, SpanGate::Age { .. })))
                     .then_some(self.strike_cursor),
                     // On a dynamic art slot the cursor cannot tell a starter
                     // from the art the loop staged behind it - both install

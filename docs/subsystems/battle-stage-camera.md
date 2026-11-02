@@ -1074,7 +1074,10 @@ the acting actor and its target (`actor[+0x1DD]` through the actor table
   a full turn when that lands below the live `_DAT_8007B792`, so the swing
   never takes the short arc back;
 - a pull-in at `0x801D6780` (pitch levelled, `TR.y += 0x40`, `TR.z = 3z/5`),
-  gated on `_DAT_800846C0 == 0` and the acting actor's anim state.
+  gated on `_DAT_800846C0 == 0` and then per seat: a party member on the art
+  slot `+0x1D9 == 0x11`, a monster on `ctx[+0x243]`, the solo byte `+0x87` of
+  its committed clip (`0x801D6738..0x801D6778`). The commit stores that byte
+  after its pass's arm, so the pull-in opens one pass later.
 
 **Case 8** is the same shape aimed at the target alone: an extra `-0x100` on
 the yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a

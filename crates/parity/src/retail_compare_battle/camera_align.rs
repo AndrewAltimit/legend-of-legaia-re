@@ -201,6 +201,37 @@ pub(super) fn summon_route_prior_end(ram: &[u8], ctx: u32, action_state: u8) -> 
     prior
 }
 
+/// Where case 7 held the eye before its pull-in, as [`displayed_cam_live`]'s
+/// `prior_end` (the translation's Y and Z).
+///
+/// The pull-in (`0x801D6780`: `TR.y += 0x40`, `TR.z = 3z/5`) is gated for a
+/// monster on `ctx[+0x243]`, which the strike clip's commit stores after that
+/// pass's arm, so a capture one pass past the commit holds the pull-in's first
+/// table: the pass before it stood on the depth the shot had already landed on.
+/// `battle_map01_frog_strike` reads TR z `4587` walking to `2948` by `164`; one
+/// pass back is `4915`, `prescale(ctx[+0x6D0])`, and the frame on screen is
+/// still there.
+pub(super) fn strike_pull_in_prior_end(ram: &[u8], ctx: u32) -> [Option<i32>; 9] {
+    let mut prior = [None; 9];
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE
+        || seat < 3
+        || game_anchors::u8_at(ram, ctx + 0x243) == 0
+    {
+        return prior;
+    }
+    let depth = i32::from(game_anchors::u16_at(ram, ctx + 0x6D0) as i16);
+    let far = legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(depth) as i32;
+    let near = legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(depth * 3 / 5) as i32;
+    let end_z = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 5 * 4 + 2) as i16);
+    if (end_z - near).abs() <= 2 {
+        prior[5] = Some(far);
+        let end_y = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 4 * 4 + 2) as i16);
+        prior[4] = Some(end_y - 0x40);
+    }
+    prior
+}
+
 /// The live pose the **displayed** frame was drawn at: retail's live camera
 /// walked back `passes` passes along its tween table.
 ///
@@ -355,7 +386,7 @@ pub(super) fn displayed_cam_live_steps(
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
             if let Some(p) = prior_end[k as usize]
-                && (pos - p) * dir > 0
+                && (pos - p) * dir >= 0
                 && (pos - dir * fs_n * step - p) * dir < 0
             {
                 prior = Some(p);

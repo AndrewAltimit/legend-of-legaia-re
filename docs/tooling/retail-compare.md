@@ -2652,6 +2652,14 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   prompt instead, the engine frames the prompt's target (case `1` on the
   member's `+0x1DD`) rather than the close-up (`image` `.866` to `.255`),
   so the drive keeps the entry's frame until that framing is settled.
+- **A swing the walk's lock spent.** `battle_map01_frog_strike` holds the queue
+  `06 06 06` at strike cursor `2`, on its first clip `0x06` at accumulator `16`:
+  the rings show the walk playing on across the first stage, which the walk
+  entry's `+0x76` lock refused. The replay commits the first byte, lands its hit
+  and is drawn on Vahn's reaction with his HP down (`image` `.866`), and retail's
+  second Lippian at the left of the frame is missing from it. Whether the port
+  plays a swing retail spends is open; a run counting the hits of that fight on
+  both sides would close it.
 - **Seat and timing.** A pick no seed reproduces (a monster's plain strike on a
   given seat) can run out of budget or end the fight first.
 - **A fading body retail does not draw.** `player_steal_skeleton_banner` holds

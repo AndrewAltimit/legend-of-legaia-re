@@ -601,3 +601,32 @@ fn a_kill_on_the_return_reads_the_steal_banner_capture() {
     assert_eq!(pose.focus, [957.0, 0.0, 857.0]);
     assert_eq!(cam.action_yaw, 0);
 }
+
+/// Case 7's pull-in on a monster's strike hangs on `ctx[+0x243]`, the solo byte
+/// of its committed clip (`lbu v0,0x243(v1)` at `0x801D6770`), under the Close
+/// option: `TR.y + 0x40`, `TR.z * 3 / 5`, as `battle_map01_frog_strike`'s table
+/// reads (`1344`, `2948` on a depth of `4915`).
+#[test]
+fn a_monsters_solo_clip_pulls_the_strike_framing_in() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Recover, 0);
+    cam.set_actor(BattleCamActor::default());
+    let monster = ActionFraming {
+        party_slot: false,
+        depth_raw: 3072,
+        ..Default::default()
+    };
+    cam.set_action_framing(monster);
+    let plain = cam.recover_pose();
+    assert_eq!(plain.tr[1], POST_TR_Y);
+    cam.set_action_framing(ActionFraming {
+        solo: true,
+        ..monster
+    });
+    let pulled = cam.recover_pose();
+    assert_eq!(pulled.tr[1], POST_TR_Y + RECOVER_PULL_TR_Y_STEP);
+    assert_eq!(pulled.tr[2], prescale_tr_z(3072 * 3 / 5));
+
+    // The far option keeps its framing.
+    cam.option = CAMERA_OPTION_CLOSE + 1;
+    assert_eq!(cam.recover_pose().tr[2], plain.tr[2]);
+}

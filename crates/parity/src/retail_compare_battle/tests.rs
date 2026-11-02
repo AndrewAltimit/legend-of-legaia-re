@@ -275,6 +275,32 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
+/// `battle_map01_frog_strike`: one pass past the strike commit its eye walks
+/// the pull-in's first table, so the frame on screen still stands on the depth
+/// the shot had landed on (`4915`), and walks no further back than that.
+#[test]
+fn a_monsters_pull_in_walks_back_no_further_than_the_landed_depth() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x243, 1);
+    put16(&mut ram, ctx + 0x6D0, 3072);
+    put32(&mut ram, 0x8008_40BC, 1292);
+    put16(&mut ram, rec(4), 6);
+    put16(&mut ram, rec(4) + 2, 1344);
+    put32(&mut ram, 0x8008_40C0, 4587);
+    put16(&mut ram, rec(5), 164);
+    put16(&mut ram, rec(5) + 2, 2948);
+    let prior = camera_align::strike_pull_in_prior_end(&ram, ctx);
+    assert_eq!(prior[5], Some(4915));
+    assert_eq!(prior[4], Some(1280));
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, prior);
+    assert_eq!(p.tr[2], 4915.0);
+    assert_eq!(p.tr[1], 1280.0);
+}
+
 /// `battle_korb2_warhalf_strike`'s words: the walk's last pass read the
 /// attacker off ring slot `3`, heading `1836` onto the target's live pair, and
 /// stood it on `(-96, 287)`, slot `2`. The loop's first arm read that heading,

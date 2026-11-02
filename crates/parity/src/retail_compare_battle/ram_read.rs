@@ -918,7 +918,11 @@ impl RetailBattle {
                         ctx,
                         &steps,
                         confirmed,
-                        summon_route_prior_end(ram, ctx, action_state),
+                        {
+                            let summon = summon_route_prior_end(ram, ctx, action_state);
+                            let pull_in = strike_pull_in_prior_end(ram, ctx);
+                            std::array::from_fn(|k| summon[k].or(pull_in[k]))
+                        },
                         {
                             let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
                             shift[1] = walk_heading(ram, ctx).map_or(0, |h| h.end_shift);

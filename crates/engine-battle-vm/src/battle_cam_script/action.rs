@@ -106,6 +106,10 @@ pub struct ActionFraming {
     /// case 8's stand-off arm ([`apply_node_gone_reframe`]). Defaults to
     /// the measured party value [`PARTY_BODY_RADIUS`].
     pub body_radius: i32,
+    /// `ctx[+0x243] != 0` - the committed clip's solo / freeze byte
+    /// (`+0x87`, stored by `FUN_8004E13C` at `0x8004E2C0`). On a monster's
+    /// strike it is case 7's pull-in gate (`0x801D6770`).
+    pub solo: bool,
 }
 
 impl Default for ActionFraming {
@@ -123,6 +127,7 @@ impl Default for ActionFraming {
             accum: 0,
             ramp: 0,
             body_radius: PARTY_BODY_RADIUS,
+            solo: false,
         }
     }
 }

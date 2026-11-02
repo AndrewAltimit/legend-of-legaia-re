@@ -482,12 +482,16 @@ impl BattleCamera {
     }
 
     pub(super) fn recover_pose(&self) -> BattleCamPose {
+        // `0x801D6738..0x801D6778`: a party seat on the art slot, a monster
+        // on a clip whose solo byte is set.
         let pull_in = self.option == CAMERA_OPTION_CLOSE
-            && self.action.party_slot
-            && self
-                .attack
-                .actor
-                .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART);
+            && if self.action.party_slot {
+                self.attack
+                    .actor
+                    .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART)
+            } else {
+                self.live_action_framing().solo
+            };
         recover_framing(
             self.body_actor(),
             self.target,
