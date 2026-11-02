@@ -316,6 +316,14 @@ impl MonsterAnimPlayer {
         (self.loop_budget / PHASE_ONE).min(255) as u8
     }
 
+    /// Rewrite the playing entry's window frames `+0x85` / `+0x86`: PROT
+    /// 0934's arm `0x12` stores `0x22` / `0x2C` into the record's clip-`3`
+    /// entry (`0x801F7FC8..0x801F7FE0`) with that clip playing.
+    pub fn set_loop_frames(&mut self, start: u8, end: u8) {
+        self.loop_start = u32::from(start) * PHASE_ONE;
+        self.loop_end = u32::from(end) * PHASE_ONE;
+    }
+
     /// Release the loop window early - the `actor+0x176` / `+0x21B` clear a
     /// cast module performs to end an authored park (the Delilas modules do
     /// this; see `docs/formats/monster-animation.md` § Playback).

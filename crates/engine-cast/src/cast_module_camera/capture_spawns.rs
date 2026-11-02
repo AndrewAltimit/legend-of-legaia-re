@@ -626,6 +626,14 @@ pub fn capture_spawn_pokes(prot_entry: u32, record: u32) -> &'static [(u16, u16)
     }
 }
 
+/// The emitter seed `+0xB8` PROT 0934's arms `0xF` and `0x14` store into the
+/// `n`th part of their ray fans as they seat it (`sh v1,0xB8(v0)` at
+/// `0x801F7C68`, `sh s0,0xB8(v0)` at `0x801F81FC`): `0x56CE`, `0x20` less per
+/// part.
+pub fn ozma_ray_seed(record: u32, n: usize) -> Option<(u16, u16)> {
+    matches!(record, 0x801F_A1BC | 0x801F_A200).then(|| (0xB8, 0x56CE - n as u16 * 0x20))
+}
+
 /// A capture arm's spawn made on a pass counted by the body's own frame
 /// counter: PROT 0940's word `0x801F8650`, which arms 2, 4 and 5 read and
 /// bump once a pass and arms 1 and 3 zero as they pass

@@ -197,6 +197,11 @@ impl World {
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
         let module_phase = run.as_ref().map_or(0, |r| r.phase);
+        // PROT 0904's ray strikes a seat on this tick: its reaction, and so
+        // the outcome, start here.
+        let ray_struck = run
+            .as_ref()
+            .is_some_and(|r| r.prot_entry == 904 && !r.aoe_hits.is_empty());
         if let Some(shot) = run.as_ref().and_then(|r| r.camera_shot)
             && let Some(cam) = self.battle.camera.as_mut()
         {
@@ -321,7 +326,7 @@ impl World {
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
-                    Some(hit) => module_phase > hit || !module_busy,
+                    Some(hit) => module_phase > hit || !module_busy || ray_struck,
                     None => walked,
                 };
                 if strike {

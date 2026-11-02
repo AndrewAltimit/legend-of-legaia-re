@@ -12,6 +12,7 @@ mod module_hits;
 mod module_impact;
 mod module_rumble;
 mod puera_writes;
+mod ra_seru_writes;
 mod seru_cam_feed;
 mod seru_seat_writes;
 mod seru_tick;

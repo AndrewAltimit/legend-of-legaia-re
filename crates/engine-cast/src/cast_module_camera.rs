@@ -282,6 +282,9 @@ pub struct ModuleCamState {
     pub caster_frame: Option<u16>,
     /// The caster's loop counter `+0x21B`, fed like [`Self::caster_clip`].
     pub caster_loops: Option<u8>,
+    /// PROT 0934's pass word `0x801FA408` and rise word `0x801FA40C`, the
+    /// camera shake of its arms 5..9.
+    pub ozma_shake: (u32, i32),
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -875,7 +878,7 @@ pub struct ModuleNudge {
 }
 
 impl ArmDirection {
-    pub(super) const HOLD: Self = Self {
+    pub const HOLD: Self = Self {
         hold: true,
         shot: None,
         follow: None,
@@ -1093,11 +1096,10 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         // (`crate::seru_magic_ticks::theeder_tick`).
         904 => Some(ModuleProfile {
             direct: theeder_direct,
-            // The sweep strikes when its ray reaches the seat, about 33 ticks
-            // into arm 12 (`0x801F7D38`). The fold cannot wait for the ray,
-            // and a fold past the arm staged the reaction a second time, with
-            // its cues, so it lands as the arm opens.
-            hit_arm: Some(crate::seru_magic_ticks::THEEDER_RETARGET_ARM),
+            // The sweep strikes when its ray reaches a seat (`0x801F7D38`):
+            // the host folds on that tick's hit, and past the arm if the ray
+            // met no seat.
+            hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
             walk_arm: None,
             owns_phase: false,
             stages_spawns: false,
@@ -1363,11 +1365,13 @@ pub const fn creature_poll_arm(prot_entry: u32) -> Option<u8> {
 /// push, then seeks `FUN_8003EAE4(0, 0xE)`; PROT 0928's arm 1 the same
 /// (`0x801F6D58..0x801F6D60`), and PROT 0931's arm 2
 /// (`0x801F6D18..0x801F6D20`): `jedo_summon_mid_cast` holds that arm one
-/// pass into the sustain with the byte at `8`.
+/// pass into the sustain with the byte at `8`. Every summon image makes this
+/// read once ([the table](../../docs/subsystems/cast-module.md#the-side-band-poll-arm));
+/// PROT 0923's sits behind its arm-0 drain and is its director's.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
-        928 | 929 => Some(1),
-        930 | 931 => Some(2),
+        904 | 909..=913 | 916 | 917 | 919..=922 | 925 | 927..=929 | 933 => Some(1),
+        903 | 905..=908 | 914 | 915 | 918 | 930..=932 | 934 => Some(2),
         _ => None,
     }
 }

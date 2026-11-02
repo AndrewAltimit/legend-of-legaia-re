@@ -187,6 +187,9 @@ pub struct CastFxState {
     /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
     /// `-0x100` and arm 16 walks it toward the row.
     pub module_mule_front: i32,
+    /// PROT 0933's orbit words: the speed `0x801F93C0` and the angle
+    /// `0x801F93C4`.
+    pub module_terra_orbit: (i32, i32),
     /// Seats a stager arm run inside its caller's op-`0x20` step decided
     /// (PROT 0925's, which writes into its caller), for the band to seat on
     /// the module's next tick.
@@ -439,6 +442,7 @@ impl CastFxState {
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
             module_mule_front: 0,
+            module_terra_orbit: (0, 0),
             module_stager_seats: Vec::new(),
             module_record_clocks: Vec::new(),
             module_split_saved_target: None,

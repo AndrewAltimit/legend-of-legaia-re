@@ -364,15 +364,14 @@ adds its reaction-channel entry). What the recordings on
   seat already reacting; the engine's mirror read the action channel, where
   a hit reaction never shows, so PROT 0904's sweep (Theeder) struck the same
   seat every pass and its reaction cue sounded on each.
-- **Zenoir's opener.** Retail's arm 8 hit (`0x801F76CC`) takes the victim to
-  1 HP and stages its reaction, whose clip cue `0x80` (ring `0x21C`, the
-  router from `FUN_800508DC`) sounds on arm 10's first pass. The engine
-  runs PROT 0908's damage sites with no rolls and resolves the spell's
-  damage elsewhere, so the opener stages nothing and the cue never sounds.
-- **Theeder's reaction, staged once.** The module's sweep stages the victim's
-  reaction, and a fold past arm 12 staged it a second time, with its cues. The
-  fold now lands as arm 12 opens, about 33 ticks ahead of retail's ray. The ids
-  and counts match; the four cues stay about 30 ticks early.
+- **Zenoir's opener.** Retail's arm 8 hit (`0x801F76CC`) takes the victim down
+  by a quarter of the roll, clamped to `HP - 1`, and stages its reaction, whose
+  clip cue `0x80` (ring `0x21C`, the router from `FUN_800508DC`) sounds on arm
+  10's first pass. The engine lands it on the same pass
+  (`World::apply_summon_pre_hits`).
+- **Theeder's reaction.** The module's sweep stages the victim's reaction when
+  the ray reaches the seat, about 33 ticks into arm 12 (`0x801F7D38`). The fold
+  lands on that tick's hit, so the reaction and its cues start there.
 - **A projectile's impact cue.** Aluru Cannon's landing rings `0x49`: the
   caller log reads `FUN_8004FCC8` from `0x801E185C`, the hit arm's
   `record[+0x0D]` ([move-power](../formats/move-power.md)). The engine's homing
@@ -384,7 +383,7 @@ adds its reaction-channel entry). What the recordings on
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
-## Reading the report## Reading the report
+## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
 come:
@@ -442,6 +441,13 @@ enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
+- **A cast longer than `LEGAIA_MAX_SHOTS` (default `1500` grabs) is cut.** At
+  `--every 2` that is 3000 vsyncs: the closing arms of Meta and Ozma carry no
+  pairs. Set the variable higher to score them.
+- **The caster need not know the spell.** An injected cast of an unlearned
+  spell rolls a capped hit
+  ([battle-formulas](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)),
+  and the engine mirrors it, so popups match but read `9999`.
 
 ## A monster cast from any battle state
 

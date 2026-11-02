@@ -4,10 +4,10 @@
 //! alone and re-arm it by literals; none stores `0xFF` - its terminal arm
 //! returns `0` and the port stands at `0xFF` for it.
 //!
-//! Not carried, as in [`super::gola_mushura_barra`]: part spawns, the
-//! writes to the other seats (the monster row's re-seat, hiding, orbit and
-//! restore), the stage, lighting and camera-block words, and every hit
-//! beyond the one the band's fold lands on the hit arm.
+//! Not carried, as in [`super::gola_mushura_barra`]: the stage, lighting and
+//! camera-block words, and every hit beyond the one the band's fold lands on
+//! the hit arm. The stores on other seats are `World::apply_meta_writes` and
+//! `World::apply_ozma_writes`.
 //!
 //! See `ghidra/scripts/funcs/overlay_summon_meta_0932_801f6a34.txt`,
 //! `overlay_summon_terra_0933_801f6a30.txt` and
@@ -78,7 +78,7 @@ pub const META_LAST_ARM: u8 = 0x16;
 /// The absolute TR y / z stores of arm 6's exit (`0x3A0`, `0x720`) and arm
 /// 4's camera block `0x80083FF8` are not carried.
 ///
-/// PORT: overlay_summon_meta_0932_801f6a34 (PROT 0932; the whole phase chain's gates, camera writes, captions, creature seat and clips - the monster-row writes, part spawns, the lighting and camera-block words and the per-call tail not carried)
+/// PORT: overlay_summon_meta_0932_801f6a34 (PROT 0932; the whole phase chain's gates, camera writes, captions, creature seat and clips - the other seats are `World::apply_meta_writes`; the lighting and camera-block words and the per-call tail not carried)
 pub fn meta_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -> ArmDirection {
     let at = [0, 0, 0x1C0];
     let shot12 = || cut([0x40, 0xA64], [0, 0x500, 0x1288], [-0xB0, 0, 0x80], 0x18);
@@ -399,6 +399,56 @@ pub const OZMA_HIT_ARM: u8 = 0x18;
 /// PROT 0934's terminal arm (`0x801F9124`).
 pub const OZMA_LAST_ARM: u8 = 0x19;
 
+/// The trail id PROT 0934's lightning passes the ribbon (`li a1,0xC` at
+/// `0x801F6EE8`).
+pub const OZMA_BOLT_TRAIL: u8 = 0xC;
+
+/// The eight ground points PROT 0934's arms 5..9 hand `FUN_801E1D98` on
+/// every pass that holds (`0x801F6E80..0x801F6EF4`): the table angle `i *
+/// 0x200`, `x = sin / 4`, `z = cos / 8 - 0x500`, each toward zero, at height
+/// `-0xC0`.
+pub fn ozma_bolt_ring() -> capture::CastRibbonRing {
+    let mut points = [[0i16; 3]; 16];
+    for (i, p) in points.iter_mut().take(8).enumerate() {
+        let (sin, cos) = legaia_engine_system::trig::trig12((i as u16) << 9);
+        *p = [sin / 4, -0xC0, cos / 8 - 0x500];
+    }
+    capture::CastRibbonRing {
+        points,
+        trail_id: OZMA_BOLT_TRAIL,
+        count: 8,
+    }
+}
+
+fn with_ring(dir: ArmDirection) -> ArmDirection {
+    ArmDirection {
+        ribbons: Some(ozma_bolt_ring()),
+        ..dir
+    }
+}
+
+/// The vsyncs one retail frame takes through PROT 0934's arms 5..9: the frame
+/// step reads `4` on every capture of them. The arms' words count frames, and
+/// the engine's tick is a vsync, so the shake's low bit is read per this many
+/// ticks: the camera does not jump `0x200` on alternate vsyncs.
+const OZMA_SHAKE_TICKS: u32 = 4;
+
+/// One pass of the camera shake PROT 0934's arms 5..9 store straight into
+/// TR y: the pass word `0x801FA408` read for its low bit and bumped, the
+/// rise word `0x801FA40C` moved by `step` (`0x801F6FBC..0x801F7018`). The
+/// low bit and the moved word.
+fn ozma_shake_step(st: &mut ModuleCamState, step: i32) -> (i32, i32) {
+    let odd = ((st.ozma_shake.0 / OZMA_SHAKE_TICKS) & 1) as i32;
+    st.ozma_shake.0 = st.ozma_shake.0.wrapping_add(1);
+    st.ozma_shake.1 += step;
+    (odd, st.ozma_shake.1)
+}
+
+/// The live TR y the host fed, so an absolute store can travel as a drift.
+fn live_tr_y(st: &ModuleCamState) -> i32 {
+    st.live_pitch_tr.map_or(0, |(_, tr)| tr[1])
+}
+
 /// PROT 0934 (Ozma): every framing aims at the raw focus `(0, 0, 0x400)`.
 ///
 /// | arm | re-arm | per-pass drift | exit |
@@ -416,11 +466,11 @@ pub const OZMA_LAST_ARM: u8 = 0x19;
 /// | 0x18 | `0x100` | - | the hit |
 /// | 0x19 | - | - | the word spent: the caption cleared, `ctx[+0x6DA] = 0`, the loop counter cleared; done |
 ///
-/// The absolute TR y stores arms 5..9 make every pass (an accumulator with a
-/// one-frame jitter) are not carried; arm 0x15's focus, the last random
-/// spawn's point, aims at `(0, 0, 0x400)`.
+/// Arms 5..9's absolute TR y stores (a rise word with a one-frame shake) are
+/// [`ozma_shake_step`], their lightning [`ozma_bolt_ring`]. Arm 0x15's focus,
+/// the last random spawn's point, aims at `(0, 0, 0x400)`.
 ///
-/// PORT: overlay_summon_ozma_0934_801f6a40 (PROT 0934; the whole phase chain's gates, camera writes, captions, creature seat and clips - the monster-row writes, part spawns and random sprays, the TR y jitter, the lighting and colour pulses and the hit ladder's earlier hits not carried)
+/// PORT: overlay_summon_ozma_0934_801f6a40 (PROT 0934; the whole phase chain's gates, camera writes, captions, creature seat and clips - the other seats are `World::apply_ozma_writes`; the random sprays and the hit ladder's earlier hits not carried)
 pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
     let at = [0, 0, 0x400];
     let d = |pitch: i32, yaw: i32, tr_x: i32, tr_y: i32, tr_z: i32| {
@@ -436,12 +486,14 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
         3 => gate(seats.band_timer != 0),
         4 => {
             st.countdown.0 = 0x20;
+            st.ozma_shake = (0, 0);
             ArmDirection::PASS
         }
         5 => {
-            let dd = d(-D, D, 0, 0, 8 * D);
+            let (odd, rise) = ozma_shake_step(st, D);
+            let dd = d(-D, D, 0, odd * 0x80 + rise - live_tr_y(st), 8 * D);
             if gated(st, 0xC0) {
-                return held(dd);
+                return with_ring(held(dd));
             }
             st.creature = Some(ModuleSeat {
                 x: 0,
@@ -451,28 +503,47 @@ pub fn ozma_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             });
             st.creature_floor_clip = true;
             st.creature_stage = Some(1);
-            with_drift(ArmDirection::PASS, dd)
+            with_ring(with_drift(ArmDirection::PASS, d(-D, D, 0, 0, 8 * D)))
         }
-        6 => arm(
-            st,
-            0x50,
-            d(-D, D, 0, 0, 8 * D),
-            cut([0x180, 0x800], [0, 0xC00, 0xC00], at, 1),
-        ),
-        7 => arm(
-            st,
-            0x50,
-            d(-D, 0, 0, 0, 24 * D),
-            cut([-0x80, 0x800], [0, 0xE00, 0x600], at, 1),
-        ),
-        8 => arm(st, 0x30, d(-D, 0, 0, 0, 48 * D), ArmDirection::PASS),
+        6 => {
+            let (odd, rise) = ozma_shake_step(st, 4 * D);
+            let dd = d(-D, D, 0, odd * 0x200 + rise - live_tr_y(st), 8 * D);
+            if gated(st, 0x50) {
+                return with_ring(held(dd));
+            }
+            with_ring(with_drift(
+                cut([0x180, 0x800], [0, 0xC00, 0xC00], at, 1),
+                d(-D, D, 0, 0, 8 * D),
+            ))
+        }
+        7 => {
+            let (odd, _) = ozma_shake_step(st, 0);
+            let dd = d(-D, 0, 0, odd * 0xC0 + 0xC00 - live_tr_y(st), 24 * D);
+            if gated(st, 0x50) {
+                return with_ring(held(dd));
+            }
+            st.ozma_shake.1 = 0x80;
+            with_ring(with_drift(
+                cut([-0x80, 0x800], [0, 0xE00, 0x600], at, 1),
+                d(-D, 0, 0, 0, 24 * D),
+            ))
+        }
+        8 => {
+            let (odd, rise) = ozma_shake_step(st, -D);
+            let dd = d(-D, 0, 0, odd * rise + 0xE00 - live_tr_y(st), 48 * D);
+            with_ring(arm(st, 0x30, dd, ArmDirection::PASS))
+        }
         9 => {
-            let dd = d(-D, 0, 0, 0, 4 * D);
+            let (odd, rise) = ozma_shake_step(st, -D);
+            let dd = d(-D, 0, 0, odd * rise + 0xE00 - live_tr_y(st), 4 * D);
             if gated(st, 0x30) {
-                return held(dd);
+                return with_ring(held(dd));
             }
             st.creature_floor_clip = false;
-            with_drift(cut([0x180, 0x900], [-0x300, 0x600, 0x1000], at, 1), dd)
+            with_drift(
+                cut([0x180, 0x900], [-0x300, 0x600, 0x1000], at, 1),
+                d(-D, 0, 0, 0, 4 * D),
+            )
         }
         0xA => arm(st, 0x60, None, ArmDirection::PASS),
         0xB => arm(st, 0x10, d(0, 0, 0, 24 * D, 0), ArmDirection::PASS),

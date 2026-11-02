@@ -2235,12 +2235,12 @@ image's phase switch (a `beq` on the register holding `1` counted as phase
 state `0x32` until the applier has read the cast's last slot, about `30`
 vsyncs a slot ([cast-sequence oracle](../tooling/cast-sequence-oracle.md#waits-the-engine-does-not-run)),
 so the arm holds for whatever of that the band head did not cover. The
-engine's side-band is resident and never raises the byte, so the arm passes
-at once in play. `cast_module_camera::sideband_wait_arm` names the arms
-whose directors gate on `ModuleCamState::sideband_busy` (0928, 0929, 0930,
-0931); that flag is raised only by a capture replay standing on the arm, and
-among the corpus's summon states only `jedo_summon_mid_cast` sits in a poll
-arm with the byte still up (`8`, one pass into the sustain).
+engine's side-band is resident, but the byte is up for the reads' CD time
+(`World::tick_sideband_token`, `sideband_token_vsyncs`), and
+`cast_module_camera::sideband_wait_arm` names the arm: the band holds a director
+there while the byte is up, ahead of anything else the arm does. Among the
+corpus's summon states only `jedo_summon_mid_cast` sits in a poll arm with the
+byte still up (`8`, one pass into the sustain).
 
 ### PROT 0918, 0922 and 0927 directors
 
@@ -2344,6 +2344,15 @@ folds the cast's outcome once the phase passes the hit arm:
 | 0932 Meta | `0x15` | the row; arm `0x12` sweeps it with a pre-hit first |
 | 0933 Terra | `0x13` | the row; arm `0xC` sweeps it with a pre-hit first |
 | 0934 Ozma | `0x18` | the row (the hit ladder's three earlier hits are not carried) |
+
+The stores Meta, Terra and Ozma make on other seats are
+`World::apply_meta_writes`, `apply_terra_writes` and `apply_ozma_writes`, tabled
+on each: the monster row re-seated in front of the creature and put back, hidden
+and shown, the creature's animation rate arm by arm (which is what keeps its
+clips on retail's frames), Terra's orbit of the row, and Ozma's blue ease
+(`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
+into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
+a shake on the low bit of a pass word, and draw eight streak ribbons on a ring.
 
 A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with

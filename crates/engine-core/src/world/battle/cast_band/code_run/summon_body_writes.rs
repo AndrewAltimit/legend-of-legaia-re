@@ -127,7 +127,7 @@ impl World {
         }
     }
 
-    /// The non-lethal pre-hits four summon-creature modules land before the
+    /// The non-lethal pre-hits five summon modules land before the
     /// band's fold, on the pass that makes them: each target's roll is the
     /// summon branch of `FUN_801DD0AC` ([`Self::player_summon_predamage`]),
     /// clamped to `HP - 1`
@@ -140,6 +140,9 @@ impl World {
     ///   `0x1C1` (`0x801F80C4..0x801F81EC`), every living targetable monster.
     /// - PROT 0932 arm `0x12` and PROT 0933 arm `0xC`, on their pass: every
     ///   living monster.
+    /// - PROT 0908 arm 8's pass (`0x801F76CC..0x801F77F4`): the latched
+    ///   victim, the roll quartered; skipped for a victim with `+0x16E` bit
+    ///   `4`.
     ///
     /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
     /// quartered roll is checked against, the first argument's `0x10` /
@@ -177,6 +180,11 @@ impl World {
                 .into_iter()
                 .map(|s| s as u8)
                 .collect(),
+            (908, 8) if passed => st
+                .victim_slot
+                .filter(|&v| self.cast_view(v).flags & FLAG_NON_TARGETABLE == 0)
+                .into_iter()
+                .collect(),
             _ => return,
         };
         for t in targets {
@@ -186,9 +194,30 @@ impl World {
             if entry == 915 {
                 dmg = (dmg >> 2).max(1);
             }
+            // Arm 8's roll quartered (`srl s0,s0,0x2` at `0x801F7728`).
+            if entry == 908 {
+                dmg >>= 2;
+            }
             let mut v = self.cast_view(t);
             if v.hp == 0 {
                 continue;
+            }
+            // `FUN_801F44A0(amount, seat)`: PROT 0915's after its clamp, the
+            // others' ahead of it.
+            if matches!(entry, 908 | 915 | 928 | 932 | 933) {
+                let amount = if entry == 915 {
+                    dmg.min(v.hp.saturating_sub(1))
+                } else {
+                    dmg
+                };
+                self.battle
+                    .hit_fx
+                    .push(legaia_engine_battle::battle_events::BattleHitFx {
+                        target_slot: t,
+                        amount,
+                        is_heal: false,
+                        is_crit: false,
+                    });
             }
             legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             self.write_cast_view(t, &v);

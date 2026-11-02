@@ -195,7 +195,15 @@ impl World {
                 // a capture replay holds it.
                 let held = st.sideband_busy;
                 st.sideband_busy |= self.battle_ctx.menu_open != 0;
-                let d = direct(&mut st, ctx.phase, seats);
+                // The poll arm returns busy ahead of anything else it does.
+                let polling = st.sideband_busy
+                    && legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry)
+                        == Some(ctx.phase);
+                let d = if polling {
+                    legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
+                } else {
+                    direct(&mut st, ctx.phase, seats)
+                };
                 st.sideband_busy = held;
                 self.store_module_cam(st);
                 d
@@ -1504,6 +1512,15 @@ impl World {
             victim_slot,
             seat_slot,
         );
+        if entry == 908 {
+            self.apply_summon_pre_hits(
+                entry,
+                phase_in,
+                ctx.phase != phase_in,
+                caster_slot,
+                spell_id,
+            );
+        }
         // The summon-creature directors' HP and colour-word stores, after
         // the views' fold-back like PROT 0908's.
         if direction.is_some() && (914..=934).contains(&entry) {
@@ -1531,6 +1548,30 @@ impl World {
             }
             if entry == 928 {
                 self.apply_palma_writes(phase_in, ctx.phase != phase_in);
+            }
+            if entry == 932 {
+                self.apply_meta_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 933 {
+                self.apply_terra_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 934 {
+                self.apply_ozma_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
             }
             if entry == 923 {
                 self.apply_gilium_writes(phase_in, ctx.phase != phase_in);

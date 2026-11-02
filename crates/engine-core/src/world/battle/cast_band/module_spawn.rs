@@ -578,9 +578,13 @@ impl World {
                         legaia_engine_cast::cast_module_camera::doomsday_ring_part_words(va, n)
                     })
                     .flatten();
+                let ray = (prot_entry == 934)
+                    .then(|| legaia_engine_cast::cast_module_camera::ozma_ray_seed(va, n))
+                    .flatten();
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
                     part.seat_pokes.extend_from_slice(pokes);
+                    part.seat_pokes.extend(ray.iter());
                     part.seat_pokes.extend(drift.iter().flatten());
                     part.seat_pokes.extend(ring.iter().flatten());
                 }
