@@ -127,6 +127,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PARTY_SPD"] = str(a.party_spd)
     if a.monster_pick:
         env["LEGAIA_MONSTER_PICK"] = "1"
+        if a.cast_queue:
+            env["LEGAIA_CAST_QUEUE"] = a.cast_queue
     if a.save_inject:
         env["LEGAIA_SAVE_INJECT"] = "1"
     if a.sfx_callers:
@@ -319,6 +321,9 @@ def main() -> int:
     ap.add_argument("--caster", type=num, default=0, help="seat whose action is rewritten (255 = any party seat)")
     ap.add_argument("--target", type=num, default=3, help="target seat")
     ap.add_argument("--formation", help="retail only: formation row bytes forced at FUN_801DA600 (comma list)")
+    ap.add_argument("--cast-queue", metavar="HEX,HEX,..",
+                    help="retail, with --monster-pick: bytes written behind the spell at +0x1E0 "
+                         "(clip, shot, ff), as the state's own queue holds them")
     ap.add_argument("--monster-pick", action="store_true",
                     help="retail: a monster caster (--caster 3..7) gets the cast written where the AI "
                          "pick FUN_801E9FD4 returns (breakpoint core), so any battle state that reaches "

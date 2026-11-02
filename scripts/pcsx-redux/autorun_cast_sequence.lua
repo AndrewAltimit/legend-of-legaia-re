@@ -58,6 +58,10 @@
 --                        that acts
 --   LEGAIA_TARGET_SEAT   actor-table seat to target (3)
 --   LEGAIA_INJECT_STATE  action state to inject on (0x0A)
+--   LEGAIA_CAST_QUEUE    hex bytes (`09,0e,ff`) written behind the spell at
+--                        +0x1E0.. by LEGAIA_MONSTER_PICK: the clip, shot and
+--                        terminator a magic pick stores. A pick that was not
+--                        a cast leaves no terminator, and 0x2A parks on it.
 --   LEGAIA_MONSTER_PICK  1 = rewrite a MONSTER caster's action where the AI
 --                        pick returns instead of at LEGAIA_INJECT_STATE: a
 --                        breakpoint on 0x801DAF50 (FUN_801DABA4's monster
@@ -120,6 +124,10 @@ local TARGET_SEAT  = probe.getenv_num("LEGAIA_TARGET_SEAT", 3)
 local INJECT_STATE = probe.getenv_num("LEGAIA_INJECT_STATE", 0x0A)
 local FORCE_ROW    = probe.getenv("LEGAIA_FORCE_ROW", "")
 local MONSTER_PICK = probe.getenv_num("LEGAIA_MONSTER_PICK", 0) ~= 0
+local CAST_QUEUE = {}
+for v in string.gmatch(probe.getenv("LEGAIA_CAST_QUEUE", ""), "[^,]+") do
+    CAST_QUEUE[#CAST_QUEUE + 1] = tonumber(v, 16)
+end
 local SAVE_INJECT  = probe.getenv_num("LEGAIA_SAVE_INJECT", 0) ~= 0
 local inject_saved = false
 local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
@@ -356,6 +364,7 @@ probe.run({
                 probe.write_u8(a + 0x1DE, 2)
                 probe.write_u8(a + 0x1DF, SPELL)
                 probe.write_u8(a + 0x1DD, TARGET_SEAT)
+                for i, v in ipairs(CAST_QUEUE) do probe.write_u8(a + 0x1DF + i, v) end
                 for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
                 injected = true
                 inject_vsync = last_elapsed
