@@ -676,7 +676,7 @@ impl BakaDuelScene {
     /// player select draws the arena and the three-fighter lineup, the
     /// cursor's fighter lit and the other two at half depth cue.
     ///
-    /// REF: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
+    /// PORT: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
     /// fighter, `0x800` otherwise; the idle clip `+0x5C` = `1 + 9 * roster`
     /// stepped at its record's byte `+0x07`)
     fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {

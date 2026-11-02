@@ -1,4 +1,4 @@
-//! The sprite-actor draw callback, hold flags and animation bind.
+//! The sprite-actor draw callback.
 
 use super::*;
 
@@ -78,101 +78,5 @@ pub fn chrome_actor_draw(actor: &ChromeActor, mode: i32, match_phase: i32) -> Ch
             draw: None,
             retire: false,
         },
-    }
-}
-
-/// Actor flag bit the retire path raises (`+0x10 |= 8`).
-pub const ACTOR_FLAG_RETIRE: u32 = 0x8;
-/// Actor flag bit `FUN_801D6F18` raises (`+0x10 |= 0x200000`).
-pub const ACTOR_FLAG_HOLD: u32 = 0x0020_0000;
-/// Actor flag bit the bind path clears (`+0x10 &= ~2`).
-pub const ACTOR_FLAG_TICK: u32 = 0x2;
-
-/// PORT: FUN_801D6F18 - the chrome actor hold wrapper.
-///
-/// Raises [`ACTOR_FLAG_HOLD`] on the actor's flag word and re-enters the
-/// shared actor dispatcher `FUN_800204F8`. The whole body is the `or` plus
-/// the tail call.
-pub fn chrome_actor_hold(flags: u32) -> u32 {
-    flags | ACTOR_FLAG_HOLD
-}
-
-/// What [`chrome_actor_bind`] resolves for one sprite actor.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChromeActorBind {
-    /// New flag word for the actor's `+0x10`.
-    pub flags: u32,
-    /// New `+0x78` fade level: `0` for the two focused fighters, `0x800`
-    /// otherwise.
-    pub fade: u16,
-    /// New `+0x6A` frame count, byte `+0x07` of the resolved animation
-    /// record. `None` when the match is over and the actor retires instead.
-    pub frames: Option<u8>,
-    /// Whether `+0x74` is cleared (the high-bank arm only).
-    pub clear_accum: bool,
-}
-
-/// Animation-id threshold that picks between the two clip banks.
-pub const ANIM_BANK_SPLIT: i16 = 0x400;
-/// Mask applied to the animation id before the bank offset lookup.
-pub const ANIM_ID_MASK: u16 = 0x3FF;
-
-/// PORT: FUN_801D3390 - the chrome sprite-actor animation bind.
-///
-/// Runs before the actor's draw. Once the match phase global
-/// `DAT_801DBF78` is non-zero the whole body collapses to raising
-/// [`ACTOR_FLAG_RETIRE`] and returning - the chrome tears itself down with
-/// the match.
-///
-/// Otherwise it clears [`ACTOR_FLAG_TICK`], sets the actor's fade level from
-/// whether its `+0x5A` owner id matches either focused fighter
-/// (`DAT_801DBF70` / `DAT_801DBF74`) - `0` when it does, `0x800` when it does
-/// not - and resolves the animation record: the `+0x5C` id picks the
-/// scene's type-`0x05` clip bank `_DAT_8007B888` below [`ANIM_BANK_SPLIT`] and
-/// the type-`0x0B` bank `_DAT_8007B840` at or above it (the same two banks the
-/// clip selector `FUN_800204F8` resolves - ANM containers, not sprite sheets) (the at-or-above arm also clears `+0x74`), the id's
-/// low [`ANIM_ID_MASK`] bits index a word offset table at the bank base, and
-/// byte `+0x07` of the record that offset reaches becomes the actor's
-/// `+0x6A` frame count.
-pub fn chrome_actor_bind(
-    flags: u32,
-    match_phase: i32,
-    owner: i16,
-    focus: (i16, i16),
-    anim_id: i16,
-    bank_below_split: &[u8],
-    bank_at_or_above: &[u8],
-) -> ChromeActorBind {
-    if match_phase != 0 {
-        return ChromeActorBind {
-            flags: flags | ACTOR_FLAG_RETIRE,
-            fade: 0,
-            frames: None,
-            clear_accum: false,
-        };
-    }
-    let flags = flags & !ACTOR_FLAG_TICK;
-    let fade = if focus.0 == owner || focus.1 == owner {
-        0
-    } else {
-        0x800
-    };
-    let below = anim_id < ANIM_BANK_SPLIT;
-    let bank = if below {
-        bank_below_split
-    } else {
-        bank_at_or_above
-    };
-    let idx = (anim_id as u16 & ANIM_ID_MASK) as usize;
-    let frames = bank
-        .get(idx * 4..idx * 4 + 4)
-        .map(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]) as usize)
-        .and_then(|off| bank.get(off + 7))
-        .copied();
-    ChromeActorBind {
-        flags,
-        fade,
-        frames,
-        clear_accum: !below,
     }
 }

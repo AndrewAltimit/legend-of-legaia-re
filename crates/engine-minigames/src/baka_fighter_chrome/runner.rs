@@ -1,9 +1,9 @@
-//! The runner that drives the two round timelines and the banner actor pool.
+//! The runner that drives the round timelines and the result banners.
 
 use super::*;
 
 // ---------------------------------------------------------------------------
-// The runner that drives the two round timelines and the banner actor pool
+// The runner that drives the round timelines and the result banners
 // ---------------------------------------------------------------------------
 
 /// Frame at which the intro title card has finished assembling and the
@@ -16,21 +16,13 @@ pub const INTRO_END: i32 = 204;
 /// `t - 90 == 48`.
 pub const BANNER_END: i32 = BANNER_SLIDE_OUT + 48;
 
-/// Widget id the round banner spawns as a sprite actor
-/// (`FUN_801D6E04`'s argument on the round-result path).
-pub const ROUND_BANNER_SPRITE: u16 = 3;
-
 /// One frame's worth of match state the runner needs from the duel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChromeTick {
     /// The global frame step (`DAT_1F800393`).
     pub frame_step: i32,
-    /// `DAT_801DBF78` - `0` while the match is torn down, non-zero while it
-    /// runs. The actor bind retires every pooled banner once it is set.
+    /// `DAT_801DBF78`, the argument the result sprites' draw reads.
     pub match_phase: i32,
-    /// `DAT_801DBF70` / `DAT_801DBF74` - the two focused fighter ids the bind
-    /// compares each actor's owner against.
-    pub focus: (i16, i16),
 }
 
 impl Default for ChromeTick {
@@ -38,31 +30,18 @@ impl Default for ChromeTick {
         ChromeTick {
             frame_step: 1,
             match_phase: 0,
-            focus: (0, 1),
         }
     }
-}
-
-/// One live banner sprite actor in the runner's pool, plus the mode its draw
-/// callback runs under and the owner id the bind compares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ChromeSprite {
-    pub actor: ChromeActor,
-    /// The `mode` argument `FUN_801D67F0` is installed with.
-    pub mode: i32,
-    /// `+0x5A` - the fighter this banner belongs to.
-    pub owner: i16,
-    /// `+0x5C` - the animation id the bind resolves.
-    pub anim_id: i16,
-    /// `+0x10` flag word.
-    pub flags: u32,
 }
 
 /// The Baka Fighter round chrome as one advancing object.
 ///
 /// Retail runs both timelines off the overlay's own per-frame tick, in
 /// parallel with the resolution state machine, and spawns the round-result
-/// banners as sprite actors that the `_DAT_8007BA2C` draw hook services.
+/// banners as sprite actors that the `_DAT_8007BA2C` draw hook services. The
+/// round banner is not one of them: `FUN_801D5C7C` draws its quads on the
+/// frames the cabinet calls it and spawns nothing, so when the banner arms
+/// end, the word is gone.
 /// [`BakaChrome`] is that arrangement: the duel
 /// ([`crate::baka_fighter::BakaFight`]) steps it once per frame and reads the
 /// [`ChromeFrame`] it produces.
@@ -77,7 +56,6 @@ pub struct BakaChrome {
     /// ([`Self::round_banner_step`]); cleared at the top of every
     /// [`Self::step`].
     banner_live: Option<i32>,
-    sprites: Vec<ChromeSprite>,
     /// The live round-result banner sprites ([`Self::raise_result`]).
     results: Vec<ChromeActor>,
     /// The result's announcer line, waiting for a frame whose XA slot is free.
@@ -147,36 +125,15 @@ impl BakaChrome {
     /// round index `DAT_801DBF8C` the setup has already advanced
     /// (`0x801D0640`), so the line `round_banner_xa(round)` starts on the
     /// first banner frame of the round it names. Clock `0` also takes the
-    /// result banners down and spawns the banner's sprite actor.
+    /// result banners down.
     pub fn round_banner_step(&mut self, t: i32, round: i32) -> ChromeFrame {
         if t == 0 {
             self.results.clear();
             self.result_hold = 0;
-            self.sprites.retain(|s| s.actor.id != ROUND_BANNER_SPRITE);
-            self.spawn_round_banner_sprite(ROUND_BANNER_SPRITE);
         }
         self.banner_live = Some(t);
         self.banner_flags = round_banner_flags(t);
         round_banner_frame(t, round)
-    }
-
-    /// Spawn the round banner's sprite actor at the screen centre through
-    /// the shared spawn wrapper.
-    fn spawn_round_banner_sprite(&mut self, sprite_id: u16) {
-        let spec = crate::baka_fighter::center_effect_spawn(sprite_id);
-        self.sprites.push(ChromeSprite {
-            actor: ChromeActor {
-                x: spec.x,
-                y: spec.y,
-                id: spec.sprite_id,
-                size: spec.scale as u16,
-                fade: 0x800,
-            },
-            mode: 1,
-            owner: -1,
-            anim_id: spec.sprite_id as i16,
-            flags: chrome_actor_hold(0),
-        });
     }
 
     /// Raise the round-result banners for `r`: the sprites
@@ -191,16 +148,12 @@ impl BakaChrome {
                 y,
                 id,
                 size: 0x1000,
-                // No owner matches either focused fighter, so the bind
-                // seats the neutral level (`0x800` -> brightness `0x80`).
+                // The neutral level (`0x800` -> brightness `0x80`).
                 fade: 0x800,
             })
             .collect();
         self.result_xa = Some(result_xa(r));
         self.result_hold = RESULT_HOLD_FRAMES;
-        // The previous round's ROUND sprite actor leaves with it: the result
-        // takes the screen centre the round banner stood at.
-        self.sprites.retain(|s| s.actor.id != ROUND_BANNER_SPRITE);
     }
 
     /// Take the round-result banners down.
@@ -220,19 +173,8 @@ impl BakaChrome {
         self.intro_t.is_some() || self.intro_live.is_some() || self.banner_live.is_some()
     }
 
-    /// The live banner sprite pool.
-    pub fn sprites(&self) -> &[ChromeSprite] {
-        &self.sprites
-    }
-
-    /// Advance every armed timeline one frame and service the sprite pool.
-    ///
-    /// `banks` are the two runtime clip banks the bind resolves frame
-    /// counts out of (`_DAT_8007B888` below [`ANIM_BANK_SPLIT`],
-    /// `_DAT_8007B840` at or above). A host with neither staged passes empty
-    /// slices, in which case the resolved frame count is `None` and every
-    /// other bind output still applies.
-    pub fn step(&mut self, tick: &ChromeTick, banks: (&[u8], &[u8])) -> ChromeFrame {
+    /// Advance every armed timeline one frame and draw the result banners.
+    pub fn step(&mut self, tick: &ChromeTick) -> ChromeFrame {
         let mut out = ChromeFrame::default();
         self.banner_live = None;
 
@@ -259,36 +201,6 @@ impl BakaChrome {
                 self.results.clear();
                 self.result_hold = 0;
             }
-        }
-
-        let mut retired = Vec::new();
-        for (i, s) in self.sprites.iter_mut().enumerate() {
-            let bind = chrome_actor_bind(
-                s.flags,
-                tick.match_phase,
-                s.owner,
-                tick.focus,
-                s.anim_id,
-                banks.0,
-                banks.1,
-            );
-            s.flags = bind.flags;
-            s.actor.fade = bind.fade;
-            if bind.flags & ACTOR_FLAG_RETIRE != 0 {
-                retired.push(i);
-                continue;
-            }
-            let d = chrome_actor_draw(&s.actor, s.mode, tick.match_phase);
-            if let Some(draw) = d.draw {
-                out.draws.push(draw);
-            }
-            if d.retire {
-                s.flags |= ACTOR_FLAG_RETIRE;
-                retired.push(i);
-            }
-        }
-        for i in retired.into_iter().rev() {
-            self.sprites.remove(i);
         }
         out
     }

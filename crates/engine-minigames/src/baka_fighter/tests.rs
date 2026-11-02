@@ -500,11 +500,53 @@ fn the_duel_ticks_the_round_chrome() {
         Some(crate::baka_cabinet::ST_ROUND_BANNER_B),
         "the banner starts on the first banner arm"
     );
-    assert_eq!(f.chrome().sprites().len(), 1);
     assert_eq!(
         f.chrome_frame().xa,
         Some(crate::baka_fighter_chrome::round_banner_xa(1)),
         "the round-announce line names the round about to start"
+    );
+}
+
+/// The "ROUND n" caption (widget 3) stands only on the frames the cabinet's
+/// banner arms `0x33..0x36` call `FUN_801D5C7C`: the routine draws quads and
+/// spawns no actor, and no `FUN_801D6E04` site in the overlay names widget 3.
+/// So it is gone once the arms end, through the go and the whole round.
+#[test]
+fn the_round_caption_stands_only_on_the_banner_arms() {
+    use crate::baka_cabinet::{ST_DUEL, ST_ROUND_BANNER_A, ST_ROUND_BANNER_D};
+    const ROUND_CAPTION: u8 = 3;
+    let caption_up = |f: &BakaFight| {
+        f.chrome_frame()
+            .draws
+            .iter()
+            .any(|d| d.widget == ROUND_CAPTION)
+    };
+
+    let mut f = fight();
+    f.end_round(0, false);
+    let (mut banner_frames, mut duel_frames) = (0, 0);
+    for _ in 0..0x800 {
+        let before = f.cabinet().state();
+        f.tick(1);
+        let on_banner_arm = (ST_ROUND_BANNER_A..=ST_ROUND_BANNER_D).contains(&before);
+        assert_eq!(
+            caption_up(&f),
+            on_banner_arm,
+            "state {before:#x}: the caption draws on the banner arms and nowhere else"
+        );
+        banner_frames += i32::from(on_banner_arm);
+        duel_frames += i32::from(before == ST_DUEL && f.cabinet().state() == ST_DUEL);
+        if duel_frames >= 600 {
+            break;
+        }
+    }
+    assert!(
+        banner_frames > 0,
+        "the fixture reaches the next round's banner"
+    );
+    assert_eq!(
+        duel_frames, 600,
+        "the fixture stands in the next round's duel"
     );
 }
 

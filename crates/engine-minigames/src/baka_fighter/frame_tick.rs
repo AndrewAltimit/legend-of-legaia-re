@@ -295,9 +295,8 @@ impl BakaFight {
         let chrome_tick = crate::baka_fighter_chrome::ChromeTick {
             frame_step,
             match_phase: i32::from(matches!(self.phase, MatchPhase::MatchOver(_))),
-            focus: (0, 1),
         };
-        self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
+        self.chrome_frame = self.chrome.step(&chrome_tick);
         self.tick_cabinet(frame_step);
         // The round banner is the cabinet's banner arms' (`0x33..0x36`, one
         // `FUN_801D5C7C(DAT_801DC128)` each), drawn the same frame they run,
