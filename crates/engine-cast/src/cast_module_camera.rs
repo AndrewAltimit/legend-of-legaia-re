@@ -983,6 +983,7 @@ mod spoon;
 pub mod summon_holds;
 mod swordie;
 mod theeder_gizam;
+mod ultimate_rave;
 mod viguro;
 pub use aluru::*;
 pub use blade_breath::{
@@ -1026,6 +1027,7 @@ pub use seru::*;
 pub use spoon::*;
 pub use swordie::*;
 pub use theeder_gizam::*;
+pub use ultimate_rave::*;
 pub use viguro::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {

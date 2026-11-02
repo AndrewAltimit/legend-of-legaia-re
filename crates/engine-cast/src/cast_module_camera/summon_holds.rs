@@ -405,15 +405,6 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
     false
 }
 
-fn direct(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> ArmDirection {
-    super::gate(hold_step(table, st, phase))
-}
-
-/// PROT 0924's director: [`ULTIMATE_RAVE`].
-pub fn ultimate_rave_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
-    direct(ULTIMATE_RAVE, st, phase)
-}
-
 /// PROT 0925's director: the holds of [`SPIKEFISH`] plus the body's camera
 /// writes. Every shot is a `FUN_801D829C` call on a zeroed stack trio with
 /// immediates over it, so its focus is the stage origin; every drift is
@@ -492,7 +483,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         922 => (super::puera_direct, PUERA_DAMAGE_ARM, 4),
         // The finale arm; the seat at arm 2's pass (`0x801F6D24`).
         924 => (
-            ultimate_rave_direct,
+            super::ultimate_rave_direct,
             crate::cast_module_ticks::ULTIMATE_RAVE_FINALE_ARM,
             3,
         ),
@@ -513,7 +504,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         owns_phase: false,
         // A director that reports its arms' spawn calls (PROT 0918's, 0922's, 0927's) seats
         // them per arm; the others leave the stager to seat the record set.
-        stages_spawns: matches!(prot_entry, 918 | 919 | 922 | 927),
+        stages_spawns: matches!(prot_entry, 918 | 919 | 922 | 924 | 927),
         seat_arm: Some(seat_arm),
         director_body: false,
     })

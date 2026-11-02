@@ -702,4 +702,60 @@ impl World {
             _ => {}
         }
     }
+
+    /// PROT 0924 (Ultimate Rave), the stores beside its director.
+    ///
+    /// | Arm | Edge | Store |
+    /// |---|---|---|
+    /// | 0..=2 (`0x801F6B18`, `0x801F6D74`) | every pass | every party seat and living monster hidden |
+    /// | 3, 5 | pass | the creature put where the director stood it |
+    /// | 7 (`0x801F7300`) | pass | the victim shown |
+    /// | 11 (`0x801F77A4`) | every pass | the creature rising, `+0x36 += 4 * step`; under `0x81` its fade `+0x21C = 2` |
+    pub(in crate::world::battle::cast_band) fn apply_rave_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        victim: u8,
+        creature: u8,
+    ) {
+        let party = usize::from(self.party.party_count);
+        if phase <= 2 {
+            for a in self.actors.iter_mut().take(party) {
+                a.battle.render_color = 0;
+                a.battle.render_flag = FLAG_PARKED;
+            }
+            self.ra_seru_row_word(monster_count, 0, FLAG_PARKED);
+        }
+        let seat = self.casting.module_cam.creature;
+        let countdown = self.casting.module_cam.countdown.0;
+        if passed
+            && matches!(phase, 3 | 5)
+            && let Some(c) = seat
+            && let Some(a) = self.actors.get_mut(usize::from(creature))
+        {
+            a.move_state.world_x = c.x;
+            a.move_state.world_z = c.z;
+            a.battle.facing_angle = c.facing;
+        }
+        if phase == 7
+            && passed
+            && let Some(a) = self.actors.get_mut(usize::from(victim))
+        {
+            a.battle.render_color = 0;
+            a.battle.render_flag = 0;
+        }
+        if phase == 0xB
+            && let Some(a) = self.actors.get_mut(usize::from(creature))
+        {
+            a.move_state.world_y = a
+                .move_state
+                .world_y
+                .wrapping_add(4 * legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as i16);
+            if countdown < 0x81 {
+                a.battle.render_flag = 2;
+                a.battle.capture_state = 2;
+            }
+        }
+    }
 }

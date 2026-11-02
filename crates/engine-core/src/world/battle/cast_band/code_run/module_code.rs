@@ -1593,6 +1593,15 @@ impl World {
                     seat_slot,
                 );
             }
+            if entry == 924 {
+                self.apply_rave_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    victim_slot,
+                    seat_slot,
+                );
+            }
             if entry == 932 {
                 self.apply_meta_writes(
                     phase_in,

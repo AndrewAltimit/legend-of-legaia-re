@@ -2165,8 +2165,8 @@ their own image and open most arms on it: drain, store, return busy while it
 is positive, and on the tick it is not run the arm's writes, re-arm the word
 and advance. Their tick bodies are ported; the holds are
 `cast_module_camera::summon_holds`, one table per module, run as a director
-ahead of the body. For 0924 the hold is the whole director: it
-arms no camera, so the band keeps its framing. 0919's is `spoon_direct`. 0925's adds the body's
+ahead of the body. 0919's and 0924's carry the body's camera, captions and spawns
+(`spoon_direct`, `ultimate_rave_direct`). 0925's adds the body's
 camera writes (`spikefish_direct`), all literal: arm 0 cuts to pitch `0`,
 TR `(0, 0x500, 0x300)`; arm 3 drifts TR y `-2` and TR z `+8` a frame step;
 arm 5 drifts TR y `+12`, TR z `+8`, yaw `+8` and pitch `-1` a step and
