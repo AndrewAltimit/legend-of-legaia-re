@@ -92,6 +92,14 @@ pub struct CaptureCamArm {
     /// The arm's stores into every party seat `actor_table[0 .. ctx[+0]]`
     /// (PROT 0960 `0xA6`'s hide and show).
     pub party_write: CaptureSeatWrite,
+    /// The arm's stores into every party seat and every live monster, made
+    /// ahead of its [`Self::caster_write`] / [`Self::victim_write`] (PROT
+    /// 0947 hides the field, then shows the caster). Waits for the band's
+    /// settle on a finishing arm.
+    pub others_write: CaptureSeatWrite,
+    /// The `FUN_80021B04` calls this pass makes at points the arm works out,
+    /// held or not. Seated on the tick that opens a battle frame.
+    pub pass_spawns: [Option<super::ModuleSpawn>; 5],
     /// The arm stores `0x800` into both backdrop records' `+0x78`, the
     /// indoor ceiling: the pair back on the draw (PROT 0965 arms 7, `0x0B`).
     pub backdrop_on: bool,
@@ -190,6 +198,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, super::GIGATON_PRESS_BODY) => Some(super::gigaton_press_camera),
         (965, super::DOOMSDAY_BODY) => Some(super::doomsday_camera),
         (955, super::KISS_OF_DEATH_BODY) => Some(super::kiss_of_death_camera),
+        (947, SINGLE_BODY) => Some(super::v_windhash_camera),
         _ => None,
     }
 }
@@ -251,6 +260,7 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
+        0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),

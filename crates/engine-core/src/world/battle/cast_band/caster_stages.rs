@@ -152,6 +152,13 @@ impl World {
                 if !debris.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
                 }
+            } else if !self.casting.module_debris.is_empty() {
+                // A director's per-pass calls on a held arm (PROT 0947's
+                // trail): one battle frame, one call.
+                let debris = std::mem::take(&mut self.casting.module_debris);
+                if opens_pass {
+                    self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
+                }
             }
         }
         // `0x70` frames nothing of its own: the camera is the module's.

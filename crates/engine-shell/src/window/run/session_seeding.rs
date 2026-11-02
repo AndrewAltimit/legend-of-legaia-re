@@ -406,9 +406,10 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         log::info!("play-window: LEGAIA_BATTLE_INFLIGHT seeds {seed:?} at the first prompt");
         world.battle.inflight_seed = Some(seed);
     }
-    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p[,t<target>]][;x:z,...]` (decimal or
-    // `0x..`): the monster in engine battle `seat` casts `spell` on its next
-    // turn instead of the AI's pick (with `,p`, that turn is taken from the
+    // `LEGAIA_BATTLE_MONSTER_CAST=seat,spell[,p][,t<slot>][;x:z,...]` (decimal
+    // or `0x..`): the monster in engine battle `seat` casts `spell` on its next
+    // turn instead of the AI's pick, a single-target cast landing on party
+    // `slot` with `,t` (with `,p`, that turn is taken from the
     // first command prompt, ahead of the party's commands, each battle slot
     // first stood at its listed ground, `-` keeping the seat) (`BattleState::forced_monster_cast`, the seam the
     // retail comparison corpus replays a mid-cast capture through). Pairs
@@ -433,12 +434,12 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
                         Some([x.trim().parse::<i16>().ok()?, z.trim().parse::<i16>().ok()?])
                     });
                 }
-                let at_prompt = it.next().is_some_and(|t| t.trim() == "p");
-                let target = it
-                    .next()
-                    .and_then(|t| t.trim().strip_prefix('t'))
+                let rest: Vec<&str> = it.map(str::trim).collect();
+                let target = rest
+                    .iter()
+                    .find_map(|t| t.strip_prefix('t'))
                     .and_then(parse);
-                Some((parse(a)?, parse(b)?, at_prompt, ground, target))
+                Some((parse(a)?, parse(b)?, rest.contains(&"p"), ground, target))
             })
     {
         log::info!(

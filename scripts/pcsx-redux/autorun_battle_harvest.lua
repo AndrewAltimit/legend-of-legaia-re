@@ -8,7 +8,8 @@
 -- (docs/tooling/capture-coverage.md); classify them with
 -- `legaia-engine retail-compare --census` before registering any.
 --
--- Pure retail play: no RAM writes, no pokes. The pad is the only input.
+-- Pure retail play unless a LEGAIA_WANT* knob below is set: no RAM writes, no
+-- pokes, the pad is the only input.
 --
 -- Field: hold a direction, cycling Up / Right / Down / Left every
 -- LEGAIA_WALK_LEG vsyncs, with a Cross every so often to clear a dialogue
@@ -46,6 +47,33 @@
 --                    field vsyncs (default 150) and the player has moved
 --                    since the scene entered (the walk has control); named
 --                    <prefix>_scene_<label>_v<vsync>. The start scene counts.
+--   LEGAIA_WANT      `;`-separated formations to fight in order, each `+`-joined
+--                    monster ids in decimal (`147+18;15+120`). In the field the
+--                    probe finds the scene's formation row holding exactly those
+--                    ids, points every region of the live MAN's region table at
+--                    that row alone (+6 base, +7 count 1), gives it a rate and
+--                    runs the step counter 0x8007B5FC down, so the next step
+--                    rolls it through retail's own FUN_801D9E1C: the stage id,
+--                    the world-map return point and the battle flags all stay
+--                    the scene's. The writes stay resident in the saved states
+--                    (the MAN's region rows and nothing else). The run ends after
+--                    the last formation. A formation no row holds is skipped
+--                    unless LEGAIA_WANT_FORCE=1, which writes it over row 0
+--                    (a synthetic fight: say so in the state's description).
+--   LEGAIA_TOUGH     1 = at each round prompt write every party seat's HP, its
+--                    readout and its pending delta back to full, so a low-level
+--                    party outlasts the rounds
+--   LEGAIA_WOUND     round number at whose prompt every monster's HP drops to a
+--                    third of its maximum: the heal arms need a patient below
+--                    half HP (0 = never)
+--   LEGAIA_FINISH    1 = once the Spirit rounds are over, write every monster's
+--                    HP to 1 at the prompt, so the party's attacks end the fight
+--   LEGAIA_HOLD_MODULE / LEGAIA_HOLD_MAGIC  vsyncs into a module / cast band
+--                    before its capture (default LEGAIA_HOLD)
+--   LEGAIA_SAVE_PRE  1 = also keep a pre-cast state for each cast captured: the
+--                    whole emulator state at the action's state 0x0A
+--                    (<key>_pre_...), before the pick, which replays the same
+--                    cast on its own for the cast-sequence oracle
 --
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
@@ -68,6 +96,19 @@ local function rnd(n)
     return math.floor(lcg / 65536) % n
 end
 local held2 = nil
+local WANT = {}
+for f in string.gmatch(probe.getenv("LEGAIA_WANT", ""), "[^;]+") do
+    local ids = {}
+    for m in string.gmatch(f, "[^+]+") do ids[#ids + 1] = tonumber(m) end
+    WANT[#WANT + 1] = ids
+end
+local WANT_FORCE = probe.getenv_num("LEGAIA_WANT_FORCE", 0) == 1
+local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) == 1
+local WOUND = probe.getenv_num("LEGAIA_WOUND", 0)
+local FINISH = probe.getenv_num("LEGAIA_FINISH", 0) == 1
+local HOLD_MODULE = probe.getenv_num("LEGAIA_HOLD_MODULE", 0)
+local HOLD_MAGIC = probe.getenv_num("LEGAIA_HOLD_MAGIC", 0)
+local SAVE_PRE = probe.getenv_num("LEGAIA_SAVE_PRE", 0) == 1
 local SCENE_SETTLE = probe.getenv_num("LEGAIA_SCENE_SETTLE", 150)
 local LOADED_DEFINE = 0x80084540
 local PLAYER_PTR = 0x8007c364
@@ -137,6 +178,91 @@ local function save_checkpoint(name, vsync)
     return ok
 end
 
+-- Point the live scene's encounter tables at the wanted formation. The tables
+-- are the MAN sections FUN_801D9E1C reads: ctrl = *0x801C6EA4, formations at
+-- ctrl[+0x20] (count byte, then rows of stride ctrl[+0x5D]), regions at
+-- ctrl[+0x28] (count byte, then rows of stride ctrl[+0x5F]).
+local CTRL_PTR = 0x801C6EA4
+local STEP_COUNTER = 0x8007B5FC
+local want_i = 1
+local want_armed = nil
+local function arm_want(ids, vsync)
+    local c = probe.read_u32(CTRL_PTR)
+    if not ok_ptr(c) then return false end
+    local ftab, rtab = probe.read_u32(c + 0x20), probe.read_u32(c + 0x28)
+    if not ok_ptr(ftab) or not ok_ptr(rtab) then return false end
+    local fcount, fstr = probe.read_u8(ftab), probe.read_u8(c + 0x5D)
+    local rcount, rstr = probe.read_u8(rtab), probe.read_u8(c + 0x5F)
+    if fcount == 0 or rcount == 0 or fstr < 8 or rstr < 8 then return false end
+    local row = nil
+    for r = 0, fcount - 1 do
+        local base = ftab + 1 + r * fstr
+        if probe.read_u8(base + 3) == #ids then
+            local same = true
+            for i, m in ipairs(ids) do
+                if probe.read_u8(base + 3 + i) ~= m then same = false end
+            end
+            if same then row = r; break end
+        end
+    end
+    if row == nil then
+        if not WANT_FORCE then return nil end
+        local base = ftab + 1
+        for i = 0, 3 do probe.write_u8(base + i, 0) end
+        probe.write_u8(base + 3, #ids)
+        for i = 0, 3 do probe.write_u8(base + 4 + i, ids[i + 1] or 0) end
+        row = 0
+        logf("vsync=%d synthetic formation over row 0", vsync)
+    end
+    for r = 0, rcount - 1 do
+        local base = rtab + 1 + r * rstr
+        probe.write_u8(base + 4, 0x40)
+        probe.write_u8(base + 6, row)
+        probe.write_u8(base + 7, 1)
+    end
+    logf("vsync=%d scene=%q want %d: row %d of %d, %d regions", vsync, scene_name(), want_i, row,
+        fcount, rcount)
+    return true
+end
+
+local function seat_actor(s)
+    local ap = probe.read_u32(ACTORS + s * 4)
+    if ok_ptr(ap) then return ap end
+    return nil
+end
+
+-- The round-prompt writes (LEGAIA_TOUGH, LEGAIA_WOUND, LEGAIA_FINISH).
+local function round_pokes(round)
+    if TOUGH then
+        for s = 0, 2 do
+            local a = seat_actor(s)
+            if a ~= nil and (probe.read_u16(a + 0x14E) or 0) > 0 then
+                -- All three: state 0x51 parks on a readout +0x172 that
+                -- disagrees with the live HP and the pending delta +0x10.
+                local hp = probe.read_u16(a + 0x14E)
+                probe.write_u16(a + 0x14C, hp)
+                probe.write_u16(a + 0x172, hp)
+                probe.write_u32(a + 0x10, 0)
+            end
+        end
+    end
+    for s = 3, 7 do
+        local a = seat_actor(s)
+        if a ~= nil and (probe.read_u16(a + 0x14C) or 0) > 0 then
+            if FINISH and round > SPIRIT_ROUNDS then
+                probe.write_u16(a + 0x14C, 1)
+            elseif round == WOUND then
+                probe.write_u16(a + 0x14C, math.max(1, math.floor(probe.read_u16(a + 0x14E) / 3)))
+            end
+        end
+    end
+end
+
+local ring_i = 0
+local held_pre = nil
+local pre_written = {}
+local last_st = nil
+
 local caps = 0
 local per_key = {}
 local band_key, band_since = nil, 0
@@ -161,12 +287,19 @@ probe.run({
     on_capture = function(ctx, vsync)
         release_if_due(vsync)
         local mode = probe.read_u8(GAME_MODE_VA) or 0
+        if vsync % 600 == 0 then
+            local cp = probe.read_u32(CTX_PTR)
+            logf("beat vsync=%d mode=0x%02x round=%d flow=0x%02x st=0x%02x seat=%d", vsync, mode, rounds,
+                ok_ptr(cp) and probe.read_u8(cp + 6) or 0, ok_ptr(cp) and probe.read_u8(cp + 7) or 0,
+                ok_ptr(cp) and probe.read_u8(cp + 0x13) or 0)
+        end
         if mode ~= last_mode then
             logf("vsync=%d game_mode=0x%02x scene=%q", vsync, mode, scene_name())
             if mode == 0x14 or mode == 0x15 then
                 if last_mode ~= 0x14 and last_mode ~= 0x15 then
                     battles = battles + 1
                     rounds = 0
+                    if want_armed == want_i then want_i = want_i + 1 end
                 end
             end
             last_mode = mode
@@ -195,6 +328,24 @@ probe.run({
             scene_key = nil
         end
         if mode ~= 0x03 and held2 ~= nil then probe.pad.release(held2); held2 = nil end
+        if mode == 0x03 and #WANT > 0 then
+            if want_i > #WANT then
+                logf("vsync=%d last formation done", vsync)
+                ctx.request_quit = true
+                return
+            end
+            if want_armed ~= want_i then
+                local r = arm_want(WANT[want_i], vsync)
+                if r == nil then
+                    logf("vsync=%d scene=%q holds no row for want %d: skipped", vsync, scene_name(), want_i)
+                    want_i = want_i + 1
+                    return
+                elseif r then
+                    want_armed = want_i
+                end
+            end
+            if want_armed == want_i then probe.write_u32(STEP_COUNTER, 1) end
+        end
         if mode == 0x03 then
             -- Walk: hold one direction per leg, a Cross now and then.
             if vsync >= walk_next and WALK_SEED ~= 0 then
@@ -238,7 +389,10 @@ probe.run({
         local st = probe.read_u8(cp + 7) or 0
         local seat = probe.read_u8(cp + 0x13) or 0
         if flow ~= last_flow then
-            if flow == 0x1E then rounds = rounds + 1 end
+            if flow == 0x1E then
+                rounds = rounds + 1
+                round_pokes(rounds)
+            end
             last_flow = flow
             next_menu_press = vsync + 10
         end
@@ -246,6 +400,10 @@ probe.run({
         if flow == 0xFF then
             -- The action SM runs: watch for a monster's action on screen.
             local b = band(st)
+            if SAVE_PRE and st == 0x0A and last_st ~= 0x0A then
+                held_pre = PCSX.createSaveState()
+            end
+            last_st = st
             if seat >= 3 and seat < 8 and b ~= nil then
                 local ap = probe.read_u32(ACTORS + seat * 4)
                 if ok_ptr(ap) then
@@ -258,7 +416,16 @@ probe.run({
                     local key = string.format("m%03d_c%d_q%02x", mid, cat, q)
                     if band_key ~= key .. b then
                         band_key, band_since = key .. b, vsync
-                    elseif vsync - band_since == HOLD
+                    elseif SAVE_PRE and cat == 2 and held_pre ~= nil and not pre_written[key] then
+                        pre_written[key] = true
+                        local name = string.format("%s_%s_%s_pre_v%d", PREFIX, key, scene_name(), vsync)
+                        local fh = Support.File.open(probe.out_path(name .. ".rawsstate"), "TRUNCATE")
+                        fh:writeMoveSlice(held_pre)
+                        fh:close()
+                        held_pre = nil
+                        logf("CKPT %s vsync=%d", name, vsync)
+                    elseif vsync - band_since == (b == "module" and HOLD_MODULE > 0 and HOLD_MODULE
+                            or b == "magic" and HOLD_MAGIC > 0 and HOLD_MAGIC or HOLD)
                         and (per_key[key] or 0) < PER_KEY and caps < MAX_CAPS then
                         local name = string.format("%s_%s_%s_st%02x_v%d",
                             PREFIX, key, scene_name(), st, vsync)
@@ -277,7 +444,16 @@ probe.run({
         band_key = nil
         if vsync < next_menu_press then return end
         if flow == 0x28 then
-            press(rounds > SPIRIT_ROUNDS and BTN.LEFT or BTN.DOWN, vsync, 4)
+            if rounds > SPIRIT_ROUNDS then
+                -- The last formation's fight has nothing left to give.
+                if #WANT > 0 and want_i > #WANT then ctx.request_quit = true end
+                -- A seat whose gauge refuses one arm parks a Left-only drive.
+                local arms = { BTN.LEFT, BTN.RIGHT, BTN.UP, BTN.CROSS }
+                ring_i = ring_i % #arms + 1
+                press(arms[ring_i], vsync, 4)
+            else
+                press(BTN.DOWN, vsync, 4)
+            end
         else
             press(BTN.CROSS, vsync, 4)
         end

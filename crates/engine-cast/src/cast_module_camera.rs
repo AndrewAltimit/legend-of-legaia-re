@@ -111,6 +111,8 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
+    /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
+    pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
     /// The creature's live seat, as the host last moved it (its walk-in).
@@ -984,6 +986,7 @@ pub mod summon_holds;
 mod swordie;
 mod theeder_gizam;
 mod ultimate_rave;
+mod v_windhash;
 mod viguro;
 pub use aluru::*;
 pub use blade_breath::{
@@ -1028,6 +1031,7 @@ pub use spoon::*;
 pub use swordie::*;
 pub use theeder_gizam::*;
 pub use ultimate_rave::*;
+pub use v_windhash::{V_WINDHASH_COUNTDOWN, v_windhash_camera};
 pub use viguro::*;
 
 pub(super) fn gate(hold: bool) -> ArmDirection {

@@ -373,6 +373,9 @@ impl World {
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
+            self.casting
+                .module_debris
+                .extend(arm.pass_spawns.iter().flatten().copied());
             capture_arm = Some(arm);
         }
         // A director arm that names the body's damage-wrapper call folds the
@@ -1459,6 +1462,17 @@ impl World {
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
+            if !arm.others_write.is_empty() && !capture_held {
+                let monsters = self.party.party_count..self.actors.len() as u8;
+                for slot in 0..self.party.party_count {
+                    self.apply_capture_seat_writes(slot, arm.others_write);
+                }
+                for slot in monsters {
+                    if self.actors[usize::from(slot)].battle.hp > 0 {
+                        self.apply_capture_seat_writes(slot, arm.others_write);
+                    }
+                }
+            }
             self.apply_capture_seat_writes(caster_slot, arm.caster_write);
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
             if !arm.party_write.is_empty() {

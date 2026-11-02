@@ -613,7 +613,7 @@ const E961_LOWERED_FORMATION: u8 = 0xB5;
 
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 9] = [938, 940, 944, 946, 959, 960, 961, 962, 966];
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 10] = [938, 940, 944, 946, 947, 959, 960, 961, 962, 966];
 
 /// Halfword stores a capture arm makes into a part it has just seated, as
 /// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
@@ -689,7 +689,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
         944 => body == Some(0x801F_6A04),
-        946 => true,
+        946 | 947 => true,
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
             body,

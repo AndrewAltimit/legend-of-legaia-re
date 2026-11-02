@@ -257,7 +257,13 @@ def run_engine(a, out: Path) -> bool:
         # walks it in, a knockback pushes the monster back): a walk-in body
         # walks from there, so its length is the capture's.
         ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
-        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{a.target}" + (f";{ground}" if ground else "")
+        # The target the monster's own pick (or the probe) left at cast begin:
+        # a single-target cast lands on the same seat on both sides, and the
+        # victim's voice cue and the framing follow it. A recording older than
+        # that field takes --target.
+        target = int(done.get("cast_target", "-1"))
+        target = target if 0 <= target < 3 else a.target
+        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     edir = out / "engine"
     if edir.exists():
         shutil.rmtree(edir)

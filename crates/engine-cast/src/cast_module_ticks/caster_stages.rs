@@ -150,7 +150,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0948 Cross Beam: `li v0,0x8; sb v0,0x1da(s3)` at `0x801F6AD0`.
     CasterStageRow {

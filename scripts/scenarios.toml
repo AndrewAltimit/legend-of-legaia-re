@@ -4380,3 +4380,118 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "jouinc"
 topics = ["field", "jouinc", "scene coverage", "door hop"]
+label = "kor_ghost_knight_pre_v_windhash"
+backup_fingerprint = "219e43ef9ace59bab192ded5b67c1c401770207bc7fd60b8be76a59fd1635620"
+description = "kor battle: Ghost Knight (monster id 18) is about to cast V-Windhash (spell 0x57, module 0947) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 7406 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy cast", "Ghost Knight", "V-Windhash", "kor", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_kor_ghost_knight_v_windhash_mid_cast"
+backup_fingerprint = "1f86e68ce9b1a38925cf59fbb49276434927b610fef741c787aac81dcc62e7bf"
+description = "kor battle: Ghost Knight (monster id 18) mid-cast V-Windhash (spell 0x57, module 0947): category 2, action state 0x70. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 7555 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy cast", "Ghost Knight", "V-Windhash", "kor", "harvest"]
+
+[[scenarios]]
+label = "kor_shade_pre_fatal_decision"
+backup_fingerprint = "6dcca1548c24635ceeeda82e68ffd939d22cd2d055086352b4c4428da2b6ff0c"
+description = "kor battle: Shade (monster id 120) is about to cast Fatal Decision (spell 0x5F, module 0954) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 12719 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy cast", "Shade", "Fatal Decision", "kor", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_kor_shade_fatal_decision_mid_cast"
+backup_fingerprint = "cd2512918574b9a68984946cac32e7df3d319802f48620e73d715fa6d8711079"
+description = "kor battle: Shade (monster id 120) mid-cast Fatal Decision (spell 0x5F, module 0954): category 2, action state 0x70. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 12868 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy cast", "Shade", "Fatal Decision", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_shade_strike"
+backup_fingerprint = "ba3b1a9f739c8c17bb06db7079a34cdb7eba7679d85088c5159162bd35f6bfa6"
+description = "kor battle: Shade (monster id 120) mid physical attack: category 3, action state 0x1E. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 15842 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "Shade", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa_worm_strike"
+backup_fingerprint = "e292fc9e02d066c35ca7cad62fb898daf56fa6f7869b2aa0558dcf48a0e41756"
+description = "rikuroa battle: Worm (monster id 34) mid physical attack: category 3, action state 0x1E. RETAIL disc: rikuroa_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1273 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa"
+topics = ["battle", "enemy attack", "Worm", "rikuroa", "harvest"]
+
+[[scenarios]]
+label = "rikuroa_pump_bat_pre_windcutter"
+backup_fingerprint = "fd7fa249148c39cf518123e1dda8b0d7108a7b550283c467dc34feaedb4e0cb5"
+description = "rikuroa battle: Pump Bat (monster id 46) is about to cast Windcutter (spell 0x3A) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: rikuroa_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 824 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa"
+topics = ["battle", "enemy cast", "Pump Bat", "Windcutter", "rikuroa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_rikuroa_pump_bat_windcutter_mid_cast"
+backup_fingerprint = "c5f29184406f460c4f4fe9acd38cd098dc92ceb9fcb1edacac24f0c099bd4508"
+description = "rikuroa battle: Pump Bat (monster id 46) mid-cast Windcutter (spell 0x3A): category 2, action state 0x2B. RETAIL disc: rikuroa_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 839 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa"
+topics = ["battle", "enemy cast", "Pump Bat", "Windcutter", "rikuroa", "harvest"]
+
+[[scenarios]]
+label = "nilboa_lucifer_pre_cross_beam"
+backup_fingerprint = "7917132f09acbc2af491d22d655bc324dce5b6cb6ce13e0ea58e47ef793460fe"
+description = "nilboa battle: Lucifer (monster id 118) is about to cast Cross Beam (spell 0x58, module 0948) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_pre_entry_card_boot played forward; no write to the action queue. Saved 17700 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Lucifer", "Cross Beam", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_lucifer_cross_beam_mid_cast"
+backup_fingerprint = "0ce500909de4860fcc949701e552b32dbd7a51bfddb7dc1fac98d1f1ca12c2eb"
+description = "nilboa battle: Lucifer (monster id 118) mid-cast Cross Beam (spell 0x58, module 0948): category 2, action state 0x70. RETAIL disc: nilboa_pre_entry_card_boot played forward; the cast is the AI's own. Saved 17849 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Lucifer", "Cross Beam", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "nilboa_lava_face_pre_fissure"
+backup_fingerprint = "d7445155d86f1fcfd83f0425004657c21b1dab27c472260ed2de67bf62609db0"
+description = "nilboa battle: Lava Face (monster id 126) is about to cast Fissure (spell 0x32) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_pre_entry_card_boot played forward; no write to the action queue. Saved 3638 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Lava Face", "Fissure", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_lava_face_fissure_mid_cast"
+backup_fingerprint = "6b3e4f577719349948b53481afa65baa894df60512a9e3cff2bc99ffeec1b024"
+description = "nilboa battle: Lava Face (monster id 126) mid-cast Fissure (spell 0x32): category 2, action state 0x2B. RETAIL disc: nilboa_pre_entry_card_boot played forward; the cast is the AI's own. Saved 3653 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Lava Face", "Fissure", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_lava_face_strike"
+backup_fingerprint = "a86814c8b626d9591820a588c91e5a7117e09b29b5f2f046782f57aa37d54518"
+description = "nilboa battle: Lava Face (monster id 126) mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_pre_entry_card_boot played forward; the attack is the AI's own. Saved 4040 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Lava Face", "nilboa", "harvest"]
