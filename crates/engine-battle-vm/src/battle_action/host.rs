@@ -73,6 +73,13 @@ pub trait BattleActionHost {
         })
     }
 
+    /// The clip id the cast census counts a seat by (`+0x1D9`,
+    /// `0x801E0A70`). The default reads the actor's own `current_anim`; a
+    /// host that plays hit reactions on another channel merges it here.
+    fn census_clip(&self, slot: u8) -> u8 {
+        self.actor(slot).map_or(0, |a| a.current_anim)
+    }
+
     /// The three per-seat reads state `0x71`'s settle test makes
     /// (`0x801E5108..0x801E5200`): the seat's playing clip `+0x1D9` as the
     /// anim system holds it (a hit reaction included, as for

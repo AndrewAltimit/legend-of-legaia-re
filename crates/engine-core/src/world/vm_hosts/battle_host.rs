@@ -56,6 +56,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
         Some((self.world.battle_current_anim(usize::from(slot)), !gone))
     }
+    /// A victim's hit reaction holds the magic band's exit: retail's census
+    /// reads `+0x1D9` (`0x801E0A70`), where the reaction commits. A frozen
+    /// seat reads idle, as in [`Self::reaction_hold_view`].
+    fn census_clip(&self, slot: u8) -> u8 {
+        let Some(a) = self.world.actors.get(usize::from(slot)) else {
+            return 0;
+        };
+        if a.battle.anim_rate.get() == 0 {
+            return 0;
+        }
+        self.world.battle_current_anim(usize::from(slot))
+    }
     /// The clip is the merged id [`Self::reaction_hold_view`] reads, frozen
     /// slots included. A downed party seat holds the engine's defeat pose
     /// rather than entry `8`, so one with no reaction left to play reads as

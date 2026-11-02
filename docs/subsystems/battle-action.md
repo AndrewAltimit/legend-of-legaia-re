@@ -360,7 +360,7 @@ While `ctx[+0x24D] != 0`, `FUN_801DC0A0` on the byte under the cursor. Once `0`:
 
 #### State `0x2E` - Magic - exit
 
-Gated on `ctx[+0x249] == 0`. A cast camera left pitched past `400` (`_DAT_8007B790`, `slti 0x191` at `0x801E4964`) snaps back: pitch `0`, eye Y `0x800840BC = 0x500`. Camera words, not a screen shake.
+Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the band (`battle_korb2_aluru_strike` replayed with Aluru Cannon: clip `4` then `5` on the victim for `85` vsyncs, `0x2E` for `60`, leaving on the pass after the victim's clip reads `0`). A cast camera left pitched past `400` (`_DAT_8007B790`, `slti 0x191` at `0x801E4964`) snaps back: pitch `0`, eye Y `0x800840BC = 0x500`. Camera words, not a screen shake.
 
 **Next:** `0x50`.
 

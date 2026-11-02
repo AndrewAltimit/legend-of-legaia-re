@@ -273,10 +273,12 @@ pub fn tick_cast_census<H: BattleActionHost + ?Sized>(host: &H, ctx: &mut Battle
     let engine_slot = |retail: u8| seats.engine(retail);
     let mut slots = [CensusSlot::default(); CENSUS_SLOTS];
     for (i, s) in slots.iter_mut().enumerate() {
-        if let Some(a) = engine_slot(i as u8).and_then(|e| host.actor(e)) {
+        if let Some(e) = engine_slot(i as u8)
+            && let Some(a) = host.actor(e)
+        {
             *s = CensusSlot {
                 render_word: a.render_color,
-                current_anim: a.current_anim,
+                current_anim: host.census_clip(e),
                 liveness: a.liveness,
             };
         }

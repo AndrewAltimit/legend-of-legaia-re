@@ -189,6 +189,14 @@ impl World {
                 }
             }
         }
+        // A landed slot's hit opens on the record's impact cue
+        // (`lbu a0,0xd(v0)` / `jal 0x8004FCC8` at `0x801E184C..0x801E1854`).
+        // Id `0` rings `-1`, which the drainer never plays.
+        for _ in homing.hits.iter().filter(|&&child| child != 0) {
+            if raw[0x0D] != 0 {
+                self.dispatch_battle_cue(u16::from(raw[0x0D]));
+            }
+        }
         // A landed slot's hit (`0x801E1844..0x801E1A68`): the cast that rides
         // this flight folds onto that slot's victim now.
         let caster = self.battle_ctx.active_actor;
@@ -226,5 +234,59 @@ impl World {
                 },
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::sound_state::SfxRingOp;
+    use legaia_game_tables::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+    };
+
+    /// Aluru Cannon's retail recording rings `0x49` on the pass its slot lands
+    /// (`FUN_8004FCC8` from `0x801E1854`, `record[+0x0D]`).
+    fn world_with_a_landing_flight(cue: u8) -> World {
+        let mut buf = vec![0u8; MOVE_POWER_TABLE_FILE_OFFSET + 44 * MOVE_POWER_RECORD_STRIDE + 64];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 1;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 0x0D] = cue;
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.tables.move_power = Some(
+            legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&buf)
+                .expect("synthetic catalog parses"),
+        );
+        world.actors[0].active = true;
+        world.casting.homing.seed(
+            Some(1),
+            (0, 0, 0),
+            &[Some([0, 0, 0]), None, None, None],
+            |i| u8::from(i == 0),
+        );
+        world
+    }
+
+    fn ticks(world: &mut World) -> Vec<SfxRingOp> {
+        for _ in 0..8 {
+            world.tick_homing_slots();
+        }
+        std::mem::take(&mut world.audio.sfx_ring_ops)
+    }
+
+    #[test]
+    fn a_landed_slot_rings_the_record_cue_once() {
+        let mut world = world_with_a_landing_flight(0x49);
+        assert_eq!(ticks(&mut world), vec![SfxRingOp::Push(0x49)]);
+    }
+
+    #[test]
+    fn a_record_with_no_cue_rings_nothing() {
+        let mut world = world_with_a_landing_flight(0);
+        assert_eq!(ticks(&mut world), vec![]);
     }
 }

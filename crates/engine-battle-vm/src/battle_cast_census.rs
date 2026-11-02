@@ -220,7 +220,8 @@ pub struct EffectChildHit {
 /// every slot-B module's face-**away** store - the victim turns to face its
 /// attacker here, not away from it.
 ///
-/// Not ported: the cue call, the packet writes and the caster-side pose. The
+/// Not here: the packet writes, the caster-side pose and the cue call, which
+/// `World`'s homing step makes (`record[+0x0D]`). The
 /// `power` byte is the caller's, read out of the per-action table at
 /// `0x801F4E63`.
 ///
