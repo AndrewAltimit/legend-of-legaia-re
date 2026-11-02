@@ -90,6 +90,7 @@ fn battle_awaiting_command() -> World {
         }
     }
     assert_eq!(w.mode, SceneMode::Battle, "walking should trigger a battle");
+    w.run_out_battle_open();
     assert!(
         w.battle.command.is_some(),
         "battle entry opens the opening command session"

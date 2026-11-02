@@ -743,40 +743,45 @@ fn replay_scripted_battle_arm_keys_on_the_records_entry_row() {
 fn the_sparring_caption_waits_for_the_enemy_names_to_go() {
     let mut world = tutorial_battle_world();
     world.battle.intro_names_frames = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
-    assert!(world.battle.sparring_open_held());
+    assert!(world.battle.battle_open_held());
     world.begin_battle_round();
-    assert!(world.battle.sparring_round_pending, "round start held");
+    assert!(world.battle.round_open_pending, "round start held");
     assert_eq!(world.battle.sideband.phase, 0, "caption not armed");
     assert!(!world.battle.battle_tutorial_box_up());
     let state = world.battle_ctx.action_state;
     // The names drain one a tick; nothing else moves under them.
     for _ in 0..legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES {
-        assert!(world.battle.sparring_round_pending);
+        assert!(world.battle.round_open_pending);
         world.live_battle_tick();
         assert_eq!(world.battle_ctx.action_state, state);
         assert_eq!(world.battle.flow, BattleFlowState::Idle, "no prompt yet");
     }
     assert_eq!(world.battle.intro_names_frames, 0);
-    assert!(!world.battle.sparring_open_held());
+    assert!(!world.battle.battle_open_held());
     // The next side-band pass sees the open done and starts the round: the
     // caption arm runs (with no caption text installed it passes straight
     // on to phase 2 and the first lesson's prompt).
     world.live_battle_tick();
-    assert!(!world.battle.sparring_round_pending);
+    assert!(!world.battle.round_open_pending);
     assert_ne!(world.battle.sideband.phase, 0, "side-band past its arm");
 }
 
-/// Every fight but the spar opens its round at the flip, names or no names.
+/// Every fight's first round waits out the same open, and a round start with
+/// the open over is not held.
 #[test]
-fn an_ordinary_fight_is_not_held_by_its_enemy_names() {
+fn any_fight_is_held_by_its_enemy_names() {
     let mut world = World::new();
     world.toggles.live_gameplay_loop = true;
     world.battle.player_driven = true;
     world.enter_battle(3, 2);
     world.battle.intro_names_frames = legaia_engine_battle_menus::battle_open::PLAIN_OPEN_FRAMES;
-    assert!(!world.battle.sparring_open_held());
+    assert!(world.battle.battle_open_held());
     world.begin_battle_round();
-    assert!(!world.battle.sparring_round_pending);
+    assert!(world.battle.round_open_pending);
+    world.battle.intro_names_frames = 0;
+    world.battle.round_open_pending = false;
+    world.begin_battle_round();
+    assert!(!world.battle.round_open_pending);
 }
 
 /// A self-dismissing prompt is the key-`1` text actor, which retail never

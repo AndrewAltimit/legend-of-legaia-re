@@ -399,11 +399,11 @@ impl World {
     ///
     /// REF: FUN_801D9D3C
     pub(in crate::world) fn open_battle_formation(&mut self) {
-        // The banner is chosen from the **unlatched** copy - retail reads it
-        // in state `0x0A` (`FUN_801D9D3C`).
-        self.raise_battle_open_banner();
-        // Flow state `0x0A`'s other half: the enemy-name banner and its
-        // `ctx[+0x6D6]` hold, whose length reads the same unlatched byte.
+        // Flow state `0x0A`: the enemy-name banner and its `ctx[+0x6D6]` hold,
+        // whose length reads the unlatched copy. The formation banner, chosen
+        // from the same copy, comes up as the state's pass runs
+        // (`World::step_battle_intro_lead`); nothing clears the byte before
+        // then, since the latch runs at round one's `0xFE`.
         self.arm_battle_intro_names();
     }
 

@@ -1265,9 +1265,9 @@ The first difference stops at the round's hand-off. Retail's `0x0B` leaves
 only on the pass its timer expires (`bgtz` at `0x801D0E58`), to `0x14` or -
 when `ctx[+0x290]` reads `1` - straight to the execute arm `0xFE`, and sweeps
 the text actors on that pass (`jal 0x800355F0` at `0x801D0E7C` /
-`0x801D0EB4`), so no action ever runs under the names. A round the port hands
-to the action SM with the timer still running sweeps them there
-(`BattleState::sweep_battle_intro_names`, from `begin_round_execution`).
+`0x801D0EB4`), so no prompt or action ever runs under the names. The port holds
+the first round start on the same span (`BattleState::battle_open_held`,
+[the open's timeline](battle-command-flow.md#the-opens-timeline)).
 
 <a id="the-battle-item-window-0x3c---packet-pinned"></a>
 ## The battle item window (`0x3C`)

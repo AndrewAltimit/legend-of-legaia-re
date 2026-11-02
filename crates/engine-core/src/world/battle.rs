@@ -29,6 +29,8 @@ mod homing;
 mod initiative;
 pub use initiative::ParkedTurn;
 mod intro_names;
+#[cfg(test)]
+pub(in crate::world) use intro_names::INTRO_LEAD_TICKS;
 mod locomotion;
 pub(in crate::world) use locomotion::stream_pose;
 mod loop_driver;

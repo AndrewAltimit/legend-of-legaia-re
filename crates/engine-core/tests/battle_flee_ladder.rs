@@ -82,7 +82,7 @@ fn enter_battle(w: &mut World) {
 
 /// Wait for the party command session (the round prompt) to open.
 fn wait_for_prompt(w: &mut World) {
-    for _ in 0..0x80 {
+    for _ in 0..0x100 {
         if w.battle.command.is_some() {
             return;
         }

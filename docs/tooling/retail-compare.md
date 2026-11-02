@@ -2096,21 +2096,12 @@ too (`BattleDrive::Opening`): the first battle frame whose monsters are bound,
 and for a capture past the intro timer (`0x0C` / `0x14`) the first one whose
 enemy-name labels have cleared.
 
-That comparison is only as good as the engine's opening. The port does not park
-its command flow on the intro timer (`battle::intro_names` - the round prompt
-opens with the names still up, which the recorded replays pace off), so an
-ordinary fight holds its prompt already at the flip and an opening capture of
-one reads `phase` `0`. The sparring fight's opening the tutorial holds back;
-the evolved Cort's the arrival module holds (flow `0x0C`). `gaza2_card_battle_init`
-is the one ordinary fight caught under its sweep. Its frame matches: the
-engine holds every surface of the round open while the sweep runs (the prompt
-and its unfold, `BattleState::arm_round_open_prompt`; the pad,
-`BattleState::battle_command_pad_held`). Its `phase` still reads `0`, because the
-port runs round one's start (`World::begin_battle_round`, flow `0x14`'s sweep,
-seeder and `0x1E` store) at the flip, so its flow word already reads the
-prompt where retail's battle tick has not run and holds `0x00`. Moving that
-start behind the sweep moves the opening's draws and the replays paced off
-it, so the channel stands as a known opening-order difference.
+The engine holds every surface of the opening as retail does
+([the open's timeline](../subsystems/battle-command-flow.md#the-opens-timeline)):
+no round start, prompt or pad until the sweep and the name hold are over, so an
+opening capture's flow word reads no prompt either. The sparring fight's caption
+hangs off the same round start, and the evolved Cort's arrival holds flow `0x0C`.
+The seed waits the hold out before it counts ticks to a capture past the prompt.
 
 **The entry sweep.** An opening capture's `camera` reads the
 [battle-entry sweep](../subsystems/battle.md#the-battle-entry-sweep) the SCUS

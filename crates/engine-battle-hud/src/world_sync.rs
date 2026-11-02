@@ -297,23 +297,9 @@ pub fn battle_intro_names(
     }
     if world.mode != legaia_engine_mode::mode::SceneMode::Battle
         || world.battle.intro_names_frames == 0
+        || world.battle.intro_lead_ticks > 0
         || world.battle.battle_entry_sweeping()
     {
-        return Vec::new();
-    }
-    // Retail holds the command flow in `0x0B` until the expiry sweep takes
-    // the labels, so no action ever plays under them. The port does not park
-    // the flow (see `world::battle::intro_names`), so an action that starts
-    // inside the hold ends the labels here instead.
-    if battle_action_in_flight(world.battle_ctx.action_state) {
-        return Vec::new();
-    }
-    // The same hold keeps every command surface past the round prompt off
-    // the screen while the labels are up: retail's sweep empties the text
-    // actor list before the prompt builds, so a ring, picker, submenu or
-    // Begin / Reselect confirm never shares a frame with the labels. One the
-    // port opens inside the span ends them.
-    if battle_hud_phase(world) == BattleHudPhase::CommandEntry {
         return Vec::new();
     }
     let mut rows = battle_enemy_target_rows(world);

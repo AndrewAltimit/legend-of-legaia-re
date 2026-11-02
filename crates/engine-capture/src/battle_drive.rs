@@ -31,17 +31,14 @@ pub const DRIVE_DEADLINE: u64 = ACTION_DRIVE_TICKS as u64;
 pub enum BattleDrive {
     /// An opening capture (`SeedPlan::Opening`): nothing is pressed, and
     /// the frame is the first one in battle mode whose entry sweep has run
-    /// as far as retail's - the instant the headless seed samples. Retail's opening holds the fight on its intro (the
-    /// tutorial's first speech, the formation reveal) while the engine's
-    /// round prompt opens with it, so a frame taken past the prompt shows a
-    /// surface retail had not reached.
+    /// as far as retail's - the instant the headless seed samples.
     ///
     /// `swept` is set for a capture whose flow byte is past the intro timer
     /// (`0x0C` / `0x14`): the enemy-name labels `0x0B` sweeps are gone there,
     /// so the frame waits for the engine's own intro names to clear
-    /// (`World::battle.intro_names_frames`) - and, in the sparring fight, for
-    /// the round start they were holding back, which is what raises the
-    /// side-band's caption a `0x14` capture shows.
+    /// (`World::battle.intro_names_frames`) and for the round start they were
+    /// holding back, which in the sparring fight is what raises the side-band's
+    /// caption a `0x14` capture shows.
     ///
     /// `entry` is retail's frame-driver counter `gp+0x330`: the frame also
     /// waits for the engine's battle-entry sweep to run as far
@@ -1109,10 +1106,9 @@ impl BattleDrive {
                 // A sparring capture past the intro timer also holds the
                 // side-band's caption, which the engine raises on the round
                 // start the open was holding back
-                // (`BattleState::sparring_open_held`).
+                // (`BattleState::battle_open_held`).
                 let ok = (!swept
-                    || world.battle.intro_names_frames == 0
-                        && !world.battle.sparring_round_pending)
+                    || world.battle.intro_names_frames == 0 && !world.battle.round_open_pending)
                     && entry_sweep_reached(world, entry)
                     && world.actors.iter().enumerate().all(|(i, a)| {
                         a.battle_monster_id.is_none()

@@ -887,13 +887,13 @@ labels and their `ctx[+0x6D6]` hold belong to the battle tick's flow `0x0A` /
 `0x80047014`), so the port neither shows nor drains them until the sweep is
 over (`BattleState::battle_entry_sweeping`).
 
-The sparring fight keeps the whole of retail's order. The side-band arms
-Tetsu's caption on the flow reading `0x14`, which retail reaches only past
-the sweep and the name hold, so the port holds that fight's first round
-start - and the battle loop with it - until both are done
-(`BattleState::sparring_open_held`): `s5_tetsu_battle`, caught under the sweep at
-flow `0x00`, shows the bare arena, and `v0_1_battle_start_tetsu`, at `0x14`,
-the caption over the close-up.
+Every fight keeps retail's order: the flow reaches `0x14` only past the sweep
+and the name hold, so the port holds the first round start - and the battle
+loop with it - until both are done (`BattleState::battle_open_held`,
+[the open's timeline](battle-command-flow.md#the-opens-timeline)). The sparring
+fight's side-band arms Tetsu's caption on that `0x14`: `s5_tetsu_battle`, caught
+under the sweep at flow `0x00`, shows the bare arena, and
+`v0_1_battle_start_tetsu`, at `0x14`, the caption over the close-up.
 
 ### The battle-entry fade
 

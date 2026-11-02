@@ -85,10 +85,10 @@ impl World {
     /// REF: FUN_80056208 (called by the frame driver `FUN_80046A20` at
     /// `0x80046D60`, ahead of both battle state machines)
     pub(in crate::world) fn tick_battle_sideband(&mut self) -> bool {
-        // The sparring fight's round start, once the battle open lets the
-        // flow reach `0x14` ([`BattleState::sparring_open_held`]).
-        if self.battle.sparring_round_pending && !self.battle.sparring_open_held() {
-            self.battle.sparring_round_pending = false;
+        // The fight's first round start, once the battle open lets the flow
+        // reach `0x14` ([`BattleState::battle_open_held`]).
+        if self.battle.round_open_pending && !self.battle.battle_open_held() {
+            self.battle.round_open_pending = false;
             self.begin_battle_round();
         }
         // Cort's arrival starts after the entry sweep. Its flow byte reaches
@@ -226,16 +226,21 @@ impl World {
     }
 
     /// The side-band's say over a round start (`FUN_801D0748` state `0x14`):
-    /// `true` when the round has to wait. The sparring caption holds it
-    /// (`ctx[+0x6B0]`, tested at `0x801D0BDC`), and under the arrival the
-    /// flow never reaches `0x14` at all until the module's hand-back.
+    /// `true` when the round has to wait. The battle open holds any fight's
+    /// first one ([`BattleState::battle_open_held`]), the sparring caption
+    /// holds it (`ctx[+0x6B0]`, tested at `0x801D0BDC`), and under the arrival
+    /// the flow never reaches `0x14` at all until the module's hand-back.
     pub(in crate::world) fn battle_sideband_holds_round(&mut self) -> bool {
+        if !matches!(
+            self.battle.stage_id,
+            sb::STAGE_ARRIVAL | sb::STAGE_FORM_TRANSITION
+        ) && self.battle.battle_open_held()
+        {
+            self.battle.round_open_pending = true;
+            return true;
+        }
         match self.battle.stage_id {
             sb::STAGE_SPARRING if self.battle.sideband.phase == 0 => {
-                if self.battle.sparring_open_held() {
-                    self.battle.sparring_round_pending = true;
-                    return true;
-                }
                 let inputs = self.battle_sideband_inputs(Some(sb::INTRO_ARM_MODE));
                 let fx = sb::battle_sideband_tick(&mut self.battle.sideband, &inputs);
                 self.apply_battle_sideband(&fx.effects);

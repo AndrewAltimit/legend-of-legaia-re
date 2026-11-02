@@ -22,31 +22,6 @@ impl BattleState {
             && (self.sideband.phase >= 3 || self.tutorial.as_ref().is_some_and(|t| t.finished))
     }
 
-    /// Whether the battle open still stands between the sparring fight and
-    /// its first `0x14`. The side-band arms its caption on the flow byte
-    /// reading `0x14` (`FUN_80056208` phase `0`), and retail's flow gets
-    /// there only through the whole open: the frame driver runs the battle
-    /// tick `FUN_801D0748` once its entry counter `gp+0x330` reads `0xFF`
-    /// (`beq a0,v0,0x80047014` at `0x80046EF8`) - after the camera's entry
-    /// sweep - and the tick then walks `0x00 -> 0x0A`, composes the enemy
-    /// names and holds `0x0B` for the intro timer `ctx[+0x6D6]`
-    /// (`0x801D0DE0..0x801D0E58`) before it stores `0x14`. So Tetsu's line
-    /// comes up after the sweep and after his name label has gone, never
-    /// under either: `s5_tetsu_battle` (flow `0x00`, counter `0xAF`) shows
-    /// the bare arena, `v0_1_battle_start_tetsu` (flow `0x14`) the caption
-    /// over the close-up.
-    ///
-    /// The port opens every other fight's round at the flip
-    /// (`super::intro_names`); the spar is held to retail's order because
-    /// its caption and the close-up it selects are what the open shows.
-    ///
-    /// REF: FUN_80046A20, FUN_801D0748, FUN_80056208
-    pub fn sparring_open_held(&self) -> bool {
-        self.stage_id == sb::STAGE_SPARRING
-            && self.sideband.phase == 0
-            && (self.battle_entry_sweeping() || self.intro_names_frames > 0)
-    }
-
     /// Queue the sparring caption - `IntroCaption`'s host half: the caption
     /// string `0x80078CB4` behind HUD element `0x5A`, carried on the tutorial
     /// box queue (both hosts draw it framed and text-measured) at the retail

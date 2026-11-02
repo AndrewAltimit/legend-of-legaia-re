@@ -49,6 +49,7 @@ fn battle_with(monster: MonsterDef, party_spd: u16) -> World {
         w.tick();
     }
     assert_eq!(w.mode, SceneMode::Battle);
+    w.run_out_battle_open();
     w
 }
 

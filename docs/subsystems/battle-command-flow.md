@@ -142,6 +142,33 @@ is the only way into it, and the action SM's round end (`0x801E67E8`) writes
 opens with `Begin` / `Run`, and each party member then picks from the ring in
 turn.
 
+### The open's timeline
+
+The frame driver `FUN_80046A20` calls this function only once its entry counter
+`gp+0x330` parks at `0xFF` (`0x80046EF8`), so the whole chain above waits out the
+camera's entry sweep. Measured per vsync on `gaza2_card_battle_init` and on a
+`karisto_sol_pre_encounter` walk into a random encounter, both from the park:
+
+| Vsyncs past the park | `ctx[+0x06]` | What happened |
+|---|---|---|
+| `+0` | `0x00` | the park; the flow still holds `0x00` |
+| `+3` | `0x0A` | one pass: `FUN_801D84C0`, stored `0x0A` |
+| `+6` | `0x0B` | the composer `FUN_801D9D3C` ran; timer `90` |
+| `+97` | `0x14` | the timer expired; the labels are swept |
+| `+99` | `0x1E` | `Begin` \| `Run` |
+
+The frame step reads `3` through the first two passes and drops to `2` about
+thirty vsyncs past the park, as the loader's frames leave the cost ring
+([the battle frame](../../crates/engine-battle-loop/src/frame_clock.rs)); the
+timer drains by the step, so it holds its `90` vsyncs either way.
+
+The port runs the same order. `World::begin_battle_round` parks on
+`BattleState::battle_open_held` (sweep, `intro_lead_ticks`, `intro_names_frames`)
+and raises `round_open_pending`, under which the battle loop runs nothing past
+the timers; the side-band tick starts the round on the pass the hold has ended.
+The formation banner comes up with the names, at the lead's end. The boss stage
+modules' `0x0C` baton keeps its own path.
+
 ### The round loop - what re-arms `0x1E`
 
 `0x14` is the round-start arm and the **only** writer of `0x1E`:

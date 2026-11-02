@@ -39,6 +39,7 @@ fn the_hold_is_ninety_frames_then_the_labels_go() {
     let mut world = intro_world();
     world.arm_battle_intro_names();
     assert_eq!(world.battle.intro_names_frames, 0x5A);
+    world.battle.intro_lead_ticks = 0;
     for _ in 0..0x59 {
         world.battle.step_battle_intro_names();
     }
@@ -63,30 +64,26 @@ fn monster_0xb5_opens_without_names() {
     assert_eq!(world.battle.intro_names_frames, 0);
 }
 
-/// Retail's expiry sweep empties the text-actor list before the round
-/// prompt builds, so the labels never share a frame with a command surface
-/// past the prompt: the ring, a picker, or the Begin / Reselect confirm.
+/// Flow `0x00` and `0x0A` run ahead of the composer: past the sweep's park the
+/// labels wait out the lead, then stand for the hold.
 #[test]
-fn the_labels_never_share_a_frame_with_a_command_surface() {
-    use legaia_engine_battle_menus::battle_input::BattleCommandSession;
+fn the_labels_come_up_as_the_lead_ends() {
     let font = legaia_font::synthetic_for_tests();
     let mut world = intro_world();
     world.arm_battle_intro_names();
+    assert!(world.battle.intro_lead_ticks > 0);
+    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
+    world.battle.step_battle_intro_names();
+    assert_eq!(
+        world.battle.intro_names_frames, 0x5A,
+        "no drain in the lead"
+    );
+    world.battle.intro_lead_ticks = 0;
     assert_eq!(
         legaia_engine_battle_hud::battle_intro_names(&world, &font).len(),
         1,
         "the labels are up through the hold"
     );
-    world.battle.command = Some(BattleCommandSession::new_round_open(0, 0, false));
-    assert_eq!(
-        legaia_engine_battle_hud::battle_intro_names(&world, &font).len(),
-        1,
-        "the round prompt is the port's documented overlap"
-    );
-    world.battle.command = Some(BattleCommandSession::new(0, 0));
-    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
-    world.battle.command = Some(BattleCommandSession::new_commit_confirm(0, 0));
-    assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
 }
 
 /// A dome leg opens the same way: the opponent's name over its seat for the
@@ -148,6 +145,7 @@ fn the_names_wait_out_the_entry_sweep() {
     );
     assert!(legaia_engine_battle_hud::battle_intro_names(&world, &font).is_empty());
     world.battle.camera = None;
+    world.battle.intro_lead_ticks = 0;
     assert_eq!(
         legaia_engine_battle_hud::battle_intro_names(&world, &font).len(),
         1

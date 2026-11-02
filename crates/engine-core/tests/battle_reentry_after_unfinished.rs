@@ -79,6 +79,7 @@ fn world_left_mid_results() -> World {
 /// that took it began on the first command prompt, which is the only state
 /// the seam dispatches from, and closed it.
 fn seed_dispatches(w: &mut World) -> bool {
+    w.run_out_battle_open();
     w.battle.inflight_seed = Some(InflightCastSeed {
         caster: 0,
         spell_id: 0x82,
