@@ -261,6 +261,14 @@ pub struct BattleCamera {
     /// the counter was last stored outright (a rung of the per-action
     /// ladder, a module's store, an alignment) - the clock half of the word.
     pub(super) action_yaw_drift: i32,
+    /// The `0x2A` pass storing `0x2B` is the newest pass
+    /// ([`Self::observe_chain_exit_pass`]).
+    pub(super) chain_exit_pass: bool,
+    /// That pass has just run: it calls neither camera driver.
+    pub(super) prologue_skip_pending: bool,
+    /// Vsyncs of that pass still to hold `ctx[+0x87C]` / `ctx[+0x26E]`, on
+    /// the per-vsync cadence.
+    pub(super) prologue_skip_vsyncs: u32,
     /// The last `ctx[7]` [`Self::observe_action_state`] saw, so the yaw
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.
@@ -476,6 +484,9 @@ pub struct BattleCamInputs {
     /// The active actor's clip-commit count
     /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
     /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
+    /// The action SM's newest pass ran `0x2A` and stored `0x2B`
+    /// ([`BattleCamera::observe_chain_exit_pass`]).
+    pub chain_exit_pass: bool,
     pub active_commits: u32,
     /// The active actor's clip-**install** count
     /// (`BattleActionCtx::active_clip_installs`): the commits that change the
@@ -586,6 +597,7 @@ pub fn drive_on_stream(
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
+    cam.observe_chain_exit_pass(inputs.chain_exit_pass);
     cam.observe_active_commits(inputs.active_commits);
     cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);

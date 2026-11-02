@@ -148,6 +148,8 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`).
         action_state: world.battle_camera_state(),
+        chain_exit_pass: world.battle.sm_ran_state == Some(0x2A)
+            && world.battle_ctx.action_state == 0x2B,
         active_commits: world.battle_ctx.active_clip_commits,
         active_installs: world.battle_ctx.active_clip_installs,
         camera_option: world.toggles.battle_camera as u8,

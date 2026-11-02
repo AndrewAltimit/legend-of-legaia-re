@@ -94,6 +94,9 @@ impl BattleCamera {
             last_active_installs: None,
             clip_age: 0,
             steps_in_state: 0,
+            chain_exit_pass: false,
+            prologue_skip_pending: false,
+            prologue_skip_vsyncs: 0,
             last_swing_seeds: None,
             option: CAMERA_OPTION_CLOSE,
             shake: ShakeState::default(),
@@ -206,6 +209,18 @@ impl BattleCamera {
         if prev.is_some_and(|p| p != installs) {
             self.clip_age = 0;
         }
+    }
+
+    /// The `0x2A` pass that meets the queue's terminator stores `0x2B` and
+    /// calls neither camera driver (`0x801E4774..0x801E479C`), so neither
+    /// prologue adds to `ctx[+0x26E]` / `ctx[+0x87C]` on that pass.
+    /// `running` holds while that pass is the newest; its rising edge holds
+    /// the counters for one pass.
+    pub fn observe_chain_exit_pass(&mut self, running: bool) {
+        if running && !self.chain_exit_pass {
+            self.prologue_skip_pending = true;
+        }
+        self.chain_exit_pass = running;
     }
 
     pub fn observe_action_state(&mut self, state: u8) {
@@ -943,6 +958,12 @@ impl BattleCamera {
         self.steps_in_state
     }
 
+    /// Stand the camera on `pose` as the capture harness read it off retail,
+    /// whatever the framing law armed here.
+    pub fn stand_on_pose(&mut self, pose: BattleCamPose) {
+        self.pose = pose;
+    }
+
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
     /// live screen-shake offset folded into the translation pair - which is
     /// where retail's `FUN_801D9D30` puts it.
@@ -1225,7 +1246,14 @@ impl BattleCamera {
         // `0x801D5900..0x801D5914`), so they advance per display frame for
         // as long as any framing case is being re-armed - not per camera
         // step.
-        self.attack.ctx.advance(vsyncs as u32);
+        let held = if std::mem::take(&mut self.prologue_skip_pending) {
+            u32::from(self.frame_step.max(1))
+        } else {
+            self.prologue_skip_vsyncs
+        };
+        let skipped = held.min(vsyncs as u32);
+        self.prologue_skip_vsyncs = held - skipped;
+        self.attack.ctx.advance(vsyncs as u32 - skipped);
         self.clip_age = self.clip_age.wrapping_add(
             (vsyncs as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
         );
