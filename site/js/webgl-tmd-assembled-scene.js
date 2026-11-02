@@ -789,6 +789,11 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       if (!this._ssaoPass) this._ssaoPass = new window.LegaiaSsaoPass(gl);
       const pass = this._ssaoPass;
       if (pass.beginPrepass(w, h)) {
+        /* (Re)creating the pass's targets binds them on the active unit: a
+         * pre-pass drawn over one samples a colour target through `u_vram`,
+         * and every draw of that frame fails with a sampler-type mismatch. */
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.tex);
         gl.uniform1i(this.locGbuf, 1);
         gl.uniform4f(this.locGbufK, frame[0], frame[1], frame[2], 0);
         gl.uniform4f(this.locGbufView, 0, 0, w, h);
