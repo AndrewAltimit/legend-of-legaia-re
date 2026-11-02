@@ -608,11 +608,11 @@ impl World {
         let player_pos = player_slot
             .and_then(|s| self.actors.get(s as usize))
             .map(|a| (a.move_state.world_x, a.move_state.world_z));
-        let mut seen: std::collections::HashSet<u8> =
-            std::collections::HashSet::with_capacity(self.npcs.positions.len() + 1);
+        // Slots are `u8`: a flat table, not a hashed set, per tick.
+        let mut seen = [false; 256];
         let mut moved_player = false;
         if let (Some(slot), Some(pos)) = (player_slot, player_pos) {
-            seen.insert(slot);
+            seen[usize::from(slot)] = true;
             match self.locomotion.motion_prev.insert(slot, pos) {
                 Some(prev) if prev != pos => {
                     moved_player = true;
@@ -627,7 +627,7 @@ impl World {
                 // mirror of it here must not double-report.
                 continue;
             }
-            seen.insert(slot);
+            seen[usize::from(slot)] = true;
             match self.locomotion.motion_prev.insert(slot, pos) {
                 Some(prev) if prev != pos => {
                     self.locomotion.actor_moving.insert(slot);
@@ -640,7 +640,7 @@ impl World {
         // instead of diffing against a dead actor's last position.
         self.locomotion
             .motion_prev
-            .retain(|slot, _| seen.contains(slot));
+            .retain(|slot, _| seen[usize::from(*slot)]);
         if moved_player && let Some(anim) = &mut self.locomotion.player_anim {
             anim.moved_this_frame = true;
         }
