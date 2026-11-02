@@ -211,6 +211,9 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 | Thread | Status | What would close it |
 |---|---|---|
+| What does the engine draw over `deene_field_card_walk`'s left rock face? | open (measured) | `ot-raster.py` on the state's table reproduces the retail frame there: the far ground quad (CLUT `0x7D80`) under the rock strips (`0x7D43`). The engine's frame shows another texture in that area. A dump of the engine's primitives for the frame, set against the table's list. |
+| What differs in the Octam trees of `ropeway_field_route_walk` and `octam_to_sebucus_worldmap`? | open (measured) | Camera, party and ground agree and only the trees' silhouettes miss; no clip or morph node stands near them. The table's packets for one tree against the engine's mesh of it. |
+| Why is `kor_field_route_walk`'s frame scaled about 4% against retail's after the walk rewind? | open (measured) | Scene features sit `-2` px at the left and `+7` px at the right, with the pose rewound two ease steps at code `2`. Retail's camera words on the displayed pass, from a per-pass probe over the same walk. |
 | Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
 
