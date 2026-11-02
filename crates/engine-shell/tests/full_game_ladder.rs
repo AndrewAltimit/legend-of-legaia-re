@@ -191,24 +191,27 @@ fn read_baseline() -> Baseline {
 #[test]
 fn plan_search_parent_links_stay_acyclic() {
     let (a, v, land, past) = ((0, 0), (1, 0), (9, 9), (2, 0));
-    let mut s = Search {
-        parent: HashMap::from([(a, a)]),
-        g: HashMap::from([(a, 0)]),
-        open: std::collections::BinaryHeap::new(),
-        goal: (20, 20),
-    };
+    let mut s = Search::new(a, (20, 20));
     // a -> (waypoint v) -> land, then land -> ... -> past, then past -> v.
     s.step(Some(v), a, land, 2);
     s.step(None, land, past, 3);
     s.step(None, past, v, 4);
     assert_eq!(
-        s.parent[&v], a,
+        s.nodes.parent(v),
+        Some(a),
         "a dearer step must not re-parent the waypoint"
     );
-    assert_eq!(walk_back(&s.parent, a, past), Some(vec![v, land, past]));
+    assert_eq!(
+        walk_back(|c| s.nodes.parent(c), s.nodes.len(), a, past),
+        Some(vec![v, land, past])
+    );
+    s.finish();
     // A cyclic map (the shape the defect produced) ends, it does not loop.
     let cyclic = HashMap::from([(a, a), (v, past), (land, v), (past, land)]);
-    assert_eq!(walk_back(&cyclic, a, past), None);
+    assert_eq!(
+        walk_back(|c| cyclic.get(&c).copied(), cyclic.len(), a, past),
+        None
+    );
 }
 
 /// `koin1`'s slot machines are the minigame cabinets the walk's idle tap
