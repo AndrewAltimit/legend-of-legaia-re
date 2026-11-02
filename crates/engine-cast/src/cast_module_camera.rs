@@ -1090,11 +1090,14 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         }),
         // PROT 0904's director gates arms 2..6 and 14 and arms the camera
         // beside the ported tick body, which paces arms 7..13 itself
-        // (`crate::seru_magic_ticks::theeder_tick`). The outcome lands once
-        // the sweep has turned.
+        // (`crate::seru_magic_ticks::theeder_tick`).
         904 => Some(ModuleProfile {
             direct: theeder_direct,
-            hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
+            // The sweep strikes when its ray reaches the seat, about 33 ticks
+            // into arm 12 (`0x801F7D38`). The fold cannot wait for the ray,
+            // and a fold past the arm staged the reaction a second time, with
+            // its cues, so it lands as the arm opens.
+            hit_arm: Some(crate::seru_magic_ticks::THEEDER_RETARGET_ARM),
             walk_arm: None,
             owns_phase: false,
             stages_spawns: false,

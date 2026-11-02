@@ -321,6 +321,10 @@ adds its reaction-channel entry). What the recordings on
   router from `FUN_800508DC`) sounds on arm 10's first pass. The engine
   runs PROT 0908's damage sites with no rolls and resolves the spell's
   damage elsewhere, so the opener stages nothing and the cue never sounds.
+- **Theeder's reaction, staged once.** The module's sweep stages the victim's
+  reaction, and a fold past arm 12 staged it a second time, with its cues. The
+  fold now lands as arm 12 opens, about 33 ticks ahead of retail's ray. The ids
+  and counts match; the four cues stay about 30 ticks early.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
