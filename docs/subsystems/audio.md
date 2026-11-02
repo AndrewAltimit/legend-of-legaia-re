@@ -506,7 +506,12 @@ the attach. An op-`0x35` sub-op 1
 or 9 that changes the word outside the field init's install slice starts it
 (the park sentinel and the same word do not), `World::tick_bgm_swap` runs it
 once a tick, and `FieldAudioHost::bgm_ready` holds sub-ops 9 and `0xA` as
-retail does. `SceneHost::route_bgm_events` tears the old track down at the
+retail does. Every port runner that steps a record holds the re-run as a
+timed park, the cutscene timeline's slice included: stepped past by width,
+a commit is lost, bit 0 outlives its select, the walk stays at stage 4 for
+the rest of the scene and every later sub-op 9 re-runs forever (`geremi`'s
+P2[1] closing commit, then its warp tiles' P0[14..16] selects).
+`SceneHost::route_bgm_events` tears the old track down at the
 start and holds the new one (`pending_bgm_install`) until
 `World::take_bgm_install_due` reports stage 6; a committed sub-op 9 select
 moves there at the commit. A field init ends the walk and attaches what it
