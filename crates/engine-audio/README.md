@@ -6,7 +6,7 @@ hosts produce comes through this crate. Two layers:
 1. A from-scratch PSX **SPU** model - 24 voices, 512 KB SPU RAM, ADSR
    envelopes, libspu-shaped transfer engine.
 2. An `AudioOut` handle that owns one cpal output stream and ticks the
-   SPU at 44.1 kHz internal rate, resampling linearly to the host device
+   SPU at 44.1 kHz internal rate, resampling (`host_resample`) to the host device
    rate.
 
 Engines push voice attributes / key-on masks / sample uploads through
@@ -95,6 +95,7 @@ Capture, diff and the retail side are documented in
 | [`spu::voice`](src/spu/voice.rs) | Per-voice `Voice` (sample addr, loop addr, pitch, ADSR, L/R volume). Resamples through the hardware's 4-point Gaussian interpolator. |
 | [`spu::gauss`](src/spu/gauss.rs) | The SPU's 512-entry Gaussian interpolation coefficient ROM + the 4-tap mix (published hardware spec; matters because Legaia's 22.05 kHz VAGs make every voice run at a non-unity pitch step). |
 | [`spu::adsr`](src/spu/adsr.rs) | 5-phase envelope state machine matching the PSX `(adsr1, adsr2)` word layout (linear / exponential / increase / decrease). |
+| [`host_resample`](src/host_resample.rs) | The output stage's windowed-sinc rate converter, for a device not at 44.1 kHz. |
 | [`spu::adpcm`](src/spu/adpcm.rs) | Streaming SPU-ADPCM block decoder - 28 samples per 16-byte block, stateful across blocks. |
 | [`spu::ram`](src/spu/ram.rs) | 512 KB SPU RAM model + libspu-style transfer pointer / direction + a first-fit `SpuAllocator` for `SsSpuMalloc` / `SpuFree`. |
 | [`spu::reverb`](src/spu/reverb.rs) | Faithful register-driven reverb network (same/different-side IIR + 4-tap comb + 2 all-pass), with the 9 standard libspu mode presets. Per-voice opt-in via `Voice::set_reverb_send`. |
