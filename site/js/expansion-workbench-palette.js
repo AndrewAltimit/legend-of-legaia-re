@@ -19,12 +19,16 @@
 
 const THUMB = 128;
 // Bump to redraw every cached picture (a change of camera or background).
-const THUMB_V = 1;
+const THUMB_V = 2;
 const DB = 'legaia-expansion-thumbs';
 const STORE = 'thumbs';
 // A turn of the queue: this long at most, then back to the page.
 const BUDGET_MS = 6;
 const REST_MS = 12;
+// The tile's background, and the mean brightness a dark model is raised to.
+const BACK = [0.2, 0.22, 0.25];
+const EXPOSE = 0.42;
+const EXPOSE_MAX = 2.4;
 // Whole scenes (their VRAM and meshes) kept parsed: the ghost's and the queue's.
 const KEEP_SCENES = 4;
 
@@ -63,12 +67,14 @@ export function parseSceneMeshes(buf) {
   return { vram, meshes };
 }
 
-/** A mesh's box: `{ lo, hi, size, center, radius }`, or null when it is empty. */
+/** A mesh's box over the vertices its triangles use (a stray vertex must not
+ * shrink the picture): `{ lo, hi, size, center, radius }`, or null when empty. */
 export function meshBox(m) {
-  const p = m.positions;
-  if (!p.length || !m.indices.length) return null;
+  const p = m.positions, ix = m.indices;
+  if (!p.length || !ix.length) return null;
   const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-  for (let i = 0; i < p.length; i += 3) {
+  for (let n = 0; n < ix.length; n++) {
+    const i = ix[n] * 3;
     for (let k = 0; k < 3; k++) {
       if (p[i + k] < lo[k]) lo[k] = p[i + k];
       if (p[i + k] > hi[k]) hi[k] = p[i + k];
@@ -78,6 +84,61 @@ export function meshBox(m) {
   const center = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
   const radius = Math.max(1, Math.hypot(size[0], size[1], size[2]) / 2);
   return { lo, hi, size, center, radius };
+}
+
+/** The thumbnail camera: a three-quarter orthographic view from above, framed
+ * on the model's own silhouette, so a thin palm fills its tile as a wide
+ * cottage does. A column-major matrix for `TmdRenderer.mvpOverride`; a half turn
+ * about Z takes the retail frame's Y-down to screen up, as `buildMvp` does. */
+export function thumbMvp(m, yaw, pitch) {
+  const c = Math.cos(yaw), s = Math.sin(yaw), cb = Math.cos(pitch), sb = Math.sin(pitch);
+  const R = [
+    [-c, 0, s],
+    [-sb * s, -cb, -sb * c],
+    [cb * s, -sb, cb * c],
+  ];
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  const p = m.positions, ix = m.indices;
+  for (let n = 0; n < ix.length; n++) {
+    const i = ix[n] * 3;
+    for (let r = 0; r < 3; r++) {
+      const v = R[r][0] * p[i] + R[r][1] * p[i + 1] + R[r][2] * p[i + 2];
+      if (v < lo[r]) lo[r] = v;
+      if (v > hi[r]) hi[r] = v;
+    }
+  }
+  const k = (2 * 0.9) / Math.max(hi[0] - lo[0], hi[1] - lo[1], 1);
+  const kz = -1.9 / Math.max(hi[2] - lo[2], 1);
+  const ox = -k * (lo[0] + hi[0]) / 2, oy = -k * (lo[1] + hi[1]) / 2, oz = -kz * (lo[2] + hi[2]) / 2;
+  return new Float32Array([
+    k * R[0][0], k * R[1][0], kz * R[2][0], 0,
+    k * R[0][1], k * R[1][1], kz * R[2][1], 0,
+    k * R[0][2], k * R[1][2], kz * R[2][2], 0,
+    ox, oy, oz, 1,
+  ]);
+}
+
+/** One exposure for every picture: the pixels that are not background, raised
+ * so their mean brightness reaches `EXPOSE` (never darkened). In place, on
+ * top-down RGBA. */
+export function exposePixels(px) {
+  const bg = BACK.map((v) => Math.round(v * 255));
+  const isBack = (i) => Math.abs(px[i] - bg[0]) < 3 && Math.abs(px[i + 1] - bg[1]) < 3 && Math.abs(px[i + 2] - bg[2]) < 3;
+  let sum = 0, n = 0;
+  for (let i = 0; i < px.length; i += 4) {
+    if (isBack(i)) continue;
+    sum += 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+    n++;
+  }
+  if (!n) return 1;
+  const k = Math.max(1, Math.min(EXPOSE_MAX, (EXPOSE * 255) / (sum / n)));
+  if (k > 1.02) {
+    for (let i = 0; i < px.length; i += 4) {
+      if (isBack(i)) continue;
+      for (let c = 0; c < 3; c++) px[i + c] = Math.min(255, px[i + c] * k);
+    }
+  }
+  return k;
 }
 
 function idb() {
@@ -115,7 +176,9 @@ export function createThumbs(env) {
     T.canvas.width = T.canvas.height = THUMB;
     T.r = new TmdRenderer(T.canvas);
     T.r.useFlatColors = true;
-    T.r.clearColor = [0.13, 0.15, 0.18, 1];
+    T.r.clearColor = [BACK[0], BACK[1], BACK[2], 1];
+    T.out = document.createElement('canvas');
+    T.out.width = T.out.height = THUMB;
     return T.r;
   }
 
@@ -149,10 +212,20 @@ export function createThumbs(env) {
     const r = renderer();
     if (T.loadedVram !== data.vram) { r.uploadVram(data.vram); T.loadedVram = data.vram; }
     r.uploadMesh(m.positions, m.uvs, m.cbaTsb, m.indices, m.flat.length ? m.flat : null);
-    // A three-quarter view from above, the whole box in frame.
-    r.render(-0.6, 0.5, 1.75, 0, 0, box.center, box.radius);
+    r.mvpOverride = thumbMvp(m, -0.6, 0.5);
+    r.render(0, 0, 1, 0, 0, box.center, box.radius);
+    // Read back while the drawing buffer is valid, exposed, right way up.
+    const gl = r.gl;
+    const raw = new Uint8Array(THUMB * THUMB * 4);
+    gl.readPixels(0, 0, THUMB, THUMB, gl.RGBA, gl.UNSIGNED_BYTE, raw);
+    const img = new ImageData(THUMB, THUMB);
+    for (let y = 0; y < THUMB; y++) {
+      img.data.set(raw.subarray((THUMB - 1 - y) * THUMB * 4, (THUMB - y) * THUMB * 4), y * THUMB * 4);
+    }
+    exposePixels(img.data);
+    T.out.getContext('2d').putImageData(img, 0, 0);
     const key = w.key;
-    T.canvas.toBlob((blob) => {
+    T.out.toBlob((blob) => {
       if (!blob) { noPicture(w); return; }
       const url = URL.createObjectURL(blob);
       T.urls.set(key, url);
