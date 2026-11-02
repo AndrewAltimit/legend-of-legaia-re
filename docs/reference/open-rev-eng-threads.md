@@ -316,7 +316,7 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 ## Audio / BGM
 
-No open threads. Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
+Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
 ### Sub-vsync key-on timing against the mix
 
