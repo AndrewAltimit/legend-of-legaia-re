@@ -527,6 +527,21 @@ impl World {
         self.refresh_battle_body_pairs();
     }
 
+    /// The body pair `+0x3C` / `+0x40` `FUN_8004998C` would store for `slot`
+    /// off its current pose, whether or not the seat carries a pair of its own
+    /// (a summoned creature has no [`BattleActor::seat`]).
+    pub(in crate::world) fn live_body_pair(&self, slot: usize) -> Option<(i16, i16)> {
+        let a = self.actors.get(slot)?;
+        let centroid = stream_pose(a).map(pose_centroid_xz);
+        let (dx, dz) = centroid
+            .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, BATTLE_RENDER_SCALE))
+            .unwrap_or((0, 0));
+        Some((
+            a.move_state.world_x.wrapping_add(dx),
+            a.move_state.world_z.wrapping_add(dz),
+        ))
+    }
+
     pub(in crate::world) fn refresh_battle_body_pairs(&mut self) {
         for a in self.actors.iter_mut() {
             if a.battle.seat.is_none() {

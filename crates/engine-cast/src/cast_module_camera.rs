@@ -116,6 +116,10 @@ pub struct ModuleCamState {
     /// The creature's live seat, as the host last moved it (its walk-in).
     /// Fed in by the host each tick; `None` before it is seated.
     pub creature_live: Option<ModuleSeat>,
+    /// The creature's body pair `+0x3C` / `+0x40`, `(x, z)` off its live pose:
+    /// what an arm's framing reads where the walk reads the ground pair
+    /// `+0x34` / `+0x38`. Fed in by the host each tick.
+    pub creature_body: Option<(i16, i16)>,
     /// Whether the creature's walk has reached the victim - the host's
     /// answer to the range test `FUN_8004E2F0(7, victim)` a walk arm polls.
     pub creature_arrived: bool,

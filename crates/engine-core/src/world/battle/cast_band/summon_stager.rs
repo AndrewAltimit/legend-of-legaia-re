@@ -102,6 +102,10 @@ impl World {
                 facing: a.battle.facing_angle & 0xFFF,
             });
         self.casting.module_cam.creature_live = seat_live;
+        self.casting.module_cam.creature_body = self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.live_body_pair(usize::from(s)));
         self.casting.module_cam.victim_untargetable =
             self.casting.module_cam.victim_slot.is_some_and(|v| {
                 self.cast_view(v).flags & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
