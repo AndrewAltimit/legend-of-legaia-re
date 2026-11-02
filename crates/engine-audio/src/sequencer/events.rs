@@ -41,6 +41,13 @@ impl Sequencer {
                     self.channels[ch].pan = value;
                     self.remix_channel(spu, ch);
                 }
+                // `FUN_8006126C`: the data entry after a Loop Start names how
+                // many passes the loop runs. A loop already counting ignores it.
+                CC_DATA_ENTRY if self.loop_armed && !self.loop_busy => {
+                    self.loop_repeats = value;
+                    self.loop_armed = false;
+                    self.loop_busy = true;
+                }
                 CC_LOOP_MARKER => match value {
                     LOOP_START_VALUE => {
                         // Record the position *after* this marker. `self.next`
@@ -49,10 +56,23 @@ impl Sequencer {
                         // following the marker is `next + 1`. Rewinding there
                         // skips re-firing the marker and re-applying its delta.
                         self.loop_start = Some(self.next + 1);
+                        self.loop_armed = true;
                     }
-                    LOOP_FOREVER_VALUE => {
-                        self.pending_loop_forever = true;
-                    }
+                    // `FUN_8006139C`: no count means no loop at all (the score
+                    // runs on to its end), `0x7F` loops for good, and any other
+                    // count jumps back until it runs out.
+                    LOOP_FOREVER_VALUE => match self.loop_repeats {
+                        0 => self.loop_busy = false,
+                        n if n < LOOP_REPEAT_FOREVER => {
+                            self.loop_repeats = n - 1;
+                            if n == 1 {
+                                self.loop_busy = false;
+                            } else {
+                                self.pending_loop_forever = true;
+                            }
+                        }
+                        _ => self.pending_loop_forever = true,
+                    },
                     _ => {}
                 },
                 _ => {}

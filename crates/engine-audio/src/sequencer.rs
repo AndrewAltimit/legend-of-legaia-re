@@ -69,6 +69,10 @@ fn retail_header_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
 
 /// NRPN-style controller that carries SEQ loop markers (controller 99).
 const CC_LOOP_MARKER: u8 = 0x63;
+/// Data entry (CC 6): after a Loop Start, the loop's count.
+const CC_DATA_ENTRY: u8 = 0x06;
+/// The count that loops for good.
+const LOOP_REPEAT_FOREVER: u8 = 0x7F;
 /// `CC_LOOP_MARKER` value marking a Loop Start point.
 const LOOP_START_VALUE: u8 = 20;
 /// `CC_LOOP_MARKER` value marking Loop Forever (jump to the last Loop Start).
@@ -210,6 +214,13 @@ pub struct Sequencer {
     /// first Loop Start is seen; persists across loop rewinds so repeated
     /// loops keep returning to the same bar.
     loop_start: Option<usize>,
+    /// A Loop Start fired and its count has not been read (retail's `+0x1C`).
+    loop_armed: bool,
+    /// A loop's count is running (retail's `+0x15`).
+    loop_busy: bool,
+    /// The loop's remaining count (retail's `+0x1D`): zero, as `FUN_80062410`
+    /// opens it, until a data entry follows a Loop Start.
+    loop_repeats: u8,
     /// Set when a Loop Forever marker (CC 99 value 30) fires; the advance loop
     /// consumes it, rewinds, and clears it.
     pending_loop_forever: bool,

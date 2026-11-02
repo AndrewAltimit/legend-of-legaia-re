@@ -65,16 +65,29 @@ impl Sequencer {
             remaining -= step;
             if self.flush_pos >= FLUSH_SAMPLES {
                 self.flush_pos = 0;
-                if !self.exact_tempo {
-                    self.pump_vsync(spu);
-                }
-                if self.master_vol_dirty {
-                    self.master_vol_dirty = false;
-                    self.remix_all(spu);
-                }
-                self.flush_key_ons(spu);
+                self.flush_period(spu);
             }
         }
+    }
+
+    /// A score spent at its end: `FUN_80063AA8`'s stop arm keys off what it holds
+    /// (`FUN_800684CC`) and the sequence goes quiet until something starts it.
+    fn stop_at_end(&mut self, spu: &mut Spu) {
+        self.silence_all(spu);
+        self.finished = true;
+    }
+
+    /// The end of one flush period: the vsync's pump, then the writes it
+    /// staged.
+    pub(super) fn flush_period(&mut self, spu: &mut Spu) {
+        if !self.exact_tempo {
+            self.pump_vsync(spu);
+        }
+        if self.master_vol_dirty {
+            self.master_vol_dirty = false;
+            self.remix_all(spu);
+        }
+        self.flush_key_ons(spu);
     }
 
     /// The tick budget the current tempo installs, in tenths of a tick per
@@ -125,7 +138,7 @@ impl Sequencer {
             let Some(event) = self.seq.events.get(self.next) else {
                 self.finished = true;
                 if let Some(target) = self.loop_target() {
-                    self.rewind_to(target, spu);
+                    self.jump_to(target);
                     self.pump_wait = Some(delta_of(&self.seq, self.next));
                 }
                 return;
@@ -137,12 +150,12 @@ impl Sequencer {
             if self.pending_loop_forever {
                 self.pending_loop_forever = false;
                 let target = self.loop_start.unwrap_or(0).min(self.seq.events.len());
-                self.rewind_to(target, spu);
+                self.jump_to(target);
             } else if is_eot {
                 match self.loop_target() {
-                    Some(target) => self.rewind_to(target, spu),
+                    Some(target) => self.jump_to(target),
                     None => {
-                        self.finished = true;
+                        self.stop_at_end(spu);
                         return;
                     }
                 }
@@ -174,7 +187,7 @@ impl Sequencer {
             let Some(event) = self.seq.events.get(self.next) else {
                 self.finished = true;
                 if let Some(target) = self.loop_target() {
-                    self.rewind_to(target, spu);
+                    self.jump_to(target);
                 }
                 return;
             };
@@ -198,7 +211,7 @@ impl Sequencer {
             if self.pending_loop_forever {
                 self.pending_loop_forever = false;
                 let target = self.loop_start.unwrap_or(0).min(self.seq.events.len());
-                self.rewind_to(target, spu);
+                self.jump_to(target);
                 continue;
             }
             // EOT branch: if this event was end-of-track and a loop point is
@@ -212,9 +225,9 @@ impl Sequencer {
                 Some(EventBody::Meta(MetaMessage::EndOfTrack))
             ) {
                 if let Some(target) = self.loop_target() {
-                    self.rewind_to(target, spu);
+                    self.jump_to(target);
                 } else {
-                    self.finished = true;
+                    self.stop_at_end(spu);
                     return;
                 }
             }

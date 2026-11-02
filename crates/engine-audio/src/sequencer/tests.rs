@@ -365,7 +365,12 @@ fn loop_forever_rewinds_to_in_stream_marker_not_zero() {
     buf.push(0xB0);
     buf.push(99);
     buf.push(20);
-    // idx 3: delta 480, NoteOn ch0 key 64 vel 100 (the loop body start)
+    // idx 3: delta 0, data entry: the loop's count, forever.
+    buf.push(0x00);
+    buf.push(0xB0);
+    buf.push(6);
+    buf.push(127);
+    // idx 4: delta 480, NoteOn ch0 key 64 vel 100 (the loop body start)
     buf.push(0x83);
     buf.push(0x60);
     buf.push(0x90);
@@ -397,8 +402,8 @@ fn loop_forever_rewinds_to_in_stream_marker_not_zero() {
         "Loop Start records the event after the marker"
     );
     assert_eq!(
-        s.next, 3,
-        "Loop Forever rewinds to the in-stream marker (idx 3), not to 0"
+        s.next, 4,
+        "Loop Forever rewinds to the in-stream marker, not to 0; its count re-reads at once"
     );
 
     // Exactness across the rewind: the looped NoteOn at idx 3 has delta
@@ -406,10 +411,10 @@ fn loop_forever_rewinds_to_in_stream_marker_not_zero() {
     for _ in 0..22_049 {
         s.tick_sample(&mut spu);
     }
-    assert_eq!(s.next, 3, "looped NoteOn must not fire early after rewind");
+    assert_eq!(s.next, 4, "looped NoteOn must not fire early after rewind");
     s.tick_sample(&mut spu);
     assert!(
-        s.next >= 4,
+        s.next >= 5,
         "looped NoteOn fires on the exact sample after rewind"
     );
 
@@ -419,13 +424,12 @@ fn loop_forever_rewinds_to_in_stream_marker_not_zero() {
         s.tick_sample(&mut spu);
     }
     assert!(!s.is_finished());
-    assert_eq!(s.next, 3, "repeated loops keep returning to the marker");
+    assert_eq!(s.next, 4, "repeated loops keep returning to the marker");
 }
 
-/// When the stream carries a Loop Start marker, end-of-track rewinds to it
-/// even if no external [`Sequencer::set_loop_to`] fallback was set.
-#[test]
-fn eot_rewinds_to_marker_without_external_loop() {
+/// A score built `Loop Start` then events then end-of-track, or one whose Loop
+/// Forever has no data entry to count from.
+fn uncounted_loop_seq(forever: bool) -> Seq {
     let mut buf = Vec::new();
     buf.extend_from_slice(&SEQ_MAGIC);
     buf.extend_from_slice(&[0x00, 0x01]);
@@ -433,35 +437,74 @@ fn eot_rewinds_to_marker_without_external_loop() {
     buf.extend_from_slice(&[0x07, 0xA1, 0x20]);
     buf.push(0x04);
     buf.push(0x02);
-    // idx 0: delta 0, Loop Start
-    buf.push(0x00);
-    buf.push(0xB0);
-    buf.push(99);
-    buf.push(20);
-    // idx 1: delta 480, NoteOn
-    buf.push(0x83);
-    buf.push(0x60);
-    buf.push(0x90);
-    buf.push(60);
-    buf.push(100);
-    // idx 2: delta 0, end-of-track
-    buf.push(0x00);
-    buf.push(0xFF);
-    buf.push(0x2F);
-    let seq = Seq::parse(&buf).unwrap();
-    let mut s = Sequencer::new(seq, empty_bank());
-    // Note: set_loop_to is NOT called - looping is driven purely by the
-    // in-stream marker.
+    // idx 0: delta 0, ProgramChange: the event only a head restart replays.
+    buf.extend_from_slice(&[0x00, 0xC0, 0x00]);
+    // idx 1: delta 0, Loop Start
+    buf.extend_from_slice(&[0x00, 0xB0, 99, 20]);
+    // idx 2: delta 480, NoteOn
+    buf.extend_from_slice(&[0x83, 0x60, 0x90, 60, 100]);
+    if forever {
+        buf.extend_from_slice(&[0x00, 0xB0, 99, 30]);
+    }
+    buf.extend_from_slice(&[0x00, 0xFF, 0x2F]);
+    Seq::parse(&buf).unwrap()
+}
+
+/// `FUN_8006139C` with a zero count clears the busy flag and reads on, and
+/// `FUN_80063AA8` then stops a sequence whose play count `+0x20` is spent: the
+/// three retail scores written Loop Start, Loop Forever and no data entry play
+/// once.
+#[test]
+fn an_uncounted_loop_runs_on_to_the_end_and_stops() {
+    let mut s = Sequencer::new(uncounted_loop_seq(true), empty_bank());
     let mut spu = Spu::new();
     for _ in 0..40_000 {
         s.tick_sample(&mut spu);
     }
-    assert!(
-        !s.is_finished(),
-        "in-stream marker loops without set_loop_to"
-    );
-    // Loop Start recorded idx 1; EOT rewound there rather than finishing.
-    assert_eq!(s.loop_start, Some(1));
+    assert!(s.is_finished());
+    assert_eq!(s.loop_count(), 0, "no rewind at the Loop Forever");
+}
+
+/// End-of-track never looks at a Loop Start: `FUN_80063AA8` reloads the cursor
+/// from the score head.
+#[test]
+fn end_of_track_goes_to_the_head_not_a_marker() {
+    let mut s = Sequencer::new(uncounted_loop_seq(false), empty_bank());
+    s.set_loop_to(0);
+    let mut spu = Spu::new();
+    let mut heads = 0;
+    for _ in 0..40_000 {
+        s.tick_sample(&mut spu);
+        if s.next_event() <= 1 {
+            heads += 1;
+        }
+    }
+    assert!(s.loop_count() >= 1);
+    assert!(heads > 0, "the rewind lands on the program change at idx 0");
+}
+
+/// A finite count jumps back until it runs out: `3` plays the body three times.
+#[test]
+fn a_counted_loop_plays_its_count() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&SEQ_MAGIC);
+    buf.extend_from_slice(&[0x00, 0x01]);
+    buf.extend_from_slice(&[0x01, 0xE0]);
+    buf.extend_from_slice(&[0x07, 0xA1, 0x20]);
+    buf.push(0x04);
+    buf.push(0x02);
+    buf.extend_from_slice(&[0x00, 0xB0, 99, 20]);
+    buf.extend_from_slice(&[0x00, 0xB0, 6, 3]);
+    buf.extend_from_slice(&[0x83, 0x60, 0x90, 60, 100]);
+    buf.extend_from_slice(&[0x00, 0xB0, 99, 30]);
+    buf.extend_from_slice(&[0x00, 0xFF, 0x2F]);
+    let mut s = Sequencer::new(Seq::parse(&buf).unwrap(), empty_bank());
+    let mut spu = Spu::new();
+    for _ in 0..200_000 {
+        s.tick_sample(&mut spu);
+    }
+    assert_eq!(s.loop_count(), 2);
+    assert!(s.is_finished());
 }
 
 #[test]

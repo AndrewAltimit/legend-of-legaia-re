@@ -31,8 +31,8 @@ pub struct TraceBgmDirector {
     pub(super) sequencer: Option<Sequencer>,
     /// Master volume forwarded to every freshly-attached sequencer.
     pub master_vol: u8,
-    /// Loop-to event index for newly-started sequencers. `Some(0)` matches
-    /// the retail field-BGM default; `None` plays once.
+    /// Loop-to event index for newly-started sequencers. `None`, as the shipped
+    /// director's: a score ends on its own end-of-track.
     pub loop_to: Option<usize>,
     pub(super) paused: bool,
     /// Last BGM id passed to `start`. Used to suppress duplicate starts
@@ -55,7 +55,7 @@ impl TraceBgmDirector {
             bank: None,
             sequencer: None,
             master_vol: legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL,
-            loop_to: Some(0),
+            loop_to: None,
             paused: false,
             last_started: None,
         }
