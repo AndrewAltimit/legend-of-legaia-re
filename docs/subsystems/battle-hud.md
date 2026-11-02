@@ -736,7 +736,9 @@ as it passes, so Megaton Press opens the cluster on the barrage's last pass
 already reading `11 HIT` / `TOTAL 378`. Port: `BattleHud::hold_combo`, driven
 by `BattleState::combo_cluster_held`. A cast that lands more than one hit
 reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
-(`battle_gimard_tail_fire_a`).
+(`battle_gimard_tail_fire_a`). The summon pre-hits do the same (PROT 0908, 0915,
+0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the
+band's fold.
 
 **A party-wide cast opens nothing.** The flag a cast hit raises is the
 finisher's: `FUN_801DDB30` stores `0x78` and adds the hit to the damage word

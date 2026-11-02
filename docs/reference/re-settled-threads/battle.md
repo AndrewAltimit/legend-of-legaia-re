@@ -2452,3 +2452,13 @@ The boss stage module, not the flow ladder, moves flow `0x0C` on.
 - Probe `autorun_w4d_cort_flow_writer.lua`.
 
 Owning page: [`battle.md`](../../subsystems/battle.md#flow-0x0c-is-the-boss-stage-modules-baton).
+
+### A spell its caster has not learned rolls `9999`
+
+`disassembly` + `capture`. An injected Zenoir or Gola Gola reads `9998` / `9999` in
+retail where the engine once read a few hundred. The summon roll looks the spell up on
+the caster's list (`FUN_801DD864`), a spell off the list reads list slot `0x20`, and
+that slot's level is `0`: the power's `srl` by `level - 1` wraps, and the roll caps. It
+is an artefact of the injection, and no cast in play gets there.
+
+Owning page: [`battle-formulas.md`](../../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned).

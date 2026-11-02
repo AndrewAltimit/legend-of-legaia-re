@@ -330,6 +330,9 @@ impl World {
                     None => walked,
                 };
                 if strike {
+                    // The fold's own finisher raises the readout flag the
+                    // module's pre-hits kept down.
+                    self.battle.combo_cluster_held = false;
                     self.fold_pending_cast();
                     st.phase = SummonPhase::Linger;
                     st.frames = 0;

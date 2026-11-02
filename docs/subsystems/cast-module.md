@@ -2366,6 +2366,10 @@ Gola Gola's closing arms tint the creature (`+0x21C = 7`, arm `0xB`), blank the 
 (colour `0`, `+0x21C = 7`, arm `0xC`), show the row turned away from the caster and
 park the creature on `0x3FF` (arm `0xD`), and hide the creature (arm `0xE`):
 `World::apply_gola_gola_writes`.
+Ten bodies re-run the target-size framing `FUN_801F0348` at the head of an arm whose
+shot then reads `ctx[+0x6D0]`: 0903, 0906, 0907, 0910, 0913, 0914, 0916, 0917, 0918
+and 0920. Without that call the shot reads the band's `0x600` and frames at half
+retail's depth or less.
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the soft-red then parked-red word (arms 9, `0xA`)
 and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a

@@ -99,14 +99,22 @@ pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
             } else {
                 None
             };
-            let spawning = phase == 2 && !hold;
             ArmDirection {
                 drift: d,
-                spawns: if spawning { &SPOON_SEAT_SPAWNS } else { &[] },
                 ..ArmDirection::PASS
             }
         }
         3 if !hold => caption(ArmDirection::PASS, ModuleCaption::SpellName),
+        // Retail seats these on arm 2's pass, right behind the creature; the
+        // engine stands the creature up on arm 3's first tick (`seat_arm`), and
+        // the anchor needs it.
+        3 if st.wait != (3, 1) => {
+            st.wait = (3, 1);
+            ArmDirection {
+                spawns: &SPOON_SEAT_SPAWNS,
+                ..ArmDirection::PASS
+            }
+        }
         4 if !hold => caption(
             shot(
                 [0x80, yaw_from(0x800, c.facing)],

@@ -163,7 +163,22 @@ impl World {
         // shot that reads `ctx[+0x6D0]` (`0x801F8094`, `0x801F8104`): the
         // victim on the ground is framed off its own size, not the depth
         // whatever ran before left.
-        if entry == 917 && ctx.phase == 0xF {
+        //
+        // The same call heads an arm of seven more, each before a shot that
+        // reads the word: PROT 0906 arm `0xD` (`0x801F7570`), 0907 arm `0xB`
+        // (`0x801F7C1C`), 0910 arm 9 (`0x801F796C`), 0916 arm `0x11`
+        // (`0x801F7CE4`), 0918 arm `0xE` (`0x801F7EA4`), and behind a seat
+        // target (`bVar < 8`) 0914 arm `0xD` (`0x801F75DC`) and 0920 arm 8
+        // (`0x801F75E0`). Without it those shots read the summon band's `0x600`.
+        let seat_target = self
+            .actors
+            .get(usize::from(caster_slot))
+            .is_some_and(|a| a.battle.active_target < 8);
+        if matches!(
+            (entry, ctx.phase),
+            (917, 0xF) | (906, 0xD) | (907, 0xB) | (910, 9) | (916, 0x11) | (918, 0xE)
+        ) || (seat_target && matches!((entry, ctx.phase), (914, 0xD) | (920, 8)))
+        {
             let d = self.cast_target_frame_depth(caster_slot);
             self.battle.camera_frame_height = d;
             self.battle_ctx.camera_frame_height = d;
@@ -1494,8 +1509,9 @@ impl World {
             }
             // PROT 0959's hits clear the readout flag and its arm `0x0F`
             // raises it as it passes: the cluster opens on that pass.
-            self.battle.combo_cluster_held =
-                entry == 959 && (phase_in < 0x0F || (phase_in == 0x0F && arm.hold));
+            if entry == 959 {
+                self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
+            }
             if arm.backdrop_off {
                 self.battle.backdrop_cue =
                     legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;

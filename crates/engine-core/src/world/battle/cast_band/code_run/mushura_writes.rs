@@ -25,6 +25,7 @@ impl World {
     /// | 7, 8 | spin word `+= step >> 3`, facing `= word * -0x14`, `+0x38 += k * step - word / 4` (`k` `3`, `2`) | arm 8: facing `0xB00` |
     /// | 9 | - | the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
     /// | `0xA` | - | the creature parked on word `0x3FF` |
+    /// | `0xB` | - | the creature's target `+0x1DD = 9` |
     /// | `0xC` | [`Self::mushura_chase`] | the creature's fade `+0x21C = 2` |
     ///
     /// Not carried: `+0x48`, the creature's bank, which no engine draw reads.
@@ -77,6 +78,9 @@ impl World {
                 a.battle.render_color = RED_WORD;
                 a.battle.render_flag = 0xFF;
             }
+            // `+0x1DD = 9`: no one seat's range stops the clip's root motion
+            // any more, so the creature runs (`0x801F77B4`).
+            (0xB, true) => a.battle.active_target = 9,
             (0xC, _) => {
                 self.mushura_chase(monster_count, seat, caster, spell_id);
                 if passed && let Some(a) = self.actors.get_mut(usize::from(seat)) {
@@ -130,6 +134,8 @@ impl World {
             let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
                 continue;
             };
+            // The readout flag kept down (`0x801F78AC`).
+            self.battle.combo_cluster_held = true;
             let hit = u32::from(roll >> 2).max(1);
             self.battle
                 .hit_fx

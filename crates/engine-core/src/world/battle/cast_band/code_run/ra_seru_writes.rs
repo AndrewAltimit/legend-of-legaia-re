@@ -530,6 +530,8 @@ impl World {
             let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
                 continue;
             };
+            // The readout flag kept down (`0x801F8E30`).
+            self.battle.combo_cluster_held = true;
             let hit = u32::from(roll >> 2) + 0x40 + self.next_rand() % 0x40;
             self.battle
                 .hit_fx

@@ -202,6 +202,11 @@ impl World {
             if v.hp == 0 {
                 continue;
             }
+            // Each store `0` into the readout flag `0x8007B64C` the damage
+            // kernel raised (PROT 0908 `0x801F76DC`, 0915 `0x801F7118`, 0928
+            // `0x801F8134`, 0932 `0x801F7BC0`, 0933 `0x801F7CEC`): the popup goes
+            // up with no combo cluster, which opens on the fold's hit.
+            self.battle.combo_cluster_held = true;
             // `FUN_801F44A0(amount, seat)`: PROT 0915's after its clamp, the
             // others' ahead of it.
             if matches!(entry, 908 | 915 | 928 | 932 | 933) {
