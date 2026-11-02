@@ -318,7 +318,7 @@ player's tick still to run, so it reads still over a walking pad.
 `_DAT_8007BDE0` / `E4` up, and its two framebuffers stand `(5, 3)` px apart; a
 wall press (`noaru_field_card_walk`) holds the same pad with the deltas down and
 both framebuffers on one pose. That state's step comes from the controller's
-speed law (`mid_pass_walk_step`).
+speed law (`mid_pass_walk_step`). It reads `1.000` (from `.895`).
 
 The snap composes from the state's own camera parameter block
 (`0x8007B607..0x8007B627`, `ZoneFollow::arm_arrival_over`; `play-window`
@@ -2992,7 +2992,8 @@ Only a phase the warp itself reaches is seeded:
   only).
 
 The strips are not history: the LCG starts on a literal, so the machine the warp
-builds stands on retail's symbols, and the frame needs no seat.
+builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
+(from `.922`) once the machine discards the init's four draws.
 
 What stays unseeded, and what each needs:
 
