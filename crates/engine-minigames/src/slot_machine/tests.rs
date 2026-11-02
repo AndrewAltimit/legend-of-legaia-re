@@ -1046,3 +1046,22 @@ fn packed_edges_swap_the_raw_layout() {
     assert_eq!(packed_edges(raw, 0), 0x1010);
     assert_eq!(packed_edges(raw, raw), 0);
 }
+
+/// The strips of a retail door entry, read off `minigame_slot_machine_retail_reels`
+/// and `minigame_slot_machine_retail_spin_decided` (arithmetic from the literal
+/// seed, no disc data): the four discarded draws put the machine on them. At
+/// rest the raw position is `0`, which shows row `0x10` on the payline.
+#[test]
+fn a_door_entry_stands_on_retails_strips_and_payline_row() {
+    let m = SlotMachine::new(payouts(), SLOT_RNG_SEED, 100);
+    assert_eq!(
+        *m.strips(),
+        [
+            [2, 1, 6, 5, 6, 3, 5, 9, 0, 8, 8, 7, 3, 9, 4, 2, 0, 7, 4, 1],
+            [7, 3, 9, 0, 6, 5, 3, 7, 0, 2, 8, 6, 2, 1, 4, 4, 9, 8, 5, 1],
+            [6, 5, 2, 2, 9, 8, 0, 6, 4, 1, 1, 8, 7, 7, 5, 3, 4, 3, 9, 0],
+        ]
+    );
+    assert_eq!(m.payline_row(0), 0x10);
+    assert_eq!(m.payline_symbol(1), 9);
+}
