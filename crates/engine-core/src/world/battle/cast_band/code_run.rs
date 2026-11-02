@@ -9,6 +9,7 @@ mod kemaro_writes;
 mod module_code;
 mod module_ctx;
 mod module_hits;
+mod module_impact;
 mod module_rumble;
 mod puera_writes;
 mod seru_cam_feed;

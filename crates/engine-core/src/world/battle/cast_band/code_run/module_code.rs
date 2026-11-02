@@ -1493,6 +1493,17 @@ impl World {
                     legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;
             }
         }
+        // The hit-tint stores: colour word, blend and impact selector.
+        self.apply_module_impacts(
+            entry,
+            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+            phase_in,
+            ctx.phase != phase_in,
+            countdown_before,
+            caster_slot,
+            victim_slot,
+            seat_slot,
+        );
         // The summon-creature directors' HP and colour-word stores, after
         // the views' fold-back like PROT 0908's.
         if direction.is_some() && (914..=934).contains(&entry) {

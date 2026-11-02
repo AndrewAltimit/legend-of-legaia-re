@@ -1325,6 +1325,7 @@
     "cast_arm_ticks",
     "cast_fatal_decision",
     "cast_module_camera",
+    "cast_module_impact",
     "cast_module_rumble",
     "cast_module_ticks",
     "seru_magic_ticks"

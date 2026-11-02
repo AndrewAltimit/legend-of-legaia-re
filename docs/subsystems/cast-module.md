@@ -897,6 +897,46 @@ slow motion. Four **tick** bodies sweep the party row
 | 965 `0xB6` Doomsday | phase `0x0B` (the `beq v1,0x0C` / `slt` pair at `0x801F6AE8` sends it to `0x801F7648`) | |
 | 966 tick | arm 26 | power `0x327`, see [PROT 0966](#prot-0966-evil-seru-magic) |
 
+### The hit tint: colour, blend and impact selector
+
+Beside its HP write a hit arm stores the struck seat's colour word `+0x04`,
+its blend `+0x0C = 0x1000` and the impact selector `+0x21F`. The selector is
+not a tint: the anim decode `FUN_8004998C` sheds an effect-`0x0B` fire puff off
+a selector-`1` body once its node's red lane reaches `0xB0`, and an
+effect-`0x10` spark off a selector-`2` one
+([the emitter](battle-action-helpers.md#the-burning-body-emitter-at-the-tail-of-fun_8004998c)), for as long as the tint state
+machine keeps the byte. Blade Breath's burning victim is that emitter, not a
+spawn record of the module: PROT 0962's arm 3 writes `1` (`0x801F7F68`) and the
+fire comes off Gala's body on the anim tick's accumulator.
+
+| Module | Arm, edge | Seat | `+0x04` | `+0x21F` |
+|---|---|---|---|---|
+| 0908 Zenoir | 7, pass (`0x801F761C`) | creature | - | `1` |
+| 0908 Zenoir | 8, pass (`0x801F7800`) | victim | `0x3FF` | `1` |
+| 0908 Zenoir | 11, pass (`0x801F7D5C`, `0x801F7F64`) | victim, live row | `0x3FF` | `1` |
+| 0909 Viguro | 11, pass (`0x801F7260`) | live row | - | `2` |
+| 0909 Viguro | 13, pass (`0x801F76F8`) | live row | `0x3FF00000` | `2` |
+| 0914 Gola Gola | 12, pass (`0x801F7470`) | live row | - | `1` |
+| 0914 Gola Gola | 13, pass (`0x801F7804`) | live row | `0x3FF` | `1` |
+| 0916 Aluru | 18, pass (`0x801F8684`) | victim | - | `2` |
+| 0923 Gilium | 20, pass (`0x801F8A24`) | live row | `0x3FF00000` | `1` |
+| 0932 Meta | 18, pass (`0x801F7C78`) | live row | `0x3FF` | `1` |
+| 0934 Ozma | 17, 18, every pass (`0x801F7F38`, `0x801F7F58`) | creature | - | `2` |
+| 0934 Ozma | 21..=24, pass (`0x801F85D4`, `0x801F86CC`, `0x801F8948`, `0x801F8D4C`) | live row | `0x3FF003FF` | `2` |
+| 0937 Hyper Lightning | 7, every pass (`0x801F7580`) | victim | - | `2` |
+| 0948 Cross Beam | 3, pass (`0x801F7044`) | victim | `0x3FF` | `1` |
+| 0950 Rolling Flare | 3, countdown at most `0x40` scalars (`0x801F7F44`, `0x801F7F48`) | both seats | - | `1` |
+| 0958 Blazing Slash | 6, 7, every pass (`0x801F7440`, `0x801F7574`) | victim | - | `1` |
+| 0960 Plasma Strike | `0x0D`, pass (`0x801F8200`) | victim | `0x3FF00000` | `2` |
+| 0962 Blade Breath, Thunder Needle | 3, pass (`0x801F7F68`, `0x801F78E8`) | victim | `0x3FF`, `0x3FF00000` | `1`, `2` |
+| 0963 Genocidal Cannon | 14, pass (`0x801F7D20`) | party row | `0x3FF` | `1` |
+
+The table is `legaia_engine_cast::cast_module_impact`, applied by
+`World::apply_module_impacts` after the views' fold-back; PROT 0962 stores
+through its chain (`BladeBreathShape::strike_sub_flag`), and PROT 0903 and 0904
+through their tick ports. PROT 0964's five stores (the Element Strike body) are
+not carried: their seats are read off a computed row this table cannot name.
+
 ### One owner per hit
 
 **The flurry lands in the module, not in the hit kernel.** A cast clip's hit
