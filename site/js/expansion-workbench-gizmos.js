@@ -526,7 +526,20 @@ function findItem(id) {
 function placeSpec(id) {
   const it = id && findItem(id);
   if (!it) return null;
-  return { kind: it.kind, size: it.size, hgt: it.hgt || 60, yaw: G.yaw || 0, facing: !!it.facing, zone: it.zone || null, solid: it.solid, label: it.label };
+  return { kind: it.kind, size: it.size, hgt: it.hgt || 60, yaw: G.yaw || 0, facing: !!it.facing, zone: it.zone || null, solid: it.solid, label: it.label, scale: it.scale || 1, ghostKey: it.scene != null && it.object != null ? `${it.scene}|${it.object}` : null };
+}
+
+/* Hand the frame the armed piece's real model: its streams and its scene's
+ * VRAM, read off the disc. The frame draws its box until they arrive. */
+function sendGhost(it) {
+  const api = G.api;
+  if (!it || it.scene == null || it.object == null || !api.thumbs || !api.preview || !api.preview.ghost) return;
+  const key = `${it.scene}|${it.object}`;
+  api.thumbs().mesh(it.scene, it.object).then((d) => {
+    if (!d) return;
+    const m = d.mesh;
+    api.preview.ghost({ key, scene: it.scene, vram: d.vram, positions: m.positions, uvs: m.uvs, cbaTsb: m.cbaTsb, indices: m.indices, flat: m.flat });
+  }, () => {});
 }
 
 /** Arm catalog item `id` (the 3D view's place mode with its ghost). */
@@ -538,6 +551,7 @@ export function arm(id) {
   G.mode = 'place';
   G.picked = true;
   if (it.facing) G.yaw = Math.round((G.yaw || 0) / 45) * 45;
+  sendGhost(it);
   renderBar();
   sync();
   followShell();
@@ -552,6 +566,7 @@ function note(text, bad) {
 function disarm() {
   if (G.mode !== 'place') return;
   G.mode = G.prevMode && G.prevMode !== 'place' ? G.prevMode : 'select';
+  G.armed = null;
   renderBar();
   sync();
   followShell();
@@ -592,12 +607,16 @@ function placeAt(t, yaw) {
   }
   const list = listOf(map, type, true);
   list.push(o);
-  G.sel = [{ type, i: list.length - 1 }];
+  // Placing goes on: what was put down is not selected until the piece is
+  // put away, so its panel does not cover the next spot.
+  G.sel = [];
+  G.lastPlaced = { type, i: list.length - 1 };
   api.selected(G.sel);
   api.refresh(true);
+  try { localStorage.setItem(HINT_KEY, '1'); } catch (e) { /* no storage */ }
   // The note goes to the preview's status line: a longer bar would move
   // the picture under the pointer.
-  note(`Placed ${it.label} at [${t[0]}, ${t[1]}]; click again for another, Escape to stop.`);
+  note(`Placed ${it.label} at [${t[0]}, ${t[1]}].`);
   renderBar();
   sync(true);
 }
@@ -861,6 +880,7 @@ function onFrame(m) {
     if (m.key === 'cancel-place') { disarm(); return; }
     if (m.key === 'digit') { try { setBuildMode((BUILD_MODES[(m.n | 0) - 1] || {}).id); } catch (e) { /* no shell */ } return; }
     if (m.key === 'place-yaw') { G.yaw = m.yaw || 0; return; }
+    if (m.key === 'place-why') { G.placeWhy = m.why || ''; renderFloat(); return; }
     if (m.key === 'blocked') { note(`Not moved: ${m.why || 'a piece was dropped where it cannot stand'}.`, true); return; }
     if (m.key === 'Delete' || m.key === 'Backspace') removeSel();
     else if (m.ctrl && m.key === 'd') duplicateSel();
@@ -881,6 +901,9 @@ function onFrame(m) {
       api.selected(G.sel);
       renderBar();
       sync(true);
+    } else if (m.key === 'deselect' || m.key === 'fullscreen') {
+      // Nothing left for Escape to put down, or F11 over the picture: the page's.
+      if (api.pageKey) api.pageKey(m.key);
     }
     else if (m.key === '[' || m.key === ']') {
       G.brush.radius = Math.max(0.25, Math.min(16, G.brush.radius * (m.key === ']' ? 1.25 : 0.8)));
@@ -919,6 +942,121 @@ function paintChoices(map) {
       const m = mats.find((x) => (x.chars || '').includes(ch));
       return [ch, `${ch}  ${m ? m.name || 'material' : st.label || 'tile'}`];
     });
+}
+
+/* What is on the map, in plain words: a prop by its mesh's name. */
+function objectName(map, s) {
+  const o = listOf(map, s.type)[s.i];
+  if (!o) return '';
+  const kind = { props: 'Object', decor: 'Decoration', npcs: 'Person', spawns: 'Start point', lamps: 'Lamp', emitters: 'Emitter', triggers: 'Step-on event', exits: 'Exit', encounters: 'Monster zone' }[s.type] || s.type;
+  const named = o.mesh ? meshEntry(sceneOf(map, o.mesh), o.mesh.object) : null;
+  return (named && named.label) || (o.id ? stem(o.id) : '') || o.label || kind;
+}
+
+/* A quarter turn of the selection: props and decorations by degrees, people
+ * and start points by facing sector. */
+function turnSel(deg) {
+  const api = G.api;
+  const map = api.map();
+  if (!map || !G.sel.length) return;
+  api.snapshot();
+  for (const s of G.sel) {
+    const o = listOf(map, s.type)[s.i];
+    if (!o) continue;
+    if (s.type === 'props' || s.type === 'decor') {
+      const rot = o.rotation || [0, 0, 0];
+      const y = (((rot[1] || 0) + deg) % 360 + 360) % 360;
+      o.rotation = [rot[0] || 0, y > 180 ? y - 360 : y, rot[2] || 0];
+    } else if (s.type === 'npcs' || s.type === 'spawns') {
+      o.facing = (((o.facing || 0) + Math.round(deg / 45)) % 8 + 8) % 8;
+    }
+  }
+  api.refresh();
+  renderFloat();
+  sync(true);
+}
+
+const HINT_KEY = 'legaia-xw-first-hint';
+
+/* Over the picture: the piece being placed (one line, so nothing moves under
+ * the pointer), the selection's small panel, and once a first-run hint. */
+function renderFloat() {
+  const api = G.api;
+  const pv = api && api.preview;
+  if (!pv || !pv.setFloat) return;
+  if (!G.floatEl) G.floatEl = h('div', { class: 'xw-float-in' });
+  const el = G.floatEl;
+  el.innerHTML = '';
+  pv.setFloat(el);
+  const map = api.map();
+  if (!map) return;
+  if (G.mode === 'place') {
+    const it = G.armed && findItem(G.armed);
+    el.append(h('div', { class: 'xw-float-pill' + (G.placeWhy ? ' is-bad' : ''), role: 'status' }, 'Placing ', h('strong', {}, it ? it.label : 'nothing'),
+      G.placeWhy ? `: not here, ${G.placeWhy}` : ': click the ground, ', ...(G.placeWhy ? [] : [h('kbd', {}, 'R'), ' turns it, ', h('kbd', {}, 'Esc'), ' or right click stops'])));
+  } else if (G.mode === 'select' && G.sel.length) {
+    const one = G.sel.length === 1 ? G.sel[0] : null;
+    const o = one && listOf(map, one.type)[one.i];
+    const scene = o && o.mesh ? sceneOf(map, o.mesh) : null;
+    const head = h('div', { class: 'xw-selpanel-head' });
+    if (scene && o.mesh.object != null && api.thumbs) {
+      const img = h('img', { alt: '', width: 128, height: 128, 'data-scene': scene, 'data-object': o.mesh.object });
+      head.append(img);
+      api.thumbs().watch(img);
+    }
+    head.append(h('strong', { title: one ? `${one.type}[${one.i}]` : '' }, one ? objectName(map, one) : `${G.sel.length} selected`));
+    const b = (label, title, fn, cls) => h('button', { type: 'button', class: 'wb-mini' + (cls ? ' ' + cls : ''), title, onclick: fn }, label);
+    const turnable = G.sel.some((s) => ['props', 'decor', 'npcs', 'spawns'].includes(s.type));
+    const btns = h('div', { class: 'xw-selpanel-btns' },
+      b('Move', 'Drag it on the map (arrow keys nudge it, Shift a quarter tile)', () => { G.tool = 'move'; renderBar(); sync(); note('Drag it to move it; the arrow keys nudge it a tile.'); }),
+      turnable ? b('Turn', 'A quarter turn (R); the Rotate tool turns it by 15 degrees', () => turnSel(90)) : b('Resize', 'Drag its corner', () => { G.tool = 'scale'; renderBar(); sync(); }),
+      b('Duplicate', 'A copy on the nearest free tile (Ctrl+D)', duplicateSel),
+      b('Delete', 'Remove it (Delete)', removeSel, 'is-danger'));
+    const panel = h('div', { class: 'xw-selpanel', role: 'region', 'aria-label': 'Selected object' }, head, btns);
+    if (one) {
+      panel.append(h('button', {
+        type: 'button', class: 'wb-mini xw-selpanel-more', style: 'width:100%;margin-top:0.25rem', title: 'Its full form: mesh, solid, standable top, light, animators',
+        onclick: () => {
+          pv.setDrawer(true);
+          api.selected(G.sel);
+          requestAnimationFrame(() => { if (api.showSelection) api.showSelection(); });
+        },
+      }, 'More settings'));
+    }
+    panel.append(h('details', {}, h('summary', {}, 'Line up, repeat, mirror'),
+      layoutTools(Object.assign(G.layout, { h, sel: () => G.sel, run: (fn) => runLayout(api, G.sel, fn) }))));
+    if (G.layoutMsg) panel.append(h('div', { class: 'xw-hint' }, G.layoutMsg));
+    el.append(panel);
+  }
+  let seen = true;
+  try { seen = !!localStorage.getItem(HINT_KEY); } catch (e) { seen = true; }
+  if (!seen && G.mode !== 'place' && buildMode() === 'objects') {
+    el.append(h('div', { class: 'xw-firsthint', role: 'note' },
+      h('strong', {}, 'Build by clicking.'), ' Pick an object below, then click on the ground to put it down. ',
+      'Click anything already placed to move it. Right drag turns the camera, the wheel zooms.',
+      h('div', {}, h('button', {
+        type: 'button', class: 'wb-mini',
+        onclick: () => { try { localStorage.setItem(HINT_KEY, '1'); } catch (e) { /* no storage */ } renderFloat(); },
+      }, 'Got it'))));
+  }
+}
+
+/* Placing, with the focus outside the picture (a tile just clicked): the keys
+ * still mean what they mean over it. */
+function onPageKey(e) {
+  if (G.mode !== 'place' || !G.api) return;
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  if (e.key === 'Escape') {
+    disarm();
+    e.preventDefault();
+  } else if (e.key === 'r' || e.key === 'R') {
+    const it = G.armed && findItem(G.armed);
+    const d = e.shiftKey ? (it && it.facing ? 45 : 15) : 90;
+    G.yaw = ((G.yaw || 0) + d) % 360;
+    sync();
+    e.preventDefault();
+  }
 }
 
 function renderBar() {
@@ -984,6 +1122,7 @@ function renderBar() {
 /** Switch the build tool: `view`, `select`, `move` / `rotate` / `scale`
  * (select with that gizmo), `place` (the catalog's last piece, else its
  * first prop), `npc` (the first person), `zone` (a trigger zone), `paint`
+  renderFloat();
  * or `sculpt` (terrain maps). False when the tool does not apply. */
 export function setTool(name) {
   const map = G.api && G.api.map();
@@ -1121,6 +1260,7 @@ export function mountMapEditor(api) {
   /* Split and 3D are for working in the picture: they open in Select
    * (unless a mode was picked by hand), 2D in View as before. */
   if (api.preview.onView) {
+    document.addEventListener('keydown', onPageKey);
     const byView = (view) => {
       if (G.picked || view === '2d' || G.mode !== 'view') return;
       G.mode = 'select';

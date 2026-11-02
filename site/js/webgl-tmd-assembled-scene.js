@@ -155,6 +155,78 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, flatRgba);
   }
 
+  /* Draw scene mesh `meshId` once over the finished frame, sampling its own
+   * VRAM texture `tex` (a mesh of another scene than the one on screen): the
+   * workbench's placement ghost. `mvp` is the caller's view-projection, in the
+   * same log-depth space as the frame; `alpha` < 1 blends it over the picture
+   * with the depth buffer read but not written, `tint` (`[r, g, b]`) replaces
+   * its colour by the texel's luminance. */
+  drawMeshOver(meshId, mvp, model, tex, alpha, tint) {
+    const m = this.sceneMeshes.get(meshId);
+    if (!m || !m.indexCount) return;
+    const gl = this.gl;
+    gl.useProgram(this.program);
+    gl.uniformMatrix4fv(this.locMvp, false, mvp);
+    gl.uniformMatrix4fv(this.locModel, false, model);
+    if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, this.lastLogDepth ? 1 : 0);
+    /* The scene-pass words on the shared program: identity for this draw;
+     * renderAssembled stages them again on the next frame. */
+    if (this.locCurve) gl.uniform1f(this.locCurve, 0);
+    if (this.locPrimNear) gl.uniform4f(this.locPrimNear, 0, 0, 0, 0);
+    if (this.locGteSat) gl.uniform4f(this.locGteSat, 0, 0, 0, 0);
+    if (this.locNclipCull) gl.uniform1i(this.locNclipCull, 0);
+    if (this.locGrade) gl.uniform4f(this.locGrade, 1, 1, 1, 0);
+    if (this.locPalette) gl.uniform4f(this.locPalette, 1, 1, 1, 0);
+    this._setCue(null);
+    gl.uniform1i(this.locFogEnable, 0);
+    gl.uniform1i(this.locNoDisc, 0);
+    gl.uniform1i(this.locSemiPass, -1);
+    gl.uniform1i(this.locUseFlatColors, m.hasFlat ? 1 : 0);
+    if (tint) gl.uniform4f(this.locGhost, tint[0], tint[1], tint[2], 1);
+    else gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+    gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(this.locVram, 0);
+    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    const over = alpha < 1;
+    if (over) {
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendColor(0, 0, 0, alpha);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+      gl.depthMask(false);
+    }
+    gl.bindVertexArray(m.vao);
+    gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(null);
+    if (over) {
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+    }
+    gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+    /* The frame's own VRAM back on its unit. */
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /* A VRAM image as a texture of its own, for `drawMeshOver`. */
+  makeVramTexture(bytes) {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, VRAM_W, VRAM_H, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+      new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2));
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    return tex;
+  }
+
   clearScene() {
     this.freeSceneMeshRecords(this.sceneMeshes.values());
     this.sceneMeshes.clear();

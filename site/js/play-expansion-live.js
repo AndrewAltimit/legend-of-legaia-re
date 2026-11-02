@@ -358,6 +358,8 @@
         arrival = !!m.on;
         setQuiet();
       } else if (m.type === 'xw-camera') {
+      } else if (m.type === 'xw-ghost') {
+        if (v && typeof v.setEditorGhost === 'function') v.setEditorGhost(m);
         wantOrbit = m.mode !== 'player';
         if (m.painter !== undefined) matchPainter = !!m.painter;
         if (m.focus !== undefined) focusTile = m.focus;

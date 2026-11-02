@@ -945,3 +945,7 @@ export function createPreview3d(env) {
     state: () => ({ split, lastMove: P.lastMove, bundleMs: P.bundleMs, building: !!P.building, stale: !!P.stale, view: P.view, open: P.open, ready: P.ready, map: P.map, last: P.last, stats: P.stats, select: P.select, dirty: P.dirty, mode: P.mode, painter: P.painter, arrival: P.arrival, status: status.textContent }),
   };
 }
+    /* The real model of the piece being placed, for the frame's ghost. */
+    ghost(msg) {
+      if (P.ready) post(Object.assign({ type: 'xw-ghost' }, msg));
+    },

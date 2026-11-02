@@ -109,6 +109,7 @@
           <tr><th>3D view, Select</th><td>W move, E rotate, R scale; Shift while dragging places freely; Alt+drag turns the camera; the arrows follow the map axis nearest them on screen.</td></tr>
           <tr><th>3D view, Sculpt</th><td>[ and ] size the brush.</td></tr>
         </table>
+          <tr><th>3D view, placing</th><td>Click puts the object down and stays armed; R turns it (Shift+R 15 degrees, Shift+wheel a quarter turn); Escape or a right click stops.</td></tr>
       </div>
       <div id="xw-export-status" class="wb-status"></div>
 
@@ -305,7 +306,7 @@
   .xw-3d-edit .xw-check { display: inline-flex; flex-direction: row; align-items: center; gap: 0.25rem; color: var(--text-muted); }
   .xw-3d-edit .xw-num { width: 4.5em; }
   .xw-3d-edit .xw-hint { flex: 1 1 100%; }
-  .xw-3d-body { margin-top: 0.4rem; }
+  .xw-3d-body { margin-top: 0.4rem; position: relative; }
   .xw-table tr.is-now td { background: var(--accent-soft); }
   .xw-scrub input[type=range] { flex: 1 1 12rem; min-width: 8rem; }
   .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
