@@ -112,8 +112,8 @@ impl RetailBattle {
         (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
     }
 
-    /// Whether the capture is a monster strike gated on its first swing
-    /// clip (`0x1E` at accumulator `0`, a swing clip committed), whose
+    /// Whether the capture is a monster strike gated on a swing clip
+    /// (`0x1E` on a clip's accumulator, a swing clip committed), whose
     /// strike stream the drive can stand on the capture's
     /// ([`Self::strike_stream_steer`]).
     pub fn strike_stream_steerable(&self) -> bool {
@@ -121,7 +121,7 @@ impl RetailBattle {
             && self.queued_category == 3
             && self.action_state == 0x1E
             && self.caster_clip > 1
-            && self.span_gate == SpanGate::Age { accum: 0 }
+            && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
     /// Whether the image child takes the frame the display showed - the
@@ -1172,6 +1172,16 @@ impl RetailBattle {
                             && self.caster_clip > 1
                             && matches!(self.span_gate, SpanGate::Age { .. })))
                     .then_some(self.strike_cursor),
+                    // `battle_map01_frog_strike` is on its first swing with
+                    // the cursor already on `2`, the pass after its commit
+                    // read the next byte; a stream of `07 06 ff` stops the
+                    // cursor on `2` under the second swing.
+                    played: (seat >= 3
+                        && state == 0x1E
+                        && self.queued_category == 3
+                        && self.caster_clip > 1
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.committed_queue),
                     // On a dynamic art slot the cursor cannot tell a starter
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which

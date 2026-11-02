@@ -203,6 +203,11 @@ pub struct ActionSteer {
     pub aim: Option<u8>,
     pub queue: Option<[u8; 16]>,
     pub cursor: Option<u8>,
+    /// The capture's queue under a monster strike's [`Self::cursor`]: the
+    /// phase is met only on a stream whose picks up to the cursor are the
+    /// capture's. A stream that rolled a shorter queue stops its cursor on
+    /// the capture's value on a later swing of the same clip.
+    pub played: Option<[u8; 16]>,
     /// Retail pool seat of a victim the capture shows in its defeat fade, and
     /// the fade lane it reads: an [`SpanGate::Age`] phase is met only once
     /// the engine's victim has faded at least as far.
@@ -819,6 +824,12 @@ impl BattleDrive {
                         s.push_str(&format!("{b:02x}"));
                     }
                 }
+                if let Some(q) = steer.played {
+                    s.push_str(",b");
+                    for b in q {
+                        s.push_str(&format!("{b:02x}"));
+                    }
+                }
                 s
             }
         }
@@ -896,6 +907,15 @@ impl BattleDrive {
                     *b = u8::from_str_radix(q.get(i * 2..i * 2 + 2)?, 16).ok()?;
                 }
                 steer.queue = Some(queue);
+            } else if let Some(q) = last.strip_prefix('b') {
+                if q.len() != 32 {
+                    return None;
+                }
+                let mut played = [0u8; 16];
+                for (i, b) in played.iter_mut().enumerate() {
+                    *b = u8::from_str_radix(q.get(i * 2..i * 2 + 2)?, 16).ok()?;
+                }
+                steer.played = Some(played);
             } else {
                 break;
             }
@@ -1205,6 +1225,12 @@ impl BattleDrive {
                                     .actors
                                     .get(usize::from(engine_seat(seat, pc)))
                                     .is_some_and(|a| a.battle.strike_index == u)
+                            }) && steer.played.zip(steer.cursor).is_none_or(|(q, u)| {
+                                let n = usize::from(u).min(q.len());
+                                world
+                                    .actors
+                                    .get(usize::from(engine_seat(seat, pc)))
+                                    .is_some_and(|a| a.battle.params.get(..n) == Some(&q[..n]))
                             }) && steer.latched.is_none_or(|l| {
                                 world
                                     .actors
