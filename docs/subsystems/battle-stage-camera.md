@@ -867,25 +867,23 @@ Two captures of the sparring fight's entry pin it. `v0_1_battle_loading_tetsu`
 (counter `0x84`) reads pitch `60`, `TR (0, 1472, 6912)` - four frames of drift
 from `(0, 1280, 7168)` - with an empty step table. `s5_tetsu_battle` (`0xAF`)
 reads pitch `16`, `TR (0, 2010, 3552)` under a case-2 step table whose
-endpoints are `(0, 1536, 2867)`. The battle tick's first framing takes over
-from wherever the sweep leaves the camera: the tutorial cuts to its dialogue
-close-up, any other fight re-arms case 9.
+endpoints are `(0, 1536, 2867)`. The camera stays on that close-in, the first
+monster in frame, through the battle tick's first passes and the name hold: the
+next framing is the `0x14` arm's (`gaza2_card_battle_init` at `+59` vsyncs past the
+park shows Gaza under its label). From there the tutorial cuts to its dialogue
+close-up and any other fight re-arms case 9.
 
 Port: `BattleCamera::start_entry_sweep`, armed on a fight's first camera frame
-(`BattleCamInputs::entry_sweep`). The port's round open waits for it as
-retail's flow does: while `BattleState::battle_entry_sweeping` reads true the round
-prompt does not arm (`BattleState::arm_round_open_prompt`), no press reaches a command
-surface (`BattleState::battle_command_pad_held`) and the HUD projectors report no
-handle (`battle_hud_phase` is `Idle`, `battle_command_chips` is `None`), so
-`Begin | Run` and its status windows open, and unfold, after the sweep and the
-[entry fade](#the-battle-entry-fade) it overlaps. Opening them earlier drew the
-prompt over a screen still fading in from black. The command session itself
-still opens at battle entry, a port seam retail has no counterpart for. The
-enemy-name intro keeps retail's order. Its
-labels and their `ctx[+0x6D6]` hold belong to the battle tick's flow `0x0A` /
-`0x0B`, which the frame driver reaches only past the sweep (`0x80046EF8` /
-`0x80047014`), so the port neither shows nor drains them until the sweep is
-over (`BattleState::battle_entry_sweeping`).
+(`BattleCamInputs::entry_sweep`), and `BattleCamInputs::open_held` for the stay.
+The port's round open waits for it as retail's flow does: no press reaches a
+command surface (`BattleState::battle_command_pad_held`) and the HUD projectors
+report no handle (`battle_hud_phase` is `Idle`, `battle_command_chips` is `None`),
+so `Begin | Run` and its status windows open, and unfold, after the sweep and the
+[entry fade](#the-battle-entry-fade) it overlaps. The enemy-name labels and their
+`ctx[+0x6D6]` hold belong to the battle tick's flow `0x0A` / `0x0B`, which the frame
+driver reaches only past the sweep (`0x80046EF8` / `0x80047014`), so the port neither
+shows nor drains them until the sweep is over
+(`BattleState::battle_entry_sweeping`).
 
 Every fight keeps retail's order: the flow reaches `0x14` only past the sweep
 and the name hold, so the port holds the first round start - and the battle

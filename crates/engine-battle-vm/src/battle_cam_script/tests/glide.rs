@@ -453,3 +453,29 @@ fn a_synced_camera_steps_on_the_tick_that_opens_a_battle_frame() {
     cam.advance_to(2);
     assert_ne!(cam.entry_sweep_counter(), c0, "frame opens: one step");
 }
+
+/// The sweep hands over to the far framing at the flow's `0x14`, not at its
+/// own park: under the battle open's name hold the camera stays on the close-in.
+#[test]
+fn the_entry_sweep_holds_its_close_in_under_the_battle_open() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.start_entry_sweep();
+    cam.open_held = true;
+    while cam.entry_sweep_counter().is_some() {
+        steps(&mut cam, 1);
+    }
+    steps(&mut cam, 40);
+    let held = cam.pose();
+    assert_eq!(held.focus, [0.0; 3], "still the origin");
+    assert_eq!(held.pitch, 0.0, "the close-in's pitch");
+    assert!((held.tr[1] - ENTRY_CASE2_TR_Y).abs() <= 8.0);
+    steps(&mut cam, 20);
+    assert_eq!(cam.pose().tr, held.tr, "nothing frames it under the hold");
+    cam.open_held = false;
+    steps(&mut cam, 40);
+    assert_eq!(
+        cam.pose(),
+        cam.menu_pose(),
+        "case 9 once the flow reaches 0x14"
+    );
+}

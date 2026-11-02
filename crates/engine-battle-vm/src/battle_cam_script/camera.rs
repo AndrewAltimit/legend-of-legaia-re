@@ -326,6 +326,12 @@ pub struct BattleCamera {
     /// battle-entry sweep owns the camera ([`BattleCamera::start_entry_sweep`]);
     /// `None` once the battle tick has it.
     pub(super) entry_sweep: Option<u32>,
+    /// The sweep has parked and the battle open still holds the first round
+    /// ([`BattleCamInputs::open_held`]): the last case-2 tween walks on to its
+    /// endpoint and nothing frames the camera until the flow reaches `0x14`.
+    pub(super) entry_hold: bool,
+    /// [`BattleCamInputs::open_held`].
+    pub(super) open_held: bool,
     /// Where the last fresh case-9 arm set out from, and its duration in
     /// display frames (`a3 = 0xE`): the origin
     /// [`BattleCamera::align_menu_glide_frames_left`] walks the far framing
@@ -523,6 +529,11 @@ pub struct BattleCamInputs {
     /// phase's framing. The live world sets it; a preview or a unit test
     /// that wants the framing at once leaves it off.
     pub entry_sweep: bool,
+    /// The battle open still holds the first round: flow `0x00..=0x0B` under
+    /// the enemy names. Retail's far framing is armed by the `0x14` arm's
+    /// `FUN_801D388C(0, 0)` (or `0x0B`'s own case 9 on a back attack,
+    /// `0x801D0E98`), so the camera stays on the sweep's close-in till then.
+    pub open_held: bool,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -588,6 +599,7 @@ pub fn drive_on_stream(
         cam
     });
     cam.rand_state = *rng;
+    cam.open_held = inputs.open_held;
     if let Some(actor) = inputs.acting {
         cam.set_actor(actor);
     }

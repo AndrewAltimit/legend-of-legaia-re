@@ -2123,10 +2123,10 @@ retail's step varies with load, and `s5_tetsu_battle` reads an odd `0xAF` on a
 step of `2` that the engine's even counter steps over. Its case-2 glide has run
 six passes there (eye Y and Z a third of the way from where the drift left
 them, `(10/12)^6`), the engine's pass at `0xAE`. Every other battle capture was taken after the sweep,
-since retail's battle tick opens no prompt under it, while the engine's prompt
-opens at the flip. So the seed waits the engine's sweep out before it counts
-the first prompt, the in-flight cast seed dispatches only once it is over, and
-the image child's pad drive holds until then.
+since retail's battle tick opens no prompt under it. So the seed waits the
+engine's sweep out before it counts the first prompt, the in-flight cast seed
+dispatches only at that prompt, past the name hold, and the image child's pad
+drive holds until then.
 
 **A round prompt's camera can still be on its far framing's arm.** The
 prompt's first frames walk the case-9 table the round's opening armed, from

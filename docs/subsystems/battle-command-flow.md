@@ -166,7 +166,8 @@ The port runs the same order. `World::begin_battle_round` parks on
 `BattleState::battle_open_held` (sweep, `intro_lead_ticks`, `intro_names_frames`)
 and raises `round_open_pending`, under which the battle loop runs nothing past
 the timers; the side-band tick starts the round on the pass the hold has ended.
-The formation banner comes up with the names, at the lead's end. The boss stage
+The formation banner comes up with the names, at the lead's end, and the camera
+stays on the sweep's close-in until the round starts. The boss stage
 modules' `0x0C` baton keeps its own path.
 
 ### The round loop - what re-arms `0x1E`

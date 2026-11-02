@@ -226,6 +226,7 @@ fn the_shared_camera_settles_on_the_per_art_framing() {
                     cursor: None,
                     spell_cam: None,
                     entry_sweep: false,
+                    open_held: false,
                     attack: if phase { attack } else { None },
                 };
                 drive(&mut slot, true, inputs, frames, Some(&table));
@@ -290,6 +291,7 @@ fn an_unarmed_art_id_leaves_case_six_standing() {
             cursor: None,
             spell_cam: None,
             entry_sweep: false,
+            open_held: false,
             attack: Some(AttackCamChannels {
                 character: CharacterArm::One,
                 // `0x1B` is an epilogue slot inside character 1's own bound.

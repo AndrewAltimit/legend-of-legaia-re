@@ -163,6 +163,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // A fight opens on the SCUS frame driver's entry sweep, before the
         // battle tick frames anything (`BattleCamera::start_entry_sweep`).
         entry_sweep: true,
+        open_held: world.battle.battle_open_held(),
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
