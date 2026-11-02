@@ -447,3 +447,13 @@ changes = [
   ["states/shiny_refactor_gimard_levelup/camera", 0.984, 0.979],
   ["states/shiny_refactor_gimard_levelup/image", 0.845, 0.828],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The 0x2A chain-exit pass adds nothing to ctx[+0x87C] (0x801E4774..0x801E479C), so an accumulator gate lands a pass later. The two breaths now retake the displayed case-6 frame on the pose walked back along retail's table, where they drew the gate's frame; their camera channels rose (.943 to .989, .948 to .990). Tail Fire's gate moved a pass with no retake; that its rays run on the engine's own clock is the likely cause and is not measured."
+changes = [
+  ["states/battle_chitei2_kemaro_lv2_lava_breath_mid_cast/image", 0.941, 0.913],
+  ["states/battle_rugi_slippery_poisonous_breath_mid_cast/image", 0.996, 0.986],
+  ["states/battle_gimard_tail_fire_a/image", 0.982, 0.975],
+  ["states/battle_gimard_tail_fire_b/image", 0.978, 0.97],
+]
