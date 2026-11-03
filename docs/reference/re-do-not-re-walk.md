@@ -501,6 +501,14 @@ is `06/0 4E/0 4F/0 07/1`: the roster panels come **back up** and the bar parks.
 the member the cursor names. The magic window (step 7) has the same shape. A menu state's surfaces
 are a table row, not a neighbour's: read the step, not the frames either side of it.
 
+### A monster strike's displayed focus needs another endpoint
+
+**Tempting reading.** `battle_korb2_aluru_strike` walks back from the table to focus `(276, 320)`, and the frame scored `.946` on it. A fit of the frame gave yaw `2188` but focus `(256, 304)`, which reads as an arm on an endpoint near `(117, 107)` that no walk-clip pose reaches.
+
+**Why it is wrong.** The child never stood on `(276, 320)`. The alignment keeps the replay's focus plus retail's gap to its endpoint unless the two endpoints agree, and the replay's case 7 read a body pair a pass newer than the arm did. Stood on outright, the walked-back pose reads `.999`.
+
+**What is true.** The table is the pass's own in the strike loop, so the walk back is retail's pose (`RetailBattle::stand_on_displayed_pose`). A fit that runs through the alignment measures the alignment.
+
 ### The magic chip's gate reads the weapon byte
 
 **Tempting reading.** `FUN_80053CB8` writes `ctx[+0x25F + member]` after an `lbu` at `+0x760` off

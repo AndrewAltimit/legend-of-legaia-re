@@ -1927,6 +1927,33 @@ fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
     assert!(b.retake_turning_pose().is_none());
 }
 
+#[test]
+fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 4;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.span_gate = SpanGate::Age { accum: 0 };
+    assert!(b.stand_on_displayed_pose());
+    b.active_actor = 0;
+    assert!(!b.stand_on_displayed_pose(), "a party seat");
+    b.active_actor = 4;
+    b.action_state = 0x2B;
+    assert!(!b.stand_on_displayed_pose(), "a cast");
+}
+
 /// The recorded case-6 tail of Aluru Cannon: TR z `4772` walks `+36` on the
 /// armed pass (step `3`) and `+48` on the terminator's (step `4`), its stale
 /// increment `12` (`ceil(143 / 12)`), and the shot closes the last `59`.

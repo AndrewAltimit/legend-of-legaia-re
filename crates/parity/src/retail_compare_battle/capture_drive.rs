@@ -178,6 +178,24 @@ impl RetailBattle {
         self.monster_magic_band_age()
     }
 
+    /// A monster's strike loop on its clip age. `0x1E` arms case 7 on every
+    /// pass (`li a1,0x7` at `0x801E36EC`), so the table describes the pass it
+    /// is read on and the walk back along it is retail's own displayed pose.
+    /// The alignment otherwise takes only the components whose endpoint the
+    /// replay's framing agrees with, and the replay's case 7 reads the body
+    /// pairs a pass newer than the arm did: `battle_korb2_aluru_strike`'s
+    /// endpoint `(54, 60)` is the midpoint on the attacker's body at
+    /// `(131, 146)`, the RAM's reads `(176, 173)`. The camera channel still
+    /// reads the law. The same stand over every battle state loses badly
+    /// (`cort_evolved_final_crisis_mid_cast` `1.000` to `.344`): those shots
+    /// were not armed by the pass the table describes.
+    pub fn stand_on_displayed_pose(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, state: 0x1E }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 3
+    }
+
     /// A monster's magic-band capture: [`SpanGate::Age`] on a monster seat,
     /// category `2`, state `0x2A..=0x2E`.
     pub fn monster_magic_band_age(&self) -> bool {

@@ -454,6 +454,21 @@ impl PlayWindowApp {
             } else {
                 mask
             };
+            // A monster's strike: case 7 re-arms every pass, so the RAM's pose
+            // walked back is the displayed frame's on every component, whatever
+            // the replay's body pairs put the framing on
+            // (`RetailBattle::stand_on_displayed_pose`).
+            let mask = if self
+                .screenshot
+                .as_ref()
+                .is_some_and(|sc| sc.battle_cam_stand_displayed)
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(live);
+                0xFF
+            } else {
+                mask
+            };
             // A monster's magic-band retake on a shot still walking: the
             // displayed frame is the framing the shot replaced, and `live`
             // is retail's pose walked back onto it along the RAM's table.

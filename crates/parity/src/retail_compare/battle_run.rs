@@ -934,6 +934,9 @@ pub(super) fn battle_image(
         // The display shows the frame two game frames older than the RAM;
         // where it measures better the child re-runs to it
         // (`RetailBattle::display_retake`).
+        if battle.stand_on_displayed_pose() {
+            env.push(("LEGAIA_BATTLE_CAM_STAND_DISPLAYED", "1".to_string()));
+        }
         if battle.display_retake() {
             if battle.retake_across_band_entry() {
                 env.push(("LEGAIA_CAPTURE_RETAKE_ENTRY", "1".to_string()));

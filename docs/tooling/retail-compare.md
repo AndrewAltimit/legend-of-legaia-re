@@ -3684,6 +3684,22 @@ capture's fight off the headless seed's, so the strike never reached its
 phase (`battle_rugi_barra_strike`). `battle_rugi_slippery_poisonous_breath_mid_cast`
 read `.966` to `.982`.
 
+#### A monster's strike stands on the walked-back pose
+
+The image child's alignment takes retail's live pose only on the components
+whose endpoint the replay's framing agrees with. In a monster's strike loop the
+replay's case 7 reads the body pairs a pass newer than the arm that built
+retail's table, so the focus disagrees by a few steps and stays the engine's:
+`battle_korb2_aluru_strike`'s endpoint `(54, 60)` is the midpoint on the
+attacker's body at `(131, 146)`, and the RAM's body reads `(176, 173)`. `0x1E` arms case 7 on
+every pass, so the walk back along the table is retail's own pose, and the
+child stands on it (`RetailBattle::stand_on_displayed_pose`,
+`LEGAIA_BATTLE_CAM_STAND_DISPLAYED`). The camera channel still reads the law.
+It is not a general rule: over every other battle state the same stand loses
+(`cort_evolved_final_crisis_mid_cast` `1.000` to `.344`,
+`battle_rugi_barra_windcutter_mid_cast` `.861` to `.543`), because a shot armed
+once holds a table that does not describe the passes behind it.
+
 #### A shot armed after the displayed frame
 
 The magic band's shot arms on the first `0x2B` pass

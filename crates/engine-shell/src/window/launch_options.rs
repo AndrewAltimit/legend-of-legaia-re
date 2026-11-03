@@ -446,6 +446,11 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_CAPTURE_RETAKE_YAW=<yaw>`: on a shot retake, the yaw the frame
     /// before a turning shot stood on (`RetailBattle::retake_turning_yaw` in
     /// `legaia-parity`).
+    /// `LEGAIA_BATTLE_CAM_STAND_DISPLAYED=1`: the frame stands on the camera
+    /// alignment's walked-back pose outright, not on the components whose
+    /// endpoint the replay's framing agrees with
+    /// (`RetailBattle::stand_on_displayed_pose` in `legaia-parity`).
+    pub battle_cam_stand_displayed: bool,
     pub retake_yaw: Option<f32>,
     /// `LEGAIA_CAPTURE_RETAKE_POSE=pitch,yaw,x,y,z,fx,fy,fz`: on a shot retake,
     /// the whole pose the displayed frame stood on
@@ -1135,6 +1140,8 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
             retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
+                .is_ok_and(|v| v.trim() == "1"),
+            battle_cam_stand_displayed: std::env::var("LEGAIA_BATTLE_CAM_STAND_DISPLAYED")
                 .is_ok_and(|v| v.trim() == "1"),
             retake_yaw: std::env::var("LEGAIA_CAPTURE_RETAKE_YAW")
                 .ok()
