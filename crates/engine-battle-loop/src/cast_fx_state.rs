@@ -142,6 +142,14 @@ pub struct CastFxState {
     /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
     /// A director's per-pass scatter ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::scatter`]).
     pub module_scatter: Option<(u32, u8)>,
+    /// PROT 0957's arms 4 to 6 seat their scatter pairs this pass
+    /// ([`legaia_engine_cast::cast_module_camera::capture::CaptureCamArm::scatter_pairs`]).
+    pub module_scatter_pairs: bool,
+    /// The `y` the last scatter pair drew, the stack word PROT 0957's arm 5
+    /// hands its ribbons as their height.
+    pub module_scatter_y: i16,
+    /// This pass's ribbons take that height.
+    pub module_ribbons_on_scatter_y: bool,
     pub module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
@@ -452,6 +460,9 @@ impl CastFxState {
             module_shake: 0,
             module_hit_arm: None,
             module_scatter: None,
+            module_scatter_pairs: false,
+            module_scatter_y: 0,
+            module_ribbons_on_scatter_y: false,
             module_debris: Vec::new(),
             module_rumble_alternate: 0,
             module_mule_backdrop_follow: false,

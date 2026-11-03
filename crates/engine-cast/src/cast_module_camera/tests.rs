@@ -292,8 +292,15 @@ fn big_wave_arms_6_to_8_cut_spin_and_finish() {
     assert!(a7.hold);
     assert_eq!(a7.drift.unwrap().yaw, (SPEED_SCALAR / 4) as i16);
     st.countdown.0 = 1;
-    assert_eq!(wave_camera(&mut st, 7, seats).next, Some(8));
-    st.countdown.0 = 1;
+    let hits = wave_camera(&mut st, 7, seats);
+    assert_eq!(hits.next, Some(8));
+    assert!(hits.folds_hit && hits.party_live_only);
+    assert_eq!(hits.party_write.rate, Some(4));
+    assert_eq!(hits.party_write.facing, Some(0));
+    // Arm 8 holds on a spent word until every party seat has settled.
+    st.countdown.0 = 0;
+    assert!(wave_camera(&mut st, 8, seats).hold);
+    st.party_settled = true;
     let a8 = wave_camera(&mut st, 8, seats);
     assert_eq!((a8.hold, a8.next), (false, None));
     assert!(a8.drift.is_some());

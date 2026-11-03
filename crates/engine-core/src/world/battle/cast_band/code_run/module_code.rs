@@ -382,6 +382,7 @@ impl World {
                     .copied(),
             );
             self.casting.module_scatter = arm.scatter;
+            self.casting.module_scatter_pairs = arm.scatter_pairs;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
         }
@@ -413,7 +414,18 @@ impl World {
                         self.next_rand()
                     });
             }
+            // The sweep's seats are those with HP and no Stone before the hit.
+            let struck: Vec<u8> = (0..self.party.party_count)
+                .filter(|&s| {
+                    arm.party_faces_caster
+                        && self.actors[usize::from(s)].battle.hp > 0
+                        && !self.battle.actor_is_petrified(s)
+                })
+                .collect();
             self.fold_pending_cast();
+            for s in struck {
+                self.face_seat_away_from_caster(s, caster_slot);
+            }
             caster = self.cast_view(caster_slot);
             victim = self.cast_view(victim_slot);
             seat = self.cast_view(seat_slot);
@@ -688,9 +700,6 @@ impl World {
                 }
                 (957, Some(ticks::SUMMON_EFFECT_TICK_B)) => {
                     Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
-                }
-                (957, Some(ticks::SUMMON_EFFECT_TICK_A)) => {
-                    Some(ticks::summon_effect_tick_a(&mut ctx, &mut victim, None))
                 }
                 // PROT 0942's Power Up reads the caster's own monster record
                 // `+0x0E` and writes the AGL **base** half only.
@@ -1515,6 +1524,8 @@ impl World {
             .as_ref()
             .and_then(|a| a.ribbons)
             .or(direction.and_then(|d| d.ribbons));
+        self.casting.module_ribbons_on_scatter_y =
+            capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
@@ -1535,7 +1546,19 @@ impl World {
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
             if !arm.party_write.is_empty() {
                 for slot in 0..self.party.party_count {
-                    self.apply_capture_seat_writes(slot, arm.party_write);
+                    let a = &self.actors[usize::from(slot)];
+                    if (!arm.party_live_only || a.battle.hp > 0)
+                        && !(arm.party_skip_stoned && self.battle.actor_is_petrified(slot))
+                    {
+                        self.apply_capture_seat_writes(slot, arm.party_write);
+                    }
+                }
+            }
+            if let Some(level) = arm.parts_level
+                && let Some(scene) = self.casting.active_summon.as_mut()
+            {
+                for part in &mut scene.parts {
+                    part.state.field_78 = level;
                 }
             }
             // PROT 0965 arm `0x0B` lines the party up for its sweep and its

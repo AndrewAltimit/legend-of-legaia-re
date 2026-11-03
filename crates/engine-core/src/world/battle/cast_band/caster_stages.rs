@@ -160,6 +160,34 @@ impl World {
                 }
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
             }
+            // PROT 0957's arms 4 to 6: four pairs a pass, each pair on two
+            // draws (`0x801F70AC..0x801F713C`).
+            if std::mem::take(&mut self.casting.module_scatter_pairs) && opens_pass {
+                let mut seated = Vec::with_capacity(usize::from(cmc::STORM_SCATTER_PAIRS) * 2);
+                for _ in 0..cmc::STORM_SCATTER_PAIRS {
+                    let x = 0x80 - (self.next_rand() % 255) as i16;
+                    let y = 0x80 - (self.next_rand() % 255) as i16;
+                    self.casting.module_scatter_y = y;
+                    for record in cmc::STORM_SCATTER_RECORDS {
+                        seated.push(cmc::ModuleSpawn {
+                            record: cmc::SpawnRecord::Module(record),
+                            anchor: cmc::SpawnAnchor::LiteralScaled {
+                                pos: [x, y, 0x100],
+                                rot: [0, 0, 0],
+                                scale: 0x1000,
+                            },
+                        });
+                    }
+                }
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
+            if std::mem::take(&mut self.casting.module_ribbons_on_scatter_y)
+                && let Some(ring) = self.battle.cast_ribbons.as_mut()
+            {
+                for p in ring.points.iter_mut().take(usize::from(ring.count)) {
+                    p[1] = self.casting.module_scatter_y;
+                }
+            }
             if run.phase != arm || !run.busy {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
                     self.casting.flush_module_part_pool();

@@ -234,7 +234,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x77],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[1]),
     },
     // PROT 0957 `0x76` (`0x801F798C`): `9` at `0x801F7CF8`.
     CasterStageRow {

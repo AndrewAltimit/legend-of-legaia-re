@@ -596,7 +596,7 @@ impl World {
                         legaia_engine_cast::cast_module_camera::doomsday_ring_part_words(va, n)
                     })
                     .flatten();
-                let ray = (prot_entry == 934)
+                let ray = matches!(prot_entry, 934 | 957)
                     .then(|| legaia_engine_cast::cast_module_camera::ozma_ray_seed(va, n))
                     .flatten();
                 for part in &mut scene.parts[first..] {

@@ -297,6 +297,27 @@ impl World {
         self.actors[usize::from(victim)].battle.facing_angle = facing;
     }
 
+    /// Turn party seat `seat` with its back to the caster's bearing:
+    /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34]) +
+    /// 0x800` into `+0x46` (PROT 0957's sweep, `0x801F75A4..0x801F75CC`).
+    pub(in crate::world::battle) fn face_seat_away_from_caster(&mut self, seat: u8, caster: u8) {
+        let (Some(s), Some(c)) = (
+            self.actors.get(usize::from(seat)),
+            self.actors.get(usize::from(caster)),
+        ) else {
+            return;
+        };
+        let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+            c.move_state.world_z,
+            c.move_state.world_x,
+            s.move_state.world_z,
+            s.move_state.world_x,
+        )
+        .wrapping_add(0x800)
+            & 0xFFF;
+        self.actors[usize::from(seat)].battle.facing_angle = facing;
+    }
+
     /// Whether the owed cast's outcome is its homing flight's to land: a
     /// monster's cast whose staged clip (`params[1]`, `+0x1E0`) carries an
     /// effect-script terminator - the record whose step seeds the homing

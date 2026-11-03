@@ -647,6 +647,17 @@ pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
     ),
     (951, &[0x801F_8348, 0x801F_836C]),
     (955, &[0x801F_95DC, 0x801F_9630, 0x801F_9684, 0x801F_96D8]),
+    (
+        957,
+        &[
+            0x801F_A06C,
+            0x801F_A0D4,
+            0x801F_A174,
+            0x801F_A194,
+            0x801F_A1D8,
+            0x801F_A228,
+        ],
+    ),
 ];
 
 /// Halfword stores a capture arm makes into a part it has just seated, as
@@ -663,9 +674,11 @@ pub fn capture_spawn_pokes(prot_entry: u32, record: u32) -> &'static [(u16, u16)
 /// The emitter seed `+0xB8` PROT 0934's arms `0xF` and `0x14` store into the
 /// `n`th part of their ray fans as they seat it (`sh v1,0xB8(v0)` at
 /// `0x801F7C68`, `sh s0,0xB8(v0)` at `0x801F81FC`): `0x56CE`, `0x20` less per
-/// part.
+/// part. PROT 0957's arm 3 stores the same run into its ring
+/// (`sh v1,0xB8(v0)` at `0x801F7010`).
 pub fn ozma_ray_seed(record: u32, n: usize) -> Option<(u16, u16)> {
-    matches!(record, 0x801F_A1BC | 0x801F_A200).then(|| (0xB8, 0x56CE - n as u16 * 0x20))
+    matches!(record, 0x801F_A1BC | 0x801F_A200 | 0x801F_A194)
+        .then(|| (0xB8, 0x56CE - n as u16 * 0x20))
 }
 
 /// A capture arm's spawn made on a pass counted by the body's own frame
@@ -724,6 +737,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         942 => body == Some(super::POWER_UP_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         955 => body == Some(super::TERROR_SCREAM_BODY),
+        957 => body == Some(super::THUNDER_STORM_BODY),
         _ => false,
     }
 }
@@ -740,6 +754,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         944 => body == Some(0x801F_6A04),
         946..=948 => true,
         955 => body == Some(super::TERROR_SCREAM_BODY),
+        957 => body == Some(super::THUNDER_STORM_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         942 => body == Some(super::POWER_UP_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
@@ -787,6 +802,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (962, 3)
             | (965, 3 | 8 | 9 | 0x0B)
             | (961, 1 | 3 | 5)
+            | (957, 3 | 6)
     )
 }
 

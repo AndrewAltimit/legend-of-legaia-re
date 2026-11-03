@@ -968,6 +968,7 @@ mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
 mod cross_beam;
+mod thunder_storm;
 mod doomsday;
 mod evil_seru_magic;
 mod freed;
@@ -1010,6 +1011,10 @@ pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
+pub use thunder_storm::{
+    STORM_RAY_RECORD, STORM_SCATTER_PAIRS, STORM_SCATTER_RECORDS, THUNDER_STORM_BODY,
+    THUNDER_STORM_COUNTDOWN, thunder_storm_camera,
+};
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,
