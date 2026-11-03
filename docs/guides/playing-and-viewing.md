@@ -824,7 +824,7 @@ click walks straight onto one, as a retail scene's row does. The
 packs you install stay in the browser's pack library, listed with their cover,
 version and authors; a pack that needs another pack you have not installed, or
 conflicts with one you have, says so under its row. The expansion workbench's
-*Play in browser* installs the working pack in that library (replacing the
+*Play pack* installs the working pack in that library (replacing the
 version there) and opens the play page on it, and `End` on the play page
 reloads the library's copy in place. *Unload* goes back to the game as it
 shipped.

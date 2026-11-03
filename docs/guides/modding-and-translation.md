@@ -247,16 +247,17 @@ page builds one in the browser:
 3. Edit section by section. The checks panel re-runs the validator after
    every edit, with your disc resolving every coordinate; click an issue to
    go to its field.
-4. Lay out a map on the **Maps** tab: paint tiles from the legend, place
-   spawns, exits, trigger and encounter zones and props, and turn on
+4. Lay out a map under **Build**. It opens in **Place objects**, with a palette
+   of real objects off your disc; **Map settings** opens the tile painter: paint
+   tiles from the legend, place spawns, exits, trigger and encounter zones and props, and turn on
    **Heights** to see which cells the floor slopes across.
-5. **Download .lxpack** to share it, or take the TOML files one at a time on
+5. **Save .lxpack** to share it, or take the TOML files one at a time on
    the Files tab for a pack kept as a folder.
 
 The same pack works from the command line (`asset expansion validate`,
 `asset expansion bundle`) and runs in the native port with
 `legaia-engine play-window --expansion <dir>`, or on the browser play page:
-the workbench's **Play in browser** button hands the pack straight to it. Page reference:
+the workbench's **Play pack** button hands the pack straight to it. Page reference:
 [expansion-workbench.md](../tooling/expansion-workbench.md); format:
 [expansion-pack.md](../formats/expansion-pack.md).
 

@@ -60,12 +60,12 @@ and a browser; nothing is installed.
    resolving each coordinate. A check names its file and field; clicking it
    opens the tab, selects the item and focuses the field. A pack with an
    error does not export. `F8` steps through the checks.
-7. **Play it.** **Play here** opens the play page on the map the Maps tab
-   is on; while that tab is open, the next Play here (or **Live**, every
+7. **Play it.** **Play this map** opens the play page on the map the Maps tab
+   is on; while that tab is open, the next Play this map (or **Live**, every
    edit) reloads the pack in place with the player where they stand.
-   **Open 3D preview** draws the map the way the engine builds it, above
-   the painter.
-8. **Export and share.** **Download .lxpack** writes the bundle (`Ctrl+S`).
+   The 3D view is the map the way the engine builds it; **Fullscreen** (`F11`)
+   takes it edge to edge.
+8. **Export and share.** **Save .lxpack** writes the bundle (`Ctrl+S`).
    Anyone with their own disc opens it on the play page (*Load expansion*)
    or in the native port with `--expansion`. **Share** sets a cover,
    compares against an older `.lxpack` for a changelog and a version bump,
