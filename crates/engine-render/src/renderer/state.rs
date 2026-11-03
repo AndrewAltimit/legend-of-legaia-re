@@ -23,6 +23,12 @@ pub(super) struct OcclFocus {
     pub(super) proj_scale_y: f32,
 }
 
+#[derive(Default)]
+pub(super) struct ShadowScratch {
+    pub(super) bytes: Vec<u8>,
+    pub(super) slots: Vec<(u32, u32)>,
+}
+
 pub struct Renderer {
     /// The volumetric ground-fog enhancement pass, built on the first frame
     /// a host stages a bank ([`Renderer::set_fog_volume`]); `None` until
@@ -325,6 +331,10 @@ pub struct Renderer {
     pub(super) shadow_uniforms_buf: std::cell::RefCell<wgpu::Buffer>,
     pub(super) shadow_uniforms_bg: std::cell::RefCell<wgpu::BindGroup>,
     pub(super) shadow_uniforms_capacity: std::cell::Cell<usize>,
+    /// The shadow stage's per-frame uniforms and `(light, draw)` list, kept.
+    pub(super) shadow_scratch: std::cell::RefCell<ShadowScratch>,
+    /// Recycled buffers for the meshes a frame builds and drops.
+    pub(super) mesh_buffers: buffer_pool::BufferPool,
     /// Screen-space 2D overlay pass (see [`crate::screen_overlay`]): PSX
     /// `POLY_FT4` textured quads + flat quads in NDC, ordering-table order,
     /// per-ABR semi-transparency. Opaque pipeline (replace).

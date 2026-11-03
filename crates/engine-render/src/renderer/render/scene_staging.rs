@@ -162,12 +162,42 @@ impl Renderer {
         let Some(inv_vp) = self.scene_view_proj.get().map(|vp| vp.inverse()) else {
             return;
         };
-        let stride = self.uniform_offset_alignment as usize;
         let n_draws = scene.draws.len() + scene.color_draws.len();
         if n_draws == 0 {
             return;
         }
-        let needed = n * n_draws;
+        // Only the draws a light's frustum touches: a body wholly outside it
+        // writes no depth into that light's layer, so leaving it out moves no
+        // shadow. A lamp reaches a few props of the scene's hundreds of draws.
+        let mut scratch = self.shadow_scratch.borrow_mut();
+        let ShadowScratch { bytes, slots } = &mut *scratch;
+        slots.clear();
+        bytes.clear();
+        let stride = self.uniform_offset_alignment as usize;
+        let su_size = std::mem::size_of::<ShadowUniforms>();
+        for (li, lvp) in light_vps.iter().enumerate() {
+            let model_to_light = *lvp * inv_vp;
+            let mut stage = |di: usize, mvp: Mat4, bounds: &([f32; 3], [f32; 3])| {
+                let smvp = model_to_light * mvp;
+                if !crate::scene_lights::bounds_touch_frustum(&smvp, bounds) {
+                    return;
+                }
+                let su = ShadowUniforms {
+                    mvp: smvp.to_cols_array_2d(),
+                };
+                let start = bytes.len();
+                bytes.resize(start + stride, 0);
+                bytes[start..start + su_size].copy_from_slice(bytemuck::bytes_of(&su));
+                slots.push((li as u32, di as u32));
+            };
+            for (di, d) in scene.draws.iter().enumerate() {
+                stage(di, d.mvp, &d.mesh.bounds);
+            }
+            for (ci, d) in scene.color_draws.iter().enumerate() {
+                stage(scene.draws.len() + ci, d.mvp, &d.mesh.bounds);
+            }
+        }
+        let needed = slots.len().max(1);
         let mut cap = self.shadow_uniforms_capacity.get();
         if cap < needed {
             cap = needed.next_power_of_two().max(needed);
@@ -195,27 +225,9 @@ impl Renderer {
             *self.shadow_uniforms_bg.borrow_mut() = new_bg;
             self.shadow_uniforms_capacity.set(cap);
         }
-        let mut bytes = vec![0u8; needed * stride];
-        for (li, lvp) in light_vps.iter().enumerate() {
-            for (di, mvp) in scene
-                .draws
-                .iter()
-                .map(|d| d.mvp)
-                .chain(scene.color_draws.iter().map(|d| d.mvp))
-                .enumerate()
-            {
-                let smvp = *lvp * inv_vp * mvp;
-                let su = ShadowUniforms {
-                    mvp: smvp.to_cols_array_2d(),
-                };
-                let off = (li * n_draws + di) * stride;
-                bytes[off..off + std::mem::size_of::<ShadowUniforms>()]
-                    .copy_from_slice(bytemuck::bytes_of(&su));
-            }
-        }
         {
             let buf = self.shadow_uniforms_buf.borrow();
-            self.queue.write_buffer(&buf, 0, &bytes);
+            self.queue.write_buffer(&buf, 0, bytes);
         }
         // Depth-only passes, one per light layer. Full opaque index range
         // of every draw; the light's near plane keeps the emitting flame
@@ -226,6 +238,7 @@ impl Renderer {
                 label: Some("shadow encoder"),
             });
         let bg_borrow = self.shadow_uniforms_bg.borrow();
+        let mut cursor = 0usize;
         for li in 0..n {
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("scene light shadow pass"),
@@ -242,22 +255,35 @@ impl Renderer {
                 multiview_mask: None,
                 timestamp_writes: None,
             });
-            rp.set_pipeline(&self.shadow_vram_pipeline);
-            for (di, draw) in scene.draws.iter().enumerate() {
-                let off = ((li * n_draws + di) * stride) as u32;
+            // `slots` runs light by light, VRAM draws ahead of colour draws.
+            let n_vram = scene.draws.len() as u32;
+            let mut bound_vram = None;
+            while let Some(&(l, di)) = slots.get(cursor) {
+                if l as usize != li {
+                    break;
+                }
+                let off = (cursor * stride) as u32;
+                cursor += 1;
+                let vram = di < n_vram;
+                if bound_vram != Some(vram) {
+                    rp.set_pipeline(if vram {
+                        &self.shadow_vram_pipeline
+                    } else {
+                        &self.shadow_color_pipeline
+                    });
+                    bound_vram = Some(vram);
+                }
                 rp.set_bind_group(0, &*bg_borrow, &[off]);
-                rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
-                rp.set_index_buffer(draw.mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
-            }
-            rp.set_pipeline(&self.shadow_color_pipeline);
-            for (ci, draw) in scene.color_draws.iter().enumerate() {
-                let di = scene.draws.len() + ci;
-                let off = ((li * n_draws + di) * stride) as u32;
-                rp.set_bind_group(0, &*bg_borrow, &[off]);
-                rp.set_vertex_buffer(0, draw.mesh.vertex_buf.slice(..));
-                rp.set_index_buffer(draw.mesh.index_buf.slice(..), wgpu::IndexFormat::Uint32);
-                rp.draw_indexed(0..draw.mesh.index_count, 0, 0..1);
+                let (vb, ib, count) = if vram {
+                    let m = scene.draws[di as usize].mesh;
+                    (&m.vertex_buf, &m.index_buf, m.index_count)
+                } else {
+                    let m = scene.color_draws[(di - n_vram) as usize].mesh;
+                    (&m.vertex_buf, &m.index_buf, m.index_count)
+                };
+                rp.set_vertex_buffer(0, vb.slice(..));
+                rp.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
+                rp.draw_indexed(0..count, 0, 0..1);
             }
             drop(rp);
         }

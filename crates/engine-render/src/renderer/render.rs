@@ -20,6 +20,7 @@ impl Renderer {
     /// * `Texture(t)` - letterboxed quad (Phase 1 TIM viewer).
     /// * `Mesh { mesh, mvp }` - depth-tested 3D mesh draw (Phase 1 TMD viewer).
     pub fn render(&self, target: RenderTarget<'_>) -> Result<()> {
+        self.mesh_buffers.next_frame();
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,

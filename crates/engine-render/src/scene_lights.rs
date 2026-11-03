@@ -48,10 +48,55 @@ pub fn light_view_proj(light: &ScenePointLight) -> Mat4 {
     proj * view
 }
 
+/// Whether a model-space box can reach the light's frustum under `mvp`: false
+/// only when all eight corners lie outside one clip plane (depth `0..=w`). The
+/// tiny margin keeps a corner on a plane in, against the float error of a matrix
+/// recovered through an inverse.
+pub fn bounds_touch_frustum(mvp: &Mat4, (lo, hi): &([f32; 3], [f32; 3])) -> bool {
+    const MARGIN: f32 = 1e-3;
+    let mut outside = [true; 6];
+    for i in 0..8u32 {
+        let corner = Vec3::new(
+            if i & 1 == 0 { lo[0] } else { hi[0] },
+            if i & 2 == 0 { lo[1] } else { hi[1] },
+            if i & 4 == 0 { lo[2] } else { hi[2] },
+        );
+        let c = *mvp * corner.extend(1.0);
+        let slack = c.w.abs() * MARGIN;
+        let planes = [c.x + c.w, c.w - c.x, c.y + c.w, c.w - c.y, c.z, c.w - c.z];
+        for (o, d) in outside.iter_mut().zip(planes) {
+            *o &= d < -slack;
+        }
+    }
+    !outside.contains(&true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use legaia_render_kernels::scene_lighting::MAX_SCENE_LIGHTS;
+
+    /// A box straddling, inside and beyond the frustum: only wholly outside one
+    /// plane is out, and a box enclosing the frustum with no corner in it is in.
+    #[test]
+    fn frustum_test_is_conservative() {
+        let m = glam::camera::rh::proj::directx::perspective(1.0, 1.0, 1.0, 100.0);
+        let t = |lo, hi| bounds_touch_frustum(&m, &(lo, hi));
+        assert!(t([-1.0, -1.0, -20.0], [1.0, 1.0, -10.0]));
+        assert!(t([-500.0, -500.0, -500.0], [500.0, 500.0, 500.0]));
+        assert!(
+            !t([-1.0, -1.0, 10.0], [1.0, 1.0, 20.0]),
+            "behind the near plane"
+        );
+        assert!(
+            !t([-1.0, -1.0, -300.0], [1.0, 1.0, -200.0]),
+            "past the far plane"
+        );
+        assert!(
+            !t([100.0, -1.0, -20.0], [110.0, 1.0, -10.0]),
+            "off to the side"
+        );
+    }
 
     /// The shadow view-projection maps a floor point under the light into
     /// the depth range and NDC square.

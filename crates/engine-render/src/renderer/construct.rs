@@ -115,8 +115,10 @@ impl Renderer {
             config,
             view_format,
         } = surface::open_surface(window, width, height).await?;
+        crate::profile::startup("surface + device");
 
         let quad = quad::build_quad(&device, view_format);
+        crate::profile::startup("quad pipeline");
 
         // Depth convention: **reversed-Z** across every 3D pipeline. The MVP
         // upload sites post-multiply [`reverse_z`] (clip z' = w - z), the pass
@@ -143,11 +145,13 @@ impl Renderer {
             &vram_vertex_layout,
         );
         let lines = mesh::build_wireframe(&device, view_format, &flat_mesh.uniforms_bgl);
+        crate::profile::startup("flat, textured, vram, line pipelines");
 
         let scene_uniforms = scene::build_scene_uniforms(&device);
         let light_layer = lighting::build_light_layer(&device);
         let shadow_pass = lighting::build_shadow_pass(&device, scene_uniforms.offset_alignment);
         let glow = lighting::build_glow_sprites(&device, view_format);
+        crate::profile::startup("shadow + glow pipelines");
 
         let scene_vram = scene::build_scene_vram_mesh(
             &device,
@@ -157,6 +161,7 @@ impl Renderer {
             &light_layer.bgl,
             &vram_vertex_layout,
         );
+        crate::profile::startup("scene vram pipeline");
         let vram_mesh_blend_pipelines = blend::blend_pipelines(
             &device,
             view_format,
@@ -173,6 +178,7 @@ impl Renderer {
             &scene_vram.shader,
             &vram_vertex_layout,
         );
+        crate::profile::startup("vram blend pipelines");
         let scene_lines_pipeline =
             scene::build_scene_wireframe(&device, view_format, &scene_uniforms.bgl, &lines.shader);
         let color_mesh = scene::build_scene_color_mesh(
@@ -183,12 +189,14 @@ impl Renderer {
             &light_layer.bgl,
         );
 
+        crate::profile::startup("scene lines + colour pipelines");
         let text = text::build_text_overlay(&device, view_format);
         let overlay = screen_overlay::build_screen_overlay(&device, view_format, &vram_mesh.bgl);
         let (viewport_fill_vbuf, viewport_fill_ibuf) = screen_overlay::build_viewport_fill(&device);
 
         let depth_view = create_depth_view(&device, config.width, config.height);
 
+        crate::profile::startup("text + overlay pipelines");
         Ok(Self {
             fog_volume_pass: std::cell::RefCell::new(None),
             fog_volume_active: std::cell::Cell::new(false),
@@ -291,6 +299,8 @@ impl Renderer {
             shadow_uniforms_buf: std::cell::RefCell::new(shadow_pass.uniforms_buf),
             shadow_uniforms_bg: std::cell::RefCell::new(shadow_pass.uniforms_bg),
             shadow_uniforms_capacity: std::cell::Cell::new(shadow_pass.initial_capacity),
+            shadow_scratch: Default::default(),
+            mesh_buffers: buffer_pool::BufferPool::new(),
             screen_overlay_pipeline: overlay.pipeline,
             screen_overlay_semi_opaque_pipeline: overlay.semi_opaque_pipeline,
             screen_overlay_blend_pipelines: overlay.blend_pipelines,

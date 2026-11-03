@@ -129,7 +129,7 @@ fn print_alloc_sites() {
         *by_site.entry(site.join(" < ")).or_default() += 1;
     }
     let mut rows: Vec<_> = by_site.into_iter().collect();
-    rows.sort_by(|a, b| b.1.cmp(&a.1));
+    rows.sort_by_key(|r| std::cmp::Reverse(r.1));
     for (site, n) in rows.into_iter().take(40) {
         eprintln!("[alloc-site] {:7} {site}", n * SITE_SAMPLE);
     }
@@ -191,6 +191,9 @@ struct State {
     bench: Bench,
 }
 
+/// The slowest measured frame: its number, time and stages.
+type WorstFrame = (u64, Duration, Vec<(&'static str, Duration)>);
+
 /// The `[bench]` line's accumulators.
 #[derive(Default)]
 struct Bench {
@@ -205,7 +208,7 @@ struct Bench {
     first: Option<Duration>,
     /// This frame's stages so far, and the slowest measured frame's.
     current: Vec<(&'static str, Duration)>,
-    worst: Option<(u64, Duration, Vec<(&'static str, Duration)>)>,
+    worst: Option<WorstFrame>,
     draws_max: (usize, usize),
 }
 

@@ -12,6 +12,7 @@ use wgpu::util::DeviceExt;
 
 // --- lane L ---
 pub mod bloom;
+mod buffer_pool;
 mod construct;
 mod depth;
 mod fog_volume;
