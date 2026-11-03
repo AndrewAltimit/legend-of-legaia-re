@@ -98,86 +98,7 @@ impl Archive {
     }
 
     fn from_reader(mut reader: Box<dyn ReadSeek>, file_len: u64) -> Result<Self> {
-        let header = detect_header(reader.as_mut(), file_len)?;
-
-        let toc_start = header.header_offset + 0x08;
-        let toc_end = header.header_offset + (header.header_sectors as u64) * (SECTOR as u64);
-        let toc_bytes = (toc_end - toc_start) as usize;
-        let mut buf = vec![0u8; toc_bytes];
-        reader.seek(SeekFrom::Start(toc_start))?;
-        reader.read_exact(&mut buf)?;
-        let toc: Vec<u32> = buf
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|&c| u32::from_le_bytes(c))
-            .collect();
-
-        // For entry p:
-        //   start_lba    = toc[p+2]                (LBA relative to PROT.DAT)
-        //   size_sectors = toc[p+3] - toc[p+2]     (the entry's sectors)
-        //
-        // The span comes from the port of retail's own routine so the
-        // arithmetic - including the `wrapping_sub` that makes a zero-padded
-        // or non-monotonic row produce an obviously-bogus value instead of
-        // panicking - has exactly one implementation in the crate.
-        let count = (header.file_num.saturating_sub(1)) as usize;
-        let mut entries = Vec::with_capacity(count);
-        for p in 0..count {
-            if p + 3 >= toc.len() {
-                break;
-            }
-            let start_lba = toc[p + 2];
-            // LBA 0 holds the archive header, so a row pointing there is TOC
-            // padding rather than an entry. The zeroed tail rows are exactly
-            // this shape.
-            if start_lba == 0 {
-                continue;
-            }
-            let Some(size_sectors) =
-                crate::runtime_toc::entry_sector_span_from_archive_toc(&toc, p)
-            else {
-                continue;
-            };
-            // A wrapped (non-monotonic / zero-padded) row, or a zero-length
-            // one: not an entry.
-            if size_sectors == 0 || size_sectors > MAX_REASONABLE_FOOTPRINT_SECTORS {
-                continue;
-            }
-            let byte_offset = (start_lba as u64) * (SECTOR as u64);
-            let size_bytes = (size_sectors as u64) * (SECTOR as u64);
-            if byte_offset.saturating_add(size_bytes) > file_len {
-                continue;
-            }
-            // Diagnostics only - see `Entry::declared_span_sectors`. Against
-            // the zeroed TOC tail the expression underflows to a wrapped
-            // value; fall back to the real size there, then clamp to the
-            // image so a caller reading this window can't run off the end.
-            // On retail neither guard binds outside the final two rows.
-            let declared_raw = toc
-                .get(p + 5)
-                .copied()
-                .unwrap_or(0)
-                .wrapping_sub(toc[p + 3])
-                .wrapping_add(4);
-            let room = ((file_len - byte_offset) / (SECTOR as u64)) as u32;
-            let declared_span_sectors = if declared_raw <= MAX_REASONABLE_FOOTPRINT_SECTORS {
-                declared_raw.min(room)
-            } else {
-                size_sectors
-            };
-            let declared_span_bytes = (declared_span_sectors as u64) * (SECTOR as u64);
-            entries.push(Entry {
-                index: p as u32,
-                start_lba,
-                size_sectors,
-                byte_offset,
-                size_bytes,
-                declared_span_sectors,
-                declared_span_bytes,
-            });
-        }
-
+        let (header, toc, entries) = read_layout(reader.as_mut(), file_len)?;
         Ok(Self {
             reader,
             file_len,
@@ -185,6 +106,17 @@ impl Archive {
             toc,
             entries,
         })
+    }
+
+    /// The entries of the PROT.DAT behind `reader`, `file_len` bytes long,
+    /// reading its header and TOC and nothing else. For a caller that holds
+    /// the bytes in another shape (a raw disc image) and wants the addressing
+    /// without a flat copy of the archive to hand [`Self::from_bytes`].
+    pub fn read_entries<R: Read + Seek + Send>(
+        reader: &mut R,
+        file_len: u64,
+    ) -> Result<Vec<Entry>> {
+        Ok(read_layout(reader, file_len)?.2)
     }
 
     pub fn file_len(&self) -> u64 {
@@ -238,6 +170,89 @@ impl Archive {
         self.reader.read_exact(out)?;
         Ok(())
     }
+}
+
+fn read_layout(reader: &mut dyn ReadSeek, file_len: u64) -> Result<(Header, Vec<u32>, Vec<Entry>)> {
+    let header = detect_header(reader, file_len)?;
+
+    let toc_start = header.header_offset + 0x08;
+    let toc_end = header.header_offset + (header.header_sectors as u64) * (SECTOR as u64);
+    let toc_bytes = (toc_end - toc_start) as usize;
+    let mut buf = vec![0u8; toc_bytes];
+    reader.seek(SeekFrom::Start(toc_start))?;
+    reader.read_exact(&mut buf)?;
+    let toc: Vec<u32> = buf
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|&c| u32::from_le_bytes(c))
+        .collect();
+
+    // For entry p:
+    //   start_lba    = toc[p+2]                (LBA relative to PROT.DAT)
+    //   size_sectors = toc[p+3] - toc[p+2]     (the entry's sectors)
+    //
+    // The span comes from the port of retail's own routine so the
+    // arithmetic - including the `wrapping_sub` that makes a zero-padded
+    // or non-monotonic row produce an obviously-bogus value instead of
+    // panicking - has exactly one implementation in the crate.
+    let count = (header.file_num.saturating_sub(1)) as usize;
+    let mut entries = Vec::with_capacity(count);
+    for p in 0..count {
+        if p + 3 >= toc.len() {
+            break;
+        }
+        let start_lba = toc[p + 2];
+        // LBA 0 holds the archive header, so a row pointing there is TOC
+        // padding rather than an entry. The zeroed tail rows are exactly
+        // this shape.
+        if start_lba == 0 {
+            continue;
+        }
+        let Some(size_sectors) = crate::runtime_toc::entry_sector_span_from_archive_toc(&toc, p)
+        else {
+            continue;
+        };
+        // A wrapped (non-monotonic / zero-padded) row, or a zero-length
+        // one: not an entry.
+        if size_sectors == 0 || size_sectors > MAX_REASONABLE_FOOTPRINT_SECTORS {
+            continue;
+        }
+        let byte_offset = (start_lba as u64) * (SECTOR as u64);
+        let size_bytes = (size_sectors as u64) * (SECTOR as u64);
+        if byte_offset.saturating_add(size_bytes) > file_len {
+            continue;
+        }
+        // Diagnostics only - see `Entry::declared_span_sectors`. Against
+        // the zeroed TOC tail the expression underflows to a wrapped
+        // value; fall back to the real size there, then clamp to the
+        // image so a caller reading this window can't run off the end.
+        // On retail neither guard binds outside the final two rows.
+        let declared_raw = toc
+            .get(p + 5)
+            .copied()
+            .unwrap_or(0)
+            .wrapping_sub(toc[p + 3])
+            .wrapping_add(4);
+        let room = ((file_len - byte_offset) / (SECTOR as u64)) as u32;
+        let declared_span_sectors = if declared_raw <= MAX_REASONABLE_FOOTPRINT_SECTORS {
+            declared_raw.min(room)
+        } else {
+            size_sectors
+        };
+        let declared_span_bytes = (declared_span_sectors as u64) * (SECTOR as u64);
+        entries.push(Entry {
+            index: p as u32,
+            start_lba,
+            size_sectors,
+            byte_offset,
+            size_bytes,
+            declared_span_sectors,
+            declared_span_bytes,
+        });
+    }
+
+    Ok((header, toc, entries))
 }
 
 fn detect_header(reader: &mut dyn ReadSeek, len: u64) -> Result<Header> {
