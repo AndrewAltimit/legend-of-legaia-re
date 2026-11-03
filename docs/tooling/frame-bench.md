@@ -106,11 +106,24 @@ These are shapes that recur, not measurements:
   (`categorize::classify_class`). Each deferred value is a pure function of what the
   load captured, so its reader gets what it would have had.
 - **Whole-disc copies cost at the wasm boundary.** A wasm memory never shrinks. The
-  page's image stays on its side of the boundary and `load_disc_image` copies across
+  page's image stays on its side of the boundary and `load_disc_spans` copies across
   only the files the runtime keeps.
-- **The scene picker's first pick walks every scene.** `ArrivalCatalog::build` loads
-  and classifies each CDNAME block to find its doors, once per process. A door, a New
-  Game and a card load do not build it.
+- **A page need not read what it may never play.** The image is the largest read on
+  the way in, and two thirds of it is movies and XA, which reach the page behind the
+  engine ([the disc image](../subsystems/browser-host.md#the-disc-image)).
+- **The scene picker's first pick walks every scene.** `ArrivalCatalog::build` reads
+  each scene's MAN and `.MAP` to find its doors, once per process. It skips blocks with
+  no `.MAP` and stops at a block's bundle (`Scene::load_through_bundle`), since
+  classifying the rest was most of the walk and held those bytes in the index cache. A
+  door, a New Game and a card load do not build it.
+- **The capture frame's cost is the GPU, not the bytes.** `readPixels` on the battle
+  transition's arming frame waits for that frame to finish, and the wait does not
+  shrink with the size of the read. An asynchronous read would land the capture frames
+  later, which moves the transition. The landing reads only the pixels the rects sample
+  (`blit_bottom_up_rgba_into_vram`).
+- **The worst battle-edge frame is the stage, not the capture.** Where the transition
+  hands over, one `play_frame_ticks` builds the battle stage and party forms. That is the
+  frame `--entry-profile`'s `battle entry` table names.
 
 ## See also
 
