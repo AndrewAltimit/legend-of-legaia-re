@@ -22,6 +22,11 @@ mod fatal_panic;
 #[path = "legaia-engine/launcher_window.rs"]
 mod launcher_window;
 
+#[cfg(feature = "bench-alloc")]
+#[global_allocator]
+static COUNTING_ALLOC: legaia_engine_render::profile::CountingAlloc =
+    legaia_engine_render::profile::CountingAlloc;
+
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Cmd};

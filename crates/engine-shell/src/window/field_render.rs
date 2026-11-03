@@ -211,8 +211,10 @@ impl PlayWindowApp {
         // shot snaps in, as on the browser page (`CutsceneGlide::reset`).
         self.cutscene_glide.reset();
         let started = std::time::Instant::now();
+        legaia_engine_render::profile::startup("scene swap begins");
         match build_window_scene_resources(&self.session) {
             Ok(res) => {
+                legaia_engine_render::profile::startup("scene resources");
                 // Spawn-slot drain state is per-scene (the new scene's field
                 // VM re-issues its own actor spawns; `upload_assets` re-seats
                 // the player's slot).
