@@ -66,6 +66,9 @@
 --   LEGAIA_WOUND     round number at whose prompt every monster's HP drops to a
 --                    third of its maximum: the heal arms need a patient below
 --                    half HP (0 = never)
+--   LEGAIA_WOUND_EVERY  1 = repeat that cut at every later round prompt: a heal
+--                    lifts its patient back above half HP, and the arm then has
+--                    nobody to heal
 --   LEGAIA_FINISH    1 = once the Spirit rounds are over, write every monster's
 --                    HP to 1 at the prompt, so the party's attacks end the fight
 --   LEGAIA_HOLD_MODULE / LEGAIA_HOLD_MAGIC  vsyncs into a module / cast band
@@ -105,6 +108,7 @@ end
 local WANT_FORCE = probe.getenv_num("LEGAIA_WANT_FORCE", 0) == 1
 local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) == 1
 local WOUND = probe.getenv_num("LEGAIA_WOUND", 0)
+local WOUND_EVERY = probe.getenv_num("LEGAIA_WOUND_EVERY", 0) ~= 0
 local FINISH = probe.getenv_num("LEGAIA_FINISH", 0) == 1
 local HOLD_MODULE = probe.getenv_num("LEGAIA_HOLD_MODULE", 0)
 local HOLD_MAGIC = probe.getenv_num("LEGAIA_HOLD_MAGIC", 0)
@@ -251,7 +255,7 @@ local function round_pokes(round)
         if a ~= nil and (probe.read_u16(a + 0x14C) or 0) > 0 then
             if FINISH and round > SPIRIT_ROUNDS then
                 probe.write_u16(a + 0x14C, 1)
-            elseif round == WOUND then
+            elseif round == WOUND or (WOUND_EVERY and WOUND > 0 and round > WOUND) then
                 probe.write_u16(a + 0x14C, math.max(1, math.floor(probe.read_u16(a + 0x14E) / 3)))
             end
         end
