@@ -8,6 +8,8 @@ What a build and a test run spend their time on, and what to run so an edit does
 - [What an edit costs](#what-an-edit-costs)
 - [The linker](#the-linker)
 - [Where a test run goes](#where-a-test-run-goes)
+- [Page faults](#page-faults)
+- [The commit-time gates](#the-commit-time-gates)
 - [Profiling without perf](#profiling-without-perf)
 
 ## Which profile
@@ -66,7 +68,32 @@ RUSTC_BOOTSTRAP=1 ../../target/release-test/deps/integration-<hash> -Zunstable-o
 
 Run from the crate directory, as cargo does: tests read paths relative to it.
 
-The suite's wall clock is set by the slowest binary, since cargo runs binaries one at a time and tests within one in parallel. With a disc, that is `engine-shell`'s `integration`, whose length is part C of the [full-game ladder](full-game-ladder.md#what-the-time-goes-to). `patcher`'s `integration` is the most CPU, nearly all of it in the tests that apply a whole mod to a whole disc. Disc-gated tests that open a session read `PROT.DAT` out of the image each time, which is a real but small share next to those.
+The suite's wall clock is set by the slowest binary, since cargo runs binaries one at a time and tests within one in parallel. With a disc, that is `engine-shell`'s `integration`, whose length is part C of the [full-game ladder](full-game-ladder.md#what-the-time-goes-to). `patcher`'s `integration` is the most CPU, nearly all of it in the tests that apply a whole mod to a whole disc. Disc-gated tests that open a session read `PROT.DAT` out of the image each time, which is a real but small share next to those, and small enough that sharing one index across a test binary is not worth tests no longer starting from a fresh one.
+
+## Page faults
+
+A test that holds the disc image in a `Vec` pays for it twice: the copy, and a page fault for every 4 KiB of the allocation, in the kernel and contended between threads. On the patcher suite those faults are more CPU than the tests' own code, and it shows as system time rather than in a profile of the program.
+
+The repo's [`.cargo/config.toml`](../../.cargo/config.toml) sets `GLIBC_TUNABLES=glibc.malloc.hugetlb=1` for everything cargo spawns. glibc then asks for transparent huge pages behind its large allocations (`madvise`, so it works where the system setting is `madvise`, as well as `always`), and one fault covers 2 MiB. It is an allocation hint: it moves nothing a program computes, peak memory stays about where it was, a clean build under it costs what one costs without it, and other libcs ignore the variable. An inherited `GLIBC_TUNABLES` wins, so `GLIBC_TUNABLES= cargo test ...` measures without it.
+
+It reaches what cargo runs. A binary started by hand, as in the profiling recipe below or by a `scripts/ci/*.py` driver, runs without it unless the shell sets it.
+
+`DiscPatcher::open` reads the `PROT.DAT` TOC in place out of the image rather than through a flat copy of the archive, for the same reason. `crates/web-patcher`'s byte pin runs its cases side by side, each over its own copy of the image. Neither moved a pinned digest.
+
+## The commit-time gates
+
+[`scripts/git-hooks/pre-commit`](../../scripts/git-hooks/pre-commit) runs the same checks in the same tree whatever the order, so the order is chosen for how fast a failure reports:
+
+1. The sub-second gates, one after another.
+2. `cargo fmt`, with its auto-fix, when Rust is staged: whatever reads source below reads what the commit will hold.
+3. The gates that take seconds, side by side (`start_gate` / `finish_gates`): the dump-corpus ratchets, the port catalog, and on a Rust commit the host-drift gates. Each logs to its own file, the logs print in the hook's order, and every failure is reported, not only the first.
+4. `cargo clippy` and the `wasm32` check, which are the longest and take cargo's build lock.
+
+A gate added to step 3 has to read the tree only, and not read another gate's output. The port catalog owns `target/port-catalog/`.
+
+In the Repo Gates job the one step that compiles is last for the same reason, and it builds into the per-toolchain target directory the other jobs use. Built into the cache root, `select-ci-target-dir.sh` in the next job pruned it as stale, and every run compiled `asset` from nothing.
+
+A gate that is slow is usually repeating itself. `check-css-cascade-order.py` keeps its parse of the shared stylesheet across pages, and the catalog's call graph resolves a name once per calling file. For a gate, the proof is its output: `port-catalog.py --live-audit` must write `target/port-catalog/` byte for byte as before.
 
 ## Profiling without perf
 
