@@ -80,7 +80,7 @@ scripts/ci/frame-bench-web.mjs --cpu-throttle 6               # a proxy, labelle
       <tr><td><code>--profile</code></td><td>A CPU profile: self time by function and by kind (JS, wasm, GL calls, the rest), garbage collector included, an inclusive table, and the call chains of the heaviest.</td></tr>
       <tr><td><code>--trace</code></td><td>A browser trace over six seconds: main-thread self time per trace event, inside and outside the animation-frame callback. It names what a profile calls <code>(program)</code>: style, layout, paint. <code>--trace-out file</code> writes the events, invalidation tracking included.</td></tr>
       <tr><td><code>--gl egl</code> / <code>swiftshader</code></td><td>The default asks for a real GPU and the output names the renderer it got; a software rasteriser swamps the page&rsquo;s cost with fragment work.</td></tr>
-      <tr><td><code>--entry-profile</code></td><td>Samples the disc load, each scene entry and each battle&rsquo;s first frames; time by function, self and inclusive.</td></tr>
+      <tr><td><code>--entry-profile</code></td><td>Samples the disc load, each scene entry and each battle&rsquo;s first frames; time by function, self and inclusive. A battle row adds its three longest frames as call trees; read those with <code>--vsync</code>.</td></tr>
       <tr><td><code>--reenter</code></td><td>Enters each scene twice in a row.</td></tr>
       <tr><td><code>--reload</code></td><td>Reloads the page once the disc is up and times a returning visitor&rsquo;s load from the page&rsquo;s own disc cache.</td></tr>
       <tr><td><code>--idle ms</code></td><td>Waits at the boot-mode prompt before the first pick, which is when the page prewarms the first entry.</td></tr>
@@ -146,7 +146,9 @@ scripts/ci/cost-ratchet.py --write-baseline       # after a real change, with it
     <li><strong>A page need not read what it may never play.</strong> The image is the largest read on the way in, and two thirds of it is movies and XA, which reach the page behind the engine (<a href="../subsystems/browser-host.html#disc-image">the disc image</a>).</li>
     <li><strong>The scene picker&rsquo;s first pick walks every scene.</strong> The arrival catalog reads each scene&rsquo;s MAN and <code>.MAP</code> to find its doors, once per process. A door, a New Game and a card load do not build it.</li>
     <li><strong>The capture frame&rsquo;s cost is the GPU, not the bytes.</strong> <code>readPixels</code> on the battle transition&rsquo;s arming frame waits for that frame to finish, and the wait does not shrink with the size of the read. An asynchronous read would land the capture frames later, which moves the transition.</li>
-    <li><strong>The worst battle-edge frame is the stage, not the capture.</strong> Where the transition hands over, one <code>play_frame_ticks</code> builds the battle stage and party forms.</li>
+    <li><strong>The worst battle-edge frame is the hand-over, not the capture.</strong> Where the transition hands over, one frame runs the fight&rsquo;s first tick and builds and uploads its whole render. Decoding the party&rsquo;s battle files and building the stage were the largest items; a memo holds them across fights and the transition&rsquo;s frames fill it ahead of a first fight.</li>
+    <li><strong>A first fight&rsquo;s hand-over pays for cold code.</strong> The same frame in a second fight is a fraction of the first&rsquo;s, and no memo reaches that.</li>
+    <li><strong>An uncapped row&rsquo;s entry can be the GPU&rsquo;s queue.</strong> With the frame limit off, the first <code>bufferData</code> after a heavy row blocks until the queue drains. With <code>--vsync</code> it is gone.</li>
   </ul>
 </section>
 

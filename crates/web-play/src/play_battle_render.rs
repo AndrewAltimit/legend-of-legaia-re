@@ -354,6 +354,39 @@ fn flatten_frame(frame: &[legaia_actor_formats::monster_archive::PartPose]) -> V
 }
 
 impl LegaiaRuntime {
+    /// Across the encounter transition's frames, have what the coming battle
+    /// edge reads off the disc ready: one step a display frame
+    /// ([`legaia_engine_scene_host::scene_host::SceneHost::prewarm_battle_edge`]),
+    /// from the frame after the transition arms, whose capture is that frame's
+    /// cost. Writes no world state, so nothing the simulation or a frame
+    /// draws can see whether it ran.
+    pub(crate) fn step_battle_prewarm(&mut self) {
+        let Some(host) = self.scene_host.host_mut() else {
+            return;
+        };
+        let in_transition = matches!(
+            host.world.encounters.session.as_ref().map(|s| s.phase()),
+            Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
+        ) && host.world.battle.intro.is_some();
+        if !in_transition {
+            self.battle_prewarm_step = None;
+            return;
+        }
+        let step = match self.battle_prewarm_step {
+            None => {
+                self.battle_prewarm_step = Some(0);
+                return;
+            }
+            Some(usize::MAX) => return,
+            Some(step) => step,
+        };
+        self.battle_prewarm_step = Some(if host.prewarm_battle_edge(step) {
+            step + 1
+        } else {
+            usize::MAX
+        });
+    }
+
     /// React to the `Field -> Battle` mode edge: build the battle VRAM +
     /// meshes the shared battle SM's poses are drawn with. The browser twin of the native
     /// `enter_battle_render`; soft-fails leg by leg (a scene with no stage
@@ -394,7 +427,7 @@ impl LegaiaRuntime {
         // Stage backdrop (scene battle build). Its VRAM becomes the battle
         // base so the dome renders textured; field VRAM is the fallback.
         let mut vram = match &stage {
-            Some(s) => s.vram.clone(),
+            Some(s) => s.resources.vram.clone(),
             None => field_base,
         };
         // Battle effect-texture atlas (PROT 870) into the battle copy only -
@@ -415,12 +448,13 @@ impl LegaiaRuntime {
         // edit + second-copy transform this host consumes through
         // `legaia_scene_formats::battle_backdrop`, exactly like the native window.
         if let Some(BattleStage {
-            dome: (tmd, raw),
+            resources,
             second,
             grid_far: gf,
             ..
         }) = &stage
         {
+            let (tmd, raw) = &resources.dome;
             // `_DAT_8007B64B` (region `+8` bit 5) keeps object 1, and the
             // evolved-Cort arrival's hand-back rebinds slot 0 to it - one
             // shared kernel, `SceneHost::battle_stage_object_indices`.
@@ -476,7 +510,9 @@ impl LegaiaRuntime {
             let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
                 continue;
             };
-            let Some(vmesh) = mesh.battle_render_mesh(slot, &mut vram) else {
+            let Some((vmesh, object_ids)) =
+                mesh.battle_render_mesh_with_object_ids(slot, &mut vram)
+            else {
                 continue;
             };
             // The boss effect page the loader stages behind every id above
@@ -488,8 +524,6 @@ impl LegaiaRuntime {
                 continue;
             }
             bound_slots.push(slot);
-            let object_ids =
-                legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
             let idle = legaia_actor_formats::monster_archive::idle_animation(&archive, monster_id)
                 .ok()
                 .flatten();
@@ -652,7 +686,9 @@ impl LegaiaRuntime {
             let Ok(tmd) = legaia_tmd::parse(mesh.tmd_bytes()) else {
                 continue;
             };
-            let Some(vmesh) = mesh.battle_render_mesh(seat.tex_slot, &mut vram) else {
+            let Some((vmesh, object_ids)) =
+                mesh.battle_render_mesh_with_object_ids(seat.tex_slot, &mut vram)
+            else {
                 continue;
             };
             legaia_actor_formats::monster_archive::write_boss_effect_page(
@@ -663,8 +699,6 @@ impl LegaiaRuntime {
             if vmesh.indices.is_empty() {
                 continue;
             }
-            let object_ids =
-                legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, mesh.tmd_bytes()).1;
             let rest_pose =
                 legaia_actor_formats::monster_archive::idle_animation(&archive, seat.monster_id)
                     .ok()

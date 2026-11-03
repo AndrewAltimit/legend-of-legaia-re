@@ -513,11 +513,48 @@ impl SceneHost {
         {
             return;
         }
-        let forms = legaia_engine_core::battle_party_form::install_party_battle_forms(
+        let forms = legaia_engine_core::battle_party_form::install_party_battle_forms_memo(
             &self.index,
             &mut self.world,
+            &mut self.party_form_memo,
         );
         self.battle_party_forms = Some(forms);
+    }
+
+    /// One step of what the coming `Field -> Battle` edge will want off the
+    /// disc, for a host to run across the encounter transition's frames, so
+    /// the edge's frame finds it ready: the entries the edge reads, each
+    /// member's battle form, the fight's stage. `false` once `step` is past
+    /// the last. Fills the index cache and the memos and writes nothing else;
+    /// a key the edge then reads differently is a miss and builds as it would
+    /// have.
+    pub fn prewarm_battle_edge(&mut self, step: usize) -> bool {
+        use legaia_engine_core::battle_party_form::{ProtFormDisc, party_form_key};
+        let party = usize::from(self.world.party.party_count).min(3);
+        match step {
+            0 => {
+                for entry in [
+                    MONSTER_ARCHIVE_PROT_ENTRY,
+                    legaia_container_formats::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32,
+                    u32::from(legaia_actor_formats::summon_readef::READEF_PROT_INDEX),
+                ] {
+                    let _ = self.index.entry_bytes(entry);
+                }
+                self.party_form_memo.sources(&ProtFormDisc(&self.index));
+            }
+            s if s <= party => {
+                let disc = ProtFormDisc(&self.index);
+                if let Some(sources) = self.party_form_memo.sources(&disc) {
+                    let key = party_form_key(&self.world, s - 1);
+                    self.party_form_memo.prepare(&disc, &sources, key);
+                }
+            }
+            s if s == party + 1 => {
+                let _ = self.battle_stage_resources();
+            }
+            _ => return false,
+        }
+        true
     }
 
     /// The fight in progress's party battle forms, for a renderer: meshes,

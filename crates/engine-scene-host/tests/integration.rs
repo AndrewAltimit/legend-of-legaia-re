@@ -17,6 +17,7 @@ mod baka_minigame_real;
 mod balden_terrain_height_disc;
 mod battle_bank_bgm_disc;
 mod battle_camera_heights_disc;
+mod battle_entry_memo_disc;
 mod battle_stage_entries_real;
 mod battle_tutorial_disc;
 mod bgm_midscene_change_disc;

@@ -95,7 +95,9 @@ fn a_pack_fight_is_fought_on_the_stage_it_names() {
     let mut tinted = legaia_tim::Vram::new();
     upload_battle_stage_tims_into_vram_tinted(&map01, stage.stage_entry, &mut plain, None);
     upload_battle_stage_tims_into_vram_tinted(&map01, stage.stage_entry, &mut tinted, Some(TINT));
-    let row: Vec<_> = (0..16).map(|x| stage.vram.pixel(x, 479)).collect();
+    let row: Vec<_> = (0..16)
+        .map(|x| stage.resources.vram.pixel(x, 479))
+        .collect();
     let want: Vec<_> = (0..16).map(|x| tinted.pixel(x, 479)).collect();
     let raw: Vec<_> = (0..16).map(|x| plain.pixel(x, 479)).collect();
     assert_eq!(row, want, "the stage VRAM holds the tinted palette");

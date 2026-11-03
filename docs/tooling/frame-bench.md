@@ -173,7 +173,11 @@ armed; otherwise a slow run would read whatever rung the page had stepped to by 
 off by default. A row says when the page stepped during it.
 
 `--entry-profile` samples the disc load, each scene entry and each battle's first
-frames and prints time by function, self and inclusive of callees. `--reenter`
+frames and prints time by function, self and inclusive of callees. A battle row adds its
+three longest frames, each as a call tree, since the table over the window lets many
+ordinary frames outweigh the one a player feels; a `second_fight` row prints the same for
+the fight before it. Read those with `--vsync`, where frames do not run together.
+Function names need a bundle with a name section (below). `--reenter`
 enters each scene twice in a row, and `--reload` reloads the page once the disc is
 up and times a returning visitor's load from the page's own disc cache. `--idle ms`
 waits at the boot-mode prompt before the first pick, which is when the page prewarms
@@ -256,9 +260,21 @@ These are shapes that recur, not measurements:
   shrink with the size of the read. An asynchronous read would land the capture frames
   later, which moves the transition. The landing reads only the pixels the rects sample
   (`blit_bottom_up_rgba_into_vram`).
-- **The worst battle-edge frame is the stage, not the capture.** Where the transition
-  hands over, one `play_frame_ticks` builds the battle stage and party forms. That is the
-  frame `--entry-profile`'s `battle entry` table names.
+- **The worst battle-edge frame is the hand-over, not the capture.** Where the transition
+  hands over, one frame runs the fight's first tick and builds and uploads its whole render.
+  What it read off the disc is gone from it: decoding the party's battle files and building
+  the stage were the two largest items, a pure function of a small key each, so a memo holds
+  them across fights and the transition's frames fill it ahead of a first fight
+  ([the prewarm](../subsystems/browser-host.md#battle-edge-prewarm)). The prewarm's stage step
+  is then the transition's longest frame.
+- **A first fight's hand-over pays for cold code.** The same frame in a second fight, doing
+  the same work, is a fraction of the first's: the code it runs has not run before, in wasm or
+  JS, and no memo reaches that.
+- **An uncapped row's entry can be the GPU's queue.** With the frame limit off the main thread
+  outruns the GPU, so the first `bufferData` after a heavy row blocks until the queue drains.
+  A `second_fight` entry after `summon_cast` shows it: `bufferData` holds the time, the wasm
+  export `enter_field` does not move, and with `--vsync` it is gone. Read an entry with the
+  limit on before calling it a cost.
 
 ## See also
 

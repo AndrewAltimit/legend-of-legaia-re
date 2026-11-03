@@ -201,6 +201,7 @@ impl LegaiaRuntime {
             }
         }
         r.player_rig_rebuilt = self.player_rig_gen != rig_gen;
+        self.step_battle_prewarm();
         Ok(r)
     }
 }

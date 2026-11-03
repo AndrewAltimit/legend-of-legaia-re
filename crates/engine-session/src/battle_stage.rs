@@ -11,11 +11,9 @@
 //! draw half, which only reads it. One resolver replaces the two hosts'
 //! copies of the stage build.
 
-use legaia_engine_scene::scene::Scene;
-use legaia_engine_scene::scene_resources::{
-    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
-};
-use legaia_engine_scene_host::scene_host::SceneHost;
+use std::sync::Arc;
+
+use legaia_engine_scene_host::scene_host::{BattleStageResources, SceneHost};
 use legaia_scene_formats::battle_backdrop::{MirrorXTable, SecondCopy};
 
 /// The PROT entry of the monster archive (meshes, idle clips).
@@ -25,10 +23,8 @@ pub const MONSTER_ARCHIVE_PROT_INDEX: u32 = 867;
 pub struct BattleStage {
     /// The PROT entry of the stage stream the fight's region names.
     pub stage_entry: u32,
-    /// Scene + stage-dome textures resident - becomes the battle VRAM base.
-    pub vram: legaia_tim::Vram,
-    /// The backdrop shell TMD plus the raw bytes it was parsed from.
-    pub dome: (legaia_tmd::Tmd, Vec<u8>),
+    /// The stage VRAM and backdrop shell, shared with the host's memo.
+    pub resources: Arc<BattleStageResources>,
     /// The second backdrop copy's per-stage transform (`DAT_80078B50`).
     pub second: SecondCopy,
     /// Ground-grid depth-cue far colour, display `0..1` - the backdrop far
@@ -38,8 +34,6 @@ pub struct BattleStage {
     /// `DAT_8007BDA8` flag (`World::battle_actor_draw_plan`) and the backdrop
     /// ramp's ceiling.
     pub outdoor: bool,
-    /// How many stage TIMs the stage stream re-uploaded over its siblings.
-    pub restored_tims: usize,
 }
 
 /// Build the current scene's battle-stage backdrop bundle: the stage VRAM,
@@ -49,55 +43,8 @@ pub struct BattleStage {
 /// second copy is the half turn and the stage indoor, the safer arms.
 // REF: FUN_800513f0
 pub fn resolve_battle_stage(host: &SceneHost, scus: Option<&[u8]>) -> Option<BattleStage> {
-    // A Muscle Dome leg fights on the arena backdrop, which lives in its own
-    // data block rather than the departure scene's
-    // (`SceneHost::battle_stage_scene`).
-    let other;
-    let scene = match host.battle_stage_scene() {
-        Some(name) => {
-            other = Scene::load(&host.index, name).ok()?;
-            &other
-        }
-        None => host.scene.as_ref()?,
-    };
-    // Not the block's first stage stream: a scene bundle carries one per
-    // sub-area, and the region the fight starts in names which one
-    // (`SceneHost::battle_stage_entry`, the region reader's stage variant
-    // `_DAT_8007BD60`).
-    let stage_entry = host.battle_stage_entry()?;
-    let shared: Vec<Scene> = FIELD_SHARED_BLOCKS
-        .iter()
-        .filter_map(|name| Scene::load(&host.index, name).ok())
-        .collect();
-    let refs: Vec<&Scene> = shared.iter().collect();
-    let system_ui = host.index.system_ui_bundle().ok();
-    let (res, _) = SceneResources::build_targeted_with_options(
-        scene,
-        &refs,
-        BuildOptions {
-            kind: SceneLoadKind::Battle,
-            upload_all_tims: true,
-            // Boot-resident system-UI bundle: resident through battle in
-            // retail (uploaded once at boot, never evicted).
-            system_ui: system_ui.as_deref(),
-        },
-    )
-    .ok()?;
-    // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
-    let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
-    // Take back the VRAM this stage owns. A bundle carries one stream per
-    // sub-area and they all declare the SAME pages + CLUT rows, so the
-    // DMA-every-TIM build leaves whichever sibling was written last holding
-    // them. Retail only ever has the recorded stream resident.
-    let mut vram = res.vram.clone();
-    // An expansion pack's stage tint rides the stage's own palettes, so the
-    // shell and the ground tile take it on both hosts alike.
-    let restored_tims = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram_tinted(
-        scene,
-        stage_entry,
-        &mut vram,
-        host.battle_stage_tint(),
-    );
+    let resources = host.battle_stage_resources()?;
+    let stage_entry = resources.stage_entry;
     // Which transform retail gives the SECOND backdrop copy: a half turn
     // about Y, or an X mirror on the stages the `DAT_80078B50` table names.
     // `town01` IS on the mirror list, so half-turning it plants a second
@@ -122,12 +69,10 @@ pub fn resolve_battle_stage(host: &SceneHost, scus: Option<&[u8]>) -> Option<Bat
         .is_some_and(|t| t.contains_prot_index(stage_entry));
     Some(BattleStage {
         stage_entry,
-        vram,
-        dome: (dome.tmd.clone(), dome.raw.clone()),
+        resources,
         second,
         grid_far,
         outdoor,
-        restored_tims,
     })
 }
 
@@ -160,9 +105,9 @@ pub fn stage_battle_world(
     }
     host.world.battle.stage_outdoor = stage.as_ref().is_some_and(|s| s.outdoor);
     host.world.fog_volume.battle_luma = stage.as_ref().and_then(|s| {
-        let (tmd, raw) = &s.dome;
+        let (tmd, raw) = &s.resources.dome;
         let objects = host.battle_stage_object_indices(tmd.objects.len());
-        let mut vram = s.vram.clone();
+        let mut vram = s.resources.vram.clone();
         if let Err(e) =
             legaia_engine_scene::scene::upload_flame_atlas_into_vram(&host.index, &mut vram, true)
         {

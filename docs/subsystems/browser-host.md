@@ -431,6 +431,25 @@ effect atlas through the shared `legaia_engine_ui::battle_numerals` builder the
 native window emits through; the font-atlas layout is only the fallback for
 frames before the battle VRAM exists.
 
+
+### Battle edge prewarm
+
+The hand-over frame reads a lot off the disc, and all of it is known when the transition
+starts: the party, its equipment and the fight's stage. So `play_frame_ticks` runs one step of
+`SceneHost::prewarm_battle_edge` per display frame while the encounter session sits in
+`Transition`, from the frame after the transition arms, whose capture is that frame's cost:
+the entries the edge reads, each member's battle form, the stage's resources.
+
+The steps fill two memos on the scene host and the disc index's cache, and write nothing else,
+so no frame or tick can see whether they ran. `PartyFormMemo` holds finished battle-form builds
+keyed on the band, the roster slot and the five equipment bytes; a hit hands back the form and
+appends the VRAM writes the build recorded, in its order. `SceneHost::battle_stage_resources`
+holds the last stage, keyed on the block, the stage stream and a pack's tint, and does not hold
+a scene over an expansion map's synthetic layer. A key the edge reads differently from the
+prewarm's is a miss and builds as it would have. Both hosts and the headless drivers go through
+the memos; only this page prewarms. `LEGAIA_BATTLE_MEMO_VERIFY=1` rebuilds behind every hit and
+panics on a difference.
+
 ## Battle effects (`play_battle_fx`)
 
 The browser twin of the native window's per-frame FX block: it drains the

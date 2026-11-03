@@ -175,6 +175,12 @@
   <p>A consumer asks <code>span(lba, sectors)</code>, which answers from what is resident or null. Movies and XA staging poll every frame anyway, so a span that beats the worker is read with <code>prefetch</code> and the consumer installs on the next frame it polls. The engine holds the world until a movie installs, and a span that will not read (the file moved) makes the movie finish unplayed, as a page with no disc does. A trapped engine is rebuilt by reading the head again.</p>
 </section>
 
+<section class="doc-section" id="battle-edge">
+  <h2>The battle edge</h2>
+  <p>The frame where the transition hands over to a fight reads a lot off the disc, and all of it is known when the transition starts: the party, its equipment and the fight&rsquo;s stage. So while the encounter sits in its transition, the page runs one step per frame of the scene host&rsquo;s prewarm: the entries the edge reads, each member&rsquo;s battle form, the stage&rsquo;s resources.</p>
+  <p>The steps fill two memos and the disc index&rsquo;s cache and write nothing else, so no frame or tick can see whether they ran. A key the edge then reads differently is a miss, and builds as it would have. Both hosts and the headless drivers go through the memos; only this page prewarms.</p>
+</section>
+
 <section class="doc-section" id="other">
   <h2>The other surfaces</h2>
     <p>The minigames page holds the play hosts&rsquo; <code>AudioDirector</code> over one <code>WebAudioOut</code>, opened inside a user gesture. A tab change is that game&rsquo;s mode entry: the old game&rsquo;s voices and armed cues go, and the new game&rsquo;s banks stage as its door warp stages them. Every cue keys a live SPU voice, so its envelope, volume, pan, reverb send and closed-slot silence are the play hosts&rsquo;; a disc test renders each cue against the director and requires the same samples, and a host-drift tier rejects a cue played as a decoded buffer. Only the BGM is a buffer, an offline render at the same unity gain.</p>

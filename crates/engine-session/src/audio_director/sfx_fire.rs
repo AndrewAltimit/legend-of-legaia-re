@@ -338,7 +338,7 @@ impl<S: AudioSink> AudioDirector<S> {
     pub fn sync_battle_monster_banks(
         &mut self,
         want: &[(u8, u16)],
-        read_archive: impl FnOnce() -> Option<Vec<u8>>,
+        read_archive: impl FnOnce() -> Option<std::sync::Arc<Vec<u8>>>,
     ) {
         self.observe_track();
         let parked = self.tail.monsters().map(|(k, _)| k.clone());
@@ -429,7 +429,7 @@ impl<S: AudioSink> AudioDirector<S> {
         let monster_banks = world.battle_monster_sound_banks();
         self.sync_battle_monster_banks(&monster_banks, || {
             index
-                .entry_bytes_extended(
+                .entry_bytes(
                     legaia_container_formats::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32,
                 )
                 .ok()

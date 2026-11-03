@@ -246,6 +246,11 @@ pub struct SceneHost {
     /// `legaia_engine_battle_loop::battle_state::BattleState::entry_serial`; kept for the renderers
     /// until the battle ends. `None` outside battle.
     battle_party_forms: Option<legaia_engine_battle::battle_party_form::BattlePartyForms>,
+    /// Finished battle-form builds, kept across fights: a pure function of
+    /// the disc behind [`Self::index`] and each member's key.
+    party_form_memo: legaia_engine_battle::battle_party_form::PartyFormMemo,
+    /// The last fight's stage resources ([`Self::battle_stage_resources`]).
+    battle_stage_memo: std::sync::Mutex<Option<battle_stage::MemoisedStage>>,
     /// What the last **mode-24 minigame door-warp** drain did, if one has run.
     ///
     /// Deliberately a host field rather than a [`SceneTickEvent`] variant: the
@@ -412,8 +417,8 @@ mod audio_dialog;
 mod battle_intro_inputs;
 mod battle_stage;
 pub use battle_stage::{
-    ARENA_STAGE_SCENE, BattleStageLayers, backdrop_copy_nclip, backdrop_shell_color_mesh,
-    backdrop_shell_mesh, backdrop_shell_nclip, backdrop_slot_1_basis,
+    ARENA_STAGE_SCENE, BattleStageLayers, BattleStageResources, backdrop_copy_nclip,
+    backdrop_shell_color_mesh, backdrop_shell_mesh, backdrop_shell_nclip, backdrop_slot_1_basis,
 };
 mod effects;
 pub mod expansion_cards;

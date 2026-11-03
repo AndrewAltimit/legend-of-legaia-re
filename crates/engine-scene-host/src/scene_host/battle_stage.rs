@@ -9,8 +9,91 @@
 //! ([`legaia_scene_formats::battle_backdrop::battle_stage_entry_for_variant`]). So a scene
 //! with several sub-area backdrops fights in whichever one the region names.
 
+use std::sync::Arc;
+
 use super::SceneHost;
+use legaia_engine_scene::scene::Scene;
+use legaia_engine_scene::scene_resources::{
+    BuildOptions, FIELD_SHARED_BLOCKS, SceneLoadKind, SceneResources,
+};
 use legaia_scene_formats::battle_backdrop::SecondCopy;
+
+/// What a fight's stage loads off the disc: the part of the stage the
+/// `Field -> Battle` edge can reuse from the last fight in the same place.
+pub struct BattleStageResources {
+    /// The PROT entry of the stage stream the fight's region names.
+    pub stage_entry: u32,
+    /// Scene + stage-dome textures resident - becomes the battle VRAM base.
+    pub vram: legaia_tim::Vram,
+    /// The backdrop shell TMD plus the raw bytes it was parsed from.
+    pub dome: (legaia_tmd::Tmd, Vec<u8>),
+    /// How many stage TIMs the stage stream re-uploaded over its siblings.
+    pub restored_tims: usize,
+}
+
+/// What [`BattleStageResources`] are a pure function of, past the disc: the
+/// block the stage comes from, the stage stream and a pack's tint. A scene
+/// standing over an expansion map's synthetic layer is not memoised.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct BattleStageKey {
+    scene: String,
+    start: u32,
+    end: u32,
+    stage_entry: u32,
+    tint: Option<[u8; 3]>,
+}
+
+/// The last stage built, by [`BattleStageKey`].
+pub(super) type MemoisedStage = (BattleStageKey, Arc<BattleStageResources>);
+
+/// Build a stage's resources off the disc: the battle-kind scene build over
+/// the shared field blocks, then the stage's own TIMs back on top.
+fn build_stage_resources(
+    host: &SceneHost,
+    scene: &Scene,
+    stage_entry: u32,
+    tint: Option<[u8; 3]>,
+) -> Option<BattleStageResources> {
+    let shared: Vec<Scene> = FIELD_SHARED_BLOCKS
+        .iter()
+        .filter_map(|name| Scene::load(&host.index, name).ok())
+        .collect();
+    let refs: Vec<&Scene> = shared.iter().collect();
+    let system_ui = host.index.system_ui_bundle().ok();
+    let (res, _) = SceneResources::build_targeted_with_options(
+        scene,
+        &refs,
+        BuildOptions {
+            kind: SceneLoadKind::Battle,
+            upload_all_tims: true,
+            // Boot-resident system-UI bundle: resident through battle in
+            // retail (uploaded once at boot, never evicted).
+            system_ui: system_ui.as_deref(),
+        },
+    )
+    .ok()?;
+    // The stage dome is the leading TMD of the scene_tmd_stream stage entry.
+    let dome = res.tmds.iter().find(|t| t.entry_idx == stage_entry)?;
+    // Take back the VRAM this stage owns. A bundle carries one stream per
+    // sub-area and they all declare the SAME pages + CLUT rows, so the
+    // DMA-every-TIM build leaves whichever sibling was written last holding
+    // them. Retail only ever has the recorded stream resident.
+    let mut vram = res.vram.clone();
+    // An expansion pack's stage tint rides the stage's own palettes, so the
+    // shell and the ground tile take it on both hosts alike.
+    let restored_tims = legaia_engine_scene::scene::upload_battle_stage_tims_into_vram_tinted(
+        scene,
+        stage_entry,
+        &mut vram,
+        tint,
+    );
+    Some(BattleStageResources {
+        stage_entry,
+        vram,
+        dome: (dome.tmd.clone(), dome.raw.clone()),
+        restored_tims,
+    })
+}
 
 /// A backdrop's drawn objects split by whether the backdrop draw spins them.
 ///
@@ -172,6 +255,62 @@ pub fn backdrop_shell_nclip(second: SecondCopy) -> u32 {
 pub const ARENA_STAGE_SCENE: &str = "other6";
 
 impl SceneHost {
+    /// The stage resources for a fight starting now, from the last fight's
+    /// when it stood on the same stage. `None` when the scene has no stage
+    /// entry for the fight's region.
+    ///
+    /// `LEGAIA_BATTLE_MEMO_VERIFY=1` rebuilds behind every hit and panics on
+    /// a difference.
+    pub fn battle_stage_resources(&self) -> Option<Arc<BattleStageResources>> {
+        // A Muscle Dome leg fights on the arena backdrop, which lives in its
+        // own data block rather than the departure scene's
+        // (`SceneHost::battle_stage_scene`).
+        let other;
+        let scene = match self.battle_stage_scene() {
+            Some(name) => {
+                other = Scene::load(&self.index, name).ok()?;
+                &other
+            }
+            None => self.scene.as_ref()?,
+        };
+        // Not the block's first stage stream: a scene bundle carries one per
+        // sub-area, and the region the fight starts in names which one
+        // (`SceneHost::battle_stage_entry`, the region reader's stage variant
+        // `_DAT_8007BD60`).
+        let stage_entry = self.battle_stage_entry()?;
+        let tint = self.battle_stage_tint();
+        let key = scene.overrides.is_none().then(|| BattleStageKey {
+            scene: scene.name.clone(),
+            start: scene.start,
+            end: scene.end,
+            stage_entry,
+            tint,
+        });
+        let mut memo = self
+            .battle_stage_memo
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let (Some(key), Some((held, res))) = (&key, memo.as_ref())
+            && key == held
+        {
+            if std::env::var_os("LEGAIA_BATTLE_MEMO_VERIFY").is_some() {
+                let fresh = build_stage_resources(self, scene, stage_entry, tint)?;
+                assert!(
+                    fresh.vram.as_bytes() == res.vram.as_bytes()
+                        && fresh.vram.written_bytes() == res.vram.written_bytes()
+                        && fresh.dome.1 == res.dome.1,
+                    "memoised battle stage differs from a fresh build: {key:?}"
+                );
+            }
+            return Some(res.clone());
+        }
+        let res = Arc::new(build_stage_resources(self, scene, stage_entry, tint)?);
+        if let Some(key) = key {
+            *memo = Some((key, res.clone()));
+        }
+        Some(res)
+    }
+
     /// The battle-stage backdrop entry for a fight starting now: the entry the
     /// last region setup's stage variant names in the loaded scene, falling
     /// back to [`legaia_engine_scene::scene::ProtIndex::battle_stage_entry_for_scene`] when

@@ -361,6 +361,9 @@ pub struct LegaiaRuntime {
     /// Monotonic battle-render build counter; the page re-uploads the battle
     /// scene when `play_battle_generation` changes.
     pub(crate) battle_render_generation: u32,
+    /// The next step of [`Self::step_battle_prewarm`], `usize::MAX` past the
+    /// last; `None` outside an encounter transition.
+    pub(crate) battle_prewarm_step: Option<usize>,
     /// This frame's built battle FX geometry (effect-pool billboards + the 3D
     /// FX model draw list), rebuilt by `play_battle_fx_sync` and read back by
     /// the `play_battle_fx_*` accessors ([`crate::play_battle_fx`]).
@@ -555,6 +558,7 @@ impl LegaiaRuntime {
             battle_hud: legaia_engine_battle::battle_hud_state::BattleHud::new(),
             encounter_banner: None,
             prev_scene_mode: None,
+            battle_prewarm_step: None,
             battle_render: None,
             battle_render_generation: 0,
             battle_fx: Default::default(),

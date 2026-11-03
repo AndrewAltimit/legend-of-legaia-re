@@ -25,7 +25,8 @@ use std::sync::Arc;
 
 use legaia_actor_formats::monster_archive::MonsterAnimation;
 use legaia_engine_battle::battle_party_form::{
-    BattlePartyForms, PartyBattleForm, PartyFormDisc, PartyFormSources, VramSink, art_character,
+    BattlePartyForms, PartyBattleForm, PartyFormDisc, PartyFormKey, PartyFormMemo,
+    PartyFormSources, VramSink, art_character,
 };
 use legaia_engine_scene::scene::ProtIndex;
 
@@ -53,6 +54,17 @@ pub fn install_party_battle_forms(
     index: &ProtIndex,
     world: &mut crate::world::World,
 ) -> BattlePartyForms {
+    install_party_battle_forms_memo(index, world, &mut PartyFormMemo::default())
+}
+
+/// [`install_party_battle_forms`] over a host's memo of finished builds: a
+/// member in the same clothes as a recent fight installs that build, and its
+/// VRAM writes replay in the log as the build made them.
+pub fn install_party_battle_forms_memo(
+    index: &ProtIndex,
+    world: &mut crate::world::World,
+    memo: &mut PartyFormMemo,
+) -> BattlePartyForms {
     let mut out = BattlePartyForms {
         battle_serial: world.battle.entry_serial,
         ..Default::default()
@@ -68,13 +80,13 @@ pub fn install_party_battle_forms(
     if party_count == 0 {
         return out;
     }
-    let Some(sources) = PartyFormSources::load(&ProtFormDisc(index)) else {
+    let Some(sources) = memo.sources(&ProtFormDisc(index)) else {
         log::warn!("battle party: PROT 1204 fallback pack unavailable; no battle forms");
         return out;
     };
     for member in 0..party_count {
-        if let Some(mut form) =
-            build_party_battle_form(index, world, &sources, &mut out.vram_writes, member)
+        let key = party_form_key(world, member);
+        if let Some(mut form) = memo.form(&ProtFormDisc(index), &sources, &mut out.vram_writes, key)
         {
             world.install_party_battle_form(&mut form);
             out.forms.push(form);
@@ -83,18 +95,11 @@ pub fn install_party_battle_forms(
     out
 }
 
-/// Build member `member`'s battle form off the world's roster: the
-/// occupying character's roster slot and its equipped item ids (from the
+/// What member `member`'s battle form is built from, off the world's roster:
+/// the occupying character's roster slot and its equipped item ids (from the
 /// canonical roster record; an absent or zeroed record assembles the
-/// all-default, unequipped sections), then
-/// [`legaia_engine_battle::battle_party_form::build_party_battle_form`].
-pub fn build_party_battle_form(
-    index: &ProtIndex,
-    world: &crate::world::World,
-    sources: &PartyFormSources,
-    vram: &mut impl VramSink,
-    member: usize,
-) -> Option<PartyBattleForm> {
+/// all-default, unequipped sections).
+pub fn party_form_key(world: &crate::world::World, member: usize) -> PartyFormKey {
     let cslot = world.party_roster_slot(member);
     // The record's bytes, with an expansion pack item's borrowed look in a
     // slot it fills (the record's own bytes without a pack).
@@ -108,13 +113,31 @@ pub fn build_party_battle_form(
             [s[0], s[1], s[2], s[3], s[4]]
         })
         .unwrap_or_default();
+    PartyFormKey {
+        member,
+        cslot,
+        equipped,
+    }
+}
+
+/// Build member `member`'s battle form off the world's roster
+/// ([`party_form_key`]), through
+/// [`legaia_engine_battle::battle_party_form::build_party_battle_form`].
+pub fn build_party_battle_form(
+    index: &ProtIndex,
+    world: &crate::world::World,
+    sources: &PartyFormSources,
+    vram: &mut impl VramSink,
+    member: usize,
+) -> Option<PartyBattleForm> {
+    let key = party_form_key(world, member);
     legaia_engine_battle::battle_party_form::build_party_battle_form(
         &ProtFormDisc(index),
         sources,
         vram,
-        member,
-        cslot,
-        &equipped,
+        key.member,
+        key.cslot,
+        &key.equipped,
     )
 }
 
@@ -135,11 +158,11 @@ impl crate::world::World {
             self.set_actor_battle_animation(member, player);
         }
         if let Some(clips) = form.action_clips.take() {
-            self.set_actor_battle_action_clips(member, std::sync::Arc::new(clips));
+            self.set_actor_battle_action_clips(member, clips);
         }
         let bank = std::mem::take(&mut form.art_bank);
         if !bank.is_empty() {
-            self.set_actor_battle_art_bank(member, std::sync::Arc::new(bank));
+            self.set_actor_battle_art_bank(member, bank);
         }
         if let Some(character) = art_character(form.cslot) {
             self.install_art_bank_records(character, &form.art_records);
