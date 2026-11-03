@@ -637,6 +637,23 @@ no such distinction - 3D primitives and screen-space packets share one
 ordering table and one `DrawOTag` walk - so the split is a port artifact and
 this variant is where the halves meet.
 
+<a id="a-casts-frames-build-on-earlier-ones"></a>
+
+**A cast's frames build on earlier ones.** Retail's battle frames never clear.
+A frame's opaque stage normally hides that, but a cast's arms can drop the stage
+and draw additive layers alone, and those layers sum over the frames before,
+drained by the armed wash
+([cast modules](cast-module.md#presentation-calls)). `Renderer::set_frame_persist`
+reproduces it on the native target, which is the one target that outlives its
+frame: while `World::cast_frame_persists` holds, each frame loads an earlier
+frame instead of clearing, and a capture seeds from the same one. Retail's
+earlier frame is the same display page two game frames back, eight vsyncs at the
+frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
+rather than building on the last one, which fills the buffer eight times too
+fast. The frame step itself is the engine's fixed reading of those arms, not a
+measurement of the running frame's cost. The window's own target and the
+browser's canvas still clear: there the additive arms draw dimmer than retail.
+
 **Backdrops draw first.** A screen primitive whose four corners sit at the
 far plane (`ScreenPrim::is_backdrop`) is one retail links into the farthest
 bucket: PROT 0898's cast colour wash (`ot + 0x3FFC`) and the overworld sky

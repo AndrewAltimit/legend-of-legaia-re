@@ -43,7 +43,13 @@ impl Renderer {
             // The native target: the frame draws at the display's own size,
             // then the window magnifies it.
             Some(native) => {
+                if self.frame_persist.get() {
+                    self.load_persisted_frame(&native.texture);
+                }
                 self.encode_frame(target, &native.view)?;
+                if self.frame_persist.get() {
+                    self.store_persisted_frame();
+                }
                 self.present_native(native, &view);
             }
             None => self.encode_frame(target, &view)?,
@@ -274,7 +280,14 @@ impl Renderer {
                     a: 1.0,
                 },
             };
-            let viewport_fill = viewport_fill.is_some();
+            // A frame that builds on the last one ([`Self::set_frame_persist`]):
+            // only the native target outlives its frame, and a scene alone
+            // draws into it.
+            let persist = self.frame_persist.get()
+                && self.native.is_some()
+                && bloom_target.is_none()
+                && matches!(target, RenderTarget::Scene(_));
+            let viewport_fill = viewport_fill.is_some() && !persist;
             let mut rp = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("legaia frame pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -282,7 +295,11 @@ impl Renderer {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear_rgba),
+                        load: if persist {
+                            wgpu::LoadOp::Load
+                        } else {
+                            wgpu::LoadOp::Clear(clear_rgba)
+                        },
                         store: wgpu::StoreOp::Store,
                     },
                 })],

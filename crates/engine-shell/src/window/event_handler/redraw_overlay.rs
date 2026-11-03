@@ -465,6 +465,11 @@ impl PlayWindowApp {
             self.session.pause_wipe().fade_level(),
             host,
         );
+        // A cast's frames build on the last one where the target allows it, and
+        // the armed wash drains what they hold from under the scene.
+        if self.session.host.world.cast_frame_persists() {
+            under.extend(self.session.host.world.cast_armed_wash_prim());
+        }
         // The multiplayer room screen / roaming panel, over everything else
         // under the text.
         under.extend(self.netplay_prims());

@@ -1815,11 +1815,24 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                     })
                 })
             };
+            // An armed wash the arm holds through: its `bgtz` on the countdown
+            // lands on the call in a sibling arm's tail, which is the arm's own
+            // re-arm for the passes it holds (PROT 0934's arms `0x10` and `0x12`
+            // into arm `0x15`'s `0x801F864C`, `lui a0` first).
+            let holds_into_wash = |s: u32| {
+                img.ins(s)
+                    .is_some_and(|i| i.is_jal() && i.jump_target() == ARMED_WASH)
+                    && reach.iter().any(|&v| {
+                        img.ins(v).is_some_and(|i| {
+                            i.is_branch() && (s - 4..=s).contains(&i.branch_target())
+                        })
+                    })
+            };
             for &s in cands.iter().filter(|s| reach.contains(s)) {
                 let arms = placed.entry(s).or_default();
                 // The first arm to reach a site keeps it; the arm laid out
                 // over it and an arm that jumps into its block run it too.
-                if (arms.is_empty() || physical(s) || jumps_into(s))
+                if (arms.is_empty() || physical(s) || jumps_into(s) || holds_into_wash(s))
                     && !arms.iter().any(|&(b, p, _)| b == lo && p == phase)
                 {
                     arms.push((lo, phase, timing_of(s)));

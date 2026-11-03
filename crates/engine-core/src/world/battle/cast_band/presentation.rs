@@ -491,6 +491,35 @@ impl World {
         out
     }
 
+    /// Whether this frame's picture depends on what the buffer still holds:
+    /// retail's battle frames never clear, and a cast's arms draw additive
+    /// layers with no opaque stage under them, over the frames before (Ozma's
+    /// fans go white that way). A host whose target outlives its frame keeps
+    /// it through a resident cast ([`Self::cast_armed_wash_prim`] is the drain).
+    pub fn cast_frame_persists(&self) -> bool {
+        self.mode == SceneMode::Battle
+            && (self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some())
+    }
+
+    /// The armed wash as the drain draws it (`FUN_80046978`), for a host that
+    /// keeps its target ([`Self::cast_frame_persists`]): subtractive, in the
+    /// farthest bucket, the colour times the frame step. The arms that arm it
+    /// run at the step's top (`4`, measured on PROT 0934's arms 6..24), and the
+    /// engine's own step is a vsync, so the drain takes the arms' value:
+    /// `0x101010` is the `(64, 64, 64)` a retail ordering table holds.
+    pub fn cast_armed_wash_prim(&self) -> Option<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim, fade_prim};
+        const ARMED_ARM_FRAME_STEP: u32 = 4;
+        let rgb = self.cast_armed_wash()?;
+        let scaled = |shift: u32| (((rgb >> shift) & 0xFF) * ARMED_ARM_FRAME_STEP).min(0xFF);
+        let word = scaled(16) << 16 | scaled(8) << 8 | scaled(0);
+        let mut prim = fade_prim(word, 2, 0);
+        if let ScreenPrim::Flat(q) = &mut prim {
+            q.depth = Some(CornerDepth::new([1.0; 4]));
+        }
+        Some(prim)
+    }
+
     /// The armed wash (`FUN_8004695C(rgb)`) the resident module's last tick
     /// armed, if any: the colour the drain `FUN_80046978` would subtract in
     /// the farthest bucket before the frame draws ([`Self::cast_wash_prims`]

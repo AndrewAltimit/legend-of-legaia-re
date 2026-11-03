@@ -159,6 +159,13 @@ pub struct Renderer {
     pub(super) depth_view: wgpu::TextureView,
     /// The native-resolution frame target ([`Self::set_native_resolution`]);
     /// `None` draws straight onto the surface.
+    /// The next frames build on the last one's pixels instead of a clear
+    /// ([`Renderer::set_frame_persist`]).
+    pub(super) frame_persist: std::cell::Cell<bool>,
+    /// The frames a persisting frame reads back from, oldest at
+    /// [`Self::frame_ring_next`].
+    pub(super) frame_ring: std::cell::RefCell<Vec<wgpu::Texture>>,
+    pub(super) frame_ring_next: std::cell::Cell<usize>,
     pub(super) native: Option<super::native_target::NativeTarget>,
     /// The texel rule of PSX mode on the native target
     /// ([`Self::set_psx_texel_rule`]).
