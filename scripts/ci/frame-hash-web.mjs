@@ -175,7 +175,6 @@ async function stepRun(cfg) {
   const nextRand = () => { rand = Math.imul(rand ^ 0x5bd1e995, 0x01000193) + 12345 | 0; return (rand >>> 8) & 0xFFFF; };
   const positions = new Set();
   let battleFrame = null;
-  B.on = !!cfg.counts;
   for (let n = 0; n < cfg.frames; n++) {
     if (n === 0) B.firstState = rt.state_json();
     if (sc.force && n === sc.settle) {
@@ -184,8 +183,12 @@ async function stepRun(cfg) {
     }
     padAt(n);
     B.vt += 1000 / 60;
+    /* Counts cover the frame alone: the page's timers (the card's write-back, the XA
+     * banks landing) fire whenever they fire, between frames. */
+    B.on = !!cfg.counts;
     view.step();
     view._frame();
+    B.on = false;
     if (view._battle && battleFrame === null) battleFrame = n;
     const st = rt.state_json();
     try { const p = JSON.parse(st).player; positions.add(p.x + ',' + p.z); } catch (e) { /* no player */ }
@@ -235,7 +238,6 @@ async function stepRun(cfg) {
       await new Promise((res) => setTimeout(res, 0));
     }
   }
-  B.on = false;
   for (const [, , key] of sc.pad || []) send('keyup', key);
   /* Written after the run: a screenshot's wait between frames can hide what a run without one shows. */
   for (let n = 0; n < raws.length; n++) {

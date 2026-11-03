@@ -20,7 +20,7 @@ What it runs, in groups:
     tests    the workspace tests with the disc (read from the Disc-Gated Tests job)
     ladder   part B, part C default, and every seed `[continuous_seeds]` names
     retail   retail-compare --images --check, audio sweep, PCM check, capture coverage
-    wasm     the bundle build, its freshness, headless page checks
+    wasm     the bundle build, its freshness, headless page checks, the cost ratchet
 
 Run lines come out of the workflow file each time, so a step added there is a
 gate here with no edit. A step's name becomes its gate's name: `ci-<slug>`.
@@ -622,6 +622,19 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
             cpu=2,
             scope=True,
             read_log=tail_detail(r"^\[check-pages\] .*$"),
+        )
+    )
+    p.add(
+        Gate(
+            "cost-ratchet",
+            "wasm",
+            "python3 scripts/ci/cost-ratchet.py --check",
+            needs=("wasm-freshness",),
+            # Its native half builds a bench-alloc engine and drives the window.
+            locks=("display", "cargo-rt"),
+            cpu=a.cargo_jobs,
+            scope=True,
+            read_log=tail_detail(r"^\[cost-ratchet\] .*$"),
         )
     )
 
