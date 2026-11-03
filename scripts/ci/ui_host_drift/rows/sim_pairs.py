@@ -957,24 +957,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         ],
     },
     {
-        "what": "`apply == 0` Camera Configure snap beats, native vs play "
-        "page - retail's mover snaps the live camera globals to a snap beat "
-        "immediately, and the field VM runs until yield, so a snap+glide pair "
-        "committed in ONE tick must glide FROM the snapped pose. The beats "
-        "are banked by `Camera::route_camera_events`, which is the only thing "
-        "that drains `FieldEvent::CameraConfigure` off the world queue - a "
-        "host watching its own later event drain for them sees none. Both "
-        "hosts step the glide through the shared `frame_step::CutsceneGlide`, "
-        "whose `advance` replays the bank before it glides and counts steps "
-        "on the world's display-frame clock (zero on an idle redraw)",
-        "sites": {
-            "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["cutscene_glide"],
-    },
-    {
         "what": "save-select phase layout, native vs play page - which pills "
         "draw, whether the pill cursor shows, and whether the block grid and "
         "its info panel stay up are one decision per `SelectPhase`, and the "
@@ -1346,7 +1328,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "crates' boot paths and neither is reached by the other's tests",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "enter_field_live"),
-            "web": (WEB_RUNTIME_DISC_LOAD, "load_disc"),
+            "web": (WEB_RUNTIME_DISC_LOAD, "install_disc"),
         },
         "mode": "symbols_all",
         "symbols": ["set_steal_table"],

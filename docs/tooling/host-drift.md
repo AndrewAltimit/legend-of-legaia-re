@@ -1596,7 +1596,6 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | ticks per display frame | `frame_step::SimStepper` (page: `play_drain_sim_steps`) |
 | options knobs on the world and camera | `BootSession::apply_option_knobs`, every tick ahead of the session tick and on every options change (window: `resolve_tick_pad`; page: `tick_frame`) |
 | camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` |
-| cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
 | fog pool render step | `BootSession::step_field_fog`, once per sim tick (window: `tick_frame_tail_effects`; page: inside `tick_frame`); the draws read `World::fog_quads` |
 | who owns the tick | `BootSession::claim_tick` -> `TickOwner`: a host-held screen, the naming prompt, the prologue skip, the pause menu's spawn and press, a suspending overlay screen, the field (neutral pad or not). Each host matches on the answer (window: `sim_tick`; page: `frame_ticks`) and adds only what it holds; a `SIM_PAIRS` row pins both to the claim |
