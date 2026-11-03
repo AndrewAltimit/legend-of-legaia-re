@@ -114,8 +114,8 @@ fn region_map_is_arithmetically_closed() {
 /// empty-field precondition accepts them as field maps.
 const SIZED_BUT_NOT_FIELD_MAPS: [usize; 10] = [63, 71, 378, 379, 648, 701, 1074, 1087, 1089, 1187];
 
-/// The one retail field map with a zeroed trigger header: `rikuroa2`'s, a
-/// cutscene-only scene with no walkable field.
+/// The one retail field map with a zeroed trigger header: `dream`'s (raw TOC
+/// 128, extraction 126), a cutscene-only scene with no walkable field.
 const ZEROED_TRIGGER_HEADER_ENTRY: usize = 126;
 
 #[test]

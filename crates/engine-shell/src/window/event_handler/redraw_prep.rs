@@ -258,6 +258,14 @@ impl PlayWindowApp {
                         m.env,
                     );
                 }
+                if !sc.seat_floor_bobs.is_empty() {
+                    let bobs: Vec<_> = sc
+                        .seat_floor_bobs
+                        .iter()
+                        .map(|b| (b.rung, b.pos, b.vel, b.accel, b.target))
+                        .collect();
+                    self.session.host.world.seed_floor_ladder(&bobs);
+                }
                 self.session.host.world.seed_morph_weight_actors(
                     sc.seat_morph_weights
                         .iter()

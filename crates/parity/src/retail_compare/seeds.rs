@@ -89,6 +89,7 @@ pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
                 facing: game_anchors::i16_at(ram, n + 0x26),
                 x: game_anchors::i16_at(ram, n + 0x14),
                 z: game_anchors::i16_at(ram, n + 0x18),
+                y: game_anchors::i16_at(ram, n + 0x16),
                 model: game_anchors::i16_at(ram, n + 0x64),
                 flags: game_anchors::u32_at(ram, n + 0x10),
                 ambient: retail_ambient_heading(ram, n),
@@ -617,6 +618,47 @@ pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
             })
         })
         .collect()
+}
+
+/// Every floor-ladder oscillator's live words (`+0x0C == 0x801DA930`). Where a
+/// rung stands is time since the scene's install ran: `concnow`'s four rungs
+/// swing about `22` units in antiphase, so its floor under the party reads
+/// anywhere in `-213..-235` by when the seed samples it.
+pub fn retail_floor_bobs(ram: &[u8]) -> Vec<legaia_engine_capture::field_seeds::FloorBobSeed> {
+    let mut bobs: Vec<_> = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x801D_A930)
+        .filter(|&n| game_anchors::i16_at(ram, n + 0x54) == 1)
+        .map(|n| legaia_engine_capture::field_seeds::FloorBobSeed {
+            rung: game_anchors::u16_at(ram, n + 0x50),
+            pos: game_anchors::u32_at(ram, n + 0x80) as i32,
+            vel: game_anchors::u32_at(ram, n + 0x84) as i32,
+            accel: game_anchors::u32_at(ram, n + 0x88) as i32,
+            target: game_anchors::u32_at(ram, n + 0x8C) as i32,
+        })
+        .collect();
+    bobs.sort_by_key(|b| b.rung);
+    bobs
+}
+
+/// A floor-ladder oscillator `steps` of its tick (`0x801DA9B0..0x801DAA34`) back:
+/// `vel` steps toward the rest height off the position it read, then `pos` adds
+/// `vel`, so the position before a step is `pos - vel` and the accel sign is the
+/// one that position read.
+pub fn rewind_floor_bob(
+    mut b: legaia_engine_capture::field_seeds::FloorBobSeed,
+    steps: usize,
+) -> legaia_engine_capture::field_seeds::FloorBobSeed {
+    for _ in 0..steps {
+        b.pos = b.pos.wrapping_sub(b.vel);
+        if b.pos < b.target {
+            b.vel = b.vel.wrapping_sub(b.accel);
+        }
+        if b.target < b.pos {
+            b.vel = b.vel.wrapping_add(b.accel);
+        }
+    }
+    b
 }
 
 /// Every `4C D8` morph-weight actor's envelope (`+0x0C == 0x8002174C`,

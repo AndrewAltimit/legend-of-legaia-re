@@ -114,6 +114,7 @@ Environment switches that open up a battle state's channels:
 | `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
 | `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state, the camera's yaw counter, focus, glide-target focus and yaw, and each of the first four combatants' live pair, body pair, heading, clip and target |
 | `LEGAIA_RC_DRIVE_TRACE=1` | on stderr, one line per tick of a replayed cast's run to its gate: the action state, the yaw counter, the close-up accumulator, every heading, the caster's body pair, the glide-target focus and the camera pose |
+| `LEGAIA_RC_NPC_Y=1` | on stderr, one `[npc-y]` line for each drawn placement whose height stands more than 8 units from retail's, read at retail's `(X, Z)`: the `npcs` channel scores `(X, Z)` alone |
 | `LEGAIA_RC_FX_TRACE=1` | on stderr, at the sampled tick: each active combatant's live pair, burn selector `+0x21F` and colour word, then the effect-VM pool (`FUN_801E0080`'s masters and children) with positions in the retail pool's whole units - the engine half of a side-by-side against the capture's `_DAT_8007BD30` pool |
 | `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
 | `LEGAIA_RC_SEED_SCAN=1` | the battle search runs every stream instead of stopping at the first that reaches, so the seed trace lists each one's outcome ([pin search](#the-stream-at-the-entry)) |
@@ -407,7 +408,11 @@ engine verdict:
   parks (`A3 <flat> 7F 7F`, or the run-to-tile `CC <flat> 51 7F 7F`), is
   stood on retail's park coordinates with retail's heading, which the beat's
   last walk turned and nothing draws there
-  ([the npcs channel](#the-npcs-channel)).
+  ([the npcs channel](#the-npcs-channel)). So is a park a placement's own spawn
+  section chose behind a flag test on the flags of the visit's entry: `town0b`
+  flat `72` parks on `0x147`, `0x148` or `0x22F` and stands at tile `(15, 21)` on
+  `0x141`, which the Gimard fight raised after `town0b_field_door_hop`'s entry ran
+  (`npcs` `.973` to `1`).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -3785,6 +3790,18 @@ measured as its frame less the same frame with the ghost's colours zeroed.
   `y = 4`), and the displayed frame two passes older (`y = 244`) does not
   have it in view yet. A sweep of a leg past the frame edge in two passes
   is the residual, not the ghost's colour.
+
+### A rung's phase is time since the install
+
+Op `4C 90` sets a rung of the floor ladder swinging (`FUN_801DA930`), and nothing
+damps it, so where it stands at a capture is how long the scene has run. `concnow`'s
+four rungs swing `22` units in antiphase: the party's floor reads anywhere from
+`-213` to `-235` for the same `(X, Z)`, and its ground differs at every corner. The
+state's own oscillators are written over the engine's
+([`retail_floor_bobs`](../../crates/parity/src/retail_compare/seeds.rs),
+`World::seed_floor_ladder`) at the headless sample, and on the capture frame taken
+back by the display lag (`LEGAIA_SEAT_FLOOR_BOBS`). `concnow_field_door_hop_settled`
+`image` `.658` to `.948`, `footing` `.96` to `1`.
 
 ### A script-held height is not a footing
 

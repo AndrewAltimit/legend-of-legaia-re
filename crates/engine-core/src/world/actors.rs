@@ -1227,6 +1227,42 @@ impl World {
             .collect()
     }
 
+    /// Capture harness (`LEGAIA_SEAT_FLOOR_BOBS`): write a retail state's live
+    /// floor-ladder oscillators over the engine's, with each rung they drive,
+    /// and stand a player the hosts keep on the floor where the floor now is.
+    /// A rung's phase is time since the scene's install ran, which a seed
+    /// cannot reach by running. Under a walking `FUN_801D1BA0` the settle's
+    /// glide rides the ladder the same way, every frame.
+    pub fn seed_floor_ladder(&mut self, seeds: &[(u16, i32, i32, i32, i32)]) {
+        use legaia_engine_field::field_actor_timers::FloorTierBob;
+        self.terrain.floor_tier_bobs = seeds
+            .iter()
+            .map(|&(slot, pos, vel, accel, target)| FloorTierBob {
+                slot,
+                phase: 1,
+                phase_seed: 0,
+                pos,
+                vel,
+                accel,
+                target,
+                arm: 0,
+            })
+            .collect();
+        for &(slot, pos, ..) in seeds {
+            if let Some(rung) = self.terrain.floor_height_lut.get_mut(usize::from(slot)) {
+                *rung = (pos >> 16) as i16;
+            }
+        }
+        if self.locomotion.follow_terrain_height
+            && let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(usize::from(slot))
+        {
+            let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+            let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+            self.actors[usize::from(slot)].move_state.world_y = y;
+        }
+    }
+
     /// Capture harness (`LEGAIA_SEAT_MORPH_WEIGHTS`): write a retail state's
     /// live envelopes over the `4C D8` morph-weight actors. An actor is known by
     /// its two rates; several sharing a pair take the seeds in slot order. Where

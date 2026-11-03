@@ -342,6 +342,10 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_SEAT_MORPH_WEIGHTS=<fields>`: a retail state's `4C D8`
     /// morph-weight envelopes, written on the frame the capture is taken.
     pub seat_morph_weights: Vec<legaia_engine_capture::field_seeds::MorphWeightSeed>,
+    /// `LEGAIA_SEAT_FLOOR_BOBS=<fields>`: a retail state's floor-ladder
+    /// oscillators, written on the frame the capture is taken
+    /// (`World::seed_floor_ladder`).
+    pub seat_floor_bobs: Vec<legaia_engine_capture::field_seeds::FloorBobSeed>,
     /// `LEGAIA_SEAT_WALKERS=<fields>`: a retail state's ambient walkers'
     /// live seats (`legaia_parity::retail_compare::retail_walkers`), stood
     /// on the capture frame (`World::seed_ambient_walker`).
@@ -1081,6 +1085,9 @@ impl ScreenshotConfig {
                 .unwrap_or_default(),
             seat_morph_weights: std::env::var("LEGAIA_SEAT_MORPH_WEIGHTS")
                 .map(|v| legaia_engine_capture::field_seeds::morph_weights_from_env(&v))
+                .unwrap_or_default(),
+            seat_floor_bobs: std::env::var("LEGAIA_SEAT_FLOOR_BOBS")
+                .map(|v| legaia_engine_capture::field_seeds::floor_bobs_from_env(&v))
                 .unwrap_or_default(),
             seat_object_clips: std::env::var("LEGAIA_SEAT_OBJECT_CLIPS")
                 .map(|v| legaia_engine_capture::field_seeds::object_clips_from_env(&v))

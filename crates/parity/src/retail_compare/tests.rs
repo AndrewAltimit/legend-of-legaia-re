@@ -11,6 +11,44 @@ fn ram_with_subscreen(sub: u8) -> Vec<u8> {
 }
 
 /// The capture-alignment seeds survive their env forms.
+/// The rewind undoes `FloorTierBob::step` exactly, across the rest height.
+#[test]
+fn a_floor_bob_rewinds_its_own_step() {
+    use legaia_engine_capture::field_seeds::FloorBobSeed;
+    use legaia_engine_field::field_actor_timers::FloorTierBob;
+    let start = FloorBobSeed {
+        rung: 7,
+        pos: -14_680_064 + 100_000,
+        vel: -29_669,
+        accel: 444,
+        target: -14_680_064,
+    };
+    let mut bob = FloorTierBob {
+        slot: 7,
+        phase: 1,
+        phase_seed: 0,
+        pos: start.pos,
+        vel: start.vel,
+        accel: start.accel,
+        target: start.target,
+        arm: 0,
+    };
+    for _ in 0..12 {
+        bob.step(1);
+    }
+    let back = rewind_floor_bob(
+        FloorBobSeed {
+            rung: 7,
+            pos: bob.pos,
+            vel: bob.vel,
+            accel: bob.accel,
+            target: bob.target,
+        },
+        12,
+    );
+    assert_eq!(back, start);
+}
+
 #[test]
 fn morph_weights_rewind_their_own_ramp_by_the_display_lag() {
     // Rising lane (not peaked, not finishing): back by up * step * frames.

@@ -496,6 +496,16 @@ pub(super) fn sample_engine(
     menu_subscreen: Option<u8>,
 ) -> EngineObs {
     let world = &mut session.host.world;
+    // The rungs at the state's own instant ([`retail_floor_bobs`]): the floor
+    // reading below measures the model, not how long the seed ran.
+    if !retail.floor_bobs.is_empty() {
+        let bobs: Vec<_> = retail
+            .floor_bobs
+            .iter()
+            .map(|b| (b.rung, b.pos, b.vel, b.accel, b.target))
+            .collect();
+        world.seed_floor_ladder(&bobs);
+    }
     let player = world.player_actor_slot.and_then(|s| {
         world.actors.get(s as usize).map(|a| {
             [
@@ -537,6 +547,27 @@ pub(super) fn sample_engine(
         .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
         .map(|mf| mf.header.partition_counts[0].max(0) as u16);
     let world = &session.host.world;
+    if std::env::var_os("LEGAIA_RC_NPC_Y").is_some()
+        && let Some(n0) = n0
+    {
+        // `+0x10 & 2` is the visibility cull: the height arm holds, nothing draws.
+        for a in retail
+            .actor_facings
+            .iter()
+            .filter(|a| !npc_parked(a.x, a.z) && a.flags & 2 == 0)
+        {
+            let Some(slot) = a.flat.checked_sub(n0).and_then(|s| u8::try_from(s).ok()) else {
+                continue;
+            };
+            let y = world.field_npc_render_y(slot, a.x, a.z);
+            if (y - i32::from(a.y)).abs() > 8 {
+                eprintln!(
+                    "[npc-y] {} flat {} at ({}, {}) +0x10={:08X}: retail {} engine {y}",
+                    retail.scene, a.flat, a.x, a.z, a.flags, a.y
+                );
+            }
+        }
+    }
     let npc_facings = n0
         .map(|n0| {
             world

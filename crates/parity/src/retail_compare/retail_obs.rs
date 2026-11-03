@@ -190,6 +190,10 @@ pub struct RetailObs {
     /// The `4C D8` morph-weight actors' envelopes ([`retail_morph_weights`]),
     /// handed to the image child as `LEGAIA_SEAT_MORPH_WEIGHTS`.
     pub morph_weights: Vec<legaia_engine_capture::field_seeds::MorphWeightSeed>,
+    /// The floor-ladder oscillators' live words ([`retail_floor_bobs`]). The
+    /// headless sample writes them as they stand, the image child takes them
+    /// back by the display lag.
+    pub floor_bobs: Vec<legaia_engine_capture::field_seeds::FloorBobSeed>,
     /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
     /// child as `LEGAIA_SEAT_WALKERS`.
     pub walkers: Vec<WalkerSeed>,
@@ -245,6 +249,8 @@ pub struct ActorFacing {
     /// `+0x14` / `+0x18`.
     pub x: i16,
     pub z: i16,
+    /// `+0x16`, the footing or a script-held height.
+    pub y: i16,
     /// `+0x64`, the live model id (bank-relative ids are not resolved).
     pub model: i16,
     /// `+0x10`.
@@ -409,6 +415,11 @@ impl RetailObs {
             },
             morph_weights: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_morph_weights(ram)
+            } else {
+                Vec::new()
+            },
+            floor_bobs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_floor_bobs(ram)
             } else {
                 Vec::new()
             },
@@ -611,6 +622,19 @@ impl RetailObs {
             env.push((
                 "LEGAIA_SEAT_MORPH_WEIGHTS",
                 legaia_engine_capture::field_seeds::morph_weights_env(&self.morph_weights),
+            ));
+        }
+        if !self.floor_bobs.is_empty() {
+            let back = usize::from(self.frame_step())
+                * crate::retail_compare_battle::DISPLAY_LAG_PASSES as usize;
+            let shown: Vec<_> = self
+                .floor_bobs
+                .iter()
+                .map(|&b| rewind_floor_bob(b, back))
+                .collect();
+            env.push((
+                "LEGAIA_SEAT_FLOOR_BOBS",
+                legaia_engine_capture::field_seeds::floor_bobs_env(&shown),
             ));
         }
         if !self.walkers.is_empty() {

@@ -186,6 +186,43 @@ pub struct MorphWeightSeed {
     pub descending: bool,
 }
 
+/// One floor-ladder oscillator's live words (`FUN_801DA930`'s `+0x50`, `+0x80`,
+/// `+0x84`, `+0x88`, `+0x8C`), which `World::seed_floor_ladder` writes over the
+/// engine's. Where a rung stands is time since the scene's install ran.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FloorBobSeed {
+    pub rung: u16,
+    pub pos: i32,
+    pub vel: i32,
+    pub accel: i32,
+    pub target: i32,
+}
+
+/// `retail_floor_bobs` as `LEGAIA_SEAT_FLOOR_BOBS`:
+/// `rung:pos:vel:accel:target` per oscillator, `;`-joined.
+pub fn floor_bobs_env(b: &[FloorBobSeed]) -> String {
+    b.iter()
+        .map(|s| format!("{}:{}:{}:{}:{}", s.rung, s.pos, s.vel, s.accel, s.target))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`floor_bobs_env`].
+pub fn floor_bobs_from_env(v: &str) -> Vec<FloorBobSeed> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.split(':');
+            Some(FloorBobSeed {
+                rung: f.next()?.parse().ok()?,
+                pos: f.next()?.parse().ok()?,
+                vel: f.next()?.parse().ok()?,
+                accel: f.next()?.parse().ok()?,
+                target: f.next()?.parse().ok()?,
+            })
+        })
+        .collect()
+}
+
 /// `retail_morph_weights` as `LEGAIA_SEAT_MORPH_WEIGHTS`:
 /// `up:down:weight:descending` per actor, `;`-joined.
 pub fn morph_weights_env(m: &[MorphWeightSeed]) -> String {
@@ -498,5 +535,14 @@ mod morph_weight_seed_tests {
         ];
         assert_eq!(morph_weights_from_env(&morph_weights_env(&seeds)), seeds);
         assert!(morph_weights_from_env("").is_empty());
+        let bobs = [FloorBobSeed {
+            rung: 7,
+            pos: -14189736,
+            vel: -29669,
+            accel: 444,
+            target: -14680064,
+        }];
+        assert_eq!(floor_bobs_from_env(&floor_bobs_env(&bobs)), bobs);
+        assert!(floor_bobs_from_env("").is_empty());
     }
 }

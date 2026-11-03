@@ -129,8 +129,10 @@ them inside named scene blocks. Resolve by slot (below), not by size.
 
 ### The zeroed trigger header
 
-One `0x12000` entry ships the header all zeros: `rikuroa2`'s map (extraction
-126), a cutscene-only scene. Its object table and collision grid are entirely
+One `0x12000` entry ships the header all zeros: `dream`'s map (extraction 126,
+`#define dream 128`, though its file is named for the block before it, the
+[`+2` numbering](cdname.md#numbering-space)), the scene the inn stays and the
+Uru Mais beds script. Its object table and collision grid are entirely
 zero; its object-index map carries a single stray byte (`0x04` at `+0xC081`)
 and its trigger *body* past the zeroed header is not empty either. The detector
 accepts it with an absent trigger block rather than special-casing the scene,

@@ -52,6 +52,36 @@ fn trigger_rows(block: &[u8]) -> Vec<Value> {
     out
 }
 
+/// A MAN's scene-change sites and partition-1 placements, into the scene's JSON.
+fn insert_man_facts(
+    o: &mut serde_json::Map<String, Value>,
+    man: &[u8],
+    mf: &man_section::ManFile,
+    idx: usize,
+) {
+    let sites = man_edit::scene_change_sites(man);
+    let slots = man_edit::site_p2_slots(man, &sites);
+    let doors: Vec<Value> = sites
+        .iter()
+        .zip(slots)
+        .map(|(s, slot)| {
+            json!({ "slot": slot, "dest": s.name, "ex": s.entry_x, "ez": s.entry_z,
+                    "dir": s.dir, "part": s.partition, "pc": s.op_pc })
+        })
+        .collect();
+    let p1: Vec<Value> = mf
+        .actor_placements(man)
+        .iter()
+        .map(|a| {
+            json!({ "i": a.index, "tx": a.tile_x, "tz": a.tile_z, "x": a.world_x,
+                    "z": a.world_z, "model": a.model_index, "off": a.record_offset })
+        })
+        .collect();
+    o.insert("bundle_entry".into(), json!(idx));
+    o.insert("doors".into(), json!(doors));
+    o.insert("p1".into(), json!(p1));
+}
+
 fn scene_json(ar: &mut Archive, map: &cdname::IndexMap, name: &str) -> Result<Value> {
     let raw = *map
         .iter()
@@ -103,28 +133,29 @@ fn scene_json(ar: &mut Archive, map: &cdname::IndexMap, name: &str) -> Result<Va
         let Ok(mf) = man_section::parse(&man) else {
             continue;
         };
-        let sites = man_edit::scene_change_sites(&man);
-        let slots = man_edit::site_p2_slots(&man, &sites);
-        let doors: Vec<Value> = sites
-            .iter()
-            .zip(slots)
-            .map(|(s, slot)| {
-                json!({ "slot": slot, "dest": s.name, "ex": s.entry_x, "ez": s.entry_z,
-                        "dir": s.dir, "part": s.partition, "pc": s.op_pc })
-            })
-            .collect();
-        let p1: Vec<Value> = mf
-            .actor_placements(&man)
-            .iter()
-            .map(|a| {
-                json!({ "i": a.index, "tx": a.tile_x, "tz": a.tile_z, "x": a.world_x,
-                        "z": a.world_z, "model": a.model_index, "off": a.record_offset })
-            })
-            .collect();
-        o.insert("bundle_entry".into(), json!(idx));
-        o.insert("doors".into(), json!(doors));
-        o.insert("p1".into(), json!(p1));
+        insert_man_facts(&mut o, &man, &mf, idx);
         break;
+    }
+    // The v12-family blocks (`rikuroa`, `doman`, `taiku`, ...) ship a MAN-less
+    // bundle table: their MAN is a streaming entry's type-3 chunk.
+    if !o.contains_key("bundle_entry") {
+        'entries: for idx in first..end {
+            let entry = ar.entries[idx].clone();
+            ar.read_entry(&entry, &mut buf)?;
+            let Ok(report) = legaia_container_formats::parse_streaming(&buf, 4096) else {
+                continue;
+            };
+            for chunk in report.chunks.iter().filter(|c| c.type_byte == MAN_TYPE) {
+                let start = chunk.header_offset + 4;
+                let Some(man) = buf.get(start..start.saturating_add(chunk.size as usize)) else {
+                    continue;
+                };
+                if let Ok(mf) = man_section::parse(man) {
+                    insert_man_facts(&mut o, man, &mf, idx);
+                    break 'entries;
+                }
+            }
+        }
     }
     Ok(Value::Object(o))
 }
