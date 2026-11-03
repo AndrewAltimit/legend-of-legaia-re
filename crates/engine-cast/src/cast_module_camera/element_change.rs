@@ -66,11 +66,7 @@ pub fn element_change_camera(
                 st.countdown.add(1 << 6);
             }
         }
-        2 => {
-            if st.countdown.drain_above(0) {
-                arm.hold = true;
-            }
-        }
+        2 if st.countdown.drain_above(0) => arm.hold = true,
         _ => {}
     }
     arm

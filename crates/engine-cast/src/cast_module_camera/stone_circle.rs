@@ -110,11 +110,7 @@ pub fn stone_circle_camera(
             arm.shot = Some(shot(0, 0x500, 0xC00, 0x40));
             st.countdown.add(1 << 6);
         }
-        4 => {
-            if st.countdown.drain_above(0) {
-                arm.hold = true;
-            }
-        }
+        4 if st.countdown.drain_above(0) => arm.hold = true,
         _ => {}
     }
     arm
