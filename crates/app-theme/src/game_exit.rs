@@ -20,14 +20,20 @@ pub fn exit_headline(status: &std::process::ExitStatus) -> String {
     {
         use std::os::unix::process::ExitStatusExt;
         if let Some(sig) = status.signal() {
+            // Something outside the game ended it (a shutdown, a task
+            // manager, a kill): not the game crashing.
+            if sig == 15 {
+                return "The game was closed from outside (SIGTERM).".into();
+            }
+            if sig == 9 {
+                return "The game was killed from outside (SIGKILL).".into();
+            }
             let name = match sig {
                 4 => "SIGILL",
                 6 => "SIGABRT",
                 7 => "SIGBUS",
                 8 => "SIGFPE",
-                9 => "SIGKILL",
                 11 => "SIGSEGV",
-                15 => "SIGTERM",
                 _ => "",
             };
             return if name.is_empty() {
@@ -92,7 +98,13 @@ pub fn failure_detail(log: &str) -> Option<String> {
             None => capitalise_first(&shorten_paths(top)),
         }
     } else {
-        let l = lines.iter().rev().find(|l| l.contains(" ERROR "))?;
+        // An output hiccup is logged as an error and the game plays on: under a
+        // loaded machine it is the last record of many a crash that has
+        // nothing to do with it.
+        let l = lines
+            .iter()
+            .rev()
+            .find(|l| l.contains(" ERROR ") && !l.contains("buffer underrun"))?;
         capitalise_first(&shorten_paths(strip_log_prefix(l)))
     };
     Some(clip(&found, DETAIL_MAX))
@@ -196,10 +208,24 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
+    fn an_audio_underrun_is_not_a_reason() {
+        let log = "[t ERROR legaia_engine_audio::native_out] audio output error: \
+                   A buffer underrun or overrun occurred.";
+        assert_eq!(failure_detail(log), None);
+    }
+
+    #[test]
     fn exit_headline_names_signals_and_codes() {
         use std::os::unix::process::ExitStatusExt;
         let st = |raw| std::process::ExitStatus::from_raw(raw);
-        assert_eq!(exit_headline(&st(9)), "The game crashed (SIGKILL).");
+        assert_eq!(
+            exit_headline(&st(9)),
+            "The game was killed from outside (SIGKILL)."
+        );
+        assert_eq!(
+            exit_headline(&st(15)),
+            "The game was closed from outside (SIGTERM)."
+        );
         assert_eq!(exit_headline(&st(11)), "The game crashed (SIGSEGV).");
         assert_eq!(
             exit_headline(&st(1 << 8)),

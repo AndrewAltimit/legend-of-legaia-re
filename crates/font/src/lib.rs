@@ -322,7 +322,7 @@ impl Font {
                         continue;
                     }
                     let x = ox + PAD_X + col;
-                    let y = oy + PAD_Y + row;
+                    let y = oy + PAD_Y + row + builtin::descent(c);
                     let off = ((y * atlas_w + x) * 4) as usize;
                     atlas_rgba[off] = 255;
                     atlas_rgba[off + 1] = 255;

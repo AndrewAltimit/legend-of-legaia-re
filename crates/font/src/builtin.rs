@@ -12,6 +12,19 @@
 /// set = pixel on). Bit 4 is leftmost.
 pub type Glyph = [u8; 7];
 
+/// How many rows below the normal 7-row box `byte`'s glyph is drawn.
+///
+/// `g`, `p`, `q` and `y` hang their tails under the baseline, and `j` its
+/// hook. Squeezed inside the 7 rows they closed up into other letters: the
+/// launcher's first screen read "Lesaia" and "Disrlay".
+pub fn descent(byte: u8) -> u32 {
+    match byte {
+        b'g' | b'p' | b'q' | b'y' => 2,
+        b'j' => 1,
+        _ => 0,
+    }
+}
+
 /// Returns the 5×7 glyph for `byte`, or `UNKNOWN` for unmapped bytes.
 pub fn glyph(byte: u8) -> Glyph {
     match byte {
@@ -289,7 +302,9 @@ const LOWER: [Glyph; 26] = [
         0b00110, 0b01001, 0b01000, 0b11110, 0b01000, 0b01000, 0b01000,
     ],
     // g
-    [0, 0, 0b01111, 0b10001, 0b01111, 0b00001, 0b01110],
+    [
+        0b01111, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+    ],
     // h
     [
         0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b10001, 0b10001,
@@ -317,9 +332,13 @@ const LOWER: [Glyph; 26] = [
     // o
     [0, 0, 0b01110, 0b10001, 0b10001, 0b10001, 0b01110],
     // p
-    [0, 0, 0b11110, 0b10001, 0b11110, 0b10000, 0b10000],
+    [
+        0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+    ],
     // q
-    [0, 0, 0b01111, 0b10001, 0b01111, 0b00001, 0b00001],
+    [
+        0b01111, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b00001,
+    ],
     // r
     [0, 0, 0b10110, 0b11001, 0b10000, 0b10000, 0b10000],
     // s
@@ -337,7 +356,9 @@ const LOWER: [Glyph; 26] = [
     // x
     [0, 0, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001],
     // y
-    [0, 0, 0b10001, 0b10001, 0b01111, 0b00001, 0b01110],
+    [
+        0b10001, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+    ],
     // z
     [0, 0, 0b11111, 0b00010, 0b00100, 0b01000, 0b11111],
 ];
@@ -355,6 +376,20 @@ const TILDE: Glyph = [0, 0, 0b01001, 0b10110, 0, 0, 0];
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The letters that hang below the baseline are not the letters they
+    /// used to read as, and start on the x-height once drawn at their
+    /// [`descent`].
+    #[test]
+    fn descending_letters_are_distinct_and_sit_on_the_x_height() {
+        for (a, b) in [(b'g', b's'), (b'p', b'r'), (b'g', b'q'), (b'y', b'v')] {
+            assert_ne!(glyph(a), glyph(b));
+        }
+        let top = |b: u8| glyph(b).iter().position(|&r| r != 0).unwrap() as u32 + descent(b);
+        for b in [b'g', b'p', b'q', b'y'] {
+            assert_eq!(top(b), top(b'a'), "{}", b as char);
+        }
+    }
 
     #[test]
     fn space_is_blank() {

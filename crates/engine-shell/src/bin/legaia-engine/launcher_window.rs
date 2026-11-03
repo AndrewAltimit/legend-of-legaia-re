@@ -462,6 +462,7 @@ impl LauncherApp {
             && let Err(e) = self.settings.save(f)
         {
             log::warn!("launcher: could not save settings ({e:#})");
+            self.status = Some(vec![(format!("Could not save the settings: {e:#}"), WARN)]);
         }
     }
 
@@ -850,7 +851,11 @@ impl LauncherApp {
             row.value(&self.options, &self.settings)
         );
         self.status = None;
-        if row.is_game_option() {
+        if row == OptionRow::Preset {
+            // One switch over both files.
+            self.save_options();
+            self.save_settings();
+        } else if row.is_game_option() {
             self.save_options();
         } else {
             self.save_settings();
@@ -1439,8 +1444,14 @@ impl ApplicationHandler for LauncherApp {
             // the display's resting pointer happens to sit over.
             WindowEvent::CursorMoved { .. } if self.screenshot.is_some() => {}
             WindowEvent::CursorMoved { position, .. } => {
-                self.cursor = Some((position.x, position.y));
-                if let Some(item) = self.hit()
+                let at = (position.x, position.y);
+                // The first report is where the pointer already was. A window
+                // opening under a resting pointer must keep *Play* focused, or
+                // the Enter that follows flips whichever option it landed on.
+                let moved = self.cursor.is_some_and(|c| c != at);
+                self.cursor = Some(at);
+                if moved
+                    && let Some(item) = self.hit()
                     && item != self.focus
                 {
                     self.focus = item;
@@ -2022,7 +2033,7 @@ const CONTROLS_ROWS: i32 = 12;
 /// The notes under the controls table, wrapped to the panel.
 const CONTROLS_NOTES: [&str; 2] = [
     "Gamepad: bottom button Cross, right Circle, left Square, top Triangle.",
-    "Key Config in the in-game Options rebinds keys; F12 in the game lists every key.",
+    "In the game, F12 or Select+Start opens settings and the key list. Options > Key Config rebinds keys.",
 ];
 
 fn controls_note_lines(c: &Canvas, panel: Rect) -> Vec<String> {
