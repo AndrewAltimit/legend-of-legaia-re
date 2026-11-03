@@ -24,6 +24,11 @@
 -- of LEGAIA_NUDGE (default UP, 16 vsyncs) logs CONTROL when it moves the player
 -- and NO_CONTROL when LEGAIA_STUCK (1500) vsyncs pass without it.
 --
+-- LEGAIA_FLAGS_SET / LEGAIA_FLAGS_CLEAR: comma lists of story flags (hex, the
+-- 0x80085758 bank) written once as the run starts, for a door whose record
+-- tests a flag the source state does not hold. A state made so carries a poke:
+-- its scenario must name the flags.
+--
 -- Env: LEGAIA_SSTATE, LEGAIA_HOPS, LEGAIA_OUT_DIR, LEGAIA_PREFIX (default
 -- "hop"), LEGAIA_FRAMES (default 6000). No breakpoints, --fast is fine.
 
@@ -48,6 +53,16 @@ local hops = {}
 for sc, x, z, w in string.gmatch(probe.getenv("LEGAIA_HOPS", ""), "([%w_]+):(%d+):(%d+):?(%d*)") do
     hops[#hops + 1] = { scene = sc, x = tonumber(x), z = tonumber(z), wait = tonumber(w) or 60 }
 end
+
+local FLAG_BANK = 0x80085758
+local function flag_list(name)
+    local out = {}
+    for f in string.gmatch(probe.getenv(name, ""), "[%x]+") do
+        out[#out + 1] = tonumber(f, 16)
+    end
+    return out
+end
+local flags_set, flags_clear = flag_list("LEGAIA_FLAGS_SET"), flag_list("LEGAIA_FLAGS_CLEAR")
 
 local log_lines = {}
 local function logf(fmt, ...)
@@ -99,6 +114,7 @@ local poked_at, held_tile = nil, nil
 local tap_until, tap_btn, next_tap = 0, nil, 0
 local nudge_at, nudge_from = nil, nil
 local finished = false
+local flags_done = false
 
 local function tap(btn, vsync, hold)
     probe.pad.force(btn)
@@ -116,6 +132,20 @@ probe.run({
 
     on_capture = function(ctx, vsync)
         if finished then return end
+        -- After the state load, which on_arm runs ahead of.
+        if not flags_done then
+            flags_done = true
+            for _, f in ipairs(flags_set) do
+                local va = FLAG_BANK + bit.rshift(f, 3)
+                probe.write_u8(va, bit.bor(probe.read_u8(va) or 0, bit.rshift(0x80, bit.band(f, 7))))
+                logf("FLAG set 0x%03X", f)
+            end
+            for _, f in ipairs(flags_clear) do
+                local va = FLAG_BANK + bit.rshift(f, 3)
+                probe.write_u8(va, bit.band(probe.read_u8(va) or 0, 0xFF - bit.rshift(0x80, bit.band(f, 7))))
+                logf("FLAG clear 0x%03X", f)
+            end
+        end
         if tap_btn and vsync >= tap_until then
             probe.pad.release(tap_btn)
             tap_btn = nil

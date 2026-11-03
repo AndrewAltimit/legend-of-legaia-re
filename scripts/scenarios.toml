@@ -4960,3 +4960,61 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "dohaty"
 topics = ["battle", "enemy attack", "Gola Gola", "dohaty", "harvest"]
+
+[[scenarios]]
+label = "casino_prize_counter_retail"
+backup_fingerprint = "c674cabede0c3b7f4f91f4dbbac50e7c8918822d7574bcd79b48c452fd379bf1"
+description = "Casino counter screen, mode 0x17, menu sub-screen 0x20. RETAIL disc, pad only, no pokes: koin1_field_route_walk, walked to (3418, 6610) by autorun_walk_route.lua, ACT X+ paging P1[4]'s talk with Cross on every default; saved 200 vsyncs after the game mode left the field."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "koin1"
+topics = ["casino", "prize exchange", "shop", "menu"]
+
+[[scenarios]]
+label = "rikuroa2_field_door_hop"
+backup_fingerprint = "8dd8b4e60da6979b3dc497d6fe3190d13ae56478bb4837b9fc7141f189a25b3e"
+description = "rikuroa2 free field run. RETAIL disc: rikuroa_field_card_walk crossed rikuroa:65:38 (P2[55]) by autorun_door_hop.lua: player position held on the door walk-on tile, the door record ran as the disc wrote it, saved 620 vsyncs in. No flag or other RAM poke."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rikuroa2"
+topics = ["field", "rikuroa2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "taiku2_field_door_hop"
+backup_fingerprint = "1fed5d94f0cc809bc5e90d6948ff8efc024d0db57d23fc55d36db21ac2b01076"
+description = "taiku2 free field run. RETAIL disc: korout_field_door_hop crossed korout:68:25 (P2[2]) by autorun_door_hop.lua, saved 678 vsyncs in. Flags poked at the start for the door record's arm: 0x403 set, 0x47E and 0x577 clear."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "taiku2"
+ram_poked = ["story flags 0x403 set, 0x47E 0x577 clear"]
+topics = ["field", "taiku2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "uru2_field_door_hop"
+backup_fingerprint = "001d2a0715a20d8be24f4c8fb68faedb8ef5d0b4d660cbd1c4e1a2cf119043b6"
+description = "uru2 free field run. RETAIL disc: uru_field_run crossed uru:39:5;map03:36:71 (P2[5]) by autorun_door_hop.lua, saved 1347 vsyncs in. Flag poked at the start for the portal's arm: 0x36F set."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "uru2"
+ram_poked = ["story flag 0x36F set"]
+topics = ["field", "uru2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "nilboa2_field_door_hop"
+backup_fingerprint = "33ddaa3b57f70d1e755b19c22c53df63f7d0d981a1a6987eb994480b3ef99597"
+description = "nilboa2 free field run. RETAIL disc: uru_field_run crossed uru:39:5;map03:93:67 (P2[3]) by autorun_door_hop.lua, saved 1368 vsyncs in. Flag poked at the start for the portal's arm: 0x378 set."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "nilboa2"
+ram_poked = ["story flag 0x378 set"]
+topics = ["field", "nilboa2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "concend_field_door_hop"
+backup_fingerprint = "541805dca660ac64d0a213e150b4c25960ed80f98563c2ee5f14265ecfd5ca33"
+description = "concend at its arrival. RETAIL disc: uru_field_run crossed uru:39:5;map03:66:101 (P2[7]) by autorun_door_hop.lua, saved 1346 vsyncs in, its record still holding the pad. Flags poked at the start for the portal's arm: 0x4C8 set, 0x3F2 and 0x6C2 clear."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "concend"
+ram_poked = ["story flags 0x4C8 set, 0x3F2 0x6C2 clear"]
+topics = ["field", "concend", "scene coverage", "door hop"]
