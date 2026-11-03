@@ -525,11 +525,17 @@ impl World {
     /// the farthest bucket before the frame draws ([`Self::cast_wash_prims`]
     /// says why no host composites it).
     pub fn cast_armed_wash(&self) -> Option<u32> {
-        let resident = self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some();
-        if self.mode != SceneMode::Battle || !resident {
+        if !self.cast_module_resident() {
             return None;
         }
         self.casting.module_pres.armed_wash
+    }
+
+    /// A cast module is on the battle band, so a frame may soon build on the
+    /// ones before it ([`Self::cast_frame_persists`]).
+    pub fn cast_module_resident(&self) -> bool {
+        self.mode == SceneMode::Battle
+            && (self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some())
     }
 }
 

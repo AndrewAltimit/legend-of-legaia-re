@@ -120,8 +120,10 @@ is an offscreen draw and the tick lock paces them. A child runs with
 `LEGAIA_CAPTURE_NO_PRESENT=1`, so its window stays blank: the frames before the
 capture build the same scene description but skip the window draw, since the
 capture and the recorder each draw their own frame from that description and
-`Renderer::render` leaves nothing a later frame samples. To watch a kept child
-by hand, drop that variable from its `.cmd.sh`.
+`Renderer::render` leaves nothing a later frame samples. A cast module on the
+battle band is the exception: its wash frames build on the frames before them, so
+those frames still draw. To watch a kept child by hand, drop that variable from
+its `.cmd.sh`.
 
 **The result cache.** One state's report and side-by-side PNG, under a key
 hashing everything the result is a function of

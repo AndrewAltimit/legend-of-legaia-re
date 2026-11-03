@@ -270,8 +270,10 @@ impl PlayWindowApp {
         // A capture child's frames before its capture reach nobody: the
         // capture and the recorder each draw their own frame from the scene
         // description (`encode_frame` stages everything it reads), and
-        // `Renderer::render` leaves nothing a later frame samples.
-        if capture_child_skips_present() {
+        // `Renderer::render` leaves nothing a later frame samples - except
+        // through a cast module, whose wash frames build on the frames before
+        // them (`Renderer::set_frame_persist`).
+        if capture_child_skips_present() && !self.session.host.world.cast_module_resident() {
             r.flush_frame_uploads();
             return;
         }

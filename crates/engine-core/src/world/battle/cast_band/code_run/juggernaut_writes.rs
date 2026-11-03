@@ -299,7 +299,10 @@ impl World {
     /// come up, long before the body's arm 26).
     ///
     /// REF: FUN_801F85A8
-    pub(in crate::world::battle::cast_band) fn run_juggernaut_stager_calls(&mut self, spell_id: u8) {
+    pub(in crate::world::battle::cast_band) fn run_juggernaut_stager_calls(
+        &mut self,
+        spell_id: u8,
+    ) {
         use legaia_engine_cast::cast_module_ticks as ticks;
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         for (arm, caller) in calls {
