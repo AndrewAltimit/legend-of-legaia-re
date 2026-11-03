@@ -488,6 +488,28 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &sc.battle_bars,
             );
+            // `LEGAIA_CAST_LEARN=seat,spell,level`: the oracle's damage runs
+            // put the injected spell on the caster's list, as the retail
+            // probe does (`LEGAIA_LEARN_LEVEL`).
+            if let Ok(v) = std::env::var("LEGAIA_CAST_LEARN") {
+                let t: Vec<u8> = v.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+                if let [seat, spell, level] = t[..]
+                    && let Some(m) = self
+                        .session
+                        .host
+                        .world
+                        .party
+                        .roster
+                        .members
+                        .get_mut(usize::from(seat))
+                {
+                    let mut list = m.spell_list();
+                    list.ids[0] = spell;
+                    list.levels[0] = level;
+                    list.count = list.count.max(1);
+                    m.set_spell_list(list);
+                }
+            }
             if let Some(seat) = sc.battle_reseat {
                 legaia_engine_capture::bar_seeds::arm_capture_reseat(
                     &mut self.session.host.world,

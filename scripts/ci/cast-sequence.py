@@ -127,6 +127,10 @@ def run_retail(a, out: Path) -> bool:
         "TMPDIR": str(out / ".tmp"),
     })
     (out / ".tmp").mkdir(exist_ok=True)
+    if a.learned:
+        env["LEGAIA_LEARN_LEVEL"] = str(a.learned)
+    if a.monster_hp:
+        env["LEGAIA_MONSTER_HP"] = str(a.monster_hp)
     if a.formation:
         env["LEGAIA_FORCE_ROW"] = a.formation
     if a.party_spd:
@@ -300,6 +304,17 @@ def run_engine(a, out: Path) -> bool:
     })
     if a.guard:
         env["LEGAIA_BATTLE_GUARD"] = a.guard
+    if a.learned and caster < 3:
+        env["LEGAIA_CAST_LEARN"] = f"{caster},{a.spell},{a.learned}"
+    if a.monster_hp and env.get("LEGAIA_BATTLE_BARS"):
+        # `slot:hp:mp[:..]`, engine slots: the party's first, `129+` empty seats.
+        pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
+        def raised(e: str) -> str:
+            f = e.split(":")
+            if pc <= int(f[0]) < 129 and int(f[1]) > 0:
+                f[1] = str(a.monster_hp)
+            return ":".join(f)
+        env["LEGAIA_BATTLE_BARS"] = ",".join(raised(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
@@ -420,6 +435,12 @@ def main() -> int:
     ap.add_argument("--engine-only", action="store_true", help="skip the retail stage (needs a cached capture)")
     ap.add_argument("--retail-only", action="store_true")
     ap.add_argument("--score-only", action="store_true")
+    ap.add_argument("--learned", type=int, default=0, metavar="LEVEL",
+                    help="both sides: the spell sits on the caster's list at this level "
+                         "(off the list, a summon's hits read a wrapped level and cap at 9999)")
+    ap.add_argument("--monster-hp", type=int, default=0, metavar="HP",
+                    help="both sides: every living monster's HP at the inject / first prompt, "
+                         "so the cast's whole damage shows in the HP columns")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()
     if a.spell is None and not a.physical:

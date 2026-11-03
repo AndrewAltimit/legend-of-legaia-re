@@ -91,6 +91,15 @@
 --                        choreography latch PROT 0946's arm 0 forks on
 --                        (`0x801C8FE4=1` sends a seat-0 cast of 0x56 down
 --                        Big Wave's branch instead of Call Wave's)
+--   LEGAIA_LEARN_LEVEL   put the spell on the caster's list at this level at
+--                        the inject (first list slot of roster record = seat).
+--                        Off the list, FUN_801DD864 reads slot 0x20 and level 0
+--                        wraps into a capped hit: a damage measurement wants
+--                        this set (cast-sequence-oracle.md)
+--   LEGAIA_MONSTER_HP    write this HP into every living monster seat at the
+--                        cast begin, so a cast's whole damage shows in the HP
+--                        column (a monster's own swing scales with its HP, so
+--                        not before its turn)
 --   LEGAIA_SHOT_EVERY    vsyncs between frames (2)
 --   LEGAIA_MAX_SHOTS     frame cap (1500)
 --   LEGAIA_TAIL          vsyncs to keep going past the Done band (60)
@@ -140,6 +149,8 @@ local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
 local PRESS_PERIOD = probe.getenv_num("LEGAIA_PRESS_PERIOD", 60)
 local PARTY_SPD    = probe.getenv_num("LEGAIA_PARTY_SPD", 0)
 local MP_TOPUP     = probe.getenv_num("LEGAIA_MP_TOPUP", 999)
+local LEARN_LEVEL = probe.getenv_num("LEGAIA_LEARN_LEVEL", 0)
+local MONSTER_HP = probe.getenv_num("LEGAIA_MONSTER_HP", 0)
 local POKE32 = {}
 for kv in string.gmatch(probe.getenv("LEGAIA_POKE32", ""), "[^,]+") do
     local a, v = string.match(kv, "^%s*([^=]+)=(.+)$")
@@ -205,7 +216,7 @@ local function tou32(v)
     return v
 end
 
-local meta, body, cam, pre
+local meta, body, cam, pre, creature
 -- The cue ring's sampler, hung off `probe` (on_capture already sits at
 -- Lua's 60-upvalue cap, so it takes no new upvalue).
 probe.cast_sfx = {
@@ -304,6 +315,7 @@ probe.run({
         -- The live camera pose (pitch / yaw `0x8007B790/92`, TR
         -- `0x800840B8..C0`) with the yaw and TR z records of the tween
         -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
+        creature = probe.csv_open(probe.out_path("creature.csv"), "vsync,clip,staged,cursor,x,y,z,facing")
         cam = probe.csv_open(probe.out_path("cam.csv"),
             "vsync,st7,phase,step,pitch,yaw,trx,try,trz,yaw_inc,yaw_end,trz_inc,trz_end")
         probe.cast_sfx.csv = probe.csv_open(probe.out_path("sfx.csv"), "vsync,frame,st7,phase,slot,id,drain")
@@ -431,6 +443,13 @@ probe.run({
                 end
             end
             for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
+            if LEARN_LEVEL > 0 then
+                for _, s in ipairs(seats) do
+                    local rec = 0x80084708 + s * 0x414
+                    probe.write_u8(rec + 0x13D, SPELL)
+                    probe.write_u8(rec + 0x161, LEARN_LEVEL)
+                end
+            end
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
         end
@@ -476,9 +495,20 @@ probe.run({
             caster_at_cast = acting
             target_at_cast = u8(actor(acting) + 0x1DD)
             PCSX.log(string.format("[cast t%d] caster=%d ground=%s", elapsed, acting, ground_at_cast))
+            if MONSTER_HP > 0 then
+                for s = 3, 7 do
+                    local a = actor(s)
+                    if a ~= nil and u16(a + 0x14C) > 0 then
+                        probe.write_u16(a + 0x14C, MONSTER_HP)
+                        probe.write_u16(a + 0x172, MONSTER_HP)
+                    end
+                end
+            end
             PCSX.log(string.format("[cast t%d] cast begin loader=%d", elapsed, u8(LOADER_ID)))
         end
-        if cast_seen and not done_seen and (st7 == 0x50 or st7 == 0x51 or st7 == 0x5A) then
+        -- 0x65: the Spikefish flute's flee leaves the summon band for the run
+        -- band's wait instead (PROT 0925, arm 8) and the fight ends there.
+        if cast_seen and not done_seen and (st7 == 0x50 or st7 == 0x51 or st7 == 0x5A or st7 == 0x65) then
             done_seen = true
             done_vsync = elapsed
             PCSX.log(string.format("[done t%d] st7=0x%02X", elapsed, st7))
@@ -512,6 +542,21 @@ probe.run({
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
+        -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
+        -- engine recorder's file of the same name.
+        if cast_seen then
+            local a = actor(7)
+            if a ~= nil then
+                local node = u32(a + 0x22C)
+                local function sh7(off)
+                    local v = u16(a + off)
+                    if v >= 0x8000 then v = v - 0x10000 end
+                    return v
+                end
+                creature:row("%d,%d,%d,%d,%d,%d,%d,%d", elapsed, u8(a + 0x1D9), u8(a + 0x1DA),
+                    ptr_ok(node) and u16(node + 0x68) or -1, sh7(0x34), sh7(0x36), sh7(0x38), sh7(0x46))
+            end
+        end
         -- The cue ring's ready edges (see sfx.csv in the header).
         for i = 0, 3 do
             local id = s16(probe.cast_sfx.ring + i * 2)
