@@ -386,7 +386,7 @@ mod tests {
             assert_ne!(glyph(a), glyph(b));
         }
         let top = |b: u8| glyph(b).iter().position(|&r| r != 0).unwrap() as u32 + descent(b);
-        for b in [b'g', b'p', b'q', b'y'] {
+        for &b in b"gpqy" {
             assert_eq!(top(b), top(b'a'), "{}", b as char);
         }
     }

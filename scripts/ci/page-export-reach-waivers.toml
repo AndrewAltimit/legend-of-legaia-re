@@ -161,3 +161,8 @@ names = ["open_menu", "menu_tick", "play_menu_blips_inline"]
 kind = "both-absent"
 reason = "Retail's 5-bit overlay tint switch: on by default on both hosts and no control on either (the native Renderer::set_ui_psx_tint has no caller either)."
 names = ["set_ui_psx_tint", "ui_psx_tint"]
+
+[[waiver]]
+kind = "probe"
+reason = "Measurement hooks a headless audio run calls from the page's console: the output's path, queue and latencies, and firing a battle shout to measure a CD-XA clip's start and level."
+names = ["audio_stats_json", "play_xa_probe_fire_shout"]
