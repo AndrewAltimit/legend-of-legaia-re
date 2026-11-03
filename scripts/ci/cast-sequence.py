@@ -148,6 +148,8 @@ def run_retail(a, out: Path) -> bool:
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
+    if not a.window:
+        cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not a.formation and not a.monster_pick and not a.sfx_callers:
@@ -408,6 +410,9 @@ def main() -> int:
     ap.add_argument("--every", type=int, default=2, help="retail vsyncs between frames")
     ap.add_argument("--tail", type=int, default=60, help="vsyncs / ticks past the Done band")
     ap.add_argument("--frames", type=int, default=6000, help="retail capture cap in vsyncs")
+    ap.add_argument("--window", action="store_true",
+                    help="retail: run the emulator in its window instead of headless (the same frames, "
+                         "slower, and it takes a display)")
     ap.add_argument("--retail-timeout", type=int, default=900, help="emulator wall-clock cap, seconds")
     ap.add_argument("--engine-timeout", type=int, default=600, help="engine child wall-clock cap, seconds")
     ap.add_argument("--retail-lag", help="display lag in vsyncs, or 'auto' (2 * frame step, the default)")

@@ -62,6 +62,7 @@ function M.run(opts)
     local state         = STATE_WAIT_BOOT
     local vsync_count   = 0
     local capture_start = nil
+    local done_at       = nil
     local pad_held      = false
 
     local function on_vsync()
@@ -138,11 +139,14 @@ function M.run(opts)
                 end
                 if on_done then on_done(ctx, ctx.descs) end
                 state = STATE_DONE
+                done_at = vsync_count
                 PCSX.log(string.format(
                     "[probe] capture done; quitting in %d vsyncs", quit_delay))
             end
         elseif state == STATE_DONE then
-            if vsync_count - capture_start >= capture_frames + quit_delay then
+            -- From the end of the capture, not from capture_frames: a probe that
+            -- set request_quit is finished and has nothing left to wait for.
+            if vsync_count - done_at >= quit_delay then
                 PCSX.quit(0)
             end
         end

@@ -18,6 +18,7 @@ Two channels per state:
            rate converter and cue gain. Rate, level and waveform; not the start.
 
     scripts/ci/audio-pcm.py --capture             # record what is missing, score
+    scripts/ci/audio-pcm.py --capture --jobs 6    # the recordings side by side
     scripts/ci/audio-pcm.py --check               # fail below the baseline
     scripts/ci/audio-pcm.py --propose PATH        # candidate baseline (never the committed one)
 
@@ -26,7 +27,9 @@ the repo's disc-gated convention.
 """
 
 import argparse
+import concurrent.futures
 import gzip
+import itertools
 import json
 import os
 import shutil
@@ -98,6 +101,11 @@ def silenced_copy(state: Path, out: Path) -> None:
     out.write_bytes(gzip.compress(bytes(b), 1))
 
 
+# Each recording gets its own X server. `xvfb-run -a` moves on from a number in
+# use, but two started together can pick the same one: start them apart.
+_server_num = itertools.count(200)
+
+
 def record(state: Path, wav: Path, seconds: int, disc: Path) -> None:
     """Run mednafen from `state` until `wav` holds `seconds` of output."""
     wav.parent.mkdir(parents=True, exist_ok=True)
@@ -118,7 +126,7 @@ def record(state: Path, wav: Path, seconds: int, disc: Path) -> None:
         partial = wav.with_suffix(".partial.wav")
         partial.unlink(missing_ok=True)
         cmd = [
-            "xvfb-run", "-a", "-s", "-screen 0 800x600x24",
+            "xvfb-run", "-a", "-n", str(next(_server_num)), "-s", "-screen 0 800x600x24",
             "mednafen", "-autosave", "1", "-filesys.fname_state", "state.%X",
             "-sound.rate", "44100", "-sound.driver", "sdl", "-video.driver", "softfb",
             "-video.fs", "0", "-psx.input.port1", "gamepad",
@@ -130,8 +138,8 @@ def record(state: Path, wav: Path, seconds: int, disc: Path) -> None:
         p = subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              start_new_session=True)
         try:
-            for _ in range(seconds * 20):
-                time.sleep(1)
+            for _ in range(seconds * 80):
+                time.sleep(0.25)
                 if partial.exists() and partial.stat().st_size >= want:
                     break
                 if p.poll() is not None:
@@ -143,6 +151,33 @@ def record(state: Path, wav: Path, seconds: int, disc: Path) -> None:
         if not partial.exists() or partial.stat().st_size < want:
             raise RuntimeError(f"mednafen wrote too little for {state.name}")
         partial.replace(wav)
+
+
+def capture_missing(want, library: Path, manifest: dict, out: Path, disc: Path, jobs: int) -> None:
+    """Record every missing WAV, `jobs` mednafens at a time.
+
+    Each recording is a private home, disc stage and X server, and the run is
+    deterministic in emulated time however slowly it goes, so running them side
+    by side leaves the WAVs' bytes as they are.
+    """
+    def track(label: str, state: Path, wav: Path) -> None:
+        record(state, wav, TRACK_SECONDS, disc)
+
+    def core(label: str, state: Path, wav: Path) -> None:
+        silent = out / f"{label}.core.mcr"
+        silenced_copy(state, silent)
+        record(silent, wav, CORE_SECONDS, disc)
+
+    tasks = []
+    for labels, suffix, fn in ((STATES, "", track), (CORE_STATES, ".core", core), (XA_STATES, ".core", core)):
+        for label in filter(want, labels):
+            state = state_file(label, library, manifest)
+            wav = out / f"{label}{suffix}.wav"
+            if state is not None and not wav.exists() and not any(t[2] == wav for t in tasks):
+                tasks.append((fn, label, wav, state))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        for f in [pool.submit(fn, label, state, wav) for fn, label, wav, state in tasks]:
+            f.result()
 
 
 def score(exe: Path, args: list[str], wav: Path, samples: int, out: Path) -> dict:
@@ -164,6 +199,7 @@ def main() -> int:
     ap.add_argument("--check", action="store_true", help="assert the baseline")
     ap.add_argument("--propose", help="write a candidate baseline to this path")
     ap.add_argument("--filter", help="only labels containing this (comma = any of several)")
+    ap.add_argument("--jobs", type=int, default=4, help="--capture: recordings side by side")
     ap.add_argument("--out", default=str(REPO / "captures" / "audio-pcm"))
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()
@@ -188,6 +224,8 @@ def main() -> int:
         )
     exe = REPO / "target" / PROFILE / "legaia-engine"
     want = lambda label: not a.filter or any(f in label for f in a.filter.split(","))
+    if a.capture:
+        capture_missing(want, library, manifest, out, disc, a.jobs)
 
     results: dict[str, dict] = {}
     for label in filter(want, STATES):

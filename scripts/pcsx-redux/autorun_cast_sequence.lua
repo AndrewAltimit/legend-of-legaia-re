@@ -302,6 +302,13 @@ probe.run({
     on_arm = function()
         PCSX.log(string.format("== cast sequence == spell=0x%02X caster=%d target=%d every=%d",
             SPELL, CASTER_SEAT, TARGET_SEAT, SHOT_EVERY))
+        -- The debugger core pauses on a read of unmapped memory (psxmem.cc, after
+        -- returning the same 0xFF the recompiler returns) and nothing would resume
+        -- it: the run sat there until the driver's timeout.
+        probe.cast_resume = PCSX.Events.createEventListener("ExecutionFlow::Pause", function()
+            PCSX.log("[cast-seq] emulator paused itself: resumed")
+            PCSX.resumeEmulator()
+        end)
         probe.env.write_manifest("autorun_cast_sequence.lua", {
             sstate = SSTATE_PATH, spell = string.format("0x%02X", SPELL),
             caster_seat = CASTER_SEAT, target_seat = TARGET_SEAT,
