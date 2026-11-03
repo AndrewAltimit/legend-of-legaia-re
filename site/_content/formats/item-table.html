@@ -46,7 +46,8 @@
 
 <section class="doc-section" id="name-strings">
   <h2>Name and description strings</h2>
-  <p>The strings carry the same control prefixes as every other in-game string (MES, the game's text markup): a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. Descriptions use the MES <code>0x7C</code> line-break token, decoded to <code>'\n'</code> by the parser. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) have empty names - reserved / gap slots.</p>
+  <p>The strings carry the same control prefixes as every other in-game string (MES, the game's text markup): a leading <code>0x01</code> icon escape and <code>0xCE XX</code> colour-control bytes. Descriptions use the MES <code>0x7C</code> line-break token, decoded to <code>'\n'</code> by the parser. The parser strips control bytes (keeping printable ASCII) and trims whitespace. A handful of ids (<code>0x00</code>, <code>0x12</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>) share one empty string - reserved / gap slots.</p>
+  <p>Id <code>0x1A</code> is not one of them. Its string is <code>C1 00 " Fist"</code>, the MES party-name substitution then the word, so it reads as the first hero's name (&ldquo;Vahn Fist&rdquo;). Ids <code>0x1C</code> (<code>C1 01 " Feral"</code>) and <code>0x20</code> (<code>C1 02 " Mace"</code>) take the same form for the second and third heroes, and a renamed hero's name goes in. The parser's <code>name</code> prints what retail prints; <code>pool_name</code> is the reading the randomizer pools and the gamedata join key on (no hero, and nothing for <code>0x1A</code>, which no pool holds), so a fixed seed's output does not move with it.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">

@@ -273,6 +273,11 @@
 <section class="doc-section" id="cast-sequence" data-doc="-">
   <h2>The cast-sequence oracle</h2>
   <p>The corpus scores one frozen moment per state. A cast - a spell, a summon or a monster&rsquo;s special - is a sequence, so its oracle records the whole thing on both sides: a PCSX-Redux probe on retail and the <code>play-window</code> recorder on the engine, paired on the action machine&rsquo;s clock and the cast module&rsquo;s phase, then scored frame by frame.</p>
+  <p><strong>A still cannot see a cast.</strong> A high image score on a <code>*_mid_cast</code> state says that one frame matches and nothing about the order, timing or length of the cast around it: an arm that runs late, a record seated all at once and a missing camera arm can all sit in frames no state holds. On most summons the state&rsquo;s one instant is the white flash, which the metric cannot see under. Do not read a still&rsquo;s score as proof of a cast; record it.</p>
+  <div class="cli"><code>scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
+scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --engine-only
+scripts/ci/cast-sequence-batch.py casts.txt --jobs 4</code></div>
+  <p>A retail recording is a <a href="pcsx-redux-automation.html#headless-runs">headless</a> emulator at 1x (<code>--window</code> opens one), holds no display lock, and several run side by side through <code>cast-sequence-batch.py</code>; the engine runs follow one at a time. Each stage is reused until something it depends on changes, so an <code>--engine-only</code> with nothing changed goes straight to the score. Two recordings of one cast are not byte-identical, in a window or not, because the emulator&rsquo;s SPU runs on wall-clock time and moves the game&rsquo;s adaptive frame step, so a residual smaller than two retail runs differ from each other is noise. What holds across runs: the action-state and module-phase path, the HP columns, the sound cues and the game-frame count to within one.</p>
   <p>Beside the frames it scores <strong>sound</strong>. Each side writes one row per sound cue played. On retail the probe samples the four-slot cue ring every vsync - the cue ids and their countdowns - and counts a cue when a slot reaches zero with its id live and the drainer&rsquo;s gate open; a cue that came due behind a closed gate was not heard and is not scored. On the engine the recorder reads the audio director&rsquo;s due cues each tick, through an output with no device. Both ids are indices into the same descriptor table, so they compare directly.</p>
   <figure class="diagram">
     <svg viewBox="0 0 860 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sound cue matching. A retail cue is placed into engine time by its segment and its offset on the game clock. It matches the nearest unmatched engine cue of the same id within 6 ticks. What is left pairs within 120 ticks as a timing miss with its offset. The rest are missing, retail only, or extra, engine only.">
@@ -293,6 +298,16 @@
     <figcaption>A retail cue is placed into engine time the way a frame is: its segment, and the same offset into the aligned engine segment. The tolerance is a command-line knob.</figcaption>
   </figure>
   <p>A missing cue is traced back with a second probe mode that breakpoints the cue producers, the battle router and the dispatcher and logs who called each. That is how a missing Zenoir cue was found to come from the <em>victim&rsquo;s</em> animation track: the summon&rsquo;s module drops the victim&rsquo;s clip, and the engine had applied the drop to the creature. With that put right the cue still does not sound, and why is not yet traced. One static cue near the end of every summon arrives through none of the four logged entries, so it is a ring store made inline somewhere not yet located.</p>
+</section>
+
+<section class="doc-section" id="capture-coverage" data-doc="-">
+  <h2>Capture coverage</h2>
+  <p>The corpus&rsquo;s headline is only as broad as the moments it holds. <code>scripts/ci/capture-coverage.py</code> takes the denominator from the disc: of every scene, monster, enemy attack, player cast, cast module and screen the disc defines, does a retail state show it. Its output is a ranked worklist of what to capture next. Three probes fill it, each a valid run of the game, and state-making runs can take <code>run_probe.sh --fast --turbo</code>, since any valid run is as good as another.</p>
+  <ul class="bullets">
+    <li><strong>The battle harvest</strong> walks until an encounter, plays each round with Spirit and saves a state when a monster&rsquo;s action sits mid-action. <code>LEGAIA_WANT</code> names formations by monster id: the probe points the live region table at the scene&rsquo;s row holding them and lets retail&rsquo;s own roll pick it. A heal-class spell runs its own flow, so it counts as well.</li>
+    <li><strong>The door hop</strong> crosses a chain of doors by holding the player on each door&rsquo;s walk-on tile. The door&rsquo;s own record runs with its gates and flag writes, so a door the story has not opened refuses and ends the run, unless the scenario names the flags it pokes.</li>
+    <li><strong>The movie probe</strong> makes the op <code>4C E2</code> stores from a field state and saves states inside the movie.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="see-also">

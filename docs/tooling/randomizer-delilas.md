@@ -300,9 +300,11 @@ hands them out; both CLIs print a note. `inject_custom_items` composes the item
 set with the Delilas grant, and each half is idempotent on its own key (applier
 jump-table word / arena hook word), so either order of arrival completes.
 
-**The three items** claim the item table's only free slots: the executable's
-three empty-name records, `0xB9` (the cut Ra-Seru-egg item) and `0x12` / `0x1A`
-(the cut top-tier Ra-Seru weapon slots). A dual census - the curated gamedata
+**The three items** claim the item table's free slots: `0xB9` (the cut Ra-Seru-egg
+item) and `0x12` / `0x1A` (the cut top-tier Ra-Seru weapon slots). `0xB9` and `0x12`
+are empty-name records; `0x1A` holds a party-named string that nothing in play uses
+([item table](../formats/item-table.md#name-strings)), which the mod's own name
+replaces. A dual census - the curated gamedata
 cross-reference and the patcher's own drop / chest / steal / shop / casino /
 fishing / starting-item sweeps - shows every other named id is reachable in
 retail.

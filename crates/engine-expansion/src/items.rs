@@ -388,7 +388,8 @@ impl CompiledItems {
 }
 
 /// The five retail item ids no retail item uses (`0x12`, `0x1A`, `0x52`,
-/// `0xB9`, `0xFD`: empty names in the static item table), lent to pack items
+/// `0xB9`, `0xFD`: four empty names and `0x1A`'s unused party-named string in the
+/// static item table), lent to pack items
 /// for one fight at a time.
 pub const ALIAS_POOL: [u8; 5] = [0x12, 0x1A, 0x52, 0xB9, 0xFD];
 

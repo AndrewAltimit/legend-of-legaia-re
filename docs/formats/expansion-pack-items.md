@@ -15,7 +15,7 @@
 
 ## Where pack items live
 
-Retail's item id is a `u8`. The static item table ([item-table.md](item-table.md)) names 250 of its 256 ids, and the six it leaves blank are `0x00` ("no item") and five cut slots: `0x12`, `0x1A`, `0x52`, `0xB9` and `0xFD`. Every other id is a retail item the player can hold. A pack item cannot take a retail id without displacing a real item, and five spare ids are too few for a gear set.
+Retail's item id is a `u8`. The static item table ([item-table.md](item-table.md)) leaves `0x00` ("no item") and four cut slots blank (`0x12`, `0x52`, `0xB9`, `0xFD`), and `0x1A` holds a party-named string no pool or item in play uses. Those last five are spare; every other id is a retail item the player can hold. A pack item cannot take a retail id without displacing a real item, and five spare ids are too few for a gear set.
 
 So a pack item is not a retail id. The engine keeps pack items in their own store, keyed by their local `items.toml` key, beside the retail structures rather than inside them:
 

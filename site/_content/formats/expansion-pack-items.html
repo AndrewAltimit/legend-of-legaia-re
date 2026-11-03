@@ -17,7 +17,7 @@
 
 <section class="doc-section" id="where-pack-items-live" data-doc="where-pack-items-live">
   <h2>Where pack items live</h2>
-  <p>Retail's item id is a <code>u8</code>, and the static <a href="item-table.html">item table</a> names 250 of its 256 ids. The six blank ones are <code>0x00</code> ("no item") and five cut slots, <code>0x12</code>, <code>0x1A</code>, <code>0x52</code>, <code>0xB9</code> and <code>0xFD</code>. A pack item cannot take a retail id without displacing a real item, and five spare ids are too few for a gear set, so pack items live in their own store, keyed by their <code>items.toml</code> key.</p>
+  <p>Retail's item id is a <code>u8</code>, and the static <a href="item-table.html">item table</a> leaves <code>0x00</code> ("no item") and four cut slots blank (<code>0x12</code>, <code>0x52</code>, <code>0xB9</code>, <code>0xFD</code>), and <code>0x1A</code> holds a party-named string no pool or item in play uses. Those last five are spare. A pack item cannot take a retail id without displacing a real item, and five spare ids are too few for a gear set, so pack items live in their own store, keyed by their <code>items.toml</code> key.</p>
   <table class="data">
     <thead><tr><th>What</th><th>Retail</th><th>Pack</th></tr></thead>
     <tbody>

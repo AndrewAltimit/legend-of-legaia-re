@@ -45,6 +45,14 @@ A state the engine cannot be seeded into stays in the report with its reason.
 Start with [Running it](#running-it) and [Reading the report](#reading-the-report);
 the sections after them define the model the scores come from.
 
+**A still cannot see a cast.** The corpus scores one frame per state, and a cast runs
+for hundreds of vsyncs, so a high image score on a `*_mid_cast` state says that frame
+matches and nothing about the order, timing or length of the cast around it: an arm
+that runs late, a record seated all at once and a missing camera arm can all sit in
+frames no state holds. On most summons the state's one instant is the white flash,
+which the metric cannot see under. Before treating a cast as matched, record it with
+the [cast-sequence oracle](cast-sequence-oracle.md).
+
 ## Contents
 
 - [Running it](#running-it)

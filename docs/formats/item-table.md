@@ -61,6 +61,14 @@ the first hero's name ("Vahn Fist"). Its `00` is the substitution's argument,
 not a terminator. Ids `0x1C` (`C1 01 " Feral"`) and `0x20` (`C1 02 " Mace"`) take
 the same form for the second and third heroes.
 
+`ItemNameTable::name` prints what retail prints, the template hero name before a
+save's own names apply (`PARTY_NAMED_ITEMS`, `DEFAULT_PARTY_NAMES`), and a host with
+a save in hand puts the renamed hero in. `ItemNameTable::pool_name` is the reading
+the randomizer pools and the curated gamedata join key on: no hero in a party-named
+weapon (`Feral`, `Mace`), and nothing at all for `0x1A`, which no pool holds. A
+fixed seed's output does not move with what `name` prints, and a name a patch writes
+into one of these slots stands in both.
+
 ## Provenance + parser
 
 `PTR_DAT_8007436C` and the `*3`-word index form are read straight from the MES

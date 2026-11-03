@@ -19,10 +19,10 @@
 //! covers the field follow camera, the op-`0x45` cutscene shots, the overworld
 //! walk view and [`battle_vp`](crate::projection::battle_vp) alike.
 //!
-//! [`CutsceneCameraInterp`] is the glide between op-`0x45` Configure beats.
-//! It lives here rather than in the renderer so both the native window and the
-//! browser play page ease the same shot - a host that reads the staged params
-//! straight out of the world snaps every `apply > 0` beat.
+//! A scripted shot is the camera globals the op-`0x45` beats and the mover
+//! ([`camera_mover`](crate::camera_mover)) write, read by both the native window
+//! and the browser play page through `engine-field::frame_step::scripted_view`;
+//! neither host arms a glide of its own.
 //!
 //! REF: FUN_80026988 (the camera's Euler kernel), FUN_800172C0 (the view
 //! composition), FUN_801DE084 (the op-`0x45` Configure apply handler).
