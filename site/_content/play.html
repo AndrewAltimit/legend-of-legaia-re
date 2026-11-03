@@ -1796,7 +1796,7 @@ div.play-vis-head { cursor: default; }
           },
           onError: (msg) => {
             /* A WASM trap poisons the engine instance; rebuild it from the
-             * cached disc bytes and re-enter, so a single bad frame doesn't
+             * disc and re-enter, so a single bad frame doesn't
              * cost a page refresh (Bug-3 belt-and-suspenders). */
             statusEl.textContent = `Engine hiccup - recovering… (${msg})`;
             recoverRuntime();
@@ -2221,7 +2221,7 @@ div.play-vis-head { cursor: default; }
   window.__bootTitle = runBootTitle;
 
   /* Rebuild a fresh engine after a WASM trap and re-enter the current scene,
-   * reusing the existing renderer/canvas and the cached disc bytes (no
+   * reusing the existing renderer/canvas and the disc in hand (no
    * re-upload). Guarded against re-entrancy and against a scene that traps every
    * frame: after a few rapid failures it falls back to the opening scene, then
    * gives up (a page refresh clears everything). */
