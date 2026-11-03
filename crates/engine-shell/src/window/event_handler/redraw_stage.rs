@@ -849,11 +849,16 @@ impl PlayWindowApp {
                     legaia_engine_field::actor_look::ActorLook::pose_key_bits(look.as_ref())
                         as usize;
                 let key = (*slot, player.pose_key() | look_bits);
+                npc_frames.push(key);
+                // A hit reads no pose (the memo is why this loop is cheap),
+                // unless it is there to be checked.
+                if !verify && cache.contains_key(&key) {
+                    continue;
+                }
                 let mut pose = player.current_pose();
                 if let Some(l) = look {
                     legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
                 }
-                npc_frames.push(key);
                 if cache.contains_key(&key) {
                     // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
                     // must be the pose the entry was built from, or the key

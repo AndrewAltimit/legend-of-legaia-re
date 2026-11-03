@@ -461,6 +461,8 @@ impl PlayWindowApp {
                 ai,
                 tmd.objects.len(),
             )
+            // Every object drawn is the TMD as it stands: no copy to mask.
+            .filter(|d| !d.iter().all(|&drawn| drawn))
             .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
@@ -946,6 +948,8 @@ impl PlayWindowApp {
             // (`FUN_80049348` -> `FUN_8004CCD4`).
             let masked = g
                 .drawn_objects(tmd.objects.len())
+                // Every object drawn is the TMD as it stands: no copy to mask.
+                .filter(|d| !d.iter().all(|&drawn| drawn))
                 .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh =
