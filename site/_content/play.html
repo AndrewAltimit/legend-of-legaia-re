@@ -2298,24 +2298,33 @@ div.play-vis-head { cursor: default; }
 
   /* ---------------- per-frame HUD ---------------- */
 
+  /* Assigning textContent replaces the text node even when the string is the
+   * one already shown, and a replaced node sends the browser through style
+   * (this page's `:has()` rules included), layout and paint for the frame. A
+   * readout that did not change must not cost that. */
+  function setText(el, value) {
+    const text = value === null || value === undefined ? '' : String(value);
+    if (el.textContent !== text) el.textContent = text;
+  }
+
   function onState(st, fps) {
-    hud.scene.textContent = st.scene || '-';
-    hud.mode.textContent  = st.mode;
-    hud.fps.textContent   = fps;
-    hud.npcs.textContent  = st.npcs;
-    hud.pos.textContent = st.player
+    setText(hud.scene, st.scene || '-');
+    setText(hud.mode, st.mode);
+    setText(hud.fps, fps);
+    setText(hud.npcs, st.npcs);
+    setText(hud.pos, st.player
       ? `${st.player.x}, ${st.player.z}` + (st.player.walking ? ' (walking)' : '')
-      : '-';
+      : '-');
 
     /* Sound-effect channel: how many descriptors decoded off the disc, whether
        the class-2 program bank is resident in the SPU, and how many cues have
        keyed a voice. A cue that never keys is a silent channel, so the fired
        count is the honest readout. */
     const sfx = view && view.sfxState ? view.sfxState() : null;
-    hud.sfx.textContent = sfx
+    setText(hud.sfx, sfx
       ? `${sfx.descriptors} cues` + (sfx.vab_staged ? '' : ' (bank not staged)')
         + `, fired ${sfx.fired}`
-      : '-';
+      : '-');
 
     /* The retail dialog reading box is engine-drawn on the overlay canvas at
      * the TOP of the stage. This DOM text box is a `bottom: 5%` strip and
