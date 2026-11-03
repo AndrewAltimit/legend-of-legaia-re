@@ -491,14 +491,14 @@ impl World {
         out
     }
 
-    /// Whether this frame's picture depends on what the buffer still holds:
-    /// retail's battle frames never clear, and a cast's arms draw additive
-    /// layers with no opaque stage under them, over the frames before (Ozma's
-    /// fans go white that way). A host whose target outlives its frame keeps
-    /// it through a resident cast ([`Self::cast_armed_wash_prim`] is the drain).
+    /// Whether this frame's picture depends on what the buffer still holds.
+    /// A retail battle frame's farthest bucket holds an opaque black rect, and
+    /// an arm that arms the wash (`FUN_8004695C`) has it hold the subtractive
+    /// quad instead ([`Self::cast_armed_wash_prim`]): that frame's additive layers
+    /// land over the frames before (Ozma's fans go white that way), and the
+    /// first frame with no arm clears again (its arm 25 opens on black).
     pub fn cast_frame_persists(&self) -> bool {
-        self.mode == SceneMode::Battle
-            && (self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some())
+        self.cast_armed_wash().is_some()
     }
 
     /// The armed wash as the drain draws it (`FUN_80046978`), for a host that

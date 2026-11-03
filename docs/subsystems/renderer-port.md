@@ -639,10 +639,9 @@ this variant is where the halves meet.
 
 <a id="a-casts-frames-build-on-earlier-ones"></a>
 
-**A cast's frames build on earlier ones.** Retail's battle frames never clear.
-A frame's opaque stage normally hides that, but a cast's arms can drop the stage
-and draw additive layers alone, and those layers sum over the frames before,
-drained by the armed wash
+**A cast's frames build on earlier ones.** A retail battle frame's farthest bucket
+holds an opaque black rect, and an arm that arms the wash has it hold the subtractive
+quad instead, so that frame's additive layers sum over the frames before
 ([cast modules](cast-module.md#presentation-calls)). `Renderer::set_frame_persist`
 reproduces it on the native target, which is the one target that outlives its
 frame: while `World::cast_frame_persists` holds, each frame loads an earlier
