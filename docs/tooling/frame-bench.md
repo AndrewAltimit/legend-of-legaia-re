@@ -1,6 +1,7 @@
 # Frame benchmark
 
-Two drivers measure what the engine costs a player, on a fixed set of scenes:
+Two drivers measure what the engine costs a player, on a fixed set of scenes and
+on the way into them:
 [`scripts/ci/frame-bench.py`](../../scripts/ci/frame-bench.py) on the native
 window and [`scripts/ci/frame-bench-web.mjs`](../../scripts/ci/frame-bench-web.mjs)
 on the browser play page. They print tables and assert nothing: a frame-time gate
@@ -34,6 +35,21 @@ how a hitch gets a name.
 `LEGAIA_PROFILE_ALLOC_SITES=1` on a `bench-alloc` binary samples allocation call
 stacks past the skip and prints the heaviest at the end, as `[alloc-site]` lines.
 
+### Entry
+
+```bash
+scripts/ci/frame-bench.py --entry --base-exe old --repeat 7   # paired against another build
+scripts/ci/frame-bench.py --entry --entry-scenes town01,koin1
+```
+
+`legaia-engine entry-bench` enters each scene and forces a fight from it with no
+window and no GPU, one `[entry] <scene> <step> <ms>` line per step. The first round
+enters through the scene picker and carries the once-per-process caches; the
+second, labelled `scene+`, is what a door back into the scene costs. With a base
+build the two binaries alternate run by run, so a busy box hits both alike. What a
+window adds past these steps (surface, pipelines, mesh upload, draw lists) is the
+frame table's startup row.
+
 ## Browser
 
 ```bash
@@ -54,6 +70,13 @@ frame is not in it. The default `--gl egl` asks for a real GPU, and the output n
 the renderer it got; `--gl swiftshader` measures a software rasteriser, where the
 page's cost is swamped by the fragment work.
 
+`--entry-profile` samples the disc load, each scene entry and each battle's first
+frames and prints time by function, self and inclusive of callees. `--reenter`
+enters each scene twice in a row, and `--reload` reloads the page once the disc is
+up and times a returning visitor's load from the page's own disc cache. The summary
+line reports the disc read, the `load_disc_image` export and the module's memory
+size.
+
 A bundle built with `web-viewer`'s `bench-alloc` feature adds wasm allocations per
 frame (`wasm-pack build --target web --release -- --features bench-alloc`). A wasm
 profile names its functions by index; `wasm-bindgen --keep-debug` over the cargo
@@ -73,6 +96,19 @@ These are shapes that recur, not measurements:
 - **Shadow layers multiply the draw count.** A draw wholly outside a lamp's
   frustum writes no depth to that layer, so both hosts test each mesh's box per
   light. See [`renderer-port.md`](../subsystems/renderer-port.md#frame-profiler).
+
+- **A first entry pays for what a scene never reads.** The 64 cast modules parse on
+  a module's first read (`CastEffectPool`), the fog ground on the first tick with
+  the toggle up (`FogVolume::set_ground_source`), and a scene load asks for an
+  entry's class without the byte statistics a report carries
+  (`categorize::classify_class`). Each deferred value is a pure function of what the
+  load captured, so its reader gets what it would have had.
+- **Whole-disc copies cost at the wasm boundary.** A wasm memory never shrinks. The
+  page's image stays on its side of the boundary and `load_disc_image` copies across
+  only the files the runtime keeps.
+- **The scene picker's first pick walks every scene.** `ArrivalCatalog::build` loads
+  and classifies each CDNAME block to find its doors, once per process. A door, a New
+  Game and a card load do not build it.
 
 ## See also
 

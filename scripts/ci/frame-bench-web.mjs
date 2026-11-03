@@ -3,7 +3,7 @@
 //
 //   scripts/ci/frame-bench-web.mjs [--site site] [--scene town01,..] [--frames 600]
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
-//       [--reenter] [--entry-profile]
+//       [--reenter] [--entry-profile] [--reload]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
 // own file input, enters each scene through the page's own scene list and times the
@@ -15,6 +15,9 @@
 // `--reenter` enters each scene a second time, right after the first entry, and reports
 // that too: what a door back into a scene costs. `--entry-profile` samples each scene
 // entry and each battle's first frames and prints time by function, self and inclusive.
+//
+// `--reload` reloads the page once the disc is up and times a returning visitor's load,
+// the disc coming from the page's own cache.
 //
 // A browser's timers are coarse, and the frame function is only the page's main-thread
 // cost: the GPU process's own work is not in it. It prints numbers and asserts nothing.
@@ -119,6 +122,25 @@ function instrument() {
       else B.entryWorst = Math.max(B.entryWorst || 0, performance.now() - t);
       return r;
     };
+  };
+  // The module's memory, which a wasm instance never gives back once grown.
+  for (const k of ['instantiate', 'instantiateStreaming']) {
+    const f = WebAssembly[k];
+    WebAssembly[k] = async function (...a) {
+      const r = await f.apply(WebAssembly, a);
+      const inst = r.instance || r;
+      if (inst.exports && inst.exports.memory) B.memory = inst.exports.memory;
+      return r;
+    };
+  }
+  // The disc image read off its blob.
+  const readAs = FileReader.prototype.readAsArrayBuffer;
+  FileReader.prototype.readAsArrayBuffer = function (blob) {
+    const t = performance.now();
+    if (blob.size > (1 << 24)) {
+      this.addEventListener('load', () => { B.fileRead = performance.now() - t; });
+    }
+    return readAs.call(this, blob);
   };
   // Main-thread stalls, by the browser's own account.
   B.longTasks = [];
@@ -236,12 +258,25 @@ async function main() {
     console.log('  disc load inclusive ms:\n          ' + inclusiveTableOf(profile, 40));
   }
   out.startup.load_disc_export_ms = await page.evaluate(() => window.__bench.loadDisc);
+  out.startup.file_read_ms = await page.evaluate(() => window.__bench.fileRead);
+  out.startup.wasm_memory_mb = await page.evaluate(() => {
+    const m = window.__bench.memory;
+    return m ? m.buffer.byteLength / 1048576 : null;
+  });
   await page.evaluate(async () => {
     window.__bench.wrapRuntime(window.__playRuntime);
     const m = await window.LegaiaWasm.load();
     if (m.bench_alloc_totals) window.__wasmAllocTotals = () => m.bench_alloc_totals();
   });
 
+  if (arg('reload')) {
+    /* A returning visitor: the page again, its cached disc auto-loading. */
+    const tr = Date.now();
+    await page.reload();
+    await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
+    out.startup.reload_disc_ready_ms = Date.now() - tr;
+    out.startup.reload_file_read_ms = await page.evaluate(() => window.__bench.fileRead);
+  }
   const cdp = await page.context().newCDPSession(page);
   /* A CPU profile of the scene entry alone, stopped from the page. */
   const inclusiveTable = inclusiveTableOf;
