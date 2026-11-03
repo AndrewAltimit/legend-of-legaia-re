@@ -13,6 +13,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use legaia_engine_audio::note_trace::NoteTrace;
 use legaia_engine_audio::spu::adsr::{AdsrConfig, Phase};
 use legaia_engine_audio::spu::ram::SpuRam;
 use legaia_engine_audio::spu::reverb::{RESAMPLE_IN_LEN, RESAMPLE_OUT_LEN};
@@ -30,10 +31,11 @@ use crate::retail_compare::enumerate_corpus;
 /// libsnd's per-slot record pointer table (`_DAT_801CD2C0[16]`).
 const SEQ_TABLE: u32 = 0x801C_D2C0;
 
-/// mednafen's vsync in SPU samples (59.826 Hz, fitted: the drift of a track's
-/// note onsets against the emulator's output zeroes here). The port's own
-/// frame is a flat 60 Hz.
-pub const RETAIL_VSYNC_SAMPLES: f64 = 737.13;
+/// mednafen's vsync in SPU samples: an NTSC frame, 263 lines of 3413 video clocks
+/// at 53.693175 MHz (59.8261 Hz), against 44.1 kHz. The drift of a track's note
+/// onsets against the emulator's output zeroes here. The port's own frame is a
+/// flat 60 Hz.
+pub const RETAIL_VSYNC_SAMPLES: f64 = 737.1365;
 
 /// How many arrivals at a state's event `--pass 0` looks at. An hour of vsyncs
 /// bounds it for a score whose event comes round less often than that.
@@ -63,6 +65,11 @@ pub struct PcmRetailArgs {
     /// Where to write the aligned engine window (WAV).
     #[arg(long)]
     pub engine_wav: Option<PathBuf>,
+    /// Write the render's split for `scripts/ci/audio-note-fit.py`: `PREFIX.stems`
+    /// (every voice and the wet return, per sample), `PREFIX.notes` (the
+    /// key-ons), `PREFIX.flush` (how many voices each flush staged).
+    #[arg(long)]
+    pub stems: Option<PathBuf>,
     /// mednafen's recording of the same window: score the engine against it.
     #[arg(long)]
     pub retail_wav: Option<PathBuf>,
@@ -154,6 +161,7 @@ pub fn render_aligned(
     vsync_samples: f64,
     pass: u32,
     verbose: bool,
+    stems: Option<&Path>,
 ) -> Result<Vec<i16>> {
     let mut d = TraceBgmDirector::new();
     d.master_vol = pos.seq_vol;
@@ -227,11 +235,83 @@ pub fn render_aligned(
         }
     }
     let mut out = Vec::with_capacity(samples * 2 + 4096);
+    if let Some(prefix) = stems {
+        render_stems(&mut d, &mut carry, vsync_samples, samples, &mut out, prefix)?;
+    }
     while out.len() < samples * 2 {
         step(&mut d, &mut carry, Some(&mut out));
     }
     out.truncate(samples * 2);
     Ok(out)
+}
+
+/// [`render_aligned`]'s window with the mix's parts kept apart: one tick of
+/// [`Spu`] spelled out, its voices and its wet return written beside the sum.
+/// The key-ons and the flushes' staged voices go beside them.
+fn render_stems(
+    d: &mut TraceBgmDirector,
+    carry: &mut f64,
+    vsync_samples: f64,
+    samples: usize,
+    out: &mut Vec<i16>,
+    prefix: &Path,
+) -> Result<()> {
+    let with = |ext: &str| prefix.with_extension(ext);
+    let mut stems = Vec::with_capacity(samples * 100);
+    let mut flushes = String::new();
+    d.spu_mut().note_trace = Some(NoteTrace::new());
+    while out.len() < samples * 2 {
+        let at = (out.len() / 2) as u64;
+        let spu: *mut Spu = d.spu_mut();
+        if let Some(s) = d.sequencer_mut() {
+            // SAFETY: the director's SPU and sequencer are disjoint fields.
+            let spu = unsafe { &mut *spu };
+            if let Some(t) = spu.note_trace.as_mut() {
+                t.sample = at;
+            }
+            s.step_vsync(spu);
+            flushes.push_str(&format!("{at} {}\n", s.last_flush_staged()));
+        }
+        *carry += vsync_samples;
+        let n = carry.floor() as usize;
+        *carry -= n as f64;
+        let spu = d.spu_mut();
+        for _ in 0..n {
+            let (mut acc, mut send) = ([0i64; 2], [0i64; 2]);
+            let Spu {
+                voices,
+                ram,
+                reverb,
+                ..
+            } = spu;
+            for v in voices.iter_mut() {
+                let (l, r) = v.tick(ram);
+                for (i, x) in [l, r].into_iter().enumerate() {
+                    acc[i] += i64::from(x);
+                    if v.reverb_send {
+                        send[i] += i64::from(x);
+                    }
+                    stems.push(x.clamp(-32768, 32767) as i16);
+                }
+            }
+            let narrow = |x: i64| x.clamp(-32768, 32767) as i16;
+            let (wl, wr) = reverb.tick(narrow(send[0]), narrow(send[1]));
+            stems.extend([wl, wr]);
+            for (x, gain, wet) in [
+                (acc[0], spu.master_left, wl),
+                (acc[1], spu.master_right, wr),
+            ] {
+                out.push(narrow(((x + i64::from(wet)) * i64::from(gain)) >> 14));
+            }
+        }
+    }
+    let trace = d.spu_mut().note_trace.take().unwrap_or_default();
+    std::fs::write(with("notes"), trace.to_jsonl("{}"))?;
+    std::fs::write(with("flush"), flushes)?;
+    stems.truncate(samples * 50);
+    let bytes: Vec<u8> = stems.iter().flat_map(|x| x.to_le_bytes()).collect();
+    std::fs::write(with("stems"), bytes)?;
+    Ok(())
 }
 
 /// A CD-XA channel alone through the output's own mix core, as a one-shot cue
@@ -503,6 +583,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             args.vsync_samples,
             args.pass,
             args.verbose,
+            args.stems.as_deref(),
         )?;
         (pcm, args.label.clone())
     };

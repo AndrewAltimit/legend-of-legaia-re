@@ -3266,42 +3266,77 @@ recorder and not in the console; the oracle divides it out
   the event the read cursor `+0x00` waits on, with `+0x90` tenths of a tick left.
   From there it renders with no world, so a state's own cues are retail's alone.
 
-| State | `core` corr | `track` corr | Level (retail / engine) | Reading |
-|---|---|---|---|---|
-| `terra_party_battle` | | `0.982` | `-0.01` dB | battle theme |
-| `minigame_fishing` | | `0.985` | `0.00` dB | |
-| `minigame_baka_fighter` | | `0.978` | `0.00` dB | |
-| `keikoku_chest_pre` | `1.000` | `0.973` | `+0.02` dB | |
-| `mei_house_inside` | `1.000` | `0.970` | `-0.19` dB | |
-| `title_screen_new_game` | `1.000` | `0.932` | `-0.06` dB | first 10 s; it then times out into the attract sequence |
-| `sebucus_overworld_resident` | | `0.948` | `-0.04` dB | |
-| `rimelm_wall_press_left` | | `0.896` | `+0.39` dB | retail's river emitter is in the recording |
-| `menu_status_town` | | `0.903` | `-0.19` dB | the score's body, past its first pass |
-| `minigame_slot_machine` | | `0.842` | `-0.22` dB | retail's cabinet cues are in the recording |
-| `party_battle_gobu_gobu` | | `0.987` | `-0.01` dB | battle theme; [the bend](#engine-audio-model---sequencer-port) it found |
+| State | `core` corr | `track` corr | Residual | Level (retail / engine) | Reading |
+|---|---|---|---|---|---|
+| `party_battle_gobu_gobu` | | `0.9996` | `-30` dB | `0.00` dB | battle theme; [the bend](#engine-audio-model---sequencer-port) it found |
+| `minigame_fishing` | | `0.9998` | `-32` dB | `0.00` dB | |
+| `terra_party_battle` | | `0.9991` | `-27` dB | `0.00` dB | battle theme |
+| `menu_status_town` | | `0.9990` | `-27` dB | `0.00` dB | the score's body, past its first pass |
+| `sebucus_overworld_resident` | | `0.9990` | `-27` dB | `0.00` dB | |
+| `mei_house_inside` | `1.000` | `0.9989` | `-27` dB | `0.00` dB | |
+| `keikoku_chest_pre` | `1.000` | `0.9986` | `-26` dB | `0.00` dB | |
+| `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
+| `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
+| `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | |
+| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render: `+1` to `+4.6` dB between `350` Hz and `4` kHz |
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
 where the two sides differ.
 
-**What the residual is.** The `track` channel's `-12` to `-15` dB residual is not
-in the voices. Paired by pitch and ADSR word at nine moments of one track, every
-sounding voice carries the same pitch, ADSR word and L/R volume on both sides,
-and the `core` channel holds those same voices to correlation `0.99998`. It is
-sub-vsync timing, and the sequencer's grid is not coarser than retail's: under
-PCSX-Redux (`autorun_kon_cycle_watch.lua`, 1200 vsyncs each of a field and a battle
-state) the per-frame flush `FUN_80065BAC` holds its vsync phase within `0.2` of a
-sample, the port's flush period, and the KON write falls `8.7` to `20.8` samples
-after the flush's entry, by how much work the flush has that frame (`768` cycles a
-sample). Two voices keyed on different frames land up to `12` samples apart relative
-to each other, and two voices on one pitch sum differently that far apart; a port
-flush keys every frame at one offset. The size fits: the port against its own render
-with a random `0..=12` sample offset on each flush reads `0.965` / `-11.6` dB on
-`mei_house_inside` (retail `0.970` / `-12.1` dB) and `0.987` / `-15.8` dB on
-`terra_party_battle` (retail `0.982` / `-14.4` dB). Closing it would mean modelling the flush's
-cycle cost per voice and note against a CPU that only an emulator's timing pins, so
-it is left: `136` microseconds either way, and no constant moves it
-(`--vsync-samples`, tried from `737` to `737.46`).
+**How a residual gets a cause.** A low correlation with every band's level right is
+timing, and a whole-mix number cannot say whose. `scripts/ci/audio-note-fit.py` splits the
+engine's render into one stem per note (`pcm-retail --stems`), and fits each note's own time
+offset and gain against the recording by coordinate descent. The offsets are the measurement:
+plotted against pitch, against how many voices the flush keyed and against the vsync grid, each
+of the three defects below read as a straight line or a clean cluster before anything changed.
+The fit's own ceiling on `menu_status_town` was `0.976` when the track channel read `0.931`; it now
+reads `0.9995` against `0.998`, with no term left in pitch or in the flush.
+
+<a id="the-key-ons-start"></a>
+**The key-on's start.** A note's offset against the fit was `d = 4 - 3 / p` samples for a pitch
+ratio `p` (regression `3.72 - 2.19 / p` over 523 notes of one recording): a fixed output delay
+and a lead in *source* samples. It is mednafen's key-on, which carries the field in every state
+(`Voices[n].DecodePlayDelay`, read by `legaia_mednafen::PsxSpu::voice_decoder`): a key-on takes effect
+after the voice's sample in hand, holds the voice for four samples with neither envelope nor
+counter running, plays one more at envelope `0` where both take their first step, and reads its
+interpolator from the decoder's read position, whose four taps are the stream's samples `0..=3`. So
+a voice's first sounding output is the seventh after the write, at sample `3 + pitch`, with real
+history behind it. The port had the first output at once, on a history of three zeros and sample
+`0`. On a low note that is `10` samples against the next voice up, every note: `-0.15` dB of level
+as well, because two voices on one pitch beat against each other differently. Port: `Voice::key_on`,
+`KEY_ON_START_DELAY`. What this settles is the oracle's retail, an emulator's model: no real-console
+recording has been compared, the same limit as the rounding below.
+
+<a id="the-flushs-own-cost"></a>
+**The flush's own cost.** Per flush, the fitted offset is a straight line in how many voices the
+flush wrote registers for: `1.15` to `1.25` samples a voice over six recordings, with under a
+sample of scatter, and the counts that matter include a voice a CC7 or CC10 re-volumed in that
+vsync, which is what separates `sebucus_overworld_resident`'s `1.48` against keyed voices alone from
+its `1.20`. `FUN_80065BAC` walks the 24 voices and calls `FUN_8006C048` once for each with a flag up,
+and that routine loops over all 24 mask bits inside (`0x8006C048`), so a call costs the same near
+`920` cycles whatever it writes; the KON write `FUN_8006B854(1, mask)` comes after the walk. Under
+PCSX-Redux (`autorun_kon_cycle_watch.lua`, `s3_rimelm_freeroam`, 900 vsyncs) the flush-to-KON gap is
+`7.42 + 1.34 * n` samples for a mask of `n` voices, each row within `0.1` of a sample. Two voices keyed on
+different vsyncs therefore land up to a dozen samples apart relative to each other, and retail's
+chords sit later than its single notes by a fixed law. Port: `flush_key_on_lag` over the sequencer's
+staged-voice mask, at the recordings' `1.2` (the emulator-specific cycle cost of the routine is the one
+fitted number here, and the score is against mednafen). The port does not add the `7.4` itself: it
+moves all music alike against nothing the port keys it to. A cue keys as the port's frame reaches it,
+outside this flush, and takes the fixed delay alone.
+
+<a id="a-loop-jump-does-not-wait-again"></a>
+**A loop's later passes do not wait the delta behind the Loop Start.** With those two gone, `11` of
+`171` flushes on `menu_status_town` were a whole vsync late: every one after the score's jump. `FUN_8006139C`'s
+Loop Start reads the next delta into `+0x90` first and then saves the cursor (`0x80061410..0x80061424`),
+so the saved position is *past* that delta, and the arm that loops for good discards the delta at the
+loop end and zeroes the wait (`0x8006147C..0x80061490`). The event behind the marker therefore waits
+its delta on the first pass only. In `music_01` that delta is usually one tick: ten tenths against a
+budget near `115`, so about one event in eleven lands a vsync late after each jump, and the phase
+walks on every pass. Port: `pump_vsync`, [SEQ loop markers](../formats/seq.md#loop-markers).
+
+Below these, what the `track` channel still reads is a fraction of a sample per flush: the KON write
+falls mid-sample, and the fitted line is not an integer.
 
 **CD-XA.** The silenced recording of a state with a one-shot sounding, the resumed SPU
 subtracted, is the CD input alone (`xa` channel, `--xa-wav`). On
@@ -3314,9 +3349,10 @@ across a second, at the mix's `0.81` of the decoded channel. Its first sample la
 `205` ms past the call: `SHOUT_CD_RESPONSE_DELAY` plus the queue. The start against a
 retail trigger is not scored, because no library state stands just ahead of a cue.
 
-**The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is
-`59.826` Hz (fitted, the drift zeroes at `737.13` samples) and the port's frame is a
-flat 60 Hz. Note for note the score is the same; a track reaches any bar `0.29 %`
+**The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is `59.8261` Hz,
+an NTSC frame of 263 lines of 3413 video clocks at 53.693175 MHz, `737.1365` samples, where
+the drift zeroes (a rounder `737.13` left `20` samples of it across a recording). The port's
+frame is a flat 60 Hz. Note for note the score is the same; a track reaches any bar `0.29 %`
 early, by the same factor the port's whole simulation runs ahead of the console,
 so the music stays locked to the game. The oracle renders at the console's rate
 (`Sequencer::step_vsync`); the hosts stay at 60 Hz.
@@ -3422,8 +3458,9 @@ timer throttling does not touch.
   `FUN_800250D4` releases voices and keys none, so a battle cue is on the ring or it
   is a CD-XA clip (`FUN_8003D53C`), and only the ring half is in the cast oracle's
   sound channel.
-- **ADPCM rounding and the per-frame KON offset** are the two remaining differences
-  [real retail PCM](#real-retail-pcm) can see; the second is CPU cost, not the grid.
+- **ADPCM rounding** is the remaining difference on the
+  [real retail PCM](#real-retail-pcm) core channel; the track channel's rest is a fraction of a
+  sample per flush ([the flush's own cost](#the-flushs-own-cost)) and retail's own cues.
 - **A CD-XA clip's start against a retail trigger** is unscored: it wants a mednafen
   state just ahead of a cue ([above](#real-retail-pcm)).
 - **Two emitter inputs are constants.** The per-row scale pair is set once:

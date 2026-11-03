@@ -330,8 +330,19 @@ entry (sound-test track 72) borrowing another entry's bank. See
 data entry stored lasts, and `FUN_80063AA8` (end-of-track) never reads a Loop Start: it
 restarts from the score head or, with the play count spent, stops. The field BGM attach
 plays with a count of `1`, so `2050`, `2057`, `2070` and `2071` play once; a capture of
-`2050` runs off its end with its flags at `0`. A jump touches no voice. See
-[`seq.md`](../../formats/seq.md#loop-markers).
+`2050` runs off its end with its flags at `0`. A jump touches no voice, and does not wait the
+delta behind the Loop Start again. See [`seq.md`](../../formats/seq.md#loop-markers).
+
+### What a track's residual against retail PCM was
+
+*Status:* resolved - grade `capture`, `disassembly`
+
+The `-12` to `-15` dB the track channel left once voices, volumes and pitches matched was three
+defects, each read off a per-note fit of the render against mednafen's recording: a key-on's
+start (seventh output, sample `3`, on real history), the flush's cost before its KON write
+(`FUN_8006C048` per staged voice, `1.2` samples a voice against the recording and `1.34` under
+PCSX-Redux's cycle counter), and a loop jump that re-waited the delta behind its Loop Start
+(`FUN_8006139C`). See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).
 
 ### The level of the port's mix against retail's
 
