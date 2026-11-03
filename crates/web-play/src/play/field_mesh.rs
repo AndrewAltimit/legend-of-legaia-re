@@ -24,6 +24,19 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// [`Self::field_vram_bytes`] as a view of the engine's own image, for the
+    /// per-frame re-upload: valid until the next call into the engine, so the
+    /// page hands it straight to GL.
+    pub fn field_vram_view(&self) -> js_sys::Uint8Array {
+        let bytes: &[u8] = match self.battle_intro.as_ref().and_then(|i| i.captured_vram()) {
+            Some(page) => page.as_bytes(),
+            None => self.res().map(|r| r.vram.as_bytes()).unwrap_or(&[]),
+        };
+        // SAFETY: the page reads the view before anything else runs in this
+        // module, so nothing can grow the memory or move the image under it.
+        unsafe { js_sys::Uint8Array::view(bytes) }
+    }
+
     /// True when a field VRAM effect (water CLUT-walk shimmer, jou's ambient
     /// palette cyclers / lightning, scripted CLUT fx) changed texels since
     /// the last call - the page then re-uploads [`Self::field_vram_bytes`].
@@ -308,8 +321,11 @@ impl LegaiaRuntime {
         let Some(m) = host.world.morphed_env_tmd(s, rtmd) else {
             return Vec::new();
         };
-        let (mesh, _) = legaia_engine_scene::scene_assembly::build_hybrid_env_mesh(&m, &res.vram);
-        mesh.positions.iter().flatten().copied().collect()
+        legaia_engine_scene::scene_assembly::hybrid_env_positions_memo(
+            &m,
+            &res.vram,
+            &mut self.field_morph_memo,
+        )
     }
 
     pub fn field_mesh_uvs(&self) -> Vec<u8> {

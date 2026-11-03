@@ -134,19 +134,40 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const gl = this.gl;
     const locs = this.locPrimC || [];
     let refs = null;
-    if (this.primRefsFn && positions && indices && locs[0] >= 0) {
-      try { refs = this.primRefsFn(positions, indices); } catch (_) { refs = null; }
-      if (refs && refs.length !== (positions.length / 3) * 13) refs = null;
+    if (positions && indices && locs[0] >= 0) {
+      const n = (positions.length / 3) | 0;
+      if (this.primPlanFn) {
+        /* The corners a vertex's primitive has depend on the indices alone:
+         * one wasm call per mesh, then a plain fill per pose. */
+        if (m.primPlanFor !== indices || !m.primPlan || m.primPlan.length !== n * 5) {
+          try { m.primPlan = this.primPlanFn(n, indices); } catch (_) { m.primPlan = null; }
+          m.primPlanFor = indices;
+        }
+        if (m.primPlan && m.primPlan.length === n * 5) {
+          if (!m.primRefData || m.primRefData.length !== n * 13) m.primRefData = new Float32Array(n * 13);
+          refs = fillPrimRefs(m.primPlan, positions, m.primRefData);
+        }
+      } else if (this.primRefsFn) {
+        try { refs = this.primRefsFn(positions, indices); } catch (_) { refs = null; }
+        if (refs && refs.length !== n * 13) refs = null;
+      }
     }
     m.hasPrimRefs = !!refs;
     if (!refs) {
       for (const l of locs) if (l >= 0) gl.disableVertexAttribArray(l);
+      m.primRefLen = 0;
       return;
     }
+    const data = refs instanceof Float32Array ? refs : new Float32Array(refs);
     if (!m.primRefBuf) m.primRefBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, m.primRefBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, refs instanceof Float32Array ? refs : new Float32Array(refs),
-      gl.DYNAMIC_DRAW);
+    /* A re-pose: same size, and the VAO's pointers still stand. */
+    if (m.primRefLen === data.length) {
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+      return;
+    }
+    m.primRefLen = data.length;
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
     const sizes = [4, 3, 3, 3];
     const offs = [0, 16, 28, 40];
     for (let k = 0; k < 4; k++) {
@@ -322,6 +343,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.enable(gl.POLYGON_OFFSET_FILL);
     gl.polygonOffset(2, 2);
     const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const smvp = this._shadowMvp || (this._shadowMvp = new Float32Array(16));
     const ground = this.groundEnable && this.ground && this.ground.indexCount > 0 ? this.ground : null;
     for (let li = 0; li < n; li++) {
       gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, this.shadowTex, 0, li);
@@ -332,10 +354,15 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         gl.bindVertexArray(ground.vao);
         gl.drawElements(gl.TRIANGLES, ground.indexCount, gl.UNSIGNED_INT, 0);
       }
+      /* Only what this light's frustum touches: a body wholly outside writes
+       * no depth into the layer, so leaving it out moves no shadow. */
       for (const p of placements) {
         const mesh = this.sceneMeshes.get(p.meshId);
         if (!mesh || mesh.indexCount === 0) continue;
-        gl.uniformMatrix4fv(this.locShadowMvp, false, mulMat4(lvp, this._placementModel(p, mesh)));
+        mulMat4Into(smvp, lvp, this._placementModel(p, mesh));
+        const b = mesh.aabb;
+        if (b && boxOutsideClip(smvp, b.cx, b.cy, b.cz, b.sx * 0.5, b.sy * 0.5, b.sz * 0.5)) continue;
+        gl.uniformMatrix4fv(this.locShadowMvp, false, smvp);
         gl.bindVertexArray(mesh.vao);
         gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_INT, 0);
       }
@@ -391,6 +418,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const idx = rec.cpuIndices;
     if (!pos || !idx || pos.length === 0) return;
     const normals = computeSmoothNormals(pos, idx);
+    if (rec.normBuf && rec.normLen === normals.length) {
+      /* A re-pose: same size, and the VAO's pointer still stands. */
+      gl.bindBuffer(gl.ARRAY_BUFFER, rec.normBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, normals);
+      rec.normalsDirty = false;
+      return;
+    }
+    rec.normLen = normals.length;
     if (!rec.normBuf) rec.normBuf = gl.createBuffer();
     gl.bindVertexArray(rec.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, rec.normBuf);
@@ -654,6 +689,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     /* Legacy fallback: overwrite the first 16 entries of the ocean
      * CLUT row inside VRAM so terrain-embedded water shimmers too. */
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    this._vramShadow = null;
     gl.texSubImage2D(
       gl.TEXTURE_2D, 0, 0, 506, 16, 1,
       gl.RED_INTEGER, gl.UNSIGNED_SHORT,

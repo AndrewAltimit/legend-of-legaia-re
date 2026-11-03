@@ -120,6 +120,8 @@ pub struct LegaiaRuntime {
     /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
     /// so the page re-uploads the VRAM texture only on real changes.
     pub(crate) field_vram_dirty: bool,
+    /// [`Self::field_morph_positions`]'s answers, per morph state.
+    pub(crate) field_morph_memo: legaia_engine_scene::scene_assembly::HybridPositionsMemo,
     /// Enhanced lighting's derived light sets for the running scene
     /// ([`crate::play_lighting`]), built on the first lit frame after a
     /// scene entry.
@@ -489,6 +491,7 @@ impl LegaiaRuntime {
             locomotion_anm: None,
             field_vram_anim: None,
             field_vram_dirty: false,
+            field_morph_memo: Default::default(),
             scene_lights: None,
             battle_intro: None,
             intro_readback: false,

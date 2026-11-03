@@ -458,6 +458,8 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* Every scene mesh carries its primitives' corners for retail's
        * per-primitive near reject, built by the engine's kernel (read
        * through this.rt so a recovered runtime keeps serving it). */
+      this.renderer.primPlanFn = this.rt && typeof this.rt.prim_corner_plan === 'function'
+        ? (n, i) => this.rt.prim_corner_plan(n, i) : null;
       this.renderer.primRefsFn = (p, i) => (this.rt && typeof this.rt.prim_corner_refs === 'function'
         ? this.rt.prim_corner_refs(p, i) : null);
       this.opts = opts || {};

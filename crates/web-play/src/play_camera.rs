@@ -255,6 +255,21 @@ impl LegaiaRuntime {
         .to_vec()
     }
 
+    /// [`prim_near_reject::prim_corner_plan`](legaia_render_kernels::prim_near_reject::prim_corner_plan),
+    /// flat: five words per vertex (four corner vertices and the count), which
+    /// a mesh keeps across re-poses so the page fills the stream from its
+    /// positions without a call per pose. Empty for an out-of-range index, as
+    /// [`Self::prim_corner_refs`] is.
+    pub fn prim_corner_plan(&self, vertex_count: u32, indices: &[u32]) -> Vec<u32> {
+        if indices.iter().any(|&i| i >= vertex_count) {
+            return Vec::new();
+        }
+        legaia_render_kernels::prim_near_reject::prim_corner_plan(vertex_count as usize, indices)
+            .into_iter()
+            .flatten()
+            .collect()
+    }
+
     /// Per-vertex primitive-corner records for a triangle mesh - the stream
     /// the page binds as `a_prim_c0..a_prim_c3`, from the same
     /// [`legaia_render_kernels::prim_near_reject::prim_corner_refs`] the native

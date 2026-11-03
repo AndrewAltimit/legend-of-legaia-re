@@ -260,7 +260,10 @@
        * really changed (the take call clears the engine-side flag). Guarded
        * so a cached wasm bundle predating the export still runs statically. */
       if (typeof rt.field_vram_take_dirty === 'function' && rt.field_vram_take_dirty()) {
-        this.renderer.uploadVram(rt.field_vram_bytes());
+        /* A view of the engine's own image where the bundle has one: no
+         * megabyte copied onto the JS heap per CLUT step. */
+        this.renderer.uploadVram(typeof rt.field_vram_view === 'function'
+          ? rt.field_vram_view() : rt.field_vram_bytes());
       }
       /* VDF vertex morphs: env-pack meshes whose morph deltas moved this
        * tick (retail-armed ambient parts + the scene-entry pulse) get just
