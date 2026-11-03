@@ -328,6 +328,7 @@ const NAV = [
       { href: 'tooling/frame-bench.html', text: 'Frame benchmark', key: 'tooling/frame-bench' },
       { href: 'tooling/build-and-test-speed.html', text: 'Build and test speed', key: 'tooling/build-and-test-speed' },
       { heading: 'Beyond Legaia' },
+      { href: 'tooling/porting-by-reimplementation.html', text: 'Porting by reimplementation', key: 'tooling/porting-by-reimplementation' },
       { href: 'tooling/reusing-for-other-ps1-games.html', text: 'Reusing for other PS1 games', key: 'tooling/reusing-for-other-ps1-games' },
       { href: 'tooling/retail-oracle-method.html', text: 'The retail-oracle method', key: 'tooling/retail-oracle-method' },
     ],
