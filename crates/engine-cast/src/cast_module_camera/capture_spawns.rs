@@ -645,6 +645,7 @@ pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
             0x801F_87FC,
         ],
     ),
+    (944, &[0x801F_7FD0, 0x801F_8038]),
     (951, &[0x801F_8348, 0x801F_836C]),
     (
         955,
@@ -756,6 +757,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         ),
         957 => body == Some(super::THUNDER_STORM_BODY),
         941 => body == Some(super::STEAL_BODY),
+        944 => body == Some(super::CURSE_ALL_BODY),
         _ => false,
     }
 }
@@ -769,7 +771,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
-        944 => body == Some(0x801F_6A04),
+        944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
         946..=948 => true,
         955 => matches!(
             body,
@@ -849,6 +851,9 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0944's per-arm tables are Guilty Cross's; Curse All (`0x53`)
+        // seats its two records through its director.
+        (944, _) if action == 0x53 => &[],
         // PROT 0962's arms are per body: Ultra Charge (`0xA5`) seats on
         // arms 0 and 1, the three charge bodies on arm 3.
         (962, 3) if action == 0xA2 => &super::blade_breath::E962_A2_3,

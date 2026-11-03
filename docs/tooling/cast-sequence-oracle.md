@@ -548,6 +548,28 @@ evolved Cort's arrival holds the flow on `0x0C` for about 3200 vsyncs
 ([battle-command-flow.md](../subsystems/battle-command-flow.md#flow-0x0c-is-the-boss-stage-modules-baton)),
 so a probe run from the fight's opening needs `LEGAIA_PRESS_UNTIL` past it.
 
+### What a harvested state needs passed
+
+A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
+`--target` store into `+0x1DD` is the one the cast begins on (`cast_target` in
+`done.txt` follows it, whatever seat the pick chose). So:
+
+- Pass the seat the corpus's `*_mid_cast` state of the same cast holds, and for a
+  group spell `--target 8`: the [spell table](../formats/spell-table.md#target-shape-2)
+  reads `0x64` for all opponents, `0x44` for one. A `--target 0` on Multi Cutter
+  records retail hitting Vahn alone against the engine's sweep and reads `.533` for
+  `.813`; a `--target 8` on Astral Wave (`0x44`) records retail sweeping the party
+  against the engine's single hit.
+- The harvester plays Spirit, so a state saved in those rounds holds every party seat
+  at `+0x1DE == 4`. Pass `--guard 0,1,2` or the engine's victims take three to four
+  times retail's damage. A `--monster-pick` run several rounds on from a `*_strike`
+  state has tapped Attack since, and takes no `--guard`.
+- A monster-pick run from a `*_strike` state wants `LEGAIA_PRESS_UNTIL=7000` and
+  `--frames 12000`: the default window ends at the next round's command input. Some
+  still inject nothing in that span (`inject=-1`). `--physical --retail-only` from the
+  corpus's `*_mid_cast` state then records the cast from its instant, and
+  `--spell .. --engine-only` runs the engine side, which pairs by arm.
+
 ### The target has to be the engine's
 
 The engine half dispatches the monster's cast with the target class its

@@ -121,7 +121,10 @@ mod tests {
         let a = steal_camera(&mut st, 0, seats());
         assert!(a.follow_caster);
         st.caster_in_reach = true;
-        let away = steal_camera(&mut st, 1, seats()).caster_write.facing.unwrap();
+        let away = steal_camera(&mut st, 1, seats())
+            .caster_write
+            .facing
+            .unwrap();
         let onto = a.caster_write.facing.unwrap();
         assert_eq!(onto.wrapping_add(0x800) & 0xFFF, away);
     }

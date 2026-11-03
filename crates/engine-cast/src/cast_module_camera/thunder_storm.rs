@@ -167,11 +167,7 @@ pub fn thunder_storm_camera(
                     let (sin, cos) = legaia_engine_system::trig::trig12(angle as u16);
                     arm.charge_spawns[2 + i] = Some(seat(
                         STORM_RAY_RECORD,
-                        [
-                            c.x.wrapping_sub(sin / 16),
-                            0,
-                            c.z.wrapping_sub(cos / 16),
-                        ],
+                        [c.x.wrapping_sub(sin / 16), 0, c.z.wrapping_sub(cos / 16)],
                         [0, angle as i16, 0],
                     ));
                 }
@@ -290,7 +286,18 @@ mod tests {
         }
         assert_eq!(phase, 0xFF);
         assert_eq!(SPEED_SCALAR, 8);
-        assert_eq!(dwell, [1, 0x600 / 8, 0x400 / 8, 0x100 / 8, 0x800 / 8, 0x200 / 8, 257]);
+        assert_eq!(
+            dwell,
+            [
+                1,
+                0x600 / 8,
+                0x400 / 8,
+                0x100 / 8,
+                0x800 / 8,
+                0x200 / 8,
+                257
+            ]
+        );
     }
 
     /// The hit lands on the pass that leaves arm 5, with the party turned on

@@ -174,7 +174,12 @@ impl World {
             .as_ref()
             .and_then(|t| t.item_name(item))
             .map(str::to_string)
-            .or_else(|| self.tables.item_catalog.get(item).map(|e| e.name.to_string()))
+            .or_else(|| {
+                self.tables
+                    .item_catalog
+                    .get(item)
+                    .map(|e| e.name.to_string())
+            })
             .unwrap_or_default()
     }
 

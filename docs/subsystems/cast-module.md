@@ -1347,6 +1347,11 @@ are on [`functions/battle.md`](../reference/functions/battle.md#slot-b-summon--c
 
 Notes on individual arms:
 
+- **PROT 0941 `0x51` (enemy Steal) seats no record.** Its caster walks into
+  reach on arm 1 (halving `ctx[+0x6D0]` from arm 0 until the steal), turns its
+  back, and each of arms 1 and 2 rings a voice through `FUN_8004FE5C` by the
+  caster's monster id. Arm 1 also backs the caster off along that heading until
+  it leaves reach, which the port does not carry (`steal_camera`).
 - **PROT 0941 `0x51` (enemy Steal) reaches no damage wrapper.** Its ten
   distinct `jal` targets are `0x80019B28`, `0x8003CA78`, `0x8003CAC4`,
   `0x80042310`, `0x8004E2F0`, `0x8004FE5C`, `0x80050E2C`, `0x80056798`,
@@ -3220,6 +3225,10 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 | 0938 `0xB7` Mystic Circle, `0x801F69EC` | arm 0's cut behind the caster (pitch `-0x40`, TR `(0, 0x600, 0x600)`), arm 2's cut to the front (pitch `0x180`, TR `(0, 0x600, 0xC00)`); drifts on arms 1 / 2 (TR z `+4`, TR y `-1` a vsync) and 3 (`+96`, `-29`) | `0x801F8040`, **absolute**, not scalar-scaled: `0x800`, drained `8 * delta` |
 | 0946 Call Wave `0x55` / Big Wave `0x56`, `0x801F69FC` (`SINGLE_BODY`) | below | `0x801F7F20`; the director owns the phase and finishes the module at arm 8 |
 | 0953 Terio Punch, `0x801F69FC` (`SINGLE_BODY`) | below | - |
+| 0957 `0x77` Thunder Storm, `0x801F6A14` | [below](#prot-0957-thunder-storm) | `0x801FA278`, seeded `0x600`, drained `8 * delta`; the director owns the phase |
+| 0944 `0x53` Curse All, `0x801F7470` | arm 0's `0x20`-frame shot on the caster (TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0x80`-frame pull to TR z `ctx[+0x6D0]`, arm 2's cut on the row's `FUN_801DCEAC` centroid (TR `(0, 0x500, 2 * extent)`), arm 3's `0x60`-frame pull to `3 * extent` | `0x801F8360`, seeded `scalar << 5`; PROT 0944's per-arm record tables are Guilty Cross's, and this body seats `0x801F7FD0` and `0x801F8038` itself |
+| 0941 `0x51` Steal, `0x801F730C` | case 6 on the caster through every arm; no `FUN_801D829C` | `0x801F83EC`, seeded `scalar << 5`; arm 1 holds on `FUN_8004E2F0` instead |
+| 0955 `0x73` Void Accessories, `0x801F6A28` | arm 0's `0xC`-frame shot on the caster, arm 1's `0xA0`-frame pull (pitch `-0xA0`, TR `(0, 0x740, ctx[+0x6D0] / 3)`), arm 2's cut on the victim (TR `(0, 0x300, 0x600)`), TR z `+scalar` through arms 3 and 4 | `0x801F9D28`, seeded `scalar * 12` |
 | 0960 `0x7B` Plasma Strike, `0x801F74E4` | [below](#prot-0960-plasma-strike) | `0x801F8E50`, seeded `scalar * 12`; arms 5, 6 and `0xD` gate on the caster's clip instead, arms 7..`0xF` re-arm by storing |
 | 0959 `0x7A` Megaton Press, `0x801F69F0` | [below](#prot-0959-megaton-press) | `0x801F9624`, seeded `scalar * 12`; the phase chain is ported (`MEGATON_PRESS_CHAIN`), so the director runs the countdown table and leaves the phase alone |
 | 0962 `0xA2` / `0xA3` / `0xA4` Blade Breath / Thunder Needle / Gigaton Press | [below](#prot-0962-koru-charge-bodies) | none: each strike waits on the caster's node cursor, each tail on the cursor or the victim's settle |
@@ -3245,6 +3254,11 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
   animation rate `+0x21D` beside its stage store (`0x801F6BFC..0x801F6C08`;
   `zeto_big_wave_mid_cast` holds Zeto at `4`), so Zeto sways at half speed
   until the Done arm's restore; the port halves it on the same store.
+  Arm 7's way out is the party's hit (`0x801F7398..0x801F74A8`): the fold lands
+  there, each struck seat's rate halved and its heading `caster[+0x46] + 0x800`.
+  Arm 8's exit waits on every party seat's `+0x1D9` (`0`, a downed one `8`), and
+  that wait, not the word, sets the arm's length: a retail recording holds it `238`
+  vsyncs on a `160`-vsync word.
 - **0953** arm 0 forks on the caster's battle-scoped latch word
   `0x801C8FE0 + (ctx[+0x13] + 1) * 4` (the monster AI's cooldown
   `dat[m + 4]`). Zero takes the **charge**: the body sets the latch and leaves
@@ -3253,6 +3267,28 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
   the latch is cleared and the party sweep lands through the fold at power
   `0x274`. The branches hold different caster stages (`0x5E` charge, `0x5D`
   punch).
+
+<a id="prot-0957-thunder-storm"></a>
+
+**0957 Thunder Storm** (`cast_module_camera::thunder_storm_camera`) is the one
+body the module's image holds for `0x77`. Arm 0 hides every live seat but the
+caster, cuts behind it (TR `(0, 0x500, z/2)`) and seats `0x801FA06C`. Arm 1 pulls
+TR z `+16` a vsync; its exit plays clip `0x0A` and cuts to pitch `0x400`, yaw
+`-facing`, TR `(0, 0, z/2)`, the party back on the draw. Arm 2 runs TR z `+0xC0`,
+TR y `-8`. Arm 3's exit hides the party, flushes the pool and seats `0x801FA0D4`,
+`0x801FA174` and a ring of six `0x801FA194` on `i * 0x1000 / 6`, each with the
+`+0xB8` seed Ozma's rays take. Arms 4 to 6 seat four pairs of `0x801FA1D8` /
+`0x801FA228` a battle frame on `x, y = 0x80 - rand() % 255`, `z = 0x100`: eight
+`rand()`s a frame. Arm 5 ends on the party's hit (`FUN_801DD4B0(0x100, ..)`, a seat
+with HP and no Stone, turned on the caster). Arms 5 and 6 draw six streak ribbons
+(`FUN_801E1D98`, trail `0xB`) on a ring widening one unit a vsync; arm 5's height
+is the stack word its scatter loop left, arm 6 draws ahead of its scatter and reads
+zero. Arm 6 climbs a fade word `16` a vsync into every part's level `+0x78`, then
+flushes and leaves for `0xFF`.
+
+The scatter's density follows the frame step: retail reads step `4` through arms 4
+to 6 and the engine's default is `2`, so the engine seats twice retail's sparks a
+vsync ([the frame step](battle-stage-camera.md#the-battle-frame-step-is-the-frames-own-cost)).
 
 <a id="prot-0959-megaton-press"></a>
 

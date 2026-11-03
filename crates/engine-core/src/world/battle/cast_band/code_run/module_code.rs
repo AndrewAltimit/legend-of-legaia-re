@@ -355,6 +355,10 @@ impl World {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
+            // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
+            if entry == 944 {
+                self.feed_seru_cam(entry, caster_slot, &mut st);
+            }
             let arm = direct(&mut st, ctx.phase, seats);
             self.store_module_cam(st);
             if let Some(v) = arm.latch

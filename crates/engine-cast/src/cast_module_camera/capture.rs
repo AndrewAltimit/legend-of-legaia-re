@@ -236,6 +236,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
+        (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
         (955, super::VOID_ACCESSORIES_BODY) => Some(super::void_accessories_camera),
         _ => None,
     }
@@ -670,11 +671,25 @@ pub fn dead_end_crisis_camera(
         }
         _ => (None, None),
     };
+    // The party's rate: `2` as arm 3 lands the hit (`0x801F7418`), on every
+    // pass of arm 4 (`li v0,2` in the dispatch's delay slot, `0x801F6AA0`), and
+    // `0` on every pass of arm 5 (the same `v0`, the `slt` at `0x801F6A98`).
+    // The Done band's restore `FUN_801E93C8` puts every seat back.
+    let party_rate = match phase {
+        3 if !hold => Some(2),
+        4 => Some(2),
+        5 => Some(0),
+        _ => None,
+    };
     CaptureCamArm {
         shot: if hold { None } else { shot },
         drift,
         hold,
         next: None,
+        party_write: CaptureSeatWrite {
+            rate: party_rate,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }

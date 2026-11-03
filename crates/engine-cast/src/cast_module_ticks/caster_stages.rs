@@ -145,7 +145,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
             miss: 0x08,
         },
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0947 V-Windhash: `li v0,0xa; sb v0,0x1da(s2)` at `0x801F6B20`.
     CasterStageRow {
@@ -282,7 +282,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
             miss: 0x07,
         },
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0963 Genocidal Cannon `0xB3`: `8` at `0x801F6EC8`.
     CasterStageRow {

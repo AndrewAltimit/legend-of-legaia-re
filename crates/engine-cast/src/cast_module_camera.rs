@@ -971,9 +971,7 @@ mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
 mod cross_beam;
-mod void_accessories;
-mod steal;
-mod thunder_storm;
+mod curse_all;
 mod doomsday;
 mod evil_seru_magic;
 mod freed;
@@ -994,13 +992,16 @@ mod puera;
 mod scythe_wind;
 mod seru;
 mod spoon;
+mod steal;
 pub mod summon_holds;
 mod swordie;
 mod terror_scream;
 mod theeder_gizam;
+mod thunder_storm;
 mod ultimate_rave;
 mod v_windhash;
 mod viguro;
+mod void_accessories;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
@@ -1016,12 +1017,7 @@ pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
-pub use steal::{STEAL_BODY, steal_camera};
-pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
-pub use thunder_storm::{
-    STORM_RAY_RECORD, STORM_SCATTER_PAIRS, STORM_SCATTER_RECORDS, THUNDER_STORM_BODY,
-    THUNDER_STORM_COUNTDOWN, thunder_storm_camera,
-};
+pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,
@@ -1050,12 +1046,18 @@ pub use puera::*;
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
 pub use spoon::*;
+pub use steal::{STEAL_BODY, steal_camera};
 pub use swordie::*;
 pub use terror_scream::{TERROR_SCREAM_BODY, terror_scream_camera};
 pub use theeder_gizam::*;
+pub use thunder_storm::{
+    STORM_RAY_RECORD, STORM_SCATTER_PAIRS, STORM_SCATTER_RECORDS, THUNDER_STORM_BODY,
+    THUNDER_STORM_COUNTDOWN, thunder_storm_camera,
+};
 pub use ultimate_rave::*;
 pub use v_windhash::{V_WINDHASH_COUNTDOWN, v_windhash_camera};
 pub use viguro::*;
+pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {

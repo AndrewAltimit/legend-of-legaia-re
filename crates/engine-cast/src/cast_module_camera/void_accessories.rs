@@ -149,7 +149,7 @@ mod tests {
             ..Default::default()
         };
         let mut st = ModuleCamState::default();
-        assert_eq!(void_accessories_camera(&mut st, 0, seats).charge_spawns[5].is_some(), true);
+        assert!(void_accessories_camera(&mut st, 0, seats).charge_spawns[5].is_some());
         for (phase, want) in [(1, 12), (2, 160), (3, 128), (4, 128)] {
             let mut n = 1;
             while void_accessories_camera(&mut st, phase, seats).hold {
