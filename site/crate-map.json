@@ -1463,6 +1463,7 @@
     "engine-shell",
     "engine-world-views",
     "parity",
+    "web-minigames",
     "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-core/README.md"
@@ -4590,6 +4591,7 @@
     "engine-battle-menus",
     "engine-battle-vm",
     "engine-camera",
+    "engine-core",
     "engine-expansion",
     "engine-field",
     "engine-fishing",

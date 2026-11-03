@@ -84,10 +84,10 @@
 
   /* ---------------- actions ---------------- */
 
-  /* The retail menu confirm blip (static cue 0x20), when the shared cue
-   * player has it rendered off the visitor's disc. Silent otherwise. */
+  /* The retail menu confirm blip (static cue 0x20), on the page's live SPU
+   * once a game has opened it. Silent otherwise. */
   function confirmBlip() {
-    if (window.LegaiaSfx && LegaiaSfx.ready()) LegaiaSfx.playCue(0x20, 'saves.confirm');
+    if (window.MgSpu) MgSpu.cueOpen(0x20);
   }
 
   function loadSave(meta) {

@@ -20,7 +20,6 @@
 //! ids instead of inventing art (same contract as the slot machine section).
 
 use super::*;
-#[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
 
 use legaia_container_formats::{
@@ -995,18 +994,17 @@ impl LegaiaMinigames {
             pcm.pcm.len()
         };
         self.baka_xa_last = Some((xa, frames));
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
+        if let Some(d) = self.audio.as_mut() {
             // Every line this lane starts is the duel's or the dome hub's,
             // the two places retail routes the CD input into the reverb send
             // (`SPUCNT` bit 2; `World::cd_input_reverb` on the play hosts).
-            out.set_cd_reverb(true);
+            d.set_cd_reverb(true);
             let channels = if pcm.stereo {
                 legaia_xa::Channels::Stereo
             } else {
                 legaia_xa::Channels::Mono
             };
-            out.play_xa_shout(
+            d.audio().play_xa_shout(
                 pcm.pcm,
                 pcm.sample_rate,
                 channels,
@@ -1014,8 +1012,6 @@ impl LegaiaMinigames {
                 legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY,
             );
         }
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = pcm;
     }
 }
 

@@ -3321,6 +3321,7 @@ dependencies = [
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
+ "legaia-engine-core",
  "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",

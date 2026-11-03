@@ -18,6 +18,7 @@ use super::*;
 use legaia_engine_fishing::fishing::{
     self, FishingRecord, PondEvent, PondInput, PondPhase, PondSession, PrizeExchange,
 };
+use legaia_engine_system::sound_state::SfxRingOp;
 use legaia_minigame_formats::fishing_species;
 // engine-ui re-exports its `fishing::hud` module's items at the crate root.
 use legaia_engine_ui as ui_fishing;
@@ -523,6 +524,7 @@ impl LegaiaMinigames {
             0x9D..=0x9F => lures[(id - 0x9D) as usize],
             _ => MINIGAMES_TACKLE_HELD,
         });
+        let hub_cue = hub.sfx;
         match hub.exit {
             Some(legaia_engine_fishing::fishing_hub::HubExit::Leave) => {
                 hub_events.push(r#"{"e":"hub_leave"}"#.to_string());
@@ -533,6 +535,7 @@ impl LegaiaMinigames {
             }
             _ => {}
         }
+        let casts = p.persist().casts;
         p.tick(
             PondInput {
                 reel_mask,
@@ -543,6 +546,14 @@ impl LegaiaMinigames {
             0x80,
         );
         let events = p.take_events();
+        // The overlay's direct ring stores, as `World::tick_fishing` raises
+        // them for the play hosts: the hooked rod's creak `0x201` into slot 1
+        // and, on the arm that bumps the cast counter, the lure landing
+        // `0x204` into slot 2 (`0x801D2950`).
+        let mut ring = vec![SfxRingOp::WriteSlot(1, 0x201); p.take_rod_creaks() as usize];
+        if p.persist().casts != casts {
+            ring.push(SfxRingOp::WriteSlot(2, 0x204));
+        }
         // The venue's shore actors, the play hosts' own step: the lead's
         // ambient ripple and the catch bursts, seated through the venue
         // camera this page draws with. The page aims the lead with no D-pad,
@@ -573,9 +584,10 @@ impl LegaiaMinigames {
             .iter()
             .flat_map(legaia_engine_minigame_scenes::minigame_state::pond_event_cues)
             .collect();
-        for cue in cues {
+        for cue in hub_cue.into_iter().chain(cues) {
             self.minigame_sfx_cue(cue);
         }
+        self.audio_frame(&ring, &[], Vec::new());
         for e in &events {
             match *e {
                 PondEvent::Splash => {
@@ -972,6 +984,8 @@ impl LegaiaMinigames {
             .fishing_prizes
             .entry(purchase.item_id as u32)
             .or_insert(0) += purchase.qty;
+        // The purchase's ring store: `0x206` into slot 0 (`0x801D089C`).
+        self.minigame_sfx_cue(0x206);
         let name = ex
             .rows
             .get(row as usize)

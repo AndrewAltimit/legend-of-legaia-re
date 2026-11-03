@@ -30,26 +30,6 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
-    /// Decode one dance cue to mono PCM (`i16`). Empty when absent.
-    pub fn dance_sfx_pcm(&self, cue: u16) -> Vec<i16> {
-        self.dance_pres
-            .as_ref()
-            .and_then(|p| p.sfx.as_ref())
-            .and_then(|b| b.decode(cue).ok())
-            .map(|(pcm, _)| pcm)
-            .unwrap_or_default()
-    }
-
-    /// Playback rate for [`Self::dance_sfx_pcm`] (`0` when absent).
-    pub fn dance_sfx_rate(&self, cue: u16) -> u32 {
-        self.dance_pres
-            .as_ref()
-            .and_then(|p| p.sfx.as_ref())
-            .and_then(|b| b.decode(cue).ok())
-            .map(|(_, rate)| rate)
-            .unwrap_or(0)
-    }
-
     /// The retail cue ids (`FUN_801d1af4` sites): miss, the three combo-tier
     /// stings, the run-start and intro cues.
     pub fn dance_sfx_cue_ids(&self) -> String {
@@ -82,7 +62,7 @@ impl LegaiaMinigames {
     /// dancer-0 arm raises for the press just judged
     /// (`legaia_engine_minigames::dance::award_sounds`), as JSON:
     /// `[{"cue":528}, {"sting":5}, {"sting":null}]`. A cue plays by id; a
-    /// sting keys both [`Self::dance_sting_pcm`] layers at `r`, and `null`
+    /// sting keys both voices at `r` ([`Self::dance_sting_key`]), and `null`
     /// is the tier-2 site's `rand() % 3`, the page's to draw. A plain matched
     /// note, an unlanded groovy move and an empty triangle stock raise
     /// nothing.
@@ -103,26 +83,6 @@ impl LegaiaMinigames {
             .collect::<Vec<_>>()
             .join(",");
         format!("[{rows}]")
-    }
-
-    /// One layer of a good-step **hit sting**. Retail keys these directly
-    /// (`FUN_801d3d78`, bypassing the cue ring): two voices together, at the
-    /// tones and note [`dance_hit_sting_voices`] resolves `r` to. Mono i16 PCM;
-    /// empty when the bank does not hold that tone.
-    ///
-    /// The retail `r` space is not just the tier-2 award's `rand() % 3`
-    /// (`legaia_engine_minigames::dance::STING_RANDOM_VARIANTS`) - the three
-    /// groovy-move tiers all key `STING_TIER_VARIANT` as well, so `r = 5` is a
-    /// real sting and this accepts it.
-    pub fn dance_sting_pcm(&self, r: u8, layer: u8) -> Vec<i16> {
-        self.dance_sting(r, layer)
-            .map(|(pcm, _)| pcm)
-            .unwrap_or_default()
-    }
-
-    /// Playback rate for [`Self::dance_sting_pcm`] (`0` when absent).
-    pub fn dance_sting_rate(&self, r: u8, layer: u8) -> u32 {
-        self.dance_sting(r, layer).map(|(_, r)| r).unwrap_or(0)
     }
 
     // --------------------------------------------------------------- dance BGM
@@ -166,7 +126,49 @@ impl LegaiaMinigames {
     }
 }
 
+/// A test's read of the bank's samples. Not wasm exports: every cue the page
+/// sounds keys a voice on the live SPU ([`crate::live_spu`]).
 impl LegaiaMinigames {
+    /// Decode one dance cue to mono PCM (`i16`). Empty when absent.
+    pub fn dance_sfx_pcm(&self, cue: u16) -> Vec<i16> {
+        self.dance_pres
+            .as_ref()
+            .and_then(|p| p.sfx.as_ref())
+            .and_then(|b| b.decode(cue).ok())
+            .map(|(pcm, _)| pcm)
+            .unwrap_or_default()
+    }
+
+    /// Playback rate for [`Self::dance_sfx_pcm`] (`0` when absent).
+    pub fn dance_sfx_rate(&self, cue: u16) -> u32 {
+        self.dance_pres
+            .as_ref()
+            .and_then(|p| p.sfx.as_ref())
+            .and_then(|b| b.decode(cue).ok())
+            .map(|(_, rate)| rate)
+            .unwrap_or(0)
+    }
+
+    /// One layer of a good-step **hit sting**. Retail keys these directly
+    /// (`FUN_801d3d78`, bypassing the cue ring): two voices together, at the
+    /// tones and note [`dance_hit_sting_voices`] resolves `r` to. Mono i16 PCM;
+    /// empty when the bank does not hold that tone.
+    ///
+    /// The retail `r` space is not just the tier-2 award's `rand() % 3`
+    /// (`legaia_engine_minigames::dance::STING_RANDOM_VARIANTS`) - the three
+    /// groovy-move tiers all key `STING_TIER_VARIANT` as well, so `r = 5` is a
+    /// real sting and this accepts it.
+    pub fn dance_sting_pcm(&self, r: u8, layer: u8) -> Vec<i16> {
+        self.dance_sting(r, layer)
+            .map(|(pcm, _)| pcm)
+            .unwrap_or_default()
+    }
+
+    /// Playback rate for [`Self::dance_sting_pcm`] (`0` when absent).
+    pub fn dance_sting_rate(&self, r: u8, layer: u8) -> u32 {
+        self.dance_sting(r, layer).map(|(_, r)| r).unwrap_or(0)
+    }
+
     /// Decode one sting layer, keyed against the tone's own centre note.
     ///
     /// The `(program, tone, note)` triple is [`dance_hit_sting_voices`]'s, not

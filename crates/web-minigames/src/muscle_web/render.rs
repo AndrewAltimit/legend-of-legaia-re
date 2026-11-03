@@ -724,7 +724,11 @@ impl LegaiaMinigames {
             hit_voices,
         )
     }
+}
 
+/// A test's read of the bank's samples. Not wasm exports: every cue the page
+/// sounds keys a voice on the live SPU ([`crate::live_spu`]).
+impl LegaiaMinigames {
     /// Decode one voice layer of static SFX descriptor row `row` to mono i16
     /// PCM (the dome's cues are static-table rows - see
     /// [`Self::muscle_sfx_json`]). Empty when the row / voice / bank doesn't

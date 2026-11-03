@@ -77,6 +77,19 @@ impl<S: AudioSink> AudioDirector<S> {
         self.fire_batch(&SfxFireBatch::immediate(id))
     }
 
+    /// Fire one **ring** id now, without ticking the scheduler: the drainer's
+    /// id split ([`Self::fire_batch`]'s ring half), for a host whose producer
+    /// is not on a per-frame ring tick. The minigames page's event-raised cues
+    /// are the caller: a runtime-bank id (`>= 0x200`) has no leg through
+    /// [`Self::fire_now`], which reads the `0x100+` band as a CD-XA voice.
+    pub fn fire_ring_now(&mut self, id: i16) -> SfxFrameReport {
+        self.commands.push(super::AudioCommand::RingDue(id));
+        self.fire_batch(&SfxFireBatch {
+            ring: vec![id],
+            ..SfxFireBatch::default()
+        })
+    }
+
     /// Fire one batch through the SPU. Each cue resolves against the
     /// resident SFX bank **its own `+4` category names**
     /// ([`Self::sfx_vab_for_cue`]) - the retail path, where `FUN_80065034`

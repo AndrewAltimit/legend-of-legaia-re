@@ -1,4 +1,4 @@
-//! The slot machine's own sound cues, decoded off the disc's runtime bank.
+//! The slot machine's own sound cues: what the disc's runtime bank defines.
 
 use super::*;
 
@@ -6,11 +6,11 @@ use super::*;
 impl LegaiaMinigames {
     // ------------------------------------------------------------- slot sound
     //
-    // The machine's own cues, decoded off the disc: the reel-stop click, the
-    // payout tick, the reach sting. These are runtime-bank ids (>= 0x200), so
-    // they resolve through the slot overlay's `efect.dat` descriptor block
-    // (PROT 1199) into the VAB it loads alongside it (PROT 1198). Nothing here
-    // is a substitute sound - if a cue does not resolve, the page stays silent.
+    // The machine's own cues: the reel-stop click, the payout tick, the reach
+    // sting. These are runtime-bank ids (>= 0x200), so they resolve through the
+    // slot overlay's `efect.dat` descriptor block (PROT 1199) into the VAB it
+    // loads alongside it (PROT 1198); the machine keys them on the page's live
+    // SPU (`slot_step`). If a cue does not resolve, the page stays silent.
 
     /// The cue ids this disc's slot bank actually defines, with the VAB voice
     /// each one keys:
@@ -39,6 +39,23 @@ impl LegaiaMinigames {
         format!("[{rows}]")
     }
 
+    /// The retail cue ids, so the page never has to hard-code a number:
+    /// `{"reel_stop":522,"payout_tick":521,"reach":512,"reach1":513,"reach2":514}`.
+    pub fn slot_sfx_cue_ids(&self) -> String {
+        format!(
+            r#"{{"reel_stop":{},"payout_tick":{},"reach":{},"reach1":{},"reach2":{}}}"#,
+            minigame_sfx::CUE_SLOT_REEL_STOP,
+            minigame_sfx::CUE_SLOT_PAYOUT_TICK,
+            minigame_sfx::CUE_SLOT_REACH,
+            minigame_sfx::CUE_SLOT_REACH_1,
+            minigame_sfx::CUE_SLOT_REACH_2,
+        )
+    }
+}
+
+/// A test's read of the bank's samples. Not wasm exports: every cue the page
+/// sounds keys a voice on the live SPU ([`crate::live_spu`]).
+impl LegaiaMinigames {
     /// Decode one cue to mono PCM (`i16`). Empty when the cue isn't in the bank.
     pub fn slot_sfx_pcm(&self, cue: u16) -> Vec<i16> {
         self.slot_sfx
@@ -75,21 +92,6 @@ impl LegaiaMinigames {
         self.slot_spin_tone().map(|(_, r)| r).unwrap_or(0)
     }
 
-    /// The retail cue ids, so the page never has to hard-code a number:
-    /// `{"reel_stop":522,"payout_tick":521,"reach":512,"reach1":513,"reach2":514}`.
-    pub fn slot_sfx_cue_ids(&self) -> String {
-        format!(
-            r#"{{"reel_stop":{},"payout_tick":{},"reach":{},"reach1":{},"reach2":{}}}"#,
-            minigame_sfx::CUE_SLOT_REEL_STOP,
-            minigame_sfx::CUE_SLOT_PAYOUT_TICK,
-            minigame_sfx::CUE_SLOT_REACH,
-            minigame_sfx::CUE_SLOT_REACH_1,
-            minigame_sfx::CUE_SLOT_REACH_2,
-        )
-    }
-}
-
-impl LegaiaMinigames {
     /// Decode the reel-spin motor tone (see [`Self::slot_spin_pcm`]).
     fn slot_spin_tone(&self) -> Option<(Vec<i16>, u32)> {
         self.slot_sfx.as_ref().and_then(|b| {

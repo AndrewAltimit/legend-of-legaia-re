@@ -243,23 +243,12 @@ impl World {
                     } else {
                         r
                     };
-                    let vol = legaia_engine_minigames::other_game_overlay::cue_volume(
-                        self.audio.levels.voice_volume as u32,
+                    self.audio.sfx_voice_keys.extend(
+                        legaia_engine_minigames::dance::dance_hit_sting_cues(
+                            r,
+                            self.audio.levels.voice_volume as u32,
+                        ),
                     );
-                    for v in legaia_engine_minigames::dance::dance_hit_sting_voices(r) {
-                        self.audio.sfx_voice_keys.push(
-                            legaia_engine_minigames::other_game_overlay::VoiceAttrCue {
-                                voice: u32::from(v.voice),
-                                vab_program_tone: (
-                                    i32::from(v.level),
-                                    i32::from(v.program),
-                                    i32::from(v.tone),
-                                ),
-                                note_and_fine: (i32::from(v.note), 0x40),
-                                volume: (vol, vol),
-                            },
-                        );
-                    }
                 }
             }
         }

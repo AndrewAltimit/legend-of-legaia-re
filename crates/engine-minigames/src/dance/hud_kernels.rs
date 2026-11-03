@@ -221,6 +221,23 @@ pub fn dance_hit_sting_voices(r: u16) -> [DanceStingVoice; 2] {
     [voice(0x12, (2 * r) as i16), voice(0x13, (2 * r + 1) as i16)]
 }
 
+/// The two direct key-ons of hit sting `r` at the voice-volume config word
+/// `volume_word`, in the eight-argument shape `FUN_801d3d78` hands
+/// `FUN_80065034`: fine `0x40`, and both volume halves the expression every
+/// direct cue uses ([`crate::other_game_overlay::cue_volume`]).
+pub fn dance_hit_sting_cues(
+    r: u16,
+    volume_word: u32,
+) -> [crate::other_game_overlay::VoiceAttrCue; 2] {
+    let vol = crate::other_game_overlay::cue_volume(volume_word);
+    dance_hit_sting_voices(r).map(|v| crate::other_game_overlay::VoiceAttrCue {
+        voice: u32::from(v.voice),
+        vab_program_tone: (i32::from(v.level), i32::from(v.program), i32::from(v.tone)),
+        note_and_fine: (i32::from(v.note), 0x40),
+        volume: (vol, vol),
+    })
+}
+
 /// Ring slot the award's cues are stored into: `sh id, 0x8007B6DE` - slot 3
 /// of the cue ring `DAT_8007B6D8`, written straight, without the cursor pair.
 pub const AWARD_CUE_RING_SLOT: u8 = 3;

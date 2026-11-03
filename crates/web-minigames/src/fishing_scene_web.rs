@@ -372,6 +372,7 @@ impl LegaiaMinigames {
         )
         .ok()?;
         let scene = Scene::load(&index, FISHING_SCENE_NAME).ok()?;
+        self.fishing_sfx_bundle = scene.find_event_scripts().map(|e| e.bytes.to_vec());
         let (res, _stats) = SceneResources::build_targeted_with_options(
             &scene,
             &[],

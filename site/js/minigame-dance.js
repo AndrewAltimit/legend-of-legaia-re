@@ -74,7 +74,6 @@ window.MgDance = (function () {
     let pages = {};          /* palette -> HUD-page canvas */
     let faces = null;        /* [dancer][pose] -> canvas, + meta */
     let body = null;         /* the 3D dancer-body scene (null = HUD only) */
-    let sfx = null;          /* { ctx, buffers, stings } */
     let sfxIds = null;
     let bgmInfo = null;
 
@@ -626,85 +625,29 @@ window.MgDance = (function () {
 
     /* ---------------- sound ---------------- */
 
-    function audioReady() {
-      /* Page-level sound gate (js/audio-toggle.js): every cue, sting and
-       * the BGM render path funnel through here, so one check mutes all. */
+    /* The BGM's own context. Every cue and sting keys a voice on the page's
+     * live SPU instead (js/minigame-bgm.js `MgSpu`). */
+    let bgmCtx = null;
+    function bgmContext() {
+      /* Page-level sound gate (js/audio-toggle.js). */
       if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return null;
-      if (!sfxIds) return null;
-      if (!sfx) {
+      if (!bgmCtx) {
         const Ctx = window.AudioContext || window.webkitAudioContext;
         if (!Ctx) return null;
-        const ctx = new Ctx();
-        const buffers = {};
-        for (const [name, id] of Object.entries(sfxIds)) {
-          const pcm = api.dance_sfx_pcm(id);
-          const rate = api.dance_sfx_rate(id);
-          if (!pcm.length || !rate) continue;
-          const buf = ctx.createBuffer(1, pcm.length, rate);
-          const ch = buf.getChannelData(0);
-          for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
-          buffers[name] = buf;
-        }
-        /* The good-step stings: the 3 random picks plus the groovy tiers'
-         * fixed r = 5 (index 5), 2 layers keyed together. */
-        const stings = [];
-        for (let r = 0; r < 6; r++) {
-          if (r > 2 && r !== 5) { stings.push([]); continue; }
-          const pair = [];
-          for (let l = 0; l < 2; l++) {
-            const pcm = api.dance_sting_pcm(r, l);
-            const rate = api.dance_sting_rate(r, l);
-            if (pcm.length && rate) {
-              const buf = ctx.createBuffer(1, pcm.length, rate);
-              const ch = buf.getChannelData(0);
-              for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
-              pair.push(buf);
-            }
-          }
-          stings.push(pair);
-        }
-        sfx = { ctx, buffers, stings };
+        bgmCtx = new Ctx();
       }
-      if (sfx.ctx.state === 'suspended') sfx.ctx.resume();
-      return sfx;
+      if (bgmCtx.state === 'suspended') bgmCtx.resume();
+      return bgmCtx;
     }
 
-    // Site master trim (js/layout.js) - applied at the output stage so the
-    // authored per-cue levels below stay as written.
-    const masterTrim = () =>
-      window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
-
-    function play(name, gain = 0.5) {
-      const a = audioReady();
-      if (!a || !a.buffers[name]) return;
-      const src = a.ctx.createBufferSource();
-      src.buffer = a.buffers[name];
-      const gn = a.ctx.createGain();
-      gn.gain.value = gain * masterTrim();
-      src.connect(gn).connect(a.ctx.destination);
-      src.start();
-    }
-
-    /* A cue by its retail id, through the names `dance_sfx_cue_ids` gives. */
+    /* A cue by its retail id. */
     function playId(id) {
-      if (!sfxIds) return;
-      for (const [name, v] of Object.entries(sfxIds)) {
-        if (v === id) { play(name, 0.5); return; }
-      }
+      if (window.MgSpu) MgSpu.cue(api, id);
     }
 
+    /* `fixed` null is the tier-2 site's `rand() % 3`. */
     function playSting(fixed) {
-      const a = audioReady();
-      if (!a || !a.stings.length) return;
-      const r = fixed == null ? (Math.random() * 3) | 0 : fixed;
-      for (const buf of a.stings[r] || []) {
-        const src = a.ctx.createBufferSource();
-        src.buffer = buf;
-        const gn = a.ctx.createGain();
-        gn.gain.value = 0.45 * masterTrim();
-        src.connect(gn).connect(a.ctx.destination);
-        src.start();
-      }
+      if (window.MgSpu) MgSpu.sting(api, fixed == null ? (Math.random() * 3) | 0 : fixed);
     }
 
     /* The disco jukebox track the dance plays. The dance overlay itself loads
@@ -725,11 +668,11 @@ window.MgDance = (function () {
      * calls this from a timeout. */
     function startBgm(seconds) {
       stopBgm();
-      const a = audioReady();
-      if (!a || !window.MgBgm2 || !bgmTrack) return false;
-      const entry = MgBgm2.render(api, a.ctx, bgmTrack, Math.min(seconds || 45, 45));
+      const ctx = bgmContext();
+      if (!ctx || !window.MgBgm2 || !bgmTrack) return false;
+      const entry = MgBgm2.render(api, ctx, bgmTrack, Math.min(seconds || 45, 45));
       if (!entry) return false;
-      bgmSrc = MgBgm2.start(a.ctx, entry, 0.55);
+      bgmSrc = MgBgm2.start(ctx, entry);
       return !!bgmSrc;
     }
 
@@ -1035,7 +978,7 @@ window.MgDance = (function () {
         intro = { live: true, songSeconds };
       } else {
         intro = { t: 0 };
-        play('start', 0.5);
+        if (sfxIds) playId(sfxIds.start);
         startBgm(songSeconds);
       }
     }
@@ -1147,8 +1090,7 @@ window.MgDance = (function () {
       /* Count-in, stepped by the engine one vsync per drawn frame. */
       if (intro && intro.live) {
         const c = api.dance_countin_step();
-        if (c[6] === 0x200) play('intro', 0.5);
-        else if (c[6] === 0x201) play('start', 0.5);
+        if (c[6]) playId(c[6]);
         if (c[1]) {
           /* FUN_801d2d98: two blended copies sliding apart on row 0x77, or
            * one opaque centred copy on row 0x78 while it holds. */

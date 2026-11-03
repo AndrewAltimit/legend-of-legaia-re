@@ -246,7 +246,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 <script src="js/minigame-muscle-canvas-chrome.js"></script>
 <script src="js/minigame-muscle.js"></script>
 <script src="js/minigame-fishing.js"></script>
-<script src="js/legaia-sfx.js"></script>
 -->
 
 <!-- PS1 controller-button sprite. Hidden; referenced via <use href="#btn-*">.
@@ -1110,12 +1109,13 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
         && muscleHost() === 'battle') muscleReset();
     /* Leaving the dance stops its BGM loop. */
     if (game !== 'dance' && typeof danceR !== 'undefined' && danceR) danceR.stopAll();
-    /* Leaving the slot machine / duel stops their track (and the slot's
-     * spin-motor loop); entering one pre-mixes its track off the tab click
-     * so the first spin doesn't hitch. */
+    /* Leaving the slot machine / duel stops their track; entering one
+     * pre-mixes its track off the tab click so the first spin doesn't hitch. */
     if (MgBgm.playing() && MgBgm.playing() !== game) MgBgm.stop();
-    if (game !== 'slot' && typeof slotSpinStop === 'function') slotSpinStop();
     if (api) MgBgm.prerender(game);
+    /* The tab change is the game's mode entry on the live SPU: the old game's
+     * voices stop and the new one's banks stage. */
+    if (api && window.MgSpu) MgSpu.enter(api, game);
     /* A tab click is a user gesture: bring the live SPU up (or resume it)
      * here, so a game whose first sound is not a click of its own - the
      * dome's "Welcome to the Muscle Dome!" line, spoken by the hub's first
@@ -1207,7 +1207,7 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       const bgm = gameBgm(game);
       if (!a || !bgm) return false;
       const entry = MgBgm2.render(api, a, bgm, RENDER_SECONDS);
-      const src = MgBgm2.start(a, entry, 0.5);
+      const src = MgBgm2.start(a, entry);
       if (!src) return false;
       cur = { game: game, src: src };
       return true;
@@ -1863,15 +1863,11 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
   /* ---- the machine's own sound ----
    *
-   * The reel-stop click, the payout tick and the reach sting are the retail
-   * cues, decoded from your disc: the slot overlay's efect.dat descriptor block
-   * (PROT 1199) names a VAB program/tone/note per cue id, and the sample comes
-   * out of the VAB the overlay loads beside it (PROT 1198). The cue's note
-   * against the sample's own centre note IS the pitch, so the playback rate the
-   * API reports carries it.
-   *
-   * If a cue does not decode, the page stays SILENT. No substitute beeps. */
-  let slotAudio = null;   /* { ctx, buffers: {name: AudioBuffer} } */
+   * The reel motor, the reel-stop click, the payout tick and the reach stings
+   * are the retail cues on the page's live SPU, raised by the machine's own
+   * kernel: `slot_step` hands its ring stores and motor voice to the audio
+   * director the play hosts run (`World::route_slot_sounds`). The page only
+   * says whether the disc's bank decoded, for the note. */
   let slotSfxIds = null;
 
   function slotLoadSfx() {
@@ -1881,87 +1877,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
     if (!cues.length) return;              /* silent, and the note says why */
     slotSfxIds = JSON.parse(api.slot_sfx_cue_ids());
   }
-
-  /* The AudioContext can only start from a gesture, so build it lazily. */
-  function slotAudioReady() {
-    if (!slotSfxIds) return null;
-    if (!slotAudio) {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return null;
-      const ctx = new Ctx();
-      const buffers = {};
-      const stash = (name, pcm, rate) => {
-        if (!pcm.length || !rate) return;
-        const buf = ctx.createBuffer(1, pcm.length, rate);
-        const ch = buf.getChannelData(0);
-        for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
-        buffers[name] = buf;
-      };
-      for (const [name, id] of Object.entries(slotSfxIds)) {
-        stash(name, api.slot_sfx_pcm(id), api.slot_sfx_rate(id));
-      }
-      /* The reel-spin motor is not a ring cue - the reel SM keys the VAB
-       * voice directly (program 1 / tone 0 at note 0x3C) and releases it
-       * on all-reels-stop, so the page loops it for as long as reels turn. */
-      stash('spin_loop', api.slot_spin_pcm(), api.slot_spin_rate());
-      slotAudio = { ctx, buffers };
-    }
-    if (slotAudio.ctx.state === 'suspended') slotAudio.ctx.resume();
-    return slotAudio;
-  }
-
-  /* Page-level trim on every slot cue (spin motor included): the machine's
-   * effects sat well above the page's BGM, so they play at a quarter of
-   * their per-cue levels. The per-call `gain` args keep the cues' RELATIVE
-   * balance (reel_stop over reach etc.); this scales the whole machine. */
-  const SLOT_SFX_SCALE = 0.25;
-
-  /* Site master output trim (canonical value in js/layout.js; the literal is
-   * a fallback, not a second source of truth). Distinct from SLOT_SFX_SCALE
-   * above and multiplied ON TOP of it: that one is a BALANCE fix local to the
-   * slot machine (its cues sat above this page's BGM), this one is the
-   * page-wide loudness every sound on the site now carries. Collapsing them
-   * into one number would lose the slot machine's balance against the BGM the
-   * moment the site trim changes. */
-  const SLOT_MASTER_TRIM =
-    window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
-
-  function slotPlay(name, gain = 0.5) {
-    if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;
-    const a = slotAudioReady();
-    if (!a || !a.buffers[name]) return;
-    const src = a.ctx.createBufferSource();
-    src.buffer = a.buffers[name];
-    const g = a.ctx.createGain();
-    g.gain.value = gain * SLOT_SFX_SCALE * SLOT_MASTER_TRIM;
-    src.connect(g).connect(a.ctx.destination);
-    src.start();
-  }
-
-  /* The looping spin-motor voice: keyed as the reels start, released on
-   * all-reels-stop - the retail voice lifecycle (FUN_801CF0D8, voice 0x13). */
-  let slotSpinSrc = null;
-  function slotSpinStart() {
-    if (slotSpinSrc) return;
-    if (window.LegaiaSound && !LegaiaSound.isSoundOn()) return;
-    const a = slotAudioReady();
-    if (!a || !a.buffers.spin_loop) return;
-    const src = a.ctx.createBufferSource();
-    src.buffer = a.buffers.spin_loop;
-    src.loop = true;
-    const g = a.ctx.createGain();
-    /* Retail keys it at volume 0x28 of 0x7F - noticeably under the cues. */
-    g.gain.value = 0.3 * SLOT_SFX_SCALE * SLOT_MASTER_TRIM;
-    src.connect(g).connect(a.ctx.destination);
-    src.start();
-    slotSpinSrc = src;
-  }
-  function slotSpinStop() {
-    if (!slotSpinSrc) return;
-    try { slotSpinSrc.stop(); } catch (e) { /* done */ }
-    slotSpinSrc = null;
-  }
-  if (window.LegaiaSound) LegaiaSound.onChange((on) => { if (!on) slotSpinStop(); });
 
   /* shared helper: site/js/site-util.js */
   const rgbaCanvas = window.LegaiaUtil.rgbaCanvas;
@@ -2259,34 +2174,6 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
 
     slotRender();
 
-    /* Cue the machine's own sounds off the state transitions the retail SM
-     * fires them on: the spin-motor loop while reels turn, one click per reel
-     * as its stop is taken, the "reach" sting when the second jackpot symbol
-     * lands on a live line (FUN_801D1AF4), the escalating anticipation cues
-     * when a feature mode opens, and the payout tick per coin tallied. */
-    const spinning = st.phase === 'spinning' || (st.phase === 'stopping' && st.stopped < 3);
-    if (spinning) slotSpinStart(); else slotSpinStop();
-    if (st.stopped > slotPrev.stopped) {
-      slotPlay('reel_stop', 0.55);
-      /* Two reels down: scan the five lines through them for a matching
-       * jackpot pair (symbols 8 / 9) - retail's second-symbol-sighted cue. */
-      if (st.stopped === 2 && slotPrev.stopped < 2 && st.window) {
-        const LINE = [[0, 0], [1, 1], [2, 2], [0, 1], [2, 1]]; /* rows on reels 0,1 */
-        const reach = LINE.some(([a, b]) => {
-          const s0 = st.window[0][a], s1 = st.window[1][b];
-          return s0 === s1 && s0 >= 8;
-        });
-        if (reach) slotPlay('reach', 0.5);
-      }
-    }
-    if (st.feature_mode !== slotPrev.feature && st.feature_mode > 0) {
-      slotPlay(st.feature_mode === 2 ? 'reach2' : 'reach1', 0.5);
-    }
-    if (credited > 0) {
-      /* One tally transfer is one tick (retail keys `CUE_PAYOUT_TICK` per
-       * transfer); a press that finished the count ticks once. */
-      slotPlay('payout_tick', 0.5);
-    }
     /* The spin resolved on this frame: the last reel's stop evaluated it -
      * into the payout state, which counts a win in, or straight back to
      * idle on a loss. */
@@ -3146,6 +3033,8 @@ canvas.mg-cabinet:focus-visible { outline: 2px solid var(--accent); outline-offs
       prog.indeterminate('Decoding the minigame tables…');
       await prog.paint();
       const status = JSON.parse(api.load_disc(buf));
+      /* Stage the open tab's banks off this disc (load_disc restaged the rest). */
+      if (window.MgSpu) MgSpu.enter(api, active);
       window.__mgStatus = status;
 
       /* A game whose overlay didn't decode is disabled, not broken. */
