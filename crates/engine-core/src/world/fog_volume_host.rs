@@ -124,6 +124,7 @@ impl World {
             }
             return;
         }
+        self.fog_volume.resolve_ground_source();
         // A new field scene starts its own bank (a battle keeps the label of
         // the scene it was entered from, and inherits that bank).
         if self.mode == SceneMode::Field && self.fog_volume.scene != self.active_scene_label {

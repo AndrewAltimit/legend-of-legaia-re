@@ -756,7 +756,7 @@ preparing waits for that preparation rather than starting another. The
 native window also starts its own render build of the map from the entry's,
 rather than building the same scene a second time, and its scene upload (any
 scene's, retail included) builds the CPU half of each environment mesh, and
-the coplanar offsets, occluder set and fog ground field, in parallel - the
+the coplanar offsets, occluder set and fog ground source, in parallel - the
 same products in the same order as a serial build.
 
 The preparation reads only the `ProtIndex` and the pack - no `World` state,

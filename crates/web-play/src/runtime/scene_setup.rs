@@ -227,7 +227,7 @@ impl LegaiaRuntime {
             && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_ref())
             && let Some(fr) = self.field.as_ref()
         {
-            let field = legaia_engine_scene::fog_ground::build_for_scene(
+            let source = legaia_engine_scene::fog_ground::source_for_scene(
                 &fr.terrain,
                 &fr.placements,
                 &fr.placement_scales,
@@ -235,7 +235,7 @@ impl LegaiaRuntime {
                 scene,
                 &host.index,
             );
-            host.world.fog_volume.set_ground_field(&scene.name, field);
+            host.world.fog_volume.set_ground_source(&scene.name, source);
         }
         // The scene's actors, bound to the world by the step the native
         // window runs too (`scene_actors::bind_scene_actors`): the lead's

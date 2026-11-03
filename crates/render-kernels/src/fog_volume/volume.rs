@@ -73,6 +73,9 @@ pub struct FogVolume {
     /// spills off its rims. Used only while that label is [`Self::scene`];
     /// without one the bank lies on the walk grid as before.
     ground_field: Option<(String, FogGround)>,
+    /// What builds [`Self::ground_field`] the first time a raised toggle ticks
+    /// the bank ([`Self::resolve_ground_source`]), with the label it is for.
+    ground_source: Option<(String, FogGroundSource)>,
     /// [`FogGround::texels`] of [`Self::ground_field`], and the generation
     /// the hosts re-upload them on.
     ground_texels: Vec<u8>,
@@ -127,6 +130,29 @@ impl Default for FogVolume {
     }
 }
 
+/// Builds one scene's [`FogGround`] from the owned data the host captured at
+/// the scene's load ([`FogVolume::set_ground_source`]). Pure: every call makes
+/// the same field.
+#[derive(Clone)]
+pub struct FogGroundSource(std::sync::Arc<dyn Fn() -> Option<FogGround> + Send + Sync>);
+
+impl FogGroundSource {
+    pub fn new(build: impl Fn() -> Option<FogGround> + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(build))
+    }
+
+    /// The field.
+    pub fn build(&self) -> Option<FogGround> {
+        (self.0)()
+    }
+}
+
+impl std::fmt::Debug for FogGroundSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("FogGroundSource")
+    }
+}
+
 impl FogVolume {
     pub fn new() -> Self {
         Self {
@@ -152,6 +178,7 @@ impl FogVolume {
             regions_dirty: false,
             interiors: InteriorTracker::default(),
             ground_field: None,
+            ground_source: None,
             ground_texels: Vec::new(),
             ground_tex_gen: 0,
         }
@@ -173,6 +200,7 @@ impl FogVolume {
         *self = Self {
             ground_gen: self.ground_gen.wrapping_add(1),
             ground_field: self.ground_field.take(),
+            ground_source: self.ground_source.take(),
             ground_texels: std::mem::take(&mut self.ground_texels),
             ground_tex_gen: self.ground_tex_gen.wrapping_add(1),
             ..Self::new()
@@ -183,10 +211,29 @@ impl FogVolume {
     /// `scene` at load ([`FogGround`]), or `None` to fall back to the walk
     /// grid. The sheet mesh re-samples on the next step.
     pub fn set_ground_field(&mut self, scene: &str, field: Option<FogGround>) {
+        self.ground_source = None;
         self.ground_texels = field.as_ref().map(FogGround::texels).unwrap_or_default();
         self.ground_field = field.map(|f| (scene.trim().to_ascii_lowercase(), f));
         self.ground_tex_gen = self.ground_tex_gen.wrapping_add(1);
         self.regions_dirty = true;
+    }
+
+    /// Install what builds field scene `scene`'s ground field, in place of the
+    /// field itself. The fog is an enhancement that defaults off and its field
+    /// costs more than the rest of a scene's draw lists, so a host hands this
+    /// over at load and the field is built only if the bank ever ticks.
+    pub fn set_ground_source(&mut self, scene: &str, source: Option<FogGroundSource>) {
+        self.set_ground_field(scene, None);
+        self.ground_source = source.map(|s| (scene.to_string(), s));
+    }
+
+    /// Build the field a [`Self::set_ground_source`] left pending. The bank's
+    /// step calls this first, so nothing has read the ground before it runs:
+    /// the bank sees the field it would have had from the scene's load.
+    pub fn resolve_ground_source(&mut self) {
+        if let Some((scene, source)) = self.ground_source.take() {
+            self.set_ground_field(&scene, source.build());
+        }
     }
 
     /// The installed ground field, when it belongs to the current scene and

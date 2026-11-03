@@ -361,8 +361,9 @@ transcription. The simulation, the scene styles and the shading recipe are
 on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
 
 **Ground field.** Each field scene's `FogGround`
-(`engine-scene::fog_ground::build_for_scene`, built once at scene load by
-both hosts over their static draw lists) puts the sheet mesh on the drawn
+(`engine-scene::fog_ground::source_for_scene`, captured at scene load by both
+hosts over their static draw lists, and built the first time the raised toggle
+ticks the bank) puts the sheet mesh on the drawn
 floor and stops it over open air, so a tower top such as `teien` no longer
 carries a flat bank across the sky around it. Past a rim the mesh keeps
 going as a near-vertical spill curtain hugging the wall face, carrying a
