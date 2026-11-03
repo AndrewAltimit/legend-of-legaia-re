@@ -5,16 +5,7 @@ receiver-gated, and reachability from the host roots.
 from collections import defaultdict, deque
 from pathlib import Path
 
-from port_catalog.rust_source import (
-    BARE_CALL_RE,
-    FIELD_COLON_RE,
-    IDENT_RE,
-    METHOD_CALL_RE,
-    QUAL_CALL_RE,
-    RUST_KEYWORDS,
-    RustFn,
-    RustSource,
-)
+from port_catalog.rust_source import RustFn, RustSource
 
 
 def build_rust_graph(
@@ -113,8 +104,7 @@ def build_rust_graph(
     if strict:
         all_impl_types = {f.impl_type for f in fns if f.impl_type}
         for p, s in srcs.items():
-            words = set(IDENT_RE.findall(s.stripped))
-            named_types[p] = words & all_impl_types
+            named_types[p] = s.idents & all_impl_types
 
     def gated(caller: RustFn, cands: list[RustFn]) -> list[RustFn]:
         """Apply the receiver gate, but only where there is ambiguity to resolve.
@@ -140,12 +130,9 @@ def build_rust_graph(
     edges: dict[int, set[int]] = defaultdict(set)
     for src in srcs.values():
         for f in src.fns:
-            body = src.stripped[f.body_start : f.body_end]
+            calls = f.calls
             targets: set[int] = set()
-            consumed: set[tuple[int, int]] = set()
-            for m in QUAL_CALL_RE.finditer(body):
-                qual, name = m.group(1), m.group(2)
-                consumed.add(m.span(2))
+            for qual, name in calls.quals:
                 if qual == "Self" and f.impl_type:
                     qual = f.impl_type
                 # Fall back to *free* functions only, never to methods. An
@@ -159,25 +146,19 @@ def build_rust_graph(
                     or free_by_name.get(name, [])
                 )
                 targets.update(c.uid for c in cands)
-            for m in METHOD_CALL_RE.finditer(body):
-                consumed.add(m.span(1))
-                targets.update(
-                    c.uid for c in gated(f, methods_by_name.get(m.group(1), []))
-                )
-            for m in BARE_CALL_RE.finditer(body):
-                if m.span(1) in consumed or m.group(1) in RUST_KEYWORDS:
-                    continue
-                consumed.add(m.span(1))
-                targets.update(c.uid for c in gated(f, by_name.get(m.group(1), [])))
-            for m in IDENT_RE.finditer(body):
-                if m.span(1) in consumed or m.group(1) in RUST_KEYWORDS:
-                    continue
-                # A field declaration (`name: Type`) or a struct-literal key
-                # (`Foo { name: v }`) is not a function value. `::` is not a
-                # field separator, so exclude it from the lookahead.
-                if strict and FIELD_COLON_RE.match(body, m.end(1)):
-                    continue
-                targets.update(c.uid for c in free_by_name.get(m.group(1), []))
+            for name in calls.methods:
+                targets.update(c.uid for c in gated(f, methods_by_name.get(name, [])))
+            for name in calls.bares:
+                targets.update(c.uid for c in gated(f, by_name.get(name, [])))
+            # A field declaration (`name: Type`) or a struct-literal key
+            # (`Foo { name: v }`) is not a function value: the strict graph
+            # leaves the names used only that way out. `::` is not a field
+            # separator (`FIELD_COLON_RE`).
+            for name in calls.idents:
+                targets.update(c.uid for c in free_by_name.get(name, []))
+            if not strict:
+                for name in calls.field_idents:
+                    targets.update(c.uid for c in free_by_name.get(name, []))
             targets.discard(f.uid)
             edges[f.uid] |= targets
     return fns, edges

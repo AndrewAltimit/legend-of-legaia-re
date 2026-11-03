@@ -94,20 +94,26 @@ def compute_live(
     ) -> dict[tuple[Path, str], bool]:
         out = {k: False for k in item_keys}
         remaining = set(item_keys)
+        # `f.words` holds every `\\w+` word of the body, so `\\bname\\b`
+        # matching is membership, and a qualified spelling needs the name too.
+        keys_of: dict[str, list[tuple[Path, str]]] = defaultdict(list)
+        for key in item_keys:
+            keys_of[key[1]].append(key)
         for f in fns:
             if not remaining:
                 break
             if f.is_test or f.uid not in reached:
                 continue
-            body = srcs[f.path].stripped[f.body_start : f.body_end]
-            for key in list(remaining):
-                p, n = key
-                bare, qual = item_pats[key]
-                if strict:
-                    hit = item_reference_hit(f.path, body, p, bare, qual)
-                else:
-                    hit = bare.search(body)
-                if hit:
+            for name in f.words & keys_of.keys():
+                for key in keys_of[name]:
+                    if key not in remaining:
+                        continue
+                    if strict:
+                        p, _ = key
+                        bare, qual = item_pats[key]
+                        body = srcs[f.path].stripped[f.body_start : f.body_end]
+                        if not item_reference_hit(f.path, body, p, bare, qual):
+                            continue
                     out[key] = True
                     remaining.discard(key)
         return out

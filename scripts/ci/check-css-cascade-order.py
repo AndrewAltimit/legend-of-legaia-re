@@ -38,6 +38,7 @@ of the file for exactly this reason.
 from __future__ import annotations
 
 import argparse
+import bisect
 import re
 import sys
 from dataclasses import dataclass
@@ -110,15 +111,16 @@ def strip_comments(text: str) -> str:
     out: list[str] = []
     i = 0
     while i < len(text):
-        if text.startswith("/*", i):
-            j = text.find("*/", i + 2)
-            if j < 0:
-                j = len(text)
-            out.append("\n" * text.count("\n", i, j + 2))
-            i = j + 2
-        else:
-            out.append(text[i])
-            i += 1
+        k = text.find("/*", i)
+        if k < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:k])
+        j = text.find("*/", k + 2)
+        if j < 0:
+            j = len(text)
+        out.append("\n" * text.count("\n", k, j + 2))
+        i = j + 2
     return "".join(out)
 
 
@@ -157,9 +159,10 @@ def parse(text: str) -> list[Decl]:
     """Walk the stylesheet, recording every declaration with its @-conditions."""
     decls: list[Decl] = []
     n = len(text)
+    newlines = [m.start() for m in re.finditer("\n", text)]
 
     def line_at(pos: int) -> int:
-        return text.count("\n", 0, pos) + 1
+        return bisect.bisect_left(newlines, pos) + 1
 
     def skip_block(pos: int) -> int:
         depth = 1
@@ -274,13 +277,17 @@ def scan_sources(sources: list[tuple[str, str]]) -> list[Finding]:
             d.sheet = sheet
             decls.append(d)
     conditional = [d for d in decls if d.conditions]
-    unconditional = [d for d in decls if not d.conditions]
+    # By selector, in source order: a pair needs the same selector text.
+    unconditional: dict[str, list[Decl]] = {}
+    for d in decls:
+        if not d.conditions:
+            unconditional.setdefault(d.sel, []).append(d)
     findings: list[Finding] = []
     for m in conditional:
         m_spec = specificity(m.sel)
         m_props = covers(m.prop)
-        for later in unconditional:
-            if later.order <= m.order or later.sel != m.sel:
+        for later in unconditional.get(m.sel, ()):
+            if later.order <= m.order:
                 continue
             if not (covers(later.prop) & m_props):
                 continue

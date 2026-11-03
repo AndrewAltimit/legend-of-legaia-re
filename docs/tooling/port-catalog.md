@@ -116,7 +116,7 @@ python3 scripts/ci/port-catalog.py --live-only       # ported and reachable
 python3 scripts/ci/port-catalog.py --live-audit      # the audit page (below)
 ```
 
-The pass parses every Rust file in the workspace, so it is markedly slower than the other modes and stays opt-in.
+The pass parses every Rust file in the workspace, so it is markedly slower than the other modes and stays opt-in. Each file's parse is kept in `target/port-catalog/parse-cache.pickle`, keyed on the file's bytes, its path and the parser's own source, so a run after a small edit re-parses only that edit; `LEGAIA_NO_PARSE_CACHE=1` turns it off.
 
 **How to read it:** `live` is an *upper bound* on what runs; `--not-live` is a *hard floor* on what does not. Every ambiguity in the graph resolves toward reachability, so an address `--not-live` reports is one no plausible edge - not even a wrong one - could reach.
 
