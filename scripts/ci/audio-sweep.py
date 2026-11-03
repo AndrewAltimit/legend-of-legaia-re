@@ -87,6 +87,8 @@ def main() -> int:
     ap.add_argument("--filter", help="only labels containing this (comma = any of several; =label matches exactly)")
     ap.add_argument("--out", default=str(REPO / "captures" / "audio-sweep" / "report.json"))
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--jobs", type=int, default=max(1, min(8, (os.cpu_count() or 2) // 2)),
+                    help="states seeded at once; the report is the same at any count (default %(default)s)")
     a = ap.parse_args()
     if a.propose and Path(a.propose).resolve() == BASELINE.resolve():
         ap.error("--propose never writes the committed baseline")
@@ -106,10 +108,10 @@ def main() -> int:
              "--features", "oracles", "--bin", "legaia-engine"],
             cwd=REPO, check=True,
         )
-    exe = REPO / "target" / PROFILE / "legaia-engine"
+    exe = Path(os.environ.get("LEGAIA_ENGINE_BIN") or REPO / "target" / PROFILE / "legaia-engine")
     cmd = [str(exe), "audio-sweep", "--out", a.out,
            "--library", str(library), "--extracted-root", str(extracted),
-           "--manifest", str(REPO / "scripts" / "scenarios.toml")]
+           "--manifest", str(REPO / "scripts" / "scenarios.toml"), "--jobs", str(a.jobs)]
     if a.filter:
         cmd += ["--filter", a.filter]
     env = dict(os.environ)

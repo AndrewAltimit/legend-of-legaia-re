@@ -1100,7 +1100,7 @@ namespace LegaiaWorld
             if (!System.IO.File.Exists(manifestPath))
                 Fail("no manifest at " + manifestPath +
                      " - copy the exported scene folder into the project first");
-            object manifest = MiniJson.Parse(System.IO.File.ReadAllText(manifestPath));
+            object manifest = LegaiaManifestFrame.Load(manifestPath);
 
             LegaiaWorldBuilder.EnsureUdonProgramAssets();
             var settings = LegaiaSceneSettings.Load(sceneName);

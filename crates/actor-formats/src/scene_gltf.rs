@@ -22,16 +22,31 @@
 //!
 //! ## Coordinate convention
 //!
-//! Mesh-local geometry is stored PSX-style (+Y down). The site renderers
-//! flip Y in the per-placement model matrix (`diag(s, -s, s)`); the export
-//! bakes the same flip into the mesh geometry (negating local Y) so instance
-//! transforms stay plain TRS and the model reads +Y-up in any glTF viewer -
-//! matching what the page shows, mirror-handedness and all. (The Y-flip
-//! commutes with a Y-rotation, so baking it into the vertices is exact.)
+//! Mesh-local geometry is stored PSX-style: `+X` right, `+Y` down, `+Z` into
+//! the screen, which is a right-handed frame. glTF is right-handed with `+Y`
+//! up, so the proper conversion is a rotation: 180 degrees about X, `(x, y, z)
+//! -> (x, -y, -z)` ([`psx_to_export`]), determinant `+1`. The bake applies it
+//! to every vertex and morph delta, so a raw glb has the game's own layout in
+//! any glTF viewer - the frame the NPC and prop files carry on their root node
+//! (`character_gltf`, `monster_gltf`), so a placement needs no compensating
+//! mirror.
+//!
+//! [`SceneInstance`] keeps the callers' **render frame**: the site pages'
+//! `placementModelScaledY` convention, world Y negated and nothing else. The
+//! bake maps it onto the export frame in one place ([`render_to_export_position`],
+//! [`render_to_export_rotation`]). A consumer that needs the same numbers beside
+//! the file (the world manifest) calls those two functions.
+//!
 //! Instance yaw needs one conversion: [`SceneInstance::rot_y`] carries the
 //! page's `placementModelScaledY` param, whose inline rotY block is the
-//! transpose of a standard +Y rotation - the emitted node quaternion is
-//! therefore `Ry(-rot_y)` (see [`quat_y`]).
+//! transpose of a standard +Y rotation, so its render-frame rotation is
+//! `Ry(-rot_y)` (see [`quat_y`]) before the export-frame conversion.
+//!
+//! **Winding.** [`SceneMesh::indices`] holds retail's order: a triangle is a
+//! front face when its corners run clockwise on the Y-down screen, the sign
+//! `NCLIP` keeps. glTF's front face runs counter-clockwise, and a rotation
+//! leaves the on-screen order alone, so the bake reverses every triangle. A
+//! viewer that honours the winding then keeps what retail's cull keeps.
 //!
 //! PSX transparency follows the fragment shader: a BGR555 word of `0` bakes
 //! as fully transparent (alpha 0) and the material uses `MASK` alpha, so
@@ -82,7 +97,7 @@ pub struct SceneMesh {
     pub flat_rgba: Vec<u8>,
     /// Morph targets (glTF `targets`, Unity blendshapes): per-vertex position
     /// deltas in the same PSX-frame layout as `positions` (the bake applies
-    /// the same Y flip). Empty for the ordinary static mesh. The engine's
+    /// the same [`psx_to_export`]). Empty for the ordinary static mesh. The engine's
     /// VDF vertex-morph lanes export through this - one target per lane.
     pub morph_targets: Vec<SceneMorphTarget>,
 }
@@ -106,15 +121,15 @@ pub struct SceneWeightsAnim {
 
 /// One placement of a [`SceneMesh`]: the same `(translation, rot_y, scale)`
 /// triple the page's `placementModelScaledY` builds its model matrix from
-/// (`translation` in the renderer's world frame, `rot_y` in radians about
-/// +Y, uniform `scale`).
+/// (`translation` in the render frame, `rot_y` in radians about +Y, uniform
+/// `scale`). The bake maps it onto the export frame.
 pub struct SceneInstance {
     pub mesh: usize,
     pub translation: [f32; 3],
     pub rot_y: f32,
     /// A full render-frame rotation quaternion `[x, y, z, w]`, emitted as
-    /// the node's `rotation` verbatim and taking precedence over
-    /// [`Self::rot_y`]. The world exporter fills it from the placement's
+    /// the node's `rotation` through [`render_to_export_rotation`] and taking
+    /// precedence over [`Self::rot_y`]. The world exporter fills it from the placement's
     /// three authored angles (`legaia_engine_scene::scene_assembly::draw_rotation_quat`),
     /// so a pitched or rolled record is not stood upright; the page export
     /// session fills it the same way for a tilted draw
@@ -176,16 +191,36 @@ pub(crate) fn bake_tile(
     }
 }
 
+/// The export frame's map of a PSX-frame point or vector: 180 degrees about
+/// X. A rotation, so handedness and on-screen layout survive it.
+pub fn psx_to_export(v: [f32; 3]) -> [f32; 3] {
+    [v[0], -v[1], -v[2]]
+}
+
+/// A render-frame point (PSX world Y negated) in the export frame: `Z` negated,
+/// which composed with the render frame's Y negation is [`psx_to_export`].
+pub fn render_to_export_position(t: [f32; 3]) -> [f32; 3] {
+    [t[0], t[1], -t[2]]
+}
+
+/// A render-frame rotation `[x, y, z, w]` in the export frame: the same `Z`
+/// negation conjugating the rotation, `M * R * M` with `M = diag(1, 1, -1)`.
+/// A quaternion's axis is a pseudovector, so `x` and `y` change sign and a
+/// rotation about +Y turns the other way.
+pub fn render_to_export_rotation(q: [f32; 4]) -> [f32; 4] {
+    [-q[0], -q[1], q[2], q[3]]
+}
+
 /// Quaternion `[x, y, z, w]` for a **standard** rotation of `a` radians
 /// about +Y (`[c,0,s; 0,1,0; -s,0,c]` acting on column vectors).
 ///
 /// This is the TRANSPOSE of the inline rotY block in the page's
 /// `placementModelScaledY` (whose column-major literal reads as
 /// `Ry(-param)`), so a [`SceneInstance::rot_y`] - which carries the page
-/// param by contract - must be **negated** at the emission site to
-/// reproduce the page's facing. Emitting `quat_y(rot_y)` unnegated is the
-/// bug that faced every yawed building the wrong way in exported worlds
-/// while leaving positions (and therefore layout comparisons) untouched.
+/// param by contract - must be **negated** to reproduce the page's facing
+/// in the render frame. A wrong sign here faces every yawed building the
+/// wrong way while leaving positions (and therefore layout comparisons)
+/// untouched.
 fn quat_y(a: f32) -> [f32; 4] {
     let h = a * 0.5;
     [0.0, h.sin(), 0.0, h.cos()]
@@ -307,11 +342,11 @@ pub fn build_scene_glb_animated(
         let has_colors = m.flat_rgba.len() >= nverts * 4;
         let mut colors: Vec<[f32; 4]> = Vec::new();
         for vi in 0..nverts {
-            positions.push([
+            positions.push(psx_to_export([
                 m.positions[vi * 3],
-                -m.positions[vi * 3 + 1], // bake the renderer's Y flip
+                m.positions[vi * 3 + 1],
                 m.positions[vi * 3 + 2],
-            ]);
+            ]));
             let flat = has_colors && m.flat_rgba[vi * 4 + 3] < 128;
             if flat {
                 let slot = white_tile.expect("flat vertex implies white tile");
@@ -364,7 +399,12 @@ pub fn build_scene_glb_animated(
             } else {
                 0
             };
-            buckets.entry(mat).or_default().extend_from_slice(tri);
+            // Reversed: retail's front face is clockwise on the Y-down
+            // screen, glTF's counter-clockwise (see the module docs).
+            buckets
+                .entry(mat)
+                .or_default()
+                .extend_from_slice(&[tri[0], tri[2], tri[1]]);
         }
 
         let pos_acc = b.push_vec3(&positions, Some(TARGET_ARRAY), true);
@@ -374,8 +414,8 @@ pub fn build_scene_glb_animated(
             let col_acc = b.push_vec4(&colors);
             attrs["COLOR_0"] = json!(col_acc);
         }
-        // Morph targets: one POSITION-delta accessor per target, with the
-        // same Y flip the base positions get.
+        // Morph targets: one POSITION-delta accessor per target, through the
+        // same frame map the base positions get.
         let mut target_attrs: Vec<Value> = Vec::new();
         let mut target_names: Vec<Value> = Vec::new();
         for t in &m.morph_targets {
@@ -384,11 +424,7 @@ pub fn build_scene_glb_animated(
             }
             let deltas: Vec<[f32; 3]> = (0..nverts)
                 .map(|vi| {
-                    [
-                        t.deltas[vi * 3],
-                        -t.deltas[vi * 3 + 1],
-                        t.deltas[vi * 3 + 2],
-                    ]
+                    psx_to_export([t.deltas[vi * 3], t.deltas[vi * 3 + 1], t.deltas[vi * 3 + 2]])
                 })
                 .collect();
             let acc = b.push_vec3(&deltas, Some(TARGET_ARRAY), true);
@@ -432,15 +468,16 @@ pub fn build_scene_glb_animated(
         };
         let mut node = json!({
             "mesh": gm,
-            "translation": inst.translation,
+            "translation": render_to_export_position(inst.translation),
         });
         if let Some(q) = inst.rotation {
-            node["rotation"] = json!(q);
+            node["rotation"] = json!(render_to_export_rotation(q));
         } else if inst.rot_y != 0.0 {
             // `rot_y` is the page's `placementModelScaledY` param, and that
             // function's inline rotY block is the transpose of a standard
-            // +Y rotation - negate to land on the same facing (see quat_y).
-            node["rotation"] = json!(quat_y(-inst.rot_y));
+            // +Y rotation - negate to land on the render-frame facing (see
+            // quat_y), then carry that into the export frame.
+            node["rotation"] = json!(render_to_export_rotation(quat_y(-inst.rot_y)));
         }
         if inst.scale != 1.0 {
             node["scale"] = json!([inst.scale, inst.scale, inst.scale]);
@@ -561,8 +598,8 @@ mod tests {
         }
     }
 
-    /// Morph targets export as glTF `targets` (Y-flipped like the base
-    /// positions, named through `extras.targetNames`), and a weights
+    /// Morph targets export as glTF `targets` (through the base positions'
+    /// frame map, named through `extras.targetNames`), and a weights
     /// animation lands one channel per instance node of the tracked mesh.
     #[test]
     fn morph_targets_and_weights_animation_export() {
@@ -571,7 +608,7 @@ mod tests {
         m.morph_targets = vec![SceneMorphTarget {
             name: "vdf_lane_0".into(),
             // Move vertex 1 down by 32 in PSX space (+Y down).
-            deltas: vec![0.0, 0.0, 0.0, 0.0, 32.0, 0.0, 0.0, 0.0, 0.0],
+            deltas: vec![0.0, 0.0, 0.0, 0.0, 32.0, 0.0, 0.0, 0.0, -8.0],
         }];
         let instances = [
             SceneInstance {
@@ -601,10 +638,11 @@ mod tests {
         assert_eq!(targets.len(), 1);
         assert_eq!(mesh["extras"]["targetNames"][0], "vdf_lane_0");
         assert_eq!(mesh["weights"][0], 0.0);
-        // The delta stream gets the same Y flip as the base positions.
+        // The delta stream gets the same frame map as the base positions.
         let acc = targets[0]["POSITION"].as_u64().unwrap() as usize;
         let d = crate::gltf_color::glb_probe::floats(&root, bin, acc).expect("deltas");
         assert_eq!(d[1][1], -32.0, "PSX +Y-down delta flips to -Y");
+        assert_eq!(d[2][2], 8.0, "PSX +Z delta flips to -Z");
         // One weights channel per instance node, sharing one sampler.
         let anims = root["animations"].as_array().unwrap();
         assert_eq!(anims.len(), 1);
@@ -664,20 +702,21 @@ mod tests {
         // Y-flip is baked into geometry: -64 becomes +64 in the POSITION max.
         let max_y = root["accessors"][0]["max"][1].as_f64().unwrap();
         assert!((max_y - 64.0).abs() < 1e-3);
-        // Instance TRS carried through.
+        // Instance TRS carried through, Z negated onto the export frame.
         assert_eq!(root["nodes"][0]["translation"][0], 100.0);
+        assert_eq!(root["nodes"][0]["translation"][2], -200.0);
         assert_eq!(root["nodes"][0]["scale"][0], 6.0);
         // The yaw SIGN: rot_y is the page's `placementModelScaledY` param,
-        // whose inline rotY block is transposed - the node quaternion must
-        // be the standard Ry of the NEGATED param. For rot_y = +PI/2 that
-        // is quat [0, sin(-PI/4), 0, cos(PI/4)]: y strictly negative. The
-        // unnegated emission faced every yawed building backwards in Unity
-        // and Blender while leaving all positions (and layout tests) right.
+        // whose inline rotY block is transposed, so its render-frame rotation
+        // is Ry(-rot_y), and the export frame's Z negation turns that back
+        // to Ry(rot_y). For rot_y = +PI/2 that is quat [0, sin(PI/4), 0,
+        // cos(PI/4)]: y strictly positive. The placement test below pins the
+        // sign against the geometry.
         let qy = root["nodes"][0]["rotation"][1].as_f64().unwrap();
         let qw = root["nodes"][0]["rotation"][3].as_f64().unwrap();
         assert!(
-            (qy + std::f64::consts::FRAC_PI_4.sin()).abs() < 1e-6,
-            "rotation must be Ry(-rot_y), got quat y = {qy}"
+            (qy - std::f64::consts::FRAC_PI_4.sin()).abs() < 1e-6,
+            "rotation must be Ry(rot_y), got quat y = {qy}"
         );
         assert!((qw - std::f64::consts::FRAC_PI_4.cos()).abs() < 1e-6);
     }
@@ -835,5 +874,64 @@ mod tests {
             root["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"].is_null(),
             "no stream, no attribute"
         );
+    }
+
+    /// One triangle wound the way retail keeps it: seen from a PSX camera on
+    /// `-Z` looking along `+Z`, `(0,0) -> (64,0) -> (0,64)` runs clockwise on
+    /// the Y-down screen, the positive `NCLIP` sign.
+    fn retail_front_triangle() -> SceneMesh {
+        SceneMesh {
+            name: "front".into(),
+            positions: vec![0.0, 0.0, 0.0, 64.0, 0.0, 0.0, 0.0, 64.0, 0.0],
+            uvs: vec![0, 0, 63, 0, 0, 63],
+            cba_tsb: vec![0, 5, 0, 5, 0, 5],
+            indices: vec![0, 1, 2],
+            flat_rgba: Vec::new(),
+            morph_targets: Vec::new(),
+        }
+    }
+
+    /// The handedness contract, in numbers: the bake is `(x, -y, -z)`, a
+    /// determinant `+1` map, and a triangle retail's cull keeps comes out
+    /// front-facing by glTF's rule for an eye at the same place.
+    #[test]
+    fn bake_is_a_proper_rotation_and_keeps_retail_front_faces() {
+        let vram = Vram::new();
+        let basis = [[1.0f32, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        let [a, b, c] = basis.map(psx_to_export);
+        let det = a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0]);
+        assert_eq!(det, 1.0, "the export frame must not mirror");
+
+        let inst = [SceneInstance {
+            mesh: 0,
+            translation: [0.0; 3],
+            rot_y: 0.0,
+            rotation: None,
+            scale: 1.0,
+        }];
+        let glb = build_scene_glb("front", &[retail_front_triangle()], &inst, &vram).unwrap();
+        let (root, bin) = crate::gltf_color::glb_probe::split(&glb).expect("glb container");
+        let prim = &root["meshes"][0]["primitives"][0];
+        let acc = prim["attributes"]["POSITION"].as_u64().unwrap() as usize;
+        let p = crate::gltf_color::glb_probe::floats(&root, bin, acc).unwrap();
+        assert_eq!(p[1], [64.0, 0.0, 0.0]);
+        assert_eq!(p[2][1], -64.0, "PSX +Y down reads as -Y");
+
+        let idx_acc = &root["accessors"][prim["indices"].as_u64().unwrap() as usize];
+        let view = &root["bufferViews"][idx_acc["bufferView"].as_u64().unwrap() as usize];
+        let off = view["byteOffset"].as_u64().unwrap_or(0) as usize
+            + idx_acc["byteOffset"].as_u64().unwrap_or(0) as usize;
+        assert_eq!(idx_acc["componentType"], 5125, "u32 indices");
+        let i: Vec<usize> = (0..3)
+            .map(|k| u32::from_le_bytes(bin[off + k * 4..off + k * 4 + 4].try_into().unwrap()))
+            .map(|v| v as usize)
+            .collect();
+        let sub = |a: &[f32], b: &[f32]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        let (e1, e2) = (sub(&p[i[1]], &p[i[0]]), sub(&p[i[2]], &p[i[0]]));
+        let normal_z = e1[0] * e2[1] - e1[1] * e2[0];
+        // The PSX eye at (0, 0, -100) is (0, 0, +100) in the export frame, so
+        // a front face's normal points along +Z.
+        assert!(normal_z > 0.0, "retail front face must be glTF front");
     }
 }

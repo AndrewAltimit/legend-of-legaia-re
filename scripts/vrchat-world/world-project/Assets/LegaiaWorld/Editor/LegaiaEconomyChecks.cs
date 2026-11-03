@@ -868,7 +868,7 @@ namespace LegaiaWorld
             if (!System.IO.File.Exists(path))
                 Fail("no manifest at " + path +
                      " - copy the exported scene folder into the project first");
-            return MiniJson.Parse(System.IO.File.ReadAllText(path));
+            return LegaiaManifestFrame.Load(path);
         }
 
         static System.Type Type(string name)

@@ -192,6 +192,13 @@ impl LegaiaRuntime {
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Build now what the first scene entry would otherwise build on its first
+    /// frame: the menu assets every frame's overlay asks for. They are a pure
+    /// read of the disc, so the page can do this while it idles.
+    pub fn play_prewarm(&mut self) {
+        self.ensure_menu_assets();
+    }
+
     /// `true` once the gold chrome atlas resolved from the disc; `false` means
     /// the menu renders glyphs only (PROT.DAT-only load).
     pub fn play_menu_has_chrome(&self) -> bool {

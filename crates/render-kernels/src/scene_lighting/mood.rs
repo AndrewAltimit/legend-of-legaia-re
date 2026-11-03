@@ -321,8 +321,7 @@ impl ScriptedSky {
 /// base  = ambient + (DIFFUSE * |N.L| + pool_w * pool(frag)) * key
 /// gain  = min(min(base, MAX_GAIN) + point_gain, TOTAL_MAX_GAIN)
 /// lit   = rgb * gain
-/// out   = emissive ? rgb * min(emissive_gain + point_gain, TOTAL_MAX_GAIN)
-///                  : lit                                (saturating)
+/// out   = emissive ? rgb * emissive_gain : lit          (saturating)
 /// ```
 ///
 /// `uniforms` is [`LightingMood::uniforms`]; with its enable at zero the
@@ -344,7 +343,7 @@ pub fn shade(
     if emissive {
         let mut out = [0.0f32; 3];
         for i in 0..3 {
-            out[i] = (rgb[i] * (amb[3] + point_gain[i]).min(TOTAL_MAX_GAIN)).clamp(0.0, 1.0);
+            out[i] = (rgb[i] * amb[3]).clamp(0.0, 1.0);
         }
         return out;
     }

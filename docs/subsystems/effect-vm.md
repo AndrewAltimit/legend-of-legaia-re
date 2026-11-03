@@ -225,6 +225,7 @@ and the inline sprite atlas.
 |---|---|---|
 | Animation effect arm | `FUN_8004998C` at `0x8004A634..0x8004A81C` calls `FUN_801DFDF0(id, sp+0x10, actor+0x46)` (`ghidra/scripts/funcs/8004998c.txt`) | `BattleActionHost::ui_element` spawns at the acting actor's battle seat with its `facing_angle` |
 | Per-action effect-script walk | `FUN_801DEA50` -> `FUN_801DFDF0` ([`battle-action.md`](battle-action.md#the-per-action-effect-script-fun_801dea50)) | `World::route_battle_effect_spawns` -> `World::try_spawn_effect` |
+| Move-power launch run `+0x0E`, at the script's terminator | `FUN_801DEA50` (`0x801DF3E0..0x801DF508`, [`move-power.md`](../formats/move-power.md#effect-list-framing)) | `World::spawn_launch_run` |
 | Move-power effect-id lists | `+0x12` / `+0x16` lists dispatched by `FUN_801e09f8` | `World::spawn_move_fx` |
 | Per-move effect-list spawner | `FUN_801e22c8` (called by the battle effect driver `FUN_800402f4`), 5-byte-stride list at `0x801F6470` | `engine-battle-vm::battle_cue_group::expand_cue_group` + `cue_group_for` |
 
@@ -463,9 +464,15 @@ texture page `0x001F` (`(960, 256)`, 4bpp) through CLUT `0x7F84`
 
 Port: `engine-effects::effect_ribbon`.
 `World::active_effect_ribbons` rebuilds each live ribbon node's mesh every
-frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923). Ozma
-(`0xA0`, PROT 0934) and the two capture-class carriers (PROT 0957, 0964) are
-not staged as scenes by the engine.
+frame. In play that is **Gilium**'s summon (spell `0x95`, PROT 0923) and
+**Ozma**'s (`0xA0`, PROT 0934: the ray fans of its arms `0xF` and `0x14`, whose
+seeds `+0xB8` the arm stores as it seats them). The two capture-class carriers
+(PROT 0957, 0964) are not staged as scenes by the engine.
+
+The vertices are pinned against retail: a RAM image of Ozma's arm `0x12` holds
+the last ray in the scratch TMD, and the port's walk from that ray's seed
+reproduces its vertices. Each step's pairs lie square to the walk, on the
+heading `(wander + angle + 0x400) & 0xFFF`.
 
 ### The sprite arm's draw
 

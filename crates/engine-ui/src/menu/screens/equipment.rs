@@ -26,6 +26,10 @@ const LIST_PITCH: i32 = 0x0d;
 /// verb table rather than from an item record).
 pub const EQUIP_REMOVE_ROW_LABEL: &str = "Remove";
 
+/// A verb row's name column and a pictogram row's, from the list pen.
+const EQUIP_ROW_NAME_X: i32 = 0x0c;
+const EQUIP_ROW_ICON_NAME_X: i32 = 0x1c;
+
 /// One slot row in the equip main window.
 pub struct EquipSlotRow<'a> {
     /// Slot label (engine hint only - retail identifies slots purely by
@@ -39,7 +43,9 @@ pub struct EquipSlotRow<'a> {
 /// One candidate row in the item-list window (id 23).
 pub struct EquipCandidateRow<'a> {
     pub name: &'a str,
-    pub count: u8,
+    /// ICO code of the row's pictogram; `0` is a row with none, whose name
+    /// starts where the pictogram would (the Remove verb, class `0x4000`).
+    pub icon: u8,
 }
 
 /// One row of the main window's stat-compare block: current value plus
@@ -60,8 +66,6 @@ pub enum EquipDrawPhase {
     SlotPicker,
     /// Cursor on the candidate-item list for the active slot.
     ItemPicker,
-    /// Yes/No confirmation prompt (`cursor` == 0 for Yes, 1 for No).
-    Confirm,
 }
 
 /// Plain-data view of the whole equip screen for
@@ -91,10 +95,8 @@ pub struct EquipScreenView<'a> {
     /// header is cursor row 0 of `DAT_801E46C0` - and it is what
     /// `engine-menus::equip_session::EquipState::SlotPicker` carries.
     pub cursor: u16,
-    /// Active slot index when in `ItemPicker` / `Confirm`.
+    /// Active slot index when in `ItemPicker`.
     pub active_slot: u8,
-    /// Optional pending swap label rendered above the Yes/No prompt.
-    pub confirm_label: Option<&'a str>,
     /// Emit ASCII `>` cursors. `false` when the caller draws the retail
     /// pointing-hand sprite instead ([`equip_screen_sprites_for`]).
     pub text_cursor: bool,
@@ -261,59 +263,114 @@ pub fn equip_screen_draws_for_with(
         }
     }
 
-    // Item-list window (id 23): candidate rows. Engine-styled content in
-    // the pinned retail rect.
+    // Item-list window (id 23): the kind-4 kernel's rows. Row `Y` from the
+    // window top at the shared `0xE` pitch, one 12-row page at a time. A
+    // pictogram row (class `0x6000` / `0x7000` / `0x9000`) has its name at
+    // `WX + 0x1C`, past the verb column a row without one uses.
     if view.phase != EquipDrawPhase::SlotPicker {
         let (lx, ly) = list_pen;
         if view.candidates.is_empty() {
             str_at(&mut out, "(no items)", lx + 10, ly, dim);
         }
-        // Row 0 is retail's **Remove** row (class `0x4000`, payload `0`) when
-        // `engine-menus::equip_session::EquipSession::items_for_slot` put one
-        // there: on an occupied armament slot, and on every Goods slot (the
-        // Goods builder always leads with it). It carries no item, so its bag
-        // count is `0` where every bag row's is at least `1` - that is the
-        // test, and the label is drawn from here instead of the id's name.
-        // A count of `0` further down is the Goods list's **equipped** row
-        // (class `0x7000`, the item already in the slot), which retail draws
-        // without a count column.
-        let remove_row = view.candidates.first().is_some_and(|c| c.count == 0);
-        for (i, c) in view.candidates.iter().enumerate() {
-            let y = ly + i as i32 * LIST_PITCH;
-            let selected = view.phase == EquipDrawPhase::ItemPicker && i as u16 == view.cursor;
-            let color = if selected { gold } else { white };
-            if selected {
-                str_at(&mut out, ">", lx, y, color);
+        let hovered = usize::from(view.cursor);
+        let top = hovered - hovered % PAUSE_LIST_VISIBLE_ROWS;
+        out.extend(list_page_header_draws(
+            font,
+            (top / PAUSE_LIST_VISIBLE_ROWS) as u16 + 1,
+            view.candidates.len().div_ceil(PAUSE_LIST_VISIBLE_ROWS) as u16,
+            list_pen,
+        ));
+        for (i, c) in view
+            .candidates
+            .iter()
+            .enumerate()
+            .skip(top)
+            .take(PAUSE_LIST_VISIBLE_ROWS)
+        {
+            let y = ly + PAUSE_LIST_ROWS_TOP + (i - top) as i32 * PAUSE_LIST_ROW_PITCH;
+            let selected = view.phase == EquipDrawPhase::ItemPicker && i == hovered;
+            if selected && view.text_cursor {
+                str_at(&mut out, ">", lx, y, gold);
             }
-            if remove_row && i == 0 {
-                str_at(&mut out, EQUIP_REMOVE_ROW_LABEL, lx + 10, y, color);
-                continue;
-            }
-            str_at(&mut out, c.name, lx + 10, y, color);
-            if c.count > 0 {
-                let count = format!("x{:>2}", c.count);
-                str_at(&mut out, &count, lx + 104, y, color);
-            }
-        }
-
-        // Confirm prompt at the bottom of the list window.
-        if view.phase == EquipDrawPhase::Confirm {
-            let prompt_y = ly + 150;
-            if let Some(label) = view.confirm_label {
-                str_at(&mut out, label, lx, prompt_y, white);
-            }
-            for (i, opt) in ["Yes", "No"].iter().enumerate() {
-                let x = lx + 10 + i as i32 * 50;
-                let selected = i as u16 == view.cursor;
-                let color = if selected { gold } else { white };
-                if selected {
-                    str_at(&mut out, ">", x - 10, prompt_y + LIST_PITCH, color);
-                }
-                str_at(&mut out, opt, x, prompt_y + LIST_PITCH, color);
-            }
+            let x = if c.icon == 0 {
+                lx + EQUIP_ROW_NAME_X
+            } else {
+                lx + EQUIP_ROW_ICON_NAME_X
+            };
+            let name = if c.icon == 0 {
+                EQUIP_REMOVE_ROW_LABEL
+            } else {
+                c.name
+            };
+            str_at(&mut out, name, x, y, white);
         }
     }
 
+    out
+}
+
+/// The candidate list's sprites: each row's pictogram at the verb column
+/// (`(WX + 0xC, row_y)`, drawn by the kernel's class arm through `FUN_8002C488`),
+/// the hand on the selected row and the blink-gated page arrows, all off the
+/// shared kind-4 list placements.
+///
+/// PORT: FUN_80032A44 (class `0x6000` / `0x7000` / `0x9000` row pictograms)
+pub fn equip_candidate_sprites_for(
+    rects: &SaveMenuAtlasRects,
+    icons: &[u8],
+    cursor: u16,
+    arrow_fallback: bool,
+    list_pen: (i32, i32),
+    stage_origin: (i32, i32),
+    stage_scale: u32,
+) -> Vec<SpriteDraw> {
+    let mut out = Vec::new();
+    let hovered = usize::from(cursor);
+    let top = hovered - hovered % PAUSE_LIST_VISIBLE_ROWS;
+    for (i, &code) in icons
+        .iter()
+        .enumerate()
+        .skip(top)
+        .take(PAUSE_LIST_VISIBLE_ROWS)
+    {
+        let src = match code {
+            0x21 => rects.icon_worn,
+            0x22 => rects.icon_helmet,
+            0x23 => rects.icon_armor,
+            0x24 => rects.icon_weapon,
+            0x25 => rects.icon_boot,
+            0x46 => rects.icon_goods,
+            _ => continue,
+        };
+        push_stage_sprite(
+            &mut out,
+            src,
+            (
+                list_pen.0 + EQUIP_ROW_NAME_X,
+                list_pen.1 + PAUSE_LIST_ROWS_TOP + (i - top) as i32 * PAUSE_LIST_ROW_PITCH,
+            ),
+            stage_origin,
+            stage_scale,
+        );
+    }
+    push_stage_sprite(
+        &mut out,
+        rects.cursor,
+        list_hand_pos(list_pen, (hovered - top) as u8),
+        stage_origin,
+        stage_scale,
+    );
+    out.extend(page_arrow_sprites(
+        rects,
+        (
+            (top / PAUSE_LIST_VISIBLE_ROWS) as u16 + 1,
+            icons.len().div_ceil(PAUSE_LIST_VISIBLE_ROWS) as u16,
+        ),
+        arrow_fallback,
+        list_pen,
+        stage_origin,
+        stage_scale,
+    ));
     out
 }
 
@@ -467,7 +524,6 @@ mod tests {
             phase,
             cursor,
             active_slot,
-            confirm_label: None,
             text_cursor: true,
         }
     }
@@ -538,7 +594,7 @@ mod tests {
         }];
         let cands = [EquipCandidateRow {
             name: "Iron Sword",
-            count: 1,
+            icon: 0x24,
         }];
         let browse = equip_screen_draws_for_with(
             &font,
@@ -592,70 +648,48 @@ mod tests {
     /// put one there - the one row with no bag count. It carries no item, so
     /// its label comes from here rather than from the host's per-id name.
     #[test]
-    fn candidate_row_zero_is_the_remove_row_when_it_has_no_count() {
+    fn a_row_with_no_pictogram_is_the_remove_verb_at_the_verb_column() {
         let font = legaia_font::synthetic_for_tests();
-        let with_remove_row = [
+        let rows = [
             EquipCandidateRow {
                 name: "REMOVE-PLACEHOLDER",
-                count: 0,
+                icon: 0,
             },
             EquipCandidateRow {
                 name: "Iron Sword",
-                count: 1,
-            },
-        ];
-        let without_remove_row = [
-            EquipCandidateRow {
-                name: "REMOVE-PLACEHOLDER",
-                count: 1,
-            },
-            EquipCandidateRow {
-                name: "Iron Sword",
-                count: 1,
+                icon: 0x24,
             },
         ];
         let slots = [EquipSlotRow {
             label: "Weapon",
             current_name: "",
         }];
-
-        let with_remove = equip_screen_draws_for_with(
+        let draws = equip_screen_draws_for_with(
             &font,
             None,
-            &view(&slots, &with_remove_row, EquipDrawPhase::ItemPicker, 0, 0),
+            &view(&slots, &rows, EquipDrawPhase::ItemPicker, 1, 0),
             PARTY,
             LIST,
             MAIN,
-        );
-        let without = equip_screen_draws_for_with(
-            &font,
-            None,
-            &view(
-                &slots,
-                &without_remove_row,
-                EquipDrawPhase::ItemPicker,
-                0,
-                0,
-            ),
-            PARTY,
-            LIST,
-            MAIN,
-        );
-        // The Remove row drops the count field the ordinary rows carry, so
-        // it emits strictly fewer glyphs on the same list.
-        assert!(
-            with_remove.len() < without.len(),
-            "the Remove row must replace the host's name + count draws"
         );
         let (lx, ly) = LIST;
-        let remove_glyphs = font.layout_ascii(EQUIP_REMOVE_ROW_LABEL).glyphs.len();
-        assert_eq!(
-            with_remove
+        let row_y = |row: i32| ly + PAUSE_LIST_ROWS_TOP + row * PAUSE_LIST_ROW_PITCH;
+        let on = |row: i32| {
+            let y = row_y(row);
+            draws
                 .iter()
-                .filter(|d| d.dst.0 >= lx + 10 && d.dst.1 == ly)
-                .count(),
-            remove_glyphs,
+                .filter(move |d| d.dst.0 >= lx && (y..y + PAUSE_LIST_ROW_PITCH).contains(&d.dst.1))
+        };
+        assert_eq!(
+            on(0).count(),
+            font.layout_ascii(EQUIP_REMOVE_ROW_LABEL).glyphs.len(),
             "row 0 draws exactly the Remove label"
+        );
+        assert_eq!(on(0).map(|d| d.dst.0).min(), Some(lx + EQUIP_ROW_NAME_X));
+        assert_eq!(
+            // Past the text cursor, which marks the hovered row at the pen.
+            on(1).map(|d| d.dst.0).filter(|&x| x > lx).min(),
+            Some(lx + EQUIP_ROW_ICON_NAME_X)
         );
     }
 }

@@ -93,7 +93,8 @@ impl<'m> DrawCtx<'_, 'm> {
             if let Some((_, second)) = app.battle_stage_shell.as_ref() {
                 nclip_marks.push((
                     draws.len(),
-                    legaia_engine_scene_host::scene_host::backdrop_shell_nclip(*second),
+                    legaia_engine_scene_host::scene_host::backdrop_shell_nclip(*second)
+                        | legaia_engine_render::DRAW_WORD_MEAN_DEPTH,
                 ));
             }
             // Half-arena stage in the scaled battle stage space.
@@ -117,7 +118,8 @@ impl<'m> DrawCtx<'_, 'm> {
             if let Some((_, second)) = app.battle_stage_shell.as_ref() {
                 color_nclip_marks.push((
                     color_draws.len(),
-                    legaia_engine_scene_host::scene_host::backdrop_shell_nclip(*second),
+                    legaia_engine_scene_host::scene_host::backdrop_shell_nclip(*second)
+                        | legaia_engine_render::DRAW_WORD_MEAN_DEPTH,
                 ));
             }
             color_draws.push(ColorSceneDraw {

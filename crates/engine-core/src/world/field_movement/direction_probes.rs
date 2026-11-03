@@ -34,6 +34,7 @@ impl World {
     /// step-exact (pinned by the `rimelm_wall_press_left`/`_down` captures).
     /// The actor-collision arm (result bits `1`/`4`) is
     /// [`Self::field_actor_dir_blocked`].
+    #[inline]
     pub fn field_dir_blocked(&self, x: i16, z: i16, dir: usize) -> bool {
         FIELD_WALL_PROBES[dir & 3]
             .iter()

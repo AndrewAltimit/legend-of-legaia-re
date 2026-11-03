@@ -40,6 +40,8 @@ mod camera;
 /// ported retail dev-menu kernels.
 #[path = "window/dev_menu.rs"]
 mod dev_menu;
+#[path = "window/entry_bench.rs"]
+mod entry_bench;
 #[path = "window/event_handler.rs"]
 mod event_handler;
 #[path = "window/field_render.rs"]
@@ -73,6 +75,7 @@ mod save_rack_disk;
 mod screens;
 #[path = "window/session_steps.rs"]
 mod session_steps;
+mod settings_panel;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]
@@ -91,6 +94,7 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-scene-formats` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
+pub use entry_bench::cmd_entry_bench;
 pub use headless::HeadlessPlayWindow;
 pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub use run::cmd_play_window;
@@ -154,9 +158,15 @@ impl PlayWindowApp {
         }
         let path = std::path::PathBuf::from(OPTIONS_CONFIG_FILE);
         let to_save = self.options_pins.persistable(&self.options_state);
-        if let Err(e) = to_save.save(&path) {
-            log::warn!("options: save to {} failed: {e:#}", path.display());
-        }
+        // A settings page that silently forgets is worse than one that says
+        // so: the page shows this in place of its control line.
+        *self.options_save_error.borrow_mut() = match to_save.save(&path) {
+            Ok(()) => None,
+            Err(e) => {
+                log::warn!("options: save to {} failed: {e:#}", path.display());
+                Some("Could not save these settings (see the log)".to_string())
+            }
+        };
     }
 
     /// A `--screenshot` / `--screenshot-every` / `--key-script` run: a capture,

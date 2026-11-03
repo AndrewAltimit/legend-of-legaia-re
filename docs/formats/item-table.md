@@ -54,8 +54,20 @@ PSX-EXE data segment (the words past `id 0xFF` are no longer valid pointers).
 The display strings carry the same MES control prefixes as every other in-game
 string: a leading `0x01` icon escape and `0xCE XX` colour-control bytes. The
 parser strips control bytes (keeping printable ASCII) and trims surrounding
-whitespace. A handful of ids (`0x00`, `0x12`, `0x1A`, `0x52`, `0xB9`, `0xFD`)
-have empty names - reserved / gap slots; `id 0` is "no item".
+whitespace. A handful of ids (`0x00`, `0x12`, `0x52`, `0xB9`, `0xFD`) share one empty string
+and decode to `None`. Id `0x1A` is not one of them: its string is
+`C1 00 " Fist"`, the MES party-name substitution then the word, so it reads as
+the first hero's name ("Vahn Fist"). Its `00` is the substitution's argument,
+not a terminator. Ids `0x1C` (`C1 01 " Feral"`) and `0x20` (`C1 02 " Mace"`) take
+the same form for the second and third heroes.
+
+`ItemNameTable::name` prints what retail prints, the template hero name before a
+save's own names apply (`PARTY_NAMED_ITEMS`, `DEFAULT_PARTY_NAMES`), and a host with
+a save in hand puts the renamed hero in. `ItemNameTable::pool_name` is the reading
+the randomizer pools and the curated gamedata join key on: no hero in a party-named
+weapon (`Feral`, `Mace`), and nothing at all for `0x1A`, which no pool holds. A
+fixed seed's output does not move with what `name` prints, and a name a patch writes
+into one of these slots stands in both.
 
 ## Provenance + parser
 

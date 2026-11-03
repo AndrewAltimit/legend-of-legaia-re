@@ -27,7 +27,9 @@
 
 use legaia_actor_formats::character_gltf::{CharacterClip, build_character_glb_hybrid};
 use legaia_actor_formats::player_anm::PlayerAnmBundle;
-use legaia_actor_formats::scene_gltf::{SceneInstance, SceneMesh};
+use legaia_actor_formats::scene_gltf::{
+    SceneInstance, SceneMesh, render_to_export_position, render_to_export_rotation,
+};
 use legaia_engine_scene::npc_catalog::{NpcCatalog, scene_anm_bundle};
 use legaia_engine_scene::scene::{ProtIndex, Scene};
 use legaia_engine_scene::scene_assembly::{
@@ -38,6 +40,8 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 
 mod animated_props;
+#[cfg(test)]
+mod handedness_tests;
 mod items;
 mod manifest;
 mod npcs;
@@ -57,9 +61,30 @@ pub use world::*;
 
 /// Placement transforms of one animated prop: `(translation, rot_y radians,
 /// full rotation quaternion)` per placed instance, all in the export frame.
-/// The quaternion is [`draw_rotation_quat`] - the same one the world glb's
+/// The quaternion is [`export_rotation`] - the same one the world glb's
 /// frame-0 twin node carries; `rot_y` is its yaw-only legacy field.
 type PropInstances = Vec<([f32; 3], f32, [f32; 4])>;
+
+/// A retail-frame world point in the export frame the world glb and the NPC
+/// and prop files share: `(x, -y, -z)`, the 180-degree turn about X that
+/// `legaia_actor_formats::scene_gltf` bakes. Not yet scaled.
+pub fn export_translation(pos: [f32; 3]) -> [f32; 3] {
+    render_to_export_position(draw_translation(pos))
+}
+
+/// An [`EnvDraw`](legaia_engine_scene::field_env::EnvDraw)'s full placement
+/// rotation in the export frame: the node rotation of its world glb twin.
+pub fn export_rotation(d: &legaia_engine_scene::field_env::EnvDraw) -> [f32; 4] {
+    render_to_export_rotation(draw_rotation_quat(d))
+}
+
+/// The yaw alone of [`export_rotation`], in radians about the export frame's
+/// `+Y`: the authored retail yaw with its sign turned, since the export frame
+/// looks at the ground from the opposite side of `Z`. Exact only for a record
+/// with no pitch or roll.
+pub fn export_yaw_radians(rot_y: u16) -> f32 {
+    draw_rot_y_radians(rot_y)
+}
 
 /// Field/duel clip playback rate baked into exported animation timelines -
 /// the observed retail field animator cadence (see the characters page's

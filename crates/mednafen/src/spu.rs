@@ -102,6 +102,36 @@ impl SpuVoiceState {
     }
 }
 
+/// A voice's ADPCM decoder at the moment of capture (mednafen's own layout: a
+/// 32-sample ring the decoder fills four samples at a time).
+#[derive(Debug, Clone)]
+pub struct SpuVoiceDecoder {
+    pub buffer: [i16; 32],
+    /// Ring index of the interpolator's oldest tap.
+    pub read_pos: u32,
+    /// Ring index the next decoded sample lands on.
+    pub write_pos: u32,
+    /// Samples from [`Self::read_pos`] up to [`Self::write_pos`].
+    pub avail: u32,
+    /// Ticks a just-keyed voice still waits before it plays.
+    pub play_delay: u32,
+}
+
+/// The reverb network at the moment of capture.
+#[derive(Debug, Clone)]
+pub struct SpuReverbState {
+    /// Buffer position, SPU-RAM halfwords.
+    pub cur: u32,
+    /// Work-area base, SPU-RAM halfwords.
+    pub work_area: u32,
+    /// Resampler position (`0..0x40`); an odd one steps the network.
+    pub res_pos: u32,
+    /// Down-sampler history, `[channel][res_pos + 0x00 / 0x40]`.
+    pub down: Vec<Vec<i16>>,
+    /// Up-sampler history, `[channel][(res_pos >> 1) + 0x00 / 0x20]`.
+    pub up: Vec<Vec<i16>>,
+}
+
 /// Top-level helper over the `SPU` section. Mirrors [`PsxGpu`] in shape.
 #[derive(Debug, Clone, Copy)]
 pub struct PsxSpu<'a> {
@@ -159,6 +189,59 @@ impl<'a> PsxSpu<'a> {
         } else {
             None
         }
+    }
+
+    /// The decoder half of a voice's capture, which [`Self::voice_state`]
+    /// leaves out: what resuming the voice sample for sample needs.
+    pub fn voice_decoder(&self, idx: usize) -> Option<SpuVoiceDecoder> {
+        if idx >= NUM_VOICES {
+            return None;
+        }
+        let buf = self
+            .save
+            .entry_bytes("SPU", &format!("&Voices[{idx}].DecodeBuffer[0]"))?;
+        let mut buffer = [0i16; 32];
+        for (slot, b) in buffer.iter_mut().zip(buf.as_chunks::<2>().0) {
+            *slot = i16::from_le_bytes(*b);
+        }
+        Some(SpuVoiceDecoder {
+            buffer,
+            read_pos: self.voice_u32(idx, "DecodeReadPos")?,
+            write_pos: self.voice_u32(idx, "DecodeWritePos")?,
+            avail: self.voice_u32(idx, "DecodeAvail")?,
+            play_delay: self.voice_u32(idx, "DecodePlayDelay")?,
+        })
+    }
+
+    /// The reverb network's live state, which the register accessors leave
+    /// out: buffer position (halfwords), resampler position and the two
+    /// resampler histories (`[channel][index]`).
+    pub fn reverb_state(&self) -> Option<SpuReverbState> {
+        let word = |name: &str| {
+            let b = self.save.entry_bytes("SPU", name)?;
+            Some(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+        };
+        let table = |name: &str, rows: usize| -> Option<Vec<Vec<i16>>> {
+            let b = self.save.entry_bytes("SPU", name)?;
+            let row = b.len() / 2 / rows;
+            Some(
+                b.as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|h| i16::from_le_bytes(*h))
+                    .collect::<Vec<_>>()
+                    .chunks_exact(row)
+                    .map(<[i16]>::to_vec)
+                    .collect(),
+            )
+        };
+        Some(SpuReverbState {
+            cur: word("ReverbCur")?,
+            work_area: word("ReverbWA")?,
+            res_pos: word("RvbResPos")?,
+            down: table("&RDSB[0][0]", 2)?,
+            up: table("&RUSB[0][0]", 2)?,
+        })
     }
 
     /// Full 24-voice state array. Slots with no data are populated with

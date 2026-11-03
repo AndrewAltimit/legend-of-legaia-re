@@ -324,6 +324,8 @@ pub struct BakaDuelScene {
     fighter: [Range<usize>; 2],
     ghost: [[Range<usize>; 2]; 2],
     cameo: Range<usize>,
+    /// The all-clear fighter ([`legaia_engine_minigames::baka_fighter_chrome::ClearFighter`]).
+    clear_fighter: Range<usize>,
     /// The three party fighters of the player-select lineup, by roster id.
     lineup: Vec<Range<usize>>,
     floor: Range<usize>,
@@ -366,6 +368,7 @@ impl BakaDuelScene {
             fighter: [0..0, 0..0],
             ghost: [[0..0, 0..0], [0..0, 0..0]],
             cameo: 0..0,
+            clear_fighter: 0..0,
             lineup: Vec::new(),
             floor: 0..0,
             walls: Vec::new(),
@@ -387,6 +390,13 @@ impl BakaDuelScene {
         }
         if let Some((tmd, raw)) = assets.cameo.as_ref() {
             s.cameo = s.push_tmd(tmd, raw, 1.0);
+        }
+        if let Some(a) = assets
+            .fighters
+            .get(legaia_engine_minigames::baka_fighter_chrome::CLEAR_FIGHTER_ROSTER)
+            .and_then(|a| a.as_ref())
+        {
+            s.clear_fighter = s.push_tmd(&a.tmd, &a.raw, 1.0);
         }
         let floor_start = s.base.len();
         s.push_floor();
@@ -416,6 +426,17 @@ impl BakaDuelScene {
         s.base_cba_tsb = s.cba_tsb.clone();
         s.positions = s.base.clone();
         Some(s)
+    }
+
+    /// The all-clear fighter's posed extent in world units, `0` while it is
+    /// not on stage.
+    pub fn clear_fighter_extent(&self) -> f32 {
+        let mut hi = 0.0f32;
+        let p = &self.positions[self.clear_fighter.clone()];
+        for v in p {
+            hi = hi.max(v[1].abs()).max((v[0] - p[0][0]).abs());
+        }
+        hi
     }
 
     /// The vertex range one ghost pass of fighter `slot` occupies
@@ -669,20 +690,21 @@ impl BakaDuelScene {
             let r = self.lineup[i].clone();
             self.collapse(r);
         }
-        self.pose_duel(assets, fight);
+        self.pose_duel(assets, fight, arena);
     }
 
     /// The cabinet's front end: the attract card draws no 3D at all; the
     /// player select draws the arena and the three-fighter lineup, the
     /// cursor's fighter lit and the other two at half depth cue.
     ///
-    /// REF: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
+    /// PORT: FUN_801D3390 (the lineup tick: `+0x78 = 0` on the cursor's
     /// fighter, `0x800` otherwise; the idle clip `+0x5C` = `1 + 9 * roster`
     /// stepped at its record's byte `+0x07`)
     fn pose_front_end(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
         let mut dead: Vec<Range<usize>> = vec![self.fighter[0].clone(), self.fighter[1].clone()];
         dead.extend(self.ghost.iter().flatten().cloned());
         dead.push(self.cameo.clone());
+        dead.push(self.clear_fighter.clone());
         dead.extend(self.impact_sprites.iter().cloned());
         dead.extend(self.impact_meshes.iter().map(|(_, r)| r.clone()));
         for r in dead {
@@ -757,7 +779,7 @@ impl BakaDuelScene {
 
     /// The duel proper: both fighters, their ghosts, the cameo, the walls
     /// and the impact parts.
-    fn pose_duel(&mut self, assets: &BakaDuelAssets, fight: &BakaFight) {
+    fn pose_duel(&mut self, assets: &BakaDuelAssets, fight: &BakaFight, arena: bool) {
         let camera = fight.duel_camera();
         let view = camera.view();
         // Eye-forward in world space, for the ghost setback.
@@ -771,6 +793,14 @@ impl BakaDuelScene {
             else {
                 continue;
             };
+            if fight.seat_retired(slot) {
+                let mut dead = vec![self.fighter[slot].clone()];
+                dead.extend(self.ghost[slot].iter().cloned());
+                for r in dead {
+                    self.collapse(r);
+                }
+                continue;
+            }
             let m = fight.motion(slot);
             let origin = fight.fighter_position(slot);
             let yaw = fight.fighter_yaw(slot);
@@ -805,12 +835,58 @@ impl BakaDuelScene {
             }
         }
         self.pose_cameo(assets, fight, &view, &r);
+        self.pose_clear_fighter(assets, fight);
         for i in 0..self.walls.len() {
             let (range, (pos, yaw)) = self.walls[i].clone();
-            let (base, out) = (&self.base[range.clone()], &mut self.positions[range]);
-            place_stage_model(camera, pos, yaw, base, out);
+            if arena {
+                let (base, out) = (&self.base[range.clone()], &mut self.positions[range]);
+                place_stage_model(camera, pos, yaw, base, out);
+            } else {
+                self.collapse(range);
+            }
         }
         self.pose_impact(fight);
+    }
+
+    /// Pose the all-clear fighter, or drop it when none is on stage. It is an
+    /// actor, so it draws whichever way the arena pass goes.
+    fn pose_clear_fighter(&mut self, assets: &BakaDuelAssets, fight: &BakaFight) {
+        use legaia_engine_minigames::baka_fighter_chrome as chrome;
+        let range = self.clear_fighter.clone();
+        let (Some(actor), Some(asset)) = (
+            fight.clear_fighter(),
+            assets
+                .fighters
+                .get(chrome::CLEAR_FIGHTER_ROSTER)
+                .and_then(|a| a.as_ref()),
+        ) else {
+            self.collapse(range);
+            return;
+        };
+        let rec = asset.first_record + chrome::CLEAR_FIGHTER_RECORD;
+        let frame = asset
+            .bank
+            .record(rec)
+            .ok()
+            .map(|r| {
+                let h = legaia_engine_minigames::baka_fighter::ClipHeader::from_record_words(
+                    r.a, r.b, r.flag,
+                );
+                let step = h.selector_step(chrome::CLEAR_FIGHTER_RATE);
+                let span = (i32::from(r.frame_count) * 16).max(1);
+                (actor.clock.wrapping_mul(step).rem_euclid(span) >> 4) as usize
+            })
+            .unwrap_or(0);
+        let origin = [f32::from(actor.x), 0.0, 0.0];
+        self.pose_range(
+            &asset.tmd,
+            &asset.bank,
+            rec,
+            frame,
+            range,
+            origin,
+            chrome::CLEAR_FIGHTER_YAW,
+        );
     }
 
     /// Pose the round-start cameo, or drop it when none is on stage. The
@@ -1015,6 +1091,8 @@ pub struct BakaDuelSurface {
     /// The blit row the cameo's cell last showed; a change is a VRAM edit
     /// the host must re-upload (a new generation).
     wink: Option<usize>,
+    /// The all-clear fighter's atlas holds the opponent's page.
+    clear_up: bool,
 }
 
 impl BakaDuelSurface {
@@ -1040,6 +1118,14 @@ impl BakaDuelSurface {
         let want = [fight.player_roster(), fight.opponent_roster()];
         if self.scene.as_ref().map(|s| s.roster()) != Some(want) {
             self.scene = BakaDuelScene::build(&assets, want[0], want[1]);
+            self.generation = self.generation.wrapping_add(1);
+        }
+        // The all-clear fighter's pack loads over the seated opponent's atlas
+        // (`FUN_801D4C50(6)`, `0x801D1AA0`).
+        // REF: FUN_801D4C50
+        let clear_up = fight.clear_fighter().is_some();
+        if clear_up != self.clear_up {
+            self.clear_up = clear_up;
             self.generation = self.generation.wrapping_add(1);
         }
         let wink = fight.cameo().and_then(|c| c.pose()).map(|p| p.blit_index);
@@ -1125,7 +1211,11 @@ impl BakaDuelSurface {
     pub fn vram(&self) -> Option<legaia_tim::Vram> {
         let s = self.scene.as_ref()?;
         let assets = self.assets.as_ref()?;
-        let mut vram = assets.vram(s.roster[1]);
+        let mut vram = assets.vram(if self.clear_up {
+            legaia_engine_minigames::baka_fighter_chrome::CLEAR_FIGHTER_ROSTER
+        } else {
+            s.roster[1]
+        });
         if let Some(i) = self.wink {
             assets.apply_wink(&mut vram, i);
         }

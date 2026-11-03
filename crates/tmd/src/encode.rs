@@ -354,8 +354,8 @@ pub fn decode_model(tmd: &Tmd, buf: &[u8]) -> Result<Vec<ModelObject>> {
             let mut prims = Vec::with_capacity(g.prims.len());
             for p in &g.prims {
                 prims.push(ModelPrim {
-                    vertices: p.vertex_indices(),
-                    uvs: p.uvs.clone(),
+                    vertices: p.vertex_indices().to_vec(),
+                    uvs: p.uvs.to_vec(),
                     cba: p.cba,
                     tsb: p.tsb,
                     // The parser replicates a flat prim's single colour word

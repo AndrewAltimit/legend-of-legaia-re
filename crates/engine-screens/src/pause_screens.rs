@@ -668,6 +668,7 @@ pub fn magic_draws(
             mp_cost: i.mp_cost,
         });
         let view = ui::PauseMagicView {
+            arrows_blink: list_arrows_blink(world),
             casters: &casters,
             rows: &rows,
             page: model.page,
@@ -835,8 +836,10 @@ pub fn items_draws(
         count: i.count,
         desc: &i.desc,
         passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+        detail: None,
     });
     let view = ui::PauseItemsView {
+        arrows_blink: list_arrows_blink(world),
         rows: &rows,
         page: model.page,
         pages: model.pages,
@@ -967,7 +970,47 @@ pub fn equip_draws(
             }
         }
     }
-    equip_screen_compose(ctx, &equip_compose_input(&model, !ctx.chrome_present()))
+    let stats: Vec<ui::PauseDetailStat> = model
+        .info
+        .as_ref()
+        .and_then(|i| i.detail.as_ref())
+        .map(|d| {
+            d.stats
+                .iter()
+                .map(|(label, label_dx, value_dx, value)| ui::PauseDetailStat {
+                    label: label.clone(),
+                    label_dx: *label_dx,
+                    value_dx: *value_dx,
+                    value: *value,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut input = equip_compose_input(&model, !ctx.chrome_present());
+    input.arrows_blink = list_arrows_blink(world);
+    if let (Some(info), Some(d)) = (
+        input.info.as_mut(),
+        model.info.as_ref().and_then(|i| i.detail.as_ref()),
+    ) {
+        info.detail = Some(ui::PauseItemDetail {
+            text: &d.text,
+            stats: &stats,
+        });
+    }
+    equip_screen_compose(ctx, &input)
+}
+
+/// The kind-4 kernel's blink gate on the frame word retail reads
+/// (`0x80084570 & 0x18`), the play clock's vsync counter.
+fn list_arrows_blink(world: Option<&World>) -> bool {
+    world.is_none_or(|w| {
+        let vsyncs = w
+            .clock
+            .play_time_seconds
+            .wrapping_mul(60)
+            .wrapping_add(u32::from(w.clock.play_tick_phase));
+        ui::shop_screen::page_arrows_blink_on(vsyncs)
+    })
 }
 
 /// Borrow the shared Equip screen model into the shared `engine-ui` compose
@@ -980,26 +1023,26 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
         slot_labels: &m.slot_labels,
         slot_items: &m.slot_items,
         candidate_names: &m.candidate_names,
-        candidate_counts: &m.candidate_counts,
+        candidate_icons: &m.candidate_icons,
         stat_compare: &m.stat_compare,
         best_changes: &m.best_changes,
         phase: match m.phase {
             Tag::SlotPicker => ui::EquipDrawPhase::SlotPicker,
             Tag::ItemPicker => ui::EquipDrawPhase::ItemPicker,
-            Tag::Confirm => ui::EquipDrawPhase::Confirm,
         },
         cursor: m.cursor,
         active_slot: m.active_slot,
-        confirm_label: m.confirm_label.as_deref(),
         char_slot: m.party_row as usize,
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,
         text_cursor,
+        arrows_blink: true,
         info: m.info.as_ref().map(|i| ui::pause_menu::EquipInfoInput {
             name: i.name.as_str(),
             count: i.count,
             desc: i.desc.as_str(),
             passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+            detail: None,
         }),
         compare: m.compare.as_ref().map(equip_compare_input),
     }

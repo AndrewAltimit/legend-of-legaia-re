@@ -24,7 +24,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result};
-use legaia_disc_audit::categorize::{Class, classify};
+use legaia_disc_audit::categorize::{Class, classify_class};
 use legaia_prot::Region;
 use legaia_prot::archive::{Archive, Entry};
 use legaia_prot::cdname;

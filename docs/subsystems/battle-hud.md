@@ -736,7 +736,9 @@ as it passes, so Megaton Press opens the cluster on the barrage's last pass
 already reading `11 HIT` / `TOTAL 378`. Port: `BattleHud::hold_combo`, driven
 by `BattleState::combo_cluster_held`. A cast that lands more than one hit
 reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
-(`battle_gimard_tail_fire_a`).
+(`battle_gimard_tail_fire_a`). The summon pre-hits do the same (PROT 0908, 0915,
+0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the
+band's fold.
 
 **A party-wide cast opens nothing.** The flag a cast hit raises is the
 finisher's: `FUN_801DDB30` stores `0x78` and adds the hit to the damage word
@@ -1265,9 +1267,9 @@ The first difference stops at the round's hand-off. Retail's `0x0B` leaves
 only on the pass its timer expires (`bgtz` at `0x801D0E58`), to `0x14` or -
 when `ctx[+0x290]` reads `1` - straight to the execute arm `0xFE`, and sweeps
 the text actors on that pass (`jal 0x800355F0` at `0x801D0E7C` /
-`0x801D0EB4`), so no action ever runs under the names. A round the port hands
-to the action SM with the timer still running sweeps them there
-(`BattleState::sweep_battle_intro_names`, from `begin_round_execution`).
+`0x801D0EB4`), so no prompt or action ever runs under the names. The port holds
+the first round start on the same span (`BattleState::battle_open_held`,
+[the open's timeline](battle-command-flow.md#the-opens-timeline)).
 
 <a id="the-battle-item-window-0x3c---packet-pinned"></a>
 ## The battle item window (`0x3C`)

@@ -2398,6 +2398,7 @@ name = "legaia-engine-scene"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-container-formats",
@@ -3044,6 +3045,7 @@ dependencies = [
  "legaia-tmd",
  "legaia-ui-formats",
  "legaia-vab",
+ "legaia-xa",
  "log",
  "png",
  "serde",
@@ -3319,6 +3321,7 @@ dependencies = [
  "legaia-engine-battle-menus",
  "legaia-engine-battle-vm",
  "legaia-engine-camera",
+ "legaia-engine-core",
  "legaia-engine-expansion",
  "legaia-engine-field",
  "legaia-engine-fishing",

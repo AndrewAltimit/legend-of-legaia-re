@@ -35,43 +35,30 @@ fn write_equip_swap(world: &mut World, char_slot: u8, slot: u8, added: u8, remov
     }
 }
 
-/// Apply a finished [`EquipSession`] to a `world.party.roster` member. Returns
-/// `Some(EquipOutcome)` when the session ended on an outcome; `None` for a
-/// session still open.
+/// Write what an [`EquipSession`] has committed and not yet handed over onto
+/// a `world.party.roster` member. Returns whether any swap landed.
 ///
-/// Two kinds of commit reach the record. The Best Equipment row's swaps
-/// ([`EquipSession::best_equipment_swaps`]) do not end the session - retail's
-/// applier `FUN_801CF760` writes the record and the bag where it stands and
-/// the slot browser stays up - so they are replayed first, whatever the
-/// session's closing outcome. A single-slot confirm is the outcome itself.
+/// Retail's appliers write the record and the bag where they stand and the
+/// slot browser stays up (`FUN_801CF760` on the Best Equipment row, the
+/// candidate confirm `0x801DA0B4..0x801DA1D0` on a slot row).
+/// [`tick_open_subsession`] drains the session each frame, so the record is
+/// live by the time the character picker rebuilds on another member; the
+/// sub-session's close sweeps what a driver stepping it directly left behind.
 // REF: FUN_801CF760
-pub fn apply_equip_outcome(
-    session: &EquipSession,
-    char_slot: u8,
-    world: &mut World,
-) -> Option<EquipOutcome> {
-    let best = session.best_equipment_swaps();
-    for &(slot, removed, added) in best {
+pub fn apply_equip_swaps(session: &mut EquipSession, char_slot: u8, world: &mut World) -> bool {
+    let swaps = session.take_swaps();
+    for &(slot, removed, added) in &swaps {
         write_equip_swap(world, char_slot, slot, added, removed);
     }
-    let outcome = session.outcome();
-    let committed = matches!(outcome, Some(EquipOutcome::Committed { .. }));
-    if let Some(EquipOutcome::Committed {
-        slot,
-        added,
-        removed,
-    }) = outcome
-    {
-        write_equip_swap(world, char_slot, slot, added, removed);
+    if swaps.is_empty() {
+        return false;
     }
-    if committed || !best.is_empty() {
-        // An equipment change can add / remove an accessory passive; rebuild
-        // the ability bitfields immediately (retail re-derives them every
-        // aggregator pass) so menu + battle consumers see the new bits
-        // without waiting for the next battle entry.
-        world.refresh_party_ability_bits();
-    }
-    outcome
+    // An equipment change can add / remove an accessory passive; rebuild
+    // the ability bitfields immediately (retail re-derives them every
+    // aggregator pass) so menu + battle consumers see the new bits
+    // without waiting for the next battle entry.
+    world.refresh_party_ability_bits();
+    true
 }
 
 /// Apply a finished [`InventoryUseSession`] to the world. Folds the

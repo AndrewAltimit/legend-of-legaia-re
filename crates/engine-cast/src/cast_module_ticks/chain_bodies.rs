@@ -668,10 +668,11 @@ pub const POWER_UP_AA_CHAIN: ChainBody = ChainBody {
 /// shape A, the victim staged with its reaction. Arm 5 is terminal: it waits
 /// for the victim to settle, zeroes `ctx[+0x0D]` and clears the busy word.
 ///
-/// Not ported: the packet arms and the hide/show stores. Countdowns:
-/// `capture_countdown`; arm 5's settle: [`ChainSettle::VictimOrFaded`].
+/// The camera arms, the hide/show stores and the blade's records are
+/// `cast_module_camera::v_windhash_camera`, whose gates run the arms; arm 5's
+/// settle: [`ChainSettle::VictimOrFaded`].
 ///
-/// PORT: FUN_801F69F0 (PROT 0947; phase chain + caster staging; packet arms unported)
+/// PORT: FUN_801F69F0 (PROT 0947; phase chain + caster staging)
 pub const V_WINDHASH_CHAIN: ChainBody = ChainBody {
     prot_entry: 947,
     body: 0x801F_69F0,
@@ -710,9 +711,9 @@ pub const CROSS_BEAM_COUNTER_PER_TICK: i32 = 2;
 /// The beam is drawn: `World::run_cast_module_code` keeps the builder's
 /// counter and both hosts build its packets through
 /// `legaia_render_kernels::cast_beam`. The countdown gates are
-/// `cast_module_camera::capture_countdown::CROSS_BEAM`. Not ported: the
-/// camera shots and the hide/show stores. Arm 5's settle:
-/// [`ChainSettle::VictimOrFaded`].
+/// `cast_module_camera::capture_countdown::CROSS_BEAM`, walked by
+/// `cast_module_camera::cross_beam_camera`, which carries the camera shots and
+/// the hide/show stores. Arm 5's settle: [`ChainSettle::VictimOrFaded`].
 ///
 /// PORT: FUN_801F69F0 (PROT 0948; phase chain + caster staging + countdown gates; beam drawn)
 pub const CROSS_BEAM_CHAIN: ChainBody = ChainBody {

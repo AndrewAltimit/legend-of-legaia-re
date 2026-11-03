@@ -50,7 +50,19 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// (`0x801F7A9C..0x801F7AB8`), and the head holds that slow clip through
 /// arm 24 until its natural end; committed at once, clip `5`'s lunge
 /// filled the screen from arm 24's first pass.
-const CLIP_GATED_MODULES: [u32; 8] = [907, 908, 909, 913, 927, 928, 929, 930];
+///
+/// PROT 0914 (Gola Gola) stores `1` bare beside the installer on arm 3
+/// (`0x801F6CF0..0x801F6CFC`) and arms 4..6 wait on the appear clip `0`'s
+/// cursor, arm 7 on its end: committed at once, the fall from the sky never
+/// played and arm 8 parked on the wrong clip's cursor for the wait's whole
+/// bound.
+///
+/// The commit path names no module, so the rule is the band's; a module joins
+/// this list once its director's stage stores carry their `+0x1DC` bumps
+/// (`ModuleCamState::creature_restage`), which an at-once commit hides.
+const CLIP_GATED_MODULES: [u32; 16] = [
+    907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931, 932, 933, 934,
+];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
 /// gives the creature it seats (`li s3,0x2` at `0x801F1CFC`, stored at
@@ -127,6 +139,9 @@ impl World {
         self.casting.module_cam.row_aim =
             legaia_engine_battle_vm::battle_target_group::target_group_aim(9, &slots);
         self.casting.module_cam.creature_clip = clip;
+        self.casting.module_cam.creature_word_up = seat
+            .and_then(|s| self.actors.get(s as usize))
+            .is_some_and(|a| a.battle.render_color != 0);
         // `+0x21B`, the loop counter the anim tick keeps on the creature
         // (`World::mirrors_loop_counter`).
         self.casting.module_cam.creature_loops = seat

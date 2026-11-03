@@ -168,6 +168,9 @@ pub struct ScreenshotConfig {
     /// (`World::debug_arm_scene_shop`), the browser page's
     /// `debug_arm_scene_shop` twin.
     pub shop_at: Option<(u64, usize)>,
+    /// `LEGAIA_SEAT_PRIZE=<tick>:<block>`: arm the casino prize counter (op
+    /// `49 07 <block>`) at that tick, which no root row reaches.
+    pub prize_at: Option<(u64, u8)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_engine_capture::phase_gate::PhaseGate`]) instead of
@@ -225,6 +228,10 @@ pub struct ScreenshotConfig {
     /// that moved between that frame and the RAM's. Set by the
     /// retail-compare image channel (`RetailBattle::engine_image_displayed_seats`).
     pub battle_displayed_seat: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_BATTLE_GHOST_POSE`: the pose the near-camera ghost pass read for
+    /// the displayed frame, one pass older than the pose it stands on
+    /// ([`legaia_engine_core::world::World::refresh_battle_camera_ghost_on`]).
+    pub battle_ghost_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     pub battle_cam_align_displayed: Option<(
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
@@ -251,11 +258,20 @@ pub struct ScreenshotConfig {
     /// (`BattleState::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
+    /// `LEGAIA_SEAT_AI_COUNTER=<n>`: the capture's monster AI counter
+    /// `0x801C8FE4`, the roll PROT 0964's strike forks on. Set by the
+    /// retail-compare image channel.
+    pub seat_ai_counter: Option<i32>,
     /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
     /// label opened on a commit younger than its displayed frame, so the
     /// captured frame closes the engine's (`BattleState::move_label_closed`).
     /// Set by the retail-compare image channel.
     pub seat_move_label_unseen: bool,
+    /// `LEGAIA_SEAT_CAM_BEHIND_COMMIT`: the capture stands on the pass its
+    /// art committed, so the frame takes the RAM's camera outright
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_commit_pass`]).
+    /// Set by the retail-compare image channel.
+    pub seat_cam_behind_commit: bool,
     /// `LEGAIA_SEAT_HUD_GLIDES=x:y:elapsed:total,...`: the retail capture's
     /// HUD widget glides still in flight, each at the elapsed its displayed
     /// frame shows; the captured frame seats the engine's on them
@@ -269,6 +285,17 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_frames_left`]).
     /// Set by the retail-compare image channel.
     pub seat_menu_glide_left: Option<f32>,
+    /// `LEGAIA_SEAT_GLIDE_PAIRS=<start,end;...>`: a retail state's camera
+    /// mover pair block, which the captured frame's glide sets out from
+    /// ([`legaia_engine_field::camera::Camera::seat_glide_pairs`]). Set by the
+    /// retail-compare image channel.
+    pub seat_glide_pairs: Option<[(i32, i32); 10]>,
+    /// `LEGAIA_SEAT_MENU_GLIDE_POSE=pitch,tx,ty,tz,fx,fy,fz`: the pose retail's
+    /// own table puts that displayed frame on, which the seat stands on in
+    /// place of the engine's arm
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_pose`]).
+    /// Set by the retail-compare image channel.
+    pub seat_menu_glide_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     /// `LEGAIA_SEAT_POPUP_AGE=<engine slot>:<age>`: the newest damage
     /// numeral's age as the retail capture's displayed frame drew it; the
     /// captured frame ages the engine's newest popup on that slot to it.
@@ -316,10 +343,21 @@ pub struct ScreenshotConfig {
     /// the matching placed props' clips on the capture frame
     /// (`World::seed_object_prop_clip`).
     pub seat_object_clips: Vec<legaia_engine_capture::field_seeds::ObjectClipSeed>,
+    /// `LEGAIA_SEAT_PLAYER_CLIP=<record>:<clip>:<cursor>:<flags>:<rate>`: the
+    /// player's clip words (`legaia_parity::retail_compare::retail_player_clip`),
+    /// stood on the capture frame (`World::seed_player_clip`).
+    pub seat_player_clip: Option<legaia_engine_capture::field_seeds::ObjectClipSeed>,
     /// `LEGAIA_SEAT_MORPHS=<fields>`: a retail state's live VDF morph
     /// envelopes (`legaia_parity::retail_compare::retail_morphs`), written
     /// over the engine's on the capture frame (`World::seed_field_morph`).
     pub seat_morphs: Vec<legaia_engine_capture::field_seeds::MorphSeed>,
+    /// `LEGAIA_SEAT_MORPH_WEIGHTS=<fields>`: a retail state's `4C D8`
+    /// morph-weight envelopes, written on the frame the capture is taken.
+    pub seat_morph_weights: Vec<legaia_engine_capture::field_seeds::MorphWeightSeed>,
+    /// `LEGAIA_SEAT_FLOOR_BOBS=<fields>`: a retail state's floor-ladder
+    /// oscillators, written on the frame the capture is taken
+    /// (`World::seed_floor_ladder`).
+    pub seat_floor_bobs: Vec<legaia_engine_capture::field_seeds::FloorBobSeed>,
     /// `LEGAIA_SEAT_WALKERS=<fields>`: a retail state's ambient walkers'
     /// live seats (`legaia_parity::retail_compare::retail_walkers`), stood
     /// on the capture frame (`World::seed_ambient_walker`).
@@ -414,6 +452,25 @@ pub struct ScreenshotConfig {
     /// the gate's frame shows a different shot than the display did
     /// (`RetailBattle::retake_on_shot_only` in `legaia-parity`).
     pub retake_shot_only: bool,
+    /// `LEGAIA_CAPTURE_RETAKE_YAW=<yaw>`: on a shot retake, the yaw the frame
+    /// before a turning shot stood on (`RetailBattle::retake_turning_yaw` in
+    /// `legaia-parity`).
+    /// `LEGAIA_BATTLE_CAM_STAND_DISPLAYED=1`: the frame stands on the camera
+    /// alignment's walked-back pose outright, not on the components whose
+    /// endpoint the replay's framing agrees with
+    /// (`RetailBattle::stand_on_displayed_pose` in `legaia-parity`).
+    pub battle_cam_stand_displayed: bool,
+    pub retake_yaw: Option<f32>,
+    /// `LEGAIA_CAPTURE_RETAKE_POSE=pitch,yaw,x,y,z,fx,fy,fz`: on a shot retake,
+    /// the whole pose the displayed frame stood on
+    /// (`RetailBattle::retake_turning_pose` in `legaia-parity`).
+    pub retake_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
+    /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
+    /// the lag into its state may still retake: the displayed frame is the
+    /// pass before the band's first arm spawned its parts, and it stands on
+    /// retail's walked-back pose (`RetailBattle::retake_across_band_entry` in
+    /// `legaia-parity`).
+    pub retake_across_entry: bool,
     /// The first tick of the drive's current run in its action state.
     pub state_since: std::cell::Cell<Option<u64>>,
     /// The framing the battle camera's law armed on the gate tick, kept for
@@ -895,6 +952,10 @@ impl ScreenshotConfig {
                 let (slot, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
             }),
+            prize_at: std::env::var("LEGAIA_SEAT_PRIZE").ok().and_then(|v| {
+                let (t, b) = v.split_once(':')?;
+                Some((t.parse().ok()?, b.parse().ok()?))
+            }),
             shop_at: std::env::var("LEGAIA_CAPTURE_SHOP").ok().and_then(|v| {
                 let (idx, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, idx.trim().parse().ok()?))
@@ -923,6 +984,9 @@ impl ScreenshotConfig {
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
+            battle_ghost_pose: std::env::var("LEGAIA_BATTLE_GHOST_POSE")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             battle_displayed_seat: std::env::var("LEGAIA_BATTLE_DISPLAYED_SEAT")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
@@ -943,7 +1007,11 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_ai_counter: std::env::var("LEGAIA_SEAT_AI_COUNTER")
+                .ok()
+                .and_then(|v| v.parse().ok()),
             seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),
+            seat_cam_behind_commit: std::env::var_os("LEGAIA_SEAT_CAM_BEHIND_COMMIT").is_some(),
             seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")
                 .ok()
                 .and_then(|v| {
@@ -957,9 +1025,23 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_glide_pairs: std::env::var("LEGAIA_SEAT_GLIDE_PAIRS")
+                .ok()
+                .and_then(|v| legaia_engine_capture::script_gate::glide_pairs_from_env(&v)),
             seat_menu_glide_left: std::env::var("LEGAIA_SEAT_MENU_GLIDE_LEFT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            seat_menu_glide_pose: std::env::var("LEGAIA_SEAT_MENU_GLIDE_POSE")
+                .ok()
+                .and_then(|v| {
+                    let n: Vec<f32> = v.split(',').filter_map(|f| f.trim().parse().ok()).collect();
+                    (n.len() == 7).then(|| legaia_engine_camera::projection::BattleCamPose {
+                        pitch: n[0],
+                        yaw: 0.0,
+                        tr: [n[1], n[2], n[3]],
+                        focus: [n[4], n[5], n[6]],
+                    })
+                }),
             seat_popup_cells: std::env::var("LEGAIA_SEAT_POPUP_CELLS")
                 .map(|v| {
                     v.split(',')
@@ -1032,9 +1114,20 @@ impl ScreenshotConfig {
             seat_morphs: std::env::var("LEGAIA_SEAT_MORPHS")
                 .map(|v| legaia_engine_capture::field_seeds::morphs_from_env(&v))
                 .unwrap_or_default(),
+            seat_morph_weights: std::env::var("LEGAIA_SEAT_MORPH_WEIGHTS")
+                .map(|v| legaia_engine_capture::field_seeds::morph_weights_from_env(&v))
+                .unwrap_or_default(),
+            seat_floor_bobs: std::env::var("LEGAIA_SEAT_FLOOR_BOBS")
+                .map(|v| legaia_engine_capture::field_seeds::floor_bobs_from_env(&v))
+                .unwrap_or_default(),
             seat_object_clips: std::env::var("LEGAIA_SEAT_OBJECT_CLIPS")
                 .map(|v| legaia_engine_capture::field_seeds::object_clips_from_env(&v))
                 .unwrap_or_default(),
+            seat_player_clip: std::env::var("LEGAIA_SEAT_PLAYER_CLIP").ok().and_then(|v| {
+                legaia_engine_capture::field_seeds::object_clips_from_env(&v)
+                    .first()
+                    .copied()
+            }),
             seat_object_models: std::env::var("LEGAIA_SEAT_OBJECT_MODELS")
                 .map(|v| {
                     v.split(',')
@@ -1062,6 +1155,24 @@ impl ScreenshotConfig {
                 .and_then(|v| v.trim().parse().ok())
                 .unwrap_or(0),
             retake_shot_only: std::env::var("LEGAIA_CAPTURE_RETAKE_SHOT")
+                .is_ok_and(|v| v.trim() == "1"),
+            battle_cam_stand_displayed: std::env::var("LEGAIA_BATTLE_CAM_STAND_DISPLAYED")
+                .is_ok_and(|v| v.trim() == "1"),
+            retake_yaw: std::env::var("LEGAIA_CAPTURE_RETAKE_YAW")
+                .ok()
+                .and_then(|v| v.trim().parse().ok()),
+            retake_pose: std::env::var("LEGAIA_CAPTURE_RETAKE_POSE")
+                .ok()
+                .and_then(|v| {
+                    let f: Vec<f32> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+                    (f.len() == 8).then(|| legaia_engine_camera::projection::BattleCamPose {
+                        pitch: f[0],
+                        yaw: f[1],
+                        tr: [f[2], f[3], f[4]],
+                        focus: [f[5], f[6], f[7]],
+                    })
+                }),
+            retake_across_entry: std::env::var("LEGAIA_CAPTURE_RETAKE_ENTRY")
                 .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),
             battle_reseat: std::env::var("LEGAIA_BATTLE_RESEAT")
@@ -1205,6 +1316,20 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
 /// Write a [`CaptureImage`] (RGBA8, row-major) to a PNG file. Used by the
 /// `--screenshot` harness in the redraw path.
 pub fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
+    write_capture_png_at(path, img, png::Compression::default())
+}
+
+/// [`write_capture_png`] at the fastest compression: the same pixels in a
+/// larger file, for a recorder that writes every frame.
+pub fn write_recorder_png(path: &Path, img: &CaptureImage) -> Result<()> {
+    write_capture_png_at(path, img, png::Compression::Fast)
+}
+
+fn write_capture_png_at(
+    path: &Path,
+    img: &CaptureImage,
+    compression: png::Compression,
+) -> Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating screenshot dir {}", dir.display()))?;
@@ -1214,6 +1339,7 @@ pub fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), img.width, img.height);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
+    enc.set_compression(compression);
     enc.write_header()
         .context("png header")?
         .write_image_data(&img.rgba)

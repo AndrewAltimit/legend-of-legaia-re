@@ -16,7 +16,7 @@ pub struct SlotRng {
 }
 
 impl SlotRng {
-    /// Seed the generator (retail reseeds from BIOS `rand` at machine init).
+    /// Seed the generator (retail writes a literal at the overlay's init).
     pub fn new(seed: u32) -> Self {
         Self { state: seed }
     }

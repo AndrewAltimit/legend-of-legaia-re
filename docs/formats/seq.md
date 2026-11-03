@@ -120,20 +120,51 @@ PSX SEQ encodes looping through NRPN-style control changes on `0xB0`:
 
 | Controller | Value | Meaning |
 | ---------- | ----- | ------- |
-| `0x63` (99) | 20 | Loop Start - remembers the current position |
-| `0x63` (99) | 30 | Loop Forever - jump back to the last Loop Start |
+| `0x63` (99) | 20 | Loop Start - remembers the current position, arms the count |
+| `0x06` (6) | n | Data entry after a Loop Start: the loop's count (`127` = for good) |
+| `0x63` (99) | 30 | Loop end - jump back to the last Loop Start while the count lasts |
 
 88 of 92 retail SEQ tracks carry these markers.
 
 The parser surfaces them as ordinary `ControlChange` events (the bytes really
-are a CC), and the engine `Sequencer` interprets them at playback time: a Loop
-Start fires recording the position immediately after the marker, and a later
-Loop Forever - or an end-of-track that follows a Loop Start - rewinds there
-rather than to event 0. The rewind lands on the event *after* the marker, so it
-neither re-fires the marker nor re-applies its delta, and the integer
-sample-clock is reset so the looped body re-fires on the same sample offset
-every pass. `Sequencer::set_loop_to` remains an external fallback for the four
-tracks that carry no markers.
+are a CC), and the engine `Sequencer` interprets them at playback time, as
+`FUN_8006139C` (CC 99) and `FUN_8006126C` (CC 6) do:
+
+- A Loop Start saves the position after the marker (`+0x08`, unconditionally, so
+  the last one read wins) and arms the count (`+0x1C`).
+- A data entry while armed and no count is running stores the count (`+0x1D`) and
+  marks it running (`+0x15`); `FUN_80062410` opens a sequence with both zero.
+- A loop end with a zero count clears `+0x15` and **reads on**; a count of `127` or
+  more jumps back for good; any other is decremented and jumps while it stays
+  non-zero.
+
+End-of-track (`FUN_80063AA8`) never looks at a Loop Start. It bumps the pass counter
+`+0x21` and compares it with the play count `+0x20`: a count of `0` restarts from the
+score head `+0x04`, and one that is spent stops the sequence (flags cleared, its
+notes keyed off by `FUN_800684CC`). The field BGM attach `FUN_80026478` plays with a
+count of `1` (`FUN_80062880(seq, 1, 1)`), so **a retail score with no counted loop
+plays once**. A capture confirms it: with `2050` started from a field state its read
+cursor runs off the end about seven seconds in, and its flags stay `0` from then on
+(`scripts/pcsx-redux/autorun_seq_end_watch.lua`).
+
+Across `music_01` that splits the scores like this:
+
+| Score shape | Tracks | Plays |
+|---|---|---|
+| Loop Start, count `127`, loop end (some with several Loop Starts: the last wins) | all but those below | loops from the last Loop Start |
+| Loop Start, loop end, no count | `2057`, `2070`, `2071` | once |
+| No markers | `2050`, and the entry past the sound-test list at extraction `1057` | once |
+
+A jump touches no voice. Most looping scores hold notes across their loop end (54 of
+the 73 in `music_01`, up to 14 notes), and those keep sounding until the next pass's
+note-off for the key. The jump lands on the event *after* the marker with no wait for that
+event's delta: the Loop Start saved the cursor past it (`0x80061410..0x80061424`), and the
+arm that loops for good discards the delta at the loop end and zeroes `+0x90`
+(`0x8006147C..0x80061490`). A counted loop's jump waits the delta read at the loop end
+instead. In `music_01` the delta behind a Loop Start is usually one tick, which is a tenth of a
+vsync of phase per pass when a port waits it again. On the sample clock (`set_exact_tempo`) the
+integer clock is reset so the looped body re-fires on the same sample offset every pass. `Sequencer::set_loop_to` is a viewer's
+choice to repeat a score at its end; no play host sets it.
 
 ### ProgramChange to an unused VAB slot
 

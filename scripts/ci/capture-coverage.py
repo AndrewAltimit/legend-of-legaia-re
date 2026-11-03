@@ -105,10 +105,10 @@ def run_census(out: Path, build: bool) -> Path | None:
     env = dict(os.environ)
     env.setdefault("RUST_LOG", "error")
     subprocess.run(
-        [str(REPO / "target" / PROFILE / "legaia-engine"), "retail-compare",
+        [os.environ.get("LEGAIA_ENGINE_BIN") or str(REPO / "target" / PROFILE / "legaia-engine"), "retail-compare",
          "--library", str(library), "--extracted-root", str(extracted),
          "--manifest", str(REPO / "scripts" / "scenarios.toml"),
-         "--out", str(out), "--census", str(census)],
+         "--out", str(out), "--census", str(census), "--jobs", str(rc.default_jobs())],
         cwd=REPO, env=env, check=True,
     )
     return census
@@ -235,7 +235,9 @@ def build(census: dict, baseline: dict) -> dict:
             continue
         for mid in set(b["monster_ids"]):
             mo.cover(mid, lab, sco)
-        acting = b["band"] in ("attack", "magic", "summon", "module")
+        acting = b["band"] in ("attack", "magic", "summon", "module") or (
+            b["band"] == "spirit" and b["category"] == 2  # a heal-class cast
+        )
         if not acting:
             continue
         q = b["queued_action"]

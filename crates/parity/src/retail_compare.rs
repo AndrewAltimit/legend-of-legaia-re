@@ -63,6 +63,7 @@ mod baseline_report;
 mod corpus_run;
 mod engine_run;
 mod minigame_run;
+mod movie_run;
 mod pause_menu_drive;
 pub mod resident_disc;
 mod retail_obs;
@@ -179,16 +180,23 @@ impl StateClass {
     pub fn seedable(self) -> bool {
         matches!(
             self,
-            StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Menu
+            StateClass::Field
+                | StateClass::WorldMap
+                | StateClass::Battle
+                | StateClass::Menu
+                | StateClass::Cutscene
         )
     }
 
     /// The reason a non-seedable class is not seeded.
     pub fn unseeded_reason(self) -> &'static str {
         match self {
-            StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Menu => "",
+            StateClass::Field
+            | StateClass::WorldMap
+            | StateClass::Battle
+            | StateClass::Menu
+            | StateClass::Cutscene => "",
             StateClass::FieldInit => "scene mid-load; no settled frame to reproduce",
-            StateClass::Cutscene => "STR playback is not a seeded state",
             StateClass::Minigame => "no minigame session seeding path",
             StateClass::Other => "boot / unknown mode",
         }
@@ -239,13 +247,14 @@ pub struct CorpusEntry {
 pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<CorpusEntry> {
     let mut out: Vec<CorpusEntry> = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    const EMULATORS: [&str; 2] = ["mednafen", "pcsx-redux"];
+    let backups = legaia_ram_image::scenarios::LibraryIndex::open(library, &EMULATORS);
     for sc in &manifest.scenarios {
         let Some(fp) = sc.backup_fingerprint.as_deref() else {
             continue;
         };
-        for emulator in ["mednafen", "pcsx-redux"] {
-            let Some(path) = legaia_ram_image::scenarios::library_backup_for(emulator, library, fp)
-            else {
+        for emulator in EMULATORS {
+            let Some(path) = backups.backup_for(emulator, fp) else {
                 continue;
             };
             if seen.insert(path.clone()) {

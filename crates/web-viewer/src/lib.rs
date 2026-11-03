@@ -46,6 +46,9 @@ use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
 use legaia_iso::image::{extract_prot_dat, extract_scus};
 use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
+#[cfg(feature = "bench-alloc")]
+mod bench_alloc;
+
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;
 use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement, ImageData};

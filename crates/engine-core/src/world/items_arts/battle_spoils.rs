@@ -341,7 +341,7 @@ impl World {
                 .and_then(legaia_game_tables::item_names::ItemNameTable::from_scus)
                 .map(|names| {
                     legaia_gamedata::Database::load()
-                        .equipment_pool_by_name(|id| names.name(id).map(str::to_string))
+                        .equipment_pool_by_name(|id| names.pool_name(id).map(str::to_string))
                         .into_iter()
                         .map(|(id, _)| id)
                         .collect()

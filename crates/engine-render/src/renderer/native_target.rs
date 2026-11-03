@@ -38,10 +38,31 @@ pub enum PsxTexelRule {
     PcsxRedux,
 }
 
+/// How far back a persisting frame reads: two pages at frame step `4`.
+const FRAME_PERSIST_VSYNCS: usize = 8;
+
+fn copy_frame(
+    enc: &mut wgpu::CommandEncoder,
+    from: &wgpu::Texture,
+    to: &wgpu::Texture,
+    native: &NativeTarget,
+) {
+    enc.copy_texture_to_texture(
+        from.as_image_copy(),
+        to.as_image_copy(),
+        wgpu::Extent3d {
+            width: native.width,
+            height: native.height,
+            depth_or_array_layers: 1,
+        },
+    );
+}
+
 /// The offscreen frame of [`Renderer::set_native_resolution`].
 pub(crate) struct NativeTarget {
     pub(super) width: u32,
     pub(super) height: u32,
+    pub(super) texture: wgpu::Texture,
     pub(super) view: wgpu::TextureView,
     /// The frame as the blit pipeline's group 0 (texture + nearest sampler).
     pub(super) blit_bg: wgpu::BindGroup,
@@ -76,6 +97,8 @@ impl Renderer {
     /// [`Self::presented_size`].
     pub fn set_native_resolution(&mut self, size: Option<(u32, u32)>) {
         self.native = size.map(|(w, h)| self.build_native_target(w.max(1), h.max(1)));
+        self.frame_ring.borrow_mut().clear();
+        self.frame_ring_next.set(0);
         let (w, h) = self.target_size();
         self.depth_view = create_depth_view(&self.device, w, h);
     }
@@ -111,7 +134,10 @@ impl Renderer {
             // The attachment format every pipeline renders through, so the
             // passes draw into it unchanged and the blit copies its bytes.
             format: self.view_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -133,6 +159,7 @@ impl Renderer {
         NativeTarget {
             width,
             height,
+            texture: tex,
             view,
             blit_bg,
         }
@@ -140,6 +167,100 @@ impl Renderer {
 
     /// Magnify the finished native frame onto `present`: black around the
     /// integer-scaled, centred picture.
+    /// Build the coming frames on the pixels an earlier one left instead of a
+    /// clear, as retail's battle frames do: its draw environment never clears,
+    /// so whatever a frame's opaque draws leave uncovered still holds the buffer
+    /// from an earlier frame. Only the native target outlives its frame; on any
+    /// other target this does nothing.
+    ///
+    /// Retail's "earlier frame" is the same page two game frames back, which at
+    /// the frame step a heavy arm runs at (`4`) is eight vsyncs. The engine
+    /// draws one frame a vsync, so each frame builds on the one
+    /// [`FRAME_PERSIST_VSYNCS`] back: built on the last frame, an additive layer
+    /// fills the buffer eight times too fast.
+    pub fn set_frame_persist(&self, on: bool) {
+        let was = self.frame_persist.replace(on);
+        if on && !was {
+            self.seed_frame_ring();
+        }
+    }
+
+    /// The ring takes what the target holds now: the frames before a persisting
+    /// run are all the earlier frames it has.
+    fn seed_frame_ring(&self) {
+        let Some(native) = &self.native else {
+            return;
+        };
+        let mut ring = self.frame_ring.borrow_mut();
+        if ring.is_empty() {
+            *ring = (0..FRAME_PERSIST_VSYNCS)
+                .map(|_| {
+                    self.device.create_texture(&wgpu::TextureDescriptor {
+                        label: Some("frame persist ring"),
+                        size: wgpu::Extent3d {
+                            width: native.width,
+                            height: native.height,
+                            depth_or_array_layers: 1,
+                        },
+                        mip_level_count: 1,
+                        sample_count: 1,
+                        dimension: wgpu::TextureDimension::D2,
+                        format: self.view_format,
+                        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+                        view_formats: &[],
+                    })
+                })
+                .collect();
+        }
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame ring seed"),
+            });
+        for t in ring.iter() {
+            copy_frame(&mut enc, &native.texture, t, native);
+        }
+        self.queue.submit(std::iter::once(enc.finish()));
+    }
+
+    /// The frame a persisting frame builds on, loaded into `dest`.
+    pub(super) fn load_persisted_frame(&self, dest: &wgpu::Texture) {
+        let Some(native) = &self.native else {
+            return;
+        };
+        let ring = self.frame_ring.borrow();
+        let Some(oldest) = ring.get(self.frame_ring_next.get()) else {
+            return;
+        };
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame ring load"),
+            });
+        copy_frame(&mut enc, oldest, dest, native);
+        self.queue.submit(std::iter::once(enc.finish()));
+    }
+
+    /// The presented frame takes the oldest slot of the ring.
+    pub(super) fn store_persisted_frame(&self) {
+        let Some(native) = &self.native else {
+            return;
+        };
+        let ring = self.frame_ring.borrow();
+        let next = self.frame_ring_next.get();
+        let Some(slot) = ring.get(next) else {
+            return;
+        };
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame ring store"),
+            });
+        copy_frame(&mut enc, &native.texture, slot, native);
+        self.queue.submit(std::iter::once(enc.finish()));
+        self.frame_ring_next.set((next + 1) % ring.len());
+    }
+
     pub(super) fn present_native(&self, native: &NativeTarget, present: &wgpu::TextureView) {
         self.queue.write_buffer(
             &self.uniforms_buf,

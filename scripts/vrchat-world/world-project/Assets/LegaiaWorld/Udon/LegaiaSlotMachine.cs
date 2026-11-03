@@ -475,6 +475,12 @@ namespace LegaiaWorld
             builtSeed = seed;
             rngState = seed;
             randState = seed ^ 0x5A5A5A5A;
+            // State 0 discards four draws before it fills the strips, and the
+            // reels start with row 0x10 on the payline (retail's raw position 0).
+            for (int i = 0; i < 4; i++)
+                NextRngMod(STRIP_LEN);
+            for (int r = 0; r < REEL_COUNT; r++)
+                reelPos[r] = 0x10 << 8;
             for (int i = 0; i < symbolStrip.Length; i++)
             {
                 symbolStrip[i] = -1;

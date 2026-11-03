@@ -123,7 +123,15 @@ impl World {
         if self.field_vm.object_glide_legs.is_empty() {
             return;
         }
-        let speed = self.clock.display_frame_step.max(1);
+        // The kernel spends the frame step once per game frame (the spend at
+        // `0x800379C4`), and nothing on the vsyncs between: `taiku2`'s sky
+        // dome leg (`41` with `rate * s / div` = `64 * s / 128`) moves one
+        // unit a game frame at step `2`, and truncates to nothing at `1`.
+        // REF: FUN_8003774C (the 0x37 / 0x41 arm)
+        let speed = self.clock.script_frame_delta();
+        if speed == 0 {
+            return;
+        }
         for (record, mut leg) in std::mem::take(&mut self.field_vm.object_glide_legs) {
             let Some(c) = self
                 .field_vm
@@ -489,6 +497,29 @@ mod tests {
         // A miss tints nobody.
         w.set_actor_tint(&mut caller, Some(0x77), false, 0, 0x1000, 0);
         assert_eq!(w.field_vm.actor_tints.len(), 3);
+    }
+
+    /// `taiku2`'s sky dome leg, `41` with `b0 = 0x84`, `b1 = 0x4A`: the step is
+    /// `64 * s / 128`, spent once a game frame. One unit a game frame at step
+    /// `2`, nothing on the vsync between.
+    #[test]
+    fn an_object_leg_spends_the_frame_step_once_a_game_frame() {
+        let mut w = World::default();
+        let mut c = channel(20, 20, true);
+        c.ctx.world_x = 2112;
+        c.ctx.world_z = 1984;
+        c.ctx.flags = 0x400;
+        w.field_vm.channels = vec![c];
+        w.arm_object_glide_leg(20, (0x84, 0x4A, 0x40));
+        w.clock.frame_step = 2;
+        w.clock.game_tick_live = true;
+        for vsync in 0..302 {
+            w.clock.game_tick_fired = vsync % 2 == 1;
+            w.tick_object_actor_heights();
+        }
+        let c = &w.field_vm.channels[0];
+        assert_eq!((c.ctx.world_x, c.ctx.world_z), (2112, 1984 + 151));
+        assert_ne!(c.ctx.flags & 0x400, 0, "the leg is 1280 units long");
     }
 
     /// `conc`'s tube floor (`P0[17]`): a prologue `37 02 01` parked on the

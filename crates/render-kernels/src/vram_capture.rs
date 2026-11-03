@@ -182,6 +182,32 @@ pub fn blit_rgba_into_vram(
     dst: VramRect,
     opts: CaptureOpts,
 ) -> usize {
+    blit_rows(rgba, src_w, src_h, vram, dst, opts, false)
+}
+
+/// [`blit_rgba_into_vram`] of a frame whose rows run bottom-up (WebGL's
+/// `readPixels` order): what the top-down blit of the flipped frame lands,
+/// reading only the pixels it samples.
+pub fn blit_bottom_up_rgba_into_vram(
+    rgba: &[u8],
+    src_w: u32,
+    src_h: u32,
+    vram: &mut Vram,
+    dst: VramRect,
+    opts: CaptureOpts,
+) -> usize {
+    blit_rows(rgba, src_w, src_h, vram, dst, opts, true)
+}
+
+fn blit_rows(
+    rgba: &[u8],
+    src_w: u32,
+    src_h: u32,
+    vram: &mut Vram,
+    dst: VramRect,
+    opts: CaptureOpts,
+    bottom_up: bool,
+) -> usize {
     if dst.w == 0 || dst.h == 0 || src_w == 0 || src_h == 0 {
         return 0;
     }
@@ -191,7 +217,8 @@ pub fn blit_rgba_into_vram(
     }
     let mut words = Vec::with_capacity(dst.w as usize * dst.h as usize);
     for row in 0..dst.h as u32 {
-        let sy = (row * src_h / dst.h as u32).min(src_h - 1) as usize;
+        let sy = (row * src_h / dst.h as u32).min(src_h - 1);
+        let sy = if bottom_up { src_h - 1 - sy } else { sy } as usize;
         for col in 0..dst.w as u32 {
             let sx = (col * src_w / dst.w as u32).min(src_w - 1) as usize;
             let off = (sy * src_w as usize + sx) * 4;
@@ -381,5 +408,28 @@ mod tests {
         // onto the next row.
         assert_eq!(vram.pixel(1020, 510), 0xFFFF);
         assert_eq!(vram.pixel(0, 511), 0);
+    }
+
+    /// The bottom-up blit lands what the top-down blit of the flipped frame
+    /// does, at any scale.
+    #[test]
+    fn a_bottom_up_frame_lands_as_its_flip() {
+        let (w, h) = (37u32, 23u32);
+        let rgba: Vec<u8> = (0..w * h * 4)
+            .map(|i| (i.wrapping_mul(31) >> 1) as u8)
+            .collect();
+        let flipped: Vec<u8> = rgba
+            .chunks_exact(w as usize * 4)
+            .rev()
+            .flatten()
+            .copied()
+            .collect();
+        for dst in [VramRect::new(0, 0, 320, 240), VramRect::new(8, 16, 11, 7)] {
+            let (mut a, mut b) = (Vram::new(), Vram::new());
+            let opts = CaptureOpts::default();
+            blit_bottom_up_rgba_into_vram(&rgba, w, h, &mut a, dst, opts);
+            blit_rgba_into_vram(&flipped, w, h, &mut b, dst, opts);
+            assert!(a.as_bytes() == b.as_bytes());
+        }
     }
 }

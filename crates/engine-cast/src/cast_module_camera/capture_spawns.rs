@@ -615,6 +615,134 @@ const E961_LOWERED_FORMATION: u8 = 0xB5;
 /// the pager.
 pub const CAPTURE_SPAWN_ENTRIES: [u32; 9] = [938, 940, 944, 946, 959, 960, 961, 962, 966];
 
+/// The records each director that works out its own points seats
+/// ([`capture_director_seats_all`]), listed for the disc check that each names
+/// a record of its module.
+pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
+    (
+        935,
+        &[
+            0x801F_8028,
+            0x801F_8074,
+            0x801F_811C,
+            0x801F_80C0,
+            0x801F_8178,
+            0x801F_81CC,
+            0x801F_8238,
+            0x801F_826C,
+        ],
+    ),
+    (
+        941,
+        &[
+            0x801F_8218,
+            0x801F_7E70,
+            0x801F_7ED8,
+            0x801F_7F38,
+            0x801F_7FDC,
+            0x801F_8020,
+            0x801F_8070,
+            0x801F_80C0,
+            0x801F_8108,
+            0x801F_8154,
+        ],
+    ),
+    (942, &[0x801F_81B8]),
+    (
+        964,
+        &[
+            0x801F_8EB8,
+            0x801F_8FF0,
+            0x801F_9058,
+            0x801F_90BC,
+            0x801F_9120,
+            0x801F_9184,
+            0x801F_91E8,
+            0x801F_9258,
+            0x801F_923C,
+            0x801F_92C0,
+            0x801F_94A0,
+            0x801F_9310,
+            0x801F_9374,
+            0x801F_93D8,
+            0x801F_943C,
+            0x801F_950C,
+            0x801F_94F0,
+            0x801F_9550,
+            0x801F_95D8,
+            0x801F_9640,
+            0x801F_9690,
+            0x801F_972C,
+            0x801F_9790,
+            0x801F_97F4,
+            0x801F_9858,
+            0x801F_96E8,
+            0x801F_98BC,
+            0x801F_9910,
+            0x801F_9978,
+            0x801F_9994,
+            0x801F_99E4,
+            0x801F_9A78,
+            0x801F_9A34,
+            0x801F_9AD0,
+            0x801F_9B20,
+        ],
+    ),
+    (
+        947,
+        &[
+            0x801F_7900,
+            0x801F_795C,
+            0x801F_79B8,
+            0x801F_7A00,
+            0x801F_79DC,
+            0x801F_7A44,
+            0x801F_7A88,
+        ],
+    ),
+    (
+        948,
+        &[
+            0x801F_8564,
+            0x801F_85B8,
+            0x801F_860C,
+            0x801F_867C,
+            0x801F_86F0,
+            0x801F_8748,
+            0x801F_87A4,
+            0x801F_87FC,
+        ],
+    ),
+    (944, &[0x801F_7FD0, 0x801F_8038]),
+    (951, &[0x801F_8348, 0x801F_836C]),
+    (
+        955,
+        &[
+            0x801F_95DC,
+            0x801F_9630,
+            0x801F_9684,
+            0x801F_96D8,
+            0x801F_9790,
+            0x801F_980C,
+            0x801F_9888,
+            0x801F_9904,
+            0x801F_9990,
+            0x801F_9A0C,
+        ],
+    ),
+    (
+        957,
+        &[
+            0x801F_A06C,
+            0x801F_A0D4,
+            0x801F_A174,
+            0x801F_A194,
+            0x801F_A1D8,
+            0x801F_A228,
+        ],
+    ),
+];
+
 /// Halfword stores a capture arm makes into a part it has just seated, as
 /// `(actor offset, value)`, applied after the part's seat run: PROT 0944's
 /// arm 2 parks the handle of `0x801F81E8` at `0x801F836C` and stores
@@ -624,6 +752,16 @@ pub fn capture_spawn_pokes(prot_entry: u32, record: u32) -> &'static [(u16, u16)
         (944, 0x801F_81E8) => &[(0x16, 0xEE00), (0x42, 1)],
         _ => &[],
     }
+}
+
+/// The emitter seed `+0xB8` PROT 0934's arms `0xF` and `0x14` store into the
+/// `n`th part of their ray fans as they seat it (`sh v1,0xB8(v0)` at
+/// `0x801F7C68`, `sh s0,0xB8(v0)` at `0x801F81FC`): `0x56CE`, `0x20` less per
+/// part. PROT 0957's arm 3 stores the same run into its ring
+/// (`sh v1,0xB8(v0)` at `0x801F7010`).
+pub fn ozma_ray_seed(record: u32, n: usize) -> Option<(u16, u16)> {
+    matches!(record, 0x801F_A1BC | 0x801F_A200 | 0x801F_A194)
+        .then(|| (0xB8, 0x56CE - n as u16 * 0x20))
 }
 
 /// A capture arm's spawn made on a pass counted by the body's own frame
@@ -671,6 +809,29 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
     matches!((prot_entry, phase), (940, 1 | 3))
 }
 
+/// Whether the director of `prot_entry`'s body `body` names every record the
+/// body seats, on its own arms: nothing of the module's image goes in on the
+/// band's first tick. The rest of a multi-body cell's records belong to its
+/// other bodies (PROT 0951's Chaos Flare under Scythe Wind drew a large pink
+/// shell no retail frame of the cast holds).
+pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
+    match prot_entry {
+        935 => true,
+        964 => true,
+        947 | 948 => true,
+        942 => body == Some(super::POWER_UP_BODY),
+        951 => body == Some(super::SCYTHE_WIND_BODY),
+        955 => matches!(
+            body,
+            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+        ),
+        957 => body == Some(super::THUNDER_STORM_BODY),
+        941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
+        944 => body == Some(super::CURSE_ALL_BODY),
+        _ => false,
+    }
+}
+
 /// Whether the body `body` of capture-class module `prot_entry` (the
 /// trampoline's pick for the queued action, [`crate::cast_module_ticks::capture_tick_body`])
 /// has its spawns seated per arm. A multi-body cell keeps the pager
@@ -678,10 +839,20 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 /// Breath and PROT 0962's other bodies.
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
+        935 => true,
+        964 => true,
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
-        944 => body == Some(0x801F_6A04),
-        946 => true,
+        944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
+        946..=948 => true,
+        955 => matches!(
+            body,
+            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+        ),
+        957 => body == Some(super::THUNDER_STORM_BODY),
+        941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
+        951 => body == Some(super::SCYTHE_WIND_BODY),
+        942 => body == Some(super::POWER_UP_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
             body,
@@ -727,6 +898,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (962, 3)
             | (965, 3 | 8 | 9 | 0x0B)
             | (961, 1 | 3 | 5)
+            | (957, 3 | 6)
     )
 }
 
@@ -751,6 +923,9 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0944's per-arm tables are Guilty Cross's; Curse All (`0x53`)
+        // seats its two records through its director.
+        (944, _) if action == 0x53 => &[],
         // PROT 0962's arms are per body: Ultra Charge (`0xA5`) seats on
         // arms 0 and 1, the three charge bodies on arm 3.
         (962, 3) if action == 0xA2 => &super::blade_breath::E962_A2_3,

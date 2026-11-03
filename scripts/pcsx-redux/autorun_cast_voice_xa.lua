@@ -32,6 +32,9 @@
 --               and the `ra` it was reached through.
 --   resolve.csv one row per FUN_801F3990 call and return: the five retail
 --               inputs and the returned cue.
+--   xa_start.csv the CPU cycle of each clip start and each CD volume set
+--               FUN_8003EE7C(level): a one-shot's level rises (0x75) at drive
+--               state 6, once the drive reports a read.
 --
 -- Env:
 --   LEGAIA_SPELL         action id to force (default 0x83 Vera)
@@ -62,6 +65,7 @@ local CHAR_KIND   = 0x8007BD10   -- DAT_8007BD10[slot]
 local CUE_DISPATCH = 0x8004FCC8
 local CLIP_START   = 0x8003D53C
 local CAST_CUE     = 0x801F3990
+local CD_VOLUME    = 0x8003EE7C
 
 local function u8(a)  return probe.read_u8(a)  or 0 end
 local function u32(a) return probe.read_u32(a) or 0 end
@@ -86,7 +90,7 @@ local function regs()
     return (r.GPR and r.GPR.n) or {}
 end
 
-local cues_csv, clips_csv, resolve_csv
+local cues_csv, clips_csv, resolve_csv, start_csv
 local injected = false
 local elapsed_now = 0
 local last_clip_vsync = -1
@@ -110,6 +114,12 @@ probe.run({
         resolve_csv = probe.csv_open(probe.out_path("resolve.csv"),
             "vsync,kind,slot,char_kind,cast_class,queue_head,sub_class,v0,ra")
 
+        start_csv = probe.csv_open(probe.out_path("xa_start.csv"), "vsync,kind,cycle,level")
+        probe.arm_breakpoint(CD_VOLUME, "Exec", 4, "cd_volume", function()
+            start_csv:row("%d,volume,%.0f,%d", elapsed_now, tonumber(PCSX.getCPUCycles()),
+                tou32(regs().a0))
+        end)
+
         probe.arm_breakpoint(CUE_DISPATCH, "Exec", 4, "cue_dispatch", function()
             local n = regs()
             local cx = ctxp()
@@ -125,6 +135,7 @@ probe.run({
             local n = regs()
             n_clips = n_clips + 1
             last_clip_vsync = elapsed_now
+            start_csv:row("%d,start,%.0f,0", elapsed_now, tonumber(PCSX.getCPUCycles()))
             clips_csv:row("%d,%d,%d,%d,0x%08X",
                 elapsed_now, tou32(n.a0), tou32(n.a1), tou32(n.a2), tou32(n.ra))
         end)

@@ -334,6 +334,7 @@ impl World {
         self.battle.step_commit_log_launch();
         self.battle.step_action_plate_glides();
         self.battle.step_battle_intro_names();
+        self.step_battle_intro_lead();
         // The arts-list driver `FUN_801D3444` runs at the top of every
         // command-flow frame (`0x801D0B24`, ahead of the box park): a list
         // window its entry left on screen keeps sliding out.
@@ -350,11 +351,11 @@ impl World {
         if self.tick_battle_tutorial_boxes() {
             return None;
         }
-        // The sparring fight's open: retail's flow sits in `0x0A` / `0x0B`
-        // under the enemy names and reaches no round until they have gone
-        // (`BattleState::sparring_open_held`), so nothing below runs either.
+        // The fight's open: retail's flow sits in `0x0A` / `0x0B` under the
+        // enemy names and reaches no round until they have gone
+        // (`BattleState::battle_open_held`), so nothing below runs either.
         // REF: FUN_801D0748 (flow states `0x0A` / `0x0B`)
-        if self.battle.sparring_round_pending {
+        if self.battle.round_open_pending {
             return None;
         }
 

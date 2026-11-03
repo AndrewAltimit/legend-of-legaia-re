@@ -454,10 +454,14 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* One binding table, read from the engine rather than typed here. */
       adoptPadBindings(runtime);
       this.canvas = canvas;
-      this.renderer = new window.TmdRenderer(canvas);
+      /* The page may have built it while idle (`play.html`, `prewarmFirstEntry`):
+       * the same object on the same canvas, its shaders already compiled. */
+      this.renderer = (opts && opts.renderer) || new window.TmdRenderer(canvas);
       /* Every scene mesh carries its primitives' corners for retail's
        * per-primitive near reject, built by the engine's kernel (read
        * through this.rt so a recovered runtime keeps serving it). */
+      this.renderer.primPlanFn = this.rt && typeof this.rt.prim_corner_plan === 'function'
+        ? (n, i) => this.rt.prim_corner_plan(n, i) : null;
       this.renderer.primRefsFn = (p, i) => (this.rt && typeof this.rt.prim_corner_refs === 'function'
         ? this.rt.prim_corner_refs(p, i) : null);
       this.opts = opts || {};
@@ -878,23 +882,24 @@ void main() { o_color = texture(u_layer, v_uv); }
     }
 
     /* Serve one lazy CD-XA staging request per frame: the engine names a
-     * file's read span (`play_xa_stage_requests_json`), the page slices those
-     * raw 2352-byte sectors out of the disc bytes it holds and hands them
-     * back (`play_xa_install_span`), which decodes that one channel and
-     * replays the clip request. No disc bytes on the page means no request
-     * can be served; the engine keeps listing it, silently. */
+     * file's read span (`play_xa_stage_requests_json`), the page hands those
+     * raw 2352-byte sectors back (`play_xa_install_span`), which decodes that
+     * one channel and replays the clip request. Sectors not resident yet
+     * (js/play-disc.js) are read now and served on a later frame. No disc on
+     * the page, or sectors it cannot read, means the request is not served;
+     * the engine keeps listing it, silently. */
     _serveXaStage(rt) {
       if (typeof rt.play_xa_stage_requests_json !== 'function') return;
-      const bytes = window.__playDiscBytes;
-      if (!bytes) return;
+      const disc = window.__playDisc;
+      if (!disc) return;
       let reqs = [];
       try { reqs = JSON.parse(rt.play_xa_stage_requests_json()) || []; } catch (e) { return; }
       const req = reqs[0];
       if (!req) return;
-      const RAW = 2352;
-      const start = req.lba * RAW, end = Math.min(bytes.length, start + req.sectors * RAW);
-      if (start >= end) return;
-      try { rt.play_xa_install_span(req.path, bytes.subarray(start, end), req.channel); }
+      const sectors = disc.span(req.lba, req.sectors);
+      if (!sectors) { disc.prefetch(req.lba, req.sectors); return; }
+      if (!sectors.length) return;
+      try { rt.play_xa_install_span(req.path, sectors, req.channel); }
       catch (e) { console.warn('xa stage', req.path, e); }
     }
 

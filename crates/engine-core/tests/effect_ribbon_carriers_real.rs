@@ -163,11 +163,13 @@ fn shipped_ribbon_carriers_reach_the_battle_draw_list() {
                 let quads = rb.mesh.indices.len() / 6;
                 assert_eq!(rb.mesh.positions.len(), quads * 4);
                 assert_eq!(quads % 6, 0, "six packets a step");
+                // The packets' page and CLUT are fixed; the node's colour word
+                // ORs its ABE and ABR over them at the draw.
                 assert!(
                     rb.mesh
                         .cba_tsb
                         .iter()
-                        .all(|&ct| ct == [RIBBON_CLUT, RIBBON_TPAGE]),
+                        .all(|&ct| ct[0] == RIBBON_CLUT && ct[1] & 0x1F == RIBBON_TPAGE & 0x1F),
                     "PROT {idx:04}: fixed patch"
                 );
                 first.get_or_insert((frame, quads));

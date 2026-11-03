@@ -465,6 +465,11 @@ pub fn compare(
     );
     let want_mode = match retail.class {
         StateClass::WorldMap => SceneMode::WorldMap,
+        // The prize counter's screen runs over the suspended field, where
+        // retail swaps the menu overlay in (mode `0x17`).
+        StateClass::Menu if matches!(&retail.menu, Some(Ok(m)) if m.prize_block.is_some()) => {
+            SceneMode::Field
+        }
         StateClass::Menu => SceneMode::Menu,
         _ => SceneMode::Field,
     };
@@ -531,7 +536,21 @@ pub fn compare(
             }
         }
     }
-    let (s, d) = camera_score(&retail.camera, &engine.camera);
+    let (mut s, mut d) = camera_score(&retail.camera, &engine.camera);
+    // A follow camera mid-ease: the live pose is history the seat cannot
+    // replay, and the staging pose retail eased toward is the compose the
+    // engine's seat answers for ([`RetailObs::camera_staging`]). A pose that
+    // matches neither still scores its miss.
+    if let Some(staging) = &retail.camera_staging {
+        let (t, _) = camera_score(staging, &engine.camera);
+        if t > s {
+            s = t;
+            d = format!(
+                "{d}; ease in flight, scored on retail's staging pose {}/{}/{} eye={:?}",
+                staging.pitch, staging.yaw, staging.h, staging.eye
+            );
+        }
+    }
     put("camera", s, d);
     put(
         "bgm",

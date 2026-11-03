@@ -769,6 +769,69 @@ impl RetailBattle {
             ACTOR_TABLE + u32::from(active_actor.min(7)) * 4,
         ))
         .filter(|&p| in_ram(p));
+        let (displayed_cam_live, displayed_ghost_pose) = {
+            let passes = tween_passes_back(
+                action_state,
+                game_anchors::u16_at(ram, ctx + 0x6DA),
+                DISPLAY_LAG_PASSES,
+            );
+            let passes = if done_arm_pass(ram, ctx, action_state) {
+                passes.min(1)
+            } else {
+                passes
+            };
+            // Each pass on its own step where the older ordering table's
+            // floor confirms the newest one; the history's largest entry
+            // for every pass otherwise.
+            let steps = display_pass_steps(ram);
+            let confirmed = steps != [frame_step(ram); 2];
+            let steps: Vec<u8> = (0..usize::from(passes))
+                .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
+                .collect();
+            // The magic-capture fade `0x6F` arms no framing: the table the
+            // branch `0x6E` left (`FUN_801D5854(actor, 6)` every pass)
+            // walks on at its own increment, so the passes back stood
+            // that increment further out each, not the re-arm's widening
+            // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
+            // walk, `.971`; `4883` on the table's, `.996`).
+            // `0x70` arms none either (`0x801E50C8..0x801E50E8`: the
+            // module tick, then `0x71`), so once the module's arm 0 has
+            // built its own shot (`ctx[+0x279]` past `0`) and that shot
+            // is still walking, the table the RAM holds is the one the
+            // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0:
+            // `image` `.849` on the re-arm's walk, `.886` on the
+            // table's). Before arm 0 the table is `0x6F`'s.
+            let module_shot = action_state == CAPTURE_MODULE_STATE
+                && game_anchors::u8_at(ram, ctx + 0x279) > 0
+                && module_shot_walking(ram, ctx);
+            let walk = |steps: &[u8]| {
+                if action_state == CAPTURE_FADE_STATE || module_shot {
+                    displayed_module_cam_live(ram, ctx, steps)
+                } else {
+                    displayed_cam_live_steps(
+                        ram,
+                        ctx,
+                        steps,
+                        confirmed,
+                        {
+                            let summon = summon_route_prior_end(ram, ctx, action_state);
+                            let pull_in = strike_pull_in_prior_end(ram, ctx);
+                            std::array::from_fn(|k| summon[k].or(pull_in[k]))
+                        },
+                        {
+                            let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
+                            shift[1] = walk_heading(ram, ctx).map_or(0, |h| h.end_shift);
+                            shift
+                        },
+                    )
+                }
+            };
+            let shown = walk(&steps);
+            let mut further_steps = steps.clone();
+            further_steps.push(steps.last().copied().unwrap_or(frame_step(ram)));
+            let ghost = displayed_ghost_pose(ram, ctx, action_state, shown, walk(&further_steps));
+            (shown, ghost)
+        };
         Ok(Self {
             party_count,
             monster_count,
@@ -810,6 +873,7 @@ impl RetailBattle {
             queued_action: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF)),
             target_code: active.map_or(0, |p| seed_target_code(ram, ctx, p)),
             queued_category: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DE)),
+            queued_shot: active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1E1)),
             summon_fade: summon_fade(ram),
             display_lag: display_lag_vsyncs(ram),
             display_phase_lag: displayed_lag_vsyncs(ram),
@@ -875,54 +939,16 @@ impl RetailBattle {
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             cam_tween: retail_cam_tween(ram, ctx),
-            displayed_cam_live: {
-                let passes = tween_passes_back(
-                    action_state,
-                    game_anchors::u16_at(ram, ctx + 0x6DA),
-                    DISPLAY_LAG_PASSES,
-                );
-                let passes = if done_arm_pass(ram, ctx, action_state) {
-                    passes.min(1)
-                } else {
-                    passes
-                };
-                // Each pass on its own step where the older ordering table's
-                // floor confirms the newest one; the history's largest entry
-                // for every pass otherwise.
-                let steps = display_pass_steps(ram);
-                let confirmed = steps != [frame_step(ram); 2];
-                let steps: Vec<u8> = (0..usize::from(passes))
-                    .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
-                    .collect();
-                // The magic-capture fade `0x6F` arms no framing: the table the
-                // branch `0x6E` left (`FUN_801D5854(actor, 6)` every pass)
-                // walks on at its own increment, so the passes back stood
-                // that increment further out each, not the re-arm's widening
-                // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
-                // walk, `.971`; `4883` on the table's, `.996`).
-                // `0x70` arms none either (`0x801E50C8..0x801E50E8`: the
-                // module tick, then `0x71`), so once the module's arm 0 has
-                // built its own shot (`ctx[+0x279]` past `0`) and that shot
-                // is still walking, the table the RAM holds is the one the
-                // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0:
-                // `image` `.849` on the re-arm's walk, `.886` on the
-                // table's). Before arm 0 the table is `0x6F`'s.
-                let module_shot = action_state == CAPTURE_MODULE_STATE
-                    && game_anchors::u8_at(ram, ctx + 0x279) > 0
-                    && module_shot_walking(ram, ctx);
-                if action_state == CAPTURE_FADE_STATE || module_shot {
-                    displayed_module_cam_live(ram, ctx, &steps)
-                } else {
-                    displayed_cam_live_steps(
-                        ram,
-                        ctx,
-                        &steps,
-                        confirmed,
-                        summon_route_prior_end(ram, ctx, action_state),
-                        walker_end_shift(ram, ctx).unwrap_or([0; 9]),
-                    )
-                }
+            cam_tween_steps: std::array::from_fn(|k| {
+                game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k as u32 * 4)
+            }),
+            turn_cursor: game_anchors::u8_at(ram, ctx + 0x1A),
+            recent_steps: {
+                let steps = recent_pass_steps(ram);
+                [steps[0], steps[1], steps[2], steps[3]]
             },
+            displayed_cam_live,
+            displayed_ghost_pose,
             displayed_cam_end: {
                 // The endpoints the displayed frame's own pass chased, where
                 // a walker moved them ([`walker_end_shift`]): the image child
@@ -951,8 +977,15 @@ impl RetailBattle {
                 ctx,
                 pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             ),
+            menu_glide_left_live: displayed_menu_glide_left(ram, ctx, 0),
+            menu_glide_pose: displayed_menu_glide_pose(
+                ram,
+                ctx,
+                pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
+            ai_counter: game_anchors::u32_at(ram, 0x801C_8FE4),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),
@@ -1137,6 +1170,7 @@ impl RetailBattle {
                     })
                 })
                 .collect(),
+            displayed_strike_heading: walk_heading(ram, ctx).map(|h| h.displayed),
             displayed_clips: (0..8u32)
                 .map(|slot| displayed_monster_clip(ram, slot))
                 .collect(),

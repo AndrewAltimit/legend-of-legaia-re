@@ -116,6 +116,9 @@ pub struct RetailScripts {
     /// Display frames left on a live camera-mover glide, when one is in
     /// flight (duration `+0x9E` less progress `+0x9C`).
     pub glide_left: Option<i32>,
+    /// That mover's pair block (`+0x90`: `start`, `end` halfwords per axis),
+    /// which holds the pose the glide set out from.
+    pub glide_pairs: Option<[(i32, i32); 10]>,
     /// How many vsyncs the displayed frame is older than the RAM
     /// ([`crate::retail_compare_battle::display_lag_vsyncs`]): the field
     /// double-buffers the same way the battle does.
@@ -192,6 +195,16 @@ impl RetailScripts {
                 let left = i32::from(game_anchors::i16_at(ram, node + 0x9E))
                     - i32::from(game_anchors::i16_at(ram, node + 0x9C));
                 out.glide_left = Some(left.max(0));
+                let block = game_anchors::u32_at(ram, node + 0x90);
+                out.glide_pairs = in_ram(block).then(|| {
+                    std::array::from_fn(|i| {
+                        let at = block + 4 * i as u32;
+                        (
+                            i32::from(game_anchors::i16_at(ram, at)),
+                            i32::from(game_anchors::i16_at(ram, at + 2)),
+                        )
+                    })
+                });
                 continue;
             }
             let base = game_anchors::u32_at(ram, node + 0x90);

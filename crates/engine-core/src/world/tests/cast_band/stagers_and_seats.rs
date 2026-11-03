@@ -118,6 +118,10 @@ fn a_lone_members_juggernaut_sweeps_the_engine_monster_row() {
     }
     world.battle.set_battle_attack(0, 400);
     assert_eq!(world.cast_module_ctx().monster_count, 5);
+    // A party caster's sweep rolls the summon body (`FUN_801DD0AC(0x12, 7, seat)`).
+    let mut creature = legaia_engine_battle::monster_catalog::MonsterDef::new(10, "Evil", 100, 10);
+    creature.intel = 200;
+    world.tables.summon_creatures.insert(0x99, creature);
     let run = world.run_cast_module_aoe(0x99, 0).expect("PROT 0927");
     let mut seats: Vec<u8> = run.aoe_hits.iter().map(|h| h.seat).collect();
     seats.sort_unstable();

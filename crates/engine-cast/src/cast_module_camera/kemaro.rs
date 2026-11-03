@@ -197,6 +197,16 @@ fn kemaro_pass(phase: u8, seats: ModuleCamSeats, st: &ModuleCamState) -> ArmDire
             ..ArmDirection::shot(cut([-0x40, -0x200], [0, 0x400, 0x780], 0, creature_z, 1))
         },
         11 => ArmDirection::shot(cut([0x40, -0x700], [0, 0x400, 0x800], 0, creature_z, 1)),
+        // The direct stores of arm 12's exit (`0x801F7B8C..0x801F7BC4`): pitch
+        // `-0x40`, yaw `0xEA0`, TR x `-0x780`, TR z `0x1A60`. They are the
+        // global's own units, so the cut's raw TR z is the prescale's inverse.
+        12 => ArmDirection::shot(cut(
+            [-0x40, 0xEA0],
+            [-0x780, 0x400, super::body_kit::raw_tr_z(0x1A60) as i16],
+            0,
+            creature_z,
+            1,
+        )),
         13 => ArmDirection::shot(cut([0, 0], [0, 0x400, 0], 0, victim_z, 1)),
         14 => ArmDirection::shot(cut([0x80, 0x900], [0, 0x500, depth], 0, victim_z, 1)),
         15 => ArmDirection {

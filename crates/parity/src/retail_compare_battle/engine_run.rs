@@ -541,10 +541,10 @@ pub fn run_engine_battle(
             // A sparring capture past the intro timer (`0x14`) holds the
             // side-band's caption and the close-up it selects; the engine
             // raises it on the round start its open holds back until the
-            // enemy names have gone (`BattleState::sparring_open_held`).
+            // enemy names have gone (`BattleState::battle_open_held`).
             if matches!(battle.flow, 0x0C | 0x14) {
                 for _ in 0..SPARRING_OPEN_TICKS {
-                    if !session.host.world.battle.sparring_round_pending {
+                    if !session.host.world.battle.round_open_pending {
                         break;
                     }
                     session.tick()?;
@@ -723,6 +723,16 @@ pub fn run_engine_battle(
     {
         cam.align_orbit_yaw(f32::from(retail.camera.yaw));
     }
+    // A round prompt caught with its far framing still walking: the fixed
+    // settle tick has landed the engine's case-9 arm long before, so stand it
+    // as far along as the RAM's own table reads, no display lag (the image
+    // child's seat takes that lag, `LEGAIA_SEAT_MENU_GLIDE_LEFT`).
+    if battle.seed_plan() == SeedPlan::Prompt
+        && let Some(left) = battle.menu_glide_left_live
+        && let Some(cam) = session.host.world.battle.camera.as_mut()
+    {
+        cam.align_menu_glide_frames_left(left);
+    }
     // A capture inside an action reads its camera part-way along a glide
     // whose start is the previous framing's leftover - an earlier action's
     // side-and-tilt coin, the orbit's clock at the commit - which the replay
@@ -843,6 +853,12 @@ pub fn run_engine_battle(
             }
             _ => 0,
         };
+        // A capture on the pass its art committed: the RAM's camera outright.
+        if battle.camera_behind_commit()
+            && let Some(cam) = world.battle.camera.as_mut()
+        {
+            cam.align_commit_pass(battle.cam_tween.0);
+        }
         // A capture-class shot armed past a walk-in the replay skipped
         // (`RetailBattle::walk_in_shot_aligned`).
         if battle.walk_in_shot_aligned()

@@ -159,7 +159,7 @@ This hash is a sanity check against the project author's dump; different dumping
 
 ## Documentation
 
-Start at [`docs/overview.md`](docs/overview.md): how the layers stack from disc to sub-asset, and where to read next for any task.
+Start at [`docs/overview.md`](docs/overview.md): how the layers stack from disc to sub-asset, and where to read next for any task. [`docs/porting-by-reimplementation.md`](docs/porting-by-reimplementation.md) explains the general approach: why an engine reimplementation rather than a decompilation or a static recompilation, and the method from documenting the disc to measuring against retail.
 
 | Section | Holds |
 |---|---|

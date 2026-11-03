@@ -184,6 +184,10 @@ impl SaveMenuAtlas {
     pub fn band_icon_goods(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_ICON_GOODS
     }
+    /// Equip candidate list's worn-row mark, ICO `0x21` (12x12).
+    pub fn band_icon_worn(&self) -> (u32, u32, u32, u32) {
+        ATLAS_RECT_ICON_WORN
+    }
     /// "Condition" pager left triangle (16x16, CLUT row 7).
     pub fn band_pager_left(&self) -> (u32, u32, u32, u32) {
         ATLAS_RECT_PAGER_LEFT

@@ -108,7 +108,7 @@ fn disc_equip_slots_map_one_to_one_to_gamedata() {
     // (armor has no tier system). Weapons do NOT, because the disc enumerates
     // the upgradeable Ra-Seru weapon as ~24 separate per-tier entries (Meta
     // $1..$9, Terra $1..$8, Ozma $1..$7) that gamedata collapses to one each -
-    // so disc Weapon (50) > curated weapons (27). That's expected, not a slot
+    // so disc Weapon (51) > curated weapons (27). That's expected, not a slot
     // problem: every disc Weapon-slot item is still a weapon.
     let db = Database::load();
     let gd_armor = db.armor().iter().filter(|a| a.slot == "armor").count();
@@ -125,7 +125,7 @@ fn disc_equip_slots_map_one_to_one_to_gamedata() {
     );
 
     // Pin the absolute disc numbers, so a regression in the parser is caught.
-    assert_eq!((weapon, body, head, foot), (50, 20, 15, 16));
+    assert_eq!((weapon, body, head, foot), (51, 20, 15, 16));
 }
 
 #[test]

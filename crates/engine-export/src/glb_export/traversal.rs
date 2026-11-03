@@ -74,12 +74,12 @@ pub struct TraversalExport {
     pub portals: Vec<Value>,
 }
 
-/// The facing direction of engine heading `h` (12-bit, `0` faces +Z) as a
-/// unit XZ vector - unchanged by the export frame's Y re-sign
-/// ([`draw_translation`] touches only Y), so it is valid in both.
-fn heading_dir_xz(h: i16) -> [f32; 2] {
+/// The facing direction of engine heading `h` (12-bit, `0` faces retail +Z)
+/// as a unit XZ vector in the export frame, whose Z is retail's negated
+/// ([`export_translation`]).
+pub(super) fn heading_dir_xz(h: i16) -> [f32; 2] {
     let th = (h as f32) / 4096.0 * std::f32::consts::TAU;
-    [th.sin(), th.cos()]
+    [th.sin(), -th.cos()]
 }
 
 /// Recover both retail doorway families of a scene as manifest entries (the
@@ -96,7 +96,7 @@ fn heading_dir_xz(h: i16) -> [f32; 2] {
 ///   records whose cold arm spawns a cutscene instead of teleporting are
 ///   skipped.
 ///
-/// Positions are in the export frame (scaled, [`draw_translation`]-signed),
+/// Positions are in the export frame (scaled, [`export_translation`]-signed),
 /// with destination heights re-sampled off the floor model exactly as the
 /// engine re-seats an arrival. `facing_dir` is the arrival facing as a unit
 /// XZ direction (`null` = keep the walked-in facing).
@@ -131,7 +131,7 @@ pub fn export_scene_traversal(
     };
     let door_level = |wx: i16, wz: i16| -> f32 { -(floor.height(wx as i32, wz as i32) as f32) * s };
     let pt = |x: f32, y: f32, z: f32| -> [f32; 3] {
-        let t = draw_translation([x, y, z]);
+        let t = export_translation([x, y, z]);
         [t[0] * s, t[1] * s, t[2] * s]
     };
     let floor_pt = |wx: i16, wz: i16| -> [f32; 3] {
@@ -312,13 +312,13 @@ pub fn export_scene_traversal(
             // Arrival point in the TARGET scene's export frame (XZ only,
             // scaled; sample the destination scene's floor for Y when
             // wiring a multi-scene world).
-            "entry_xz": [entry_half(site.entry_x) * s, entry_half(site.entry_z) * s],
+            "entry_xz": [entry_half(site.entry_x) * s, -entry_half(site.entry_z) * s],
             "facing_dir": facing,
             "record": site.record,
             "conditional": site.conditional.as_ref().map(|c| json!({
                 "flag": c.flag,
                 "target_scene": c.scene_name,
-                "entry_xz": [entry_half(c.entry_x) * s, entry_half(c.entry_z) * s],
+                "entry_xz": [entry_half(c.entry_x) * s, -entry_half(c.entry_z) * s],
             })),
         }));
     }

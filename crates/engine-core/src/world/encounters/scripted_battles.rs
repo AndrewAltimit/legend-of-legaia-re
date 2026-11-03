@@ -227,7 +227,24 @@ impl World {
                 );
                 continue;
             }
-            let station = match site.station_world {
+            // A record the placement installer pre-ran has already taken its
+            // seat off the story flags, and that seat is where the actor is:
+            // the static scan reads the first leg in the bytes, whichever arm
+            // the flags select. `town0b` `P1[36]` (the Gimard beat) tests
+            // `0x141`, `0x22F`, `0x148` and `0x147`, seats at `(15, 21)` only
+            // under `0x141` and parks on every other arm; with `0x147` up
+            // retail's actor is off the map (`town0b_field_door_hop`), and
+            // standing it on the `0x141` seat drew it there. `rikuroa` `P1[3]`
+            // stays parked until `0x286` selects its `(69, 75)` arm. A parked
+            // actor has nothing to touch ([`Self::stager_parked`]).
+            // REF: FUN_8003A1E4, FUN_801CF754
+            let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+            let entry_seat = site
+                .spawn_prologue
+                .then(|| self.npcs.entry_positions.get(&slot).copied())
+                .flatten();
+            let parked = entry_seat == Some((hide, hide));
+            let station = match entry_seat.filter(|_| !parked).or(site.station_world) {
                 Some(w) => w,
                 None if !site.spawn_parked => site.spawn_world,
                 // Parked with no station leg: no reachable approach point.
@@ -240,7 +257,9 @@ impl World {
                     park_gate: site.park_gate_flag,
                 },
             );
-            self.npcs.positions.insert(slot, station);
+            if !parked {
+                self.npcs.positions.insert(slot, station);
+            }
             self.props.walk_touch.insert(
                 slot,
                 (
@@ -254,6 +273,14 @@ impl World {
                 site.park_gate_flag,
             );
         }
+    }
+
+    /// Whether stager `slot`'s actor stands on the off-map park seat, where
+    /// its contact box reaches nothing.
+    pub(crate) fn stager_parked(&self, slot: u8) -> bool {
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+        self.props.boss_stagers.contains_key(&slot)
+            && self.npcs.positions.get(&slot) == Some(&(hide, hide))
     }
 
     /// Run the boss-stager record bound to placement `slot`: install its

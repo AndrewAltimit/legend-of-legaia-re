@@ -74,6 +74,7 @@ fn vs_main(
 ) -> VsOut {
     var out: VsOut;
     out.clip_pos = overworld_curve_clip(u.mvp * vec4<f32>(position, 1.0), u.flags.w);
+    out.clip_pos = prim_mean_depth(out.clip_pos, prim_c0, prim_c1, prim_c2, prim_c3);
     // The PSX vertex snap, after the bend, as the VRAM mesh takes it: the
     // GTE hands an untextured prim integer screen coordinates too.
     // The GTE's register limits first: a corner past them is where retail's

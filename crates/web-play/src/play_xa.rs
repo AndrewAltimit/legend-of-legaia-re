@@ -344,6 +344,16 @@ impl LegaiaRuntime {
             .unwrap_or(0)
     }
 
+    /// **Diagnostic**: fire the shout `(cslot, action_constant)` resolves to
+    /// through the live output, as a battle's art does. `false` when audio is
+    /// down, the bank is absent or the art is unvoiced. How a page measures a
+    /// CD-XA clip's start and level without playing to the art.
+    #[cfg(target_arch = "wasm32")]
+    pub fn play_xa_probe_fire_shout(&mut self, cslot: u8, action: u8) -> bool {
+        self.audio_director()
+            .is_some_and(|d| d.play_art_shout(cslot, action).is_some())
+    }
+
     /// **Diagnostic** sibling for the clip bank: the frames a
     /// `(slot, channel, duration_sectors)` request would play after the
     /// retail read-span cut, `0` when the clip is not staged.

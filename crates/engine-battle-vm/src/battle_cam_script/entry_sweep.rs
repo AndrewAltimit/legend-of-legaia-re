@@ -76,6 +76,15 @@ impl BattleCamera {
     /// entry sweep. Returns
     /// `false` once the sweep is over.
     pub(super) fn step_entry_sweep(&mut self) -> bool {
+        if self.entry_hold {
+            if self.open_held && matches!(self.phase, BattleCamPhase::Menu) {
+                self.step_entry_close_in();
+                return true;
+            }
+            self.entry_hold = false;
+            self.hand_over_from_entry_sweep();
+            return false;
+        }
         let Some(counter) = self.entry_sweep else {
             return false;
         };
@@ -85,6 +94,7 @@ impl BattleCamera {
         // the battle tick's framing takes the camera from where it stands.
         if !matches!(self.phase, BattleCamPhase::Menu | BattleCamPhase::Dialogue) {
             self.entry_sweep = None;
+            self.entry_hold = false;
             self.hand_over_from_entry_sweep();
             return false;
         }
@@ -93,32 +103,41 @@ impl BattleCamera {
             self.pose.tr[1] += ENTRY_DRIFT_TR_Y * fs;
             self.pose.tr[2] -= ENTRY_DRIFT_TR_Z * fs;
         } else {
-            let target = BattleCamPose {
-                pitch: 0.0,
-                yaw: self.pose.yaw,
-                tr: [0.0, ENTRY_CASE2_TR_Y, prescale_tr_z(ENTRY_CASE2_TR_Z_RAW)],
-                focus: [0.0; 3],
-            };
-            let mut from = self.pose;
-            let g = Glide::chase(
-                &mut from,
-                target,
-                ENTRY_CASE2_TR_Z_RAW,
-                ENTRY_CASE2_FRAMES,
-                f32::from(self.frame_step),
-            );
-            self.pose = from;
-            self.step_components(&g);
-            self.pose.yaw = self.pose.yaw.rem_euclid(4096.0);
+            self.step_entry_close_in();
         }
         let next = counter + u32::from(self.frame_step);
         if next > ENTRY_COUNTER_LAST {
             self.entry_sweep = None;
-            self.hand_over_from_entry_sweep();
+            if self.open_held && matches!(self.phase, BattleCamPhase::Menu) {
+                self.entry_hold = true;
+            } else {
+                self.hand_over_from_entry_sweep();
+            }
         } else {
             self.entry_sweep = Some(next);
         }
         true
+    }
+
+    /// One pass of `FUN_801D5854(0, 2)`'s chase of the close-in.
+    fn step_entry_close_in(&mut self) {
+        let target = BattleCamPose {
+            pitch: 0.0,
+            yaw: self.pose.yaw,
+            tr: [0.0, ENTRY_CASE2_TR_Y, prescale_tr_z(ENTRY_CASE2_TR_Z_RAW)],
+            focus: [0.0; 3],
+        };
+        let mut from = self.pose;
+        let g = Glide::chase(
+            &mut from,
+            target,
+            ENTRY_CASE2_TR_Z_RAW,
+            ENTRY_CASE2_FRAMES,
+            f32::from(self.frame_step),
+        );
+        self.pose = from;
+        self.step_components(&g);
+        self.pose.yaw = self.pose.yaw.rem_euclid(4096.0);
     }
 
     /// The battle tick's first framing after the sweep: the tutorial's

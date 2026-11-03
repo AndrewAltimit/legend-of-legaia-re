@@ -140,6 +140,16 @@ impl Renderer {
         }
     }
 
+    /// Hand the queue a frame's uploads without drawing anything. A frame's
+    /// meshes are written through the queue, and only a submission flushes
+    /// those writes and retires the buffers the last frame dropped: a capture
+    /// child that skips [`Self::render`] for thousands of frames calls this
+    /// instead, or it holds every frame's meshes until its capture.
+    pub fn flush_frame_uploads(&self) {
+        self.queue.submit(std::iter::empty());
+        let _ = self.device.poll(wgpu::PollType::Poll);
+    }
+
     /// Render one frame into an offscreen texture at the current surface
     /// size and read it back to a CPU RGBA8 buffer (no window / no present).
     /// This is the headless screenshot path - the deterministic replacement
@@ -160,10 +170,17 @@ impl Renderer {
             // UNORM, like the presented frame: a screenshot must read back the
             // exact bytes the window shows (see `choose_surface_format`).
             format: self.view_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        // A frame that builds on an earlier one starts from it, as the
+        // presented frame will.
+        if self.frame_persist.get() {
+            self.load_persisted_frame(&tex);
+        }
         self.encode_frame(target, &view)?;
         // Let the frame's own submission finish before the copy is encoded.
         // The queue orders the two, but under heavy GPU contention a

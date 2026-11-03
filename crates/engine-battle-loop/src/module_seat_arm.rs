@@ -154,8 +154,12 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             .render_scale(0),
         // `0x801F6D2C..0x801F6D54`.
         924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8),
-        // `0x801F6DC0..0x801F6DEC`.
-        925 => seat(Lit(0), Lit(0), 0x800).rate(8),
+        // `0x801F6DC0..0x801F6DF4`: with the colour word `+0x04 = 0x3FFFFFFF`
+        // and the render node's scale `0x300`, which arm 5 grows.
+        925 => seat(Lit(0), Lit(0), 0x800)
+            .rate(8)
+            .colour(0x3FFF_FFFF)
+            .render_scale(0x300),
         // `0x801F6DF4..0x801F6E0C`.
         927 => seat(Lit(0), Lit(0x1C0), 0x800).rate(0),
         // `0x801F746C..0x801F7474`: the origin, facing `0`. The height is
@@ -178,7 +182,11 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
         // `0x801F6E3C..0x801F6E60`.
         931 => seat(Lit(0), Lit(-0x800), 0).rate(4),
         // `0x801F6EC4..0x801F6EE8`.
-        932 => seat(Lit(-0x96), Lit(-0x1C0), 0).rate(0x10),
+        // ... and `li v0,0x1800; sh v0,0x72(v1)` at `0x801F6EF4`: half as big
+        // again.
+        932 => seat(Lit(-0x96), Lit(-0x1C0), 0)
+            .rate(0x10)
+            .render_scale(0x1800),
         // `0x801F6D90..0x801F6DA8`.
         933 => seat(Lit(0), Lit(0), 0).rate(4),
         // `0x801F7048..0x801F7060`.

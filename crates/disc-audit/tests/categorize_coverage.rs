@@ -28,7 +28,7 @@
 //! Its sibling `crates/extract/tests/validation_suite.rs` pins the exact
 //! per-class entry counts; this one measures bytes.
 
-use legaia_disc_audit::categorize::{Class, classify};
+use legaia_disc_audit::categorize::{Class, classify, classify_class};
 use legaia_prot::archive::Archive;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -67,6 +67,13 @@ fn categorize_coverage() {
             .read_entry(entry, &mut entry_buf)
             .expect("read entry footprint");
         let footprint_report = classify(&entry_buf);
+        // A scene load asks for the class alone; it must be the same class.
+        assert_eq!(
+            classify_class(&entry_buf),
+            footprint_report.class,
+            "entry {}: class-only classification differs",
+            entry.index
+        );
         *footprint_class_bytes
             .entry(footprint_report.class.name())
             .or_insert(0) += entry_buf.len() as u64;

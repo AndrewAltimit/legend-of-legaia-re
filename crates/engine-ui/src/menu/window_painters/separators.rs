@@ -88,7 +88,7 @@ pub(crate) fn separator_glyph_char_draws(
 /// The retail number writer (`FUN_80034B78`) takes the field width as its
 /// second argument and fills cells from the right, so a short value leaves
 /// the leading cells blank rather than shifting left.
-pub(super) fn digits_draws(
+pub(crate) fn digits_draws(
     font: &legaia_font::Font,
     value: u64,
     x: i32,

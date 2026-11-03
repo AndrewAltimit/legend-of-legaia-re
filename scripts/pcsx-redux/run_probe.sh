@@ -71,6 +71,16 @@
 #                        scaler percent (default 100 = 1x; 300 = 3x cruise).
 #                        Human-navigated poll-tier captures sustain 3x; the
 #                        BP-tier probes should stay at 100.
+#   --headless           no window, no audio device, a private profile and private
+#                        copies of the memory cards (env LEGAIA_PCSX_HEADLESS=1),
+#                        at the same 1x pace. Takes no display, so several run side
+#                        by side. Same guest timing as a windowed run
+#                        (docs/tooling/pcsx-redux-automation.md#headless-runs).
+#   --turbo              --headless, with the disc held in memory and the speed
+#                        scaler at LEGAIA_SCALER (default 2000 = 20x). The SPU
+#                        thread keeps wall-clock time, so a recording comes out
+#                        different from run to run: for making states only,
+#                        never for a measured recording.
 #   --log PATH           emulator log path (default logs/pcsx_probe_<stem>.log)
 #                        Env LEGAIA_FASTBOOT=1 adds -fastboot (skip the BIOS
 #                        intro). A cold boot (LEGAIA_NO_SSTATE=1) needs it:
@@ -133,6 +143,9 @@ TIMING=0
 # Config isolation (see "Config isolation" block below). "" = auto (on under
 # --fast), 1 = force on, 0 = force off. Env LEGAIA_NO_ISOLATE=1 forces off.
 ISOLATE_CONFIG="${LEGAIA_ISOLATE_CONFIG:-}"
+HEADLESS="${LEGAIA_PCSX_HEADLESS:-0}"
+TURBO="${LEGAIA_PCSX_TURBO:-0}"
+[[ "$TURBO" == "1" ]] && HEADLESS=1
 # Managed throwaway persistent dir for the isolated profile.
 LEGAIA_PCSX_PROFILE_DIR="${LEGAIA_PCSX_PROFILE_DIR:-$REPO_ROOT/captures/.pcsx-profile}"
 # Where the volunteer's real memory cards live, so isolation keeps card saves
@@ -156,6 +169,8 @@ while [[ $# -gt 0 ]]; do
         --log)       LOG_FILE="$2"; shift 2 ;;
         --fast)      FAST=1; shift ;;
         --timing)    TIMING=1; shift ;;
+        --headless)          HEADLESS=1; shift ;;
+        --turbo)             HEADLESS=1; TURBO=1; shift ;;
         --isolate-config)    ISOLATE_CONFIG=1; shift ;;
         --no-isolate-config) ISOLATE_CONFIG=0; shift ;;
         -h|--help)
@@ -315,6 +330,7 @@ cd "$REPO_ROOT"
 # ---------- config isolation resolution + fast-profile write ----------
 # Resolve the effective isolation setting: explicit flag/env wins, else auto
 # (on under --fast, off otherwise). See the "Config isolation" header block.
+[[ "$HEADLESS" == "1" ]] && ISOLATE_CONFIG=1
 if [[ -z "$ISOLATE_CONFIG" ]]; then
     if [[ "${LEGAIA_NO_ISOLATE:-0}" == "1" ]]; then
         ISOLATE_CONFIG=0
@@ -353,6 +369,21 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     # argPath1 to slot 2), so the card choice belongs here, not on the CLI.
     _mcd1="${LEGAIA_MCD1:-$LEGAIA_PCSX_REAL_CONFIG/memcard1.mcd}"
     _mcd2="${LEGAIA_MCD2:-$LEGAIA_PCSX_REAL_CONFIG/memcard2.mcd}"
+    # Side-by-side runs share no card file: a headless run with no card of its
+    # own works on a copy, which also keeps the real cards out of its reach.
+    if [[ "$HEADLESS" == "1" ]]; then
+        for _n in 1 2; do
+            _src="_mcd$_n"
+            _copy="$LEGAIA_PCSX_PROFILE_DIR/run-memcard$_n.mcd"
+            if [[ -z "$(eval echo "\${LEGAIA_MCD$_n:-}")" && -f "${!_src}" ]]; then
+                cp -f "${!_src}" "$_copy"
+                printf -v "$_src" '%s' "$_copy"
+            fi
+        done
+    fi
+    _audio=Default; _cache=false; _scaler="${LEGAIA_SCALER:-100}"
+    if [[ "$HEADLESS" == "1" ]]; then _audio=Null; fi
+    if [[ "$TURBO" == "1" ]]; then _cache=true; _scaler="${LEGAIA_SCALER:-2000}"; fi
     for _m in "$_mcd1" "$_mcd2"; do
         [[ "$_m" = /* ]] || { echo "ERROR: memory-card path must be absolute: $_m" >&2; exit 2; }
     done
@@ -365,13 +396,15 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     # the persistent dir to relative names).
     cat > "$LEGAIA_PCSX_PROFILE_DIR/pcsx.json" <<JSON
 {
+  "SPU": { "Backend": "$_audio" },
   "emulator": {
     "Dynarec": $_dynarec,
     "HardwareRenderer": $_hw_gpu,
     "Xa": true,
+    "FullCaching": $_cache,
     "SpuIrq": false,
     "FastBoot": true,
-    "Scaler": ${LEGAIA_SCALER:-100},
+    "Scaler": $_scaler,
     "AutoUpdate": false,
     "Mcd1": "$_mcd1",
     "Mcd2": "$_mcd2",
@@ -381,6 +414,16 @@ if [[ "$ISOLATE_CONFIG" == "1" ]]; then
   }
 }
 JSON
+fi
+
+# ---------- preflight ----------
+# A probe that fails to compile (Lua's 60-upvalue cap is the usual one) leaves
+# the emulator idle until whatever timeout wraps the run. Refuse it here.
+if command -v luajit >/dev/null 2>&1; then
+    if ! _err="$(luajit -bl "$LEGAIA_LUA" /dev/null 2>&1 >/dev/null)"; then
+        echo "ERROR: $LEGAIA_LUA does not compile: $_err" | tee -a "$LOG_FILE" >&2
+        exit 3
+    fi
 fi
 
 # ---------- banner ----------
@@ -411,6 +454,11 @@ fi
     else
         echo "  mode       : interpreter+debugger (Lua BPs fire)"
     fi
+    if [[ "$TURBO" == "1" ]]; then
+        echo "  display    : none (--turbo, scaler $_scaler: not for measured recordings)"
+    elif [[ "$HEADLESS" == "1" ]]; then
+        echo "  display    : none (--headless)"
+    fi
     [[ "$ISOLATE_CONFIG" == "1" ]] \
         && echo "  config     : ISOLATED profile ($LEGAIA_PCSX_PROFILE_DIR; renderer=$PROFILE_HW_GPU; cards=$LEGAIA_PCSX_REAL_CONFIG)" \
         || echo "  config     : real persistent dir ($LEGAIA_PCSX_REAL_CONFIG)"
@@ -438,6 +486,9 @@ export LEGAIA_CORE
 emu_flags=(-bios "$LEGAIA_BIOS" -iso "$LEGAIA_ISO" -run -stdout -dofile "$LEGAIA_LUA")
 if [[ "${LEGAIA_FASTBOOT:-0}" == "1" ]]; then
     emu_flags=(-fastboot "${emu_flags[@]}")
+fi
+if [[ "$HEADLESS" == "1" ]]; then
+    emu_flags=(-no-ui "${emu_flags[@]}")
 fi
 if [[ "$ISOLATE_CONFIG" == "1" ]]; then
     # -portable PATH points getPersistentDir() at our throwaway profile dir
@@ -483,8 +534,24 @@ if [[ "${LEGAIA_GDB:-0}" == "1" ]]; then
         --args "$PCSX_REDUX" "${emu_flags[@]}" >> "$LOG_FILE" 2>&1
     EXIT=$?
 else
-    stdbuf -oL -eL "$PCSX_REDUX" "${emu_flags[@]}" >> "$LOG_FILE" 2>&1
-    EXIT=$?
+    stdbuf -oL -eL "$PCSX_REDUX" "${emu_flags[@]}" >> "$LOG_FILE" 2>&1 < /dev/null &
+    EMU_PID=$!
+    # A probe that dies at load leaves the emulator running with nothing to end it.
+    (
+        while kill -0 "$EMU_PID" 2>/dev/null; do
+            if grep -qF "Runtime error while running LUA code." "$LOG_FILE"; then
+                echo "ERROR: the probe died at load; stopping the emulator" >> "$LOG_FILE"
+                kill "$EMU_PID" 2>/dev/null
+                break
+            fi
+            sleep 1
+        done
+    ) &
+    WATCH_PID=$!
+    EXIT=0
+    wait "$EMU_PID" || EXIT=$?
+    kill "$WATCH_PID" 2>/dev/null || true
+    wait "$WATCH_PID" 2>/dev/null || true
 fi
 
 echo "" | tee -a "$LOG_FILE"
@@ -505,7 +572,7 @@ if grep -q "=== probe hits ===\|=== world-map probe hits ===\|=== prim-pool writ
     echo ""
     echo "=== probe summary ==="
     sed -n '/=== .* ===$/,/=== end ===\|^pcsx-redux exited/p' "$LOG_FILE" \
-        | grep -vE "^pcsx-redux exited" | head -40
+        | grep -vE "^pcsx-redux exited" | head -40 || true
 fi
 
 exit "$EXIT"

@@ -51,6 +51,11 @@
 --
 -- Env:
 --   LEGAIA_SPELL         action id to force (required; e.g. 0x86)
+--   LEGAIA_PHYSICAL      1 = no inject: record the action a catalogued
+--                        mid-strike state already holds, from the first vsync
+--                        in the strike loop (action state 0x1E) to past the
+--                        Done band, for whichever seat is acting. The cue
+--                        channel of a monster's physical attack.
 --   LEGAIA_CASTER_SEAT   seat whose queued action is rewritten (0); 255
 --                        writes every party seat. A monster seat (3..7) is
 --                        written on the first 0x0A of any seat: state 0x0C
@@ -58,6 +63,10 @@
 --                        that acts
 --   LEGAIA_TARGET_SEAT   actor-table seat to target (3)
 --   LEGAIA_INJECT_STATE  action state to inject on (0x0A)
+--   LEGAIA_CAST_QUEUE    hex bytes (`09,0e,ff`) written behind the spell at
+--                        +0x1E0.. by LEGAIA_MONSTER_PICK: the clip, shot and
+--                        terminator a magic pick stores. A pick that was not
+--                        a cast leaves no terminator, and 0x2A parks on it.
 --   LEGAIA_MONSTER_PICK  1 = rewrite a MONSTER caster's action where the AI
 --                        pick returns instead of at LEGAIA_INJECT_STATE: a
 --                        breakpoint on 0x801DAF50 (FUN_801DABA4's monster
@@ -82,6 +91,15 @@
 --                        choreography latch PROT 0946's arm 0 forks on
 --                        (`0x801C8FE4=1` sends a seat-0 cast of 0x56 down
 --                        Big Wave's branch instead of Call Wave's)
+--   LEGAIA_LEARN_LEVEL   put the spell on the caster's list at this level at
+--                        the inject (first list slot of roster record = seat).
+--                        Off the list, FUN_801DD864 reads slot 0x20 and level 0
+--                        wraps into a capped hit: a damage measurement wants
+--                        this set (cast-sequence-oracle.md)
+--   LEGAIA_MONSTER_HP    write this HP into every living monster seat at the
+--                        cast begin, so a cast's whole damage shows in the HP
+--                        column (a monster's own swing scales with its HP, so
+--                        not before its turn)
 --   LEGAIA_SHOT_EVERY    vsyncs between frames (2)
 --   LEGAIA_MAX_SHOTS     frame cap (1500)
 --   LEGAIA_TAIL          vsyncs to keep going past the Done band (60)
@@ -120,12 +138,23 @@ local TARGET_SEAT  = probe.getenv_num("LEGAIA_TARGET_SEAT", 3)
 local INJECT_STATE = probe.getenv_num("LEGAIA_INJECT_STATE", 0x0A)
 local FORCE_ROW    = probe.getenv("LEGAIA_FORCE_ROW", "")
 local MONSTER_PICK = probe.getenv_num("LEGAIA_MONSTER_PICK", 0) ~= 0
+local CAST_QUEUE = {}
+for v in string.gmatch(probe.getenv("LEGAIA_CAST_QUEUE", ""), "[^,]+") do
+    CAST_QUEUE[#CAST_QUEUE + 1] = tonumber(v, 16)
+end
+local PHYSICAL     = probe.getenv_num("LEGAIA_PHYSICAL", 0) ~= 0
 local SAVE_INJECT  = probe.getenv_num("LEGAIA_SAVE_INJECT", 0) ~= 0
 local inject_saved = false
 local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
 local PRESS_PERIOD = probe.getenv_num("LEGAIA_PRESS_PERIOD", 60)
-local PARTY_SPD    = probe.getenv_num("LEGAIA_PARTY_SPD", 0)
 local MP_TOPUP     = probe.getenv_num("LEGAIA_MP_TOPUP", 999)
+-- Hung off `probe`: on_capture sits at Lua's 60-upvalue cap, and one over it
+-- fails the whole file at load.
+probe.cast_cfg = {
+    party_spd = probe.getenv_num("LEGAIA_PARTY_SPD", 0),
+    learn_level = probe.getenv_num("LEGAIA_LEARN_LEVEL", 0),
+    monster_hp = probe.getenv_num("LEGAIA_MONSTER_HP", 0),
+}
 local POKE32 = {}
 for kv in string.gmatch(probe.getenv("LEGAIA_POKE32", ""), "[^,]+") do
     local a, v = string.match(kv, "^%s*([^=]+)=(.+)$")
@@ -191,7 +220,7 @@ local function tou32(v)
     return v
 end
 
-local meta, body, cam, pre
+local meta, body, cam, pre, creature
 -- The cue ring's sampler, hung off `probe` (on_capture already sits at
 -- Lua's 60-upvalue cap, so it takes no new upvalue).
 probe.cast_sfx = {
@@ -211,6 +240,7 @@ local park_st7, park_since = -1, 0
 local parked = false
 local ground_at_cast = ""
 local caster_at_cast = -1
+local target_at_cast = -1
 
 -- Each pool slot's live ground pair +0x34 / +0x38 (`-` for an empty slot):
 -- the engine's inflight seed seats every combatant there at its dispatch, so
@@ -272,11 +302,18 @@ probe.run({
     on_arm = function()
         PCSX.log(string.format("== cast sequence == spell=0x%02X caster=%d target=%d every=%d",
             SPELL, CASTER_SEAT, TARGET_SEAT, SHOT_EVERY))
+        -- The debugger core pauses on a read of unmapped memory (psxmem.cc, after
+        -- returning the same 0xFF the recompiler returns) and nothing would resume
+        -- it: the run sat there until the driver's timeout.
+        probe.cast_resume = PCSX.Events.createEventListener("ExecutionFlow::Pause", function()
+            PCSX.log("[cast-seq] emulator paused itself: resumed")
+            PCSX.resumeEmulator()
+        end)
         probe.env.write_manifest("autorun_cast_sequence.lua", {
             sstate = SSTATE_PATH, spell = string.format("0x%02X", SPELL),
             caster_seat = CASTER_SEAT, target_seat = TARGET_SEAT,
             inject_state = INJECT_STATE, force_row = FORCE_ROW,
-            party_spd = PARTY_SPD, monster_pick = MONSTER_PICK and 1 or 0, shot_every = SHOT_EVERY, tail = TAIL,
+            party_spd = probe.cast_cfg.party_spd, monster_pick = MONSTER_PICK and 1 or 0, shot_every = SHOT_EVERY, tail = TAIL,
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
@@ -289,6 +326,7 @@ probe.run({
         -- The live camera pose (pitch / yaw `0x8007B790/92`, TR
         -- `0x800840B8..C0`) with the yaw and TR z records of the tween
         -- table `ctx[+0x118C]` (`{step, endpoint}`): a module shot's walk.
+        creature = probe.csv_open(probe.out_path("creature.csv"), "vsync,clip,staged,cursor,x,y,z,facing")
         cam = probe.csv_open(probe.out_path("cam.csv"),
             "vsync,st7,phase,step,pitch,yaw,trx,try,trz,yaw_inc,yaw_end,trz_inc,trz_end")
         probe.cast_sfx.csv = probe.csv_open(probe.out_path("sfx.csv"), "vsync,frame,st7,phase,slot,id,drain")
@@ -356,6 +394,7 @@ probe.run({
                 probe.write_u8(a + 0x1DE, 2)
                 probe.write_u8(a + 0x1DF, SPELL)
                 probe.write_u8(a + 0x1DD, TARGET_SEAT)
+                for i, v in ipairs(CAST_QUEUE) do probe.write_u8(a + 0x1DF + i, v) end
                 for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
                 injected = true
                 inject_vsync = last_elapsed
@@ -373,7 +412,7 @@ probe.run({
         local cs = actor(CASTER_SEAT == 255 and 0 or CASTER_SEAT)
         probe.pad_release(probe.BTN.CROSS)
         if cx == nil or cs == nil then return end
-        if not injected and elapsed < PRESS_UNTIL then
+        if not injected and not PHYSICAL and elapsed < PRESS_UNTIL then
             local sub = elapsed % PRESS_PERIOD
             if sub >= PRESS_PERIOD / 2 and sub < PRESS_PERIOD / 2 + 4 then
                 probe.pad_force(probe.BTN.CROSS)
@@ -381,10 +420,10 @@ probe.run({
         end
         local in_battle = u8(cx) >= 1 and u8(cx) <= 3 and u8(cx + 1) >= 1 and u8(cx + 1) <= 4
             and (FORCE_ROW == "" or forced_row)
-        if in_battle and PARTY_SPD > 0 and not injected then
+        if in_battle and probe.cast_cfg.party_spd > 0 and not injected then
             for sx = 0, 2 do
                 local a = actor(sx)
-                if a ~= nil and u16(a + 0x14E) > 0 then probe.write_u16(a + 0x164, PARTY_SPD) end
+                if a ~= nil and u16(a + 0x14E) > 0 then probe.write_u16(a + 0x164, probe.cast_cfg.party_spd) end
             end
         end
         local st7 = u8(cx + 7)
@@ -394,6 +433,10 @@ probe.run({
             PCSX.log(string.format("[flow t%d] ctx6=0x%02X ctx7=0x%02X acting=%d",
                 elapsed, u8(cx + 6), st7, acting))
             last_flow = flow
+        end
+        if PHYSICAL and not injected and in_battle then
+            injected = true
+            inject_vsync = elapsed
         end
         if not injected and not MONSTER_PICK and in_battle and st7 == INJECT_STATE
             and (CASTER_SEAT == 255 or CASTER_SEAT >= 3 or acting == CASTER_SEAT) then
@@ -411,6 +454,13 @@ probe.run({
                 end
             end
             for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
+            if probe.cast_cfg.learn_level > 0 then
+                for _, s in ipairs(seats) do
+                    local rec = 0x80084708 + s * 0x414
+                    probe.write_u8(rec + 0x13D, SPELL)
+                    probe.write_u8(rec + 0x161, probe.cast_cfg.learn_level)
+                end
+            end
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
                 elapsed, SPELL, TARGET_SEAT, acting))
         end
@@ -448,16 +498,28 @@ probe.run({
         -- Cast begin (0x28) is the state every Magic action passes through
         -- first - a party summon, a monster spell, a capture-class cast - and
         -- the engine recorder starts on the same one.
-        if not cast_seen and st7 == 0x28
-            and ((CASTER_SEAT == 255 and acting < 3) or acting == CASTER_SEAT) then
+        if not cast_seen and ((PHYSICAL and (st7 == 0x1E or st7 == 0x2B)) or (not PHYSICAL and (st7 == 0x28 or st7 == 0x3C)
+            and ((CASTER_SEAT == 255 and acting < 3) or acting == CASTER_SEAT))) then
             cast_seen = true
             cast_vsync = elapsed
             ground_at_cast = ground_pairs()
             caster_at_cast = acting
+            target_at_cast = u8(actor(acting) + 0x1DD)
             PCSX.log(string.format("[cast t%d] caster=%d ground=%s", elapsed, acting, ground_at_cast))
+            if probe.cast_cfg.monster_hp > 0 then
+                for s = 3, 7 do
+                    local a = actor(s)
+                    if a ~= nil and u16(a + 0x14C) > 0 then
+                        probe.write_u16(a + 0x14C, probe.cast_cfg.monster_hp)
+                        probe.write_u16(a + 0x172, probe.cast_cfg.monster_hp)
+                    end
+                end
+            end
             PCSX.log(string.format("[cast t%d] cast begin loader=%d", elapsed, u8(LOADER_ID)))
         end
-        if cast_seen and not done_seen and (st7 == 0x50 or st7 == 0x51 or st7 == 0x5A) then
+        -- 0x65: the Spikefish flute's flee leaves the summon band for the run
+        -- band's wait instead (PROT 0925, arm 8) and the fight ends there.
+        if cast_seen and not done_seen and (st7 == 0x50 or st7 == 0x51 or st7 == 0x5A or st7 == 0x65) then
             done_seen = true
             done_vsync = elapsed
             PCSX.log(string.format("[done t%d] st7=0x%02X", elapsed, st7))
@@ -491,6 +553,21 @@ probe.run({
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
+        -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
+        -- engine recorder's file of the same name.
+        if cast_seen then
+            local a = actor(7)
+            if a ~= nil then
+                local node = u32(a + 0x22C)
+                local function sh7(off)
+                    local v = u16(a + off)
+                    if v >= 0x8000 then v = v - 0x10000 end
+                    return v
+                end
+                creature:row("%d,%d,%d,%d,%d,%d,%d,%d", elapsed, u8(a + 0x1D9), u8(a + 0x1DA),
+                    ptr_ok(node) and u16(node + 0x68) or -1, sh7(0x34), sh7(0x36), sh7(0x38), sh7(0x46))
+            end
+        end
         -- The cue ring's ready edges (see sfx.csv in the header).
         for i = 0, 3 do
             local id = s16(probe.cast_sfx.ring + i * 2)
@@ -549,8 +626,8 @@ probe.run({
         if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
-            fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\nground=%s\nparked=%d\n",
-                inject_vsync, cast_vsync, done_vsync, shots, caster_at_cast, SPELL, TARGET_SEAT, ground_at_cast,
+            fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\ncast_target=%d\nground=%s\nparked=%d\n",
+                inject_vsync, cast_vsync, done_vsync, shots, caster_at_cast, SPELL, TARGET_SEAT, target_at_cast, ground_at_cast,
                 parked and math.floor(park_st7 / 256) or -1))
             fh:close()
         end

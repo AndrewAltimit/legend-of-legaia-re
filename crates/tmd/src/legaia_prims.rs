@@ -112,6 +112,92 @@ pub fn vertex_offset_bytes(flags: u16) -> Option<usize> {
     Descriptor::for_flags(flags).map(|d| d.vertex_offset)
 }
 
+/// A per-corner list held inline: a primitive has at most four corners.
+///
+/// The posed mesh builders walk every primitive of a body each frame, so a heap
+/// list per corner stream is the bulk of what a frame allocates. It reads and
+/// serialises as a slice.
+#[derive(Clone, Copy)]
+pub struct Corners<T> {
+    items: [T; 4],
+    len: u8,
+}
+
+impl<T: Copy + Default> Corners<T> {
+    /// An empty list.
+    pub fn new() -> Self {
+        Self {
+            items: [T::default(); 4],
+            len: 0,
+        }
+    }
+
+    /// Append one corner. Panics past the fourth: no primitive has a fifth.
+    pub fn push(&mut self, v: T) {
+        self.items[self.len as usize] = v;
+        self.len += 1;
+    }
+}
+
+impl<T: Copy + Default> Default for Corners<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> std::ops::Deref for Corners<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        &self.items[..self.len as usize]
+    }
+}
+
+impl<T> std::ops::DerefMut for Corners<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        &mut self.items[..self.len as usize]
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for Corners<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<T: Serialize> Serialize for Corners<T> {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        (**self).serialize(s)
+    }
+}
+
+impl<T: PartialEq> PartialEq<Vec<T>> for Corners<T> {
+    fn eq(&self, other: &Vec<T>) -> bool {
+        **self == **other
+    }
+}
+
+impl<T: PartialEq> PartialEq for Corners<T> {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Corners<T> {
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a mut Corners<T> {
+    type Item = &'a mut T;
+    type IntoIter = std::slice::IterMut<'a, T>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
+    }
+}
+
 /// One decoded primitive within a group.
 #[derive(Debug, Clone, Serialize)]
 pub struct Prim {
@@ -121,11 +207,11 @@ pub struct Prim {
     pub bytes_size: usize,
     /// Vertex indices as raw u16 byte-offsets into the object's vertex array.
     /// Array index = raw / 8 (since SVECTOR = 8 bytes).
-    pub vertex_indices_raw: Vec<u16>,
+    pub vertex_indices_raw: Corners<u16>,
     /// Per-vertex `(u, v)` texture coordinates if the prim has a texture
     /// block (which Legaia's character TMDs always do - every observed mode
     /// in the 599-mesh battle_data corpus carries UVs). One entry per vertex.
-    pub uvs: Vec<(u8, u8)>,
+    pub uvs: Corners<(u8, u8)>,
     /// CLUT base address (raw 16-bit value from the TMD). Decode with
     /// `cba_xy()` to get VRAM coordinates.
     pub cba: u16,
@@ -145,13 +231,17 @@ pub struct Prim {
     /// prim in it directly. Populated for every prim, textured or not; the
     /// light-source-lit rows (0/1), which carry no colour block of their own, get
     /// [`MODULATION_NEUTRAL`] so they draw at the raw texel.
-    pub colors: Vec<[u8; 3]>,
+    pub colors: Corners<[u8; 3]>,
 }
 
 impl Prim {
     /// Vertex array indices (raw / 8).
-    pub fn vertex_indices(&self) -> Vec<u16> {
-        self.vertex_indices_raw.iter().map(|r| r / 8).collect()
+    pub fn vertex_indices(&self) -> Corners<u16> {
+        let mut out = Corners::new();
+        for r in &self.vertex_indices_raw {
+            out.push(r / 8);
+        }
+        out
     }
 
     /// Decode CBA → `(vram_x_pixels, vram_y_pixels)` for the CLUT location.
@@ -215,13 +305,13 @@ fn extract_textures(
     prim_off: usize,
     n_verts: usize,
     block_off: usize,
-) -> (Vec<(u8, u8)>, u16, u16) {
+) -> (Corners<(u8, u8)>, u16, u16) {
     let block_len = 4 + n_verts * 2; // CBA(2) + TSB(2) + UVs(n*2)
     let block_start = prim_off + block_off;
     if block_start + block_len > buf.len() {
-        return (Vec::new(), 0, 0);
+        return (Corners::new(), 0, 0);
     }
-    let mut uvs = Vec::with_capacity(n_verts);
+    let mut uvs = Corners::new();
     // Bytes 0-1: u0,v0; 2-3: cba; 4-5: u1,v1; 6-7: tsb; 8-9: u2,v2 [10-11: u3,v3]
     uvs.push((buf[block_start], buf[block_start + 1]));
     let cba = u16::from_le_bytes([buf[block_start + 2], buf[block_start + 3]]);
@@ -255,17 +345,22 @@ pub const MODULATION_NEUTRAL: u8 = 0x80;
 /// semi-transparent variants) is dropped. Returns `n_verts` entries; a colour
 /// word that runs past the buffer falls back to mid-grey so a malformed tail
 /// can't panic.
-fn extract_colors(buf: &[u8], prim_off: usize, n_verts: usize, is_gouraud: bool) -> Vec<[u8; 3]> {
-    (0..n_verts)
-        .map(|corner| {
-            let off = prim_off + if is_gouraud { corner * 4 } else { 0 };
-            if off + 3 <= buf.len() {
-                [buf[off], buf[off + 1], buf[off + 2]]
-            } else {
-                [128, 128, 128]
-            }
-        })
-        .collect()
+fn extract_colors(
+    buf: &[u8],
+    prim_off: usize,
+    n_verts: usize,
+    is_gouraud: bool,
+) -> Corners<[u8; 3]> {
+    let mut out = Corners::new();
+    for corner in 0..n_verts {
+        let off = prim_off + if is_gouraud { corner * 4 } else { 0 };
+        out.push(if off + 3 <= buf.len() {
+            [buf[off], buf[off + 1], buf[off + 2]]
+        } else {
+            [128, 128, 128]
+        });
+    }
+    out
 }
 
 /// One group: header + decoded prims.
@@ -377,7 +472,7 @@ fn decode_prim(
     is_textured: bool,
     is_gouraud: bool,
 ) -> Prim {
-    let mut vertex_indices_raw = Vec::with_capacity(n_verts);
+    let mut vertex_indices_raw = Corners::new();
     if let Some(off) = vert_off
         && off + n_verts * 2 <= stride
     {
@@ -389,7 +484,7 @@ fn decode_prim(
     let (uvs, cba, tsb, colors) = if is_textured {
         let (uvs, cba, tsb) = match texblock_off {
             Some(off) => extract_textures(buf, prim_off, n_verts, off),
-            None => (Vec::new(), 0, 0),
+            None => (Corners::new(), 0, 0),
         };
         // Textured prims on the *baked-colour* rows (4/5, `byte1 = 3`) carry
         // the same leading colour block as the untextured rows - it is what
@@ -402,13 +497,19 @@ fn decode_prim(
         // treats as "texel unchanged". See `MODULATION_NEUTRAL`.
         let colors = match texblock_off {
             Some(off) if off > 0 => extract_colors(buf, prim_off, n_verts, is_gouraud),
-            _ => vec![[MODULATION_NEUTRAL; 3]; n_verts],
+            _ => {
+                let mut neutral = Corners::new();
+                for _ in 0..n_verts {
+                    neutral.push([MODULATION_NEUTRAL; 3]);
+                }
+                neutral
+            }
         };
         (uvs, cba, tsb, colors)
     } else {
         // Untextured (F*/G*): per-vertex colour block at the prim start.
         (
-            Vec::new(),
+            Corners::new(),
             0,
             0,
             extract_colors(buf, prim_off, n_verts, is_gouraud),

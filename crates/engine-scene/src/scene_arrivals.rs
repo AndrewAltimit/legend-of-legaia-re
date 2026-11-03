@@ -133,6 +133,35 @@ impl ArrivalCatalog {
     /// destination. Scenes without a MAN (data / audio / system blocks)
     /// contribute nothing. Empty when the index carries no CDNAME map.
     pub fn build(index: &ProtIndex) -> Self {
+        Self::build_with(index, |index, name| {
+            // Doors live in scenes, and a scene's block opens with its `.MAP`.
+            // The other blocks (audio banks, the monster and data blocks) are
+            // the largest and slowest to classify, and carry no door.
+            let (start, _) = index.block_range_extraction(name)?;
+            index
+                .entries()
+                .get(start as usize)
+                .filter(|e| e.size_bytes as usize == crate::scene::FIELD_MAP_LEN)?;
+            let scene = Scene::load_through_bundle(index, name).ok()?;
+            match scene.field_man_payload(index) {
+                // `load_through_bundle` stopped at a bundle with no MAN: the
+                // streamed forms in the rest of the block still count.
+                Ok(None) if scene.entries.len() < (scene.end - scene.start) as usize => {
+                    let scene = Scene::load(index, name).ok()?;
+                    let man = scene.field_man_payload(index).ok().flatten()?;
+                    Some((scene, man))
+                }
+                Ok(man) => Some((scene, man?)),
+                Err(_) => None,
+            }
+        })
+    }
+
+    /// The walk over `read`'s scene and MAN, `None` for a scene with neither.
+    fn build_with(
+        index: &ProtIndex,
+        read: impl Fn(&ProtIndex, &str) -> Option<(Scene, Vec<u8>)>,
+    ) -> Self {
         let mut by_dest: BTreeMap<String, Vec<SceneArrival>> = BTreeMap::new();
         let mut home_bgm: BTreeMap<String, u16> = BTreeMap::new();
         let mut seen = std::collections::BTreeSet::new();
@@ -140,10 +169,7 @@ impl ArrivalCatalog {
             if !seen.insert(name.clone()) {
                 continue;
             }
-            let Ok(scene) = Scene::load(index, &name) else {
-                continue;
-            };
-            let Ok(Some(man)) = scene.field_man_payload(index) else {
+            let Some((scene, man)) = read(index, &name) else {
                 continue;
             };
             if let Some(id) = entry_script_bgm(&man) {
@@ -235,6 +261,28 @@ impl ArrivalCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Skipping the blocks with no `.MAP` and stopping the others at their
+    /// bundle finds every arrival the walk of every whole block does, in the
+    /// same order.
+    #[test]
+    fn the_short_walk_finds_what_the_whole_walk_does_on_the_disc() {
+        let Ok(path) = std::env::var("LEGAIA_DISC_BIN") else {
+            return;
+        };
+        let disc = std::fs::read(path).expect("disc");
+        let prot = legaia_iso::image::extract_prot_dat(&disc).expect("PROT.DAT");
+        let cdname = legaia_iso::image::extract_cdname_txt(&disc);
+        let index = ProtIndex::from_bytes(prot, cdname.as_deref()).expect("index");
+        let fast = ArrivalCatalog::build(&index);
+        let whole = ArrivalCatalog::build_with(&index, |index, name| {
+            let scene = Scene::load(index, name).ok()?;
+            let man = scene.field_man_payload(index).ok().flatten()?;
+            Some((scene, man))
+        });
+        assert!(!whole.by_dest.is_empty());
+        assert_eq!(format!("{fast:?}"), format!("{whole:?}"));
+    }
 
     fn arrival(from: &str, pc: usize, x: u8, z: u8, class: ArrivalClass) -> SceneArrival {
         SceneArrival {

@@ -17,7 +17,7 @@ use legaia_engine_battle::spells::SpellCatalog;
 use legaia_engine_battle::tactical_arts_editor::{ChainEditor, ChainLibrary};
 use legaia_engine_core::world::World;
 use legaia_engine_menu_runtime::field_menu_dispatch::{
-    FieldMenuSubsession, apply_arts_outcome, apply_equip_outcome, apply_inventory_outcome,
+    FieldMenuSubsession, apply_arts_outcome, apply_equip_swaps, apply_inventory_outcome,
     apply_spell_outcome,
 };
 use legaia_engine_menus::field_menu::{
@@ -206,7 +206,7 @@ fn apply_inventory_outcome_does_nothing_on_cancel() {
 }
 
 #[test]
-fn apply_equip_outcome_writes_back_to_roster() {
+fn apply_equip_swaps_writes_back_to_roster() {
     let mut world = fresh_world();
     // Insert an item that the placeholder (`id >> 5 == slot`) rule lands
     // in slot 1 to avoid the Healing-Leaf collision in slot 0.
@@ -232,15 +232,15 @@ fn apply_equip_outcome_writes_back_to_roster() {
     for _ in 0..2 {
         sub.tick_pad_edge(PadButton::Down.mask());
     }
-    for _ in 0..3 {
+    for _ in 0..2 {
         sub.tick_pad_edge(PadButton::Cross.mask());
     }
-    assert!(sub.is_done());
+    assert!(!sub.is_done());
     if let FieldMenuSubsession::Equip {
         session, char_slot, ..
-    } = &sub
+    } = &mut sub
     {
-        let _ = apply_equip_outcome(session, *char_slot, &mut world);
+        let _ = apply_equip_swaps(session, *char_slot, &mut world);
         assert_eq!(world.party.roster.members[0].equipment().slots[1], 0x25);
     } else {
         panic!("expected Equip sub");

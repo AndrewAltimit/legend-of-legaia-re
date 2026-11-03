@@ -44,9 +44,10 @@ impl LegaiaMinigames {
     ///
     /// Returns the coins credited this frame - one tally transfer, or the
     /// rest of the count on a Cross press.
-    /// The machine's static-table cues (`< 0x200`) are keyed here; its
-    /// runtime-bank cues are this page's own `slotPlay` path, drained and
-    /// dropped.
+    /// The machine's sound writes go to the page's live SPU the way
+    /// `World::route_slot_sounds` hands them to the play hosts' director: its
+    /// ring stores (static rows and the machine's own `efect.dat` rows) and
+    /// its directly keyed reel motor, on and off.
     pub fn slot_step(&mut self, packed: u32) -> i32 {
         let Some(m) = self.slot.as_mut() else {
             return 0;
@@ -59,21 +60,18 @@ impl LegaiaMinigames {
         } else {
             0
         };
-        let cues: Vec<i16> = m
-            .take_sounds()
-            .ring
-            .into_iter()
-            .map(|(_, id)| id)
-            .filter(|&id| (0..0x200).contains(&id))
-            .collect();
+        let sounds = m.take_sounds();
         let frame = m.marquee();
         let reach = m.anticipation();
         if let Some(c) = self.slot_cabinet.as_ref() {
             self.slot_dots = self.slot_clock.frame(&frame, reach, &c.scene.messages);
         }
-        for id in cues {
-            self.minigame_sfx_cue(id as u16);
-        }
+        let ring: Vec<_> = sounds
+            .ring
+            .iter()
+            .map(|&(slot, id)| legaia_engine_system::sound_state::SfxRingOp::WriteSlot(slot, id))
+            .collect();
+        self.audio_frame(&ring, &sounds.voice_off, sounds.voice_on);
         credited
     }
 

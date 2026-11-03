@@ -297,6 +297,27 @@ impl World {
         self.actors[usize::from(victim)].battle.facing_angle = facing;
     }
 
+    /// Turn party seat `seat` with its back to the caster's bearing:
+    /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34]) +
+    /// 0x800` into `+0x46` (PROT 0957's sweep, `0x801F75A4..0x801F75CC`).
+    pub(in crate::world::battle) fn face_seat_away_from_caster(&mut self, seat: u8, caster: u8) {
+        let (Some(s), Some(c)) = (
+            self.actors.get(usize::from(seat)),
+            self.actors.get(usize::from(caster)),
+        ) else {
+            return;
+        };
+        let facing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+            c.move_state.world_z,
+            c.move_state.world_x,
+            s.move_state.world_z,
+            s.move_state.world_x,
+        )
+        .wrapping_add(0x800)
+            & 0xFFF;
+        self.actors[usize::from(seat)].battle.facing_angle = facing;
+    }
+
     /// Whether the owed cast's outcome is its homing flight's to land: a
     /// monster's cast whose staged clip (`params[1]`, `+0x1E0`) carries an
     /// effect-script terminator - the record whose step seeds the homing
@@ -335,6 +356,10 @@ impl World {
         // charge, `0x801F6CEC`) owes nothing: retail never reaches its
         // `FUN_801DD6B4` on that path.
         if std::mem::take(&mut self.casting.module_skips_fold) {
+            let gain = std::mem::take(&mut self.casting.module_hit_xp);
+            if gain != 0 {
+                self.accrue_summon_spell_xp(pc.caster, pc.spell_id, gain);
+            }
             return;
         }
         // Two casts in the band do not fold through the catalog at all:
@@ -409,6 +434,7 @@ impl World {
         };
         let hit_fx_start = self.battle.hit_fx.len();
         self.cast_spell_on_slots_prepaid(pc.caster, &def, &pc.targets);
+        self.casting.module_fold_quiet = false;
         if pc.caster >= self.party.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);
             self.apply_enemy_agl_status(pc.caster, def.id, &pc.targets);

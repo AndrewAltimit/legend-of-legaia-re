@@ -87,6 +87,73 @@ pub const BAKA_BGM_PROT_INDEX: usize = 1043;
 /// Load base of the Baka Fighter overlay (the shared slot-A minigame base).
 pub const BAKA_OVERLAY_BASE_VA: u32 = 0x801C_E818;
 
+/// The pause menu's strings in the overlay's head pool (`0x801D131C` /
+/// `0x801D145C` arms, `FUN_80036888`'s first argument).
+pub const PAUSE_CONTINUE_VA: u32 = 0x801C_E9C8;
+/// State `0xBE`'s second row.
+pub const PAUSE_TITLE_VA: u32 = 0x801C_E9D4;
+/// State `0xBF`'s second row.
+pub const PAUSE_QUIT_VA: u32 = 0x801C_E9DC;
+/// State `0xBF`'s third row.
+pub const PAUSE_HOW_TO_VA: u32 = 0x801C_E9E4;
+/// The "How to Play" panel's pointer table (`FUN_801D6CBC`).
+pub const HELP_POINTER_TABLE_VA: u32 = 0x801D_7134;
+/// Its eleven lines; the last is a deliberate blank.
+pub const HELP_LINE_COUNT: usize = 11;
+
+/// The text of the in-duel pause menu and its "How to Play" panel, in
+/// dialog-font bytes off the as-loaded overlay.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BakaPauseText {
+    pub continue_row: Vec<u8>,
+    pub title_row: Vec<u8>,
+    pub quit_row: Vec<u8>,
+    pub how_to_row: Vec<u8>,
+    pub help: Vec<Vec<u8>>,
+}
+
+/// A dialog-font string at `va`: up to its NUL, with the two-byte `0xCE` /
+/// `0xCF` escapes kept whole, because the panel's button icons are `CE 00`
+/// and a plain C-string read stops at that operand.
+fn dialog_string_at(overlay: &[u8], va: u32) -> Option<Vec<u8>> {
+    let mut o = va.checked_sub(BAKA_OVERLAY_BASE_VA)? as usize;
+    let mut out = Vec::new();
+    loop {
+        let b = *overlay.get(o)?;
+        o += 1;
+        if b == 0 {
+            return Some(out);
+        }
+        out.push(b);
+        if b == 0xCE || b == 0xCF {
+            out.push(*overlay.get(o)?);
+            o += 1;
+        }
+    }
+}
+
+/// Parse [`BakaPauseText`] out of an as-loaded PROT 0976 image.
+pub fn parse_pause_text(overlay: &[u8]) -> Option<BakaPauseText> {
+    let table = (HELP_POINTER_TABLE_VA - BAKA_OVERLAY_BASE_VA) as usize;
+    let help = (0..HELP_LINE_COUNT)
+        .map(|i| {
+            let o = table + i * 4;
+            let va = u32::from_le_bytes(overlay.get(o..o + 4)?.try_into().ok()?);
+            dialog_string_at(overlay, va)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let text = BakaPauseText {
+        continue_row: dialog_string_at(overlay, PAUSE_CONTINUE_VA)?,
+        title_row: dialog_string_at(overlay, PAUSE_TITLE_VA)?,
+        quit_row: dialog_string_at(overlay, PAUSE_QUIT_VA)?,
+        how_to_row: dialog_string_at(overlay, PAUSE_HOW_TO_VA)?,
+        help,
+    };
+    // A mis-based image reads bytes, not text: every row has to say something.
+    (!text.continue_row.is_empty() && !text.quit_row.is_empty() && !text.how_to_row.is_empty())
+        .then_some(text)
+}
+
 /// Runtime VA of the roster-record base (`0x801d769c`, the stat-pointer base;
 /// the historical "+0x20" gold view is `DAT_801d76bc`).
 pub const OPPONENT_TABLE_VA: u32 = 0x801D_769C;
@@ -846,6 +913,19 @@ pub fn parse_fighter_pack(entry: &[u8]) -> Option<BakaFighterPack> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_dialog_string_keeps_an_icon_escape_whose_operand_is_nul() {
+        let base = BAKA_OVERLAY_BASE_VA;
+        let bytes = [b'A', 0xCE, 0x00, b'B', 0x00, b'C', 0x00];
+        assert_eq!(
+            super::dialog_string_at(&bytes, base),
+            Some(vec![b'A', 0xCE, 0x00, b'B'])
+        );
+        assert_eq!(super::dialog_string_at(&bytes, base + 5), Some(vec![b'C']));
+        assert_eq!(super::dialog_string_at(&bytes, base + 7), None);
+        assert_eq!(super::dialog_string_at(&bytes, base - 1), None);
+    }
+
     use super::*;
 
     #[test]

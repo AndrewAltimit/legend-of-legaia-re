@@ -79,7 +79,7 @@ stateDiagram-v2
 
 | Diagram | `DAT_801d3c84` | Role |
 |---|---|---|
-| Init | `0` | reseed (`func_0x80056798`), build the reel strips, clone the symbol strip into the display strip, fade in, advance to `1` |
+| Init | `0` | discard four LCG draws (`0x801CF150..0x801CF160`), build the reel strips, clone the symbol strip into the display strip, fade in, advance to `1` |
 | Idle | `1` | attract; tests the submenu edge, then the coin gate, then the bet (order below) |
 | SpinUp | `2` | adds the reel velocities `DAT_801d3cd0..` into the positions `DAT_801d3cc0..` each frame (mod `0x1400`) until the spin timer `DAT_801d3c90` expires; a face-button edge raises the [spin-up press latch](#the-spin-up-press-latch) |
 | Stopping | `3` | each Stop press (pad bits `0x80` / `0x40` / `0x20` → reels 0 / 1 / 2) calls `FUN_801d2114`; at `DAT_801d3d2c == 3` it runs `FUN_801d13e8` and advances to `4` |
@@ -109,7 +109,7 @@ Each of the 3 reels is a 20-slot (`0x14`) strip. The init builds **two** source 
 | `DAT_801d3fd0` | the ten bonus **numerals**, values `0x10..=0x19` (`slot / 2 + 0x10`) | `+1` |
 | `DAT_801d3d50` | the **display strip**, the only one the win eval and the renderer read | (copied) |
 
-State `0` fills both source strips in one interleaved pass. For each of the 20 slots it draws an RNG value, reduces it mod `0x14`, probes forward by the array's step until an unused position turns up, and places the slot's value there. Each value therefore lands on two scattered positions per reel. The symbol strip is then cloned into the display strip. **Confirmed** from `overlay_slot_machine_801cf0d8.txt` (the `% 0x14` / `(uVar1 + 0xd) % 0x14` placement loops and the `+ 0x10` on the second array).
+The LCG starts on the literal seed and nothing re-seeds it, so a door entry's strips are the same on every run; two retail captures of separate spins hold the same three strips. State `0` fills both source strips in one interleaved pass. For each of the 20 slots it draws an RNG value, reduces it mod `0x14`, probes forward by the array's step until an unused position turns up, and places the slot's value there. Each value therefore lands on two scattered positions per reel. The symbol strip is then cloned into the display strip. **Confirmed** from `overlay_slot_machine_801cf0d8.txt` (the `% 0x14` / `(uVar1 + 0xd) % 0x14` placement loops and the `+ 0x10` on the second array).
 
 The live reel position `DAT_801d3cc0[reel]` is a fixed-point angle. The on-screen symbol index is `(pos >> 8)` reduced mod `0x14`, and adjacent rows are read at `±1` / `±0x10` / `±0x11` offsets (the three pay rows).
 
@@ -605,7 +605,9 @@ shade = clamp(0xB4 - ((z + 0x200) * 0x21C >> 9), 0, 0xB4)
 
 The `POLY_GT4` blend is `texel * shade / 128`, so the shade peaks (a 1.41x **brighten**) exactly at `z = -0x200 = -512`, the payline face, and falls to black within about 48 degrees either side. That fade caps each reel window top and bottom and hides the near half of the cylinder. There is no backface cull.
 
-**The payline face is the fifth emitted, not the first.** It carries the strip row the win eval pays on (`strip[(pos >> 8) % 0x14]`). With the first face at angle `0x380` and a `0x100` step, the face at the shade peak is `z(0x380 + 4*0x100 + 0x80) = -512`, and the faces above / below it carry the rows either side as the strip walks downward with the angle. A renderer that indexes the strip straight off the face index draws a payline whose three symbols are not the three that paid.
+**The payline face is the fifth emitted, not the first.** The row counter starts on the raw row `pos >> 8` and counts down one row a face, wrapping `0` to `0x13` (`addiu s1,s1,-1`, `0x801D135C`), so the fifth face carries `strip[((pos >> 8) + 0x10) % 0x14]`, the row the win eval pays on. A machine at rest holds raw position `0` and shows row `0x10` on the payline; `minigame_slot_machine_retail_reels` reads rows `0x11` / `0x10` / `0xF` top to bottom. `SlotMachine::reel_pos` names the payline row, so it holds the raw word plus `0x1000`.
+
+With the first face at angle `0x380` and a `0x100` step, the face at the shade peak is `z(0x380 + 4*0x100 + 0x80) = -512`, and the faces above / below it carry the rows either side as the strip walks downward with the angle. A renderer that indexes the strip straight off the face index draws a payline whose three symbols are not the three that paid.
 
 <a id="symbol-art---computed-not-tabled"></a>
 
@@ -835,7 +837,7 @@ Every cue is a bare store into one ring slot (`DAT_8007B6D8[slot] = id`); the ov
 
 **The payout state tallies over time.** It advances its caption timer every frame (starting at `0` on a win, `0x6B` on a loss), moves `11` coins per odd frame while more than `20` are owed and `1` otherwise, ticks `0x209` for each move, and returns to idle with the winning line cleared once nothing is owed and the timer reaches `0x79`.
 
-Port: `SlotMachine` (`take_sounds`, the `CUE_*` constants, `tick_payout`). The world routes the stores as `SfxRingOp::WriteSlot` and the motor through its direct voice-key / voice-stop queues. Both play hosts resolve the runtime rows through `World::runtime_sfx_bundle` (the machine's own `efect.dat` while it is up) against the PROT 1198 bank the residency stages in slot 2. The cash-out menu's three cues ride the same `WriteSlot` stores; being static-table ids (`< 0x200`), they resolve through the class-0 bank, and the minigames page keys them through its static-cue path (`slot_pad`).
+Port: `SlotMachine` (`take_sounds`, the `CUE_*` constants, `tick_payout`). The world routes the stores as `SfxRingOp::WriteSlot` and the motor through its direct voice-key / voice-stop queues. Both play hosts resolve the runtime rows through `World::runtime_sfx_bundle` (the machine's own `efect.dat` while it is up) against the PROT 1198 bank the residency stages in slot 2. The minigames page's `slot_step` hands the same three lists to its own director. The cash-out menu's three cues ride the same `WriteSlot` stores; being static-table ids (`< 0x200`), they resolve through the class-0 bank, and the minigames page keys them through its static-cue path (`slot_pad`).
 
 ### BGM
 

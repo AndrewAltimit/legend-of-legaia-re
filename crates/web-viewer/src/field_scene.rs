@@ -1026,6 +1026,17 @@ impl LegaiaViewer {
             .unwrap_or_default()
     }
 
+    /// [`Self::field_scene_ground_indices`] on the disc meshes' winding parity
+    /// (`field_ground::render_indices`), what a `.glb` export bakes so a
+    /// viewer that culls keeps the floor.
+    pub fn field_scene_ground_render_indices(&self) -> Vec<u32> {
+        self.field_scene
+            .as_ref()
+            .and_then(|f| f.ground.as_ref())
+            .map(legaia_engine_scene::field_ground::render_indices)
+            .unwrap_or_default()
+    }
+
     pub fn field_scene_ground_quad_count(&self) -> u32 {
         self.field_scene
             .as_ref()

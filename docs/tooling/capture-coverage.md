@@ -56,6 +56,11 @@ or its frame is a fade.
 | mode classes | the corpus classes | a state of the class |
 | menu screens | the pause-menu sub-screens, the title family (word clear) and the prize exchange `0x20` | a menu state's sub-screen word `DAT_801E46A4` |
 
+A heal-class spell runs the Spirit / Item flow `0x3C..=0x40`
+([the magic arm's override](../subsystems/battle-action.md#outer-dispatch---ctx7-action-state-cursor)),
+so a category `2` action in that band counts as well; the harvester saves it at
+`0x3E`, and the oracle begins its recording there.
+
 An action counts only while it is on screen: the action-state cursor
 `ctx[+0x07]` sits in the attack chain `0x14..=0x20`, the magic / item flow
 `0x28..=0x2E`, the summon flow `0x32..=0x38` or the module sequence
@@ -112,6 +117,25 @@ column) is the source to start from; a town has no encounters. From a
 probe-poked pre-cast state (`koru_pre_*`) it saves the forced cast mid-module
 instead, and the new state inherits that state's poke.
 
+A fight need not wait for the walk to find it. `LEGAIA_WANT=147+18;15+120` names
+formations by their monster ids. In the field the probe finds the scene's row
+holding exactly those ids, points every region of the live MAN's region table at
+that row alone, and runs the step counter `0x8007B5FC` down, so the next step rolls
+it through retail's own `FUN_801D9E1C`: the stage id, the world-map return point and
+the battle flags stay the scene's. Those region rows are the only RAM it writes
+before the fight, and they stay resident in the saved states. `LEGAIA_TOUGH=1` keeps
+a low-level party alive (live HP, readout and pending delta together: the readout
+alone parks state `0x51`), `LEGAIA_WOUND=<round>` cuts the monsters to a third of
+their HP so a heal arm has a patient (`LEGAIA_WOUND_EVERY=1` repeats the cut each round), and `LEGAIA_FINISH=1` ends the fight after the
+Spirit rounds. The action in each state is the AI's own, and `LEGAIA_SAVE_PRE=1`
+keeps the whole emulator state from that action's `0x0A`, ahead of the pick, which
+replays the same cast for the [cast-sequence oracle](cast-sequence-oracle.md). A
+cast the AI will not pick in the rounds given still needs `--monster-pick`.
+
+A state is a valid run of the game whichever way it was reached, so state-making runs
+take `run_probe.sh --fast --turbo`: no display, several at once, well above 1x
+([headless runs](pcsx-redux-automation.md#headless-runs)).
+
 The scene rows are filled the same way: with `LEGAIA_SCENES=1` the probe also
 saves one field state per scene its walk reaches, once the loaded scene has
 run a settle window and the player has moved in it. A save point in an
@@ -144,6 +168,18 @@ The planner sees walls, trigger tiles and spawn points only. A door actor, a
 moving NPC or a story-gated paint can block a planned leg; the probe then
 sidesteps, and a leg that stays blocked ends the run with the states it
 already saved.
+
+When the walk is not the point, [`autorun_door_hop.lua`](../../scripts/pcsx-redux/autorun_door_hop.lua)
+crosses a chain of doors by holding the player on each door's walk-on tile
+(the `.MAP` kind-1 gate-1 records `plan_walk_route.py` reads). The door's own
+record runs with its gates and its flag writes, so a door the story has not
+opened refuses and ends the run; nothing is poked but the position, and the
+scenario says so. It saves one state per scene it arrives in, once the pad
+moves the player there.
+`LEGAIA_REFUSE` sets how long a door gets before it counts as refused: a bed
+or cutscene door runs a long record first. A door whose record tests a story
+flag the source state lacks takes `LEGAIA_FLAGS_SET` / `LEGAIA_FLAGS_CLEAR`,
+written once at the start, and the scenario names them in `ram_poked`.
 
 A harvested state is a candidate, not a corpus state, until:
 

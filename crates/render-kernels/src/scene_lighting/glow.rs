@@ -131,27 +131,27 @@ pub fn glow_vertices(
 }
 
 /// One frame's lighting for a host that draws in its own process space (the
-/// browser play page): the [`nearest_lights`] to `focus` with the mood's
+/// browser play page): the picked `lights` with the mood's
 /// [`LightingMood::point_scale`] folded into their colours, followed by the
-/// glow-sprite vertices expanded against the camera basis - the exact pair
-/// the native renderer derives from `set_scene_lights` + `set_glow_sprites`.
+/// glow-sprite vertices of `glowing` (the picked lights that draw sprites this
+/// frame) expanded against the camera basis - the exact pair the native
+/// renderer derives from `set_scene_lights` + `set_glow_sprites`.
 ///
 /// Layout (all `f32`, retail Y-down frame): `[n_lights, n_glow_vertices]`,
 /// then `n_lights x [x, y, z, radius, r, g, b]`, then `n_glow_vertices x
 /// [x, y, z, u, v, r, g, b, kind]`.
 pub fn frame_packet(
     lights: &[ScenePointLight],
-    focus: [f32; 3],
+    glowing: &[ScenePointLight],
     mood: &LightingMood,
     cam_right: [f32; 3],
     cam_up: [f32; 3],
 ) -> Vec<f32> {
-    let picked = nearest_lights(lights, focus);
-    let verts = glow_vertices(&glow_sprites(&picked, mood), cam_right, cam_up);
-    let mut out = Vec::with_capacity(2 + picked.len() * 7 + verts.len() * 9);
-    out.push(picked.len() as f32);
+    let verts = glow_vertices(&glow_sprites(glowing, mood), cam_right, cam_up);
+    let mut out = Vec::with_capacity(2 + lights.len() * 7 + verts.len() * 9);
+    out.push(lights.len() as f32);
     out.push(verts.len() as f32);
-    for l in &picked {
+    for l in lights {
         out.extend_from_slice(&l.pos);
         out.push(l.radius);
         out.extend(l.color.iter().map(|c| c * mood.point_scale));

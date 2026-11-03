@@ -77,6 +77,39 @@ impl World {
         self.casting.homing_holds_lists = fold_pending.then_some(caster as u8);
     }
 
+    /// The terminator's own spawns, the run of bytes from record `+0x0E` up to
+    /// the first zero: a bit-7 byte goes to the 2D pool `FUN_801DFDF0` at slot
+    /// `k`'s position and heading, any other to the `0x801F6324` prototype at
+    /// slot `0`'s position and rotation trio, and its actor becomes slot `k`'s
+    /// handle. The run does not wait on the flight and has no fold to defer
+    /// to. Aluru Cannon's `2C 29` is the charge at the muzzle, up before the
+    /// slot's phase `1` is out. `0x801F6418`'s CLUT stage is the table arm's.
+    // PORT: FUN_801DEA50 (`0x801DF3E0..0x801DF508`, the `+0x0E` launch run)
+    pub(in crate::world) fn spawn_launch_run(&mut self, caster: usize, record: Option<usize>) {
+        use legaia_engine_effects::action_effect_script as fx;
+        let Some(raw) = record.and_then(|idx| {
+            let cat = self.tables.move_power.as_ref()?;
+            cat.record_at_index(idx).map(|rec| rec.raw)
+        }) else {
+            return;
+        };
+        let slots = self.casting.homing.slots;
+        for (k, &byte) in raw[0x0E..].iter().take_while(|&&b| b != 0).enumerate() {
+            let direct = byte & fx::EFFECT_DIRECT_BIT != 0;
+            let s = slots[if direct { k.min(slots.len() - 1) } else { 0 }];
+            self.battle.effect_spawns.push(
+                legaia_engine_battle::battle_events::BattleEffectSpawn {
+                    actor_slot: caster as u8,
+                    effect: byte & !fx::EFFECT_DIRECT_BIT,
+                    direct,
+                    at: (s.pos[0], s.pos[1], s.pos[2]),
+                    facing: s.heading,
+                    homing_slot: Some(k.min(slots.len() - 1) as u8),
+                },
+            );
+        }
+    }
+
     /// Whether actor `slot`'s committed action is a cast whose fold
     /// (`World::cast_spell_on_slots`) will stage a move-FX scene that has not
     /// run yet: a Magic-category action (`+0x1DE == 2`) on a move that is
@@ -189,6 +222,14 @@ impl World {
                 }
             }
         }
+        // A landed slot's hit opens on the record's impact cue
+        // (`lbu a0,0xd(v0)` / `jal 0x8004FCC8` at `0x801E184C..0x801E1854`).
+        // Id `0` rings `-1`, which the drainer never plays.
+        for _ in homing.hits.iter().filter(|&&child| child != 0) {
+            if raw[0x0D] != 0 {
+                self.dispatch_battle_cue(u16::from(raw[0x0D]));
+            }
+        }
         // A landed slot's hit (`0x801E1844..0x801E1A68`): the cast that rides
         // this flight folds onto that slot's victim now.
         let caster = self.battle_ctx.active_actor;
@@ -226,5 +267,95 @@ impl World {
                 },
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::sound_state::SfxRingOp;
+    use legaia_game_tables::move_power::{
+        MOVE_ID_INDEX_MAP_FILE_OFFSET, MOVE_POWER_RECORD_STRIDE, MOVE_POWER_TABLE_FILE_OFFSET,
+    };
+
+    /// Aluru Cannon's retail recording rings `0x49` on the pass its slot lands
+    /// (`FUN_8004FCC8` from `0x801E1854`, `record[+0x0D]`).
+    fn world_with_a_landing_flight(cue: u8) -> World {
+        let mut buf = vec![0u8; MOVE_POWER_TABLE_FILE_OFFSET + 44 * MOVE_POWER_RECORD_STRIDE + 64];
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE] = 1;
+        buf[MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE + 0x0D] = cue;
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.tables.move_power = Some(
+            legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&buf)
+                .expect("synthetic catalog parses"),
+        );
+        world.actors[0].active = true;
+        world.casting.homing.seed(
+            Some(1),
+            (0, 0, 0),
+            &[Some([0, 0, 0]), None, None, None],
+            |i| u8::from(i == 0),
+        );
+        world
+    }
+
+    fn ticks(world: &mut World) -> Vec<SfxRingOp> {
+        for _ in 0..8 {
+            world.tick_homing_slots();
+        }
+        std::mem::take(&mut world.audio.sfx_ring_ops)
+    }
+
+    #[test]
+    fn a_landed_slot_rings_the_record_cue_once() {
+        let mut world = world_with_a_landing_flight(0x49);
+        assert_eq!(ticks(&mut world), vec![SfxRingOp::Push(0x49)]);
+    }
+
+    #[test]
+    fn the_terminator_spawns_its_launch_run_up_to_the_zero() {
+        let mut buf = vec![0u8; MOVE_POWER_TABLE_FILE_OFFSET + 44 * MOVE_POWER_RECORD_STRIDE + 64];
+        let rec = MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[rec] = 1;
+        // Aluru Cannon's run, then a list byte past the zero the walk never reads.
+        buf[rec + 0x0E] = 0x2C;
+        buf[rec + 0x0F] = 0x29;
+        buf[rec + 0x12] = 0x2A;
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.tables.move_power = Some(
+            legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&buf)
+                .expect("synthetic catalog parses"),
+        );
+        world
+            .casting
+            .homing
+            .seed(Some(1), (5, -6, 7), &[None; 4], |_| 0);
+        world.spawn_launch_run(4, Some(1));
+        let spawns = world.drain_battle_effect_spawns();
+        assert_eq!(
+            spawns
+                .iter()
+                .map(|s| (s.effect, s.direct, s.at, s.homing_slot))
+                .collect::<Vec<_>>(),
+            vec![
+                (0x2C, false, (5, -6, 7), Some(0)),
+                (0x29, false, (5, -6, 7), Some(1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_record_with_no_cue_rings_nothing() {
+        let mut world = world_with_a_landing_flight(0);
+        assert_eq!(ticks(&mut world), vec![]);
     }
 }

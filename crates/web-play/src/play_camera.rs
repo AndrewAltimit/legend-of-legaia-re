@@ -92,21 +92,17 @@ impl LegaiaRuntime {
             .host_view_at(aabb)
             .expect("checked above")
             .scripted_target();
-        let (host, camera) = self.scene_host.host_cam_mut().expect("checked above");
-        let world = &host.world;
-        let cutscene = if scripted {
-            // The shared kernel (`frame_step::CutsceneGlide`, the native
-            // window's twin): replay the banked `apply == 0` snaps, then step
-            // the glide by the display frames the world ran since the last
-            // call - zero on a redraw that ran no tick.
-            Some(self.cutscene_glide.advance(world, camera, target))
-        } else {
-            // Nothing is interpolating, so a banked snap would move a pose
-            // no draw reads.
-            self.cutscene_glide.idle(camera);
-            None
-        };
-        legaia_engine_world_views::screen_passes::HostView::new(world, camera, aabb).frame(cutscene)
+        let (_, camera) = self.scene_host.host_cam().expect("checked above");
+        let cutscene =
+            scripted.then(|| legaia_engine_field::frame_step::scripted_view(camera, target));
+        // The fog pool's next render step projects through this shot
+        // (`BootSession::step_field_fog`).
+        if let Some(session) = self.scene_host.session_mut() {
+            session.field_fog_shot = cutscene;
+        }
+        let (host, camera) = self.scene_host.host_cam().expect("checked above");
+        legaia_engine_world_views::screen_passes::HostView::new(&host.world, camera, aabb)
+            .frame(cutscene)
     }
 }
 
@@ -246,6 +242,21 @@ impl LegaiaRuntime {
             ),
         )
         .to_vec()
+    }
+
+    /// [`prim_near_reject::prim_corner_plan`](legaia_render_kernels::prim_near_reject::prim_corner_plan),
+    /// flat: five words per vertex (four corner vertices and the count), which
+    /// a mesh keeps across re-poses so the page fills the stream from its
+    /// positions without a call per pose. Empty for an out-of-range index, as
+    /// [`Self::prim_corner_refs`] is.
+    pub fn prim_corner_plan(&self, vertex_count: u32, indices: &[u32]) -> Vec<u32> {
+        if indices.iter().any(|&i| i >= vertex_count) {
+            return Vec::new();
+        }
+        legaia_render_kernels::prim_near_reject::prim_corner_plan(vertex_count as usize, indices)
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// Per-vertex primitive-corner records for a triangle mesh - the stream

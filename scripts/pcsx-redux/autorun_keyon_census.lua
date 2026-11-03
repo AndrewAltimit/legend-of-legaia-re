@@ -47,6 +47,10 @@
 --   LEGAIA_FRAMES=4000 bash scripts/pcsx-redux/run_probe.sh \
 --       --scenario s3_rimelm_freeroam \
 --       --lua scripts/pcsx-redux/autorun_keyon_census.lua --out <path>.csv
+--
+-- LEGAIA_PAD_SCRIPT drives a flow while it counts: comma-separated
+-- `vsync:BUTTON:frames` presses (`120:LEFT:90,300:START:4`), each row also
+-- logged as `press`, so a walk, a menu or a door shows the cue stream it raises.
 
 package.path = package.path .. ";scripts/pcsx-redux/lib/?.lua"
 local probe = require("probe")
@@ -76,6 +80,12 @@ local NOTE_STRIDE = 0x36
 local function n32(v) return (tonumber(v) or 0) % 0x100000000 end
 
 local csv = probe.csv_open(OUT_PATH, "vsync,mode,mask,ra,records")
+
+local presses = {}
+for at, button, frames in string.gmatch(os.getenv("LEGAIA_PAD_SCRIPT") or "",
+    "(%d+):(%u+):(%d+)") do
+    presses[#presses + 1] = { at = tonumber(at), button = button, frames = tonumber(frames) }
+end
 local vsync = -1
 local hits = 0
 
@@ -238,6 +248,14 @@ probe.run({
 
     on_capture = function(ctx, elapsed)
         vsync = elapsed
+        for _, p in ipairs(presses) do
+            if elapsed == p.at then
+                probe.pad_force(probe.BTN[p.button])
+                if csv then csv:row("%d,press,0,0,%s", elapsed, p.button) end
+            elseif elapsed == p.at + p.frames then
+                probe.pad_release(probe.BTN[p.button])
+            end
+        end
         -- Wall-clock pace, every 60 vsyncs: the libsnd allocator reads each
         -- voice's envelope back off the SPU, and PCSX-Redux runs that
         -- envelope on the host's audio clock, so a run far below real time

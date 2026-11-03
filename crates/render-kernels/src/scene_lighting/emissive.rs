@@ -144,9 +144,33 @@ pub fn tmd_signature(raw: &[u8]) -> u64 {
 }
 
 /// The curated entry for a TMD, if any.
+///
+/// A posed mesh asks per frame, and [`tmd_signature`] parses the TMD, so the
+/// answer is kept per content hash of `raw`.
 pub fn curated_emissive(raw: &[u8]) -> Option<&'static EmissiveMesh> {
-    let sig = tmd_signature(raw);
-    EMISSIVE_MESHES.iter().find(|e| e.signature == sig)
+    type Memo = std::collections::HashMap<(usize, u64), Option<&'static EmissiveMesh>>;
+    thread_local! {
+        static MEMO: std::cell::RefCell<Memo> = std::cell::RefCell::new(Memo::new());
+    }
+    let key = (raw.len(), content_hash(raw));
+    MEMO.with(|m| {
+        *m.borrow_mut().entry(key).or_insert_with(|| {
+            let sig = tmd_signature(raw);
+            EMISSIVE_MESHES.iter().find(|e| e.signature == sig)
+        })
+    })
+}
+
+/// A word-at-a-time hash of a whole TMD, far cheaper than parsing it.
+fn content_hash(raw: &[u8]) -> u64 {
+    let (words, rest) = raw.as_chunks::<8>();
+    let mut h = SIGNATURE_BASIS;
+    for w in words {
+        h = (h ^ u64::from_le_bytes(*w))
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .rotate_left(29);
+    }
+    fnv1a(h, rest)
 }
 
 /// The mean opaque texel colour (0..=1) of a textured prim, sampled on a 7x7
@@ -302,11 +326,15 @@ pub fn tag_emissive_vram(
             continue;
         };
         let by_curated = curated.is_some_and(|(e, vram)| {
-            let corner: Vec<[u8; 2]> = tri
-                .iter()
-                .filter_map(|&i| uvs.get(i as usize).copied())
-                .collect();
-            curated_prim_glows(e.texels, c, Some((vram, cba, tsb, &corner)))
+            let mut corner = [[0u8; 2]; 3];
+            let mut n = 0;
+            for &i in tri {
+                if let Some(&uv) = uvs.get(i as usize) {
+                    corner[n] = uv;
+                    n += 1;
+                }
+            }
+            curated_prim_glows(e.texels, c, Some((vram, cba, tsb, &corner[..n])))
         });
         if by_curated {
             bounds.add(positions, tri);

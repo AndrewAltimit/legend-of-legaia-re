@@ -337,6 +337,21 @@ fn scene_carrier_pack(buf: &[u8]) -> Option<legaia_scene_formats::field_pack::Sc
 
 /// Classify a single buffer.
 pub fn classify(buf: &[u8]) -> FileReport {
+    classify_report(buf, true)
+}
+
+/// The class [`classify`] reports, without the byte statistics the report
+/// carries for a reader. Most classes are settled by a structural detector and
+/// never look at those statistics, and on a scene load they are the bulk of the
+/// cost: one pass over the entry for the histogram and one for the zero count.
+pub fn classify_class(buf: &[u8]) -> Class {
+    classify_report(buf, false).class
+}
+
+/// `full_stats` fills the report's statistics. The class does not depend on
+/// it: a statistic a detector decides on is computed when that detector
+/// reaches it.
+fn classify_report(buf: &[u8], full_stats: bool) -> FileReport {
     let size = buf.len();
     let head = hex_head(buf, 16);
     let first_u32 = if buf.len() >= 4 {
@@ -344,14 +359,21 @@ pub fn classify(buf: &[u8]) -> FileReport {
     } else {
         None
     };
-    let entropy_bits = entropy(buf);
-    let leading_zeros = buf.iter().take_while(|&&b| b == 0).count();
-    let zero_count = buf.iter().filter(|&&b| b == 0).count();
-    let zero_fraction = if buf.is_empty() {
-        0.0
+    let decide_entropy = std::cell::LazyCell::new(|| entropy(buf));
+    let decide_zero_fraction = std::cell::LazyCell::new(|| {
+        if buf.is_empty() {
+            0.0
+        } else {
+            buf.iter().filter(|&&b| b == 0).count() as f32 / buf.len() as f32
+        }
+    });
+    let entropy_bits = if full_stats { *decide_entropy } else { 0.0 };
+    let zero_fraction = if full_stats {
+        *decide_zero_fraction
     } else {
-        zero_count as f32 / buf.len() as f32
+        0.0
     };
+    let leading_zeros = buf.iter().take_while(|&&b| b == 0).count();
 
     // Run all detectors; pick the first one that fires in this priority order.
     if size == 0 {
@@ -799,7 +821,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
 
     // Large zero-padded header (>= 2 sectors of zeros) with high-entropy body.
     // Typical of cutscene/XA audio files where the leading sector(s) are zeroed.
-    if leading_zeros >= 512 && entropy_bits >= 7.0 {
+    if leading_zeros >= 512 && *decide_entropy >= 7.0 {
         return mk(
             Class::ZeroSectorHighEntropy,
             size,
@@ -942,7 +964,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // Mostly-zeros placeholder. Run after structural detectors so a sparse
     // stage-geometry / streaming entry isn't shadowed. The 0.75 threshold
     // catches near-empty PROT slots without sweeping in real (sparse) tables.
-    if zero_fraction >= 0.75 {
+    if *decide_zero_fraction >= 0.75 {
         return mk(
             Class::MostlyZeros,
             size,
@@ -957,7 +979,7 @@ pub fn classify(buf: &[u8]) -> FileReport {
     // Mid-entropy data blob with significant printable ASCII content.
     // Covers overlay string tables, text data dumps, and mixed game data where
     // the format is not yet identified but readable text content is present.
-    if entropy_bits < 7.0 {
+    if *decide_entropy < 7.0 {
         let visible: f32 = buf
             .iter()
             .filter(|&&b| (0x20..=0x7E).contains(&b) || matches!(b, 9 | 10 | 13))
@@ -977,9 +999,9 @@ pub fn classify(buf: &[u8]) -> FileReport {
     }
 
     // Statistical fallback.
-    let class = if entropy_bits >= 7.5 {
+    let class = if *decide_entropy >= 7.5 {
         Class::UnknownHighEntropy
-    } else if entropy_bits < 4.0 {
+    } else if *decide_entropy < 4.0 {
         Class::UnknownLowEntropy
     } else {
         Class::UnknownOther
@@ -1171,6 +1193,36 @@ fn entropy(buf: &[u8]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn class_only_agrees_on_the_statistical_arms() {
+        // Each arm below decides on a statistic the structural detectors never
+        // read, which `classify_class` computes only on reaching it.
+        let mut high_entropy_tail = vec![0u8; 1024];
+        high_entropy_tail.extend((0..8192u32).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8));
+        let mut mostly_zeros = vec![0u8; 4096];
+        mostly_zeros[100] = 1;
+        let cases: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            vec![0u8; 1024],
+            vec![7u8; 1024],
+            high_entropy_tail,
+            mostly_zeros,
+            b"plain readable text, ".repeat(100),
+            (0..4096u32).map(|i| (i % 7) as u8 + 1).collect(),
+            (0..4096u32)
+                .map(|i| (i.wrapping_mul(2654435761) >> 11) as u8)
+                .collect(),
+        ];
+        for buf in cases {
+            assert_eq!(
+                classify_class(&buf),
+                classify(&buf).class,
+                "{} bytes",
+                buf.len()
+            );
+        }
+    }
 
     #[test]
     fn detects_all_zeros() {

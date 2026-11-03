@@ -265,10 +265,34 @@ pub struct PauseItemInfo<'a> {
     /// `+0x48` (`FUN_801D0F1C` reads them from the accessory-passive
     /// table `0x8007625C`). `None` leaves the box empty.
     pub passive: Option<(&'a str, &'a str)>,
+    /// The item-detail printer's output (`FUN_800337B0`) when the disc tables
+    /// are up: raw text in place of [`Self::desc`], plus equipment's stat line.
+    pub detail: Option<PauseItemDetail<'a>>,
+}
+
+/// What `FUN_800337B0` prints at the description pen: its text, with the name
+/// escapes already expanded, and one row down equipment's label / value pairs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauseItemDetail<'a> {
+    pub text: &'a [u8],
+    pub stats: &'a [PauseDetailStat],
+}
+
+/// One label / value pair of the detail printer's stat line, offsets from the
+/// description pen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PauseDetailStat {
+    pub label: String,
+    pub label_dx: i32,
+    pub value_dx: i32,
+    pub value: u8,
 }
 
 /// Plain-data view of the Items screen for [`items_screen_draws_for_with`].
 pub struct PauseItemsView<'a> {
+    /// The list kernel's blink gate this frame
+    /// ([`crate::shop_screen::page_arrows_blink_on`]).
+    pub arrows_blink: bool,
     /// Current page's visible rows (at most
     /// [`PAUSE_LIST_VISIBLE_ROWS`]).
     pub rows: &'a [PauseItemsRow<'a>],
@@ -292,7 +316,7 @@ pub struct PauseItemsView<'a> {
 /// Shared list-page header + rows: "PAGE cur / total" and the name rows.
 /// `name_inset` positions each row's name pen (`+0xC` for items; the
 /// spell list adds the element-icon advance per row).
-fn list_page_header_draws(
+pub(crate) fn list_page_header_draws(
     font: &legaia_font::Font,
     page: u16,
     pages: u16,
@@ -476,12 +500,8 @@ pub fn item_info_panel_draws_for(
     pen: (i32, i32),
     info: &PauseItemInfo<'_>,
 ) -> Vec<TextDraw> {
-    let mut out = Vec::new();
-    let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
-        out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
-    };
     let (ix, iy) = pen;
-    str_at(&mut out, info.name, ix, iy, MENU_TEXT_GOLD);
+    let mut out = item_info_body_draws(font, pen, info);
     out.extend(num_field_draws(
         font,
         info.count as u64,
@@ -490,11 +510,52 @@ pub fn item_info_panel_draws_for(
         2,
         MENU_TEXT_GOLD,
     ));
+    out
+}
+
+/// `FUN_801D0F1C` itself: the name, the description through the detail printer
+/// and the passive lines. The bag count beside the name is each caller's own
+/// (`FUN_801DCB60` window 17, `FUN_801DCC20` window 24 at `WX + 0x80`).
+///
+/// PORT: FUN_801d0f1c
+pub fn item_info_body_draws(
+    font: &legaia_font::Font,
+    pen: (i32, i32),
+    info: &PauseItemInfo<'_>,
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    let str_at = |out: &mut Vec<TextDraw>, s: &str, x: i32, y: i32, c: [f32; 4]| {
+        out.extend(text_draws_for(&font.layout_ascii(s), (x, y), c));
+    };
+    let (ix, iy) = pen;
+    str_at(&mut out, info.name, ix, iy, MENU_TEXT_GOLD);
     // Both description words go through the line-breaking printer
     // (`FUN_800337B0` / `FUN_8003CD00` -> `FUN_80036888`): a break puts the
     // rest one row pitch down.
     let broken = crate::menu::window_painters::broken_text_draws_for;
-    out.extend(broken(font, info.desc, (ix, iy + 0x10), MENU_TEXT_WHITE));
+    let desc_y = iy + 0x10;
+    match &info.detail {
+        Some(detail) => {
+            out.extend(text_draws_for(
+                &font.layout(detail.text),
+                (ix, desc_y),
+                MENU_TEXT_WHITE,
+            ));
+            // The stat line, one row under the printer's pen (`param_4 + 0xD`).
+            let y = desc_y + 0x0d;
+            for st in detail.stats {
+                str_at(&mut out, &st.label, ix + st.label_dx, y, MENU_TEXT_WHITE);
+                out.extend(crate::shop_screen::shop_digit_field_draws(
+                    font,
+                    u32::from(st.value),
+                    (ix + st.value_dx, y),
+                    3,
+                    MENU_TEXT_WHITE,
+                ));
+            }
+        }
+        None => out.extend(broken(font, info.desc, (ix, desc_y), MENU_TEXT_WHITE)),
+    }
     if let Some((line1, line2)) = info.passive {
         str_at(&mut out, line1, ix, iy + 0x38, MENU_TEXT_GREEN);
         out.extend(broken(font, line2, (ix, iy + 0x48), MENU_TEXT_WHITE));
@@ -570,8 +631,8 @@ pub fn items_screen_sprites_for(
     phase: PauseItemsPhase,
     command_cursor: u8,
     list_cursor: u8,
-    page: u16,
-    pages: u16,
+    pages: (u16, u16),
+    arrows: bool,
     cmd_pen: (i32, i32),
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
@@ -603,8 +664,8 @@ pub fn items_screen_sprites_for(
     }
     out.extend(page_arrow_sprites(
         rects,
-        page,
         pages,
+        arrows,
         list_pen,
         stage_origin,
         stage_scale,
@@ -769,6 +830,9 @@ pub struct PauseMagicInfo<'a> {
 
 /// Plain-data view of the Magic screen for [`magic_screen_draws_for_with`].
 pub struct PauseMagicView<'a> {
+    /// The list kernel's blink gate this frame
+    /// ([`crate::shop_screen::page_arrows_blink_on`]).
+    pub arrows_blink: bool,
     pub casters: &'a [PauseMagicCaster<'a>],
     /// Current page's visible spell rows.
     pub rows: &'a [PauseMagicRow<'a>],
@@ -958,8 +1022,8 @@ pub fn magic_screen_sprites_for(
     phase: PauseMagicPhase,
     caster_cursor: u8,
     list_cursor: u8,
-    page: u16,
-    pages: u16,
+    pages: (u16, u16),
+    arrows: bool,
     caster_pen: (i32, i32),
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
@@ -1006,8 +1070,8 @@ pub fn magic_screen_sprites_for(
     }
     out.extend(page_arrow_sprites(
         rects,
-        page,
         pages,
+        arrows,
         list_pen,
         stage_origin,
         stage_scale,
@@ -1016,36 +1080,35 @@ pub fn magic_screen_sprites_for(
 }
 
 /// List-window hand-cursor stage position: `(X-0xC, Y+0xC + row*0xE)`.
-fn list_hand_pos(list_pen: (i32, i32), row: u8) -> (i32, i32) {
+pub(crate) fn list_hand_pos(list_pen: (i32, i32), row: u8) -> (i32, i32) {
     (
         list_pen.0 - 0x0c,
         list_pen.1 + PAUSE_LIST_ROWS_TOP + row as i32 * PAUSE_LIST_ROW_PITCH,
     )
 }
 
-/// Content height of the id-15 / id-18 list windows (descriptor `h`).
-const LIST_CONTENT_H: i32 = 182;
-
-/// Page-turn arrow sprites for a list page: the right arrow at
-/// `(X+0x84, Y + (182-16)/2)` while more pages follow (capture-pinned);
-/// the left arrow mirrored at `X-0x14` on later pages (inferred - not
-/// yet captured).
-fn page_arrow_sprites(
+/// The page triangles' fallback when the font carries no sprite cells: the
+/// 16x16 atlas pager cells with the triangle centred, so 4 px left of / above
+/// the kernel's 8x8 spot ([`list_page_arrow_spot`]). Drawn only through
+/// `gate` (the list has the pad and the blink is on).
+pub(crate) fn page_arrow_sprites(
     rects: &SaveMenuAtlasRects,
-    page: u16,
-    pages: u16,
+    (page, pages): (u16, u16),
+    gate: bool,
     list_pen: (i32, i32),
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<SpriteDraw> {
     let mut out = Vec::new();
-    let (lx, ly) = list_pen;
-    let arrow_y = ly + (LIST_CONTENT_H - 16) / 2;
+    if !gate {
+        return out;
+    }
+    let (right, left) = list_page_arrow_spots(list_pen);
     if page < pages {
         push_stage_sprite(
             &mut out,
             rects.pager_right,
-            (lx + 0x84, arrow_y),
+            (right.0 - 4, right.1 - 4),
             stage_origin,
             stage_scale,
         );
@@ -1054,7 +1117,7 @@ fn page_arrow_sprites(
         push_stage_sprite(
             &mut out,
             rects.pager_left,
-            (lx - 0x14, arrow_y),
+            (left.0 - 4, left.1 - 4),
             stage_origin,
             stage_scale,
         );
@@ -1062,10 +1125,55 @@ fn page_arrow_sprites(
     out
 }
 
+/// The kernel's two 8x8 page-triangle spots, right then left: ICO `0x28` at
+/// `(WX + w + 4, WY + h/2 - 3)` and ICO `0x27` at `(WX - 0xC, ..)`, on the live
+/// list rect (`0x80032FE4..0x8003304C`), which stands `(2, 5)` off the pen. Off the
+/// pen that is `(X + 0x86, Y + 0x58)` and `(X - 0xA, Y + 0x58)`, measured on
+/// `menu_equip_candidates_conc_retail`.
+pub(crate) fn list_page_arrow_spots(list_pen: (i32, i32)) -> ((i32, i32), (i32, i32)) {
+    let (lx, ly) = list_pen;
+    ((lx + 0x86, ly + 0x58), (lx - 0x0a, ly + 0x58))
+}
+
+/// The page triangles as retail draws them, the font's 8x8 ICO `0x27` / `0x28`
+/// cells, when it carries them; empty otherwise, and [`page_arrow_sprites`]
+/// stands in. `gate` is the kernel's: `beq s4,zero` (mode 1, the list has the
+/// pad) and the frame word's blink at `0x80032FC0`.
+///
+/// PORT: FUN_80032A44 (page triangles, `0x80032FB8..0x8003304C`)
+pub(crate) fn list_page_arrow_draws(
+    font: &legaia_font::Font,
+    (page, pages): (u16, u16),
+    gate: bool,
+    list_pen: (i32, i32),
+) -> Vec<TextDraw> {
+    let mut out = Vec::new();
+    if !gate {
+        return out;
+    }
+    let (right, left) = list_page_arrow_spots(list_pen);
+    let mut tri = |id: u16, at: (i32, i32)| {
+        if let Some(c) = font.sprite_cell(id) {
+            out.push(TextDraw {
+                dst: (at.0, at.1, c.w, c.h),
+                src: (c.atlas_x, c.atlas_y, c.w, c.h),
+                color: [1.0, 1.0, 1.0, 1.0],
+            });
+        }
+    };
+    if page < pages {
+        tri(legaia_font::sprite_cell_ids::PAGE_NEXT, right);
+    }
+    if page > 1 {
+        tri(legaia_font::sprite_cell_ids::PAGE_PREV, left);
+    }
+    out
+}
+
 /// Push one atlas sprite at a 320x240 stage position, mapped into surface
 /// pixels with the shared stage transform (matching
 /// [`crate::menu_window_chrome_draws_for`]).
-fn push_stage_sprite(
+pub(crate) fn push_stage_sprite(
     out: &mut Vec<SpriteDraw>,
     src: (u32, u32, u32, u32),
     stage_pos: (i32, i32),
@@ -1130,6 +1238,7 @@ mod pause_list_tests {
             icon_armor: z,
             icon_boot: z,
             icon_goods: z,
+            icon_worn: z,
             pager_left: (104, 232, 16, 16),
             pager_right: (124, 232, 16, 16),
             tab_cap_l: z,
@@ -1149,6 +1258,7 @@ mod pause_list_tests {
 
     fn items_view<'a>(rows: &'a [PauseItemsRow<'a>], phase: PauseItemsPhase) -> PauseItemsView<'a> {
         PauseItemsView {
+            arrows_blink: true,
             rows,
             page: 1,
             pages: 6,
@@ -1327,6 +1437,7 @@ mod pause_list_tests {
         let rows = [];
         let mut view = items_view(&rows, PauseItemsPhase::List);
         view.info = Some(PauseItemInfo {
+            detail: None,
             name: "Medicine",
             count: 15,
             desc: "Cure all status. Ally.",
@@ -1352,6 +1463,7 @@ mod pause_list_tests {
         phase: PauseMagicPhase,
     ) -> PauseMagicView<'a> {
         PauseMagicView {
+            arrows_blink: true,
             casters,
             rows,
             page: 1,
@@ -1642,8 +1754,8 @@ mod pause_list_tests {
             PauseItemsPhase::Command,
             1,
             0,
-            1,
-            1,
+            (1, 1),
+            true,
             (32, 44),
             (174, 22),
             (0, 0),
@@ -1659,8 +1771,8 @@ mod pause_list_tests {
             PauseItemsPhase::List,
             0,
             2,
-            1,
-            6,
+            (1, 6),
+            true,
             (32, 44),
             (174, 22),
             (0, 0),
@@ -1672,13 +1784,13 @@ mod pause_list_tests {
                 .any(|d| d.dst.0 == 174 - 0x0c && d.dst.1 == 22 + 0x0c + 2 * 0x0e)
         );
         // Page 1 of 6 -> right arrow at the pinned spot, no left arrow.
-        let arrow_y = 22 + (LIST_CONTENT_H - 16) / 2;
+        let arrow_y = 22 + 0x58 - 4;
         assert!(
             items_list
                 .iter()
-                .any(|d| d.dst.0 == 174 + 0x84 && d.dst.1 == arrow_y)
+                .any(|d| d.dst.0 == 174 + 0x86 - 4 && d.dst.1 == arrow_y)
         );
-        assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x14));
+        assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x0a - 4));
         // Single page -> no arrows at the arrow row besides the hand.
         assert!(!items_cmd.iter().any(|d| d.dst.1 == arrow_y));
     }

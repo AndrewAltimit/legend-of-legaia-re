@@ -327,9 +327,9 @@ const RESAMPLE_TAPS: [i32; 20] = [
 /// The centre tap, the one non-zero odd tap of the 39.
 const RESAMPLE_CENTRE: i32 = 0x4000;
 /// Down-sampler span in 44.1 kHz samples.
-const RESAMPLE_IN_LEN: usize = 39;
+pub const RESAMPLE_IN_LEN: usize = 39;
 /// Up-sampler span in 22.05 kHz samples (the even taps alone).
-const RESAMPLE_OUT_LEN: usize = 20;
+pub const RESAMPLE_OUT_LEN: usize = 20;
 
 /// 44.1 -> 22.05 kHz: the 39-tap kernel over the send history, where
 /// `hist[(oldest + k) % 39]` is the `k`-th oldest sample.
@@ -342,14 +342,15 @@ fn downsample(hist: &[i16; RESAMPLE_IN_LEN], oldest: usize) -> i16 {
     sat(acc >> 15)
 }
 
-/// 22.05 -> 44.1 kHz over the zero-stuffed stream. On the sample phase only
-/// the centre tap meets a sample, and the stuffing gain of 2 makes it unity,
-/// so the centre sample passes through; on the interpolated phase the even
-/// taps meet the samples, at gain 2.
+/// 22.05 -> 44.1 kHz over the zero-stuffed stream. The tick that steps the
+/// network reads the interpolated phase, where the even taps meet the samples
+/// at gain 2, centred between the window's middle two; the tick after it reads
+/// the sample phase, where only the centre tap meets a sample and the stuffing
+/// gain of 2 makes it unity, so the later of those two passes through.
 fn upsample(hist: &[i16; RESAMPLE_OUT_LEN], oldest: usize, interpolate: bool) -> i16 {
     let at = |k: usize| hist[(oldest + k) % RESAMPLE_OUT_LEN] as i32;
     if !interpolate {
-        return at(RESAMPLE_OUT_LEN / 2 - 1) as i16;
+        return at(RESAMPLE_OUT_LEN / 2) as i16;
     }
     let mut acc = 0i32;
     for (i, &c) in RESAMPLE_TAPS.iter().enumerate() {
@@ -423,6 +424,29 @@ impl Reverb {
     pub fn set_output_volume(&mut self, left: i16, right: i16) {
         self.out_vol_l = left;
         self.out_vol_r = right;
+    }
+
+    /// Stand the network where a retail capture has it: the tank's bytes (the
+    /// work area, from its base), the buffer position, whether the next tick
+    /// runs a step, and the two resampler histories, oldest first.
+    pub fn resume(
+        &mut self,
+        tank: &[i16],
+        cur: i32,
+        steps_next_tick: bool,
+        send_hist: [&[i16; RESAMPLE_IN_LEN]; 2],
+        wet_hist: [&[i16; RESAMPLE_OUT_LEN]; 2],
+    ) {
+        let n = self.buf.len().min(tank.len());
+        self.buf[..n].copy_from_slice(&tank[..n]);
+        self.cur = cur.rem_euclid(self.size_hw.max(1));
+        self.run_phase = !steps_next_tick;
+        self.in_pos = 0;
+        self.out_pos = 0;
+        for lr in 0..2 {
+            self.in_hist[lr] = *send_hist[lr];
+            self.out_hist[lr] = *wet_hist[lr];
+        }
     }
 
     /// Current reverb output volume `(vLOUT, vROUT)` - the depth the host
@@ -576,7 +600,7 @@ impl Reverb {
             self.out_hist[1][self.out_pos] = r;
             self.out_pos = (self.out_pos + 1) % RESAMPLE_OUT_LEN;
         }
-        let interpolate = !self.run_phase;
+        let interpolate = self.run_phase;
         (
             upsample(&self.out_hist[0], self.out_pos, interpolate),
             upsample(&self.out_hist[1], self.out_pos, interpolate),
@@ -608,6 +632,19 @@ mod tests {
             let mbase = (0x80000 - p.size) / 8;
             assert_eq!(mbase * 8, 0x80000 - p.size);
         }
+    }
+
+    /// The tick that steps the network reads the interpolated phase and the tick
+    /// after passes a sample through: a sample stepped on tick `t` comes back at
+    /// the centre of the window ten steps on, on the tick after that step.
+    #[test]
+    fn the_up_sampler_passes_samples_on_the_tick_after_a_step() {
+        let mut hist = [0i16; RESAMPLE_OUT_LEN];
+        hist[RESAMPLE_OUT_LEN / 2] = 1000;
+        assert_eq!(upsample(&hist, 0, false), 1000);
+        let mut other = [0i16; RESAMPLE_OUT_LEN];
+        other[RESAMPLE_OUT_LEN / 2 - 1] = 1000;
+        assert_eq!(upsample(&other, 0, false), 0);
     }
 
     /// `identify` round-trips every preset's own register block to its mode.

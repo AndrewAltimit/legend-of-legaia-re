@@ -1584,6 +1584,21 @@ pub(crate) enum Cmd {
         #[arg(long, default_value_t = 0x05)]
         item: u8,
     },
+    /// Time scene and battle entry with no window, for
+    /// `scripts/ci/frame-bench.py --entry`: one `[entry] <scene> <step> <ms>`
+    /// line per step. A scene's second round is what a door back into it costs.
+    #[command(display_order = 28)]
+    EntryBench {
+        /// Extracted PROT.DAT + CDNAME.TXT directory.
+        #[arg(long, default_value = "extracted")]
+        extracted_root: PathBuf,
+        /// Comma-separated CDNAME scenes, entered in order.
+        #[arg(long, default_value = "town01,jouina,map01")]
+        scenes: String,
+        /// Rounds over the list.
+        #[arg(long, default_value_t = 2)]
+        repeat: u32,
+    },
     /// Replay a recorded GTE (cop2) trace file against a fresh emulator
     /// and report per-step register divergences. Useful for validating
     /// the emulator against captured retail RAM dumps.
@@ -1716,6 +1731,11 @@ pub(crate) enum Cmd {
     #[command(display_order = 31)]
     #[cfg(feature = "oracles")]
     AudioSweep(legaia_parity::audio_sweep::AudioSweepArgs),
+    /// The engine's mix against mednafen's own output from a library state
+    /// (`docs/subsystems/audio.md`, "Real retail PCM").
+    #[command(display_order = 32)]
+    #[cfg(feature = "oracles")]
+    PcmRetail(legaia_parity::pcm_retail::PcmRetailArgs),
 }
 
 #[derive(Subcommand, Debug)]

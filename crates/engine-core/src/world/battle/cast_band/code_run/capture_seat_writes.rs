@@ -29,6 +29,7 @@ impl World {
         // The victim's `+0x1D9` back on idle (or a downed seat on clip `8`),
         // the poll a body's settle arm makes (PROT 0962 `0xA2` arm 4).
         st.victim_settled = self.chain_seat_settled(usize::from(victim_slot), false);
+        st.caster_in_reach = self.battle_range_metric(caster_slot, victim_slot) == 0;
         st.party_settled =
             (0..usize::from(self.party.party_count)).all(|s| self.chain_seat_settled(s, false));
         // The caster's clip state, for the bodies that wait on it.
@@ -106,6 +107,11 @@ impl World {
             && let Some(p) = a.battle_animation.as_mut()
         {
             p.seek_sixteenths(0);
+        }
+        if let Some(at) = w.seek
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            p.seek_sixteenths(at);
         }
         if w.loop_release {
             a.battle.hit_count_bound = 0;

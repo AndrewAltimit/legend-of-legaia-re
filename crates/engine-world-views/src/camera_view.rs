@@ -343,8 +343,8 @@ pub fn map_display_frame(world: &World) -> Option<FieldCameraFrame> {
 
 /// Resolve this frame's camera from the live world.
 ///
-/// `cutscene` is the host's already-glided cutscene view (see
-/// [`legaia_engine_camera::psx_camera::CutsceneCameraInterp`]) or `None` when no
+/// `cutscene` is the scripted shot's view
+/// ([`legaia_engine_field::frame_step::scripted_view`]) or `None` when no
 /// timeline owns the frame; `scene_center_xz` is the host's fallback focus.
 ///
 /// The world-map gate is the one place a reading is easy to get wrong: a

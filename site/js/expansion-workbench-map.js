@@ -486,7 +486,7 @@ export function renderMaps(ctx, el) {
   const addBtn = h('button', {
     type: 'button', class: 'wb-mini', onclick: () => {
       const id = freshId('map', ids);
-      maps[id] = newMap(ctx);
+      maps[id] = ctx.starterMap ? ctx.starterMap(`Map ${Object.keys(maps).length + 1}`) : newMap(ctx);
       V.map = id;
       ctx.changed(true);
     },
@@ -965,6 +965,16 @@ export function renderMaps(ctx, el) {
       ids: () => ctx.ids('npc'),
       idsOf: (kind) => ctx.ids(kind),
       pack: () => ctx.pack,
+      // The form of what is selected, in the drawer ("More settings").
+      showSelection: () => {
+        const box = side.querySelector('.xw-selbox');
+        if (box) box.scrollIntoView({ block: 'start' });
+      },
+      pageKey: (k) => { if (ctx.pageKey) ctx.pageKey(k); },
+      hasDisc: () => !!ctx.cat,
+      scenes: () => (ctx.cat && ctx.cat.scenes) || [],
+      thumbs: () => ctx.thumbs(),
+      meshCatalog: () => ctx.meshCatalog(),
       // The catalog's base-scene pieces (cached by the page per scene).
       sceneObjects: (scene) => (ctx.cat ? ctx.sceneObjects(scene) : { scene, objects: [] }),
       sceneNpcs: (scene) => {
@@ -1002,7 +1012,7 @@ export function renderMaps(ctx, el) {
 }
 
 function newMap(ctx) {
-  const scene = (ctx.cat && ctx.cat.scenes && ctx.cat.scenes[0]) ? ctx.cat.scenes[0].name : 'town01';
+  const scene = 'town01';
   return {
     name: 'New map', size: null,
     base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },

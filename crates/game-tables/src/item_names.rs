@@ -29,8 +29,13 @@
 //!
 //! Ids run `0x00..=0xFF`; the pointers leave the data segment past `0xFF`,
 //! which is how [`ItemNameTable::from_scus`] finds the table's extent. A
-//! handful of ids (`0x00`, `0x12`, `0x1A`, `0x52`, `0xB9`, `0xFD`) have empty
-//! name strings (reserved / gap slots) and decode to `None`.
+//! handful of ids (`0x00`, `0x12`, `0x52`, `0xB9`, `0xFD`) share the empty
+//! string at `0x8007B508` (reserved / gap slots) and decode to `None`. Ids
+//! `0x1A`, `0x1C` and `0x20` open with the MES party-name substitution, then
+//! the word (`C1 00 " Fist"`, `C1 01 " Feral"`, `C1 02 " Mace"`) - retail prints
+//! that hero's record name there. They decode with the template name
+//! ([`DEFAULT_PARTY_NAMES`]); a host with a save in hand puts the renamed hero
+//! in ([`PARTY_NAMED_ITEMS`]).
 //!
 //! The display strings carry the same MES control prefixes as every other
 //! in-game string (a leading `0x01` icon escape, `0xCE XX` colour controls);
@@ -109,6 +114,14 @@ fn glyph_char(b: u8, accents: bool) -> Option<char> {
     }
 }
 
+/// The items whose name string opens with a party-name substitution, each with
+/// the record index the substitution names.
+pub const PARTY_NAMED_ITEMS: [(u8, usize); 3] = [(0x1A, 0), (0x1C, 1), (0x20, 2)];
+
+/// The roster's default names, in record order: what a `0xC1 XX` party-name
+/// substitution in an item name decodes to before a save's own names apply.
+pub const DEFAULT_PARTY_NAMES: [&str; 3] = ["Vahn", "Noa", "Gala"];
+
 /// Read an item name string at `va`, stripping MES control prefixes (`0xCE XX`
 /// colour controls, the leading `0x01` icon escape, any other control byte)
 /// and trimming surrounding whitespace. Returns `None` if the pointer is out
@@ -128,6 +141,16 @@ fn read_name(scus: &[u8], map: &ExeMap, va: u32, accents: bool) -> Option<String
             if scus.get(i) == Some(&0x20) {
                 i += 1;
             }
+            continue;
+        }
+        if b == 0xC1 {
+            // Party-name substitution (docs/formats/mes.md): its argument
+            // byte is a record index, and may be 0 - not a terminator.
+            let who = scus.get(i + 1).copied().unwrap_or(0xFF);
+            if let Some(n) = DEFAULT_PARTY_NAMES.get(usize::from(who)) {
+                out.push_str(n);
+            }
+            i += 2;
             continue;
         }
         if let Some(c) = glyph_char(b, accents) {
@@ -311,6 +334,22 @@ impl ItemNameTable {
         self.names.get(id as usize)?.as_deref()
     }
 
+    /// `id`'s name as the randomizer pools and the curated gamedata join read
+    /// it: no hero in a party-named weapon, and none at all for `0x1A`'s retail
+    /// string, which no pool holds. Keying the pools on this form keeps a seed's output stable
+    /// whatever [`Self::name`] prints.
+    pub fn pool_name(&self, id: u8) -> Option<&str> {
+        let name = self.name(id)?;
+        let Some(&(_, record)) = PARTY_NAMED_ITEMS.iter().find(|(item, _)| *item == id) else {
+            return Some(name);
+        };
+        // A patch can repoint the slot at a name of its own: that one stands.
+        let Some(word) = name.strip_prefix(DEFAULT_PARTY_NAMES[record]) else {
+            return Some(name);
+        };
+        (record != 0).then(|| word.trim_start())
+    }
+
     /// Info-window description for item `id` (the record `+8` string the
     /// shared item-info panel `FUN_801D0F1C` draws at `WY + 0x10`), or
     /// `None` for an empty slot. Line breaks are `'\n'`.
@@ -440,5 +479,25 @@ mod tests {
         assert!(file_offset_for_va(&scus, 0x8000_0000).is_none());
         assert!(file_offset_for_va(&scus, 0x8FFF_FFFF).is_none());
         assert!(file_offset_for_va(b"nope", TABLE_VA).is_none());
+    }
+
+    #[test]
+    fn pool_name_drops_the_party_substitution() {
+        let mut names: Vec<Option<String>> = vec![None; 256];
+        names[0x05] = Some("Healing Berry".into());
+        names[0x1A] = Some("Vahn Fist".into());
+        names[0x1C] = Some("Noa Feral".into());
+        names[0x20] = Some("Gala Mace".into());
+        let table = ItemNameTable::from_names(names);
+        assert_eq!(table.pool_name(0x05), Some("Healing Berry"));
+        assert_eq!(table.pool_name(0x1A), None);
+        assert_eq!(table.pool_name(0x1C), Some("Feral"));
+        assert_eq!(table.pool_name(0x20), Some("Mace"));
+        assert_eq!(table.name(0x20), Some("Gala Mace"));
+
+        let mut names: Vec<Option<String>> = vec![None; 256];
+        names[0x1A] = Some("Custom Item".into());
+        let patched = ItemNameTable::from_names(names);
+        assert_eq!(patched.pool_name(0x1A), Some("Custom Item"));
     }
 }

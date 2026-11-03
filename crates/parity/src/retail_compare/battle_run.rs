@@ -693,6 +693,15 @@ pub(super) fn battle_image(
         && let Some(left) = battle.menu_glide_left
     {
         env.push(("LEGAIA_SEAT_MENU_GLIDE_LEFT", format!("{left:.2}")));
+        if let Some(p) = battle.menu_glide_pose {
+            env.push((
+                "LEGAIA_SEAT_MENU_GLIDE_POSE",
+                format!(
+                    "{},{},{},{},{},{},{}",
+                    p.pitch, p.tr[0], p.tr[1], p.tr[2], p.focus[0], p.focus[1], p.focus[2]
+                ),
+            ));
+        }
     }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
@@ -746,7 +755,12 @@ pub(super) fn battle_image(
                 } else {
                     battle.cam_tween.1
                 };
-                (battle.displayed_cam_live, end)
+                let live = if battle.camera_behind_commit() {
+                    battle.displayed_commit_live()
+                } else {
+                    battle.displayed_cam_live
+                };
+                (live, end)
             } else {
                 battle.cam_tween
             }),
@@ -762,6 +776,10 @@ pub(super) fn battle_image(
             ),
         ));
         if battle.displayed_camera() {
+            env.push((
+                "LEGAIA_BATTLE_GHOST_POSE",
+                legaia_engine_capture::camera_align::cam_pose_to_env(&battle.displayed_ghost_pose),
+            ));
             let seats = battle.engine_image_displayed_seats();
             if !seats.is_empty() {
                 env.push((
@@ -794,8 +812,14 @@ pub(super) fn battle_image(
     if battle.hud_glides_landed || displayed_menu {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
     }
+    if battle.ai_counter != 0 {
+        env.push(("LEGAIA_SEAT_AI_COUNTER", battle.ai_counter.to_string()));
+    }
     if battle.move_label_unseen() {
         env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
+    }
+    if battle.camera_behind_commit() {
+        env.push(("LEGAIA_SEAT_CAM_BEHIND_COMMIT", "1".to_string()));
     }
     // Glides still in flight: each seated on the elapsed the displayed
     // frame shows (`HudGlideSeat`).
@@ -918,13 +942,37 @@ pub(super) fn battle_image(
         // The display shows the frame two game frames older than the RAM;
         // where it measures better the child re-runs to it
         // (`RetailBattle::display_retake`).
+        if battle.stand_on_displayed_pose() {
+            env.push(("LEGAIA_BATTLE_CAM_STAND_DISPLAYED", "1".to_string()));
+        }
         if battle.display_retake() {
+            if battle.retake_across_band_entry() {
+                env.push(("LEGAIA_CAPTURE_RETAKE_ENTRY", "1".to_string()));
+            }
             if battle.retake_on_shot_only() {
                 env.push((
                     "LEGAIA_CAPTURE_DISPLAY_LAG",
                     battle.drive_display_lag().to_string(),
                 ));
                 env.push(("LEGAIA_CAPTURE_RETAKE_SHOT", "1".to_string()));
+                if let Some(p) = battle.retake_turning_pose() {
+                    env.push((
+                        "LEGAIA_CAPTURE_RETAKE_POSE",
+                        format!(
+                            "{},{},{},{},{},{},{},{}",
+                            p.pitch,
+                            p.yaw,
+                            p.tr[0],
+                            p.tr[1],
+                            p.tr[2],
+                            p.focus[0],
+                            p.focus[1],
+                            p.focus[2]
+                        ),
+                    ));
+                } else if let Some(yaw) = battle.retake_turning_yaw() {
+                    env.push(("LEGAIA_CAPTURE_RETAKE_YAW", yaw.to_string()));
+                }
             } else {
                 env.push(("LEGAIA_CAPTURE_DISPLAY_LAG", battle.display_lag.to_string()));
             }

@@ -270,8 +270,7 @@ impl ProtIndex {
             return Ok(c);
         }
         let bytes = self.entry_bytes(idx)?;
-        let report = classify(&bytes);
-        let class = report.class;
+        let class = classify_class(&bytes);
         crate::lock_poison_tolerant(&self.class_cache).insert(idx, class);
         Ok(class)
     }

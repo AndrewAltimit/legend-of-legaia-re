@@ -187,7 +187,7 @@ pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) ->
 
     // Stage 5: summon power-percent scale.
     if i.attacker_slot == 7 {
-        over = over.saturating_mul(i.summon_power_pct as u32) / 100;
+        over = over.wrapping_mul(i.summon_power_pct as u32) / 100;
     }
 
     // Stage 6: 9999 cap.

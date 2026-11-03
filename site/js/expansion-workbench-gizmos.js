@@ -31,8 +31,9 @@ import { h } from './expansion-workbench-forms.js';
 import { layoutTools, layoutSummary, nudge } from './expansion-workbench-layout.js';
 // The page shell's mode toolbar (a cycle with the shell, which imports this
 // module: the names are only called at run time).
-import { registerBuildTools, syncBuildMode, setBuildMode, buildMode } from './expansion-workbench-shell.js';
+import { registerBuildTools, syncBuildMode, setBuildMode, buildMode, BUILD_MODES } from './expansion-workbench-shell.js';
 import { setPainterTool } from './expansion-workbench-map.js';
+import { helpLink, PALETTE_HELP } from './expansion-workbench-help.js';
 
 const UNIT = 128;
 const TYPES = ['props', 'decor', 'npcs', 'spawns', 'lamps', 'emitters', 'triggers', 'exits', 'encounters'];
@@ -44,7 +45,7 @@ const BRUSHES = [
 
 // Edit state survives the tab re-rendering.
 const G = {
-  mode: 'view', tool: 'move', snap: 'tile', sel: [],
+  mode: 'select', tool: 'move', snap: 'tile', sel: [],
   brush: { kind: 'raise', radius: 2.5, height: 24, strength: 1, char: '' },
   api: null, sentTerrain: undefined, sentObjects: '', bar: null,
   // The layout row's counts and steps (expansion-workbench-layout.js),
@@ -344,9 +345,24 @@ function sceneObjects(scene) {
 /** The extent `[x, y, z]` of mesh source `mesh` on `map` (scaled by
  * nothing), or null when the catalog does not know it yet. */
 export function meshSize(map, mesh) {
+  // The mesh catalog knows it without assembling the scene.
+  const named = meshEntry(sceneOf(map, mesh), mesh && mesh.object);
+  if (named) return [named.size[0], named.size[2], named.size[1]];
   const sc = sceneObjects(sceneOf(map, mesh));
   const o = sc && sc.objects && sc.objects.find((x) => x.index === mesh.object);
   return o ? o.size : null;
+}
+
+/* The mesh catalog's entry for `scene`'s mesh `object` (its label, kind and
+ * measured size; `size` is width X, depth Z, height), or null. */
+function meshEntry(scene, object) {
+  if (!scene || object == null || !G.api || !G.api.meshCatalog) return null;
+  if (!G.meshIdx) {
+    const rows = G.api.meshCatalog();
+    if (!rows.length) return null;
+    G.meshIdx = new Map(rows.map((e) => [`${e.scene}|${e.object}`, e]));
+  }
+  return G.meshIdx.get(`${scene}|${object}`) || null;
 }
 
 function sceneNpcs(scene) {
@@ -364,19 +380,59 @@ function sceneNpcs(scene) {
 const stem = (id) => String(id || '').replace(/(_[a-z]?\d+)+$/i, '').replace(/_/g, ' ') || 'prop';
 const sizeClass = (w) => (w >= 384 ? 'Buildings' : w >= 160 ? 'Large props' : 'Small props');
 
+/* The palette's categories, in tab order: the mesh catalog's kinds. */
+const KIND_GROUPS = [
+  ['building', 'Buildings'], ['plant', 'Plants & trees'], ['rock', 'Rocks'], ['furniture', 'Furniture'],
+  ['structure', 'Walls & structures'], ['light', 'Lights'], ['vehicle', 'Vehicles'], ['other', 'Odds & ends'], ['terrain', 'Ground pieces'],
+];
+// What "All" leaves out: pieces of ground and scenery shells read as nothing
+// on their own.
+const NOT_IN_ALL = new Set(['terrain', 'other']);
+
+/* A mesh's size in tiles, the tile's small print: two pieces that look alike
+ * often differ here. */
+function tileSize(size) {
+  const t = (v) => { const x = Math.round(v / 12.8) / 10; return x < 0.1 ? '0.1' : String(x); };
+  return `${t(size[0])} x ${t(size[1])} x ${t(size[2])}`;
+}
+
+/* Whether a piece stands in the player's way by default: the mesh catalog's
+ * measure, or anything the walk-through hint would flag (wider than half a
+ * tile both ways and taller than a step, expansion-workbench-hints.js). */
+function wantsSolid(size, named) {
+  return named || (size[0] > 64 && size[1] > 64 && size[2] > 16);
+}
+
+/* A palette item for `scene`'s mesh `object` on `map`. */
+function meshItem(map, base, scene, object, o) {
+  const size = o.size;
+  const solid = !!o.solid;
+  const mesh = scene === base ? { object } : { scene, object };
+  return {
+    id: 'prop:' + JSON.stringify([scene, object]), label: o.label, kind: 'prop', group: o.group, scene, object, note: o.note || '',
+    mesh, size: [size[0], size[1]], hgt: Math.max(24, size[2]), solid,
+    hint: `${scene} mesh ${object}, ${size[0]} wide, ${size[1]} deep, ${size[2]} tall${o.note ? `; ${o.note}` : ''}`,
+    sizeLabel: tileSize(size),
+    make: () => ({ mesh: { ...mesh }, offset: [0, 0, 0], rotation: [0, 0, 0], scale: null, solid }),
+  };
+}
+
 /** The catalog for the open map: `[{ id, label, items }]`, each item
- * `{ id, label, kind, size, hgt, hint, make }`. */
+ * `{ id, label, kind, size, hgt, hint, make }`, a prop's also `{ scene, object }`. */
 export function catalog() {
   const api = G.api;
   const map = api && api.map();
   if (!map) return [];
   if (G.catalog && G.catalog.map === map) return G.catalog.groups;
   const pack = api.pack ? api.pack() : null;
-  const groups = { Buildings: [], 'Large props': [], 'Small props': [], People: [], Markers: [] };
+  const groups = { 'On your maps': [] };
+  for (const [, label] of KIND_GROUPS) groups[label] = [];
+  groups.People = [];
+  groups.Markers = [];
   const seen = new Set();
   const base = sceneOf(map, { object: 0 });
-  // Props the pack already uses, on any map (a mesh named by its scene so
-  // it builds on this one too).
+  const kindLabel = Object.fromEntries(KIND_GROUPS);
+  // What the pack's maps already use, on any map, with the pack's own settings.
   const uses = [];
   for (const [mid, m] of Object.entries((pack && pack.maps) || { here: map })) {
     for (const p of m.props || []) uses.push([mid, m, p]);
@@ -385,33 +441,43 @@ export function catalog() {
   for (const [, m, p] of uses) {
     if (!p.mesh) continue;
     const scene = sceneOf(m, p.mesh);
-    const mesh = p.mesh.object != null && scene ? { scene, object: p.mesh.object } : p.mesh;
-    const k = JSON.stringify(mesh.object != null ? [mesh.scene, mesh.object] : mesh);
+    const onDisc = p.mesh.object != null && scene;
+    const k = JSON.stringify(onDisc ? [scene, p.mesh.object] : p.mesh);
     if (seen.has(k)) continue;
     seen.add(k);
-    const sz = mesh.object != null ? meshSize(map, mesh) : null;
+    const named = onDisc ? meshEntry(scene, p.mesh.object) : null;
+    const sz = onDisc ? meshSize(map, { scene, object: p.mesh.object }) : null;
     const sc = p.scale || 1;
-    const w = sz ? Math.max(sz[0], sz[2]) * sc : 96;
-    groups[sizeClass(w)].push({
-      id: 'prop:' + k, label: stem(p.id), kind: 'prop', mesh, size: sz ? [sz[0] * sc, sz[2] * sc] : [96, 96],
-      hgt: sz ? Math.max(24, sz[1] * sc) : 72, solid: !!p.solid, foot: footOf(map, mesh),
+    const mesh = onDisc ? (scene === base ? { object: p.mesh.object } : { scene, object: p.mesh.object }) : p.mesh;
+    groups['On your maps'].push({
+      id: 'use:' + k, label: (named && named.label) || stem(p.id), kind: 'prop', group: 'On your maps', scene: onDisc ? scene : null, object: onDisc ? p.mesh.object : null,
+      mesh, size: sz ? [sz[0] * sc, sz[2] * sc] : [96, 96], hgt: sz ? Math.max(24, sz[1] * sc) : 72, solid: !!p.solid, scale: sc,
       hint: `as ${p.id}${sz ? `, ${Math.round(sz[0] * sc)} x ${Math.round(sz[2] * sc)} units` : ''}`,
-      make: () => { const o = JSON.parse(JSON.stringify(p)); delete o.id; delete o.on; o.mesh = mesh.object != null && mesh.scene === base ? { object: mesh.object } : mesh; return o; },
+      make: () => { const o = JSON.parse(JSON.stringify(p)); delete o.id; delete o.on; o.mesh = JSON.parse(JSON.stringify(mesh)); return o; },
     });
   }
-  // The base scene's geometry the pack does not use yet.
-  const so = sceneObjects(base);
-  for (const o of (so && so.objects) || []) {
-    const k = JSON.stringify([base, o.index]);
-    if (seen.has(k) || !o.prims) continue;
-    const w = Math.max(o.size[0], o.size[2]);
-    groups[sizeClass(w)].push({
-      id: 'prop:' + k, label: `${base} #${o.index}`, kind: 'prop', mesh: { object: o.index }, size: [o.size[0], o.size[2]],
-      hgt: Math.max(24, o.size[1]), solid: w >= 160, foot: o.footprint,
-      hint: `${o.size[0]} x ${o.size[2]} units, ${o.prims} prims${o.placed ? `, placed ${o.placed}x in ${base}` : ''}`,
-      make: () => ({ mesh: { object: o.index }, offset: [0, 0, 0], rotation: [0, 0, 0], scale: null, solid: w >= 160 }),
-    });
+  // The named meshes of the mesh catalog, by what they are; the map's own
+  // scene first, so a palette's first row sits with the map's textures.
+  const seenMesh = new Set();
+  const rows = api.meshCatalog ? api.meshCatalog() : [];
+  for (const e of rows.slice().sort((a, b) => (a.scene === base ? 0 : 1) - (b.scene === base ? 0 : 1))) {
+    if (!e.tris) continue;
+    seenMesh.add(`${e.scene}|${e.object}`);
+    const group = kindLabel[e.kind] || 'Odds & ends';
+    groups[group].push(meshItem(map, base, e.scene, e.object, { label: e.label, size: e.size, solid: wantsSolid(e.size, e.solid), note: e.note, group }));
   }
+  // The rest of the scene being browsed (and the base scene): no name but
+  // its picture.
+  const browse = [base, G.catScene].filter(Boolean);
+  if (base && api.hasDisc && api.hasDisc() && !(G.sceneList && G.sceneList[base]) && G.loadingScene !== base) listScene(base);
+  for (const sc of browse) {
+    for (const o of (G.sceneList && G.sceneList[sc]) || []) {
+      if (seenMesh.has(`${sc}|${o.index}`)) continue;
+      seenMesh.add(`${sc}|${o.index}`);
+      groups['Odds & ends'].push(meshItem(map, base, sc, o.index, { label: `${sc} #${o.index}`, size: o.size, solid: wantsSolid(o.size, false), group: 'Odds & ends' }));
+    }
+  }
+  for (const k of Object.keys(groups)) groups[k].sort((a, b) => (a.scene === base ? 0 : 1) - (b.scene === base ? 0 : 1) || (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   // People: the pack's NPCs, then the base scene's placements.
   const npcSeen = new Set();
   for (const [, m] of Object.entries((pack && pack.maps) || { here: map })) {
@@ -445,7 +511,6 @@ export function catalog() {
     { id: 'encounter', label: 'Encounter zone', kind: 'zone', zone: [4, 4], list: 'encounters', hint: 'random battles inside it (4 x 4)', make: () => ({ table: '' }) },
     { id: 'exit', label: 'Exit', kind: 'zone', zone: [1, 1], list: 'exits', hint: 'a way off the map', make: () => ({ to: { kind: 'retail', scene: { kind: 'scene', name: base || 'town01' }, facing: 0 } }) },
   );
-  for (const k of ['Buildings', 'Large props', 'Small props']) groups[k].sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
   // Two meshes one name (two cottages): numbered, so each reads apart.
   const seenLabel = new Map();
   for (const items of Object.values(groups)) {
@@ -455,15 +520,9 @@ export function catalog() {
       if (n > 1) it.label = `${it.label} ${n}`;
     }
   }
-  const out = Object.entries(groups).filter(([, items]) => items.length).map(([label, items]) => ({ id: label.toLowerCase().replace(/ /g, '-'), label, items }));
+  const out = Object.entries(groups).filter(([, items]) => items.length).map(([label, items]) => ({ id: label.toLowerCase().replace(/[^a-z]+/g, '-'), label, items }));
   G.catalog = { map, groups: out };
   return out;
-}
-
-function footOf(map, mesh) {
-  const sc = sceneObjects(sceneOf(map, mesh));
-  const o = sc && sc.objects && sc.objects.find((x) => x.index === mesh.object);
-  return o ? o.footprint : null;
 }
 
 function findItem(id) {
@@ -475,7 +534,20 @@ function findItem(id) {
 function placeSpec(id) {
   const it = id && findItem(id);
   if (!it) return null;
-  return { kind: it.kind, size: it.size, hgt: it.hgt || 60, yaw: G.yaw || 0, facing: !!it.facing, zone: it.zone || null, solid: it.solid, label: it.label };
+  return { kind: it.kind, size: it.size, hgt: it.hgt || 60, yaw: G.yaw || 0, facing: !!it.facing, zone: it.zone || null, solid: it.solid, label: it.label, scale: it.scale || 1, ghostKey: it.scene != null && it.object != null ? `${it.scene}|${it.object}` : null };
+}
+
+/* Hand the frame the armed piece's real model: its streams and its scene's
+ * VRAM, read off the disc. The frame draws its box until they arrive. */
+function sendGhost(it) {
+  const api = G.api;
+  if (!it || it.scene == null || it.object == null || !api.thumbs || !api.preview || !api.preview.ghost) return;
+  const key = `${it.scene}|${it.object}`;
+  api.thumbs().mesh(it.scene, it.object).then((d) => {
+    if (!d) return;
+    const m = d.mesh;
+    api.preview.ghost({ key, scene: it.scene, vram: d.vram, positions: m.positions, uvs: m.uvs, cbaTsb: m.cbaTsb, indices: m.indices, flat: m.flat });
+  }, () => {});
 }
 
 /** Arm catalog item `id` (the 3D view's place mode with its ghost). */
@@ -487,6 +559,7 @@ export function arm(id) {
   G.mode = 'place';
   G.picked = true;
   if (it.facing) G.yaw = Math.round((G.yaw || 0) / 45) * 45;
+  sendGhost(it);
   renderBar();
   sync();
   followShell();
@@ -501,6 +574,7 @@ function note(text, bad) {
 function disarm() {
   if (G.mode !== 'place') return;
   G.mode = G.prevMode && G.prevMode !== 'place' ? G.prevMode : 'select';
+  G.armed = null;
   renderBar();
   sync();
   followShell();
@@ -541,18 +615,23 @@ function placeAt(t, yaw) {
   }
   const list = listOf(map, type, true);
   list.push(o);
-  G.sel = [{ type, i: list.length - 1 }];
+  // Placing goes on: what was put down is not selected until the piece is
+  // put away, so its panel does not cover the next spot.
+  G.sel = [];
+  G.lastPlaced = { type, i: list.length - 1 };
   api.selected(G.sel);
   api.refresh(true);
+  try { localStorage.setItem(HINT_KEY, '1'); } catch (e) { /* no storage */ }
   // The note goes to the preview's status line: a longer bar would move
   // the picture under the pointer.
-  note(`Placed ${it.label} at [${t[0]}, ${t[1]}]; click again for another, Escape to stop.`);
+  note(`Placed ${it.label} at [${t[0]}, ${t[1]}].`);
   renderBar();
   sync(true);
 }
 
-/* A catalog tile's picture: the mesh's footprint from above (its convex
- * hull, the painter's prop outline), else a glyph for its kind. */
+/* A person's or a marker's tile: a glyph for its kind (a prop's is a picture
+ * of the mesh, `paletteEl`). A mesh off no disc coordinate (a glTF model) has
+ * a square. */
 function thumb(it) {
   const c = h('canvas', { width: 44, height: 44, class: 'xw-piece-thumb', 'aria-hidden': 'true' });
   const g = c.getContext && c.getContext('2d');
@@ -562,18 +641,7 @@ function thumb(it) {
   const tone = { prop: '#d8c06a', npc: '#9b6bf0', spawn: '#3ccf8f', lamp: '#ffd75a', zone: '#e8a33d' }[it.kind] || '#ccc';
   g.fillStyle = tone;
   g.strokeStyle = tone;
-  if (it.kind === 'prop' && it.foot && it.foot.length > 2) {
-    let lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
-    for (const [x, z] of it.foot) { lo = [Math.min(lo[0], x), Math.min(lo[1], z)]; hi = [Math.max(hi[0], x), Math.max(hi[1], z)]; }
-    const k = 36 / Math.max(hi[0] - lo[0], hi[1] - lo[1], 1);
-    g.beginPath();
-    it.foot.forEach(([x, z], i) => { const px = 4 + (x - lo[0]) * k, py = 4 + (z - lo[1]) * k; if (i) g.lineTo(px, py); else g.moveTo(px, py); });
-    g.closePath();
-    g.globalAlpha = 0.55;
-    g.fill();
-    g.globalAlpha = 1;
-    g.stroke();
-  } else if (it.kind === 'npc' || it.kind === 'spawn') {
+  if (it.kind === 'npc' || it.kind === 'spawn') {
     g.beginPath(); g.arc(22, 13, 6, 0, Math.PI * 2); g.fill();
     g.fillRect(15, 21, 14, 16);
   } else if (it.kind === 'lamp') {
@@ -624,6 +692,116 @@ export function catalogEl(into, only) {
   paintItems();
   el.append(tabs, items);
   return el;
+}
+
+/* The object palette: Sims-style. A search box and a scene picker, category
+ * tabs, a row of pictures. Kept across re-renders of the tab (`G.pal`), so a
+ * selection or an edit does not rebuild it or lose its scroll. */
+function paletteEl() {
+  installCatalogCss();
+  const api = G.api;
+  if (!api.hasDisc || !api.hasDisc()) {
+    return h('div', { class: 'xw-pal-msg' }, 'The objects you can place come from your own disc. Choose your disc image under "Disc and pack" at the top of this page, and they appear here.');
+  }
+  const groups = catalog();
+  if (G.pal && G.pal.groups === groups) {
+    refreshPalette();
+    return G.pal.el;
+  }
+  const props = groups.filter((g) => g.items.length && g.items[0].kind === 'prop');
+  const all = props.flatMap((g) => g.items);
+  const allGroup = { id: 'all', label: 'All', items: all.filter((it) => !NOT_IN_ALL.has((KIND_GROUPS.find(([, l]) => l === it.group) || [])[0]) && it.group !== 'On your maps') };
+  const tabs = [allGroup].concat(props);
+  if (!tabs.some((g) => g.id === G.catGroup)) G.catGroup = 'all';
+  const el = h('div', { class: 'xw-pal', role: 'region', 'aria-label': 'Objects to place' });
+  const tabRow = h('div', { class: 'xw-pal-tabs', role: 'tablist', 'aria-label': 'Object categories' });
+  const items = h('div', { class: 'xw-pal-items' });
+  // A vertical wheel scrolls the row.
+  items.addEventListener('wheel', (e) => {
+    if (e.deltaX || !e.deltaY) return;
+    items.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+  const q = h('input', { type: 'search', placeholder: 'Find: tree, bed, wall', 'aria-label': 'Find an object', value: G.catFind || '' });
+  const scene = h('select', { 'aria-label': 'Which scene\'s objects' }, h('option', { value: '' }, 'All named objects'),
+    ...(api.scenes ? api.scenes() : []).map((s) => h('option', { value: s.name, selected: s.name === G.catScene }, `${s.display || s.name} (${s.name})`)));
+  scene.addEventListener('change', () => browseScene(scene.value));
+  const paint = () => {
+    tabRow.innerHTML = '';
+    const f = (G.catFind || '').trim().toLowerCase();
+    const inScene = (it) => !G.catScene || it.scene === G.catScene;
+    for (const g of tabs) {
+      const n = g.items.filter(inScene).length;
+      if (!n && g.id !== 'all') continue;
+      const on = !f && g.id === G.catGroup;
+      tabRow.append(h('button', {
+        type: 'button', role: 'tab', class: 'wb-mini' + (on ? ' is-on' : ''), 'aria-selected': String(on),
+        onclick: () => { G.catGroup = g.id; G.catFind = ''; q.value = ''; paint(); },
+      }, `${g.label} ${n}`));
+    }
+    items.innerHTML = '';
+    const list = (f ? all.filter((it) => `${it.label} ${it.hint} ${it.group}`.toLowerCase().includes(f)) : (tabs.find((g) => g.id === G.catGroup) || allGroup).items).filter(inScene);
+    const thumbs = api.thumbs ? api.thumbs() : null;
+    for (const it of list.slice(0, 500)) {
+      const tile = h('button', {
+        type: 'button', class: 'xw-tile', 'data-item': it.id,
+        title: `${it.label} (${it.hint}${it.sizeLabel ? `; ${it.sizeLabel} tiles wide, deep, high` : ''}). Click, then click on the ground to place it.`,
+        onclick: () => { if (G.mode === 'place' && G.armed === it.id) disarm(); else arm(it.id); },
+      });
+      if (it.scene != null && it.object != null && thumbs) {
+        const img = h('img', { class: 'xw-tile-img', alt: '', width: 128, height: 128, draggable: 'false', 'data-scene': it.scene, 'data-object': it.object });
+        tile.append(img);
+        thumbs.watch(img);
+      } else {
+        tile.append(thumb(it));
+      }
+      tile.append(h('span', { class: 'xw-tile-name' }, it.label));
+      if (it.sizeLabel) tile.append(h('span', { class: 'xw-tile-size' }, it.sizeLabel));
+      items.append(tile);
+    }
+    if (!list.length) {
+      items.append(h('span', { class: 'xw-pal-msg' }, G.catScene && G.loadingScene === G.catScene ? 'Reading that scene ...' : f ? `Nothing matches "${f}".` : 'No objects here.'));
+    }
+    refreshPalette();
+  };
+  q.addEventListener('input', () => { G.catFind = q.value; paint(); });
+  el.append(h('div', { class: 'xw-pal-side' }, tabRow, q, scene, helpLink(...PALETTE_HELP)), items);
+  G.pal = { el, groups, paint, items };
+  paint();
+  return el;
+}
+
+/* The tile of the armed object is marked. */
+function refreshPalette() {
+  if (!G.pal) return;
+  for (const t of G.pal.items.children) {
+    if (t.dataset && t.dataset.item) t.classList.toggle('is-on', G.mode === 'place' && t.dataset.item === G.armed);
+  }
+}
+
+/* Show one scene's objects (read off the disc by the worker, names where the
+ * mesh catalog has them), or every named object with `scene` empty. */
+function browseScene(scene) {
+  G.catScene = scene || '';
+  G.catalog = null;
+  if (scene && !(G.sceneList && G.sceneList[scene])) listScene(scene);
+  fillIfShown();
+}
+
+/* Read one scene's objects off the disc (the worker), then redraw. */
+function listScene(scene) {
+  if (!G.api.thumbs) return;
+  G.sceneList = G.sceneList || {};
+  G.loadingScene = scene;
+  G.api.thumbs().objects(scene).then((list) => { G.sceneList[scene] = list; }, () => { G.sceneList[scene] = []; }).then(() => {
+    if (G.loadingScene === scene) G.loadingScene = null;
+    G.catalog = null;
+    fillIfShown();
+  });
+}
+
+function fillIfShown() {
+  if (G.shellCat && G.shellCat.el.isConnected) fillShellCatalog();
 }
 
 const CATALOG_CSS = `
@@ -709,8 +887,9 @@ function onFrame(m) {
     placeAt(m.tile, m.yaw || 0);
   } else if (m.type === 'xw-key') {
     if (m.key === 'cancel-place') { disarm(); return; }
-    if (m.key === 'digit') { try { setBuildMode(['build', 'terrain', 'objects', 'npcs', 'zones', 'test'][(m.n | 0) - 1]); } catch (e) { /* no shell */ } return; }
+    if (m.key === 'digit') { try { setBuildMode((BUILD_MODES[(m.n | 0) - 1] || {}).id); } catch (e) { /* no shell */ } return; }
     if (m.key === 'place-yaw') { G.yaw = m.yaw || 0; return; }
+    if (m.key === 'place-why') { G.placeWhy = m.why || ''; renderFloat(); return; }
     if (m.key === 'blocked') { note(`Not moved: ${m.why || 'a piece was dropped where it cannot stand'}.`, true); return; }
     if (m.key === 'Delete' || m.key === 'Backspace') removeSel();
     else if (m.ctrl && m.key === 'd') duplicateSel();
@@ -731,6 +910,9 @@ function onFrame(m) {
       api.selected(G.sel);
       renderBar();
       sync(true);
+    } else if (m.key === 'deselect' || m.key === 'fullscreen') {
+      // Nothing left for Escape to put down, or F11 over the picture: the page's.
+      if (api.pageKey) api.pageKey(m.key);
     }
     else if (m.key === '[' || m.key === ']') {
       G.brush.radius = Math.max(0.25, Math.min(16, G.brush.radius * (m.key === ']' ? 1.25 : 0.8)));
@@ -771,21 +953,143 @@ function paintChoices(map) {
     });
 }
 
+/* What is on the map, in plain words: a prop by its mesh's name. */
+function objectName(map, s) {
+  const o = listOf(map, s.type)[s.i];
+  if (!o) return '';
+  const kind = { props: 'Object', decor: 'Decoration', npcs: 'Person', spawns: 'Start point', lamps: 'Lamp', emitters: 'Emitter', triggers: 'Step-on event', exits: 'Exit', encounters: 'Monster zone' }[s.type] || s.type;
+  const named = o.mesh ? meshEntry(sceneOf(map, o.mesh), o.mesh.object) : null;
+  return (named && named.label) || (o.id ? stem(o.id) : '') || o.label || kind;
+}
+
+/* A quarter turn of the selection: props and decorations by degrees, people
+ * and start points by facing sector. */
+function turnSel(deg) {
+  const api = G.api;
+  const map = api.map();
+  if (!map || !G.sel.length) return;
+  api.snapshot();
+  for (const s of G.sel) {
+    const o = listOf(map, s.type)[s.i];
+    if (!o) continue;
+    if (s.type === 'props' || s.type === 'decor') {
+      const rot = o.rotation || [0, 0, 0];
+      const y = (((rot[1] || 0) + deg) % 360 + 360) % 360;
+      o.rotation = [rot[0] || 0, y > 180 ? y - 360 : y, rot[2] || 0];
+    } else if (s.type === 'npcs' || s.type === 'spawns') {
+      o.facing = (((o.facing || 0) + Math.round(deg / 45)) % 8 + 8) % 8;
+    }
+  }
+  api.refresh();
+  renderFloat();
+  sync(true);
+}
+
+const HINT_KEY = 'legaia-xw-first-hint';
+
+/* Over the picture: the piece being placed (one line, so nothing moves under
+ * the pointer), the selection's small panel, and once a first-run hint. */
+function renderFloat() {
+  const api = G.api;
+  const pv = api && api.preview;
+  if (!pv || !pv.setFloat) return;
+  if (!G.floatEl) G.floatEl = h('div', { class: 'xw-float-in' });
+  const el = G.floatEl;
+  el.innerHTML = '';
+  pv.setFloat(el);
+  const map = api.map();
+  if (!map) return;
+  if (G.mode === 'place') {
+    const it = G.armed && findItem(G.armed);
+    el.append(h('div', { class: 'xw-float-pill' + (G.placeWhy ? ' is-bad' : ''), role: 'status' }, 'Placing ', h('strong', {}, it ? it.label : 'nothing'),
+      G.placeWhy ? `: not here, ${G.placeWhy}` : ': click the ground, ', ...(G.placeWhy ? [] : [h('kbd', {}, 'R'), ' turns it, ', h('kbd', {}, 'Esc'), ' or right click stops'])));
+  } else if (G.mode === 'select' && G.sel.length) {
+    const one = G.sel.length === 1 ? G.sel[0] : null;
+    const o = one && listOf(map, one.type)[one.i];
+    const scene = o && o.mesh ? sceneOf(map, o.mesh) : null;
+    const head = h('div', { class: 'xw-selpanel-head' });
+    if (scene && o.mesh.object != null && api.thumbs) {
+      const img = h('img', { alt: '', width: 128, height: 128, 'data-scene': scene, 'data-object': o.mesh.object });
+      head.append(img);
+      api.thumbs().watch(img);
+    }
+    head.append(h('strong', { title: one ? `${one.type}[${one.i}]` : '' }, one ? objectName(map, one) : `${G.sel.length} selected`));
+    const b = (label, title, fn, cls) => h('button', { type: 'button', class: 'wb-mini' + (cls ? ' ' + cls : ''), title, onclick: fn }, label);
+    const turnable = G.sel.some((s) => ['props', 'decor', 'npcs', 'spawns'].includes(s.type));
+    const btns = h('div', { class: 'xw-selpanel-btns' },
+      b('Move', 'Drag it on the map (arrow keys nudge it, Shift a quarter tile)', () => { G.tool = 'move'; renderBar(); sync(); note('Drag it to move it; the arrow keys nudge it a tile.'); }),
+      turnable ? b('Turn', 'A quarter turn (R); the Rotate tool turns it by 15 degrees', () => turnSel(90)) : b('Resize', 'Drag its corner', () => { G.tool = 'scale'; renderBar(); sync(); }),
+      b('Duplicate', 'A copy on the nearest free tile (Ctrl+D)', duplicateSel),
+      b('Delete', 'Remove it (Delete)', removeSel, 'is-danger'));
+    const panel = h('div', { class: 'xw-selpanel', role: 'region', 'aria-label': 'Selected object' }, head, btns);
+    if (one) {
+      panel.append(h('button', {
+        type: 'button', class: 'wb-mini xw-selpanel-more', style: 'width:100%;margin-top:0.25rem', title: 'Its full form: mesh, solid, standable top, light, animators',
+        onclick: () => {
+          pv.setDrawer(true);
+          api.selected(G.sel);
+          requestAnimationFrame(() => { if (api.showSelection) api.showSelection(); });
+        },
+      }, 'More settings'));
+    }
+    panel.append(h('details', {}, h('summary', {}, 'Line up, repeat, mirror'),
+      layoutTools(Object.assign(G.layout, { h, sel: () => G.sel, run: (fn) => runLayout(api, G.sel, fn) }))));
+    if (G.layoutMsg) panel.append(h('div', { class: 'xw-hint' }, G.layoutMsg));
+    el.append(panel);
+  }
+  let seen = true;
+  try { seen = !!localStorage.getItem(HINT_KEY); } catch (e) { seen = true; }
+  if (!seen && G.mode !== 'place' && buildMode() === 'objects') {
+    el.append(h('div', { class: 'xw-firsthint', role: 'note' },
+      h('strong', {}, 'Build by clicking.'), ' Pick an object below, then click on the ground to put it down. ',
+      'Click anything already placed to move it. Right drag turns the camera, the wheel zooms.',
+      h('div', {}, h('button', {
+        type: 'button', class: 'wb-mini',
+        onclick: () => { try { localStorage.setItem(HINT_KEY, '1'); } catch (e) { /* no storage */ } renderFloat(); },
+      }, 'Got it'))));
+  }
+}
+
+/* Placing, with the focus outside the picture (a tile just clicked): the keys
+ * still mean what they mean over it. */
+function onPageKey(e) {
+  if (G.mode !== 'place' || !G.api) return;
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+  if (e.key === 'Escape') {
+    disarm();
+    e.preventDefault();
+  } else if (e.key === 'r' || e.key === 'R') {
+    const it = G.armed && findItem(G.armed);
+    const d = e.shiftKey ? (it && it.facing ? 45 : 15) : 90;
+    G.yaw = ((G.yaw || 0) + d) % 360;
+    sync();
+    e.preventDefault();
+  }
+}
+
 function renderBar() {
   const bar = G.bar;
   const api = G.api;
   if (!bar || !api) return;
   bar.innerHTML = '';
+  // What the shell's mode needs (the page's rules hide the rest).
+  bar.dataset.bm = shellMode() || '';
   const map = api.map();
   const b = (label, on, title, fn) => h('button', { type: 'button', class: 'wb-mini' + (on ? ' is-on' : ''), title, onclick: fn }, label);
   const setMode = (m) => { G.mode = m; G.picked = true; renderBar(); sync(); };
+  const modeBtn = (...args) => {
+    const x = b(...args);
+    x.classList.add('xw-3d-modebtn');
+    return x;
+  };
   bar.append(h('span', { class: 'wb-label' }, 'Build'),
-    b('View', G.mode === 'view', 'The picture is only looked at: a click picks a tile', () => setMode('view')),
-    b('Select', G.mode === 'select', 'Pick, move (drag), turn (R) and scale props, decorations, NPCs, spawns, lamps, emitters and zones', () => setMode('select')),
-    b('Place', G.mode === 'place', 'Place a piece from the catalog below: a ghost follows the pointer, green where it fits; click to place, R turns it, Escape stops', () => setTool('place')));
+    modeBtn('View', G.mode === 'view', 'The picture is only looked at: a click picks a tile', () => setMode('view')),
+    modeBtn('Select', G.mode === 'select', 'Pick, move (drag), turn (R) and scale props, decorations, NPCs, spawns, lamps, emitters and zones', () => setMode('select')),
+    modeBtn('Place', G.mode === 'place', 'Place a piece from the catalog below: a ghost follows the pointer, green where it fits; click to place, R turns it, Escape stops', () => setTool('place')));
   if (map && map.terrain) {
-    bar.append(b('Sculpt', G.mode === 'sculpt', 'Shape the terrain with a brush ([ and ] size it)', () => setMode('sculpt')),
-      b('Paint', G.mode === 'paint', 'Paint a ground material under the brush', () => setMode('paint')));
+    bar.append(h('span', { class: 'xw-3d-group xw-only-terrain' }, b('Sculpt', G.mode === 'sculpt', 'Shape the terrain with a brush ([ and ] size it)', () => setMode('sculpt')),
+      b('Paint', G.mode === 'paint', 'Paint a ground material under the brush', () => setMode('paint'))));
   }
   const num = (label, key, step, min, max) => {
     const i = h('input', { type: 'number', value: G.brush[key], step, min, max, 'aria-label': label, class: 'xw-num' });
@@ -803,11 +1107,11 @@ function renderBar() {
     const snap = h('select', { 'aria-label': 'Snap' },
       ...[['tile', 'Snap: tile'], ['sub', 'Snap: 32 units'], ['free', 'Free']].map(([k, l]) => h('option', { value: k, selected: G.snap === k }, l)));
     snap.addEventListener('change', () => { G.snap = snap.value; sync(); });
-    bar.append(h('span', { class: 'xw-sep' }), tool('move', 'Move', 'Drag an object to move it (red where it cannot stand); the gizmo\'s arrows move on one axis, the square on both (G)'),
+    bar.append(h('span', { class: 'xw-sep' }), h('span', { class: 'xw-3d-group xw-only-build' }, tool('move', 'Move', 'Drag an object to move it (red where it cannot stand); the gizmo\'s arrows move on one axis, the square on both (G)'),
       tool('rotate', 'Rotate', 'Drag the ring: 15 degree steps (NPCs and spawns by facing sector); R turns a quarter turn'),
-      tool('scale', 'Scale', 'Drag the corner handle; a zone\'s corner resizes it'), snap,
-      b('Duplicate', false, 'Copy the selection one tile over (Ctrl+D)', duplicateSel),
-      b('Delete', false, 'Remove the selection (Delete)', removeSel),
+      tool('scale', 'Scale', 'Drag the corner handle; a zone\'s corner resizes it'), snap),
+      h('span', { class: 'xw-3d-seltools' }, b('Duplicate', false, 'Copy the selection one tile over (Ctrl+D)', duplicateSel),
+        b('Delete', false, 'Remove the selection (Delete)', removeSel)),
       h('span', { class: 'xw-hint' }, ` ${G.sel.length ? `${G.sel.length} selected; arrows nudge (Shift a quarter tile), R turns 90 (Shift+R 15)` : 'click an object; Shift adds'}; Shift while dragging places freely`));
     if (G.sel.length) {
       bar.append(layoutTools(Object.assign(G.layout, { h, sel: () => G.sel, run: (fn) => runLayout(api, G.sel, fn) })));
@@ -829,6 +1133,7 @@ function renderBar() {
   bar.append(h('div', { class: 'xw-3d-keys xw-hint' }, 'Camera: right drag orbits, middle drag or Space + drag pans, wheel zooms, W A S D / arrows pan, Q / E turn, T top view, F frame. Ctrl+Z / Ctrl+Y undo and redo, Delete removes.'));
   if ((G.mode === 'place' || G.mode === 'select') && G.catalogShown !== false) bar.append(catalogEl());
   if (G.shellCat && G.shellCat.el.isConnected) fillShellCatalog();
+  renderFloat();
 }
 
 /** Switch the build tool: `view`, `select`, `move` / `rotate` / `scale`
@@ -879,12 +1184,14 @@ export const xwBuild = {
 
 /* --- The shell's mode toolbar (expansion-workbench-shell.js) ---------------------
  *
- * Build: select and move (the gizmo); Paint terrain: the painter's paint
- * tool, and on a terrain map the 3D paint brush; Place objects / NPCs /
- * Zones & exits: Place with that part of the catalog in the shell's strip;
- * Test-play: the party on the map. Escape, a right click and Stop test come
- * back to Build, and the toolbar follows (`syncBuildMode`). */
-const MODE_GROUPS = { objects: ['buildings', 'large-props', 'small-props'], npcs: ['people'], zones: ['markers'] };
+ * Select & move: select and move (the gizmo); Paint terrain: the painter's
+ * paint tool, and on a terrain map the 3D paint brush; Place objects / NPCs /
+ * Zones & exits: select, with that part of the catalog in the shell's strip:
+ * nothing is armed until a piece is clicked, so a stray click on the map never
+ * places. Escape or a right click puts the piece away and stays in the mode.
+ * Test-play: the party on the map; Stop test comes back to the mode it left,
+ * and the toolbar follows (`syncBuildMode`). */
+const MODE_GROUPS = { npcs: ['people'], zones: ['markers'] };
 const PAINTER_TOOL = { build: 'select', terrain: 'paint', objects: 'select', npcs: 'select', zones: 'select' };
 
 function shellMode() { try { return buildMode(); } catch (e) { return null; } }
@@ -902,16 +1209,17 @@ const SHELL_TOOLS = {
       G.tool = 'move';
     } else if (mode === 'terrain') {
       G.mode = map && map.terrain ? 'paint' : 'view';
+    } else if (mode === 'objects') {
+      if (pv && pv.open) pv.open();
+      G.armed = null;
+      G.mode = 'select';
     } else if (MODE_GROUPS[mode]) {
       if (pv && pv.open) pv.open();
       const want = MODE_GROUPS[mode];
       const groups = catalog().filter((g) => want.includes(g.id));
-      const keep = G.armed && groups.some((g) => g.items.some((it) => it.id === G.armed));
       if (!groups.some((g) => g.id === G.catGroup)) G.catGroup = groups.length ? groups[0].id : G.catGroup;
-      const first = groups.length && groups[0].items[0];
-      if (keep) arm(G.armed);
-      else if (first) arm(first.id);
-      else G.mode = 'select';
+      G.armed = null;
+      G.mode = 'select';
     }
     G.picked = true;
     renderBar();
@@ -933,6 +1241,14 @@ function fillShellCatalog() {
     el.append(h('div', { class: 'xw-hint' }, 'Click anything in the 3D view to pick it up; drag it to move it (it turns red where it cannot stand), R turns it, Delete removes it, Ctrl+Z takes any change back. Camera: right drag orbits, middle drag or Space + drag pans, the wheel zooms, T looks straight down.'));
     return;
   }
+  if (mode === 'objects') {
+    const pal = paletteEl();
+    const row = G.pal && G.pal.items;
+    const left = row ? row.scrollLeft : 0;
+    el.append(pal);
+    if (row) row.scrollLeft = left;
+    return;
+  }
   el.append(catalogEl(h('div', { class: 'xw-pieces', role: 'region', 'aria-label': 'Build catalog' }), MODE_GROUPS[mode]));
 }
 
@@ -940,11 +1256,11 @@ function fillShellCatalog() {
 function followShell() {
   const cur = shellMode();
   if (!cur) return;
-  const want = G.mode === 'place' ? (() => {
-    const it = G.armed && findItem(G.armed);
-    return it ? (it.kind === 'npc' ? 'npcs' : it.kind === 'prop' ? 'objects' : 'zones') : cur;
-  })() : (cur === 'objects' || cur === 'npcs' || cur === 'zones') ? 'build' : cur;
+  if (G.mode !== 'place') return;
+  const it = G.armed && findItem(G.armed);
+  const want = it ? (it.kind === 'npc' ? 'npcs' : it.kind === 'prop' ? 'objects' : 'zones') : cur;
   if (want !== cur) syncBuildMode(want);
+  if (G.bar) G.bar.dataset.bm = shellMode() || '';
 }
 
 /** Mount the 3D editor for the map tab. `api`: { preview, map(), pack(),
@@ -956,6 +1272,7 @@ export function mountMapEditor(api) {
   G.api = api;
   if (!G.registered) {
     G.registered = true;
+    document.addEventListener('keydown', onPageKey);
     G.catalogShown = false;
     try { registerBuildTools(SHELL_TOOLS); } catch (e) { G.catalogShown = true; }
   }
@@ -963,7 +1280,8 @@ export function mountMapEditor(api) {
     api.preview.onMode((m) => {
       const cur = shellMode();
       if (m === 'player' && cur !== 'test') syncBuildMode('test');
-      else if (m === 'orbit' && cur === 'test') syncBuildMode('build');
+      else if (m === 'orbit' && cur === 'test') syncBuildMode('objects');
+      if (G.bar) G.bar.dataset.bm = shellMode() || '';
     });
   }
   if (!api.preview) return null;

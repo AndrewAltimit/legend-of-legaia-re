@@ -8,15 +8,17 @@
 //! root file's logical bytes (sector-stripped, file-size-truncated), matching
 //! the name case-insensitively with the `;1` version suffix stripped. The
 //! directory walk itself is [`crate::iso9660`]'s in-memory one
-//! ([`list_directory_in_image`], [`read_file_in_image`]), the same reader the
+//! ([`crate::iso9660::list_directory_in_image`],
+//! [`crate::iso9660::read_file_in_image`]), the same reader the
 //! patcher uses, so the browser and the CLI resolve a name identically. The
 //! PROT.DAT table of contents those bytes carry is parsed by
 //! `legaia_prot::toc_index`.
 
-use crate::iso9660::{DirectoryRecord, list_directory_in_image, read_file_in_image, root_in_image};
+use crate::iso9660::{
+    DirectoryRecord, ImageSource, list_directory_in_source, read_file_in_source, root_in_source,
+};
 
 const RAW_SECTOR_SIZE: usize = 2352;
-const RAW_USER_DATA_OFFSET: usize = 24;
 const RAW_USER_DATA_SIZE: usize = 2048;
 
 /// Deepest directory nesting [`walk_iso_files`] descends into. A cyclic or
@@ -26,12 +28,17 @@ const MAX_WALK_DEPTH: u32 = 8;
 /// True if `disc` looks like a Mode2/2352 PSX disc image (sector-aligned size +
 /// valid ISO9660 PVD at LBA 16).
 pub fn is_mode2_2352_disc(disc: &[u8]) -> bool {
-    if disc.len() < 17 * RAW_SECTOR_SIZE || !disc.len().is_multiple_of(RAW_SECTOR_SIZE) {
+    is_mode2_2352_source(disc)
+}
+
+/// [`is_mode2_2352_disc`] over an [`ImageSource`].
+pub fn is_mode2_2352_source<S: ImageSource + ?Sized>(disc: &S) -> bool {
+    let len = disc.image_len();
+    if len < 17 * RAW_SECTOR_SIZE || !len.is_multiple_of(RAW_SECTOR_SIZE) {
         return false;
     }
-    let start = 16 * RAW_SECTOR_SIZE + RAW_USER_DATA_OFFSET;
-    let pvd = &disc[start..start + RAW_USER_DATA_SIZE];
-    pvd[0] == 1 && &pvd[1..6] == b"CD001"
+    let mut pvd = Vec::with_capacity(RAW_USER_DATA_SIZE);
+    disc.read_user_data(16, 1, &mut pvd) && pvd[0] == 1 && &pvd[1..6] == b"CD001"
 }
 
 /// One file enumerated from the on-disc ISO9660 filesystem.
@@ -45,8 +52,8 @@ pub struct FileEntry {
     pub size: u32,
 }
 
-fn walk_directory_recursive(
-    disc: &[u8],
+fn walk_directory_recursive<S: ImageSource + ?Sized>(
+    disc: &S,
     dir: &DirectoryRecord,
     prefix: &str,
     out: &mut Vec<FileEntry>,
@@ -55,7 +62,7 @@ fn walk_directory_recursive(
     if depth > MAX_WALK_DEPTH {
         return;
     }
-    let Some(children) = list_directory_in_image(disc, dir) else {
+    let Some(children) = list_directory_in_source(disc, dir) else {
         return;
     };
     for c in children {
@@ -80,11 +87,16 @@ fn walk_directory_recursive(
 /// with their (path, lba, size), in on-disc record order. Returns an empty vec
 /// when the disc isn't a valid Mode2/2352 image.
 pub fn walk_iso_files(disc: &[u8]) -> Vec<FileEntry> {
+    walk_iso_source(disc)
+}
+
+/// [`walk_iso_files`] over an [`ImageSource`].
+pub fn walk_iso_source<S: ImageSource + ?Sized>(disc: &S) -> Vec<FileEntry> {
     let mut out = Vec::new();
-    if !is_mode2_2352_disc(disc) {
+    if !is_mode2_2352_source(disc) {
         return out;
     }
-    let Some(root) = root_in_image(disc) else {
+    let Some(root) = root_in_source(disc) else {
         return out;
     };
     if !root.is_dir {
@@ -105,16 +117,21 @@ pub fn read_raw_sector(disc: &[u8], lba: u32) -> Option<&[u8]> {
 
 /// A named root file's bytes (sector-stripped, file-size-truncated), or `None`
 /// when `disc` is not a Mode2/2352 image or has no such file.
-fn extract_root_file(disc: &[u8], name: &str) -> Option<Vec<u8>> {
-    if !is_mode2_2352_disc(disc) {
+fn extract_root_file<S: ImageSource + ?Sized>(disc: &S, name: &str) -> Option<Vec<u8>> {
+    if !is_mode2_2352_source(disc) {
         return None;
     }
-    read_file_in_image(disc, name)
+    read_file_in_source(disc, name)
 }
 
 /// Walk a Mode2/2352 disc image, find the file named `PROT.DAT` in the root
 /// directory, and return its bytes (sector-stripped, file-size-truncated).
 pub fn extract_prot_dat(disc: &[u8]) -> Option<Vec<u8>> {
+    extract_prot_dat_source(disc)
+}
+
+/// [`extract_prot_dat`] over an [`ImageSource`].
+pub fn extract_prot_dat_source<S: ImageSource + ?Sized>(disc: &S) -> Option<Vec<u8>> {
     extract_root_file(disc, "PROT.DAT")
 }
 
@@ -122,6 +139,11 @@ pub fn extract_prot_dat(disc: &[u8]) -> Option<Vec<u8>> {
 /// and return its text content. Returns `None` if the disc is not a valid
 /// Mode2/2352 image or the file is absent or not valid UTF-8.
 pub fn extract_cdname_txt(disc: &[u8]) -> Option<String> {
+    extract_cdname_txt_source(disc)
+}
+
+/// [`extract_cdname_txt`] over an [`ImageSource`].
+pub fn extract_cdname_txt_source<S: ImageSource + ?Sized>(disc: &S) -> Option<String> {
     let bytes = extract_root_file(disc, "CDNAME.TXT")?;
     String::from_utf8(bytes).ok()
 }
@@ -130,5 +152,10 @@ pub fn extract_cdname_txt(disc: &[u8]) -> Option<String> {
 /// executable (the retail NA build's main `.EXE`). The ISO9660 `;1` version
 /// suffix is stripped by the directory-record parser.
 pub fn extract_scus(disc: &[u8]) -> Option<Vec<u8>> {
+    extract_scus_source(disc)
+}
+
+/// [`extract_scus`] over an [`ImageSource`].
+pub fn extract_scus_source<S: ImageSource + ?Sized>(disc: &S) -> Option<Vec<u8>> {
     extract_root_file(disc, "SCUS_942.54")
 }

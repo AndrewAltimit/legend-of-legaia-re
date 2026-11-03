@@ -1021,6 +1021,23 @@ pub fn ground_shadow_src(inner: u32, outer: u32, radius: i16) -> [u8; 0x24] {
 ///
 /// PORT: FUN_80048A08 (the ground-shadow build and draw, `0x800491FC..0x800492BC`)
 pub fn ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::mesh::VramMesh {
+    // A pure function of its arguments, asked per body per frame.
+    type Memo = std::collections::HashMap<(u32, u32, i16), legaia_tmd::mesh::VramMesh>;
+    thread_local! {
+        static MEMO: std::cell::RefCell<Memo> = std::cell::RefCell::new(Memo::new());
+    }
+    MEMO.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() >= 64 {
+            m.clear();
+        }
+        m.entry((inner, outer, radius))
+            .or_insert_with(|| build_ground_shadow_mesh(inner, outer, radius))
+            .clone()
+    })
+}
+
+fn build_ground_shadow_mesh(inner: u32, outer: u32, radius: i16) -> legaia_tmd::mesh::VramMesh {
     let src = ground_shadow_src(inner, outer, radius);
     let b = build(
         0x8000_0000 + SHADOW_SCRATCH_OFFSET,

@@ -102,10 +102,25 @@ pub const HIDDEN_RENDER_FLAG: u8 = 0xFF;
 /// The playing-clip id arm 12 waits for on a party victim left at zero HP.
 pub const PARTY_DOWN_CLIP: u8 = 8;
 
+/// The wheel's tick, `FUN_8004FE5C(0xFD, ctx[+0x13])` in the epilogue
+/// (`0x801F8574`).
+pub const WHEEL_TICK_CUE: u16 = 0xFD;
+
+/// The angle span one tick covers: one slot's `0x200`.
+pub const WHEEL_TICK_SPAN: i32 = 0x200;
+
 /// The port's bound on arm 12's wait, in ticks. Retail waits on the victim's
 /// clip with no bound; an engine clip that never reports the id retail
 /// waits for would hold the band for good, so the port lets go.
 pub const SETTLE_TICK_LIMIT: u16 = 600;
+
+impl FatalDecisionState {
+    /// `rot % span` as `addiu 0x1FF` / `sra 9` / `sll 9` / `subu` take it: its
+    /// sign follows the angle (`0x801F8534..0x801F8558`).
+    pub fn wheel_tick_rem(&self, span: i32) -> i32 {
+        self.rot % span
+    }
+}
 
 /// The sixteen outcomes, by slot value - the jump table at `0x801F6A18`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +330,9 @@ pub struct FatalDecisionState {
     pub landed: usize,
     /// The port's arm-12 wait counter ([`SETTLE_TICK_LIMIT`]).
     pub settle_ticks: u16,
+    /// `0x801F9014`: the angle's remainder over [`WHEEL_TICK_SPAN`] on the
+    /// last pass.
+    pub tick_rem: i32,
 }
 
 /// What the body reads off the battle each tick.

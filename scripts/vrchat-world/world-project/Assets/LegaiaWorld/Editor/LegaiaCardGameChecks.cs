@@ -217,7 +217,7 @@ namespace LegaiaWorld
             string manifestPath = "Assets/LegaiaImports/" + sceneName + "/manifest.json";
             if (File.Exists(manifestPath))
             {
-                object manifest = MiniJson.Parse(File.ReadAllText(manifestPath));
+                object manifest = LegaiaManifestFrame.Load(manifestPath);
                 var sceneSettings = LegaiaSceneSettings.Load(sceneName);
                 string manifestDir = "Assets/LegaiaImports/" + sceneName;
                 sceneSettings.ApplyNpcOverrides(manifest, manifestDir, root);
@@ -1000,7 +1000,7 @@ namespace LegaiaWorld
             string manifestPath = "Assets/LegaiaImports/" + sceneName + "/manifest.json";
             if (!File.Exists(manifestPath))
                 Fail("no manifest at " + manifestPath);
-            object manifest = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object manifest = LegaiaManifestFrame.Load(manifestPath);
             var settings = LegaiaSceneSettings.Load(sceneName);
             string manifestDir = "Assets/LegaiaImports/" + sceneName;
             // The passes run at 1x, whatever the saved scene is at.

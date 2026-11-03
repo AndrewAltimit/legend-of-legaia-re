@@ -146,7 +146,7 @@
           ? rt.play_battle_backdrop_nclip() : undefined;
         draws.push({
           meshId: b.backdrop, x: 0, y: 0, z: 0, rotY: 0, scale: 1.0, cue: backdropCue,
-          nclip: shellNclip,
+          nclip: shellNclip, meanDepth: true,
         });
       }
       /* The backdrop's drawn slot 1 (on a stage that keeps object 1, the
@@ -165,6 +165,7 @@
           draws.push({
             meshId: b.backdropSpun, model: models.slice(o, o + 16), cue: backdropCue,
             nclip: (spunNclip && k < spunNclip.length) ? spunNclip[k] : undefined,
+            meanDepth: true,
           });
         }
       }

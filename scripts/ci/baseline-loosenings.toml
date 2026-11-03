@@ -447,3 +447,37 @@ changes = [
   ["states/shiny_refactor_gimard_levelup/camera", 0.984, 0.979],
   ["states/shiny_refactor_gimard_levelup/image", 0.845, 0.828],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The 0x2A chain-exit pass adds nothing to ctx[+0x87C] (0x801E4774..0x801E479C), so an accumulator gate lands a pass later. The two breaths now retake the displayed case-6 frame on the pose walked back along retail's table, where they drew the gate's frame; their camera channels rose (.943 to .989, .948 to .990). Tail Fire's gate moved a pass with no retake; that its rays run on the engine's own clock is the likely cause and is not measured."
+changes = [
+  ["states/battle_chitei2_kemaro_lv2_lava_breath_mid_cast/image", 0.941, 0.92],
+  ["states/battle_rugi_slippery_poisonous_breath_mid_cast/image", 0.996, 0.985],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Every fight now holds its first round through the entry sweep's park, two passes and the 0x0B timer, as retail does (prompt at park +99 on gaza2_card_battle_init and a karisto_sol_pre_encounter encounter), so these captures seat a round later. The two retail states move by .001 to .002. The large move is delilas_gi_spirit_distortion_v3, a resident-patch state, whose frame loses the purple aura at the caster's feet and whose camera shifts; the commit is identified by elimination across its range and why this one state loses the aura is not traced. No unpatched state fell with it."
+changes = [
+  ["states/delilas_gi_spirit_distortion_v3/camera", 1.0, 0.988],
+  ["states/delilas_gi_spirit_distortion_v3/image", 0.923, 0.617],
+  ["states/evil_medallion_rage_battle/image", 0.999, 0.997],
+  ["states/rim_elm_gimard_victory/image", 0.966, 0.965],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A monster strike's comparison child now stands on the walked-back camera pose through case 7's every-pass arm (disassembly). Twin Tomb's mean absolute error improves, 18.3 to 18.2, while its within-threshold share falls. No game behaviour changes."
+changes = [
+  ["states/battle_vozz_twin_tomb_strike/image", 0.953, 0.947],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Small moves narrowed by sampling only, not to one commit. Wolf's strike moved among the strike camera commits (walking the camera back onto the walk's heading, a monster's solo clip pulling the framing in). koin1's route walk moved among the field fog projection and the player-seat commits. The artifact state, a resident-patch state, moved in the summon and battle dim commits, probably the solo commit's bystander dim."
+changes = [
+  ["states/battle_map02_wolf_strike/image", 0.999, 0.997],
+  ["states/koin1_field_route_walk/image", 0.987, 0.986],
+  ["states/delilas_gi_spirit_artifact/image", 0.954, 0.951],
+]

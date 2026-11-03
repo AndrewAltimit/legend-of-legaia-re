@@ -1,5 +1,9 @@
 //! PCM-window oracle plumbing - I2 of Phase I.
 //!
+//! The "retail" window here is the engine's own mixer seeded from a snapshot,
+//! so it can catch a seeding or start-up regression and nothing about the
+//! mixer itself. Real retail PCM is [`crate::pcm_retail`]'s.
+//!
 //! Builds on top of [`crate::audio_trace_oracle`] by emitting **mixed PCM**
 //! windows rather than per-frame voice-activity masks. The voice-mask
 //! oracle catches "engine never key-on'd the right voices"; the PCM oracle
@@ -143,11 +147,12 @@ pub fn engine_spu_from_retail(psx_spu: &PsxSpu<'_>) -> Option<Spu> {
     for (i, rv) in retail_voices.iter().enumerate() {
         let v = &mut spu.voices[i];
         v.set_reverb_send(reverb_mask & (1u32 << i) != 0);
+        // mednafen holds both in SPU-RAM halfwords; the engine in bytes.
         if let Some(addr) = rv.start_addr {
-            v.start_addr = addr;
+            v.start_addr = addr * 2;
         }
         if let Some(addr) = rv.loop_addr {
-            v.loop_addr = Some(addr);
+            v.loop_addr = Some(addr * 2);
         }
         if let Some(pitch) = rv.pitch {
             v.pitch = pitch;
@@ -637,7 +642,8 @@ mod tests {
         // Reverb mode is identified from the captured coefficient registers
         // (Studio C), not mednafen's `Reverb_Mode` (which is the EON mask).
         assert_eq!(spu.reverb.mode, ReverbMode::StudioC);
-        assert_eq!(spu.voices[3].start_addr, 0x1000);
+        // The state's halfwords, in the engine's bytes.
+        assert_eq!(spu.voices[3].start_addr, 0x2000);
         assert_eq!(spu.voices[3].pitch, 0x1234);
         // Voice 3 is in the EON mask → reverb-routed.
         assert!(spu.voices[3].reverb_send);

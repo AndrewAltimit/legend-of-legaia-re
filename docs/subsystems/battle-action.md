@@ -336,6 +336,8 @@ Decrements `ctx[+0x6D8]` by the frame dt. When negative: party_id < 3 → `FUN_8
 
 Looks one byte **past** the cursor, `actor[+0x1DF + ctx[+0x15] + 1]` (the queue is `(clip, shot)` pairs). Not the terminator: while the clip latch `+0x1FA` is clear, steps the cursor onto the clip, stages it at `+0x1DA`, steps onto its shot and raises the latch; then calls `FUN_801DC0A0` with the byte two behind the cursor and holds. Terminator (`-1`): if the cursor is `2`, raises `+0x1FA` and `+0x1DC |= 4`.
 
+The terminator pass calls neither `FUN_801DC0A0` nor `FUN_801D5854` (`0x801E4774..0x801E479C`), so neither prologue adds to `ctx[+0x26E]` / `ctx[+0x87C]`, while the anim tick still advances the clip the `0x29` exit committed. The two clocks therefore part by that one pass: rate-`1` clips read cursor `36` beside accumulator `48` three step-`3` passes past the commit (`battle_tower_guardian_windhash_mid_cast`, `battle_retona_viguro_lv2_thunder_break_mid_cast`, `battle_rugi_barra_windcutter_mid_cast`, `battle_chitei2_kemaro_lv2_lava_breath_mid_cast`, `battle_rugi_slippery_poisonous_breath_mid_cast`), and cursor `32` beside `32` two step-`4` passes past it (`battle_korb2_aluru_cannon_mid_cast`). Port: `BattleCamera::observe_chain_exit_pass`.
+
 **Next:** `0x2B`.
 
 #### State `0x2B` - Magic - sustained anim
@@ -358,7 +360,7 @@ While `ctx[+0x24D] != 0`, `FUN_801DC0A0` on the byte under the cursor. Once `0`:
 
 #### State `0x2E` - Magic - exit
 
-Gated on `ctx[+0x249] == 0`. A cast camera left pitched past `400` (`_DAT_8007B790`, `slti 0x191` at `0x801E4964`) snaps back: pitch `0`, eye Y `0x800840BC = 0x500`. Camera words, not a screen shake.
+Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the band (`battle_korb2_aluru_strike` replayed with Aluru Cannon: clip `4` then `5` on the victim for `85` vsyncs, `0x2E` for `60`, leaving on the pass after the victim's clip reads `0`). A cast camera left pitched past `400` (`_DAT_8007B790`, `slti 0x191` at `0x801E4964`) snaps back: pitch `0`, eye Y `0x800840BC = 0x500`. Camera words, not a screen shake.
 
 **Next:** `0x50`.
 

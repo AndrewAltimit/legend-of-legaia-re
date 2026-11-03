@@ -29,6 +29,7 @@
 use crate::menu::window_dispatch::{
     COUNTER_PICTOGRAM_COINS, CounterSource, MenuWindowPainter, painter_at, painter_rect,
 };
+use crate::menu::window_painters::digits_draws;
 use crate::menu::window_painters::{
     ChoiceFlags, PAINTER_ROW_PITCH, PainterPictogram, PainterSprite, choice_panel_draws_for,
     counter_panel_draws_for, title_tab_draws_for,
@@ -133,6 +134,13 @@ pub struct PrizeExchangeView {
     pub confirm_cursor: Option<u8>,
 }
 
+/// Window 44's name pen past its rect (`FUN_801D5DE0`, `addiu s3,v1,0x14`).
+const PRIZE_NAME_INSET: i32 = 0x14;
+/// Window 44's price field past its rect (`s3 + 0x5C`).
+const PRIZE_PRICE_INSET: i32 = 0x70;
+/// Window 44's price field width in number cells (`li a1,0x6`).
+const PRIZE_PRICE_CELLS: i32 = 6;
+
 /// Compose the exchange screen's draws off the disc window table. Returns
 /// text draws, marker/cursor sprites and the coin pictogram request.
 pub fn prize_exchange_draws_for(
@@ -185,25 +193,37 @@ pub fn prize_exchange_draws_for(
                 PRIZE_INK_MARKED => crate::MENU_TEXT_GOLD,
                 _ => MENU_TEXT_WHITE,
             };
-            // Cursor marker column, then the name, then the right-ish price.
-            if i == view.cursor && view.confirm_cursor.is_none() {
-                text.extend(text_draws_for(&font.layout_ascii(">"), (rect.x, y), ink));
+            // `FUN_801D5DE0`: the hand `FUN_8002B994` at the rect's pen, the
+            // name at `+0x14` (`0x801D5E24`), the price in a six-cell number
+            // field at `+0x70` (`addiu a2,s3,0x5c`, `li a1,0x6`, `0x801D5FC0`).
+            if view.confirm_cursor.is_none()
+                && let Some(variant) = ChoiceFlags(view.cursor as u32).marker_variant(i as u32)
+            {
+                sprites.push(PainterSprite {
+                    sprite: 0,
+                    variant,
+                    x: rect.x,
+                    y,
+                });
             }
             text.extend(text_draws_for(
                 &font.layout_ascii(&row.name),
-                (rect.x + 0x10, y),
+                (rect.x + PRIZE_NAME_INSET, y),
                 ink,
             ));
-            text.extend(text_draws_for(
-                &font.layout_ascii(&format!("{:>7}", row.price)),
-                (rect.x + rect.w - 0x38, y),
+            text.extend(digits_draws(
+                font,
+                u64::from(row.price),
+                rect.x + PRIZE_PRICE_INSET,
+                y,
+                PRIZE_PRICE_CELLS,
                 ink,
             ));
         }
         if view.rows.is_empty() {
             text.extend(text_draws_for(
                 &font.layout_ascii("No prizes remain."),
-                (rect.x + 0x10, rect.y),
+                (rect.x + PRIZE_NAME_INSET, rect.y),
                 MENU_TEXT_WHITE,
             ));
         }

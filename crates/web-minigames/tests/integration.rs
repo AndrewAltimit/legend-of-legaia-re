@@ -8,6 +8,7 @@
 mod baka_presentation_wasm_api;
 mod dance_howto_disc;
 mod dome_ladder_and_hub_real;
+mod live_spu_cues_disc;
 mod minigame_dance_sting_wire;
 mod minigames_dance_api;
 mod minigames_fishing_pond;

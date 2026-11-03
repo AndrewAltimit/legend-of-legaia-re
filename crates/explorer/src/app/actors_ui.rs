@@ -348,19 +348,28 @@ impl App {
         });
 
         if let Some(pick) = export {
-            let (name, res) = match pick {
-                Pick::Character(c) => (
-                    format!("{}.glb", crate::actors::character_label(c)),
-                    actors::character_glb(&lib, c, self.actors.equipment[c.min(3)]),
-                ),
-                Pick::Monster(id) => (
-                    format!("monster_{id:03}.glb"),
-                    actors::monster_glb(&lib, id),
-                ),
+            let name = match pick {
+                Pick::Character(c) => format!("{}.glb", crate::actors::character_label(c)),
+                Pick::Monster(id) => format!("monster_{id:03}.glb"),
+            };
+            let equipped = match pick {
+                Pick::Character(c) => Some(self.actors.equipment[c.min(3)]),
+                Pick::Monster(_) => None,
             };
             if let Some(out) = self.export_target(&name, "glb") {
-                let res = res.and_then(|b| crate::export::bytes(&b, &out));
-                self.report("glTF", res, &out);
+                let lib = std::sync::Arc::clone(&lib);
+                let folder = out.parent().map(std::path::Path::to_path_buf);
+                self.start_export(name, folder, move || {
+                    let glb = match (pick, equipped) {
+                        (Pick::Character(c), Some(equipped)) => {
+                            actors::character_glb(&lib, c, equipped)?
+                        }
+                        (Pick::Monster(id), _) => actors::monster_glb(&lib, id)?,
+                        (Pick::Character(_), None) => unreachable!("set with the pick"),
+                    };
+                    crate::export::bytes(&glb, &out)?;
+                    Ok(format!("glTF written to {}", out.display()))
+                });
             }
         }
     }

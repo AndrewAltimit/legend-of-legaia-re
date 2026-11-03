@@ -11,6 +11,44 @@ fn ram_with_subscreen(sub: u8) -> Vec<u8> {
 }
 
 /// The capture-alignment seeds survive their env forms.
+/// The rewind undoes `FloorTierBob::step` exactly, across the rest height.
+#[test]
+fn a_floor_bob_rewinds_its_own_step() {
+    use legaia_engine_capture::field_seeds::FloorBobSeed;
+    use legaia_engine_field::field_actor_timers::FloorTierBob;
+    let start = FloorBobSeed {
+        rung: 7,
+        pos: -14_680_064 + 100_000,
+        vel: -29_669,
+        accel: 444,
+        target: -14_680_064,
+    };
+    let mut bob = FloorTierBob {
+        slot: 7,
+        phase: 1,
+        phase_seed: 0,
+        pos: start.pos,
+        vel: start.vel,
+        accel: start.accel,
+        target: start.target,
+        arm: 0,
+    };
+    for _ in 0..12 {
+        bob.step(1);
+    }
+    let back = rewind_floor_bob(
+        FloorBobSeed {
+            rung: 7,
+            pos: bob.pos,
+            vel: bob.vel,
+            accel: bob.accel,
+            target: bob.target,
+        },
+        12,
+    );
+    assert_eq!(back, start);
+}
+
 #[test]
 fn morph_weights_rewind_their_own_ramp_by_the_display_lag() {
     // Rising lane (not peaked, not finishing): back by up * step * frames.
@@ -110,29 +148,67 @@ fn a_state_run_without_its_own_image_is_skipped_and_never_blessed() {
 /// on a seeded state with no frame at all; a raster-sized drop passes, and a
 /// patched-disc state is never judged.
 #[test]
-fn the_smoke_tier_breaks_only_on_a_large_drop_or_a_missing_frame() {
+fn the_smoke_tier_breaks_only_on_a_broken_frame_or_a_missing_one() {
     let mut b = Baseline::default();
-    for l in ["near", "far", "blank", "patched"] {
+    for l in ["fine", "flooded", "blank", "unread", "patched"] {
         b.states.insert(l.into(), chans(&[("image", 0.95)]));
     }
-    let retail = |label: &str, image: Option<f64>| {
-        let mut r = patched_report(label, image.unwrap_or(0.0), None);
+    let retail = |label: &str, scored: bool| {
+        let mut r = patched_report(label, 0.5, None);
         r.resident_patch = None;
-        if image.is_none() {
+        if !scored {
             r.channels = chans(&[("camera", 1.0)]);
         }
         r
     };
     let reports = vec![
-        retail("near", Some(0.80)),
-        retail("far", Some(0.60)),
-        retail("blank", None),
+        retail("fine", true),
+        retail("flooded", true),
+        retail("blank", false),
+        retail("unread", true),
         patched_report("patched", 0.1, None),
     ];
-    let breaks = b.smoke_breaks(&reports, SMOKE_IMAGE_SLACK);
-    assert_eq!(breaks.len(), 2, "{breaks:?}");
-    assert!(breaks[0].starts_with("far.image"));
-    assert!(breaks[1].starts_with("blank.image: no frame"));
+    let ok = SmokeFrame {
+        big_change: 0.0,
+        lit_from_black: 0.0,
+        luma_shift: 1.0,
+    };
+    let breaks = b.smoke_breaks(&reports, &|l| match l {
+        "flooded" => Some(SmokeFrame {
+            big_change: 0.05,
+            ..ok
+        }),
+        "unread" => None,
+        _ => Some(ok),
+    });
+    assert_eq!(breaks.len(), 3, "{breaks:?}");
+    assert!(breaks[0].starts_with("flooded.image: 0.050"));
+    assert!(breaks[1].starts_with("blank.image: no frame scored"));
+    assert!(breaks[2].starts_with("unread.image: no frame to compare"));
+}
+
+/// A frame reads broken on any one of the three measures, and a modest grade
+/// over the whole frame is none of them.
+#[test]
+fn a_smoke_frame_measures_what_moved_against_the_accuracy_frame() {
+    let flat = |y: u8, n: usize| -> Vec<u8> { [y, y, y, 255].repeat(n) };
+    let same = SmokeFrame::measure(&flat(100, 100), &flat(100, 100)).unwrap();
+    assert!(same.broken().is_none());
+    let graded = SmokeFrame::measure(&flat(100, 100), &flat(130, 100)).unwrap();
+    assert!((graded.luma_shift - 30.0).abs() < 0.01);
+    assert!(graded.broken().is_none(), "{graded:?}");
+    let black = SmokeFrame::measure(&flat(120, 100), &flat(0, 100)).unwrap();
+    assert!(black.broken().is_some(), "{black:?}");
+    // A glow in a black band: few pixels, none of them far enough to count
+    // as big change, and the mean barely moves.
+    let mut glow = flat(0, 100);
+    for px in glow.as_chunks_mut::<4>().0.iter_mut().take(3) {
+        px[..3].copy_from_slice(&[80, 80, 80]);
+    }
+    let lit = SmokeFrame::measure(&flat(0, 100), &glow).unwrap();
+    assert_eq!(lit.big_change, 0.0);
+    assert!(lit.broken().unwrap().contains("lit from black"));
+    assert!(SmokeFrame::measure(&flat(0, 2), &flat(0, 3)).is_none());
 }
 
 /// The sub-screen word names the screen: a root row's route, one of the
@@ -147,7 +223,9 @@ fn a_menu_capture_is_classified_by_its_subscreen() {
     let m = RetailMenu::from_ram(&ram_with_subscreen(0x14), "map01").unwrap();
     assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Equip, 2));
     assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
-    assert!(RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").is_err());
+    let m = RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").unwrap();
+    assert_eq!(m.prize_block, Some(0));
+    assert!(RetailMenu::from_ram(&ram_with_subscreen(0x21), "koin1").is_err());
 }
 
 fn field_run_ram(label: &str, loaded_define: u16) -> Vec<u8> {
@@ -238,6 +316,15 @@ fn the_drive_walks_the_root_cursor_onto_the_row() {
             .windows(2)
             .all(|w| w[1].0 - w[0].0 == MENU_PRESS_GAP)
     );
+}
+
+/// The root list opens on `Start` alone and settles past the pause wipe.
+#[test]
+fn the_root_list_is_start_alone() {
+    let m = RetailMenu::from_ram(&ram_with_subscreen(MENU_ROOT), "conc").unwrap();
+    let presses = pause_menu_presses(&m);
+    assert_eq!(presses, vec![(0, PadButton::Start)]);
+    assert!(pause_menu_drive_ticks(&m) > MENU_OPEN_WIPE_TICKS);
 }
 
 /// The card screen's sub-mode word marks the grid: a Load / Save screen on
@@ -541,4 +628,41 @@ fn a_parked_pair_scores_its_exact_coordinates() {
     assert_eq!(npc_pair_score(seat, (12608, 1984)), 0.0);
     assert_eq!(npc_pair_score((4160, 11968), (4160, 11964)), 1.0);
     assert_eq!(npc_pair_score((4160, 11968), (4160, 11840)), 0.0);
+}
+
+/// The player's clip words are read off its own node, party-bank bit up, and
+/// the cursor is taken back to the displayed frame.
+#[test]
+fn the_player_clip_is_the_displayed_frame_of_the_party_bank() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let put16 = |ram: &mut Vec<u8>, va: u32, v: u16| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    };
+    let put32 = |ram: &mut Vec<u8>, va: u32, v: u32| {
+        let o = (va & 0x1F_FFFF) as usize;
+        ram[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    };
+    let (p, rec) = (0x8008_3794u32, 0x8015_93C4u32);
+    put32(&mut ram, game_anchors::PLAYER_PTR_VA, p);
+    put32(&mut ram, p + 0x4C, rec);
+    put16(&mut ram, rec + 2, 12);
+    put16(&mut ram, p + 0x5C, 3);
+    put16(&mut ram, p + 0x62, 0x15);
+    put16(&mut ram, p + 0x68, 112);
+    put16(&mut ram, p + 0x6A, 8);
+    // Bit down: a scene-bank clip, not one the party bank can stand.
+    assert_eq!(retail_player_clip(&ram), None);
+    put32(
+        &mut ram,
+        p + 0x10,
+        legaia_engine_field::field_player_clip::PARTY_BANK_FLAG,
+    );
+    let c = retail_player_clip(&ram).expect("party clip");
+    assert_eq!((c.clip, c.flags, c.rate), (3, 0x15, 8));
+    // One game frame of `8` a pass, over the two-frame display lag.
+    assert_eq!(
+        c.cursor,
+        112 - 8 * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16
+    );
 }

@@ -31,7 +31,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | `+0x1D9` / `+0x1DA` / `+0x1DB` | Playing clip id / **staged** clip id / camera-variant key. |
 | `+0x1DC` | Commit flags: bit 0 commit now, bit 1 commit past the gate frame, bit `0x4` idle at natural end, bit `0x8` root-motion latch. |
 | `+0x1EF..+0x1F3` | Reaction-clip map, one slot per action tag `2/3/4/5/0xB`. |
-| `+0x21C` | Render flag (`2` capture / defeat fade, `0xC8` cursor dim). |
+| `+0x21C` | Render flag (`1` solo-commit bystander dim, `2` capture / defeat fade, `0xC8` cursor dim). |
 | `+0x21D` | Animation-rate scalar, normal `8`. |
 | `+0x226` | Additive fade. |
 | `+0x22C` / `+0x230` | Radius source for the distance fade / mesh pointer. |
@@ -383,6 +383,10 @@ The view depth is one row of the battle camera: `R * (4p - 4*focus) + tr`, with 
 
 Over the 97 catalogued battle states, recomputing the pass from each seated actor's fields reproduces the stored `+0x74` / `+0x78` exactly for 258 of 266 drawn bodies, 54 of them on the distance-fade arm (e.g. the Tetsu command menu's monster at depth `9098`: colour `0x48` a channel at weight `0x990`). The eight that differ are frames where a later writer touched the node after the draw.
 
+**Bystander dim.** A clip commit whose header byte `+0x87` is non-zero calls `FUN_8004E13C` (`0x8004BE28`), whose loop over pool slots `0..7` (`0x8004E15C..0x8004E24C`) raises `+0x21C = 1` on every live body but the acting seat `ctx[+0x13]` and its target `+0x1DD`, leaving any other arm in place. A group target undoes it on its own side: `+0x1DD == 9` zeroes the monster seats' byte, `8` the party seats'. `FUN_80050120` arm 1 eases those lanes toward `0x20` at rate `4` under weight `0x1000`, and the rate restore `FUN_801E93C8` drops every `1` back to `0`, after which arm 0 walks the word home.
+
+So every monster cast and solo strike and every party art darkens its audience: `battle_tower_guardian_windhash_mid_cast` holds lanes `0xE0` on three bodies, `battle_korb2_aluru_cannon_mid_cast` `0x100`. Port `World::sweep_solo_bystanders`, over `battle_formulas::solo_commit_state`.
+
 **Cursor dim.** `+0x21C == 0xC8` (the target cursor's non-pointed monsters) is its own arm: colour `0x010101` at weight `0x1000`, unless the seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads as a black silhouette. The arm is ported (`battle_actor_tint`), but no catalogued state holds that flag, so both hosts keep their own cursor cue (`battle_action::cursor_cue`) for the two cursor flags.
 
 #### The near-camera ghost pass (`FUN_8004DC68`)
@@ -390,6 +394,7 @@ Over the 97 catalogued battle states, recomputing the pass from each seated acto
 The tint pass takes the colour word's top byte from the pool actor's `+0x8` word (`0x8004AA44..0x8004AA50`), and that byte is the draw's mode: bit 31 raises semi-transparency, bits 24/25 pick the blend rule. `FUN_8004DC68` owns those bits. The frame driver `FUN_80046A20` calls it once per battle frame (`jal` at `0x80047124`, between the camera update and the tint SM `FUN_80050120`). It only ever sets or clears `0x83000000` - mode `3`, `B + F/4`, a faint ghost of the body (`ghidra/scripts/funcs/8004dc68.txt`). The reference point is the camera, not an actor, and the effect is translucency, not dimming.
 
 - **Near the camera.** It forms a point on the view axis: the focus trio `0x80089118` / `0x80089120` pulled back by `dist * 25 / 128` along the yaw `0x8007B792`, `dist` being the eye depth `0x800840C0`. For each of pool slots `0..=6` it measures the planar distance to that point (the sum `|dx| |sin b| + |dz| |cos b|` over the `FUN_80019B28` bearing `b`). Within `dist / 4` a body ghosts.
+- **Which pose.** `FUN_8004DC68` sits in the controller node `FUN_80046A20`, ahead of the walker task `FUN_8002149C` in the node list, so it reads the pose the walker left on the pass before, and the frame draws under the pose one pass newer. Over the captured strike band, 24 bodies have a test that parts between the RAM's pose and the pose one increment back, and `+0x08` follows the older pose on all 24. A body therefore goes translucent a pass late on a camera that is closing on it: `battle_map01_frog_strike`'s left Lippian draws opaque on the displayed pose, which alone would ghost it (reach `1214`, radius `1228`), and is ghosted by the two tables after it. `World::tick_battle_camera_ghost` runs ahead of the camera step for this reason.
 - **Exceptions to that.** No ghost if the body is the acting actor; the command-flow byte `ctx[+6]` is below `0x1F` or one of `0x32` / `0x6E` / `0xFE`; the action state is below `0x0B`; or it is the actor's target while `ctx[+6]` is `0x64` / `0x65` (or `0xFF` with the actor's category in `1..=3`).
 - **Whole-side scopes** clear a side: target byte `8` keeps the party's bits, `9` keeps the monsters', anything above clears both.
 - **Nothing ghosts** during a run (category `5`), on a pre-emptive round (`ctx[+0x290] == 1`), in action state `0x0B`, or after the battle ends with `ctx[+0x26B]` raised.

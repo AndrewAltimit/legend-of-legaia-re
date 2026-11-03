@@ -339,7 +339,7 @@ Both ids are `>= 0x200`, so the drainer resolves them against the current-bundle
 
 Category `3` is VAB slot 3, which the same init fills with extraction **1157** (`vab_01 + 0x57`, one program of six tones). Only `0x202` and `0x203` have a writer in the arena image.
 
-Port: the scene host stages the bundle on the warp (`legaia_minigame_formats::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring.
+Port: the scene host stages the bundle on the warp (`legaia_minigame_formats::minigame_sfx::ARENA_SFX_BUNDLE_PROT_INDEX`), `World::runtime_sfx_bundle` returns it in `SceneMode::MuscleDome`, and `World::tail_side_band_bank` names the slot-3 bank for both hosts' BGM-tail stagers. `HubTimers` emits the four slot writes on the INTERVAL arm's first frame as `SfxRingOp::ArmSlot`, replayed by both hosts onto their cue ring. The minigames page arms the same four from `muscle_tally_voice_reset` and ages them on the screen tick `muscle_tally_voice` replays.
 
 <a id="the-arenas-per-frame-voice-cue-fun_801d1288"></a>
 

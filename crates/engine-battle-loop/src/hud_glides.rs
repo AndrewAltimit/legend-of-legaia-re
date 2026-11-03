@@ -29,17 +29,6 @@ impl BattleState {
     /// around their `FUN_801D8DE8` call (`0x801D3D40`) and restore it.
     pub const GLIDE_BLOCKING_FLAG: u8 = 1;
 
-    /// Sweep the intro labels on a round's hand-off to the action SM.
-    /// Retail reaches the execute arm `0xFE` only through `0x0B`'s expiry,
-    /// which sweeps every text actor (`0x801D0E58..0x801D0EB8`), so an
-    /// action never runs under the names; the port opens its round prompt
-    /// under them and sweeps them here instead.
-    ///
-    /// REF: FUN_801D0748 (flow state `0x0B`), FUN_800355F0
-    pub fn sweep_battle_intro_names(&mut self) {
-        self.intro_names_frames = 0;
-    }
-
     /// Whether the battle camera's entry sweep still owns the opening
     /// (`BattleCamera::start_entry_sweep`). Retail's frame driver
     /// `FUN_80046A20` calls the battle tick `FUN_801D0748` - whose flow
@@ -53,13 +42,28 @@ impl BattleState {
             .is_some_and(|c| c.entry_sweep_counter().is_some())
     }
 
+    /// Whether the battle open still holds the first round back: retail's
+    /// frame driver `FUN_80046A20` calls the battle tick `FUN_801D0748` only
+    /// once its entry counter `gp+0x330` parks at `0xFF`
+    /// (`beq a0,v0,0x80047014` at `0x80046EF8`), and the tick then walks
+    /// `0x00 -> 0x0A`, composes the enemy names and holds `0x0B` on the intro
+    /// timer `ctx[+0x6D6]` (`0x801D0DE0..0x801D0E58`) before it stores `0x14`.
+    /// Nothing below that store runs under the hold: no round start, no
+    /// prompt, no action.
+    ///
+    /// REF: FUN_80046A20, FUN_801D0748
+    pub fn battle_open_held(&self) -> bool {
+        self.battle_entry_sweeping() || self.intro_lead_ticks > 0 || self.intro_names_frames > 0
+    }
+
     /// One tick of the intro timer: `ctx[+0x6D6] -= 0x1F800393` per battle
     /// pass, expiring at or below zero (`0x801D0E3C..0x801D0E58`) - one a
     /// vsync tick ([`crate::hud_glides::BATTLE_PASS_STEP_PER_TICK`]).
     /// The timer holds while the entry sweep runs
-    /// ([`Self::battle_entry_sweeping`]).
+    /// ([`Self::battle_entry_sweeping`]) and through the two passes ahead of
+    /// the composer ([`Self::intro_lead_ticks`]).
     pub fn step_battle_intro_names(&mut self) {
-        if self.battle_entry_sweeping() {
+        if self.battle_entry_sweeping() || self.intro_lead_ticks > 0 {
             return;
         }
         let step = u16::from(crate::hud_glides::BATTLE_PASS_STEP_PER_TICK);
@@ -209,9 +213,10 @@ impl BattleState {
         // No flow state runs under the battle-entry sweep: the frame driver
         // calls the battle tick only once its entry counter parks
         // (`FUN_80046A20`, `0x80046EF8`), so no press reaches a command
-        // surface there.
+        // surface there. Nor is there one to reach until the open's hold has
+        // let the flow to `0x14` ([`Self::battle_open_held`]).
         // REF: FUN_80046A20
-        if self.battle_entry_sweeping() {
+        if self.battle_entry_sweeping() || self.round_open_pending {
             return true;
         }
         [

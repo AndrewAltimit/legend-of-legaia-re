@@ -94,6 +94,9 @@ impl BattleCamera {
             last_active_installs: None,
             clip_age: 0,
             steps_in_state: 0,
+            chain_exit_pass: false,
+            prologue_skip_pending: false,
+            prologue_skip_vsyncs: 0,
             last_swing_seeds: None,
             option: CAMERA_OPTION_CLOSE,
             shake: ShakeState::default(),
@@ -103,6 +106,8 @@ impl BattleCamera {
             escape_shot: false,
             cursor: None,
             entry_sweep: None,
+            entry_hold: false,
+            open_held: false,
             menu_glide_from: None,
         }
     }
@@ -206,6 +211,18 @@ impl BattleCamera {
         if prev.is_some_and(|p| p != installs) {
             self.clip_age = 0;
         }
+    }
+
+    /// The `0x2A` pass that meets the queue's terminator stores `0x2B` and
+    /// calls neither camera driver (`0x801E4774..0x801E479C`), so neither
+    /// prologue adds to `ctx[+0x26E]` / `ctx[+0x87C]` on that pass.
+    /// `running` holds while that pass is the newest; its rising edge holds
+    /// the counters for one pass.
+    pub fn observe_chain_exit_pass(&mut self, running: bool) {
+        if running && !self.chain_exit_pass {
+            self.prologue_skip_pending = true;
+        }
+        self.chain_exit_pass = running;
     }
 
     pub fn observe_action_state(&mut self, state: u8) {
@@ -482,12 +499,16 @@ impl BattleCamera {
     }
 
     pub(super) fn recover_pose(&self) -> BattleCamPose {
+        // `0x801D6738..0x801D6778`: a party seat on the art slot, a monster
+        // on a clip whose solo byte is set.
         let pull_in = self.option == CAMERA_OPTION_CLOSE
-            && self.action.party_slot
-            && self
-                .attack
-                .actor
-                .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART);
+            && if self.action.party_slot {
+                self.attack
+                    .actor
+                    .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART)
+            } else {
+                self.live_action_framing().solo
+            };
         recover_framing(
             self.body_actor(),
             self.target,
@@ -634,6 +655,44 @@ impl BattleCamera {
         self.pose = from;
         self.glides.push_back(g);
         true
+    }
+
+    /// [`Self::align_menu_glide_frames_left`] on retail's own table: stand on
+    /// `shown` (pitch, translation and focus; the yaw stays the orbit's) with
+    /// `left` frames of the arm to go, keeping the pose already walked on a
+    /// `NaN` component (one retail's table has landed, so the table no longer
+    /// says where it stood). The engine's arm sets out from the pose its own
+    /// sweep left, so its increments miss retail's by a few percent, which a
+    /// walk of hundreds of units a frame shows at a close-up.
+    /// The capture harness's handle. Nothing in play calls it.
+    pub fn align_menu_glide_pose(&mut self, shown: BattleCamPose, left: f32) -> bool {
+        if self.menu_glide_from.is_none() || self.phase != BattleCamPhase::Menu {
+            return false;
+        }
+        let target = self.menu_pose();
+        let pick = |walked: f32, table: f32| if table.is_nan() { walked } else { table };
+        let mut from = BattleCamPose {
+            pitch: pick(self.pose.pitch, shown.pitch),
+            yaw: self.pose.yaw,
+            tr: std::array::from_fn(|k| pick(self.pose.tr[k], shown.tr[k])),
+            focus: std::array::from_fn(|k| pick(self.pose.focus[k], shown.focus[k])),
+        };
+        let steps = self.frames_to_steps(left.max(0.0).ceil() as u32);
+        let g = Glide::linear(&mut from, target, menu_raw_z(self.formation), steps, false);
+        self.pose = from;
+        self.glides.clear();
+        self.glides.push_back(g);
+        true
+    }
+
+    /// Take a capture's live pose outright. A capture on the very pass an art
+    /// committed (close-up accumulator `0`: the commit `FUN_8004AD80` zeroes
+    /// it after the pass's framing ran) holds a step table armed on the clip
+    /// before, which the engine's framing, reading the new clip, cannot agree
+    /// with on any endpoint, so [`Self::align_glide_origin`] refuses it.
+    pub fn align_commit_pass(&mut self, live: BattleCamPose) {
+        self.pose = live;
+        self.glides.clear();
     }
 
     /// Whether the glide in flight heads for retail's framing on every
@@ -929,6 +988,12 @@ impl BattleCamera {
         self.steps_in_state
     }
 
+    /// Stand the camera on `pose` as the capture harness read it off retail,
+    /// whatever the framing law armed here.
+    pub fn stand_on_pose(&mut self, pose: BattleCamPose) {
+        self.pose = pose;
+    }
+
     /// Current camera pose (12-bit angle units + eye-space TR), **with** the
     /// live screen-shake offset folded into the translation pair - which is
     /// where retail's `FUN_801D9D30` puts it.
@@ -1211,7 +1276,14 @@ impl BattleCamera {
         // `0x801D5900..0x801D5914`), so they advance per display frame for
         // as long as any framing case is being re-armed - not per camera
         // step.
-        self.attack.ctx.advance(vsyncs as u32);
+        let held = if std::mem::take(&mut self.prologue_skip_pending) {
+            u32::from(self.frame_step.max(1))
+        } else {
+            self.prologue_skip_vsyncs
+        };
+        let skipped = held.min(vsyncs as u32);
+        self.prologue_skip_vsyncs = held - skipped;
+        self.attack.ctx.advance(vsyncs as u32 - skipped);
         self.clip_age = self.clip_age.wrapping_add(
             (vsyncs as u32).wrapping_mul(crate::battle_attack_camera::AttackCamCtx::RAMP_SCALE),
         );

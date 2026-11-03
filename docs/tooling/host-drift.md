@@ -46,8 +46,9 @@ that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trac
 | 13 boot installs | does the page's boot make every `world.install_*` / `set_*` call the native boot makes? | derived, `[[boot_install]]` | tables written as field assignments |
 | 14 save routing | does every save / load go through the retail screen's applier? | `SAVE_IO_ROUTES` | the page's save-bar import |
 | 15 engine environment | does an engine crate read a switch from the process environment? | `ENV_KERNEL_ROOTS`, `ENV_ALLOWED_*` | an env read in a crate no browser host links |
+| 16 page cues | does the minigames page play a cue as decoded PCM instead of keying the live SPU? | `MINIGAME_PAGE_SOURCES`, `BGM_BUFFER_HOST` | whether the id it keys is the right one |
 
-Tiers 1-3 and 5-15 live in
+Tiers 1-3 and 5-16 live in
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
 (`--list` prints the full surface table, `--selftest` the detector controls,
 `--quiet` findings only); tier 4 is
@@ -86,6 +87,7 @@ docstring is the text `--help` prints. The package keeps three things apart: the
 | [`rows/boot_installs.py`](../../scripts/ci/ui_host_drift/rows/boot_installs.py) | `BOOT_NATIVE`, `BOOT_WEB_ROOT` |
 | [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py) | `SAVE_IO_ROUTES`, `PAGE_CARD_RACK`, `PAGE_CARD_RACK_RULES` |
 | [`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py) | `ENV_KERNEL_ROOTS`, `ENV_NATIVE_HOST_PATHS`, `ENV_ALLOWED_PREFIXES`, `ENV_ALLOWED_NAMES` |
+| [`rows/page_cues.py`](../../scripts/ci/ui_host_drift/rows/page_cues.py) | `MINIGAME_PAGE_SOURCES`, `BGM_BUFFER_HOST` |
 | [`tiers/`](../../scripts/ci/ui_host_drift/tiers/__init__.py) | the analysis, one module per tier, named as its rows module is (`tiers/screens.py` is tier 1, which has no table) |
 | [`rust_text.py`](../../scripts/ci/ui_host_drift/rust_text.py) | comment stripping, signature and body extraction, whole-word sets |
 | [`controls.py`](../../scripts/ci/ui_host_drift/controls.py), [`selftest.py`](../../scripts/ci/ui_host_drift/selftest.py) | the detector controls and `--selftest` |
@@ -1092,6 +1094,20 @@ non-literal name is never allowed. Out of scope, because no browser host links
 them: `engine-shell`, `engine-render`, `engine-export`, `engine-capture`, and
 `engine-session`'s `native` module.
 
+
+## Tier 16 - minigame cues key the live SPU
+
+`check_page_cues` in [`tiers/page_cues.py`](../../scripts/ci/ui_host_drift/tiers/page_cues.py), rows in
+[`rows/page_cues.py`](../../scripts/ci/ui_host_drift/rows/page_cues.py).
+
+A cue decoded out of a VAB and handed to an `AudioBufferSourceNode` sounds like the game, so
+nothing fails, but it has no ADSR, no retail volume or pan and no reverb send, and it resolves
+against whatever bank the page happened to decode. The tier flags a call to a `*_sfx_*`,
+`*_spin_*` or `*_sting_*` PCM export anywhere in the minigames page's sources, and a hand-built
+Web Audio buffer anywhere except the BGM render in `site/js/minigame-bgm.js`. The Rust half is
+`crates/web-minigames/tests/live_spu_cues_disc.rs`, which compares each cue's mix with the
+director's sample for sample.
+
 ## Two JavaScript-side gates
 
 No Rust tier reads `site/js/`. Two scripts do, in the pre-commit hook when
@@ -1526,7 +1542,7 @@ reverse-engineering questions, so they are not on
 | Difference | State |
 |---|---|
 | shading law | One law in WGSL and GLSL, paired by evaluation for the field mesh's both stages, its enhancement layer and the fog sheets' fragment stage. Unpaired: the point lights' shadow-map sampling, the fog sheets' vertex stage, clip depth. See [shading](#the-two-hosts-do-not-share-a-shading-law). |
-| battle body blend | Native keys the posed override by TMD index (two bodies sharing a TMD share one); the page orders blend passes per mesh, not per prim. |
+| battle body blend | Both hosts key a body's posed mesh by actor slot and apply one `apply_body_blend`; the page orders blend passes per mesh, not per prim. |
 | lit rows under the palette collapse | Not drift: both hosts run a lit row's shaded colour through the prologue's packet sepia, which the light kernel's output never meets in retail. See [light-source rows](#light-source-rows-in-a-graded-scene). |
 | cheats | One `WorldCheats::cheat_*` call each. Every listed cheat is a launch switch natively and a runtime control on the page (`F6` / `F7` are runtime on both, through the [hotkey table](#host-hotkeys)); a GameShark file is a launch switch natively and pasted text on the page (`cheat_apply_codes`). |
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
@@ -1535,7 +1551,6 @@ reverse-engineering questions, so they are not on
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
-| absent on both | The Baka in-duel pause menu (`0xBE` / `0xBF`; the pause edge `0x110` includes Triangle, which the cameo test reads held). |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The minigames page has no `World`
@@ -1581,7 +1596,6 @@ The frame model is in [`engine.md`](../subsystems/engine.md#the-frame-model).
 | ticks per display frame | `frame_step::SimStepper` (page: `play_drain_sim_steps`) |
 | options knobs on the world and camera | `BootSession::apply_option_knobs`, every tick ahead of the session tick and on every options change (window: `resolve_tick_pad`; page: `tick_frame`) |
 | camera around the world tick | `camera_before_world_tick` / `camera_after_world_tick` |
-| cutscene glide clock | `CutsceneGlide`, reset on every entry (retail's `FUN_80025C24` kills the mover) |
 | move-VM strips | `MoveVmGlobals::strip_frame` |
 | fog pool render step | `BootSession::step_field_fog`, once per sim tick (window: `tick_frame_tail_effects`; page: inside `tick_frame`); the draws read `World::fog_quads` |
 | who owns the tick | `BootSession::claim_tick` -> `TickOwner`: a host-held screen, the naming prompt, the prologue skip, the pause menu's spawn and press, a suspending overlay screen, the field (neutral pad or not). Each host matches on the answer (window: `sim_tick`; page: `frame_ticks`) and adds only what it holds; a `SIM_PAIRS` row pins both to the claim |
@@ -1789,7 +1803,7 @@ screens.
 | drag / wheel / double-click | `engine-field::camera::follow_knobs` |
 | `F3` debug orbit | `Camera::debug_orbit_by` (un-gated by cutscenes, field-only) |
 | camera-distance preset | `OptionsState::cycle_camera_distance` |
-| snap-beat bank | on `Camera`, beside `route_camera_events` |
+| scripted shot | `engine-field::frame_step::scripted_view`, over the camera globals the op-`0x45` beats and the mover write |
 | battle | `battle_cam_script::battle_vp`; inputs `engine-core::battle_cam_inputs`; state `BattleState::camera`, read through `World::battle_cam_pose`; armed on `world.mode`, never on a render resource |
 | script-arc follow (`FUN_801DB510` / `FUN_801DAA50`) | `World::script_arc_follow_camera` |
 | scene viewport | Native hands the renderer its stage rect (`Renderer::set_scene_viewport`), so 3D draws inside the integer-scaled 4:3 stage as on the page's canvas. |

@@ -50,6 +50,8 @@
  *              frame's for this draw only - the battle bodies' single-sided
  *              rule (BattleActorDrawPlan::nclip_mode) over the both-sided
  *              battle pass.
+ *     meanDepth - in PSX mode the draw's prims take the mean depth of their
+ *              corners, the key retail links a battle shell prim by.
  *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
  *              overriding the frame-global `setDepthCue` for this draw only.
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage
@@ -172,6 +174,7 @@ class TmdRenderer {
     this.locPalette = gl.getUniformLocation(this.program, 'u_palette');
     this.locPairFront = gl.getUniformLocation(this.program, 'u_pair_front');
     this.locNclipCull = gl.getUniformLocation(this.program, 'u_nclip_cull');
+    this.locPrimMeanDepth = gl.getUniformLocation(this.program, 'u_prim_mean_depth');
     this.locCurve = gl.getUniformLocation(this.program, 'u_curve');
     this.locCurveBias = gl.getUniformLocation(this.program, 'u_curve_bias');
     this.locPrimNear = gl.getUniformLocation(this.program, 'u_prim_near');
@@ -508,12 +511,43 @@ class TmdRenderer {
     const u16 = new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texSubImage2D(
-      gl.TEXTURE_2D, 0,
-      0, 0, VRAM_W, VRAM_H,
-      gl.RED_INTEGER, gl.UNSIGNED_SHORT,
-      u16,
-    );
+    /* The texture's contents, kept: a CLUT walk moves a few rows of the
+     * megabyte, so a re-upload sends only the rows that differ. */
+    const whole = VRAM_W * VRAM_H;
+    let shadow = this._vramShadow;
+    if (!shadow || u16.length !== whole) {
+      if (u16.length === whole) {
+        this._vramShadow = shadow = this._vramShadowStore || new Uint16Array(whole);
+        this._vramShadowStore = shadow;
+        shadow.set(u16);
+      }
+      gl.texSubImage2D(
+        gl.TEXTURE_2D, 0,
+        0, 0, VRAM_W, VRAM_H,
+        gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+        u16,
+      );
+      return;
+    }
+    let runStart = -1;
+    for (let y = 0; y <= VRAM_H; y++) {
+      let differs = false;
+      if (y < VRAM_H) {
+        const start = y * VRAM_W, end = start + VRAM_W;
+        for (let i = start; i < end; i++) {
+          if (u16[i] !== shadow[i]) { differs = true; break; }
+        }
+      }
+      if (differs) {
+        if (runStart < 0) runStart = y;
+      } else if (runStart >= 0) {
+        const off = runStart * VRAM_W, h = y - runStart;
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, runStart, VRAM_W, h,
+          gl.RED_INTEGER, gl.UNSIGNED_SHORT, u16, off);
+        shadow.set(u16.subarray(off, off + h * VRAM_W), off);
+        runStart = -1;
+      }
+    }
   }
 
   /* Return the AABB this renderer computed for an uploaded scene mesh.

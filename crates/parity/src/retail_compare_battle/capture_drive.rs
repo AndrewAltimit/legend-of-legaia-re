@@ -112,8 +112,8 @@ impl RetailBattle {
         (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
     }
 
-    /// Whether the capture is a monster strike gated on its first swing
-    /// clip (`0x1E` at accumulator `0`, a swing clip committed), whose
+    /// Whether the capture is a monster strike gated on a swing clip
+    /// (`0x1E` on a clip's accumulator, a swing clip committed), whose
     /// strike stream the drive can stand on the capture's
     /// ([`Self::strike_stream_steer`]).
     pub fn strike_stream_steerable(&self) -> bool {
@@ -121,7 +121,7 @@ impl RetailBattle {
             && self.queued_category == 3
             && self.action_state == 0x1E
             && self.caster_clip > 1
-            && self.span_gate == SpanGate::Age { accum: 0 }
+            && matches!(self.span_gate, SpanGate::Age { .. })
     }
 
     /// Whether the image child takes the frame the display showed - the
@@ -164,32 +164,183 @@ impl RetailBattle {
     /// first frames the camera on the first `0x2B` pass (`jal 0x801DC0A0` at
     /// `0x801E4834`; `0x29`'s own call is overridden by the case 6 its pass
     /// ends on, `0x801E474C`), so a capture two passes into `0x2B` holds the
-    /// shot while its display shows the case-6 framing before it
-    /// (`battle_rugi_barra_windcutter_mid_cast` `0.538` to `0.864`). The
-    /// image child retakes only when its own camera armed the shot after
-    /// the retake's tick (`LEGAIA_CAPTURE_RETAKE_SHOT`), and only on a shot
-    /// retail's camera already stands on (live pose at the tween table's
-    /// endpoints): a one-frame shot lands on its arming pass and keeps
-    /// nothing of the framing before it, so the replay's own case 6 is the
-    /// only reading of the displayed frame. A shot still walking holds
-    /// retail's live pose, which the gate's frame is aligned to: the group
-    /// breaths, whose case 9 eases in over six frames, read lower on the
-    /// replay's case 6 (`battle_chitei2_kemaro_lv2_lava_breath_mid_cast`
-    /// `0.941` to `0.735`, `battle_rugi_slippery_poisonous_breath_mid_cast`
-    /// `0.966` to `0.932`). Elsewhere a monster's
-    /// gate keeps the RAM's frame: retaken on every monster `Age` gate the
-    /// strikes split both ways (`battle_jouind_gilium_lv3_strike` `0.850` to
-    /// `0.953`, `battle_vozz_gizam_strike` `0.964` to `0.921`) and Tail
-    /// Fire's rays, which run on the engine's own clock, fell
-    /// (`battle_gimard_tail_fire_b` `0.978` to `0.970`).
+    /// shot while its display shows the case-6 framing before it. The image
+    /// child retakes only when its own camera armed the shot after the
+    /// retake's tick (`LEGAIA_CAPTURE_RETAKE_SHOT`). A shot that lands on its
+    /// arming pass keeps nothing of the framing before it, so the replay's
+    /// own case 6 is the only reading of the displayed frame; a shot still
+    /// walking holds retail's table, and the retake stands on the pose walked
+    /// back along it. Elsewhere a monster's gate keeps the RAM's frame:
+    /// retaken on every monster `Age` gate the strikes split both ways
+    /// (`battle_jouind_gilium_lv3_strike` `0.850` to `0.953`,
+    /// `battle_vozz_gizam_strike` `0.964` to `0.921`).
     pub fn retake_on_shot_only(&self) -> bool {
+        self.monster_magic_band_age()
+    }
+
+    /// A monster's strike loop on its clip age. `0x1E` arms case 7 on every
+    /// pass (`li a1,0x7` at `0x801E36EC`), so the table describes the pass it
+    /// is read on and the walk back along it is retail's own displayed pose.
+    /// The alignment otherwise takes only the components whose endpoint the
+    /// replay's framing agrees with, and the replay's case 7 reads the body
+    /// pairs a pass newer than the arm did: `battle_korb2_aluru_strike`'s
+    /// endpoint `(54, 60)` is the midpoint on the attacker's body at
+    /// `(131, 146)`, the RAM's reads `(176, 173)`. The camera channel still
+    /// reads the law. The same stand over every battle state loses badly
+    /// (`cort_evolved_final_crisis_mid_cast` `1.000` to `.344`): those shots
+    /// were not armed by the pass the table describes.
+    pub fn stand_on_displayed_pose(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, state: 0x1E }, SpanGate::Age { .. }) if seat >= 3
+        ) && self.queued_category == 3
+    }
+
+    /// A monster's magic-band capture: [`SpanGate::Age`] on a monster seat,
+    /// category `2`, state `0x2A..=0x2E`.
+    pub fn monster_magic_band_age(&self) -> bool {
         matches!(
             (self.seed_plan(), self.span_gate),
             (SeedPlan::Action { seat, .. }, SpanGate::Age { .. }) if seat >= 3
         ) && self.queued_category == 2
             && legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES
                 .contains(&self.action_state)
-            && self.cam_tween.0 == self.cam_tween.1
+    }
+
+    /// The yaw the frame before a turning case `0xE` shot stood on. Case `0xE`
+    /// aims the live yaw `step * 4` on from wherever it stands, every pass
+    /// (`0x801DCB18`), and its accumulator counts the passes it has run, so
+    /// the RAM's yaw walks back onto the case-6 yaw it took over: the one
+    /// retail's frame holds where the replay's own case 6 carries the yaw
+    /// history of its own rounds. A step-`4` capture displays one pass
+    /// earlier still, a case-6 step off this yaw.
+    pub fn retake_turning_yaw(&self) -> Option<u16> {
+        if !self.retake_on_shot_only() || self.action_state != 0x2B || self.queued_shot != 0x0E {
+            return None;
+        }
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (step, _) = self.step_run;
+        let step = u16::from(step.max(1));
+        let (live, _) = self.cam_tween;
+        Some((live.yaw as i32 - i32::from(accum / (8 * step) * step * 4)).rem_euclid(4096) as u16)
+    }
+
+    /// The pose the displayed frame of a turning shot stood on, for a capture
+    /// on the shot's own pass (`0x2B` at one pass of accumulator): two passes
+    /// back along the case-6 walk the shot cut off.
+    ///
+    /// The shot closes each component in one frame, so the table's steps name
+    /// the pass before it (`N - 1`). That pass ran no arm: the `0x2A`
+    /// terminator calls neither `FUN_801DC0A0` nor `FUN_801D5854`
+    /// (`0x801E4774..0x801E479C`), so it walked on the increment of the pass
+    /// before it, `N - 2`, the one the display shows, which armed case 6
+    /// (`ceil(gap / 0xC)`) and walked in the same pass. Both moves share that
+    /// increment, and the increment is the gap's, so [`stale_pass_gap`]
+    /// inverts them. Yaw takes case 6's endpoint from the counter
+    /// `ctx[+0x6DA]`, less the prologue's drift over the passes since.
+    ///
+    /// The table's steps are unsigned. Pitch and TR y take the sign that
+    /// stands nearer case 6's endpoint. TR z and the focus come from the
+    /// framing of the action before ([`Self::previous_actor_bearing`]): the
+    /// sign is inferred, and `None` where no earlier actor this round names
+    /// one (the far framing comes from elsewhere).
+    pub fn retake_turning_pose(&self) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+        let yaw_n1 = self.retake_turning_yaw()?;
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (step, _) = self.step_run;
+        if self.cam_style != 0 || accum != 8 * u16::from(step) {
+            return None;
+        }
+        let [_, pass_n, pass_n1, pass_n2] = self.recent_steps.map(i32::from);
+        let (s1, s2) = (pass_n1, pass_n2);
+        let drift = |s: i32| (s * 4 / 3).max(1);
+        let (live, end) = self.cam_tween;
+        let [pitch_step, _, _, _, try_step, trz_step, fx_step, _, fz_step] =
+            self.cam_tween_steps.map(i32::from);
+        let back = |v_n1: i32, end6: i32| {
+            let d = v_n1 - end6;
+            end6 + d.signum() * stale_pass_gap(d.abs(), s1, s2)
+        };
+        // Pitch and TR y: the side of the shot's endpoint case 6 stands on.
+        let near = |shot_end: i32, step: i32, end6: i32| {
+            let (a, b) = (shot_end + step, shot_end - step);
+            if (a - end6).abs() <= (b - end6).abs() {
+                a
+            } else {
+                b
+            }
+        };
+        let wrap_i = |a: f32| {
+            let a = a as i32 & 0xFFF;
+            if a >= 0x800 { a - 0x1000 } else { a }
+        };
+        let tr_y6 = legaia_engine_battle_vm::battle_cam_script::ACTION_TR_Y as i32;
+        let pitch = back(near(wrap_i(end.pitch), pitch_step, 0), 0);
+        let tr_y = back(near(end.tr[1] as i32, try_step, tr_y6), tr_y6);
+        // Yaw: case 6's endpoint on the pass that armed it.
+        let pool = usize::from(self.active_actor);
+        let facing = i32::from((*self.facing.get(pool)?)?);
+        let counter = i32::from(self.walk_yaw_base) - drift(pass_n) - drift(pass_n1);
+        let end6 = (counter - facing).rem_euclid(4096);
+        let gap = (end6 - i32::from(yaw_n1) + 2048).rem_euclid(4096) - 2048;
+        let yaw = (end6 - gap.signum() * stale_pass_gap(gap.abs(), s1, s2)).rem_euclid(4096);
+        // TR z and the focus: from the framing of the action before.
+        let [fx, fz] = live_pair(live.focus);
+        let (sx, sz) = self.previous_actor_bearing([fx, fz], [fx_step, fz_step])?;
+        let tr_z = end.tr[2] as i32 - stale_pass_gap(trz_step, s1, s2);
+        Some(legaia_engine_camera::projection::BattleCamPose {
+            pitch: pitch.rem_euclid(4096) as f32,
+            yaw: yaw as f32,
+            tr: [0.0, tr_y as f32, tr_z as f32],
+            focus: [
+                (fx + sx * stale_pass_gap(fx_step, s1, s2)) as f32,
+                0.0,
+                (fz + sz * stale_pass_gap(fz_step, s1, s2)) as f32,
+            ],
+        })
+    }
+
+    /// The signs `(x, z)` from `focus` towards the earlier actor of this round
+    /// whose bearing best fits the focus record's unsigned steps: case 6 walks
+    /// off the framing of the action before, in a straight line per component
+    /// ratio. `None` on a round's first action, or with no spent seat.
+    fn previous_actor_bearing(&self, focus: [i32; 2], steps: [i32; 2]) -> Option<(i32, i32)> {
+        if self.turn_cursor == 0 {
+            return None;
+        }
+        let party = 0..usize::from(self.party_count.clamp(1, 3));
+        let monsters = 3..3 + usize::from(self.monster_count);
+        let fit = party
+            .chain(monsters)
+            .filter(|&s| s != usize::from(self.active_actor))
+            .filter(|&s| self.init_keys.get(s).copied().flatten() == Some(0))
+            .filter_map(|s| {
+                let [x, z] = (*self.ground.get(s)?)?;
+                let v = [i32::from(x) - focus[0], i32::from(z) - focus[1]];
+                let len = f64::from(v[0]).hypot(f64::from(v[1]));
+                (len > 0.0).then(|| {
+                    let cos = f64::from(v[0].abs() * steps[0] + v[1].abs() * steps[1]) / len;
+                    (cos, v)
+                })
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0))?;
+        Some((fit.1[0].signum(), fit.1[1].signum()))
+    }
+
+    /// A monster's capture-band gate ([`SpanGate::CaptureFade`]): captured
+    /// within the display lag of the band's entry, its displayed frame is a
+    /// pass before the band's first arm, whose parts retail had not spawned
+    /// on screen (`battle_map01_lippian_kiss_of_death_mid_cast`: PROT 0955's
+    /// shell parts stand on the gate's frame and on none of retail's).
+    pub fn retake_across_band_entry(&self) -> bool {
+        matches!(
+            (self.seed_plan(), self.span_gate),
+            (SeedPlan::Action { seat, .. }, SpanGate::CaptureFade { .. }) if seat >= 3
+        )
     }
 
     /// The display lag in the image child's own ticks: two of its passes,
@@ -384,14 +535,24 @@ impl RetailBattle {
         // A monster whose strike clip committed inside the display lag drew
         // the clip before it, on the ring's pair
         // ([`Self::engine_image_displayed_clips`]).
-        if let Some((seed, Some(then))) = self.displayed_strike_clip() {
-            return vec![legaia_engine_capture::ground_snap::GroundSnap {
-                slot: seed.slot,
-                x: then[0],
-                z: then[1],
-                facing: None,
-                body: None,
-            }];
+        // A displayed frame that is the walk's last pass drew the walk's
+        // heading ([`RetailBattle::displayed_strike_heading`]).
+        if let Some((seed, then)) = self.displayed_strike_clip() {
+            let then = then.or_else(|| {
+                self.displayed_ground
+                    .get(usize::from(self.active_actor))
+                    .copied()
+                    .flatten()
+            });
+            if let Some(then) = then {
+                return vec![legaia_engine_capture::ground_snap::GroundSnap {
+                    slot: seed.slot,
+                    x: then[0],
+                    z: then[1],
+                    facing: self.displayed_strike_heading,
+                    body: None,
+                }];
+            }
         }
         let pool = usize::from(self.active_actor);
         if pool >= 3
@@ -471,12 +632,17 @@ impl RetailBattle {
         // the arm the RAM is in, after the frame on screen was built, so
         // the display still shows the run clip the walk-in played.
         let walked_cast = self.walk_in_shot_aligned();
-        if pool < 3 || !(strike || walked_cast) {
+        // A monster cast's accumulator gate: the frame the gate stops on
+        // carries the clip the RAM's accumulator pairs with, two passes past
+        // the keyframe the screen shows, and the cast clip is a one-shot the
+        // cursor seat leaves alone.
+        let magic_band = self.monster_magic_band_age();
+        if pool < 3 || !(strike || walked_cast || magic_band) {
             return None;
         }
         let (clip, cursor) = (*self.displayed_clips.get(pool)?)?;
         let committed = clip != self.caster_clip;
-        if !committed && (walked_cast || !self.walk_clock_capture()) {
+        if !committed && !magic_band && (walked_cast || !self.walk_clock_capture()) {
             return None;
         }
         let m = pool - 3;
@@ -911,6 +1077,32 @@ impl RetailBattle {
             && self.cam_accum / 8 < u32::from(self.display_phase_lag)
     }
 
+    /// Whether the capture stands on the pass its art committed: the commit
+    /// zeroes the accumulator after that pass's framing ran
+    /// (`0x8004BF74`, [`Self::move_label_unseen`]), so the RAM's camera
+    /// still walks the clip before's table
+    /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: TR z `1945` where
+    /// the art's own arm reads `1817`).
+    pub fn camera_behind_commit(&self) -> bool {
+        self.move_label_unseen() && self.cam_accum == 0
+    }
+
+    /// The live pose the image child stands a [`Self::camera_behind_commit`]
+    /// capture on: the frame on screen predates the swing's own close-up. The
+    /// art arm `FUN_801D71B8` calls the tween builder with one display frame
+    /// (`a3 = 2`), which lands that pass and leaves `ceil(gap / 2)` in the
+    /// table, so the depth the pass walked from is `2 * step` behind the RAM's,
+    /// on the far side since the arm only tightens the shot
+    /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: `1945`, step `103`:
+    /// the frame fits `2150`). The channel keeps reading the RAM's pose.
+    pub fn displayed_commit_live(&self) -> legaia_engine_camera::projection::BattleCamPose {
+        let (mut live, end) = (self.displayed_cam_live, self.cam_tween.1);
+        if self.camera_behind_commit() && self.cam_tween.0.tr[2] == end.tr[2] {
+            live.tr[2] += 2.0 * f32::from(self.cam_tween_steps[5]);
+        }
+        live
+    }
+
     /// Whether this capture's approach waits on a measured string
     /// ([`Self::party_combo_vsyncs`]): a party Attack in its Done band.
     pub fn wants_party_combo(&self) -> bool {
@@ -1081,10 +1273,13 @@ impl RetailBattle {
                         // on clip `0x06` at cursor `-24`, the engine's still
                         // on its idle). Clips `0` / `1` are the idle and the
                         // walk, which the engine may hold under another id.
+                        // A later accumulator reads the same way: the walk's
+                        // clock runs that age too (`battle_map01_frog_strike`:
+                        // retail on clip `0x06` at `16`, the engine stopped on
+                        // its walk at the same age, framing the walk's case 6).
                         || (seat >= 3
                             && state == 0x1E
-                            && self.caster_clip > 1
-                            && self.span_gate == SpanGate::Age { accum: 0 })
+                            && self.caster_clip > 1)
                         && matches!(self.span_gate, SpanGate::Age { .. }))
                     .then_some(self.caster_clip),
                     aim: (seat < 3
@@ -1113,8 +1308,18 @@ impl RetailBattle {
                             && state == 0x1E
                             && self.queued_category == 3
                             && self.caster_clip > 1
-                            && self.span_gate == SpanGate::Age { accum: 0 }))
+                            && matches!(self.span_gate, SpanGate::Age { .. })))
                     .then_some(self.strike_cursor),
+                    // `battle_map01_frog_strike` is on its first swing with
+                    // the cursor already on `2`, the pass after its commit
+                    // read the next byte; a stream of `07 06 ff` stops the
+                    // cursor on `2` under the second swing.
+                    played: (seat >= 3
+                        && state == 0x1E
+                        && self.queued_category == 3
+                        && self.caster_clip > 1
+                        && matches!(self.span_gate, SpanGate::Age { .. }))
+                    .then_some(self.committed_queue),
                     // On a dynamic art slot the cursor cannot tell a starter
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which
@@ -1343,4 +1548,23 @@ pub(super) fn run_drive(
     }
     session.host.world.input.set_pad(0);
     Ok(reached)
+}
+
+/// A float pose's ground pair as whole units.
+fn live_pair(focus: [f32; 3]) -> [i32; 2] {
+    [focus[0] as i32, focus[2] as i32]
+}
+
+/// The gap to case 6's endpoint one pass before `gap`, across the terminator
+/// pass that walked on its increment: `gap` stands `s1` (that pass's step)
+/// past the armed pass, which took `s2` of the same increment
+/// `ceil(gap_before / 0xC)` (case 6's duration, `FUN_801D829C`). A recording of
+/// Aluru Cannon walks TR z `4772, 4808, 4856` to `4915` on `s2 = 3`, `s1 = 4`.
+pub fn stale_pass_gap(gap: i32, s1: i32, s2: i32) -> i32 {
+    (0..=gap + 1)
+        .find(|&k| {
+            let before = gap + (s1 + s2) * k;
+            (before + 11) / 12 == k
+        })
+        .map_or(gap, |k| gap + s1 * k)
 }

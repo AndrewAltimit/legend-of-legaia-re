@@ -341,9 +341,12 @@ impl UploadedVram {
 /// proper PSX texture lookup that selects the right texture page + CLUT
 /// per primitive, regardless of which TIM the texels came from.
 pub struct UploadedVramMesh {
-    pub(super) vertex_buf: wgpu::Buffer,
-    pub(super) index_buf: wgpu::Buffer,
+    pub(super) vertex_buf: super::buffer_pool::PooledBuffer,
+    pub(super) index_buf: super::buffer_pool::PooledBuffer,
     pub(super) index_count: u32,
+    /// The vertices' `(min, max)` in model space, which the shadow pass tests
+    /// against each light's frustum.
+    pub(super) bounds: ([f32; 3], [f32; 3]),
     /// `[(first_index, index_count); 4]` ranges of the per-ABR-mode
     /// semi-transparent "tail" appended past `index_count` in `index_buf`
     /// (see [`psx_blend::append_semi_tail`]). Describes the tail layout;
@@ -389,9 +392,12 @@ impl UploadedVramMesh {
 /// carry per-vertex colours instead of UVs (which the textured VRAM-mesh path
 /// drops).
 pub struct UploadedColorMesh {
-    pub(super) vertex_buf: wgpu::Buffer,
-    pub(super) index_buf: wgpu::Buffer,
+    pub(super) vertex_buf: super::buffer_pool::PooledBuffer,
+    pub(super) index_buf: super::buffer_pool::PooledBuffer,
     pub(super) index_count: u32,
+    /// The vertices' `(min, max)` in model space, which the shadow pass tests
+    /// against each light's frustum.
+    pub(super) bounds: ([f32; 3], [f32; 3]),
     /// `[(first_index, index_count); 4]` ranges of the per-ABR-mode
     /// semi-transparent "tail" appended past `index_count` in `index_buf`
     /// (see [`psx_blend::append_semi_tail_words`]). Describes the tail

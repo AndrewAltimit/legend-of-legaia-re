@@ -788,6 +788,13 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             None => placed,
         }
     };
+    // Arms 6, 7 and 8 frame on the pose's own pair (`lhu v0,0x3c(s7)` /
+    // `lhu v0,0x40(s7)` at `0x801F7374`, `0x801F749C`, `0x801F755C`,
+    // `0x801F7668`), not the ground pair the walk and the heading read.
+    let body_focus = st.creature_body.map_or_else(
+        || focus_on(creature),
+        |(x, z)| focus_on(ModuleSeat { x, z, ..creature }),
+    );
     let lift = |st: &mut ModuleCamState, dir: i32| {
         if let Some(c) = st.creature.as_mut() {
             c.y = (i32::from(c.y) + dir * ZENOIR_LIFT_PER_PRODUCT * p) as i16;
@@ -858,7 +865,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
                 ..ArmDirection::shot(ModuleShot {
                     angles: [-0x80, yaw_from(0x600, facing), 0],
                     tr: [0, 0x400, 0x600],
-                    focus: focus_on(creature),
+                    focus: body_focus,
                     frames: 1,
                 })
             }
@@ -870,7 +877,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             let mut shot = ModuleShot {
                 angles: [(w / 8 - 0x80) as i16, yaw(0x600), 0],
                 tr: [0, (0x400 - w / 16) as i16, (w / 4 + 0x600) as i16],
-                focus: focus_on(creature),
+                focus: body_focus,
                 frames: 1,
             };
             if st.creature_clip.is_some_and(|c| c != 2) {
@@ -890,7 +897,7 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             ArmDirection::shot(ModuleShot {
                 angles: [0, yaw_from(0x200, creature.facing), 0],
                 tr: [0, 0x400, 0x800],
-                focus: focus_on(creature),
+                focus: body_focus,
                 frames: 1,
             })
         }

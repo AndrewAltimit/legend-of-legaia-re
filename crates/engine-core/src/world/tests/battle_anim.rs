@@ -896,6 +896,72 @@ fn gala_clip_key_0x67_raises_the_ribbon_at_the_target_seat_in_window() {
     }
 }
 
+/// A solo commit's sweep (`FUN_8004E13C`): the bystanders go to the dim arm
+/// from neutral, not from the engine's resting zero word, and ease toward
+/// `0x20` a lane at `0x20` a tick under the full blend. The acting seat and
+/// its target stay lit, as does a dead seat.
+#[test]
+fn a_solo_commit_dims_the_live_bystanders() {
+    use legaia_engine_battle_vm::battle_formulas::STATE_DIM;
+    use legaia_engine_battle_vm::battle_impact_fx as ifx;
+    let mut world = World::new();
+    world.enter_battle(3, 0);
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 3;
+    for i in 0..4 {
+        world.actors[i].active = true;
+        world.actors[i].battle.hp = 10;
+        world.actors[i].battle.render_flag = 0;
+        world.actors[i].battle.render_color = 0;
+    }
+    world.actors[2].battle.hp = 0;
+    world.sweep_solo_bystanders();
+    assert_eq!(world.actors[0].battle.render_flag, 0, "the acting seat");
+    assert_eq!(world.actors[3].battle.render_flag, 0, "its target");
+    assert_eq!(world.actors[2].battle.render_flag, 0, "a dead seat");
+    assert_eq!(world.actors[1].battle.render_flag, STATE_DIM);
+    assert_eq!(
+        world.actors[1].battle.render_color,
+        ifx::IMPACT_NEUTRAL_STATE
+    );
+    world.tick_battle_animations();
+    let lanes = world.actors[1].battle.render_color & 0x3FF;
+    assert_eq!(lanes, 0x200 - 0x20, "one ease step at the arm's rate `4`");
+    assert_eq!(world.actors[1].battle.render_blend, 0x1000);
+}
+
+/// The ghost pass on a pose of the caller's: a bystander inside the near radius
+/// of that pose's view axis takes the `0x83` mode bits, and off it drops them.
+/// `FUN_8004DC68` reads the pose the walker left a pass earlier, so a capture
+/// seat hands that pose in rather than the one it stands on.
+#[test]
+fn the_ghost_pass_reads_the_pose_it_is_handed() {
+    use legaia_engine_battle_loop::round_flow::RoundPhase;
+    use legaia_engine_camera::projection::BattleCamPose;
+    let mut world = World::new();
+    world.enter_battle(3, 0);
+    world.battle.round_flow.phase = RoundPhase::Execute;
+    world.battle_ctx.action_state = 0x1E;
+    world.battle_ctx.active_actor = 0;
+    world.actors[0].battle.active_target = 3;
+    world.actors[1].battle.max_hp = 10;
+    world.actors[1].battle_monster_id = None;
+    world.actors[1].move_state.world_x = 0;
+    world.actors[1].move_state.world_z = -960;
+    let pose = |focus_z: f32| BattleCamPose {
+        pitch: 0.0,
+        yaw: 0.0,
+        tr: [0.0, 1280.0, 4915.0],
+        focus: [0.0, 0.0, focus_z],
+    };
+    world.refresh_battle_camera_ghost_on(pose(0.0));
+    let near = world.actors[1].battle.flag_word & 0x8300_0000;
+    world.refresh_battle_camera_ghost_on(pose(8000.0));
+    let far = world.actors[1].battle.flag_word & 0x8300_0000;
+    assert_ne!(near, far, "the handed pose decides the bits");
+    assert_eq!(far, 0);
+}
+
 /// The armed tint eases back to the neutral word, the blend drains, and
 /// the selector retires - `FUN_80050120` arm 0 over the `FUN_80050F30`
 /// per-lane ease, in the disassembly's order (`0x800501A4..0x80050210`):

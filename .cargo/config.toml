@@ -1,0 +1,9 @@
+# Applies to what cargo spawns from this tree: tests above all. Why it is here
+# and what it costs: docs/tooling/build-and-test-speed.md#page-faults.
+[env]
+# Ask the kernel for huge pages behind glibc's large allocations. A test that
+# holds the 466 MB disc image in a Vec otherwise takes one page fault per 4 KiB
+# of it, and those faults were more of the patcher suite's CPU than the tests.
+# An allocation hint: no effect on what any program computes, and ignored by
+# every libc but glibc. An inherited GLIBC_TUNABLES wins.
+GLIBC_TUNABLES = "glibc.malloc.hugetlb=1"

@@ -19,8 +19,16 @@ struct State {
 }
 
 /// Encode one 28-sample unit with a fixed `(filter, range)`; returns the
-/// nibbles, the squared error, and the post-unit state.
-fn try_unit(samples: &[i16], filter: usize, range: u32, s0: State) -> ([u8; 28], f64, State) {
+/// nibbles, the squared error, and the post-unit state. `None` as soon as
+/// the error reaches `bound`: the sum only grows, so such a pair cannot beat
+/// the one that set the bound.
+fn try_unit(
+    samples: &[i16],
+    filter: usize,
+    range: u32,
+    s0: State,
+    bound: f64,
+) -> Option<([u8; 28], f64, State)> {
     let (k0, k1) = (K0[filter], K1[filter]);
     let mut st = s0;
     let mut nibbles = [0u8; 28];
@@ -37,10 +45,29 @@ fn try_unit(samples: &[i16], filter: usize, range: u32, s0: State) -> ([u8; 28],
         let recon = top as f64 + predicted;
         let clamped = recon.round().clamp(i16::MIN as f64, i16::MAX as f64);
         err += (clamped - raw as f64).powi(2);
+        if err >= bound {
+            return None;
+        }
         st.prev2 = st.prev1;
         st.prev1 = recon;
     }
-    (nibbles, err, st)
+    Some((nibbles, err, st))
+}
+
+/// The `(filter, range)` pair with the least squared error for one unit, the
+/// first such pair on a tie: its nibbles, post-unit state and param byte.
+fn best_unit(samples: &[i16], s0: State) -> ([u8; 28], State, u8) {
+    let mut best: Option<([u8; 28], f64, State, u8)> = None;
+    for filter in 0..4usize {
+        for range in 0..=12u32 {
+            let bound = best.as_ref().map_or(f64::INFINITY, |b| b.1);
+            if let Some((nibbles, err, st)) = try_unit(samples, filter, range, s0, bound) {
+                best = Some((nibbles, err, st, ((filter as u8) << 4) | range as u8));
+            }
+        }
+    }
+    let (nibbles, _, st, param) = best.expect("the first pair has no bound to reach");
+    (nibbles, st, param)
 }
 
 /// Encode mono PCM into consecutive 4-bit XA sound groups (each
@@ -59,16 +86,7 @@ pub fn encode_mono_4bit(pcm: &[i16]) -> Vec<u8> {
         for unit in 0..UNITS_PER_GROUP_4BIT {
             let base = g * samples_per_group + unit * SAMPLES_PER_UNIT;
             let samples = &padded[base..base + SAMPLES_PER_UNIT];
-            let mut best: Option<([u8; 28], f64, State, u8)> = None;
-            for filter in 0..4usize {
-                for range in 0..=12u32 {
-                    let (nibbles, err, st) = try_unit(samples, filter, range, state);
-                    if best.as_ref().is_none_or(|(_, be, _, _)| err < *be) {
-                        best = Some((nibbles, err, st, ((filter as u8) << 4) | range as u8));
-                    }
-                }
-            }
-            let (nibbles, _, st, param) = best.unwrap();
+            let (nibbles, st, param) = best_unit(samples, state);
             state = st;
             // Param layout: units 0-3 at bytes 0..4 (copy at 4..8),
             // units 4-7 at bytes 8..12 (copy at 12..16).
@@ -111,16 +129,7 @@ pub fn encode_stereo_4bit_dualmono(pcm: &[i16]) -> Vec<u8> {
             // both channels.
             let base = g * frames_per_group + (unit / 2) * SAMPLES_PER_UNIT;
             let samples = &padded[base..base + SAMPLES_PER_UNIT];
-            let mut best: Option<([u8; 28], f64, State, u8)> = None;
-            for filter in 0..4usize {
-                for range in 0..=12u32 {
-                    let (nibbles, err, st) = try_unit(samples, filter, range, state[ch]);
-                    if best.as_ref().is_none_or(|(_, be, _, _)| err < *be) {
-                        best = Some((nibbles, err, st, ((filter as u8) << 4) | range as u8));
-                    }
-                }
-            }
-            let (nibbles, _, st, param) = best.unwrap();
+            let (nibbles, st, param) = best_unit(samples, state[ch]);
             state[ch] = st;
             let po = if unit < 4 { unit } else { 4 + unit };
             group[po] = param;
@@ -164,16 +173,7 @@ pub fn encode_stereo_4bit(left: &[i16], right: &[i16]) -> Vec<u8> {
             let base = g * frames_per_group + (unit / 2) * SAMPLES_PER_UNIT;
             let src = if ch == 0 { &l } else { &r };
             let samples = &src[base..base + SAMPLES_PER_UNIT];
-            let mut best: Option<([u8; 28], f64, State, u8)> = None;
-            for filter in 0..4usize {
-                for range in 0..=12u32 {
-                    let (nibbles, err, st) = try_unit(samples, filter, range, state[ch]);
-                    if best.as_ref().is_none_or(|(_, be, _, _)| err < *be) {
-                        best = Some((nibbles, err, st, ((filter as u8) << 4) | range as u8));
-                    }
-                }
-            }
-            let (nibbles, _, st, param) = best.unwrap();
+            let (nibbles, st, param) = best_unit(samples, state[ch]);
             state[ch] = st;
             let po = if unit < 4 { unit } else { 4 + unit };
             group[po] = param;
@@ -214,6 +214,46 @@ pub fn resample_linear(pcm: &[i16], from_hz: u32, to_hz: u32) -> Vec<i16> {
 mod tests {
     use super::*;
     use crate::{BitsPerSample, Channels, DecodeOptions, StreamingDecoder};
+
+    /// The bound only skips pairs: over a signal with silence, ramps and noise
+    /// the choice matches an exhaustive search, ties to the first pair.
+    #[test]
+    fn best_unit_matches_the_exhaustive_search() {
+        let mut r = 0x2545_F491u32;
+        let mut noise = move || {
+            r ^= r << 13;
+            r ^= r >> 17;
+            r ^= r << 5;
+            (r >> 16) as i16
+        };
+        let pcm: Vec<i16> = (0..28 * 400)
+            .map(|i: i32| match (i / 28) % 4 {
+                0 => 0,
+                1 => noise() / 64,
+                2 => (i % 500 * 40) as i16,
+                _ => noise(),
+            })
+            .collect();
+        let mut state = State::default();
+        for samples in pcm.as_chunks::<SAMPLES_PER_UNIT>().0 {
+            let mut want: Option<([u8; 28], f64, State, u8)> = None;
+            for filter in 0..4usize {
+                for range in 0..=12u32 {
+                    let (nibbles, err, st) =
+                        try_unit(samples, filter, range, state, f64::INFINITY).unwrap();
+                    if want.as_ref().is_none_or(|w| err < w.1) {
+                        want = Some((nibbles, err, st, ((filter as u8) << 4) | range as u8));
+                    }
+                }
+            }
+            let want = want.unwrap();
+            let (nibbles, st, param) = best_unit(samples, state);
+            assert_eq!((nibbles, param), (want.0, want.3));
+            assert_eq!(st.prev1.to_bits(), want.2.prev1.to_bits());
+            assert_eq!(st.prev2.to_bits(), want.2.prev2.to_bits());
+            state = st;
+        }
+    }
 
     #[test]
     fn encoded_groups_decode_close_to_source() {

@@ -79,17 +79,18 @@
           <span id="xw-saved" class="xw-saved" role="status"></span>
           <nav class="xw-crumbs" id="xw-crumbs" aria-label="You are here"></nav></div>
         <div class="wb-actions">
-          <button type="button" id="xw-undo" class="wb-mini" title="Undo (Ctrl+Z)" disabled>Undo</button>
-          <button type="button" id="xw-redo" class="wb-mini" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
+          <button type="button" id="xw-undo" class="wb-mini" data-ic="&#8630;" title="Undo (Ctrl+Z)" disabled>Undo</button>
+          <button type="button" id="xw-redo" class="wb-mini" data-ic="&#8631;" title="Redo (Ctrl+Y or Ctrl+Shift+Z)" disabled>Redo</button>
           <button type="button" id="xw-checks-btn" class="wb-mini xw-checks-btn" aria-controls="xw-aside" title="The pack is checked as you edit: show or hide the problems and Find (F8 steps through them)">Checking ...</button>
-          <button type="button" id="xw-dl" class="wb-button" title="Save the pack as one .lxpack file (Ctrl+S)">Save .lxpack</button>
-          <button type="button" id="xw-play" class="wb-button wb-button-ghost" title="Install the pack in the play page and start it">Play pack</button>
-          <button type="button" id="xw-more" class="wb-mini xw-more-btn" aria-expanded="false" aria-controls="xw-more-items" title="Play this map, Live, files, Share and keys">More</button>
+          <button type="button" id="xw-dl" class="wb-button" data-ic="&#10515;" title="Save the pack as one .lxpack file (Ctrl+S)">Save .lxpack</button>
+          <button type="button" id="xw-play" class="wb-button wb-button-ghost" data-ic="&#9654;" title="Install the pack in the play page and start it">Play pack</button>
+          <button type="button" id="xw-more" class="wb-mini xw-more-btn" data-ic="&#8943;" aria-expanded="false" aria-controls="xw-more-items" title="Play this map, Live, files, Share and keys">More</button>
           <span id="xw-more-items" class="xw-more-items">
             <button type="button" id="xw-play-here" class="wb-button wb-button-ghost" title="Play the map you are building, in a play tab. A play tab already open on this pack reloads it in place and keeps the player where they stand.">Play this map</button>
             <label class="xw-check xw-field" title="Send every edit to the open play tab as you make it"><input type="checkbox" id="xw-live"> Live</label>
             <button type="button" id="xw-toml" class="wb-mini" title="The pack's files, to copy or download one at a time">Files</button>
             <button type="button" id="xw-keys" class="wb-mini" title="Keyboard shortcuts (?)" aria-controls="xw-keyhelp">Keys ?</button>
+            <button type="button" id="xw-open-setup" class="wb-mini" title="Open another pack, or change the disc">Disc and pack</button>
             <span class="info-tip tip-align-right" tabindex="0" role="button" aria-expanded="false" aria-label="Details">?<span class="tip-pop" role="tooltip"><p><strong>Save .lxpack</strong> writes the pack as one file, the same bytes every time for the same pack. It is refused while the pack has problems; the checks button says how many and opens them. Your work is also autosaved in this browser.</p><p><strong>Play pack</strong> installs the pack in the play page's pack library in this browser (replacing the version there), makes it the active pack and opens the play page on it.</p><p><strong>Play this map</strong> puts you on the map you are building. When a play tab is already open on this pack it reloads the pack in place, with the player where they stood - edit, switch tabs, look. With <strong>Live</strong> ticked every edit goes there by itself.</p><p><strong>Files</strong> shows each file of the pack to copy or download one at a time, for a pack kept as a folder.</p></span></span>
           </span>
         </div>
@@ -99,14 +100,16 @@
         <table class="wb-table">
           <tr><th>?</th><td>This list. Escape closes it.</td></tr>
           <tr><th>Alt+1 .. Alt+6</th><td>Build, Story, Battle, Items &amp; cards, Modes &amp; music, Pack settings. Alt+[ / Alt+] the previous or next page.</td></tr>
-          <tr><th>1 .. 6 (Build)</th><td>Build, Paint terrain, Place objects, NPCs, Zones &amp; exits, Test-play.</td></tr>
+          <tr><th>1 .. 6 (Build)</th><td>Place objects, Select &amp; move, Paint terrain, NPCs, Zones &amp; exits, Test-play.</td></tr>
           <tr><th>Ctrl+Z / Ctrl+Y (Ctrl+Shift+Z)</th><td>Undo / redo any edit, painter strokes included. In a text box the box's own undo runs first.</td></tr>
           <tr><th>Ctrl+S</th><td>Save the <code>.lxpack</code>.</td></tr>
           <tr><th>Ctrl+K or /</th><td>Find in the pack.</td></tr>
           <tr><th>F8 / Shift+F8</th><td>Next / previous problem.</td></tr>
+          <tr><th>F11 (Build)</th><td>Fullscreen. Escape puts down what you are placing, then the selection, then leaves.</td></tr>
           <tr><th>Tile map</th><td>B paint, R fill rect, I pick, V select, S start point, E exit, T step-on event, N monster zone, P object, C person, K sculpt; Ctrl+wheel zooms; Space or right drag pans.</td></tr>
           <tr><th>Selection (tile map or 3D)</th><td>Arrows nudge it a tile, Shift+arrows a quarter tile; Ctrl+D duplicates; Delete removes; Escape drops it.</td></tr>
           <tr><th>3D view, Select</th><td>W move, E rotate, R scale; Shift while dragging places freely; Alt+drag turns the camera; the arrows follow the map axis nearest them on screen.</td></tr>
+          <tr><th>3D view, placing</th><td>Click puts the object down and stays armed; R turns it (Shift+R 15 degrees, Shift+wheel a quarter turn); Escape or a right click stops.</td></tr>
           <tr><th>3D view, Sculpt</th><td>[ and ] size the brush.</td></tr>
         </table>
       </div>
@@ -114,9 +117,13 @@
 
       <div class="xw-work">
         <div class="xw-edpane">
+          <button type="button" id="xw-fs-menu-btn" class="xw-fs-menu-btn" aria-expanded="false" aria-controls="xw-tabs" title="The pack's other pages: story, battle, items and settings">&#9776;</button>
           <nav class="xw-nav" id="xw-tabs" aria-label="Pack sections"></nav>
           <div id="xw-build" class="xw-build" hidden></div>
-          <div id="xw-catalog" class="xw-catalog" hidden aria-label="Catalog"></div>
+          <div id="xw-catdock" class="xw-catdock" hidden>
+            <button type="button" id="xw-cat-toggle" class="wb-mini xw-cat-toggle" aria-controls="xw-catalog" aria-expanded="true" title="Show or hide the catalog">Hide catalog</button>
+            <div id="xw-catalog" class="xw-catalog" aria-label="Catalog"></div>
+          </div>
           <div id="xw-panel" class="xw-panel"></div>
         </div>
         <aside class="xw-issues" id="xw-aside" aria-label="Find and checks">
@@ -305,13 +312,30 @@
   .xw-3d-edit .xw-check { display: inline-flex; flex-direction: row; align-items: center; gap: 0.25rem; color: var(--text-muted); }
   .xw-3d-edit .xw-num { width: 4.5em; }
   .xw-3d-edit .xw-hint { flex: 1 1 100%; }
-  .xw-3d-body { margin-top: 0.4rem; }
+  .xw-3d-body { margin-top: 0.4rem; position: relative; }
   .xw-table tr.is-now td { background: var(--accent-soft); }
   .xw-scrub input[type=range] { flex: 1 1 12rem; min-width: 8rem; }
-  .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: #000; }
+  .xw-3d-frame { display: block; width: 100%; max-width: calc(58vh * 4 / 3); aspect-ratio: 4 / 3; margin: 0 auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card-hi); }
   .xw-chart text { font-size: 11px; fill: var(--text-muted); }
   .xw-legend { display: flex; gap: 1rem; font-size: 0.82em; color: var(--text-muted); margin: 0.2rem 0; }
   .xw-legend i { display: inline-block; width: 1.2em; height: 2px; vertical-align: middle; margin-right: 0.3em; }
+  /* The object palette (expansion-workbench-gizmos.js): category tabs and a
+     row of pictures of the objects, each drawn from the visitor's disc. */
+  .xw-pal { display: flex; flex-direction: column; gap: 0.25rem; min-height: 0; }
+  .xw-pal-side { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+  .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 0 0 auto; width: 11rem; padding: 0.1rem 0.35rem; font-size: 0.8em; }
+  .xw-pal-tabs { flex: 1 1 auto; min-width: 0; display: flex; gap: 0.2rem; overflow-x: auto; scrollbar-width: none; }
+  .xw-pal-tabs .wb-mini { flex: none; white-space: nowrap; font-size: 0.8em; }
+  .xw-pal-items { display: flex; gap: 0.3rem; overflow-x: auto; overflow-y: hidden; padding-bottom: 0.2rem; scrollbar-width: thin; align-items: flex-start; min-height: 7.4rem; }
+  .xw-pal-msg { padding: 0.5rem 0.2rem; color: var(--text-muted); }
+  .xw-tile { flex: 0 0 auto; width: 5.2rem; display: grid; justify-items: center; gap: 0.15rem; padding: 0.2rem; border: 1px solid var(--border); border-radius: 7px; background: var(--bg-raised); color: inherit; cursor: pointer; font: inherit; font-size: 0.74rem; line-height: 1.15; }
+  .xw-tile:hover, .xw-tile:focus-visible { border-color: var(--accent); }
+  .xw-tile.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .xw-tile.is-blank { display: none; }
+  .xw-tile-img { display: block; width: 4.8rem; height: 4.8rem; border-radius: 5px; background: var(--bg-code); opacity: 0.25; }
+  .xw-tile-img.is-ready { opacity: 1; }
+  .xw-tile-name { width: 100%; height: 2.3em; overflow: hidden; text-align: center; overflow-wrap: anywhere; }
+  .xw-tile-size { width: 100%; overflow: hidden; white-space: nowrap; text-align: center; font-size: 0.82em; color: var(--text-dim); }
   .xw-pre { max-height: 30rem; overflow: auto; margin: 0.3rem 0 0; padding: 0.5rem 0.6rem; font-size: 0.8em; background: var(--bg-code); border-radius: 5px; white-space: pre; }
 
   /* Tile painter */
@@ -396,23 +420,18 @@
   .xw-area.is-aside.is-active { font-weight: 600; }
   .xw-pages { display: flex; flex-wrap: wrap; gap: 0.15rem; padding: 0 0.4rem; }
   .xw-page-lead { margin: 0; padding: 0.35rem 0.8rem; font-size: 0.85em; color: var(--text-muted); border-top: 1px solid var(--line-soft); }
-  .xw-build { padding: 0.5rem 0.8rem 0.4rem; background: var(--bg-card); }
+  .xw-build { padding: 0.25rem 0.5rem; background: var(--bg-card); }
   .xw-build[hidden], .xw-catalog[hidden] { display: none; }
-  .xw-maps-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; margin-bottom: 0.25rem; }
-  .xw-maps { display: flex; gap: 0.4rem; overflow-x: auto; padding-bottom: 0.3rem; scrollbar-width: thin; }
-  .xw-map-card { position: relative; flex: 0 0 auto; display: flex; flex-direction: column; gap: 0.1rem; min-width: 10.5rem; max-width: 15rem; padding: 0.4rem 0.6rem; text-align: left; font: inherit; font-size: 0.86em; color: var(--text); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
-  .xw-map-card:hover, .xw-map-card:focus-visible { border-color: var(--accent); }
-  .xw-map-card.is-on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--accent-soft); }
-  .xw-map-card.has-err { border-left: 3px solid var(--open); }
-  .xw-map-card.is-add { border-style: dashed; color: var(--text-muted); }
-  .xw-map-card strong { color: var(--text-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .xw-map-card .xw-badge { position: absolute; top: 0.3rem; right: 0.35rem; }
-  .xw-map-meta { color: var(--text-dim); font-size: 0.9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .xw-modebar { display: flex; gap: 0.35rem; margin-top: 0.45rem; overflow-x: auto; scrollbar-width: thin; }
-  .xw-mode { flex: 1 0 5.6rem; display: flex; flex-direction: column; align-items: center; gap: 0.2rem; padding: 0.45rem 0.4rem 0.35rem; font: inherit; font-size: 0.84em; font-weight: 600; color: var(--text-muted); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+  .xw-build { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.6rem; }
+  .xw-map-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+  .wb .xw-map-pick { max-width: 15rem; font-weight: 600; }
+  .xw-map-add { white-space: nowrap; }
+  .xw-modebar { display: flex; flex: 0 1 auto; min-width: 0; gap: 0.2rem; overflow-x: auto; scrollbar-width: none; }
+  .xw-mode { flex: none; display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.18rem 0.55rem; font: inherit; font-size: 0.84em; font-weight: 600; color: var(--text-muted); background: var(--bg-raised); border: 1px solid var(--border); border-radius: 7px; cursor: pointer; }
   .xw-mode:hover, .xw-mode:focus-visible { color: var(--text-bright); border-color: var(--border-hi); }
-  .xw-mode.is-on { color: var(--text-bright); border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 -3px 0 var(--accent); }
-  .xw-mode-ico { width: 1.7rem; height: 1.7rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .xw-mode.is-on { color: var(--text-bright); border-color: var(--accent); background: var(--accent-soft); }
+  .xw-mode-ico { width: 1.05rem; height: 1.05rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .xw-build-tools { display: flex; align-items: center; gap: 0.25rem; margin-left: auto; }
   .xw-mode-label { white-space: nowrap; }
   .xw-catalog { padding: 0.45rem 0.8rem; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg-card); font-size: 0.88em; }
   .xw-cat-head { margin-bottom: 0.3rem; }
@@ -428,19 +447,6 @@
   .xw-start-ico { display: inline-flex; align-items: center; justify-content: center; width: 2.2rem; height: 2.2rem; border-radius: 50%; background: var(--accent-soft); color: var(--accent-hi); font-size: 1.2em; font-weight: 700; }
   .xw-keyhelp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
 
-  /* The Split view (expansion-workbench-preview3d.js lays the picture and
-     the forms side by side): the nav and the Build head span the width,
-     the catalog heads the forms column. Prefixed to outrank its rules. */
-  body.xw-view-split .xw-work .xw-edpane > .xw-nav { grid-column: 1 / -1; grid-row: 1; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-build { grid-column: 1 / -1; grid-row: 2; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-catalog { grid-column: 1; grid-row: 3; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-panel { grid-row: 4; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-3d:not([hidden]) { grid-row: 3 / span 2; }
-  body.xw-view-split .xw-work .xw-edpane > .xw-split-handle { grid-row: 3 / span 2; }
-  /* The 3D view on the Build area leaves room for the pack bar, the map
-     strip and the mode toolbar above it in one screen. */
-  body.xw-view-3d.xw-on-build .xw-work .xw-edpane > .xw-3d .xw-3d-frame { width: min(100%, calc((100vh - var(--topbar-h, 0px) - 24rem) * 4 / 3)); min-width: min(100%, 22rem); }
-
   /* The pack bar's secondary buttons: inline on a wide screen, folded
      under More on a phone (the rule below). */
   .xw-more-btn { display: none; }
@@ -451,6 +457,9 @@
     .xw-painter { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 44rem) {
+    .xw-pal-side { flex-wrap: wrap; }
+    .wb .xw-pal-side input, .wb .xw-pal-side select { flex: 1 1 8rem; width: auto; min-width: 0; }
+    .xw-pal-tabs { flex: 1 1 100%; order: 2; }
     .xw-split { grid-template-columns: minmax(0, 1fr); }
     .xw-list { max-height: 12rem; }
     .xw-panel { padding: 0.5rem 0.45rem; }
@@ -466,7 +475,6 @@
     .xw-area { padding: 0.35rem 0.7rem; font-size: 0.9em; }
     .xw-crumbs, .xw-saved { display: none; }
     .xw-area.is-aside { margin-left: 0; }
-    .xw-mode { flex-basis: 4.6rem; font-size: 0.78em; }
     .xw-build, .xw-catalog { padding-left: 0.45rem; padding-right: 0.45rem; }
     .xw-stat { grid-template-columns: 4.5rem minmax(0, 1fr); }
   }
@@ -492,4 +500,9 @@
 <script src="../js/rom-cache.js"></script>
 <script src="../js/disc-info.js"></script>
 <script src="../js/play-pack-library.js"></script>
+<script src="../js/webgl-shaders.js"></script>
+<script src="../js/webgl-math.js"></script>
+<script src="../js/webgl-tmd.js"></script>
+<script src="../js/webgl-tmd-frame-state.js"></script>
+<script src="../js/webgl-tmd-assembled-scene.js"></script>
 <script type="module" src="../js/expansion-workbench-app.js"></script>

@@ -1,7 +1,21 @@
 //! `Renderer` GPU-upload methods: mesh / textured-mesh / VRAM-mesh /
 //! color-mesh / lines / font-atlas / texture uploads.
 
+use super::buffer_pool::MeshBufferKind;
 use super::*;
+
+/// The `(min, max)` of a mesh's vertices.
+fn position_bounds(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
+    let mut lo = [f32::MAX; 3];
+    let mut hi = [f32::MIN; 3];
+    for p in positions {
+        for k in 0..3 {
+            lo[k] = lo[k].min(p[k]);
+            hi[k] = hi[k].max(p[k]);
+        }
+    }
+    (lo, hi)
+}
 
 impl Renderer {
     pub fn upload_mesh(&self, positions: &[[f32; 3]], indices: &[u32]) -> Result<UploadedMesh> {
@@ -257,29 +271,30 @@ impl Renderer {
             bytes.extend_from_slice(bytemuck::cast_slice(&flat));
             bytes.extend_from_slice(bytemuck::cast_slice(&prim_refs[i]));
         }
-        let vertex_buf = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vram mesh vertex buffer"),
-                contents: &bytes,
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+        let vertex_buf = self.mesh_buffers.upload(
+            &self.device,
+            &self.queue,
+            "vram mesh vertex buffer",
+            MeshBufferKind::Vertex,
+            &bytes,
+        );
         // Append the per-ABR-mode semi-transparent tail for the PSX-faithful
         // blend pass. The opaque pass still draws `0..indices.len()`
         // (`index_count` below), so the default path is unchanged.
         let (indices_with_tail, semi_ranges, semi_prims) =
             psx_blend::append_semi_tail(indices, cba_tsb, positions);
-        let index_buf = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vram mesh index buffer"),
-                contents: bytemuck::cast_slice(&indices_with_tail),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+        let index_buf = self.mesh_buffers.upload(
+            &self.device,
+            &self.queue,
+            "vram mesh index buffer",
+            MeshBufferKind::Index,
+            bytemuck::cast_slice(&indices_with_tail),
+        );
         Ok(UploadedVramMesh {
             vertex_buf,
             index_buf,
             index_count: indices.len() as u32,
+            bounds: position_bounds(positions),
             semi_ranges,
             semi_prims,
         })
@@ -366,13 +381,13 @@ impl Renderer {
             bytes.extend_from_slice(&word.to_le_bytes());
             bytes.extend_from_slice(bytemuck::cast_slice(&prim_refs[i]));
         }
-        let vertex_buf = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("color mesh vertex buffer"),
-                contents: &bytes,
-                usage: wgpu::BufferUsages::VERTEX,
-            });
+        let vertex_buf = self.mesh_buffers.upload(
+            &self.device,
+            &self.queue,
+            "color mesh vertex buffer",
+            MeshBufferKind::Vertex,
+            &bytes,
+        );
         // Append the per-ABR-mode semi-transparent tail for the PSX-faithful
         // blend pass. The opaque pass still draws `0..indices.len()`
         // (`index_count` below), so the default path is unchanged.
@@ -381,17 +396,18 @@ impl Renderer {
         } else {
             psx_blend::append_semi_tail_words(indices, blend, positions)
         };
-        let index_buf = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("color mesh index buffer"),
-                contents: bytemuck::cast_slice(&indices_with_tail),
-                usage: wgpu::BufferUsages::INDEX,
-            });
+        let index_buf = self.mesh_buffers.upload(
+            &self.device,
+            &self.queue,
+            "color mesh index buffer",
+            MeshBufferKind::Index,
+            bytemuck::cast_slice(&indices_with_tail),
+        );
         Ok(UploadedColorMesh {
             vertex_buf,
             index_buf,
             index_count: indices.len() as u32,
+            bounds: position_bounds(positions),
             semi_ranges,
             semi_prims,
         })

@@ -1,0 +1,260 @@
+//! The slot-B cast and summon modules' hit-tint stores: the colour word
+//! `+0x04`, its blend `+0x0C` and the impact selector `+0x21F` a tick body
+//! writes into a struck seat beside its damage.
+//!
+//! The selector is what makes a struck body burn: `FUN_8004998C` sheds an
+//! effect-`0x0B` puff off a selector-`1` body once its red lane reaches
+//! `0xB0`, and an effect-`0x10` spark off a selector-`2` one. The table holds
+//! each store as the disassembly has it, keyed on the arm that makes it, so
+//! the host can apply it on the same edge. PROT 0903 and 0904 write theirs
+//! from their tick ports and PROT 0962 from its chain
+//! (`cast_arm_ticks::BladeBreathShape::strike_sub_flag`), so neither is here.
+
+use crate::cast_module_camera::{SINGLE_BODY, SPEED_SCALAR};
+
+/// Which seats an entry writes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImpactSeat {
+    /// `actor_table[caster + 0x1DD]`, the seat the cast latched.
+    Victim,
+    /// `actor_table[ctx + 0x13]`.
+    Caster,
+    /// `actor_table[7]`, the summoned creature.
+    Creature,
+    /// `actor_table[3..7]` with non-zero HP: the loops the row hits run.
+    LiveMonsters,
+    /// `actor_table[0..ctx[+0]]`: the party row.
+    Party,
+}
+
+/// The edge of its arm a store sits on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImpactEdge {
+    /// The pass the arm's gate lets through.
+    Pass,
+    /// Every pass of the arm, held or not.
+    EveryPass,
+    /// Every pass whose module countdown reads at most this.
+    CountdownAtMost(i32),
+}
+
+/// One store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModuleImpact {
+    pub entry: u32,
+    pub body: u32,
+    pub arm: u8,
+    pub edge: ImpactEdge,
+    pub seat: ImpactSeat,
+    /// `+0x04`, where the site writes it.
+    pub colour: Option<u32>,
+    /// Whether the site also stores `+0x0C = 0x1000`.
+    pub full_blend: bool,
+    /// `+0x21F`.
+    pub selector: u8,
+}
+
+/// `0x3FF`: the colour word's red lane at its top, no green or blue.
+const RED: u32 = 0x3FF;
+/// `0x3FF00000`: the colour word's blue lane at its top.
+const BLUE: u32 = 0x3FF0_0000;
+/// `0x3FF003FF`: red and blue.
+const MAGENTA: u32 = 0x3FF0_03FF;
+
+const fn tint(entry: u32, arm: u8, seat: ImpactSeat, colour: u32, selector: u8) -> ModuleImpact {
+    ModuleImpact {
+        entry,
+        body: SINGLE_BODY,
+        arm,
+        edge: ImpactEdge::Pass,
+        seat,
+        colour: Some(colour),
+        full_blend: true,
+        selector,
+    }
+}
+
+const fn latch(
+    entry: u32,
+    arm: u8,
+    edge: ImpactEdge,
+    seat: ImpactSeat,
+    selector: u8,
+) -> ModuleImpact {
+    ModuleImpact {
+        entry,
+        body: SINGLE_BODY,
+        arm,
+        edge,
+        seat,
+        colour: None,
+        full_blend: false,
+        selector,
+    }
+}
+
+/// Every store the table carries, in PROT order.
+pub const MODULE_IMPACTS: &[ModuleImpact] = &[
+    // PROT 0908 Zenoir. Arm 7's pass lights the creature (`0x801F761C`, the
+    // delay slot of the arm's exit); arm 8's opener strikes the victim
+    // (`0x801F77DC..0x801F7800`); arm 11's finisher strikes the victim
+    // (`0x801F7D58..0x801F7D6C`) and its splash every other live monster
+    // (`0x801F7F60..0x801F7F7C`).
+    latch(908, 7, ImpactEdge::Pass, ImpactSeat::Creature, 1),
+    tint(908, 8, ImpactSeat::Victim, RED, 1),
+    tint(908, 11, ImpactSeat::Victim, RED, 1),
+    tint(908, 11, ImpactSeat::LiveMonsters, RED, 1),
+    // PROT 0909 Viguro. Arm 11 marks the live row (`0x801F7248..0x801F7268`,
+    // beside `+0x21C = 4`), the sweep strikes it (`0x801F76DC..0x801F76F8`).
+    latch(909, 11, ImpactEdge::Pass, ImpactSeat::LiveMonsters, 2),
+    tint(909, 13, ImpactSeat::LiveMonsters, BLUE, 2),
+    // PROT 0914 Gola Gola. Arm 12's pass marks the live row
+    // (`0x801F7458..0x801F7488`, its colour word cleared and the row hidden),
+    // arm 13 strikes it (`0x801F77E8..0x801F7804`).
+    latch(914, 12, ImpactEdge::Pass, ImpactSeat::LiveMonsters, 1),
+    tint(914, 13, ImpactSeat::LiveMonsters, RED, 1),
+    // PROT 0916 Aluru: arm 18's victim (`0x801F8684`, beside its rate `2`).
+    latch(916, 18, ImpactEdge::Pass, ImpactSeat::Victim, 2),
+    // PROT 0923 Gilium: the finale's row strike (`0x801F8A08..0x801F8A24`).
+    tint(923, 20, ImpactSeat::LiveMonsters, BLUE, 1),
+    // PROT 0932 Meta: the row strike (`0x801F7C5C..0x801F7C78`).
+    tint(932, 18, ImpactSeat::LiveMonsters, RED, 1),
+    // PROT 0934 Ozma. Arms 17 and 18 hold the creature's sparks every pass
+    // (`0x801F7F38`, `0x801F7F58`, `s4 = actor_table[7]`), arms 21..=24 flash
+    // the live row magenta every time they run (`0x801F85B0..0x801F85D4`,
+    // `0x801F86B4..0x801F86CC`, `0x801F8948`, `0x801F8D4C`).
+    latch(934, 17, ImpactEdge::EveryPass, ImpactSeat::Creature, 2),
+    latch(934, 18, ImpactEdge::EveryPass, ImpactSeat::Creature, 2),
+    tint(934, 21, ImpactSeat::LiveMonsters, MAGENTA, 2),
+    tint(934, 22, ImpactSeat::LiveMonsters, MAGENTA, 2),
+    tint(934, 23, ImpactSeat::LiveMonsters, MAGENTA, 2),
+    tint(934, 24, ImpactSeat::LiveMonsters, MAGENTA, 2),
+    // PROT 0937 Hyper Lightning: arm 7's victim sparks, every pass
+    // (`0x801F7580`, `s2 = actor_table[caster + 0x1DD]`, `s3` the caster).
+    latch(937, 7, ImpactEdge::EveryPass, ImpactSeat::Victim, 2),
+    // PROT 0948 Cross Beam: arm 3's hit (`0x801F7030..0x801F7044`).
+    tint(948, 3, ImpactSeat::Victim, RED, 1),
+    // PROT 0950 Rolling Flare, body `0x801F79F8`: the last `0x40` scalars of
+    // arm 3's countdown burn both seats (`sll v0,v0,0x6` / `slt` at
+    // `0x801F7F34..0x801F7F48`).
+    ModuleImpact {
+        entry: 950,
+        body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
+        arm: 3,
+        edge: ImpactEdge::CountdownAtMost(SPEED_SCALAR << 6),
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: 1,
+    },
+    ModuleImpact {
+        entry: 950,
+        body: crate::cast_arm_ticks::ROLLING_FLARE_TICK,
+        arm: 3,
+        edge: ImpactEdge::CountdownAtMost(SPEED_SCALAR << 6),
+        seat: ImpactSeat::Caster,
+        colour: None,
+        full_blend: false,
+        selector: 1,
+    },
+    // PROT 0958 Blazing Slash: arms 6 and 7 hold the victim's fire every pass
+    // (`0x801F7440`, `0x801F7574`, `s1` the victim).
+    ModuleImpact {
+        entry: 958,
+        body: crate::cast_module_ticks::BLAZING_SLASH_TICK,
+        arm: 6,
+        edge: ImpactEdge::EveryPass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: 1,
+    },
+    ModuleImpact {
+        entry: 958,
+        body: crate::cast_module_ticks::BLAZING_SLASH_TICK,
+        arm: 7,
+        edge: ImpactEdge::EveryPass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: false,
+        selector: 1,
+    },
+    // PROT 0960 Plasma Strike's burst, arm `0x0D`
+    // (`sw 0x3FF00000, 0x1000` then `sb v1,0x21f(s3)` at `0x801F81D4..0x801F8200`).
+    ModuleImpact {
+        entry: 960,
+        body: crate::cast_module_ticks::PLASMA_STRIKE_TICK,
+        arm: 0x0D,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Victim,
+        colour: None,
+        full_blend: true,
+        selector: 2,
+    },
+    // PROT 0963 Genocidal Cannon: arm 14's party row (`0x801F7D10..0x801F7D20`).
+    ModuleImpact {
+        entry: 963,
+        // `(0xB3, 0x801F6A20)`: Genocidal Cannon's trampoline arm.
+        body: 0x801F_6A20,
+        arm: 14,
+        edge: ImpactEdge::Pass,
+        seat: ImpactSeat::Party,
+        colour: Some(RED),
+        full_blend: false,
+        selector: 1,
+    },
+];
+
+/// The stores `entry`'s `body` makes on `arm` this tick: `passed` is whether
+/// the arm's gate let it through, `countdown` the module countdown before
+/// this tick's drain.
+pub fn module_impacts_due(
+    entry: u32,
+    body: u32,
+    arm: u8,
+    passed: bool,
+    countdown: i32,
+) -> impl Iterator<Item = &'static ModuleImpact> {
+    MODULE_IMPACTS.iter().filter(move |m| {
+        m.entry == entry
+            && m.body == body
+            && m.arm == arm
+            && match m.edge {
+                ImpactEdge::Pass => passed,
+                ImpactEdge::EveryPass => true,
+                ImpactEdge::CountdownAtMost(c) => countdown <= c,
+            }
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_hit_store_waits_for_its_arms_pass() {
+        assert_eq!(module_impacts_due(948, SINGLE_BODY, 3, false, 0).count(), 0);
+        let hit: Vec<_> = module_impacts_due(948, SINGLE_BODY, 3, true, 0).collect();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].colour, Some(RED));
+        assert!(hit[0].full_blend);
+        assert_eq!(hit[0].selector, 1);
+    }
+
+    #[test]
+    fn rolling_flare_burns_both_seats_for_its_countdowns_last_stretch() {
+        let body = crate::cast_arm_ticks::ROLLING_FLARE_TICK;
+        let top = SPEED_SCALAR << 6;
+        assert_eq!(module_impacts_due(950, body, 3, false, top + 1).count(), 0);
+        let seats: Vec<_> = module_impacts_due(950, body, 3, false, top)
+            .map(|m| m.seat)
+            .collect();
+        assert_eq!(seats, [ImpactSeat::Victim, ImpactSeat::Caster]);
+    }
+
+    #[test]
+    fn a_body_the_table_does_not_name_writes_nothing() {
+        assert_eq!(module_impacts_due(950, SINGLE_BODY, 3, true, 0).count(), 0);
+        assert_eq!(module_impacts_due(906, SINGLE_BODY, 13, true, 0).count(), 0);
+    }
+}

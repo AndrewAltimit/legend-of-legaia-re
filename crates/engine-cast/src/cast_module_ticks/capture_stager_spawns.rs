@@ -57,6 +57,74 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
+/// The stagers of PROT 0935, 0941, 0942, 0951 and 0964 (`gp[+0x714]` off the
+/// 64-word table at `0x801F6734`), reached from their parts' op `0x20`:
+///
+/// | PROT | stager | arm: seats, on the caller |
+/// |---|---|---|
+/// | 0935 | `FUN_801F7FF0` | 0: `0x801F81EC` |
+/// | 0941 | `FUN_801F7DB0` | 1: `0x801F7F98`, 2: `0x801F8184`, 3: `0x801F81C8`, 4: `0x801F8238` |
+/// | 0942 | `FUN_801F8118` | 0: `0x801F81D0`, 1: `0x801F8480`, 2: `0x801F84F8`, each at the caller's scale |
+/// | 0951 | `FUN_801F81DC` | 0: `0x801F82EC`; 1: that and `0x801F83B0`; 2: `0x801F84EC`; 3: `0x801F87DC`, `0x801F8908` (2 and 3 at the caller's scale) |
+/// | 0964 | `FUN_801F8BF8` | 0: `0x801F8EDC` / `8F38` / `8F94` by the last roll; 1: four `0x801F9008`, each on six draws; 2: `0x801F9568` (all at the caller's scale) |
+///
+/// Not ported: PROT 0941's arm 0 (`sh zero,0x42` on the caller) and arm 1's 2D
+/// puff `FUN_801DFDF0(3, ..)`.
+///
+/// PORT: overlay_cast_earthquake_0935_801f7ff0, overlay_cast_steal_0941_801f7db0, overlay_cast_power_up_0942_801f8118, overlay_cast_chaos_flare_0951_801f81dc, overlay_cast_element_change_0964_801f8bf8
+pub fn enemy_cast_stager_spawns(
+    entry: u32,
+    arm: u8,
+    caller: StagerCaller,
+    roll: u8,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    let at = |record: u32, scale: u16| on_caller(record, caller, scale);
+    let own = caller.scale;
+    match (entry, arm) {
+        (935, 0) => vec![at(0x801F_81EC, 0x1000)],
+        (941, 1) => vec![at(0x801F_7F98, 0x1000)],
+        (941, 2) => vec![at(0x801F_8184, 0x1000)],
+        (941, 3) => vec![at(0x801F_81C8, 0x1000)],
+        (941, 4) => vec![at(0x801F_8238, 0x1000)],
+        (942, 0) => vec![at(0x801F_81D0, own)],
+        (942, 1) => vec![at(0x801F_8480, own)],
+        (942, 2) => vec![at(0x801F_84F8, own)],
+        (951, 0) => vec![at(0x801F_82EC, 0x1000)],
+        (951, 1) => vec![at(0x801F_82EC, 0x1000), at(0x801F_83B0, 0x1000)],
+        (951, 2) => vec![at(0x801F_84EC, own)],
+        (951, 3) => vec![at(0x801F_87DC, own), at(0x801F_8908, own)],
+        (964, 0) => match roll {
+            0 => vec![at(0x801F_8EDC, own)],
+            1 => vec![at(0x801F_8F38, own)],
+            2 => vec![at(0x801F_8F94, own)],
+            _ => Vec::new(),
+        },
+        (964, 1) => (0..4u16)
+            .map(|i| {
+                let mut s = at(0x801F_9008, own);
+                let a = (rand() % 12) as u16;
+                let b = ((rand() % 33) as i16 - 0x10) as u16;
+                let c = (rand() % 64) as u16;
+                let d = (rand() % 32 + 0x20) as u16;
+                let e = (rand() % 128 + 0x400) as u16;
+                let f = (rand() % 0x400) as u16 + (i << 10);
+                s.pokes = vec![
+                    (0x54, a),
+                    (0x84, b),
+                    (0xBA, c),
+                    (0xB4, d),
+                    (0xB6, e),
+                    (0x28, f),
+                ];
+                s
+            })
+            .collect(),
+        (964, 2) => vec![at(0x801F_9568, own)],
+        _ => Vec::new(),
+    }
+}
+
 /// PROT 0962's stager `FUN_801F813C`:
 ///
 /// | Arm | Seats |

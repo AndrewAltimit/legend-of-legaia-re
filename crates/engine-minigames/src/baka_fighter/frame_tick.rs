@@ -116,6 +116,16 @@ impl BakaFight {
                 exit: self.cabinet.exit_done(),
             };
         }
+        // The pause menu reads the pad as the cabinet's and the exit it can
+        // pick ends the visit: no throw lands from here.
+        if crate::baka_cabinet::fight_on_hold(self.cabinet.state()) {
+            self.set_cabinet_pad(edge);
+            self.tick(1);
+            return BakaFrameOutcome {
+                exit: self.cabinet.exit_done(),
+                ..BakaFrameOutcome::default()
+            };
+        }
         let attack = if edge & PACK_CROSS != 0 {
             Some(BakaAttack::C)
         } else if edge & PACK_CIRCLE != 0 {
@@ -129,6 +139,7 @@ impl BakaFight {
             self.choose(0, attack);
         }
         self.set_held_pad(held);
+        self.set_cabinet_pad(edge);
         self.tick(1);
         BakaFrameOutcome::default()
     }
@@ -199,6 +210,9 @@ impl BakaFight {
             });
         }
         self.tick_cameo(frame_step);
+        if let Some(a) = self.clear_fighter.as_mut() {
+            crate::baka_fighter_chrome::clear_fighter_tick(a, frame_step);
+        }
         if let Some(st) = self.strike.as_ref() {
             for (m, t) in self.motion.iter_mut().zip(st.iter()) {
                 let r = m
@@ -295,9 +309,8 @@ impl BakaFight {
         let chrome_tick = crate::baka_fighter_chrome::ChromeTick {
             frame_step,
             match_phase: i32::from(matches!(self.phase, MatchPhase::MatchOver(_))),
-            focus: (0, 1),
         };
-        self.chrome_frame = self.chrome.step(&chrome_tick, (&[], &[]));
+        self.chrome_frame = self.chrome.step(&chrome_tick);
         self.tick_cabinet(frame_step);
         // The round banner is the cabinet's banner arms' (`0x33..0x36`, one
         // `FUN_801D5C7C(DAT_801DC128)` each), drawn the same frame they run,
@@ -318,6 +331,12 @@ impl BakaFight {
         if self.cabinet.front_end() {
             // Attract and player select: retail spawns the round SM only at
             // `0x0E`, so nothing of the fight runs yet.
+            return;
+        }
+        if crate::baka_cabinet::fight_on_hold(self.cabinet.state()) {
+            // The pool walk goes on (`FUN_8002519C`), so the impact parts run
+            // out; the round SM and the combat tick's rules do not.
+            self.tick_pool_actors(frame_step);
             return;
         }
         if !matches!(self.phase, MatchPhase::Fighting) {

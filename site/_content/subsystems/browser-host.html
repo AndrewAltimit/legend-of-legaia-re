@@ -131,8 +131,36 @@
   </div>
 </section>
 
+<section class="doc-section" id="disc-image">
+  <h2>The disc image</h2>
+  <p>The play page reads a disc in three stages (<code>js/play-disc.js</code>), so a visitor is not waiting on movies they may never play and the wasm memory, which never shrinks, does not hold a whole image.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The three stages of the play page's disc read. Before the engine: the volume descriptor and root directory find PROT.DAT, and the sectors up to its end are read while the wasm module compiles. The load: disc_image_missing names any sector the runtime's walk lacks, then load_disc_spans copies PROT.DAT and the executable across and the page lets those sectors go. Behind it: a worker reads the XA and movie files in one read and moves the buffer to the page without a copy. DMY.DAT stays on the disc.">
+      <defs><marker id="bh-disc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node" x="10" y="20" width="270" height="100" rx="4"/>
+      <text class="dg-label" x="145" y="46">1. Before the engine</text>
+      <text class="dg-sub" x="145" y="70">find PROT.DAT, read up to its end</text>
+      <text class="dg-sub" x="145" y="90">while the wasm module compiles</text>
+      <rect class="dg-node-accent" x="305" y="20" width="270" height="100" rx="4"/>
+      <text class="dg-label" x="440" y="46">2. The load</text>
+      <text class="dg-sub" x="440" y="70">disc_image_missing, then load_disc_spans</text>
+      <text class="dg-sub" x="440" y="90">copies only what the runtime keeps</text>
+      <rect class="dg-node" x="600" y="20" width="270" height="100" rx="4"/>
+      <text class="dg-label" x="735" y="46">3. Behind it</text>
+      <text class="dg-sub" x="735" y="70">a worker reads XA and movies</text>
+      <text class="dg-sub" x="735" y="90">and moves the buffer without a copy</text>
+      <path class="dg-edge" d="M280 70 L303 70" marker-end="url(#bh-disc-arrow)"/>
+      <path class="dg-edge" d="M575 70 L598 70" marker-end="url(#bh-disc-arrow)"/>
+      <text class="dg-sub" x="440" y="155">on the retail image, stage 1 is under a third of the file</text>
+    </svg>
+    <figcaption>Anything that is not a Mode 2/2352 image with a <code>PROT.DAT</code> in its root (a bare <code>PROT.DAT</code>, say) is read whole and goes to <code>load_disc_image</code>, as is a source with no <code>Blob</code> behind it.</figcaption>
+  </figure>
+  <p>A consumer asks <code>span(lba, sectors)</code>, which answers from what is resident or null. Movies and XA staging poll every frame anyway, so a span that beats the worker is read with <code>prefetch</code> and the consumer installs on the next frame it polls. The engine holds the world until a movie installs, and a span that will not read (the file moved) makes the movie finish unplayed, as a page with no disc does. A trapped engine is rebuilt by reading the head again.</p>
+</section>
+
 <section class="doc-section" id="other">
   <h2>The other surfaces</h2>
+    <p>The minigames page holds the play hosts&rsquo; <code>AudioDirector</code> over one <code>WebAudioOut</code>, opened inside a user gesture. A tab change is that game&rsquo;s mode entry: the old game&rsquo;s voices and armed cues go, and the new game&rsquo;s banks stage as its door warp stages them. Every cue keys a live SPU voice, so its envelope, volume, pan, reverb send and closed-slot silence are the play hosts&rsquo;; a disc test renders each cue against the director and requires the same samples, and a host-drift tier rejects a cue played as a decoded buffer. Only the BGM is a buffer, an offline render at the same unity gain.</p>
   <ul class="bullets">
     <li><strong>Viewer pages</strong> - assembled full-scene maps, the field-NPC catalog, the Tactical Arts and equipment viewers, summon and battle-stage previews - read the same format crates the extractor does.</li>
     <li><strong>NPC conversations</strong> on the <a href="../npcs.html">NPCs page</a> are each actor&rsquo;s interaction script walked down every arm by the field kernel: pages of text, Yes / No menus and where each option leads, the story-flag and inventory tests that pick a branch, the side effects, and what the next talk runs. Text is decoded from the visitor&rsquo;s disc in the browser.</li>

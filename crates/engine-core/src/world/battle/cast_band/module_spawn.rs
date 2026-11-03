@@ -339,6 +339,12 @@ impl World {
         let Some(entry) = self.cast_module_for(spell_id) else {
             return;
         };
+        if legaia_engine_cast::cast_module_camera::capture_director_seats_all(
+            entry,
+            legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id),
+        ) {
+            return;
+        }
         let Some(module) = self
             .casting
             .effect_pool
@@ -486,9 +492,21 @@ impl World {
                     anchor_seats,
                 ),
             };
-            let Some((pos, rot)) = point else {
+            let Some((mut pos, rot)) = point else {
                 continue;
             };
+            // PROT 0934's spray: each of the three records its own point,
+            // `rand() % 0x101 - 0x80` on x, then y, at a literal z
+            // (`0x801F825C..0x801F82A0`).
+            if prot_entry == 934
+                && matches!(
+                    spawn.record,
+                    SpawnRecord::Module(0x801F_A320 | 0x801F_A36C | 0x801F_A3B8)
+                )
+            {
+                pos[0] = (self.next_rand() % 0x101) as i16 - 0x80;
+                pos[1] = (self.next_rand() % 0x101) as i16 - 0x80;
+            }
             let (bytes, parts, off): (std::sync::Arc<[u8]>, Vec<_>, usize) = match spawn.record {
                 SpawnRecord::Module(va) => {
                     let Some(module) = self
@@ -578,9 +596,13 @@ impl World {
                         legaia_engine_cast::cast_module_camera::doomsday_ring_part_words(va, n)
                     })
                     .flatten();
+                let ray = matches!(prot_entry, 934 | 957)
+                    .then(|| legaia_engine_cast::cast_module_camera::ozma_ray_seed(va, n))
+                    .flatten();
                 for part in &mut scene.parts[first..] {
                     part.tag.get_or_insert(va);
                     part.seat_pokes.extend_from_slice(pokes);
+                    part.seat_pokes.extend(ray.iter());
                     part.seat_pokes.extend(drift.iter().flatten());
                     part.seat_pokes.extend(ring.iter().flatten());
                 }

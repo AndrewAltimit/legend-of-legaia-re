@@ -144,6 +144,31 @@ pub struct TintStepEffects {
     pub mode_semi_transparent: bool,
 }
 
+/// `+0x21C` after a solo commit's bystander sweep, for one seat of the pool's
+/// first seven (`FUN_8004E13C`, `0x8004E15C..0x8004E24C`).
+///
+/// A clip whose header byte `+0x87` is non-zero dims every live body but the
+/// acting seat `ctx[+0x13]` and its target `+0x1DD`: a state of `0` goes to
+/// [`STATE_DIM`], and any other state stands. A group target then undoes it
+/// for its own side, whatever the state read: `9` zeroes the monster seats,
+/// `8` the party seats. A seat at HP `0` is skipped outright, so its state
+/// stands. All slots are retail's pool numbering.
+///
+/// PORT: FUN_8004E13C (`0x8004E15C..0x8004E24C`, the `+0x21C` sweep)
+pub fn solo_commit_state(seat: u8, hp: u16, state: u8, acting: u8, target: u8) -> u8 {
+    if hp == 0 {
+        return state;
+    }
+    let mut state = state;
+    if seat != acting && seat != target && state == STATE_DECAY {
+        state = STATE_DIM;
+    }
+    if (target == 9 && seat >= 3) || (target == 8 && seat < 3) {
+        state = STATE_DECAY;
+    }
+    state
+}
+
 /// One frame of the presentation tint SM for one actor.
 ///
 /// `state` is `+0x21C`, `dt` the frame delta (`1` per engine tick).
@@ -224,6 +249,29 @@ mod tests {
     /// Arm 0 runs the three phases in retail order: colour to neutral,
     /// then the blend drains, then the selector retires - and the selector
     /// clears on the frame the blend is already zero, not a frame later.
+    #[test]
+    fn a_solo_commit_dims_the_bystanders_only() {
+        // Acting monster 3 on party seat 0.
+        assert_eq!(solo_commit_state(3, 9, 0, 3, 0), STATE_DECAY);
+        assert_eq!(solo_commit_state(0, 9, 0, 3, 0), STATE_DECAY);
+        assert_eq!(solo_commit_state(1, 9, 0, 3, 0), STATE_DIM);
+        assert_eq!(solo_commit_state(4, 9, 0, 3, 0), STATE_DIM);
+        // A dead seat is skipped, and a raised arm stands.
+        assert_eq!(solo_commit_state(1, 0, 0, 3, 0), STATE_DECAY);
+        assert_eq!(solo_commit_state(1, 9, 0xFF, 3, 0), 0xFF);
+    }
+
+    #[test]
+    fn a_group_target_undoes_the_sweep_on_its_own_side() {
+        // `8` lands on the party, `9` on the monsters; the other side dims.
+        assert_eq!(solo_commit_state(1, 9, 0, 3, 8), STATE_DECAY);
+        assert_eq!(solo_commit_state(4, 9, 0, 3, 8), STATE_DIM);
+        assert_eq!(solo_commit_state(4, 9, 0, 0, 9), STATE_DECAY);
+        assert_eq!(solo_commit_state(1, 9, 0, 0, 9), STATE_DIM);
+        // The clear reads no state: it drops whatever arm the seat held.
+        assert_eq!(solo_commit_state(4, 9, 0xFF, 0, 9), STATE_DECAY);
+    }
+
     #[test]
     fn decay_arm_eases_then_drains_then_clears() {
         let hit = words(pack(0x3FF, 0x100, 0x200), 0x1000, 2);

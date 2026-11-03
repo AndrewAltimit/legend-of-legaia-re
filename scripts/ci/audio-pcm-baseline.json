@@ -1,0 +1,58 @@
+{
+  "states": {
+    "battle_melee_hit_spark": {
+      "xa_corr": 0.999,
+      "xa_level": -0.1319
+    },
+    "keikoku_chest_pre": {
+      "core_corr": 1.0,
+      "core_level": -0.0004,
+      "track_corr": 0.9986,
+      "track_level": 0.003
+    },
+    "mei_house_inside": {
+      "core_corr": 1.0,
+      "core_level": -0.0011,
+      "track_corr": 0.9989,
+      "track_level": 0.005
+    },
+    "menu_status_town": {
+      "track_corr": 0.999,
+      "track_level": 0.0048
+    },
+    "minigame_baka_fighter": {
+      "track_corr": 0.9954,
+      "track_level": 0.0042
+    },
+    "minigame_fishing": {
+      "track_corr": 0.9998,
+      "track_level": 0.0017
+    },
+    "minigame_slot_machine": {
+      "track_corr": 0.9984,
+      "track_level": 0.0049
+    },
+    "party_battle_gobu_gobu": {
+      "track_corr": 0.9996,
+      "track_level": 0.0007
+    },
+    "rimelm_wall_press_left": {
+      "track_corr": 0.9248,
+      "track_level": 0.494
+    },
+    "sebucus_overworld_resident": {
+      "track_corr": 0.999,
+      "track_level": 0.0037
+    },
+    "terra_party_battle": {
+      "track_corr": 0.9991,
+      "track_level": 0.001
+    },
+    "title_screen_new_game": {
+      "core_corr": 1.0,
+      "core_level": 0.0004,
+      "track_corr": 0.9984,
+      "track_level": 0.0114
+    }
+  }
+}

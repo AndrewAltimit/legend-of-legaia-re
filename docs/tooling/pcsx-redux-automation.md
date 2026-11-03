@@ -39,6 +39,7 @@ apply to every probe and are worth knowing before reading a result:
 - [Why PCSX-Redux](#why-pcsx-redux)
 - [Setup](#setup)
 - [The harness](#the-harness)
+- [Headless runs](#headless-runs)
 - [The probe pattern](#the-probe-pattern)
 - [Fast whole-playthrough capture (two-tier model)](#fast-whole-playthrough-capture-two-tier-model)
 - [Patched-disc taint](#patched-disc-taint)
@@ -207,6 +208,71 @@ The wrapper:
 The `-stdout` flag is what makes the autorun's `PCSX.log(...)`
 calls visible to the parent shell.
 
+The runner compiles the probe with `luajit -bl` first when `luajit` is installed,
+and stops the emulator if the log shows a probe dying at load. Lua's cap of 60
+upvalues per function is the usual cause, and without these a probe that does
+not compile idles in the emulator until whatever timeout wraps the run.
+
+## Headless runs
+
+`--headless` runs the emulator with `-no-ui`: no window and no display, the Null
+audio backend, a private profile, and private copies of the memory cards. It keeps
+the 1x pace and the guest timing of a windowed run, so it is the default for
+[`cast-sequence.py`](cast-sequence-oracle.md) (`--window` asks for the window).
+Several run side by side with no display lock. A run that has to write a memory
+card names its card with `LEGAIA_MCD1`; a shared card still takes the shared lock.
+
+Where a windowed run's time goes:
+
+| Cost | Where | What removes it |
+|---|---|---|
+| The window | ImGui and GL present on every vsync, on the emulator's thread, sensitive to everything else on the display | `-no-ui` |
+| The audio device | `callback` pushes to the real backend (a socket round trip per period); the 1x throttle waits on its clock, and rounds each wait up to a period | `Backend: Null` |
+| The throttle | `Counters::update` waits for the audio clock (`Scaler` percent of 1x) | `Scaler`, with the catch below |
+| XA feed | `FeedXA` blocks the emulator's thread on a full stream (up to 200 ms): XA plays at 1x whatever the scaler | `Xa: false`; guest-invisible, but only matters above 1x |
+| The disc | `UvFile::readAt` hops to the libuv thread per sector and blocks on the reply | `FullCaching`; only matters above 1x |
+
+The probe's own work (RAM reads, CSV writes, the raw frame dumps) does not show up:
+a recording with its frame dumps off takes as long as one with them on.
+
+### A recording is not byte-repeatable, at any speed
+
+PCSX-Redux's SPU runs on its own thread, paced by wall-clock time against the audio
+output (`SPU::impl::MainThread`, `src/spu/spu.cc`), not by the emulated clock. The
+voice table at `0x801CDB4C` differs between two runs at the same vsync. The likely
+reading, not yet traced instruction by instruction, is that the game's sound driver
+reads SPU state, and its per-frame cost moves with what it finds. When a frame
+crosses a vsync the adaptive frame step `*(0x1F800393)` moves a vsync early, and the
+frames after it shift.
+
+Two windowed runs of one cast at 1x can therefore differ in half their frames, and
+two headless runs by the same amount. What holds across runs of either kind: the
+action-state and module-phase path, the HP columns, the sound cue ids, the number of
+game frames to within one, and most frames compared at the same game frame (the
+`frame` column). So compare recordings on those, and show that a difference is more
+than the noise of two runs of the same kind before believing it.
+
+The shift grows with the speed. `Scaler` above 100 is not a free fast-forward: at 2x
+to 4x a cast that holds byte-identical at 1x shifts in about one run out of three.
+Making the process's whole monotonic clock run fast with an `LD_PRELOAD` shim, which
+keeps the SPU's ratio to the emulated clock at 1, lowers that and does not remove it.
+A recording that would not differ needs the SPU stepped from the emulated clock,
+which is a change to the emulator.
+
+`--turbo` is `--headless` with the disc in memory and the scaler at
+`LEGAIA_SCALER` (default `2000`). It is for **making states**, where any valid run of
+the game is as good as another: a door hop or a harvest. Never for a recording that
+gets compared.
+
+### The debugger core pauses itself
+
+Under `-debugger`, a read of unmapped memory pauses the emulator
+(`Memory::read8`, `src/core/psxmem.cc`) after returning the same `0xFF` the
+recompiler returns, and nothing resumes it. A probe that writes a game's action
+queue can send it there. [`autorun_cast_sequence.lua`](../../scripts/pcsx-redux/autorun_cast_sequence.lua)
+resumes on `ExecutionFlow::Pause` and logs it; another breakpoint probe doing the
+same hangs at 0% CPU until its timeout.
+
 ## The probe pattern
 
 Every autorun script under `scripts/pcsx-redux/` follows the same
@@ -354,6 +420,9 @@ on_capture = function(ctx, _elapsed)
     end
 end,
 ```
+
+The emulator quits `quit_delay` vsyncs (30) after the capture ends, wherever in
+`LEGAIA_FRAMES` that was.
 
 ### Symbolic breakpoint addresses
 
@@ -1157,7 +1226,7 @@ instrument produced them.
 | [`autorun_battle_state_stream.lua`](../../scripts/pcsx-redux/autorun_battle_state_stream.lua) | Per-vsync typed battle state via [`probe.battle_state`](../../scripts/pcsx-redux/lib/probe/battle_state.lua), diffed into newline-delimited JSON (deltas + a full sweep every `LEGAIA_STREAM_SWEEP` vsyncs and on battle enter) | `--fast` | The shared live battle-state event source - [detail](#autorun_battle_state_streamlua) | |
 | [`autorun_battle_render_capture.lua`](../../scripts/pcsx-redux/autorun_battle_render_capture.lua) | The battle camera, byte-exact | see detail | [detail](#autorun_battle_render_capturelua) | |
 | [`autorun_battle_cam_orbit.lua`](../../scripts/pcsx-redux/autorun_battle_cam_orbit.lua) | Per-vsync battle-camera yaw beside its two retail writers | see detail | The idle-orbit rate as a measurement - [detail](#autorun_battle_cam_orbitlua) | |
-| [`autorun_battle_harvest.lua`](../../scripts/pcsx-redux/autorun_battle_harvest.lua) | From a field state: walks until an encounter, plays each round with Spirit, and saves a raw state when a monster's action sits in a mid-action state (strike loop `0x1E`, cast `0x2B` / `0x2C`, module `0x6F` / `0x70`); pad only | `--fast`, a retail field state; `LEGAIA_MAX_CAPS`, `LEGAIA_PER_KEY` | `<prefix>_m<id>_c<cat>_q<id>_<scene>_st<state>_v<vsync>.rawsstate`: corpus candidates for the [capture-coverage](capture-coverage.md) worklist's enemy attacks; with `LEGAIA_SCENES=1` also one `<prefix>_scene_<label>_v<vsync>.rawsstate` per scene the walk reaches, once it has settled and the player moves | |
+| [`autorun_battle_harvest.lua`](../../scripts/pcsx-redux/autorun_battle_harvest.lua) | From a field state: walks until an encounter, plays each round with Spirit, and saves a raw state when a monster's action sits in a mid-action state (strike loop `0x1E`, cast `0x2B` / `0x2C`, module `0x6F` / `0x70`); pad only without `LEGAIA_WANT` | `--fast`, a retail field state; `LEGAIA_MAX_CAPS`, `LEGAIA_PER_KEY`, [`LEGAIA_WANT`](capture-coverage.md#filling-the-worklist) | `<prefix>_m<id>_c<cat>_q<id>_<scene>_st<state>_v<vsync>.rawsstate`: corpus candidates for the [capture-coverage](capture-coverage.md) worklist's enemy attacks; with `LEGAIA_SCENES=1` also one `<prefix>_scene_<label>_v<vsync>.rawsstate` per scene the walk reaches, once it has settled and the player moves | |
 | [`autorun_arts_list_capture.lua`](../../scripts/pcsx-redux/autorun_arts_list_capture.lua) | One saved state per page of the arts entry's Triangle list, each once the window's slide counter `0x801F4E0A` has settled at 12; pad only | `--fast`, a state parked in the arts entry (`arts_bar_*`); `LEGAIA_PAGES` | `arts_list_p<N>.sstate` + screenshot: the corpus's `arts_list_*` states ([`minigame-muscle-dome.md`](../subsystems/minigame-muscle-dome.md#the-triangle-arts-list)) | |
 | [`autorun_battle_intro_banner.lua`](../../scripts/pcsx-redux/autorun_battle_intro_banner.lua) | Exec-bps on text-actor spawner `FUN_8003541C` (`$ra`, id, class, seat, box, kind) and teardown `FUN_800355F0`; per-vsync walk of the live list at `gp[+0x148] = 0x8007B460` | a pre-battle state (none is parked on the intro), interp; `LEGAIA_FRAMES` | `w1d_spawns.csv`, `w1d_list.csv`. `FUN_801D9D3C` spawns the intro name banner from immediates ([`battle.md`](../subsystems/battle.md#the-battle-intro-enemy-name-banner)) | |
 | [`autorun_results_window_emitter.lua`](../../scripts/pcsx-redux/autorun_results_window_emitter.lua) | Exec-bp on the OT linker `AddPrim` = `FUN_8003D2C4`, folded by `$ra` with first / last vsync; two full-detail windows (`LEGAIA_FULL_A_LO/HI`, `LEGAIA_FULL_B_LO/HI`) record each packet's GP0 command, colour, XY | interp; `LEGAIA_FRAMES` | `results_window_emitter.csv`. The SCUS window emitter `FUN_8002C69C` runs in battle ([`level-up.md`](../subsystems/level-up.md)) | |
@@ -1193,7 +1262,7 @@ Background for this group: [`cast-module.md`](../subsystems/cast-module.md).
 | [`autorun_enemy_steal_bag_draw.lua`](../../scripts/pcsx-redux/autorun_enemy_steal_bag_draw.lua) | Seeds bag slots with holes, forces PROT 0941's enemy Steal; every draw of the rejection sampler (`0x801F7864`, up to `0x400` attempts) with its three tests, the `FUN_80042310` consume call, the active window `gp[+0x2D2..+0x2D6]` | battle state, interp | The draw is over all 256 slots, the removal is window-bounded | |
 | [`autorun_slippery_budget_gate.lua`](../../scripts/pcsx-redux/autorun_slippery_budget_gate.lua) | Write watch on slot-B effect budget `_DAT_8007BDC0` + exec-bps on gate read `0x8004818C` and the `jal 0x801F7B88` at `0x800481A0`, each with the loader-B tracker | battle state, interp | The arm is an in-battle per-frame path the battle-end signal closes ([`cast-module.md`](../subsystems/cast-module.md#the-arm-is-an-in-battle-frame-path-not-a-teardown)) | |
 | [`autorun_w3a_slippery_call_frame.lua`](../../scripts/pcsx-redux/autorun_w3a_slippery_call_frame.lua) | The cast oracle's injection aimed at action id `0x92`, so PROT 0920 is resident and `_DAT_8007BDC0` non-zero; bps on `0x8004818C`, `0x800481A0`, `0x801F7B88` | battle state, interp | SCUS's one fixed-VA call into slot B firing (the only Slippery mid-cast backup is a mednafen state) | |
-| [`autorun_cast_voice_xa.lua`](../../scripts/pcsx-redux/autorun_cast_voice_xa.lua) | One Seru cast's CD-XA chain: cast-audio dispatcher `FUN_801F3990`, cue dispatcher `FUN_8004FCC8` (both decline gates at entry), clip starter `FUN_8003D53C` with `(clip slot, filter channel, duration)` | injected cast, interp | Confirms [the cue census](../subsystems/cast-module.md#the-casts-own-cd-xa-voice); the character-banded cue does not fire on a cast | |
+| [`autorun_cast_voice_xa.lua`](../../scripts/pcsx-redux/autorun_cast_voice_xa.lua) | One Seru cast's CD-XA chain: cast-audio dispatcher `FUN_801F3990`, cue dispatcher `FUN_8004FCC8` (both decline gates at entry), clip starter `FUN_8003D53C` with `(clip slot, filter channel, duration)`; `xa_start.csv`, the cycle of each start and CD level set | injected cast, interp | Confirms [the cue census](../subsystems/cast-module.md#the-casts-own-cd-xa-voice); the character-banded cue does not fire on a cast | |
 | [`autorun_arts_voice_parity.lua`](../../scripts/pcsx-redux/autorun_arts_voice_parity.lua) | A typed arts string (`LEGAIA_INPUT_SEQ`, edge-only pad) and every selector call `FUN_8004C140`, clip start `FUN_8003D53C` and cue `FUN_8004FCC8` with the strike cursor `ctx[+0x15]` and clip latch `ctx[+0x243]`; per-seat committed-clip rows; optional per-vsync rows (`LEGAIA_TRACE_SEAT`: rate byte, clips, frame step, frame counter, anim cursor, sampled `pc`) | arts-input state (`arts_bar_ideal_noa_fangs`), interp | The retail side of `parity`'s `arts_voice_retail_capture_disc` ([arts shout](../subsystems/battle-action-helpers.md#tactical-arts-shout-xa2--xa4--xa6)) | |
 | [`autorun_spirit_item_cue_band.lua`](../../scripts/pcsx-redux/autorun_spirit_item_cue_band.lua) | Hijacks the action **category** at seed state `0x0C` (arm head `0x801E2BFC`) to reach jump-table slot `0x3D`, the one caller of `FUN_801F3990`; taps both category arms, `0x3C`, `0x3D`, the guard store, the dispatcher, its band `jal`, the clip starter | battle state, interp | Every driven item action fires the band. A Magic injection cannot reach it: the category-2 override to `0x3C` needs a spell id `< 0x65` | |
 | [`autorun_cast_cue_band_sweep.lua`](../../scripts/pcsx-redux/autorun_cast_cue_band_sweep.lua) | Whether the character-banded cue band ever fires on a player cast | see detail | [detail](#autorun_cast_cue_band_sweeplua) | |
@@ -1204,8 +1273,11 @@ Background for this group: [`cast-module.md`](../subsystems/cast-module.md).
 | Probe | Captures | Run | Output / answer |
 |---|---|---|---|
 | [`autorun_audio_trace.lua`](../../scripts/pcsx-redux/autorun_audio_trace.lua) | Multi-frame retail trace for the audio-trace parity oracle | see detail | [detail](#autorun_audio_tracelua) | |
+| [`autorun_kon_cycle_watch.lua`](../../scripts/pcsx-redux/autorun_kon_cycle_watch.lua) | CPU cycle of each per-frame flush and each KON write: where inside a vsync a sequence's key-ons reach the SPU. |
 | [`autorun_keyon_census.lua`](../../scripts/pcsx-redux/autorun_keyon_census.lua) | Exec-bps on libsnd note-on `FUN_80066308`, allocator verdict `0x80066C84`, `SpuSetKey` `FUN_8006B854`; SFX cue key-ons `FUN_80065034`, ring pushes + ring-id write watch, motion-VM cue pushes, CD-XA one-shots; clock rows with BGM id, PROT index, mute masks | interp; reads no SPU state, so counts are exact at any speed | Input to `legaia-engine audio-trace --retail-keyon-csv` ([audio.md](../subsystems/audio.md#count-the-key-ons-not-the-edges)) | |
 | [`autorun_audio_level_watch.lua`](../../scripts/pcsx-redux/autorun_audio_level_watch.lua) | Injects a summon from a pre-cast battle state; write watches on the duck cell `0x8007B910` and the applied level `0x8007B6EC` (pc / ra per store), one row per vsync with both words and each sequence record's `+0x58` | interp (the watches are Lua breakpoints) | Pins `FUN_8001698C`'s once-a-frame level apply ([audio.md](../subsystems/audio.md#a-sequence-volume-change-re-volumes-the-held-notes)) | |
+| [`autorun_door_hop.lua`](../../scripts/pcsx-redux/autorun_door_hop.lua) | Crosses a `LEGAIA_HOPS` chain of doors by holding the player on each walk-on tile, pages arrival boxes, saves one raw state per scene reached once the pad moves the player; a gated door logs `REFUSED` and ends the run | field state, `--fast` | Coverage states for a scene whose walk is not the point ([capture-coverage](capture-coverage.md#filling-the-worklist)). |
+| [`autorun_movie_state.lua`](../../scripts/pcsx-redux/autorun_movie_state.lua) | Makes op `4C E2`'s two stores from a field state and saves raw states `LEGAIA_SHOTS` vsyncs into the movie | field state, `--fast` | The retail frames of the [movie states](retail-compare.md#movie-states). |
 | [`autorun_movie_bgm_audibility.lua`](../../scripts/pcsx-redux/autorun_movie_bgm_audibility.lua) | Starts a mid-game movie by the `4C E2` op's two stores (`LEGAIA_FMV`), a tile poke (`LEGAIA_POKE_POS`) or CROSS taps (`LEGAIA_MASH_EVERY`); streams the SPU (`LEGSPU01`, [`probe.spu`](../../scripts/pcsx-redux/lib/probe/spu.lua)) with mode + BGM words | `LEGAIA_CALL` / `LEGAIA_FLAGS_OR` run one op-`0x35` arm first (interp only) | Whether the field score is audible under a movie ([`audio.md`](../subsystems/audio.md#movies-and-the-score)) | |
 
 #### Minigames

@@ -69,7 +69,7 @@ impl World {
             // rays and final blasts).
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
-            927 => self.run_juggernaut_stager_calls(),
+            927 => self.run_juggernaut_stager_calls(spell_id),
             // PROT 0923's stager is reached through its parts' op-`0x20`
             // calls, never off the phase: its arm 0 (the stage byte `3`) runs
             // when the record that calls it does. A retail cast holds
@@ -163,7 +163,22 @@ impl World {
         // shot that reads `ctx[+0x6D0]` (`0x801F8094`, `0x801F8104`): the
         // victim on the ground is framed off its own size, not the depth
         // whatever ran before left.
-        if entry == 917 && ctx.phase == 0xF {
+        //
+        // The same call heads an arm of seven more, each before a shot that
+        // reads the word: PROT 0906 arm `0xD` (`0x801F7570`), 0907 arm `0xB`
+        // (`0x801F7C1C`), 0910 arm 9 (`0x801F796C`), 0916 arm `0x11`
+        // (`0x801F7CE4`), 0918 arm `0xE` (`0x801F7EA4`), and behind a seat
+        // target (`bVar < 8`) 0914 arm `0xD` (`0x801F75DC`) and 0920 arm 8
+        // (`0x801F75E0`). Without it those shots read the summon band's `0x600`.
+        let seat_target = self
+            .actors
+            .get(usize::from(caster_slot))
+            .is_some_and(|a| a.battle.active_target < 8);
+        if matches!(
+            (entry, ctx.phase),
+            (917, 0xF) | (906, 0xD) | (907, 0xB) | (910, 9) | (916, 0x11) | (918, 0xE)
+        ) || (seat_target && matches!((entry, ctx.phase), (914, 0xD) | (920, 8)))
+        {
             let d = self.cast_target_frame_depth(caster_slot);
             self.battle.camera_frame_height = d;
             self.battle_ctx.camera_frame_height = d;
@@ -195,7 +210,30 @@ impl World {
                 // a capture replay holds it.
                 let held = st.sideband_busy;
                 st.sideband_busy |= self.battle_ctx.menu_open != 0;
-                let d = direct(&mut st, ctx.phase, seats);
+                // The poll holds the arm's way out, not what runs ahead of it:
+                // PROT 0917's arm 1 rises to TR y `0x800` first
+                // (`iRam800840bc` under `0x800`), PROT 0919's drifts while its
+                // word runs. An arm that would pass makes none of its exit's
+                // stores, and keeps its drain and its drift.
+                let polling = st.sideband_busy
+                    && legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry)
+                        == Some(ctx.phase);
+                let d = if polling {
+                    let mut ahead = st;
+                    let d = direct(&mut ahead, ctx.phase, seats);
+                    if d.hold {
+                        st = ahead;
+                        d
+                    } else {
+                        st.countdown = ahead.countdown;
+                        legaia_engine_cast::cast_module_camera::ArmDirection {
+                            drift: d.drift,
+                            ..legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
+                        }
+                    }
+                } else {
+                    direct(&mut st, ctx.phase, seats)
+                };
                 st.sideband_busy = held;
                 self.store_module_cam(st);
                 d
@@ -222,7 +260,7 @@ impl World {
         if entry == 927
             && let Some(d) = direction
         {
-            self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count);
+            self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count, spell_id);
         }
         if entry == 918
             && let Some(d) = direction
@@ -300,6 +338,7 @@ impl World {
         run.capture_drift_after_shot = direction.is_some_and(|d| d.drift_after_shot);
         let mut capture_held = false;
         let mut capture_arm = None;
+        let mut capture_vram_move = None;
         let phase_in = ctx.phase;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
@@ -316,6 +355,14 @@ impl World {
             let seats = self.module_cam_seats(caster_slot, victim_slot);
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
+            // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
+            if entry == 944 || entry == 935 {
+                self.feed_seru_cam(entry, caster_slot, &mut st);
+            }
+            // PROT 0964's strike picks its opening record off the last roll.
+            if entry == 964 {
+                st.module_words[0] = i32::from(self.cast_element_change_last_roll());
+            }
             let arm = direct(&mut st, ctx.phase, seats);
             self.store_module_cam(st);
             if let Some(v) = arm.latch
@@ -335,6 +382,19 @@ impl World {
             run.capture_focus_z = arm.focus_z;
             run.capture_drift_first = arm.drift_first;
             capture_held = arm.hold;
+            self.casting.module_debris.extend(
+                arm.pass_spawns
+                    .iter()
+                    .chain(&arm.charge_spawns)
+                    .flatten()
+                    .copied(),
+            );
+            self.casting.module_scatter = arm.scatter;
+            self.casting.module_rock_burst = arm.rock_burst;
+            self.casting.module_spray = arm.spray;
+            self.casting.module_ring = arm.ring;
+            self.casting.module_scatter_pairs = arm.scatter_pairs;
+            capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
         }
         // A director arm that names the body's damage-wrapper call folds the
@@ -365,7 +425,18 @@ impl World {
                         self.next_rand()
                     });
             }
+            // The sweep's seats are those with HP and no Stone before the hit.
+            let struck: Vec<u8> = (0..self.party.party_count)
+                .filter(|&s| {
+                    arm.party_faces_caster
+                        && self.actors[usize::from(s)].battle.hp > 0
+                        && !self.battle.actor_is_petrified(s)
+                })
+                .collect();
             self.fold_pending_cast();
+            for s in struck {
+                self.face_seat_away_from_caster(s, caster_slot);
+            }
             caster = self.cast_view(caster_slot);
             victim = self.cast_view(victim_slot);
             seat = self.cast_view(seat_slot);
@@ -524,7 +595,7 @@ impl World {
         run.camera_nudge = direction.and_then(|d| d.nudge);
         run.spawns = direction.map_or(&[], |d| d.spawns);
         run.arm_point = direction.and_then(|d| d.arm_point);
-        run.vram_move = direction.and_then(|d| d.vram_move);
+        run.vram_move = direction.and_then(|d| d.vram_move).or(capture_vram_move);
         run.caption = direction.and_then(|d| d.caption);
         run.fades = direction.map_or(&[], |d| d.fades);
         run.kills_fades = direction.is_some_and(|d| d.kills_fades);
@@ -641,9 +712,6 @@ impl World {
                 (957, Some(ticks::SUMMON_EFFECT_TICK_B)) => {
                     Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
                 }
-                (957, Some(ticks::SUMMON_EFFECT_TICK_A)) => {
-                    Some(ticks::summon_effect_tick_a(&mut ctx, &mut victim, None))
-                }
                 // PROT 0942's Power Up reads the caster's own monster record
                 // `+0x0E` and writes the AGL **base** half only.
                 (942, Some(ticks::POWER_UP_TICK)) => {
@@ -751,7 +819,14 @@ impl World {
                     Some(ticks::power_charge_tick(&mut ctx, &mut caster))
                 }
                 (955, Some(ticks::VOID_ACCESSORIES_TICK)) => {
-                    let rolls = Some((self.next_rand(), self.next_rand()));
+                    // Arm 3's two draws (`0x801F6EB4`, `0x801F6F34`); the second
+                    // only behind a filled slot.
+                    let rolls = (ctx.phase == 3).then(|| {
+                        let slot = self.next_rand();
+                        let id = self.cast_victim_accessories(victim_slot)
+                            [(slot % u32::from(ticks::ACCESSORY_SLOTS)) as usize];
+                        (slot, if id != 0 { self.next_rand() } else { 1 })
+                    });
                     let accessories = self.cast_victim_accessories(victim_slot);
                     let (step, outcome) =
                         ticks::void_accessories_tick(&mut ctx, &mut victim, accessories, rolls);
@@ -839,6 +914,7 @@ impl World {
                     }
                     if let Some(outcome) = taken {
                         self.stash_cast_steal(caster_slot, outcome);
+                        self.raise_cast_steal_caption(outcome);
                     }
                     Some(step)
                 }
@@ -1050,8 +1126,13 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
+                    // Retail tests once a pass, four vsyncs of `0x40` apart: from
+                    // `0x100` on, so the ray's first swing past the victim
+                    // misses and the hit waits for the centre crossing at
+                    // `0x800`, 32 vsyncs in.
                     let cone_seats: Vec<u8> = if entry == 904
                         && ctx.phase == ticks_a::THEEDER_SWEEP_ARM
+                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8)
                     {
                         use legaia_engine_cast::seru_magic_ticks::{
                             MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH,
@@ -1161,7 +1242,44 @@ impl World {
                             ),
                             Vec::new(),
                         ),
-                        _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
+                        _ => {
+                            // Arm 11's sites are the cast's second and last
+                            // hits: three quarters of a roll on the victim,
+                            // two thirds of one on each other seat
+                            // (`0x801F7C14`, `0x801F7DF8`). The opener is arm
+                            // 8's `apply_summon_pre_hits`, and the band folds
+                            // nothing for a party's cast. A monster's cast of
+                            // the id, which has no roll here, keeps the fold.
+                            let finishing = ctx.phase == ticks_a::ZENOIR_FINISH_ARM
+                                && caster_slot < self.party.party_count;
+                            self.casting.module_skips_fold |= caster_slot < self.party.party_count;
+                            let mut rolled: Vec<(u8, u32)> = Vec::new();
+                            let out = ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |r| {
+                                if !finishing {
+                                    return None;
+                                }
+                                let t = map.engine(r)?;
+                                let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
+                                let site = if r == who.victim {
+                                    ticks_a::SERU_HIT_SITES[4]
+                                } else {
+                                    ticks_a::SERU_HIT_SITES[5]
+                                };
+                                rolled.push((t, roll * site.scale_num / site.scale_den));
+                                Some(roll as i32)
+                            });
+                            for (t, amount) in rolled {
+                                self.battle.hit_fx.push(
+                                    legaia_engine_battle::battle_events::BattleHitFx {
+                                        target_slot: t,
+                                        amount: amount.min(u32::from(u16::MAX)) as u16,
+                                        is_heal: false,
+                                        is_crit: false,
+                                    },
+                                );
+                            }
+                            out
+                        }
                     };
                     self.write_cast_seat_row(&seats);
                     caster = seats.get(r_caster).copied().unwrap_or(caster);
@@ -1181,6 +1299,9 @@ impl World {
                     // Arm 0's kill roll, drawn once per cast and held for
                     // arm 10 (the word `0x801F7C4C`).
                     let kill = self.ultimate_rave_verdict();
+                    // The body rolls no wrapper: its one write is the kill's
+                    // `sh zero, 0x14c`, and off that path the cast hits nothing.
+                    self.casting.module_skips_fold = true;
                     Some(ticks::ultimate_rave_tick(
                         &mut ctx,
                         &mut caster,
@@ -1275,6 +1396,10 @@ impl World {
                             legaia_engine_cast::seru_magic_ticks::ORB_CLEANSE_MIN_LEVEL,
                         );
                         legaia_engine_cast::seru_magic_ticks::spoon_cure_sweep(&mut seats, cleanse);
+                        // ...and raises the roster panels the way Orb's arm 9 does
+                        // (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`,
+                        // `0x801F83E4..0x801F8450`).
+                        self.battle.raise_module_roster_panels();
                         self.write_cast_seat_row(&seats);
                         caster = seats.get(r_caster).copied().unwrap_or(caster);
                         victim = seats.get(r_victim).copied().unwrap_or(victim);
@@ -1343,6 +1468,40 @@ impl World {
         // runs the same framing on arm 13's pass (`jal` at `0x801F7B6C`,
         // unscaled): arms 14 / 15 frame the victim at `d` and `(d/2, -d/2)`
         // and arm 16 lifts it `sin * d >> 14`, all off that depth.
+        // PROT 0941's Steal halves the depth for the walk (`0x801F7434`) and
+        // puts it back on the steal (`0x801F7B24`); each of the steal's two
+        // passing arms rings a monster's own voice through the funnel by the
+        // caster's id, `(4..=6, 0x43..=0x45, 0x90..=0x92)`.
+        if entry == 941 && body == Some(arms::STEAL_TICK) && ctx.phase != phase_entry {
+            match phase_entry {
+                0 => {
+                    self.battle.camera_frame_height /= 2;
+                    self.battle_ctx.camera_frame_height /= 2;
+                }
+                1 => {
+                    self.battle.camera_frame_height *= 2;
+                    self.battle_ctx.camera_frame_height *= 2;
+                }
+                _ => {}
+            }
+            let id = self
+                .actors
+                .get(usize::from(caster_slot))
+                .and_then(|a| a.battle_monster_id)
+                .unwrap_or(0);
+            let cue = match (phase_entry, id) {
+                (1, 4..=6) => Some(0x1D),
+                (1, 0x43..=0x45) => Some(0x137),
+                (1, 0x90..=0x92) => Some(0x155),
+                (2, 4..=6) => Some(0x1C),
+                (2, 0x43..=0x45) => Some(0x138),
+                (2, 0x90..=0x92) => Some(0x18B),
+                _ => None,
+            };
+            if let Some(cue) = cue {
+                self.route_battle_cue(cue, caster_slot);
+            }
+        }
         if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
             let depth = match (entry, phase_entry) {
                 (903, 10) => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
@@ -1418,14 +1577,41 @@ impl World {
             .as_ref()
             .and_then(|a| a.ribbons)
             .or(direction.and_then(|d| d.ribbons));
+        self.casting.module_ribbons_on_scatter_y =
+            capture_arm.as_ref().is_some_and(|a| a.ribbons_on_scatter_y);
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
+            if !arm.others_write.is_empty() && !capture_held {
+                let monsters = self.party.party_count..self.actors.len() as u8;
+                for slot in 0..self.party.party_count {
+                    if !arm.others_live_only || self.actors[usize::from(slot)].battle.hp > 0 {
+                        self.apply_capture_seat_writes(slot, arm.others_write);
+                    }
+                }
+                for slot in monsters {
+                    if self.actors[usize::from(slot)].battle.hp > 0 {
+                        self.apply_capture_seat_writes(slot, arm.others_write);
+                    }
+                }
+            }
             self.apply_capture_seat_writes(caster_slot, arm.caster_write);
             self.apply_capture_seat_writes(victim_slot, arm.victim_write);
             if !arm.party_write.is_empty() {
                 for slot in 0..self.party.party_count {
-                    self.apply_capture_seat_writes(slot, arm.party_write);
+                    let a = &self.actors[usize::from(slot)];
+                    if (!arm.party_live_only || a.battle.hp > 0)
+                        && !(arm.party_skip_stoned && self.battle.actor_is_petrified(slot))
+                    {
+                        self.apply_capture_seat_writes(slot, arm.party_write);
+                    }
+                }
+            }
+            if let Some(level) = arm.parts_level
+                && let Some(scene) = self.casting.active_summon.as_mut()
+            {
+                for part in &mut scene.parts {
+                    part.state.field_78 = level;
                 }
             }
             // PROT 0965 arm `0x0B` lines the party up for its sweep and its
@@ -1486,12 +1672,33 @@ impl World {
             }
             // PROT 0959's hits clear the readout flag and its arm `0x0F`
             // raises it as it passes: the cluster opens on that pass.
-            self.battle.combo_cluster_held =
-                entry == 959 && (phase_in < 0x0F || (phase_in == 0x0F && arm.hold));
+            if entry == 959 {
+                self.battle.combo_cluster_held = phase_in < 0x0F || (phase_in == 0x0F && arm.hold);
+            }
             if arm.backdrop_off {
                 self.battle.backdrop_cue =
                     legaia_engine_battle_vm::battle_ground_grid::BACKDROP_CUE_FULL;
             }
+        }
+        // The hit-tint stores: colour word, blend and impact selector.
+        self.apply_module_impacts(
+            entry,
+            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+            phase_in,
+            ctx.phase != phase_in,
+            countdown_before,
+            caster_slot,
+            victim_slot,
+            seat_slot,
+        );
+        if entry == 908 {
+            self.apply_summon_pre_hits(
+                entry,
+                phase_in,
+                ctx.phase != phase_in,
+                caster_slot,
+                spell_id,
+            );
         }
         // The summon-creature directors' HP and colour-word stores, after
         // the views' fold-back like PROT 0908's.
@@ -1508,6 +1715,15 @@ impl World {
             }
             if entry == 915 {
                 self.apply_mushura_writes(phase_in, victim_slot);
+                self.apply_mushura_run(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    victim_slot,
+                    seat_slot,
+                    caster_slot,
+                    spell_id,
+                );
             }
             if entry == 929 {
                 self.apply_mule_writes(
@@ -1520,6 +1736,68 @@ impl World {
             }
             if entry == 928 {
                 self.apply_palma_writes(phase_in, ctx.phase != phase_in);
+            }
+            if entry == 914 && ctx.phase != phase_in {
+                self.apply_gola_gola_writes(phase_in, ctx.monster_count, caster_slot, seat_slot);
+            }
+            if entry == 919 {
+                self.apply_spoon_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 921 {
+                self.apply_iota_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == SPIKEFISH_ENTRY {
+                self.apply_spikefish_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 924 {
+                self.apply_rave_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    victim_slot,
+                    seat_slot,
+                );
+            }
+            if entry == 932 {
+                self.apply_meta_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 933 {
+                self.apply_terra_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
+            if entry == 934 {
+                self.apply_ozma_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                    caster_slot,
+                    spell_id,
+                );
             }
             if entry == 923 {
                 self.apply_gilium_writes(phase_in, ctx.phase != phase_in);
@@ -1634,6 +1912,12 @@ impl World {
             ctx.phase,
             run.tick_ported && !run.busy,
         );
+        // PROT 0955's Void Accessories composes its line at run time, the
+        // strip's `0xC2`-escape template or the module's `Nothing happened.`
+        // (`0x801F6F94`, `0x801F7048`); the decoder sees both sites.
+        if let Some(out) = run.voided_accessory {
+            self.raise_cast_void_caption(out.voided);
+        }
         if entry == 929 {
             self.mule_backdrop_follow(phase_in, ctx.phase != phase_in);
         }

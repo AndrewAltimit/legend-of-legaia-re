@@ -180,7 +180,7 @@ const STAGER_PROBES: [StagerProbe; 4] = [
 ];
 
 /// Every ported dispatch site in `cast_module_ticks.rs`.
-const ROWS: [Row; 34] = [
+const ROWS: [Row; 33] = [
     // --- the five state-touching stagers (0909's through its parts) --------
     row(
         &[
@@ -326,13 +326,6 @@ const ROWS: [Row; 34] = [
         Reach::Trampoline,
     ),
     row(
-        &[0x801F_6A14],
-        957,
-        Some(0x77),
-        Some(0x801F_6A14),
-        Reach::Trampoline,
-    ),
-    row(
         &[0x801F_6DD8],
         958,
         Some(0x79),
@@ -366,10 +359,9 @@ const ROWS: [Row; 34] = [
 /// for this module, which is the reason this ladder exists. Asserted as a
 /// subset of what the walk entered, so the conversion claim is checked rather
 /// than stated.
-const NEVER_ENTERED: [u32; 11] = [
+const NEVER_ENTERED: [u32; 10] = [
     0x801F_69F8,
     0x801F_6A0C,
-    0x801F_6A14,
     0x801F_6A28,
     0x801F_7158,
     0x801F_767C,

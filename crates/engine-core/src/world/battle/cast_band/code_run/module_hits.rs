@@ -73,9 +73,16 @@ impl World {
             let Some(target) = map.engine(seat).filter(|_| hittable) else {
                 continue;
             };
-            let roll = self
-                .capture_module_roll(shape, caster, target)
-                .unwrap_or_default();
+            // A party caster's sweep calls the wrapper's summon branch
+            // (`FUN_801DD0AC(0x12, 7, seat)`, `0x801F8758`): the creature's roll,
+            // not a capture body's baked one.
+            let roll = if entry == 927 && caster < ctx.party_count {
+                self.summon_module_roll(caster, target, spell_id)
+                    .map_or(0, |r| r as i32)
+            } else {
+                self.capture_module_roll(shape, caster, target)
+                    .unwrap_or_default()
+            };
             rolls.push((seat, roll));
         }
         self.refresh_seat_spirit(&mut seats);

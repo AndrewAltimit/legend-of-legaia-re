@@ -29,6 +29,7 @@ impl PlayWindowApp {
     /// tick's framebuffer grabs project through.
     pub(in crate::window) fn note_frame_field_view(&mut self, cutscene_cam: Option<CutsceneCam>) {
         self.frame_cutscene_view = cutscene_cam.map(cutscene_view);
+        self.session.field_fog_shot = self.frame_cutscene_view;
         self.last_frame_field_view = self
             .host_view()
             .frame(self.frame_cutscene_view)
@@ -360,8 +361,14 @@ impl PlayWindowApp {
         &self,
         r: &legaia_engine_render::Renderer,
     ) -> (Vec<Option<UploadedVramMesh>>, Option<UploadedColorMesh>) {
+        // Keyed by actor slot, not by TMD: two bodies on one TMD (a formation's
+        // twin monsters, a scene's NPCs on one model) each carry their own
+        // frame, relocation and blend word, and retail posts each its own
+        // packets.
         let mut posed_overrides: Vec<Option<UploadedVramMesh>> =
-            (0..self.scene_tmd_data.len()).map(|_| None).collect();
+            (0..self.session.host.world.actors.len())
+                .map(|_| None)
+                .collect();
         // The player's untextured colour half follows the same
         // per-frame pose - rebuilt below alongside the textured
         // override, drawn instead of the static rest-pose colour
@@ -380,7 +387,7 @@ impl PlayWindowApp {
             // so the mesh is rebuilt de-indexed this frame, posed or not.
             if let Some(input) = self.body_draw_plan(ai).and_then(|p| p.shatter) {
                 if let Some(m) = self.shattered_battle_mesh(r, ai, actor, tmd_idx, &input) {
-                    posed_overrides[tmd_idx] = Some(m);
+                    posed_overrides[ai] = Some(m);
                 }
                 continue;
             }
@@ -404,7 +411,7 @@ impl PlayWindowApp {
                         &rest.colors,
                         &rest.indices,
                     ) {
-                        Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                        Ok(m) => posed_overrides[ai] = Some(m),
                         Err(e) => log::warn!("blended rest mesh upload: {e:#}"),
                     }
                 }
@@ -454,6 +461,8 @@ impl PlayWindowApp {
                 ai,
                 tmd.objects.len(),
             )
+            // Every object drawn is the TMD as it stands: no copy to mask.
+            .filter(|d| !d.iter().all(|&drawn| drawn))
             .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh = if actor.battle_animation.is_some() || player_slot == Some(ai as u8) {
@@ -535,7 +544,7 @@ impl PlayWindowApp {
                 &vmesh.colors,
                 &vmesh.indices,
             ) {
-                Ok(m) => posed_overrides[tmd_idx] = Some(m),
+                Ok(m) => posed_overrides[ai] = Some(m),
                 Err(e) => log::warn!("posed mesh upload: {e:#}"),
             }
         }
@@ -939,6 +948,8 @@ impl PlayWindowApp {
             // (`FUN_80049348` -> `FUN_8004CCD4`).
             let masked = g
                 .drawn_objects(tmd.objects.len())
+                // Every object drawn is the TMD as it stands: no copy to mask.
+                .filter(|d| !d.iter().all(|&drawn| drawn))
                 .map(|d| legaia_engine_battle::battle_attach_swap::mask_tmd(tmd, &d));
             let tmd = masked.as_ref().unwrap_or(tmd);
             let mut vmesh =

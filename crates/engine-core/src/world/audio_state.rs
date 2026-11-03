@@ -404,6 +404,17 @@ pub struct SideBandBank {
     pub prot_entry: u32,
 }
 
+impl SideBandBank {
+    /// The Muscle Dome arena's slot-`3` side bank, which its init streams
+    /// directly rather than through a request
+    /// (`legaia_minigame_formats::minigame_sfx::ARENA_SIDE_BANK_PROT_INDEX`).
+    pub const ARENA: Self = Self {
+        request: ARENA_SIDE_BAND_REQUEST,
+        slot: 3,
+        prot_entry: legaia_minigame_formats::minigame_sfx::ARENA_SIDE_BANK_PROT_INDEX,
+    };
+}
+
 /// Raw in-RAM TOC index of the `vab_01` block, `*(0x8007BBE4)` - `1072`, the
 /// CDNAME `#define vab_01 1072`. Read as a runtime word from every catalogued
 /// mednafen state checked (field and battle alike).
@@ -620,11 +631,7 @@ impl World {
     pub fn tail_side_band_bank(&self) -> Option<SideBandBank> {
         match self.mode {
             SceneMode::Field | SceneMode::WorldMap => self.side_band_bank(),
-            SceneMode::MuscleDome => Some(SideBandBank {
-                request: ARENA_SIDE_BAND_REQUEST,
-                slot: 3,
-                prot_entry: legaia_minigame_formats::minigame_sfx::ARENA_SIDE_BANK_PROT_INDEX,
-            }),
+            SceneMode::MuscleDome => Some(SideBandBank::ARENA),
             _ => None,
         }
     }

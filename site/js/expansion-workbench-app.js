@@ -37,6 +37,7 @@ import { renderCutscenes } from './expansion-workbench-cutscenes.js';
 import { renderAudio } from './expansion-workbench-audio.js';
 import { renderArts, renderSpells } from './expansion-workbench-arts.js';
 import { createPreview3d } from './expansion-workbench-preview3d.js';
+import { createThumbs } from './expansion-workbench-palette.js';
 import { createFind, locate } from './expansion-workbench-xref.js';
 import { renderFlow } from './expansion-workbench-graph.js';
 import { attachShare } from './expansion-workbench-share.js';
@@ -253,6 +254,17 @@ const ctx = {
       return { error: errText(e) };
     }
   },
+  // The object palette's pictures and names (expansion-workbench-palette.js).
+  starterMap: (name) => starterMap(name),
+  pageKey: (k) => {
+    if (k === 'fullscreen') setFullscreen(!S.fs);
+    else if (k === 'deselect' && S.fs) setFullscreen(false);
+  },
+  thumbs: () => S.thumbs || (S.thumbs = createThumbs({ ask: askSceneMeshes, discKey: () => (S.wb && S.wb.disc_key ? S.wb.disc_key() : '') })),
+  meshCatalog: () => {
+    if (!S.meshCat && S.wb && S.wb.mesh_catalog) { try { S.meshCat = JSON.parse(S.wb.mesh_catalog()); } catch (e) { S.meshCat = []; } }
+    return S.meshCat || [];
+  },
   sceneObjects: (scene) => {
     if (!S.sceneObj[scene]) S.sceneObj[scene] = JSON.parse(S.wb.scene_objects(scene));
     return S.sceneObj[scene];
@@ -271,6 +283,9 @@ function setStatus(msg, kind, id) {
   const el = $(id || 'xw-status');
   el.textContent = msg || '';
   el.className = 'wb-status' + (kind ? ' is-' + kind : '');
+  // A good word goes by itself; a problem stays until the next message.
+  clearTimeout(el._xwClear);
+  if (kind === 'ok' && id === 'xw-export-status') el._xwClear = setTimeout(() => { el.textContent = ''; }, 4000);
 }
 const errText = (e) => (e && e.message ? e.message : String(e));
 
@@ -308,6 +323,8 @@ function renderCheckChip() {
   const warns = S.issues.length - errs;
   el.textContent = S.checking && !S.issues.length ? 'Checking ...' : errs ? `${errs} problem${errs === 1 ? '' : 's'}` : warns ? `${warns} warning${warns === 1 ? '' : 's'}` : 'Pack checks out';
   el.className = 'wb-mini xw-checks-btn' + (errs ? ' is-err' : warns ? ' is-warn' : ' is-ok');
+  el.dataset.ic = errs ? `\u26A0 ${errs}` : warns ? `\u26A0 ${warns}` : '\u2713';
+  el.title = `${el.textContent}: show or hide the problems and Find (F8 steps through them)`;
   el.setAttribute('aria-expanded', String(asideOpen()));
 }
 
@@ -332,7 +349,7 @@ function renderBuild() {
   const cat = $('xw-catalog');
   const on = S.tab === 'maps';
   head.hidden = !on;
-  cat.hidden = !on;
+  $('xw-catdock').hidden = !on;
   if (!on) return;
   const maps = S.pack.maps || (S.pack.maps = {});
   const ids = Object.keys(maps);
@@ -345,20 +362,76 @@ function renderBuild() {
       let n = ids.length + 1;
       while (maps[`map_${n}`]) n++;
       const id = `map_${n}`;
-      maps[id] = blankMap(S.cat);
-      maps[id].name = `Map ${n}`;
+      maps[id] = starterMap(`Map ${n}`);
       S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
       ctx.changed(true);
     },
     errorsOf: (id) => S.issues.filter((i) => i.severity === 'error' && i.path === `maps/${id}.toml`).length,
     catalog: cat,
+    tools: buildTools,
     env: () => ({
       map: openMapId(), preview: S.preview, pack: S.pack, rerender, jump: jumpTo, playHere, playPack: playInBrowser,
     }),
   });
 }
 
+/* The Build head's right end: the drawer with the forms. */
+function buildTools() {
+  const pv = S.preview;
+  const open = pv && pv.drawerOpen && pv.drawerOpen();
+  return h('div', { class: 'xw-build-tools' },
+    h('button', {
+      type: 'button', class: 'wb-mini' + (open ? ' is-on' : ''), 'aria-pressed': String(!!open), 'data-ic': '\u2699',
+      title: 'Map settings: the tile painter and every form for this map, in a drawer beside the 3D view',
+      onclick: () => { pv.setDrawer(!pv.drawerOpen()); rerender(); },
+    }, open ? 'Hide map settings' : 'Map settings'),
+    h('button', {
+      type: 'button', class: 'wb-mini' + (S.fs ? ' is-on' : ''), 'aria-pressed': String(!!S.fs), 'data-ic': S.fs ? '\u2715' : '\u26F6',
+      title: S.fs ? 'Leave fullscreen (F11, or Escape with nothing selected)' : 'Give the whole screen to the map builder (F11). Escape puts down what you are placing, then the selection, then leaves.',
+      onclick: () => setFullscreen(!S.fs),
+    }, S.fs ? 'Exit fullscreen' : 'Fullscreen'));
+}
+
+/* Fullscreen: the workbench's own bar and the editor take the whole screen.
+ * The class does the layout, so a browser without the Fullscreen API (or one
+ * that refuses it) still gets the whole window. Where the Keyboard Lock API
+ * holds Escape, Escape stays the editor's: placing, then the selection, then
+ * leaving. Elsewhere the browser takes Escape and leaves at once, and placing
+ * stops with it. */
+function setFullscreen(on) {
+  S.fs = !!on;
+  document.body.classList.toggle('xw-fs', S.fs);
+  document.body.classList.remove('xw-fs-menu');
+  const root = $('xw-main');
+  if (S.fs) {
+    if (root.requestFullscreen && !document.fullscreenElement) {
+      root.requestFullscreen({ navigationUI: 'hide' }).then(() => {
+        if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {});
+      }).catch(() => { /* the class fills the window */ });
+    }
+  } else {
+    if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock();
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+  renderBuild();
+}
+
+document.addEventListener('fullscreenchange', () => {
+  // The browser left fullscreen by itself (Escape, F11, a tab switch).
+  if (!document.fullscreenElement && S.fs) {
+    if (window.xwBuild) window.xwBuild.disarm();
+    setFullscreen(false);
+  }
+});
+
 // Open map `id` on the Build area, without a jump's scroll and flash.
+function starterMap(name) {
+  if (S.wb && S.wb.starter_map) return JSON.parse(S.wb.starter_map(name));
+  const m = blankMap(S.cat);
+  m.name = name;
+  return m;
+}
+
 function openMap(id) {
   S.tab = 'maps';
   S.jump = { file: `maps/${id}.toml`, field: null, quiet: true };
@@ -374,6 +447,8 @@ function rerender() {
   $('xw-pack-id').textContent = m.id || '';
   $('xw-pack-ver').textContent = `${m.version || ''}${S.label ? ' - ' + S.label : ''}`;
   document.body.classList.toggle('xw-on-build', S.tab === 'maps');
+  // Fullscreen is the map builder's; another page goes back to the page.
+  if (S.fs && S.tab !== 'maps') setFullscreen(false);
   applyAside();
   if (S.preview) {
     S.preview.show(['maps', 'cutscenes', 'battle', 'cards', 'modes'].includes(S.tab));
@@ -719,7 +794,7 @@ function placeParseError(issue) {
  * answer for a pack that has changed since is dropped (a newer one is on
  * its way). Without the worker (an older bundle, a worker that failed) it
  * runs here. An export or a hand-off still validates here, at once. */
-const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [] };
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [], meshAsks: new Map() };
 
 // Count every change to the session's own files (the loaded tree, assets,
 // documents), so the worker is handed them again before its next check.
@@ -822,6 +897,12 @@ function startValidator(parts) {
       S.hintLoad = null;
       computeHints();
       renderIssues();
+    } else if (m.type === 'scene_meshes') {
+      const a = V.meshAsks.get(m.seq);
+      if (!a) return;
+      V.meshAsks.delete(m.seq);
+      if (m.error != null) a.rej(new Error(m.error));
+      else a.res(m.bytes.buffer);
     } else if (m.type === 'xref_sites') {
       if (m.seq !== xrefAsk.seq) return;
       const done = xrefAsk.done;
@@ -1405,6 +1486,27 @@ function init() {
   initRest();
 }
 
+/* A scene's meshes for the palette and the ghost: off this thread when the
+ * worker is up, else a moment later on the page. */
+function askSceneMeshes(scene) {
+  return new Promise((res, rej) => {
+    const go = (tries) => {
+      if (V.worker && V.ready) {
+        V.meshSeq = (V.meshSeq || 0) + 1;
+        V.meshAsks.set(V.meshSeq, { res, rej });
+        V.worker.postMessage({ type: 'scene_meshes', seq: V.meshSeq, scene });
+      } else if (V.worker && tries > 0) {
+        setTimeout(() => go(tries - 1), 400);
+      } else {
+        setTimeout(() => {
+          try { res(S.wb.scene_meshes(scene).buffer); } catch (e) { rej(e); }
+        }, 30);
+      }
+    };
+    go(40);
+  });
+}
+
 async function downloadBundle() {
   // Built in the worker when it is up; the export refuses a pack with an
   // error, and only then do the checks run here to open the first one.
@@ -1435,34 +1537,20 @@ async function downloadBundle() {
 function minimalPack(pack) {
   const cat = S.cat || {};
   const mon = (cat.monsters && cat.monsters[0]) || { id: 1 };
-  const scene = (cat.scenes && cat.scenes[0] && cat.scenes[0].name) || 'town01';
   pack.battle.monsters = { first_monster: { base: { kind: 'monster', id: mon.id }, name: 'First Monster', hp: { mul: 1.5 } } };
   pack.battle.formations = { first_fight: { label: 'First Fight', monsters: ['first_monster'] } };
-  pack.dialog.lines = { welcome: { speaker: 'Guide', text: 'Welcome to my expansion.\nStep onto the red tiles to fight.' } };
+  pack.dialog.lines = { welcome: { speaker: 'Guide', text: 'Welcome to my expansion.\nWalk on, and a fight is waiting.' } };
   pack.quests.quests = [{
     id: 'first_quest', title: 'First Quest', description: 'Win the first fight.', auto_start: true, ordered: true,
     objectives: [{ kind: 'defeat_formation', formation: 'first_fight', count: 1, text: 'Win the first fight' }],
     rewards: { gold: 100 },
   }];
-  pack.maps = {
-    first_map: {
-      name: 'First Map', size: null,
-      base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },
-      floor_heights: [0, 64],
-      tiles: {
-        origin: [16, 16],
-        rows: ['###########', '#.........#', '#.........#', '#.........#', '#.........#', '###########'],
-        legend: { '#': { label: 'wall', walls: 'all', height: 0, ground: null }, '.': { label: 'floor', height: 0, ground: null } },
-      },
-      props: [], npcs: [], exits: [], encounters: [],
-      spawns: [{ id: 'start', tile: [2, 2], facing: 0 }],
-      triggers: [
-        { id: 'greeting', rect: [3, 2, 3, 2], event: { kind: 'dialog', line: 'welcome' }, once: true },
-        { id: 'fight', rect: [7, 2, 8, 3], event: { kind: 'battle', formation: 'first_fight' } },
-      ],
-      bgm: null, camera: 'default',
-    },
-  };
+  const first = starterMap('First Map');
+  first.triggers = [
+    { id: 'greeting', rect: [8, 5, 8, 5], event: { kind: 'dialog', line: 'welcome' }, once: true },
+    { id: 'fight', rect: [11, 3, 12, 4], event: { kind: 'battle', formation: 'first_fight' } },
+  ];
+  pack.maps = { first_map: first };
   return pack;
 }
 
@@ -1523,8 +1611,26 @@ function toggleKeys(on) {
   if (show) box.focus({ preventScroll: true });
 }
 
+function onShortcutFs(ev) {
+  if (ev.key === 'F11' && S.pack && S.tab === 'maps') {
+    ev.preventDefault();
+    setFullscreen(!S.fs);
+    return true;
+  }
+  // Escape with nothing left to put down leaves fullscreen.
+  if (ev.key === 'Escape' && S.fs && !ev.defaultPrevented && window.xwBuild) {
+    const st = window.xwBuild.state();
+    if (st.mode !== 'place' && !st.sel.length && !document.querySelector('#xw-keyhelp:not([hidden])')) {
+      setFullscreen(false);
+      return true;
+    }
+  }
+  return false;
+}
+
 function onShortcut(ev) {
   if (!S.pack || $('xw-main').hidden) return;
+  if (onShortcutFs(ev)) return;
   const k = ev.key.toLowerCase();
   const mod = ev.ctrlKey || ev.metaKey;
   // Undo / redo: a text field keeps the browser's own while it has focus.
@@ -1579,6 +1685,13 @@ function setupMoreMenu() {
 function initRest() {
   setupMoreMenu();
   $('xw-toml').addEventListener('click', () => { S.tab = 'files'; rerender(); });
+  // The disc and pack pickers, folded away while building.
+  $('xw-open-setup').addEventListener('click', () => {
+    if (S.fs) setFullscreen(false);
+    const setup = $('xw-setup');
+    setup.open = true;
+    setup.scrollIntoView({ block: 'start' });
+  });
   $('xw-play').addEventListener('click', playInBrowser);
   $('xw-play-here').addEventListener('click', playHere);
   $('xw-live').addEventListener('change', (ev) => S.preview && S.preview.setLive(ev.target.checked));
@@ -1589,8 +1702,20 @@ function initRest() {
     storePlay,
     playUrl: playLibUrl,
   });
+  S.preview.onLayout(() => renderBuild());
   // The 3D view sits between the Build head and its catalog strip.
-  $('xw-catalog').before(S.preview.el);
+  $('xw-catdock').before(S.preview.el);
+  $('xw-cat-toggle').addEventListener('click', () => {
+    const closed = document.body.classList.toggle('xw-cat-closed');
+    $('xw-cat-toggle').textContent = closed ? 'Show catalog' : 'Hide catalog';
+    $('xw-cat-toggle').setAttribute('aria-expanded', String(!closed));
+  });
+  // Fullscreen's one control for the pack's other pages.
+  $('xw-fs-menu-btn').addEventListener('click', () => {
+    const open = document.body.classList.toggle('xw-fs-menu');
+    $('xw-fs-menu-btn').setAttribute('aria-expanded', String(open));
+    $('xw-fs-menu-btn').title = `${S.pack ? S.pack.manifest.name || S.pack.manifest.id : ''}: the pack's other pages`;
+  });
   S.share = attachShare({
     S,
     changed: (structural) => ctx.changed(structural),

@@ -828,3 +828,42 @@ fn the_all_clear_beats_run_the_announcer_and_its_captions() {
             .all(|c| ![0x1A, 0x1C, 0x1D].contains(&c.widget))
     );
 }
+
+/// The `0xFB -> 0xFC` edge spawns the all-clear fighter unless the displayed
+/// stage reads `0xE`; every beat past `0xFA` ends on its subtractive quad.
+#[test]
+fn the_all_clear_spawns_its_fighter_and_fades_under_it() {
+    let idle = CabinetInput {
+        frame_step: 1,
+        ..Default::default()
+    };
+    for (stage, want) in [(12, 1), (0xE, 0)] {
+        let mut cab = BakaCabinet::new();
+        cab.stage_display = stage;
+        cab.state = ST_CLEAR_A;
+        let (mut spawns, mut levels) = (0, Vec::new());
+        for _ in 0..0x800 {
+            let entry = cab.state;
+            let f = cab.tick(&idle);
+            spawns += i32::from(f.spawn_clear_fighter);
+            if f.spawn_clear_fighter {
+                assert_eq!(entry, ST_CLEAR_B);
+                assert_eq!(f.state, ST_CLEAR_C);
+            }
+            if entry == ST_CLEAR_A {
+                assert_eq!(f.clear_fade, None);
+            } else if (ST_CLEAR_B..=ST_CLEAR_E).contains(&entry) {
+                let level = f.clear_fade.expect("the beat's quad");
+                if entry != ST_CLEAR_B {
+                    levels.push(level);
+                }
+            }
+            if cab.state == ST_EXIT {
+                break;
+            }
+        }
+        assert_eq!(spawns, want, "stage {stage}");
+        assert_eq!(levels.iter().copied().min(), Some(0x50));
+        assert_eq!(levels.last().copied(), Some(0xFF));
+    }
+}

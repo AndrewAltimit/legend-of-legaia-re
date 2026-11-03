@@ -20,7 +20,6 @@
 //! ids instead of inventing art (same contract as the slot machine section).
 
 use super::*;
-#[cfg(target_arch = "wasm32")]
 use legaia_engine_audio::AudioSink;
 
 use legaia_container_formats::{
@@ -866,6 +865,25 @@ impl LegaiaMinigames {
             .iter()
             .map(|c| serde_json::json!({ "w": c.widget, "x": c.x, "y": c.y, "b": c.brightness }))
             .collect();
+        // The pause menu: the disc's text with its button icons as the escape
+        // bytes this page's browser font cannot draw (`hub_text_lossy`'s rule),
+        // so it marks them `*` rather than closing the gaps.
+        let pause = f.pause_panel().map(|(frame, lines)| {
+            let lines: Vec<serde_json::Value> = lines
+                .iter()
+                .map(|l| {
+                    serde_json::json!({
+                        "t": baka_pause_text_lossy(&l.text),
+                        "x": l.x,
+                        "y": l.y,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "frame": [frame.x, frame.y, frame.w, frame.h],
+                "lines": lines,
+            })
+        });
         serde_json::json!({
             "live": true,
             "state": f.cabinet().state(),
@@ -874,6 +892,14 @@ impl LegaiaMinigames {
             "player": f.player_roster(),
             "opponent": f.opponent_roster(),
             "cells": cells,
+            "pause": pause,
+            "clear_fighter": f.clear_fighter().map(|a| serde_json::json!({
+                "roster": legaia_engine_minigames::baka_fighter_chrome::CLEAR_FIGHTER_ROSTER,
+                "x": a.x,
+                "clock": a.clock,
+            })),
+            "seat_retired": [f.seat_retired(0), f.seat_retired(1)],
+            "clear_fade": f.cabinet_frame().clear_fade,
             // Whether this cabinet state's epilogue draws the duel HUD
             // (not under the result screens or the NEXT GAME / PAY OUT
             // sheet), and the sheet's pot numeral over the run's winnings
@@ -968,18 +994,17 @@ impl LegaiaMinigames {
             pcm.pcm.len()
         };
         self.baka_xa_last = Some((xa, frames));
-        #[cfg(target_arch = "wasm32")]
-        if let Some(out) = self.audio_out.as_ref() {
+        if let Some(d) = self.audio.as_mut() {
             // Every line this lane starts is the duel's or the dome hub's,
             // the two places retail routes the CD input into the reverb send
             // (`SPUCNT` bit 2; `World::cd_input_reverb` on the play hosts).
-            out.set_cd_reverb(true);
+            d.set_cd_reverb(true);
             let channels = if pcm.stereo {
                 legaia_xa::Channels::Stereo
             } else {
                 legaia_xa::Channels::Mono
             };
-            out.play_xa_shout(
+            d.audio().play_xa_shout(
                 pcm.pcm,
                 pcm.sample_rate,
                 channels,
@@ -987,8 +1012,6 @@ impl LegaiaMinigames {
                 legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY,
             );
         }
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = pcm;
     }
 }
 
@@ -1017,4 +1040,25 @@ impl LegaiaMinigames {
             self.baka_xa_fired
         )
     }
+}
+
+/// A pause line for the page's browser font: printable ASCII kept, each
+/// two-byte `0xCE` icon escape a `*`, other bytes dropped.
+fn baka_pause_text_lossy(bytes: &[u8]) -> String {
+    let mut s = String::new();
+    let mut it = bytes.iter();
+    while let Some(&b) = it.next() {
+        match b {
+            0xCE => {
+                it.next();
+                s.push('*');
+            }
+            0xCF => {
+                it.next();
+            }
+            0x20..=0x7E => s.push(b as char),
+            _ => {}
+        }
+    }
+    s
 }

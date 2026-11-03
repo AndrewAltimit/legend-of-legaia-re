@@ -247,14 +247,16 @@ impl PlayWindowApp {
 
     /// Fire the pause menu's own blip for this frame's pad edges. Which cue,
     /// if any, is the engine's one rule
-    /// ([`legaia_engine_menus::menu_cues::menu_edge_blip`]) - the browser play
+    /// ([`legaia_engine_menus::field_menu::pause_edge_blip`]) - the browser play
     /// page asks the same function through `play_menu_edge_blip`.
     /// `start_closes_menu` is whether this frame's Start closes the menu:
     /// on the root row list it does, inside a sub-screen it does not.
     pub(super) fn fire_menu_cues(&mut self, pressed: u16, start_closes_menu: bool) {
-        if let Some(blip) =
-            legaia_engine_menus::menu_cues::menu_edge_blip(pressed, start_closes_menu)
-        {
+        if let Some(blip) = legaia_engine_menus::field_menu::pause_edge_blip(
+            pressed,
+            start_closes_menu,
+            self.session.field_menu.as_ref(),
+        ) {
             self.fire_menu_cue(u16::from(blip.cue()));
         }
     }
@@ -582,7 +584,7 @@ impl PlayWindowApp {
                         active_sub,
                         pressed,
                         pending_key,
-                        &self.session.host.world,
+                        &mut self.session.host.world,
                     );
                     if active_sub.is_done() {
                         // Fold the outcome into the world through the one
@@ -1028,10 +1030,8 @@ impl PlayWindowApp {
         // `ActorSpawned` is the only variant the shared drain answers, and
         // there is deliberately no `CameraConfigure` arm: the session tick's
         // `Camera::route_camera_events` has already consumed every one off
-        // the world queue and does not restore it. The `apply == 0` snap
-        // beats are banked on the camera instead
-        // (`Camera::take_camera_snap_beats`, replayed by
-        // `frame_step::CutsceneGlide::advance`).
+        // the world queue and does not restore it; the shot lives in the
+        // camera globals (`frame_step::scripted_view`).
         self.session
             .host
             .world

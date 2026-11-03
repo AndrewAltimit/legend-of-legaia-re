@@ -92,6 +92,56 @@ pub struct CaptureCamArm {
     /// The arm's stores into every party seat `actor_table[0 .. ctx[+0]]`
     /// (PROT 0960 `0xA6`'s hide and show).
     pub party_write: CaptureSeatWrite,
+    /// [`Self::party_write`] walks only the seats with HP and without Stone
+    /// (PROT 0946's arm 7, `0x801F73A8..0x801F73C4`), read after the fold.
+    pub party_live_only: bool,
+    /// [`Self::party_write`] also skips a Stoned seat (`+0x16E & 4`).
+    pub party_skip_stoned: bool,
+    /// The pass's fold turns each seat it reaches on the caster:
+    /// `FUN_80019B28(caster[+0x38], caster[+0x34], seat[+0x38], seat[+0x34])
+    /// + 0x800` into `+0x46` (PROT 0957's arm 5, `0x801F75A4..0x801F75CC`).
+    pub party_faces_caster: bool,
+    /// The pass seats [`crate::cast_module_camera::STORM_SCATTER_PAIRS`] pairs of
+    /// [`crate::cast_module_camera::STORM_SCATTER_RECORDS`] on `rand()` points
+    /// (PROT 0957's arms 4 to 6): `x`, `y` each `0x80 - rand() % 255`, `z = 0x100`.
+    pub scatter_pairs: bool,
+    /// [`Self::ribbons`] take their height off the `y` the scatter's last pair
+    /// drew: the two loops share one stack trio (PROT 0957's arm 5).
+    pub ribbons_on_scatter_y: bool,
+    /// The arm stores this into every live part's level `+0x78`
+    /// (PROT 0957's arm 6, `0x801F78B8..0x801F78E4`).
+    pub parts_level: Option<u16>,
+    /// The arm's stores into every party seat and every live monster, made
+    /// ahead of its [`Self::caster_write`] / [`Self::victim_write`] (PROT
+    /// 0947 hides the field, then shows the caster). Waits for the band's
+    /// settle on a finishing arm.
+    pub others_write: CaptureSeatWrite,
+    /// [`Self::others_write`] skips a downed party seat as it does a downed
+    /// monster (PROT 0955 `0x70` walks seven seats behind one HP test).
+    pub others_live_only: bool,
+    /// The `MoveImage` (`FUN_80058490`) the arm issues on this pass.
+    pub vram_move: Option<super::ModuleVramMove>,
+    /// PROT 0935's arms 4 and 5: the pass's rock pair at a point off the
+    /// quadrant in the pass word, on the host's `rand()` draws
+    /// ([`super::rock_point`]).
+    pub rock_burst: Option<u8>,
+    /// PROT 0964's Thunder `k = 5`: these two records, on the host's draws, at
+    /// `(0x80 - r % 257, 0x80 - r % 257, 0x100)` (`0x801F767C..0x801F7708`).
+    pub spray: Option<[u32; 2]>,
+    /// PROT 0941's arm 1: three records at each of eight points round the
+    /// origin, `(sin / 2, 0, cos / 2)` at `i * 0x200`, the rot trio beside them,
+    /// on the host's `rand() % 8` slot draws (`0x801F6CD8..0x801F6E28`).
+    pub ring: Option<([u32; 3], [i16; 3])>,
+    /// `(record, count)`: this pass seats `count` copies of a record each on
+    /// five `rand()` draws (PROT 0951's arm 4, `0x801F7E34..0x801F7F14`:
+    /// `x = r % 64 - 32`, `y = r % 64 - 16`, `z = 0x100`, then the angle trio
+    /// roll, pitch, yaw, each `r % 4095`).
+    pub scatter: Option<(u32, u8)>,
+    /// The `FUN_80021B04` calls this pass makes at points the arm works out,
+    /// held or not. Seated on the tick that opens a battle frame.
+    pub pass_spawns: [Option<super::ModuleSpawn>; 5],
+    /// A passing arm's larger run of the same calls (PROT 0948's arm 1).
+    pub charge_spawns: [Option<super::ModuleSpawn>; 8],
     /// The arm stores `0x800` into both backdrop records' `+0x78`, the
     /// indoor ceiling: the pair back on the draw (PROT 0965 arms 7, `0x0B`).
     pub backdrop_on: bool,
@@ -153,6 +203,8 @@ pub struct CaptureSeatWrite {
     pub colour: Option<u32>,
     pub render_flag: Option<u8>,
     pub cursor_reset: bool,
+    /// A store into the seat's node cursor `+0x68` (12.4).
+    pub seek: Option<u16>,
 }
 
 impl CaptureSeatWrite {
@@ -190,6 +242,19 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (962, super::GIGATON_PRESS_BODY) => Some(super::gigaton_press_camera),
         (965, super::DOOMSDAY_BODY) => Some(super::doomsday_camera),
         (955, super::KISS_OF_DEATH_BODY) => Some(super::kiss_of_death_camera),
+        (947, SINGLE_BODY) => Some(super::v_windhash_camera),
+        (948, SINGLE_BODY) => Some(super::cross_beam_camera),
+        (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
+        (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
+        (935, SINGLE_BODY) => Some(super::earthquake_camera),
+        (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),
+        (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
+        (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
+        (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
+        (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
+        (941, super::STEAL_BODY) => Some(super::steal_camera),
+        (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
+        (955, super::VOID_ACCESSORIES_BODY) => Some(super::void_accessories_camera),
         _ => None,
     }
 }
@@ -251,6 +316,16 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
+        0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
+        0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
+        0x52 => Some(super::POWER_UP_COUNTDOWN),
+        0x4A => Some(super::EARTHQUAKE_COUNTDOWN),
+        0xB9 => Some(super::STONE_CIRCLE_COUNTDOWN),
+        0xAF..=0xB2 => Some(super::ELEMENT_CHANGE_COUNTDOWN),
+        // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
+        0x5F => Some(0x801F_9018),
+        0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),
+        0x70 => Some(super::KISS_OF_DEATH_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),
@@ -616,11 +691,25 @@ pub fn dead_end_crisis_camera(
         }
         _ => (None, None),
     };
+    // The party's rate: `2` as arm 3 lands the hit (`0x801F7418`), on every
+    // pass of arm 4 (`li v0,2` in the dispatch's delay slot, `0x801F6AA0`), and
+    // `0` on every pass of arm 5 (the same `v0`, the `slt` at `0x801F6A98`).
+    // The Done band's restore `FUN_801E93C8` puts every seat back.
+    let party_rate = match phase {
+        3 if !hold => Some(2),
+        4 => Some(2),
+        5 => Some(0),
+        _ => None,
+    };
     CaptureCamArm {
         shot: if hold { None } else { shot },
         drift,
         hold,
         next: None,
+        party_write: CaptureSeatWrite {
+            rate: party_rate,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -726,6 +815,10 @@ pub fn stage_store_runs(entry: u32, va: u32, action: Option<u8>) -> bool {
 /// PROT 0946's countdown word (`lui 0x801F` / `+0x7F20`).
 pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
 
+/// A Big Wave victim's animation rate: arm 7 halves `+0x21D` (`srl 1` at
+/// `0x801F7418..0x801F7424`) off the seat's full `8`.
+const WAVE_HIT_RATE: u8 = 4;
+
 /// Zeto's **Call Wave** (`0x55`) and **Big Wave** (`0x56`), PROT 0946's one
 /// tick body `0x801F69FC` (nine arms off the image-head table). Retail picks
 /// the choreography at arm 0 off a per-seat word (`0x801CEFE0 + (seat+1)*4`)
@@ -746,9 +839,8 @@ pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
 ///
 /// Arms 0..5's shots are behind the caster (yaw `0x800 - caster[+0x46]`,
 /// focus the caster) and `z` is `ctx[+0x6D0]`. The body has no other port, so
-/// this director owns its phase and finishes the module at arm 8 (retail's
-/// own exit also waits on every party member's clip, which the countdown
-/// outlasts). The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
+/// this director owns its phase and finishes the module at arm 8, whose exit
+/// also waits on every party member's clip. The `zeto_call_wave_mid_cast` capture is in arm 2 on arm 1's
 /// pan, `zeto_big_wave_mid_cast` in arm 5 on arm 4's.
 ///
 /// PORT: FUN_801F69FC, overlay_cast_call_wave_0946_801f69fc (PROT 0946; the camera arms 0..8, their countdown and
@@ -827,10 +919,9 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             };
             pass(Some(s), Some(7))
         }
-        7 | 8 => {
+        7 => {
             // `_DAT_8007B792 += (delta * scalar) / 4` ahead of the gate
-            // (`0x801F7318..0x801F7368`, `0x801F74E4..0x801F7528`): per
-            // vsync, a quarter of the scalar.
+            // (`0x801F7318..0x801F7368`): per vsync, a quarter of the scalar.
             let spin = Some(drift(0, (super::SPEED_SCALAR / 4) as i16, 0, 0));
             if gate(st) {
                 return CaptureCamArm {
@@ -838,16 +929,39 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     ..held
                 };
             }
-            let next = if phase == 7 {
-                // `5 * scalar << 5` (`0x801F74AC..0x801F74CC`).
-                st.countdown.add(0xA0);
-                Some(8)
-            } else {
-                None
-            };
+            // The way out of the gate is the party's hits
+            // (`0x801F7398..0x801F74A8`): `FUN_801DD4B0(0x120, ctx[+0x13], seat)`
+            // for each seat with HP and without Stone, whose rate halves and
+            // whose heading turns to `caster[+0x46] + 0x800`. Then
+            // `5 * scalar << 5` (`0x801F74AC..0x801F74CC`).
+            st.countdown.add(0xA0);
             CaptureCamArm {
                 drift: spin,
-                ..pass(None, next)
+                folds_hit: true,
+                party_write: CaptureSeatWrite {
+                    rate: Some(WAVE_HIT_RATE),
+                    facing: Some(c.facing.wrapping_add(0x800) & 0xFFF),
+                    ..Default::default()
+                },
+                party_live_only: true,
+                party_skip_stoned: true,
+                ..pass(None, Some(8))
+            }
+        }
+        8 => {
+            // The same spin (`0x801F74E4..0x801F7528`). The body returns `0`
+            // once the word is spent and every party seat has settled
+            // (`0x801F7534..0x801F75A0`: `+0x1D9 == 0`, a downed one `8`).
+            let spin = Some(drift(0, (super::SPEED_SCALAR / 4) as i16, 0, 0));
+            if (st.countdown.0 > 0 && gate(st)) || !st.party_settled {
+                return CaptureCamArm {
+                    drift: spin,
+                    ..held
+                };
+            }
+            CaptureCamArm {
+                drift: spin,
+                ..pass(None, None)
             }
         }
         _ => pass(None, None),

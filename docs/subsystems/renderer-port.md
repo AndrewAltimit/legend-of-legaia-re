@@ -249,6 +249,20 @@ face in `casino_ticket_counter` and a beam and counter in
 keyed by every primitive's own mean, so the per-object linking has to be
 read before an ordering rule is ported.
 
+### The battle shell sorts by prim mean
+
+The battle stage is the case where that rule does hold. The shell and its spun
+slot are one object list linked at each prim's own mean `SZ`, so in PSX mode
+both hosts draw them at their corners' mean `w`: `DRAW_WORD_MEAN_DEPTH` on the
+draw's NCLIP word stages `flags.w = -1` (`prim_mean_depth` over
+`prim_c0..prim_c3` on the vertex stage), and the page's `meanDepth` placement
+keys its log depth on the same mean (`primMeanW`). A wall quad nearer by mean
+now paints over the horizon mist as retail's does. Worked on Sol Tower's stage:
+`battle_kor_dead_bone_strike` `.969` to `.993`, `battle_korb2_kemaro_strike`
+`.971` to `.990`, `battle_kor_spoon_strike` `.966` to `.984`. Clean rendering
+keeps per-pixel depth: a mean pops as the camera turns, which the retail frame
+shows and the clean frame need not.
+
 ## Enhanced lighting (enhancement, NOT retail)
 
 `Renderer::set_dynamic_lighting(true)` shades the VRAM-mesh and colour-mesh
@@ -347,8 +361,9 @@ transcription. The simulation, the scene styles and the shading recipe are
 on [renderer.md](renderer.md#volumetric-ground-fog-enhancement).
 
 **Ground field.** Each field scene's `FogGround`
-(`engine-scene::fog_ground::build_for_scene`, built once at scene load by
-both hosts over their static draw lists) puts the sheet mesh on the drawn
+(`engine-scene::fog_ground::source_for_scene`, captured at scene load by both
+hosts over their static draw lists, and built the first time the raised toggle
+ticks the bank) puts the sheet mesh on the drawn
 floor and stops it over open air, so a tower top such as `teien` no longer
 carries a flat bank across the sky around it. Past a rim the mesh keeps
 going as a near-vertical spill curtain hugging the wall face, carrying a
@@ -623,6 +638,22 @@ no such distinction - 3D primitives and screen-space packets share one
 ordering table and one `DrawOTag` walk - so the split is a port artifact and
 this variant is where the halves meet.
 
+<a id="a-casts-frames-build-on-earlier-ones"></a>
+
+**A cast's frames build on earlier ones.** A retail battle frame's farthest bucket
+holds an opaque black rect, and an arm that arms the wash has it hold the subtractive
+quad instead, so that frame's additive layers sum over the frames before
+([cast modules](cast-module.md#presentation-calls)). `Renderer::set_frame_persist`
+reproduces it on the native target, which is the one target that outlives its
+frame: while `World::cast_frame_persists` holds, each frame loads an earlier
+frame instead of clearing, and a capture seeds from the same one. Retail's
+earlier frame is the same display page two game frames back, eight vsyncs at the
+frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
+rather than building on the last one, which fills the buffer eight times too
+fast. The frame step itself is the engine's fixed reading of those arms, not a
+measurement of the running frame's cost. The window's own target and the
+browser's canvas still clear: there the additive arms draw dimmer than retail.
+
 **Backdrops draw first.** A screen primitive whose four corners sit at the
 far plane (`ScreenPrim::is_backdrop`) is one retail links into the farthest
 bucket: PROT 0898's cast colour wash (`ot + 0x3FFC`) and the overworld sky
@@ -809,6 +840,10 @@ Two companion knobs make it a repeatable benchmark:
 | `LEGAIA_PROFILE=1` | Enable the breakdown. |
 | `LEGAIA_PROFILE_FRAMES=N` | Print a final summary and exit after `N` frames. |
 | `LEGAIA_VSYNC=off` | Configure the surface with an uncapped present mode. |
+| `LEGAIA_PROFILE_SKIP=N` | Leave the first `N` frames out of the closing `[bench]` line. |
+
+`scripts/ci/frame-bench.py` runs these over a fixed scene set
+([`frame-bench.md`](../tooling/frame-bench.md)).
 
 `LEGAIA_VSYNC=off` matters for measurement: with the default `AutoVsync`
 the frame time is pinned to the display refresh interval and the whole cost
@@ -825,6 +860,16 @@ bytes into freshly allocated GPU buffers - dominates the field frame in a
 populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
 live pose on every cache hit and logs any mismatch, which is what pins the
 `(slot, frame)` key as non-aliasing.
+
+**A rebuilt mesh writes over last frame's buffers.** A posed body, a live prop
+and a morph are rebuilt into a mesh of the same size per frame. A buffer dropped
+within two frames of its birth goes back to a pool
+([`buffer_pool`](../../crates/engine-render/src/renderer/buffer_pool.rs)), and the
+next mesh of its exact size takes it. A long-lived mesh frees its buffers as ever.
+
+**The shadow stage draws only what each light reaches.** A draw whose box lies
+wholly outside a lamp's frustum writes no depth into that lamp's layer, so leaving
+it out moves no shadow.
 
 ## Retail draw-decision kernels (reference ports)
 

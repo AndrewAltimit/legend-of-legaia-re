@@ -113,6 +113,9 @@ legaia-parity = { workspace = true, optional = true }
 default = ["gamepad"]
 gamepad = ["dep:gilrs"]
 oracles = ["dep:legaia-parity"]
+# Measurement build: the frame profiler's per-stage allocation counts
+# (`profile::CountingAlloc` as the global allocator). `scripts/ci/frame-bench.py`.
+bench-alloc = []
 
 # SIGPIPE reset in the bin's main() so piping stdout into `head` exits
 # quietly instead of panicking on a broken pipe.

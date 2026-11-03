@@ -44,6 +44,48 @@ pub struct Block {
     pub entries: Vec<usize>,
 }
 
+/// The kinds the browse list names and its filter offers, in menu order.
+pub const KINDS: [&str; 12] = [
+    "Scene textures and models",
+    "3D models",
+    "Textures",
+    "Sound and music",
+    "Animation",
+    "Characters",
+    "Effects",
+    "Maps and scripts",
+    "Game code",
+    "Packed data",
+    "Empty or filler",
+    "Unidentified",
+];
+
+/// What a `legaia_disc_audit` category holds, in the words of someone who has
+/// not read the format pages. A disc-wide classification by what the entry
+/// mostly is: a scene's model stream carries textures too, which its tabs
+/// count. The raw category stays on the row's hover and the Overview tab, and
+/// the search finds either.
+pub fn kind_of_class(class: &str) -> &'static str {
+    match class {
+        "scene_tmd_stream" | "tmd_size_prefix" | "stage_geometry" => "3D models",
+        "tim_passthrough" | "tim_pack" => "Textures",
+        "scene_vab_stream" | "seq_container" | "vab_multi_bank" | "monster_sound_bank"
+        | "bse_bank" => "Sound and music",
+        "anm_container" => "Animation",
+        "battle_data_pack" => "Characters",
+        "effect_bundle" | "efect_pack" | "summon_readef" => "Effects",
+        // A scene's main bundle: where its textures live.
+        "scene_asset_table" | "scene_scripted_asset_table" => "Scene textures and models",
+        "field_map" | "scene_v12_table" | "scene_event_scripts" => "Maps and scripts",
+        "mips_overlay" | "overlay_ptr_table" | "overlay_data_blob" | "init_pak" => "Game code",
+        "data_field_streaming" | "data_field_truncated" | "pack" | "lzs_container" => "Packed data",
+        "empty" | "tiny" | "all_zeros" | "mostly_zeros" | "constant_byte" | "pochi_filler" => {
+            "Empty or filler"
+        }
+        _ => "Unidentified",
+    }
+}
+
 /// The display name of the scene a CDNAME label names (`town01` -> `Rim
 /// Elm`), from the curated scene-name table (`legaia_gamedata`,
 /// `docs/reference/scene-names.md`). `None` for a label the table does not
@@ -100,6 +142,8 @@ pub struct Explorer {
     pub selected: Option<usize>,
     pub analysis: Option<Arc<Analysis>>,
     analyzing: Option<(usize, Receiver<Analysis>)>,
+    /// The last settings write failed and the banner has said so.
+    settings_save_failed: bool,
     /// Last error worth showing the user.
     pub error: Option<String>,
     /// Last informational message (export written, ...).
@@ -123,16 +167,32 @@ impl Explorer {
             selected: None,
             analysis: None,
             analyzing: None,
+            settings_save_failed: false,
             error: None,
             status: None,
         }
     }
 
-    pub fn save_settings(&self) {
-        if let Some(p) = &self.settings_path
-            && let Err(e) = self.settings.save(p)
-        {
-            log::warn!("saving settings to {}: {e}", p.display());
+    /// Write the settings. A failure goes on the error banner, once: the
+    /// recent list, the theme and the zoom would otherwise be quietly gone at
+    /// the next start.
+    pub fn save_settings(&mut self) {
+        let Some(p) = &self.settings_path else {
+            return;
+        };
+        match self.settings.save(p) {
+            Ok(()) => self.settings_save_failed = false,
+            Err(e) => {
+                log::warn!("saving settings to {}: {e}", p.display());
+                if !self.settings_save_failed {
+                    self.settings_save_failed = true;
+                    self.error = Some(format!(
+                        "Could not save your settings to {}: {e}. Your recent list, theme and \
+                         zoom will not carry over; check that folder can be written.",
+                        p.display()
+                    ));
+                }
+            }
         }
     }
 
@@ -291,7 +351,8 @@ impl Explorer {
             return false;
         };
         let cat = self.class_of(pos).map(|c| c.name());
-        if class.is_some_and(|c| cat != Some(c)) {
+        // The filter holds a plain kind ("3D models") or a raw category.
+        if class.is_some_and(|c| cat != Some(c) && cat.map(kind_of_class) != Some(c)) {
             return false;
         }
         // `block` is the retail block the tree groups under; the filename
@@ -306,6 +367,7 @@ impl Explorer {
         query.split_whitespace().all(|term| {
             let t = term.to_lowercase();
             block.to_ascii_lowercase().contains(&t)
+                || cat.is_some_and(|c| kind_of_class(c).to_lowercase().contains(&t))
                 || place.contains(&t)
                 || label.to_ascii_lowercase().contains(&t)
                 || cat.is_some_and(|c| c.contains(&t))

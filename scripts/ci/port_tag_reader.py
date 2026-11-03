@@ -104,6 +104,9 @@ def iter_markers(text: str):
     `lineno` is 1-based and names the marker's own line, so a caller reporting
     a site points at the line an author wrote the tag on.
     """
+    # Most files hold no marker, and a marker on a line matches the whole text.
+    if not MARKER_RE.search(text):
+        return
     lines = text.splitlines()
     i = 0
     while i < len(lines):

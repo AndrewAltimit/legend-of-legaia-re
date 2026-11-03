@@ -68,6 +68,15 @@ impl World {
             };
             fd::fatal_decision_tick(&mut st, &mut ctx, &view, &mut host)
         };
+        // The epilogue every arm leaves through (`0x801F8530..0x801F859C`):
+        // the wheel's tick, each time the angle crosses a slot boundary -
+        // `FUN_8004FE5C(0xFD, ctx[+0x13])` when the remainder rose.
+        let rem = st.wheel_tick_rem(fd::WHEEL_TICK_SPAN);
+        if st.tick_rem < rem {
+            self.route_battle_cue(fd::WHEEL_TICK_CUE, caster);
+        }
+        st.tick_rem = rem;
+        self.casting.module_cam.countdown.0 = st.countdown;
         self.casting.fatal_decision = Some(st);
         self.apply_fatal_pass(&pass, caster, victim, ctx.party_count);
         self.casting.module_phase = ctx.phase;
@@ -104,7 +113,20 @@ impl World {
                 .just_pressed(legaia_engine_system::input::PadButton::Cross),
             victim_status: self.raw_status_word(victim),
             victim_hp: v.map_or(0, |a| a.battle.hp),
-            victim_playing: v.map_or(0, |a| a.battle.current_anim),
+            // `+0x1D9`: a reaction plays on its own channel, and a downed
+            // seat's clip `8` is its Defeat pose here.
+            victim_playing: match v {
+                Some(a)
+                    if a.battle.hp == 0 && self.chain_seat_settled(usize::from(victim), false) =>
+                {
+                    fd::PARTY_DOWN_CLIP
+                }
+                Some(a) => match a.battle_reaction {
+                    Some(tag) => a.battle_reaction_entry.unwrap_or(tag.max(1)),
+                    None => a.battle.current_anim,
+                },
+                None => 0,
+            },
             victim_tint: v.map_or(0, |a| a.battle.render_color),
         }
     }

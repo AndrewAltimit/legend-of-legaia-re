@@ -48,6 +48,7 @@ pub fn save_menu_rects(a: &SaveMenuAtlas) -> SaveMenuAtlasRects {
         icon_armor: a.band_icon_armor(),
         icon_boot: a.band_icon_boot(),
         icon_goods: a.band_icon_goods(),
+        icon_worn: a.band_icon_worn(),
         pager_left: a.band_pager_left(),
         pager_right: a.band_pager_right(),
         tab_cap_l: a.band_tab_cap_l(),

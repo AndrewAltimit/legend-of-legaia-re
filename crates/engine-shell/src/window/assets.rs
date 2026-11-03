@@ -136,10 +136,13 @@ impl PlayWindowApp {
             .upload_font(&self.font)
             .map_err(|e| log::error!("font upload: {e:#}"))
             .ok();
+        legaia_engine_render::profile::startup("vram + font upload");
         let mut geo = SceneGeometry::new(res.tmds.len(), self.draw_census.is_some());
         self.upload_env_meshes(r, &res, &mut geo);
+        legaia_engine_render::profile::startup("env meshes");
         self.upload_posed_placement_meshes(r, &res, scene_bundle.as_ref(), &mut geo);
         self.upload_ground_heightfield(r, &mut geo);
+        legaia_engine_render::profile::startup("posed placements + ground");
         let world_map_slot4_lines = world_map_slot4_lines(&res);
 
         // Draw lists. Cross-draw coplanar offsets are computed over the
@@ -150,6 +153,7 @@ impl PlayWindowApp {
         let draws = self.resolve_field_draws(&res, &geo, scene_bundle.as_ref());
         let light_samples = static_layer_light_samples(&geo, &draws);
         let world_map = self.resolve_world_map_draws(&res, &geo);
+        legaia_engine_render::profile::startup("draw lists");
 
         // Commit to the window.
         self.install_field_pack_tables(&res, &geo.tmd_src_index);
@@ -163,6 +167,7 @@ impl PlayWindowApp {
             self.font_atlas = Some(a);
         }
         self.upload_ui_atlases();
+        legaia_engine_render::profile::startup("ui atlases");
         self.commit_scene_geometry(&res, geo, draws, world_map, world_map_slot4_lines);
 
         // Actors' meshes. The live mesh overrides and the player's rig mesh
@@ -174,6 +179,7 @@ impl PlayWindowApp {
         self.upload_player_rig(player_rig);
         let prop_light_sets = self.upload_field_npcs(&res, scene_bundle, &live_npc_meshes);
         self.install_scene_lights(&light_samples, prop_light_sets);
+        legaia_engine_render::profile::startup("actor meshes + lights");
         // Kept for the next upload: a mid-scene model re-bind
         // (`rebind_live_npc_models`) and a renderer that re-opens re-upload
         // from it.

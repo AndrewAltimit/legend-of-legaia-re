@@ -236,6 +236,10 @@ pub(super) struct Blockers {
     starts: Vec<u32>,
     /// The boxes overlapping each tile, tile by tile, in build order.
     boxes: Vec<BodyBox>,
+    /// Row-major over the grid grown by one tile on every side: whether the
+    /// tile or a neighbour holds a box. A lattice cell's probes reach under
+    /// a tile from its centre, so a clear tile answers all of them at once.
+    near: Vec<bool>,
 }
 
 impl Blockers {
@@ -278,6 +282,7 @@ impl Blockers {
                 height: 0,
                 starts: vec![0],
                 boxes: Vec::new(),
+                near: vec![false; 4],
             };
         };
         let (width, height) = (x1 - x0 + 1, z1 - z0 + 1);
@@ -299,6 +304,18 @@ impl Blockers {
             run += *s;
             *s = run;
         }
+        let (near_w, near_h) = (width as usize + 2, height as usize + 2);
+        let mut near = vec![false; near_w * near_h];
+        for z in 0..height as usize {
+            for x in 0..width as usize {
+                let i = z * width as usize + x;
+                if starts[i] != starts[i + 1] {
+                    for row in near.chunks_exact_mut(near_w).skip(z).take(3) {
+                        row[x..x + 3].fill(true);
+                    }
+                }
+            }
+        }
         let mut fill = starts.clone();
         let mut placed = vec![(0, 0, 0); run as usize];
         for b in &boxes {
@@ -313,10 +330,31 @@ impl Blockers {
             height,
             starts,
             boxes: placed,
+            near,
         }
     }
 
+    /// Feeds the boxes into a [`PlanMemo`] key, in an order the live NPC
+    /// table's iteration cannot change.
+    fn hash_boxes(&self, h: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        let mut boxes = self.boxes.clone();
+        boxes.sort_unstable();
+        boxes.hash(h);
+    }
+
+    /// Whether tile `(tx, tz)` or a neighbour holds a box.
+    #[inline]
+    fn near_tile(&self, tx: i32, tz: i32) -> bool {
+        let (x, z) = (tx - self.origin.0 + 1, tz - self.origin.1 + 1);
+        if !(0..self.width + 2).contains(&x) || !(0..self.height + 2).contains(&z) {
+            return false;
+        }
+        self.near[(z * (self.width + 2) + x) as usize]
+    }
+
     /// The boxes overlapping tile `(tx, tz)`.
+    #[inline]
     fn at(&self, tx: i32, tz: i32) -> &[BodyBox] {
         let (x, z) = (tx - self.origin.0, tz - self.origin.1);
         if !(0..self.width).contains(&x) || !(0..self.height).contains(&z) {
@@ -333,6 +371,7 @@ impl Blockers {
 
     /// Whether a body box covers `(px, pz)`, ignoring the static boxes
     /// centred on `skip` (the platforms under the arrival bracket).
+    #[inline]
     pub(super) fn hit_except(&self, px: i32, pz: i32, skip: &[(i16, i16)]) -> bool {
         self.at(px >> 7, pz >> 7).iter().any(|&(x, z, h)| {
             (px - x).abs() < h
@@ -351,6 +390,11 @@ impl Blockers {
         dir: usize,
         skip: &[(i16, i16)],
     ) -> bool {
+        // Every probe offset is under a tile, so its point lies in this tile
+        // or a neighbour.
+        if !self.near_tile(i32::from(cx) >> 7, i32::from(cz) >> 7) {
+            return false;
+        }
         ACTOR_PROBES[dir].iter().any(|&(dx, dz)| {
             self.hit_except(
                 i32::from(cx) + i32::from(dx),
@@ -398,16 +442,25 @@ const NODE_SIDE: usize = 1025;
 /// so a new search starts empty without clearing it, and kept per thread
 /// between searches: a hash map here cost more than the rest of the A*.
 pub(super) struct Nodes {
-    /// The search a slot's record belongs to; a slot with an older stamp is
-    /// empty.
-    stamp: Vec<u32>,
-    parent: Vec<Cell>,
-    g: Vec<i32>,
+    /// One record per cell: a slot's fields share a cache line, which is
+    /// most of a probe's cost in a table this size.
+    slots: Vec<NodeSlot>,
     now: u32,
     /// The cells reached, in first-reached order.
     reached: Vec<Cell>,
     /// Records for cells outside the dense square.
     overflow: FastMap<Cell, (Cell, i32)>,
+    /// The frontier, kept here for its storage.
+    open: OpenSet,
+}
+
+#[derive(Clone, Copy)]
+struct NodeSlot {
+    /// The search this record belongs to; a slot with an older stamp is
+    /// empty.
+    stamp: u32,
+    parent: Cell,
+    g: i32,
 }
 
 thread_local! {
@@ -421,21 +474,28 @@ impl Nodes {
     pub(super) fn take() -> Box<Nodes> {
         let mut n = NODES.with(|t| t.borrow_mut().take()).unwrap_or_else(|| {
             Box::new(Nodes {
-                stamp: vec![0; NODE_SIDE * NODE_SIDE],
-                parent: vec![(0, 0); NODE_SIDE * NODE_SIDE],
-                g: vec![0; NODE_SIDE * NODE_SIDE],
+                slots: vec![
+                    NodeSlot {
+                        stamp: 0,
+                        parent: (0, 0),
+                        g: 0,
+                    };
+                    NODE_SIDE * NODE_SIDE
+                ],
                 now: 0,
                 reached: Vec::new(),
                 overflow: FastMap::default(),
+                open: OpenSet::default(),
             })
         });
         n.now = n.now.wrapping_add(1);
         if n.now == 0 {
-            n.stamp.fill(0);
+            n.slots.iter_mut().for_each(|s| s.stamp = 0);
             n.now = 1;
         }
         n.reached.clear();
         n.overflow.clear();
+        n.open.clear();
         n
     }
 
@@ -444,27 +504,35 @@ impl Nodes {
         NODES.with(|t| *t.borrow_mut() = Some(n));
     }
 
+    #[inline]
     fn slot(c: Cell) -> Option<usize> {
         let (x, z) = (usize::try_from(c.0).ok()?, usize::try_from(c.1).ok()?);
         (x < NODE_SIDE && z < NODE_SIDE).then_some(z * NODE_SIDE + x)
     }
 
     /// `c`'s record, `(parent, g)`.
+    #[inline]
     pub(super) fn get(&self, c: Cell) -> Option<(Cell, i32)> {
         match Self::slot(c) {
-            Some(i) => (self.stamp[i] == self.now).then(|| (self.parent[i], self.g[i])),
+            Some(i) => {
+                let s = &self.slots[i];
+                (s.stamp == self.now).then_some((s.parent, s.g))
+            }
             None => self.overflow.get(&c).copied(),
         }
     }
 
+    #[inline]
     pub(super) fn parent(&self, c: Cell) -> Option<Cell> {
         self.get(c).map(|(p, _)| p)
     }
 
+    #[inline]
     pub(super) fn g(&self, c: Cell) -> Option<i32> {
         self.get(c).map(|(_, g)| g)
     }
 
+    #[inline]
     pub(super) fn contains(&self, c: Cell) -> bool {
         self.get(c).is_some()
     }
@@ -479,15 +547,17 @@ impl Nodes {
         &self.reached
     }
 
+    #[inline]
     fn set(&mut self, c: Cell, parent: Cell, g: i32) {
         match Self::slot(c) {
             Some(i) => {
-                if self.stamp[i] != self.now {
-                    self.stamp[i] = self.now;
+                let s = &mut self.slots[i];
+                if s.stamp != self.now {
+                    s.stamp = self.now;
                     self.reached.push(c);
                 }
-                self.parent[i] = parent;
-                self.g[i] = g;
+                s.parent = parent;
+                s.g = g;
             }
             None => {
                 if self.overflow.insert(c, (parent, g)).is_none() {
@@ -498,11 +568,57 @@ impl Nodes {
     }
 }
 
+/// The search frontier: entries pop in exactly `(f, g, x, z)` tuple order.
+/// One small heap per `f` value, holding `(g, x, z)` packed into one integer:
+/// most of a pop in a single heap over the whole frontier is comparing and
+/// moving entries with some other `f`.
+#[derive(Default)]
+struct OpenSet {
+    by_f: Vec<std::collections::BinaryHeap<std::cmp::Reverse<u64>>>,
+    /// No entry has an `f` below this.
+    low: usize,
+}
+
+impl OpenSet {
+    /// Empty, keeping the heaps' storage for the next search.
+    fn clear(&mut self) {
+        for heap in self.by_f.iter_mut().skip(self.low) {
+            heap.clear();
+        }
+        self.low = self.by_f.len();
+    }
+
+    #[inline]
+    fn push(&mut self, f: i32, g: i32, c: Cell) {
+        let f = usize::try_from(f).expect("a path cost and a distance are never negative");
+        if f >= self.by_f.len() {
+            self.by_f.resize_with(f + 1, Default::default);
+        }
+        let g = u32::try_from(g).expect("a path cost is never negative");
+        let cell = |v: i16| u64::from(v as u16 ^ 0x8000);
+        let key = u64::from(g) << 32 | cell(c.0) << 16 | cell(c.1);
+        self.by_f[f].push(std::cmp::Reverse(key));
+        self.low = self.low.min(f);
+    }
+
+    /// The least entry's `(g, cell)`.
+    #[inline]
+    fn pop(&mut self) -> Option<(i32, Cell)> {
+        while let Some(heap) = self.by_f.get_mut(self.low) {
+            if let Some(std::cmp::Reverse(key)) = heap.pop() {
+                let cell = |shift: u32| ((key >> shift) as u16 ^ 0x8000) as i16;
+                return Some(((key >> 32) as i32, (cell(16), cell(0))));
+            }
+            self.low += 1;
+        }
+        None
+    }
+}
+
 /// One step of [`plan_path`]'s search: reach `to` from `cur` at `cost`,
 /// through the waypoint `via` when the step is a teleport.
 pub(super) struct Search {
     pub(super) nodes: Box<Nodes>,
-    pub(super) open: std::collections::BinaryHeap<std::cmp::Reverse<(i32, i32, Cell)>>,
     pub(super) goal: Cell,
 }
 
@@ -512,11 +628,7 @@ impl Search {
     pub(super) fn new(from: Cell, goal: Cell) -> Self {
         let mut nodes = Nodes::take();
         nodes.set(from, from, 0);
-        Self {
-            nodes,
-            open: std::collections::BinaryHeap::new(),
-            goal,
-        }
+        Self { nodes, goal }
     }
 
     /// End the search, handing its table back for the next one.
@@ -524,6 +636,7 @@ impl Search {
         Nodes::put(self.nodes);
     }
 
+    #[inline]
     pub(super) fn h(&self, c: Cell) -> i32 {
         i32::from((c.0 - self.goal.0).abs() + (c.1 - self.goal.1).abs())
     }
@@ -546,7 +659,7 @@ impl Search {
         };
         self.nodes.set(to, parent, cost);
         let f = cost + self.h(to);
-        self.open.push(std::cmp::Reverse((f, cost, to)));
+        self.nodes.open.push(f, cost, to);
     }
 }
 
@@ -554,6 +667,10 @@ thread_local! {
     /// Plans run and cells they expanded, for the trace's cost line.
     pub(super) static PLAN_STATS: std::cell::Cell<(u64, u64)> = const { std::cell::Cell::new((0, 0)) };
 }
+
+/// How far a step's door probes reach from the cell centre on either axis:
+/// the largest [`ACTOR_PROBES`] offset plus the half-cell lean.
+const DOOR_PROBE_REACH: i32 = 64 + SUBCELL as i32 / 2;
 
 /// A* over the collision lattice toward `goal`, never entering an `avoid`
 /// dispatch tile (retail fires on a tile change, so occupying one is safe).
@@ -752,18 +869,45 @@ pub(super) fn plan_key(
     (scene_name(session), goal, h.finish(), f.finish())
 }
 
+/// What one search left behind: its answer and the press waypoints it
+/// recorded, replayed whole when the same search comes up again.
+struct MemoPlan {
+    answer: Option<PlanAnswer>,
+    presses: Vec<(Cell, (i16, i16))>,
+    cells: u64,
+}
+
+/// A route, the cells the search reached, and whether it reached its aim.
+type PlanAnswer = (Vec<Cell>, Vec<Cell>, bool);
+
+/// Searches kept for reuse, by a hash of everything a search reads. A walk
+/// that keeps asking from where it stands, in a world that has not moved, is
+/// most of the planner's calls.
+#[derive(Default)]
+struct PlanMemo {
+    plans: HashMap<u64, std::rc::Rc<MemoPlan>>,
+    cells: usize,
+}
+
+/// The cells [`PlanMemo`] may hold before it starts over.
+const PLAN_MEMO_CELLS: usize = 4_000_000;
+
+thread_local! {
+    static PLAN_MEMO: std::cell::RefCell<PlanMemo> = std::cell::RefCell::new(PlanMemo::default());
+}
+
 /// The A* behind [`plan_path`]: the route toward `goal`'s tile - or toward
 /// `target` when one is given, a cell already known reachable - the cells
 /// the search reached, and whether it reached its aim.
-#[allow(clippy::type_complexity)]
 pub(super) fn plan_search(
     session: &NativeSession,
     from: Cell,
     goal: (i16, i16),
     target: Option<Cell>,
     avoid: &HashSet<(i32, i32)>,
-) -> Option<(Vec<Cell>, Vec<Cell>, bool)> {
+) -> Option<PlanAnswer> {
     let w = &session.host.world;
+    let plan_debug = std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some();
     let gw = tile_center(goal);
     // A goal tile whose centre is wall (a door band set in a wall strip)
     // is aimed at through its open part: the dispatch fires on entering the
@@ -809,7 +953,7 @@ pub(super) fn plan_search(
             .map(|v| v.iter().copied().filter(|&p| in_reach(land, p)).collect())
             .unwrap_or_default();
         if plats.is_empty() {
-            if std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some() {
+            if plan_debug {
                 eprintln!(
                     "      [plan] arrival {contact:?} at {land:?}: partners {:?}",
                     partners.get(&contact)
@@ -855,7 +999,7 @@ pub(super) fn plan_search(
                 }
             }
         }
-        if std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some() {
+        if plan_debug {
             eprintln!(
                 "      [plan] arrival {contact:?} at {land:?} platforms {plats:?}: pocket {} exits {exits:?}",
                 dist.len()
@@ -897,10 +1041,58 @@ pub(super) fn plan_search(
                             && (c.center.1 - i32::from(z)).abs() <= 128
                     })))
     });
+    // Everything below reads the world only through what has been gathered
+    // above and the wall grid, so these inputs name the search's result. A
+    // debug run prints as it searches, so it always searches.
+    let memo_key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (from, goal, gc).hash(&mut h);
+        w.terrain.collision_grid.hash(&mut h);
+        blockers.hash_boxes(&mut h);
+        doors.hash(&mut h);
+        platforms.hash(&mut h);
+        boxed.hash(&mut h);
+        let mut sorted: Vec<_> = avoid.iter().collect();
+        sorted.sort_unstable();
+        sorted.hash(&mut h);
+        let mut sorted: Vec<_> = warps.iter().collect();
+        sorted.sort_unstable();
+        sorted.hash(&mut h);
+        let mut sorted: Vec<_> = partners.iter().collect();
+        sorted.sort_unstable();
+        sorted.hash(&mut h);
+        let mut sorted: Vec<_> = phased.iter().collect();
+        sorted.sort_unstable();
+        for (tile, lands) in sorted {
+            tile.hash(&mut h);
+            for &(land, flag, on) in lands {
+                (land, flag, on).hash(&mut h);
+                phase_usable(session, flag, on).hash(&mut h);
+                w.system_flag_test(flag).hash(&mut h);
+            }
+        }
+        h.finish()
+    };
+    if !plan_debug && let Some(plan) = PLAN_MEMO.with(|m| m.borrow().plans.get(&memo_key).cloned())
+    {
+        PRESS_AT.with(|m| m.borrow_mut().extend(plan.presses.iter().copied()));
+        PLAN_STATS.with(|p| {
+            let (n, cells) = p.get();
+            p.set((n + 1, cells + plan.cells));
+        });
+        return plan.answer.clone();
+    }
+    let mut presses: Vec<(Cell, (i16, i16))> = Vec::new();
     let mut s = Search::new(from, gc);
-    s.open.push(std::cmp::Reverse((s.h(from), 0, from)));
+    let start_f = s.h(from);
+    s.nodes.open.push(start_f, 0, from);
     let mut best = from;
-    while let Some(std::cmp::Reverse((_, gcur, cur))) = s.open.pop() {
+    // Reused per expanded cell: the platforms and door leaves this cell may
+    // pass, and the doors its step probes can touch.
+    let mut skip: Vec<(i16, i16)> = Vec::new();
+    let mut near_doors: Vec<((i16, i16), Cell)> = Vec::new();
+    while let Some((gcur, cur)) = s.nodes.open.pop() {
         if s.nodes.g(cur).is_some_and(|v| v < gcur) {
             continue;
         }
@@ -915,22 +1107,33 @@ pub(super) fn plan_search(
         }
         let (cx, cz) = cell_center(cur);
         let here = dispatch_tile(cx, cz);
-        let skip: Vec<(i16, i16)> = platforms
-            .iter()
-            .copied()
-            .filter(|&p| in_reach(cur, p))
-            .chain(
-                boxed
-                    .iter()
-                    // One tile of slack: the leaf's own tile, which the
-                    // player walks through once the press has opened it.
-                    .filter(|((x0, z0, x1, z1), _)| {
-                        (i32::from(*x0) - 1..=i32::from(*x1) + 1).contains(&here.0)
-                            && (i32::from(*z0) - 1..=i32::from(*z1) + 1).contains(&here.1)
-                    })
-                    .flat_map(|(_, leaves)| leaves.iter().copied()),
-            )
-            .collect();
+        skip.clear();
+        skip.extend(
+            platforms
+                .iter()
+                .copied()
+                .filter(|&p| in_reach(cur, p))
+                .chain(
+                    boxed
+                        .iter()
+                        // One tile of slack: the leaf's own tile, which the
+                        // player walks through once the press has opened it.
+                        .filter(|((x0, z0, x1, z1), _)| {
+                            (i32::from(*x0) - 1..=i32::from(*x1) + 1).contains(&here.0)
+                                && (i32::from(*z0) - 1..=i32::from(*z1) + 1).contains(&here.1)
+                        })
+                        .flat_map(|(_, leaves)| leaves.iter().copied()),
+                ),
+        );
+        // A step's probes lie within `DOOR_PROBE_REACH` of the centre on each
+        // axis, so only these doors can answer the contact test below; the
+        // list keeps `doors`' order, and the test's first match with it.
+        near_doors.clear();
+        near_doors.extend(doors.iter().copied().filter(|((dx, dz), _)| {
+            (i32::from(cx) - i32::from(*dx)).abs() < TOUCH_BOX_HALF + DOOR_PROBE_REACH
+                && (i32::from(cz) - i32::from(*dz)).abs() < TOUCH_BOX_HALF + DOOR_PROBE_REACH
+                && !skip.contains(&(*dx, *dz))
+        }));
         for ((dx, dz), dir) in STEPS {
             let next = (cur.0 + dx, cur.1 + dz);
             if next.0 < 0 || next.1 < 0 {
@@ -954,25 +1157,20 @@ pub(super) fn plan_search(
                     i32::from(cz) - i32::from(pz) + i32::from(sz),
                 )
             });
-            if let Some(&(contact, land)) =
-                doors
-                    .iter()
-                    .filter(|(c, _)| !skip.contains(c))
-                    .find(|((dx, dz), _)| {
-                        probes.iter().any(|&(px, pz)| {
-                            (px - i32::from(*dx)).abs() < TOUCH_BOX_HALF
-                                && (pz - i32::from(*dz)).abs() < TOUCH_BOX_HALF
-                        })
-                    })
-            {
+            if let Some(&(contact, land)) = near_doors.iter().find(|((dx, dz), _)| {
+                probes.iter().any(|&(px, pz)| {
+                    (px - i32::from(*dx)).abs() < TOUCH_BOX_HALF
+                        && (pz - i32::from(*dz)).abs() < TOUCH_BOX_HALF
+                })
+            }) {
                 if land != next && !s.nodes.contains(next) {
                     for (to, d) in arrivals(contact, land) {
                         if to != next {
                             s.step(Some(next), cur, to, gcur + 2 + d);
                         }
                     }
-                    PRESS_AT.with(|m| m.borrow_mut().insert(next, contact));
-                    if std::env::var_os("LEGAIA_FGL_PLAN_DEBUG").is_some() {
+                    presses.push((next, contact));
+                    if plan_debug {
                         eprintln!("      [plan] door {contact:?} from {cur:?} -> {land:?}");
                     }
                 }
@@ -1025,7 +1223,7 @@ pub(super) fn plan_search(
                         }
                     }
                     if any {
-                        PRESS_AT.with(|m| m.borrow_mut().insert(next, press));
+                        presses.push((next, press));
                     }
                 } else if phased.contains_key(&nt) && s.nodes.parent(cur) != Some(next) {
                     // The tile's cells are already reached - the walker
@@ -1045,9 +1243,7 @@ pub(super) fn plan_search(
                         }
                     }
                     if any {
-                        PRESS_AT.with(|m| {
-                            m.borrow_mut().insert(cur, press);
-                        });
+                        presses.push((cur, press));
                     }
                 }
                 continue;
@@ -1074,10 +1270,12 @@ pub(super) fn plan_search(
             s.step(None, cur, next, gcur + 1);
         }
     }
+    let cells = s.nodes.len();
     PLAN_STATS.with(|p| {
-        let (n, cells) = p.get();
-        p.set((n + 1, cells + s.nodes.len() as u64));
+        let (n, total) = p.get();
+        p.set((n + 1, total + cells as u64));
     });
+    PRESS_AT.with(|m| m.borrow_mut().extend(presses.iter().copied()));
     let reached = best == gc;
     let path = if best == from {
         Some(Vec::new())
@@ -1086,7 +1284,23 @@ pub(super) fn plan_search(
     };
     let seen = s.nodes.cells().to_vec();
     s.finish();
-    Some((path?, seen, reached))
+    let answer = path.map(|path| (path, seen, reached));
+    PLAN_MEMO.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.cells + cells > PLAN_MEMO_CELLS {
+            *m = PlanMemo::default();
+        }
+        m.cells += cells;
+        m.plans.insert(
+            memo_key,
+            std::rc::Rc::new(MemoPlan {
+                answer: answer.clone(),
+                presses,
+                cells: cells as u64,
+            }),
+        );
+    });
+    answer
 }
 
 /// The route from `from` to `to` along `parent` links. A chain longer than

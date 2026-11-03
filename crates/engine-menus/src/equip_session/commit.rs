@@ -157,8 +157,8 @@ impl EquipSession {
         );
     }
 
-    /// Shared tail of both commit paths: re-aggregate, park the session on
-    /// `Done`, and emit the confirm events.
+    /// Shared tail of both commit paths: re-aggregate, record the swap for
+    /// the host, and emit the confirm events.
     fn finish_commit(&mut self, slot: u8, removed: u8, item_id: u8, sfx: Option<u8>) {
         self.preview_stats = compute_battle_stats(
             &self.record,
@@ -166,11 +166,7 @@ impl EquipSession {
             &self.active_status,
             &self.modifiers,
         );
-        self.state = EquipState::Done(EquipOutcome::Committed {
-            slot,
-            removed,
-            added: item_id,
-        });
+        self.swaps.push((slot, removed, item_id));
         self.events.push(EquipEvent::Committed {
             slot,
             removed,
@@ -201,8 +197,7 @@ impl EquipSession {
     /// save/restore as a copy.
     ///
     /// Driven from [`Self::input`]'s `ItemPicker` arm: the candidate list
-    /// stages a preview as it opens, refreshes it on every cursor move, and
-    /// re-runs it on the confirm that raises the Yes/No prompt.
+    /// stages a preview as it opens and refreshes it on every cursor move.
     ///
     /// PORT: FUN_801d9c14 (state-2 trial-equip stat preview; see
     /// `ghidra/scripts/funcs/overlay_menu_801d9c14.txt` at
@@ -242,11 +237,7 @@ impl EquipSession {
             &self.active_status,
             &self.modifiers,
         );
-        self.state = EquipState::Done(EquipOutcome::Committed {
-            slot,
-            removed,
-            added: 0,
-        });
+        self.swaps.push((slot, removed, 0));
         self.events.push(EquipEvent::Committed {
             slot,
             removed,

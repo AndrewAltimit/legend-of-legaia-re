@@ -148,6 +148,8 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // The yaw counter `ctx[+0x6DA]` is re-seeded on the action SM's
         // state edges (`BattleCamera::observe_action_state`).
         action_state: world.battle_camera_state(),
+        chain_exit_pass: world.battle.sm_ran_state == Some(0x2A)
+            && world.battle_ctx.action_state == 0x2B,
         active_commits: world.battle_ctx.active_clip_commits,
         active_installs: world.battle_ctx.active_clip_installs,
         camera_option: world.toggles.battle_camera as u8,
@@ -161,6 +163,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         // A fight opens on the SCUS frame driver's entry sweep, before the
         // battle tick frames anything (`BattleCamera::start_entry_sweep`).
         entry_sweep: true,
+        open_held: world.battle.battle_open_held(),
     };
     battle_end_cam_inputs(world, inputs, actor_at)
 }
@@ -711,6 +714,13 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
         accum: 0,
         ramp: 0,
         body_radius: script::PARTY_BODY_RADIUS,
+        solo: world
+            .actors
+            .get(usize::from(acting_slot))
+            .and_then(|a| a.battle_animation.as_ref())
+            // The commit stores `ctx[+0x243]` after the pass's arm, so the
+            // pass that commits the clip still frames without it.
+            .is_some_and(|p| p.solo_flag() != 0 && p.cursor_sixteenths() > 0),
     }
 }
 

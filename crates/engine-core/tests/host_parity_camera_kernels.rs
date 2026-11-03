@@ -5,7 +5,6 @@
 //! word the engine does not own", and the two shapes a "the page is missing
 //! it" reading gets backwards.
 
-use legaia_engine_camera::psx_camera::CutsceneCameraInterp;
 use legaia_engine_core::world::World;
 use legaia_engine_field::camera::Camera;
 use legaia_engine_field::camera_frame;
@@ -14,13 +13,11 @@ use legaia_engine_menus::save_select::{SelectPhase, phase_layout};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_vm::field::CameraParam;
 
-/// `apply_trigger == 0` beats are banked where the events are consumed.
-///
-/// `route_camera_events` is the only drain of `FieldEvent::CameraConfigure`
-/// and it does not restore one, so a host watching its own later drain of
-/// `pending_field_events` for snap beats never sees any.
+/// `route_camera_events` is the only drain of `FieldEvent::CameraConfigure`,
+/// and it leaves the shot in the globals both hosts draw from: a snap beat
+/// writes them, and a glide beat in the same slice sets out from the snap.
 #[test]
-fn snap_beats_are_banked_on_the_camera_not_left_on_the_world_queue() {
+fn a_snap_then_a_glide_arm_the_mover_from_the_snap() {
     let mut w = World {
         mode: SceneMode::Field,
         ..World::default()
@@ -45,53 +42,15 @@ fn snap_beats_are_banked_on_the_camera_not_left_on_the_world_queue() {
     ];
     let mut cam = Camera::default();
     cam.route_camera_events(&mut w);
-    // Neither beat survives on the world queue.
     assert!(
         !w.pending_field_events
             .iter()
             .any(|e| matches!(e, FieldEvent::CameraConfigure { .. })),
         "route_camera_events consumes every Configure beat"
     );
-    let beats = cam.take_camera_snap_beats();
-    assert_eq!(beats.len(), 1, "only the apply==0 beat banks");
-    // Packed component 4 is yaw; 1024 twelve-bit units = a quarter turn.
-    let (idx, val) = beats[0][0];
-    assert_eq!(idx, 4);
-    assert!((val - std::f32::consts::TAU / 4.0).abs() < 1e-3);
-    // A second take is empty - the bank is drained, not read.
-    assert!(cam.take_camera_snap_beats().is_empty());
-}
-
-/// The snap decode is `cutscene_view`'s decode: same negations, same angle
-/// scale, same 6x eye-trio reduction, same degenerate filters.
-#[test]
-fn snap_component_decode_matches_the_cutscene_view_slot_map() {
-    let comps = CutsceneCameraInterp::snap_components_for(&[
-        (0, 512),              // pitch
-        (1, 1024),             // yaw
-        (2, 256),              // roll
-        (3, 60),               // tr x
-        (5, 1),                // tr z - degenerate, filtered
-        (6, (-100i16) as u16), // focus x, stored negated
-        (8, (-200i16) as u16), // focus z, stored negated
-        (9, 1),                // H - degenerate, filtered
-    ]);
-    let get = |i: usize| comps.iter().find(|(c, _)| *c == i).map(|(_, v)| *v);
-    use std::f32::consts::TAU;
-    assert!(
-        (get(3).unwrap() - TAU / 8.0).abs() < 1e-3,
-        "slot 0 -> pitch"
-    );
-    assert!((get(4).unwrap() - TAU / 4.0).abs() < 1e-3, "slot 1 -> yaw");
-    assert!(
-        (get(CutsceneCameraInterp::ROLL).unwrap() - TAU / 16.0).abs() < 1e-3,
-        "slot 2 -> roll"
-    );
-    assert!((get(6).unwrap() - 10.0).abs() < 1e-3, "slot 3 -> tr x / 6");
-    assert_eq!(get(8), None, "|z| <= 1 is not an eye depth");
-    assert_eq!(get(0), Some(100.0), "slot 6 -> focus x, negated back");
-    assert_eq!(get(2), Some(200.0), "slot 8 -> focus z, negated back");
-    assert_eq!(get(5), None, "H <= 1 is not a focal length");
+    let mv = cam.mover.as_ref().expect("the glide beat armed the mover");
+    assert_eq!(mv.pairs[1], (1024, 2048));
+    assert_eq!(mv.d, 900);
 }
 
 /// The NCLIP mode word is armed for the whole field pass (retail culls the

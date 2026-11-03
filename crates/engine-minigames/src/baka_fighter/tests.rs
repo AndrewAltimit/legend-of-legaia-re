@@ -500,12 +500,134 @@ fn the_duel_ticks_the_round_chrome() {
         Some(crate::baka_cabinet::ST_ROUND_BANNER_B),
         "the banner starts on the first banner arm"
     );
-    assert_eq!(f.chrome().sprites().len(), 1);
     assert_eq!(
         f.chrome_frame().xa,
         Some(crate::baka_fighter_chrome::round_banner_xa(1)),
         "the round-announce line names the round about to start"
     );
+}
+
+/// The "ROUND n" caption (widget 3) stands only on the frames the cabinet's
+/// banner arms `0x33..0x36` call `FUN_801D5C7C`: the routine draws quads and
+/// spawns no actor, and no `FUN_801D6E04` site in the overlay names widget 3.
+/// So it is gone once the arms end, through the go and the whole round.
+#[test]
+fn the_round_caption_stands_only_on_the_banner_arms() {
+    use crate::baka_cabinet::{ST_DUEL, ST_ROUND_BANNER_A, ST_ROUND_BANNER_D};
+    const ROUND_CAPTION: u8 = 3;
+    let caption_up = |f: &BakaFight| {
+        f.chrome_frame()
+            .draws
+            .iter()
+            .any(|d| d.widget == ROUND_CAPTION)
+    };
+
+    let mut f = fight();
+    f.end_round(0, false);
+    let (mut banner_frames, mut duel_frames) = (0, 0);
+    for _ in 0..0x800 {
+        let before = f.cabinet().state();
+        f.tick(1);
+        let on_banner_arm = (ST_ROUND_BANNER_A..=ST_ROUND_BANNER_D).contains(&before);
+        assert_eq!(
+            caption_up(&f),
+            on_banner_arm,
+            "state {before:#x}: the caption draws on the banner arms and nowhere else"
+        );
+        banner_frames += i32::from(on_banner_arm);
+        duel_frames += i32::from(before == ST_DUEL && f.cabinet().state() == ST_DUEL);
+        if duel_frames >= 600 {
+            break;
+        }
+    }
+    assert!(
+        banner_frames > 0,
+        "the fixture reaches the next round's banner"
+    );
+    assert_eq!(
+        duel_frames, 600,
+        "the fixture stands in the next round's duel"
+    );
+}
+
+/// A fight with the pause text in, standing in the duel state.
+fn paused_ready_fight() -> BakaFight {
+    let mut f = fight();
+    f.pause_text = Some(legaia_minigame_formats::baka_opponents::BakaPauseText {
+        continue_row: b"C".to_vec(),
+        title_row: b"T".to_vec(),
+        quit_row: b"Q".to_vec(),
+        how_to_row: b"H".to_vec(),
+        help: vec![b"one".to_vec(), b"two".to_vec()],
+    });
+    assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_DUEL);
+    f
+}
+
+#[test]
+fn select_pauses_the_duel_and_nothing_lands_until_it_resumes() {
+    use crate::baka_cabinet::{ST_DUEL, ST_HOWTO, ST_PAUSE_3};
+    use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_DOWN, PACK_UP};
+    const PACK_SELECT: u16 = 0x100;
+    let mut f = paused_ready_fight();
+    let hp = [f.f[0].hp, f.f[1].hp];
+    f.frame(PACK_SELECT, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_PAUSE_3);
+    let (frame, lines) = f.pause_panel().expect("the panel draws");
+    assert_eq!(frame, crate::baka_cabinet::PAUSE_FRAME);
+    assert_eq!(lines.last().map(|l| l.y), Some(0x68), "cursor on Continue");
+    // No HUD under the menu, as the epilogue's flag leaves it in `0xBF`.
+    assert!(!crate::baka_cabinet::draws_hud(f.cabinet().state()));
+
+    // The CPU does not commit and no exchange books while the menu is up.
+    for _ in 0..600 {
+        f.frame(0, 0, 0);
+    }
+    assert_eq!([f.f[0].hp, f.f[1].hp], hp);
+    assert!(f.f[1].chosen.is_none(), "the CPU waits with the fight");
+
+    // Row 2 is How to Play, and any face button comes back.
+    f.frame(PACK_DOWN, 0, 0);
+    f.frame(PACK_DOWN, 0, 0);
+    f.frame(PACK_CROSS, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_HOWTO);
+    assert_eq!(f.pause_panel().map(|(_, l)| l.len()), Some(2));
+    f.frame(PACK_CROSS, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_PAUSE_3);
+
+    // Up from the third row, and Circle cancels back into the duel. Neither
+    // throw reached the fighter.
+    f.frame(PACK_UP, 0, 0);
+    f.frame(PACK_CIRCLE, 0, 0);
+    assert_eq!(f.cabinet().state(), ST_DUEL);
+    assert!(f.f[0].chosen.is_none());
+}
+
+#[test]
+fn quit_on_the_pause_menu_ends_the_visit_through_the_exit_state() {
+    use legaia_engine_system::pad::{PACK_CROSS, PACK_DOWN, PACK_TRIANGLE};
+    let mut f = paused_ready_fight();
+    f.frame(PACK_TRIANGLE, 0x10, 0);
+    f.frame(PACK_DOWN, 0, 0);
+    f.frame(PACK_CROSS, 0, 0);
+    assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_EXIT);
+    let mut exited = false;
+    for _ in 0..0x100 {
+        if f.frame(0, 0, 0).exit {
+            exited = true;
+            break;
+        }
+    }
+    assert!(exited, "the exit state's fade ends the visit");
+}
+
+#[test]
+fn without_the_disc_text_the_pause_edge_stays_shut() {
+    const PACK_SELECT: u16 = 0x100;
+    let mut f = fight();
+    f.frame(PACK_SELECT, 0, 0);
+    assert_eq!(f.cabinet().state(), crate::baka_cabinet::ST_DUEL);
+    assert!(f.pause_panel().is_none());
 }
 
 #[test]
@@ -1290,4 +1412,20 @@ fn each_round_banner_plays_its_own_line_uninterrupted() {
             .all(|(_, c)| !(c.clip == 0x20 && (0x0A..=0x0D).contains(&c.chan))),
         "the stage-clear lines never fire in a match"
     );
+}
+
+/// The all-clear fighter's tick: the shadow-off bit, and a clock on the
+/// frame step.
+#[test]
+fn the_clear_fighter_tick_raises_its_flag_and_runs_its_clip() {
+    use crate::baka_fighter_chrome::{ACTOR_FLAG_NO_SHADOW, ClearFighter, clear_fighter_tick};
+    let mut a = ClearFighter {
+        x: -300,
+        flags: 8,
+        clock: 0,
+    };
+    clear_fighter_tick(&mut a, 2);
+    clear_fighter_tick(&mut a, 3);
+    assert_eq!(a.flags, 8 | ACTOR_FLAG_NO_SHADOW);
+    assert_eq!(a.clock, 5);
 }

@@ -999,6 +999,11 @@ the second walk starts only when the first lands. The engine keeps the same
 rule for the modal timeline and the helper contexts
 (`FieldVmState::halted_elsewhere`).
 
+A placed object takes the same compass arm. `taiku2`'s arrival `P2[0]` walks its sky dome,
+partition-0 record `0x14`, with `C1 14 84 4A` as the shot starts; the leg spends the frame
+step once a game frame, so at step `2` the `64 * 2 / 128` step moves one unit a game frame
+(`World::arm_object_glide_leg`).
+
 The same park holds for the compass-walk ops against the **player**. `B7 F8 b0 b1`
 (op `0x37`, rate `0x80`; `0x41` is the `0x40` twin) moves the player along the
 direction `b0 & 7` names in the axis table at `0x80073F14`, for

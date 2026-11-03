@@ -11,7 +11,7 @@ its own colour type.
 |---|---|
 | `legaia-explorer` (`theme.rs`) | Both palettes, as egui `Visuals` for its dark and light themes, and the button padding and item spacing; `game_exit` for its failed-game banner. |
 | The game launcher (`legaia-engine` with no subcommand, `launcher_window.rs`) | The dark palette, as `[f32; 4]` for its software canvas; `game_exit` for its help box after a failed game. |
-| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel, `chrome::CHANGED` for a panel state the original game does not have, and the chrome inset and line gap. |
+| The play window's chrome (`window/hud/text_list.rs`) | `chrome::HEADING` / `KEY` / `TEXT` for the key hint, the toggle notices, the quit prompt and the `F12` panel's settings and key pages, `chrome::CHANGED` for a panel state the original game does not have, and the chrome inset and line gap. |
 
 ## Icons, and where the release puts the programs
 
@@ -80,8 +80,9 @@ reason: what a crash leaves is the chatter before it. The module needs `std`
 - The contrast function against the WCAG reference points.
 - The dark tokens stay within half an 8-bit step of the launcher's original
   float values.
-- `game_exit`: the error-chain, panic and crash-log readings, and the
-  signal / exit-code headlines.
+- `game_exit`: the error-chain, panic and crash-log readings, an audio
+  underrun not read as the reason, and the signal / exit-code headlines (a
+  `SIGTERM` or `SIGKILL` is the game being closed from outside, not a crash).
 - The window-icon PNGs are 256 px RGBA and each `.ico` holds a 256 px image;
   the resource script and the windres pick; `find_engine` across the release
   folder, a build folder and a macOS bundle.

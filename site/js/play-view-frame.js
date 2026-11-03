@@ -260,7 +260,10 @@
        * really changed (the take call clears the engine-side flag). Guarded
        * so a cached wasm bundle predating the export still runs statically. */
       if (typeof rt.field_vram_take_dirty === 'function' && rt.field_vram_take_dirty()) {
-        this.renderer.uploadVram(rt.field_vram_bytes());
+        /* A view of the engine's own image where the bundle has one: no
+         * megabyte copied onto the JS heap per CLUT step. */
+        this.renderer.uploadVram(typeof rt.field_vram_view === 'function'
+          ? rt.field_vram_view() : rt.field_vram_bytes());
       }
       /* VDF vertex morphs: env-pack meshes whose morph deltas moved this
        * tick (retail-armed ambient parts + the scene-entry pulse) get just
@@ -552,8 +555,10 @@
          * never the one already uploaded. The native window re-uploads the
          * same slots in its redraw pass. */
         let restage = fresh;
+        const morphSlots = new Set();
         if (typeof rt.play_morph_weight_slots === 'function') {
           const morph = rt.play_morph_weight_slots();
+          for (let i = 0; i < morph.length; i++) morphSlots.add(morph[i]);
           if (morph.length) restage = Array.from(new Set([...fresh, ...morph]));
         }
         for (let i = 0; i < restage.length; i++) {
@@ -567,6 +572,19 @@
             this.renderer.uploadSceneMesh(DYN_ACTOR_MESH_BASE + slot, pos,
               rt.play_dynamic_mesh_uvs(), rt.play_dynamic_mesh_cba_tsb(), idx,
               flat.length ? flat : null);
+            /* Retail blends the resident model in place: the blend shows on
+             * the environment's instances of it, and the actor draws nothing. */
+            if (morphSlots.has(slot) && typeof rt.play_morph_env_slots === 'function') {
+              const envSlots = rt.play_morph_env_slots(slot);
+              for (let k = 0; k < envSlots.length; k++) {
+                const meshId = this._ensureEnvMesh ? this._ensureEnvMesh(envSlots[k]) : -1;
+                if (meshId >= 0) {
+                  this.renderer.uploadSceneMesh(meshId, pos, rt.play_dynamic_mesh_uvs(),
+                    rt.play_dynamic_mesh_cba_tsb(), idx, flat.length ? flat : null);
+                }
+              }
+              continue;
+            }
             this._dynActors.add(slot);
           } catch (e) { /* a slot with no drawable mesh just stays unlisted */ }
         }
@@ -905,7 +923,7 @@
        * renderer against the camera basis of the VP it draws with. */
       this.renderer.lightingProvider = (this.dynLighting
           && typeof rt.play_lighting_frame === 'function')
-        ? (r, u) => rt.play_lighting_frame(r[0], r[1], r[2], u[0], u[1], u[2])
+        ? (r, u) => rt.play_lighting_frame(r[0], r[1], r[2], u[0], u[1], u[2], !!this.debugCamera)
         : null;
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass

@@ -76,6 +76,48 @@ struct KnownDivergence {
 /// engine's).
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
+        label: "balden2_field_door_hop",
+        key: "vis:62",
+        class: "a-reported",
+        note: "the balden_field_route_walk entry's P1[62] seat, reached through the door: the install slice runs one pass late",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop",
+        key: "vis:2",
+        class: "b",
+        note: "mid-arrival-record capture: P2[13] seats the pair with `CC 32 51 1E 1C` / `CC 33 51 1E 1C` and walks them to tiles (31, 29) / (29, 29); a cold entry parks them, as retail's own entry does",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop",
+        key: "vis:3",
+        class: "b",
+        note: "mid-arrival-record capture: P2[13] seats the pair with `CC 32 51 1E 1C` / `CC 33 51 1E 1C` and walks them to tiles (31, 29) / (29, 29); a cold entry parks them, as retail's own entry does",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop_settled",
+        key: "vis:2",
+        class: "b",
+        note: "mid-arrival-record capture: P2[13] seats the pair with `CC 32 51 1E 1C` / `CC 33 51 1E 1C` and walks them to tiles (31, 29) / (29, 29); a cold entry parks them, as retail's own entry does",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop_settled",
+        key: "vis:3",
+        class: "b",
+        note: "mid-arrival-record capture: P2[13] seats the pair with `CC 32 51 1E 1C` / `CC 33 51 1E 1C` and walks them to tiles (31, 29) / (29, 29); a cold entry parks them, as retail's own entry does",
+    },
+    KnownDivergence {
+        label: "concend_field_door_hop",
+        key: "vis:1",
+        class: "b",
+        note: "mid-arrival-record capture: concend's record seats the pair with `CC 07 51 2E 27` / `CC 08 51 2E 27` and walks them to tiles (47, 40) / (45, 40); a cold entry parks them",
+    },
+    KnownDivergence {
+        label: "concend_field_door_hop",
+        key: "vis:2",
+        class: "b",
+        note: "mid-arrival-record capture: concend's record seats the pair with `CC 07 51 2E 27` / `CC 08 51 2E 27` and walks them to tiles (47, 40) / (45, 40); a cold entry parks them",
+    },
+    KnownDivergence {
         label: "rim_elm_zoom_intro",
         key: "vis:*",
         class: "b",

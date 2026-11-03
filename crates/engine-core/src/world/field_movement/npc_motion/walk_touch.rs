@@ -97,6 +97,7 @@ impl World {
             .iter()
             .filter(|(s, _)| !exempt.iter().any(|(e, _)| e == *s))
             .filter(|(s, _)| !script_exempt(s))
+            .filter(|(s, _)| !self.stager_parked(**s))
             .find(|(_, ((wx, wz), _))| {
                 points.iter().any(|&(qx, qz)| {
                     (qx - *wx as i32).abs() < FIELD_PROP_BOX_HALF

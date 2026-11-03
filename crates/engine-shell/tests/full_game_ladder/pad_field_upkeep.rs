@@ -705,27 +705,14 @@ pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize
                         EquipState::ItemPicker { slot, cursor } if slot == GUARD_SLOT => {
                             let rows = es.items_for_slot(slot);
                             match rows.iter().position(|r| r.id == item && !r.equipped) {
-                                Some(k) => match usize::from(cursor).cmp(&k) {
-                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
-                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
-                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
-                                },
+                                Some(k) => candidate_press(usize::from(cursor), k),
                                 None => {
                                     skipped.insert(t);
                                     PadButton::Circle.mask()
                                 }
                             }
                         }
-                        EquipState::Confirm {
-                            item_id, cursor, ..
-                        } if item_id == item => {
-                            if cursor == 0 {
-                                PadButton::Cross.mask()
-                            } else {
-                                PadButton::Left.mask()
-                            }
-                        }
-                        EquipState::Done(_) => 0,
+                        EquipState::Done => 0,
                         _ => PadButton::Circle.mask(),
                     }
                 }
@@ -757,6 +744,22 @@ pub(super) fn pad_equip_guard(session: &mut NativeSession, element: u8) -> usize
         );
     }
     before - after.min(before)
+}
+
+/// The press that walks the candidate list's hand from row `cursor` toward row
+/// `target`. The list runs the kind-4 kernel: Up and Down wrap inside the 12-row
+/// page, and only Left and Right change it.
+fn candidate_press(cursor: usize, target: usize) -> u16 {
+    use legaia_engine_menus::pause_screens::LIST_PAGE_ROWS;
+    match (cursor / LIST_PAGE_ROWS).cmp(&(target / LIST_PAGE_ROWS)) {
+        std::cmp::Ordering::Less => PadButton::Right.mask(),
+        std::cmp::Ordering::Greater => PadButton::Left.mask(),
+        std::cmp::Ordering::Equal => match cursor.cmp(&target) {
+            std::cmp::Ordering::Less => PadButton::Down.mask(),
+            std::cmp::Ordering::Greater => PadButton::Up.mask(),
+            std::cmp::Ordering::Equal => PadButton::Cross.mask(),
+        },
+    }
 }
 
 /// Put on what the bag holds, with the pad, as a player does after opening
@@ -835,7 +838,7 @@ pub(super) fn pad_equip_best(session: &mut NativeSession) -> usize {
                                 pressed = true;
                                 PadButton::Cross.mask()
                             }
-                            EquipState::Done(_) => 0,
+                            EquipState::Done => 0,
                             _ => PadButton::Circle.mask(),
                         }
                     }
@@ -1012,7 +1015,6 @@ pub(super) fn pad_equip_specialty(session: &mut NativeSession) -> usize {
     let list = session.host.world.present_party_list();
     let pos = |s: u8| list.iter().position(|&x| x == s).unwrap_or(0);
     let mut done: HashSet<u8> = HashSet::new();
-    let mut aim: Option<u8> = None;
     for _ in 0..400 {
         let Some(menu) = session.field_menu.as_ref() else {
             break;
@@ -1045,7 +1047,6 @@ pub(super) fn pad_equip_specialty(session: &mut NativeSession) -> usize {
                 } else {
                     match es.state() {
                         EquipState::SlotPicker { cursor } => {
-                            aim = None;
                             if worn_weapon(session, t)
                                 != before[off_class.iter().position(|&m| m == t).unwrap_or(0)]
                             {
@@ -1062,29 +1063,15 @@ pub(super) fn pad_equip_specialty(session: &mut NativeSession) -> usize {
                         EquipState::ItemPicker { slot, cursor } if slot == weapon_slot => {
                             let rows = es.items_for_slot(slot);
                             let best = picks.iter().find(|&&(m, _)| m == t).map(|&(_, id)| id);
-                            aim = best;
                             match best.and_then(|id| rows.iter().position(|r| r.id == id)) {
-                                Some(k) => match usize::from(cursor).cmp(&k) {
-                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
-                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
-                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
-                                },
+                                Some(k) => candidate_press(usize::from(cursor), k),
                                 None => {
                                     done.insert(t);
                                     PadButton::Circle.mask()
                                 }
                             }
                         }
-                        EquipState::Confirm {
-                            item_id, cursor, ..
-                        } if Some(item_id) == aim => {
-                            if cursor == 0 {
-                                PadButton::Cross.mask()
-                            } else {
-                                PadButton::Left.mask()
-                            }
-                        }
-                        EquipState::Done(_) => 0,
+                        EquipState::Done => 0,
                         _ => {
                             done.insert(t);
                             PadButton::Circle.mask()
@@ -1486,27 +1473,14 @@ fn pad_swap_goods(session: &mut NativeSession, plan: &[(u8, u8, u8)], what: &str
                         EquipState::ItemPicker { slot: s, cursor } if s == slot => {
                             let rows = es.items_for_slot(slot);
                             match rows.iter().position(|r| r.id == item && !r.equipped) {
-                                Some(k) => match usize::from(cursor).cmp(&k) {
-                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
-                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
-                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
-                                },
+                                Some(k) => candidate_press(usize::from(cursor), k),
                                 None => {
                                     next += 1;
                                     PadButton::Circle.mask()
                                 }
                             }
                         }
-                        EquipState::Confirm {
-                            item_id, cursor, ..
-                        } if item_id == item => {
-                            if cursor == 0 {
-                                PadButton::Cross.mask()
-                            } else {
-                                PadButton::Left.mask()
-                            }
-                        }
-                        EquipState::Done(_) => 0,
+                        EquipState::Done => 0,
                         _ => PadButton::Circle.mask(),
                     }
                 }
@@ -1646,27 +1620,14 @@ pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
                             let row = best
                                 .and_then(|id| rows.iter().position(|r| r.id == id && !r.equipped));
                             match row {
-                                Some(k) => match usize::from(cursor).cmp(&k) {
-                                    std::cmp::Ordering::Less => PadButton::Down.mask(),
-                                    std::cmp::Ordering::Greater => PadButton::Up.mask(),
-                                    std::cmp::Ordering::Equal => PadButton::Cross.mask(),
-                                },
+                                Some(k) => candidate_press(usize::from(cursor), k),
                                 None => {
                                     skipped.insert((t, slot));
                                     PadButton::Circle.mask()
                                 }
                             }
                         }
-                        EquipState::Confirm {
-                            item_id, cursor, ..
-                        } if Some(item_id) == aim => {
-                            if cursor == 0 {
-                                PadButton::Cross.mask()
-                            } else {
-                                PadButton::Left.mask()
-                            }
-                        }
-                        EquipState::Done(_) => 0,
+                        EquipState::Done => 0,
                         _ => {
                             // Whatever else opened is backed out of, and the
                             // slot it was for is not asked about again.

@@ -60,6 +60,34 @@ from ui_host_drift.rows.host_files import (
 # injection is a call made from a place the pairing should not pin.
 SIM_PAIRS: list[dict[str, object]] = [
     {
+        "what": "a battle body's blend word, native vs play page - the native "
+        "posed override was keyed by TMD index, so two bodies on one TMD shared "
+        "one mesh and one blend. Each host re-uploads a body's own stream with "
+        "the one `apply_body_blend`",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_passes.rs",
+                "build_posed_actor_overrides",
+            ),
+            "web": (
+                "crates/web-play/src/play_battle_body_blend.rs",
+                "play_battle_actor_blend_cba_tsb",
+            ),
+        },
+        "mode": "symbols_all",
+        "symbols": ["apply_body_blend"],
+    },
+    {
+        "what": "the Baka pause menu, native vs play page - both draw the "
+        "cabinet's own layout through one composition",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/hud/text_list.rs", "build_hud"),
+            "web": ("crates/web-play/src/play_minigame_arena.rs", "baka_hud_text_draws"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["pause_panel", "baka_pause_text_draws_for"],
+    },
+    {
         "what": "session-switch world toggles, native vs play page - the "
         "native window read `LEGAIA_SMART_MONSTERS` and "
         "`LEGAIA_WORLD_MAP_MARKERS` inline in its launch code, and its "
@@ -929,24 +957,6 @@ SIM_PAIRS: list[dict[str, object]] = [
         ],
     },
     {
-        "what": "`apply == 0` Camera Configure snap beats, native vs play "
-        "page - retail's mover snaps the live camera globals to a snap beat "
-        "immediately, and the field VM runs until yield, so a snap+glide pair "
-        "committed in ONE tick must glide FROM the snapped pose. The beats "
-        "are banked by `Camera::route_camera_events`, which is the only thing "
-        "that drains `FieldEvent::CameraConfigure` off the world queue - a "
-        "host watching its own later event drain for them sees none. Both "
-        "hosts step the glide through the shared `frame_step::CutsceneGlide`, "
-        "whose `advance` replays the bank before it glides and counts steps "
-        "on the world's display-frame clock (zero on an idle redraw)",
-        "sites": {
-            "native": (NATIVE_REDRAW, "handle_redraw"),
-            "web": (WEB_PLAY_CAMERA, "resolve_camera_frame"),
-        },
-        "mode": "symbols_all",
-        "symbols": ["cutscene_glide"],
-    },
-    {
         "what": "save-select phase layout, native vs play page - which pills "
         "draw, whether the pill cursor shows, and whether the block grid and "
         "its info panel stay up are one decision per `SelectPhase`, and the "
@@ -1318,7 +1328,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "crates' boot paths and neither is reached by the other's tests",
         "sites": {
             "native": (NATIVE_BOOT_SCENE_ENTRY, "enter_field_live"),
-            "web": (WEB_RUNTIME_DISC_LOAD, "load_disc"),
+            "web": (WEB_RUNTIME_DISC_LOAD, "install_disc"),
         },
         "mode": "symbols_all",
         "symbols": ["set_steal_table"],

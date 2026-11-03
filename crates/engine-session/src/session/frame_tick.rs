@@ -45,9 +45,13 @@ impl<S: AudioSink> BootSession<S> {
     /// reads (and a spawn draws the world `rand()` stream), the window's
     /// simulation depended on the monitor's refresh rate.
     ///
-    /// The camera is the follow frame with no cutscene view (the shared
-    /// simplification both hosts make); `centre` is the host's scene centre,
-    /// the frame resolver's fallback with no lead actor. Returns the field-FX
+    /// The camera is the frame the scene draws through: `FUN_8003F348` runs
+    /// inside the field render pass, under that pass's matrices, so a scripted
+    /// shot takes the sheets with it. The glide is the host's and is stepped in
+    /// its redraw, after the tick, so this reads the shot the host last drew
+    /// (`field_fog_shot`), one frame old; a driver with no glide has none and
+    /// keeps the follow frame. `centre` is the host's scene centre, the frame
+    /// resolver's fallback with no lead actor. Returns the field-FX
     /// projection the frame resolved to - `Some` in game mode 3 whenever the
     /// frame has a field view, whether or not the script gate let the step
     /// run - for the page's depth-affine readback.
@@ -59,10 +63,13 @@ impl<S: AudioSink> BootSession<S> {
         if !legaia_engine_core::world::World::fog_mode(world.mode) {
             return None;
         }
+        let shot = self
+            .field_fog_shot
+            .filter(|_| legaia_engine_world_views::camera_view::cutscene_owns_camera(world));
         let frame = legaia_engine_world_views::camera_view::resolve_field_camera(
             world,
             &self.camera,
-            None,
+            shot,
             centre,
         );
         let view = frame.field_view()?;
@@ -91,10 +98,13 @@ impl<S: AudioSink> BootSession<S> {
         if !legaia_engine_core::world::World::fog_mode(world.mode) || !world.fog.gate {
             return;
         }
+        let shot = self
+            .field_fog_shot
+            .filter(|_| legaia_engine_world_views::camera_view::cutscene_owns_camera(world));
         let frame = legaia_engine_world_views::camera_view::resolve_field_camera(
             world,
             &self.camera,
-            None,
+            shot,
             centre,
         );
         if let Some(view) = frame.field_view() {
@@ -277,7 +287,7 @@ impl<S: AudioSink> BootSession<S> {
         let Ok(archive) = self
             .host
             .index
-            .entry_bytes_extended(crate::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
+            .entry_bytes(crate::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
         else {
             return;
         };

@@ -355,6 +355,13 @@ impl LegaiaRuntime {
                 WHITE,
             ));
         }
+        if let Some((_, lines)) = f.pause_panel() {
+            out.extend(legaia_engine_ui::baka_strips::baka_pause_text_draws_for(
+                font,
+                lines.iter().map(|l| (&l.text[..], l.x, l.y)),
+                WHITE,
+            ));
+        }
         if f.cabinet().choice_sheet().is_some() {
             let pot = self
                 .scene_host

@@ -1,0 +1,134 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; build and test speed</div>
+  <h1>Build and test speed</h1>
+  <p class="lede">What a build and a test run spend their time on, and what to run so an edit does not wait for them. Everything here changes how fast a result arrives, never the result: the optimiser&rsquo;s choices do not move a simulation that runs on integers, and the ladder&rsquo;s trace comes out byte-identical under every profile below.</p>
+</header>
+
+<section class="doc-section" id="profiles" data-doc="contents,which-profile">
+  <h2>Which profile</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Profile</th><th>Use it for</th><th>What it is</th></tr></thead>
+    <tbody>
+      <tr><td><code>dev-fast</code></td><td>The edit-build-test loop: one crate&rsquo;s tests, an oracle, a replay, a ladder run after an edit.</td><td><code>release-test</code>&rsquo;s optimisation level with rustc&rsquo;s incremental cache over the workspace crates.</td></tr>
+      <tr><td><code>release-test</code></td><td>What CI runs, so the last run before a commit; and what the <code>scripts/ci/*.py</code> drivers build.</td><td><code>release</code>&rsquo;s optimisation level, no LTO, 16 codegen units.</td></tr>
+      <tr><td><code>release</code></td><td>Shipped binaries only.</td><td>Thin LTO, one codegen unit.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="cli"><code>cargo test -p legaia-engine-shell --profile dev-fast --test integration foo::</code></div>
+  <p><code>dev-fast</code> binaries lose some inlining across codegen units and run a few percent slower for it on the ladder, with the whole suite&rsquo;s outcomes the same, test for test. CI stays on <code>release-test</code>, and a change is not verified until it has run there. <code>dev-fast</code> is a local choice and no script or workflow names it.</p>
+</section>
+
+<section class="doc-section" id="edit-cost" data-doc="what-an-edit-costs">
+  <h2>What an edit costs</h2>
+  <p>A crate is compiled whole when it or anything under it changes, because cargo has no early cut-off on an unchanged interface. So the cost of an edit is the crates above it. An edit in <code>engine-core</code> recompiles everything from <code>engine-scene-host</code> up to <code>engine-shell</code>&rsquo;s <code>integration</code> test binary, each from scratch under <code>release-test</code>. <code>dev-fast</code> recompiles the same crates, and each reuses the codegen units the edit did not reach; that is the whole difference, and it is an order of magnitude on a mid-graph edit.</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="An edit in engine-core recompiles the chain above it: engine-scene-host, engine-session, engine-netplay, web-play, parity, engine-shell and its integration binary. Under release-test each is compiled whole; under dev-fast each reuses the codegen units the edit did not reach.">
+      <defs><marker id="bs-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-node-warn" x="10" y="30" width="130" height="50" rx="4"/><text class="dg-label" x="75" y="60">engine-core</text>
+      <rect class="dg-node" x="175" y="30" width="130" height="50" rx="4"/><text class="dg-label" x="240" y="60">scene-host</text>
+      <rect class="dg-node" x="340" y="30" width="130" height="50" rx="4"/><text class="dg-label" x="405" y="60">session</text>
+      <rect class="dg-node" x="505" y="30" width="130" height="50" rx="4"/><text class="dg-label" x="570" y="60">parity, web-play</text>
+      <rect class="dg-node" x="670" y="30" width="200" height="50" rx="4"/><text class="dg-label" x="770" y="60">shell, integration</text>
+      <path class="dg-edge" d="M140 55 L173 55" marker-end="url(#bs-arrow)"/>
+      <path class="dg-edge" d="M305 55 L338 55" marker-end="url(#bs-arrow)"/>
+      <path class="dg-edge" d="M470 55 L503 55" marker-end="url(#bs-arrow)"/>
+      <path class="dg-edge" d="M635 55 L668 55" marker-end="url(#bs-arrow)"/>
+      <text class="dg-sub" x="440" y="115">release-test: every box compiled whole</text>
+      <text class="dg-sub" x="440" y="137">dev-fast: the same boxes, reusing the codegen units the edit did not reach</text>
+    </svg>
+    <figcaption>The chain is why profile choice matters more than any one crate&rsquo;s compile time.</figcaption>
+  </figure>
+  <ul class="bullets">
+    <li>LLVM dominates. Type-checking and borrow-checking are a small part of nearly every crate.</li>
+    <li><code>legaia-expansion-format</code> costs the most of anything in the graph, for its derived TOML types, but it is low in the graph and changes rarely, so it weighs on a clean build and not on an edit.</li>
+    <li><code>engine-shell</code>&rsquo;s <code>integration</code> binary is the largest single unit an edit reaches. An edit under <code>crates/engine-shell/tests/</code> rebuilds that unit alone.</li>
+    <li>sccache misses on workspace crates between checkouts by design, since the checkout path is in the crate&rsquo;s metadata. What it serves is dependencies.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="wasm" data-doc="the-wasm-bundle">
+  <h2>The wasm bundle</h2>
+  <p>The shipped bundle is <code>scripts/ci/build-wasm.sh</code>: <code>release</code> plus <code>wasm-opt</code> stripping. A one-line edit in <code>engine-core</code> costs three quarters of a clean build, and no one step is why: it is the chain above the edit, each crate compiled whole, then the thin-LTO link. So the iteration path is a separate build.</p>
+  <div class="cli"><code>scripts/ci/build-wasm.sh --fast   # site/wasm/ from the wasm-fast profile, no wasm-opt
+scripts/ci/check-pages.mjs        # the same page checks run on it</code></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>What</th><th>Shipped</th><th><code>--fast</code></th></tr></thead>
+    <tbody>
+      <tr><td>Clean target directory</td><td>about 6 min</td><td>about 5 min</td></tr>
+      <tr><td>One line, <code>engine-core</code></td><td>4.5 min</td><td>30 s</td></tr>
+      <tr><td>One line, <code>web-play</code></td><td>2 min</td><td>30 s</td></tr>
+      <tr><td><code>.wasm</code>, raw / gzip</td><td>21.3 / 6.9 MB</td><td>33.4 / 8.3 MB</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><code>wasm-fast</code> lands in <code>site/wasm/</code> where a page expects it, and the freshness stamp records the profile: <code>check-wasm-freshness.py --strict</code> refuses it, so neither a claim that a fix is live nor the full gate can rest on it. <code>scripts/ci/check-wasm-target.sh</code> stays the cheapest question, whether the browser host compiles at all.</p>
+</section>
+
+<section class="doc-section" id="linker" data-doc="the-linker">
+  <h2>The linker</h2>
+  <p>The <code>aarch64-unknown-linux-gnu</code> toolchain links with the system <code>cc</code>, which runs GNU <code>ld</code>. <code>rust-lld</code>, which rustup ships, takes well under half the time on the test binaries. Set it per shell and not in <code>~/.cargo/config.toml</code>: on a machine that is also the CI runner, that file applies to the release builds as well, and <code>release-build.sh</code> is the only thing that should decide how a shipped binary links.</p>
+</section>
+
+<section class="doc-section" id="test-run" data-doc="where-a-test-run-goes,page-faults">
+  <h2>Where a test run goes</h2>
+  <p>The suite&rsquo;s wall clock is set by the slowest binary, since cargo runs binaries one at a time and tests within one in parallel. With a disc, that is <code>engine-shell</code>&rsquo;s <code>integration</code>, whose length is part C of the <a href="full-game-ladder.html">full-game ladder</a>. <code>patcher</code>&rsquo;s <code>integration</code> is the most CPU, nearly all of it in the tests that apply a whole mod to a whole disc. libtest&rsquo;s per-test timing works on a stable compiler when <code>RUSTC_BOOTSTRAP=1</code> and <code>-Zunstable-options --report-time</code> are passed to the built binary, run from the crate directory.</p>
+  <p><strong>Page faults.</strong> A test that holds the disc image in a <code>Vec</code> pays twice: the copy, and a page fault for every 4 KiB of the allocation. On the patcher suite those faults are more CPU than the tests&rsquo; own code. The repo&rsquo;s <code>.cargo/config.toml</code> sets <code>GLIBC_TUNABLES=glibc.malloc.hugetlb=1</code> for everything cargo spawns, so glibc asks for transparent huge pages behind its large allocations and one fault covers 2 MiB. It moves nothing a program computes, and it reaches only what cargo runs.</p>
+</section>
+
+<section class="doc-section" id="commit-gates" data-doc="the-commit-time-gates">
+  <h2>The commit-time gates</h2>
+  <p>The pre-commit hook runs the same checks in the same tree whatever the order, so the order is chosen for how fast a failure reports.</p>
+  <ol class="steps">
+    <li>The sub-second gates, one after another.</li>
+    <li><code>cargo fmt</code>, with its auto-fix, when Rust is staged: whatever reads source below reads what the commit will hold.</li>
+    <li>The gates that take seconds, side by side: the dump-corpus ratchets, the port catalog, and on a Rust commit the host-drift gates. Every failure is reported, not only the first.</li>
+    <li><code>cargo clippy</code> and the <code>wasm32</code> check, which are the longest and take cargo&rsquo;s build lock.</li>
+  </ol>
+  <p>A gate that is slow is usually repeating itself. For a gate, the proof of a speedup is its output: <code>port-catalog.py --live-audit</code> must write <code>target/port-catalog/</code> byte for byte as before.</p>
+</section>
+
+<section class="doc-section" id="full-gate" data-doc="the-full-gate">
+  <h2>The full gate</h2>
+  <p><code>scripts/ci/full-gate.py</code> is the end-of-work gate as one command. It reports and never decides: nothing it runs blesses, proposes or pushes, and a command that carries such a flag is refused before the run starts.</p>
+  <div class="cli"><code>scripts/ci/full-gate.py                       # everything
+scripts/ci/full-gate.py --list                # the gates, their groups and commands
+scripts/ci/full-gate.py --only repo,lint-*    # gate names, globs or groups; needs come along
+scripts/ci/full-gate.py --skip 'ladder-seed-*'
+scripts/ci/full-gate.py --resume              # rerun what did not pass, on the same tree</code></div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Group</th><th>What runs</th></tr></thead>
+    <tbody>
+      <tr><td><code>repo</code></td><td>Every step of CI&rsquo;s Repo Gates job, in a clean worktree of <code>HEAD</code> with no disc and no gitignored data</td></tr>
+      <tr><td><code>tree</code></td><td>Format, clippy and the wasm type-check; the ratchets again where the data is; the baseline-loosening and revert scans</td></tr>
+      <tr><td><code>build</code></td><td>One build of <code>legaia-engine</code> and of the ladder&rsquo;s test binary, copied aside so later gates read one binary</td></tr>
+      <tr><td><code>tests</code></td><td>The disc-gated suite; the disc-free suite only when named</td></tr>
+      <tr><td><code>ladder</code></td><td>Part B, part C on the default stream, and each listed seed</td></tr>
+      <tr><td><code>retail</code></td><td><a href="retail-compare.html">Retail comparison</a>, the audio sweep, the PCM check, capture coverage</td></tr>
+      <tr><td><code>wasm</code></td><td>The bundle build, its strict freshness check and the page checks</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The workflow&rsquo;s steps are read from the file on every run, so a step added there is a gate here with no edit. Every failure is reported with its log: a gate whose prerequisite failed shows as <code>BLOCKED</code>, and the rest still run. A driver&rsquo;s <code>[skip]</code> line reads as <code>SKIP</code> and the verdict as <code>PARTIAL</code>, since a skip is not a pass; only the <code>repo</code> group is exempt, where a ratchet skipping for want of the disc is what the runner does. <code>preflight</code> fails when the data a gate needs is missing, and <code>tree-unchanged</code> runs last and fails if a tracked file moved during the run.</p>
+  <p>Output goes under <code>--out</code> (default <code>target/full-gate</code>): one log per gate, <code>timing.md</code> and <code>state.json</code>. <code>--max-cpu</code>, <code>--jobs</code>, <code>--cargo-jobs</code> and <code>--memory-max</code> set the load on a shared box.</p>
+</section>
+
+<section class="doc-section" id="profiling" data-doc="profiling-without-perf">
+  <h2>Profiling without perf</h2>
+  <p>Where <code>perf</code> is refused, <code>scripts/profile/sampler.c</code> gets the same answer with no privilege and no rebuild: a preload library that takes a stack every 10 ms of CPU time, and <code>scripts/profile/report.py</code> to read it. On a shared machine compare CPU seconds, not wall clock, and compare two binaries by running them side by side.</p>
+  <p>A speedup is proved by the output, not the timing. For part C of the ladder, that is the trace with its wall-clock fields stripped; for a patcher feature, the <code>.ppf</code> from a fixed seed must hash the same.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="frame-bench.html">Frame benchmark</a>
+    <a href="full-game-ladder.html">Full-game ladder</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/build-and-test-speed.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

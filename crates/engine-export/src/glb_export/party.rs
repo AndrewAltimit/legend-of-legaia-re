@@ -171,7 +171,8 @@ pub fn party_manifest(e: &PartyExport, opts: &GlbExportOptions) -> Value {
         "source": "PROT 0874 (player.lzs): section 0 field meshes, section 1 locomotion bank, section 2 field texture pages",
         "scale": opts.scale,
         "conventions": {
-            "axes": "glTF +Y up; geometry keeps the site viewers' mirror-handedness (same as the scene NPC glbs)",
+            "axes": "glTF +Y up, right-handed; a PSX point (x, y, z) exports as (x, -y, -z) (same as the scene NPC glbs)",
+            "world_frame": "psx_rx180",
             "npc_prop_units": "scaled",
             "units": "glTF meters = PSX world units * scale, baked on each file's root node",
             "clips": "clip 0 is the standing idle (frame 0 = rest pose), clip 1 the walk cycle; the rest of the 7-clip bank follows as `Locomotion N`",

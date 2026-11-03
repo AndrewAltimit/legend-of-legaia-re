@@ -431,6 +431,18 @@ vec2 depthAffine(mat4 m) {
   return vec2(a, m[3].z - a * m[3].w);
 }
 
+/* A battle shell prim's depth in PSX mode: the mean of its corners' w, the key
+ * retail links it by, so one quad's whole area sorts as that mean. Twin of
+ * engine-render's prim_mean_depth; -1 where it keeps the per-pixel depth. */
+uniform float u_prim_mean_depth;
+float primMeanW(mat4 m) {
+  if (u_prim_mean_depth < 0.5 || u_psx.z < 0.5 || a_prim_c0.w < 2.5) return -1.0;
+  float w = (m * vec4(a_prim_c0.xyz, 1.0)).w + (m * vec4(a_prim_c1, 1.0)).w
+    + (m * vec4(a_prim_c2, 1.0)).w;
+  if (a_prim_c0.w > 3.5) return (w + (m * vec4(a_prim_c3, 1.0)).w) / 4.0;
+  return w / 3.0;
+}
+
 /* The flat bucket's representative w for a continent cell (the w whose
  * normalised depth overworldFlatDepth writes), or -1 where it keeps the
  * per-pixel depth. Same gate and same key as overworldFlatDepth. */
@@ -634,6 +646,7 @@ void main() {
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
+  if (flatW <= 0.0) flatW = primMeanW(u_mvp * u_model);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);
@@ -964,16 +977,15 @@ vec3 dyn_far(vec3 far_rgb) {
 /* Twin of engine-render's dyn_light: the mood's ambient floor + a soft
  * |N.L| key light + a screen-centred pool, capped at DYN_MAX_GAIN over the
  * baked colour, plus the point lights up to DYN_TOTAL_MAX_GAIN. An emissive
- * prim (TSB / blend bit 13) skips the mood and draws at the emissive gain
- * plus the light falling on it. vn = the smoothed vertex normal (zero =
+ * prim (TSB / blend bit 13) skips the mood and the point lights and draws
+ * at the emissive gain. vn = the smoothed vertex normal (zero =
  * none), gn = the facet normal. Identity while u_dyn_dir.w is 0. */
 vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn, bool emissive) {
   if (u_dyn_dir.w < 0.5) return rgb;
   vec3 n = dot(vn, vn) < 1e-8 ? gn : vn;
   vec3 pg = point_gain(n);
   if (emissive) {
-    return clamp(rgb * min(vec3(u_dyn_ambient.a) + pg, vec3(DYN_TOTAL_MAX_GAIN)),
-                 vec3(0.0), vec3(1.0));
+    return clamp(rgb * u_dyn_ambient.a, vec3(0.0), vec3(1.0));
   }
   float lambert = DYN_LAMBERT_FALLBACK;
   float n_len = length(n);

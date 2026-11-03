@@ -97,7 +97,13 @@ fn run_to_first_box(rt: &mut LegaiaRuntime, frames: u32) -> Option<serde_json::V
         }
         // The command flow needs input edges to walk its phases; a bare tick
         // loop parks at the first prompt-less state.
-        if i.is_multiple_of(6) {
+        // Nothing reads the pad under the battle open, and a press on the
+        // frame it ends would dismiss the caption it raises.
+        let open_held = rt
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.battle.round_open_pending);
+        if i.is_multiple_of(6) && !open_held {
             tap(rt, PadButton::Cross.mask());
         } else {
             step(rt);

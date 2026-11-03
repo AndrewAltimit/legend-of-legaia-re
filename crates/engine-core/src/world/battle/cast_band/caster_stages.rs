@@ -130,6 +130,136 @@ impl World {
                 }
                 self.casting.module_pass_counter = n.wrapping_add(1);
             }
+            if let Some(m) = run.vram_move {
+                self.battle.vram_moves.push(
+                    legaia_engine_field::script_vram_move::ScriptVramMove {
+                        src: (m.src.0 as i16, m.src.1 as i16),
+                        size: (m.size.0 as i16, m.size.1 as i16),
+                        dst: (m.dst.0 as i16, m.dst.1 as i16),
+                    },
+                );
+            }
+            // PROT 0935's arms 4 and 5: two draws for the point, a third for
+            // the yaw (`0x801F7480..0x801F7690`).
+            if let Some(w) = self.casting.module_rock_burst.take()
+                && opens_pass
+                && let Some(caster) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+            {
+                let c = (caster.move_state.world_x, caster.move_state.world_z);
+                let dx = (self.next_rand() % 1023) as i32;
+                let dz = (self.next_rand() % 1023) as i32;
+                let yaw = (self.next_rand() % 4095) as i16;
+                let (x, z) = cmc::rock_point(c, w, dx, dz);
+                let seated: Vec<cmc::ModuleSpawn> = cmc::ROCK_RECORDS
+                    .iter()
+                    .map(|&r| cmc::ModuleSpawn {
+                        record: cmc::SpawnRecord::Module(r),
+                        anchor: cmc::SpawnAnchor::LiteralScaled {
+                            pos: [x, 0, z],
+                            rot: [0, yaw, 0],
+                            scale: 0x1000,
+                        },
+                    })
+                    .collect();
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
+            if let Some((records, rot)) = self.casting.module_ring.take() {
+                let mut used = [false; 8];
+                for i in 0..8u16 {
+                    // `rand() % 8` until an unused slot comes up; its slot times
+                    // `0x40` lands on each record's `+0x54`, `+0x42 = 1`.
+                    let mut slot = 0u16;
+                    for _ in 0..0x400 {
+                        slot = (self.next_rand() % 8) as u16;
+                        if !used[usize::from(slot)] {
+                            used[usize::from(slot)] = true;
+                            break;
+                        }
+                    }
+                    let (s, c) = legaia_engine_system::trig::trig12(i << 9);
+                    for record in records {
+                        self.casting.seat_stager_spawn(
+                            run.prot_entry,
+                            &legaia_engine_cast::cast_module_ticks::StagerSpawn {
+                                record,
+                                pos: [s / 2, 0, c / 2],
+                                rot,
+                                pokes: vec![(0x54, slot << 6), (0x42, 1)],
+                                patches: Vec::new(),
+                                halve_speed: false,
+                                scale: 0x1000,
+                            },
+                        );
+                    }
+                }
+            }
+            if let Some(records) = self.casting.module_spray.take()
+                && opens_pass
+            {
+                let x = 0x80 - (self.next_rand() % 257) as i16;
+                let y = 0x80 - (self.next_rand() % 257) as i16;
+                let seated: Vec<cmc::ModuleSpawn> = records
+                    .iter()
+                    .map(|&r| cmc::ModuleSpawn {
+                        record: cmc::SpawnRecord::Module(r),
+                        anchor: cmc::SpawnAnchor::LiteralScaled {
+                            pos: [x, y, 0x100],
+                            rot: [0; 3],
+                            scale: 0x1000,
+                        },
+                    })
+                    .collect();
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
+            if let Some((record, count)) = self.casting.module_scatter.take()
+                && opens_pass
+            {
+                let mut seated = Vec::with_capacity(usize::from(count));
+                for _ in 0..count {
+                    let x = (self.next_rand() % 64) as i16 - 32;
+                    let y = (self.next_rand() % 64) as i16 - 16;
+                    let roll = (self.next_rand() % 4095) as i16;
+                    let pitch = (self.next_rand() % 4095) as i16;
+                    let yaw = (self.next_rand() % 4095) as i16;
+                    seated.push(cmc::ModuleSpawn {
+                        record: cmc::SpawnRecord::Module(record),
+                        anchor: cmc::SpawnAnchor::LiteralScaled {
+                            pos: [x, y, 0x100],
+                            rot: [pitch, yaw, roll],
+                            scale: 0x1000,
+                        },
+                    });
+                }
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
+            // PROT 0957's arms 4 to 6: four pairs a pass, each pair on two
+            // draws (`0x801F70AC..0x801F713C`).
+            if std::mem::take(&mut self.casting.module_scatter_pairs) && opens_pass {
+                let mut seated = Vec::with_capacity(usize::from(cmc::STORM_SCATTER_PAIRS) * 2);
+                for _ in 0..cmc::STORM_SCATTER_PAIRS {
+                    let x = 0x80 - (self.next_rand() % 255) as i16;
+                    let y = 0x80 - (self.next_rand() % 255) as i16;
+                    self.casting.module_scatter_y = y;
+                    for record in cmc::STORM_SCATTER_RECORDS {
+                        seated.push(cmc::ModuleSpawn {
+                            record: cmc::SpawnRecord::Module(record),
+                            anchor: cmc::SpawnAnchor::LiteralScaled {
+                                pos: [x, y, 0x100],
+                                rot: [0, 0, 0],
+                                scale: 0x1000,
+                            },
+                        });
+                    }
+                }
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
+            if std::mem::take(&mut self.casting.module_ribbons_on_scatter_y)
+                && let Some(ring) = self.battle.cast_ribbons.as_mut()
+            {
+                for p in ring.points.iter_mut().take(usize::from(ring.count)) {
+                    p[1] = self.casting.module_scatter_y;
+                }
+            }
             if run.phase != arm || !run.busy {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
                     self.casting.flush_module_part_pool();
@@ -150,6 +280,13 @@ impl World {
                 // on the same pass (drawn ahead of the arm's hit).
                 let debris = std::mem::take(&mut self.casting.module_debris);
                 if !debris.is_empty() {
+                    self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
+                }
+            } else if !self.casting.module_debris.is_empty() {
+                // A director's per-pass calls on a held arm (PROT 0947's
+                // trail): one battle frame, one call.
+                let debris = std::mem::take(&mut self.casting.module_debris);
+                if opens_pass {
                     self.stage_module_arm_spawns(run.prot_entry, &debris, run.camera_shot, None);
                 }
             }
@@ -248,7 +385,12 @@ impl World {
         self.casting.module_beam_live = false;
         self.casting.module_hit_arm = None;
         self.casting.module_settle_ticks = 0;
-        self.battle.combo_cluster_held = false;
+        // A module with pre-hits keeps the readout flag down from its first
+        // popup, which the HUD reads a frame late: hold from the start, and let
+        // the band's fold release it.
+        self.battle.combo_cluster_held = self
+            .cast_module_for(spell_id)
+            .is_some_and(|e| matches!(e, 908 | 915 | 928 | 932 | 933 | 934));
         self.casting.capture_spell = Some(spell_id);
         self.casting.caster_stages = self.caster_stage_run_for(spell_id);
         self.emit_cast_module_voice(spell_id);

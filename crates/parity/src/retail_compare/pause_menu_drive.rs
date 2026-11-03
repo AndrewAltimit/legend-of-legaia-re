@@ -19,6 +19,9 @@ pub const MENU_OPEN_WIPE_TICKS: u64 = MENU_PRESS_GAP;
 /// after the confirm.
 pub const CARD_READ_SETTLE_TICKS: u64 = 160;
 
+/// Ticks the prize counter's windows take to slide in after the arm.
+pub const PRIZE_SETTLE_TICKS: u64 = 90;
+
 /// The pad edges that reach `menu` from a settled field, as `(tick offset,
 /// button)` pairs from the first press: `Start`, `Down` until the root
 /// cursor (opening on row `0`) sits on the row, `Cross`. The Equip row opens
@@ -27,12 +30,19 @@ pub const CARD_READ_SETTLE_TICKS: u64 = 160;
 /// a `Cross` after that.
 pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::input::PadButton)> {
     use legaia_engine_system::input::PadButton;
+    if menu.prize_block.is_some() {
+        return Vec::new();
+    }
     let mut out = vec![(0, PadButton::Start)];
     let mut t = MENU_OPEN_WIPE_TICKS;
     let mut press = |b: PadButton| {
         t += MENU_PRESS_GAP;
         out.push((t, b));
     };
+    // The root list is `Start` alone: the hand rests on its first row.
+    if menu.subscreen == MENU_ROOT {
+        return out;
+    }
     for _ in 0..menu.row.index() {
         press(PadButton::Down);
     }
@@ -54,8 +64,13 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
 
 /// Ticks a menu drive runs from its first press to the sample.
 pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
+    if menu.prize_block.is_some() {
+        return PRIZE_SETTLE_TICKS;
+    }
     let settle = if menu.card_grid {
         CARD_READ_SETTLE_TICKS
+    } else if menu.subscreen == MENU_ROOT {
+        MENU_OPEN_WIPE_TICKS + 2 * MENU_PRESS_GAP
     } else {
         2 * MENU_PRESS_GAP
     };
@@ -71,6 +86,24 @@ pub(super) fn drive_pause_menu(
 ) -> Result<Option<u8>> {
     use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::EquipState;
+    if let Some(block) = menu.prize_block {
+        // A headless session reads no menu overlay on boot; its table is what
+        // the arm stands on.
+        let overlay = session.host.index.entry_bytes_extended(
+            legaia_game_tables::menu_windows::MENU_OVERLAY_PROT_INDEX as u32,
+        )?;
+        session.host.world.install_menu_overlay_tables(&overlay);
+        session
+            .host
+            .world
+            .try_arm_prize_exchange(&[0x49, 0x07, block]);
+        let mut screen = legaia_engine_menu_runtime::menu_runtime::MenuRuntime::new("");
+        session.poll_field_overlay(&mut screen);
+        return Ok(screen
+            .prize_session
+            .is_some()
+            .then_some(MENU_PRIZE_EXCHANGE));
+    }
     let presses = pause_menu_presses(menu);
     for t in 0..=pause_menu_drive_ticks(menu) {
         let mask = presses

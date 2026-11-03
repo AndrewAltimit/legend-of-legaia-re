@@ -110,7 +110,8 @@ pub fn quest_item_ids(scus: &[u8]) -> Result<Vec<u8>> {
             continue;
         }
         // A real item (named slot) the table prices as unsellable.
-        if table.name(id).is_some() && item_names::item_price(scus, id).is_some_and(|p| p == 0) {
+        if table.pool_name(id).is_some() && item_names::item_price(scus, id).is_some_and(|p| p == 0)
+        {
             out.push(id);
         }
     }

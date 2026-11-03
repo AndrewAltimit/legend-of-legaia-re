@@ -15,9 +15,69 @@ pub struct Baseline {
     pub classes: BTreeMap<String, StateClass>,
 }
 
-/// How far under the baselined accuracy score a smoke-tier frame may fall
-/// before [`Baseline::smoke_breaks`] reports it.
-pub const SMOKE_IMAGE_SLACK: f64 = 0.25;
+/// Luma change that counts a pixel as moved a long way between the accuracy
+/// frame and a smoke-tier frame.
+const SMOKE_BIG_CHANGE_LUMA: f64 = 96.0;
+/// Share of the frame that may move by [`SMOKE_BIG_CHANGE_LUMA`].
+pub const SMOKE_MAX_BIG_CHANGE: f64 = 0.03;
+/// Share of the frame that may turn lit (luma 64 and up) where the accuracy
+/// frame is black (luma 8 and under).
+pub const SMOKE_MAX_LIT_FROM_BLACK: f64 = 0.02;
+/// How far the frame's mean luma may move either way.
+pub const SMOKE_MAX_LUMA_SHIFT: f64 = 45.0;
+
+/// A smoke-tier frame measured against the same state's accuracy frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SmokeFrame {
+    pub big_change: f64,
+    pub lit_from_black: f64,
+    pub luma_shift: f64,
+}
+
+impl SmokeFrame {
+    /// Measure two same-sized RGBA frames.
+    pub fn measure(accuracy: &[u8], frame: &[u8]) -> Option<Self> {
+        if accuracy.len() != frame.len() || accuracy.is_empty() {
+            return None;
+        }
+        let luma =
+            |p: &[u8]| 0.299 * f64::from(p[0]) + 0.587 * f64::from(p[1]) + 0.114 * f64::from(p[2]);
+        let (mut big, mut lit, mut sum) = (0usize, 0usize, 0.0f64);
+        let n = accuracy.len() / 4;
+        for (a, f) in accuracy
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(frame.as_chunks::<4>().0)
+        {
+            let (ya, yf) = (luma(a), luma(f));
+            sum += yf - ya;
+            big += usize::from((yf - ya).abs() >= SMOKE_BIG_CHANGE_LUMA);
+            lit += usize::from(ya <= 8.0 && yf >= 64.0);
+        }
+        Some(Self {
+            big_change: big as f64 / n as f64,
+            lit_from_black: lit as f64 / n as f64,
+            luma_shift: sum / n as f64,
+        })
+    }
+
+    /// What is broken about the frame, if anything.
+    pub fn broken(&self) -> Option<String> {
+        if self.big_change >= SMOKE_MAX_BIG_CHANGE {
+            Some(format!("{:.3} of the frame moved far", self.big_change))
+        } else if self.lit_from_black >= SMOKE_MAX_LIT_FROM_BLACK {
+            Some(format!(
+                "{:.3} of the frame lit from black",
+                self.lit_from_black
+            ))
+        } else if self.luma_shift.abs() >= SMOKE_MAX_LUMA_SHIFT {
+            Some(format!("mean luma moved {:+.1}", self.luma_shift))
+        } else {
+            None
+        }
+    }
+}
 
 /// Slack for float round-trips through the JSON baseline.
 pub(super) const RATCHET_EPS: f64 = 0.0005;
@@ -99,15 +159,23 @@ impl Baseline {
             .collect()
     }
 
-    /// The smoke tier's breaks: every baselined image channel of a
-    /// retail-disc state that a run in a non-accuracy render mode
-    /// ([`crate::retail_compare_image::FrameRender::Clean`] /
-    /// `Enhanced`) scored more than `slack` under the baseline, or did not
-    /// score at all on a state it seeded. The baseline is the accuracy
-    /// mode's, so the smoke tier has no ratchet of its own: the slack only
-    /// catches a mode that broke outright (a black frame, a missing pass,
-    /// a misplaced stage), never a raster difference.
-    pub fn smoke_breaks(&self, reports: &[StateReport], slack: f64) -> Vec<String> {
+    /// The smoke tier's breaks: every retail-disc state with a baselined image
+    /// channel whose frame in a non-accuracy render mode
+    /// ([`crate::retail_compare_image::FrameRender::Clean`] / `Enhanced`) reads
+    /// as broken against the same engine's accuracy frame, or which it seeded
+    /// and did not score. `frame_of` measures a state's frame, `None` when a
+    /// frame is missing on either side.
+    ///
+    /// The comparison is with the engine's accuracy frame and not retail's:
+    /// these modes are meant to differ from retail, and a state's own accuracy
+    /// gap says nothing about them. It catches a black frame, a missing pass, a
+    /// misplaced stage or light flooding a scene, never a raster difference, and
+    /// there is no ratchet of its own.
+    pub fn smoke_breaks(
+        &self,
+        reports: &[StateReport],
+        frame_of: &dyn Fn(&str) -> Option<SmokeFrame>,
+    ) -> Vec<String> {
         let mut out = Vec::new();
         for r in reports {
             let Some(chans) = self.states.get(&r.label) else {
@@ -120,19 +188,20 @@ impl Baseline {
                 continue;
             }
             for ch in IMAGE_CHANNELS {
-                let Some(&want) = chans.get(*ch) else {
+                if !chans.contains_key(*ch) {
                     continue;
-                };
-                match r.channels.get(*ch) {
-                    Some(&got) if got + slack < want => out.push(format!(
-                        "{}.{ch}: {got:.3} < baseline {want:.3} - {slack:.2}",
-                        r.label
-                    )),
-                    Some(_) => {}
-                    None => out.push(format!(
-                        "{}.{ch}: no frame scored (baseline {want:.3})",
-                        r.label
-                    )),
+                }
+                if !r.channels.contains_key(*ch) {
+                    out.push(format!("{}.{ch}: no frame scored", r.label));
+                    continue;
+                }
+                match frame_of(&r.label) {
+                    Some(f) => {
+                        if let Some(why) = f.broken() {
+                            out.push(format!("{}.{ch}: {why}", r.label));
+                        }
+                    }
+                    None => out.push(format!("{}.{ch}: no frame to compare", r.label)),
                 }
             }
         }

@@ -48,7 +48,7 @@ pub struct EquipItem {
     pub slot: u8,
     /// `true` when the player owns at least one of these.
     pub owned: bool,
-    /// `true` on the Goods list's **equipped** row: the class-`0x7000` entry
+    /// `true` on the list's **equipped** row: the class-`0x7000` entry
     /// the builder puts second, naming the item already in the slot.
     /// Confirming it commits nothing - `FUN_801D9C14`'s confirm arm tests
     /// only the `0x4000` (Remove) and `0x6000` / `0x9000` (bag) classes, so a
@@ -108,20 +108,10 @@ pub enum EquipState {
     /// Row `0` of that list is the **Remove** row whenever the slot is
     /// occupied ([`EquipSession::items_for_slot`]).
     ItemPicker { slot: u8, cursor: u16 },
-    /// "Equip `<X>`?" Yes/No prompt. Cross confirms; Circle abandons.
-    Confirm { slot: u8, item_id: u8, cursor: u8 },
-    /// Session done - committed or aborted.
-    Done(EquipOutcome),
-}
-
-/// Result of a finished equip session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EquipOutcome {
-    /// Player committed a swap. `removed` is the previous item id (0 for
-    /// "nothing"); `added` is the newly-equipped id.
-    Committed { slot: u8, removed: u8, added: u8 },
-    /// Session was cancelled without committing.
-    Cancelled,
+    /// The browse was cancelled. Commits do not end a session: every one has
+    /// already landed in [`EquipSession::swaps`], and the picker confirm's
+    /// tail hands the pad back to the slot browse.
+    Done,
 }
 
 /// Per-frame input bundle.
@@ -143,9 +133,8 @@ pub enum EquipEvent {
     CursorMoved { state: EquipStateKind, cursor: u16 },
     /// Player opened the item picker for a slot.
     EnteredItemPicker { slot: u8 },
-    /// Player advanced to the confirm prompt.
-    EnteredConfirm { slot: u8, item_id: u8 },
-    /// Player committed a swap.
+    /// Player committed a swap. `removed` is the previous item id (0 for
+    /// "nothing"); `added` is the newly-equipped id (0 for the Remove row).
     Committed { slot: u8, removed: u8, added: u8 },
     /// Player cancelled - session terminating.
     Cancelled,
@@ -170,7 +159,6 @@ pub enum EquipEvent {
 pub enum EquipStateKind {
     SlotPicker,
     ItemPicker,
-    Confirm,
 }
 
 /// Equip session.
@@ -210,12 +198,13 @@ pub struct EquipSession {
     pub(super) weapon_category: Vec<crate::menu_item_category::CategoryEntry>,
     /// The character picker owns the pad ([`Self::set_slot_cursor_hidden`]).
     slot_cursor_hidden: bool,
-    /// Swaps the Best Equipment row made on this session's own record and
-    /// bag, as `(engine slot, removed, added)` in the order they landed.
-    /// Retail's applier (`FUN_801CF760`) writes the live record and the bag
-    /// directly; the session edits copies, so its host replays these when
-    /// the session closes ([`Self::best_equipment_swaps`]).
-    pub(super) best_swaps: Vec<(u8, u8, u8)>,
+    /// Swaps committed on this session's own record and bag and not yet
+    /// handed to the host, as `(engine slot, removed, added)` in the order
+    /// they landed. Retail's appliers (`FUN_801CF760` for Best Equipment, the
+    /// candidate confirm `0x801DA0B4..0x801DA1D0`) write the live record and
+    /// the bag on the frame of the press; the session edits copies, so its
+    /// host drains these ([`Self::take_swaps`]).
+    pub(super) swaps: Vec<(u8, u8, u8)>,
 }
 
 impl EquipSession {
@@ -241,17 +230,21 @@ impl EquipSession {
             active_party_slot: 0,
             weapon_category: Vec::new(),
             slot_cursor_hidden: false,
-            best_swaps: Vec::new(),
+            swaps: Vec::new(),
         }
     }
 
-    /// Every swap the Best Equipment row committed during this session, as
-    /// `(engine slot, removed, added)`. Unlike a single-slot confirm these
-    /// do not end the session, so they are not in [`Self::outcome`]: the
-    /// host applies them to the live record and bag however the session
-    /// ended.
-    pub fn best_equipment_swaps(&self) -> &[(u8, u8, u8)] {
-        &self.best_swaps
+    /// The swaps committed since the host last drained them, as
+    /// `(engine slot, removed, added)`.
+    pub fn swaps(&self) -> &[(u8, u8, u8)] {
+        &self.swaps
+    }
+
+    /// Drain [`Self::swaps`] for the host to write onto the live record and
+    /// bag. The session keeps browsing on its own copies, which already hold
+    /// them.
+    pub fn take_swaps(&mut self) -> Vec<(u8, u8, u8)> {
+        std::mem::take(&mut self.swaps)
     }
 
     /// Hide the slot-browse hand while the Equip screen's character picker
@@ -269,7 +262,7 @@ impl EquipSession {
     /// End the session as cancelled - the character picker's cancel, which
     /// leaves the Equip screen for the root list.
     pub fn cancel(&mut self) {
-        self.state = EquipState::Done(EquipOutcome::Cancelled);
+        self.state = EquipState::Done;
     }
 
     /// Re-open the slot browse on its Best Equipment row - the state the
@@ -367,15 +360,7 @@ impl EquipSession {
 
     /// `true` if the session is in `Done` state.
     pub fn is_done(&self) -> bool {
-        matches!(self.state, EquipState::Done(_))
-    }
-
-    /// Outcome - only valid when `is_done()`.
-    pub fn outcome(&self) -> Option<EquipOutcome> {
-        match self.state {
-            EquipState::Done(out) => Some(out),
-            _ => None,
-        }
+        matches!(self.state, EquipState::Done)
     }
 
     /// Drain events the SM emitted since the last call.
@@ -491,7 +476,54 @@ impl EquipSession {
                     equipped: false,
                 }),
         );
+        self.sort_armament_rows(slot, &mut out);
         out
+    }
+
+    /// The builder's row sort: a selection sort over rows `1..n`, whose swap
+    /// is what a tie's order comes from, so it is kept rather than replaced
+    /// by a library sort. The outer walk stops one short of the last row and
+    /// the scan runs through it (`slt` at `0x80031618` / `0x80031654`); a row
+    /// displaces the running best only when strictly greater.
+    fn sort_armament_rows(&self, slot: u8, rows: &mut [EquipItem]) {
+        use legaia_game_tables::equip_stats::EquipSlot as Disc;
+        let (Some(info), Some(engine_slot)) = (&self.restrictions, EquipSlot::from_index(slot))
+        else {
+            return;
+        };
+        let category = match engine_slot {
+            EquipSlot::Weapon => Disc::Weapon,
+            EquipSlot::Helmet => Disc::Head,
+            EquipSlot::BodyArmor => Disc::Body,
+            EquipSlot::Boot => Disc::Footwear,
+            _ => return,
+        };
+        let key = |item: &EquipItem| {
+            let favour = if category == Disc::Weapon {
+                crate::menu_item_category::category_check(
+                    &self.weapon_category,
+                    u32::from(self.active_party_slot),
+                    item.id,
+                    0,
+                )
+            } else {
+                0
+            };
+            info.armament_rank(item.id, category) + favour
+        };
+        let n = rows.len();
+        for i in 1..n.saturating_sub(1) {
+            let mut best = i;
+            let mut best_key = key(&rows[i]);
+            for (j, row) in rows.iter().enumerate().skip(i + 1) {
+                let k = key(row);
+                if best_key < k {
+                    best_key = k;
+                    best = j;
+                }
+            }
+            rows.swap(i, best);
+        }
     }
 
     /// The three **Goods** slots' candidate list, in retail's row order.

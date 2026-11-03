@@ -42,6 +42,14 @@ pub const JEDO_SHATTER_STEP_PER_TICK: u16 = (D as u16) << 2;
 /// PROT 0931's terminal arm: it returns `0` without storing a phase.
 pub const JEDO_LAST_ARM: u8 = 31;
 
+/// The creature's advance through arms 5 and 6: `+0x38 += step << 2` on every
+/// pass (`0x801F70A0`, `0x801F7214`), from `-0x800` to `-0x400` over the two arms.
+fn jedo_creature_advance(st: &mut ModuleCamState) {
+    if let Some(c) = st.creature.as_mut() {
+        c.z += (4 * D) as i16;
+    }
+}
+
 /// PROT 0931 (Jedo): its word `0x801F95FC` drains by the frame delta and
 /// re-arms by literals. Every framing aims at the raw focus `(0, 0, 0x600)`
 /// through arm 8 and `(0, 0, 0x400)` after it.
@@ -103,6 +111,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             ArmDirection::PASS
         }
         5 => {
+            jedo_creature_advance(st);
             let d = Some(drift(0, 0, 0, 0, 8 * D));
             if gated(st, 0x80) {
                 return held(d);
@@ -110,6 +119,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             with_drift(cut([0x100, 0x800], [0, 0x1000, 0x1000], at6, 1), d)
         }
         6 => {
+            jedo_creature_advance(st);
             let d = Some(drift(0, 0, 0, -10 * D, 30 * D));
             if gated(st, 0xC0) {
                 return held(d);
@@ -120,7 +130,9 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x20) {
                 return ArmDirection::HOLD;
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F7414`, `0x801F741C`).
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             cut([0, 0x800], [0, 0x1600, 0xB00], at6, 1)
         }
         8 => {
@@ -155,7 +167,9 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x80) {
                 return ArmDirection::HOLD;
             }
+            // Together again (`0x801F7730`, `0x801F7738`).
             st.creature_stage = Some(3);
+            st.creature_restage = true;
             cut([0, 0x800], [0, 0x1200, 0x180], at4, 1)
         }
         13 => {
@@ -174,6 +188,10 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0xC0) {
                 return ArmDirection::HOLD;
             }
+            // The bump alone (`0x801F78C0`) cuts to the clip arm 14 staged
+            // bare.
+            st.creature_stage = Some(4);
+            st.creature_restage = true;
             ArmDirection::PASS
         }
         16 => {
@@ -181,7 +199,9 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x80) {
                 return held(d);
             }
+            // Together (`0x801F79DC`, `0x801F79E4`).
             st.creature_stage = Some(5);
+            st.creature_restage = true;
             with_drift(cut([-0xA0, 0x980], [0, 0x1480, 0xD00], at4, 1), d)
         }
         18 | 21 => {
@@ -193,7 +213,9 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x68) {
                 return held(d);
             }
+            // Together (`0x801F7B78`, `0x801F7B80`).
             st.creature_stage = Some(6);
+            st.creature_restage = true;
             with_drift(cut([0x40, 0x7A0], [0, 0x1480, 0x980], at4, 1), d)
         }
         20 => {

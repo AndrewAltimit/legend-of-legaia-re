@@ -105,7 +105,6 @@ impl PlayWindowApp {
             self.apply_fmv_handoff();
             self.cutscene = None;
         }
-        let run_ticks = if self.cutscene.is_some() { 0 } else { ticks };
         // A key tapped between two redraws is set and cleared before any
         // tick samples `pad`; the latch hands it to this frame's first tick
         // as one held tick (`PadTapLatch`, the browser page's `pulse`).
@@ -113,6 +112,32 @@ impl PlayWindowApp {
         let key_pad = self.pad;
         let held_pad = key_pad | self.gamepad_held;
         let first_tick_pad = self.pad_taps.take_frame_word(held_pad);
+        // The controller's way to the settings panel; the frame it opens on
+        // already belongs to the panel, so Start never reaches the pause menu.
+        if !self.hotkey_help
+            && !self.scripted_run()
+            && self.win.renderer.is_some()
+            && self.netplay.is_none()
+            && self.netplay_menu.is_none()
+            && crate::window::settings_panel::settings_chord(
+                first_tick_pad,
+                first_tick_pad & !self.prev_pad,
+            )
+        {
+            self.open_panel();
+        }
+        // The settings panel holds the game still and reads the pad itself.
+        let panel_holds = self.panel_holds_game();
+        if panel_holds {
+            let edge = first_tick_pad & !self.prev_pad;
+            self.panel_pad_edge(edge);
+            self.prev_pad = held_pad;
+        }
+        let run_ticks = if self.cutscene.is_some() || panel_holds {
+            0
+        } else {
+            ticks
+        };
         // Retail's movie abort on an in-flow movie (`fmv_skip_edge_hit`: the
         // attract id only, on a face button / Select), which the browser
         // page's FMV lane tests on every frame of a field cutscene too. The
@@ -122,7 +147,16 @@ impl PlayWindowApp {
             && let Some(c) = self.cutscene.as_mut()
         {
             let edge = first_tick_pad & !self.prev_pad;
-            if let Some(fmv_id) = self.session.host.world.active_fmv()
+            // The title's attract movie belongs to the front end, not the
+            // world (no `active_fmv`), and the movie holds the very ticks that
+            // would step the front end's own abort test.
+            let fmv_id = self
+                .session
+                .host
+                .world
+                .active_fmv()
+                .or_else(|| self.boot_ui.title_session().and_then(attract_fmv_id));
+            if let Some(fmv_id) = fmv_id
                 && legaia_engine_system::movie::cutscene::fmv_skip_edge_hit(fmv_id, edge)
             {
                 c.skipped = true;
@@ -368,6 +402,14 @@ impl PlayWindowApp {
         {
             let _ = self.session.host.world.debug_arm_scene_shop(idx);
         }
+        if let Some((t, block)) = self.screenshot.as_ref().and_then(|sc| sc.prize_at)
+            && t == self.tick_no
+        {
+            self.session
+                .host
+                .world
+                .try_arm_prize_exchange(&[0x49, 0x07, block]);
+        }
         if self.screenshot.is_some() {
             let scripted_pad = self
                 .screenshot
@@ -446,6 +488,28 @@ impl PlayWindowApp {
                 &mut self.session.host.world,
                 &sc.battle_bars,
             );
+            // `LEGAIA_CAST_LEARN=seat,spell,level`: the oracle's damage runs
+            // put the injected spell on the caster's list, as the retail
+            // probe does (`LEGAIA_LEARN_LEVEL`).
+            if let Ok(v) = std::env::var("LEGAIA_CAST_LEARN") {
+                let t: Vec<u8> = v.split(',').filter_map(|p| p.trim().parse().ok()).collect();
+                if let [seat, spell, level] = t[..]
+                    && let Some(m) = self
+                        .session
+                        .host
+                        .world
+                        .party
+                        .roster
+                        .members
+                        .get_mut(usize::from(seat))
+                {
+                    let mut list = m.spell_list();
+                    list.ids[0] = spell;
+                    list.levels[0] = level;
+                    list.count = list.count.max(1);
+                    m.set_spell_list(list);
+                }
+            }
             if let Some(seat) = sc.battle_reseat {
                 legaia_engine_capture::bar_seeds::arm_capture_reseat(
                     &mut self.session.host.world,
@@ -696,5 +760,13 @@ impl PlayWindowApp {
         // Advance the field party-status HUD's idle countdown
         // (`FUN_801D0D38`). Its decision is read back in the draw pass.
         self.tick_field_party_hud();
+    }
+}
+
+/// The attract movie a title session is playing.
+fn attract_fmv_id(title: &legaia_engine_title::title::TitleSession) -> Option<i16> {
+    match title.phase() {
+        legaia_engine_title::title::TitlePhase::Attract { fmv_id, .. } => Some(fmv_id),
+        _ => None,
     }
 }

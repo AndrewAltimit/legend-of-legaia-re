@@ -143,7 +143,7 @@
       <tr><td><code>center</code> / <code>shift</code></td><td>Key to pitch - the whole of it, sample rate included</td><td>Used</td></tr>
       <tr><td><code>min</code> / <code>max</code></td><td>Note range that selects the tone</td><td>Used</td></tr>
       <tr><td><code>adsr1</code> / <code>adsr2</code></td><td>Envelope</td><td>Used</td></tr>
-      <tr><td><code>pbmin</code> / <code>pbmax</code></td><td>Pitch-bend range in semitones; the sequencer scales a <code>0xEn</code> wheel event by the <em>sounding tone's</em> range (<code>VabBank::pitch_bend_range</code>)</td><td>Mostly 2 (GM default); a few tones at 4 / 12 / 24 / 40; <code>(0, 0)</code> does not bend</td></tr>
+      <tr><td><code>pbmin</code> / <code>pbmax</code></td><td>Pitch-bend range in semitones; the sequencer scales a <code>0xEn</code> wheel event by the <em>sounding tone's</em> range (<code>VabBank::bent_pitch</code>)</td><td>Mostly 2 (GM default); a few tones at 4 / 12 / 24 / 40; <code>(0, 0)</code> does not bend</td></tr>
       <tr><td><code>vibw</code> / <code>vibt</code></td><td>Vibrato</td><td>Always zero - no LFO needed</td></tr>
       <tr><td><code>porw</code> / <code>port</code></td><td>Portamento</td><td>Always zero</td></tr>
     </tbody>

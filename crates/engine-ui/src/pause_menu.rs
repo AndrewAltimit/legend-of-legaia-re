@@ -494,6 +494,10 @@ pub struct EquipComposeView<'a> {
     pub slot_cursor: Option<u16>,
     /// Pictogram rows to draw - retail's seven.
     pub pictogram_rows: usize,
+    /// ICO codes of the candidate rows, parallel to the view's candidates.
+    pub candidate_icons: &'a [u8],
+    /// The list kernel's blink gate this frame.
+    pub arrows_blink: bool,
     /// Armament rows the Best Equipment change list draws a pictogram on.
     pub best_rows: &'a [u8],
     /// Window 24's item-info panel content for the hovered candidate, or
@@ -743,14 +747,22 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             sprites
                 .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS));
             sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
+            texts.extend(crate::list_page_arrow_draws(
+                ctx.font,
+                (v.view.page, v.view.pages),
+                v.view.arrows_blink && v.view.phase == crate::PauseItemsPhase::List,
+                ctx.rects.pen(window_ids::ITEMS_LIST),
+            ));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::items_screen_sprites_for(
                     rects,
                     v.view.phase,
                     v.view.command_cursor,
                     v.view.list_cursor,
-                    v.view.page,
-                    v.view.pages,
+                    (v.view.page, v.view.pages),
+                    v.view.arrows_blink
+                        && v.view.phase == crate::PauseItemsPhase::List
+                        && !ctx.font.has_page_arrow_cells(),
                     ctx.rects.pen(window_ids::ITEMS_COMMAND),
                     ctx.rects.pen(window_ids::ITEMS_LIST),
                     ctx.origin,
@@ -805,6 +817,12 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 .extend(ctx.tab_title(window_ids::TAB_MAGIC, ctx.label(MenuLabel::Magic, "Magic")));
             sprites
                 .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::MAGIC_SCREEN_WINDOWS));
+            texts.extend(crate::list_page_arrow_draws(
+                ctx.font,
+                (v.view.page, v.view.pages),
+                v.view.arrows_blink && v.view.phase == crate::PauseMagicPhase::List,
+                ctx.rects.pen(window_ids::MAGIC_LIST),
+            ));
             if let Some(rects) = ctx.chrome {
                 sprites.extend(crate::magic_screen_sprites_for(
                     rects,
@@ -812,8 +830,10 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     v.view.phase,
                     v.view.caster_cursor,
                     v.view.list_cursor,
-                    v.view.page,
-                    v.view.pages,
+                    (v.view.page, v.view.pages),
+                    v.view.arrows_blink
+                        && v.view.phase == crate::PauseMagicPhase::List
+                        && !ctx.font.has_page_arrow_cells(),
                     ctx.rects.pen(window_ids::MAGIC_CASTER),
                     ctx.rects.pen(window_ids::MAGIC_LIST),
                     ctx.origin,
@@ -864,7 +884,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 let r = painter_rect(d);
                 sprites.extend(ctx.frame_around(d.rect()));
                 if let Some(info) = v.info.as_ref() {
-                    texts.extend(crate::item_info_panel_draws_for(ctx.font, (r.x, r.y), info));
+                    texts.extend(crate::item_info_body_draws(ctx.font, (r.x, r.y), info));
                 }
                 // ...and window 24's own delta over that panel: the
                 // two-digit count in the accent pen, plus the reserved
@@ -922,6 +942,32 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 sprites.extend(ctx.frame_around(d.rect()));
                 let fields = crate::equip_compare_panel_fields(&panel, (r.x, r.y));
                 texts.extend(crate::compare_panel_draws_for(ctx.font, &fields));
+            }
+            if !browse {
+                let hovered = usize::from(v.view.cursor) / crate::PAUSE_LIST_VISIBLE_ROWS;
+                texts.extend(crate::list_page_arrow_draws(
+                    ctx.font,
+                    (
+                        hovered as u16 + 1,
+                        v.candidate_icons
+                            .len()
+                            .div_ceil(crate::PAUSE_LIST_VISIBLE_ROWS)
+                            as u16,
+                    ),
+                    v.arrows_blink,
+                    ctx.rects.pen(window_ids::EQUIP_LIST),
+                ));
+            }
+            if !browse && let Some(rects) = ctx.chrome {
+                sprites.extend(crate::equip_candidate_sprites_for(
+                    rects,
+                    v.candidate_icons,
+                    v.view.cursor,
+                    v.arrows_blink && !ctx.font.has_page_arrow_cells(),
+                    ctx.rects.pen(window_ids::EQUIP_LIST),
+                    ctx.origin,
+                    ctx.scale,
+                ));
             }
             if browse && let Some(rects) = ctx.chrome {
                 sprites.extend(crate::equip_screen_sprites_for(
@@ -1019,6 +1065,8 @@ pub struct EquipInfoInput<'a> {
     pub desc: &'a str,
     /// An accessory's two passive lines.
     pub passive: Option<(&'a str, &'a str)>,
+    /// The detail printer's output, when the disc tables are up.
+    pub detail: Option<crate::PauseItemDetail<'a>>,
 }
 
 /// Window 25's panel content as a host hands it over: the two eight-word
@@ -1048,7 +1096,9 @@ pub struct EquipComposeInput<'a> {
     pub slot_labels: &'a [String],
     pub slot_items: &'a [String],
     pub candidate_names: &'a [String],
-    pub candidate_counts: &'a [u8],
+    pub candidate_icons: &'a [u8],
+    /// The list kernel's blink gate this frame.
+    pub arrows_blink: bool,
     /// `(label, current, preview)` rows of the main window's compare block.
     pub stat_compare: &'a [(&'static str, u16, u16)],
     /// The Best Equipment row's change list, `(armament row, pick name)`.
@@ -1056,7 +1106,6 @@ pub struct EquipComposeInput<'a> {
     pub phase: crate::EquipDrawPhase,
     pub cursor: u16,
     pub active_slot: u8,
-    pub confirm_label: Option<&'a str>,
     pub char_slot: usize,
     pub slot_cursor: Option<u16>,
     pub pictogram_rows: usize,
@@ -1085,11 +1134,8 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
     let candidates: Vec<crate::EquipCandidateRow<'_>> = input
         .candidate_names
         .iter()
-        .zip(input.candidate_counts.iter())
-        .map(|(name, count)| crate::EquipCandidateRow {
-            name,
-            count: *count,
-        })
+        .zip(input.candidate_icons.iter())
+        .map(|(name, icon)| crate::EquipCandidateRow { name, icon: *icon })
         .collect();
     let stat_compare: Vec<crate::EquipStatRow<'_>> = input
         .stat_compare
@@ -1116,7 +1162,6 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
         phase: input.phase,
         cursor: input.cursor,
         active_slot: input.active_slot,
-        confirm_label: input.confirm_label,
         text_cursor: input.text_cursor,
     };
     pause_screen_draws(
@@ -1126,12 +1171,15 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
             char_slot: input.char_slot,
             slot_cursor: input.slot_cursor,
             pictogram_rows: input.pictogram_rows,
+            candidate_icons: input.candidate_icons,
+            arrows_blink: input.arrows_blink,
             best_rows: &best_rows,
             info: input.info.map(|i| crate::PauseItemInfo {
                 name: i.name,
                 count: i.count,
                 desc: i.desc,
                 passive: i.passive,
+                detail: i.detail,
             }),
             compare: input.compare,
         }),

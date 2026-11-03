@@ -160,8 +160,8 @@ impl World {
     pub(in crate::world) fn begin_battle_round(&mut self) {
         use legaia_engine_battle_loop::round_flow::RoundPhase;
         use legaia_engine_battle_menus::battle_flow::BattleFlowState;
-        // The side-band holds the round start back in two fights. The
-        // sparring fight's opening caption: retail's side-band tick sees
+        // The battle open holds the first round start back in every fight,
+        // and the side-band in two. The sparring fight's opening caption: retail's side-band tick sees
         // `0x14` stored, raises the caption and sets `ctx[+0x6B0]`, and
         // `FUN_801D0748` returns on it before its state switch (`0x801D0BDC`)
         // - so none of the sweep / seed / prompt below runs until the caption
@@ -261,7 +261,6 @@ impl World {
         self.battle.round_flow.flat_walk_last = None;
         // An armed expansion challenge's turn limit counts rounds.
         self.expansion_round_begun();
-        self.battle.sweep_battle_intro_names();
         self.battle.commit_log_launch = None;
         // Retail's Begin moves the flow to `0xFE`, whose arm restarts the
         // action SM at `0x00`, and `0x00` opens with `FUN_801F0450`: the pool
@@ -348,7 +347,6 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
-        self.battle.sweep_battle_intro_names();
         self.battle
             .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         // The capture's MP is already charged (the Magic band debits at
@@ -422,7 +420,6 @@ impl World {
         self.battle.arts_menu = None;
         self.battle.arts_input = None;
         self.battle.round_flow.phase = RoundPhase::Execute;
-        self.battle.sweep_battle_intro_names();
         self.battle
             .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
         for (slot, at) in self.battle.forced_monster_ground.iter().enumerate() {

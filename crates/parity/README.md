@@ -15,7 +15,8 @@ fills from retail RAM.
 ## Retail comparison corpus
 
 - [`retail_compare`](src/retail_compare.rs) (+ `retail_compare_battle`,
-  `retail_compare_image`, `retail_compare_script`, `retail_compare_cli`) -
+  `retail_compare_image`, `retail_compare_script`, `retail_compare_cache`,
+  `retail_compare_cli`, over the worker pool `parallel`) -
   the corpus behind `legaia-engine retail-compare`: enumerate the state
   library, seed the engine from each walkable and battle state, score every
   channel, ratchet the result
@@ -31,6 +32,7 @@ mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
   VRAM dump (per-tile overlap + texpage-region byte-exactness).
 - [`mode_trace_oracle`](src/mode_trace_oracle.rs) - `(scene_mode,
   active_scene)` per frame.
+- [`pcm_retail`](src/pcm_retail.rs) - the engine's mix against mednafen's own recorded output from a library state: the SPU resumed sample for sample, and the track from the state's libsnd read cursor on, scored by correlation and level. Driver `scripts/ci/audio-pcm.py`; `--stems` feeds the per-note fit `scripts/ci/audio-note-fit.py`.
 - [`audio_trace_oracle`](src/audio_trace_oracle.rs) - `(voice_mask,
   voices[24], master_volume)` per frame, vs. the SPU section.
 - [`pcm_oracle`](src/pcm_oracle.rs) - rendered stereo PCM windows from both

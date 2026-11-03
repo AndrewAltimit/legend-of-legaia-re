@@ -121,8 +121,16 @@ impl PlayWindowApp {
                 && let Some(left) = sc.script_gate.as_ref().and_then(|g| g.glide_left)
                 && left > 0
             {
-                self.cutscene_glide.align_frames_left(left as u32);
+                if let Some(pairs) = &sc.seat_glide_pairs {
+                    self.session.camera.seat_glide_pairs(pairs);
+                }
                 self.session.camera.align_glide_frames_left(left);
+            }
+            // A capture no pose reaches stands the camera on this frame's
+            // seats, and the tick's ghost bits read the pose before them: the
+            // pass walks a table, and a seat's jump is none of retail's.
+            if due && sc.battle_ghost_pose.is_none() {
+                self.session.host.world.refresh_battle_camera_ghost();
             }
             if due && !sc.seat_battle_clips.is_empty() {
                 legaia_engine_capture::clip_cursors::apply_clip_cursors(
@@ -138,6 +146,20 @@ impl PlayWindowApp {
                 && let Some(cam) = self.session.host.world.battle.camera.as_mut()
             {
                 cam.align_menu_glide_frames_left(left);
+                if let Some(shown) = sc.seat_menu_glide_pose {
+                    cam.align_menu_glide_pose(shown, left);
+                }
+            }
+            // Ahead of the cast it forks: battle init clears the word.
+            if let Some(n) = sc.seat_ai_counter
+                && self.session.host.world.casting.active_summon.is_none()
+            {
+                self.session
+                    .host
+                    .world
+                    .battle
+                    .monster_ai_state
+                    .set_counter(n);
             }
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.battle.land_battle_hud_glides();
@@ -217,6 +239,12 @@ impl PlayWindowApp {
                         c.rate,
                     );
                 }
+                if let Some(c) = sc.seat_player_clip {
+                    self.session
+                        .host
+                        .world
+                        .seed_player_clip(c.clip, c.cursor, c.flags, c.rate);
+                }
                 for &(record, model) in &sc.seat_object_models {
                     self.session
                         .host
@@ -243,6 +271,19 @@ impl PlayWindowApp {
                         m.env,
                     );
                 }
+                if !sc.seat_floor_bobs.is_empty() {
+                    let bobs: Vec<_> = sc
+                        .seat_floor_bobs
+                        .iter()
+                        .map(|b| (b.rung, b.pos, b.vel, b.accel, b.target))
+                        .collect();
+                    self.session.host.world.seed_floor_ladder(&bobs);
+                }
+                self.session.host.world.seed_morph_weight_actors(
+                    sc.seat_morph_weights
+                        .iter()
+                        .map(|m| (m.up_rate, m.down_rate, m.weight, m.descending)),
+                );
             }
         }
         // Capture harness: phase-align the battle idle orbit to the retail
@@ -415,6 +456,71 @@ impl PlayWindowApp {
                 }
                 _ => 0,
             };
+            let mask = if self
+                .screenshot
+                .as_ref()
+                .is_some_and(|sc| sc.seat_cam_behind_commit)
+                && let Some(cam) = world.battle.camera.as_mut()
+            {
+                cam.align_commit_pass(live);
+                0xFF
+            } else {
+                mask
+            };
+            // A monster's strike: case 7 re-arms every pass, so the RAM's pose
+            // walked back is the displayed frame's on every component, whatever
+            // the replay's body pairs put the framing on
+            // (`RetailBattle::stand_on_displayed_pose`).
+            let mask = if self
+                .screenshot
+                .as_ref()
+                .is_some_and(|sc| sc.battle_cam_stand_displayed)
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(live);
+                0xFF
+            } else {
+                mask
+            };
+            // A monster's magic-band retake on a shot still walking: the
+            // displayed frame is the framing the shot replaced, and `live`
+            // is retail's pose walked back onto it along the RAM's table.
+            // The replay's own case 6 carries the camera history of its own
+            // rounds (`RetailBattle::monster_magic_band_age`).
+            // A capture-band retake across the band's entry reads the same
+            // pose (`RetailBattle::retake_across_band_entry`).
+            if live != end
+                && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
+                && self.screenshot.as_ref().is_some_and(|sc| {
+                    sc.retake_shot_only
+                        || (sc.retake_across_entry
+                            && sc
+                                .battle_drive
+                                .as_ref()
+                                .is_some_and(|d| !d.in_action_state(&self.session.host.world)))
+                })
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(live);
+            }
+            // A turning shot's retake: the yaw it took over.
+            if let Some(yaw) = self.screenshot.as_ref().and_then(|sc| sc.retake_yaw)
+                && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                let mut pose = cam.framing_pose();
+                pose.yaw = yaw;
+                cam.stand_on_pose(pose);
+            }
+            // ... or the whole pose it stood on.
+            if let Some(pose) = self.screenshot.as_ref().and_then(|sc| sc.retake_pose)
+                && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(pose);
+            }
+            let ghost_pose = self.screenshot.as_ref().and_then(|sc| sc.battle_ghost_pose);
+            let world = &mut self.session.host.world;
             // The near-camera ghost bits are derived from the pose, and the
             // tick computed them on the unaligned one. Re-derive them only
             // when every component took retail's value: a partly aligned
@@ -440,7 +546,10 @@ impl PlayWindowApp {
                         .collect();
                     let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &live);
                 }
-                world.refresh_battle_camera_ghost();
+                match ghost_pose {
+                    Some(pose) => world.refresh_battle_camera_ghost_on(pose),
+                    None => world.refresh_battle_camera_ghost(),
+                }
             }
             // A seat the displayed frame drew elsewhere than the RAM's ground
             // (`LEGAIA_BATTLE_DISPLAYED_SEAT`): moved after the alignment, so
@@ -462,7 +571,10 @@ impl PlayWindowApp {
                 let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &seats);
                 legaia_engine_capture::clip_cursors::apply_displayed_clips(world, &clips);
                 if mask == 0xFF {
-                    world.refresh_battle_camera_ghost();
+                    match ghost_pose {
+                        Some(pose) => world.refresh_battle_camera_ghost_on(pose),
+                        None => world.refresh_battle_camera_ghost(),
+                    }
                 }
             }
         }
@@ -589,14 +701,9 @@ impl PlayWindowApp {
         self.sync_battle_ground_ambient();
     }
 
-    /// This frame's cutscene camera, eased through the shared glide kernel;
-    /// `None` while no cutscene timeline owns the camera.
+    /// This frame's cutscene camera (`frame_step::scripted_view`); `None`
+    /// while no cutscene timeline owns the camera.
     pub(super) fn resolve_cutscene_camera(&mut self) -> Option<CutsceneCam> {
-        // Ease the in-engine cutscene camera between Camera Configure
-        // beats. Done here (outside the renderer borrow below) so the
-        // interpolator can take `&mut self`; while no cutscene timeline
-        // owns the scene the interp is reset so the next opening shot
-        // snaps in rather than sweeping from a stale pose.
         // The cutscene camera also owns the WORLD-MAP frame while the opening
         // chain's map01 leg runs its timeline: retail's Rim Elm fly-in is
         // three op-0x45 beats in map01's opening record (snap to the high
@@ -607,33 +714,9 @@ impl PlayWindowApp {
         // force-walk bands - keeps the ordinary field / walk camera.
         if legaia_engine_world_views::camera_view::cutscene_owns_camera(&self.session.host.world) {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
-            // Glide pacing from the op-`0x45` `apply_trigger` (retail
-            // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
-            // commits its camera targets IMMEDIATELY (snap cut), while
-            // `apply > 0` stages them and the per-frame mover glides the live
-            // globals there over exactly `apply` frames - the mover law
-            // (curve per mode nibble, 1 apply unit = 1 sim tick) is
-            // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
-            // both: the entry shot snaps (`apply 0`), the mid-prologue grove
-            // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
-            // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
-            // narration text scrolls - the "3D keeps playing under the
-            // crawl" retail behaviour. The interp arms glides PER COMPONENT
-            // on target change (see `CutsceneCameraInterp::glide`), so the
-            // H-only re-poke one frame after the tableau beat cannot snap
-            // the in-flight dolly (the earlier whole-tuple ease-rate model
-            // did exactly that, tele-porting the eye into the crater-rim
-            // geometry - the "opening shot buried in a gold wall" report).
-            //
-            // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
-            // sim-tick time, through the shared kernel
-            // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
-            // credits one unit per display frame, so `apply` is a duration in
-            // display frames and a redraw on which no tick ran advances the
-            // glide by nothing. The kernel also replays this frame's snap
-            // beats first (retail order: the mover snaps to an `apply 0` beat,
-            // then glides from there when a same-tick follow-up beat
-            // re-stages - the map01 fly-in pair).
+            // The shot is the live camera globals, which the op-`0x45` beats
+            // and the mover (`FUN_801DC0BC`) wrote this tick
+            // (`frame_step::scripted_view`).
             let target = legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
@@ -642,11 +725,7 @@ impl PlayWindowApp {
                 h,
                 tr_eye,
             };
-            let v = self.cutscene_glide.advance(
-                &self.session.host.world,
-                &mut self.session.camera,
-                target,
-            );
+            let v = legaia_engine_field::frame_step::scripted_view(&self.session.camera, target);
             let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
             let apply = self.session.host.world.camera.state.apply_trigger;
             if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
@@ -660,10 +739,6 @@ impl PlayWindowApp {
             }
             Some(out)
         } else {
-            // Nothing is interpolating this frame, so a banked snap would
-            // move a pose no draw reads - drop them rather than let them
-            // land on the next shot.
-            self.cutscene_glide.idle(&mut self.session.camera);
             None
         }
     }

@@ -151,9 +151,11 @@ fn cross_beam_queues_its_clut_copy() {
 }
 
 /// PROT 0958's (Blazing Slash's) arm-9 armed wash (`FUN_8004695C(0x202020)`
-/// at `0x801F78D0`) arms on the pass, and no host composites it: retail's
-/// drain draws it in the farthest bucket, before the frame's scene, so over a
-/// frame built from scratch it would only darken the frame's own pixels.
+/// at `0x801F78D0`) arms on the pass, and the composited wash list stays out of
+/// it: retail's drain draws it in the farthest bucket, before the frame's
+/// scene, so over a frame built from scratch it would only darken the frame's
+/// own pixels. A host that keeps its frames takes it from
+/// `cast_armed_wash_prim`.
 #[test]
 fn armed_wash_arms_without_a_composited_quad() {
     let Some(mut w) = band_world() else {
@@ -170,8 +172,12 @@ fn armed_wash_arms_without_a_composited_quad() {
     // Arm 10 re-arms it on every pass (`0x801F78E4`).
     w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 10, 10, false);
     assert_eq!(w.cast_armed_wash(), Some(0x0020_2020));
-    // One-shot: a tick on an arm that does not re-arm it leaves it unarmed.
+    // Arm 14 re-arms it through its hold: its `bgtz` lands on the `0x801F83F8`
+    // call in a sibling arm's tail (`0x801F7EA8`).
     w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 14, 14, false);
+    assert_eq!(w.cast_armed_wash(), Some(0x0020_2020));
+    // One-shot: a tick on an arm that does not re-arm it leaves it unarmed.
+    w.fire_cast_presentation(958, Some(0x801F_6DD8), None, 15, 15, false);
     assert_eq!(w.cast_armed_wash(), None);
 }
 

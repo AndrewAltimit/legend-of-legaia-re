@@ -104,4 +104,16 @@ pub struct ItemDisplayText {
     pub desc: String,
     /// An accessory's two passive lines (`(name, description)`).
     pub passive: Option<(String, String)>,
+    /// What the item-detail printer `FUN_800337B0` prints at the description
+    /// pen, when the disc tables are up: the description (or undescribed
+    /// equipment's slot template) with name escapes expanded, and equipment's
+    /// stat line as `(label, label dx, value dx, value)`.
+    pub detail: Option<ItemDetailText>,
+}
+
+/// One item's [`ItemDisplayText::detail`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ItemDetailText {
+    pub text: Vec<u8>,
+    pub stats: Vec<(String, i32, i32, u8)>,
 }

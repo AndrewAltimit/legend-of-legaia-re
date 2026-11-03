@@ -33,6 +33,11 @@ impl PlayWindowApp {
         }) {
             return self.screenshot.is_some() && self.tick_no >= t;
         }
+        self.capture_gate_met()
+    }
+
+    /// The capture's own gate, whatever `LEGAIA_DIAG_CAPTURE_TICK` says.
+    pub(super) fn capture_gate_met(&self) -> bool {
         let world = &self.session.host.world;
         self.screenshot.as_ref().is_some_and(|sc| {
             sc.phase_gate.as_ref().is_some_and(|g| g.met(world))
@@ -190,6 +195,11 @@ impl PlayWindowApp {
             w.presentation.fade.as_ref().map(|f| f.age_vsyncs()),
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
+        eprintln!("capture object moves {:?}", w.object_draw_displacements());
+        eprintln!(
+            "capture field camera: globals {:?} mover {:?}",
+            self.session.camera.globals, self.session.camera.mover,
+        );
         // Every battle body's draw inputs: where it stands, which clip and
         // keyframe it shows, and its tint state / colour word.
         for (i, a) in w

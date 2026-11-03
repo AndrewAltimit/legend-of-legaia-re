@@ -12,7 +12,9 @@ directory. See `docs/tooling/retail-compare.md`.
     scripts/ci/retail-compare.py --images        # + frames (needs a display)
     scripts/ci/retail-compare.py --check         # assert the committed ratchet
     scripts/ci/retail-compare.py --bless         # update the baseline (merges: unmeasured states/channels keep their values)
-    scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, loose check, no ratchet
+    scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, broken-frame check, no ratchet
+    scripts/ci/retail-compare.py --jobs 1        # one state at a time (default: several, same report)
+    scripts/ci/retail-compare.py --fresh         # measure every state, ignoring the result cache
 
 Exit 0 and a `[skip]` line when the library or the extracted disc is missing,
 matching the repo's disc-gated convention.
@@ -27,6 +29,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 BASELINE = REPO / "scripts" / "ci" / "retail-compare-baseline.json"
 PROFILE = "release-test"
+# Results reused when the binary, disc, state and environment all match
+# (`crates/parity/src/retail_compare_cache.rs`). Holds retail pixels: gitignored.
+CACHE = REPO / "target" / "retail-compare-cache"
+
+
+def default_jobs() -> int:
+    """Image children mostly wait on the driver: the corpus scales to about a
+    dozen on the 20-core box, and half the cores leaves room for other work."""
+    return max(1, min(8, (os.cpu_count() or 2) // 2))
 
 
 def main_checkout() -> Path:
@@ -63,10 +74,18 @@ def main() -> int:
     ap.add_argument("--no-build", action="store_true")
     ap.add_argument(
         "--smoke", choices=["clean", "enhanced"],
-        help="smoke tier: render the frames in this mode and check them loosely "
-             "against the accuracy baseline (implies --images; never blesses or checks the ratchet)",
+        help="smoke tier: render the frames in this mode and fail any that reads as broken "
+             "against the same engine's accuracy frame (implies --images; never blesses or checks the ratchet)",
     )
+    ap.add_argument("--smoke-reference",
+                    help="--smoke: an accuracy run's output from this engine, instead of running one first")
+    ap.add_argument("--jobs", type=int, default=default_jobs(),
+                    help="states run at once; report.json is the same at any count (default %(default)s)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="measure every state: read no cached result (--bless, --check and --smoke always do)")
     a = ap.parse_args()
+    if a.bless and a.no_build:
+        ap.error("--bless always builds: a baseline must come from the tree it is committed with")
     if a.smoke and (a.bless or a.check):
         ap.error("--smoke is the smoke tier: it never blesses or checks the ratchet")
     if a.smoke and a.out == str(REPO / "captures" / "retail-compare"):
@@ -87,14 +106,30 @@ def main() -> int:
              "--features", "oracles", "--bin", "legaia-engine"],
             cwd=REPO, check=True,
         )
-    exe = REPO / "target" / PROFILE / "legaia-engine"
+    exe = Path(os.environ.get("LEGAIA_ENGINE_BIN") or REPO / "target" / PROFILE / "legaia-engine")
     cmd = [str(exe), "retail-compare", "--out", a.out,
            "--library", str(library), "--extracted-root", str(extracted),
-           "--manifest", str(REPO / "scripts" / "scenarios.toml")]
+           "--manifest", str(REPO / "scripts" / "scenarios.toml"),
+           "--jobs", str(a.jobs), "--progress"]
+    if not (a.fresh or a.bless or a.check or a.smoke):
+        cmd += ["--cache", str(CACHE)]
     if a.images or a.smoke:
         cmd.append("--images")
     if a.smoke:
-        cmd += ["--render", a.smoke, "--smoke-check", str(BASELINE)]
+        reference = a.smoke_reference
+        if reference is None:
+            reference = str(Path(a.out) / "accuracy")
+            first = list(cmd)
+            first[first.index("--out") + 1] = reference
+            first += ["--cache", str(CACHE)]
+            if a.filter:
+                first += ["--filter", a.filter]
+            env = dict(os.environ)
+            env.setdefault("RUST_LOG", "error")
+            code = subprocess.run(first, cwd=REPO, env=env).returncode
+            if code != 0:
+                return code
+        cmd += ["--render", a.smoke, "--smoke-check", str(BASELINE), "--smoke-reference", reference]
     if a.flags_first:
         cmd.append("--flags-first")
     if a.filter:

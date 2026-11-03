@@ -39,10 +39,10 @@
 //! `build_summon_and_move_fx_part_draws`) and the browser play page's FX
 //! frame (`play_battle_fx.rs`, `build_battle_fx`) both draw that list,
 //! composed like a mesh part. In play the ribbon belongs to **Gilium**'s
-//! summon (spell `0x95`, PROT 0923, one node); the other carriers are Ozma
-//! (`0xA0`, PROT 0934, two nodes), PROT 0957 (Death Game / Thunder Storm) and
-//! PROT 0964 (Element Change and the Rogue spells), which the engine does not
-//! stage as scenes yet. The other two draw-kind-4 emitters are
+//! summon (spell `0x95`, PROT 0923, one node) and Ozma's (`0xA0`, PROT 0934,
+//! its ray fans); the other carriers are PROT 0957 (Death Game / Thunder Storm)
+//! and PROT 0964 (Element Change and the Rogue spells), which the engine does
+//! not stage as scenes yet. The other two draw-kind-4 emitters are
 //! [`crate::effect_sprite_arm`] (`0x4000`) and [`crate::effect_default_arm`]
 //! (the default `FUN_80028158`), drawn through the same list.
 //!
@@ -79,8 +79,8 @@
 //! occurs in the PROT 0898 move-FX prototypes or the field stager records.
 //! So the lightning arm is shipped content. The 97 catalogued battle states
 //! hold 188 render-mode-4 nodes - 128 on the default emitter, 60 on the
-//! `0x4000` sprite arm, none on this one - so no capture yet shows a live
-//! bolt.
+//! `0x4000` sprite arm, none on this one. A RAM image of Ozma's arm `0x12`
+//! does hold one (`a_ray_lays_its_pairs_square_to_its_walk`).
 //!
 //! ## Growth over a node's life
 //!
@@ -453,6 +453,9 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
         };
         let suppress = i < suppressed;
         let modulus = radius.max(1);
+        // The lateral heading: square to the walk, `(wander + angle + 0x400)
+        // & 0xFFF` (`iVar16`, halved back from the table's byte index).
+        let lateral = (wander + angle + 0x400) & ANGLE_MASK;
 
         // Pair 1 + 2: near lateral offset at +-1r and +-2r.
         let r1 = (radius >> 1) + (rand() % modulus as u32) as i32;
@@ -460,8 +463,8 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
             (0, 0)
         } else {
             (
-                narrow_lateral(i64::from(trig.sin(angle)) * i64::from(r1)),
-                narrow_lateral(i64::from(trig.cos(angle)) * i64::from(r1)),
+                narrow_lateral(i64::from(trig.sin(lateral)) * i64::from(r1)),
+                narrow_lateral(i64::from(trig.cos(lateral)) * i64::from(r1)),
             )
         };
         // Pair 3: far lateral offset at +-8r.
@@ -470,8 +473,8 @@ pub fn build_ribbon<T: TrigTable, R: FnMut() -> u32>(
             (0, 0)
         } else {
             (
-                narrow_lateral(i64::from(trig.sin(angle)) * i64::from(r2)),
-                narrow_lateral(i64::from(trig.cos(angle)) * i64::from(r2)),
+                narrow_lateral(i64::from(trig.sin(lateral)) * i64::from(r2)),
+                narrow_lateral(i64::from(trig.cos(lateral)) * i64::from(r2)),
             )
         };
         let w = |v: i32| v as i16;
@@ -757,7 +760,22 @@ pub fn ribbon_mesh_for_actor(
     let mut rng = OverlayRng::new((i32::from(params.rng_seed) >> 2) as u32);
     let ribbon = build_ribbon(mode, packed, params, &RetailTrig, || rng.draw());
     let (core, flare) = ribbon_colour_words(s);
-    Some(ribbon_vram_mesh(&ribbon, core, flare))
+    let mut mesh = ribbon_vram_mesh(&ribbon, core, flare);
+    // The emitter's object goes through the ordinary model draw, which runs
+    // the corners through the node's colour word `+0x74` / `+0x78` and ORs its
+    // ABE / ABR into every packet (the default arm's `vram_mesh`).
+    let colour = legaia_render_kernels::sprite_arm::ColourWord::of(s);
+    let tsb = legaia_tmd::mesh::pack_tsb_semi(
+        (RIBBON_TPAGE & !0x60) | (u16::from(colour.abr) << 5),
+        colour.semi,
+    ) | legaia_tmd::mesh::TSB_RUNTIME_PACKET_BIT;
+    for c in &mut mesh.cba_tsb {
+        c[1] = tsb;
+    }
+    for c in &mut mesh.colors {
+        *c = colour.cue(*c);
+    }
+    Some(mesh)
 }
 
 /// One live ribbon, ready to draw: the local-space mesh and the node's
@@ -1037,6 +1055,34 @@ mod tests {
         let r = build_ribbon(0, 0, params(), &AnalyticTrig::new(), lcg());
         assert_eq!(r.steps.len(), 1);
         assert_eq!(r.packets.emitted_verts, 0);
+    }
+
+    /// The vertices a retail RAM image of Ozma's cast holds in the emitter's
+    /// scratch TMD, built from the seed `0x57D6` of its last ray: a head of
+    /// zeros, each later step's pairs laid square to the walk.
+    #[test]
+    fn a_ray_lays_its_pairs_square_to_its_walk() {
+        let params = RibbonParams {
+            wander_spread: 0x200,
+            radius: 0xF0,
+            step_len: 0x500,
+            rng_seed: 0x57D6,
+            turn_rate: 0,
+        };
+        let mut rng = OverlayRng::new((i32::from(params.rng_seed) >> 2) as u32);
+        let r = build_ribbon(0x2000, 10, params, &RetailTrig, || rng.draw());
+        assert_eq!(r.steps[0].verts, [(0, 0); 6]);
+        assert_eq!(
+            r.steps[1].verts,
+            [
+                (-213, -969),
+                (-103, -987),
+                (-268, -960),
+                (-48, -996),
+                (-646, -898),
+                (330, -1058)
+            ]
+        );
     }
 
     #[test]

@@ -37,6 +37,14 @@ pub struct RetailObs {
     /// sample (`docs/subsystems/script-vm.md`, the actor `+0x8E` row).
     pub script_height: Option<i16>,
     pub camera: CameraObs,
+    /// The follow camera's staging pose (`0x801F3580`) with the live focus,
+    /// where the ease `FUN_801DB510` is heading, on a field or overworld
+    /// state. The ease runs only on a frame the player moved, so a capture
+    /// can hold the live pose anywhere short of it. The `camera` channel takes
+    /// whichever of the two poses the engine stands nearer: the seat composes
+    /// the target and has no walk to ease over, and a script's shot leaves
+    /// this stale, with the engine on the live pose instead.
+    pub camera_staging: Option<CameraObs>,
     pub bgm_id: u16,
     /// Whether the field BGM slot `0x8007052C` is attached and at a non-zero
     /// volume: the playing word `0x8007B708` (raised by the replay primitive
@@ -117,6 +125,8 @@ pub struct RetailObs {
     pub minigame: Option<super::RetailMinigame>,
     /// The displayed frame, when the state carries VRAM + display registers.
     pub frame: Option<Frame>,
+    /// A movie-class state's fmv id and stream frame word.
+    pub movie: Option<super::movie_run::RetailMovie>,
     /// Battle observables for a battle-class state; `Err` names why the
     /// state cannot seed a battle.
     pub battle: Option<std::result::Result<crate::retail_compare_battle::RetailBattle, String>>,
@@ -171,9 +181,19 @@ pub struct RetailObs {
     /// Drawn field actors' clip words ([`retail_object_clips`]), handed to
     /// the image child as `LEGAIA_SEAT_OBJECT_CLIPS`.
     pub object_clips: Vec<ObjectClipSeed>,
+    /// The player's clip words ([`retail_player_clip`]), handed to the image
+    /// child as `LEGAIA_SEAT_PLAYER_CLIP`.
+    pub player_clip: Option<ObjectClipSeed>,
     /// Field actors' live VDF morph envelopes ([`retail_morphs`]), handed to
     /// the image child as `LEGAIA_SEAT_MORPHS`.
     pub morphs: Vec<MorphSeed>,
+    /// The `4C D8` morph-weight actors' envelopes ([`retail_morph_weights`]),
+    /// handed to the image child as `LEGAIA_SEAT_MORPH_WEIGHTS`.
+    pub morph_weights: Vec<legaia_engine_capture::field_seeds::MorphWeightSeed>,
+    /// The floor-ladder oscillators' live words ([`retail_floor_bobs`]). The
+    /// headless sample writes them as they stand, the image child takes them
+    /// back by the display lag.
+    pub floor_bobs: Vec<legaia_engine_capture::field_seeds::FloorBobSeed>,
     /// Ambient walkers' live seats ([`retail_walkers`]), handed to the image
     /// child as `LEGAIA_SEAT_WALKERS`.
     pub walkers: Vec<WalkerSeed>,
@@ -229,6 +249,8 @@ pub struct ActorFacing {
     /// `+0x14` / `+0x18`.
     pub x: i16,
     pub z: i16,
+    /// `+0x16`, the footing or a script-held height.
+    pub y: i16,
     /// `+0x64`, the live model id (bank-relative ids are not resolved).
     pub model: i16,
     /// `+0x10`.
@@ -326,6 +348,9 @@ impl RetailObs {
                 }
                 _ => None,
             },
+            camera_staging: (matches!(class, StateClass::Field | StateClass::WorldMap)
+                && player.is_some())
+            .then(|| super::walk_rewind::follow_staging_pose(ram, &camera)),
             seat_eye: (matches!(class, StateClass::Field | StateClass::WorldMap)
                 && player.is_some())
             .then_some(camera.eye),
@@ -376,6 +401,8 @@ impl RetailObs {
             scroll_rects: Vec::new(),
             panel: None,
             scripted_seats: Vec::new(),
+            movie: (class == StateClass::Cutscene)
+                .then(|| super::movie_run::RetailMovie::from_ram(ram)),
             walkers: if matches!(class, StateClass::Field) {
                 retail_walkers(ram)
             } else {
@@ -386,10 +413,25 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            morph_weights: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_morph_weights(ram)
+            } else {
+                Vec::new()
+            },
+            floor_bobs: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_floor_bobs(ram)
+            } else {
+                Vec::new()
+            },
             object_models: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_object_models(ram)
             } else {
                 Vec::new()
+            },
+            player_clip: if matches!(class, StateClass::Field | StateClass::WorldMap) {
+                retail_player_clip(ram)
+            } else {
+                None
             },
             object_clips: if matches!(class, StateClass::Field) {
                 retail_object_clips(ram)
@@ -570,8 +612,30 @@ impl RetailObs {
                 object_clips_env(&self.object_clips),
             ));
         }
+        if let Some(c) = self.player_clip {
+            env.push(("LEGAIA_SEAT_PLAYER_CLIP", object_clips_env(&[c])));
+        }
         if !self.morphs.is_empty() {
             env.push(("LEGAIA_SEAT_MORPHS", morphs_env(&self.morphs)));
+        }
+        if !self.morph_weights.is_empty() {
+            env.push((
+                "LEGAIA_SEAT_MORPH_WEIGHTS",
+                legaia_engine_capture::field_seeds::morph_weights_env(&self.morph_weights),
+            ));
+        }
+        if !self.floor_bobs.is_empty() {
+            let back = usize::from(self.frame_step())
+                * crate::retail_compare_battle::DISPLAY_LAG_PASSES as usize;
+            let shown: Vec<_> = self
+                .floor_bobs
+                .iter()
+                .map(|&b| rewind_floor_bob(b, back))
+                .collect();
+            env.push((
+                "LEGAIA_SEAT_FLOOR_BOBS",
+                legaia_engine_capture::field_seeds::floor_bobs_env(&shown),
+            ));
         }
         if !self.walkers.is_empty() {
             env.push(("LEGAIA_SEAT_WALKERS", walkers_env(&self.walkers)));
@@ -581,6 +645,12 @@ impl RetailObs {
         }
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
+        }
+        if let Some(pairs) = &self.scripts.glide_pairs {
+            env.push((
+                "LEGAIA_SEAT_GLIDE_PAIRS",
+                legaia_engine_capture::script_gate::glide_pairs_env(pairs),
+            ));
         }
         if let Some([x, y, z]) = self.seat_eye {
             env.push(("LEGAIA_SEAT_EYE", format!("{x},{y},{z}")));
@@ -793,8 +863,13 @@ impl RetailObs {
 /// keeps the 320-wide reader, so no state outside the minigames gains a
 /// frame it was not scored on.
 fn display_frame(ram: &[u8], vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Frame> {
-    if game_anchors::game_mode(ram) == 0x19 {
+    let mode = game_anchors::game_mode(ram);
+    if mode == 0x19 {
         Frame::from_vram_display_hires(vram, rect)
+    } else if matches!(mode, 0x1A | 0x1B)
+        && super::movie_run::RetailMovie::from_ram(ram).is_24bit(ram)
+    {
+        Frame::from_vram_display_24(vram, rect)
     } else {
         Frame::from_vram_display(vram, rect)
     }

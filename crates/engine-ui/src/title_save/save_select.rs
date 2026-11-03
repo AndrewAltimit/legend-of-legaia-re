@@ -402,6 +402,8 @@ pub struct SaveMenuAtlasRects {
     pub icon_armor: (u32, u32, u32, u32),
     pub icon_boot: (u32, u32, u32, u32),
     pub icon_goods: (u32, u32, u32, u32),
+    /// The worn row's "E" mark on an equip candidate list (ICO `0x21`).
+    pub icon_worn: (u32, u32, u32, u32),
     /// "Condition" pager arrows (16x16 solid triangles, CLUT row 7 of
     /// the system-UI TIM - the `FUN_8002b994` sprite-table kinds 2/3).
     /// Drawn flanking the status screen's window-27 label.

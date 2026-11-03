@@ -111,71 +111,170 @@ pub struct RunOptions<'a> {
     pub filter: Option<&'a str>,
     /// Save application order (see [`SeedOrder`]).
     pub order: SeedOrder,
+    /// Worker threads the states run on; `0` and `1` run them on this thread.
+    pub jobs: usize,
+    /// Directory of the per-state result cache
+    /// ([`crate::retail_compare_cache`]), when the run may reuse results.
+    pub cache: Option<&'a Path>,
+    /// One line on stderr as each state finishes.
+    pub progress: bool,
+}
+
+/// One state's wall clock, for `timings.json`. Kept out of [`StateReport`] so
+/// the report stays a pure function of the state and the binary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StateTiming {
+    pub label: String,
+    pub seconds: f64,
+    /// Served from the result cache ([`crate::retail_compare_cache`]) rather
+    /// than measured.
+    pub cached: bool,
+}
+
+/// The states `filter` keeps, in corpus order.
+fn filtered_corpus(opts: &RunOptions<'_>) -> Vec<CorpusEntry> {
+    enumerate_corpus(opts.manifest, opts.library)
+        .into_iter()
+        .filter(|entry| {
+            opts.filter.is_none_or(|f| {
+                f.split(',')
+                    .filter(|alt| !alt.is_empty())
+                    .any(|alt| match alt.strip_prefix('=') {
+                        // `=label` names one state exactly (a label that is a
+                        // prefix of its siblings', as the Gaza park states are).
+                        Some(exact) => entry.label == exact,
+                        None => entry.label.contains(alt),
+                    })
+            })
+        })
+        .collect()
 }
 
 /// Run the whole corpus.
 pub fn run_corpus(opts: &RunOptions<'_>) -> Result<Vec<StateReport>> {
+    Ok(run_corpus_timed(opts)?.0)
+}
+
+/// [`run_corpus`] with each state's wall clock.
+///
+/// With `opts.jobs > 1` the states run on that many worker threads, and the
+/// reports still come back in corpus order. A state is independent of every
+/// other: its seed is its own session, its image child its own process, and
+/// each file either writes is named for the label. The shared files are the
+/// exception and are handled here: states with one label run one after the
+/// other in one work item, since they share those names, and the resident-disc
+/// extraction takes a lock.
+pub fn run_corpus_timed(opts: &RunOptions<'_>) -> Result<(Vec<StateReport>, Vec<StateTiming>)> {
     let scus = std::fs::read(opts.extracted.join("SCUS_942.54"))
         .with_context(|| format!("read {}/SCUS_942.54", opts.extracted.display()))?;
     let cdname = legaia_prot::cdname::parse(&opts.extracted.join("CDNAME.TXT"))?;
-    let entries = enumerate_corpus(opts.manifest, opts.library);
-    let mut out = Vec::new();
-    for entry in entries {
-        if let Some(f) = opts.filter
-            && !f
-                .split(',')
-                .filter(|alt| !alt.is_empty())
-                .any(|alt| match alt.strip_prefix('=') {
-                    // `=label` names one state exactly (a label that is a
-                    // prefix of its siblings', as the Gaza park states are).
-                    Some(exact) => entry.label == exact,
-                    None => entry.label.contains(alt),
-                })
-        {
-            continue;
-        }
-        crate::retail_compare_image::set_capture_emulator(entry.emulator);
-        // A state made on a known patched image runs the engine on that
-        // image's files (`resident_disc`); one whose image is not on this
-        // machine runs on the retail disc and says so.
-        let resident = entry.resident_disc.as_deref().map(|name| {
-            let dirs = super::resident_disc::resident_disc_dirs();
-            let image = super::resident_disc::locate_resident_disc(name, &dirs)
-                .with_context(|| format!("{name} not found in {dirs:?}"))?;
-            let cache = opts
-                .out_dir
-                .map(|d| d.join("resident-discs"))
-                .context("no report directory to extract into")?;
-            let root = super::resident_disc::extract_resident_disc(&image, &cache)?;
-            let scus = std::fs::read(root.join("SCUS_942.54"))?;
-            let cdname = legaia_prot::cdname::parse(&root.join("CDNAME.TXT"))?;
-            anyhow::Ok((root, scus, cdname))
-        });
-        let mut report = match &resident {
-            Some(Ok((root, scus, cdname))) => {
-                let opts = RunOptions {
-                    extracted: root,
-                    ..*opts
-                };
-                run_one(&opts, &entry, scus, cdname)
+    let entries = filtered_corpus(opts);
+    let cache = match opts.cache {
+        Some(root) => Some(crate::retail_compare_cache::ResultCache::open(root, opts)?),
+        None => None,
+    };
+    let resident_lock = std::sync::Mutex::new(());
+    let run = |entry: &CorpusEntry| -> (StateReport, StateTiming) {
+        let t0 = std::time::Instant::now();
+        let key = cache.as_ref().and_then(|c| c.key(entry));
+        let hit = cache.as_ref().and_then(|c| c.fetch(&key, entry, opts));
+        let (report, cached) = match hit {
+            Some(report) => (report, true),
+            None => {
+                let report = run_entry(opts, entry, &scus, &cdname, &resident_lock);
+                if let Some(c) = &cache {
+                    c.store(&key, entry, &report, opts);
+                }
+                (report, false)
             }
-            _ => run_one(opts, &entry, &scus, &cdname),
         };
-        if let (Some(name), Some(r)) = (&entry.resident_disc, &resident) {
-            report.detail.insert(
-                "resident_disc".into(),
-                match r {
-                    Ok(_) => format!("engine ran the capture's own image {name}"),
-                    Err(e) => {
-                        report.resident_disc_missing = Some(format!("{e:#}"));
-                        format!("engine ran the retail disc: {e:#}")
-                    }
-                },
+        let timing = StateTiming {
+            label: entry.label.clone(),
+            seconds: t0.elapsed().as_secs_f64(),
+            cached,
+        };
+        if opts.progress {
+            eprintln!(
+                "retail-compare: {} {:.1}s{}",
+                entry.label,
+                timing.seconds,
+                if cached { " (cached)" } else { "" }
             );
         }
-        out.push(report);
+        (report, timing)
+    };
+    // One work item per label, in the order its first state appears.
+    let mut items: Vec<Vec<usize>> = Vec::new();
+    let mut item_of: BTreeMap<&str, usize> = BTreeMap::new();
+    for (i, entry) in entries.iter().enumerate() {
+        let n = *item_of.entry(entry.label.as_str()).or_insert_with(|| {
+            items.push(Vec::new());
+            items.len() - 1
+        });
+        items[n].push(i);
     }
-    Ok(out)
+    let done = crate::parallel::parallel_map(&items, opts.jobs, |item| {
+        item.iter()
+            .map(|&i| (i, run(&entries[i])))
+            .collect::<Vec<_>>()
+    });
+    let mut done: Vec<_> = done.into_iter().flatten().collect();
+    done.sort_by_key(|(i, _)| *i);
+    Ok(done.into_iter().map(|(_, row)| row).unzip())
+}
+
+/// One state from the top: its resident disc if it names one, then
+/// [`run_one`].
+fn run_entry(
+    opts: &RunOptions<'_>,
+    entry: &CorpusEntry,
+    scus: &[u8],
+    cdname: &legaia_prot::cdname::IndexMap,
+    resident_lock: &std::sync::Mutex<()>,
+) -> StateReport {
+    crate::retail_compare_image::set_capture_emulator(entry.emulator);
+    // A state made on a known patched image runs the engine on that
+    // image's files (`resident_disc`); one whose image is not on this
+    // machine runs on the retail disc and says so.
+    let resident = entry.resident_disc.as_deref().map(|name| {
+        let dirs = super::resident_disc::resident_disc_dirs();
+        let image = super::resident_disc::locate_resident_disc(name, &dirs)
+            .with_context(|| format!("{name} not found in {dirs:?}"))?;
+        let cache = opts
+            .out_dir
+            .map(|d| d.join("resident-discs"))
+            .context("no report directory to extract into")?;
+        let root = {
+            let _one_at_a_time = resident_lock.lock().unwrap_or_else(|e| e.into_inner());
+            super::resident_disc::extract_resident_disc(&image, &cache)?
+        };
+        let scus = std::fs::read(root.join("SCUS_942.54"))?;
+        let cdname = legaia_prot::cdname::parse(&root.join("CDNAME.TXT"))?;
+        anyhow::Ok((root, scus, cdname))
+    });
+    let mut report = match &resident {
+        Some(Ok((root, scus, cdname))) => {
+            let opts = RunOptions {
+                extracted: root,
+                ..*opts
+            };
+            run_one(&opts, entry, scus, cdname)
+        }
+        _ => run_one(opts, entry, scus, cdname),
+    };
+    if let (Some(name), Some(r)) = (&entry.resident_disc, &resident) {
+        report.detail.insert(
+            "resident_disc".into(),
+            match r {
+                Ok(_) => format!("engine ran the capture's own image {name}"),
+                Err(e) => {
+                    report.resident_disc_missing = Some(format!("{e:#}"));
+                    format!("engine ran the retail disc: {e:#}")
+                }
+            },
+        );
+    }
+    report
 }
 
 pub(super) fn run_one(
@@ -221,6 +320,10 @@ pub(super) fn run_one(
     report.class = retail.class;
     if retail.class == StateClass::Minigame {
         super::minigame_run::run_minigame(opts, entry, &retail, &mut report);
+        return report;
+    }
+    if retail.class == StateClass::Cutscene {
+        super::movie_run::run_movie(opts, entry, &retail, &mut report);
         return report;
     }
     if !retail.class.seedable() {
@@ -622,7 +725,10 @@ pub(super) fn menu_image(
         .map(|(t, b)| format!("{}:{b:?}", first + t))
         .collect::<Vec<_>>()
         .join(",");
-    let mut extra = vec!["--pad-script".to_string(), script];
+    let mut extra = Vec::new();
+    if !script.is_empty() {
+        extra.extend(["--pad-script".to_string(), script]);
+    }
     if let Some(card) = frame.card {
         match card_save_dir(opts.out_dir, &entry.label, card) {
             Ok(dir) => extra.extend(["--save-dir".to_string(), dir.display().to_string()]),
@@ -634,11 +740,14 @@ pub(super) fn menu_image(
             }
         }
     }
-    let env: Vec<(&str, String)> = if retail.save_allowed {
+    let mut env: Vec<(&str, String)> = if retail.save_allowed {
         vec![("LEGAIA_SEAT_SAVE_ALLOWED", "1".to_string())]
     } else {
         Vec::new()
     };
+    if let Some(block) = menu.prize_block {
+        env.push(("LEGAIA_SEAT_PRIZE", format!("{first}:{block}")));
+    }
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,

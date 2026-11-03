@@ -170,6 +170,62 @@ pub fn baka_bar_prim(
     )
 }
 
+/// The Baka pause menu's lines as text draws, the one composition both play
+/// hosts call (`BakaFight::pause_panel`).
+pub fn baka_pause_text_draws_for<'a>(
+    font: &legaia_font::Font,
+    lines: impl IntoIterator<Item = (&'a [u8], i32, i32)>,
+    color: [f32; 4],
+) -> Vec<TextDraw> {
+    crate::text_lines::text_line_draws_for(
+        font,
+        lines.into_iter().map(|(t, x, y)| (t, x, y, false)),
+        color,
+        color,
+    )
+}
+
+/// The shade behind the Baka pause menu, standing in for the window frame
+/// retail closes it with (`FUN_8002C69C`): a half-black quad over the rect, so
+/// the text reads over the arena. Text is drawn above it by the host.
+pub fn baka_pause_shade(
+    rect: (i32, i32, i32, i32),
+    ot_index: u32,
+) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    let (x, y, w, h) = rect;
+    let (x0, y0, x1, y1) = (x as i16, y as i16, (x + w) as i16, (y + h) as i16);
+    legaia_render_kernels::screen_prim::ScreenPrim::Flat(
+        legaia_render_kernels::screen_prim::FlatQuad {
+            xy: [(x0, y0), (x1, y0), (x0, y1), (x1, y1)],
+            color: [0, 0, 0, 0xC0],
+            gouraud: None,
+            semi_transparent: true,
+            abr_mode: 0,
+            ot_index,
+            depth: None,
+        },
+    )
+}
+
+/// The all-clear beats' full-screen quad: `FUN_80024EE4(0xA, 2, level *
+/// 0x010101)`, an untextured semi-transparent quad on ordering-table layer
+/// `0xA` under blend mode `2` (`B - F`), which darkens by `level`.
+///
+/// REF: FUN_801CF388 (`0x801D1B40..0x801D1B54`), FUN_80024EE4
+pub fn baka_clear_fade(level: u8) -> legaia_render_kernels::screen_prim::ScreenPrim {
+    legaia_render_kernels::screen_prim::ScreenPrim::Flat(
+        legaia_render_kernels::screen_prim::FlatQuad {
+            xy: [(0, 0), (320, 0), (0, 240), (320, 240)],
+            color: [level, level, level, 0xFF],
+            gouraud: None,
+            semi_transparent: true,
+            abr_mode: 2,
+            ot_index: 0xA,
+            depth: None,
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

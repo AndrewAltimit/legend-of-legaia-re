@@ -47,6 +47,12 @@ fn the_retail_comparison_corpus_holds_its_baseline() {
         out_dir: Some(&out),
         filter: None,
         order: SeedOrder::Resume,
+        jobs: std::env::var("LEGAIA_RC_JOBS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1),
+        cache: None,
+        progress: false,
     })
     .expect("run corpus");
     let summary = summarise(&reports);

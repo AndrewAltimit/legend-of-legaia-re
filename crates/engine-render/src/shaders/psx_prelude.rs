@@ -395,12 +395,12 @@ fn dyn_light(
     // a daylight constant (see `mood_ambient` in the scene-lights layer).
     let amb = mood_ambient();
     // Emissive prims (lamps, glow sheets, the Genesis Tree - TSB / blend
-    // bit 13, tagged by `scene_lighting::tag_emissive_*`) ignore the mood:
-    // they draw at the emissive gain, plus whatever light falls on them
-    // (their own light included).
+    // bit 13, tagged by `scene_lighting::tag_emissive_*`) ignore the mood
+    // and the point lights: the emissive gain is their light. A point light
+    // sits inside the prims it was derived from, so adding it would light
+    // the glow with itself.
     if (emissive) {
-        let eg = min(vec3<f32>(amb.w) + point_gain, vec3<f32>(DYN_TOTAL_MAX_GAIN));
-        return clamp(rgb * eg, vec3<f32>(0.0), vec3<f32>(1.0));
+        return clamp(rgb * amb.w, vec3<f32>(0.0), vec3<f32>(1.0));
     }
     // Orientation term. Prefer the smoothed per-vertex normal (continuous
     // shading across connected surfaces); fall back to the screen-space

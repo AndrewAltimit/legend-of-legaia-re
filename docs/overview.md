@@ -13,7 +13,7 @@ This page is the map of the docs: what the project consists of, how the disc's l
 | **The disc patcher** | Randomizer, translation packs, content mods and MIPS code hooks, applied to a user-supplied `.bin` or emitted as a PPF. | [`guides/modding-and-translation.md`](guides/modding-and-translation.md), [`tooling/randomizer.md`](tooling/randomizer.md) |
 | **The reference** | Byte-level format specs, subsystem documentation, traced functions and the RAM map, each claim carrying its provenance. | [`formats/overview.md`](formats/overview.md), [`reference/functions.md`](reference/functions.md) |
 
-The port is **fresh Rust written from the format docs and the Ghidra-traced disassembly** - not a decompilation, and not a static recompilation of `SCUS_942.54`. Retail behaviour is the measured ground truth and a retail-faithful mode stays testable, but the port is not bound by it: enhanced lighting, volumetric fog, the camera-occlusion fade, precise movement and VR ship as toggles, several on by default ([`subsystems/engine.md`](subsystems/engine.md#fidelity-and-enhancements)).
+The port is **fresh Rust written from the format docs and the Ghidra-traced disassembly** - not a decompilation, and not a static recompilation of `SCUS_942.54` ([how the three methods compare, and the method this one follows](porting-by-reimplementation.md)). Retail behaviour is the measured ground truth and a retail-faithful mode stays testable, but the port is not bound by it: enhanced lighting, volumetric fog, the camera-occlusion fade, precise movement and VR ship as toggles, several on by default ([`subsystems/engine.md`](subsystems/engine.md#fidelity-and-enhancements)).
 
 ## How the layers stack
 
@@ -63,6 +63,7 @@ Choose by what you are trying to do:
 | Export scenes to Blender / Unity / VRChat | [`tooling/vrchat-world-export.md`](tooling/vrchat-world-export.md) |
 | Understand a specific file format | [`formats/overview.md`](formats/overview.md) → per-format page |
 | Understand how a runtime subsystem works | [`subsystems/`](subsystems/) - boot, asset loader, script VM, move VM, renderer, audio, battle, minigames |
+| Understand why the port is a reimplementation, and the method behind it | [`porting-by-reimplementation.md`](porting-by-reimplementation.md) |
 | Understand the Rust port's architecture | [`subsystems/engine.md`](subsystems/engine.md) |
 | Measure the port against retail | [`tooling/retail-compare.md`](tooling/retail-compare.md), [`tooling/full-game-ladder.md`](tooling/full-game-ladder.md), [`tooling/host-drift.md`](tooling/host-drift.md) |
 | Reverse a new function in Ghidra | [`tooling/ghidra.md`](tooling/ghidra.md) |

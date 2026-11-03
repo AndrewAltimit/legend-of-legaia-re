@@ -120,6 +120,8 @@ pub struct LegaiaRuntime {
     /// CLUT fx) changed texels; drained by [`Self::field_vram_take_dirty`]
     /// so the page re-uploads the VRAM texture only on real changes.
     pub(crate) field_vram_dirty: bool,
+    /// [`Self::field_morph_positions`]'s answers, per morph state.
+    pub(crate) field_morph_memo: legaia_engine_scene::scene_assembly::HybridPositionsMemo,
     /// Enhanced lighting's derived light sets for the running scene
     /// ([`crate::play_lighting`]), built on the first lit frame after a
     /// scene entry.
@@ -136,11 +138,6 @@ pub struct LegaiaRuntime {
     /// the bare field: a host that never lands a capture (a headless run, a
     /// cached page without the readback) keeps the transition on screen.
     pub(crate) intro_readback: bool,
-    /// The between-beat cutscene glide and its display-frame clock - the
-    /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
-    /// one of too. Without it every `apply > 0` Camera Configure beat snapped
-    /// on this host.
-    pub(crate) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// The engine camera [`Self::play_camera_vp`] last handed the page: the
     /// matrix and the frame it was built from. The field FX pass reads the
     /// frame back only when the page draws through that exact matrix, so the
@@ -489,13 +486,13 @@ impl LegaiaRuntime {
             locomotion_anm: None,
             field_vram_anim: None,
             field_vram_dirty: false,
+            field_morph_memo: Default::default(),
             scene_lights: None,
             battle_intro: None,
             intro_readback: false,
             // The host framing bias the retail follow view is rendered with,
             // pushed in exactly where the native window pushes it
             // (`window/run.rs`), through the one shared expression.
-            cutscene_glide: Default::default(),
             engine_camera: None,
             last_frame_field_view: None,
             sim_stepper: Default::default(),

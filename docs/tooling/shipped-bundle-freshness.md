@@ -3,7 +3,8 @@
 `site/wasm/` is **build output and is not committed**. Two things produce it:
 
 - [`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh), for browsing
-  `site/` locally (~9 min cold).
+  `site/` locally (about 6 min cold; `--fast` is
+  [the edit loop](build-and-test-speed.md#the-wasm-bundle)).
 - The `deploy-pages` job in `main-ci.yml`, which runs its own `wasm-pack build`
   into that path before publishing. **The deployed site is always built from
   source** and has never loaded a committed bundle.
@@ -72,6 +73,12 @@ while the bundle is stale, which is worse than no checker.
 Excluded on purpose: `*.md`, `tests/`, `benches/`. Retargeting a test must not
 read as a stale bundle.
 
+The root `Cargo.toml` is hashed too, since its profiles decide what the bundle is.
+The stamp also records the cargo profile: `build-wasm.sh --fast` builds an
+iteration bundle, whose pages behave as the shipped ones do, and `--strict` refuses
+it, because its size and speed say nothing about what ships. `--strict --any-profile`
+accepts it.
+
 ### "Tracked files only" was a third way of guessing wrong
 
 The enumeration was a plain `git ls-files`, which is the index and nothing else.
@@ -92,6 +99,7 @@ computed under the old set is treated as unreliable rather than merely old.
 scripts/ci/build-wasm.sh                              # build + stamp
 python3 scripts/ci/check-wasm-freshness.py            # warn, exit 0
 python3 scripts/ci/check-wasm-freshness.py --strict   # fail, exit 1
+python3 scripts/ci/check-wasm-freshness.py --strict --any-profile   # a --fast bundle counts
 scripts/ci/check-wasm.sh --full                       # wasm-pack build + strict
 ```
 

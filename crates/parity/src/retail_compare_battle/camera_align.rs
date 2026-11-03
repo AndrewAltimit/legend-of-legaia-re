@@ -201,6 +201,37 @@ pub(super) fn summon_route_prior_end(ram: &[u8], ctx: u32, action_state: u8) -> 
     prior
 }
 
+/// Where case 7 held the eye before its pull-in, as [`displayed_cam_live`]'s
+/// `prior_end` (the translation's Y and Z).
+///
+/// The pull-in (`0x801D6780`: `TR.y += 0x40`, `TR.z = 3z/5`) is gated for a
+/// monster on `ctx[+0x243]`, which the strike clip's commit stores after that
+/// pass's arm, so a capture one pass past the commit holds the pull-in's first
+/// table: the pass before it stood on the depth the shot had already landed on.
+/// `battle_map01_frog_strike` reads TR z `4587` walking to `2948` by `164`; one
+/// pass back is `4915`, `prescale(ctx[+0x6D0])`, and the frame on screen is
+/// still there.
+pub(super) fn strike_pull_in_prior_end(ram: &[u8], ctx: u32) -> [Option<i32>; 9] {
+    let mut prior = [None; 9];
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE
+        || seat < 3
+        || game_anchors::u8_at(ram, ctx + 0x243) == 0
+    {
+        return prior;
+    }
+    let depth = i32::from(game_anchors::u16_at(ram, ctx + 0x6D0) as i16);
+    let far = legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(depth) as i32;
+    let near = legaia_engine_battle_vm::battle_cam_script::prescale_tr_z(depth * 3 / 5) as i32;
+    let end_z = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 5 * 4 + 2) as i16);
+    if (end_z - near).abs() <= 2 {
+        prior[5] = Some(far);
+        let end_y = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 4 * 4 + 2) as i16);
+        prior[4] = Some(end_y - 0x40);
+    }
+    prior
+}
+
 /// The live pose the **displayed** frame was drawn at: retail's live camera
 /// walked back `passes` passes along its tween table.
 ///
@@ -355,7 +386,7 @@ pub(super) fn displayed_cam_live_steps(
             // `p` behind `pos` (further from the endpoint), and the step back
             // on this table would land behind `p` too.
             if let Some(p) = prior_end[k as usize]
-                && (pos - p) * dir > 0
+                && (pos - p) * dir >= 0
                 && (pos - dir * fs_n * step - p) * dir < 0
             {
                 prior = Some(p);
@@ -382,6 +413,77 @@ pub(super) fn displayed_cam_live_steps(
             live.focus[2] + back[8] as f32,
         ],
     }
+}
+
+/// The pose the near-camera ghost pass read for the displayed frame: one pass
+/// behind `shown`, the pose that frame stands on
+/// ([`World::tick_battle_camera_ghost`](legaia_engine_core::world::World)).
+/// `further` is the same walk with one pass more.
+///
+/// Case 7's yaw sits `0x700` past its endpoint on the first pass that armed it
+/// (`0x801D6700`), so a walk back beyond that is a pass of the earlier framing
+/// the re-arm law does not describe, and the earlier framing had all but
+/// landed: `battle_korb2_aluru_strike` stands on yaw `2188` under an endpoint
+/// of `395`, one unit from where case 6 was resting. Such a pass holds `shown`.
+pub(super) fn displayed_ghost_pose(
+    ram: &[u8],
+    ctx: u32,
+    action_state: u8,
+    shown: legaia_engine_camera::projection::BattleCamPose,
+    further: legaia_engine_camera::projection::BattleCamPose,
+) -> legaia_engine_camera::projection::BattleCamPose {
+    const CASE_7_UNWRAP: f32 = 0x700 as f32;
+    if action_state == STRIKE_LOOP_STATE {
+        let (live, end) = retail_cam_tween(ram, ctx);
+        let dir = (end.yaw - live.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
+        // Round the way the walk goes back, away from the endpoint.
+        let moved = if dir < 0.0 {
+            (further.yaw - end.yaw).rem_euclid(4096.0)
+        } else {
+            (end.yaw - further.yaw).rem_euclid(4096.0)
+        };
+        if moved > CASE_7_UNWRAP {
+            return shown;
+        }
+    }
+    further
+}
+
+/// The pose the displayed frame of a walking round prompt stands on, off
+/// retail's own table: the arm's table is linear, so `lag` frames back is the
+/// live word less `lag` increments, on each component still short of its
+/// endpoint ([`displayed_menu_glide_left`]). A component that has landed with
+/// an increment still in the table reads `NaN`: the table no longer says when
+/// it landed, so the engine's arm keeps it (pitch `3` a frame reaches `32`
+/// well ahead of the translation). The yaw is the orbit's.
+pub(super) fn displayed_menu_glide_pose(
+    ram: &[u8],
+    ctx: u32,
+    lag: u16,
+) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+    displayed_menu_glide_left(ram, ctx, lag)?;
+    let (live, end) = retail_cam_tween(ram, ctx);
+    let inc = |k: u32| f32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4) as i16).abs();
+    let back = |l: f32, e: f32, k: u32| {
+        let gap = e - l;
+        if gap == 0.0 {
+            if inc(k) == 0.0 { l } else { f32::NAN }
+        } else {
+            l - gap.signum() * inc(k) * f32::from(lag)
+        }
+    };
+    Some(legaia_engine_camera::projection::BattleCamPose {
+        pitch: back(live.pitch, end.pitch, 0),
+        yaw: live.yaw,
+        tr: [3u32, 4, 5].map(|k| {
+            let i = (k - 3) as usize;
+            back(live.tr[i], end.tr[i], k)
+        }),
+        focus: [6u32, 7, 8].map(|k| {
+            let i = (k - 6) as usize;
+            back(live.focus[i], end.focus[i], k)
+        }),
+    })
 }
 
 /// The live pose the displayed frame was drawn at under a **module shot**:
@@ -606,4 +708,88 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     shift[6] = -((b2[0] - b1[0]) / 2);
     shift[8] = -((b2[1] - b1[1]) / 2);
     Some(shift)
+}
+
+/// The walk's last heading on a monster strike whose displayed frame **is** that
+/// walk pass, read off the attacker's position ring.
+///
+/// Each pass of the walk or the strike loop arms its framing and then stores
+/// `+0x46` from the live pair the pass before left, so ring slot `k + 1`
+/// names what pass `k` back stored. The strike loop bears onto the target's
+/// **body** pair `+0x3C` / `+0x40` (`0x801E36F0..0x801E371C`), the walk states
+/// onto its **live** pair `+0x34` / `+0x38` (`0x801E3568..0x801E3588`).
+pub(super) struct WalkHeading {
+    /// What the displayed frame's pass stored: the body is drawn on it.
+    pub displayed: u16,
+    /// Case 7's yaw endpoint on the pass before the RAM's, off the RAM's -
+    /// [`displayed_cam_live_steps`]'s `end_shift` for the yaw. Case 7
+    /// subtracts the heading (`0x801D65DC..`) ahead of the pass's own re-face,
+    /// so that table read what the displayed frame's pass stored.
+    pub end_shift: i32,
+}
+
+/// [`WalkHeading`] on a monster's first swing: the walk's last pass stands the
+/// attacker nearest the target and the loop's first moves it away again, so
+/// nearest on slot `2` the displayed frame is that pass, and it drew and handed
+/// on the walk's bearing. `battle_korb2_warhalf_strike`'s body stands on `1836`
+/// where the RAM holds `1730`, the table the RAM's replaced chased an endpoint
+/// `112` further, and the walk back lands on yaw `795` where the RAM's endpoint
+/// alone gives `759`.
+///
+/// `None` otherwise. Nearest on slot `3` is a pass later and the bearing is the
+/// loop's own: `12` units of this shift read `battle_noaru_gilium_lv2_strike`
+/// `.904` to `.585`. Nor is a party attacker's (its first swing commit re-seeds
+/// the yaw counter, `FUN_8004E13C`) or a later swing's table read this way.
+pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
+    if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE
+        || game_anchors::u8_at(ram, ctx + 0x15) != 1
+    {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if !(3..=7).contains(&seat) || !in_ram(actor) {
+        return None;
+    }
+    let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
+    let target = game_anchors::u32_at(ram, ACTOR_TABLE + target_slot.min(7) * 4);
+    if target_slot > 7 || !in_ram(target) {
+        return None;
+    }
+    let ring = |a: u32, k: u32| {
+        let at = a + POSITION_RING + k * 8;
+        [
+            f64::from(game_anchors::u32_at(ram, at) as i32 as i16),
+            f64::from(game_anchors::u32_at(ram, at + 4) as i32 as i16),
+        ]
+    };
+    let dist = |k: u32| {
+        let (a, t) = (ring(actor, k), ring(target, k));
+        (a[0] - t[0]).hypot(a[1] - t[1])
+    };
+    if dist(2) >= dist(1) || dist(2) >= dist(3) {
+        return None;
+    }
+    // How far the target's body stood off its live pair.
+    let body_off = [
+        f64::from(game_anchors::i16_at(ram, target + 0x3C))
+            - f64::from(game_anchors::i16_at(ram, target + 0x34)),
+        f64::from(game_anchors::i16_at(ram, target + 0x40))
+            - f64::from(game_anchors::i16_at(ram, target + 0x38)),
+    ];
+    // `(FUN_80019B28(..) + 0x800) & 0xFFF`: slot `k`'s live pair onto the
+    // target's, shifted by `off`.
+    let bearing = |k: u32, off: [f64; 2]| {
+        let (a, t) = (ring(actor, k), ring(target, k));
+        (f64::atan2(t[0] + off[0] - a[0], t[1] + off[1] - a[1]) * 4096.0 / std::f64::consts::TAU)
+            .round() as i32
+    };
+    let displayed = bearing(3, [0.0, 0.0]);
+    let turn = (bearing(2, body_off) - displayed + 2048).rem_euclid(4096) - 2048;
+    // The counter the endpoint adds climbs `max(1, 4 * step / 3)` a pass.
+    let step = i32::from(frame_step(ram));
+    Some(WalkHeading {
+        displayed: displayed.rem_euclid(4096) as u16,
+        end_shift: turn - (4 * step / 3).max(1),
+    })
 }

@@ -9,7 +9,7 @@
 //!
 //! - [`AudioOut`] - a single cpal output stream that owns an [`spu::Spu`]
 //!   instance behind a `Mutex`, ticking it once per host-rate output sample
-//!   (with linear resampling from the SPU's 44.1 kHz to the device rate).
+//!   (with [`host_resample`] from the SPU's 44.1 kHz to the device rate).
 //!   The asset viewer also gets a "play this VAG sample as a one-shot"
 //!   convenience path that materialises a one-block stream into SPU RAM,
 //!   sets up voice 0, and key-ons it through the same SPU model.
@@ -28,6 +28,8 @@ pub use native_out::AudioOut;
 use native_out::pcm_to_silence_padded_adpcm;
 pub mod bgm_tail;
 pub mod duck;
+pub mod host_resample;
+pub mod mix_pump;
 pub mod note_trace;
 pub mod pcm_bus;
 pub mod seq_calc;
@@ -414,8 +416,11 @@ pub struct StreamResampler {
     master_gain: f32,
     /// Cached previous sample (one frame, stereo).
     prev: (i16, i16),
-    /// Cached current sample (the SPU output we'll interpolate against).
+    /// Cached current sample.
     cur: (i16, i16),
+    /// The rate converter, for a device not at the SPU's rate. `None` at
+    /// 44.1 kHz, where the mix reaches the device untouched.
+    host_resampler: Option<host_resample::HostResampler>,
     /// Phase: how far into the gap from `prev` to `cur` we are. 0..1.
     phase: f64,
     /// Step in phase units per output frame.
@@ -445,13 +450,15 @@ impl StreamResampler {
             master_gain: 1.0,
             prev: (0, 0),
             cur: (0, 0),
+            host_resampler: (device_rate != SPU_INTERNAL_RATE)
+                .then(|| host_resample::HostResampler::new(step)),
             phase: 0.0,
             step,
         }
     }
 
-    /// Pull one output frame at the device sample rate, resampling from the
-    /// SPU's 44.1 kHz with linear interpolation. XA streams are summed
+    /// Pull one output frame at the device sample rate, through
+    /// [`host_resample`] from the SPU's 44.1 kHz. XA streams are summed
     /// into the SPU output at SPU rate, then the whole sum is resampled.
     /// The `master_fade` multiplier is applied to the SPU contribution only
     /// (not XA) so BGM cross-fades don't interrupt ambient / dialogue audio.
@@ -501,11 +508,15 @@ impl StreamResampler {
                 sample = mix_stereo(sample, (c(l), c(r)));
             }
             self.cur = sample;
+            if let Some(rs) = self.host_resampler.as_mut() {
+                rs.push(sample);
+            }
             self.phase -= 1.0;
         }
-        let alpha = self.phase as f32;
-        let l = lerp_i16(self.prev.0, self.cur.0, alpha);
-        let r = lerp_i16(self.prev.1, self.cur.1, alpha);
+        let (l, r) = match &self.host_resampler {
+            Some(rs) => rs.read(self.phase as f32),
+            None => self.prev,
+        };
         self.phase += self.step;
         // Host full-mono downmix, after the resample so both backends and
         // the test sink share it (a mono device averages again, a no-op on

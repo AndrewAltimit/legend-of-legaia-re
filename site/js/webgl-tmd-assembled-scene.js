@@ -155,6 +155,78 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, flatRgba);
   }
 
+  /* Draw scene mesh `meshId` once over the finished frame, sampling its own
+   * VRAM texture `tex` (a mesh of another scene than the one on screen): the
+   * workbench's placement ghost. `mvp` is the caller's view-projection, in the
+   * same log-depth space as the frame; `alpha` < 1 blends it over the picture
+   * with the depth buffer read but not written, `tint` (`[r, g, b]`) replaces
+   * its colour by the texel's luminance. */
+  drawMeshOver(meshId, mvp, model, tex, alpha, tint) {
+    const m = this.sceneMeshes.get(meshId);
+    if (!m || !m.indexCount) return;
+    const gl = this.gl;
+    gl.useProgram(this.program);
+    gl.uniformMatrix4fv(this.locMvp, false, mvp);
+    gl.uniformMatrix4fv(this.locModel, false, model);
+    if (this.locLogDepthOn) gl.uniform1i(this.locLogDepthOn, this.lastLogDepth ? 1 : 0);
+    /* The scene-pass words on the shared program: identity for this draw;
+     * renderAssembled stages them again on the next frame. */
+    if (this.locCurve) gl.uniform1f(this.locCurve, 0);
+    if (this.locPrimNear) gl.uniform4f(this.locPrimNear, 0, 0, 0, 0);
+    if (this.locGteSat) gl.uniform4f(this.locGteSat, 0, 0, 0, 0);
+    if (this.locNclipCull) gl.uniform1i(this.locNclipCull, 0);
+    if (this.locGrade) gl.uniform4f(this.locGrade, 1, 1, 1, 0);
+    if (this.locPalette) gl.uniform4f(this.locPalette, 1, 1, 1, 0);
+    this._setCue(null);
+    gl.uniform1i(this.locFogEnable, 0);
+    gl.uniform1i(this.locNoDisc, 0);
+    gl.uniform1i(this.locSemiPass, -1);
+    gl.uniform1i(this.locUseFlatColors, m.hasFlat ? 1 : 0);
+    if (tint) gl.uniform4f(this.locGhost, tint[0], tint[1], tint[2], 1);
+    else gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+    gl.uniform4f(this.locOcclFocus, 0, 0, 0, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.uniform1i(this.locVram, 0);
+    gl.disable(gl.CULL_FACE);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    const over = alpha < 1;
+    if (over) {
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendColor(0, 0, 0, alpha);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+      gl.depthMask(false);
+    }
+    gl.bindVertexArray(m.vao);
+    gl.drawElements(gl.TRIANGLES, m.indexCount, gl.UNSIGNED_INT, 0);
+    gl.bindVertexArray(null);
+    if (over) {
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+    }
+    gl.uniform4f(this.locGhost, 0, 0, 0, 0);
+    /* The frame's own VRAM back on its unit. */
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+  }
+
+  /* A VRAM image as a texture of its own, for `drawMeshOver`. */
+  makeVramTexture(bytes) {
+    const gl = this.gl;
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16UI, VRAM_W, VRAM_H, 0, gl.RED_INTEGER, gl.UNSIGNED_SHORT,
+      new Uint16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2));
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    return tex;
+  }
+
   clearScene() {
     this.freeSceneMeshRecords(this.sceneMeshes.values());
     this.sceneMeshes.clear();
@@ -568,6 +640,9 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         this._setHazeDraw(0);
       }
 
+      /* Set on the first draw, then only on a change. */
+      let occlAllow = -1;
+      let meanDepth = -1;
       for (const [meshId, list] of byMesh) {
         const m = this.sceneMeshes.get(meshId);
         if (m.indexCount === 0) continue;
@@ -593,8 +668,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           }
           /* Actor draws (the player, NPCs - `noOccl` on the placement) must
            * never dissolve; environment placements may. */
-          gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+          const wantOccl = p.noOccl ? 0 : 1;
+          if (wantOccl !== occlAllow) { gl.uniform1i(this.locOcclAllow, wantOccl); occlAllow = wantOccl; }
           nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
+          const wantMean = p.meanDepth ? 1 : 0;
+          if (this.locPrimMeanDepth && wantMean !== meanDepth) {
+            gl.uniform1f(this.locPrimMeanDepth, wantMean);
+            meanDepth = wantMean;
+          }
           eclipOn = this._setEffectClip(p.effectClip, eclipOn);
           /* A far-bucket placement (the battle ground grid) writes its depth
            * into the far slice, behind everything else on the frame. */
@@ -629,6 +710,8 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * blend prims against the already-rendered background. */
     let blendOn = false;
     let strictOn = false;
+    let blendOccl = -1;
+    let blendMean = -1;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
       if (!m || !m.semiRanges || m.indexCount === 0) continue;
@@ -666,8 +749,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           this._setHazeDraw(p.hazeDeco ? 2 : 0, model[12], model[14]);
           hazeOn = !!p.hazeDeco;
         }
-        gl.uniform1i(this.locOcclAllow, p.noOccl ? 0 : 1);
+        const wantOccl = p.noOccl ? 0 : 1;
+        if (wantOccl !== blendOccl) { gl.uniform1i(this.locOcclAllow, wantOccl); blendOccl = wantOccl; }
         nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
+        const wantMean = p.meanDepth ? 1 : 0;
+        if (this.locPrimMeanDepth && wantMean !== blendMean) {
+          gl.uniform1f(this.locPrimMeanDepth, wantMean);
+          blendMean = wantMean;
+        }
         eclipOn = this._setEffectClip(p.effectClip, eclipOn);
         for (const r of m.semiRanges) {
           this._setSemiBlend(r.mode);
@@ -689,6 +778,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     if (eclipOn) this._setEffectClip(null, true);
     if (hazeOn) this._setHazeDraw(0);
     this._setPlacementNclip(undefined, nclipOn);
+    if (this.locPrimMeanDepth) gl.uniform1f(this.locPrimMeanDepth, 0);
     gl.bindVertexArray(null);
     /* Enhanced lighting's halos + light shafts over the finished scene. */
     this._drawGlow(vp);
@@ -717,6 +807,11 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       if (!this._ssaoPass) this._ssaoPass = new window.LegaiaSsaoPass(gl);
       const pass = this._ssaoPass;
       if (pass.beginPrepass(w, h)) {
+        /* (Re)creating the pass's targets binds them on the active unit: a
+         * pre-pass drawn over one samples a colour target through `u_vram`,
+         * and every draw of that frame fails with a sampler-type mismatch. */
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, this.tex);
         gl.uniform1i(this.locGbuf, 1);
         gl.uniform4f(this.locGbufK, frame[0], frame[1], frame[2], 0);
         gl.uniform4f(this.locGbufView, 0, 0, w, h);
@@ -752,15 +847,28 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * already folded in), so no JS-side transform model exists to drift. */
     if (p.model) return p.model;
     const scale = (p.scale != null) ? p.scale : MESH_SCALE;
-    if ((p.anchor === 'centroid') && m.aabb) {
-      return placementModelCentered(p.x, p.z, p.rotY || 0, scale, m.aabb);
+    const rotY = p.rotY || 0;
+    const aabb = m.aabb;
+    /* A frame asks for a placement's model once per pass and per light, and a
+     * static placement's never moves: the last answer stands while its inputs
+     * do. */
+    const c = p._modelMemo;
+    if (c && c.x === p.x && c.y === p.y && c.z === p.z && c.rotY === rotY && c.scale === scale
+        && c.anchor === p.anchor && c.aabb === aabb) {
+      return c.model;
     }
-    if (p.y != null) {
+    let model;
+    if ((p.anchor === 'centroid') && aabb) {
+      model = placementModelCentered(p.x, p.z, rotY, scale, aabb);
+    } else if (p.y != null) {
       /* Walk-frame landmarks carry a world Y (floor-LUT height) so they
        * sit on the continent heightfield instead of the y=0 plane. */
-      return placementModelScaledY(p.x, p.y, p.z, p.rotY || 0, scale);
+      model = placementModelScaledY(p.x, p.y, p.z, rotY, scale);
+    } else {
+      model = placementModelScaled(p.x, p.z, rotY, scale);
     }
-    return placementModelScaled(p.x, p.z, p.rotY || 0, scale);
+    p._modelMemo = { x: p.x, y: p.y, z: p.z, rotY, scale, anchor: p.anchor, aabb, model };
+    return model;
   }
 
   /* GL blend state for one PSX ABR semi-transparency mode (B = backbuffer,

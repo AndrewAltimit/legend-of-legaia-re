@@ -42,6 +42,8 @@
   }
 
   /* Start a rendered entry as a looping source through a fresh gain node.
+   * Unity is the mix's own level: the live SPU's cues come out at unity x the
+   * trim too, so the BGM to cue balance is the SPU's, as on the play hosts.
    * Returns the source node (call .stop() to end) or null. When the render
    * found a true loop region the source repeats [loopStart, loopEnd) - one
    * SEQ period - after playing the lead-in once; otherwise it hard-loops the
@@ -56,7 +58,7 @@
     // Caller's level x the site master trim (js/layout.js). The caller's
     // own value is untouched - this is the output stage, not the mix.
     var trim = window.LEGAIA_MASTER_TRIM == null ? 0.25 : window.LEGAIA_MASTER_TRIM;
-    gn.gain.value = (gain == null ? 0.5 : gain) * trim;
+    gn.gain.value = (gain == null ? 1 : gain) * trim;
     src.connect(gn).connect(ctx.destination);
     src.start();
     return src;
@@ -64,23 +66,20 @@
 
   /* ---- the page's LIVE SPU -------------------------------------------
    *
-   * Everything above renders audio OFFLINE: a whole track (or a whole cue)
-   * decoded to PCM and handed to an `AudioBufferSourceNode`. That works for
-   * anything that names itself by id, and it cannot work for a cue that names
-   * a voice: the Muscle Dome's between-leg tally resolves a whole
-   * `(voice, VAB id, program, tone, note, fine, vol_l, vol_r)` set per drained
-   * lane (`FUN_801D1288`) and there was no SPU on this page to key it into.
-   *
-   * So the engine now owns one here too (`LegaiaMinigames::minigame_audio_*`),
-   * the way the play page's `play_sfx` does. This is the page-side gate: open
-   * it inside a user gesture, mirror the site sound toggle onto it, and let
-   * every minigame page reach the same two firing paths.
+   * Every minigame cue keys a voice on the engine's SPU
+   * (`LegaiaMinigames::minigame_audio_*`, the audio director the play hosts
+   * run), so it carries the tone's ADSR, the retail volume and pan and the
+   * tone's reverb send. Only the BGM above is rendered offline. This is the
+   * page-side gate: open it inside a user gesture, mirror the site sound
+   * toggle onto it, and tell it which game is open.
    *
    * `api` is the `LegaiaMinigames` instance. Idempotent. */
   var spuOpen = false;
+  var spuApi = null;
 
   function spuReady(api) {
     if (!api || typeof api.minigame_audio_open !== 'function') return false;
+    spuApi = api;
     /* Page-level sound gate (js/audio-toggle.js) - same gate the offline cue
      * path above checks, so one toggle silences both. */
     var on = !window.LegaiaSound || LegaiaSound.isSoundOn();
@@ -106,14 +105,31 @@
     return on;
   }
 
+  /* The toggle reaches a voice already sounding, such as the reel motor. */
+  if (window.LegaiaSound) LegaiaSound.onChange(function () { if (spuApi) spuReady(spuApi); });
+
   window.MgSpu = {
     ready: spuReady,
-    /* One catalog cue by descriptor id. Returns whether a voice keyed - the
-     * engine answers false for an id it cannot resolve rather than keying a
-     * truncated one, so a false here is information, not a failure. */
+    /* The open game's banks: a tab change is that game's mode entry. */
+    enter: function (api, game) {
+      if (api && typeof api.minigame_audio_enter === 'function') api.minigame_audio_enter(game);
+    },
+    /* One cue by id. Returns whether a voice keyed - the engine answers false
+     * for an id it cannot resolve rather than keying a truncated one, so a
+     * false here is information, not a failure. */
     cue: function (api, id) {
       if (!spuReady(api)) return false;
       try { return !!api.minigame_sfx_cue(id); } catch (e) { return false; }
+    },
+    /* One cue on whichever page instance last opened the SPU, for a caller
+     * holding no `api` (the save bar). */
+    cueOpen: function (id) {
+      return !!spuApi && spuReady(spuApi) && !!spuApi.minigame_sfx_cue(id);
+    },
+    /* A dance good-step hit sting, keyed direct. */
+    sting: function (api, r) {
+      if (!spuReady(api)) return 0;
+      try { return api.dance_sting_key(r) | 0; } catch (e) { return 0; }
     },
     /* The dome tally's voice-attr cues for one INTERVAL-screen tick. The
      * engine replays the ramp to `t` and keys only the steps it has not keyed

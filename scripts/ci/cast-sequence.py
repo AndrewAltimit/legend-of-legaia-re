@@ -28,6 +28,7 @@ The outputs hold retail pixels and RAM: they live under the gitignored
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import shlex
@@ -48,6 +49,14 @@ DROP_ENV = {
     "LEGAIA_BATTLE_DRIVE", "LEGAIA_CAPTURE_GATE", "LEGAIA_CAPTURE_DISPLAY_LAG",
     "LEGAIA_BATTLE_INFLIGHT", "LEGAIA_BATTLE_MONSTER_CAST", "LEGAIA_DIAG_CAPTURE_TICK",
     "LEGAIA_BATTLE_CAM_ALIGN", "LEGAIA_BATTLE_FRAME_STEP", "LEGAIA_SEAT_HUD_GLIDES",
+    # One capture instant's cycler and scroller state: seated for a whole run
+    # they hold the arena's palette and texels still (the Cort fight's flesh).
+    "LEGAIA_SEAT_CLUT_FX", "LEGAIA_SEAT_VRAM_RECTS",
+    # A strike capture's re-seat of its own round: left in, the cast's action
+    # seed recentres a fight the re-seat stood elsewhere (a caster recorded on
+    # (-978, 339) cast from (1977, 2207)).
+    "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP", "LEGAIA_BATTLE_APPROACH_YAW",
+    "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_SEAT_DISPLAYED_CLIPS",
 }
 
 
@@ -107,7 +116,7 @@ def run_retail(a, out: Path) -> bool:
         return False
     env = dict(os.environ)
     env.update({
-        "LEGAIA_SPELL": str(a.spell),
+        "LEGAIA_SPELL": str(a.spell or 0),
         "LEGAIA_CASTER_SEAT": str(a.caster),
         "LEGAIA_TARGET_SEAT": str(a.target),
         "LEGAIA_SHOT_EVERY": str(a.every),
@@ -118,12 +127,20 @@ def run_retail(a, out: Path) -> bool:
         "TMPDIR": str(out / ".tmp"),
     })
     (out / ".tmp").mkdir(exist_ok=True)
+    if a.learned:
+        env["LEGAIA_LEARN_LEVEL"] = str(a.learned)
+    if a.monster_hp:
+        env["LEGAIA_MONSTER_HP"] = str(a.monster_hp)
     if a.formation:
         env["LEGAIA_FORCE_ROW"] = a.formation
     if a.party_spd:
         env["LEGAIA_PARTY_SPD"] = str(a.party_spd)
     if a.monster_pick:
         env["LEGAIA_MONSTER_PICK"] = "1"
+        if a.cast_queue:
+            env["LEGAIA_CAST_QUEUE"] = a.cast_queue
+    if a.physical:
+        env["LEGAIA_PHYSICAL"] = "1"
     if a.save_inject:
         env["LEGAIA_SAVE_INJECT"] = "1"
     if a.sfx_callers:
@@ -131,11 +148,13 @@ def run_retail(a, out: Path) -> bool:
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
+    if not a.window:
+        cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
     if not a.formation and not a.monster_pick and not a.sfx_callers:
         cmd.insert(5, "--fast")
-    print(f"[retail] capturing {a.state} spell 0x{a.spell:02X} (an emulator run, minutes)")
+    print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
         rc = subprocess.run(cmd, cwd=REPO, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
     done = read_kv(rdir / "done.txt")
@@ -166,7 +185,7 @@ def child_cmd(a, out: Path) -> Path | None:
     env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error")
     cmd = [str(EXE), "retail-compare", "--out", str(out / "rc"), "--library", str(library),
            "--extracted-root", str(extracted), "--manifest", str(REPO / "scripts" / "scenarios.toml"),
-           "--images", "--filter", a.state]
+           "--images", "--filter", f"={a.state}"]
     print(f"[engine] seeding {a.state} through retail-compare")
     subprocess.run(cmd, cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not kept.exists():
@@ -190,6 +209,29 @@ def retail_rand_seed(out: Path, key: str) -> str | None:
     return None if seed is None else f"{st7}:{phase}:{seed}"
 
 
+def record_key(exe: str, env: dict, args: list[str]) -> str:
+    """What an engine recording is a function of: the binary's bytes, the
+    child's `LEGAIA_*` environment and arguments, the contents of every file
+    an argument names, and the disc's identity. The child is tick-locked, so a
+    matching key means the recording it already made."""
+    h = hashlib.sha256()
+    with open(exe, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    for k, v in sorted(env.items()):
+        if k.startswith(("LEGAIA_", "WGPU_")):
+            h.update(f"{k}={v}\0".encode())
+    for t in args:
+        h.update(f"{t}\0".encode())
+        p = Path(t)
+        if p.is_file():
+            h.update(p.read_bytes())
+        elif (p / "PROT.DAT").is_file():
+            st = (p / "PROT.DAT").stat()
+            h.update(f"{st.st_size} {st.st_mtime_ns}\0".encode())
+    return h.hexdigest()
+
+
 def run_engine(a, out: Path) -> bool:
     kept = child_cmd(a, out)
     if kept is None:
@@ -205,7 +247,8 @@ def run_engine(a, out: Path) -> bool:
         k, v = rest[i].split("=", 1)
         if k == "LEGAIA_BATTLE_INFLIGHT":
             child_inflight = v
-        if k not in DROP_ENV:
+        # A physical recording walks the state's own pad path to the strike.
+        if k not in DROP_ENV or (a.physical and k == "LEGAIA_BATTLE_DRIVE"):
             env[k] = v
         i += 1
     args = rest[i + 1:]
@@ -226,7 +269,12 @@ def run_engine(a, out: Path) -> bool:
         # No retail recording yet (an engine-only look at a corpus mid-cast
         # state): keep the caster the state's own replay seeds.
         caster = int(child_inflight.split(",")[0])
-    if caster < 3:
+    if a.physical:
+        env["LEGAIA_DIAG_CAST_SEQ_BEGIN"] = "gate"
+        # The child takes its frame on the drive's gate and leaves: push the
+        # frame past the recording, which exits on its own tail.
+        env["LEGAIA_DIAG_CAPTURE_TICK"] = "40000"
+    elif caster < 3:
         ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
         env["LEGAIA_BATTLE_INFLIGHT"] = f"{caster},{a.spell},{a.target}" + (f";{ground}" if ground else "")
     else:
@@ -239,10 +287,14 @@ def run_engine(a, out: Path) -> bool:
         # walks it in, a knockback pushes the monster back): a walk-in body
         # walks from there, so its length is the capture's.
         ground = engine_ground(done.get("ground", "")) if not a.no_ground else ""
-        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p" + (f";{ground}" if ground else "")
+        # The target the monster's own pick (or the probe) left at cast begin:
+        # a single-target cast lands on the same seat on both sides, and the
+        # victim's voice cue and the framing follow it. A recording older than
+        # that field takes --target.
+        target = int(done.get("cast_target", "-1"))
+        target = target if 0 <= target < 3 else a.target
+        env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     edir = out / "engine"
-    if edir.exists():
-        shutil.rmtree(edir)
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
         "LEGAIA_DIAG_CAST_SEQ_SEAT": str(caster),
@@ -254,6 +306,17 @@ def run_engine(a, out: Path) -> bool:
     })
     if a.guard:
         env["LEGAIA_BATTLE_GUARD"] = a.guard
+    if a.learned and caster < 3:
+        env["LEGAIA_CAST_LEARN"] = f"{caster},{a.spell},{a.learned}"
+    if a.monster_hp and env.get("LEGAIA_BATTLE_BARS"):
+        # `slot:hp:mp[:..]`, engine slots: the party's first, `129+` empty seats.
+        pc = max(1, sum(1 for g in done.get("ground", "").split(",")[:3] if g not in ("", "-")))
+        def raised(e: str) -> str:
+            f = e.split(":")
+            if pc <= int(f[0]) < 129 and int(f[1]) > 0:
+                f[1] = str(a.monster_hp)
+            return ":".join(f)
+        env["LEGAIA_BATTLE_BARS"] = ",".join(raised(e) for e in env["LEGAIA_BATTLE_BARS"].split(","))
     if a.rand_at:
         seed = retail_rand_seed(out, a.rand_at)
         if seed is None:
@@ -264,13 +327,25 @@ def run_engine(a, out: Path) -> bool:
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
         + " " + shlex.join([exe] + args) + "\n")
-    print(f"[engine] recording the cast ({'inflight' if caster < 3 else 'monster cast'} seed, caster seat {caster})")
+    key = record_key(exe, env, args)
+    key_file = out / "engine-key.txt"
+    if (not a.rerecord and (edir / "meta.csv").exists() and key_file.exists()
+            and key_file.read_text() == key):
+        print(f"[engine] cached: {edir} (same binary, command and inputs; --rerecord to run it again)")
+        return True
+    key_file.unlink(missing_ok=True)
+    if edir.exists():
+        shutil.rmtree(edir)
+    seed = "pad drive" if a.physical else "inflight" if caster < 3 else "monster cast"
+    print(f"[engine] recording the action ({seed} seed, seat {caster})")
     r = subprocess.run([exe] + args, cwd=work, env=env, capture_output=True, text=True,
                        timeout=a.engine_timeout)
     (out / "engine.log").write_text(r.stdout + r.stderr)
     if not (edir / "meta.csv").exists():
-        print(f"[engine] FAILED: the cast never began (status {r.returncode}); see {out / 'engine.log'}")
+        print(f"[engine] FAILED: the action never began (status {r.returncode}); see {out / 'engine.log'}")
         return False
+    if r.returncode == 0:
+        key_file.write_text(key)
     print(f"[engine] {sum(1 for _ in edir.glob('e_*.png'))} frames")
     return True
 
@@ -311,11 +386,17 @@ def resident_patch_of(label: str) -> str | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--spell", type=num, required=True, help="action id to inject (0x81..)")
+    ap.add_argument("--spell", type=num, help="action id to inject (0x81..); not with --physical")
+    ap.add_argument("--physical", action="store_true",
+                    help="no inject: record the strike a mid-strike state (action state 0x1E) already "
+                         "holds, on both sides, from the state's own instant to past the Done band")
     ap.add_argument("--state", required=True, help="scenarios.toml label of a PCSX-Redux battle state")
     ap.add_argument("--caster", type=num, default=0, help="seat whose action is rewritten (255 = any party seat)")
     ap.add_argument("--target", type=num, default=3, help="target seat")
     ap.add_argument("--formation", help="retail only: formation row bytes forced at FUN_801DA600 (comma list)")
+    ap.add_argument("--cast-queue", metavar="HEX,HEX,..",
+                    help="retail, with --monster-pick: bytes written behind the spell at +0x1E0 "
+                         "(clip, shot, ff), as the state's own queue holds them")
     ap.add_argument("--monster-pick", action="store_true",
                     help="retail: a monster caster (--caster 3..7) gets the cast written where the AI "
                          "pick FUN_801E9FD4 returns (breakpoint core), so any battle state that reaches "
@@ -329,6 +410,9 @@ def main() -> int:
     ap.add_argument("--every", type=int, default=2, help="retail vsyncs between frames")
     ap.add_argument("--tail", type=int, default=60, help="vsyncs / ticks past the Done band")
     ap.add_argument("--frames", type=int, default=6000, help="retail capture cap in vsyncs")
+    ap.add_argument("--window", action="store_true",
+                    help="retail: run the emulator in its window instead of headless (the same frames, "
+                         "slower, and it takes a display)")
     ap.add_argument("--retail-timeout", type=int, default=900, help="emulator wall-clock cap, seconds")
     ap.add_argument("--engine-timeout", type=int, default=600, help="engine child wall-clock cap, seconds")
     ap.add_argument("--retail-lag", help="display lag in vsyncs, or 'auto' (2 * frame step, the default)")
@@ -350,12 +434,22 @@ def main() -> int:
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")
     ap.add_argument("--recapture", action="store_true", help="re-run the retail capture")
+    ap.add_argument("--rerecord", action="store_true",
+                    help="run the engine recording even when its binary, command and inputs match the last one")
     ap.add_argument("--reseed", action="store_true", help="re-run retail-compare for the child command")
     ap.add_argument("--engine-only", action="store_true", help="skip the retail stage (needs a cached capture)")
     ap.add_argument("--retail-only", action="store_true")
     ap.add_argument("--score-only", action="store_true")
+    ap.add_argument("--learned", type=int, default=0, metavar="LEVEL",
+                    help="both sides: the spell sits on the caster's list at this level "
+                         "(off the list, a summon's hits read a wrapped level and cap at 9999)")
+    ap.add_argument("--monster-hp", type=int, default=0, metavar="HP",
+                    help="both sides: every living monster's HP at the inject / first prompt, "
+                         "so the cast's whole damage shows in the HP columns")
     ap.add_argument("--no-build", action="store_true")
     a = ap.parse_args()
+    if a.spell is None and not a.physical:
+        ap.error("--spell is required without --physical")
     # The user's rule is retail states only. A state made on a patched disc
     # keeps the patched executable resident through every later load, and a
     # state saved from it (`--save-inject`) inherits it: the manifest's
@@ -366,7 +460,7 @@ def main() -> int:
               "retail states only (--allow-patched to measure it anyway)")
         return 2
 
-    out = Path(a.out) if a.out else REPO / "captures" / "cast-sequence" / f"{a.state}_{a.spell:02x}"
+    out = Path(a.out) if a.out else REPO / "captures" / "cast-sequence" / f"{a.state}_{'strike' if a.physical else format(a.spell, '02x')}"
     out = out.resolve()
     out.mkdir(parents=True, exist_ok=True)
     if not a.no_build and not a.retail_only:

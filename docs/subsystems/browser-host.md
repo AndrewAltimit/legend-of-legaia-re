@@ -27,7 +27,9 @@ inline-script dialogue runner. Drives `site/play.html`.
 
 The split is deliberate:
 
-- **`runtime`** - the simulation. `load_disc` (user's own image, in memory, in
+- **`runtime`** - the simulation. `load_disc_image` (`load_disc`'s twin that leaves
+  the image on the page's side and copies across only `PROT.DAT`, `CDNAME.TXT` and
+  the executable) and `load_disc` (user's own image, in memory, in
   their browser), `enter_field(name)`, `set_pad(mask)` (PSX pad word),
   `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
   `tick_frame()` (calls `BootSession::tick` - the native frame order - and
@@ -164,6 +166,32 @@ narration input lock, and the retail intro-skip
 establishing-sweep timeline runs through to the name-entry overlay it opens
 (`play_name_entry` below).
 
+## The disc image
+
+The play page reads a disc in three stages (`site/js/play-disc.js`):
+
+1. **Before the engine.** A short read of the volume descriptor and root
+   directory finds `PROT.DAT`. The page reads the sectors up to its end while
+   the wasm module compiles. On the retail image that is under a third of the
+   file, and `SCUS_942.54`, `CDNAME.TXT` and every directory sit inside it.
+2. **The load.** `disc_image_missing` runs the runtime's own walk over what was
+   read and names any sector it lacks, which the page reads and offers again.
+   `load_disc_spans` then copies `PROT.DAT` and the executable across and the
+   page lets those sectors go. Anything that is not a Mode 2/2352 image with a
+   `PROT.DAT` in its root (a bare `PROT.DAT`) is read whole and goes to
+   `load_disc_image`, as is a source with no `Blob` behind it.
+3. **Behind it.** A worker reads the XA and movie files in one read and moves the
+   buffer to the page without a copy. `DMY.DAT`, which no consumer asks for, stays
+   on the disc.
+
+A consumer asks `span(lba, sectors)`, which answers from what is resident
+or null. Movies and XA staging poll every frame anyway, so a span that beats the
+worker is read with `prefetch` and the consumer installs on the next frame it
+polls. The engine holds the world until a movie installs
+(`INSTALL_TIMEOUT_FRAMES`), and a span that will not read (the file moved) makes
+the movie finish unplayed, as a page with no disc does. A trapped engine is
+rebuilt by reading the head again (`recoverRuntime`).
+
 ## FMV beats (`play_fmv`)
 
 An FMV the field VM triggers (or the title's attract countdown, `fmv_id 0`)
@@ -171,8 +199,8 @@ holds the world in `SceneMode::Cutscene` until the movie finishes, as the
 native window does. The runtime names the segment
 (`play_fmv_wanted_json`: the STR file plus the `fmv_segment_window` narrowing
 shared with the native `cutscene_av` - `MV3.STR` carries several ids), the
-page slices those raw sectors out of the disc bytes it still holds
-(`window.__playDiscBytes` + `disc_file_extent_json`, so the runtime never
+page takes those raw sectors off its disc image
+(`window.__playDisc`, [The disc image](#the-disc-image), so the runtime never
 keeps a second copy of the image), `play_fmv_install` demuxes the video and
 decodes the XA track through `legaia_mdec::str_av` - the native window's
 kernel, so both hosts agree on the frame list, frame rate and soundtrack -
@@ -1131,6 +1159,19 @@ the same path the play-window uses (raw PROT entry ->
 the fishing species table out of 0972, and the Muscle Dome hand command-id
 table out of the battle overlay 0898. Nothing is shipped with the site.
 
+**Sound.** The page holds the play hosts' `AudioDirector` over one `WebAudioOut`
+([`live_spu`](../../crates/web-minigames/src/live_spu.rs)), opened inside a user
+gesture. A tab change is that game's mode entry (`minigame_audio_enter`): the old
+game's voices and armed cues go, and the new game's banks stage as its door warp
+stages them, through `SfxBankResidency` and the runtime bundle the play hosts name.
+Every cue keys a voice there, with the kernel's ring slot where the kernel gives one
+(`slot_step`, `fishing_pond_tick`, the tally's armed cues), so its ADSR, volume, pan,
+reverb send and closed-slot silence are the play hosts'. `live_spu_cues_disc` renders
+each cue against the director and requires the same samples. Tier 16 of
+[`host-drift.md`](../tooling/host-drift.md) rejects a cue played as a decoded buffer.
+Only the BGM is a buffer: an offline render on its own context at the same unity gain,
+so the BGM to cue balance is the SPU's.
+
 Per game: `<g>_start` / a step or input method
 (`dance_press` / `baka_choose` / `slot_step`, one packed pad word a frame /
 `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
@@ -1181,7 +1222,7 @@ capture-pinned `+4`-line draw-environment offset), the dancer face-stamp
 windows with the pose blits replayed (`dance_face_rgba`; dancer 0 = Noa's
 field atlas, PROT 0874 §2), the SFX cue bank (PROT 1228 descriptors +
 the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
-stings (`dance_sting_pcm`), and the real BGM pair rendered through the
+stings (`dance_sting_key`), and the real BGM pair rendered through the
 from-scratch SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
 Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
@@ -1474,7 +1515,8 @@ reference TIMs sitting in other PROT entries.
 visitor's disc is parsed once for the pickers and the validator's disc
 resolver, the page edits the pack as its JSON form, and the session validates,
 previews and exports it (`validate`, `files_view`, `export_bundle`, `xp_chart`,
-`check_dialog`, `map_preview`, `scene_objects`). The map preview is the
+`check_dialog`, `map_preview`, `scene_objects`, and for the object palette
+`scene_meshes`, `mesh_catalog`, `disc_key` and `starter_map`). The map preview is the
 engine's own synthetic field image read back, and a base scene's geometry
 pack is its scene assembly, so the page shows what the engine would load.
 Exports and page: [`expansion-workbench.md`](../tooling/expansion-workbench.md).

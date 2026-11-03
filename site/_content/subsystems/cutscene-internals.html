@@ -145,7 +145,7 @@
       <tr><td>4</td><td>Ease-in-out</td><td>Curve 3 to the midpoint over <code>d &gt;&gt; 1</code>, then curve 2</td></tr>
     </tbody>
   </table>
-  <p>Port: <code>legaia_engine_camera::camera_mover</code>, and <code>play-window</code> eases the rendered pose through <code>CutsceneCameraInterp</code> in display-frame time. Because retail scales the world 6&times; and the engine renders at 1&times;, <code>tr_eye</code> is divided by 6 - the perspective divide makes both project identically. Reference frame: focus <code>(8640, 0, 10304)</code>, pitch 180, yaw &minus;2967, <code>H</code> 792, <code>tr_eye (260, 1293, 17145)</code> projects the party to <code>(172, 180)</code>, matching the capture.</p>
+  <p>Port: <code>legaia_engine_camera::camera_mover</code>, and both play hosts draw a scripted shot from the camera globals it writes (<code>frame_step::scripted_view</code>). Because retail scales the world 6&times; and the engine renders at 1&times;, <code>tr_eye</code> is divided by 6 - the perspective divide makes both project identically. Reference frame: focus <code>(8640, 0, 10304)</code>, pitch 180, yaw &minus;2967, <code>H</code> 792, <code>tr_eye (260, 1293, 17145)</code> projects the party to <code>(172, 180)</code>, matching the capture.</p>
 
   <h3 id="roller">The narration roller</h3>
   <p>Spawn op <code>CC F8 80 N</code> allocates a child actor from template <code>DAT_801F28A0</code> with handler <code>FUN_80037174</code>, points its script pointer at the page-count byte, and the parent measures the pages to skip past the block. Config op <code>CC F8 E8 w0 w1 w2 w3</code> (four signed-16 words) is mode-selected by <code>w3</code>:</p>

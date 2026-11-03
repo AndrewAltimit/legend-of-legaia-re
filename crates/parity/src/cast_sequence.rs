@@ -47,7 +47,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::retail_compare_image::{DARK_LUMA, FRAME_H, FRAME_W, Frame, ImageScore, luma, score};
+use crate::retail_compare_image::{DARK_LUMA, FRAME_H, FRAME_W, Frame, ImageScore, score};
 
 /// Mean luma above which a retail frame is a white flash; the mirror of
 /// [`DARK_LUMA`].
@@ -539,15 +539,8 @@ pub struct Report {
     pub sound: Option<crate::cast_sequence_sound::SoundReport>,
 }
 
-/// Pair the two recordings and score every pair. `keep` receives each
-/// scored pair's frames (for the strip), and may drop them.
-pub fn compare(
-    label: &str,
-    retail: &Side,
-    engine: &Side,
-    lag: Lag,
-    mut keep: impl FnMut(&Pair, &Frame, &Frame),
-) -> Result<Report> {
+/// Pair the two recordings and score every pair.
+pub fn compare(label: &str, retail: &Side, engine: &Side, lag: Lag) -> Result<Report> {
     // The retail probe logs from the inject, which can sit an action or two
     // before the cast begins; only the rows its frames can display matter.
     let first = retail
@@ -591,7 +584,18 @@ pub fn compare(
         .collect();
     let seg_of = |segs: &[Segment], t: u64| segs.iter().position(|s| s.start <= t && t <= s.end);
 
-    let mut pairs = Vec::new();
+    // What each retail frame pairs with; the frames themselves are read and
+    // scored below, on as many threads as there are.
+    struct Job<'a> {
+        row: &'a Row,
+        erow: &'a Row,
+        shown: u64,
+        shown_st7: u8,
+        key: Key,
+        into: u64,
+        et: u64,
+    }
+    let mut jobs: Vec<Job<'_>> = Vec::new();
     let mut unpaired = 0usize;
     let mut retail_frames = 0usize;
     for row in retail.rows.iter().filter(|r| r.shot.is_some()) {
@@ -627,33 +631,46 @@ pub fn compare(
             unpaired += 1;
             continue;
         };
-        let rf = retail.frame(row)?;
-        let ef = engine.frame(erow)?;
-        let s: ImageScore = score(&rf, &ef);
-        let class = if s.retail_luma < DARK_LUMA {
-            FrameClass::Dark
-        } else if s.retail_luma > WHITE_LUMA {
-            FrameClass::White
-        } else {
-            FrameClass::Scene
-        };
-        let p = Pair {
-            retail_vsync: row.t,
-            shown_vsync: shown,
-            engine_tick: et,
+        jobs.push(Job {
+            row,
+            erow,
+            shown,
+            shown_st7: shown_row.st7,
             key: rseg.key,
             into,
-            retail_st7: shown_row.st7,
-            engine_st7: erow.st7,
-            class,
-            within: s.within,
-            mae: s.mae,
-            retail_luma: luma(&rf),
-            engine_luma: luma(&ef),
-        };
-        keep(&p, &rf, &ef);
-        pairs.push(p);
+            et,
+        });
     }
+    let pairs = crate::parallel::parallel_map(
+        &jobs,
+        crate::parallel::default_jobs(),
+        |j| -> Result<Pair> {
+            let s: ImageScore = score(&retail.frame(j.row)?, &engine.frame(j.erow)?);
+            let class = if s.retail_luma < DARK_LUMA {
+                FrameClass::Dark
+            } else if s.retail_luma > WHITE_LUMA {
+                FrameClass::White
+            } else {
+                FrameClass::Scene
+            };
+            Ok(Pair {
+                retail_vsync: j.row.t,
+                shown_vsync: j.shown,
+                engine_tick: j.et,
+                key: j.key,
+                into: j.into,
+                retail_st7: j.shown_st7,
+                engine_st7: j.erow.st7,
+                class,
+                within: s.within,
+                mae: s.mae,
+                retail_luma: s.retail_luma,
+                engine_luma: s.engine_luma,
+            })
+        },
+    )
+    .into_iter()
+    .collect::<Result<Vec<_>>>()?;
 
     let scene: Vec<&Pair> = pairs
         .iter()
@@ -930,7 +947,7 @@ pub struct CastSequenceArgs {
 pub fn run(a: CastSequenceArgs) -> Result<()> {
     let retail = Side::read(&a.retail)?;
     let engine = Side::read(&a.engine)?;
-    let mut report = compare(&a.label, &retail, &engine, a.retail_lag, |_, _, _| {})?;
+    let mut report = compare(&a.label, &retail, &engine, a.retail_lag)?;
     report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
     let strip = strip_pairs(&report, a.strip);
     std::fs::create_dir_all(&a.out)?;

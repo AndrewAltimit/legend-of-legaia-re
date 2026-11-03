@@ -110,9 +110,9 @@ impl PlayWindowApp {
                 .session
                 .host
                 .index
-                .entry_bytes_extended(MONSTER_ARCHIVE_PROT_ENTRY)
+                .entry_bytes(MONSTER_ARCHIVE_PROT_ENTRY)
             {
-                Ok(b) => self.monster_archive = Some(std::sync::Arc::new(b)),
+                Ok(b) => self.monster_archive = Some(b),
                 Err(e) => {
                     log::warn!("play-window: monster archive (PROT 867) load skipped: {e:#}");
                     return None;
@@ -170,7 +170,7 @@ impl PlayWindowApp {
 }
 
 /// The window's own title, shown whenever no minigame caption is up.
-pub(super) const WINDOW_TITLE: &str = "legaia-engine";
+pub(super) const WINDOW_TITLE: &str = "Legend of Legaia";
 
 impl PlayWindowApp {
     /// The live minigame's status caption (`engine-minigame-scenes::minigame_status`),

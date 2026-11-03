@@ -279,6 +279,12 @@ impl MonsterAnimPlayer {
         self.root_speed
     }
 
+    /// Overwrite the entry's root speed `+0x0C`, as a cast module's direct
+    /// store into the clip record does (PROT 0915's arm `0xB`).
+    pub fn set_root_speed(&mut self, speed: i16) {
+        self.root_speed = speed;
+    }
+
     /// The entry's signed end-of-clip displacement (`+0x0E`); `0` for a
     /// headless clip.
     pub fn end_root_step(&self) -> i16 {
@@ -314,6 +320,14 @@ impl MonsterAnimPlayer {
     /// window or has spent it.
     pub fn loop_cycles_remaining(&self) -> u8 {
         (self.loop_budget / PHASE_ONE).min(255) as u8
+    }
+
+    /// Rewrite the playing entry's window frames `+0x85` / `+0x86`: PROT
+    /// 0934's arm `0x12` stores `0x22` / `0x2C` into the record's clip-`3`
+    /// entry (`0x801F7FC8..0x801F7FE0`) with that clip playing.
+    pub fn set_loop_frames(&mut self, start: u8, end: u8) {
+        self.loop_start = u32::from(start) * PHASE_ONE;
+        self.loop_end = u32::from(end) * PHASE_ONE;
     }
 
     /// Release the loop window early - the `actor+0x176` / `+0x21B` clear a

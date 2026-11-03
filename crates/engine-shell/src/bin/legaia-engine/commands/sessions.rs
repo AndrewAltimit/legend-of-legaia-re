@@ -53,7 +53,7 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
     use legaia_engine_battle::battle_stats::{
         EquipmentTable, ItemModifier, StatRecord, StatusModifiers,
     };
-    use legaia_engine_menus::equip_session::{EquipInput, EquipOutcome, EquipSession};
+    use legaia_engine_menus::equip_session::{EquipEvent, EquipInput, EquipSession};
 
     let record = StatRecord {
         base_attack: 50,
@@ -84,7 +84,7 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
 
     // Drive: down `slot + 1` times to reach the slot's browse row (row 0
     // is "Best Equipment"), cross to enter the picker, cross to confirm
-    // the item, cross to commit.
+    // the item, which commits it.
     let mut step_count = 0;
     for _ in 0..=slot {
         session.input(EquipInput {
@@ -103,22 +103,20 @@ pub(crate) fn cmd_equip(slot: u8, item: u8) -> Result<()> {
         ..Default::default()
     });
     step_count += 1;
-    session.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    step_count += 1;
 
     println!(
-        "equip: drove {step_count} inputs; outcome={:?}",
-        session.outcome()
+        "equip: drove {step_count} inputs; state={:?}",
+        session.state()
     );
-    if let Some(EquipOutcome::Committed {
-        added,
-        slot: out_slot,
-        removed,
-    }) = session.outcome()
-    {
+    for event in session.drain_events() {
+        let EquipEvent::Committed {
+            added,
+            slot: out_slot,
+            removed,
+        } = event
+        else {
+            continue;
+        };
         println!("equip: committed slot={out_slot} added=0x{added:02X} removed=0x{removed:02X}");
         println!(
             "equip: post-commit ATK={} (record.equip[{}]=0x{:02X})",

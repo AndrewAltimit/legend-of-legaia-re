@@ -32,7 +32,8 @@ holds the glue around it:
 - [`xa_clip`](src/xa_clip.rs) - XA voice-clip dispatch arithmetic behind the
   `xa-cue` census.
 - [`window`](src/window.rs) - the `play-window` app and the `play-str`
-  player. `window::HeadlessPlayWindow` is the same app with no window or
+  player. Its `F12` panel (`window::settings_panel`, also `Select` + `Start`)
+  is a settings page over the launcher's live rows and the key list. `window::HeadlessPlayWindow` is the same app with no window or
   renderer, stepped one display frame at a time with a given pad word and
   tick count: what `tests/host_frame_parity.rs` drives against the browser
   play page.

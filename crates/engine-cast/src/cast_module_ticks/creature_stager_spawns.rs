@@ -61,6 +61,95 @@ pub fn gola_gola_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn
     }
 }
 
+/// PROT 0916 (Aluru) - the stager `0x801F88F8`, every seat on the caller at
+/// `0x1000`. Arms 1 and 2 are fades ([`ALURU_STAGER_FADES`]).
+///
+/// | arm | seats |
+/// |---:|---|
+/// | 0 | `0x801F8C20` |
+/// | 3 | `0x801F8D84`, `0x801F8DC8`, then four of `0x801F8CE4`: `+0x54 = 8 i + rand & 0x1F`, `+0x84 = rand & 0xFF - 0x80`, `+0xBA = rand & 0x7F`, `+0xB6 = rand & 0x1F + 0x300`, `+0x28 = rand & 0xFFF` |
+/// | 4 | `0x801F8D40` |
+/// | 5 | `0x801F8D84`, `0x801F8DC8` |
+/// | 6 | `0x801F8E0C` |
+/// | 7 | `0x801F8E58` |
+///
+/// PORT: FUN_801F88F8 (PROT 0916 stager; every arm)
+pub fn aluru_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    rand: &mut dyn FnMut() -> u32,
+) -> Vec<StagerSpawn> {
+    let one = |r: u32| vec![on(r, caller, 0x1000)];
+    match arm {
+        0 => one(0x801F_8C20),
+        3 => {
+            let mut v = vec![
+                on(0x801F_8D84, caller, 0x1000),
+                on(0x801F_8DC8, caller, 0x1000),
+            ];
+            for i in 0..4u16 {
+                let mut s = on(0x801F_8CE4, caller, 0x1000);
+                let mut r = || rand() as u16;
+                s.pokes = vec![
+                    (0x54, i * 8 + (r() & 0x1F)),
+                    (0x84, (r() & 0xFF).wrapping_sub(0x80)),
+                    (0xBA, r() & 0x7F),
+                    (0xB6, (r() & 0x1F) + 0x300),
+                    (0x28, r() & 0xFFF),
+                ];
+                v.push(s);
+            }
+            v
+        }
+        4 => one(0x801F_8D40),
+        5 => vec![
+            on(0x801F_8D84, caller, 0x1000),
+            on(0x801F_8DC8, caller, 0x1000),
+        ],
+        6 => one(0x801F_8E0C),
+        7 => one(0x801F_8E58),
+        _ => Vec::new(),
+    }
+}
+
+/// PROT 0916's stager arm 1: a `0x10`-frame white rise, held.
+pub const ALURU_STAGER_FADE_IN: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x10,
+        start_rgb: [0, 0, 0],
+        end_rgb: [0xFF, 0xFF, 0xFF],
+        delay: 0,
+        hold: 4,
+    };
+/// PROT 0916's stager arm 2: a `0x1E`-frame white fall.
+pub const ALURU_STAGER_FADE_OUT: legaia_engine_battle_vm::battle_action::SummonFadeTemplate =
+    legaia_engine_battle_vm::battle_action::SummonFadeTemplate {
+        kind: 1,
+        duration: 0x1E,
+        start_rgb: [0xFF, 0xFF, 0xFF],
+        end_rgb: [0, 0, 0],
+        delay: 0,
+        hold: 0,
+    };
+
+/// PROT 0919 (Spoon) - the stager `0x801F8578`: arm 0 seats `0x801F86FC` at
+/// `0x1000`, arm 1 `0x801F88CC` (and `FUN_801DFDF0(0x14, ..)`, not carried),
+/// arm 2 `0x801F8C30` and `0x801F8C74` at the caller's scale.
+///
+/// PORT: FUN_801F8578 (PROT 0919 stager; every seat)
+pub fn spoon_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> {
+    match arm {
+        0 => vec![on(0x801F_86FC, caller, 0x1000)],
+        1 => vec![on(0x801F_88CC, caller, 0x1000)],
+        2 => vec![
+            on(0x801F_8C30, caller, caller.scale),
+            on(0x801F_8C74, caller, caller.scale),
+        ],
+        _ => Vec::new(),
+    }
+}
+
 /// PROT 0915 (Mushura) - the stager `0x801F7F34`: arm 0 seats `0x801F8004`,
 /// arm 1 `0x801F80A4`, each on the caller at its scale `+0x72`.
 ///
@@ -441,6 +530,16 @@ pub fn creature_stager_records(entry: u32) -> &'static [u32] {
             0x801F_7EC8,
         ],
         915 => &[0x801F_8004, 0x801F_80A4],
+        916 => &[
+            0x801F_8C20,
+            0x801F_8CE4,
+            0x801F_8D40,
+            0x801F_8D84,
+            0x801F_8DC8,
+            0x801F_8E0C,
+            0x801F_8E58,
+        ],
+        919 => &[0x801F_86FC, 0x801F_88CC, 0x801F_8C30, 0x801F_8C74],
         917 => &[
             0x801F_88F8,
             0x801F_893C,
@@ -601,7 +700,9 @@ mod tests {
         for (entry, arms) in [
             (914u32, 6u8),
             (915, 2),
+            (916, 8),
             (917, 5),
+            (919, 3),
             (921, 1),
             (928, 7),
             (929, 9),
@@ -615,7 +716,9 @@ mod tests {
                     let s = match entry {
                         914 => gola_gola_stager_spawns(arm, cl),
                         915 => mushura_stager_spawns(arm, cl),
+                        916 => aluru_stager_spawns(arm, cl, &mut r),
                         917 => barra_stager_spawns(arm, cl, &mut c),
+                        919 => spoon_stager_spawns(arm, cl),
                         921 => iota_stager_spawns(arm, cl, &mut r),
                         928 => palma_stager_spawns(arm, cl, &mut r),
                         929 => mule_stager_spawns(arm, cl, &mut r),

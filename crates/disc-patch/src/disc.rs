@@ -21,6 +21,7 @@
 //! that copy and is serialized by the caller. It embeds no game bytes.
 
 use std::collections::BTreeMap;
+use std::io::{Read, Seek, SeekFrom};
 
 use anyhow::{Context, Result, bail};
 use legaia_actor_formats::monster_archive::SLOT_STRIDE;
@@ -51,6 +52,56 @@ pub struct DiscPatcher {
     entries: Vec<EntrySpan>,
 }
 
+/// One sector's 2048 bytes of user data, `None` past the end of the image.
+fn sector_user_data(image: &[u8], lba: usize) -> Option<&[u8]> {
+    let base = lba * SECTOR_SIZE + USER_DATA_OFFSET;
+    image.get(base..base + USER_DATA_SIZE)
+}
+
+/// `PROT.DAT` read in place out of a raw disc image: what opening a disc needs
+/// is the TOC at its head, and a flat copy of the archive to read that from is
+/// a third of a small patch's page faults.
+struct ProtReader<'a> {
+    image: &'a [u8],
+    /// Disc sector where the file begins.
+    lba: usize,
+    len: u64,
+    pos: u64,
+}
+
+impl Read for ProtReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let left = self.len.saturating_sub(self.pos);
+        if left == 0 {
+            return Ok(0);
+        }
+        let sector = (self.pos / USER_DATA_SIZE as u64) as usize;
+        let at = (self.pos % USER_DATA_SIZE as u64) as usize;
+        let Some(data) = sector_user_data(self.image, self.lba + sector) else {
+            return Ok(0);
+        };
+        let n = buf
+            .len()
+            .min(USER_DATA_SIZE - at)
+            .min(usize::try_from(left).unwrap_or(usize::MAX));
+        buf[..n].copy_from_slice(&data[at..at + n]);
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl Seek for ProtReader<'_> {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        let pos = match to {
+            SeekFrom::Start(p) => Some(p),
+            SeekFrom::Current(d) => self.pos.checked_add_signed(d),
+            SeekFrom::End(d) => self.len.checked_add_signed(d),
+        };
+        self.pos = pos.ok_or_else(|| std::io::Error::from(std::io::ErrorKind::InvalidInput))?;
+        Ok(self.pos)
+    }
+}
+
 /// Read `sector_count` sectors of 2048-byte user data starting at `lba` out of
 /// an in-memory 2352-byte-per-sector disc image.
 fn read_user_data(image: &[u8], lba: u32, sector_count: usize) -> Result<Vec<u8>> {
@@ -72,11 +123,23 @@ impl DiscPatcher {
         let (prot_lba, prot_size) =
             find_file_in_image(&image, "PROT.DAT").context("PROT.DAT not found in disc image")?;
         let sectors = (prot_size as usize).div_ceil(USER_DATA_SIZE);
-        let mut payload = read_user_data(&image, prot_lba, sectors)?;
-        payload.truncate(prot_size as usize);
-        let archive = ProtArchive::from_bytes(payload).context("parse PROT.DAT TOC")?;
-        let entries = archive
-            .entries
+        if let Some(missing) =
+            (0..sectors).find(|i| sector_user_data(&image, prot_lba as usize + i).is_none())
+        {
+            bail!(
+                "sector {} past end of disc image",
+                prot_lba as usize + missing
+            );
+        }
+        let mut prot = ProtReader {
+            image: &image,
+            lba: prot_lba as usize,
+            len: u64::from(prot_size),
+            pos: 0,
+        };
+        let entries = ProtArchive::read_entries(&mut prot, u64::from(prot_size))
+            .context("parse PROT.DAT TOC")?;
+        let entries = entries
             .iter()
             .map(|e| EntrySpan {
                 start_lba: e.start_lba,
@@ -1055,6 +1118,41 @@ pub fn boot_exe_name(patcher: &DiscPatcher) -> Result<String> {
 mod tests {
     use super::synth::{synth_disc, synth_prot};
     use super::*;
+
+    /// Opening reads the TOC in place; the entries are the ones the archive
+    /// parser finds in a flat copy of the same file.
+    #[test]
+    fn open_reads_the_entries_a_flat_copy_holds() {
+        let prot = synth_prot(b"PAYLOAD");
+        let disc = synth_disc(&prot);
+        let (lba, size) = find_file_in_image(&disc, "PROT.DAT").unwrap();
+        let sectors = (size as usize).div_ceil(USER_DATA_SIZE);
+        let mut flat = read_user_data(&disc, lba, sectors).unwrap();
+        flat.truncate(size as usize);
+        let want = ProtArchive::from_bytes(flat).unwrap().entries;
+        assert!(!want.is_empty());
+        let patcher = DiscPatcher::open(disc).unwrap();
+        let got: Vec<(u32, u64)> = patcher
+            .entries
+            .iter()
+            .map(|e| (e.start_lba, e.size_bytes))
+            .collect();
+        let want: Vec<(u32, u64)> = want.iter().map(|e| (e.start_lba, e.size_bytes)).collect();
+        assert_eq!(got, want);
+    }
+
+    /// An image cut short anywhere inside `PROT.DAT` is refused at open, not
+    /// only where the TOC sits, and the error names the first missing sector.
+    #[test]
+    fn open_refuses_an_image_cut_short_inside_prot() {
+        let prot = synth_prot(&vec![0x5Au8; 3 * USER_DATA_SIZE]);
+        let mut disc = synth_disc(&prot);
+        let (lba, size) = find_file_in_image(&disc, "PROT.DAT").unwrap();
+        let last = lba as usize + (size as usize).div_ceil(USER_DATA_SIZE) - 1;
+        disc.truncate(last * SECTOR_SIZE);
+        let err = DiscPatcher::open(disc).err().expect("refused").to_string();
+        assert_eq!(err, format!("sector {last} past end of disc image"));
+    }
 
     #[test]
     fn patch_prot_entry_round_trips_through_the_disc() {

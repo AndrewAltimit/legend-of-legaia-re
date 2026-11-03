@@ -223,6 +223,41 @@ impl Frame {
         Ok(Self { rgb })
     }
 
+    /// Retail's displayed frame when the display scans 24-bit: three bytes per
+    /// pixel packed through the 16-bit VRAM words.
+    pub fn from_vram_display_24(vram: &[u8], rect: (u32, u32, u32, u32)) -> Option<Self> {
+        let (x0, y0, w, h) = rect;
+        if w as usize != FRAME_W || (h as usize) < FRAME_H || vram.len() != 1024 * 512 * 2 {
+            return None;
+        }
+        let mut rgb = Vec::with_capacity(FRAME_W * FRAME_H * 3);
+        for y in 0..FRAME_H {
+            let vy = y0 as usize + y;
+            if vy >= 512 {
+                return None;
+            }
+            let row = (vy * 1024 + x0 as usize) * 2;
+            rgb.extend_from_slice(vram.get(row..row + FRAME_W * 3)?);
+        }
+        Some(Self { rgb })
+    }
+
+    /// A decoded movie frame, centred in the 240-line display (a `224`-line
+    /// movie shows an 8-row band above it), compared over the top `224` rows.
+    pub fn from_movie(rgba: &[u8], width: usize, height: usize) -> Self {
+        let mut rgb = vec![0u8; FRAME_W * FRAME_H * 3];
+        let top = 240usize.saturating_sub(height) / 2;
+        for y in 0..FRAME_H.saturating_sub(top).min(height) {
+            for x in 0..FRAME_W.min(width) {
+                let (s, d) = ((y * width + x) * 4, ((y + top) * FRAME_W + x) * 3);
+                if let Some(px) = rgba.get(s..s + 3) {
+                    rgb[d..d + 3].copy_from_slice(px);
+                }
+            }
+        }
+        Self { rgb }
+    }
+
     fn px(&self, x: usize, y: usize) -> [u8; 3] {
         let o = (y * FRAME_W + x) * 3;
         [self.rgb[o], self.rgb[o + 1], self.rgb[o + 2]]
@@ -328,6 +363,18 @@ pub fn score(retail: &Frame, engine: &Frame) -> ImageScore {
         engine_luma: el,
         note,
     }
+}
+
+/// The engine's panel of a side-by-side report image (retail, engine,
+/// difference), as RGBA rows; `None` when the file is missing or unreadable.
+pub(crate) fn engine_panel_rgba(path: &Path) -> Option<Vec<u8>> {
+    let (rgba, w, h) = read_png_rgba(path).ok()?;
+    let panel = w / 3;
+    let mut out = Vec::with_capacity(panel * h * 4);
+    for row in rgba.chunks_exact(w * 4) {
+        out.extend_from_slice(&row[panel * 4..panel * 2 * 4]);
+    }
+    Some(out)
 }
 
 fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
@@ -478,6 +525,7 @@ pub fn engine_frame_with(
     if render == FrameRender::Psx && CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux" {
         cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
     }
+    cmd.env("LEGAIA_CAPTURE_NO_PRESENT", "1");
     cmd.args(["play-window", "--no-audio"])
         .args(render.child_args())
         .args(["--scene", scene])

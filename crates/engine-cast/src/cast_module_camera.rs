@@ -111,11 +111,17 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
+    /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
+    pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
     /// The creature's live seat, as the host last moved it (its walk-in).
     /// Fed in by the host each tick; `None` before it is seated.
     pub creature_live: Option<ModuleSeat>,
+    /// The creature's body pair `+0x3C` / `+0x40`, `(x, z)` off its live pose:
+    /// what an arm's framing reads where the walk reads the ground pair
+    /// `+0x34` / `+0x38`. Fed in by the host each tick.
+    pub creature_body: Option<(i16, i16)>,
     /// Whether the creature's walk has reached the victim - the host's
     /// answer to the range test `FUN_8004E2F0(7, victim)` a walk arm polls.
     pub creature_arrived: bool,
@@ -142,6 +148,9 @@ pub struct ModuleCamState {
     /// a dead one faded out - fed in by the host each tick for a settle
     /// gate ([`summon_holds::Gate::Settle`]).
     pub row_settled: bool,
+    /// The creature seat's colour word `+0x04` still up, as the host last saw
+    /// it (PROT 0915's arm `0xD` holds on it through the seat's fade).
+    pub creature_word_up: bool,
     /// The creature seat's playing clip `+0x1D9`, as the host last saw it
     /// (fed each tick, like [`Self::creature_live`]). `None` before the seat
     /// exists or where the host plays no clip on it: a clip gate then
@@ -231,6 +240,9 @@ pub struct ModuleCamState {
     /// fed by the host for a capture director's row settle (PROT 0965's arm
     /// `0x0C`).
     pub party_settled: bool,
+    /// `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])` reads zero: the caster stands
+    /// in reach of its victim, the poll PROT 0941's arm 1 walks on.
+    pub caster_in_reach: bool,
     /// The party seats' pairs and headings as a line-up arm found them
     /// ([`capture::CaptureCamArm::party_line_up`]), for the restore.
     pub party_saved: [Option<(i16, i16, u16)>; 3],
@@ -278,6 +290,9 @@ pub struct ModuleCamState {
     pub caster_frame: Option<u16>,
     /// The caster's loop counter `+0x21B`, fed like [`Self::caster_clip`].
     pub caster_loops: Option<u8>,
+    /// PROT 0934's pass word `0x801FA408` and rise word `0x801FA40C`, the
+    /// camera shake of its arms 5..9.
+    pub ozma_shake: (u32, i32),
 }
 
 /// `FUN_801D5854(7, 6)` out of a module arm: the action SM's own case-6
@@ -871,7 +886,7 @@ pub struct ModuleNudge {
 }
 
 impl ArmDirection {
-    pub(super) const HOLD: Self = Self {
+    pub const HOLD: Self = Self {
         hold: true,
         shot: None,
         follow: None,
@@ -955,7 +970,11 @@ pub mod capture_countdown;
 mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
+mod cross_beam;
+mod curse_all;
 mod doomsday;
+mod earthquake;
+mod element_change;
 mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
@@ -970,12 +989,22 @@ mod nighto;
 mod nova;
 mod orb;
 mod plasma_strike;
+mod power_up;
 mod puera;
+mod scythe_wind;
 mod seru;
+mod spoon;
+mod steal;
+mod stone_circle;
 pub mod summon_holds;
 mod swordie;
+mod terror_scream;
 mod theeder_gizam;
+mod thunder_storm;
+mod ultimate_rave;
+mod v_windhash;
 mod viguro;
+mod void_accessories;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
@@ -990,9 +1019,16 @@ pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture
 pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
+pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
+pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,
+};
+pub use earthquake::{EARTHQUAKE_COUNTDOWN, ROCK_RECORDS, earthquake_camera, rock_point};
+pub use element_change::{
+    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, element_change_camera,
+    element_strike_camera,
 };
 pub use evil_seru_magic::*;
 pub use freed::*;
@@ -1013,11 +1049,26 @@ pub use plasma_strike::{
     NEO_STAR_SLASH_BODY, PLASMA_STRIKE_ARM5_CURSOR, PLASMA_STRIKE_BODY, PLASMA_STRIKE_BURST_CURSOR,
     PLASMA_STRIKE_COUNTDOWN, neo_star_slash_camera, plasma_strike_camera,
 };
+pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
+pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
+pub use spoon::*;
+pub use steal::{STEAL_BODY, steal_camera};
+pub use stone_circle::{
+    RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,
+};
 pub use swordie::*;
+pub use terror_scream::{TERROR_SCREAM_BODY, terror_scream_camera};
 pub use theeder_gizam::*;
+pub use thunder_storm::{
+    STORM_RAY_RECORD, STORM_SCATTER_PAIRS, STORM_SCATTER_RECORDS, THUNDER_STORM_BODY,
+    THUNDER_STORM_COUNTDOWN, thunder_storm_camera,
+};
+pub use ultimate_rave::*;
+pub use v_windhash::{V_WINDHASH_COUNTDOWN, v_windhash_camera};
 pub use viguro::*;
+pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {
@@ -1086,10 +1137,12 @@ pub fn module_profile(prot_entry: u32) -> Option<ModuleProfile> {
         }),
         // PROT 0904's director gates arms 2..6 and 14 and arms the camera
         // beside the ported tick body, which paces arms 7..13 itself
-        // (`crate::seru_magic_ticks::theeder_tick`). The outcome lands once
-        // the sweep has turned.
+        // (`crate::seru_magic_ticks::theeder_tick`).
         904 => Some(ModuleProfile {
             direct: theeder_direct,
+            // The sweep strikes when its ray reaches a seat (`0x801F7D38`):
+            // the host folds on that tick's hit, and past the arm if the ray
+            // met no seat.
             hit_arm: Some(crate::seru_magic_ticks::THEEDER_SWEEP_ARM),
             walk_arm: None,
             owns_phase: false,
@@ -1356,11 +1409,13 @@ pub const fn creature_poll_arm(prot_entry: u32) -> Option<u8> {
 /// push, then seeks `FUN_8003EAE4(0, 0xE)`; PROT 0928's arm 1 the same
 /// (`0x801F6D58..0x801F6D60`), and PROT 0931's arm 2
 /// (`0x801F6D18..0x801F6D20`): `jedo_summon_mid_cast` holds that arm one
-/// pass into the sustain with the byte at `8`.
+/// pass into the sustain with the byte at `8`. Every summon image makes this
+/// read once ([the table](../../docs/subsystems/cast-module.md#the-side-band-poll-arm));
+/// PROT 0923's sits behind its arm-0 drain and is its director's.
 pub const fn sideband_wait_arm(prot_entry: u32) -> Option<u8> {
     match prot_entry {
-        928 | 929 => Some(1),
-        930 | 931 => Some(2),
+        904 | 909..=913 | 916 | 917 | 919..=922 | 925 | 927..=929 | 933 => Some(1),
+        903 | 905..=908 | 914 | 915 | 918 | 930..=932 | 934 => Some(2),
         _ => None,
     }
 }

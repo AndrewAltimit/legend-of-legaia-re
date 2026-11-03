@@ -24,8 +24,6 @@
 //! The engines are the rules; the JS page is the presentation. Everything with
 //! a `// PORT:` provenance tag lives in `legaia-engine-core`, not here.
 
-#[cfg(target_arch = "wasm32")]
-use legaia_engine_audio::AudioSink;
 use wasm_bindgen::prelude::*;
 
 // Baka Fighter presentation exports (fighter meshes, HUD art, stage, poses)
@@ -271,42 +269,24 @@ pub struct LegaiaMinigames {
     /// reward; games degrade (and say so) without it.
     scus: Option<Vec<u8>>,
 
-    /// This page's **live SPU**, the way the play page's `play_sfx` owns one.
-    ///
-    /// Until it existed the page's whole audio surface was offline: a track
-    /// rendered to PCM and handed to an `AudioBufferSourceNode`, and per-cue
-    /// PCM decoded from a VAB and played the same way. That covers a cue that
-    /// names itself by id and nothing else - and the Muscle Dome's between-leg
-    /// tally names no id at all. `FUN_801D1288` resolves a whole
-    /// `(voice, VAB id, program, tone, note, fine, vol_l, vol_r)` set, which
-    /// is exactly `legaia_engine_audio::VoiceAttr`, and keying one needs an
-    /// `Spu` to key it *into*.
-    ///
-    /// Opened lazily from a user gesture ([`Self::minigame_audio_open`]) -
-    /// browser autoplay policy - and `None` off wasm32, where `WebAudioOut`
-    /// does not exist.
-    #[cfg(target_arch = "wasm32")]
-    audio_out: Option<legaia_engine_audio::WebAudioOut>,
-    /// The SFX program bank staged into that SPU, keyed by the descriptor
-    /// table's VAB **slot** (`sfx_table::slot_for_category`). Uploaded once
-    /// per slot out of one allocator so several banks pack rather than
-    /// overlap - the same rule the play page's SFX region follows.
-    #[cfg(target_arch = "wasm32")]
-    sfx_vabs: std::collections::HashMap<u8, legaia_engine_audio::VabBank>,
-    /// Allocator for that region.
-    #[cfg(target_arch = "wasm32")]
-    sfx_alloc: Option<legaia_engine_audio::spu::ram::SpuAllocator>,
-    /// The static cue descriptors (`SCUS_942.54`'s `DAT_8006F198` table),
-    /// lifted into the audio layer's bank once a disc with an executable
-    /// loads. The catalog path ([`Self::minigame_sfx_cue`]) resolves through
-    /// it; the voice-attr path does not need it.
-    #[cfg(target_arch = "wasm32")]
-    sfx_bank: Option<legaia_engine_audio::SfxBank>,
+    /// This page's **live SPU**: the play hosts' audio director over one
+    /// `WebAudioOut` ([`live_spu`]), opened lazily from a user gesture
+    /// ([`Self::minigame_audio_open`]) - browser autoplay policy.
+    audio: Option<live_spu::MgDirector>,
+    /// The tables and slot-0 bank are staged for the disc under the page.
+    audio_staged: bool,
+    /// The game whose tab is open ([`Self::minigame_audio_enter`]).
+    audio_game: Option<legaia_engine_mode::minigame_entry::MinigameSubId>,
+    /// Which bank the shared slot-2 / slot-6 region holds - the play hosts'
+    /// residency kernel, walked by the page's tab changes.
+    audio_residency: legaia_engine_mode::sfx_residency::SfxBankResidency,
+    /// The fishing venue's runtime cue rows: the `other1` scene's own bundle
+    /// (the fishing init loads no `efect.dat`).
+    fishing_sfx_bundle: Option<Vec<u8>>,
     /// Rotating voice counter for the tally cue - retail's `DAT_801D1AE4`,
     /// which is a free-running `u32` masked only when it picks the slot.
     /// Held on the page host because the ramp is replayed from its screen
     /// tick rather than stepped once per frame.
-    #[cfg(target_arch = "wasm32")]
     muscle_tally_cue_counter: u32,
     /// How many tally steps this screen has already keyed, so a replay to
     /// `round` keys only the steps it has not.
@@ -485,15 +465,11 @@ impl LegaiaMinigames {
             muscle_surface: Default::default(),
             muscle_tables: None,
             scus: None,
-            #[cfg(target_arch = "wasm32")]
-            audio_out: None,
-            #[cfg(target_arch = "wasm32")]
-            sfx_vabs: std::collections::HashMap::new(),
-            #[cfg(target_arch = "wasm32")]
-            sfx_alloc: None,
-            #[cfg(target_arch = "wasm32")]
-            sfx_bank: None,
-            #[cfg(target_arch = "wasm32")]
+            audio: None,
+            audio_staged: false,
+            audio_game: None,
+            audio_residency: Default::default(),
+            fishing_sfx_bundle: None,
             muscle_tally_cue_counter: 0,
             muscle_tally_voiced_steps: 0,
             muscle_tally_boost_from: None,

@@ -77,6 +77,7 @@ fn enter_battle(w: &mut World) {
         w.set_pad(up);
         let _ = w.tick();
         if w.mode == SceneMode::Battle {
+            w.run_out_battle_open();
             return;
         }
     }

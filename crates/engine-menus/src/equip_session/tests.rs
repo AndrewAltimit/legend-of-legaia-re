@@ -174,7 +174,7 @@ fn circle_in_slot_picker_terminates_session_with_cancel() {
         ..Default::default()
     });
     assert!(s.is_done());
-    assert_eq!(s.outcome(), Some(EquipOutcome::Cancelled));
+    assert!(s.swaps().is_empty());
 }
 
 #[test]
@@ -364,32 +364,6 @@ fn restrictions_gate_unambiguous_slot_by_disc_category() {
 }
 
 #[test]
-fn cross_in_item_picker_advances_to_confirm_with_preview() {
-    let mut s = fresh_session();
-    // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
-    s.state = EquipState::SlotPicker { cursor: 1 };
-    // Open slot 0's item picker.
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    let _ = s.drain_events();
-    // Confirm item 0x05 (atk +5). Preview ATK should be 50 + 5 = 55.
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    match s.state() {
-        EquipState::Confirm { slot, item_id, .. } => {
-            assert_eq!(slot, 0);
-            assert_eq!(item_id, 0x05);
-        }
-        _ => panic!("expected Confirm state"),
-    }
-    assert_eq!(s.preview_stats.atk, 55);
-}
-
-#[test]
 fn preview_reflects_equipment_spd_and_int() {
     // A footwear/head item that carries SPD + INT bonuses (the equipment
     // table's +4 / +0 bytes). The preview must move SPD/INT, not acc/eva.
@@ -429,8 +403,11 @@ fn preview_reflects_equipment_spd_and_int() {
     assert_eq!(s.preview_stats.eva, 20);
 }
 
+/// Retail has no prompt: the confirm writes the record on the frame of the
+/// press (`0x801DA150..0x801DA1CC`) and the tail steps the hand to the next
+/// slot row and hands the pad back to the browse (`0x801DA1DC..0x801DA254`).
 #[test]
-fn cross_yes_in_confirm_commits_swap_and_writes_record() {
+fn a_candidate_confirm_commits_at_once_and_steps_to_the_next_slot() {
     let mut s = fresh_session();
     // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
     s.state = EquipState::SlotPicker { cursor: 1 };
@@ -442,79 +419,85 @@ fn cross_yes_in_confirm_commits_swap_and_writes_record() {
         cross: true,
         ..Default::default()
     });
-    // Now in Confirm with cursor=Yes (0).
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    assert!(s.is_done());
-    match s.outcome() {
-        Some(EquipOutcome::Committed {
-            slot,
-            removed,
-            added,
-        }) => {
-            assert_eq!(slot, 0);
-            assert_eq!(removed, 0);
-            assert_eq!(added, 0x05);
-        }
-        _ => panic!("expected Committed outcome"),
-    }
+    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 2 });
+    assert!(!s.is_done(), "the screen stays up");
     assert_eq!(s.record().equip[0], 0x05);
+    assert_eq!(s.take_swaps(), vec![(0, 0, 0x05)]);
+    assert!(s.swaps().is_empty(), "a drain hands each swap over once");
 }
 
+/// The tail's wrap is at 8 (`slti v0,s4,0x8`, `clear s4`): the last slot row's
+/// confirm leaves the hand on Best Equipment.
 #[test]
-fn right_in_confirm_moves_cursor_to_no_then_cross_returns_to_item_picker() {
+fn the_tail_wraps_the_hand_from_the_last_row_to_best_equipment() {
     let mut s = fresh_session();
-    // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
-    s.state = EquipState::SlotPicker { cursor: 1 };
+    let slot = (0..EQUIP_SLOTS)
+        .find(|&sl| browse_row_for_slot(sl) == SLOT_BROWSE_ROWS - 1)
+        .expect("a slot sits on the last row");
+    // The disc-free rule files an id under slot `id >> 5`.
+    let id = (slot << 5) | 1;
+    s.give_item(id, 1);
+    s.equipment.set(id, ItemModifier::default());
+    s.state = EquipState::ItemPicker { slot, cursor: 0 };
     s.input(EquipInput {
         cross: true,
         ..Default::default()
     });
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    // Now in Confirm with cursor=0 (Yes).
-    s.input(EquipInput {
-        right: true,
-        ..Default::default()
-    });
-    match s.state() {
-        EquipState::Confirm { cursor, .. } => assert_eq!(cursor, 1),
-        _ => panic!("expected Confirm"),
-    }
-    // Cross with cursor=No should bounce back to item picker.
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    assert!(matches!(
-        s.state(),
-        EquipState::ItemPicker { slot: 0, cursor: 0 }
-    ));
+    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 0 });
 }
 
+/// The worn row tests no class the confirm arm knows and goes straight to the
+/// tail: no write, the hand on the next row. Remove on an empty slot buzzes
+/// (`0x801DA128`) and jumps to the same tail.
 #[test]
-fn circle_in_confirm_returns_to_item_picker_without_committing() {
-    let mut s = fresh_session();
-    // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
-    s.state = EquipState::SlotPicker { cursor: 1 };
-    s.input(EquipInput {
+fn a_refused_confirm_still_runs_the_tail() {
+    use crate::equipment::{DiscEquipEntry, DiscEquipInfo};
+    use legaia_game_tables::equip_stats::EquipSlot as Disc;
+    let weapon = DiscEquipEntry {
+        mask: 7,
+        category: Disc::Weapon,
+        is_ra_seru: false,
+        passive_index: None,
+    };
+    let info = DiscEquipInfo::from_entries([(0x30, weapon), (0x20, weapon)]);
+    let inv = crate::item_bag::ItemBag::from_slots(&[(0x20, 1)]);
+    let mut rec = fresh_record();
+    let cross = EquipInput {
         cross: true,
         ..Default::default()
-    });
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
-    s.input(EquipInput {
-        circle: true,
-        ..Default::default()
-    });
-    assert!(matches!(s.state(), EquipState::ItemPicker { slot: 0, .. }));
-    assert_eq!(s.record().equip[0], 0);
+    };
+    // Remove on the empty slot.
+    let mut s = EquipSession::new_with_restrictions(
+        rec,
+        inv.clone(),
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+        info.clone(),
+        0,
+    );
+    s.state = EquipState::ItemPicker { slot: 0, cursor: 0 };
+    s.input(cross);
+    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 2 });
+    assert!(s.swaps().is_empty());
+    assert!(s.drain_events().contains(&EquipEvent::InvalidConfirm));
+    // The worn row: [Remove, worn 0x30, ...], the row the list opens on.
+    rec.equip[0] = 0x30;
+    let mut s = EquipSession::new_with_restrictions(
+        rec,
+        inv,
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+        info,
+        0,
+    );
+    s.state = EquipState::ItemPicker { slot: 0, cursor: 1 };
+    assert!(s.items_for_slot(0)[1].equipped);
+    s.input(cross);
+    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 2 });
+    assert!(s.swaps().is_empty());
+    assert_eq!(s.record().equip[0], 0x30);
 }
 
 #[test]
@@ -536,19 +519,12 @@ fn commit_decrements_new_item_and_restores_old_inventory() {
         cross: true,
         ..Default::default()
     });
-    // The slot is occupied, so the list is [Remove, 0x05, 0x06]. Step
-    // down twice to land on 0x06.
-    for _ in 0..2 {
-        s.input(EquipInput {
-            down: true,
-            ..Default::default()
-        });
-    }
+    // The slot is occupied, so the list is [Remove, 0x05, 0x06], and it opens
+    // on row 1, below Remove. One step down lands on 0x06.
     s.input(EquipInput {
-        cross: true,
+        down: true,
         ..Default::default()
     });
-    // Confirm yes.
     s.input(EquipInput {
         cross: true,
         ..Default::default()
@@ -565,10 +541,6 @@ fn commit_recomputes_battle_stats() {
     let mut s = fresh_session();
     // Park on slot row 0 (browse row 1); row 0 is Best Equipment.
     s.state = EquipState::SlotPicker { cursor: 1 };
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
     s.input(EquipInput {
         cross: true,
         ..Default::default()
@@ -696,10 +668,6 @@ fn unequip_returns_item_to_bag_and_refuses_empty_slot() {
         cross: true,
         ..Default::default()
     });
-    s.input(EquipInput {
-        cross: true,
-        ..Default::default()
-    });
     assert_eq!(s.record().equip[0], 0x05);
     assert_eq!(s.inventory().get(&0x05), Some(&0));
 
@@ -753,14 +721,8 @@ fn remove_row_appears_only_on_an_occupied_slot_and_confirming_it_unequips() {
         ..Default::default()
     });
     assert_eq!(s.record().equip[0], 0);
-    assert_eq!(
-        s.outcome(),
-        Some(EquipOutcome::Committed {
-            slot: 0,
-            removed: 0x05,
-            added: 0,
-        })
-    );
+    assert_eq!(s.take_swaps(), vec![(0, 0x05, 0)]);
+    assert_eq!(s.state(), EquipState::SlotPicker { cursor: 2 });
 }
 
 /// Row 0's confirm has to compute the candidates first - the engine's
@@ -890,4 +852,60 @@ fn best_equipment_skips_non_equipment_wrong_character_and_empty_stacks() {
     let bag = [(0x40, 1), (0x41, 1), (0x42, 0), (0, 5)];
     let best = best_equipment_candidates([0, 0, 0, 0], 1, &bag, table, |_| 0);
     assert_eq!(best, [0, 0, 0, 0]);
+}
+
+/// The armament list ranks best first: a favoured weapon over any other, the
+/// worn row among them, the Remove verb fixed on top. `0x80031614..0x800316E0`.
+#[test]
+fn armament_rows_rank_on_the_key_with_the_worn_row_among_them() {
+    use crate::equipment::DiscEquipInfo;
+    use legaia_game_tables::equip_stats::EquipStatTable;
+    // [INT, ATK, UDF, LDF, SPD, passive, mask, +7 slot bits].
+    let weapon = |atk: u8| [0, atk, 0, 0, 0, 0x40, 7, 0x40];
+    let table = EquipStatTable::from_entries(&[
+        (0x10, weapon(5)),
+        (0x11, weapon(50)),
+        (0x12, weapon(20)),
+        (0x13, weapon(1)),
+    ]);
+    let info = DiscEquipInfo::from_disc(&table);
+    let mut inv = crate::item_bag::ItemBag::new();
+    for id in [0x10, 0x11, 0x13] {
+        inv.insert(id, 1);
+    }
+    let mut record = fresh_record();
+    record.equip[0] = 0x12;
+    let s = EquipSession::new_with_restrictions(
+        record,
+        inv,
+        EquipmentTable::new(),
+        StatusModifiers::default(),
+        Vec::new(),
+        info,
+        0,
+    )
+    .with_weapon_category(vec![crate::menu_item_category::CategoryEntry {
+        item_id: 0x13,
+        mask: 0x01,
+    }]);
+    let ids: Vec<u8> = s.items_for_slot(0).iter().map(|r| r.id).collect();
+    assert_eq!(ids, [REMOVE_ROW_ID, 0x13, 0x11, 0x12, 0x10]);
+    assert!(s.items_for_slot(0)[3].equipped);
+}
+
+/// The candidate step opens on the row under Remove, and on Remove when the
+/// list holds nothing else (`FUN_80030104` clamps the selection).
+#[test]
+fn the_candidate_list_opens_below_remove() {
+    let mut s = fresh_session();
+    s.state = EquipState::SlotPicker { cursor: 1 };
+    s.record.equip[0] = 0x05;
+    s.input(EquipInput {
+        cross: true,
+        ..Default::default()
+    });
+    assert!(matches!(
+        s.state(),
+        EquipState::ItemPicker { slot: 0, cursor: 1 }
+    ));
 }

@@ -1,6 +1,14 @@
 //! `EquipSession::input`: the per-frame pad step over the slot browse and item list.
 
 use super::*;
+use legaia_engine_system::input::PadButton;
+
+/// The row the candidate confirm's tail leaves the hand on: the next row below
+/// `slot`'s own, wrapping at 8 (`0x801DA1E8..0x801DA1F8`).
+fn next_browse_row(slot: u8) -> u8 {
+    let next = browse_row_for_slot(slot) + 1;
+    if next < SLOT_BROWSE_ROWS { next } else { 0 }
+}
 
 impl EquipSession {
     /// Apply a per-frame input.
@@ -35,26 +43,49 @@ impl EquipSession {
                             self.events.push(EquipEvent::BestEquipmentUnchanged);
                         }
                         SlotBrowseOutcome::OpenCandidates { slot } => {
-                            self.state = EquipState::ItemPicker { slot, cursor: 0 };
+                            // The candidate step opens with the list's
+                            // selection on row 1, the row below Remove
+                            // (`sw s3,-0x4468` at `0x801D9D20`); the allocator
+                            // `FUN_80030104` clamps it to the last row, so a
+                            // list holding only Remove opens on Remove.
+                            let items = self.items_for_slot(slot);
+                            let cursor = 1.min(items.len().saturating_sub(1)) as u16;
+                            self.state = EquipState::ItemPicker { slot, cursor };
                             self.events.push(EquipEvent::EnteredItemPicker { slot });
                             // Retail stages the trial equip as the candidate
                             // list opens, so the stat-compare block is already
-                            // showing the top row's preview on the first frame.
-                            if let Some(item) = self.items_for_slot(slot).first().copied() {
+                            // showing the hovered row's preview on the first frame.
+                            if let Some(item) = items.get(usize::from(cursor)).copied() {
                                 self.preview_candidate(slot, item.id);
                             }
                         }
                     }
                 } else if input.circle {
-                    self.state = EquipState::Done(EquipOutcome::Cancelled);
+                    self.state = EquipState::Done;
                     self.events.push(EquipEvent::Cancelled);
                 }
             }
             EquipState::ItemPicker { slot, mut cursor } => {
                 let items = self.items_for_slot(slot);
                 let n = items.len();
-                if input.up && cursor > 0 {
-                    cursor -= 1;
+                // The candidate list runs the kind-4 kernel: Up / Down wrap
+                // inside the 12-row page and Left / Right flip it.
+                let mut pressed = 0u16;
+                for (held, button) in [
+                    (input.up, PadButton::Up),
+                    (input.down, PadButton::Down),
+                    (input.left, PadButton::Left),
+                    (input.right, PadButton::Right),
+                ] {
+                    if held {
+                        pressed |= button.mask();
+                    }
+                }
+                let moved =
+                    crate::pause_screens::list_kernel_navigate(usize::from(cursor), n, pressed)
+                        as u16;
+                if moved != cursor {
+                    cursor = moved;
                     self.state = EquipState::ItemPicker { slot, cursor };
                     self.events.push(EquipEvent::CursorMoved {
                         state: EquipStateKind::ItemPicker,
@@ -66,54 +97,29 @@ impl EquipSession {
                     if let Some(item) = items.get(cursor as usize) {
                         self.preview_candidate(slot, item.id);
                     }
-                } else if input.down && (cursor as usize + 1) < n {
-                    cursor += 1;
-                    self.state = EquipState::ItemPicker { slot, cursor };
-                    self.events.push(EquipEvent::CursorMoved {
-                        state: EquipStateKind::ItemPicker,
-                        cursor,
-                    });
-                    if let Some(item) = items.get(cursor as usize) {
-                        self.preview_candidate(slot, item.id);
-                    }
                 } else if input.cross && (cursor as usize) < n {
+                    // Retail has no prompt here. The confirm arm
+                    // (`0x801DA0B4..0x801DA1D0`) writes the record on the frame
+                    // of the press and every path through it, a refused one
+                    // too, runs the shared tail (`0x801DA1DC..0x801DA254`):
+                    // the hand steps to the next slot row, wrapping at 8, and
+                    // the pad goes back to the slot browse. An equipped row
+                    // tests no class the arm knows and goes straight there.
                     let item = items[cursor as usize];
                     if item.id == REMOVE_ROW_ID {
-                        // The Remove row commits straight away - retail has
-                        // no Yes/No prompt on it (`0x801DA0B4` writes the
-                        // record byte in the same frame as the confirm).
                         if self.unequip(slot).is_none() {
                             self.events.push(EquipEvent::InvalidConfirm);
                         }
-                        return;
+                    } else if !item.equipped {
+                        if item.owned {
+                            self.commit(slot, item.id);
+                        } else {
+                            self.events.push(EquipEvent::InvalidConfirm);
+                        }
                     }
-                    if item.equipped {
-                        // The Goods list's equipped row: retail commits
-                        // nothing and runs the shared tail, which steps the
-                        // hand to the next slot row (wrapping at 8) and
-                        // returns to the slot picker (`0x801DA1DC..0x801DA254`).
-                        let next = browse_row_for_slot(slot) + 1;
-                        self.state = EquipState::SlotPicker {
-                            cursor: if next < 8 { next } else { 0 },
-                        };
-                        return;
-                    }
-                    if !item.owned {
-                        self.events.push(EquipEvent::InvalidConfirm);
-                        return;
-                    }
-                    self.state = EquipState::Confirm {
-                        slot,
-                        item_id: item.id,
-                        cursor: 0, // Yes selected by default
+                    self.state = EquipState::SlotPicker {
+                        cursor: next_browse_row(slot),
                     };
-                    self.events.push(EquipEvent::EnteredConfirm {
-                        slot,
-                        item_id: item.id,
-                    });
-                    // Refresh the preview through the ported trial-equip
-                    // (`FUN_801d9c14`) rather than re-deriving it here.
-                    self.preview_candidate(slot, item.id);
                 } else if input.circle {
                     // Retail's cancel returns to sub-screen 0x13 with the hand
                     // back on the slot's own row ([`browse_row_for_slot`]).
@@ -122,46 +128,7 @@ impl EquipSession {
                     };
                 }
             }
-            EquipState::Confirm {
-                slot,
-                item_id,
-                mut cursor,
-            } => {
-                if input.left && cursor > 0 {
-                    cursor -= 1;
-                    self.state = EquipState::Confirm {
-                        slot,
-                        item_id,
-                        cursor,
-                    };
-                    self.events.push(EquipEvent::CursorMoved {
-                        state: EquipStateKind::Confirm,
-                        cursor: cursor as u16,
-                    });
-                } else if input.right && cursor < 1 {
-                    cursor += 1;
-                    self.state = EquipState::Confirm {
-                        slot,
-                        item_id,
-                        cursor,
-                    };
-                    self.events.push(EquipEvent::CursorMoved {
-                        state: EquipStateKind::Confirm,
-                        cursor: cursor as u16,
-                    });
-                } else if input.cross {
-                    if cursor == 0 {
-                        // Confirm - commit the swap.
-                        self.commit(slot, item_id);
-                    } else {
-                        // No - back to item picker.
-                        self.state = EquipState::ItemPicker { slot, cursor: 0 };
-                    }
-                } else if input.circle {
-                    self.state = EquipState::ItemPicker { slot, cursor: 0 };
-                }
-            }
-            EquipState::Done(_) => {}
+            EquipState::Done => {}
         }
     }
 }

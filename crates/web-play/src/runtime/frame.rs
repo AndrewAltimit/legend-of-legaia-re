@@ -85,12 +85,6 @@ impl LegaiaRuntime {
         if movie_held && fmv_handoff_scene.is_empty() && self.fmv.armed_for().is_some() {
             return Ok(String::new());
         }
-        // A scene swap - a door or the post-movie hand-off - restarts the
-        // between-beat cutscene glide; the camera globals' reset is the
-        // session's.
-        if matches!(event, SceneTickEvent::SceneEntered { .. }) || !fmv_handoff_scene.is_empty() {
-            self.cutscene_glide.reset();
-        }
         // A field-VM op-0x49 sub-0 merchant (or sub-7 prize counter) armed a
         // screen this tick: hand it to the menu runtime so the page can open
         // it, where the native window polls - after the session tick, ahead

@@ -51,19 +51,16 @@ impl BakaFight {
     pub(super) fn tick_cabinet(&mut self, frame_step: i32) {
         let input = crate::baka_cabinet::CabinetInput {
             frame_step,
-            // The host's packed edge, but only once the match is decided and
-            // the cabinet has left the duel state (see `set_cabinet_pad`): the
-            // duel band's one read is the pause edge `0x110`, which overlaps
-            // the cameo's held Triangle, and the port's cabinet sits in the
-            // duel state for up to `0xB5` frames after the deciding exchange.
-            pad_edge: if self.cabinet.front_end()
-                || matches!(self.phase, MatchPhase::MatchOver(_))
-                    && self.cabinet.state() != crate::baka_cabinet::ST_DUEL
-            {
-                std::mem::take(&mut self.cabinet_pad)
-            } else {
-                self.cabinet_pad = 0;
-                0
+            // The host's packed edge. In the duel state its one read is the
+            // pause edge, which stays shut until the disc's menu text is in.
+            pad_edge: {
+                let edge = std::mem::take(&mut self.cabinet_pad);
+                let duel = self.cabinet.state() == crate::baka_cabinet::ST_DUEL;
+                if duel && self.pause_text.is_none() {
+                    0
+                } else {
+                    edge
+                }
             },
             pad_edge_alt: 0,
             pad_held: 0,
@@ -86,6 +83,16 @@ impl BakaFight {
         };
         self.cabinet_frame = self.cabinet.tick(&input);
         self.cues.append(&mut self.cabinet_frame.cues);
+        if self.cabinet_frame.spawn_clear_fighter {
+            self.clear_fighter = Some(crate::baka_fighter_chrome::ClearFighter {
+                x: (-(self.stand_off[0] + 200)) as i16,
+                flags: 0,
+                clock: 0,
+            });
+        }
+        if self.cabinet.state() == crate::baka_cabinet::ST_EXIT {
+            self.clear_fighter = None;
+        }
         if let Some(roster) = self
             .cabinet_frame
             .install_player

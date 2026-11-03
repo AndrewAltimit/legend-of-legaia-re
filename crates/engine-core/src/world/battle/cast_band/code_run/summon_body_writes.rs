@@ -127,7 +127,7 @@ impl World {
         }
     }
 
-    /// The non-lethal pre-hits four summon-creature modules land before the
+    /// The non-lethal pre-hits five summon modules land before the
     /// band's fold, on the pass that makes them: each target's roll is the
     /// summon branch of `FUN_801DD0AC` ([`Self::player_summon_predamage`]),
     /// clamped to `HP - 1`
@@ -140,6 +140,9 @@ impl World {
     ///   `0x1C1` (`0x801F80C4..0x801F81EC`), every living targetable monster.
     /// - PROT 0932 arm `0x12` and PROT 0933 arm `0xC`, on their pass: every
     ///   living monster.
+    /// - PROT 0908 arm 8's pass (`0x801F76CC..0x801F77F4`): the latched
+    ///   victim, the roll quartered; skipped for a victim with `+0x16E` bit
+    ///   `4`.
     ///
     /// Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
     /// quartered roll is checked against, the first argument's `0x10` /
@@ -177,20 +180,74 @@ impl World {
                 .into_iter()
                 .map(|s| s as u8)
                 .collect(),
+            (908, 8) if passed => st
+                .victim_slot
+                .filter(|&v| self.cast_view(v).flags & FLAG_NON_TARGETABLE == 0)
+                .into_iter()
+                .collect(),
             _ => return,
         };
         for t in targets {
-            let Some(mut dmg) = self.player_summon_predamage(caster, t, spell_id) else {
+            let Some(dmg) = self.summon_module_roll(caster, t, spell_id) else {
                 continue;
             };
+            let mut dmg = dmg.min(u32::from(u16::MAX)) as u16;
             if entry == 915 {
                 dmg = (dmg >> 2).max(1);
+            }
+            // Arm 8's roll quartered (`srl s0,s0,0x2` at `0x801F7728`).
+            if entry == 908 {
+                dmg >>= 2;
             }
             let mut v = self.cast_view(t);
             if v.hp == 0 {
                 continue;
             }
-            legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
+            // Each store `0` into the readout flag `0x8007B64C` the damage
+            // kernel raised (PROT 0908 `0x801F76DC`, 0915 `0x801F7118`, 0928
+            // `0x801F8134`, 0932 `0x801F7BC0`, 0933 `0x801F7CEC`): the popup goes
+            // up with no combo cluster, which opens on the fold's hit.
+            self.battle.combo_cluster_held = true;
+            // `FUN_801F44A0(amount, seat)`: PROT 0915's after its clamp, the
+            // others' ahead of it.
+            if matches!(entry, 908 | 915 | 928 | 932 | 933) {
+                let amount = if entry == 915 {
+                    dmg.min(v.hp.saturating_sub(1))
+                } else {
+                    dmg
+                };
+                self.battle
+                    .hit_fx
+                    .push(legaia_engine_battle::battle_events::BattleHitFx {
+                        target_slot: t,
+                        amount,
+                        is_heal: false,
+                        is_crit: false,
+                    });
+            }
+            // PROT 0933's stages nothing (`0x801F7D2C..0x801F7D3C`, HP and on
+            // to the next seat): the row shows no reaction until arm 0x14's hit.
+            if entry == 933 {
+                legaia_engine_cast::seru_magic_ticks::apply_hit_cap_hp_minus_one(
+                    &mut v,
+                    u32::from(dmg),
+                );
+            } else if entry == 908 {
+                // PROT 0908's stages the flinch with no knockdown fork
+                // (`0x801F77B4..0x801F77D4`): arm 9's clip `2` on Gobu Gobu.
+                legaia_engine_cast::seru_magic_ticks::apply_hit_cap_hp_minus_one(
+                    &mut v,
+                    u32::from(dmg),
+                );
+                legaia_engine_cast::seru_magic_ticks::stage_reaction_alt_only(&mut v);
+            } else {
+                legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
+            }
+            // PROT 0928's parks the flinch at rate 0 (`0x801F81C8`), so its cues
+            // wait with it; arm 0x13 sets the row going again.
+            if entry == 928 {
+                v.anim_rate = 0;
+            }
             self.write_cast_view(t, &v);
         }
     }
@@ -775,6 +832,8 @@ impl World {
                         .find(|p| p.0 == s)
                         .copied();
                     let a = &mut self.actors[s];
+                    // The rate arm 0xF parked at `0` (`0x801F8AD8`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
                     if let Some((_, pos, facing)) = saved {
                         let m = &mut a.move_state;
                         [m.world_x, m.world_y, m.world_z] = pos;

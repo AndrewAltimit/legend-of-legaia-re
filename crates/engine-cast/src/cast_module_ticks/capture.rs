@@ -227,7 +227,7 @@ pub const ALL_STATS_SURGE_TICK: u32 = 0x801F_69F8;
 /// PROT 0960's `0x7B` arm - [`plasma_strike_tick`]. Its `0xA6` arm (Neo Star
 /// Slash) is `0x801F69D8`, the load base - [`NEO_STAR_SLASH_CHAIN`].
 pub const PLASMA_STRIKE_TICK: u32 = 0x801F_74E4;
-/// PROT 0957's `0x77` arm - [`summon_effect_tick_a`].
+/// PROT 0957's `0x77` arm - [`crate::cast_module_camera::thunder_storm_camera`].
 pub const SUMMON_EFFECT_TICK_A: u32 = 0x801F_6A14;
 /// PROT 0957's `0x76` arm - [`summon_effect_tick_b`].
 pub const SUMMON_EFFECT_TICK_B: u32 = 0x801F_798C;

@@ -127,6 +127,12 @@ pub fn blade_breath_tick(
             if let Some(roll) = hit {
                 apply_arm_hit(victim, roll, victim.restage.wrapping_add(1), 4);
             }
+            // `sb s8,0x21f(s2)` at `0x801F7F68` (`0xA2`) and `sb t0,0x21f(s3)`
+            // at `0x801F78E8` (`0xA3`), whoever owns the roll: the body
+            // sheds its fire or sparks from here (`FUN_8004998C`).
+            if let Some(sub) = shape.strike_sub_flag {
+                victim.render_21f = sub;
+            }
             caster.staged_anim = 0;
             CastArmStep::Advance
         }

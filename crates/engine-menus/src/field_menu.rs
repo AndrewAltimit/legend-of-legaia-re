@@ -71,6 +71,23 @@ pub enum FieldMenuRow {
 /// so they must stay the same length.
 const _: () = assert!(FieldMenuRow::ALL.len() == ROOT_MENU_ROWS as usize);
 
+/// The blip a frame's edges fire while the pause menu is up, both hosts' one
+/// call: [`menu_edge_blip`](crate::menu_cues::menu_edge_blip), with a Cross on
+/// the root picker (`root` is `Some` only there) sounding what that row sounds.
+pub fn pause_edge_blip(
+    pressed: u16,
+    start_closes_menu: bool,
+    root: Option<&FieldMenuSession>,
+) -> Option<crate::menu_cues::MenuBlip> {
+    use crate::menu_cues::{MenuBlip, menu_edge_blip};
+    match (menu_edge_blip(pressed, start_closes_menu), root) {
+        (Some(MenuBlip::Confirm), Some(menu)) if start_closes_menu => {
+            Some(menu.root_confirm_blip())
+        }
+        (blip, _) => blip,
+    }
+}
+
 impl FieldMenuRow {
     /// Retail row order (`FUN_801CFD68` draw order, top to bottom).
     pub const ALL: [Self; 7] = [
@@ -444,6 +461,21 @@ impl FieldMenuSession {
         }
     }
 
+    /// The blip Cross on the current root row sounds (`FUN_801D6B20`): a row it
+    /// refuses buzzes, Load and Save overwrite the picker's `0x36` with `0x20`,
+    /// and Items through Options leave it.
+    pub fn root_confirm_blip(&self) -> crate::menu_cues::MenuBlip {
+        use crate::menu_cues::MenuBlip;
+        let Some(row) = FieldMenuRow::from_index(self.cursor()) else {
+            return MenuBlip::Refuse;
+        };
+        match (self.confirm_target(row), row) {
+            (None, _) => MenuBlip::Refuse,
+            (Some(_), FieldMenuRow::Load | FieldMenuRow::Save) => MenuBlip::Confirm,
+            (Some(_), _) => MenuBlip::Pick,
+        }
+    }
+
     pub fn is_done(&self) -> bool {
         matches!(self.phase, FieldMenuPhase::Done(_))
     }
@@ -721,6 +753,31 @@ mod tests {
 
     fn input() -> FieldMenuInput {
         FieldMenuInput::default()
+    }
+
+    /// `FUN_801D6B20`: Items through Options leave the picker's `0x36`, an
+    /// allowed Load or Save overwrites it with `0x20`, a refused row with `0x23`.
+    #[test]
+    fn the_root_rows_sound_what_the_picker_leaves() {
+        use crate::menu_cues::MenuBlip;
+        let mut s = FieldMenuSession::new();
+        assert_eq!(s.root_confirm_blip(), MenuBlip::Pick);
+        assert_eq!(
+            pause_edge_blip(0x4000, true, Some(&s)),
+            Some(MenuBlip::Pick)
+        );
+        // Inside a sub-screen the session plays no part.
+        assert_eq!(
+            pause_edge_blip(0x4000, false, Some(&s)),
+            Some(MenuBlip::Confirm)
+        );
+        s.phase = FieldMenuPhase::Browsing {
+            cursor: FieldMenuRow::Save.index(),
+        };
+        let mut mask = *s.mask();
+        mask.disable(FieldMenuRow::Save);
+        s.set_mask(mask);
+        assert_eq!(s.root_confirm_blip(), MenuBlip::Refuse);
     }
 
     #[test]

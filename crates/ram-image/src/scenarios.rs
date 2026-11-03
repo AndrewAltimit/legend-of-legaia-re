@@ -335,25 +335,71 @@ impl Scenario {
 
 /// Look up an immutable library backup by `(emulator, fingerprint)`: the first
 /// file in `library_dir/<emulator>/` whose stem starts with `fingerprint`.
-/// Returns `None` when the directory or a matching file is absent.
+/// Returns `None` when the directory or a matching file is absent. A caller
+/// asking about many fingerprints wants [`LibraryIndex`], which lists each
+/// directory once.
 pub fn library_backup_for(
     emulator: &str,
     library_dir: &Path,
     fingerprint: &str,
 ) -> Option<PathBuf> {
-    let emu_dir = library_dir.join(emulator);
-    let entries = std::fs::read_dir(&emu_dir).ok()?;
-    let mut hits: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| {
-            p.is_file()
-                && p.file_stem()
+    LibraryDir::list(&library_dir.join(emulator)).backup_for(fingerprint)
+}
+
+/// One emulator's backup directory, its files sorted by path.
+#[derive(Debug, Default)]
+struct LibraryDir {
+    files: Vec<PathBuf>,
+}
+
+impl LibraryDir {
+    fn list(dir: &Path) -> Self {
+        let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(|p| p.is_file())
+                    .collect()
+            })
+            .unwrap_or_default();
+        files.sort();
+        Self { files }
+    }
+
+    fn backup_for(&self, fingerprint: &str) -> Option<PathBuf> {
+        self.files
+            .iter()
+            .find(|p| {
+                p.file_stem()
                     .and_then(|s| s.to_str())
                     .is_some_and(|stem| stem.starts_with(fingerprint))
-        })
-        .collect();
-    hits.sort();
-    hits.into_iter().next()
+            })
+            .cloned()
+    }
+}
+
+/// [`library_backup_for`] over a listing taken once per emulator, for walking
+/// a whole manifest.
+#[derive(Debug, Default)]
+pub struct LibraryIndex {
+    dirs: std::collections::BTreeMap<String, LibraryDir>,
+}
+
+impl LibraryIndex {
+    /// List `library_dir/<emulator>/` for each of `emulators`.
+    pub fn open(library_dir: &Path, emulators: &[&str]) -> Self {
+        Self {
+            dirs: emulators
+                .iter()
+                .map(|e| ((*e).to_string(), LibraryDir::list(&library_dir.join(e))))
+                .collect(),
+        }
+    }
+
+    /// The backup [`library_backup_for`] names, off the listing.
+    pub fn backup_for(&self, emulator: &str, fingerprint: &str) -> Option<PathBuf> {
+        self.dirs.get(emulator)?.backup_for(fingerprint)
+    }
 }
 
 #[cfg(test)]
@@ -366,6 +412,38 @@ mod tests {
     /// runner. Poison is recovered (a panicking test still releases the guard
     /// logically) so one failure doesn't cascade into spurious failures.
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// The index answers exactly what the one-shot lookup answers: first by
+    /// path among the prefix matches, directories never, an absent emulator
+    /// directory `None`.
+    #[test]
+    fn the_library_index_answers_as_the_one_shot_lookup_does() {
+        let dir = std::env::temp_dir().join(format!("legaia-lib-index-{}", std::process::id()));
+        let emu = dir.join("mednafen");
+        std::fs::create_dir_all(emu.join("abc0-dir")).unwrap();
+        for f in ["abc1.mc0", "abc0.mc0", "zzz.mc0"] {
+            std::fs::write(emu.join(f), b"").unwrap();
+        }
+        let index = LibraryIndex::open(&dir, &["mednafen", "pcsx-redux"]);
+        for (emulator, fp) in [
+            ("mednafen", "abc"),
+            ("mednafen", "abc1"),
+            ("mednafen", "zzz"),
+            ("mednafen", "none"),
+            ("pcsx-redux", "abc"),
+        ] {
+            assert_eq!(
+                index.backup_for(emulator, fp),
+                library_backup_for(emulator, &dir, fp),
+                "{emulator} {fp}"
+            );
+        }
+        assert_eq!(
+            index.backup_for("mednafen", "abc"),
+            Some(emu.join("abc0.mc0"))
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn sample_toml() -> &'static str {
         r#"

@@ -242,38 +242,11 @@ pub fn astral_slash_tick(
 /// The action id PROT 0957's trampoline `0x801F9BA8` sends to
 /// [`summon_effect_tick_b`] (`beq v1, 0x76` at `0x801F9BDC`).
 pub const SUMMON_EFFECT_TICK_B_ID: u8 = 0x76;
-/// The action id the same trampoline sends to [`summon_effect_tick_a`]
-/// (`beq v1, 0x77` at `0x801F9BE4`). Any other id falls through to the
+/// The action id the same trampoline sends to tick body A, Thunder Storm
+/// ([`crate::cast_module_camera::thunder_storm_camera`], `beq v1, 0x77` at
+/// `0x801F9BE4`). Any other id falls through to the
 /// epilogue and ticks nothing.
 pub const SUMMON_EFFECT_TICK_A_ID: u8 = 0x77;
-
-/// PROT 0957 tick body A, reached from the module's own trampoline.
-///
-/// One `FUN_801DD4B0` site at `0x801F7514` with a baked power of `0x100`, the
-/// shape-A clamp at `0x801F7538`, three `+0x1DA` / `+0x1DC` pairs, three
-/// `ctx+0x278` writes and one phase store. Its head is a `beq`/`slti` chain,
-/// not a table, so the per-arm map is not recovered statically; what is
-/// ported is the bound, the damage step and the phase discipline.
-///
-/// `hit` is `Some(roll)` on the frame the damage arm fires; the caller owns
-/// the wrapper call so the RNG cursor stays retail's.
-///
-/// Wired: `World::run_cast_module_code`.
-///
-/// PORT: FUN_801F6A14 (phase machine + damage; packet arms and the per-arm
-/// gating unported)
-pub fn summon_effect_tick_a(
-    ctx: &mut CastModuleCtx,
-    victim: &mut CastActorState,
-    hit: Option<i32>,
-) -> CastTickStep {
-    run_tick(ctx, 8, |_| {
-        if let Some(roll) = hit {
-            apply_hit_floor_zero(victim, roll);
-        }
-        false
-    })
-}
 
 /// PROT 0957 tick body B - the long one (8296 B, 2074 instructions).
 ///
@@ -524,13 +497,12 @@ pub const POWER_UP_CHARGE_RENDER_FLAG: u8 = 7;
 ///
 /// `agl_record` is the record's `+0x0E`; the caller supplies it because the
 /// record table is the host's, not the kernel's. The per-arm countdown gate
-/// (`0x801F88B4` minus `scratch[0x1F80037D] * scratch[0x1F800393]` each
-/// frame) is **not** ported - it is per-frame timing, the same class this
-/// module's header disclaims for every body here.
+/// (`0x801F88B4`) and the camera arms are
+/// `cast_module_camera::power_up_camera`.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F7D34 (phase machine + the AGL-base buff; packet arms and the countdown gate unported)
+/// PORT: FUN_801F7D34 (phase machine + the AGL-base buff)
 pub fn power_up_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,

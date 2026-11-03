@@ -168,6 +168,13 @@ pub fn front_end(state: u32) -> bool {
     state < ST_OPPONENT_INSTALL
 }
 
+/// The pause menu's states and the exit it can reach: the round SM's body
+/// tests `DAT_801DBF44 == 0x64` (`0x801D352C`) and the combat tick runs only
+/// the clip selector off it (`0x801D4098`), so the fight stands still.
+pub fn fight_on_hold(state: u32) -> bool {
+    matches!(state, ST_PAUSE_2 | ST_PAUSE_3 | ST_HOWTO | ST_EXIT)
+}
+
 /// Whether the three player-select fighters are on stage. They spawn in
 /// `0x0A` from the template at `0x801D760C`, whose tick `FUN_801D3390`
 /// raises the retire bit once the match phase `DAT_801DBF78` is non-zero -

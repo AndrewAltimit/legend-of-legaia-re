@@ -89,6 +89,7 @@ pub fn retail_actor_facings(ram: &[u8]) -> Vec<ActorFacing> {
                 facing: game_anchors::i16_at(ram, n + 0x26),
                 x: game_anchors::i16_at(ram, n + 0x14),
                 z: game_anchors::i16_at(ram, n + 0x18),
+                y: game_anchors::i16_at(ram, n + 0x16),
                 model: game_anchors::i16_at(ram, n + 0x64),
                 flags: game_anchors::u32_at(ram, n + 0x10),
                 ambient: retail_ambient_heading(ram, n),
@@ -424,6 +425,45 @@ pub fn retail_object_clips(ram: &[u8]) -> Vec<ObjectClipSeed> {
         .collect()
 }
 
+/// The player's party-bank clip words as the displayed frame stood them. The
+/// player's node ticks through its own handler `FUN_801D2298`, so
+/// [`retail_object_clips`] does not list it, and a seat stands it idle; a
+/// capture the pad was running holds the run clip `3` mid-stride
+/// (`+0x10 & PARTY_BANK_FLAG` selects the bank, `lw v0,0x10(s0)` at
+/// `0x80020534`). `None` for a clip outside the party bank.
+pub fn retail_player_clip(ram: &[u8]) -> Option<ObjectClipSeed> {
+    let p = game_anchors::player_ptr(ram)?;
+    if game_anchors::u32_at(ram, p + 0x10) & legaia_engine_field::field_player_clip::PARTY_BANK_FLAG
+        == 0
+    {
+        return None;
+    }
+    let clip = game_anchors::u16_at(ram, p + 0x5C);
+    let flags = game_anchors::u16_at(ram, p + 0x62);
+    let rate = game_anchors::i16_at(ram, p + 0x6A);
+    let rec = game_anchors::u32_at(ram, p + 0x4C);
+    let frames = game_anchors::u16_at(ram, rec + 2);
+    let gated = game_anchors::u8_at(ram, rec + 1) & 1 != 0;
+    let div = game_anchors::u8_at(ram, rec + 6);
+    let cursor = rewind_clip_cursor(
+        game_anchors::i16_at(ram, p + 0x68),
+        flags,
+        frames,
+        clip_display_lag_units(
+            legaia_engine_vm::actor_tick::clip_step(rate as u16, gated, div),
+            crate::retail_compare_battle::frame_step(ram).max(1),
+            crate::retail_compare_battle::DISPLAY_LAG_PASSES,
+        ),
+    );
+    (1..0x100).contains(&clip).then_some(ObjectClipSeed {
+        record: 0,
+        clip: clip as u8,
+        cursor,
+        flags,
+        rate,
+    })
+}
+
 /// How far a clip cursor moved over the display lag: one anim tick
 /// (`FUN_800204F8`) adds the clip step times the frame-step scalar
 /// `DAT_1F800393` (`mult a0,v0` at `0x80020660` / `0x80020680`), so each of
@@ -576,6 +616,80 @@ pub fn retail_morphs(ram: &[u8]) -> Vec<MorphSeed> {
                     env,
                 }
             })
+        })
+        .collect()
+}
+
+/// Every floor-ladder oscillator's live words (`+0x0C == 0x801DA930`). Where a
+/// rung stands is time since the scene's install ran: `concnow`'s four rungs
+/// swing about `22` units in antiphase, so its floor under the party reads
+/// anywhere in `-213..-235` by when the seed samples it.
+pub fn retail_floor_bobs(ram: &[u8]) -> Vec<legaia_engine_capture::field_seeds::FloorBobSeed> {
+    let mut bobs: Vec<_> = crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x801D_A930)
+        .filter(|&n| game_anchors::i16_at(ram, n + 0x54) == 1)
+        .map(|n| legaia_engine_capture::field_seeds::FloorBobSeed {
+            rung: game_anchors::u16_at(ram, n + 0x50),
+            pos: game_anchors::u32_at(ram, n + 0x80) as i32,
+            vel: game_anchors::u32_at(ram, n + 0x84) as i32,
+            accel: game_anchors::u32_at(ram, n + 0x88) as i32,
+            target: game_anchors::u32_at(ram, n + 0x8C) as i32,
+        })
+        .collect();
+    bobs.sort_by_key(|b| b.rung);
+    bobs
+}
+
+/// A floor-ladder oscillator `steps` of its tick (`0x801DA9B0..0x801DAA34`) back:
+/// `vel` steps toward the rest height off the position it read, then `pos` adds
+/// `vel`, so the position before a step is `pos - vel` and the accel sign is the
+/// one that position read.
+pub fn rewind_floor_bob(
+    mut b: legaia_engine_capture::field_seeds::FloorBobSeed,
+    steps: usize,
+) -> legaia_engine_capture::field_seeds::FloorBobSeed {
+    for _ in 0..steps {
+        b.pos = b.pos.wrapping_sub(b.vel);
+        if b.pos < b.target {
+            b.vel = b.vel.wrapping_sub(b.accel);
+        }
+        if b.target < b.pos {
+            b.vel = b.vel.wrapping_add(b.accel);
+        }
+    }
+    b
+}
+
+/// Every `4C D8` morph-weight actor's envelope (`+0x0C == 0x8002174C`,
+/// [`legaia_engine_field::morph_weight_apply::MorphWeightEnvelope`]), taken back
+/// by the display lag the way [`retail_morphs`] takes its lanes: the frame on
+/// screen was built before the state's tick stepped the ramp.
+pub fn retail_morph_weights(
+    ram: &[u8],
+) -> Vec<legaia_engine_capture::field_seeds::MorphWeightSeed> {
+    let step = i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
+    let lag = crate::retail_compare_battle::DISPLAY_LAG_PASSES as i32;
+    crate::retail_compare_script::actor_nodes(ram)
+        .into_iter()
+        .filter(|&n| game_anchors::u32_at(ram, n + 0x0C) == 0x8002_174C)
+        .map(|n| {
+            let up_rate = game_anchors::i16_at(ram, n + 0x3C);
+            let down_rate = game_anchors::i16_at(ram, n + 0x3E);
+            let weight = game_anchors::i16_at(ram, n + 0x6E);
+            let descending = game_anchors::u16_at(ram, n + 0x40) != 0;
+            let rate = i32::from(if descending { down_rate } else { up_rate });
+            let back = if descending {
+                i32::from(weight) + rate * step * lag
+            } else {
+                i32::from(weight) - rate * step * lag
+            };
+            legaia_engine_capture::field_seeds::MorphWeightSeed {
+                up_rate,
+                down_rate,
+                weight: back.clamp(0, 0x1000) as i16,
+                descending,
+            }
         })
         .collect()
 }
@@ -1344,6 +1458,9 @@ pub struct RetailMenu {
     /// [`CARD_SCREEN_SUBMODE`] on the live title menu or the pill row over
     /// it). Reached from the title, not from a field.
     pub title_screen: Option<TitleScreen>,
+    /// The casino prize counter: the op `49 07` operand's block, armed
+    /// directly since no root row reaches it.
+    pub prize_block: Option<u8>,
 }
 
 /// A title front-end screen the seed drives the boot front end to, read off
@@ -1371,8 +1488,8 @@ impl RetailMenu {
     /// Classify a menu-class capture's sub-screen id. The pause menu runs
     /// over a walkable scene with the id set; the title / boot family (the
     /// attract loop, the title picker, the card-boot save select) holds it
-    /// clear, and a script-entered screen (the casino prize exchange,
-    /// `0x20`) is no root row's.
+    /// clear, and the casino prize exchange (`0x20`) is entered by script,
+    /// no root row's.
     pub(super) fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
         use legaia_engine_menus::field_menu::FieldMenuRow;
         let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
@@ -1385,6 +1502,7 @@ impl RetailMenu {
                 card_grid,
                 title_continue: true,
                 title_screen: None,
+                prize_block: None,
             });
         }
         let title_screen = match game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) {
@@ -1404,6 +1522,7 @@ impl RetailMenu {
                 card_grid: false,
                 title_continue: false,
                 title_screen: Some(screen),
+                prize_block: None,
             });
         }
         if subscreen == 0 {
@@ -1412,6 +1531,29 @@ impl RetailMenu {
                  not a title screen the seed drives to",
                 game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE)
             ));
+        }
+        if subscreen == MENU_ROOT {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                prize_block: None,
+            });
+        }
+        if subscreen == MENU_PRIZE_EXCHANGE {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                // The disc's one counter, `koin1`'s, is `49 07 00`.
+                prize_block: Some(0),
+            });
         }
         let (row, equip_depth) = match subscreen {
             MENU_EQUIP_PICK => (FieldMenuRow::Equip, 0),
@@ -1433,9 +1575,16 @@ impl RetailMenu {
             card_grid: card_grid && matches!(row, FieldMenuRow::Load | FieldMenuRow::Save),
             title_continue: false,
             title_screen: None,
+            prize_block: None,
         })
     }
 }
+
+/// The root list's own sub-screen id: the pause menu with no row open.
+pub const MENU_ROOT: u8 = 0x01;
+
+/// The casino prize counter's sub-screen id, script-entered through op `49 07`.
+pub const MENU_PRIZE_EXCHANGE: u8 = 0x20;
 
 /// Prefix of the reason a menu-class state carries when it is not a
 /// pause-menu screen the seed can drive to.

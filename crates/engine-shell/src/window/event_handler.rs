@@ -30,9 +30,11 @@ mod redraw_tick;
 impl ApplicationHandler for PlayWindowApp {
     fn resumed(&mut self, evl: &ActiveEventLoop) {
         let setup = self.window_setup();
+        legaia_engine_render::profile::startup("event loop up");
         if !self.win.open_with(evl, minigames::WINDOW_TITLE, setup) {
             return;
         }
+        legaia_engine_render::profile::startup("window + renderer + pipelines");
         // Opt-in PSX-faithful rendering: affine (perspective-incorrect) UV
         // warp + sub-pixel vertex jitter + 15-bit BGR555 ordered dithering on
         // the 3D mesh pipelines. Off by default (clean modern output); enable

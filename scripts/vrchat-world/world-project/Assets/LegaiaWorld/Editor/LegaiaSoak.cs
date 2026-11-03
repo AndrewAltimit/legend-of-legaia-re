@@ -112,7 +112,7 @@ namespace LegaiaWorld
             string manifestPath = "Assets/LegaiaImports/" + sceneName + "/manifest.json";
             if (!File.Exists(manifestPath))
                 Bail("no manifest at " + manifestPath);
-            object manifest = MiniJson.Parse(File.ReadAllText(manifestPath));
+            object manifest = LegaiaManifestFrame.Load(manifestPath);
 
             // Re-apply the pass, so the kit under test is what runs (the
             // scene on disk may carry an older build of it).

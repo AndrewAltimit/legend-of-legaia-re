@@ -51,7 +51,7 @@ fn named_item_mask(patcher: &DiscPatcher) -> Option<[bool; 256]> {
     let names = legaia_game_tables::item_names::ItemNameTable::from_scus(&scus)?;
     let mut mask = [false; 256];
     for (id, slot) in mask.iter_mut().enumerate() {
-        *slot = names.name(id as u8).is_some_and(|n| !n.is_empty());
+        *slot = names.pool_name(id as u8).is_some_and(|n| !n.is_empty());
     }
     Some(mask)
 }

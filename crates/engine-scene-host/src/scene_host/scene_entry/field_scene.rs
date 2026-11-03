@@ -732,25 +732,27 @@ impl SceneHost {
                 // evolved blocks both. The catalog above is the scene's own
                 // monsters, so a summon creature is not in it; the summon
                 // roll reads its HP / INT / element off this record.
-                if self.world.tables.summon_creatures.is_empty() {
-                    for spell_id in (0..=u8::MAX)
+                let need_creatures = self.world.tables.summon_creatures.is_empty();
+                let need_elements = self.world.tables.summon_elements.is_empty();
+                let bodies: Vec<_> = if need_creatures || need_elements {
+                    (0..=u8::MAX)
                         .filter(|&id| legaia_engine_effects::summon::has_summon_body(id))
-                    {
-                        let Some(cid) =
-                            legaia_engine_effects::summon::summon_creature_id(spell_id, &archive)
-                        else {
-                            continue;
-                        };
-                        if let Ok(Some(rec)) =
-                            legaia_actor_formats::monster_archive::record(&archive, cid)
-                        {
-                            self.world.tables.summon_creatures.insert(
-                                spell_id,
-                                legaia_engine_battle::monster_catalog::monster_def_from_record(
-                                    &rec,
-                                ),
-                            );
-                        }
+                        .filter_map(|spell_id| {
+                            legaia_engine_effects::summon::summon_creature_record(
+                                spell_id, &archive,
+                            )
+                            .map(|(_, rec)| (spell_id, rec))
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                if need_creatures {
+                    for (spell_id, rec) in &bodies {
+                        self.world.tables.summon_creatures.insert(
+                            *spell_id,
+                            legaia_engine_battle::monster_catalog::monster_def_from_record(rec),
+                        );
                     }
                     // The body's stats are the cast's own `summon.dat`
                     // record, not the twin's: the seat arm copies the
@@ -761,23 +763,12 @@ impl SceneHost {
                     // placeholder (a Terra cast hit for 1).
                     self.install_summon_cast_records();
                 }
-                if self.world.tables.summon_elements.is_empty() {
-                    for spell_id in (0..=u8::MAX)
-                        .filter(|&id| legaia_engine_effects::summon::has_summon_body(id))
-                    {
-                        let Some(cid) =
-                            legaia_engine_effects::summon::summon_creature_id(spell_id, &archive)
-                        else {
-                            continue;
-                        };
-                        if let Ok(Some(rec)) =
-                            legaia_actor_formats::monster_archive::record(&archive, cid)
-                        {
-                            self.world
-                                .tables
-                                .summon_elements
-                                .insert(spell_id, rec.element);
-                        }
+                if need_elements {
+                    for (spell_id, rec) in &bodies {
+                        self.world
+                            .tables
+                            .summon_elements
+                            .insert(*spell_id, rec.element);
                     }
                 }
                 // Pair the per-move power table with the just-merged monster

@@ -102,6 +102,10 @@ impl World {
                 facing: a.battle.facing_angle & 0xFFF,
             });
         self.casting.module_cam.creature_live = seat_live;
+        self.casting.module_cam.creature_body = self
+            .casting
+            .summon_actor_slot
+            .and_then(|s| self.live_body_pair(usize::from(s)));
         self.casting.module_cam.victim_untargetable =
             self.casting.module_cam.victim_slot.is_some_and(|v| {
                 self.cast_view(v).flags & legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE
@@ -193,6 +197,11 @@ impl World {
         let module_busy =
             profile.is_some() && run.as_ref().is_some_and(|r| r.tick_ported && r.busy);
         let module_phase = run.as_ref().map_or(0, |r| r.phase);
+        // PROT 0904's ray strikes a seat on this tick: its reaction, and so
+        // the outcome, start here.
+        let ray_struck = run
+            .as_ref()
+            .is_some_and(|r| r.prot_entry == 904 && !r.aoe_hits.is_empty());
         if let Some(shot) = run.as_ref().and_then(|r| r.camera_shot)
             && let Some(cam) = self.battle.camera.as_mut()
         {
@@ -317,10 +326,17 @@ impl World {
                 };
                 st.walked = walked;
                 let strike = match directed_hit {
-                    Some(hit) => module_phase > hit || !module_busy,
+                    Some(hit) => module_phase > hit || !module_busy || ray_struck,
                     None => walked,
                 };
                 if strike {
+                    // The fold's own finisher raises the readout flag the
+                    // module's pre-hits kept down. PROT 0915 has no fold: every
+                    // one of its rolls stores `0` there, so its cluster never
+                    // opens and the hits it counted go with it.
+                    self.battle.combo_cluster_held = false;
+                    self.battle.combo_cluster_dropped =
+                        self.cast_module_for(st.spell_id) == Some(915);
                     self.fold_pending_cast();
                     st.phase = SummonPhase::Linger;
                     st.frames = 0;
@@ -329,7 +345,13 @@ impl World {
             }
             SummonPhase::Linger => {
                 st.frames = st.frames.saturating_add(1);
+                if st.frames == 2 {
+                    self.battle.combo_cluster_dropped = false;
+                }
+                // A module still running owns the creature's clip: PROT 0934
+                // holds clip `3` through its closing arm `0x19`.
                 if st.frames == 1
+                    && !module_busy
                     && let Some(slot) = self.casting.summon_actor_slot
                     && let Some(a) = self.actors.get_mut(slot as usize)
                 {

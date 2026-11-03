@@ -22,6 +22,11 @@ mod fatal_panic;
 #[path = "legaia-engine/launcher_window.rs"]
 mod launcher_window;
 
+#[cfg(feature = "bench-alloc")]
+#[global_allocator]
+static COUNTING_ALLOC: legaia_engine_render::profile::CountingAlloc =
+    legaia_engine_render::profile::CountingAlloc;
+
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Cmd};
@@ -48,6 +53,7 @@ const ORACLE_SUBCOMMANDS: &[&str] = &[
     "retail-compare",
     "cast-sequence-score",
     "audio-sweep",
+    "pcm-retail",
 ];
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
@@ -120,6 +126,8 @@ fn main() -> Result<()> {
         Cmd::CastSequenceScore(args) => legaia_parity::cast_sequence::run(args),
         #[cfg(feature = "oracles")]
         Cmd::AudioSweep(args) => legaia_parity::audio_sweep::run(args),
+        #[cfg(feature = "oracles")]
+        Cmd::PcmRetail(args) => legaia_parity::pcm_retail::run(args),
         Cmd::Info {
             scene,
             extracted_root,
@@ -656,6 +664,14 @@ fn main() -> Result<()> {
         } => cmd_inventory(item, party_size, &script),
         Cmd::Equip { slot, item } => cmd_equip(slot, item),
         Cmd::GteReplay { trace, verbose } => cmd_gte_replay(&trace, verbose),
+        Cmd::EntryBench {
+            extracted_root,
+            scenes,
+            repeat,
+        } => {
+            let scenes: Vec<String> = scenes.split(',').map(str::to_string).collect();
+            legaia_engine_shell::window::cmd_entry_bench(&extracted_root, &scenes, repeat)
+        }
         Cmd::Title {
             script,
             no_save,

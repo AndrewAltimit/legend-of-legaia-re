@@ -419,6 +419,24 @@ impl FieldPlayerAnim {
         self.bank.get(slot).is_some_and(Option::is_some)
     }
 
+    /// Stand the player on bank slot `slot` at `cursor`, as a save state's
+    /// clip words hold it, and return that pose. The slot becomes the pick
+    /// and the one playing, so a tick after it runs on from the seat. `None`
+    /// for a slot the bank does not hold. The retail comparison's image child
+    /// only.
+    pub fn seat_bank_clip(&mut self, slot: usize, cursor: u32, clamp: bool) -> Option<PoseFrame> {
+        let clip = self.bank.get_mut(slot)?.as_mut()?;
+        clip.set_cursor(cursor, clamp);
+        let pose = clip.current_pose();
+        self.retail_slot = Some(slot);
+        self.playing_slot = Some(slot);
+        self.scene_record = None;
+        self.playing_scene = None;
+        self.walking = slot == legaia_actor_formats::character_pack::LOCOMOTION_WALK_SLOT;
+        self.last_pose = Some(pose.clone());
+        Some(pose)
+    }
+
     /// The settle tail's pick for this frame: a party-bank slot, or `None`
     /// when the pick did not land in the leader's bank (the scene-sentinel
     /// clip, a zero clip), which falls back to the motion-derived pair.
@@ -750,6 +768,22 @@ mod tests {
             assert_eq!(pose.bone_outputs[1].0[0], expect + 1);
             assert!(!pose.finished);
         }
+    }
+
+    /// A seat stands the bank slot at the state's cursor, and the next tick
+    /// runs on from it rather than rewinding the clip.
+    #[test]
+    fn a_seated_bank_clip_keeps_its_cursor_through_the_next_tick() {
+        let bundle = synth_anm_bundle(&[(2, 4); 7]);
+        let mut anim = FieldPlayerAnim::from_locomotion_bank(&bundle, 0).expect("bank");
+        let pose = anim.seat_bank_clip(2, 32, false).expect("slot 2");
+        assert_eq!(pose.bone_outputs[0].0[0], 220);
+        assert_eq!(anim.retail_slot(), Some(2));
+        let (ticked, _) = anim.tick_with_flags(0);
+        assert_eq!(ticked.bone_outputs[0].0[0], 220);
+        assert_eq!(anim.playing_clip().0, "bank");
+        assert_eq!(anim.playing_clip().1, 2);
+        assert!(anim.seat_bank_clip(7, 0, false).is_none());
     }
 
     /// `advance(n)` must land exactly where `n` sequential `tick()`s land,

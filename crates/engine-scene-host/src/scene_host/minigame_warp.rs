@@ -317,6 +317,7 @@ impl SceneHost {
                 loaded,
             ))
             .with_impact_overlay(loaded)
+            .with_overlay_text(loaded)
             .with_attract();
         self.world.enter_baka_fighter(fight);
         true

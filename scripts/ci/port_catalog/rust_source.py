@@ -2,10 +2,14 @@
 spans, and the host roots a reachability walk starts from.
 """
 
+import hashlib
+import os
+import pickle
 import re
+import sys
 from pathlib import Path
 
-from port_catalog.paths import CRATES_DIR
+from port_catalog.paths import CRATES_DIR, OUT_DIR
 
 # ---------------------------------------------------------------------------
 # Reachability axis ("live")
@@ -74,6 +78,13 @@ RUST_KEYWORDS = frozenset(
 )
 
 
+_STRIP_NEXT_RE = re.compile(r"""//|/\*|r["#]|"|'""")
+_RAW_OPEN_RE = re.compile(r'r(#*)"')
+_CHAR_LIT_RE = re.compile(r"'(?:\\.|[^\\'])'")
+_BRACE_RE = re.compile(r"[{}]")
+_WORD_RE = re.compile(r"\w+")
+
+
 def strip_rust_noise(text: str) -> str:
     """Blank out comments and string / char literals, preserving byte offsets.
 
@@ -84,6 +95,11 @@ def strip_rust_noise(text: str) -> str:
     out = list(text)
     i, n = 0, len(text)
     while i < n:
+        # Jump to the next spot any arm below acts on; the arms are the rule.
+        m = _STRIP_NEXT_RE.search(text, i)
+        if m is None:
+            break
+        i = m.start()
         c = text[i]
         if c == "/" and i + 1 < n and text[i + 1] == "/":
             j = text.find("\n", i)
@@ -107,12 +123,12 @@ def strip_rust_noise(text: str) -> str:
                     out[k] = " "
             i = j
         elif c == "r" and i + 1 < n and text[i + 1] in '"#':
-            m = re.match(r'r(#*)"', text[i:])
+            m = _RAW_OPEN_RE.match(text, i)
             if not m:
                 i += 1
                 continue
             close = '"' + m.group(1)
-            j = text.find(close, i + m.end())
+            j = text.find(close, m.end())
             j = n if j < 0 else j + len(close)
             for k in range(i, min(j, n)):
                 if out[k] != "\n":
@@ -133,11 +149,11 @@ def strip_rust_noise(text: str) -> str:
                     out[k] = " "
             i = j
         elif c == "'":
-            m = re.match(r"'(?:\\.|[^\\'])'", text[i:])
+            m = _CHAR_LIT_RE.match(text, i)
             if m:
-                for k in range(i, i + m.end()):
+                for k in range(i, m.end()):
                     out[k] = " "
-                i += m.end()
+                i = m.end()
             else:
                 i += 1
         else:
@@ -147,16 +163,15 @@ def strip_rust_noise(text: str) -> str:
 
 def match_brace(s: str, start: int) -> int:
     """`start` indexes a `{`. Return the index just past its matching `}`."""
-    depth, i, n = 0, start, len(s)
-    while i < n:
-        if s[i] == "{":
+    depth = 0
+    for m in _BRACE_RE.finditer(s, start):
+        if m.group() == "{":
             depth += 1
-        elif s[i] == "}":
+        else:
             depth -= 1
             if depth == 0:
-                return i + 1
-        i += 1
-    return n
+                return m.end()
+    return len(s)
 
 
 class RustFn:
@@ -174,6 +189,8 @@ class RustFn:
         "line",
         "is_test",
         "is_trait_default",
+        "calls",
+        "words",
     )
 
     def __init__(self, **kw):
@@ -275,6 +292,50 @@ def _innermost_impl(spans: list[tuple], pos: int) -> str | None:
     return best[1] if best else None
 
 
+class FnCalls:
+    """What one `fn` body can call, deduplicated, before name resolution.
+
+    One pass over the body per file parse, shared by both graphs and kept in
+    the parse cache; `build_rust_graph` only resolves these against the tree.
+    """
+
+    __slots__ = ("quals", "methods", "bares", "idents", "field_idents")
+
+    def __init__(self, body: str):
+        quals: set[tuple[str, str]] = set()
+        consumed: set[tuple[int, int]] = set()
+        for m in QUAL_CALL_RE.finditer(body):
+            quals.add((m.group(1), m.group(2)))
+            consumed.add(m.span(2))
+        methods: set[str] = set()
+        for m in METHOD_CALL_RE.finditer(body):
+            consumed.add(m.span(1))
+            methods.add(m.group(1))
+        bares: set[str] = set()
+        for m in BARE_CALL_RE.finditer(body):
+            if m.span(1) in consumed or m.group(1) in RUST_KEYWORDS:
+                continue
+            consumed.add(m.span(1))
+            bares.add(m.group(1))
+        # `idents` are the function-value candidates; a field declaration or
+        # struct-literal key among them (`name: Type`) is one the strict graph
+        # drops, so a name used both ways stays in `idents`.
+        idents: set[str] = set()
+        field_only: set[str] = set()
+        for m in IDENT_RE.finditer(body):
+            if m.span(1) in consumed or m.group(1) in RUST_KEYWORDS:
+                continue
+            if FIELD_COLON_RE.match(body, m.end(1)):
+                field_only.add(m.group(1))
+            else:
+                idents.add(m.group(1))
+        self.quals = quals
+        self.methods = methods
+        self.bares = bares
+        self.idents = idents
+        self.field_idents = field_only - idents
+
+
 class RustSource:
     """Parsed view of one Rust file: functions, spans, and export markers."""
 
@@ -288,11 +349,25 @@ class RustSource:
         self.trait_spans = _trait_spans(self.stripped)
         self.test_spans = _cfg_test_spans(self.stripped)
         self.line_starts = [0]
-        for i, ch in enumerate(text):
-            if ch == "\n":
-                self.line_starts.append(i + 1)
+        self.line_starts.extend(m.end() for m in re.finditer("\n", text))
         self.fns: list[RustFn] = []
         self._scan_fns()
+        for f in self.fns:
+            body = self.stripped[f.body_start : f.body_end]
+            f.calls = FnCalls(body)
+            f.words = frozenset(_WORD_RE.findall(body))
+        # Every identifier-shaped word in the file, for the strict graph's
+        # receiver gate.
+        self.idents = frozenset(IDENT_RE.findall(self.stripped))
+
+    # The source text is not in the parse cache: the loader has just read it.
+    def __getstate__(self):
+        state = dict(self.__dict__)
+        del state["raw"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
 
     def line_of(self, pos: int) -> int:
         lo, hi = 0, len(self.line_starts) - 1
@@ -421,10 +496,59 @@ def _crate_of(path: Path) -> tuple[str, bool]:
     return crate, sub not in NON_HOST_CRATE_DIRS
 
 
+def _parse_cache_path() -> Path | None:
+    """Where parsed sources are kept (gitignored `target/`); `None` turns the
+    cache off (`LEGAIA_NO_PARSE_CACHE=1`)."""
+    if os.environ.get("LEGAIA_NO_PARSE_CACHE"):
+        return None
+    return OUT_DIR / "parse-cache.pickle"
+
+
+def _parser_stamp() -> str:
+    """Any change to this parser, or to the interpreter, retires the cache."""
+    h = hashlib.sha256(Path(__file__).read_bytes())
+    h.update(sys.version.encode())
+    return h.hexdigest()
+
+
+def _read_parse_cache(path: Path | None, stamp: str) -> dict:
+    if path is None:
+        return {}
+    try:
+        with open(path, "rb") as f:
+            got = pickle.load(f)
+    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, ImportError):
+        return {}
+    return got["sources"] if got.get("stamp") == stamp else {}
+
+
+def _write_parse_cache(path: Path | None, stamp: str, sources: dict) -> None:
+    if path is None:
+        return
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "wb") as f:
+            pickle.dump(
+                {"stamp": stamp, "sources": sources}, f, pickle.HIGHEST_PROTOCOL
+            )
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+
+
 def load_rust_sources() -> dict[Path, RustSource]:
+    """Every host source, parsed. A file's parse is reused while its bytes,
+    its path and this parser are all unchanged, so a run after a small edit
+    re-parses only that edit."""
     out: dict[Path, RustSource] = {}
     if not CRATES_DIR.exists():
         return out
+    cache_path = _parse_cache_path()
+    stamp = _parser_stamp()
+    cached = _read_parse_cache(cache_path, stamp)
+    fresh: dict[str, tuple[str, RustSource]] = {}
+    changed = False
     for p in sorted(CRATES_DIR.rglob("*.rs")):
         crate, is_host = _crate_of(p)
         if not is_host:
@@ -433,13 +557,24 @@ def load_rust_sources() -> dict[Path, RustSource]:
             text = p.read_text(errors="ignore")
         except (PermissionError, OSError):
             continue
-        out[p] = RustSource(p, crate, text)
+        digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+        hit = cached.get(str(p))
+        if hit is not None and hit[0] == digest:
+            src = hit[1]
+            src.raw = text
+        else:
+            src = RustSource(p, crate, text)
+            changed = True
+        fresh[str(p)] = (digest, src)
+        out[p] = src
+    if changed or len(fresh) != len(cached):
+        _write_parse_cache(cache_path, stamp, fresh)
     return out
 
 
 def _is_bin_target(path: Path) -> bool:
-    rel = path.relative_to(CRATES_DIR)
-    return "bin" in rel.parts or rel.parts[-1] == "main.rs"
+    parts = path.parts[len(CRATES_DIR.parts) :]
+    return "bin" in parts or parts[-1] == "main.rs"
 
 
 def collect_roots(srcs: dict[Path, RustSource]) -> list[RustFn]:

@@ -198,9 +198,9 @@ fn no_capture_module_lands_its_hit_through_both_the_tick_and_the_fold() {
 /// fork, PROT 0916's instant kill (`sh zero,0x14c(s3)` at `0x801F7E14`, which
 /// waives the fold) and PROT 0924's finale (`sh zero, 0x14c(s3)` at
 /// `0x801F76A0`) each zero the victim outright, with no magnitude for the
-/// fold to carry - so those three are left out. Four more land a
-/// **non-lethal pre-hit** beside the fold, as retail does (PROT 0915 arm 7,
-/// 0928 arm `0xF`, 0932 arm `0x12`, 0933 arm `0xC`,
+/// fold to carry - so those three are left out. Six more land a
+/// **non-lethal pre-hit** beside the fold, as retail does (PROT 0908 arm 8,
+/// 0915 arm 7, 0928 arm `0xF`, 0932 arm `0x12`, 0933 arm `0xC`, 0934 arm `0x18`,
 /// `World::apply_summon_pre_hits`): a second damage event by design, so
 /// they are left out too.
 #[test]
@@ -212,7 +212,9 @@ fn no_seru_or_summon_tick_writes_hp_beside_its_fold() {
         let Some(entry) = world.cast_module_for(id) else {
             continue;
         };
-        if !(903..=934).contains(&entry) || [907, 915, 916, 924, 928, 932, 933].contains(&entry) {
+        if !(903..=934).contains(&entry)
+            || [907, 908, 915, 916, 924, 928, 932, 933, 934].contains(&entry)
+        {
             continue;
         }
         world.battle_ctx.active_actor = 0;

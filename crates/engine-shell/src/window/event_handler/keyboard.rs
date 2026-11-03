@@ -27,6 +27,11 @@ impl PlayWindowApp {
                     self.keys_down.remove(&code);
                 }
                 ElementState::Pressed if self.keys_down.insert(code) => {
+                    if self.hotkey_help {
+                        // On the panel, Esc is the way out of the panel.
+                        self.hotkey_help = false;
+                        return;
+                    }
                     let now = std::time::Instant::now();
                     if escape_quits(self.quit_prompt, now) {
                         if let Some(log) = self.record_log.as_mut()
@@ -112,7 +117,9 @@ impl PlayWindowApp {
         // is already down is the OS auto-repeat, not a new press.
         let repeat = state == ElementState::Pressed && self.keys_down.contains(&code);
         self.latch_key_name(code, state);
-        if self.debug_spawn_key(code, state)
+        // The panel first: `Tab` is the multiplayer screen's key everywhere else.
+        if self.panel_key(code, state, repeat)
+            || self.debug_spawn_key(code, state)
             || self.netplay_key(code, state)
             || self.minigame_key(code, state)
             || self.option_key(code, state, repeat)

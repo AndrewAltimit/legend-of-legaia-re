@@ -65,9 +65,11 @@ pub struct AudioDirector<S: AudioSink> {
     /// Master volume forwarded to every freshly-attached sequencer. Engines
     /// bump this when the user adjusts the music slider.
     pub master_vol: u8,
-    /// Loop-to event index for newly-started sequencers. `None` plays once
-    /// (sequencer reports `finished` when it runs off the end). Most field
-    /// BGM loops to 0; cutscene SEQs typically don't.
+    /// Loop-to event index for newly-started sequencers. `None`, retail's: the
+    /// field BGM attach `FUN_80026478` plays with a count of `1`
+    /// (`FUN_80062880(seq, 1, 1)`, `+0x20`), so a score ends on its own
+    /// end-of-track unless a counted in-stream loop keeps it from getting there.
+    /// A retail capture of `2050` runs off its end and its flags go to `0`.
     pub loop_to: Option<usize>,
     /// Last started BGM id, if any. Useful for diagnostics + suppressing
     /// redundant `start(same_id)` calls (the field VM occasionally re-emits
@@ -234,7 +236,7 @@ impl<S: AudioSink> AudioDirector<S> {
             audio,
             bank: None,
             master_vol: legaia_engine_audio::sequencer::RETAIL_BGM_SEQ_VOL,
-            loop_to: Some(0),
+            loop_to: None,
             last_started: None,
             sfx_bank: SfxBank::new(),
             sfx_cue_slots: BTreeMap::new(),

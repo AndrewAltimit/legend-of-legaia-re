@@ -267,14 +267,8 @@ impl LegaiaMinigames {
     /// `MinigameSubId::standalone_bgm_id`, so the page carries no track
     /// literal of its own.
     pub fn minigame_bgm_id(&self, game: &str) -> i32 {
-        use legaia_engine_mode::minigame_entry::MinigameSubId as M;
-        let sub = match game {
-            "baka" => M::BakaFighter,
-            "slot" => M::SlotMachine,
-            "muscle" => M::MuscleDome,
-            "dance" => M::Dance,
-            "fishing" => M::Fishing,
-            _ => return -1,
+        let Some(sub) = crate::live_spu::tab_minigame(game) else {
+            return -1;
         };
         sub.standalone_bgm_id().map_or(-1, i32::from)
     }

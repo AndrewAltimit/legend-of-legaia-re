@@ -1114,6 +1114,9 @@ mod tests {
                 .collect();
             lifts.sort();
             std::hash::Hash::hash(&lifts, &mut h);
+            if let Some(h) = rt.scene_host.host_mut() {
+                h.world.fog_volume.resolve_ground_source();
+            }
             let fog = rt
                 .scene_host
                 .host()

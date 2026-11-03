@@ -165,14 +165,15 @@ fn rikuroa_man_carries_the_caruban_stager_placement_and_formation_row() {
     );
 }
 
-/// Full organic chapter-1 rikuroa slice, no flags pre-seeded, no engine
+/// Chapter-1 rikuroa slice, one flag (`0x286`) raised by hand, no engine
 /// stamps:
 ///
 /// 1. first entry runs `P1[0]`, whose intro arm spawns `P2[43]` - its script
 ///    bytes SET the arrival flag `0x2FB`;
 /// 2. re-entering (the scene reload that follows the retail first-arrival
 ///    cutscene) re-derives the stager binding from the MAN (nothing is
-///    pre-armed: no forced formation, marker clear);
+///    pre-armed: no forced formation, marker clear), and with `0x286` raised
+///    its prologue seats the actor on the nest;
 /// 3. the player approaches the stager's station tile - the touch dispatch
 ///    runs `P1[3]` through the field VM, whose own `52 89` SETs the staged
 ///    marker and whose `3E FF 11` enters battle on formation row 17 (lone
@@ -234,6 +235,26 @@ fn rikuroa_caruban_chain_runs_organically_from_p1_3_to_p2_50() {
             .boss_stagers
             .contains_key(&CARUBAN_STAGER_SLOT),
         "the P1[3] stager binding is installed from the MAN"
+    );
+
+    // `P1[3]`'s spawn prologue seats the actor only on its `0x286` arm
+    // (`72 86 15 00`, then `4C 51 45 4B`); until then it stays on its parked
+    // header, and `rikuroa_pre_caruban` holds `0x286` up with the actor at
+    // `(8896, 9664)`. The record that raises it (`52 86`) is the walk toward
+    // the nest, which this slice does not play.
+    let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+    assert_eq!(
+        host.world.npcs.positions.get(&CARUBAN_STAGER_SLOT),
+        Some(&(hide, hide)),
+        "with 0x286 clear the prologue leaves the stager parked"
+    );
+    host.world.system_flag_set(0x286);
+    host.enter_field_scene("rikuroa", 0)
+        .expect("re-enter rikuroa with 0x286 up");
+    assert_eq!(
+        host.world.npcs.positions.get(&CARUBAN_STAGER_SLOT),
+        Some(&(8896, 9664)),
+        "the 0x286 arm seats the stager on the nest"
     );
 
     // Phase 3 - approach: seat the player at the stager's station tile (the

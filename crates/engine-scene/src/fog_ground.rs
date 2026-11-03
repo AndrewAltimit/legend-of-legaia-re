@@ -20,7 +20,7 @@
 use crate::field_env::EnvDraw;
 use crate::mesh_memo::{ContentKey, MeshMemo};
 use crate::scene_resources::SceneResources;
-use legaia_render_kernels::fog_volume::{FogGround, FogGroundBuilder};
+use legaia_render_kernels::fog_volume::{FogGround, FogGroundBuilder, FogGroundSource};
 use legaia_scene_formats::field_objects::WalkHeightfield;
 
 /// Below this opaque-texel fraction a textured prim is an all-but-empty
@@ -192,6 +192,23 @@ pub fn build_for_scene(
     scene: &crate::scene::Scene,
     index: &crate::scene::ProtIndex,
 ) -> Option<FogGround> {
+    source_for_scene(terrain, placements, placement_scales, res, scene, index)?.build()
+}
+
+/// What [`build_for_scene`] builds, as a source to build it from later
+/// ([`legaia_render_kernels::fog_volume::FogVolume::set_ground_source`]). It
+/// takes this load's inputs now - the draws, which meshes this VRAM lets count
+/// as surfaces, the floor tables - so a later build makes the field this load
+/// would have made, whatever the scripts have moved since. `None` for a
+/// world-map scene.
+pub fn source_for_scene(
+    terrain: &[EnvDraw],
+    placements: &[EnvDraw],
+    placement_scales: &[f32],
+    res: &SceneResources,
+    scene: &crate::scene::Scene,
+    index: &crate::scene::ProtIndex,
+) -> Option<FogGroundSource> {
     if crate::scene::is_world_map_scene(&scene.name) {
         return None;
     }
@@ -199,11 +216,13 @@ pub fn build_for_scene(
     let ground = scene.walk_heightfield(index).ok().flatten();
     let grid = scene.field_collision_grid(index).ok().flatten();
     let lut = scene.field_floor_height_lut(index).ok().flatten();
-    build(
-        &surfaces,
-        ground.as_ref(),
-        walk_floor_sampler(grid.as_deref(), lut.as_ref()),
-    )
+    Some(FogGroundSource::new(move || {
+        build(
+            &surfaces,
+            ground.as_ref(),
+            walk_floor_sampler(grid.as_deref(), lut.as_ref()),
+        )
+    }))
 }
 
 /// Rasterise the scene's floor: the surfaces' up-facing triangles plus the

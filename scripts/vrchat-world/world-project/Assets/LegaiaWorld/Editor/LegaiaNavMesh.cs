@@ -3,9 +3,9 @@
 // a chat ring, its front door) follows a route over ground it can stand
 // on instead of a straight line through a hillside or a hut wall.
 //
-// WHY COLLIDERS, NOT RENDERERS: the built root is X-mirrored, which flips
-// every render mesh's winding, and a navmesh bake decides "floor" from the
-// triangle normal the winding implies. The builder's merged world
+// WHY COLLIDERS, NOT RENDERERS: the kit frame's mirrors can flip a render
+// mesh's winding, and a navmesh bake decides "floor" from the triangle
+// normal the winding implies. The builder's merged world
 // collider is double-sided (both windings of every face), so baking from
 // PHYSICS COLLIDERS gives the voxelizer an up-facing copy of every floor
 // whatever the mirror stack did - and it is exactly the geometry the

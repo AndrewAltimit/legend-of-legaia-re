@@ -175,13 +175,6 @@ jobs:
           fi
           cargo deny check advisories
 
-      # Every pack under packs/ validates, bundles byte-for-byte the same
-      # twice and reads back clean - what release-build.sh ships as
-      # packs/<id>.lxpack. Builds the `asset` CLI (dev profile, warm in the
-      # runner's target cache).
-      - name: Expansion packs validate and bundle
-        run: python3 scripts/ci/check-expansion-packs.py
-
       # The site's crate map, the README's crate diagrams and its layer list
       # are generated from the manifests; a stale copy fails.
       - name: Crate map freshness
@@ -204,6 +197,11 @@ jobs:
           else
             echo "no base revision for this event; self-test only"
           fi
+
+      # full-gate.py reads this file's run lines by indentation; a step written
+      # in a shape it cannot read, or one that blesses or pushes, fails here.
+      - name: Full gate reads this workflow
+        run: python3 scripts/ci/full-gate.py --selftest
 
       - name: UI host drift
         run: python3 scripts/ci/check-ui-host-drift.py
@@ -252,6 +250,19 @@ jobs:
       # is what let `live/disclosure_gap` drift off its baseline of 0.
       - name: Port-catalog ratchet (skips without the dump corpus)
         run: python3 scripts/ci/port-catalog.py --check --live
+
+      # Every pack under packs/ validates, bundles byte-for-byte the same
+      # twice and reads back clean - what release-build.sh ships as
+      # packs/<id>.lxpack. Builds the `asset` CLI (dev profile), the one gate
+      # here that compiles, so it runs after the rest: a doc typo reports in
+      # seconds. The target dir is selected first because this job's build
+      # lands in the cache root otherwise, where the next cargo job's
+      # select-ci-target-dir.sh prunes it as stale and every run builds cold.
+      - name: Select per-toolchain target dir
+        run: scripts/ci/select-ci-target-dir.sh
+
+      - name: Expansion packs validate and bundle
+        run: python3 scripts/ci/check-expansion-packs.py
 
       # site/wasm/ is build output that the deploy job rebuilds, so a stale
       # bundle on the runner is not a repository defect. Reported, never fatal.

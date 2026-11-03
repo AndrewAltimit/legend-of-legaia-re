@@ -98,6 +98,26 @@ impl Scene {
     /// `geremi`'s v12 table and loaded Jeremi's MAN under the `rikuroa`
     /// label).
     pub fn load(index: &ProtIndex, name: &str) -> Result<Self> {
+        Self::load_entries(index, name, |_| false)
+    }
+
+    /// [`Self::load`] up to and including the block's first entry that
+    /// [`find_bundle`](crate::scene_bundle::find_bundle) would pick: what a
+    /// reader of the scene's MAN alone needs, without classifying the rest of
+    /// the block or holding its bytes in the index's cache. A block with no
+    /// such entry loads whole. [`Self::field_man_payload`] over it answers as
+    /// over the whole scene unless the bundle carries no MAN.
+    pub fn load_through_bundle(index: &ProtIndex, name: &str) -> Result<Self> {
+        Self::load_entries(index, name, |entry| {
+            crate::scene_bundle::table_bundle(entry).is_some()
+        })
+    }
+
+    fn load_entries(
+        index: &ProtIndex,
+        name: &str,
+        last: impl Fn(&SceneEntry) -> bool,
+    ) -> Result<Self> {
         // Head defines (`init_data 0`, `gameover_data 1`) keep their legacy
         // unshifted windows - the -2 conversion has no content to land on
         // there; see `cdname::block_range_for_name_extraction`.
@@ -128,7 +148,12 @@ impl Scene {
             // entry then failed with a descriptor offset past its end.
             let bytes = index.entry_bytes(idx)?;
             let class = index.class_of(idx)?;
-            entries.push(SceneEntry { idx, class, bytes });
+            let entry = SceneEntry { idx, class, bytes };
+            let done = last(&entry);
+            entries.push(entry);
+            if done {
+                break;
+            }
         }
         Ok(Self {
             name: name.to_string(),
@@ -718,7 +743,7 @@ impl Scene {
             return Ok(None);
         }
         if let Some(bundle) = crate::scene_bundle::find_bundle(self) {
-            let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+            let entry_bytes = index.entry_bytes(bundle.entry_idx())?;
             if let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? {
                 return Ok(Some(man));
             }

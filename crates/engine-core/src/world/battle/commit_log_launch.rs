@@ -53,6 +53,7 @@ impl World {
             // A new action's seed: whatever cleared the last target plate's
             // content is behind it.
             self.battle.action_plaque_glide = Some(LogLaunch::new(false));
+            self.battle.target_plaque_seat = None;
             self.battle.target_plate_cleared = false;
             self.battle.action_hud_wiped = false;
             self.battle.counter_hud = None;
@@ -74,6 +75,10 @@ impl World {
             self.battle.spirit_gauge_glide = Some(LogLaunch::new(false));
         } else if element == HUD_TARGET_BANNER {
             self.battle.target_plaque_glide = Some(LogLaunch::new(false));
+            self.battle.target_plaque_seat = self
+                .actors
+                .get(usize::from(self.battle_ctx.active_actor))
+                .map(|a| a.battle.active_target);
             self.battle.target_plate_cleared = false;
             self.battle.action_hud_wiped = false;
         }

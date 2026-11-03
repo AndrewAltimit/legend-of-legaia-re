@@ -1,8 +1,9 @@
 /* Expansion workbench: the frame around the editors.
  *
  * The page opens on the map builder, Sims-style: a strip of the pack's maps
- * to pick from, a mode toolbar (Build, Paint terrain, Place objects, NPCs,
- * Zones & exits, Test-play) over the 3D view, and a catalog strip under it.
+ * to pick from, a mode toolbar (Place objects, Select & move, Paint terrain,
+ * NPCs, Zones & exits, Test-play) over the 3D view, Place objects first, and a
+ * catalog strip under it.
  * Every other section editor sits behind one of five areas (Build, Story,
  * Battle, Items & cards, Modes & music) plus Pack settings, each area a row
  * of plain-named pages. This module draws that frame; the editors stay in
@@ -63,9 +64,9 @@ export const areaOf = (tab) => (AREAS.find((a) => a.tabs.includes(tab)) || AREAS
 
 /** The mode toolbar. `key` is the digit that picks the mode on the Build area. */
 export const BUILD_MODES = [
-  { id: 'build', label: 'Build', key: '1', title: 'Pick up, move, turn and scale anything on the map' },
-  { id: 'terrain', label: 'Paint terrain', key: '2', title: 'Paint floor and walls tile by tile, or sculpt the ground' },
-  { id: 'objects', label: 'Place objects', key: '3', title: 'Put furniture, plants and props on the map' },
+  { id: 'objects', label: 'Place objects', key: '1', title: 'Put furniture, plants and props on the map' },
+  { id: 'build', label: 'Select & move', key: '2', title: 'Pick up, move, turn and scale anything on the map' },
+  { id: 'terrain', label: 'Paint terrain', key: '3', title: 'Paint floor and walls tile by tile, or sculpt the ground' },
   { id: 'npcs', label: 'NPCs', key: '4', title: 'Place people and give them lines' },
   { id: 'zones', label: 'Zones & exits', key: '5', title: 'Doors out, places to start, step-on events and monster zones' },
   { id: 'test', label: 'Test-play', key: '6', title: 'Walk around the map as the player' },
@@ -94,7 +95,7 @@ function icon(id) {
 }
 
 // --- The build tools seam ------------------------------------------------------------
-const B = { mode: 'build', impl: null, bar: null, catalog: null, env: null };
+const B = { mode: 'objects', impl: null, bar: null, catalog: null, env: null };
 
 /** The fallback build tools over the painter, the 3D editor and the preview. */
 const FALLBACK = {
@@ -167,11 +168,11 @@ const CATALOG_LISTS = {
 
 const CATALOG_HINTS = {
   build: 'Click anything in the 3D view or on the tile map to pick it up. Drag to move it; W, E and R switch between move, turn and scale; Delete removes it; Ctrl+Z takes any change back.',
-  terrain: 'Choose a ground type in the palette beside the tile map, then paint. On a map with sculpted terrain the 3D view raises, lowers and smooths the ground with a brush ([ and ] size it).',
-  objects: 'Choose an object from the base scene in the tile map\'s side panel, then click a tile to place it. Click a placed one below to select it.',
+  terrain: 'On a sculpted map, the 3D view takes a brush: Sculpt raises and lowers the ground, Paint lays a material ([ and ] size it). Tile by tile, use the painter.',
+  objects: 'Click an object in the palette, then click on the ground in the 3D view to place it.',
   npcs: 'Click a tile to place a person, then pick who they are and what they say in the form that opens. Click one below to select it.',
   zones: 'Exits lead to another map or a retail scene; start points are where the player arrives; step-on events show a line, a notice or start a fight; monster zones roll random battles.',
-  test: 'Walk the map as the player, in the 3D view or in a play tab of its own. Edits made while a play tab is open reload there.',
+  test: 'You are walking the map as the player. Pick another mode to stop. A play tab of its own reloads on later edits.',
 };
 
 function drawCatalog() {
@@ -188,17 +189,21 @@ function drawCatalog() {
   el.append(h('div', { class: 'xw-cat-head' }, h('strong', {}, mode.label), h('span', { class: 'xw-hint' }, ' ' + CATALOG_HINTS[mode.id])));
   const row = h('div', { class: 'xw-cat-row' });
   if (mode.id === 'terrain') {
-    row.append(chip('Paint tiles', 'Paint the chosen ground type (B)', () => { setPainterTool('paint'); env.rerender(); }),
-      chip('Fill a rectangle', 'Drag a rectangle of the chosen ground (R)', () => { setPainterTool('rect'); env.rerender(); }),
-      chip('Pick a ground type', 'Click a tile to take its ground type (I)', () => { setPainterTool('pick'); env.rerender(); }));
-    if (map && map.terrain) row.append(chip('Sculpt the ground', 'Raise, lower and smooth the 3D ground (K)', () => { setPainterTool('sculpt'); setEditMode('sculpt'); env.rerender(); }));
+    // The tile tools act on the painter, so they show with it.
+    const pv = env.preview;
+    if (pv && pv.drawerOpen && !pv.drawerOpen() && pv.view() !== '2d') {
+      row.append(chip('Open the tile painter', 'Paint and fill tiles in a drawer beside the 3D view', () => { pv.setDrawer(true); env.rerender(); }));
+    } else {
+      row.append(chip('Paint tiles', 'Paint the chosen ground type (B)', () => { setPainterTool('paint'); env.rerender(); }),
+        chip('Fill a rectangle', 'Drag a rectangle of the chosen ground (R)', () => { setPainterTool('rect'); env.rerender(); }),
+        chip('Pick a ground type', 'Click a tile to take its ground type (I)', () => { setPainterTool('pick'); env.rerender(); }));
+    }
   } else if (mode.id === 'zones') {
     row.append(chip('Add an exit', 'Drag a rectangle where the player leaves the map (E)', () => { setPainterTool('exit'); env.rerender(); }),
       chip('Add a start point', 'Click where the player arrives (S)', () => { setPainterTool('spawn'); env.rerender(); }),
       chip('Add a step-on event', 'Drag a rectangle that shows a line or starts a fight (T)', () => { setPainterTool('trigger'); env.rerender(); }),
       chip('Add a monster zone', 'Drag a rectangle where random battles roll (N)', () => { setPainterTool('encounter'); env.rerender(); }));
   } else if (mode.id === 'test') {
-    if (env.preview && env.preview.setCamera) row.append(chip('Walk here in 3D', 'Take control of the player in the 3D view; Esc gives the camera back', () => env.preview.setCamera('player')));
     row.append(chip('Play this map in a new tab', 'Open a play tab on this map (it reloads in place on later edits)', () => env.playHere()),
       chip('Play the whole pack', 'Install the pack in the play page and start it', () => env.playPack()));
   } else if (mode.id === 'build') {
@@ -226,7 +231,8 @@ function mapSize(m) {
 
 /** A small room over the disc's first scene: what "New map" adds. */
 export function blankMap(cat) {
-  const scene = cat && cat.scenes && cat.scenes[0] ? cat.scenes[0].name : 'town01';
+  // Rim Elm: the disc's first block holds no field to enter.
+  const scene = cat && cat.scenes && cat.scenes.some((s) => s.name === 'town01') ? 'town01' : (cat && cat.scenes && cat.scenes[0] ? cat.scenes[0].name : 'town01');
   return {
     name: 'New map', size: null,
     base: { scene: { kind: 'scene', name: scene }, geometry: 'none' },
@@ -252,24 +258,6 @@ export function renderBuildHead(el, o) {
   B.catalog = o.catalog;
   const maps = (o.pack && o.pack.maps) || {};
   const ids = Object.keys(maps);
-  const pick = h('div', { class: 'xw-maps', role: 'listbox', 'aria-label': 'Your maps' });
-  for (const id of ids) {
-    const m = maps[id];
-    const [w, ht] = mapSize(m);
-    const errs = o.errorsOf(id);
-    const scene = m.base && m.base.scene && m.base.scene.name;
-    pick.append(h('button', {
-      type: 'button', role: 'option', class: 'xw-map-card' + (id === o.open ? ' is-on' : '') + (errs ? ' has-err' : ''),
-      'aria-selected': String(id === o.open), title: `Open ${m.name || id} (maps/${id}.toml)`, onclick: () => o.choose(id),
-    }, h('strong', {}, m.name || id),
-    h('span', { class: 'xw-map-meta' }, `${w} x ${ht} tiles${scene ? ' - on ' + scene : ''}`),
-    h('span', { class: 'xw-map-meta' }, `${(m.npcs || []).length} people, ${(m.props || []).length} objects, ${(m.exits || []).length} exits`),
-    errs ? h('span', { class: 'xw-badge' }, errs) : null));
-  }
-  pick.append(h('button', { type: 'button', class: 'xw-map-card is-add', title: 'Add a small walled room to build on', onclick: () => o.add() },
-    h('strong', {}, '+ New map'), h('span', { class: 'xw-map-meta' }, 'a small room to start from')));
-  el.append(h('div', { class: 'xw-maps-head' }, h('span', { class: 'wb-label' }, 'Your maps'),
-    h('span', { class: 'xw-hint' }, ids.length ? 'pick one to build on' : 'none yet: add one to start building')), pick);
   if (!ids.length) {
     el.append(h('div', { class: 'xw-emptybig' }, h('strong', {}, 'This pack has no maps yet.'),
       h('span', {}, 'A map is a place the player can walk around: a room, a village, a cave. It is laid out tile by tile over a scene from your disc.'),
@@ -278,8 +266,21 @@ export function renderBuildHead(el, o) {
     if (B.catalog) B.catalog.innerHTML = '';
     return;
   }
+  /* The map picker: one compact row. What a card said (size, scene, how many
+   * of what) is each option's tooltip and the Pack files page. */
+  const pick = h('select', { class: 'xw-map-pick', 'aria-label': 'Map being built', title: 'The map you are building' }, ...ids.map((id) => {
+    const m = maps[id];
+    const [w, ht] = mapSize(m);
+    const errs = o.errorsOf(id);
+    return h('option', { value: id, selected: id === o.open }, `${errs ? '! ' : ''}${m.name || id} (${w} x ${ht})`);
+  }));
+  pick.addEventListener('change', () => o.choose(pick.value));
+  const errs = o.open ? o.errorsOf(o.open) : 0;
+  el.append(h('div', { class: 'xw-map-row' }, pick, errs ? h('span', { class: 'xw-badge', title: `${errs} problem(s) on this map` }, errs) : null,
+    h('button', { type: 'button', class: 'wb-mini xw-map-add', 'data-ic': '+', title: 'Add a small new map, with some ground and a few objects already on it', onclick: () => o.add() }, '+ New map')));
   B.bar = h('div', { class: 'xw-modebar', role: 'toolbar', 'aria-label': 'Build modes' });
   el.append(B.bar);
+  if (o.tools) el.append(o.tools());
   drawBar();
   drawCatalog();
 }

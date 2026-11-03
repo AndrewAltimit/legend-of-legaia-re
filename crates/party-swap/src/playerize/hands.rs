@@ -97,17 +97,40 @@ pub(super) fn fk_inset_hand(
     if frames.is_empty() {
         return Ok(None);
     }
+    // The forearm's pose per frame: it does not move with the hand's inset.
+    let forearm_poses: Vec<Vec<[f32; 3]>> = frames
+        .iter()
+        .map(|(pf, _)| pose(&forearm.vertices, pf, &[0.0; 3]))
+        .collect();
     let worst_closure = |vs: &[[i16; 3]], d: &[f32; 3]| -> f32 {
         let mut worst = 0f32;
-        for (pf, ph) in &frames {
-            let fa = pose(&forearm.vertices, pf, &[0.0; 3]);
-            let ha = pose(vs, ph, d);
-            let c = closest(&fa, &ha);
+        for ((_, ph), fa) in frames.iter().zip(&forearm_poses) {
+            let c = closest(fa, &pose(vs, ph, d));
             if c > worst {
                 worst = c;
             }
         }
         worst
+    };
+    // The same worst joint, given up on once a frame reaches `bound`: the
+    // worst only grows, so that inset cannot beat the one that set the bound.
+    // The frame that does it goes first next time, since the insets that lose
+    // tend to lose on the same few frames.
+    let mut frame_order: Vec<usize> = (0..frames.len()).collect();
+    let mut worst_under = |vs: &[[i16; 3]], d: &[f32; 3], bound: f32| -> Option<f32> {
+        let mut worst = 0f32;
+        for i in 0..frame_order.len() {
+            let frame = frame_order[i];
+            let c = closest(&forearm_poses[frame], &pose(vs, frames[frame].1, d));
+            if c >= bound {
+                frame_order[..=i].rotate_right(1);
+                return None;
+            }
+            if c > worst {
+                worst = c;
+            }
+        }
+        Some(worst)
     };
     // The host's own joint sets the target - never chase below its noise.
     let target = worst_closure(&dst_hand.vertices, &[0.0; 3]).max({
@@ -150,8 +173,7 @@ pub(super) fn fk_inset_hand(
                 if mag > dst_mag + law_budget {
                     continue;
                 }
-                let w = worst_closure(&hand.vertices, &d);
-                if w < best.1 {
+                if let Some(w) = worst_under(&hand.vertices, &d, best.1) {
                     best = (d, w);
                 }
             }

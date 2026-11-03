@@ -198,6 +198,7 @@ impl PlayWindowApp {
         light_prims: &[legaia_render_kernels::screen_prim::ScreenPrim],
     ) {
         let target = |scene| present_target(scene, screen_prims, light_prims);
+        r.set_frame_persist(self.session.host.world.cast_frame_persists());
         self.capture_cast_sequence_frame(r, &|| target(scene));
         // Screenshot harness: at the target tick, read the frame back
         // offscreen and exit instead of presenting to the window.
@@ -266,10 +267,29 @@ impl PlayWindowApp {
                 }
             }
         }
+        // A capture child's frames before its capture reach nobody: the
+        // capture and the recorder each draw their own frame from the scene
+        // description (`encode_frame` stages everything it reads), and
+        // `Renderer::render` leaves nothing a later frame samples - except
+        // through a cast module, whose wash frames build on the frames before
+        // them (`Renderer::set_frame_persist`).
+        if capture_child_skips_present() && !self.session.host.world.cast_module_resident() {
+            r.flush_frame_uploads();
+            return;
+        }
         if let Err(e) = r.render(target(scene)) {
             log::error!("render: {e:#}");
         }
     }
+}
+
+/// `LEGAIA_CAPTURE_NO_PRESENT=1` (the retail comparison's image child): frames
+/// are not drawn to the window, only to the capture. Most of a capture child's
+/// GPU time and all of its display traffic otherwise goes on frames nobody
+/// sees.
+fn capture_child_skips_present() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("LEGAIA_CAPTURE_NO_PRESENT").is_some())
 }
 
 /// The `LEGAIA_DIAG_CAST_SEQ` recorder's run state
@@ -297,6 +317,12 @@ struct CastSeqRecorder {
     /// Only a cast by this acting seat starts the recording
     /// (`LEGAIA_DIAG_CAST_SEQ_SEAT`); any seat when unset.
     seat: Option<u8>,
+    /// `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`: start on the tick the capture's own
+    /// gate holds instead of on cast begin, for a retail state that holds an
+    /// action already running (a monster's strike): both recordings then open
+    /// on the same instant. The child takes its frame later
+    /// (`LEGAIA_DIAG_CAPTURE_TICK`).
+    begin_on_gate: bool,
     start: Option<u64>,
     done: Option<u64>,
     shots: u64,
@@ -305,6 +331,8 @@ struct CastSeqRecorder {
 /// Action state `0x28`, cast begin: the state every Magic action - a party
 /// summon, a monster spell, a capture-class cast - passes through first.
 const CAST_BEGIN_STATE: u8 = 0x28;
+/// Action state `0x3C`: where a heal-class Magic action begins instead.
+const HEAL_BEGIN_STATE: u8 = 0x3C;
 
 impl PlayWindowApp {
     /// `LEGAIA_DIAG_CAST_SEQ=<dir>` instrument: the engine side of the
@@ -370,6 +398,7 @@ impl PlayWindowApp {
                 seat: std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT")
                     .ok()
                     .and_then(|v| v.parse().ok()),
+                begin_on_gate: std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate"),
                 dir,
                 meta,
                 start: None,
@@ -419,14 +448,25 @@ impl PlayWindowApp {
         let tick = self.tick_no;
         let start = match rec.start {
             Some(s) => s,
-            None if st == CAST_BEGIN_STATE && rec.seat.is_none_or(|s| s == acting) => {
+            None if rec.begin_on_gate => {
+                if !self.capture_gate_met() {
+                    return;
+                }
+                eprintln!("cast sequence: the capture's gate at tick {tick} (seat {acting})");
+                rec.start = Some(tick);
+                tick
+            }
+            None if (st == CAST_BEGIN_STATE || st == HEAL_BEGIN_STATE)
+                && rec.seat.is_none_or(|s| s == acting) =>
+            {
                 eprintln!("cast sequence: cast begin at tick {tick} (seat {acting})");
                 rec.start = Some(tick);
                 tick
             }
             None => return,
         };
-        if rec.done.is_none() && matches!(st, 0x50 | 0x51 | 0x5A) {
+        // `0x65`: the Spikefish flute's flee leaves the band for the run band.
+        if rec.done.is_none() && matches!(st, 0x50 | 0x51 | 0x5A | 0x65) {
             eprintln!("cast sequence: done band at tick {tick} (state 0x{st:02X})");
             rec.done = Some(tick);
         }
@@ -461,7 +501,7 @@ impl PlayWindowApp {
                         width: legaia_parity::retail_compare_image::FRAME_W as u32,
                         height: legaia_parity::retail_compare_image::FRAME_H as u32,
                     };
-                    match write_capture_png(&rec.dir.join(&name), &img) {
+                    match write_recorder_png(&rec.dir.join(&name), &img) {
                         Ok(()) => {
                             rec.shots += 1;
                             shot = name;
@@ -621,7 +661,82 @@ impl PlayWindowApp {
                     );
                 }
             }
+            // Retail's creature is pool slot 7; the engine seats it elsewhere.
+            if let Some(a) = w
+                .casting
+                .summon_actor_slot
+                .and_then(|c| w.actors.get(usize::from(c)))
+            {
+                cols[7] = format!(
+                    "{},{},{},{}",
+                    a.battle.current_anim,
+                    a.battle.queued_anim,
+                    a.battle_anim_cue_cursor,
+                    a.battle_reaction_entry.map_or(-1, i32::from)
+                );
+            }
             let _ = writeln!(f, "{tick},{}", cols.join(","));
+        }
+        // `creature_pose.csv` (no header, `LEGAIA_DIAG_CAST_PARTS`): the
+        // creature's decoded objects per tick, a retail RAM image's pose pool
+        // `ctx+0x6F4` (twelve bytes an object) after the creature's draw.
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && let Some(a) = w
+                .casting
+                .summon_actor_slot
+                .and_then(|c| w.actors.get(usize::from(c)))
+            && let Some(frame) = a.pose_frame.as_ref()
+            && let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("creature_pose.csv"))
+        {
+            use std::io::Write as _;
+            let cursor = a
+                .battle_animation
+                .as_ref()
+                .map_or(-1, |p| i32::from(p.cursor_sixteenths()));
+            let row: Vec<String> = frame
+                .bone_outputs
+                .iter()
+                .map(|(p, r)| format!("{} {} {} {} {} {}", p[0], p[1], p[2], r[0], r[1], r[2]))
+                .collect();
+            let _ = writeln!(
+                f,
+                "{tick},{},{cursor},{}",
+                a.battle.current_anim,
+                row.join(",")
+            );
+        }
+        // `creature.csv` (no header): the summon creature's clip, staged byte,
+        // cursor in sixteenths and stand per tick, a retail RAM image's
+        // `+0x1D9`, `+0x1DA`, node `+0x68` and `+0x34..+0x38`.
+        if let Some(a) = w
+            .casting
+            .summon_actor_slot
+            .and_then(|c| w.actors.get(usize::from(c)))
+            && let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("creature.csv"))
+        {
+            use std::io::Write as _;
+            let _ = writeln!(
+                f,
+                "{tick},{},{},{},{},{},{},{},{},{},{}",
+                a.battle.current_anim,
+                a.battle.queued_anim,
+                a.battle_animation
+                    .as_ref()
+                    .map_or(-1, |p| i32::from(p.cursor_sixteenths())),
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+                a.battle.facing_angle,
+                a.battle_animation.as_ref().map_or(0, |p| p.root_speed()),
+                a.battle.active_target,
+                a.battle.anim_rate.get(),
+            );
         }
         // A `--screenshot` child exits on its capture tick without reaching
         // the recorder's own end: keep the files whole on every tick.
@@ -672,7 +787,7 @@ impl PlayWindowApp {
         if let Some(want) = self
             .tick_no
             .checked_sub(sc.display_lag)
-            .filter(|&t| t >= since)
+            .filter(|&t| t >= since || sc.retake_shot_only || sc.retake_across_entry)
         {
             // A magic-band shot the camera armed after the retake's tick
             // framed none of the frames before it: the retake draws the

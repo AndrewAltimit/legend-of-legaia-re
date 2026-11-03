@@ -76,7 +76,12 @@ pub struct SlotMachine {
     /// The marquee's bonus tally is this array (see [`SlotMachine::tally`]), and
     /// the payout multiplies the very same rows - so they cannot disagree.
     pub(super) claimed: [i32; REEL_COUNT],
-    /// Live fixed-point reel positions (`DAT_801d3cc0..`), wrap mod `0x1400`.
+    /// Live fixed-point reel positions, wrap mod `0x1400`: the row part is the
+    /// payline row, retail's raw `DAT_801d3cc0..` row plus
+    /// [`PAYLINE_CENTRE_ROW_BIAS`](legaia_minigame_formats::minigame_slot_scene::PAYLINE_CENTRE_ROW_BIAS).
+    /// The init leaves the raw word at `0`, which shows strip row `0x10` on the
+    /// payline (`FUN_801d0fa8` starts its row counter on the raw row and counts
+    /// down one row a face, and the payline is the fifth face).
     pub(super) reel_pos: [i32; REEL_COUNT],
     /// Reel velocities during a spin (`DAT_801d3cd0..`). Magnitudes are
     /// visual pacing, not pinned - host-rate constants.
@@ -221,11 +226,17 @@ pub const BONUS_SPIN_UP_FRAMES: i32 = 0x18;
 pub const SPIN_VELOCITY: [i32; REEL_COUNT] = [0x60, 0x70, 0x80];
 
 impl SlotMachine {
-    /// A fresh machine over the parsed payout table, seeded (retail reseeds
-    /// from BIOS `rand` at init) and holding `balance` coins loaded from the
-    /// casino coin bank.
+    /// A fresh machine over the parsed payout table, its LCG on `seed` (the
+    /// init's literal [`super::SLOT_RNG_SEED`]) and holding `balance` coins
+    /// loaded from the casino coin bank.
     pub fn new(payouts: SlotPayoutTable, seed: u32, balance: i32) -> Self {
         let mut rng = SlotRng::new(seed);
+        // State `0` discards four draws before it fills the strips
+        // (`0x801CF150..0x801CF160`), so a door entry's strips are the same on
+        // every run.
+        for _ in 0..4 {
+            rng.next_u32();
+        }
         // Retail builds BOTH strips for each reel in one interleaved pass - the
         // symbol strip and the bonus-numeral strip, off the same RNG stream -
         // and then clones the symbol strip into the display copy the win eval
@@ -245,7 +256,8 @@ impl SlotMachine {
             symbol_strips,
             bonus_strips,
             claimed: [0; REEL_COUNT],
-            reel_pos: [0; REEL_COUNT],
+            reel_pos: [legaia_minigame_formats::minigame_slot_scene::PAYLINE_CENTRE_ROW_BIAS << 8;
+                REEL_COUNT],
             reel_vel: [0; REEL_COUNT],
             stopped: [None; REEL_COUNT],
             spin_timer: 0,

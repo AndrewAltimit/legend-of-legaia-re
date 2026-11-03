@@ -107,8 +107,15 @@ the selected row stays in view, a bar on the panel's right edge shows where the
 view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 `End` move through it.
 
+The first row, *Look and feel*, speaks for every row below it except the
+window and the sound levels. *Enhanced* is the first-start set, *Original* is
+*Original game only* with the PlayStation pixel look on, and *Custom* is what
+it reads once a row has moved. Stepping it to *Original* and back leaves a mix
+where it was; `Delete` on the row puts all of them back on *Enhanced*.
+
 | Group | Row | Stored in | In game | Default |
 |---|---|---|---|---|
+| Start here | Look and feel (Enhanced, Original, Custom) | both | - | Enhanced |
 | Display | Fullscreen (borderless) | `legaia-options.toml` | `F11`, `Alt+Enter` | off |
 | Display | Window size (640x480 .. 1920x1440, steps of 320x240) | `legaia-options.toml` | - | 960x720 |
 | Display | Camera distance (retail, far, farther) | `legaia-options.toml` | `T` | far |
@@ -247,7 +254,7 @@ both the d-pad and the left stick drive the d-pad. The browser takes any
 controller it reports with the `standard` mapping; the native window takes any
 controller its platform's gamepad backend sees, and works with the keyboard
 alone when none is connected. Key Config (Select on the Options screen) rebinds
-keys only.
+keys only; a controller's layout is fixed.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
@@ -279,18 +286,30 @@ In the native window each press shows the toggle's new state at the bottom
 left for a moment (*Ground fog: off*); holding a key toggles once, not
 repeatedly. A key that only acts while you walk
 around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a menu.
-`F12` (or `?`) opens a panel listing every toggle key with its current state
-(`F11` fullscreen among them), under it the key each pad button is on (Cross,
-Circle, Start, ...), read from the live Key Config table, and the mouse's
-camera controls; press it again to close it. A state the original game does
+`F12` (or `?`) opens the panel; a controller opens it with `Select` + `Start`,
+which with `L1` and `R1` also held stays the original game's soft reset. The
+game holds still under it. Its first page, **Settings**, lists what the game
+reads live: fullscreen, camera distance, reduce flashing, the lighting and
+shadow rows, fog, see-through walls, free-angle movement and the volumes, in
+the launcher's words and writing the same `legaia-options.toml`. Up / Down
+pick a row and Left / Right (Cross, or `Enter`) change it, with the row's help
+underneath; a change takes effect behind the panel at once. `L1` / `R1` (`Tab`)
+flip to the **Keys** page: every toggle key with its current state (`F11`
+fullscreen among them), the key each pad button is on (Cross, Circle, Start,
+...), read from the live Key Config table, and the mouse's camera controls.
+`Esc`, `F12`, Circle or Start close the panel. A state the original game does
 not have is drawn green (*Enhanced lighting: on*), the same marking and the
 same original values as the launcher's option list; a toggle's notice line
-stays hidden while the panel is up. A player's window says so for its first few
-seconds (*F12 or ? lists the keys*, bottom left) until the panel is opened. A
-`--screenshot` capture leaves that line, the toggle notices and the quit
-prompt out, so it shows only what the game draws; `--screenshot-chrome` keeps
-them (for a documentation shot - they are timed by the wall clock, so such a
-capture is not frame-exact).
+stays hidden while the panel is up. In a multiplayer session, whose other
+players would stall on a held game, `F12` shows the Keys page alone and takes
+no pad input.
+
+The window's first seconds say so (*F12 or Select+Start: settings - Esc twice
+quits*, bottom left) until the panel is opened. A `--screenshot` capture leaves
+that line, the toggle notices and the quit prompt out, so it shows only what the
+game draws; `--screenshot-chrome` keeps them (for a documentation shot - they
+are timed by the wall clock, so such a capture is not frame-exact). A scripted
+capture's panel does not hold the game, whose frame it is counting ticks to.
 
 **Window size.** The windowed size is a multiple of the PlayStation's
 320x240 picture, `--window-scale 2..6` (3 = 960x720, the default), stored as
@@ -805,7 +824,7 @@ click walks straight onto one, as a retail scene's row does. The
 packs you install stay in the browser's pack library, listed with their cover,
 version and authors; a pack that needs another pack you have not installed, or
 conflicts with one you have, says so under its row. The expansion workbench's
-*Play in browser* installs the working pack in that library (replacing the
+*Play pack* installs the working pack in that library (replacing the
 version there) and opens the play page on it, and `End` on the play page
 reloads the library's copy in place. *Unload* goes back to the game as it
 shipped.

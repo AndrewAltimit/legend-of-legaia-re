@@ -384,3 +384,27 @@ fn a_diagonal_rim_reads_as_one_straight_edge() {
         "the outward direction swings {worst} degrees along the rim"
     );
 }
+
+#[test]
+fn a_ground_source_builds_the_field_it_stands_for_when_resolved() {
+    let eager = {
+        let mut v = FogVolume::new();
+        v.set_ground_field("", Some(plateau()));
+        v
+    };
+    let mut lazy = FogVolume::new();
+    lazy.set_ground_source("", Some(FogGroundSource::new(|| Some(plateau()))));
+    // Nothing has read it yet, and the toggle's reset does not lose it.
+    assert!(lazy.ground_field().is_none());
+    lazy.reset();
+    lazy.resolve_ground_source();
+    // Debug text: a field's empty cells hold NaN, which never compares equal.
+    let text = |v: &FogVolume| format!("{:?}", v.ground_field());
+    assert_eq!(text(&lazy), text(&eager));
+    // A second resolve has nothing left to do; a field set over a pending
+    // source wins.
+    lazy.set_ground_source("", Some(FogGroundSource::new(|| None)));
+    lazy.set_ground_field("", Some(plateau()));
+    lazy.resolve_ground_source();
+    assert_eq!(text(&lazy), text(&eager));
+}

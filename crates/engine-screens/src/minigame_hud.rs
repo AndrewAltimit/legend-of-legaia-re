@@ -116,6 +116,15 @@ pub fn baka_screen_prims(
     }
     let views: Vec<ud::DanceHudQuadView> = surface.hud_quads(fight).iter().map(quad_view).collect();
     out.extend(legaia_engine_ui::baka_strips::baka_hud_prims(&views));
+    if let Some(level) = fight.cabinet_frame().clear_fade {
+        out.push(legaia_engine_ui::baka_strips::baka_clear_fade(level));
+    }
+    if let Some((frame, _)) = fight.pause_panel() {
+        out.push(legaia_engine_ui::baka_strips::baka_pause_shade(
+            (frame.x, frame.y, frame.w, frame.h),
+            legaia_engine_minigames::baka_cabinet::DUEL_HUD_OT,
+        ));
+    }
     out
 }
 

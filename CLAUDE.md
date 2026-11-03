@@ -37,6 +37,7 @@ The committed docs are organised topic-first under `docs/` - public-facing techn
 
 - [`README.md`](README.md) - public project overview, build instructions, license.
 - [`docs/overview.md`](docs/overview.md) - elevator pitch + how the layers stack from disc to sub-asset.
+- [`docs/porting-by-reimplementation.md`](docs/porting-by-reimplementation.md) - the general method: reimplementation beside decompilation and static recompilation, the seven steps with their gates, the feedback loops, the traps.
 - [`docs/guides/`](docs/guides/getting-started.md) - task-oriented user guides: getting-started, extracting-assets, playing-and-viewing, modding-and-translation.
 
 ### Formats - [`docs/formats/`](docs/formats/overview.md)
@@ -117,7 +118,7 @@ Per-format byte-level specs with Ghidra-traced provenance. Read the relevant pag
 | [`expansion-pack-cutscenes.md`](docs/formats/expansion-pack-cutscenes.md) | An expansion pack's `cutscenes.toml`: step lists (walk, face, camera, fade, say with branches, flags, fights) on parallel tracks, their hooks (map trigger, arrival, NPC, quest moment), skip and save rules, validation. Sequencer `engine-expansion::cutscene`; `World` side `world::expansion_cutscene`. |
 | [`expansion-pack-maps.md`](docs/formats/expansion-pack-maps.md) | An expansion pack's `maps/<id>.toml`: the tile grid over a retail base scene (corner-height tiers, wall quarters), the synthetic `.MAP` image, props (standable tops), NPCs borrowed by coordinate, visible walls, zones and entrances, map validation. Runtime `engine-expansion::map`, entry `SceneHost::enter_expansion_map`. |
 | [`expansion-pack-arts.md`](docs/formats/expansion-pack-arts.md) | An expansion pack's `arts.toml` and `spells.toml`: pack arts on the heroes' retail clips (queue bytes `0x33+`, one more bank-walk record so retail arts match unchanged), chains into finishers, pack Seru cast as a retail Seru with the pack's numbers, capture learning, save tail record 5. Runtime `engine-expansion::arts` / `spells`. |
-| [`expansion-pack-items.md`](docs/formats/expansion-pack-items.md) | An expansion pack's `items.toml`: consumables on the retail item handlers, equipment and sets, shops; why pack items live beside the full `u8` id space (per-fight aliases on the five unnamed ids), the stat fold, the item screen, save tail record 4. Runtime `engine-expansion::items` / `item_screen`. |
+| [`expansion-pack-items.md`](docs/formats/expansion-pack-items.md) | An expansion pack's `items.toml`: consumables on the retail item handlers, equipment and sets, shops; why pack items live beside the full `u8` id space (per-fight aliases on the five spare ids), the stat fold, the item screen, save tail record 4. Runtime `engine-expansion::items` / `item_screen`. |
 | [`expansion-pack-audio.md`](docs/formats/expansion-pack-audio.md) | An expansion pack's `audio.toml` (WAV / Ogg tracks and sounds, loop points, normalisation, battle / victory / mode music) and map `[audio]` (zones that cross-fade, positional ambient sources); pack track ids from `0xE000`, the cross-fade sub-op `0xFC`. Runtime `engine-expansion::audio`, mixer `engine-audio::pcm_bus`. |
 | [`expansion-pack.md`](docs/formats/expansion-pack.md) | Modder expansion packs: layout, `pack.toml`, `DiscRef` coordinates, the deterministic `.lxpack` bundle, validation and the no-disc-bytes rule. Parser `legaia_expansion_format`; CLI `asset expansion`; example pack `packs/sample/` (the Sample Expansion Pack). |
 
@@ -226,6 +227,8 @@ How the runtime engine works.
 | [`site-shell.md`](docs/tooling/site-shell.md) | The static site's app shell across breakpoints, the silent-shadowing traps and their gates (CSS `@media` order, split case folds, module syntax in classic scripts), shared `site-util.js` helpers, and page delivery rules. |
 | [`dependency-policy.md`](docs/tooling/dependency-policy.md) | Third-party inputs: the 14-day publish cooldown, what is pinned where (lockfile, action SHAs, CI tools, the Ghidra image digest), and the `cargo deny check advisories` gate with its `deny.toml`. |
 | [`ratchet-integrity.md`](docs/tooling/ratchet-integrity.md) | What keeps a ratchet honest: `check-baseline-loosening.py` (a baselined value that moved the wrong way needs a ledger entry) and the disc-test tally (a skip is not a pass). |
+| [`frame-bench.md`](docs/tooling/frame-bench.md) | Frame time, allocations and startup per scene on both hosts: `scripts/ci/frame-bench.py`, `frame-bench-web.mjs`. A documented benchmark, not a gate. |
+| [`build-and-test-speed.md`](docs/tooling/build-and-test-speed.md) | Which profile for which job (`dev-fast` for the edit loop, `release-test` for CI and long runs), what an edit costs, the wasm bundle's iteration build, the linker, per-test timing, profiling with `scripts/profile/` where `perf` is refused, and the end-of-work gate `scripts/ci/full-gate.py`. |
 | [`doc-density.md`](docs/tooling/doc-density.md) | The two hard doc gates: `check-doc-density.py` (>800-char lines, >150-word cells) and `check-md-links.py` (relative links + `#anchors`). Bypass `LEGAIA_SKIP_PRECOMMIT=1`. |
 | [`translation/`](docs/tooling/translation/index.md) | `legaia-patcher translate` - community language packs: disc text → editable YAML → in-place reimport; pages for pack format, space and budgets, dialog import, UI strings, textures and fonts. Beginner guide: [`guides/translating.md`](docs/guides/translating.md). Exported packs carry game text - gitignored, never commit. |
 | [`expansion-workbench.md`](docs/tooling/expansion-workbench.md) | The site's in-browser expansion-pack editor over the user's disc: section editors, the tile painter and its corner-height overlay, validation with click-to-field, `.lxpack` export, the IndexedDB autosave and play hand-off keys. Session crate `web-expansion`. |
@@ -362,7 +365,7 @@ Jython analysis scripts that run inside the `ghidra` compose service, sorted int
 
 ### Host-side scripts - [`scripts/`](scripts/README.md)
 
-Helper scripts that run on the host (not in the Ghidra container), mapped in [`scripts/README.md`](scripts/README.md): `ci/` (the pre-commit + CI gates and build/install helpers), `ghidra-analysis/` (overlay extraction + MIPS/GTE disassembly), `asset-investigation/` (TIM/TMD/slot-4/scene RE one-offs), `recomp/` (static-recomp differential oracle), `vrc-diorama/` (VRChat battle diorama), `vrchat-world/` (Unity kit for `export-glb` output), `models/` (custom-monster mesh generators), `lib/` (sourced bash helpers), `git-hooks/` (the shipped hook), `engine/` + `replays/` (determinism-replay fixtures), plus `pcsx-redux/` + `mednafen/` capture automation.
+Helper scripts that run on the host (not in the Ghidra container), mapped in [`scripts/README.md`](scripts/README.md): `ci/` (the pre-commit + CI gates and build/install helpers), `ghidra-analysis/` (overlay extraction + MIPS/GTE disassembly), `asset-investigation/` (TIM/TMD/slot-4/scene RE one-offs), `recomp/` (static-recomp differential oracle), `vrc-diorama/` (VRChat battle diorama), `vrchat-world/` (Unity kit for `export-glb` output), `models/` (custom-monster mesh generators), `profile/` (CPU sampler for where `perf` is refused), `lib/` (sourced bash helpers), `git-hooks/` (the shipped hook), `engine/` + `replays/` (determinism-replay fixtures), plus `pcsx-redux/` + `mednafen/` capture automation.
 
 `scripts/scenarios.toml` (the capture-scenario manifest) and `manage-states.py` stay at the top level as operational entry points.
 
@@ -373,6 +376,7 @@ cargo build --release                                    # all binaries → targ
 cargo fmt --all -- --check                               # CI gate
 cargo clippy --all-targets --workspace -- -D warnings    # CI gate (warnings = failure)
 cargo test --workspace --profile release-test           # CI's test profile: release opt-level, no LTO
+cargo test -p legaia-engine-shell --profile dev-fast --test integration foo::  # the edit loop: incremental, results unchanged; CI stays on release-test
 cargo test -p legaia-lzs                                 # single-crate
 cargo test --workspace test_name                         # single test by name
 cargo test -p legaia-engine-shell --test integration foo::  # one tests/foo.rs (a crate with several tests/*.rs builds them as one `integration` binary)

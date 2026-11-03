@@ -105,19 +105,15 @@ pub fn export_animated_prop_glbs(
         }
         let key = (d.env_slot, d.anim_id);
         anchors_by_key.entry(key).or_default().push(d.anchor);
-        let t = draw_translation(a.draw_world_position(d));
+        let t = export_translation(a.draw_world_position(d));
         let t = [t[0] * opts.scale, t[1] * opts.scale, t[2] * opts.scale];
         let entry = by_key.entry(key).or_default();
         if entry.is_empty() {
             key_order.push(key);
         }
-        // The manifest contract is "rot_y_radians is applied the way the
-        // world glb instances are": the glb node negates the page param
-        // (see `scene_gltf::quat_y`), so the manifest carries the negation
-        // too - which lands on the authored retail yaw as a plain positive
-        // rotation about +Y. Keeps builder-placed props aligned with their
-        // baked frame-0 twins in any importer.
-        entry.push((t, -draw_rot_y_radians(d.rot_y), draw_rotation_quat(d)));
+        // The manifest carries what the world glb twin node carries, so a
+        // builder-placed prop lands on its baked frame-0 twin in any importer.
+        entry.push((t, export_yaw_radians(d.rot_y), export_rotation(d)));
     }
     let mut out = Vec::new();
     for key in key_order {

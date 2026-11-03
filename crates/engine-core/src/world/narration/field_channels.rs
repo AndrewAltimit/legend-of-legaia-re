@@ -589,6 +589,14 @@ impl World {
                                 },
                             );
                         }
+                        // The same arm aimed at a placed object: the op seats
+                        // on the object actor, whose tick walks it.
+                        if let Some(ci) = target.filter(|&ci| channels[ci].object_bind)
+                            && let Some(leg) = compass_walk_operands(&man[record_offset..], pc)
+                        {
+                            channels[ci].ctx.flags |= 0x400;
+                            self.arm_object_glide_leg(channels[ci].ctx.script_id, leg);
+                        }
                         let stalled = resume_pc == pc;
                         channels[i].pc = resume_pc;
                         if opcode_byte & 0x7F == 0x21 || stalled {

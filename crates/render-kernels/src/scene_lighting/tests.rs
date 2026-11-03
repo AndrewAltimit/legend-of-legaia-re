@@ -158,6 +158,7 @@ fn clustering_merges_and_caps() {
             pos: [100.0 + dx, -60.0, 100.0],
             color: [1.0, 0.8, 0.5],
             weight: 10.0,
+            brightness: 1.0,
         });
     }
     for i in 0..12 {
@@ -165,6 +166,7 @@ fn clustering_merges_and_caps() {
             pos: [5000.0 + 2000.0 * i as f32, 0.0, 0.0],
             color: [1.0, 1.0, 1.0],
             weight: 1.0,
+            brightness: 1.0,
         });
     }
     let lights = cluster_scene_lights(&samples);
@@ -172,6 +174,79 @@ fn clustering_merges_and_caps() {
     let strongest = &lights[0];
     assert!((strongest.pos[0] - 110.0).abs() < 1.0, "{strongest:?}");
     assert!(strongest.radius >= RADIUS_MIN && strongest.radius <= RADIUS_MAX);
+}
+
+/// A light's strength is its emitter's drawn brightness: a faint additive
+/// sheet does not cast a flame's light. The weighted mean holds across a
+/// cluster, and the hue is the samples' hue.
+#[test]
+fn a_light_is_as_bright_as_its_emitter() {
+    let sample = |x: f32, brightness: f32, weight: f32| EmitterSample {
+        pos: [x, 0.0, 0.0],
+        color: [1.0, 0.5, 0.0],
+        weight,
+        brightness,
+    };
+    let faint = cluster_scene_lights(&[sample(0.0, 0.2, 10.0)]);
+    assert!((faint[0].color[0] - 0.2).abs() < 1e-5, "{faint:?}");
+    assert!((faint[0].color[1] - 0.1).abs() < 1e-5, "{faint:?}");
+    let full = cluster_scene_lights(&[sample(0.0, 1.0, 10.0)]);
+    assert_eq!(full[0].color, [1.0, 0.5, 0.0]);
+    let mixed = cluster_scene_lights(&[sample(0.0, 1.0, 30.0), sample(10.0, 0.2, 10.0)]);
+    assert!((mixed[0].color[0] - 0.8).abs() < 1e-5, "{mixed:?}");
+}
+
+/// A neutral-modulated additive prim casts at its mean texel's brightness,
+/// the same number its hue is normalised by.
+#[test]
+fn a_neutral_glow_takes_its_brightness_from_its_texels() {
+    let mut vram = legaia_tim::Vram::new();
+    // A 16bpp texture page 0 run of one dim grey: 8/31 per channel.
+    let grey: u16 = 8 | (8 << 5) | (8 << 10);
+    vram.write_block(0, 0, 16, 16, &grey.to_le_bytes().repeat(16 * 16));
+    let tsb = SEMI_BIT | (1 << 5) | (2 << 7);
+    let positions = [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 0.0, 10.0]];
+    let s = vram_mesh_emitters(
+        &positions,
+        &[[0, tsb]; 3],
+        &[[0x80; 3]; 3],
+        &[0, 1, 2],
+        Some((&vram, &[[0, 0], [15, 0], [0, 15]])),
+    );
+    assert_eq!(s.len(), 1);
+    assert!((s[0].brightness - 8.0 / 31.0).abs() < 1e-5, "{:?}", s[0]);
+    assert_eq!(s[0].color, [1.0, 1.0, 1.0]);
+    // No VRAM to read: the assumed flame, at full strength.
+    let flame = vram_mesh_emitters(
+        &positions,
+        &[[0, tsb]; 3],
+        &[[0x80; 3]; 3],
+        &[0, 1, 2],
+        None,
+    );
+    assert_eq!(flame[0].brightness, 1.0);
+}
+
+/// An emissive prim draws at the mood's gain alone: the point lights derive
+/// from these same prims, so counting them would light a glow with itself.
+#[test]
+fn an_emissive_is_not_lit_by_its_own_light() {
+    let rgb = [0.25, 0.25, 0.5];
+    let u = LightingMood::CAVE.uniforms(true);
+    let shade_with = |pg| {
+        shade(
+            rgb,
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0],
+            [960.0, 720.0],
+            u,
+            pg,
+            true,
+        )
+    };
+    let lit = shade_with([1.0; 3]);
+    assert_eq!(lit, shade_with([0.0; 3]));
+    assert_eq!(lit, rgb.map(|c| c * LightingMood::CAVE.emissive_gain));
 }
 
 /// A cluster that spreads wider than a prop is dropped.
@@ -182,6 +257,7 @@ fn wide_clusters_are_dropped() {
             pos: [i as f32 * 250.0, 0.0, 0.0],
             color: [1.0, 0.9, 0.6],
             weight: 100.0 - i as f32,
+            brightness: 1.0,
         })
         .collect();
     let lights = cluster_scene_lights(&samples);

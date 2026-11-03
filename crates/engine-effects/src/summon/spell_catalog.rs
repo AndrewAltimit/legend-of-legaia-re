@@ -160,27 +160,32 @@ pub fn summon_stager_prot_entry(spell_id: u8) -> Option<u32> {
 /// The map id is validated as live in this archive; when it is not, the map
 /// entry's creature name is looked up among the archive's records instead.
 pub fn summon_creature_id(spell_id: u8, battle_data_entry: &[u8]) -> Option<u16> {
+    summon_creature_record(spell_id, battle_data_entry).map(|(id, _)| id)
+}
+
+/// [`summon_creature_id`] and the record the lookup decoded on the way to it:
+/// a caller after both does not decode the block a second time.
+pub fn summon_creature_record(
+    spell_id: u8,
+    battle_data_entry: &[u8],
+) -> Option<(u16, legaia_actor_formats::monster_archive::MonsterRecord)> {
+    use legaia_actor_formats::monster_archive::{record, slot_count};
+    let creature = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id)?;
     // Disc-pinned map: the creature id is exact (byte-validated mesh identity),
     // so prefer it. Validate it resolves in this archive before returning.
-    let mapped = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id).filter(|c| {
-        legaia_actor_formats::monster_archive::record(battle_data_entry, c.creature_id)
-            .ok()
-            .flatten()
-            .is_some()
-    });
-    if let Some(c) = mapped {
-        return Some(c.creature_id);
+    if let Ok(Some(rec)) = record(battle_data_entry, creature.creature_id) {
+        return Some((creature.creature_id, rec));
     }
     // Fallback: the mapped creature's name, resolved among this archive's
     // records. The battle spell mirror's summon names (`0x81..=0x8B`) are the
     // map's own names for those ids, so the map is the one name source.
-    let name = legaia_actor_formats::summon_creatures::creature_for_spell(spell_id)?.name;
-    let slots = legaia_actor_formats::monster_archive::slot_count(battle_data_entry) as u16;
-    (1..=slots).find(|&id| {
-        legaia_actor_formats::monster_archive::record(battle_data_entry, id)
+    let slots = slot_count(battle_data_entry) as u16;
+    (1..=slots).find_map(|id| {
+        record(battle_data_entry, id)
             .ok()
             .flatten()
-            .is_some_and(|r| r.name == name)
+            .filter(|r| r.name == creature.name)
+            .map(|r| (id, r))
     })
 }
 

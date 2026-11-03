@@ -510,6 +510,7 @@ pub(super) struct PlayWindowLaunch<'a> {
 /// and its scene, the debug seeds, the UI asset decode and the window state.
 /// Creates no window and no renderer.
 pub(super) fn assemble_play_window(launch: PlayWindowLaunch<'_>) -> Result<PlayWindowApp> {
+    legaia_engine_render::profile::startup("process up");
     let PlayWindowLaunch {
         scene,
         extracted_root,

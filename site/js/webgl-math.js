@@ -61,6 +61,18 @@ function mulMat4(a, b) {
   return out;
 }
 
+/* `mulMat4` into a caller-held array, for a per-draw path. */
+function mulMat4Into(out, a, b) {
+  for (let c = 0; c < 4; c++) {
+    const b0 = b[c * 4], b1 = b[c * 4 + 1], b2 = b[c * 4 + 2], b3 = b[c * 4 + 3];
+    out[c * 4] = a[0] * b0 + a[4] * b1 + a[8] * b2 + a[12] * b3;
+    out[c * 4 + 1] = a[1] * b0 + a[5] * b1 + a[9] * b2 + a[13] * b3;
+    out[c * 4 + 2] = a[2] * b0 + a[6] * b1 + a[10] * b2 + a[14] * b3;
+    out[c * 4 + 3] = a[3] * b0 + a[7] * b1 + a[11] * b2 + a[15] * b3;
+  }
+  return out;
+}
+
 /* Standard right-handed perspective. Camera at origin, looking down -Z,
  * +Y up. Visible points have negative z_view; w_clip = -z_view. */
 function perspective(fov, aspect, near, far) {
@@ -310,13 +322,43 @@ function computeAabb(positions) {
  * triangles. Returns a Float32Array the length of `positions`. */
 function computeSmoothNormals(positions, indices) {
   const n = (positions.length / 3) | 0;
-  const keys = new Array(n);
+  /* An open-addressed table over the three truncated coordinates: this runs
+   * per posed mesh per frame, so no string keys and no per-bin objects. */
+  let cap = 16;
+  while (cap < n * 2) cap *= 2;
+  const mask = cap - 1;
+  const s = computeSmoothNormals.scratch;
+  if (s.slots.length < cap) s.slots = new Int32Array(cap);
+  else s.slots.fill(0, 0, cap);
+  if (s.binOf.length < n) {
+    s.binOf = new Int32Array(n);
+    s.bins = new Float64Array(n * 3);
+    s.keys = new Int32Array(n * 3);
+  }
+  const slots = s.slots, binOf = s.binOf, bins = s.bins, keys = s.keys;
+  let nBins = 0;
   for (let i = 0; i < n; i++) {
     const o = i * 3;
-    keys[i] = Math.trunc(positions[o]) + ',' + Math.trunc(positions[o + 1]) + ','
-      + Math.trunc(positions[o + 2]);
+    const x = positions[o] | 0, y = positions[o + 1] | 0, z = positions[o + 2] | 0;
+    let h = (Math.imul(x, 0x9E3779B1) ^ Math.imul(y, 0x85EBCA77) ^ Math.imul(z, 0xC2B2AE3D));
+    h = (h ^ (h >>> 15)) & mask;
+    for (;;) {
+      const bin = slots[h];
+      if (bin === 0) {
+        keys[nBins * 3] = x; keys[nBins * 3 + 1] = y; keys[nBins * 3 + 2] = z;
+        bins[nBins * 3] = 0; bins[nBins * 3 + 1] = 0; bins[nBins * 3 + 2] = 0;
+        slots[h] = ++nBins;
+        binOf[i] = nBins - 1;
+        break;
+      }
+      const k = (bin - 1) * 3;
+      if (keys[k] === x && keys[k + 1] === y && keys[k + 2] === z) {
+        binOf[i] = bin - 1;
+        break;
+      }
+      h = (h + 1) & mask;
+    }
   }
-  const bins = new Map();
   const triCount = (indices.length / 3) | 0;
   for (let t = 0; t < triCount; t++) {
     const a = indices[t * 3], b = indices[t * 3 + 1], c = indices[t * 3 + 2];
@@ -329,24 +371,68 @@ function computeSmoothNormals(positions, indices) {
     const nx = aby * acz - abz * acy;
     const ny = abz * acx - abx * acz;
     const nz = abx * acy - aby * acx;
-    for (const v of [a, b, c]) {
-      let bin = bins.get(keys[v]);
-      if (!bin) { bin = [0, 0, 0]; bins.set(keys[v], bin); }
-      bin[0] += nx; bin[1] += ny; bin[2] += nz;
-    }
+    const ba = binOf[a] * 3, bb = binOf[b] * 3, bc = binOf[c] * 3;
+    bins[ba] += nx; bins[ba + 1] += ny; bins[ba + 2] += nz;
+    bins[bb] += nx; bins[bb + 1] += ny; bins[bb + 2] += nz;
+    bins[bc] += nx; bins[bc + 1] += ny; bins[bc + 2] += nz;
   }
   const out = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
-    const bin = bins.get(keys[i]);
-    if (!bin) continue;
-    const len = Math.hypot(bin[0], bin[1], bin[2]);
+    const k = binOf[i] * 3;
+    const vx = bins[k], vy = bins[k + 1], vz = bins[k + 2];
+    const len = Math.sqrt(vx * vx + vy * vy + vz * vz);
     if (len > 1e-6) {
-      out[i * 3] = bin[0] / len;
-      out[i * 3 + 1] = bin[1] / len;
-      out[i * 3 + 2] = bin[2] / len;
+      out[i * 3] = vx / len;
+      out[i * 3 + 1] = vy / len;
+      out[i * 3 + 2] = vz / len;
     }
   }
   return out;
+}
+computeSmoothNormals.scratch = {
+  slots: new Int32Array(0), binOf: new Int32Array(0),
+  bins: new Float64Array(0), keys: new Int32Array(0),
+};
+
+/* `prim_near_reject::prim_corner_refs` from its plan (five words per vertex:
+ * the primitive's four corner vertices and corner count, zero for a vertex with
+ * no single owner): 13 floats per vertex into `out`. */
+function fillPrimRefs(plan, positions, out) {
+  const n = (plan.length / 5) | 0;
+  for (let i = 0; i < n; i++) {
+    const c = i * 5, o = i * 13;
+    const count = plan[c + 4];
+    if (count === 0) {
+      out.fill(0, o, o + 13);
+      continue;
+    }
+    const a = plan[c] * 3, b = plan[c + 1] * 3, d = plan[c + 2] * 3, e = plan[c + 3] * 3;
+    out[o] = positions[a]; out[o + 1] = positions[a + 1]; out[o + 2] = positions[a + 2];
+    out[o + 3] = count;
+    out[o + 4] = positions[b]; out[o + 5] = positions[b + 1]; out[o + 6] = positions[b + 2];
+    out[o + 7] = positions[d]; out[o + 8] = positions[d + 1]; out[o + 9] = positions[d + 2];
+    out[o + 10] = positions[e]; out[o + 11] = positions[e + 1]; out[o + 12] = positions[e + 2];
+  }
+  return out;
+}
+
+/* Whether a box (centre, half extents) lies wholly outside one plane of the
+ * GL clip volume under column-major `m`: each plane's distance at the centre
+ * plus the extents' largest reach along it. A tiny margin keeps a corner on a
+ * plane in, against float error. */
+function boxOutsideClip(m, cx, cy, cz, ex, ey, ez) {
+  const wc = m[3] * cx + m[7] * cy + m[11] * cz + m[15];
+  const wr0 = m[3] * ex, wr1 = m[7] * ey, wr2 = m[11] * ez;
+  for (let axis = 0; axis < 3; axis++) {
+    const r0 = m[axis] * ex, r1 = m[axis + 4] * ey, r2 = m[axis + 8] * ez;
+    const pc = m[axis] * cx + m[axis + 4] * cy + m[axis + 8] * cz + m[axis + 12];
+    const slack = Math.abs(wc) * 1e-3 + 1e-3;
+    /* w + p >= 0 */
+    if (wc + pc + Math.abs(wr0 + r0) + Math.abs(wr1 + r1) + Math.abs(wr2 + r2) < -slack) return true;
+    /* w - p >= 0 */
+    if (wc - pc + Math.abs(wr0 - r0) + Math.abs(wr1 - r1) + Math.abs(wr2 - r2) < -slack) return true;
+  }
+  return false;
 }
 
 /* Top-down orthographic view-projection.

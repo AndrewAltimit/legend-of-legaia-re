@@ -156,6 +156,10 @@ pub struct BootSession<S: AudioSink> {
     /// Wall-clock frame counter, separate from `host.world.frame` (which
     /// includes pause-time skips when those land).
     pub frames: u64,
+    /// The scripted shot the host's last redraw drew through, which the fog
+    /// pool's per-tick render step projects by ([`Self::step_field_fog`]).
+    /// `None` on a frame the follow camera owned and on a host with no glide.
+    pub field_fog_shot: Option<legaia_engine_camera::psx_camera::FieldCameraView>,
     /// New-game starting-party template parsed from the boot source's
     /// `SCUS_942.54`, if present. Used by [`BootSession::begin_new_game`] to
     /// seed a faithful starting roster; `None` when the executable couldn't be

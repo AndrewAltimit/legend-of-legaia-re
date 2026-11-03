@@ -308,6 +308,7 @@ impl World {
         self.battle.round_flow = legaia_engine_battle_loop::round_flow::RoundFlow::default();
         self.battle.commit_log_launch = None;
         self.battle.intro_names_frames = 0;
+        self.battle.intro_lead_ticks = 0;
         // The per-fighter Auto flags and parked queues are battle state; the
         // disc inputs beside them are scene state and stay.
         self.battle.auto_combo.flags = [false; 3];
@@ -316,7 +317,7 @@ impl World {
         // `ctx[+0x289]` and the rest of the side-band state start at zero with
         // the rest of the battle context, as do the stage modules' own words.
         self.battle.sideband = Default::default();
-        self.battle.sparring_round_pending = false;
+        self.battle.round_open_pending = false;
         self.battle.arrival = Default::default();
         self.battle.form_transition = Default::default();
         // Battle init registers a fresh backdrop pair; any rebind is gone.

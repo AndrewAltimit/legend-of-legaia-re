@@ -157,12 +157,17 @@ pub struct BakaFight {
     /// The round-start cameo's actor, while it walks: its phase `+0x22` and
     /// the clip cursor `+0x68` its clip selector advances.
     pub(super) cameo: Option<CameoActor>,
+    /// The all-clear fighter, from the `0xFB -> 0xFC` edge to the exit.
+    pub(super) clear_fighter: Option<crate::baka_fighter_chrome::ClearFighter>,
     /// `DAT_801DBF50` - raised by a special's commit (`0x801D4578`), cleared
     /// by the round setup (`0x801CFFD8`). The impact pair reads it for its
     /// Z lift.
     pub(super) special_latch: bool,
     /// The impact pair's effect parts ([`crate::baka_impact_fx`]).
     pub(super) impact: crate::baka_impact_fx::ImpactFx,
+    /// The pause menu's disc text ([`Self::with_overlay_text`]). Without it the
+    /// menu has nothing to draw, so the duel's pause edge stays shut.
+    pub(super) pause_text: Option<legaia_minigame_formats::baka_opponents::BakaPauseText>,
 }
 
 /// The round-start cameo actor (`FUN_801D6310`'s record): its phase and the
@@ -228,8 +233,10 @@ impl BakaFight {
             setup_pending: true,
             select_clock: 0,
             cameo: None,
+            clear_fighter: None,
             special_latch: false,
             impact: crate::baka_impact_fx::ImpactFx::default(),
+            pause_text: None,
         }
     }
 
@@ -248,6 +255,26 @@ impl BakaFight {
             Some(t) => self.with_impact_templates(t),
             None => self,
         }
+    }
+
+    /// Read the pause menu's text off the as-loaded PROT 0976 image.
+    pub fn with_overlay_text(mut self, overlay_0976: &[u8]) -> Self {
+        self.pause_text = legaia_minigame_formats::baka_opponents::parse_pause_text(overlay_0976);
+        self
+    }
+
+    /// The pause menu's frame and lines this frame, or `None` off its states.
+    pub fn pause_panel(
+        &self,
+    ) -> Option<(
+        crate::baka_cabinet::PauseFrame,
+        Vec<crate::baka_cabinet::PauseLine>,
+    )> {
+        crate::baka_cabinet::pause_panel(
+            self.cabinet.state(),
+            self.cabinet.menu_cursor(),
+            self.pause_text.as_ref()?,
+        )
     }
 
     /// The live impact effect parts.
@@ -323,6 +350,30 @@ impl BakaFight {
         self.held_pad = packed;
     }
 
+    /// [`crate::baka_cabinet::BakaCabinet::enter_all_clear`].
+    #[doc(hidden)]
+    pub fn enter_all_clear(&mut self, stage_display: i32) {
+        self.cabinet.enter_all_clear(stage_display);
+    }
+
+    /// The all-clear fighter, while it is on stage.
+    pub fn clear_fighter(&self) -> Option<crate::baka_fighter_chrome::ClearFighter> {
+        self.clear_fighter
+    }
+
+    /// Whether the all-clear has retired duel seat `slot`: the opponent's
+    /// actor on the `0xFA -> 0xFB` edge (`+0x10 |= 8`, `0x801D1A20..0x801D1A40`),
+    /// the player's on `0xFB -> 0xFC` (`0x801D1A84..0x801D1AA4`).
+    pub fn seat_retired(&self, slot: usize) -> bool {
+        use crate::baka_cabinet::{ST_CLEAR_B, ST_CLEAR_C, ST_CLEAR_E};
+        let first = if slot & 1 == 1 {
+            ST_CLEAR_B
+        } else {
+            ST_CLEAR_C
+        };
+        (first..=ST_CLEAR_E).contains(&self.cabinet.state())
+    }
+
     /// The round-start cameo, while it is on stage.
     pub fn cameo(&self) -> Option<CameoActor> {
         self.cameo
@@ -359,16 +410,12 @@ impl BakaFight {
     /// Hand the cabinet this frame's **packed** pad edge (`_DAT_8007B874`,
     /// Legaia's layout - `baka_cabinet::CABINET_*`).
     ///
-    /// The cabinet reads it only once the match is decided **and** it has
-    /// left its duel state: the tally, the "NEXT GAME / PAY OUT" choice and
-    /// the exit. While the cabinet is in the duel state the port keeps
-    /// feeding zero, because that state's one pad read is the pause edge
-    /// `0x110`, and Triangle - one of its bits - is the button the round
-    /// setup's cameo test reads held; the in-duel pause menu stays unreached
-    /// on every host. The port's cabinet stays in the duel state up to `0xB5`
-    /// frames past the deciding exchange (its round timer is its own), so
-    /// gating on the match alone let a Triangle pressed in that window open
-    /// the pause menu.
+    /// The duel state's one read is the pause edge `0x110`. Triangle is one of
+    /// its bits and also the button the round setup's cameo test reads held,
+    /// which does not collide: the setup reads the level before the duel state
+    /// is up, the duel state reads the edge. Without the disc's menu text
+    /// ([`Self::with_overlay_text`]) the edge stays shut, so a bare test
+    /// fixture never pauses on nothing.
     pub fn set_cabinet_pad(&mut self, edge: u16) {
         self.cabinet_pad = edge;
     }

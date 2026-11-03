@@ -250,6 +250,7 @@ impl LegaiaMinigames {
         // presentation layer behind the pond session.
         self.fishing_scene = self.load_fishing_scene();
         let muscle_json = self.load_muscle_tables();
+        self.audio_disc_changed();
 
         Ok(format!(
             r#"{{"entries":{},"dance":{dance_json},"baka":{baka_json},"slot":{slot_json},"fishing":{fishing_json},"muscle":{muscle_json}}}"#,

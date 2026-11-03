@@ -37,13 +37,19 @@ pub fn tick_open_subsession(
     active: &mut FieldMenuSubsession,
     edge: u16,
     key_pressed: Option<&str>,
-    world: &World,
+    world: &mut World,
 ) -> Option<Mapping> {
     if step_equip_character_picker(active, edge, world) {
         return None;
     }
     if !try_open_arts_editor(active, edge, world) {
         active.tick_pad_edge_with_key(edge, key_pressed);
+    }
+    if let FieldMenuSubsession::Equip {
+        session, char_slot, ..
+    } = active
+    {
+        apply_equip_swaps(session, *char_slot, world);
     }
     active.take_rebound_mapping()
 }
@@ -165,9 +171,11 @@ pub fn finish_subsession(finished: FieldMenuSubsession, world: &mut World) -> Fi
             out.art_learned_notice = world.menu.pending_art_notice.take();
         }
         FieldMenuSubsession::Equip {
-            session, char_slot, ..
+            mut session,
+            char_slot,
+            ..
         } => {
-            let _ = apply_equip_outcome(&session, char_slot, world);
+            apply_equip_swaps(&mut session, char_slot, world);
         }
         FieldMenuSubsession::Spells(s) => {
             out.spell_level_notice = apply_spell_outcome(&s, world);

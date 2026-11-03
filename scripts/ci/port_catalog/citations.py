@@ -143,13 +143,8 @@ def collect_doc_citations() -> dict[str, set[str]]:
             text = p.read_text(errors="ignore")
         except (PermissionError, OSError):
             continue
-        seen: set[str] = set()
-        for m in DOC_CITATION_RE.finditer(text):
-            a = m.group(1).lower()
-            if a in seen:
-                continue
-            seen.add(a)
-            rel = str(p.relative_to(REPO))
+        rel = str(p.relative_to(REPO))
+        for a in {m.group(1).lower() for m in DOC_CITATION_RE.finditer(text)}:
             out[a].add(rel)
     return out
 

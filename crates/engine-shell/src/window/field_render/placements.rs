@@ -317,13 +317,13 @@ impl PlayWindowApp {
         let draws = coplanar_draws::emission_order(&terrain, &placements);
         let mut all_draws = terrain.clone();
         all_draws.extend(placements.iter().cloned());
-        let (offsets, occ, field) = std::thread::scope(|sc| {
+        let (offsets, occ, fog_source) = std::thread::scope(|sc| {
             let occ = sc.spawn(|| {
                 legaia_engine_scene::field_occlusion::FieldOccluders::build(&[&all_draws], res)
             });
             let fog = sc.spawn(|| {
                 scene.and_then(|scene| {
-                    legaia_engine_scene::fog_ground::build_for_scene(
+                    legaia_engine_scene::fog_ground::source_for_scene(
                         &terrain,
                         &fog_placements,
                         &scales,
@@ -365,14 +365,6 @@ impl PlayWindowApp {
             );
         }
         let label = scene.map(|s| s.name.clone()).unwrap_or_default();
-        if let Some(f) = &field {
-            log::info!(
-                "play-window: fog ground field {}x{} cells, {} on the floor",
-                f.w,
-                f.h,
-                f.covered_count(),
-            );
-        }
         log::info!(
             "play-window: static env products built in {:.1} ms",
             started.elapsed().as_secs_f64() * 1000.0
@@ -383,7 +375,7 @@ impl PlayWindowApp {
             .host
             .world
             .fog_volume
-            .set_ground_field(&label, field);
+            .set_ground_source(&label, fog_source);
     }
 }
 

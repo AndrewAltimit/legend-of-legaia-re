@@ -388,6 +388,9 @@ pub struct RetailBattle {
     /// The active seat's committed action category `+0x1DE` (`1` item, `2`
     /// magic, `3` attack, `4` spirit, `5` run).
     pub queued_category: u8,
+    /// The active seat's first shot byte `+0x1E1`, the case the magic band's
+    /// `0x2B` calls `FUN_801DC0A0` on.
+    pub queued_shot: u8,
     /// The summon band's live flash, when one is up ([`RetailFade`]).
     pub summon_fade: Option<RetailFade>,
     /// `ctx[+0x279]` - the resident summon module's phase byte.
@@ -456,9 +459,20 @@ pub struct RetailBattle {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     ),
+    /// The step magnitude of each of the tween table's nine records
+    /// ([`retail_cam_tween`]'s order): a one-frame shot's step is the whole
+    /// gap it closed, so it names the pose the pass before stood on.
+    pub cam_tween_steps: [u16; 9],
+    /// The turn cursor `ctx[+0x1A]`: order entries this round has consumed.
+    pub turn_cursor: u8,
+    /// The newest passes' frame steps ([`recent_pass_steps`]), newest first.
+    pub recent_steps: [u8; 4],
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// The pose the near-camera ghost pass read for that frame
+    /// ([`displayed_ghost_pose`]).
+    pub displayed_ghost_pose: legaia_engine_camera::projection::BattleCamPose,
     /// [`Self::cam_tween`]'s endpoints as the displayed frame's own pass
     /// armed them: the RAM's, moved where a walker moved them
     /// ([`walker_end_shift`]).
@@ -474,6 +488,12 @@ pub struct RetailBattle {
     /// the display frames of its arm the displayed frame had left
     /// ([`displayed_menu_glide_left`]).
     pub menu_glide_left: Option<f32>,
+    /// The same arm's frames left on the RAM's own instant, which is what
+    /// the headless camera channel reads.
+    pub menu_glide_left_live: Option<f32>,
+    /// The pose retail's own table stands that displayed frame on
+    /// ([`displayed_menu_glide_pose`]).
+    pub menu_glide_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /
@@ -486,6 +506,8 @@ pub struct RetailBattle {
     /// `FUN_801D9BBC` leaves once a glide has snapped onto its target
     /// (`0x801D9BE4` skips a record whose `total` byte is zero).
     pub hud_glides_landed: bool,
+    /// The monster AI's counter `0x801C8FE4`: the roll PROT 0964's strike forks on.
+    pub ai_counter: u32,
     /// The HUD widget glides in flight, each as the displayed frame shows
     /// it ([`HudGlideSeat`]); empty when every record has landed.
     pub hud_glides: Vec<HudGlideSeat>,
@@ -620,6 +642,9 @@ pub struct RetailBattle {
     /// hold). It differs from the RAM's clip where the anim node committed
     /// inside the display lag, which the walk back cannot see.
     pub displayed_clips: Vec<Option<(u8, u16)>>,
+    /// The attacker's heading on the displayed frame, where that frame is its
+    /// walk's last pass ([`camera_align::walk_heading`]).
+    pub displayed_strike_heading: Option<u16>,
     /// Each pool slot's playing clip `+0x1D9` and the cursor of its anim
     /// node (`*(+0x22C) + 0x68`, 12.4 sixteenths of a keyframe) taken back
     /// to the **displayed** frame, two game frames before the RAM's: as

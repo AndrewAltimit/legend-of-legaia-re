@@ -15,6 +15,8 @@
  *     from, built here so the page's thread is not held;
  *   - `scene_objects`: a scene's geometry pack summary (the authoring hints'
  *     mesh sizes), answered as JSON or an error;
+ *   - `scene_meshes`: a scene's VRAM and mesh streams (the object palette's
+ *     thumbnails and the placement ghost), answered as bytes, transferred;
  *   - `map_preview`: one map's JSON, answered with the painter's
  *     `map_preview` of it, parsed (or `{ error }`);
  *   - `xref_sites`: the pack JSON, answered with the reference model's
@@ -71,6 +73,10 @@ async function handle(m) {
     let json = null, error = null;
     try { json = wb.xref_sites(m.json); } catch (e) { error = String(e && e.message ? e.message : e); }
     self.postMessage({ type: 'xref_sites', seq: m.seq, json, error });
+  } else if (m.type === 'scene_meshes') {
+    let bytes = null, error = null;
+    try { bytes = wb.scene_meshes(m.scene); } catch (e) { error = String(e && e.message ? e.message : e); }
+    self.postMessage({ type: 'scene_meshes', seq: m.seq, bytes, error }, bytes ? [bytes.buffer] : []);
   } else if (m.type === 'scene_objects') {
     let json = null, error = null;
     try { json = wb.scene_objects(m.scene); } catch (e) { error = String(e && e.message ? e.message : e); }

@@ -322,7 +322,7 @@ impl Font {
                         continue;
                     }
                     let x = ox + PAD_X + col;
-                    let y = oy + PAD_Y + row;
+                    let y = oy + PAD_Y + row + builtin::descent(c);
                     let off = ((y * atlas_w + x) * 4) as usize;
                     atlas_rgba[off] = 255;
                     atlas_rgba[off + 1] = 255;
@@ -487,6 +487,11 @@ impl Font {
     /// attached ([`Font::with_sprite_cells`]).
     pub fn sprite_cell(&self, id: u16) -> Option<EscapeCell> {
         self.sprite_cells.get(&id).copied()
+    }
+
+    /// Whether the kind-4 list's page triangles have their own 8x8 cells.
+    pub fn has_page_arrow_cells(&self) -> bool {
+        self.sprite_cells.contains_key(&sprite_cell_ids::PAGE_NEXT)
     }
 
     /// The atlas cell of escape operand `index`, when the sprites are

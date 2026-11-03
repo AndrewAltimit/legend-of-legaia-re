@@ -155,6 +155,7 @@ impl World {
             self.casting.move_fx_streak.install(&step, counter);
             if let Some(launch) = step.launch {
                 self.seed_homing_slots(i, band, record, launch);
+                self.spawn_launch_run(i, record);
             }
         }
         if let Some(actor) = self.actors.get_mut(i) {

@@ -79,7 +79,7 @@ Eight `0x18`-byte prototype records tile `0x801D75DC..0x801D769C`, ending immedi
 | `0x801D760C` | `FUN_801D3390` | player-select lineup tick | `0x801CF8A0` |
 | `0x801D7624` | `FUN_801D6310` | round-start cameo | `0x801D01C4` |
 | `0x801D763C` | `FUN_801D3F44` | fighter combat tick | `0x801CFBC0`, `0x801CFD98` |
-| `0x801D7654` | `FUN_801D6F18` | effect-part flag setter | `0x801D1ACC` |
+| `0x801D7654` | `FUN_801D6F18` | [all-clear fighter](#the-all-clear-fighter) tick | `0x801D1ACC` |
 | `0x801D766C` | `FUN_801D4FC8` | developer keyframe editor | `0x801D1D68` |
 | `0x801D7684` | `FUN_801D49E8` | special afterimage | `0x801D4558` |
 
@@ -208,7 +208,7 @@ flowchart TD
 | `0x6D` | the secret opponent's own tally variant, entered from the tally's exit when `DAT_801DBF06` is non-zero | timer `0xB5` |
 | `0x6E` | teardown + reload for the next rung | immediately |
 | `0x96` / `0x97` | match lost / **"GAME OVER"** | timers |
-| `0xBE` / `0xBF` | in-duel pause menu, 2 / 3 options (vertical cursor) | confirm or cancel |
+| `0xBE` / `0xBF` | in-duel pause menu, 2 / 3 options (vertical cursor); `0xBE` has no writer | confirm or cancel |
 | `0xC0` | "How to Play" screen (`FUN_801D6CBC`) | any face button `0xF0` |
 | `0xC8` | **developer menu**, 5 rows | confirm edge |
 | `0xFA`..`0xFE` | the all-stage-clear sequence, five beats | timers |
@@ -364,7 +364,7 @@ stateDiagram-v2
 | Committed | same | `FUN_801D3A14` has a result; the booking waits for the winner's strike keyframe ([strike clock](#the-strike-clock)) |
 | Finisher | same | the standing fighter auto-commits the type-4 special against a foe at 0 HP |
 | RoundOver | same | finisher latch `+0x2C` or both HPs at zero; the hold timer runs to `0xB5`, result banners rise |
-| Paused | cabinet `0xBE` / `0xBF`, phase `1` | pause menu |
+| Paused | cabinet `0xBF`, phase unchanged | pause menu; the round SM's body is off because the state is not `0x64` |
 
 Per frame, while active, the body:
 
@@ -782,7 +782,7 @@ The card belongs to the cabinet, not the duel: its only two `jal` sites (`0x801C
 
 **Round banner (`FUN_801D5C7C`).** Two mirrored halves (widget 3, drawn through `FUN_801D5ED0` / `FUN_801D69A8`) converging on `x = 0x90`: offset `0xB4 - 6t` while `t < 30`, `0` through the hold, then `6 * (t - 90)` on the way out. The level ramps `0x80 + (t - 30) * 127 / 30` in (reaching `0xFF` at `t = 60`) and `0xC8 - (t - 90) * 127 / 30` out, clamped to `0..=0xFF`. The parted poses draw at half level and set the two banner sprite flags; the joined pose clears them. Frame `0` fires the round-announce voice line, and **its channel is the round index itself** - `FUN_8003D53C(0x1F, DAT_801DBF8C, 0x48)` - while the digit drawn beside the caption is that index plus one.
 
-The banner runs on the cabinet's clock, like the title card. Its four `jal` sites (`0x801D01D8`, `0x801D0290`, `0x801D0344`, `0x801D0468`) are the banner arms `0x33..0x36`, each calling it with `DAT_801DC128` and then stepping that clock by the frame step; the round setup `0x32` zeroes the clock (`0x801D0188`).
+The banner runs on the cabinet's clock, like the title card. Its four `jal` sites (`0x801D01D8`, `0x801D0290`, `0x801D0344`, `0x801D0468`) are the banner arms `0x33..0x36`, each calling it with `DAT_801DC128` and then stepping that clock by the frame step; the round setup `0x32` zeroes the clock (`0x801D0188`). The routine draws quads and spawns nothing, and none of the overlay's `FUN_801D6E04` sites names widget `3`, so the caption exists only on the frames an arm calls it and is gone when `0x36` leaves at clock `0x79`, still parted and dimming. `the_round_caption_stands_only_on_the_banner_arms` pins that through the go and the round after it.
 
 `DAT_801DBF8C` is zeroed when a rung starts (`0x801CFDB0`) and stepped by the duel arm on the way to the round setup (`0x801D0640`, clamped to `9` at `0x801D0648`), so the line on the first banner frame names the round about to start: round 1 reads channel `0`, round 2 channel `1`. Draws advance the index like any other round. **Confirmed** (disassembly). The port draws the banner on exactly those frames (`CabinetFrame::round_banner`, `BakaChrome::round_banner_step`) with the cabinet's round index.
 
@@ -793,6 +793,40 @@ State `DAT_801DC134` walks `0 -> 1` (`XA33` channel `0x0A`), `1 -> 2` (channel `
 `DAT_801DC134` is read and written nowhere else in the overlay, so the walk runs once per overlay load. **Confirmed** (disassembly).
 
 The port runs it from the cabinet (`BakaCabinet::tick`, the five all-clear beats), not from the round chrome. Run beside every round banner, its `0x0C` line started about fifty frames into the banner's `0x48`-vsync `XA32` line and cut the round number off. `each_round_banner_plays_its_own_line_uninterrupted` (engine) and `each_round_announcement_plays_its_own_xa32_channel_uncut` (the minigames page, disc-gated) pin each round's line as `(0x1F, round, 0x48)`, the index of the round about to start, with nothing starting inside its span.
+
+### The all-clear fighter
+
+The all-clear's beats retire both duel actors and stand another in their place:
+
+| Edge | Disassembly | What it does |
+|---|---|---|
+| `0xFA -> 0xFB` | `0x801D1A20..0x801D1A40` | retires the opponent (`DAT_801DBFA4 +0x10 \|= 8`) |
+| `0xFB -> 0xFC` | `0x801D1A84..0x801D1B3C` | retires the player, loads `FUN_801D4C50(6)`, spawns the fighter unless `DAT_801DC110 == 0xE` |
+| `0xFE -> 0x1F4` | `0x801D1CB8..0x801D1CD8` | retires the fighter |
+
+`FUN_801D4C50(6)` reads PROT `0x4B6 + 6 - 3` in the raw TOC's numbering: ladder
+entry `1207`, roster id `4`, one of the post-clear opponents the art promises.
+Its atlas lands over the opponent's page. The spawn takes prototype `0x801D7654`
+on the opponent's mesh slot and stands it at `X = -(player stand-off + 200)`,
+`y = z = 0`, yaw `0x400`, on `+0x5C = 0x401`: the `>= 0x400` bank's record `0`, the
+idle, at the allocator's rate `+0x6A = 0x10`. The tick is two lines: raise `+0x10`
+bit `0x200000`, which opts out of the field drop shadow (`FUN_8001B964` tests it
+before `FUN_8001C394`), and run the clip selector.
+
+The beats `0xFB..=0xFE` each end on `FUN_80024EE4(0xA, 2, level * 0x010101)`, a
+full-screen subtractive quad: rising to `0xFF` on `0xFB`, `0xFF` on `0xFC`,
+falling to `0x50` on `0xFD` and rising to `0xFF` on `0xFE`. So the fighter is only
+ever seen darkened, behind the announcer's art, and only on `0xFD` / `0xFE`.
+
+A run that met both secret opponents reads `0xE` there and ends on the bare arena.
+**Confirmed** (disassembly; no retail capture reaches this beat).
+
+Port: `baka_fighter_chrome::clear_fighter_tick`, spawned by `BakaFight` off
+`CabinetFrame::spawn_clear_fighter`, posed by `BakaDuelScene::pose_clear_fighter`
+over the shared `BakaDuelSurface` on both play hosts and by `minigame-baka.js` on the
+minigames page, off `baka_cabinet_json`'s `clear_fighter`. The quad is
+`CabinetFrame::clear_fade`. The port's duel draws no field drop shadow, so the bit
+has no reader there.
 
 ### Score tally (`FUN_801D239C`)
 
@@ -831,6 +865,22 @@ Both tables are overlay rodata. Their index spaces are what the consumers can pr
 The combo input is the running maximum `DAT_801DBEC8`, which the HUD renderer latches once per frame (`if (DAT_801DBEC8 <= DAT_801DC094) DAT_801DBEC8 = DAT_801DC094;`). `DAT_801DC094` is the hits-taken array `&DAT_801DBFEC[slot * 0x2A]` at slot 1 (`0x801DBFEC + 0xA8`), so the score's combo term tracks how long a streak the player is landing. `DAT_801DBF58` is a second running-max latch fed from the same word.
 
 Port: `BakaScoreTables::from_overlay` reads both tables out of a loaded PROT 0976 image; `BakaFight::max_combo` feeds `baka_round_score` at every round end. With no tables supplied the port runs no score channel and the tally opens on the coin prize alone - a host model, since retail always has the tables resident. The full-HP bonus is an immediate in the kernel, not a table cell. See `overlay_baka_fighter_801d2a28.txt`. **Confirmed.**
+
+### The pause menu (`0xBF`, `0xC0`)
+
+The duel state's pad edge `0x110` opens `0xBF` (`0x801D0908..0x801D091C`), or the developer menu when `_DAT_8007B868` is up. Triangle is a bit of that edge and also the button the round setup's cameo test reads held: they do not collide, since the setup reads the level before the duel state is up.
+
+| Arm | Lines through `FUN_80036888` | Cursor `FUN_8002C488(x, 0x68 + cursor * 0x10, 0x4E)` | Frame `FUN_8002C69C` |
+|---|---|---|---|
+| `0xBF` (`0x801D145C`) | `x = 0x7C`, `y = 0x68 / 0x78 / 0x88`: Continue (`0x801CE9C8`), Quit (`0x801CE9DC`), How to Play (`0x801CE9E4`) | `x = 0x6C` | `(0x6C, 0x68, 0x75, 0x30)` |
+| `0xBE` (`0x801D131C`) | `x = 0x80`, `y = 0x68 / 0x78`: Continue, Title (`0x801CE9D4`) | `x = 0x70` | `(0x6C, 0x68, 0x4E, 0x20)` |
+| `0xC0` (`0x801D1608`) | the help panel below, `FUN_801D6CBC(0x30, 0x20)` | none | `(0x20, 0x20, 0xF0, 0x8F)` |
+
+No writer of `0xBE` exists, so the two-row menu is unreached. The fight stands still under the menu because the round SM's body tests `DAT_801DBF44 == 0x64` (`0x801D352C`) and the combat tick falls through to the clip selector and the draw off it (`0x801D4098..0x801D40BC`): clips keep playing, nothing commits or books. The epilogue's HUD flag stays clear, so the duel HUD is gone. Row 1 goes to the exit state `0x1F4`, row 2 to `0xC0`, and any face button in `0xC0` returns to `0xBF`.
+
+The help lines hold button icons as `CE nn` escapes, one of them `CE 00`, so a plain C-string read of the pool stops mid-line. Parser `baka_opponents::parse_pause_text`.
+
+Port: `baka_cabinet::pause_panel` lays both menus out and `BakaFight::pause_panel` gates them on the disc text, the edge staying shut without it. All three hosts draw that one model. The window frame is a half-black shade (`baka_strips::baka_pause_shade`, and the minigames page's canvas fill), not retail's frame sprites. The minigames page's browser font marks an icon `*`.
 
 ### The help panel's pointer table
 
@@ -880,7 +930,7 @@ Port: `CabinetFrame::xa` carries the cabinet's three (`FIGHT_FLASH_XA`, `NEXT_GA
 
 The SFX bank is the same one the battle scene loader `FUN_800520F0` loads (also class 2, swapping to raw `0x36D` when `DAT_8007BD11 == 4`), so it is the shared battle / minigame bank. All four cue descriptors resolve in it (programs `0` and `3`). The BGM is `music_01` sound-test #55 `M112` "Sol disco fever"; the bank map is piecewise, see [`../reference/music-tracks.md`](../reference/music-tracks.md). **Confirmed.**
 
-Port: the rules engine queues the cues itself. `BakaFight::take_cues` drains `BAKA_CUE_HIT` (queued from inside `apply_damage`, where the retail ring write sits), the cabinet's menu blips and the tally ticks. Both play hosts drain it each frame. The minigames page drains it in its per-frame calls (`baka_frame` / `baka_tick`) into the page's live SPU through the catalog path the play hosts take (`minigame_sfx_cue`, opened inside a user gesture and gated on the site-wide `LegaiaSound` toggle), and plays nothing else.
+Port: the rules engine queues the cues itself. `BakaFight::take_cues` drains `BAKA_CUE_HIT` (queued from inside `apply_damage`, where the retail ring write sits), the cabinet's menu blips and the tally ticks. Both play hosts drain it each frame. The minigames page drains it in its per-frame calls (`baka_frame` / `baka_tick`) into the page's live SPU through the director the play hosts run (`minigame_sfx_cue`, opened inside a user gesture and gated on the site-wide `LegaiaSound` toggle), and plays nothing else.
 
 The page resumes its live SPU on every `MgSpu.ready` call and on every tab click: a context first opened outside a gesture (the cue load at disc load, a cached disc) is held suspended by the browser, and resuming it only once left every cue and announcer line silent while the music, on its own context, played.
 
@@ -1030,7 +1080,7 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `FUN_801D6910` / `FUN_801D693C` / `FUN_801D6968` / `FUN_801D6994` | setters of the camera-glide record at `0x80070764`: angles, eye trio, focus, `H` |
 | `FUN_801D6480` / `FUN_801D6770` | raw GPU quad emitters into the OT scratch `_DAT_1F8003A0` (gouraud code `0x3A` / flat `0x28`; `FUN_801D6770` links through `FUN_8003D2C4`) |
 | `FUN_801D657C` | vertex-colour packet build (two packed RGBs -> 6 components) + GTE submit `FUN_80024E80`; the fade actor |
-| `FUN_801D6F18` | effect-part flag setter + spawn (`actor +0x10 \|= 0x200000`, `FUN_800204F8`) |
+| `FUN_801D6F18` | the [all-clear fighter](#the-all-clear-fighter)'s tick (`actor +0x10 \|= 0x200000`, then the clip selector `FUN_800204F8`) |
 | `FUN_801D6300` | do-nothing stub (`jr ra`); a disabled hook the SM family still calls |
 | `FUN_801D4FC8` | developer keyframe editor tick |
 | `FUN_801D57BC` / `FUN_801D58E0` | editor "add frame" / "delete frame" |

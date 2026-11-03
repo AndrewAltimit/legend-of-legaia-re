@@ -213,11 +213,17 @@ impl World {
     /// dispatcher walks only the allocated list - so drawing them paints every
     /// scene-pack mesh at world `(0, 0, 0)`.
     // REF: FUN_8001E890 (scene TMD registration - no actor allocation)
+    ///
+    /// A `4C D8` morph-weight actor draws nothing either: its handler
+    /// `FUN_8002174C` only re-blends the resident TMD in place (its one call
+    /// is the GTE blend `FUN_8005B038`), and what shows the blend is the
+    /// environment instances of that model.
+    // REF: FUN_8002174C
     // REF: FUN_8001D140 (the render dispatcher's allocated-list walk)
     pub fn actor_slot_drawn(&self, slot: usize) -> bool {
         self.actors
             .get(slot)
-            .is_some_and(|a| a.tmd_binding.is_some() && a.active)
+            .is_some_and(|a| a.tmd_binding.is_some() && a.active && a.morph_weights.is_none())
     }
 
     /// Whether the scene hides actor `slot` outright: the opening prologue
@@ -734,6 +740,40 @@ impl World {
         actor.pose_frame = Some(pose);
     }
 
+    /// Stand the player on a state's party-bank clip words, on the frame the
+    /// retail comparison's image child captures: which frame of the run a
+    /// pad-driven capture stands on is walk history the seat never replayed.
+    /// `clip` is retail's `+0x5C`, record `clip - 1` of the party bank; one
+    /// outside the leader's seven records is left alone.
+    pub fn seed_player_clip(&mut self, clip: u8, cursor: i16, flags: u16, rate: i16) {
+        let Some(slot) = self.player_actor_slot else {
+            return;
+        };
+        let Some(anim) = self.locomotion.player_anim.as_mut() else {
+            return;
+        };
+        let first = anim.leader * legaia_engine_field::field_player_clip::BANK_STRIDE;
+        let Some(bank_slot) = u16::from(clip)
+            .checked_sub(1)
+            .and_then(|record| record.checked_sub(first))
+            .filter(|&s| s < legaia_engine_field::field_player_clip::BANK_STRIDE)
+        else {
+            return;
+        };
+        let clamp = flags & legaia_engine_vm::actor_tick::CLIP_CLAMP != 0;
+        let Some(pose) = anim.seat_bank_clip(usize::from(bank_slot), cursor.max(0) as u32, clamp)
+        else {
+            return;
+        };
+        if rate != 0 {
+            self.locomotion.player_clip_rate = rate;
+        }
+        if let Some(actor) = self.actors.get_mut(slot as usize) {
+            actor.move_state.local_flags = flags;
+            actor.pose_frame = Some(pose);
+        }
+    }
+
     /// Run [`vm::move_vm::actor_tick`] for `slot` against the given `bytecode`
     /// with the supplied opcode `budget`. Returns the typed outcome -
     /// engines route `Halted` to their halt-handler, `EndOfBuffer` to "clear
@@ -1185,6 +1225,69 @@ impl World {
                 out
             })
             .collect()
+    }
+
+    /// Capture harness (`LEGAIA_SEAT_FLOOR_BOBS`): write a retail state's live
+    /// floor-ladder oscillators over the engine's, with each rung they drive,
+    /// and stand a player the hosts keep on the floor where the floor now is.
+    /// A rung's phase is time since the scene's install ran, which a seed
+    /// cannot reach by running. Under a walking `FUN_801D1BA0` the settle's
+    /// glide rides the ladder the same way, every frame.
+    pub fn seed_floor_ladder(&mut self, seeds: &[(u16, i32, i32, i32, i32)]) {
+        use legaia_engine_field::field_actor_timers::FloorTierBob;
+        self.terrain.floor_tier_bobs = seeds
+            .iter()
+            .map(|&(slot, pos, vel, accel, target)| FloorTierBob {
+                slot,
+                phase: 1,
+                phase_seed: 0,
+                pos,
+                vel,
+                accel,
+                target,
+                arm: 0,
+            })
+            .collect();
+        for &(slot, pos, ..) in seeds {
+            if let Some(rung) = self.terrain.floor_height_lut.get_mut(usize::from(slot)) {
+                *rung = (pos >> 16) as i16;
+            }
+        }
+        if self.locomotion.follow_terrain_height
+            && let Some(slot) = self.player_actor_slot
+            && let Some(a) = self.actors.get(usize::from(slot))
+        {
+            let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+            let y = self.sample_field_floor_height(i32::from(x), i32::from(z)) as i16;
+            self.actors[usize::from(slot)].move_state.world_y = y;
+        }
+    }
+
+    /// Capture harness (`LEGAIA_SEAT_MORPH_WEIGHTS`): write a retail state's
+    /// live envelopes over the `4C D8` morph-weight actors. An actor is known by
+    /// its two rates; several sharing a pair take the seeds in slot order. Where
+    /// a ping-pong stands is time since the scene entered, which a seed cannot
+    /// reach by running.
+    pub fn seed_morph_weight_actors(
+        &mut self,
+        seeds: impl IntoIterator<Item = (i16, i16, i16, bool)>,
+    ) {
+        let mut taken = vec![false; self.actors.len()];
+        for (up, down, weight, descending) in seeds {
+            let slot = self.actors.iter().enumerate().position(|(i, a)| {
+                a.active
+                    && !taken[i]
+                    && a.morph_weights
+                        .as_ref()
+                        .is_some_and(|m| m.envelope.up_rate == up && m.envelope.down_rate == down)
+            });
+            let Some(slot) = slot else { continue };
+            taken[slot] = true;
+            if let Some(m) = self.actors[slot].morph_weights.as_mut() {
+                m.envelope.weight = weight;
+                m.envelope.descending = descending;
+            }
+        }
     }
 
     /// Actor slots carrying live morph-weight state, with each one's current

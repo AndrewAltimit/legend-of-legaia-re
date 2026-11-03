@@ -340,7 +340,7 @@ impl World {
     ///   party member's `battle_accuracy`, doubled into the roll.
     /// - **Scale stage** (`FUN_801dd864`): element affinity
     ///   `matrix[summon element][target element]`, then the caster's
-    ///   per-spell magic-power byte ([`Self::caster_magic_power_byte`]).
+    ///   per-spell level byte ([`Self::caster_scale_level`]).
     /// - **Finisher** (`FUN_801ddb30`): no-damage floor (`rand()%9 + 8`,
     ///   drawn lazily), the per-caster summon power-percent
     ///   (`0x801F5468[(char_id-1)*8 + summon_element]`,
@@ -392,7 +392,7 @@ impl World {
             .unwrap_or(0);
         let target_roll = self.summon_roll_defender(target)?;
         let element_affinity_pct = self.cast_affinity_pct(spell_id, target);
-        let magic_power_byte = self.caster_magic_power_byte(caster, spell_id);
+        let magic_power_byte = self.caster_scale_level(caster, spell_id);
 
         let rng2 = [self.next_rand() as u16, self.next_rand() as u16];
         let (atk, def) = summon_predamage_lazy(

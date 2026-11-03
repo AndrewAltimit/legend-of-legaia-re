@@ -142,6 +142,7 @@ fn chrome_rects() -> SaveMenuAtlasRects {
         icon_armor: band(),
         icon_boot: band(),
         icon_goods: band(),
+        icon_worn: band(),
         pager_left: band(),
         pager_right: band(),
         tab_cap_l: band(),
@@ -333,6 +334,7 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
         },
     ];
     let view = PauseItemsView {
+        arrows_blink: true,
         rows: &rows,
         page: 1,
         pages: 6,
@@ -341,6 +343,7 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
         list_cursor: 1,
         bag_empty: false,
         info: Some(PauseItemInfo {
+            detail: None,
             name: "Point Card",
             count: 1,
             desc: "Casino points.",
@@ -427,6 +430,7 @@ fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         ink: None,
     }];
     let view = PauseMagicView {
+        arrows_blink: true,
         casters: &casters,
         rows: &rows,
         page: 1,
@@ -469,13 +473,13 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
             slot_labels: &slot_labels,
             slot_items: &slot_items,
             candidate_names: &candidate_names,
-            candidate_counts: &[2, 1],
+            candidate_icons: &[0x24, 0x24],
+            arrows_blink: true,
             stat_compare: &stat_compare,
             best_changes: &[],
             phase,
             cursor: 1,
             active_slot: 0,
-            confirm_label: matches!(phase, EquipDrawPhase::Confirm).then_some("Equip Item 21?"),
             char_slot: 0,
             slot_cursor: matches!(phase, EquipDrawPhase::SlotPicker).then_some(1),
             pictogram_rows: 5,
@@ -484,6 +488,7 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
             // the slot browse step does not.
             info: (!matches!(phase, EquipDrawPhase::SlotPicker)).then_some(
                 legaia_engine_ui::pause_menu::EquipInfoInput {
+                    detail: None,
                     name: "Item 21",
                     count: 2,
                     desc: "A sturdy vest.",
@@ -636,10 +641,6 @@ fn every_pause_screen_composes_on_both_chrome_passes() {
             (
                 "equip: item picker",
                 compose_equip(&ctx, EquipDrawPhase::ItemPicker),
-            ),
-            (
-                "equip: confirm",
-                compose_equip(&ctx, EquipDrawPhase::Confirm),
             ),
             ("arts editor", compose_arts(&ctx)),
             ("spell target select", compose_spell_target(&ctx)),

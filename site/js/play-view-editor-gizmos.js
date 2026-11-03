@@ -45,6 +45,8 @@ void main() {
   v_depth_w = gl_Position.w;
 }
 `;
+  // Scene mesh ids of the placement ghosts: above the page's own.
+  const GHOST_MESH_BASE = 0x7f000000;
   const FS = `#version 300 es
 precision highp float;
 in vec4 v_color;
@@ -62,7 +64,7 @@ void main() {
   const COL = {
     x: [0.95, 0.32, 0.30, 0.95], z: [0.30, 0.55, 0.98, 0.95], plane: [0.98, 0.86, 0.30, 0.75],
     ring: [0.35, 0.92, 0.45, 0.9], scale: [0.98, 0.62, 0.20, 0.95], hot: [1, 1, 1, 1],
-    sel: [1, 1, 1, 0.42], ghost: [1, 1, 1, 0.16], hover: [0.85, 0.95, 1, 0.3],
+    sel: [1, 1, 1, 0.16], ghost: [1, 1, 1, 0.16], edge: [1, 1, 1, 0.5], hover: [0.85, 0.95, 1, 0.3],
     lamp: [1.0, 0.85, 0.35, 0.75], emitter: [0.45, 0.9, 0.95, 0.35], decor: [0.45, 0.85, 0.45, 0.55],
     brush: [1, 1, 1, 0.9], inner: [1, 0.85, 0.4, 0.8], up: [0.55, 0.85, 0.45, 0.55], down: [0.85, 0.45, 0.35, 0.55],
     paint: [0.45, 0.95, 1.0, 0.5],
@@ -233,6 +235,66 @@ void main() {
       this._edDirty = true;
     }
 
+    /* The real model of the piece being placed (`xw-ghost`): its streams and
+     * its scene's VRAM, read off the disc on the workbench's side. Kept by
+     * `key`: the workbench's next `place` names which one the ghost draws. */
+    setEditorGhost(m) {
+      if (!this._edGhosts) this._edGhosts = { meshes: new Map(), vram: new Map(), next: GHOST_MESH_BASE };
+      const G = this._edGhosts;
+      if (!G.vram.has(m.scene)) {
+        // Whole scenes' VRAM images: only the last few placed from.
+        if (G.vram.size >= 4) {
+          const [old, tex] = G.vram.entries().next().value;
+          this.renderer.gl.deleteTexture(tex);
+          G.vram.delete(old);
+        }
+        G.vram.set(m.scene, this.renderer.makeVramTexture(m.vram));
+      }
+      if (!G.meshes.has(m.key)) G.meshes.set(m.key, { id: G.next++, scene: m.scene, data: m });
+      this._edDirty = true;
+    }
+
+    /* The ghost's mesh, uploaded now if a rebuild replaced the scene's mesh
+     * table since. */
+    _edGhostMesh(key) {
+      const rec = this._edGhosts && this._edGhosts.meshes.get(key);
+      if (!rec) return null;
+      const r = this.renderer;
+      if (!r.sceneMeshes.has(rec.id)) {
+        const d = rec.data;
+        r.uploadSceneMesh(rec.id, d.positions, d.uvs, d.cbaTsb, d.indices, d.flat && d.flat.length ? d.flat : null);
+      }
+      return rec;
+    }
+
+    /* The model of a piece standing at (x, y, z), turned `yaw` degrees:
+     * `T * Ry * S` in the retail field frame (Y down), the rotation the map
+     * build gives a prop (`expansion_map::tmd_ops::rotation_deg`). */
+    _edGhostModel(x, y, z, yaw, scale) {
+      const a = (yaw || 0) * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), k = scale || 1;
+      return new Float32Array([k * c, 0, -k * s, 0, 0, k, 0, 0, k * s, 0, k * c, 0, x, y, z, 1]);
+    }
+
+    /* The ghost following the pointer, and the pieces just put down that the
+     * rebuild has not drawn yet. */
+    _edDrawGhosts() {
+      const E = this._ed;
+      if (!E || !this._editorMap) return;
+      const r = this.renderer;
+      const G = this._edGhosts;
+      if (!G) return;
+      const vp = this._edVp();
+      for (const st of E.stamps || []) {
+        const rec = this._edGhostMesh(st.key);
+        if (rec) r.drawMeshOver(rec.id, vp, this._edGhostModel(st.x, st.y, st.z, st.yaw, st.scale), G.vram.get(rec.scene), 1, null);
+      }
+      if (E.mode !== 'place' || !E.ghost || !E.place || !E.place.ghostKey) return;
+      const rec = this._edGhostMesh(E.place.ghostKey);
+      if (!rec) return;
+      const g = E.ghost;
+      r.drawMeshOver(rec.id, vp, this._edGhostModel(g.x, this._edGround(g.x, g.z), g.z, E.place.yaw, E.place.scale), G.vram.get(rec.scene), g.ok ? 0.8 : 0.7, g.ok ? null : [1, 0.25, 0.2]);
+    }
+
     /* The party HUD stays off the frame while an edit mode is on, and
      * under the orbit camera (the editor's view of the map, not the
      * player's); the field camera shows it as the game does. */
@@ -355,6 +417,7 @@ void main() {
       if (ctrl) return;
       if (k === 'Delete' || k === 'Backspace') { post({ type: 'xw-key', key: 'Delete' }); return; }
       if (k === '[' || k === ']') { post({ type: 'xw-key', key: k }); return; }
+      if (k === 'F11') { e.preventDefault(); post({ type: 'xw-key', key: 'fullscreen' }); return; }
       if (k === 'Escape') {
         if (E.mode === 'place') post({ type: 'xw-key', key: 'cancel-place' });
         else post({ type: 'xw-key', key: 'deselect' });
@@ -470,6 +533,12 @@ void main() {
         const step = E.place.facing ? 45 : 1;
         E.place.yaw = (((Math.round(((E.place.yaw || 0) + deg) / step) * step) % 360) + 360) % 360;
         this._edPost({ type: 'xw-key', key: 'place-yaw', yaw: E.place.yaw });
+        // Turned, it may fit where it did not, or the other way round.
+        if (E.ghost) {
+          const why = this._edBlocked(E.place, E.ghost.tile[0], E.ghost.tile[1], E.place.yaw, null);
+          E.ghost.ok = !why;
+          E.ghost.why = why;
+        }
         this._edDirty = true;
         return;
       }
@@ -756,7 +825,13 @@ void main() {
         const g = this._edGhostAt(e.clientX, e.clientY);
         E.ghost = g;
         this._edDirty = true;
-        if (g && g.ok) this._edPost({ type: 'xw-place', tile: g.tile, yaw: (E.place && E.place.yaw) || 0 });
+        if (g && g.ok) {
+          this._edPost({ type: 'xw-place', tile: g.tile, yaw: (E.place && E.place.yaw) || 0 });
+          // It stands there now; the rebuild draws it for real in a moment.
+          if (E.place && E.place.ghostKey) {
+            (E.stamps || (E.stamps = [])).push({ key: E.place.ghostKey, x: g.x, y: this._edGround(g.x, g.z), z: g.z, yaw: E.place.yaw, scale: E.place.scale });
+          }
+        }
         return true;
       }
       if (E.mode === 'sculpt' || E.mode === 'paint') {
@@ -1166,11 +1241,27 @@ void main() {
           }
         }
       }
+      // Placing: where the map ends, drawn on its ground; a terrain's skirt
+      // past it looks like more ground.
+      if (E.mode === 'place') {
+        const u = m.unit, X0 = m.origin[0] * u, Z0 = m.origin[1] * u, X1 = X0 + m.width * u, Z1 = Z0 + m.height * u;
+        const edge = (x0, z0, x1, z1, n) => {
+          for (let i = 0; i < n; i++) {
+            const a = i / n, b = (i + 1) / n;
+            const ax = x0 + (x1 - x0) * a, az = z0 + (z1 - z0) * a, bx = x0 + (x1 - x0) * b, bz = z0 + (z1 - z0) * b;
+            soup.ribbon([ax, ground(ax, az) - 5, az], [bx, ground(bx, bz) - 5, bz], 7, COL.edge);
+          }
+        };
+        edge(X0, Z0, X1, Z0, m.width); edge(X1, Z0, X1, Z1, m.height); edge(X1, Z1, X0, Z1, m.width); edge(X0, Z1, X0, Z0, m.height);
+      }
       // The piece being placed: its box at the snapped tile, green where it
       // can stand and red where it cannot, its footprint's tiles on the
       // ground and its facing.
       if (E.mode === 'place' && E.ghost && E.place) {
         const g = E.ghost, pl = E.place;
+        // Say why it cannot stand here, once per reason.
+        const why = (!g.ok && g.why) || '';
+        if (why !== E.ghostWhy) { E.ghostWhy = why; this._edPost({ type: 'xw-key', key: 'place-why', why }); }
         const col = g.ok ? COL.okFill : COL.badFill;
         const line = g.ok ? COL.ok : COL.bad;
         const y0 = ground(g.x, g.z);
@@ -1184,7 +1275,9 @@ void main() {
         } else {
           const yaw = (pl.yaw || 0) * Math.PI / 180;
           const sz = pl.size || [96, 96];
-          soup.obox(g.x, g.z, sz[0] / 2, sz[1] / 2, y0 + 1, pl.hgt || 80, yaw, col);
+          // The real model draws itself (_edDrawGhosts); the box only while
+          // it is on its way.
+          if (!(pl.ghostKey && this._edGhosts && this._edGhosts.meshes.has(pl.ghostKey))) soup.obox(g.x, g.z, sz[0] / 2, sz[1] / 2, y0 + 1, pl.hgt || 80, yaw, col);
           const a = yaw, L = Math.max(sz[0], sz[1]) / 2 + 40;
           soup.ribbon([g.x, y0 - 4, g.z], [g.x + Math.cos(a) * L, y0 - 4, g.z + Math.sin(a) * L], 12, line);
           const u = m.unit, x0 = g.x - u / 2, z0 = g.z - u / 2;
@@ -1322,7 +1415,7 @@ void main() {
 
   const P = window.PlayView.prototype;
   /* The workbench's preview stays silent while it is an editor: the BGM
-   * mixer runs in a ScriptProcessorNode on this page's main thread - the
+   * mixer runs on this page's main thread - the
    * workbench's own, the frame being same-origin - and was most of a drag's
    * cost (the frame's own time under a drag, measured). Its first Test play
    * (`editorAudio`) brings the sound up. */
@@ -1338,7 +1431,16 @@ void main() {
   const drawOverlay = P._drawEditorOverlay;
   P._drawEditorOverlay = function () {
     drawOverlay.call(this);
+    this._edDrawGhosts();
     this._drawEditorGizmos();
   };
+  /* A rebuild draws what was placed: the stand-ins go. */
+  const rebuild = P._rebuild;
+  if (typeof rebuild === 'function') {
+    P._rebuild = function () {
+      if (this._ed) this._ed.stamps = null;
+      return rebuild.apply(this, arguments);
+    };
+  }
   window.LegaiaEditorGizmos = { runShape };
 })();

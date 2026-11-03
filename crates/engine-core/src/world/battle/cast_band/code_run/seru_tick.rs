@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// PROT 0910's action id: its slashes roll against it.
+const SWORDIE_ID: u8 = 0x88;
+
 impl World {
     // --- player Seru 0909..0913 ---
     /// Dispatch one of the five player-Seru tick bodies for this frame
@@ -68,9 +71,10 @@ impl World {
             // arm 9's staggered slashes - built from the frame step
             // (`0x1F800393`) and the speed scalar (`0x1F80037D`), so the slash
             // reactions land on retail's cadence. Each of the four landings
-            // runs `swordie_slash_step` with a neutral wrapper return: the
-            // clamp, the hit counter and the per-slash reaction clip are
-            // live, the HP outcome stays the fold's.
+            // rolls `FUN_801DD0AC(0x12, 7, victim)` (`0x801F887C`) and applies
+            // a quarter of it: those four are the cast's damage, and the band
+            // folds nothing more. A monster's cast of the id, which has no
+            // roll here, keeps the neutral return and the fold.
             //
             // Retail runs the body once a battle pass, which spans the frame
             // step's vsyncs, and drains by `rate * speed` there; the engine
@@ -87,8 +91,37 @@ impl World {
                 };
                 let mut slashes = self.casting.module_swordie;
                 let phase_in = ctx.phase;
+                let party_cast = caster_slot < self.party.party_count;
+                if party_cast {
+                    self.casting.module_skips_fold = true;
+                }
+                let mut rolled: Vec<(u8, u32)> = Vec::new();
                 let (step, hits) =
-                    seru::swordie_tick(ctx, seats, r_summon, r_victim, &mut slashes, clock, |_| 0);
+                    seru::swordie_tick(ctx, seats, r_summon, r_victim, &mut slashes, clock, |_| {
+                        if !party_cast {
+                            return 0;
+                        }
+                        let roll = self
+                            .summon_module_roll(caster_slot, victim_slot, SWORDIE_ID)
+                            .unwrap_or(0);
+                        rolled.push((victim_slot, roll));
+                        roll as i32
+                    });
+                // Slashes 1..3 store `0` into the readout flag (`0x801F88DC`);
+                // the fourth leaves it up, which opens the cluster.
+                if party_cast && !rolled.is_empty() {
+                    self.battle.combo_cluster_held = slashes.hits < seru::SWORDIE_LETHAL_HIT;
+                }
+                for (t, roll) in rolled {
+                    self.battle
+                        .hit_fx
+                        .push(legaia_engine_battle::battle_events::BattleHitFx {
+                            target_slot: t,
+                            amount: (roll >> 2) as u16,
+                            is_heal: false,
+                            is_crit: false,
+                        });
+                }
                 self.swordie_blades(
                     phase_in,
                     ctx.phase,

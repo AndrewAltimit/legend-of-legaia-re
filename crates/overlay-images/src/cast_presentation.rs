@@ -1772,6 +1772,14 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             if has_bump && exits {
                 holding.insert(phase);
             }
+            let after_bump = |site: u32| {
+                reach.iter().any(|&v| {
+                    img.ins(v).is_some_and(|i| is_phase_store(&i, &alias))
+                        && reach_from(&img, v + 4, &reach, &alias, lo, hi)
+                            .0
+                            .contains(&site)
+                })
+            };
             let timing_of = |site: u32| -> SiteTiming {
                 if !has_bump {
                     return SiteTiming::Every;
@@ -1790,7 +1798,11 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                 // The delay slot of a call site is part of it.
                 match (bump, exit) {
                     (true, false) => SiteTiming::Pass,
-                    (false, true) => SiteTiming::Hold,
+                    // A site a phase store falls through to runs on the pass
+                    // as well (PROT 0925's arm 1 advances inside its stream
+                    // poll, then kills the band's flash on every pass,
+                    // `0x801F6C14..0x801F6C6C`).
+                    (false, true) if !after_bump(site) => SiteTiming::Hold,
                     _ => SiteTiming::Every,
                 }
             };
@@ -1815,11 +1827,24 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                     })
                 })
             };
+            // An armed wash the arm holds through: its `bgtz` on the countdown
+            // lands on the call in a sibling arm's tail, which is the arm's own
+            // re-arm for the passes it holds (PROT 0934's arms `0x10` and `0x12`
+            // into arm `0x15`'s `0x801F864C`, `lui a0` first).
+            let holds_into_wash = |s: u32| {
+                img.ins(s)
+                    .is_some_and(|i| i.is_jal() && i.jump_target() == ARMED_WASH)
+                    && reach.iter().any(|&v| {
+                        img.ins(v).is_some_and(|i| {
+                            i.is_branch() && (s - 4..=s).contains(&i.branch_target())
+                        })
+                    })
+            };
             for &s in cands.iter().filter(|s| reach.contains(s)) {
                 let arms = placed.entry(s).or_default();
                 // The first arm to reach a site keeps it; the arm laid out
                 // over it and an arm that jumps into its block run it too.
-                if (arms.is_empty() || physical(s) || jumps_into(s))
+                if (arms.is_empty() || physical(s) || jumps_into(s) || holds_into_wash(s))
                     && !arms.iter().any(|&(b, p, _)| b == lo && p == phase)
                 {
                     arms.push((lo, phase, timing_of(s)));
@@ -2089,7 +2114,7 @@ fn site_exit_phase(img: &Image, alias: &BTreeSet<usize>, va: u32) -> Option<Phas
         Stop,
     }
     let mut pending: Option<After> = None;
-    for _ in 0..96 {
+    for _ in 0..192 {
         let i = img.ins(at)?;
         if is_phase_store(&i, alias) {
             return match r[i.rt()] {
@@ -2142,9 +2167,13 @@ fn site_exit_phase(img: &Image, alias: &BTreeSet<usize>, va: u32) -> Option<Phas
             Some(After::Clobber)
         } else if i.is_j() {
             Some(After::Jump(i.jump_target()))
-        } else if i.is_branch() || i.is_jr() {
+        } else if i.is_jr() {
             Some(After::Stop)
         } else {
+            // A conditional branch is an arm's clamp, status test or seat loop
+            // on the way to its one phase store (PROT 0955's stat buffs cap
+            // each word at 999 between the raise and the store, PROT 0953's
+            // arm 0 walks the seats): the run goes on past it.
             None
         };
         at += 4;

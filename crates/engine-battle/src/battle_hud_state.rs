@@ -345,7 +345,15 @@ impl BattleHud {
     /// `0x801F7F18`) and its arm `0x0F` raises it once as it passes
     /// (`0x801F802C..0x801F8034`), so the eleven hits open the cluster on the
     /// barrage's last pass, already counted. Releasing a held cluster opens
-    /// it then.
+    /// it then. Dropping one, for a cast that never raises the flag, loses
+    /// what it counted.
+    pub fn drop_held_combo(&mut self) {
+        if self.combo.as_ref().is_some_and(|c| c.hidden) {
+            self.combo = None;
+        }
+    }
+
+    /// Hold (or release) the cluster's opening: see the note above.
     pub fn hold_combo(&mut self, held: bool) {
         if self.combo_held
             && !held

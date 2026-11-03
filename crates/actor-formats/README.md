@@ -129,7 +129,11 @@ TMDs): instanced meshes carrying page-local UVs + per-vertex `(cba, tsb)`
 are baked against a supplied `legaia_tim::Vram` into one RGBA atlas (one
 256x256 tile per distinct `(cba, tsb-page)` pair; hybrid flat-colour
 vertices ride `COLOR_0` + a white tile). Consumed by the web viewer's
-`scene_export_*` WASM session behind the site's download buttons.
+`scene_export_*` WASM session behind the site's download buttons. The bake is
+a rotation, `(x, y, z) -> (x, -y, -z)`, so a raw file has the game's layout and
+the frame `character_gltf` / `monster_gltf` reach through their root node, with
+every triangle reversed onto glTF's front-face rule
+([frame and winding](../../docs/tooling/vrchat-world-export.md)).
 Disc-gated smoke: `tests/scene_gltf_real.rs`.
 
 `character_gltf::build_character_glb` combines the two models for the

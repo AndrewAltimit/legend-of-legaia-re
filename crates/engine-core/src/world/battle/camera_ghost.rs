@@ -65,8 +65,30 @@ impl World {
         self.tick_battle_camera_ghost();
     }
 
+    /// [`Self::refresh_battle_camera_ghost`] on a pose of the caller's: the
+    /// pass reads the camera the walker left on the pass before the one it
+    /// draws under, so a capture seat hands in that pose rather than the one
+    /// it stands on.
+    pub fn refresh_battle_camera_ghost_on(
+        &mut self,
+        pose: legaia_engine_camera::projection::BattleCamPose,
+    ) {
+        self.camera_ghost_pass_on(pose);
+    }
+
     /// One frame of the ghost pass. No-op outside battle.
+    ///
+    /// `FUN_8004DC68` runs inside the controller node `FUN_80046A20`, ahead of
+    /// the walker task `FUN_8002149C` in the node list, so it reads the pose
+    /// the walker left on the pass before. The corpus pins the order: of the
+    /// 24 captured bodies whose test parts between the RAM's pose and the pose
+    /// one increment back, `+0x08` follows the older pose on all 24.
     pub(in crate::world) fn tick_battle_camera_ghost(&mut self) {
+        let pose = self.battle_cam_pose();
+        self.camera_ghost_pass_on(pose);
+    }
+
+    fn camera_ghost_pass_on(&mut self, pose: legaia_engine_camera::projection::BattleCamPose) {
         use legaia_engine_battle_vm::battle_action::{GhostInputs, GhostSlot, camera_ghost_pass};
         if self.mode != SceneMode::Battle {
             return;
@@ -97,7 +119,6 @@ impl World {
         let (target_e, category) = self.actors.get(usize::from(acting_e)).map_or((0, 0), |a| {
             (a.battle.active_target, a.battle.action_category)
         });
-        let pose = self.battle_cam_pose();
         let inputs = GhostInputs {
             yaw: (pose.yaw.rem_euclid(4096.0)) as u16,
             focus_x: pose.focus[0] as i32,

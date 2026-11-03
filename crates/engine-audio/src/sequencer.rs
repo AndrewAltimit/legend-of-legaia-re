@@ -69,6 +69,10 @@ fn retail_header_play_tempo(us_per_qn: u32, ppqn: u16) -> u32 {
 
 /// NRPN-style controller that carries SEQ loop markers (controller 99).
 const CC_LOOP_MARKER: u8 = 0x63;
+/// Data entry (CC 6): after a Loop Start, the loop's count.
+const CC_DATA_ENTRY: u8 = 0x06;
+/// The count that loops for good.
+const LOOP_REPEAT_FOREVER: u8 = 0x7F;
 /// `CC_LOOP_MARKER` value marking a Loop Start point.
 const LOOP_START_VALUE: u8 = 20;
 /// `CC_LOOP_MARKER` value marking Loop Forever (jump to the last Loop Start).
@@ -83,11 +87,6 @@ struct ChannelState {
     volume: u8,
     /// Per-channel pan (CC 10), 0..=127.
     pan: u8,
-    /// Current 14-bit pitch-bend wheel value (`0..=0x3FFF`, center `0x2000`).
-    /// Set by `0xEn` events; applied to every note sounding on the channel
-    /// and to subsequent NoteOns. The retail score uses this (see the
-    /// `real_seq_expressive_events` corpus sweep); aftertouch is never used.
-    pitch_bend: u16,
     /// Last program-change tick. Diagnostic only.
     _last_pc_tick: u64,
 }
@@ -98,10 +97,25 @@ impl Default for ChannelState {
             program: 0,
             volume: 127,
             pan: PAN_CENTER,
-            pitch_bend: PITCH_BEND_CENTER,
             _last_pc_tick: 0,
         }
     }
+}
+
+/// What retail's per-voice driver record (`0x801CDB50`, stride `0x36`) tells a
+/// bend about the note last keyed on the voice. It outlives the note: retail's
+/// bend tests the record alone, so a releasing voice still bends.
+#[derive(Debug, Clone, Copy)]
+struct VoiceNote {
+    program: usize,
+    tone: usize,
+    key: u8,
+    /// The voice's key-on count right after this note keyed it; `None` until
+    /// the flush does. A different count means a cue took the voice.
+    stamp: Option<u32>,
+    /// A bend that reached the note before its flush: retail's writes the
+    /// shadow pitch register the flush hands over.
+    staged_wheel: Option<u8>,
 }
 
 /// Active note tracker: `(channel, key, voice)` so a NoteOff can find the
@@ -111,14 +125,6 @@ struct ActiveNote {
     channel: u8,
     key: u8,
     voice: u8,
-    /// The voice's SPU pitch register at NoteOn, before this channel's
-    /// pitch-bend was folded in. Re-applying a new bend multiplies this
-    /// base so repeated bends don't compound rounding error.
-    base_pitch: u16,
-    /// The sounding tone's pitch-bend range `(pbmin, pbmax)` in semitones,
-    /// captured at NoteOn so a later `0xEn` event scales by the note's own
-    /// range (a `(0, 0)` tone never bends).
-    bend_range: (u8, u8),
     /// The note's raw velocity, program and layer tone: a CC7 or CC10
     /// re-derives the voice volume from these through the whole retail chain
     /// ([`Sequencer::note_volume`]), as libsnd's re-key does, rather than
@@ -142,7 +148,6 @@ struct ActiveNote {
 struct PendingKey {
     id: u32,
     voice: u8,
-    channel: u8,
     key: u8,
     velocity: u8,
     program: usize,
@@ -210,9 +215,21 @@ pub struct Sequencer {
     /// first Loop Start is seen; persists across loop rewinds so repeated
     /// loops keep returning to the same bar.
     loop_start: Option<usize>,
+    /// A Loop Start fired and its count has not been read (retail's `+0x1C`).
+    loop_armed: bool,
+    /// A loop's count is running (retail's `+0x15`).
+    loop_busy: bool,
+    /// The loop's remaining count (retail's `+0x1D`): zero, as `FUN_80062410`
+    /// opens it, until a data entry follows a Loop Start.
+    loop_repeats: u8,
     /// Set when a Loop Forever marker (CC 99 value 30) fires; the advance loop
     /// consumes it, rewinds, and clears it.
     pending_loop_forever: bool,
+    /// Voices holding a register write for this vsync's flush, by a volume or a
+    /// pitch change since the last one.
+    staged_voices: u32,
+    /// How many voices the last flush wrote registers for.
+    last_flush_staged: u32,
 
     channels: [ChannelState; CHANNELS],
     /// Active note → voice mappings. Linear search; bounded by SPU voice
@@ -234,6 +251,8 @@ pub struct Sequencer {
     /// `+0x1A`); the allocation scan may only steal a voice whose priority is
     /// `<=` the incoming note's. Written on every successful allocation.
     voice_prio: [u8; crate::spu::NUM_VOICES],
+    /// The note each voice was last allocated to, for a bend's voice scan.
+    voice_note: [Option<VoiceNote>; crate::spu::NUM_VOICES],
     /// Per-voice allocation **age** counter (retail per-voice record `+0x02`):
     /// every successful allocation increments every voice's age by one and
     /// zeroes the winner's, so the largest age marks the least-recently

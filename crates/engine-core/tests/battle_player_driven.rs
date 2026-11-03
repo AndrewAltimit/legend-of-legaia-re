@@ -91,6 +91,7 @@ fn battle_waits_for_player_command_then_resolves() {
         entered,
         "walking should trigger a Field -> Battle transition"
     );
+    w.run_out_battle_open();
     assert!(
         w.battle.command.is_some(),
         "entering battle should open a command session, not auto-attack"

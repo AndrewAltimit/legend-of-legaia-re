@@ -509,9 +509,10 @@ python3 scripts/ci/third-party-licenses.py "${LICENSE_TARGETS[@]}" \
     printf '    I    enhanced lighting        F8   lighting time of day\n'
     printf '    F4   see-through walls        F9   ground fog\n'
     printf '    T    camera distance          R    free-angle movement\n'
-    printf '    F2   mute                     F12  list every toggle (also ?)\n'
+    printf '    F2   mute                     F12  settings and key list (also ?)\n'
     printf '    F11 or Alt+Enter   fullscreen\n\n'
-    printf 'Each toggle shows its new state at the bottom left for a moment.\n\n'
+    printf 'Each toggle shows its new state at the bottom left for a moment.\n'
+    printf 'On a controller, Select + Start opens the settings.\n\n'
     printf 'Mouse: drag to turn the camera, wheel to zoom, double-click to reset.\n'
     printf 'Every play option is on the command line:\n'
     printf '    %s/legaia-engine play-window --help\n\n' "$TOOLS_DIR"

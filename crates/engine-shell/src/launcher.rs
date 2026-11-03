@@ -670,6 +670,8 @@ pub const GAME_LOG: &str = "legaia-engine-game.log";
 /// switch (persisted in [`LauncherSettings`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OptionRow {
+    /// One switch over the rows below: Enhanced, Original or Custom.
+    Preset,
     Fullscreen,
     WindowSize,
     EnhancedLighting,
@@ -711,7 +713,8 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 37] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 38] = [
+    (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
     (None, OptionRow::CameraDistance),
@@ -808,10 +811,40 @@ fn capitalise(s: &str) -> String {
         .unwrap_or_default()
 }
 
+/// The [`OptionRow::Preset`] row's values.
+const PRESET_ENHANCED: &str = "Enhanced";
+const PRESET_ORIGINAL: &str = "Original";
+const PRESET_CUSTOM: &str = "Custom";
+
+/// Which preset the rows add up to.
+fn preset_of(
+    opts: &legaia_engine_menus::options::OptionsState,
+    s: &LauncherSettings,
+) -> &'static str {
+    if s.switches.retail {
+        PRESET_ORIGINAL
+    } else if OPTION_ROWS
+        .iter()
+        .all(|(_, r)| !r.in_preset() || r.is_default(opts, s))
+    {
+        PRESET_ENHANCED
+    } else {
+        PRESET_CUSTOM
+    }
+}
+
 impl OptionRow {
+    /// Whether the preset speaks for the row: everything but the window and
+    /// the sound levels, which are the player's machine and not a look.
+    pub fn in_preset(self) -> bool {
+        self != Self::Preset
+            && (self.overridden_by_retail() || matches!(self, Self::PsxRender | Self::Retail))
+    }
+
     /// The row's label.
     pub fn label(self) -> &'static str {
         match self {
+            Self::Preset => "Look and feel",
             Self::Fullscreen => "Fullscreen",
             Self::WindowSize => "Window size",
             Self::EnhancedLighting => "Enhanced lighting",
@@ -855,6 +888,9 @@ impl OptionRow {
     /// One or two sentences on what the row does, for the help line.
     pub fn help(self) -> &'static str {
         match self {
+            Self::Preset => {
+                "Enhanced: the port's choices. Original: as on a PlayStation. Delete: back to Enhanced."
+            }
             Self::Fullscreen => {
                 "Fill the screen with a borderless window. In game: F11 or Alt+Enter."
             }
@@ -988,7 +1024,8 @@ impl OptionRow {
     pub fn is_game_option(self) -> bool {
         !matches!(
             self,
-            Self::PsxRender
+            Self::Preset
+                | Self::PsxRender
                 | Self::Retail
                 | Self::EntryPulse
                 | Self::SmartMonsters
@@ -1015,7 +1052,8 @@ impl OptionRow {
     pub fn overridden_by_retail(self) -> bool {
         !matches!(
             self,
-            Self::Retail
+            Self::Preset
+                | Self::Retail
                 | Self::PsxRender
                 | Self::MasterVolume
                 | Self::MusicVolume
@@ -1033,6 +1071,7 @@ impl OptionRow {
         s: &LauncherSettings,
     ) -> String {
         match self {
+            Self::Preset => preset_of(opts, s).to_string(),
             Self::Fullscreen => on_off(opts.fullscreen),
             Self::WindowSize => {
                 let k = u32::from(opts.window_scale.clamp(WINDOW_SCALES.0, WINDOW_SCALES.1));
@@ -1092,7 +1131,8 @@ impl OptionRow {
     /// itself).
     pub fn original_value(self) -> Option<String> {
         match self {
-            Self::Fullscreen
+            Self::Preset
+            | Self::Fullscreen
             | Self::WindowSize
             | Self::TimeOfDay
             | Self::MasterVolume
@@ -1174,6 +1214,13 @@ impl OptionRow {
         let d = PersistedSwitches::default();
         let w = &mut s.switches;
         match self {
+            Self::Preset => {
+                for (_, row) in OPTION_ROWS {
+                    if row.in_preset() {
+                        row.reset(opts, s);
+                    }
+                }
+            }
             Self::Fullscreen => opts.fullscreen = o.fullscreen,
             Self::WindowSize => opts.window_scale = o.window_scale,
             Self::EnhancedLighting => opts.enhanced_lighting = o.enhanced_lighting,
@@ -1231,6 +1278,13 @@ impl OptionRow {
             }
         };
         match self {
+            // Original is the session switch, so the rows under it keep their
+            // values: stepping away finds a Custom mix where it was left.
+            Self::Preset => {
+                let on = !s.switches.retail;
+                s.switches.retail = on;
+                s.switches.psx_render = on;
+            }
             Self::Fullscreen => opts.fullscreen ^= true,
             Self::WindowSize => {
                 let (lo, hi) = WINDOW_SCALES;
@@ -1370,6 +1424,38 @@ pub fn disc_font(bin: &Path) -> Option<legaia_font::Font> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Stepping the preset to Original and back leaves a mix where it was,
+    /// `Delete` restores Enhanced, and the window and sound rows stay out.
+    #[test]
+    fn preset_row_steps_keep_a_mix_and_reset_restores_enhanced() {
+        use legaia_engine_menus::options::OptionsState;
+        let mut o = OptionsState::default();
+        let mut s = LauncherSettings::default();
+        let value = |o: &_, s: &_| OptionRow::Preset.value(o, s);
+        assert_eq!(value(&o, &s), "Enhanced");
+        OptionRow::Preset.adjust(&mut o, &mut s, 1);
+        assert_eq!(value(&o, &s), "Original");
+        assert!(s.switches.retail && s.switches.psx_render);
+        OptionRow::Preset.adjust(&mut o, &mut s, 1);
+        assert_eq!(value(&o, &s), "Enhanced");
+
+        o.bgm_volume = 3;
+        o.window_scale = 4;
+        assert_eq!(value(&o, &s), "Enhanced", "levels and size are no look");
+        o.bloom ^= true;
+        assert_eq!(value(&o, &s), "Custom");
+        OptionRow::Preset.adjust(&mut o, &mut s, 1);
+        assert_eq!(value(&o, &s), "Original");
+        OptionRow::Preset.adjust(&mut o, &mut s, -1);
+        assert_eq!(value(&o, &s), "Custom", "the mix is still there");
+
+        s.switches.smart_monsters = true;
+        OptionRow::Preset.reset(&mut o, &mut s);
+        assert_eq!(value(&o, &s), "Enhanced");
+        assert_eq!((o.bgm_volume, o.window_scale), (3, 4));
+        assert!(!s.switches.smart_monsters);
+    }
 
     fn ok_info(p: &Path) -> DiscInfo {
         DiscInfo {
@@ -1887,6 +1973,9 @@ mod tests {
         use OptionRow::*;
         Some(match row {
             WindowSize => return None,
+            // The page says the same two things with its Retail-faithful switch
+            // and its Reset to defaults button.
+            Preset => "play-retail-mode",
             Fullscreen => "play-fullscreen",
             EnhancedLighting => "play-dyn-light",
             TimeOfDay => "play-time-of-day",
@@ -1963,6 +2052,10 @@ mod tests {
     fn every_row_resets_to_its_default_alone() {
         use legaia_engine_menus::options::OptionsState;
         for (_, row) in OPTION_ROWS {
+            // The preset's reset is every row's: its own test has it.
+            if row == OptionRow::Preset {
+                continue;
+            }
             let mut o = OptionsState::default();
             let mut s = LauncherSettings::default();
             assert!(row.is_default(&o, &s), "{}", row.label());

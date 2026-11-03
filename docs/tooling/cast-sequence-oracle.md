@@ -30,6 +30,28 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
 scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --score-only --retail-lag 4
 ```
 
+Several casts go through
+[`cast-sequence-batch.py`](../../scripts/ci/cast-sequence-batch.py): a file of
+`<name> <arguments>` lines, the retail recordings side by side (`--jobs`), then the
+engine runs one at a time. A retail recording is a
+[headless](pcsx-redux-automation.md#headless-runs) emulator at 1x (`--window` opens
+one) and holds no display lock. Two recordings of one cast are not byte-identical,
+in a window or not ([why, and what does hold](pcsx-redux-automation.md#a-recording-is-not-byte-repeatable-at-any-speed)),
+so a residual smaller than two retail runs differ from each other is noise. On a
+`--monster-pick` run the approach is not pinned either: a one-vsync slip moves where
+the blind CROSS taps land in the rounds before the pick, so the inject can come a
+round later (a window and a headless run of one state inject hundreds of vsyncs
+apart). The cast from its begin keeps its action path and cues, and the engine side
+takes its ground from the recording.
+
+Each stage is reused until something it depends on changes. The retail
+recording stays until `--recapture`; the seed's child command until `--reseed`;
+the engine recording while `engine-key.txt` matches a hash of the binary, the
+child's `LEGAIA_*` environment and arguments, the files those name and the
+disc, so an `--engine-only` with nothing changed goes straight to the score
+(`--rerecord` forces it). The score reads and scores its pairs on several
+threads, and the report does not depend on how many.
+
 The output defaults to `captures/cast-sequence/<state>_<spell>/` (gitignored).
 It holds `retail/` (the probe's frames and `meta.csv`), `rc/` (the
 retail-compare child command the engine run is built from), `engine/` (the
@@ -37,6 +59,10 @@ recorder's frames and `meta.csv`), `engine-cmd.txt` (the engine child's
 environment and arguments, to re-run by hand), and the products: `report.md`,
 `report.json` and `strip.png`. **Every one of them carries retail pixels or
 RAM**: keep the directory out of the repo.
+
+The engine child drops the state's own capture seeds as well as its gate and
+drive, its re-seat among them: a strike state's re-seat left in stood the
+caster `3500` units from the ground retail recorded.
 
 The driver builds `legaia-engine` with `engine-shell`'s `oracles` feature:
 `cast-sequence-score` and the recorder's frame shots exist only in that build,
@@ -49,14 +75,18 @@ Flags worth knowing:
 | `--caster <seat>` | Seat whose queued action is rewritten (default `0`; `255` = whichever party seat acts first). A seat `>= 3` is a monster: the engine side then seeds `LEGAIA_BATTLE_MONSTER_CAST` |
 | `--target <seat>` | Target seat (default `3`) |
 | `--every <n>` | Retail vsyncs between frames (default `2`; the engine records every tick) |
-| `--recapture` / `--reseed` | Re-run the retail capture / the retail-compare seed instead of using the cache |
+| `--recapture` / `--reseed` / `--rerecord` | Re-run the retail capture / the retail-compare seed / the engine recording instead of using the cache |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
+| `--learned <level>` | Both sides: the spell sits on the caster's list at this level. Off the list `FUN_801DD864` reads list slot `0x20`, and level `0` wraps into a capped hit ([the summon roll](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)), so a damage measurement wants this |
+| `--monster-hp <hp>` | Both sides: every living monster's HP from the cast begin, so a cast's whole damage shows in the HP columns. HP feeds the defender roll (`hp >> 8`) and a monster's own swing, so keep it modest and it goes in after the monster's turn |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
+| `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
+| `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
@@ -125,6 +155,17 @@ seeded, and the recorder on:
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
 
+A monster's AI counter `0x801C8FE4` travels with the state
+(`LEGAIA_SEAT_AI_COUNTER`): PROT 0964's strike forks on it, and a replay that starts
+from a cleared word plays another element's arms.
+
+The child's mode-3 cycler and mode-4 scroller seats (`LEGAIA_SEAT_CLUT_FX`,
+`LEGAIA_SEAT_VRAM_RECTS`) are dropped with the drive: each holds one capture
+instant, and a whole run under them leaves the evolved-Cort arena's flesh on
+one palette and one scroll where retail's keeps cycling. Their phase is then
+the engine's own: nothing aligns the hue clock with retail's across the
+fight's history.
+
 The child is a `--screenshot` run, so it is tick-locked, and the recording is
 deterministic. The recorder starts on cast begin `0x28` and writes the frame
 already cropped and box-filtered to the compared `320 x 224`
@@ -136,6 +177,15 @@ tick (pitch, yaw, TR trio), the engine half of the retail side's file, and
 clip loops, its cursor in sixteenths of a keyframe and the live pair: the
 engine half of the retail `body.csv`, which a clip that ends early or late
 is read off.
+
+Both sides also write `creature.csv`, the summon creature's clip, staged byte,
+cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a
+walk or a clip the engine does not carry reads directly: Jedo's creature stood at
+`z = -0x800` where retail's advanced to `-0x400`. The Done band includes a flute's flee
+state `0x65`, so the Spikefish cast ends cleanly. A cast's arm can run longer in retail
+than its countdown says: the frame step stops at 4 while a heavy arm's real frame runs
+past 4 vsyncs, so the module's word drains slower per vsync. Ozma's arm 6 runs 462
+vsyncs to the engine's 191. The pairing keys on arms, so those frames pair by arm.
 
 ## The pairing rule
 
@@ -169,7 +219,15 @@ Frames pair on the action-SM clock, never on wall time:
    [game clock](#the-game-clock), pairs with the engine frame `k` ticks into
    the aligned segment, clamped to that segment's last tick. An engine arm
    that ends early is compared at its last frame for the rest of retail's
-   arm, which is what a viewer would see.
+   arm, which is what a viewer would see. The offset runs from the key's first
+   row, inside the frame whose pass moved the key, so on a step-`4` arm the pair
+   reads a retail image up to one step older than the engine tick it scores:
+   Ozma's arm 6 shows a constant `2` in pitch and a flipped shake bit. Counting
+   from that frame's last row zeroes those camera words and drops `within` on
+   the same casts (Iota `.508` to `.477`, Ozma arm 18 `.567` to `.347`), because a
+   part or fade spawned by the pass already took that frame's whole step in
+   retail and one tick in the engine. The rule stays; read a small camera residual
+   on a slow arm against it.
 
 Each pair is scored with the corpus metric (`within`, the fraction of `8 x 8`
 blocks within `24` per channel; [The image channel](retail-compare.md#the-image-channel)).
@@ -260,6 +318,49 @@ frames past the arm's entry holds retail's rise older than the engine's
 the whole arm-4 segment scores low on the brighter retail frame. The
 `vera_summon_mid_cast` still, gated on the rise's own age, matches it.
 
+## A monster's physical attack
+
+`--physical` records the strike a harvested state already holds instead of
+injecting a cast (`battle_*_strike`: a monster eight vsyncs into its strike loop
+`0x1E`). Neither side is steered onto an action:
+
+```bash
+scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --every 8
+```
+
+- **Retail.** `LEGAIA_PHYSICAL=1`: the probe loads the state and records from
+  its first vsync to past the Done band.
+- **Engine.** The child keeps the state's own pad drive, so its strike is the
+  round `BattleDrive::reached` accepts, and starts recording on that gate
+  (`LEGAIA_DIAG_CAST_SEQ_BEGIN=gate`). `LEGAIA_DIAG_CAPTURE_TICK` pushes the
+  child's frame past the recording. A first `0x1E` is not that round: the drive
+  may replay rounds until its target and clip match, and a recording started on
+  an earlier one reads as a strike that "lands nothing".
+
+On the retail side the same switch starts on a state held on `0x2B`, with
+`--retail-only`: `LEGAIA_RAM_AT` then films a monster cast from the state on the
+fast core, where the `--monster-pick` run is an interpreter's.
+
+Once the capture's own instant is passed, nothing holds the two rounds together:
+the block roll, the monster's next queue byte and any later pick draw on each
+side's own stream. So the channel's number mixes rule differences with deals.
+`scripts/asset-investigation/cue_by_clip.py <dir>` takes the deal out: it files each
+cue under the seat and clip it landed in, with its offset from the clip's commit,
+on both sides, so a clip both sides played can be read cue for cue.
+
+What thirteen strike states show (`warhalf`, `warman`, `frog`, `spoon`,
+`gilium_lv2`, `hells_rat`, `gizam`, `wolf`, `guardian`, `freed`, `barra`,
+`chitei2_gilium`, `mad_ogre`): every clip both sides played carries the same ids
+within two vsyncs. Vahn's flinch `0x54` and block `0x51` + `0x0C`, Noa's block
+`0x249`, Gala's block `0x58` + `0x0C`, and each monster's swing (`0x2D0` Frog,
+`0x2E4` / `0x311` Warhalf, `0x2E3` Mad Ogre, `0x19` Gilium, `0x308` Freed) agree.
+`gizam` and `warhalf` play the same ids throughout, and every other difference is
+a block roll or queue byte the two streams dealt apart, not a wrong cue. A cue on
+a walk clip (`warhalf`'s `0x311`) sits on that seat's walk cycle, which the
+capture's instant does not fix. A hit
+that lands keeps its hit count: `frog`'s retail swings land, block, land and fold
+one HP drop; the engine's land, land, knock down and fold one.
+
 ## The sound channel
 
 Both sides also write `sfx.csv`, one row per sound cue played:
@@ -273,8 +374,11 @@ Both sides also write `sfx.csv`, one row per sound cue played:
   The row's `drain` column is the drainer's own gate
   (`0x8007BABC == 0x8007BAA0`, `0x80016BC0..0x80016BD4`); a cue that came due
   behind a closed gate was not played and is not scored. The ring carries
-  every battle cue the router `FUN_8004FE5C` enqueues and every script cue;
-  a voice keyed straight through `FUN_800250D4` is not on it.
+  every battle cue the router `FUN_8004FE5C` enqueues and every script cue.
+  `FUN_800250D4` releases voices, it keys none, and `FUN_80065034`'s only callers
+  outside the drainer are the emitter arm and four minigame overlays, so no battle
+  voice is keyed around the ring. A CD-XA voice clip (`FUN_8003D53C`) is not a ring
+  cue and is not in this channel.
 - **Engine.** The recorder reads the audio director's command record each
   tick: the cues that came due (`SfxDue` off the delay scheduler, `RingDue`
   off the retail ring, `SfxNow`). The driver drops the child's `--no-audio`
@@ -309,15 +413,26 @@ adds its reaction-channel entry). What the recordings on
   seat already reacting; the engine's mirror read the action channel, where
   a hit reaction never shows, so PROT 0904's sweep (Theeder) struck the same
   seat every pass and its reaction cue sounded on each.
-- **Zenoir's opener.** Retail's arm 8 hit (`0x801F76CC`) takes the victim to
-  1 HP and stages its reaction, whose clip cue `0x80` (ring `0x21C`, the
-  router from `FUN_800508DC`) sounds on arm 10's first pass. The engine
-  runs PROT 0908's damage sites with no rolls and resolves the spell's
-  damage elsewhere, so the opener stages nothing and the cue never sounds.
+- **Zenoir's opener.** Retail's arm 8 hit (`0x801F76CC`) takes the victim down
+  by a quarter of the roll, clamped to `HP - 1`, and stages its reaction, whose
+  clip cue `0x80` (ring `0x21C`, the router from `FUN_800508DC`) sounds on arm
+  10's first pass. The engine lands it on the same pass
+  (`World::apply_summon_pre_hits`).
+- **Theeder's reaction.** The module's sweep stages the victim's reaction when
+  the ray reaches the seat, about 33 ticks into arm 12 (`0x801F7D38`). The fold
+  lands on that tick's hit, so the reaction and its cues start there.
+- **A projectile's impact cue.** Aluru Cannon's landing rings `0x49`: the
+  caller log reads `FUN_8004FCC8` from `0x801E185C`, the hit arm's
+  `record[+0x0D]` ([move-power](../formats/move-power.md)). The engine's homing
+  step now rings it per landed slot.
+- **A victim's reaction holding `0x2E`.** The census's `+0x249` counts
+  `+0x1D9`, where a hit reaction commits, so the victim's knockdown and get-up
+  hold the magic band's exit. The engine counted the action channel and left
+  `0x2E` on its second pass, moving the band's closing cues `43` ticks early.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
-## Reading the report## Reading the report
+## Reading the report
 
 `report.md` opens with the mean, the minimum and the excluded counts. Then
 come:
@@ -375,6 +490,13 @@ enough to read the engine's own segment lengths for a cast in the fight the
 corpus scores it in.
 - **An item cast (the flutes) is not injectable.** The probe writes category
   `2` (Magic). An item summon needs the item category and its own id space.
+- **A cast longer than `LEGAIA_MAX_SHOTS` (default `1500` grabs) is cut.** At
+  `--every 2` that is 3000 vsyncs: the closing arms of Meta and Ozma carry no
+  pairs. Set the variable higher to score them.
+- **The caster need not know the spell.** An injected cast of an unlearned
+  spell rolls a capped hit
+  ([battle-formulas](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)),
+  and the engine mirrors it, so popups match but read `9999`.
 
 ## A monster cast from any battle state
 
@@ -401,7 +523,19 @@ the fast core with a plain `--caster`:
 | `gaza2_pre_neo_star_slash` / `cort_evolved_pre_doomsday` | the same two casts; **patched resident executable** |
 
 The action in each is the probe's, not the AI's: a capture is a statement
-about the cast, not about when the monster would have chosen it.
+about the cast, not about when the monster would have chosen it. A
+`<scene>_<monster>_pre_<spell>` state from the
+[harvest route](capture-coverage.md#filling-the-worklist) is the opposite: saved
+at the action's `0x0A`, ahead of a pick the AI makes itself. Pass the seat the
+fight gave the caster (the formation row's order, which `--filter`'s report names as
+`seat=`). The probe writes the target the cast began on to `done.txt`
+(`cast_target`), and the engine child lands a single-target cast there
+(`,t<slot>` on `LEGAIA_BATTLE_MONSTER_CAST`): the victim's voice cue and every
+victim shot follow it.
+
+A cast with a pad-driven hold needs `LEGAIA_PARK` past it: Fatal Decision's arm 6
+holds about `1200` vsyncs on an undecided party victim, which the default bound
+reads as a park.
 
 A saved state keeps the executable its source state held. The first Gaza 2
 and evolved-Cort states were made on patched discs (`battle_gaza2_prompt`,
@@ -417,6 +551,28 @@ and walked onto it, and the fight's own scripted entry (`korb3` P2[2]'s
 evolved Cort's arrival holds the flow on `0x0C` for about 3200 vsyncs
 ([battle-command-flow.md](../subsystems/battle-command-flow.md#flow-0x0c-is-the-boss-stage-modules-baton)),
 so a probe run from the fight's opening needs `LEGAIA_PRESS_UNTIL` past it.
+
+### What a harvested state needs passed
+
+A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
+`--target` store into `+0x1DD` is the one the cast begins on (`cast_target` in
+`done.txt` follows it, whatever seat the pick chose). So:
+
+- Pass the seat the corpus's `*_mid_cast` state of the same cast holds, and for a
+  group spell `--target 8`: the [spell table](../formats/spell-table.md#target-shape-2)
+  reads `0x64` for all opponents, `0x44` for one. A `--target 0` on Multi Cutter
+  records retail hitting Vahn alone against the engine's sweep and reads `.533` for
+  `.813`; a `--target 8` on Astral Wave (`0x44`) records retail sweeping the party
+  against the engine's single hit.
+- The harvester plays Spirit, so a state saved in those rounds holds every party seat
+  at `+0x1DE == 4`. Pass `--guard 0,1,2` or the engine's victims take three to four
+  times retail's damage. A `--monster-pick` run several rounds on from a `*_strike`
+  state has tapped Attack since, and takes no `--guard`.
+- A monster-pick run from a `*_strike` state wants `LEGAIA_PRESS_UNTIL=7000` and
+  `--frames 12000`: the default window ends at the next round's command input. Some
+  still inject nothing in that span (`inject=-1`). `--physical --retail-only` from the
+  corpus's `*_mid_cast` state then records the cast from its instant, and
+  `--spell .. --engine-only` runs the engine side, which pairs by arm.
 
 ### The target has to be the engine's
 

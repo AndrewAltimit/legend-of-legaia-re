@@ -71,7 +71,9 @@ pub(super) fn interact_at(
         // Out of the probe's reach from a seat beside the target's own tile,
         // the continuous hand walks up against it first, as a player does:
         // the `korb3` gate stones' boxes end exactly where the probe from
-        // the corridor's centre line reaches.
+        // the corridor's centre line reaches. It stops as soon as the target
+        // is in reach: a party with a faster walk otherwise slides along the
+        // wall and out of the probe's reach again before the step ends.
         if facing.is_none() && extra {
             let (px, pz) = player_xz(session);
             let pad = pad_for_step(session, (nx - px).signum(), (nz - pz).signum());
@@ -81,7 +83,11 @@ pub(super) fn interact_at(
                 if session.tick().is_err() {
                     break;
                 }
-                if player_xz(session) == at {
+                let reached = (0..8u8).any(|d| {
+                    session.host.world.face_player_sector(d);
+                    hits(&session.host.world)
+                });
+                if reached || player_xz(session) == at {
                     break;
                 }
             }

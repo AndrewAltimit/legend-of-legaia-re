@@ -319,6 +319,7 @@ pub fn build_atlas(
             title_pak::OVERLAY_SYSTEM_UI_ICON_GOODS,
             ATLAS_RECT_ICON_GOODS,
         ),
+        (title_pak::OVERLAY_SYSTEM_UI_ICON_WORN, ATLAS_RECT_ICON_WORN),
     ] {
         copy_rect(&mut out, ATLAS_WIDTH, &icon_rgba, panel_src_w, src, dst);
     }

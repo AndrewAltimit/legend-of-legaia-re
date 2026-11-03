@@ -533,6 +533,9 @@ pub const OVERLAY_SYSTEM_UI_ICON_HELMET: (u32, u32, u32, u32) = (244, 24, 12, 12
 pub const OVERLAY_SYSTEM_UI_ICON_ARMOR: (u32, u32, u32, u32) = (232, 36, 12, 12);
 pub const OVERLAY_SYSTEM_UI_ICON_BOOT: (u32, u32, u32, u32) = (232, 48, 12, 12);
 pub const OVERLAY_SYSTEM_UI_ICON_GOODS: (u32, u32, u32, u32) = (0, 128, 12, 12);
+/// ICO `0x21` (`0x800732A4 + 0x21*12`, UV `(232, 24)`): the worn row's "E" mark
+/// on an equip candidate list.
+pub const OVERLAY_SYSTEM_UI_ICON_WORN: (u32, u32, u32, u32) = (232, 24, 12, 12);
 
 /// CLUT block row the equipment pictograms decode with (gold ramp) -
 /// the `0x800732a4` records' CLUT byte `0x08` for all five icons.

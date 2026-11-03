@@ -139,10 +139,16 @@ ring itself: the Baka Fighter overlay's cues are plain
 
 `0x20` confirm / `0x21` cursor / `0x23` disabled-row buzz / `0x37` cancel are
 the **shared UI** cues, not the duel's own. The SCUS-resident kind-4 list kernel
-`FUN_80032A44`, which pages every pause-menu list window, writes them
-(`li a2,0x21` at `0x80032b9c`, `li a1,0x20` at `0x80032d24`, `li a1,0x23` at
-`0x80032d0c`, `li a2,0x37` at `0x80032d74`; see
-[`field-menu.md`](../subsystems/field-menu.md)).
+`FUN_80032A44` writes them (`li a2,0x21` at `0x80032b9c`, `li a1,0x20` at
+`0x80032d24`, `li a1,0x23` at `0x80032d0c`, `li a2,0x37` at `0x80032d74`), but it
+has one caller, the widget walk's kind dispatch at `0x800323AC`. The pause menu's
+own rows are paged by the menu overlay's picker `FUN_801D688C` (21 callers in PROT
+0899), whose Cross pushes **`0x36`** (`0x801D68C8`), Circle `0x37`, steps `0x21`.
+A screen that accepts the row overwrites the ring's last slot through
+`FUN_80035BD0`, `0x20` for most and `0x23` for a refusal; the root picker
+`FUN_801D6B20` does so only for Load and Save, so its Items through Options rows
+sound the bare `0x36`. A retail walk reads the same: root Items `0x36`, then the
+Items window's Use `0x36` overwritten by `0x20`.
 
 ### The field's producers: op `0x36` and the motion VM's op `0x09`
 

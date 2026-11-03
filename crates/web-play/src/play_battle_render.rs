@@ -368,7 +368,7 @@ impl LegaiaRuntime {
     pub(crate) fn enter_battle_render(
         &mut self,
         stage: Option<BattleStage>,
-        archive: Option<Vec<u8>>,
+        archive: Option<std::sync::Arc<Vec<u8>>>,
     ) {
         self.battle_render = None;
         // The party's forms are the engine's to build (normally already done
@@ -625,12 +625,16 @@ impl LegaiaRuntime {
         if host.world.mode != legaia_engine_mode::mode::SceneMode::Battle {
             return;
         }
+        // Runs per battle tick: the index's shared copy, never a clone of the
+        // whole archive.
         let archive = host
             .index
-            .entry_bytes_extended(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
+            .entry_bytes(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
             .ok();
-        let seats =
-            legaia_engine_session::battle_stage::stage_wave_monsters(host, archive.as_deref());
+        let seats = legaia_engine_session::battle_stage::stage_wave_monsters(
+            host,
+            archive.as_deref().map(Vec::as_slice),
+        );
         let (Some(archive), false) = (archive, seats.is_empty()) else {
             return;
         };

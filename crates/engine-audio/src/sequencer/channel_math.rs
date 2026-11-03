@@ -1,28 +1,4 @@
-//! Per-channel arithmetic: the pitch-bend factor, pan attenuation and the effective velocity.
-
-/// Center value of the 14-bit pitch-bend wheel - no bend.
-pub(super) const PITCH_BEND_CENTER: u16 = 0x2000;
-
-/// Convert a 14-bit pitch-bend wheel value into a pitch multiplier (`1.0` at
-/// center) using the sounding tone's own bend range (semitones): `up` at
-/// full-up wheel, `down` at full-down. The range is the VAB tone's
-/// `pbmax`/`pbmin` (disc-sourced, per [`VabBank::pitch_bend_range`]), so a
-/// tone with a `(0, 0)` range does not respond to the wheel at all - exactly
-/// as libsnd applies the per-tone range rather than a global constant. Shared
-/// by NoteOn (bend a fresh note) and the `0xEn` handler (re-bend sounding
-/// notes).
-pub(super) fn pitch_bend_factor(bend: u16, down: u8, up: u8) -> f64 {
-    let norm = (bend as f64 - PITCH_BEND_CENTER as f64) / PITCH_BEND_CENTER as f64;
-    let range = if norm >= 0.0 { up } else { down } as f64;
-    let semitones = norm * range;
-    2f64.powf(semitones / 12.0)
-}
-
-/// Scale a base SPU pitch register by a bend factor, clamped to the valid
-/// `1..=0x3FFF` register range (the same clamp `compute_pitch` applies).
-pub(super) fn bend_pitch(base: u16, factor: f64) -> u16 {
-    ((base as f64 * factor).round() as i64).clamp(1, 0x3FFF) as u16
-}
+//! Per-channel arithmetic: pan attenuation and the effective velocity.
 
 /// Center value of the 7-bit channel-pan controller (CC10) - no pan.
 pub(super) const PAN_CENTER: u8 = 0x40;

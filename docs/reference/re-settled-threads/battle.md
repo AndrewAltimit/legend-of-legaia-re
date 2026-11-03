@@ -88,6 +88,10 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Why do Aluru's and Nighto's cast-sequence cues read `.33` and `.40`? | resolved (the verdict's draw, not the cues) | `capture` | Both draw a kill verdict in arm 0. Retail's seed word gives Nighto `22235 % 8 = 3`, no kill, and the engine's stream `30808 % 8 = 0`, a kill, whose death clip sounds the extra cues. Aluru's differs the other way, and `--rand-at 0x34:0` puts it on retail's kill path with cue score `1.00`. Nighto's draw sits later in that tick than the hold reaches. |
+| Why do Vera's and Spoon's shots miss retail's yaw by `34`? | resolved (the oracle's seed, not the cast) | `capture` | Those arms read `0x800 - caster +0x46`, and a group-target cast does not turn the caster, so the shot keeps the facing `34` the fight left in the state. The cast-sequence seed leaves it `0`. Seeding `34` gives yaw `2014` on both sides and leaves both casts' scores where they were. |
+| Why did Zenoir's first hit sound `0x200`, `0x16`, `0x16`? | resolved (the wrong stage on the pre-hit) | `disassembly` + `capture` | Arm 8's hit stages `+0x1EF`, else `+0x1F0`, with no knockdown fork (`0x801F77B4..0x801F77D4`). The port ran the shared pre-hit, whose fork took the knockdown entry on a monster with a get-up. Retail's recording shows clip `2`, then arm 9's `sb zero,0x1da` leaves its cue `0x21C`. |
+| What were the pale quads Spikefish's arms 5..8 drew in the engine? | resolved (the port's seat, not a part) | `disassembly` + `capture` | The port seated PROT 0925's whole record set at the band's entry, so arm 7's five additive shells (`0x801F7DB0..0x801F7EE0`) drew from arm 1 on. `parts.csv` showed them live from the first module tick. The records are seated per arm ([cast-module.md](../../subsystems/cast-module.md#summon-countdown-holds)). |
 | What does a four-slot event list read? | resolved (a byte the fight's heap placement picks, which the disc decides) | `disassembly` + `capture` | The tick reads `entry[0x10 + ((entry + 0x13) & 0xFF)]` in RAM, and the block address follows a fixed law: ids load upward (`0x800543EC..0x800549F0`), each block takes `block[+0x08]` bytes (`0x80054668`) from the top of the free node, and the first ends at `0x800B9A50` with one member seated, `0xA8` lower per further member. The `+0x88` relocation (`0x8005473C`) puts `0x80` under `k = 0x1A`. 145 placements and 22 reads in 86 retail states match ([monster-animation.md](../../formats/monster-animation.md#event-frame-list-entry-0x100x13)). |
 | Why does a measured juggle window run past `32 * beat / (speed * rate)`? | resolved (the window counts passes) | `disassembly` | The commit zeroes the cursor (`sh zero,0x68(s5)` at `0x8004B068`), so no fraction carries. The tick advances it `(step * speed * rate) >> 1` a pass (`0x80047730..0x80047764`, `step` = `DAT_1F800393`) and latches `+0x1F7` after the commit (`0x80047E1C..0x80047E54`), so the byte drops on the first pass boundary at or past the formula and a step-`3` pass overshoots in vsyncs ([battle-formulas.md](../../subsystems/battle-formulas.md#the-juggle-window---what-makes-a-monster-juggleable)). |
 | What does the anim commit's read of the juggle byte `+0x1F7` decide? | resolved (where the re-staged clip's sound-cue track starts) | `disassembly` | `FUN_8004AD80` stores `0` to the cue cursor `+0x1F6` on every commit (delay slot `0x8004AFD0`) and `1` (`0x8004B05C`) when the staged entry is the playing one (`bne` `0x8004AFCC`), `+0x1F7` is up (`0x8004AFD4`), and the entry is `+0x1EF` / `+0x1F0`, or `+0x1F3` on a party seat (`0x8004B010`) or with first cue `entry[+0x56] >= 0x64` (`0x8004B048..0x8004B050`). A juggled re-hit replays its reaction without the first cue. It is not a counter or guard window, and it reads the juggle counter's own byte. Port `clip_ladder::recommit_cue_cursor` ([battle-formulas.md](../../subsystems/battle-formulas.md#the-commits-read-is-a-sound-cue-skip)). |
@@ -2452,3 +2456,13 @@ The boss stage module, not the flow ladder, moves flow `0x0C` on.
 - Probe `autorun_w4d_cort_flow_writer.lua`.
 
 Owning page: [`battle.md`](../../subsystems/battle.md#flow-0x0c-is-the-boss-stage-modules-baton).
+
+### A spell its caster has not learned rolls `9999`
+
+`disassembly` + `capture`. An injected Zenoir or Gola Gola reads `9998` / `9999` in
+retail where the engine once read a few hundred. The summon roll looks the spell up on
+the caster's list (`FUN_801DD864`), a spell off the list reads list slot `0x20`, and
+that slot's level is `0`: the power's `srl` by `level - 1` wraps, and the roll caps. It
+is an artefact of the injection, and no cast in play gets there.
+
+Owning page: [`battle-formulas.md`](../../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned).

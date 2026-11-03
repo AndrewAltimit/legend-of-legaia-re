@@ -116,7 +116,9 @@ pub fn gola_gola_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeat
             if counted(st, P) {
                 return ArmDirection::HOLD;
             }
+            // `+0x1DA` and `+0x1DC` together (`0x801F7208..0x801F721C`).
             st.creature_stage = Some(3);
+            st.creature_restage = true;
             caption(
                 cut([0x400, 0x900], [0, 0, 0x800], on(c), 0xC0),
                 ModuleCaption::AttackName,
@@ -221,7 +223,7 @@ pub const MUSHURA_HIT_ARM: u8 = 0xC;
 /// | 0xA | word, TR z `+= 4 p` a pass | clip `2`; a cut on the creature; `+= scalar * 120` |
 /// | 0xB | word, pitch `-= p / 2` a pass | `+= scalar << 8` |
 /// | 0xC | word | the rampage: a `0xC`-frame framing of the creature every pass |
-/// | 0xD | the creature's tint word (not fed: pass) | a `0xC`-frame framing every pass; the caption cleared; `0xFF` |
+/// | 0xD | the creature's tint word, fed by the host | a `0xC`-frame framing every pass; the caption cleared; `0xFF` |
 ///
 /// The creature's walk through arms 6, 7 and the rampage is not carried: it
 /// stays where arm 5 seats it, turned as arms 8 and 9 turn it. The arm 0xD
@@ -304,7 +306,9 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                 ..creature
             };
             st.creature = Some(c);
+            // `+0x1DA` and `+0x1DC` together (`0x801F75FC`, `0x801F7608`).
             st.creature_stage = Some(1);
+            st.creature_restage = true;
             caption(
                 cut(
                     [0x40, 0x800 - i32::from(c.facing)],
@@ -338,6 +342,12 @@ pub fn mushura_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats)
                 ..shot
             }
         }
+        // The framing re-arms every pass; the arm ends when the fade arm 0xC's
+        // pass raised has eased the creature's word to `0` (`0x801F7EB0`).
+        0xD if st.creature_word_up => ArmDirection {
+            hold: true,
+            ..cut([0, -f], [0, 0x400, 0], [0; 3], 0xC)
+        },
         0xD => finish(caption(
             cut([0, -f], [0, 0x400, 0], [0; 3], 0xC),
             ModuleCaption::Cleared,

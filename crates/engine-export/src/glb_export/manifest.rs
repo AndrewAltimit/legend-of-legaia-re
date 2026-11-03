@@ -59,7 +59,7 @@ pub fn world_manifest(
             let e = catalog?.entries.get(n.entry_index)?;
             let p = &e.placement;
             let y = floor.height(p.world_x as i32, p.world_z as i32);
-            let t = draw_translation([p.world_x as f32, y as f32, p.world_z as f32]);
+            let t = export_translation([p.world_x as f32, y as f32, p.world_z as f32]);
             Some(json!({
                 "file": format!("npcs/{}.glb", n.file_stem),
                 "kind": e.kind,
@@ -81,7 +81,7 @@ pub fn world_manifest(
                 .map(|e| {
                     let p = &e.placement;
                     let y = floor.height(p.world_x as i32, p.world_z as i32);
-                    let t = draw_translation([p.world_x as f32, y as f32, p.world_z as f32]);
+                    let t = export_translation([p.world_x as f32, y as f32, p.world_z as f32]);
                     json!({
                         "target_map": e.target_map,
                         "position": [t[0] * opts.scale, t[1] * opts.scale, t[2] * opts.scale],
@@ -128,13 +128,16 @@ pub fn world_manifest(
         "scale": opts.scale,
         "conventions": {
             "units": "glTF meters = PSX world units * scale; one walk tile = 128 PSX units",
-            "axes": "glTF +Y up; geometry keeps the site viewers' mirror-handedness",
+            "axes": "glTF +Y up, right-handed; a PSX point (x, y, z) exports as (x, -y, -z), a rotation with the game's layout intact",
+            // The world glb, the NPC and prop files and every number here
+            // share that frame. A manifest without this flag is an older
+            // export whose world glb is the mirror image: (x, -y, z).
+            "world_frame": "psx_rx180",
             "rotation": "rotation_xyzw is the instance's full glTF rotation, the world glb instance node's own; rot_y_radians is its yaw alone (exact only for records with no pitch or roll), about +Y",
             // NPC / prop glbs carry `scale` baked on their root node, so a
-            // file dragged into a scene is already world-sized; a builder
-            // placing instances applies only the handedness mirror (a
-            // manifest without this flag is an older raw-PSX-units export
-            // whose instances need the full scale).
+            // file dragged into a scene is already world-sized (a manifest
+            // without this flag is an older raw-PSX-units export whose
+            // instances need the full scale).
             "npc_prop_units": "scaled",
         },
         "world_glb": world_file,

@@ -1628,12 +1628,12 @@ answers "is this code executed", not "does a frame change".
 Two of the shared kernels above were live on both hosts and entered by no
 ladder on either, and the two have different answers.
 
-**The snap-beat bank is a ladder gap.** `Camera::take_camera_snap_beats` runs
-once per frame from each host's cutscene camera interp, and only there, so a
+**The scripted view is a ladder gap.** `frame_step::scripted_view` runs once per
+frame from each host's camera resolve, and only in the scripted branch, so a
 ladder that never parks in a scripted beat never reaches it - every rung this
 tree had opened on a town or an arena. `crates/web-play/tests/screen_effect_page_prims.rs`
 adds the rung, and the assertion is the published camera frame's own `arm`
-word: `"cutscene"` is the branch that calls the bank, so the rung cannot pass
+word: `"cutscene"` is the branch that calls it, so the rung cannot pass
 by entering a scene that never leaves the follow arm.
 
 **The ocean fallback is a content gap, and no ladder closes it.**
@@ -1647,9 +1647,8 @@ fabricate a damaged bundle, which is a fixture, not a playthrough.
 
 ### A shared kernel has no address, so this instrument is silent about it
 
-The same wave replaced five per-frame decisions each play host had been making
-locally with one `engine-core` kernel apiece - the camera's snap-beat bank,
-the occlusion fade's arming gate and body centre, the save-select phase
+Per-frame decisions each play host once made locally now sit in one `engine-core`
+kernel apiece - the occlusion fade's arming gate and body centre, the save-select phase
 layout, the field HUD's projection. None of them appears in this report, ever,
 and the reason is structural rather than a gap: they carry no `// PORT:` tag,
 because they are not ports of a retail routine with an address. The report
@@ -1669,11 +1668,9 @@ Reading the coverage exports directly for the symbol - which is what one has
 to do for an untagged kernel - puts the occlusion pair and the cull-mode
 selector on **both** hosts, the save-select phase layout and the page's HUD
 projection on the page only (they have no second host to reach), and leaves
-two entered by neither: the camera's snap-beat **drain**, which both hosts
-call but only inside a frame a scripted shot owns, and the ocean-head
-animation fallback, which needs a kingdom bundle with no CLUT-walk table. Both
-are ordinary `(a)` content gaps; neither can ever be a row here, because
-neither has an address for the report to key on.
+one entered by neither: the ocean-head animation fallback, which needs a kingdom
+bundle with no CLUT-walk table. It is an ordinary `(a)` content gap, and it can
+never be a row here, because it has no address for the report to key on.
 
 ### A wire is two halves, and a refresh can enter only one of them
 

@@ -145,7 +145,7 @@ impl LegaiaMinigames {
                     .with_roster_clip_headers(headers)
                     .with_special_cameras(cameras);
                 Some(match img.as_deref() {
-                    Some(i) => f.with_impact_overlay(i),
+                    Some(i) => f.with_impact_overlay(i).with_overlay_text(i),
                     None => f,
                 })
             }

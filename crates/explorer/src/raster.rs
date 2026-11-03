@@ -230,6 +230,8 @@ impl Default for Camera {
 /// How pixels get their colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Shading {
+    /// The model's edges alone, seen through: how it is built. A viewer aid.
+    Wireframe,
     /// Retail: `texel * colour / 128` for textured prims, the baked fill
     /// for untextured ones; no light source.
     Textured,
@@ -292,6 +294,20 @@ pub fn project_point(model: &Model, cam: Camera, w: usize, h: usize, p: [f32; 3]
 }
 
 /// Render `model` into a `w * h` RGBA8 buffer.
+/// One opaque near-white line on the transparent image.
+fn draw_edge(rgba: &mut [u8], w: usize, h: usize, a: [f32; 3], b: [f32; 3]) {
+    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+    let steps = dx.abs().max(dy.abs()).ceil().min(8192.0) as usize;
+    for i in 0..=steps {
+        let t = i as f32 / steps.max(1) as f32;
+        let (x, y) = (a[0] + dx * t, a[1] + dy * t);
+        if x >= 0.0 && y >= 0.0 && (x as usize) < w && (y as usize) < h {
+            let o = (y as usize * w + x as usize) * 4;
+            rgba[o..o + 4].copy_from_slice(&[235, 235, 225, 255]);
+        }
+    }
+}
+
 pub fn render(
     model: &Model,
     vram: &Vram,
@@ -314,6 +330,21 @@ pub fn render(
 
     let project = |p: [f32; 3]| project_point(model, cam, w, h, p);
     let screen: Vec<[f32; 3]> = model.positions.iter().map(|&p| project(p)).collect();
+    if shading == Shading::Wireframe {
+        for tri in model.indices.as_chunks::<3>().0 {
+            let s = tri.map(|k| screen.get(k as usize).copied());
+            let [Some(a), Some(b), Some(c)] = s else {
+                continue;
+            };
+            if [a, b, c].iter().any(|p| p[2] < near) {
+                continue;
+            }
+            for (p, q) in [(a, b), (b, c), (c, a)] {
+                draw_edge(&mut rgba, w, h, p, q);
+            }
+        }
+        return rgba;
+    }
     // Viewer light, from the upper left in view space.
     let light = {
         let l = [-0.4f32, -0.7, -0.6];

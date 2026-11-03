@@ -34,6 +34,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Does the sequencer key notes on a coarser grid than retail? | resolved (no) | `capture` + `inference` | Under PCSX-Redux `FUN_80065BAC` holds its vsync phase within `0.2` of a sample on a field and a battle state; the KON write falls `8.7` to `20.8` samples after its entry, by the frame's work. The port against its own render with that spread at random reads the same residual as retail, so the `track` channel's `-12` to `-15` dB is CPU cost ([real retail PCM](../../subsystems/audio.md#real-retail-pcm)). |
+| Does a channel hold its pitch-bend wheel for later notes? | resolved (no) | `disassembly` + `capture` | `FUN_8006166C` reads the wheel byte, hands it to the voice scan `FUN_80067A1C` and stores it nowhere, so a key-on plays at its own pitch. `party_battle_gobu_gobu`'s track `2026` leaves channel 0 at wheel `0x0F` and retail's later notes read `0x80E`, the note's own; holding the wheel gave `0x4C2` and a `0.743` PCM correlation, `0.987` without ([sequencer port](../../subsystems/audio.md#engine-audio-model---sequencer-port)). |
 | Does any XA stream on the NA disc use 8-bit ADPCM? | resolved (no; every channel is 4-bit at 37.8 kHz) | `capture` | `demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across the 34 `*.XA` files. The 8-bit decode path is covered by synthetic tests only and is wired through the demux, CLI and cutscene consumers, which map each channel's reported width ([xa.md](../../formats/xa.md)). |
 | Does a BGM track change close the side-band (3) or reward (11) VAB slot? | resolved (no) | `disassembly` | `FUN_800243F0` loads each track into slot 1 (`0x80024678` / `0x80024780`) and never calls the closer `FUN_8001FF58`. Slot 3 is closed by the battle mode init; slot 11 by the field init `FUN_801D6704` (`0x801D68A4..0x801D68B8` closes 7, 8 and 11 through delay-slot `a0`). Port `legaia_engine_audio::bgm_tail`, shared by both directors. |
 | Does retail age SFX cues under the pause menu or a shop? | resolved (yes) | `disassembly` | Mode `0x17`'s per-frame handler `FUN_80025F74` calls the drainer `FUN_80016B6C` at `0x80025F9C`, gated only on `FUN_8001698C` and `FUN_80017978` returning 0. Both hosts now step the scheduler there. |
@@ -319,3 +321,34 @@ C3 00` occurs in 221 entries, always at offset `≡ 0x1C (mod 0x20)` (`VagAtr +
 - reliable, but a foreign row's field. 1062 as a whole is a SEQ-only `music_01`
 entry (sound-test track 72) borrowing another entry's bank. See
 [`bse-dat.md`](../../formats/bse-dat.md).
+
+### How a score ends, and what a loop end does
+
+*Status:* resolved - grade `disassembly`, `capture`
+
+`FUN_8006139C` (CC 99) jumps back only while the count a
+data entry stored lasts, and `FUN_80063AA8` (end-of-track) never reads a Loop Start: it
+restarts from the score head or, with the play count spent, stops. The field BGM attach
+plays with a count of `1`, so `2050`, `2057`, `2070` and `2071` play once; a capture of
+`2050` runs off its end with its flags at `0`. A jump touches no voice, and does not wait the
+delta behind the Loop Start again. See [`seq.md`](../../formats/seq.md#loop-markers).
+
+### What a track's residual against retail PCM was
+
+*Status:* resolved - grade `capture`, `disassembly`
+
+The `-12` to `-15` dB the track channel left once voices, volumes and pitches matched was three
+defects, each read off a per-note fit of the render against mednafen's recording: a key-on's
+start (seventh output, sample `3`, on real history), the flush's cost before its KON write
+(`FUN_8006C048` per staged voice, `1.2` samples a voice against the recording and `1.34` under
+PCSX-Redux's cycle counter), and a loop jump that re-waited the delta behind its Loop Start
+(`FUN_8006139C`). See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).
+
+### The level of the port's mix against retail's
+
+*Status:* resolved - grade `capture`
+
+Against mednafen's recorded output, the SPU model resumed sample for sample
+reads correlation `1.000` and level within `0.003` dB, and a track from the state's read
+cursor reads within `0.2` dB, under `0.1` dB per band. The recorder's own `0.75` is divided
+out. See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).

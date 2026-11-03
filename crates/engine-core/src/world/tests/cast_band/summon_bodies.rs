@@ -409,3 +409,74 @@ fn palma_shows_the_monster_row_until_its_creature_lands() {
     assert!(world.battle_body_hidden(1), "arm 4's pass hides the row");
     assert!(!world.battle_body_hidden(0), "the caster is not a monster");
 }
+
+/// PROT 0934's stores on other seats, off its director's passes: arm 6 hides
+/// the monster row, arm `0x11` starts the creature's blue ease at rate `2`.
+#[test]
+fn ozma_hides_the_row_and_tints_the_creature_on_their_arms() {
+    const OZMA: u8 = 0xA0;
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[0].battle.active_target = 1;
+    for i in 5..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, OZMA);
+    let (mut hidden_at, mut tinted_at) = (None, None);
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(OZMA, phase) else {
+            break;
+        };
+        if hidden_at.is_none() && world.actors[1].battle.render_flag == 0xFF {
+            assert_eq!(world.actors[1].battle.render_color, 0);
+            hidden_at = Some(phase);
+        }
+        if tinted_at.is_none() && world.actors[9].battle.render_flag == 4 {
+            tinted_at = Some(phase);
+        }
+        if !run.busy {
+            break;
+        }
+    }
+    assert_eq!(hidden_at, Some(6));
+    assert_eq!(tinted_at, Some(0x11));
+}
+
+/// PROT 0934's arm `0x18`: its threshold walks down from `0x60` by `0x20` as
+/// the word falls past it, three steps while the arm holds; the fourth hit is
+/// the band's fold, on the arm's pass.
+#[test]
+fn ozma_walks_its_hit_threshold_down_arm_0x18() {
+    const OZMA: u8 = 0xA0;
+    let mut world = module_code_world();
+    world.actors[1].battle_monster_id = Some(1);
+    world.actors[0].battle.active_target = 1;
+    for i in 5..12 {
+        world.actors[i].active = false;
+        world.actors[i].battle.hp = 0;
+    }
+    world.casting.summon_actor_slot = Some(9);
+    world.actors[9].active = true;
+    world.actors[9].battle.hp = 100;
+    world.arm_summon_stager(0, OZMA);
+    let mut seen = Vec::new();
+    for _ in 0..8000 {
+        let phase = world.casting.module_phase;
+        let Some(run) = world.run_cast_module_code(OZMA, phase) else {
+            break;
+        };
+        if phase == 0x18 && seen.last() != Some(&world.casting.module_ozma_ladder) {
+            seen.push(world.casting.module_ozma_ladder);
+            assert_eq!(world.actors[1].battle.render_color, 0x3FF0_03FF);
+        }
+        if !run.busy || world.casting.module_phase > 0x18 {
+            break;
+        }
+    }
+    assert_eq!(seen, [0x60, 0x40, 0x20, 0]);
+}

@@ -357,7 +357,10 @@ pub const SCYTHE_WIND_POWER: u16 = 0x80;
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F77E8 (phase table + damage/staging; packet arms unported)
+/// The camera arms, gates and wind records are
+/// `cast_module_camera::scythe_wind_camera`.
+///
+/// PORT: FUN_801F77E8 (phase table + damage/staging)
 pub fn scythe_wind_tick(
     ctx: &mut CastModuleCtx,
     victim: &mut CastActorState,

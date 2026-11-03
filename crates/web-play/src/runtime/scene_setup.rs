@@ -106,10 +106,8 @@ impl LegaiaRuntime {
         // `SceneEntered` tick otherwise runs. Without it a scene picked
         // mid-cutscene kept the interrupted shot's globals and focus latch
         // and was framed by the old scene's camera. The native
-        // `BootSession::enter_field_live` is the paired site; the glide
-        // interpolator is this host's own and goes with it.
+        // `BootSession::enter_field_live` is the paired site.
         self.scene_host.camera_mut().reset_for_scene_entry();
-        self.cutscene_glide.reset();
         if !world_map {
             // Retail reaches the field through the mode table, not through a
             // call: whoever wants the field stores `MAIN INIT` (2) and mode
@@ -227,7 +225,7 @@ impl LegaiaRuntime {
             && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_ref())
             && let Some(fr) = self.field.as_ref()
         {
-            let field = legaia_engine_scene::fog_ground::build_for_scene(
+            let source = legaia_engine_scene::fog_ground::source_for_scene(
                 &fr.terrain,
                 &fr.placements,
                 &fr.placement_scales,
@@ -235,7 +233,7 @@ impl LegaiaRuntime {
                 scene,
                 &host.index,
             );
-            host.world.fog_volume.set_ground_field(&scene.name, field);
+            host.world.fog_volume.set_ground_source(&scene.name, source);
         }
         // The scene's actors, bound to the world by the step the native
         // window runs too (`scene_actors::bind_scene_actors`): the lead's

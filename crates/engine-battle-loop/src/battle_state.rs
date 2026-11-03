@@ -482,6 +482,9 @@ pub struct BattleState {
     /// readout flag `DAT_8007B64C` its wrapper hits clear and a later arm
     /// raises (PROT 0959's barrage, `BattleHud::hold_combo`).
     pub combo_cluster_held: bool,
+    /// The held cluster is thrown away instead of opened (PROT 0915, whose
+    /// rolls all keep the readout flag down).
+    pub combo_cluster_dropped: bool,
     /// A debug seed that makes the next party killing blow's steal roll
     /// land - the retail comparison corpus's way into a capture that shows
     /// the death-spoils caption: the capture holds the outcome of a
@@ -550,6 +553,10 @@ pub struct BattleState {
     pub action_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
     /// The target plaque's raise glide - see [`Self::action_plaque_glide`].
     pub target_plaque_glide: Option<legaia_engine_battle_vm::battle_commit_log::LogLaunch>,
+    /// The seat the target plaque opened on: the record holds its name from
+    /// there, so a module rewriting `+0x1DD` to a row code mid-cast (PROT
+    /// 0909's arm 9) leaves it up.
+    pub target_plaque_seat: Option<u8>,
     /// The active-actor bar's raise glide (placement record 7, `(16, 234)`
     /// -> `(16, 192)`), started where retail opens the record with mode `0`:
     /// the action seed for a party target (`0x801E2F24..0x801E2F44`) and
@@ -656,11 +663,11 @@ pub struct BattleState {
     /// `legaia_engine_scene_host::scene_host::SceneHost::battle_stage_object_indices`, which reads
     /// it; reset at battle entry.
     pub backdrop_rebound: bool,
-    /// The sparring fight's first round start is waiting on the battle open
-    /// ([`BattleState::sparring_open_held`]): the side-band has not
-    /// yet seen the flow at `0x14`, so its caption is not up. Reset at
-    /// battle entry.
-    pub sparring_round_pending: bool,
+    /// The fight's first round start is waiting on the battle open
+    /// ([`BattleState::battle_open_held`]): the flow has not reached `0x14`,
+    /// so no prompt is up (and the sparring fight's side-band has not armed
+    /// its caption). Reset at battle entry.
+    pub round_open_pending: bool,
     /// The Y angle of the backdrop draw's slot 1, retail `0x800891D2` (the
     /// second row of the per-slot angle table at `0x800891C8`), in 4096ths
     /// of a turn. `World::tick_battle_backdrop_spin` winds
@@ -790,6 +797,11 @@ pub struct BattleState {
     /// drains by the frame step until `0x0B` sweeps the labels away. `0`
     /// = no banner. See `legaia_engine_battle_hud::battle_intro_names`.
     pub intro_names_frames: u16,
+    /// Ticks left of the two battle passes between the entry sweep's park and
+    /// the composer: flow `0x00` (`FUN_801D84C0`) and `0x0A`
+    /// (`0x801D0DD0..0x801D0E38`). The names and the formation banner come up
+    /// when it reaches `0`, and the intro timer drains from there.
+    pub intro_lead_ticks: u8,
     /// The player's **Auto** attack: the per-fighter flag, the round-start
     /// pool-arm queues and their disc inputs
     /// ([`crate::auto_combo::AutoComboState`]).
@@ -1248,6 +1260,7 @@ impl BattleState {
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
             forced_guard: [false; 3],
             combo_cluster_held: false,
+            combo_cluster_dropped: false,
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
@@ -1258,6 +1271,7 @@ impl BattleState {
             commit_log_launch: None,
             action_plaque_glide: None,
             target_plaque_glide: None,
+            target_plaque_seat: None,
             readout_bar_glide: None,
             message_bar_glide: None,
             spirit_gauge_glide: None,
@@ -1275,7 +1289,7 @@ impl BattleState {
             stage_id: 0,
             arrival: Default::default(),
             backdrop_rebound: false,
-            sparring_round_pending: false,
+            round_open_pending: false,
             backdrop_slot_1_yaw: 0,
             backdrop_spin_frame: None,
             separation_frame: None,
@@ -1303,6 +1317,7 @@ impl BattleState {
             stage_camera: None,
             stage_banner: None,
             intro_names_frames: 0,
+            intro_lead_ticks: 0,
             auto_combo: Default::default(),
             camera: None,
             tutorial: None,

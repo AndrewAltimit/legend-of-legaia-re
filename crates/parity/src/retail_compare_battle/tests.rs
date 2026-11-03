@@ -275,6 +275,89 @@ fn the_displayed_camera_stands_two_passes_short() {
     );
 }
 
+/// `battle_map01_frog_strike`: one pass past the strike commit its eye walks
+/// the pull-in's first table, so the frame on screen still stands on the depth
+/// the shot had landed on (`4915`), and walks no further back than that.
+#[test]
+fn a_monsters_pull_in_walks_back_no_further_than_the_landed_depth() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x243, 1);
+    put16(&mut ram, ctx + 0x6D0, 3072);
+    put32(&mut ram, 0x8008_40BC, 1292);
+    put16(&mut ram, rec(4), 6);
+    put16(&mut ram, rec(4) + 2, 1344);
+    put32(&mut ram, 0x8008_40C0, 4587);
+    put16(&mut ram, rec(5), 164);
+    put16(&mut ram, rec(5) + 2, 2948);
+    let prior = camera_align::strike_pull_in_prior_end(&ram, ctx);
+    assert_eq!(prior[5], Some(4915));
+    assert_eq!(prior[4], Some(1280));
+    let p = camera_align::displayed_cam_live(&ram, ctx, 2, 2, prior);
+    assert_eq!(p.tr[2], 4915.0);
+    assert_eq!(p.tr[1], 1280.0);
+}
+
+/// `battle_korb2_warhalf_strike`'s words: the walk's last pass read the
+/// attacker off ring slot `3`, heading `1836` onto the target's live pair, and
+/// stood it on `(-96, 287)`, slot `2`. The loop's first arm read that heading,
+/// so the endpoint that pass chased stood `112` short of the RAM's (the bearing
+/// `1728` onto the body pair, a counter step at step `3`), and the walk back
+/// lands on yaw `795` where the RAM's endpoint alone gives `759`.
+#[test]
+fn the_strike_loops_first_arm_chased_the_walks_heading() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D264u32, 0x800E_C9E8u32);
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 3);
+    put8(&mut ram, ctx + 0x15, 1);
+    put32(&mut ram, ACTOR_TABLE + 3 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE, target);
+    put16(&mut ram, attacker + 0x46, 1730);
+    for (k, (x, z)) in [(-106i32, 309i32), (-101, 298), (-96, 287), (-112, 332)]
+        .into_iter()
+        .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    // Frame step `3`.
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
+    assert_eq!(frame_step(&ram), 3);
+    put16(&mut ram, target + 0x3C, 60);
+    put16(&mut ram, target + 0x40, (-5i16) as u16);
+    let h = camera_align::walk_heading(&ram, ctx).expect("second pass");
+    assert_eq!(h.displayed, 1836);
+    let shift = h.end_shift;
+    assert_eq!(shift, -112);
+
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 4135);
+    put16(&mut ram, rec(1), 103);
+    put16(&mut ram, rec(1) + 2, 3218);
+    let mut end_shift = [0; 9];
+    end_shift[1] = shift;
+    let walked =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], end_shift);
+    assert_eq!(walked.yaw, 795.0);
+
+    // A nearest slot `3` is the loop's third pass: the displayed frame's
+    // arm already read the loop's own heading.
+    put32(&mut ram, attacker + POSITION_RING + 3 * 8 + 4, 200);
+    put32(&mut ram, attacker + POSITION_RING + 4 * 8 + 4, 400);
+    assert!(camera_align::walk_heading(&ram, ctx).is_none());
+}
+
 /// A `0x32` capture on the summon route's first pass: the eye depth walks
 /// back one pass along the close-up table (`2 * 183`) and then one `0x29`
 /// step short of that table's endpoint `prescale(0xC00)`, not on past it.
@@ -1544,6 +1627,17 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
         b.engine_image_displayed_clips().is_empty(),
         "no commit in the window"
     );
+    // A monster cast's accumulator gate poses the caster on the displayed
+    // slot whether or not a commit stands in the window: the gate's own frame
+    // carries the RAM's keyframe (`battle_gimard_tail_fire_a`: `224` against
+    // the displayed `208`).
+    b.action_state = 0x2B;
+    b.queued_category = 2;
+    let clips = b.engine_image_displayed_clips();
+    assert_eq!(clips.len(), 1, "the magic band");
+    assert_eq!((clips[0].slot, clips[0].clip, clips[0].cursor), (pc, 0, 0));
+    b.action_state = 0x1E;
+    b.queued_category = 3;
 
     // A walked-in charge cast past its walk (`koru_blade_breath_mid_cast`):
     // the wind-up committed inside the lag, the display shows the run.
@@ -1610,6 +1704,13 @@ fn a_prompt_on_its_far_framing_arm_names_the_frames_left() {
     put8(&mut ram, ctx + 6, 0x28);
     assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
     put8(&mut ram, ctx + 6, 0x1E);
+    // Retail's own table: the walkers less six increments, a landed pitch
+    // left to the arm.
+    let shown = camera_align::displayed_menu_glide_pose(&ram, ctx, 6).expect("walking");
+    assert_eq!(shown.tr[1], 1327.0 + 6.0 * 19.0);
+    assert_eq!(shown.tr[2], 6750.0 - 6.0 * 353.0);
+    assert!(shown.pitch.is_nan());
+    assert_eq!(shown.focus[2], 0.0);
     put32(&mut ram, 0x8008_40BC, 1280);
     put32(&mut ram, 0x8008_40C0, 7800);
     assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
@@ -1755,4 +1856,144 @@ fn a_wrapped_damage_ring_reads_its_newest_eight_pushes() {
     );
     assert_eq!(seq[2], (3, 102));
     assert_eq!(&seq[8..], &[(3, 100), (3, 101)]);
+}
+
+/// A monster's turning case `0xE` shot: three step-`3` passes past the commit
+/// read accumulator `48`, two of them on the shot, so its yaw walks back
+/// `2 * 3 * 4` onto the case-6 yaw (`battle_tower_guardian_windhash_mid_cast`
+/// `1321` to `1297`). Two step-`4` passes read `32`, one on the shot
+/// (`battle_korb2_aluru_cannon_mid_cast` `3841` to `3825`).
+#[test]
+fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 4;
+    b.action_state = 0x2B;
+    b.queued_category = 2;
+    b.queued_shot = 0x0E;
+    b.span_gate = SpanGate::Age { accum: 48 };
+    b.step_run = (3, 3);
+    b.cam_tween.0.yaw = 1321.0;
+    assert_eq!(b.retake_turning_yaw(), Some(1297));
+    b.span_gate = SpanGate::Age { accum: 32 };
+    b.step_run = (4, 3);
+    b.cam_tween.0.yaw = 3841.0;
+    assert_eq!(b.retake_turning_yaw(), Some(3825));
+    b.queued_shot = 0x07;
+    assert_eq!(b.retake_turning_yaw(), None, "not a turning shot");
+    // The whole pose: `battle_korb2_aluru_cannon_mid_cast`'s table and steps.
+    b.queued_shot = 0x0E;
+    b.step_run = (4, 3);
+    b.recent_steps = [4, 4, 4, 3];
+    b.walk_yaw_base = 2088;
+    b.cam_style = 0;
+    b.cam_tween.0.focus = [474.0, 0.0, 978.0];
+    b.cam_tween.1.pitch = 4080.0;
+    b.cam_tween.1.tr = [0.0, 768.0, 4915.0];
+    b.cam_tween_steps = [19, 16, 0, 0, 507, 79, 10, 0, 96];
+    b.party_count = 3;
+    b.monster_count = 2;
+    b.active_actor = 4;
+    b.turn_cursor = 3;
+    b.init_keys = [144, 0, 0, 0, 0, 0, 0, 0].map(Some).to_vec();
+    b.ground = [
+        [-154, -831],
+        [755, -978],
+        [-754, -781],
+        [558, -652],
+        [474, 978],
+    ]
+    .map(Some)
+    .to_vec();
+    b.facing = vec![None, None, None, None, Some(2265)];
+    let p = b.retake_turning_pose().expect("a pose");
+    assert_eq!(
+        (p.pitch, p.yaw, p.tr, p.focus),
+        (7.0, 3757.0, [0.0, 1271.0, 4772.0], [492.0, 0.0, 802.0])
+    );
+    // A round's first action walks off the far framing: no earlier seat.
+    b.turn_cursor = 0;
+    assert!(b.retake_turning_pose().is_none());
+}
+
+#[test]
+fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 4;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.span_gate = SpanGate::Age { accum: 0 };
+    assert!(b.stand_on_displayed_pose());
+    b.active_actor = 0;
+    assert!(!b.stand_on_displayed_pose(), "a party seat");
+    b.active_actor = 4;
+    b.action_state = 0x2B;
+    assert!(!b.stand_on_displayed_pose(), "a cast");
+}
+
+/// The recorded case-6 tail of Aluru Cannon: TR z `4772` walks `+36` on the
+/// armed pass (step `3`) and `+48` on the terminator's (step `4`), its stale
+/// increment `12` (`ceil(143 / 12)`), and the shot closes the last `59`.
+#[test]
+fn a_stale_pass_walks_back_on_the_armed_increment() {
+    assert_eq!(stale_pass_gap(59, 4, 3), 107);
+    assert_eq!(stale_pass_gap(19, 4, 3), 35);
+    assert_eq!(stale_pass_gap(0, 4, 3), 0);
+}
+
+/// The art arm's one-frame shot leaves `ceil(gap / 2)` in the table, so a
+/// capture on the commit pass names the depth the swing walked from.
+#[test]
+fn a_commit_capture_stands_two_steps_behind_the_tables_depth() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 0;
+    b.action_state = 0x1F;
+    b.queued_category = 3;
+    b.caster_latched = 0x1E;
+    b.committed_queue[..5].copy_from_slice(&[0x0C, 0x0F, 0x0F, 0x1A, 0x1E]);
+    b.display_phase_lag = 2;
+    b.cam_accum = 0;
+    b.cam_tween.0.tr[2] = 1945.0;
+    b.cam_tween.1.tr[2] = 1945.0;
+    b.displayed_cam_live.tr[2] = 1945.0;
+    b.cam_tween_steps[5] = 103;
+    assert!(b.camera_behind_commit());
+    assert_eq!(b.displayed_commit_live().tr[2], 2151.0);
+    b.cam_accum = 8;
+    assert_eq!(b.displayed_commit_live().tr[2], 1945.0);
 }

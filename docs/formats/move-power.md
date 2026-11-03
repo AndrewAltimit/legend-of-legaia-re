@@ -266,6 +266,11 @@ models.
 - **`FUN_801DEA50`** (action setup) walks one contiguous run from `+0x0E`,
   stopping only on a zero byte. `0xFF` is not a terminator there: bit 7 is set,
   so it routes to the 2D sprite path with id `0x7F`.
+  That walk runs on the terminator's pass, before the flight's first phase: a
+  table id spawns at slot `0`'s position and rotation trio and becomes slot `k`'s
+  handle, a bit-7 id goes to `FUN_801DFDF0` at slot `k`'s position and heading
+  (`0x801DF3E0..0x801DF508`). Aluru Cannon's `2C 29` is the muzzle's charge and
+  ring. Port: `World::spawn_launch_run`.
 - **`FUN_801E09F8`** (per-frame tick) reads `+0x12` and `+0x16` as two separate
   4-byte lists and treats `+0x0E == 0xFF` as a broadcast to all four party
   arms.

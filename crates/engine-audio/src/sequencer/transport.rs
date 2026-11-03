@@ -30,13 +30,19 @@ impl Sequencer {
             finished: false,
             loop_to: usize::MAX,
             loop_start: None,
+            loop_armed: false,
+            loop_busy: false,
+            loop_repeats: 0,
             pending_loop_forever: false,
+            staged_voices: 0,
+            last_flush_staged: 0,
             channels: [ChannelState::default(); CHANNELS],
             active: Vec::new(),
             master_vol: 127,
             master_vol_dirty: false,
             loop_count: 0,
             voice_prio: [0; crate::spu::NUM_VOICES],
+            voice_note: [None; crate::spu::NUM_VOICES],
             voice_age: [0; crate::spu::NUM_VOICES],
             flush_pos: 0,
             pending: Vec::new(),
@@ -81,25 +87,19 @@ impl Sequencer {
 
     /// Set the external loop fallback: rewinds the event index to `to` when
     /// the SEQ hits end-of-track *and* the stream carried no Loop Start marker.
-    /// Pass `usize::MAX` to disable (the default). In-stream loop markers (CC
-    /// 99 value 20/30) take precedence over this fallback.
+    /// Pass `usize::MAX` to disable (the default). A counted in-stream loop (CC
+    /// 99 value 20, data entry, CC 99 value 30) never reaches end-of-track.
     pub fn set_loop_to(&mut self, to: usize) {
         self.loop_to = to;
     }
 
-    /// Where a loop should rewind to: the in-stream Loop Start marker if one
-    /// has fired, else the external [`Self::set_loop_to`] fallback, else
-    /// `None` (no looping). Bounds-checked against the event count.
-    pub(super) fn loop_target(&self) -> Option<usize> {
-        if let Some(start) = self.loop_start
-            && start < self.seq.events.len()
-        {
-            return Some(start);
-        }
-        if self.loop_to != usize::MAX && self.loop_to < self.seq.events.len() {
-            return Some(self.loop_to);
-        }
-        None
+    /// Where end-of-track goes: the head of the score, not a loop marker
+    /// (`FUN_80063AA8` reloads the cursor from `+0x04`, with `+0x0C` under the
+    /// alternate-loop flag no score sets), so the [`Self::set_loop_to`] target,
+    /// else `None` (no looping). Bounds-checked against the event count.
+    pub(super) fn loop_target(&mut self) -> Option<usize> {
+        self.loop_armed = false;
+        (self.loop_to != usize::MAX && self.loop_to < self.seq.events.len()).then_some(self.loop_to)
     }
 
     /// Play the score's exact tempo (`true`) or the tempo retail's driver
@@ -127,6 +127,32 @@ impl Sequencer {
     /// Has the sequence completed (no looping)?
     pub fn is_finished(&self) -> bool {
         self.finished
+    }
+
+    /// Index into the score's event list of the next event to fire.
+    pub fn next_event(&self) -> usize {
+        self.next
+    }
+
+    /// Tenths of a tick the retail pump still waits before [`Self::next_event`]
+    /// fires (retail's `+0x90`); `None` before the pump first runs.
+    pub fn pump_wait(&self) -> Option<i64> {
+        self.pump_wait
+    }
+
+    /// One retail vsync of the sequencer with the sample clock taken out: the
+    /// `SsSeqCalc` pump and the key-on flush, nothing rendered. For a caller
+    /// that spaces vsyncs itself, as the PCM oracle does to sit on the
+    /// console's vsync rate instead of [`FLUSH_SAMPLES`].
+    pub fn step_vsync(&mut self, spu: &mut Spu) {
+        self.flush_pos = 0;
+        self.flush_period(spu);
+    }
+
+    /// How many voices the last flush with a key-on wrote registers for: what
+    /// its KON write trails by ([`Self::flush_key_ons`]).
+    pub fn last_flush_staged(&self) -> u32 {
+        self.last_flush_staged
     }
 
     /// Current playhead in PPQN ticks (since start, or since the last loop
@@ -163,6 +189,15 @@ impl Sequencer {
     /// gameplay-driven loop points.
     pub fn rewind_to(&mut self, to: usize, spu: &mut Spu) {
         self.silence_all(spu);
+        self.jump_to(to);
+    }
+
+    /// Move the read position and nothing else: what a loop end does
+    /// (`FUN_8006139C` and `FUN_80063AA8`'s restart arm reload the cursor and
+    /// leave the voices alone). A note the score holds across the jump keeps
+    /// sounding until the next pass's note-off finds it, which 54 of the 73
+    /// looping scores do.
+    pub(super) fn jump_to(&mut self, to: usize) {
         self.next = to;
         self.pump_wait = None;
         self.accum = 0;
@@ -209,7 +244,7 @@ impl Sequencer {
         });
     }
 
-    fn silence_all(&mut self, spu: &mut Spu) {
+    pub(super) fn silence_all(&mut self, spu: &mut Spu) {
         self.release_lost_voices(spu);
         self.pending.clear();
         for note in self.active.drain(..) {

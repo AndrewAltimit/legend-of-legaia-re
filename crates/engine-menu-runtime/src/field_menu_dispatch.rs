@@ -29,15 +29,15 @@ use legaia_engine_battle::spells::SpellCatalog;
 use legaia_engine_battle::tactical_arts_editor::{ChainEditor, ChainLibrary, EditInput};
 use legaia_engine_core::world::World;
 use legaia_engine_expansion::journal::{JournalOutcome, JournalSession, JournalView};
-use legaia_engine_menus::equip_session::{EquipInput, EquipOutcome, EquipSession};
+use legaia_engine_menus::equip_session::{EquipInput, EquipSession};
 use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::inventory_use::{
     InventoryContext, InventoryUseSession, TargetRow as InvTargetRow,
 };
 use legaia_engine_menus::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
 use legaia_engine_menus::options::{OptionsInput, OptionsSession, OptionsState};
-use legaia_engine_menus::pause_screens::ItemDisplayText;
 use legaia_engine_menus::pause_screens::stat_record_from_character;
+use legaia_engine_menus::pause_screens::{ItemDetailText, ItemDisplayText};
 use legaia_engine_menus::pause_screens::{PauseItemRow, PauseItemsSession};
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectMode, SaveSelectSession, SelectInput};
 use legaia_engine_menus::spell_menu::{
@@ -263,7 +263,7 @@ impl FieldMenuSubsession {
                 });
                 // The slot browse's cancel returns to the character picker
                 // (`0x13` cancel -> `0x12`), not to the root list.
-                if session.outcome() == Some(EquipOutcome::Cancelled) {
+                if session.is_done() {
                     *picking = true;
                     session.set_slot_cursor_hidden(true);
                     session.reopen_slot_browse();

@@ -322,7 +322,7 @@ pub fn weapon_fusion_record(
                         let new_col = col_map[&(p.cba & 0x3F)];
                         let tex_shape = shape.textured_variant();
                         let colors = if tex_shape.is_gouraud() {
-                            p.colors.clone()
+                            p.colors.to_vec()
                         } else {
                             vec![*p.colors.first().unwrap_or(&[128, 128, 128])]
                         };
@@ -333,7 +333,7 @@ pub fn weapon_fusion_record(
                         });
                         e.prims.push(ModelPrim {
                             vertices: mapped,
-                            uvs: p.uvs.clone(),
+                            uvs: p.uvs.to_vec(),
                             cba: (AUTHORING_CLUT_ROW << 6) | new_col,
                             tsb: p.tsb,
                             colors,

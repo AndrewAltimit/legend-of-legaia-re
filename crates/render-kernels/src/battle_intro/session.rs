@@ -306,19 +306,6 @@ impl BattleIntro {
         if self.captured.is_some() {
             return;
         }
-        let flipped;
-        let rgba = if self.capture_flip_y && height > 1 {
-            let stride = width as usize * 4;
-            flipped = rgba
-                .chunks_exact(stride)
-                .rev()
-                .flatten()
-                .copied()
-                .collect::<Vec<u8>>();
-            &flipped[..]
-        } else {
-            rgba
-        };
         let style = self.style;
         let shade = if style == IntroStyle::TileShatter {
             self.shade_pack.as_ref()
@@ -336,8 +323,13 @@ impl BattleIntro {
             let zeros = vec![0u8; usize::from(r.w) * usize::from(r.h) * 2];
             page.write_block(r.x, r.y, r.w, r.h, &zeros);
         }
+        let blit = if self.capture_flip_y {
+            crate::vram_capture::blit_bottom_up_rgba_into_vram
+        } else {
+            crate::vram_capture::blit_rgba_into_vram
+        };
         for rect in capture_rects_for(style) {
-            crate::vram_capture::blit_rgba_into_vram(rgba, width, height, page, *rect, opts);
+            blit(rgba, width, height, page, *rect, opts);
         }
         // The shade page + its row-473 CLUT strip (see `shade_pack`). Entry
         // 0 only: the pack's character-atlas entries are already in the

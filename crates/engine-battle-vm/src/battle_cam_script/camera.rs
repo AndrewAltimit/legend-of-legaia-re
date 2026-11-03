@@ -261,6 +261,14 @@ pub struct BattleCamera {
     /// the counter was last stored outright (a rung of the per-action
     /// ladder, a module's store, an alignment) - the clock half of the word.
     pub(super) action_yaw_drift: i32,
+    /// The `0x2A` pass storing `0x2B` is the newest pass
+    /// ([`Self::observe_chain_exit_pass`]).
+    pub(super) chain_exit_pass: bool,
+    /// That pass has just run: it calls neither camera driver.
+    pub(super) prologue_skip_pending: bool,
+    /// Vsyncs of that pass still to hold `ctx[+0x87C]` / `ctx[+0x26E]`, on
+    /// the per-vsync cadence.
+    pub(super) prologue_skip_vsyncs: u32,
     /// The last `ctx[7]` [`Self::observe_action_state`] saw, so the yaw
     /// counter's per-action seeds fire on the state **edges** the way
     /// retail's arms store them once on entry.
@@ -318,6 +326,12 @@ pub struct BattleCamera {
     /// battle-entry sweep owns the camera ([`BattleCamera::start_entry_sweep`]);
     /// `None` once the battle tick has it.
     pub(super) entry_sweep: Option<u32>,
+    /// The sweep has parked and the battle open still holds the first round
+    /// ([`BattleCamInputs::open_held`]): the last case-2 tween walks on to its
+    /// endpoint and nothing frames the camera until the flow reaches `0x14`.
+    pub(super) entry_hold: bool,
+    /// [`BattleCamInputs::open_held`].
+    pub(super) open_held: bool,
     /// Where the last fresh case-9 arm set out from, and its duration in
     /// display frames (`a3 = 0xE`): the origin
     /// [`BattleCamera::align_menu_glide_frames_left`] walks the far framing
@@ -476,6 +490,9 @@ pub struct BattleCamInputs {
     /// The active actor's clip-commit count
     /// (`BattleActionCtx::active_clip_commits`): a change re-zeroes the
     /// ramp / accumulator / latch the way the commit `FUN_8004AD80` does.
+    /// The action SM's newest pass ran `0x2A` and stored `0x2B`
+    /// ([`BattleCamera::observe_chain_exit_pass`]).
+    pub chain_exit_pass: bool,
     pub active_commits: u32,
     /// The active actor's clip-**install** count
     /// (`BattleActionCtx::active_clip_installs`): the commits that change the
@@ -512,6 +529,11 @@ pub struct BattleCamInputs {
     /// phase's framing. The live world sets it; a preview or a unit test
     /// that wants the framing at once leaves it off.
     pub entry_sweep: bool,
+    /// The battle open still holds the first round: flow `0x00..=0x0B` under
+    /// the enemy names. Retail's far framing is armed by the `0x14` arm's
+    /// `FUN_801D388C(0, 0)` (or `0x0B`'s own case 9 on a back attack,
+    /// `0x801D0E98`), so the camera stays on the sweep's close-in till then.
+    pub open_held: bool,
 }
 
 /// Drive one host's battle camera for a frame - the single shared entry both
@@ -577,6 +599,7 @@ pub fn drive_on_stream(
         cam
     });
     cam.rand_state = *rng;
+    cam.open_held = inputs.open_held;
     if let Some(actor) = inputs.acting {
         cam.set_actor(actor);
     }
@@ -586,6 +609,7 @@ pub fn drive_on_stream(
     cam.set_formation(inputs.formation);
     cam.set_action_framing(inputs.action);
     cam.observe_action_state(inputs.action_state);
+    cam.observe_chain_exit_pass(inputs.chain_exit_pass);
     cam.observe_active_commits(inputs.active_commits);
     cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);

@@ -82,6 +82,8 @@ const BODY_PACED: [u32; 4] = [910, 911, 912, 913];
 
 /// Modules whose fades a hand port already spawns.
 const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
+/// The `FUN_80024E80` call of PROT 0934's hit ladder.
+const OZMA_LADDER_FADE_DECODED_SITE: u32 = 0x801F_907C;
 /// Modules whose message-bar raise a hand port already makes: PROT 0940
 /// (Glare's caption, raised as the roll resolves), 0941 (the enemy Steal's
 /// composed line) and 0954 (Fatal Decision, ported whole).
@@ -194,6 +196,12 @@ impl World {
         // that held fade unkillable.
         let mut spawned_now: Vec<u32> = Vec::new();
         for s in &sites {
+            // PROT 0934's ladder fade, spawned per hit by its hand port
+            // (`World::ozma_hit_ladder`): the site sits inside the arm's
+            // threshold test, which the decoder cannot place.
+            if entry == 934 && s.va == OZMA_LADDER_FADE_DECODED_SITE {
+                continue;
+            }
             // A site behind a test of the module's own word runs only on
             // the passes the word admits; a word the engine does not carry
             // leaves the site to its timing.
@@ -366,7 +374,12 @@ impl World {
                     text: Some(text),
                     exit: Some(exit),
                 } if passed
-                    && paced
+                    && (paced
+                        || legaia_engine_cast::cast_module_camera::capture_camera_director(
+                            entry,
+                            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+                        )
+                        .is_some())
                     && exit.from_arm(phase_in) == phase_out
                     && !MESSAGE_BARS_PORTED_BY_HAND.contains(&entry)
                     && sites
@@ -491,16 +504,51 @@ impl World {
         out
     }
 
+    /// Whether this frame's picture depends on what the buffer still holds.
+    /// A retail battle frame's farthest bucket holds an opaque black rect, and
+    /// an arm that arms the wash (`FUN_8004695C`) has it hold the subtractive
+    /// quad instead ([`Self::cast_armed_wash_prim`]): that frame's additive layers
+    /// land over the frames before (Ozma's fans go white that way), and the
+    /// first frame with no arm clears again (its arm 25 opens on black).
+    pub fn cast_frame_persists(&self) -> bool {
+        self.cast_armed_wash().is_some()
+    }
+
+    /// The armed wash as the drain draws it (`FUN_80046978`), for a host that
+    /// keeps its target ([`Self::cast_frame_persists`]): subtractive, in the
+    /// farthest bucket, the colour times the frame step. The arms that arm it
+    /// run at the step's top (`4`, measured on PROT 0934's arms 6..24), and the
+    /// engine's own step is a vsync, so the drain takes the arms' value:
+    /// `0x101010` is the `(64, 64, 64)` a retail ordering table holds.
+    pub fn cast_armed_wash_prim(&self) -> Option<legaia_render_kernels::screen_prim::ScreenPrim> {
+        use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim, fade_prim};
+        const ARMED_ARM_FRAME_STEP: u32 = 4;
+        let rgb = self.cast_armed_wash()?;
+        let scaled = |shift: u32| (((rgb >> shift) & 0xFF) * ARMED_ARM_FRAME_STEP).min(0xFF);
+        let word = scaled(16) << 16 | scaled(8) << 8 | scaled(0);
+        let mut prim = fade_prim(word, 2, 0);
+        if let ScreenPrim::Flat(q) = &mut prim {
+            q.depth = Some(CornerDepth::new([1.0; 4]));
+        }
+        Some(prim)
+    }
+
     /// The armed wash (`FUN_8004695C(rgb)`) the resident module's last tick
     /// armed, if any: the colour the drain `FUN_80046978` would subtract in
     /// the farthest bucket before the frame draws ([`Self::cast_wash_prims`]
     /// says why no host composites it).
     pub fn cast_armed_wash(&self) -> Option<u32> {
-        let resident = self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some();
-        if self.mode != SceneMode::Battle || !resident {
+        if !self.cast_module_resident() {
             return None;
         }
         self.casting.module_pres.armed_wash
+    }
+
+    /// A cast module is on the battle band, so a frame may soon build on the
+    /// ones before it ([`Self::cast_frame_persists`]).
+    pub fn cast_module_resident(&self) -> bool {
+        self.mode == SceneMode::Battle
+            && (self.casting.summon_stager.is_some() || self.casting.capture_spell.is_some())
     }
 }
 

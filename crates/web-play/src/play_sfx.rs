@@ -86,11 +86,8 @@ const DUCK_LEVEL_REF: u8 = legaia_engine_session::audio_director::DUCK_LEVEL_REF
 /// ([`legaia_engine_menus::menu_cues`]), which the native window fires from
 /// too.
 pub(crate) const RETAIL_MENU_CURSOR_CUE: u8 = legaia_engine_menus::menu_cues::MENU_CURSOR_CUE;
-/// Cue id retail's pause menu fires confirming an **enabled** row: `li a1,0x20`
-/// at `0x80032d24` in `FUN_80032A44`, stored through the shared
-/// `sh a1,0x0(v0)` at `0x80032d40` alongside the `mode = 2` write. A
-/// *disabled* row takes the sibling branch and buzzes `0x23` instead
-/// (`li a1,0x23` at `0x80032d0c`) - a distinction this host has no path for.
+/// Cue id a pause-menu screen overwrites the picker's pick with once it
+/// accepts a row (`FUN_80035BD0(0x20)`), as the root does for Load and Save.
 pub(crate) const RETAIL_MENU_CONFIRM_CUE: u8 = legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE;
 /// Cue id retail's pause menu fires on cancel: `li a2,0x37` at `0x80032d74` in
 /// `FUN_80032A44`, stored at `0x80032d94`, with `mode = 3`.
@@ -184,6 +181,21 @@ const PLAY_EVENTS: &[PlayCue] = &[
         why: "FUN_80032A44 cancel (li a2,0x37 at 0x80032d74); category 0, so it \
               sounds out of the slot-0 system bank (PROT 0868) - see \
               CUE_MENU_CURSOR",
+    },
+    PlayCue {
+        event: "menu_pick",
+        retail_cue: legaia_engine_menus::menu_cues::MENU_PICK_CUE,
+        fires: Some(legaia_engine_menus::menu_cues::MENU_PICK_CUE),
+        source: "disc",
+        why: "FUN_801D688C confirm (li a0,0x36 at 0x801d68cc), which the root \
+              picker's Items through Options rows leave sounding; category 0",
+    },
+    PlayCue {
+        event: "menu_refuse",
+        retail_cue: legaia_engine_menus::menu_cues::MENU_REFUSE_CUE,
+        fires: Some(legaia_engine_menus::menu_cues::MENU_REFUSE_CUE),
+        source: "disc",
+        why: "FUN_801D6B20 refused row (li a0,0x23 at 0x801d6cec); category 0",
     },
 ];
 
@@ -644,14 +656,19 @@ impl LegaiaRuntime {
 
     /// Fire the pause menu's blip for this frame's just-pressed `edge` (the
     /// PSX pad word the page feeds `set_pad`). Which blip, if any, is the
-    /// engine's one rule ([`legaia_engine_menus::menu_cues::menu_edge_blip`]),
+    /// engine's one rule ([`legaia_engine_menus::field_menu::pause_edge_blip`]),
     /// the same call the native window makes: `start_closes_menu` is whether
     /// this frame's Start closes the whole menu (the root row list) rather
     /// than reaching a sub-screen. Returns whether a cue sounded; a request
     /// is counted in `menu_cue_requests` either way, as
     /// [`Self::play_sfx_event`] counts it.
     pub fn play_menu_edge_blip(&mut self, edge: u16, start_closes_menu: bool) -> bool {
-        let Some(blip) = legaia_engine_menus::menu_cues::menu_edge_blip(edge, start_closes_menu)
+        let root = self
+            .scene_host
+            .session_mut()
+            .and_then(|s| s.field_menu.as_ref());
+        let Some(blip) =
+            legaia_engine_menus::field_menu::pause_edge_blip(edge, start_closes_menu, root)
         else {
             return false;
         };
@@ -670,6 +687,8 @@ impl LegaiaRuntime {
             legaia_engine_menus::menu_cues::MenuBlip::Cursor => "menu_cursor",
             legaia_engine_menus::menu_cues::MenuBlip::Confirm => "menu_confirm",
             legaia_engine_menus::menu_cues::MenuBlip::Cancel => "menu_cancel",
+            legaia_engine_menus::menu_cues::MenuBlip::Pick => "menu_pick",
+            legaia_engine_menus::menu_cues::MenuBlip::Refuse => "menu_refuse",
         };
         self.play_sfx_event(event)
     }

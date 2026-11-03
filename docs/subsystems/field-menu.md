@@ -864,6 +864,16 @@ below; the overlay talks to it through globals:
 | `_DAT_8007BB90` / `_DAT_8007BB98` / `_DAT_8007BBA0` | scroll top / selected row / row count |
 | `_DAT_8007BB80` | window-slide latch; every phase step waits for `== 0` |
 
+### Which cue a confirm sounds
+
+Two pickers page the menu's rows, with different cues. The command windows run the
+overlay's `FUN_801D688C` (21 callers): Cross pushes `0x36`, Circle `0x37`, a step
+`0x21`, and a screen that accepts the row overwrites the ring's last slot through
+`FUN_80035BD0`, `0x20` for most and `0x23` for a refusal. The root picker overwrites
+only for Load and Save, so its first five rows sound the bare `0x36`. The content
+lists run the kernel below, whose confirm is `0x20`. Engine:
+`field_menu::pause_edge_blip`, on both hosts.
+
 ### The kind-4 list kernel (SCUS `FUN_80032A44`)
 
 Runs per frame for each live list window whose content id (live `+0x1C`) is in
@@ -1457,7 +1467,14 @@ equipped item to the bag, buzz `0x37` on an empty slot) and the bag classes
 `0x6000` / `0x9000` (take one copy via `FUN_80042EE0` + `FUN_80043048`, return
 the old item via `FUN_800421D4`, write the slot). Every other row - including
 the equipped row - falls through to the shared tail at `0x801DA1DC`, which
-steps the hand to the next slot row (wrapping at 8) and returns to `0x13`.
+steps the hand to the next slot row (wrapping at 8) and returns to `0x13`. So
+do a commit and a refusal: there is no Yes/No step, and the screen stays up, so
+a player equips down the rows with one press each.
+
+Both appliers write the live record and bag on the frame of the press. The
+port's `EquipSession` edits copies and lists each swap;
+`tick_open_subsession` drains the list onto the world every frame, so the
+character picker's rebuild on another member reads the commit.
 
 #### The `0x801E43E8` run is three tables, not one
 
@@ -1505,10 +1522,43 @@ different filters:
 | Goods (rows 5..7) | `0x1C`..`0x1E` (also `0xE`..`0x10`) | equip bytes `5` / `6` / `7` | item record `+0` class **2** (`bne` at `0x800317D8`) and item-effect `+3` other than `0x41` (`0x800317F4..0x800317F8`); no character-mask term |
 
 Armament rows are tagged `0x6000`, Goods rows `0x9000`. Both lists lead with
-the Remove verb (`0x4000`, payload 0) and, when the slot is occupied, the
-equipped id (`0x7000`). `0x41` is one past the 64-slot passive index space: on
+the Remove verb (`0x4000`, payload 0) and build the equipped id (`0x7000`)
+next when the slot is occupied; an armament list then sorts, so its worn row
+ends up among the others. `0x41` is one past the 64-slot passive index space: on
 retail data the Goods gate is exactly "this item carries an accessory
 passive".
+
+#### The armament row sort
+
+Only the armament cases sort; the Goods cases copy their rows as built. The
+key `FUN_800302E4(char, row word, category)` resolves the row to an item id
+(class `0x6000` through the bag slot, `0x7000` from the payload) and reads the
+equipment record by the row's category (`0x8007B484` per content id, the value
+the builder filters on):
+
+| Category | Key |
+|---|---|
+| `0` body | `+2 + +3` |
+| `1` helmet | `+2` |
+| `2` weapon | `+1 + FUN_801DD0C0(char, id, 0)` |
+| `3` footwear | `+1 + +3` |
+
+The weapon's favour check runs in group `0` here where Best Equipment uses
+group `1`, which is why the Astral Sword (mask `0x01`) leads Vahn's list and
+Best Equipment never picks it. The sort is a selection sort over rows `1..n`,
+swap and strict `>` included, so ties land where the swaps leave them.
+
+The step opens with the selection on row `1`, below Remove (`0x801D9D20`);
+`FUN_80030104` clamps it to the last row. The rows run through the kind-4
+kernel at its usual placements: a pictogram row draws its ICO at `WX + 0xC`
+(`0x21` on the worn row, `0x46` on a Goods row, the category's on an armament
+row) and its name at `WX + 0x1C`, with no count column for equipment; Remove
+has no pictogram and its name at `WX + 0xC`.
+
+Window 24's text is the shared panel's: `FUN_801D0F1C` prints the name and
+hands the description to the detail printer `FUN_800337B0`, which adds
+equipment's stat line one row down (`ATK 97`). The bag count beside the name is
+`FUN_801DCC20`'s own, at `WX + 0x80`.
 
 ### What the candidate step draws, measured
 
@@ -1636,8 +1686,10 @@ its `j` targets print correctly - see
   (`EquipSession::armament_rows`, `FUN_80030628` cases `7`..`10` /
   `0x15`..`0x18`): the Remove verb always (`0x800314D0`), the worn id when
   the slot holds one (`0x800314DC`), then the accepted bag slots of the
-  active window in slot order (`0x80031544..0x800315E4`), the worn id skipped.
-  Disc-gated oracle:
+  active window (`0x80031544..0x800315E4`), the worn id skipped; then a
+  selection sort of every row below Remove on `FUN_800302E4`
+  (`0x80031614..0x800316E0`), [below](#the-armament-row-sort).
+Disc-gated oracle:
   `pause_learned_content_ladder::the_weapon_candidate_list_is_remove_worn_then_bag_order`.
   A disc-free session (no restriction tables) keeps the id-sorted placeholder
   list.

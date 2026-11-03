@@ -209,31 +209,55 @@ pub fn gpu_span_rejected(clips: [[f32; 4]; 3], sz_per_w: f32, h: f32) -> bool {
 /// every primitive touching such a vertex is written with `n = 0` and is never
 /// rejected, which keeps a shared edge from tearing.
 pub fn prim_corner_refs(positions: &[[f32; 3]], indices: &[u32]) -> Vec<PrimRef> {
-    let mut refs = vec![[0.0f32; PRIM_REF_FLOATS]; positions.len()];
+    prim_corner_plan(positions.len(), indices)
+        .iter()
+        .map(|&[c0, c1, c2, c3, n]| {
+            if n == 0 {
+                return [0.0; PRIM_REF_FLOATS];
+            }
+            let (a, b, c, d) = (
+                positions[c0 as usize],
+                positions[c1 as usize],
+                positions[c2 as usize],
+                positions[c3 as usize],
+            );
+            [
+                a[0], a[1], a[2], n as f32, b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2],
+            ]
+        })
+        .collect()
+}
+
+/// [`prim_corner_refs`]'s half that depends on the indices alone, per vertex:
+/// its primitive's four corner vertices and corner count (`n = 0` for a vertex
+/// with no single owner). A mesh that re-poses keeps its plan and re-reads only
+/// the positions - the browser host does, per mesh per frame.
+pub fn prim_corner_plan(vertex_count: usize, indices: &[u32]) -> Vec<[u32; 5]> {
+    let mut plan = vec![[0u32; 5]; vertex_count];
     let tris = indices.as_chunks::<3>().0;
-    // Group the triangles into primitives.
-    let mut groups: Vec<Vec<u32>> = Vec::with_capacity(tris.len());
+    // Group the triangles into primitives (three or four corners, held inline).
+    let mut groups: Vec<([u32; 4], u8)> = Vec::with_capacity(tris.len());
     let mut i = 0;
     while i < tris.len() {
         let a = tris[i];
         if let Some(b) = tris.get(i + 1) {
             let shared = b.iter().filter(|v| a.contains(v)).count();
-            let extra: Vec<u32> = b.iter().copied().filter(|v| !a.contains(v)).collect();
-            if shared == 2 && extra.len() == 1 && a.iter().all(|v| *v != extra[0]) {
+            let mut extras = b.iter().copied().filter(|v| !a.contains(v));
+            if let (2, Some(extra), None) = (shared, extras.next(), extras.next()) {
                 // Retail corner order for a quad: v0, v1, v2, v3.
-                groups.push(vec![a[0], a[1], a[2], extra[0]]);
+                groups.push(([a[0], a[1], a[2], extra], 4));
                 i += 2;
                 continue;
             }
         }
-        groups.push(a.to_vec());
+        groups.push(([a[0], a[1], a[2], 0], 3));
         i += 1;
     }
     // A vertex owned by more than one primitive disqualifies all of them.
-    let mut owner = vec![usize::MAX; positions.len()];
+    let mut owner = vec![usize::MAX; vertex_count];
     let mut shared = vec![false; groups.len()];
-    for (g, verts) in groups.iter().enumerate() {
-        for &v in verts {
+    for (g, (corners, n)) in groups.iter().enumerate() {
+        for &v in &corners[..*n as usize] {
             let Some(o) = owner.get_mut(v as usize) else {
                 continue;
             };
@@ -245,32 +269,18 @@ pub fn prim_corner_refs(positions: &[[f32; 3]], indices: &[u32]) -> Vec<PrimRef>
             }
         }
     }
-    for (g, verts) in groups.iter().enumerate() {
-        if shared[g] || verts.iter().any(|&v| v as usize >= positions.len()) {
+    for (g, (corners, n)) in groups.iter().enumerate() {
+        let verts = &corners[..*n as usize];
+        if shared[g] || verts.iter().any(|&v| v as usize >= vertex_count) {
             continue;
         }
-        let c = |k: usize| positions[verts[k.min(verts.len() - 1)] as usize];
-        let (c0, c1, c2, c3) = (c(0), c(1), c(2), c(3));
-        let rec: PrimRef = [
-            c0[0],
-            c0[1],
-            c0[2],
-            verts.len() as f32,
-            c1[0],
-            c1[1],
-            c1[2],
-            c2[0],
-            c2[1],
-            c2[2],
-            c3[0],
-            c3[1],
-            c3[2],
-        ];
+        let c = |k: usize| verts[k.min(verts.len() - 1)];
+        let rec = [c(0), c(1), c(2), c(3), verts.len() as u32];
         for &v in verts {
-            refs[v as usize] = rec;
+            plan[v as usize] = rec;
         }
     }
-    refs
+    plan
 }
 
 #[cfg(test)]

@@ -41,6 +41,13 @@ impl Sequencer {
                     self.channels[ch].pan = value;
                     self.remix_channel(spu, ch);
                 }
+                // `FUN_8006126C`: the data entry after a Loop Start names how
+                // many passes the loop runs. A loop already counting ignores it.
+                CC_DATA_ENTRY if self.loop_armed && !self.loop_busy => {
+                    self.loop_repeats = value;
+                    self.loop_armed = false;
+                    self.loop_busy = true;
+                }
                 CC_LOOP_MARKER => match value {
                     LOOP_START_VALUE => {
                         // Record the position *after* this marker. `self.next`
@@ -49,10 +56,23 @@ impl Sequencer {
                         // following the marker is `next + 1`. Rewinding there
                         // skips re-firing the marker and re-applying its delta.
                         self.loop_start = Some(self.next + 1);
+                        self.loop_armed = true;
                     }
-                    LOOP_FOREVER_VALUE => {
-                        self.pending_loop_forever = true;
-                    }
+                    // `FUN_8006139C`: no count means no loop at all (the score
+                    // runs on to its end), `0x7F` loops for good, and any other
+                    // count jumps back until it runs out.
+                    LOOP_FOREVER_VALUE => match self.loop_repeats {
+                        0 => self.loop_busy = false,
+                        n if n < LOOP_REPEAT_FOREVER => {
+                            self.loop_repeats = n - 1;
+                            if n == 1 {
+                                self.loop_busy = false;
+                            } else {
+                                self.pending_loop_forever = true;
+                            }
+                        }
+                        _ => self.pending_loop_forever = true,
+                    },
                     _ => {}
                 },
                 _ => {}
@@ -68,17 +88,9 @@ impl Sequencer {
                 self.note_off(spu, ch as u8, key);
             }
             ChannelMessage::PitchBend { value } => {
-                self.channels[ch].pitch_bend = value;
-                for note in self
-                    .active
-                    .iter()
-                    .filter(|n| n.channel as usize == ch && n.pending.is_none())
-                {
-                    if let Some(v) = spu.voices.get_mut(note.voice as usize) {
-                        let (down, up) = note.bend_range;
-                        v.pitch = bend_pitch(note.base_pitch, pitch_bend_factor(value, down, up));
-                    }
-                }
+                // The decoder skips the first operand unread; the handler's
+                // one byte is the wheel's high seven bits.
+                self.bend_program(spu, ch, (value >> 7) as u8);
             }
             // Aftertouch (channel + poly) is recognized but unused by the
             // retail score (corpus sweep), so there is nothing to drive.

@@ -697,10 +697,22 @@ reason = "Builds the page's audio director on first use (off wasm; on wasm once 
 # the difference - it is a statement of where the other host does the work.
 
 [[frame_content]]
+native = "tick_world_effects"
+web = "tick_world_effects"
+native_only = ["entry_bytes"]
+web_only = []
+reason = """
+Both hosts read the monster archive before seating a summon creature:
+`spawn_summon_creature` through the window's `monster_archive_bytes`, and
+`spawn_summon_creature_web` directly on `host.index`, which the walker does not
+follow past the page's own helper.
+"""
+
+[[frame_content]]
 native = "drain_and_log_battle_events"
 web = "tick_battle_presentation"
 native_only = ["battle_stage_layers"]
-web_only = ["armed", "battle_monster_slots", "battle_party_forms", "ensure_battle_party_forms", "entry_bytes_extended", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_wave_monsters", "tmd_bytes", "upload_flame_atlas_into_vram"]
+web_only = ["armed", "battle_monster_slots", "battle_party_forms", "ensure_battle_party_forms", "monster_tex_slots_used", "release_summon_seat", "replay", "reset", "stage_battle_world", "stage_wave_monsters", "tmd_bytes", "upload_flame_atlas_into_vram"]
 reason = """
 The presentation itself is one session step on both hosts
 (`BootSession::step_battle_presentation`: the battle audio, the strike
@@ -728,8 +740,6 @@ Checked name by name: every presentation call has a call site in the native
 sources. The party forms are built by `SceneHost::ensure_battle_party_forms`
 from `SceneHost::tick` for every session, and both hosts call it again before
 their render build and replay its VRAM writes with `replay`.
-`entry_bytes_extended` is the page reading the monster archive off PROT
-inside this step; the window reads it from its cached copy.
 `stage_wave_monsters` (an expansion battle wave's mid-fight seating) is the
 page staging the arrivals inside this step; the window stages them from
 `window/battle/wave_seat.rs` through the same session function.

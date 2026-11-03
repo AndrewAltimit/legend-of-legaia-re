@@ -292,8 +292,15 @@ fn big_wave_arms_6_to_8_cut_spin_and_finish() {
     assert!(a7.hold);
     assert_eq!(a7.drift.unwrap().yaw, (SPEED_SCALAR / 4) as i16);
     st.countdown.0 = 1;
-    assert_eq!(wave_camera(&mut st, 7, seats).next, Some(8));
-    st.countdown.0 = 1;
+    let hits = wave_camera(&mut st, 7, seats);
+    assert_eq!(hits.next, Some(8));
+    assert!(hits.folds_hit && hits.party_live_only);
+    assert_eq!(hits.party_write.rate, Some(4));
+    assert_eq!(hits.party_write.facing, Some(0));
+    // Arm 8 holds on a spent word until every party seat has settled.
+    st.countdown.0 = 0;
+    assert!(wave_camera(&mut st, 8, seats).hold);
+    st.party_settled = true;
     let a8 = wave_camera(&mut st, 8, seats);
     assert_eq!((a8.hold, a8.next), (false, None));
     assert!(a8.drift.is_some());
@@ -1357,4 +1364,57 @@ fn barra_stages_its_clips_one_after_another() {
     };
     assert!(barra_direct(&mut st, 0xD, seats()).hold);
     assert_eq!(st.creature_stage, Some(4));
+}
+
+/// PROT 0934's lightning stands on a ring of eight points at height `-0xC0`,
+/// `x = sin / 4`, `z = cos / 8 - 0x500`, and its arm 5 draws it while it holds.
+#[test]
+fn ozma_arm_5_draws_its_bolt_ring_every_pass() {
+    let ring = ozma_bolt_ring();
+    assert_eq!((ring.count, ring.trail_id), (8, 0xC));
+    assert_eq!(ring.points[0], [0, -0xC0, 0x200 - 0x500]);
+    assert_eq!(ring.points[2], [0x400, -0xC0, -0x500]);
+    let mut st = ModuleCamState::default();
+    st.countdown.0 = 0x20;
+    let d = ozma_direct(&mut st, 5, seats());
+    assert!(d.hold);
+    assert!(d.ribbons.is_some());
+}
+
+/// Arm 6's rise is `4` a pass and its shake `0x200` on the odd passes, stored
+/// straight into TR y (`0x801F71E8..0x801F720C`).
+#[test]
+fn ozma_arm_6_stores_tr_y_from_its_rise_and_shake() {
+    let mut st = ModuleCamState {
+        live_pitch_tr: Some((0, [0, 0, 0])),
+        ozma_shake: (0, 0x40),
+        ..Default::default()
+    };
+    st.countdown.0 = 0x50;
+    let even = ozma_direct(&mut st, 6, seats()).drift.unwrap();
+    assert_eq!(i32::from(even.tr_y), 0x40 + 4 * DELTA_PER_TICK);
+    st.ozma_shake.0 = 4;
+    let odd = ozma_direct(&mut st, 6, seats()).drift.unwrap();
+    assert_eq!(i32::from(odd.tr_y), 0x200 + 0x40 + 8 * DELTA_PER_TICK);
+}
+
+#[test]
+fn ozma_ray_fans_take_their_seeds_in_seat_order() {
+    assert_eq!(ozma_ray_seed(0x801F_A1BC, 0), Some((0xB8, 0x56CE)));
+    assert_eq!(
+        ozma_ray_seed(0x801F_A200, 15),
+        Some((0xB8, 0x56CE - 15 * 0x20))
+    );
+    assert_eq!(ozma_ray_seed(0x801F_A170, 0), None);
+}
+
+/// The side-band poll sits on the arm the table in `cast-module.md` names,
+/// and PROT 0923's, behind its arm-0 drain, stays its director's.
+#[test]
+fn the_sideband_poll_arm_covers_the_band() {
+    assert_eq!(sideband_wait_arm(934), Some(2));
+    assert_eq!(sideband_wait_arm(932), Some(2));
+    assert_eq!(sideband_wait_arm(933), Some(1));
+    assert_eq!(sideband_wait_arm(923), None);
+    assert_eq!(sideband_wait_arm(926), None);
 }

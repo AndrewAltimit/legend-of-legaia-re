@@ -86,6 +86,16 @@ impl RetailBattle {
                 && self.frame_step != default)
                 .then_some((self.frame_step, self.action_state, None));
         }
+        // A monster's magic-band capture on `0x2B`: the capture is a pass or
+        // three past the clip commit, the commit's cursor and accumulator
+        // pin those passes' step (Windhash cursor `36`, accumulator `48`:
+        // three step-`3` passes, the first adding nothing to the
+        // accumulator; Aluru Cannon `32` / `32`: two step-`4` passes), and
+        // the displayed frame is two of them back.
+        if self.monster_magic_band_age() && self.action_state == 0x2B {
+            let (step, _) = self.step_run;
+            return (step != default).then_some((step, self.action_state, None));
+        }
         // An action in flight: the newest passes' step, from the pass the
         // run began on (`step_run_start`) when the history holds where it
         // began, over the whole state when the history never left it.

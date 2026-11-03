@@ -118,6 +118,8 @@
       try { return !!(rt && JSON.parse(rt.play_pack_modes_json()).open); } catch (e) { return false; }
     };
 
+    let editBackdrop = null;
+
     function viewReady() {
       const v = api.view();
       if (!v) return null;
@@ -135,6 +137,16 @@
           clearTimeout(t);
           t = setTimeout(() => sizeCanvas(v), 150);
         });
+      }
+      if (!v._xwClearHooked) {
+        /* The editor's backdrop, under the editor camera only: Test play and
+         * fights draw the scene's own clear. */
+        v._xwClearHooked = true;
+        const sceneClear = v._applySceneClear;
+        v._applySceneClear = function (rt) {
+          if (editBackdrop && this.editorNoPlayer) { this.renderer.clearColor = editBackdrop; return undefined; }
+          return sceneClear.call(this, rt);
+        };
       }
       if (!v._xwFrameHooked) {
         /* Frame cost: the CPU time of each `_frame`, averaged over a second,
@@ -175,15 +187,18 @@
       return v;
     }
 
-    /* The canvas resolution: the width the frame shows it at (4:3, 320 to
-     * 960 wide), so the fill is what is seen. */
+    /* The canvas resolution: the size the frame shows it at, the frame's
+     * own shape, up to 1600 wide (the workbench's view fills its window), so
+     * the fill is what is seen. */
     function sizeCanvas(v) {
       if (v.psxRender) return;
       for (const c of [v.canvas, v.menuOverlay].filter(Boolean)) {
-        const w = Math.max(320, Math.min(960, Math.round(c.clientWidth || 640)));
-        if (c.width === w) continue;
+        const cw = Math.max(1, c.clientWidth || 640), ch = Math.max(1, c.clientHeight || cw * 3 / 4);
+        const k = Math.min(1, 1600 / cw);
+        const w = Math.max(320, Math.round(cw * k)), hgt = Math.max(120, Math.round(ch * k));
+        if (c.width === w && c.height === hgt) continue;
         c.width = w;
-        c.height = Math.round(w * 3 / 4);
+        c.height = hgt;
       }
     }
 
@@ -194,6 +209,9 @@
        * keys). The field camera is Test play, a cutscene, a fight or a mode:
        * the party is there and the game's own input drives it. */
       v.editorNoPlayer = wantOrbit;
+      /* The game's own screen text (a quest toast, a place name) belongs to
+       * Test play, not to the picture being edited. */
+      if (v.menuOverlay) v.menuOverlay.style.visibility = wantOrbit ? 'hidden' : '';
       if (!wantOrbit) {
         // Test play is the first time the preview may sound.
         if (!v.editorAudio) { v.editorAudio = true; if (typeof v._enableAudio === 'function') v._enableAudio(); }
@@ -352,6 +370,10 @@
       } else if (m.type === 'xw-edit') {
         if (v && typeof v.setEditorEdit === 'function') v.setEditorEdit(m);
         else pendingEdit = Object.assign(pendingEdit || {}, m);
+      } else if (m.type === 'xw-backdrop') {
+        editBackdrop = m.color;
+      } else if (m.type === 'xw-ghost') {
+        if (v && typeof v.setEditorGhost === 'function') v.setEditorGhost(m);
       } else if (m.type === 'xw-overlay') {
         if (v) v.setEditorOverlay(m);
       } else if (m.type === 'xw-arrival') {

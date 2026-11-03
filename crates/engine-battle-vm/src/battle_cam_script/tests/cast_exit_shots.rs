@@ -536,3 +536,48 @@ fn a_turning_spell_shot_aligns_its_yaw_as_a_clock() {
     retail.yaw = (target.yaw + 195.0).rem_euclid(4096.0);
     assert_eq!(cam.align_glide_origin_to(retail, retail, target) & 2, 0);
 }
+
+/// The `0x2A` pass that stores `0x2B` calls neither camera driver
+/// (`0x801E4774..0x801E479C`), so it adds nothing to the accumulator: three
+/// step-`3` passes past a cast clip's commit read accumulator `48` beside
+/// cursor `36` (`battle_tower_guardian_windhash_mid_cast`).
+#[test]
+fn the_magic_chain_exit_pass_adds_nothing_to_the_accumulator() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.set_pass_granular(true);
+    cam.set_frame_step(3);
+    cam.observe_action_state(0x29);
+    cam.observe_action_state(0x2A);
+    cam.observe_active_commits(0);
+    cam.observe_active_commits(1);
+    assert_eq!(cam.close_up_accum(), 0);
+    cam.observe_chain_exit_pass(true);
+    cam.advance_to(3);
+    assert_eq!(cam.close_up_accum(), 0);
+    cam.observe_chain_exit_pass(false);
+    cam.observe_action_state(0x2B);
+    cam.advance_to(6);
+    assert_eq!(cam.close_up_accum(), 24);
+    cam.advance_to(9);
+    assert_eq!(cam.close_up_accum(), 48);
+}
+
+/// On the per-vsync cadence the same pass holds the accumulator for its
+/// step's vsyncs.
+#[test]
+fn the_magic_chain_exit_pass_holds_on_the_vsync_cadence_too() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase(BattleCamPhase::Action);
+    cam.set_frame_step(2);
+    cam.observe_action_state(0x2A);
+    cam.observe_active_commits(0);
+    cam.observe_active_commits(1);
+    cam.observe_chain_exit_pass(true);
+    cam.advance_to(1);
+    cam.observe_chain_exit_pass(false);
+    cam.advance_to(2);
+    assert_eq!(cam.close_up_accum(), 0);
+    cam.advance_to(3);
+    assert_eq!(cam.close_up_accum(), 8);
+}

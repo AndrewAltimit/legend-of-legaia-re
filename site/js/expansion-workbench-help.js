@@ -32,6 +32,9 @@ export const TAB_HELP = {
   files: [`${F}expansion-pack.html#layout`, 'the pack layout'],
 };
 
+/** The object palette's "?": what its names and categories are. */
+export const PALETTE_HELP = [`${F}expansion-pack-maps.html#meshes-from-other-scenes`, 'meshes off the disc'];
+
 /** Per section heading (`tab:heading text`): the reference section. */
 const SECTION_HELP = {
   'battle:Monsters': `${F}expansion-pack-battle.html#monsters`,

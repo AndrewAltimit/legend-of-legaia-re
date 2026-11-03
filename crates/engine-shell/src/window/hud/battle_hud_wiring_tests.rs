@@ -70,6 +70,7 @@ const fn blank_rects() -> legaia_engine_ui::SaveMenuAtlasRects {
         icon_armor: Z,
         icon_boot: Z,
         icon_goods: Z,
+        icon_worn: Z,
         pager_left: Z,
         pager_right: Z,
         tab_cap_l: Z,

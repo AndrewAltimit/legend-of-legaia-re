@@ -1,0 +1,114 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; frame benchmark</div>
+  <h1>Frame benchmark: what the engine costs a player</h1>
+  <p class="lede">Two drivers measure the engine on a fixed set of scenes and on the way into them: <code>scripts/ci/frame-bench.py</code> on the native window and <code>scripts/ci/frame-bench-web.mjs</code> on the browser play page. They print tables and assert nothing. A frame-time gate on a shared machine can only flake, so the numbers belong in a before / after comparison on one machine, and not in the repo.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The two benchmark drivers and their readings. The native driver runs play-window tick-locked and reads frame time, allocations by stage and startup steps. Its entry mode runs entry-bench with no window, optionally paired against a base build. The browser driver serves a site directory, loads the disc through the page's file input and reads the frame function's main-thread cost, each wasm export, GL calls and long tasks.">
+      <rect class="dg-group" x="10" y="10" width="425" height="280" rx="6"/>
+      <text class="dg-label" x="222" y="34">Native: frame-bench.py</text>
+      <rect class="dg-node-accent" x="30" y="50" width="185" height="60" rx="4"/>
+      <text class="dg-label" x="122" y="74">play-window</text><text class="dg-sub" x="122" y="93">one sim tick per drawn frame</text>
+      <rect class="dg-node" x="30" y="150" width="185" height="60" rx="4"/>
+      <text class="dg-label" x="122" y="174">entry-bench</text><text class="dg-sub" x="122" y="193">no window, no GPU</text>
+      <rect class="dg-node" x="260" y="50" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="340" y="74">Three tables</text><text class="dg-sub" x="340" y="93">frame, allocs, startup</text>
+      <rect class="dg-node" x="260" y="150" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="340" y="174">[entry] lines</text><text class="dg-sub" x="340" y="193">scene, step, ms</text>
+      <path class="dg-edge" d="M215 80 L258 80" marker-end="url(#fb-arrow)"/>
+      <path class="dg-edge" d="M215 180 L258 180" marker-end="url(#fb-arrow)"/>
+      <text class="dg-sub" x="222" y="250">--base-exe alternates two builds run by run,</text>
+      <text class="dg-sub" x="222" y="268">so a busy box hits both alike</text>
+      <rect class="dg-group" x="445" y="10" width="425" height="280" rx="6"/>
+      <text class="dg-label" x="657" y="34">Browser: frame-bench-web.mjs</text>
+      <rect class="dg-node-accent" x="465" y="50" width="185" height="60" rx="4"/>
+      <text class="dg-label" x="557" y="74">The play page</text><text class="dg-sub" x="557" y="93">own file input, own scene list</text>
+      <rect class="dg-node" x="695" y="50" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="775" y="74">Per frame</text><text class="dg-sub" x="775" y="93">exports, GL, long tasks</text>
+      <path class="dg-edge" d="M650 80 L693 80" marker-end="url(#fb-arrow)"/>
+      <rect class="dg-node" x="465" y="150" width="185" height="60" rx="4"/>
+      <text class="dg-label" x="557" y="174">--profile</text><text class="dg-sub" x="557" y="193">CPU profile, GC included</text>
+      <rect class="dg-node" x="695" y="150" width="160" height="60" rx="4"/>
+      <text class="dg-label" x="775" y="174">--entry-profile</text><text class="dg-sub" x="775" y="193">disc load, entries, battles</text>
+      <text class="dg-sub" x="657" y="250">main-thread time only: what the GPU process</text>
+      <text class="dg-sub" x="657" y="268">does with the frame is not in it</text>
+      <defs><marker id="fb-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    </svg>
+    <figcaption>Both drivers walk the same frames on every run and vary only in the time those frames take, so two runs on one machine compare directly.</figcaption>
+  </figure>
+</section>
+
+<section class="doc-section" id="native" data-doc="native">
+  <h2>Native</h2>
+  <div class="cli"><code>scripts/ci/frame-bench.py                                  # every scene, both fidelities
+scripts/ci/frame-bench.py --scene town01 --mode enhanced --repeat 5
+scripts/ci/frame-bench.py --json before.json               # raw rows for a diff</code></div>
+  <p>The driver builds <code>legaia-engine</code> with <code>engine-shell</code>&rsquo;s <code>bench-alloc</code> feature and runs <code>play-window</code> tick-locked: one sim tick per drawn frame whatever the wall clock did, so every run walks the same frames and only the time varies. The audio director runs over a device-less output. It prints the fastest of <code>--repeat</code> runs with the spread between them, which says how far to trust a row on a busy box.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Table</th><th>Reads</th></tr></thead>
+    <tbody>
+      <tr><td>Frame time</td><td>average, p99, worst, allocations and bytes per frame, draw counts, then time per stage</td></tr>
+      <tr><td>Allocations by stage</td><td>which stage the allocations happen in</td></tr>
+      <tr><td>Startup by step</td><td>process up to first frame: renderer and pipelines, VRAM, each mesh family, actors</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The stages are the <a href="../subsystems/renderer-port.html#profiler">frame profiler&rsquo;s</a>. The worst frame&rsquo;s own stage breakdown goes to stderr beside each row, which is how a hitch gets a name. <code>LEGAIA_PROFILE_ALLOC_SITES=1</code> on a <code>bench-alloc</code> binary samples allocation call stacks and prints the heaviest at the end, as <code>[alloc-site]</code> lines.</p>
+  <h3>Entry</h3>
+  <div class="cli"><code>scripts/ci/frame-bench.py --entry --base-exe old --repeat 7   # paired against another build
+scripts/ci/frame-bench.py --entry --entry-scenes town01,koin1</code></div>
+  <p><code>legaia-engine entry-bench</code> enters each scene and forces a fight from it with no window and no GPU, one <code>[entry] &lt;scene&gt; &lt;step&gt; &lt;ms&gt;</code> line per step. The first round enters through the scene picker and carries the once-per-process caches; the second, labelled <code>scene+</code>, is what a door back into the scene costs. What a window adds past these steps (surface, pipelines, mesh upload, draw lists) is the frame table&rsquo;s startup row.</p>
+</section>
+
+<section class="doc-section" id="browser" data-doc="browser">
+  <h2>Browser</h2>
+  <div class="cli"><code>scripts/ci/build-wasm.sh                                      # or point --site at a scratch copy
+scripts/ci/frame-bench-web.mjs --scene town01,battle --profile
+scripts/ci/frame-bench-web.mjs --site /path/to/other/site --json out.json</code></div>
+  <p>It serves a <code>site/</code> directory itself, loads the disc named by <code>LEGAIA_DISC_BIN</code> through the page&rsquo;s own file input, and enters each scene through the page&rsquo;s own scene list. Each row reports the page&rsquo;s frame function as a main-thread cost, every wasm export&rsquo;s time, calls and returned bytes per frame, GL calls per frame, long tasks, and the scene-entry time.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Flag</th><th>Adds</th></tr></thead>
+    <tbody>
+      <tr><td><code>--profile</code></td><td>A CPU profile: self time by function, garbage collector included, and the call chains of the heaviest.</td></tr>
+      <tr><td><code>--gl egl</code> / <code>swiftshader</code></td><td>The default asks for a real GPU and the output names the renderer it got; a software rasteriser swamps the page&rsquo;s cost with fragment work.</td></tr>
+      <tr><td><code>--entry-profile</code></td><td>Samples the disc load, each scene entry and each battle&rsquo;s first frames; time by function, self and inclusive.</td></tr>
+      <tr><td><code>--reenter</code></td><td>Enters each scene twice in a row.</td></tr>
+      <tr><td><code>--reload</code></td><td>Reloads the page once the disc is up and times a returning visitor&rsquo;s load from the page&rsquo;s own disc cache.</td></tr>
+      <tr><td><code>--idle ms</code></td><td>Waits at the boot-mode prompt before the first pick, which is when the page prewarms the first entry.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The summary line reports the head of the disc&rsquo;s read, the disc-load export (<code>load_disc_spans</code>) and the module&rsquo;s memory size. A bundle built with <code>web-viewer</code>&rsquo;s <code>bench-alloc</code> feature adds wasm allocations per frame. A wasm profile names its functions by index; <code>wasm-bindgen --keep-debug</code> over the cargo artifact gives a file whose name section resolves them.</p>
+</section>
+
+<section class="doc-section" id="shapes" data-doc="what-the-numbers-have-shown">
+  <h2>What the numbers have shown</h2>
+  <p>These are shapes that recur, not measurements.</p>
+  <ul class="bullets">
+    <li><strong>A posed body re-parses its TMD every frame.</strong> Both hosts&rsquo; posed builders walk every primitive, which is why a primitive&rsquo;s corner streams are held inline rather than as four heap lists each.</li>
+    <li><strong>A per-tick copy can live in one host only.</strong> An owned read of a whole PROT entry in a browser export&rsquo;s tick path is invisible on the native window, which holds its own copy. The per-export table is what shows the difference.</li>
+    <li><strong>Shadow layers multiply the draw count.</strong> A draw wholly outside a lamp&rsquo;s frustum writes no depth to that layer, so both hosts test each mesh&rsquo;s box per light.</li>
+    <li><strong>A first entry pays for what a scene never reads.</strong> The 64 cast modules parse on a module&rsquo;s first read, the fog ground on the first tick with the toggle up, and a scene load asks for an entry&rsquo;s class without the byte statistics a report carries. Each deferred value is a pure function of what the load captured, so its reader gets what it would have had.</li>
+    <li><strong>Whole-disc copies cost at the wasm boundary.</strong> A wasm memory never shrinks. The page&rsquo;s image stays on its side of the boundary and <code>load_disc_spans</code> copies across only the files the runtime keeps.</li>
+    <li><strong>A page need not read what it may never play.</strong> The image is the largest read on the way in, and two thirds of it is movies and XA, which reach the page behind the engine (<a href="../subsystems/browser-host.html#disc-image">the disc image</a>).</li>
+    <li><strong>The scene picker&rsquo;s first pick walks every scene.</strong> The arrival catalog reads each scene&rsquo;s MAN and <code>.MAP</code> to find its doors, once per process. A door, a New Game and a card load do not build it.</li>
+    <li><strong>The capture frame&rsquo;s cost is the GPU, not the bytes.</strong> <code>readPixels</code> on the battle transition&rsquo;s arming frame waits for that frame to finish, and the wait does not shrink with the size of the read. An asynchronous read would land the capture frames later, which moves the transition.</li>
+    <li><strong>The worst battle-edge frame is the stage, not the capture.</strong> Where the transition hands over, one <code>play_frame_ticks</code> builds the battle stage and party forms.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="../subsystems/renderer-port.html#profiler">Frame profiler</a>
+    <a href="../subsystems/browser-host.html">Browser host</a>
+    <a href="build-and-test-speed.html">Build and test speed</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/frame-bench.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

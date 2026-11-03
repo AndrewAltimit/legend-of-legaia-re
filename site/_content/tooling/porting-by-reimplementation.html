@@ -1,0 +1,376 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; porting by reimplementation</div>
+  <h1>Porting a game by engine reimplementation</h1>
+  <p class="lede">How this project ports Legend of Legaia, and why it goes about it this way: a playable port and modding hub standing on Ghidra-traced reverse engineering, fresh Rust written from format docs with the decompiled output as reference. That is the ScummVM / OpenRCT2 model, not a decompilation and not a static recompilation of <code>SCUS_942.54</code>.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="contents,the-method-at-a-glance,the-feedback-loops">
+  <h2>The method at a glance</h2>
+  <p>Seven steps, listed in the order each one first becomes possible. It is not a waterfall: a subsystem passes through steps 1 to 4 many times, and steps 5 and 6 keep sending work back. The arrows that run backwards do most of the work.</p>
+  <div class="pr-flow">
+    <figure class="diagram dg-fit pr-fig">
+      <svg viewBox="0 0 450 690" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Seven steps stacked in order: document the disc, port from disassembly, wire, replace the toolchain, play the whole game, measure against retail, keep iteration quick. Feedback arrows run back up: the corpus returns to porting (A) and to formats (B), the ladder returns to wiring (C), wiring returns to porting (D), the corpus extends itself through capture coverage (E), and quicker iteration speeds every loop (F). Evidence grades and the falsified register sit beneath every step.">
+        <defs>
+          <marker id="pr-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker>
+          <marker id="pr-arrow-dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="var(--text-dim)"/></marker>
+        </defs>
+
+        <!-- forward spine -->
+        <path class="dg-edge" d="M172 74 L172 96" marker-end="url(#pr-arrow)"/>
+        <path class="dg-edge" d="M172 162 L172 184" marker-end="url(#pr-arrow)"/>
+        <path class="dg-edge" d="M172 250 L172 272" marker-end="url(#pr-arrow)"/>
+        <path class="dg-edge" d="M172 338 L172 360" marker-end="url(#pr-arrow)"/>
+        <path class="dg-edge" d="M172 426 L172 448" marker-end="url(#pr-arrow)"/>
+        <path class="dg-edge" d="M172 514 L172 536" marker-end="url(#pr-arrow)"/>
+
+        <!-- step boxes -->
+        <rect class="dg-node" x="34" y="10" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="36">1 Document the disc</text>
+        <text class="dg-sub pr-sub" x="172" y="58">byte accounting, round trips</text>
+
+        <rect class="dg-node" x="34" y="98" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="124">2 Port from disassembly</text>
+        <text class="dg-sub pr-sub" x="172" y="146">port catalog, evidence grades</text>
+
+        <rect class="dg-node" x="34" y="186" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="212">3 Wire: reach it live</text>
+        <text class="dg-sub pr-sub" x="172" y="234">live audit, runtime coverage</text>
+
+        <rect class="dg-node" x="34" y="274" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="300">4 Replace the toolchain</text>
+        <text class="dg-sub pr-sub" x="172" y="322">layering gate, host drift</text>
+
+        <rect class="dg-node-accent" x="34" y="362" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="388">5 Play the whole game</text>
+        <text class="dg-sub pr-sub" x="172" y="410">ladder ratchet, seed set</text>
+
+        <rect class="dg-node-accent" x="34" y="450" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="476">6 Measure against retail</text>
+        <text class="dg-sub pr-sub" x="172" y="498">corpus ratchet, ledger</text>
+
+        <rect class="dg-node" x="34" y="538" width="276" height="64" rx="5"/>
+        <text class="dg-label pr-title" x="172" y="564">7 Keep iteration quick</text>
+        <text class="dg-sub pr-sub" x="172" y="586">same output, or it is a bug</text>
+
+        <!-- A: corpus to porting -->
+        <path class="dg-edge" d="M310 464 H372 V118 H312" marker-end="url(#pr-arrow)"/>
+        <circle cx="372" cy="290" r="13" fill="var(--bg-raised)"/>
+        <circle class="dg-node-accent" cx="372" cy="290" r="13"/>
+        <text class="dg-label pr-badge" x="372" y="295">A</text>
+
+        <!-- B: corpus to formats -->
+        <path class="dg-edge" d="M310 478 H424 V42 H312" marker-end="url(#pr-arrow)"/>
+        <circle cx="424" cy="240" r="13" fill="var(--bg-raised)"/>
+        <circle class="dg-node-accent" cx="424" cy="240" r="13"/>
+        <text class="dg-label pr-badge" x="424" y="245">B</text>
+
+        <!-- C: ladder to wiring -->
+        <path class="dg-edge" d="M310 394 H338 V230 H312" marker-end="url(#pr-arrow)"/>
+        <circle cx="338" cy="312" r="13" fill="var(--bg-raised)"/>
+        <circle class="dg-node-accent" cx="338" cy="312" r="13"/>
+        <text class="dg-label pr-badge" x="338" y="317">C</text>
+
+        <!-- D: wiring to porting -->
+        <path class="dg-edge" d="M310 206 H338 V146 H312" marker-end="url(#pr-arrow)"/>
+        <circle cx="338" cy="176" r="13" fill="var(--bg-raised)"/>
+        <circle class="dg-node-accent" cx="338" cy="176" r="13"/>
+        <text class="dg-label pr-badge" x="338" y="181">D</text>
+
+        <!-- E: corpus self-loop -->
+        <path class="dg-edge" d="M310 490 H334 V506 H312" marker-end="url(#pr-arrow)"/>
+        <circle cx="348" cy="498" r="13" fill="var(--bg-raised)"/>
+        <circle class="dg-node-accent" cx="348" cy="498" r="13"/>
+        <text class="dg-label pr-badge" x="348" y="503">E</text>
+
+        <!-- F: quicker iteration -->
+        <path class="dg-edge-dim" d="M34 570 H14 V130 H32" marker-end="url(#pr-arrow-dim)"/>
+        <circle cx="14" cy="350" r="13" fill="var(--bg-raised)"/>
+        <circle class="dg-node" cx="14" cy="350" r="13"/>
+        <text class="dg-label pr-badge" x="14" y="355">F</text>
+
+        <!-- beneath every step -->
+        <rect class="dg-group" x="4" y="622" width="440" height="60" rx="5"/>
+        <text class="dg-label pr-title" x="224" y="646">Beneath every step</text>
+        <text class="dg-sub pr-sub" x="224" y="668">evidence grades, falsified register</text>
+      </svg>
+    </figure>
+    <div class="pr-legend">
+      <h3>The loops</h3>
+      <ol class="pr-loops">
+        <li><span class="pr-key">A</span><div><strong>Corpus to disassembly.</strong> A divergence is read for its shape, then the instrument or the engine is at fault. If the engine, the mechanism goes back to porting.</div></li>
+        <li><span class="pr-key">B</span><div><strong>Corpus to formats.</strong> The same, when what turned out wrong is a reading of the bytes.</div></li>
+        <li><span class="pr-key">C</span><div><strong>Ladder to wiring.</strong> A stall names the parked op and the unset flag, which usually means a port with no caller or a routine never ported.</div></li>
+        <li><span class="pr-key">D</span><div><strong>Wiring to porting.</strong> A port that cannot be given a caller exposes what is missing above it.</div></li>
+        <li><span class="pr-key">E</span><div><strong>Corpus to corpus.</strong> <a href="retail-compare.html#capture-coverage">Capture coverage</a> takes its denominator from the disc and ranks what to capture next.</div></li>
+        <li><span class="pr-key pr-key-dim">F</span><div><strong>Everything gets quicker.</strong> Performance rounds change how often the other loops can run, and never what they conclude.</div></li>
+      </ol>
+    </div>
+  </div>
+  <p><strong>Disproved readings are kept.</strong> Every loop can end in a reading that turns out wrong, and each newcomer finds the same wrong readings plausible for the same reasons, so <a href="../reference/re-do-not-re-walk.html">the register</a> holds the tempting reading, the decisive instruction, capture or count, and what is true instead. A rising worklist after a dump pass means the measurement got wider, not that the work went backwards (<a href="disc-coverage.html#why">disc coverage</a>).</p>
+  <p><strong>Measurement gets corrected this way as much as the game does.</strong> The Sol Tower stair walks miss on <code>camera</code> by a position-shaped amount, which reads as a defect in the follow compose. The engine's seat equals retail's staging descriptor to the unit, and retail's live pose is short of it, because the ease only runs while the player moves. The answer is in what the channel compares against, and the wrong reading goes in the register.</p>
+</section>
+
+<section class="doc-section" id="three-ways" data-doc="three-ways-to-port-a-game">
+  <h2>Three ways to port a game</h2>
+  <p>Each method suits different goals, and none is the best in general. The clearest way to separate them is by what each one starts with and what it still has to earn.</p>
+  <div class="pr-compare">
+    <article class="pr-col">
+      <h3>Decompilation</h3>
+      <p class="pr-what">The executable, rewritten as source. Matching source must compile to the retail bytes; non-matching source gives up that proof for speed.</p>
+      <div class="pr-have"><span class="pr-tag">Starts with</span>A check on every function, when matching. The byte match proves the source says what the game does.</div>
+      <div class="pr-earn"><span class="pr-tag">Has to earn</span>Coverage, names and types, the original compiler and flags, then a platform layer for retargeting.</div>
+      <div class="pr-when"><span class="pr-tag">Right when</span>Exact understanding is the goal in itself, or source-level modding is the aim, and the compiler can be pinned down.</div>
+    </article>
+    <article class="pr-col">
+      <h3>Static recompilation</h3>
+      <p class="pr-what">The machine code, translated to host code mechanically, over a runtime for the hardware it used to talk to.</p>
+      <div class="pr-have"><span class="pr-tag">Starts with</span>The whole game running early, with retail behaviour nearly for free, quirks and timing included.</div>
+      <div class="pr-earn"><span class="pr-tag">Has to earn</span>Indirect jumps and overlays, a faithful hardware model, and the freedom to change machine-shaped output, usually through hooks.</div>
+      <div class="pr-when"><span class="pr-tag">Right when</span>Retail behaviour on modern machines is the product, and the game's code is tractable to translate.</div>
+    </article>
+    <article class="pr-col pr-col-this">
+      <h3>Engine reimplementation <span class="pr-this">this project</span></h3>
+      <p class="pr-what">A new engine that loads the original's data and behaves like the original. The original's code is reference only.</p>
+      <div class="pr-have"><span class="pr-tag">Starts with</span>Free choice of structure, language and platform, with new rendering, audio and mechanics as ordinary features.</div>
+      <div class="pr-earn"><span class="pr-tag">Has to earn</span>Everything else: a long road to first playable, and every behaviour found, written and measured.</div>
+      <div class="pr-when"><span class="pr-tag">Right when</span>The goal goes beyond the original's behaviour, the target cannot carry its code, and much of the game is data an engine can load.</div>
+    </article>
+  </div>
+  <p>A wrong reading of a routine in a reimplementation produces a running game that is quietly different, which is what the measuring half of the method exists to catch. Overlays are a cost for a translation in this game: they share virtual addresses, so an address alone does not identify a function (<a href="../reference/re-do-not-re-walk.html">VA aliasing</a>).</p>
+</section>
+
+<section class="doc-section" id="why" data-doc="why-this-project-reimplements">
+  <h2>Why this project reimplements</h2>
+  <p>The project has two coordinated tracks: preserving and documenting every asset, and a port the user runs over their own disc. Format documentation is a deliverable here regardless of the porting method, and the disc patcher and language packs are built on it. The port aims to go past the original with retail one toggle away (<a href="../subsystems/engine.html#fidelity">fidelity and enhancements</a>). And Legaia is heavily data-driven: field scripts, effects and moves are bytecode on the disc, so porting a <a href="../subsystems/vm-inventory.html">VM</a> brings along every script the disc holds for it.</p>
+  <div class="pr-twoup">
+    <div>
+      <h3>What it costs</h3>
+      <ul class="bullets">
+        <li><strong>Accuracy has to be earned.</strong> A recomp inherits retail behaviour; this port has to reach it, one mechanism at a time, and prove it.</li>
+        <li><strong>A long road to first playable.</strong> Formats, VMs, a renderer, an audio stack and a battle system all have to exist first.</li>
+        <li><strong>The instruments are a project of their own.</strong> Seeding from retail RAM, scoring frames and keeping baselines honest take ongoing engineering.</li>
+        <li><strong>Being faithful is a discipline.</strong> An enhancement must leave the faithful mode bit-identical when off.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What it buys</h3>
+      <ul class="bullets">
+        <li><strong>New rendering.</strong> Enhanced lighting, fog, the occlusion fade and SSAO in the <a href="../subsystems/renderer-port.html">wgpu renderer</a>, beside a PSX mode on the native target the corpus scores.</li>
+        <li><strong>Its own audio stack.</strong> A from-scratch <a href="../subsystems/audio.html">SPU and sequencer</a> on both hosts, with pack music mixed beside them.</li>
+        <li><strong>More hosts.</strong> One session in a native window and <a href="../subsystems/browser-host.html">in the browser</a>, with <a href="../subsystems/vr-mode.html">VR</a> on the site's 3D pages.</li>
+        <li><strong>Modding as a feature.</strong> <a href="../formats/expansion-pack.html">Expansion packs</a>, <a href="../subsystems/run-rules.html">run rules</a>, <a href="../subsystems/expansion-modes.html">game modes</a> and <a href="../subsystems/netplay.html">netplay</a>.</li>
+        <li><strong>No original code executing.</strong> The engine parses data tables out of the user's <code>SCUS_942.54</code> and overlays, and reads a cast module's image to recover which presentation calls each arm makes, but no MIPS executes.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout callout-provenance">
+    <div class="callout-title">The boundary, stated honestly</div>
+    <p>The project does not call this "clean-room". The same people read the Ghidra output and write the Rust, which is not the two-team firewall that term means. The boundary actually enforced is narrower and checkable: the dumps in <code>ghidra/scripts/funcs/</code> stay reference material and are never committed, no Sony-derived bytes are committed, and no code is mechanically translated. The user supplies the disc.</p>
+  </div>
+  <h3>The methods complement each other</h3>
+  <p>Choosing one method does not rule out using the others as tools, and this project does so.</p>
+  <dl class="kv">
+    <dt>Recomp</dt><dd>A differential oracle. The <a href="recomp-differential.html">recomp differential</a> runs a local recompiled build beside the engine, emits one state-trace shape from both, and reports the first frame each channel diverges. A save state holds one instant; a recomp gives a continuous run, down to <a href="recomp-differential.html#note-differential">the stream of key-ons</a> a sequencer asks for. The workspace and its traces stay out of the repository.</dd>
+    <dt>Decompiler</dt><dd>A pointer. Ghidra's C says where to look, and the disassembly says what is true. Any source-level truth, from whatever method, makes a stronger reference.</dd>
+    <dt>Emulator</dt><dd>The judge. Its save states are the retail corpus itself.</dd>
+    <dt>Disc patcher</dt><dd>A proving ground. Features proved against retail with MIPS hooks are expected to graduate into <a href="../subsystems/gameplay-tweaks.html">engine toggles</a>.</dd>
+  </dl>
+  <p>In the other direction, the format docs, disc and save-state readers and measurement method are written so that other projects can reuse them, whichever method they chose.</p>
+</section>
+
+<section class="doc-section" id="step-1" data-doc="step-1-document-the-disc-and-parse-its-formats">
+  <h2>Step 1: document the disc and parse its formats</h2>
+  <dl class="kv">
+    <dt>Done</dt><dd>Walk the disc from sectors to sub-assets. Trace each format to the routine that reads it in Ghidra, write the byte-level page, and write a parser with a way back to bytes where a tool needs one. Every format carries a <a href="../formats/index.html">confidence level</a>: Confirmed, Inferred or Unknown.</dd>
+    <dt>Produces</dt><dd>Format pages, one parser per format, the <a href="extraction.html">extraction pipeline</a>, viewers, and the disc patcher on the same parsers. All of it is useful before any engine exists.</dd>
+    <dt>Gate</dt><dd>The denominator comes from the disc. <a href="disc-coverage.html">Disc coverage</a> counts the code bytes inside dumped functions and the entries with a known format class; <a href="byte-accounting.html">byte accounting</a> counts the bytes a parser actually consumes, so an unwalked format surfaces as a large residue. Both are ratchets. The patcher's disc-gated oracles patch a scratch copy and re-decode it to prove the round trip.</dd>
+    <dt>Example</dt><dd>The bytes <code>0x01059B84</code> at the start of a scene's texture entry look like a format's magic number, and read that way they invent a third pack format. They are a DATA_FIELD chunk header wrapping an ordinary pack (<a href="../formats/field-pack.html">field-pack</a>). And an LZS stream that "decompresses without error" proves nothing: the ring buffer starts as zeros, so most inputs decode to something plausible (<a href="../formats/lzs.html">LZS</a>).</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="step-2" data-doc="step-2-port-functions-from-the-disassembly">
+  <h2>Step 2: port functions from the disassembly</h2>
+  <dl class="kv">
+    <dt>Done</dt><dd>Dump the function, read the instruction stream, write a fresh Rust function that does the same thing, and tag it <code>// PORT: FUN_&lt;addr&gt;</code>. The decompiled C is only a hint about where to look: register arguments vanish from calls, stores get reordered or dropped, labels print as calls, and a module imported at the wrong base prints every address shifted by a constant (<a href="ghidra.html#decompiler-artifacts">decompiler artifacts</a>).</dd>
+    <dt>Produces</dt><dd><code>World</code>-free kernels in the engine's crates, a citation in the docs, and a row in the <a href="port-catalog.html">port catalog</a>, which derives each function's status from the tree on every run.</dd>
+    <dt>Gate</dt><dd><code>port-catalog.py --check</code> ratchets the figures. One honest gap remains: nothing gates whether a <code>// PORT:</code> address names the routine the Rust actually implements, so <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/port-provenance.md" target="_blank" rel="noopener">port provenance</a> is a warn-only worklist.</dd>
+    <dt>Example</dt><dd>A sweep for writers of <code>_DAT_8007B8C2</code> searched the absolute <code>lui</code> + offset form and found none, which was read as "BSS zero-init sets the value", then as "retail runs with the flag at 0", inverting the flag's polarity. Its writer is <code>0x80015F08 sh v0,0x5aa(gp)</code>, a gp-relative store the scan could not see. A negative result is held to the same evidence bar as a positive one.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="step-3" data-doc="step-3-wire-them">
+  <h2>Step 3: wire them</h2>
+  <dl class="kv">
+    <dt>Done</dt><dd>Give each port a caller that a host can reach. An unwired port compiles, passes its own unit tests, reads as progress and does nothing for a player, so it is not done until something live reaches it.</dd>
+    <dt>Produces</dt><dd>Ports a host reaches, and for the rest an explicit statement of why not: <code>// NOT WIRED:</code> names what must exist first, <code>// REPLACED-BY:</code> names the mechanism that does the routine's job.</dd>
+    <dt>Gate</dt><dd>Static and runtime. <a href="port-catalog.html#reachability"><code>port-catalog.py --live</code></a> builds a call graph from the hosts' real entry points, with every ambiguity resolved toward reachability, so <code>--not-live</code> is a hard floor. <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/live-audit-triage.md" target="_blank" rel="noopener">Live-audit triage</a> settles each row: <code>WIRE</code>, <code>DISCLOSE</code>, <code>DELETE</code>, <code>REPLACE</code> or <code>FALSE INERT</code>. The <a href="port-catalog.html#runtime-denominator">runtime denominator</a> asks what a replay actually entered, and host-drift gates catch a feature wired into one host only.</dd>
+    <dt>Example</dt><dd>Three field effect handlers stay unconverted across coverage runs, which reads as "a composed-overworld ladder would reach them". That reading is falsified: no production path constructs an actor on any of the three, so the gap is a constructor, not a test. Sharper still: an anchor tagged <code>NOT WIRED</code> that a passing oracle executed has the highest priority, since an oracle traversing stub code can certify behaviour nothing implements.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="step-4" data-doc="step-4-replace-the-toolchain-under-the-game">
+  <h2>Step 4: replace the toolchain under the game</h2>
+  <p>Find the line between the game's own logic and the PlayStation toolchain it was built on, keep the first and replace the second with new foundational libraries. Sony's PsyQ libraries are statically linked into <code>SCUS_942.54</code>, where they appear as recognisable address clusters. The game's own logic is above them and mostly lives in overlays.</p>
+  <div class="pr-boundary" role="table" aria-label="What the port replaces, retail on the left and the port on the right">
+    <div class="pr-bhead" role="row"><span role="columnheader">Retail</span><span role="columnheader">The port</span></div>
+    <div role="row"><span role="cell">libsnd / SsAPI sequencer</span><span role="cell"><code>Sequencer</code> in <a href="../subsystems/audio.html">engine-audio</a></span></div>
+    <div role="row"><span role="cell">libspu and the SPU hardware</span><span role="cell"><code>spu::Spu</code>, with <code>AudioOut</code> (cpal) and <code>WebAudioOut</code></span></div>
+    <div role="row"><span role="cell">GTE and GPU</span><span role="cell">The GTE model in <code>render-kernels</code>; <a href="../subsystems/renderer-port.html">engine-render</a> on wgpu natively, WebGL2 in the browser</span></div>
+    <div role="row"><span role="cell">CD streaming</span><span role="cell">The <code>Vfs</code> backends and CD streaming host traits in <code>engine-scene</code></span></div>
+    <div role="row"><span role="cell">Memory card</span><span role="cell">The card flow in <code>engine-menus</code>, the writer in <code>engine-menu-runtime</code>, <code>legaia_save</code></span></div>
+    <div role="row"><span role="cell">MDEC movies</span><span role="cell"><code>mdec</code>, with XA audio in sync</span></div>
+  </div>
+  <p>The line is not simply where a library ends. It depends on what a player can observe:</p>
+  <ul class="bullets">
+    <li><strong>Game decisions stay game logic, even beside the hardware.</strong> The visible-tile crop, the actor cull and the per-primitive rejects are retail's choices, so the port makes the same ones.</li>
+    <li><strong>Observable hardware behaviour is modelled, not swapped away.</strong> Voices, ADSR, the Gaussian resampler and reverb are in the SPU model. The GTE's register limits, vertex snap and dither sit behind <a href="../subsystems/renderer-port.html#psx">PSX mode</a>.</li>
+    <li><strong>A library's documented format may not be the game's.</strong> Legaia's SEQ departs from stock PsyQ SEQ, and reading it as stock plays music about three times too fast (<a href="../formats/seq.html">SEQ</a>).</li>
+  </ul>
+  <dl class="kv">
+    <dt>Produces</dt><dd>A foundation that runs on hosts the original never knew, with instruction-level reference kernels such as <code>seq_calc</code> kept beside the practical implementation to pin the behaviour.</dd>
+    <dt>Gate</dt><dd><a href="../subsystems/engine.html#crate-layout">The layering gate</a> keeps kernel crates from reaching the session, renderer or a host, and a <code>wasm32</code> type-check holds the shared session free of native dependencies. What the replacement <em>does</em> is measured in step 6: the <a href="retail-compare.html#image">image channel</a> at the native target, and audio through the audio-trace oracle and real retail PCM.</dd>
+    <dt>Example</dt><dd>The audio stack runs both hosts from one core, with only the output differing. Its scene-entry behaviour is a sequence every host owes, and the docs record <a href="../subsystems/audio.html#scene-entry">what each missing step sounds like</a>.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="step-5" data-doc="step-5-play-the-whole-game-on-pad-input">
+  <h2>Step 5: play the whole game on pad input</h2>
+  <dl class="kv">
+    <dt>Done</dt><dd>Play New Game to credits with no human, on pad input alone. A scripted hand walks, talks, fights, heals and shops by pressing the buttons a player would. Story and battle defects no unit test sees appear here, and a game that cannot be finished is not a port.</dd>
+    <dt>Produces</dt><dd>The <a href="full-game-ladder.html">full-game ladder</a>: story segments between milestones anchored to retail saves, each climbing <code>loads</code>, <code>enters</code>, <code>progresses</code> and <code>pad</code>. The <a href="full-game-ladder.html#continuous">continuous run</a> plays one session from New Game with no re-seeding, so it arrives at each stretch with the levels it earned. The <a href="soak-harness.html">soak harness</a> throws seeded random input at every scene and minigame.</dd>
+    <dt>Gate</dt><dd>The tiers are ratcheted, and a red run may not be turned green by lowering them. One random stream can hide a fight won only by the deal, so the seed set repeats the whole run on other streams, each asserting its own row. <a href="determinism-replay.html">Record and replay</a> keeps it reproducible: the same input gives bit-identical traces.</dd>
+    <dt>Example</dt><dd>A stall is a diagnosis, not a red light. The report names the script instruction that parked, the door gate that refused, the story flag never set and the disc records that set it (<a href="full-game-ladder.html#stall">how to read a stall</a>). The page also says <a href="full-game-ladder.html#limits">what the ladder cannot claim</a>.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="step-6" data-doc="step-6-measure-against-a-retail-corpus">
+  <h2>Step 6: measure against a retail corpus</h2>
+  <dl class="kv">
+    <dt>Done</dt><dd>Capture moments of the original as emulator save states. For each, read what retail was doing out of the state's own memory, put the engine in the same situation through its own load path, and score the difference per channel, worst state first. The <a href="retail-compare.html#channels">channels</a> cover what a player notices: the frame on screen, player position, camera, NPC placement, facing, the music track, story flags, party, enemies and more. <a href="retail-oracle-method.html">The retail-oracle method</a> writes it up engine-neutral.</dd>
+    <dt>Produces</dt><dd>The <a href="retail-compare.html">retail comparison corpus</a> and its siblings: the <a href="retail-compare.html#cast-sequence">cast-sequence oracle</a> for what unfolds over time, the <a href="../subsystems/audio.html#state-sweep">audio sweep</a> and real PCM comparison for sound, the <a href="recomp-differential.html">recomp differential</a> for continuous traces. Its reports are a worklist, with a <a href="retail-compare.html#divergence">catalogue of divergence shapes</a>.</dd>
+    <dt>Gate</dt><dd>Per-state, per-channel <a href="retail-compare.html#ratchet">scores may only rise</a>. Two more gates protect the ratchet: a baselined value that moved the wrong way needs a reasoned entry in a ledger that is never pruned, and a test that skipped for want of its data is not counted as passed (<a href="retail-oracle-method.html#ratchet">ratchet integrity</a>).</dd>
+    <dt>Keeping it wide</dt><dd>A corpus grows where capturing is easy, and parity on those moments says nothing about the rest. <a href="retail-compare.html#capture-coverage">Capture coverage</a> lists every scene, monster, enemy attack, player cast and menu screen the disc defines, and ranks what no state shows yet. As parity is reached on what the corpus holds, the corpus is extended into what it does not hold.</dd>
+    <dt>Example</dt><dd>On <code>noaru_field_card_walk</code>, the engine's frame is black where retail shows a floor, with every other channel exact. That pattern points at a mesh-bearing ambient part seated off its anchor: Noaru's ice floor rides the camera focus through <a href="../subsystems/move-vm-overlay-ext.html">move-VM extension op <code>0x24</code></a>. The frame pointed at the gap, and the mechanism itself is read from the move VM's overlay extension.</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="step-7" data-doc="step-7-keep-iteration-quick">
+  <h2>Step 7: keep iteration quick</h2>
+  <dl class="kv">
+    <dt>Done</dt><dd>Focused performance rounds, run now and then rather than continuously, on two costs: what the engine costs a player, and what a change costs a developer. An oracle that takes too long gets run less, and defects survive longer.</dd>
+    <dt>Produces</dt><dd><a href="frame-bench.html">Frame benchmarks</a> on both hosts, and <a href="build-and-test-speed.html">build and test profiles</a> with an edit-time <code>dev-fast</code> path, a result cache on the corpus and a parallel <a href="build-and-test-speed.html#full-gate">full gate</a>. The numbers are before-and-after comparisons on one machine, deliberately not committed: a frame-time gate on a shared machine can only flake.</dd>
+    <dt>Gate</dt><dd>A speedup is proved by the output, not by the timing. The ladder's trace with its wall-clock fields stripped must match line for line, and a patcher feature's <code>.ppf</code> from a fixed seed must hash the same (<a href="build-and-test-speed.html#profiling">profiling</a>). A cache has to key on everything its result depends on, and a bless or a check never reads the corpus's.</dd>
+    <dt>Example</dt><dd>The <code>readPixels</code> on the battle transition's arming frame is expensive, and an asynchronous read would remove the wait. It would also land the capture frames later, which moves the transition, so that is not an optimisation available here (<a href="frame-bench.html#shapes">what the numbers have shown</a>).</dd>
+  </dl>
+</section>
+
+<section class="doc-section" id="grades" data-doc="evidence-grades">
+  <h2>Evidence grades</h2>
+  <p>A claim about the original carries a grade naming what it rests on, and it takes the grade of its weakest load-bearing piece (<a href="../reference/re-settled-threads.html#grades">the evidence column</a>).</p>
+  <dl class="kv">
+    <dt><code>disassembly</code></dt><dd>Instructions at stated addresses, branch and store sequences. The strongest grade, and only as good as the addresses it cites.</dd>
+    <dt><code>capture</code></dt><dd>A save state, a probe log, a disc-derived oracle.</dd>
+    <dt><code>decompiled-C</code></dt><dd>Ghidra's rendering, an inferred signature, a label someone typed into the database. A claim nobody has confirmed against instructions, which makes this a re-audit worklist and not a verdict of wrong.</dd>
+    <dt><code>inference</code></dt><dd>Reasoning from surrounding facts or from absence, usually stated openly.</dd>
+  </dl>
+  <p>A docs page is not a grade of its own. A statement on one carries the grade of what it cites, and a statement with no citation is a hypothesis until someone re-reads the listing. Grades let a reader see how much weight a claim will bear, and they make the audit cheap: the re-audits that falsify claims here find them in the <code>decompiled-C</code> bucket.</p>
+</section>
+
+<section class="doc-section" id="traps" data-doc="traps-a-newcomer-hits">
+  <h2>Traps a newcomer hits</h2>
+  <div class="callout callout-trap">
+    <div class="callout-title">Green tests are not parity</div>
+    <p>A test can only fail on what its author thought to check, and three quieter failures sit beside that one. A disc-gated test that finds its input missing reports <code>ok</code> (<a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/ratchet-integrity.md" target="_blank" rel="noopener">a skipped test is not a passed test</a>). An oracle can have no way to disagree: <code>pcm_oracle</code>'s "retail" window is the engine's own mixer seeded from a snapshot, which is why the real retail PCM check records the emulator's actual output. And a channel may measure less than its name suggests: <code>party</code> and <code>inventory</code> are seeded from the retail window, so on their own they check the seeding.</p>
+  </div>
+  <div class="callout callout-trap">
+    <div class="callout-title">A still frame cannot prove a cast</div>
+    <p>The corpus scores one frame per state, and a cast runs for hundreds of vsyncs. A high image score on a mid-cast state says that frame matches, and nothing about the order, timing or length around it. On most summons the state's one instant is the white flash, which the metric cannot see under. The <a href="retail-compare.html#cast-sequence">cast-sequence oracle</a> records both sides and pairs frames on the game's own state-machine clock.</p>
+  </div>
+  <div class="callout callout-trap">
+    <div class="callout-title">A save state replays old RAM</div>
+    <p>A state holds the RAM of the disc that booted it, so loading it onto a freshly patched disc keeps the old executable, overlays and models resident. A fix can look absent, and a fixed defect can look present. PCSX-Redux will also silently apply a <code>.ppf</code> sitting beside the image. Verify disc edits from a cold boot or a memory-card load (<a href="pcsx-redux-automation.html#patched-disc-taint">patched-disc taint</a>).</p>
+  </div>
+  <div class="callout callout-trap">
+    <div class="callout-title">"No static caller" is not dead code</div>
+    <p>Most game logic lives in overlays loaded at runtime, and much of it is reached through pointer tables and actor templates. "No caller found" becomes "no reference exists" only after a search of every image's bytes in every encoding an address can take (<a href="address-reference-scan.html">address reference scan</a>), and a search can fail in its own ways: a <code>grep</code> through <code>| head</code> reads as empty when the pipe cuts it off before the hit.</p>
+  </div>
+  <div class="callout callout-trap">
+    <div class="callout-title">A speedup that changes a result is a bug</div>
+    <p>The optimiser's choices must not move a simulation that runs on integers, and a cache that misses one input hands back an old answer for a new question. Prove a speedup by comparing the output (<a href="#step-7">step 7</a>).</p>
+  </div>
+  <div class="callout callout-trap">
+    <div class="callout-title">A score can fall because a fix is right</div>
+    <p>The <code>0x2A</code> chain-exit fix drops two Tail Fire frames, which reads as a regression. The old scores rested on the error, and the state's own RAM shows it. Read why a score moved before reverting or blessing it, and record the reason in the ledger.</p>
+  </div>
+</section>
+
+<section class="doc-section" id="other-games" data-doc="applying-this-to-another-game">
+  <h2>Applying this to another game</h2>
+  <p>Most of the method transfers, and a good part of the code does too. <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a> sorts the crates and scripts by how far they carry and names each Legaia assumption that would trip a second title. <a href="retail-oracle-method.html">The retail-oracle method</a> writes the measurement half engine-neutral, with <a href="retail-oracle-method.html#start">an adoption order</a>.</p>
+  <p>Before starting, three questions decide much of the shape:</p>
+  <ul class="bullets">
+    <li><strong>How much of the game is data?</strong> The more of its logic is bytecode and tables, the more a ported VM carries, and the stronger the case for reimplementing.</li>
+    <li><strong>Does an emulator give you states you can read?</strong> Without readable machine states there is no corpus, and every accuracy claim stays an impression.</li>
+    <li><strong>What is the actual goal?</strong> If it is retail behaviour on modern machines and nothing more, another method may reach it sooner.</li>
+  </ul>
+  <p>Then start small on each axis instead of finishing one step at a time: one format with a round trip, one VM wired into a host, one state channel over a handful of states, and the evidence grades and falsified register from day one, since those cost nothing to start.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/porting-by-reimplementation.md" target="_blank" rel="noopener">This page's source</a>
+    <a href="../subsystems/engine.html">Engine reimplementation</a>
+    <a href="retail-oracle-method.html">The retail-oracle method</a>
+    <a href="reusing-for-other-ps1-games.html">Reusing for other PS1 games</a>
+    <a href="../reference/open-rev-eng-threads.html">Open RE threads</a>
+    <a href="../reference/re-do-not-re-walk.html">Falsified readings</a>
+  </div>
+</section>
+
+<style>
+  .pr-flow { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1.25rem; align-items: start; margin: 1.25rem 0; }
+  .pr-flow .pr-fig { margin: 0; }
+  figure.diagram.pr-fig svg text.pr-title { font-size: 16px; font-weight: 600; }
+  figure.diagram.pr-fig svg text.pr-sub { font-size: 13px; }
+  figure.diagram.pr-fig svg text.pr-badge { font-size: 14px; font-weight: 600; }
+  .pr-legend h3 { margin-top: 0; }
+  .pr-loops { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.8rem; }
+  .pr-loops li { display: grid; grid-template-columns: 1.7rem minmax(0, 1fr); gap: 0.6rem; align-items: start; margin: 0; padding: 0; line-height: 1.5; }
+  .pr-loops li::before { content: none; }
+  .pr-key { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 50%; border: 1px solid var(--accent-line); background: var(--accent-soft); color: var(--text-bright); font-family: var(--font-mono); font-size: 0.85rem; font-weight: 600; }
+  .pr-key-dim { border-color: var(--border-hi); background: var(--bg-card); }
+
+  .pr-compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto auto auto auto auto; gap: 0 0.85rem; margin: 1rem 0 1.25rem; }
+  .pr-col { display: grid; grid-row: span 5; grid-template-rows: subgrid; gap: 0.6rem; border: 1px solid var(--border); background: var(--bg-card); border-radius: 8px; padding: 0.95rem 1rem; min-width: 0; }
+  .pr-col-this { border-color: var(--accent-line); }
+  .pr-col h3 { margin: 0; font-size: 1.02rem; }
+  .pr-this { display: inline-block; margin-left: 0.2rem; padding: 0 0.45rem; border-radius: 999px; background: var(--accent-soft); color: var(--text-bright); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 500; vertical-align: 0.1em; white-space: nowrap; }
+  .pr-what { margin: 0; color: var(--text-muted); font-size: 0.92rem; line-height: 1.5; }
+  .pr-have, .pr-earn, .pr-when { padding: 0.55rem 0.7rem; border-radius: 5px; border: 1px solid transparent; font-size: 0.92rem; line-height: 1.5; }
+  .pr-have { background: var(--ok-soft); border-color: var(--ok); }
+  .pr-earn { background: var(--warn-soft); border-color: var(--warn); }
+  .pr-when { border-color: var(--border); }
+  .pr-tag { display: block; margin-bottom: 0.15rem; color: var(--text-bright); font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; }
+
+  .pr-twoup { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.5rem; }
+
+  .pr-boundary { margin: 1rem 0 1.25rem; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .pr-boundary > div { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); border-top: 1px solid var(--border); }
+  .pr-boundary > div:first-child { border-top: 0; }
+  .pr-boundary span { padding: 0.5rem 0.75rem; line-height: 1.45; font-size: 0.92rem; min-width: 0; }
+  .pr-boundary span + span { border-left: 2px dashed var(--accent-line); }
+  .pr-bhead { background: var(--bg-raised); color: var(--text-bright); font-weight: 600; }
+
+  @media (max-width: 1000px) {
+    .pr-flow { grid-template-columns: minmax(0, 1fr); }
+    .pr-flow .pr-fig { max-width: 520px; width: 100%; justify-self: center; }
+    .pr-compare { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; gap: 0.85rem; }
+    .pr-col { grid-row: auto; grid-template-rows: none; }
+  }
+  @media (max-width: 720px) {
+    .pr-twoup { grid-template-columns: minmax(0, 1fr); }
+    .pr-flow .pr-fig { padding: 0.6rem 0.5rem 0.4rem; }
+  }
+</style>

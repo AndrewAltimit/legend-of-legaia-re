@@ -93,6 +93,7 @@ fn enter_battle(w: &mut World) {
         }
     }
     assert_eq!(w.mode, SceneMode::Battle, "walking triggers an encounter");
+    w.run_out_battle_open();
     assert!(w.battle.command.is_some(), "the turn opens a command menu");
 }
 

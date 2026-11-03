@@ -67,6 +67,13 @@ pub struct CastFxState {
     /// The capture body took a branch with no damage site (PROT 0953's
     /// charge): the band's fold owes the cast nothing.
     pub module_skips_fold: bool,
+    /// Spell XP the module's own hits have earned ahead of the fold: each
+    /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
+    /// once, with the level check, when the cast folds or its fold is waived.
+    pub module_hit_xp: u32,
+    /// The module's hit stages no reaction (PROT 0918's): the fold lands its
+    /// HP and leaves the victim's clip alone.
+    pub module_fold_quiet: bool,
     /// PROT 0954's module-resident words while its body runs
     /// ([`legaia_engine_cast::cast_fatal_decision`]).
     pub fatal_decision: Option<legaia_engine_cast::cast_fatal_decision::FatalDecisionState>,
@@ -133,6 +140,22 @@ pub struct CastFxState {
     pub module_hit_arm: Option<u8>,
     /// PROT 0962 `0xA4`'s debris ring, drawn ahead of the arm's hit as
     /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
+    /// A director's per-pass scatter ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::scatter`]).
+    pub module_scatter: Option<(u32, u8)>,
+    /// PROT 0935's rock pass, by its pass word, for the frame the host opens.
+    pub module_rock_burst: Option<u8>,
+    /// PROT 0964's Thunder spray records, for the frame the host opens.
+    pub module_spray: Option<[u32; 2]>,
+    /// PROT 0941's ring records and rot trio, for the frame the host opens.
+    pub module_ring: Option<([u32; 3], [i16; 3])>,
+    /// PROT 0957's arms 4 to 6 seat their scatter pairs this pass
+    /// ([`legaia_engine_cast::cast_module_camera::capture::CaptureCamArm::scatter_pairs`]).
+    pub module_scatter_pairs: bool,
+    /// The `y` the last scatter pair drew, the stack word PROT 0957's arm 5
+    /// hands its ribbons as their height.
+    pub module_scatter_y: i16,
+    /// This pass's ribbons take that height.
+    pub module_ribbons_on_scatter_y: bool,
     pub module_debris: Vec<legaia_engine_cast::cast_module_camera::ModuleSpawn>,
     /// PROT 0922's rumble alternation word `0x801FA0BC`, bumped by its arms
     /// 14 and 15 (`cast_module_rumble::RumbleStore::PueraAlternate`).
@@ -184,9 +207,22 @@ pub struct CastFxState {
     /// PROT 0934's stager word `0x801FA410`
     /// ([`legaia_engine_cast::cast_module_ticks::OZMA_STAGER_WORD`]).
     pub module_ozma_word: i32,
+    /// PROT 0934's hit threshold `0x801FA408` on arm `0x18`.
+    pub module_ozma_ladder: i32,
+    /// PROT 0915's spin word `0x801F8150`.
+    pub module_mushura_spin: i32,
+    /// The top of PROT 0919's clip row, `0x8008401E`.
+    pub module_spoon_clip: i16,
+    /// PROT 0915's chase target `0x801F8154`, an engine slot.
+    pub module_mushura_target: u8,
     /// PROT 0929's row wave front `0x801F9AC8`: arm 15's pass seats it at
     /// `-0x100` and arm 16 walks it toward the row.
     pub module_mule_front: i32,
+    /// PROT 0933's orbit words: the speed `0x801F93C0` and the angle
+    /// `0x801F93C4`.
+    pub module_terra_orbit: (i32, i32),
+    /// PROT 0932's pass word `0x801F8F1C`, counted in engine ticks.
+    pub module_meta_tail: u32,
     /// Seats a stager arm run inside its caller's op-`0x20` step decided
     /// (PROT 0925's, which writes into its caller), for the band to seat on
     /// the module's next tick.
@@ -412,6 +448,8 @@ impl CastFxState {
             module_phase: 0,
             module_ctx_278: 0,
             module_skips_fold: false,
+            module_hit_xp: 0,
+            module_fold_quiet: false,
             fatal_decision: None,
             fatal_banner: None,
             module_ring_angle: 0,
@@ -427,6 +465,13 @@ impl CastFxState {
             module_creature_clip_kind: 0,
             module_shake: 0,
             module_hit_arm: None,
+            module_scatter: None,
+            module_rock_burst: None,
+            module_spray: None,
+            module_ring: None,
+            module_scatter_pairs: false,
+            module_scatter_y: 0,
+            module_ribbons_on_scatter_y: false,
             module_debris: Vec::new(),
             module_rumble_alternate: 0,
             module_mule_backdrop_follow: false,
@@ -438,7 +483,13 @@ impl CastFxState {
             module_running_entry: None,
             module_spikefish_words: Default::default(),
             module_ozma_word: 0,
+            module_ozma_ladder: 0,
+            module_mushura_spin: 0,
+            module_spoon_clip: 0,
+            module_mushura_target: 0,
             module_mule_front: 0,
+            module_terra_orbit: (0, 0),
+            module_meta_tail: 0,
             module_stager_seats: Vec::new(),
             module_record_clocks: Vec::new(),
             module_split_saved_target: None,

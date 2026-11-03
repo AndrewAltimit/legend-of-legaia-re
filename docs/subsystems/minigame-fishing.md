@@ -960,7 +960,9 @@ The rules engine is the crate [`engine-fishing`](../../crates/engine-fishing/REA
 
 The session seeds from the persistent words the world keeps between sessions (`World::minigames.fishing_points` / `fishing_best_points` / `fishing_best_fish` / `fishing_lure` / `fishing_rod` / `fishing_casts` / `fishing_prizes_purchased` - retail `_DAT_8008444C..0x8008446C`), and `exit_fishing` banks every one back. The lure lands in the `other1` venue map (`SceneHost::fishing_venue_map`), the same bytes the minigames page reads.
 
-**Events and cues.** Each frame's session events (`World::minigames.fishing_events`) seed both hosts' banner one-shots and queue the hook / celebration cues. The overlay's runtime-bank cues are direct ring stores, resolved through the venue scene's bundle (the fishing init loads no `efect.dat`): `0x204` into slot 2 at the lure landing, `0x206` into slot 0 on a purchase, and the rod creak `0x201` into slot 1. The port raises all three.
+**Events and cues.** Each frame's session events (`World::minigames.fishing_events`) seed both hosts' banner one-shots and queue the hook / celebration cues. The overlay's runtime-bank cues are direct ring stores, resolved through the venue scene's bundle (the fishing init loads no `efect.dat`): `0x204` into slot 2 at the lure landing, `0x206` into slot 0 on a purchase, and the rod creak `0x201` into slot 1. The port raises all three. All three hosts do, the minigames page through `fishing_pond_tick` and `fishing_exchange_buy`.
+
+The hook cue `0x3A` and the catch cue `0x2B` are category 6, and the venue's region holds the overlay's own bank (PROT 1197) in slot 2, so both are silent on every host: the [residency rule](../formats/sfx-table.md) stages one bank under its own slot and does not reproduce slot 6's stale header over foreign samples.
 
 **Actor-side frame.** Both play hosts run the overlay's actor frame through one kernel, `engine-scene-host::fishing_venue::tick_fishing_venue_on_host` (actors on `World::minigames.fishing_venue`); each host's `tick_fishing_actors` is that call plus applying the returned venue-camera writes to its own engine camera. It covers:
 

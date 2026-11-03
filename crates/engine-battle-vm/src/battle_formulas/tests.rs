@@ -172,7 +172,8 @@ fn status_weaken_applies_bits_in_order() {
 #[test]
 fn magic_power_scales_roll() {
     assert_eq!(apply_magic_power(80, 1), 80); // power 1 = no change
-    assert_eq!(apply_magic_power(80, 0), 80); // power 0 guarded to no change
+    // `srl` over the signed product (`0x801DDB1C`): level 0 wraps.
+    assert_eq!(apply_magic_power(80, 0), 80 + ((-80i32 as u32) >> 3));
     // power 9: 80 + (80*8 >> 3) = 80 + 80 = 160.
     assert_eq!(apply_magic_power(80, 9), 160);
 }

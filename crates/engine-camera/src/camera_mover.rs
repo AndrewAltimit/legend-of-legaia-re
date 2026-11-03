@@ -149,37 +149,6 @@ pub fn axis_value(start: i32, end: i32, t: i32, d: i32, curve: i16) -> i32 {
     start + curve_offset(end - start, t, d, curve)
 }
 
-/// The retail curve as a normalized `f32` shape: the fraction of the span
-/// covered at normalized progress `u ∈ [0, 1]`.
-///
-/// This is [`curve_offset`] with the integer truncation removed, for consumers
-/// that carry the camera pose in floats (the renderer's cutscene view works in
-/// world-space `f32` / radians, not the retail integer globals). The shapes
-/// are identical; only the rounding differs.
-///
-/// | `curve` | `f(u)` |
-/// |---|---|
-/// | `2` | `2u − u²` (ease-out) |
-/// | `3` | `u²` (ease-in) |
-/// | `4` | `2u²` for `u ≤ ½`; `½ + ½·(2w − w²)` with `w = 2u − 1` otherwise |
-/// | any other (incl. `1`) | `u` (linear) |
-pub fn curve_unit(u: f32, curve: u8) -> f32 {
-    let u = u.clamp(0.0, 1.0);
-    match curve & 0x0F {
-        2 => 2.0 * u - u * u,
-        3 => u * u,
-        4 => {
-            if u <= 0.5 {
-                2.0 * u * u
-            } else {
-                let w = 2.0 * u - 1.0;
-                0.5 + 0.5 * (2.0 * w - w * w)
-            }
-        }
-        _ => u,
-    }
-}
-
 /// The single camera-mover actor: ten `(start, end)` pairs advanced by one
 /// shared progress counter.
 ///
@@ -384,21 +353,6 @@ mod tests {
     #[test]
     fn angle_axes_do_not_take_the_short_arc() {
         assert_eq!(axis_value(4000, 100, 50, 100, 1), 2050);
-    }
-
-    /// The `f32` shape tracks the integer law within the truncation error.
-    #[test]
-    fn curve_unit_tracks_the_integer_law() {
-        for &c in &[1u8, 2, 3, 4] {
-            for t in 0..=100i32 {
-                let want = axis_value(0, 10_000, t, 100, i16::from(c)) as f32;
-                let got = curve_unit(t as f32 / 100.0, c) * 10_000.0;
-                assert!(
-                    (want - got).abs() <= 3.0,
-                    "curve {c} t {t}: {want} vs {got}"
-                );
-            }
-        }
     }
 
     /// Negative spans truncate toward zero, like MIPS `div`.

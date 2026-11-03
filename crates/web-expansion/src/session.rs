@@ -260,6 +260,32 @@ impl Core {
         Ok(serde_json::to_string(&self.objects[scene])?)
     }
 
+    /// A scene's meshes and VRAM for the palette and the ghost
+    /// ([`DiscCatalog::scene_meshes`]).
+    pub fn scene_meshes(&self, scene: &str) -> Result<Vec<u8>> {
+        self.catalog
+            .as_ref()
+            .context("load your disc first")?
+            .scene_meshes(scene)
+    }
+
+    /// The thumbnails' cache key for this disc ([`DiscCatalog::disc_key`]).
+    pub fn disc_key(&self) -> String {
+        self.catalog
+            .as_ref()
+            .map(|c| c.disc_key())
+            .unwrap_or_default()
+    }
+
+    /// The borrowed-mesh catalog's entries, as JSON: the palette's names and
+    /// categories. Labels and numbers, no disc.
+    pub fn mesh_catalog_json(&self) -> String {
+        let rows: Vec<_> = legaia_expansion_format::mesh_catalog::catalog()
+            .iter()
+            .collect();
+        serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
+    }
+
     // --- Loading ---------------------------------------------------------------
 
     /// Start handing over a pack tree file by file.

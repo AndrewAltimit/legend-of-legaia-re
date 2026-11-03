@@ -632,7 +632,7 @@ impl LegaiaRuntime {
         };
         let Ok(archive) = host
             .index
-            .entry_bytes_extended(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
+            .entry_bytes(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
         else {
             return;
         };

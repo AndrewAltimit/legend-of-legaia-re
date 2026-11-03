@@ -99,8 +99,11 @@ impl World {
         {
             return Some(i32::from(*power));
         }
-        legaia_engine_cast::cast_module_ticks::baked_power_for(entry)
-            .or_else(|| legaia_engine_cast::cast_module_ticks::capture_site_power(entry, move_id))
+        // The site table first: it keys on the action, so PROT 0960's Neo Star
+        // Slash (`0x2C6`, `0x801F7280`) is not read as the image's other body,
+        // Plasma Strike's burst (`0x1C0`), the module's first baked power.
+        legaia_engine_cast::cast_module_ticks::capture_site_power(entry, move_id)
+            .or_else(|| legaia_engine_cast::cast_module_ticks::baked_power_for(entry))
             .map(i32::from)
     }
 
@@ -231,6 +234,78 @@ impl World {
             .position(|&id| id == spell_id)
             .map(|i| list.levels[i])
             .unwrap_or(1)
+    }
+
+    /// The level byte `FUN_801DD864`'s scale stage itself reads
+    /// (`0x801DDAE0..0x801DDB08`). Its search leaves the index at `0x20` when
+    /// the id is not among the first `0x20` entries, and the `lbu 0x729` after
+    /// the loop then reads list slot `0x20`, normally `0`, which
+    /// [`vm::battle_formulas::apply_magic_power`] wraps into a capped hit. The
+    /// heal and side-effect readers keep [`Self::caster_magic_power_byte`].
+    pub(in crate::world) fn caster_scale_level(&self, caster: u8, spell_id: u8) -> u8 {
+        const LIST_END: usize = 0x20;
+        if let Some(level) = self.expansion_cast_level(caster, spell_id) {
+            return level;
+        }
+        let Some(record) = self
+            .party
+            .roster
+            .members
+            .get(self.party_roster_slot(caster as usize))
+        else {
+            return 1;
+        };
+        let list = record.spell_list();
+        let i = list
+            .ids
+            .iter()
+            .take(LIST_END)
+            .position(|&id| id == spell_id)
+            .unwrap_or(LIST_END);
+        list.levels[i]
+    }
+
+    /// One wrapper roll a player summon's module makes itself
+    /// (`FUN_801DD0AC(_, 7, seat)`), with what the finisher does on every roll
+    /// whoever applies the result: the spell XP tail (`0x801DE440`, on the
+    /// victim's HP before the hit), the spirit gauge and the rumble. Banks with
+    /// the cast's fold ([`Self::fold_cast`]'s waiver or the fold itself).
+    /// `None` for a monster's cast, which rolls elsewhere.
+    pub(in crate::world) fn summon_module_roll(
+        &mut self,
+        caster: u8,
+        target: u8,
+        spell_id: u8,
+    ) -> Option<u32> {
+        let mut roll = u32::from(self.player_summon_predamage(caster, target, spell_id)?);
+        if !self.expansion_casting_pack(caster, spell_id)
+            && self
+                .seru
+                .log
+                .is_shiny(self.party_roster_slot(caster as usize) as u8, spell_id)
+        {
+            roll = (roll * (100 + legaia_engine_battle::seru_learning::SHINY_DAMAGE_BONUS_PCT)
+                / 100)
+                .min(9999);
+        }
+        if legaia_engine_effects::summon::module_trains_spell_xp(spell_id)
+            && let Some(t) = self.actors.get(usize::from(target))
+        {
+            let group =
+                self.tables.spell_catalog.get(spell_id).is_some_and(|d| {
+                    d.target == legaia_engine_battle::spells::SpellTarget::AllEnemies
+                });
+            let gain = legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(
+                roll,
+                t.battle.hp,
+                t.battle.max_hp,
+                group,
+            );
+            self.casting.module_hit_xp = self.casting.module_hit_xp.saturating_add(gain);
+        }
+        self.accrue_spirit_gauge(target, roll.min(u32::from(u16::MAX)) as u16);
+        self.finisher_rumble(target);
+        Some(roll)
     }
 
     /// The restore a player Seru **heal** cast lands, straight off the owning

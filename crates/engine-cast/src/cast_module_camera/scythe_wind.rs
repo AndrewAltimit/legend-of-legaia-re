@@ -1,0 +1,180 @@
+//! PROT 0951's **Scythe Wind** body (`0x801F77E8`, action `0x5B`): the camera
+//! arms, the slowed wind-up and the wind's records.
+//!
+//! See `ghidra/scripts/funcs/overlay_cast_chaos_flare_0951_801f77e8.txt`.
+
+use super::v_windhash::seat;
+use super::{
+    CaptureCamArm, CaptureSeatWrite, ModuleCamSeats, ModuleCamState, ModuleShot, SPEED_SCALAR,
+    focus_on,
+};
+
+/// PROT 0951's Scythe Wind tick body.
+pub const SCYTHE_WIND_BODY: u32 = crate::cast_module_ticks::SCYTHE_WIND_TICK;
+
+/// The module's countdown word (`lui 0x8020` / `-0x7634`).
+pub const SCYTHE_WIND_COUNTDOWN: u32 = 0x801F_89CC;
+
+/// Arm 3's record on the victim (`0x801F7CE4`).
+const WIND_RECORD: u32 = 0x801F_8348;
+/// Arm 4's scattered record, four to a pass (`0x801F7F14`).
+const SCATTER_RECORD: u32 = 0x801F_836C;
+/// The animation rate arm 2 slows both seats to (`li v1,1` / `sb v1,0x21d`).
+const SLOW_RATE: u8 = 1;
+/// The rate arms 3 and 4 put each back to.
+const FULL_RATE: u8 = 8;
+
+/// The shot every held pass of arms 3 to 5 re-aims, at twelve frames: pitch
+/// `0x40`, yaw `cd / 8 + base - caster[+0x46]`, TR `(0, 0x500, far - cd)`.
+fn sweep(on: [i16; 3], facing: u16, cd: i32, base: i32, far: i32) -> ModuleShot {
+    ModuleShot {
+        angles: [0x40, (cd / 8 + base - i32::from(facing as i16)) as i16, 0],
+        tr: [0, 0x500, (far - cd) as i16],
+        focus: on,
+        frames: 0xC,
+    }
+}
+
+/// **Scythe Wind** (`sltiu 6` through the table at `0x801F6A08`; caster
+/// `actor_table[ctx + 0x13]`, victim `actor_table[caster + 0x1DD]`):
+///
+/// | arm | camera and seats | countdown |
+/// |---|---|---|
+/// | 0, 1 (`0x801F7874`) | the walk into reach, framed by the action SM's case 6 | - |
+/// | 2 (`0x801F7B58`) | both seats' rate `1`; on the caster: pitch `0x40`, yaw `0xA00 - facing`, TR `(0, 0x500, 0x600)`, `0xC` frames | seed `scalar << 5` |
+/// | 3 (`0x801F7C04`) | every pass on the caster: yaw base `0x9E0`, TR z `0x700 - cd`. On its pass, the wind's record on the victim and the caster's rate back | `+= scalar << 7` |
+/// | 4 (`0x801F7D30`) | every pass on the victim: yaw base `0x960`, TR z `0xB00 - cd`; below `scalar << 6`, four scattered records a pass. On its pass, the hit and the victim's rate back | `+= scalar * 0x60` |
+/// | 5 (`0x801F8008`) | every pass on the victim's body: yaw base `0x900`, TR z `0xE00 - cd`; then the victim's settle | - |
+///
+/// The phase chain is the arm table's
+/// ([`crate::cast_module_ticks::SCYTHE_WIND_TICK`]); this director owns the
+/// gates from arm 2 on. Not ported: arm 2's position pins (the seats hold
+/// their pairs through the clip).
+///
+/// PORT: overlay_cast_chaos_flare_0951_801f77e8 (PROT 0951 `0x5B`; the camera arms, the rates and the wind's records)
+pub fn scythe_wind_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let (c, v) = (seats.caster, seats.victim);
+    let mut arm = CaptureCamArm::default();
+    match phase {
+        // `0x801F79C8..0x801F79F4`, the arm's in-reach and walking paths both.
+        0 => arm.vram_move = Some(super::GIMARD_BREATH_CLUT_MOVE),
+        2 => {
+            arm.caster_write.rate = Some(SLOW_RATE);
+            arm.victim_write.rate = Some(SLOW_RATE);
+            arm.shot = Some(ModuleShot {
+                angles: [0x40, (0xA00 - i32::from(c.facing as i16)) as i16, 0],
+                tr: [0, 0x500, 0x600],
+                focus: focus_on(c),
+                frames: 0xC,
+            });
+            st.countdown.0 = SPEED_SCALAR << 5;
+        }
+        3 => {
+            let held = st.countdown.drain_above(0);
+            arm.shot = Some(sweep(focus_on(c), c.facing, st.countdown.0, 0x9E0, 0x700));
+            if held {
+                arm.hold = true;
+            } else {
+                let wind = v;
+                arm.pass_spawns[0] = Some(seat(
+                    WIND_RECORD,
+                    [wind.x, wind.y, wind.z],
+                    [0, wind.facing as i16, 0],
+                ));
+                arm.caster_write = CaptureSeatWrite {
+                    rate: Some(FULL_RATE),
+                    ..Default::default()
+                };
+                st.countdown.add(1 << 7);
+            }
+        }
+        4 => {
+            let held = st.countdown.drain_above(0);
+            let cd = st.countdown.0;
+            arm.shot = Some(sweep(focus_on(v), c.facing, cd, 0x960, 0xB00));
+            if cd < SPEED_SCALAR << 6 {
+                arm.scatter = Some((SCATTER_RECORD, 4));
+            }
+            if held {
+                arm.hold = true;
+            } else {
+                st.countdown.0 += SPEED_SCALAR * 0x60;
+                arm.victim_write = CaptureSeatWrite {
+                    rate: Some(FULL_RATE),
+                    ..Default::default()
+                };
+                arm.folds_hit = true;
+            }
+        }
+        5 => {
+            let body = st.victim_body.unwrap_or(v);
+            let cd = st.countdown.0;
+            arm.shot = Some(sweep(focus_on(body), c.facing, cd, 0x900, 0xE00));
+            if (cd > 0 && st.countdown.drain_above(0)) || !st.victim_settled {
+                arm.hold = true;
+            }
+        }
+        _ => {}
+    }
+    arm
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::ModuleSeat;
+    use super::*;
+
+    fn seats() -> ModuleCamSeats {
+        ModuleCamSeats {
+            caster: ModuleSeat {
+                x: 900,
+                y: 0,
+                z: 100,
+                facing: 0x400,
+            },
+            victim: ModuleSeat {
+                x: 0,
+                y: 0,
+                z: 700,
+                facing: 0,
+            },
+            action: 0x5B,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn arm_two_slows_both_seats_and_seeds_the_sweep() {
+        let mut st = ModuleCamState::default();
+        let a = scythe_wind_camera(&mut st, 2, seats());
+        assert_eq!(a.caster_write.rate, Some(SLOW_RATE));
+        assert_eq!(a.victim_write.rate, Some(SLOW_RATE));
+        assert_eq!(st.countdown.0, SPEED_SCALAR << 5);
+    }
+
+    #[test]
+    fn arm_three_reaims_every_pass_and_seats_the_wind_on_its_pass() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = SPEED_SCALAR * 2;
+        let held = scythe_wind_camera(&mut st, 3, seats());
+        assert!(held.hold && held.shot.is_some());
+        let pass = scythe_wind_camera(&mut st, 3, seats());
+        assert!(!pass.hold);
+        assert_eq!(pass.pass_spawns.iter().flatten().count(), 1);
+    }
+
+    #[test]
+    fn arm_four_scatters_only_near_its_end_and_lands_the_hit() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = SPEED_SCALAR << 7;
+        assert!(scythe_wind_camera(&mut st, 4, seats()).scatter.is_none());
+        st.countdown.0 = SPEED_SCALAR;
+        let a = scythe_wind_camera(&mut st, 4, seats());
+        assert_eq!(a.scatter, Some((SCATTER_RECORD, 4)));
+        assert!(a.folds_hit && !a.hold);
+    }
+}

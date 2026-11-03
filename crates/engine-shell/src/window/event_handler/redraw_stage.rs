@@ -233,24 +233,70 @@ impl PlayWindowApp {
             else {
                 continue;
             };
-            let vmesh = legaia_tmd::mesh::tmd_to_vram_mesh(&posed, &raw);
+            // The environment's own mesh build (`EnvMeshPrep::build`) over the
+            // posed vertices: the VRAM filter, the coplanar resolution and the
+            // emissive tags are all per-mesh and the blend moves none of them
+            // out of true.
+            let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&posed, &raw);
+            let mut vmesh = match self.cpu_vram_base.as_ref() {
+                Some(vram) => {
+                    legaia_tmd::mesh::tmd_to_vram_mesh_filtered_lit_vertices(
+                        &posed,
+                        &raw,
+                        |cba, tsb, uvs| vram.prim_has_texture_data(cba, tsb, uvs),
+                    )
+                    .0
+                }
+                None => legaia_tmd::mesh::tmd_to_vram_mesh(&posed, &raw),
+            };
+            let _ = legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+            if let Some(vram) = self.cpu_vram_base.as_ref() {
+                let _ = legaia_render_kernels::scene_lighting::tag_emissive_meshes(
+                    &raw, &mut vmesh, &mut cmesh, vram,
+                );
+            }
             if vmesh.indices.is_empty() {
                 continue;
             }
-            match r.upload_vram_mesh(
-                &vmesh.positions,
-                &vmesh.uvs,
-                &vmesh.cba_tsb,
-                &vmesh.normals,
-                &vmesh.colors,
-                &vmesh.indices,
-            ) {
-                Ok(m) => {
-                    if let Some(entry) = self.meshes.get_mut(mesh_idx) {
-                        *entry = m;
+            // Retail blends in place: the actor's `+0x48` is the resident TMD
+            // itself, so every environment instance of that model draws the
+            // blend. The engine's scene meshes are separate uploads of the same
+            // bytes, and each takes the posed mesh.
+            let rest = self
+                .session
+                .host
+                .world
+                .actors
+                .get(slot as usize)
+                .and_then(|a| a.tmd_ref.as_ref())
+                .map(std::sync::Arc::clone);
+            let targets: Vec<usize> = std::iter::once(mesh_idx)
+                .chain(
+                    self.scene_tmd_data
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, (_, b))| {
+                            (i != mesh_idx && rest.as_ref().is_some_and(|g| g.raw == *b))
+                                .then_some(i)
+                        }),
+                )
+                .collect();
+            for target in targets {
+                match r.upload_vram_mesh(
+                    &vmesh.positions,
+                    &vmesh.uvs,
+                    &vmesh.cba_tsb,
+                    &vmesh.normals,
+                    &vmesh.colors,
+                    &vmesh.indices,
+                ) {
+                    Ok(m) => {
+                        if let Some(entry) = self.meshes.get_mut(target) {
+                            *entry = m;
+                        }
                     }
+                    Err(e) => log::warn!("morph mesh upload: {e:#}"),
                 }
-                Err(e) => log::warn!("morph mesh upload: {e:#}"),
             }
         }
     }
@@ -309,7 +355,7 @@ impl PlayWindowApp {
         }
         // For each active actor with a tmd_binding and a current
         // pose_frame, regenerate and re-upload the posed mesh.
-        // posed_overrides[i] replaces meshes[i] when present.
+        // posed_overrides[slot] replaces the slot's meshes[tmd_binding] when present.
         let (posed_overrides, player_color_posed) = self.build_posed_actor_overrides(r);
         // Arts after-image ghosts: the actor's mesh at rate-scheduled
         // historical poses, flat-coloured additive (retail FUN_80049348;
@@ -609,8 +655,17 @@ impl PlayWindowApp {
                 r.set_scene_lights(&picked, cam);
                 // Halos + soft light shafts around the picked lights (the
                 // bloom stand-in), scaled by the mood's glow.
+                let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
+                    &self.session.host.world,
+                    legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
+                        && !self.field_debug_camera,
+                );
                 r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
-                    &picked, &mood,
+                    &legaia_engine_screens::field_frame::field_glow_lights(
+                        view_cells.as_ref(),
+                        &picked,
+                    ),
+                    &mood,
                 ));
             }
             None => {
@@ -803,11 +858,16 @@ impl PlayWindowApp {
                     legaia_engine_field::actor_look::ActorLook::pose_key_bits(look.as_ref())
                         as usize;
                 let key = (*slot, player.pose_key() | look_bits);
+                npc_frames.push(key);
+                // A hit reads no pose (the memo is why this loop is cheap),
+                // unless it is there to be checked.
+                if !verify && cache.contains_key(&key) {
+                    continue;
+                }
                 let mut pose = player.current_pose();
                 if let Some(l) = look {
                     legaia_engine_field::actor_look::apply_look(&mut pose.bone_outputs, l);
                 }
-                npc_frames.push(key);
                 if cache.contains_key(&key) {
                     // `LEGAIA_POSE_CACHE_VERIFY=1`: the pose behind a hit
                     // must be the pose the entry was built from, or the key

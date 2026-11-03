@@ -77,12 +77,19 @@ const EVIL_SERU_MAGIC_ENTRY: u32 = 966;
 const DOOMSDAY_TICKS: u32 = 1888;
 /// PROT 0965's owning entry.
 const DOOMSDAY_ENTRY: u32 = 965;
+/// PROT 0957's Thunder Storm by its own words: `0x600 + 0x400 + 0x100 + 0x800 +
+/// 0x200` drained `8` a vsync, then the fade word's `0x1000` at `16` a vsync.
+const THUNDER_STORM_TICKS: u32 = 929;
+/// PROT 0957's owning entry.
+const THUNDER_STORM_ENTRY: u32 = 957;
 
 fn band_limit(t: &CastTrace) -> u32 {
     if t.evil_seru_magic {
         EVIL_SERU_MAGIC_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
     } else if t.doomsday {
         DOOMSDAY_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
+    } else if t.thunder_storm {
+        THUNDER_STORM_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
     } else if t.owns_band {
         3 * u32::from(CASTER_STAGE_TICK_LIMIT)
     } else {
@@ -122,6 +129,8 @@ struct CastTrace {
     evil_seru_magic: bool,
     /// The cast pages PROT 0965 (Doomsday).
     doomsday: bool,
+    /// The cast is PROT 0957's Thunder Storm.
+    thunder_storm: bool,
     /// The cast runs a capture-class body that stages no caster clip in
     /// retail either (`capture_body_idles_caster`).
     idles_in_retail: bool,
@@ -349,6 +358,7 @@ fn cast(
         });
     t.evil_seru_magic = w.cast_module_for(spell) == Some(EVIL_SERU_MAGIC_ENTRY);
     t.doomsday = w.cast_module_for(spell) == Some(DOOMSDAY_ENTRY);
+    t.thunder_storm = spell == 0x77 && w.cast_module_for(spell) == Some(THUNDER_STORM_ENTRY);
     // PROT 0954's roulette, and every body whose arms the band paces on
     // the module's own countdown table (`capture_arm_countdowns`): their
     // band is the choreography's retail length, which runs past the guard
