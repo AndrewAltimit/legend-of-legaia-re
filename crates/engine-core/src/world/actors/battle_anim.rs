@@ -1101,10 +1101,8 @@ impl World {
         // (`0x8004BE18..0x8004BE2C`), which stores it into battle ctx
         // `+0x243` (`sb s0,0x243` at `0x8004E2C0`) - the marker the art
         // constant's rate arm reads (`ctx[+0x243]` armed -> quarter speed)
-        // and the SM's Done arm clears. The routine's other half, the
-        // per-actor pause flag `+0x21C` on every non-acting, non-target
-        // slot, has no engine field; the SpecialStarter's freeze covers the
-        // visible case through the rate arm above.
+        // and the SM's Done arm clears. The routine's other half dims every
+        // live bystander (`+0x21C = 1`, [`Self::sweep_solo_bystanders`]).
         // The value-2 arm (`0x8004E254..0x8004E2B4`): when the byte is `2`,
         // the previous `+0x243` was not, and the acting seat `ctx[+0x13]` is
         // a party one, it re-seeds the camera's yaw counter `ctx[+0x6DA] =
@@ -1112,8 +1110,7 @@ impl World {
         // `ctx[+0xD]` - the swing camera's per-swing side. The counter is the
         // camera's (`BattleCamInputs::swing_reseed`); the style byte is the
         // live one both hosts feed it from.
-        // PORT: FUN_8004E13C (the `+0x243` store and the value-2 re-seed;
-        // the `+0x21C` sweep is not modelled)
+        // PORT: FUN_8004E13C (the `+0x243` store and the value-2 re-seed)
         // The shout site (`0x8004BCF0..0x8004BD6C`): a party seat committing
         // a staged id `>= 0x10` asks the arts-voice selector when the byte
         // before the cursor is the known-art starter, or under the solo
@@ -1127,6 +1124,7 @@ impl World {
             .and_then(|c| c.entry_solo_flag())
             .filter(|&v| v != 0)
         {
+            self.sweep_solo_bystanders();
             if v == 2
                 && self.battle_ctx.gauge_rearm_latch != 2
                 && self.battle_ctx.active_actor < self.party.party_count
@@ -1518,6 +1516,48 @@ impl World {
         if let Some(actor) = self.actors.get_mut(slot) {
             actor.battle_animation = Some(player);
             actor.pose_frame = None;
+        }
+    }
+
+    /// A solo commit's bystander sweep: every live seat of the pool's first
+    /// seven but the acting seat `ctx[+0x13]` and its target goes to the dim
+    /// arm `+0x21C = 1`, which eases its lanes toward `0x20` at weight
+    /// `0x1000` until the rate restore `FUN_801E93C8` drops the arm
+    /// ([`solo_commit_state`](legaia_engine_battle_vm::battle_formulas::solo_commit_state)).
+    /// The sweep reads the acting seat, not the committing body, as retail's
+    /// loop does.
+    ///
+    /// An engine body at rest holds a zero colour word where retail's holds
+    /// neutral (`0x20080200`), and the arm walks from the word it finds, so a
+    /// dimmed body takes neutral first.
+    ///
+    /// PORT: FUN_8004E13C (`0x8004E15C..0x8004E24C`, the `+0x21C` sweep)
+    pub(in crate::world) fn sweep_solo_bystanders(&mut self) {
+        use legaia_engine_battle_vm::battle_formulas::{STATE_DIM, solo_commit_state};
+        let seats = self.battle_seat_map();
+        let acting_e = self.battle_ctx.active_actor;
+        let target_e = self
+            .actors
+            .get(usize::from(acting_e))
+            .map_or(0, |a| a.battle.active_target);
+        let acting = self.retail_pool_slot(acting_e);
+        let target = self.retail_pool_slot(target_e);
+        for r in 0..7u8 {
+            let Some(a) = seats
+                .engine(r)
+                .and_then(|e| self.actors.get_mut(usize::from(e)))
+            else {
+                continue;
+            };
+            if !a.active {
+                continue;
+            }
+            let b = &mut a.battle;
+            let state = solo_commit_state(r, b.hp, b.render_flag, acting, target);
+            if state == STATE_DIM && b.render_flag != STATE_DIM && b.render_color == 0 {
+                b.render_color = legaia_engine_battle_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE;
+            }
+            b.render_flag = state;
         }
     }
 

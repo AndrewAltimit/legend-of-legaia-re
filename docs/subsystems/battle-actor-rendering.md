@@ -31,7 +31,7 @@ All retail routines here are resident in `SCUS_942.54` unless marked as battle-o
 | `+0x1D9` / `+0x1DA` / `+0x1DB` | Playing clip id / **staged** clip id / camera-variant key. |
 | `+0x1DC` | Commit flags: bit 0 commit now, bit 1 commit past the gate frame, bit `0x4` idle at natural end, bit `0x8` root-motion latch. |
 | `+0x1EF..+0x1F3` | Reaction-clip map, one slot per action tag `2/3/4/5/0xB`. |
-| `+0x21C` | Render flag (`2` capture / defeat fade, `0xC8` cursor dim). |
+| `+0x21C` | Render flag (`1` solo-commit bystander dim, `2` capture / defeat fade, `0xC8` cursor dim). |
 | `+0x21D` | Animation-rate scalar, normal `8`. |
 | `+0x226` | Additive fade. |
 | `+0x22C` / `+0x230` | Radius source for the distance fade / mesh pointer. |
@@ -382,6 +382,10 @@ With no blend running the pass still writes both words.
 The view depth is one row of the battle camera: `R * (4p - 4*focus) + tr`, with `R = Rx(pitch) * Ry(yaw)` over the camera trio `0x8007B790` and translation `0x800840B8` (`battle_cam_script::battle_view_depth`). It reproduces the stored `+0x34` of 296 of 379 captured bodies to within two units (341 within 32); the rest read as states where the camera or the body moved after the draw.
 
 Over the 97 catalogued battle states, recomputing the pass from each seated actor's fields reproduces the stored `+0x74` / `+0x78` exactly for 258 of 266 drawn bodies, 54 of them on the distance-fade arm (e.g. the Tetsu command menu's monster at depth `9098`: colour `0x48` a channel at weight `0x990`). The eight that differ are frames where a later writer touched the node after the draw.
+
+**Bystander dim.** A clip commit whose header byte `+0x87` is non-zero calls `FUN_8004E13C` (`0x8004BE28`), whose loop over pool slots `0..7` (`0x8004E15C..0x8004E24C`) raises `+0x21C = 1` on every live body but the acting seat `ctx[+0x13]` and its target `+0x1DD`, leaving any other arm in place. A group target undoes it on its own side: `+0x1DD == 9` zeroes the monster seats' byte, `8` the party seats'. `FUN_80050120` arm 1 eases those lanes toward `0x20` at rate `4` under weight `0x1000`, and the rate restore `FUN_801E93C8` drops every `1` back to `0`, after which arm 0 walks the word home.
+
+So every monster cast and solo strike and every party art darkens its audience: `battle_tower_guardian_windhash_mid_cast` holds lanes `0xE0` on three bodies, `battle_korb2_aluru_cannon_mid_cast` `0x100`. Port `World::sweep_solo_bystanders`, over `battle_formulas::solo_commit_state`.
 
 **Cursor dim.** `+0x21C == 0xC8` (the target cursor's non-pointed monsters) is its own arm: colour `0x010101` at weight `0x1000`, unless the seat's formation cell (`0x8007BD09 + seat`) holds monster `0xA8`, which reads as a black silhouette. The arm is ported (`battle_actor_tint`), but no catalogued state holds that flag, so both hosts keep their own cursor cue (`battle_action::cursor_cue`) for the two cursor flags.
 
