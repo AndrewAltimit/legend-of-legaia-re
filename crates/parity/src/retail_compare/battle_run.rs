@@ -755,7 +755,12 @@ pub(super) fn battle_image(
                 } else {
                     battle.cam_tween.1
                 };
-                (battle.displayed_cam_live, end)
+                let live = if battle.camera_behind_commit() {
+                    battle.displayed_commit_live()
+                } else {
+                    battle.displayed_cam_live
+                };
+                (live, end)
             } else {
                 battle.cam_tween
             }),

@@ -1087,6 +1087,22 @@ impl RetailBattle {
         self.move_label_unseen() && self.cam_accum == 0
     }
 
+    /// The live pose the image child stands a [`Self::camera_behind_commit`]
+    /// capture on: the frame on screen predates the swing's own close-up. The
+    /// art arm `FUN_801D71B8` calls the tween builder with one display frame
+    /// (`a3 = 2`), which lands that pass and leaves `ceil(gap / 2)` in the
+    /// table, so the depth the pass walked from is `2 * step` behind the RAM's,
+    /// on the far side since the arm only tightens the shot
+    /// (`minigame_muscle_dome_retail_skeleton_hyper_arts`: `1945`, step `103`:
+    /// the frame fits `2150`). The channel keeps reading the RAM's pose.
+    pub fn displayed_commit_live(&self) -> legaia_engine_camera::projection::BattleCamPose {
+        let (mut live, end) = (self.displayed_cam_live, self.cam_tween.1);
+        if self.camera_behind_commit() && self.cam_tween.0.tr[2] == end.tr[2] {
+            live.tr[2] += 2.0 * f32::from(self.cam_tween_steps[5]);
+        }
+        live
+    }
+
     /// Whether this capture's approach waits on a measured string
     /// ([`Self::party_combo_vsyncs`]): a party Attack in its Done band.
     pub fn wants_party_combo(&self) -> bool {

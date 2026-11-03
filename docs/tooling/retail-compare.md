@@ -2337,6 +2337,12 @@ same state byte. Three refinements:
   Art `0x1E` at accumulator `0`, the pass it committed, and on clip and cursor
   alone the drive took the first `0x1F` pass, with the SpecialStarter `0x1A`
   still playing (`image` `.184` to `.642`).
+- **Depth.** The commit zeroes the accumulator after its pass's framing ran, so
+  the RAM's depth is the art arm's one-frame shot (`FUN_801D71B8`, `a3 = 2`),
+  which lands that pass and leaves `ceil(gap / 2)` in the table. The frame on
+  screen predates it and stands that gap behind
+  (`RetailBattle::displayed_commit_live`): `1945` with step `103` is `2151`, and
+  a scan of the frame's depth peaks at `2150`, where the speed lines land too.
 - **Label.** That pass is also the one the art-constant arm of the anim
   commit places and opens the art's name label on (`FUN_8004C650`, then
   `FUN_801D8DE8(0x4C, 0)`, `0x8004BB5C..0x8004BC40`), and the displayed

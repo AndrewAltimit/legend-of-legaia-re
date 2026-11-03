@@ -1963,3 +1963,37 @@ fn a_stale_pass_walks_back_on_the_armed_increment() {
     assert_eq!(stale_pass_gap(19, 4, 3), 35);
     assert_eq!(stale_pass_gap(0, 4, 3), 0);
 }
+
+/// The art arm's one-frame shot leaves `ceil(gap / 2)` in the table, so a
+/// capture on the commit pass names the depth the swing walked from.
+#[test]
+fn a_commit_capture_stands_two_steps_behind_the_tables_depth() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.flow = 0xFF;
+    b.active_actor = 0;
+    b.action_state = 0x1F;
+    b.queued_category = 3;
+    b.caster_latched = 0x1E;
+    b.committed_queue = vec![0x0C, 0x0F, 0x0F, 0x1A, 0x1E];
+    b.display_phase_lag = 2;
+    b.cam_accum = 0;
+    b.cam_tween.0.tr[2] = 1945.0;
+    b.cam_tween.1.tr[2] = 1945.0;
+    b.displayed_cam_live.tr[2] = 1945.0;
+    b.cam_tween_steps[5] = 103;
+    assert!(b.camera_behind_commit());
+    assert_eq!(b.displayed_commit_live().tr[2], 2151.0);
+    b.cam_accum = 8;
+    assert_eq!(b.displayed_commit_live().tr[2], 1945.0);
+}
