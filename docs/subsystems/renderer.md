@@ -2885,7 +2885,7 @@ in `play-window`, the page's selector; persisted as
 base = ambient + (DIFFUSE * |N.L| + pool_w * pool(frag)) * key
 gain = min(min(base, MAX_GAIN) + point_gain, TOTAL_MAX_GAIN)
 out  = baked * gain                                  (ordinary prims)
-out  = baked * min(emissive_gain + point_gain, TOTAL_MAX_GAIN)   (emissive)
+out  = baked * emissive_gain                         (emissive)
 ```
 
 `|N.L|` reads the smoothed per-vertex normals (a screen-space-derivative
@@ -2897,7 +2897,10 @@ scene-lights block, not `MeshUniforms`, which stays one 256-byte
 dynamic-offset slot; the single-mesh pipelines' stub reads the daylight mood.
 
 **Emissive surfaces.** A prim that glows draws at the emissive gain, ignoring
-the mood's darkening, so a lamp stays lit at night. The tag is bit 13 of the
+the mood's darkening, so a lamp stays lit at night. It ignores the point lights
+too: a point light is derived from these prims and sits inside them, so adding
+it would light a glow with itself, and a save crystal's column went white that
+way. The tag is bit 13 of the
 per-vertex TSB word (textured prims) or blend word (untextured) - bits no
 retail word uses, masked out of every decode - set by
 `scene_lighting::tag_emissive_*` on every mesh build, including each
@@ -2949,8 +2952,13 @@ day.
 **Point lights.** Candles, lamps and the glowing tree are that same emissive
 geometry, so the lights come from it. Each glowing triangle small enough to
 be a prop (`EMIT_MAX_TRI_AREA`) is a sample at its centroid, coloured by its
-modulation word - or, for a neutral-modulated glow prim, by its own mean
-texel through its CLUT, so a green glow casts green. A curated mesh adds one
+modulation word and as bright as that word's largest channel - or, with VRAM
+to read, by its own mean texel through its CLUT times the modulation, so a green
+glow casts green and a faint additive sheet casts faintly. The hue and the
+brightness cluster by weighted mean, and a light's colour is the one times the
+other. An additive prim is not always a lamp: `conc`'s floor patches of window
+light draw at about a fifth of full brightness and `keikoku`'s mist sheets under
+a tenth, and at full strength each blew out the surfaces around it. A curated mesh adds one
 strong sample at the centre of its glowing prims. Samples are instanced into
 world space by each host's own draw list (the `.MAP` placement + terrain
 layers through `placement_model`, the MAN scene-actor props at their spawn
@@ -2978,7 +2986,11 @@ it (`scene_lighting::glow_sprites` / `glow_vertices`; radial `(1 - r^2)^2`
 and `(1 - x^2)^2 * (1 - y)` falloffs, `glow_falloff` is the CPU mirror),
 depth-tested against the scene with depth writes off, so a wall in front
 hides the halo. Their strength is the mood's `glow`: faint at noon, full at
-night. A glow pass costs one small vertex upload and one draw.
+night. At retail framing a lamp on a cell the visible-tile crop leaves out keeps
+shading the cells that draw but has no sprites
+(`field_frame::field_glow_lights`, both hosts): with its geometry cropped, its
+halo would float over the clear colour. A glow pass costs one small vertex
+upload and one draw.
 
 <a id="camera-occlusion-fade-see-through-walls-opt-in-enhancement"></a>
 

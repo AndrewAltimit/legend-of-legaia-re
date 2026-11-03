@@ -655,8 +655,17 @@ impl PlayWindowApp {
                 r.set_scene_lights(&picked, cam);
                 // Halos + soft light shafts around the picked lights (the
                 // bloom stand-in), scaled by the mood's glow.
+                let view_cells = legaia_engine_world_views::field_view_window::field_view_cells(
+                    &self.session.host.world,
+                    legaia_engine_scene::field_view_window::framing_is_retail(&self.session.camera)
+                        && !self.field_debug_camera,
+                );
                 r.set_glow_sprites(&legaia_render_kernels::scene_lighting::glow_sprites(
-                    &picked, &mood,
+                    &legaia_engine_screens::field_frame::field_glow_lights(
+                        view_cells.as_ref(),
+                        &picked,
+                    ),
+                    &mood,
                 ));
             }
             None => {

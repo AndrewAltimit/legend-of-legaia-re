@@ -3,6 +3,7 @@
 //! which is why they live here rather than in `engine-core` or `engine-ui`.
 
 use legaia_engine_mode::mode::SceneMode;
+use legaia_engine_scene::field_view_window::ViewCells;
 use legaia_engine_scene::scene::is_world_map_scene;
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_render_kernels::scene_lighting::{
@@ -101,6 +102,27 @@ pub fn field_scene_lights(
     Some((nearest_lights(&all, focus), focus))
 }
 
+/// The picked lights that draw a halo and a shaft this frame. `cells` is the
+/// frame's visible-tile crop (`field_view_window::field_view_cells`, `None`
+/// where the map draws whole): a lamp on a cell the crop leaves out has no
+/// geometry on screen, and its sprite would float over the clear colour with
+/// nothing to depth-test against. Such a lamp keeps shading the cells that do
+/// draw - only its sprites go, and they return with the lamp's own geometry.
+pub fn field_glow_lights(
+    cells: Option<&ViewCells>,
+    picked: &[ScenePointLight],
+) -> Vec<ScenePointLight> {
+    picked
+        .iter()
+        .filter(|l| {
+            cells.is_none_or(|c| {
+                c.decoration_visible((l.pos[0] as i32) >> 7, (l.pos[2] as i32) >> 7, 0)
+            })
+        })
+        .copied()
+        .collect()
+}
+
 /// The frame's clear colour, through the shared
 /// `battle_stage_clear::scene_clear` selector, with the screen term decided
 /// here: a boot UI screen (`boot_ui`, the host's) or a menu-overlay screen
@@ -128,6 +150,30 @@ pub fn frame_clear_color(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legaia_engine_field::camera::FieldCullView;
+    use legaia_engine_scene::field_view_window::view_cells;
+
+    /// A lamp on a cell the crop leaves out draws no sprite, one on a walked
+    /// cell does, and with no crop every lamp does. Focus tile `(32, 92)`,
+    /// region `[20, 77, 44, 108]`, window `(-8, -6, 8, 12)`: `town01`'s.
+    #[test]
+    fn a_cropped_lamp_draws_no_halo() {
+        let cells = view_cells(&FieldCullView {
+            focus_stored: [-4160, -11840],
+            attr_box: [20, 77, 44, 108],
+            window: [-8, -6, 8, 12],
+        });
+        let lamp = |col: i32, row: i32| ScenePointLight {
+            pos: [(col * 128 + 64) as f32, -120.0, (row * 128 + 64) as f32],
+            color: [1.0; 3],
+            radius: 520.0,
+        };
+        let lit = lamp(32, 92);
+        let cropped = lamp(32, 107);
+        assert!(!cells.decoration_visible(32, 107, 0));
+        assert_eq!(field_glow_lights(Some(&cells), &[lit, cropped]), vec![lit]);
+        assert_eq!(field_glow_lights(None, &[lit, cropped]), vec![lit, cropped]);
+    }
 
     /// With no scene running, the mood is the time of day's alone, and an
     /// unknown option name reads as the default (`Auto`).

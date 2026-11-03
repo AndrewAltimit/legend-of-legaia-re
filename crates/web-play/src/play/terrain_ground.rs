@@ -73,7 +73,7 @@ impl LegaiaRuntime {
     /// `field_view_window::field_view_cells` kernel the native play-window
     /// asks: `None` = draw the map whole. `debug_camera` is the page's `F3`
     /// vantage, which (like the native window's) lifts the crop.
-    pub(super) fn field_view_cells_now(
+    pub(crate) fn field_view_cells_now(
         &self,
         debug_camera: bool,
     ) -> Option<legaia_engine_scene::field_view_window::ViewCells> {

@@ -239,7 +239,7 @@ impl LegaiaRuntime {
     ///
     /// Lights and glow only on a field frame (not the world map), as the
     /// native window stages them; any other frame carries the mood alone.
-    #[allow(clippy::too_many_arguments)] // two 3-vectors, flat for wasm-bindgen
+    #[allow(clippy::too_many_arguments)] // two 3-vectors and the page's debug-camera switch, flat for wasm-bindgen
     pub fn play_lighting_frame(
         &mut self,
         rx: f32,
@@ -248,6 +248,7 @@ impl LegaiaRuntime {
         ux: f32,
         uy: f32,
         uz: f32,
+        debug_camera: bool,
     ) -> Vec<f32> {
         let mood = self.lighting_mood();
         let mut out: Vec<f32> = mood.uniforms(true).iter().flatten().copied().collect();
@@ -273,13 +274,17 @@ impl LegaiaRuntime {
             ),
             _ => None,
         };
-        let Some((picked, focus)) = picked else {
+        let Some((picked, _focus)) = picked else {
             out.extend_from_slice(&[0.0, 0.0]);
             return out;
         };
+        let glowing = legaia_engine_screens::field_frame::field_glow_lights(
+            self.field_view_cells_now(debug_camera).as_ref(),
+            &picked,
+        );
         out.extend(sl::frame_packet(
             &picked,
-            focus,
+            &glowing,
             &mood,
             [rx, ry, rz],
             [ux, uy, uz],
@@ -297,7 +302,7 @@ mod tests {
     #[test]
     fn frame_layout_without_a_scene() {
         let mut rt = LegaiaRuntime::new();
-        let f = rt.play_lighting_frame(1.0, 0.0, 0.0, 0.0, -1.0, 0.0);
+        let f = rt.play_lighting_frame(1.0, 0.0, 0.0, 0.0, -1.0, 0.0, false);
         assert_eq!(f.len(), 18);
         assert_eq!(f[3], 1.0, "enable word");
         assert_eq!(&f[16..], &[0.0, 0.0]);

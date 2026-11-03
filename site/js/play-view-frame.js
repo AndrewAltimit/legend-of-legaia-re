@@ -923,7 +923,7 @@
        * renderer against the camera basis of the VP it draws with. */
       this.renderer.lightingProvider = (this.dynLighting
           && typeof rt.play_lighting_frame === 'function')
-        ? (r, u) => rt.play_lighting_frame(r[0], r[1], r[2], u[0], u[1], u[2])
+        ? (r, u) => rt.play_lighting_frame(r[0], r[1], r[2], u[0], u[1], u[2], !!this.debugCamera)
         : null;
       /* Retail GTE NCLIP winding rejection, from the shared engine kernel
        * (`camera_view::nclip_cull_mode`): armed for the whole field pass
