@@ -1098,8 +1098,13 @@ impl World {
                     // PROT 0904's ring sweep: advance the ray, then resolve
                     // the cone once for this tick (both borrow `self`, which
                     // the seat row below does not allow).
+                    // Retail tests once a pass, four vsyncs of `0x40` apart: from
+                    // `0x100` on, so the ray's first swing past the victim
+                    // misses and the hit waits for the centre crossing at
+                    // `0x800`, 32 vsyncs in.
                     let cone_seats: Vec<u8> = if entry == 904
                         && ctx.phase == ticks_a::THEEDER_SWEEP_ARM
+                        && ticks_a::theeder_pass_tested(ctx.ctx_6d8)
                     {
                         use legaia_engine_cast::seru_magic_ticks::{
                             MONSTER_ROW_END, THEEDER_CONE_HALF_WIDTH,
@@ -1209,7 +1214,44 @@ impl World {
                             ),
                             Vec::new(),
                         ),
-                        _ => ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |_| None),
+                        _ => {
+                            // Arm 11's sites are the cast's second and last
+                            // hits: three quarters of a roll on the victim,
+                            // two thirds of one on each other seat
+                            // (`0x801F7C14`, `0x801F7DF8`). The opener is arm
+                            // 8's `apply_summon_pre_hits`, and the band folds
+                            // nothing for a party's cast. A monster's cast of
+                            // the id, which has no roll here, keeps the fold.
+                            let finishing = ctx.phase == ticks_a::ZENOIR_FINISH_ARM
+                                && caster_slot < self.party.party_count;
+                            self.casting.module_skips_fold |= caster_slot < self.party.party_count;
+                            let mut rolled: Vec<(u8, u32)> = Vec::new();
+                            let out = ticks_a::zenoir_tick(&mut ctx, &mut seats, who, |r| {
+                                if !finishing {
+                                    return None;
+                                }
+                                let t = map.engine(r)?;
+                                let roll = self.summon_module_roll(caster_slot, t, spell_id)?;
+                                let site = if r == who.victim {
+                                    ticks_a::SERU_HIT_SITES[4]
+                                } else {
+                                    ticks_a::SERU_HIT_SITES[5]
+                                };
+                                rolled.push((t, roll * site.scale_num / site.scale_den));
+                                Some(roll as i32)
+                            });
+                            for (t, amount) in rolled {
+                                self.battle.hit_fx.push(
+                                    legaia_engine_battle::battle_events::BattleHitFx {
+                                        target_slot: t,
+                                        amount: amount.min(u32::from(u16::MAX)) as u16,
+                                        is_heal: false,
+                                        is_crit: false,
+                                    },
+                                );
+                            }
+                            out
+                        }
                     };
                     self.write_cast_seat_row(&seats);
                     caster = seats.get(r_caster).copied().unwrap_or(caster);
@@ -1229,6 +1271,9 @@ impl World {
                     // Arm 0's kill roll, drawn once per cast and held for
                     // arm 10 (the word `0x801F7C4C`).
                     let kill = self.ultimate_rave_verdict();
+                    // The body rolls no wrapper: its one write is the kill's
+                    // `sh zero, 0x14c`, and off that path the cast hits nothing.
+                    self.casting.module_skips_fold = true;
                     Some(ticks::ultimate_rave_tick(
                         &mut ctx,
                         &mut caster,

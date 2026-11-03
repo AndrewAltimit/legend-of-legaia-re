@@ -335,6 +335,10 @@ impl World {
         // charge, `0x801F6CEC`) owes nothing: retail never reaches its
         // `FUN_801DD6B4` on that path.
         if std::mem::take(&mut self.casting.module_skips_fold) {
+            let gain = std::mem::take(&mut self.casting.module_hit_xp);
+            if gain != 0 {
+                self.accrue_summon_spell_xp(pc.caster, pc.spell_id, gain);
+            }
             return;
         }
         // Two casts in the band do not fold through the catalog at all:
@@ -409,6 +413,7 @@ impl World {
         };
         let hit_fx_start = self.battle.hit_fx.len();
         self.cast_spell_on_slots_prepaid(pc.caster, &def, &pc.targets);
+        self.casting.module_fold_quiet = false;
         if pc.caster >= self.party.party_count {
             self.apply_enemy_move_status(pc.caster, def.id, hit_fx_start);
             self.apply_enemy_agl_status(pc.caster, def.id, &pc.targets);

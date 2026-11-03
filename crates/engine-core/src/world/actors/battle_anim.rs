@@ -392,7 +392,19 @@ impl World {
                 };
                 let slowed_idle =
                     slowed && actor.battle.current_anim == 0 && actor.battle_reaction.is_none();
-                let pose = player.tick_rated_vsyncs(rate, slowed_idle, vsyncs);
+                let mut pose = player.tick_rated_vsyncs(rate, slowed_idle, vsyncs);
+                // The decoder fills the pose pool `ctx+0x6F4` as far as the
+                // stream's part count and the draw reads an entry per mesh
+                // object: a clip with fewer parts than the model leaves its
+                // extra objects on the last pose written (Ozma's clip 3 has 15
+                // parts over 21 objects, and a RAM image's entries 15..20 hold
+                // still across the clip).
+                if let Some(prev) = actor.pose_frame.as_ref() {
+                    let n = pose.bone_outputs.len();
+                    if let Some(rest) = prev.bone_outputs.get(n..) {
+                        pose.bone_outputs.extend_from_slice(rest);
+                    }
+                }
                 let after = player.current_frame();
                 // The window arm's counter store (`actor+0x21B = +0x176 >> 4`,
                 // `0x800477E8` / `0x8004783C`) - mirrored for the summon

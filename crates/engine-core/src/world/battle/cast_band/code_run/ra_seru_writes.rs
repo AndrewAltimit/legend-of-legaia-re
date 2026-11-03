@@ -571,6 +571,64 @@ impl World {
         }
     }
 
+    /// PROT 0919's arms 5..7, every pass: arm 4's four parts per eye stand on
+    /// the creature's pose objects `0..5` (`ctx+0x6F4`, twelve bytes an object,
+    /// the pool the creature's draw just filled), turned by its facing and
+    /// raised `8`. Arm 7 pulls eyes `1..` in to four fifths (`/ 0x1400`), holds
+    /// the top eye at `0x20` above its object and drops the lower two by `0x20`;
+    /// its pass retires all twenty (`0x801F7CE0..`).
+    fn seat_spoon_eye_parts(&mut self, phase: u8, passed: bool, creature: u8) {
+        use legaia_engine_cast::cast_module_camera::SPOON_EYE_RECORDS;
+        let Some(a) = self.actors.get(usize::from(creature)) else {
+            return;
+        };
+        let (cx, cz, f) = (
+            i32::from(a.move_state.world_x),
+            i32::from(a.move_state.world_z),
+            a.battle.facing_angle,
+        );
+        let Some(pose) = crate::world::battle::locomotion::stream_pose(a) else {
+            return;
+        };
+        let (sin_f, cos_f) = legaia_engine_system::trig::trig12(f & 0xFFF);
+        let (sin_b, cos_b) = legaia_engine_system::trig::trig12(0xFFF - (f & 0xFFF));
+        let seats: Vec<[i16; 3]> = pose
+            .iter()
+            .take(5)
+            .enumerate()
+            .map(|(i, (p, _))| {
+                let div = if phase == 7 && i != 0 { 0x1400 } else { 0x1000 };
+                let (px, py, pz) = (i32::from(p[0]), i32::from(p[1]), i32::from(p[2]));
+                let x = cx + i32::from(sin_f) * pz / div + i32::from(cos_b) * px / div;
+                let z = cz + i32::from(sin_b) * px / div + i32::from(cos_f) * pz / div;
+                let y = match (phase, i) {
+                    (7, 0) => py + 0x20,
+                    (7, 3..) => py + 8 - 0x20,
+                    _ => py + 8,
+                };
+                [x as i16, y as i16, z as i16]
+            })
+            .collect();
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            return;
+        };
+        let parts = scene
+            .parts
+            .iter_mut()
+            .filter(|p| p.tag.is_some_and(|t| SPOON_EYE_RECORDS.contains(&t)));
+        for (k, part) in parts.enumerate() {
+            let Some(seat) = seats.get(k / SPOON_EYE_RECORDS.len()) else {
+                break;
+            };
+            if phase == 7 && passed {
+                part.finished = true;
+                continue;
+            }
+            [part.state.world_x, part.state.world_y, part.state.world_z] = *seat;
+            part.state.world_y_mirror = seat[1];
+        }
+    }
+
     /// PROT 0919 (Spoon).
     ///
     /// | Arm | Edge | Store |
@@ -585,6 +643,17 @@ impl World {
         monster_count: u8,
         creature: u8,
     ) {
+        // The creature's rate: `1` from arm 4's pass (`0x801F707C` on) and on
+        // every pass of arm 6 (`0x801F77FC`), so the clip it holds the eye
+        // close-up on barely moves; `4` through arm 7.
+        match (phase, passed) {
+            (4, true) | (6, _) => self.casting.module_cam.creature_rate = Some(1),
+            (7, _) => self.casting.module_cam.creature_rate = Some(4),
+            _ => {}
+        }
+        if matches!(phase, 5..=7) {
+            self.seat_spoon_eye_parts(phase, passed, creature);
+        }
         // Arm 3 lifts the row's top a frame product a pass, and its pass puts
         // the creature back on no clip (`0x801F6F28`, `0x801F6F70`).
         if phase == 3 {

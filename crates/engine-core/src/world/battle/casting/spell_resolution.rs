@@ -131,7 +131,7 @@ impl World {
             def.target,
             legaia_engine_battle::spells::SpellTarget::AllEnemies
         );
-        let mut summon_xp_gain: u32 = 0;
+        let mut summon_xp_gain: u32 = std::mem::take(&mut self.casting.module_hit_xp);
         if trains_spell_xp {
             summon_xp_gain = self.inline_module_spell_xp(def.id, jedo_banish);
         }

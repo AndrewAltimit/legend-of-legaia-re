@@ -62,6 +62,20 @@ fn group_aim(st: &ModuleCamState) -> ([i16; 3], i16) {
         .map_or(([0; 3], 0), |a| ([a.centroid_x, 0, a.centroid_z], a.extent))
 }
 
+/// Arm 4's pass (`0x801F7098..`): four parts for each of the creature's five
+/// eyes, seated on the creature and then moved onto the eye's pose object every
+/// pass of arms 5..7 (`World::seat_spoon_eye_parts`).
+pub const SPOON_EYE_RECORDS: [u32; 4] = [0x801F_8CC8, 0x801F_8D24, 0x801F_8D80, 0x801F_8DF8];
+const SPOON_EYE_SPAWNS: [ModuleSpawn; 20] = {
+    let mut out = [spoon_spawn(SPOON_EYE_RECORDS[0], SpawnAnchor::Creature); 20];
+    let mut i = 0;
+    while i < 20 {
+        out[i] = spoon_spawn(SPOON_EYE_RECORDS[i % 4], SpawnAnchor::Creature);
+        i += 1;
+    }
+    out
+};
+
 /// PROT 0919's director. `c` is the creature seat, `f` its heading, `P` the
 /// frame product a tick.
 ///
@@ -75,10 +89,7 @@ fn group_aim(st: &ModuleCamState) -> ([i16; 3], i16) {
 /// | 7 | - | the caption cleared; cut: pitch `0x80`, yaw `0x800 - f`, TR `(0, 0x200, extent)` on the group (`0x801F7E10`); the heal's parts |
 /// | 8 | pitch `0x80`, yaw `(scalar * 0x180 - word + 0x800) - f`, TR `(0, 0x200, 6 * extent)` on the group, `0x100` frames (`0x801F8508`) | - |
 ///
-/// Arm 4's twenty parts (`0x801F8CC8`, `8D24`, `8D80`, `8DF8`, five times),
-/// which arms 5..7 re-seat every pass on the creature's decoded pose objects
-/// `ctx+0x6F4`, are not carried: the engine does not publish that table to a
-/// director. Nor is arm 2's camera block `0x80084008..0x8008401E`.
+/// Not carried: arm 2's camera block `0x80084008..0x8008401E`.
 ///
 /// PORT: overlay_summon_spoon_0919_801f69d8 (PROT 0919; the camera arms, captions and the spawns of arms 2 and 7)
 pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -115,15 +126,18 @@ pub fn spoon_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -
                 ..ArmDirection::PASS
             }
         }
-        4 if !hold => caption(
-            shot(
-                [0x80, yaw_from(0x800, c.facing)],
-                [0, 0x4B0, 0x280],
-                focus_on(c),
-                1,
-            ),
-            ModuleCaption::AttackName,
-        ),
+        4 if !hold => ArmDirection {
+            spawns: &SPOON_EYE_SPAWNS,
+            ..caption(
+                shot(
+                    [0x80, yaw_from(0x800, c.facing)],
+                    [0, 0x4B0, 0x280],
+                    focus_on(c),
+                    1,
+                ),
+                ModuleCaption::AttackName,
+            )
+        },
         5 => with_drift(ArmDirection::PASS, z(MODULE_DRAIN_PER_TICK / 8)),
         6 if !hold => with_drift(
             shot(

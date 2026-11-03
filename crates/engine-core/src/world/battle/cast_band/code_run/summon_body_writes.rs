@@ -188,9 +188,10 @@ impl World {
             _ => return,
         };
         for t in targets {
-            let Some(mut dmg) = self.player_summon_predamage(caster, t, spell_id) else {
+            let Some(dmg) = self.summon_module_roll(caster, t, spell_id) else {
                 continue;
             };
+            let mut dmg = dmg.min(u32::from(u16::MAX)) as u16;
             if entry == 915 {
                 dmg = (dmg >> 2).max(1);
             }
@@ -224,7 +225,21 @@ impl World {
                         is_crit: false,
                     });
             }
-            legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
+            // PROT 0933's stages nothing (`0x801F7D2C..0x801F7D3C`, HP and on
+            // to the next seat): the row shows no reaction until arm 0x14's hit.
+            if entry == 933 {
+                legaia_engine_cast::seru_magic_ticks::apply_hit_cap_hp_minus_one(
+                    &mut v,
+                    u32::from(dmg),
+                );
+            } else {
+                legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
+            }
+            // PROT 0928's parks the flinch at rate 0 (`0x801F81C8`), so its cues
+            // wait with it; arm 0x13 sets the row going again.
+            if entry == 928 {
+                v.anim_rate = 0;
+            }
             self.write_cast_view(t, &v);
         }
     }
@@ -809,6 +824,8 @@ impl World {
                         .find(|p| p.0 == s)
                         .copied();
                     let a = &mut self.actors[s];
+                    // The rate arm 0xF parked at `0` (`0x801F8AD8`).
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
                     if let Some((_, pos, facing)) = saved {
                         let m = &mut a.move_state;
                         [m.world_x, m.world_y, m.world_z] = pos;

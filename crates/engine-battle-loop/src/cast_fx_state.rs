@@ -67,6 +67,13 @@ pub struct CastFxState {
     /// The capture body took a branch with no damage site (PROT 0953's
     /// charge): the band's fold owes the cast nothing.
     pub module_skips_fold: bool,
+    /// Spell XP the module's own hits have earned ahead of the fold: each
+    /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
+    /// once, with the level check, when the cast folds or its fold is waived.
+    pub module_hit_xp: u32,
+    /// The module's hit stages no reaction (PROT 0918's): the fold lands its
+    /// HP and leaves the victim's clip alone.
+    pub module_fold_quiet: bool,
     /// PROT 0954's module-resident words while its body runs
     /// ([`legaia_engine_cast::cast_fatal_decision`]).
     pub fatal_decision: Option<legaia_engine_cast::cast_fatal_decision::FatalDecisionState>,
@@ -427,6 +434,8 @@ impl CastFxState {
             module_phase: 0,
             module_ctx_278: 0,
             module_skips_fold: false,
+            module_hit_xp: 0,
+            module_fold_quiet: false,
             fatal_decision: None,
             fatal_banner: None,
             module_ring_angle: 0,

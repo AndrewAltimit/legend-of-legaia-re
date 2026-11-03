@@ -24,6 +24,7 @@ impl World {
     /// | 8 (`0x801F7690..0x801F76A8`, while the countdown is at or under `scalar << 5`) | the creature at `z = 0x400`, facing `0x800`; its height back to `0` on the pass (`0x801F7748`) |
     /// | 13 (`0x801F7D40..0x801F7D78`, at or under `scalar << 5`; pass `0x801F7DC0..0x801F7DCC`) | the creature walks `scalar / 4` a tick along `z`; on the pass the creature and the victim hidden |
     /// | 14 (`0x801F7E84..0x801F7E90`, pass) | the victim shown |
+    /// | 15 (`0x801F8088..0x801F80BC`, pass) | the victim's flinch staged |
     /// | 16 (`0x801F81E0`, pass) | the victim hidden |
     /// | `0x12` (`0x801F8698..0x801F86E0`, every pass) | the victim at `z = ctx[+0x6D0] / 8 - 0xA00` |
     /// | `0x13` (`0x801F893C..0x801F89B8`, pass) | the victim's pose restored, clip `0` at rate `8`; shown, or `+0x21C = 2` when it died |
@@ -79,7 +80,21 @@ impl World {
             return;
         }
         match phase {
+            // Arm 15's pass stages the victim's flinch (`0x801F8088..0x801F80BC`),
+            // the one reaction the cast gives it: arm `0x12`'s hit stages none.
+            0xF => {
+                let mut view = self.cast_view(victim);
+                view.staged_anim = if view.reaction_alt != 0 {
+                    view.reaction_alt
+                } else {
+                    view.reaction_alt2
+                };
+                view.restage |= 5;
+                self.write_cast_view(victim, &view);
+            }
             0 => {
+                // The hit stages no clip (`0x801F87B0..0x801F8864`).
+                self.casting.module_fold_quiet = true;
                 self.casting.module_saved_poses.clear();
                 if let Some(a) = self.actors.get_mut(v) {
                     self.casting.module_saved_poses.push((
@@ -109,6 +124,11 @@ impl World {
                 }
             }
             0x13 => {
+                let mut view = self.cast_view(victim);
+                view.staged_anim = 0;
+                view.anim_rate = 8;
+                view.restage = view.restage.wrapping_add(1);
+                self.write_cast_view(victim, &view);
                 let saved = self
                     .casting
                     .module_saved_poses

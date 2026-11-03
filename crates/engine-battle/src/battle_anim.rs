@@ -279,6 +279,12 @@ impl MonsterAnimPlayer {
         self.root_speed
     }
 
+    /// Overwrite the entry's root speed `+0x0C`, as a cast module's direct
+    /// store into the clip record does (PROT 0915's arm `0xB`).
+    pub fn set_root_speed(&mut self, speed: i16) {
+        self.root_speed = speed;
+    }
+
     /// The entry's signed end-of-clip displacement (`+0x0E`); `0` for a
     /// headless clip.
     pub fn end_root_step(&self) -> i16 {

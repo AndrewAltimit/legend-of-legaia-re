@@ -15,6 +15,10 @@ const TURN_RATE: i32 = 8;
 const HALF_TURN: i32 = 0x800;
 /// A full circle.
 const FULL_TURN: i32 = 0x1000;
+/// The frame step arms 7 and 8 run at. Their term `word / 4` comes off once a
+/// frame where the frame product comes off per vsync, so a pass a vsync takes a
+/// quarter of it: retail's stand reads `-552` entering arm 8 and `-140` leaving.
+const ARM_FRAME_STEP: i32 = 4;
 
 impl World {
     /// PROT 0915's creature, on each pass of the arms that move it:
@@ -41,6 +45,9 @@ impl World {
         caster: u8,
         spell_id: u8,
     ) {
+        // The module's two wrapper sites are its only hits: nothing rolls the
+        // whole power afterwards.
+        self.casting.module_skips_fold = true;
         // Arm 5's pass raises `+0x42 = 2` over object-effect row 1, tilted by
         // `-0x400` and cut at the victim's plane less `0x800`; arm 9's drops it
         // to the floor row: the creature comes up out of a slanted plane.
@@ -78,7 +85,7 @@ impl World {
                 a.move_state.world_z = a
                     .move_state
                     .world_z
-                    .wrapping_add((k * step - *spin / 4) as i16);
+                    .wrapping_add((k * step - *spin / (4 * ARM_FRAME_STEP)) as i16);
                 a.battle.facing_angle = (*spin * -0x14) as u16 & 0xFFF;
             }
             (9, true) => {
@@ -99,8 +106,15 @@ impl World {
                 a.battle.render_flag = 0xFF;
             }
             // `+0x1DD = 9`: no one seat's range stops the clip's root motion
-            // any more, so the creature runs (`0x801F77B4`).
-            (0xB, true) => a.battle.active_target = 9,
+            // any more (`0x801F77B4`), and the arm stores the running clip's
+            // root speed `0x50` straight into its entry (`0x801F77A0..0x801F77AC`):
+            // the disc's is `0`, so nothing else moves the creature.
+            (0xB, true) => {
+                a.battle.active_target = 9;
+                if let Some(p) = a.battle_animation.as_mut() {
+                    p.set_root_speed(0x50);
+                }
+            }
             (0xC, _) => {
                 self.mushura_chase(monster_count, seat, caster, spell_id);
                 if passed && let Some(a) = self.actors.get_mut(usize::from(seat)) {
@@ -151,12 +165,13 @@ impl World {
             if !in_reach || v.flags & FLAG_NON_TARGETABLE != 0 || self.battle_current_anim(e) != 0 {
                 continue;
             }
-            let Some(roll) = self.player_summon_predamage(caster, s, spell_id) else {
+            let Some(roll) = self.summon_module_roll(caster, s, spell_id) else {
                 continue;
             };
             // The readout flag kept down (`0x801F78AC`).
             self.battle.combo_cluster_held = true;
-            let hit = u32::from(roll >> 2).max(1);
+            let hit = (roll >> 2).max(1);
+            // The popup goes up ahead of the clamp (`0x801F7944`).
             self.battle
                 .hit_fx
                 .push(legaia_engine_battle::battle_events::BattleHitFx {
@@ -166,13 +181,22 @@ impl World {
                     is_crit: false,
                 });
             let mut v = self.cast_view(s);
-            legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, hit);
-            v.staged_anim = if v.reaction_alt != 0 {
-                v.reaction_alt
+            // Clamped to live HP: this hit is the one that kills
+            // (`0x801F795C..0x801F7990`), and the fold owes nothing more.
+            let dmg = hit.min(u32::from(v.hp));
+            v.hp_bar_delta = v.hp_bar_delta.wrapping_add(dmg as i32);
+            v.hp = (u32::from(v.hp) - dmg) as u16;
+            if v.hp == 0 {
+                v.staged_anim = v.knockdown_anim;
+                v.restage = 1;
             } else {
-                v.reaction_alt2
-            };
-            v.restage |= 0x05;
+                v.staged_anim = if v.reaction_alt != 0 {
+                    v.reaction_alt
+                } else {
+                    v.reaction_alt2
+                };
+                v.restage = 5;
+            }
             self.write_cast_view(s, &v);
             let Some(m) = self.actors.get_mut(e) else {
                 continue;

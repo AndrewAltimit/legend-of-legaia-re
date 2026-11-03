@@ -69,6 +69,15 @@ pub const fn theeder_sweep_phase(ctx_6d8: u16) -> u16 {
     ctx_6d8.wrapping_add(theeder_ramp_per_tick(THEEDER_SWEEP_ARM)) & 0x0FFF
 }
 
+/// Whether the engine's tick carries one of retail's arm 12 passes. Retail's
+/// frame step is 4 through this arm, so its word moves `0x100` a pass where the
+/// engine's moves `0x40` a tick, and only every fourth tick samples what retail's
+/// cone test sees. A test on the word's small values would hit a victim the first
+/// swing of retail's ray steps over.
+pub const fn theeder_pass_tested(ctx_6d8: u16) -> bool {
+    ctx_6d8 >= 0x100 && ctx_6d8 & 0xFF == 0
+}
+
 /// The render flag PROT 0904 raises the summon seat to in arm 4.
 pub const THEEDER_RISE_RENDER_FLAG: u8 = 4;
 

@@ -43,7 +43,7 @@ impl World {
                     is_heal: false,
                     is_crit: false,
                 });
-                if applied > 0 {
+                if applied > 0 && !self.casting.module_fold_quiet {
                     let survives = self
                         .actors
                         .get(target as usize)

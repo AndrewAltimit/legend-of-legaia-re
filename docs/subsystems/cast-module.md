@@ -866,9 +866,10 @@ calling all four until the last has landed and a `speed << 7` countdown
 (`0x801F8DB0`) has drained. At four vsyncs a tick those gates give arm `7` 65
 ticks and arm `9` 25, the measured dwell. Port:
 `seru_magic_ticks::swordie_slash_step`, driven by
-`World::run_cast_module_code` on the world's frame step with a neutral wrapper
-return, so each landing stages its reaction clip while the HP outcome stays
-the fold's.
+`World::run_cast_module_code` on the world's frame step. Each landing rolls for
+real and applies its quarter, and the four are the cast's damage. Slashes 1..3
+store `0` into the readout flag (`0x801F88DC`) and the fourth does not, so the
+cluster opens on it as `4 HIT`.
 
 ### Row sweeps
 
@@ -974,11 +975,18 @@ gives each exactly one owner:
 
 - **The fold** is the default. A body the port runs with a neutral wrapper
   return (`None`, `|_| 0`, a zero heal) writes no HP, and the band's generic
-  fold rolls the cast with the baked power. That covers every player-Seru and
-  summon tick and every single-target capture body except Plasma Strike's
-  burst.
+  fold rolls the cast with the baked power. That covers the player-Seru and
+  summon ticks with one whole-roll hit and every single-target capture body
+  except Plasma Strike's burst.
 - **The tick** owns the outcome where a body rolls in-tick, and the fold is
   waived:
+  - The player summons whose hits are scaled rolls, through
+    `World::summon_module_roll`: PROT 0908's three sites (`/ 4`, `* 3 / 4`,
+    `* 2 / 3`), PROT 0910's four slashes (`/ 4` each) and PROT 0915's two sites
+    (`/ 4` each). A fold here would land the whole roll on top. The roll still
+    does what the finisher does on any roll (spell XP, spirit gauge, rumble)
+    and the XP banks when the fold is waived. A monster's cast of these ids has
+    no such roll and keeps the fold.
   - PROT 0927 / 0966's stager sweeps: the fold runs the stager itself,
     `run_cast_module_aoe_for`.
   - The three whole-row tick sweeps (PROT 0938's two and 0965's), waived by
@@ -1487,8 +1495,11 @@ word is a sweep **phase**: the ray runs from a root `0x5C` ahead of the summon
 (22.5 degrees) about the facing, and the cone (`+-0x30`, both bearings from
 the root) reaches only the monsters in that arc. The port runs both ramps at
 64 ticks (`theeder_ramp_per_tick`), builds the ray with `theeder_ray_tip`,
-tests the cone against it, and gives the module a profile whose outcome arm is
-the sweep, so the band holds `0x36` until the phase has run its turn. A hit in
+tests the cone against it on the ticks that carry a retail pass
+(`theeder_pass_tested`), and gives the module a profile whose outcome arm is
+the sweep, so the band holds `0x36` until the phase has run its turn. Retail's first
+test is at phase `0x100`, where the ray is already `0x62` off the facing, so a victim dead
+ahead takes its hit at the centre crossing `0x800`, 32 vsyncs into the arm. A hit in
 the sweep arm stages the victim's knockdown id `+0x1F1` when its get-up id
 `+0x1F2` is non-zero (`0x801F7DF0..0x801F7E08`) and the flinch id `+0x1EF` /
 `+0x1F0` only otherwise (`0x801F7E0C..0x801F7E24`); the playing-clip test at
@@ -2270,7 +2281,7 @@ Beside the directors an engine-side pass applies each arm's seat writes
 
 | PROT | Writes |
 |---|---|
-| 0918 | the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
+| 0918 | the victim's flinch on arm 15's pass, the one reaction of the cast: arm `0x12`'s hit stages none, and arm `0x13` drops it to clip `0` at rate `8` and fades it if dead; the victim moved to `(0, -0x800)` and back, hidden and re-shown; the creature's spin as it grows (`facing = +0x72 * 6`), its landing at `z = 0x400`; `ctx[+0x278] = 2` on arm 4, `3` on arm 16 |
 | 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; arm 18's ring re-seated as the crystals on arm 19's pass and dropped by arm 20 ([below](#puera-crystals)); `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
 | 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
 
@@ -2374,11 +2385,12 @@ Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the soft-red then parked-red word (arms 9, `0xA`)
 and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
 quartered roll and the creature closes on a target at eight units a tick, trading it
-for another once in reach. The port clamps those hits to `HP - 1` and leaves the kill
-to the band's fold; retail's own writes can kill.
+for another once in reach. Those hits clamp to live HP and are what kills: the module
+has no other hit, so the band folds nothing for it.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
-2 and 7 over its holds; the twenty parts of arm 4 ride the creature's decoded pose
-objects `ctx+0x6F4`, which no director can read, and are not carried.
+2 and 7 over its holds. The twenty parts of arm 4 ride the creature's decoded pose
+objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 5..7
+(`seat_spoon_eye_parts`) from the same pool the creature's own draw reads.
 Spoon and Mushura raise their creature's `+0x42 = 2` over object-effect row 1, as
 Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pass on arm
 3, so the creature rises through it; Mushura's is tilted `-0x400` and cut at the
@@ -2390,9 +2402,14 @@ A **pre-hit** is the module's own non-lethal hit ahead of the fold: the
 summon branch of `FUN_801DD0AC` rolled per target, clamped to `HP - 1`, with
 the reaction staged in the `OR` form (`World::apply_summon_pre_hits`,
 `seru_magic_ticks::summon_pre_hit`). Mushura's is quartered and floored at
-`1`. Not carried: the per-seat tallies `0x801F6978` / `0x801F6980` the
-quartered roll is checked against, the `0x10` / `0x12` mode the wrapper is
-called with, and Mule's and Ozma's per-pass ladders.
+`1`. Each of Mushura's and Zenoir's rolls also adds to the readout's value
+window `0x801F6980` through the finisher, and the module trades the raw roll
+there for the amount it applied; every Mushura roll keeps the readout flag down,
+so its cluster never opens at all. PROT 0933's pre-hit stages no reaction
+(`0x801F7D2C..0x801F7D3C`), and PROT 0928's parks the flinch at rate `0`
+(`0x801F81C8`) until arm `0x13` sets the row going: neither sounds a cue before
+the kill. Not carried: the `0x10` / `0x12` mode the wrapper is called with, and
+Mule's and Ozma's per-pass ladders.
 
 The fades are the presentation hook's, fired off the image's decoded sites
 on the arm timing the director paces ([Presentation calls](#presentation-calls)).
@@ -4165,13 +4182,19 @@ both (`BattleActionHost::capture_band_exit` / `summon_band_exit`).
 wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)
 in the farthest bucket, under the whole scene: it darkens what the buffer
 still holds from an earlier frame, and everything the frame draws lands on
-top of it at full strength. The engine records the colour
-(`World::cast_armed_wash`) and composites no quad for it, since both hosts
-build each frame from a cleared target and draw screen primitives over the
-scene, where the quad could only darken the frame's own pixels. Composited
-that way, Horn's arm-9 wash (`0x202020` a pass) took that much off every
-additive layer of the arm: its rings and crowns drew a fraction as bright as
-retail's and its white blades topped out near `0xDF`.
+top of it at full strength. A battle frame does not clear, so what the drain
+leaves is the picture: the arms that arm it draw additive layers with no opaque
+stage under them, and those layers build on each other from frame to frame. A
+retail ordering table of Ozma's arm 16 rasterised on black matches the engine's
+old frame, dark teal with thin red rays, where the displayed frame is white:
+the white is the same packets over the earlier frames.
+
+The engine reproduces this where its target outlives a frame
+([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)):
+`World::cast_armed_wash_prim` is the drain, drawn as a backdrop. A cleared
+target gets no quad, since it could only darken the frame's own pixels:
+composited that way, Horn's arm-9 wash (`0x202020` a pass) took that much off
+every additive layer of the arm.
 
 **Not fired.** The 17 fade sites the decoder does not place sit in spawn
 stagers, routines the move VM's op `0x20` calls with an arm of its own rather

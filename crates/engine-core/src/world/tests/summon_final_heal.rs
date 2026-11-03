@@ -404,3 +404,42 @@ fn battle_entry_bounds_the_magic_level_up_record() {
         "a new battle starts with an empty level-up record"
     );
 }
+
+/// A module's own wrapper rolls train the spell as the fold's does, and a
+/// module with no fold (PROT 0910, 0915) still banks what they earned.
+#[test]
+fn a_waived_fold_banks_the_xp_its_modules_rolls_earned() {
+    let mut world = summon_xp_world(4000, 4000);
+    world.party.party_count = 1;
+    let expected = 7;
+    world.casting.module_hit_xp = expected;
+    world.casting.module_skips_fold = true;
+    world.casting.pending_cast = Some(legaia_engine_battle_loop::cast_band::PendingCast {
+        caster: 0,
+        spell_id: 0x81,
+        targets: vec![1],
+        on_flight: false,
+    });
+    world.fold_pending_cast();
+    assert_eq!(world.actors[1].battle.hp, 4000, "the fold rolled nothing");
+    let slot =
+        legaia_engine_battle::magic_xp::spell_slot(&world.party.roster.members[0], 0x81).unwrap();
+    assert_eq!(
+        legaia_engine_battle::magic_xp::spell_xp(&world.party.roster.members[0], slot),
+        expected
+    );
+    assert_eq!(world.casting.module_hit_xp, 0, "banked once");
+}
+
+/// PROT 0918's hit stages no clip: the fold lands its HP and leaves the
+/// victim's reaction channel alone.
+#[test]
+fn a_quiet_fold_lands_its_hp_without_a_reaction() {
+    let mut world = summon_xp_world(4000, 4000);
+    world.casting.module_fold_quiet = true;
+    let def = gimard_spell_def();
+    let before = world.actors[1].battle.hp;
+    world.cast_spell_on_slots(0, &def, &[1]);
+    assert!(world.actors[1].battle.hp < before);
+    assert!(world.actors[1].battle_reaction_entry.is_none());
+}
