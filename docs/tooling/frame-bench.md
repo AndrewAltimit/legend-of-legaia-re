@@ -146,6 +146,16 @@ A battle row waits for the page's battle scene (`view._battle`), not a frame cou
 intro runs on sim ticks, so on a page drawing faster than the sim ticks a frame count ends
 inside it, and the battle edge would land in the timed window or nowhere.
 
+**`(program)` is not one thing.** A CPU profile's largest line outside the frame function is
+`(program)`, native code it cannot see into. `--trace` names it: a browser trace over six
+seconds, read as self time per trace event on the page's main thread, split by whether a
+requestAnimationFrame callback holds the event, in milliseconds per frame. Style, layout, paint
+and layerize show there by name, and a run that needs to know who dirtied them adds
+`--trace-out file`, which writes the events, invalidation tracking and stacks included. The
+page's own DOM writes are the usual cause: `play.html`'s HUD once replaced six text nodes per
+frame with the same strings. `--profile` also prints self time by kind (`js`, `wasm`, `program`,
+`gl call`, `canvas2d call`, `gc`, `bench wrapper`) and an inclusive table.
+
 `--cpu-throttle n` slows the renderer's main thread through
 `Emulation.setCPUThrottlingRate`, and the output calls it a proxy. It shows which costs
 scale with the CPU. It says nothing of what a device does: it leaves the GPU process, the

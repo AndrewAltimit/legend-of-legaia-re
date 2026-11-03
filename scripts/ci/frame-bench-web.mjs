@@ -4,7 +4,7 @@
 //   scripts/ci/frame-bench-web.mjs [--site site] [--scene town01,..] [--frames 600]
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
 //       [--reenter] [--entry-profile] [--reload] [--idle ms]
-//       [--vsync] [--paths] [--card file.mcr] [--card-block n] [--cpu-throttle n]
+//       [--vsync] [--paths] [--card file.mcr] [--card-block n] [--cpu-throttle n] [--trace]
 //       [--uncheck id,id] [--no-msaa] [--canvas-scale s] [--auto-quality]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
@@ -365,6 +365,74 @@ function summarise(b, frames) {
 }
 
 /* Time by function, callees included. */
+const GL_CALL = /^(draw|bind|use|uniform|buffer|bufferSub|tex|enable|disable|blend|depth|vertexAttrib|clear|framebuffer|readPixels|create|delete|viewport|activeTexture|getParameter|polygonOffset|readBuffer|colorMask|cullFace|stencil|invalidate|blit|fenceSync|clientWait|finish|flush|getError|getExtension|beginQuery|endQuery|getQuery)/;
+const CANVAS_CALL = /^(drawImage|clearRect|fillRect|getImageData|putImageData|getContext|fill|stroke|save|restore|scale|translate|setTransform|beginPath|rect|createPattern|createImageData)$/;
+
+/* A browser trace over `during`, its events as a list. */
+async function traceWindow(browser, during) {
+  const cdp = await browser.newBrowserCDPSession();
+  const events = [];
+  cdp.on('Tracing.dataCollected', (m) => { for (const e of m.value) events.push(e); });
+  const done = new Promise((res) => cdp.once('Tracing.tracingComplete', res));
+  await cdp.send('Tracing.start', { transferMode: 'ReportEvents', traceConfig: { includedCategories: [
+    'toplevel', 'devtools.timeline', 'disabled-by-default-devtools.timeline', 'blink', 'cc', 'gpu', 'v8', 'loading', 'webaudio',
+    'disabled-by-default-v8.gc', 'viz', 'media', 'scheduler',
+    ...(arg('trace-out') ? ['disabled-by-default-devtools.timeline.invalidationTracking', 'disabled-by-default-devtools.timeline.stack'] : [])] } });
+  await during();
+  await cdp.send('Tracing.end');
+  await done;
+  await cdp.detach();
+  return events;
+}
+
+/* The page's main thread out of a trace: self time per event name, split by whether a
+ * requestAnimationFrame callback holds the event, and whole tasks that hold no callback
+ * by what sits on top of them. Times are wall clock, so a throttled run reads throttled. */
+function traceTable(events, frames) {
+  const threads = events.filter((e) => e.ph === 'M' && e.name === 'thread_name' && e.args.name === 'CrRendererMain');
+  const count = new Map();
+  for (const e of events) {
+    if (e.ph !== 'X') continue;
+    if (threads.some((t) => t.pid === e.pid && t.tid === e.tid)) count.set(e.pid, (count.get(e.pid) || 0) + 1);
+  }
+  const pid = [...count.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const tid = threads.find((t) => t.pid === pid).tid;
+  const xs = events.filter((e) => e.pid === pid && e.tid === tid && e.ph === 'X' && e.dur !== undefined)
+    .sort((a, b) => a.ts - b.ts || b.dur - a.dur);
+  const self = new Map();
+  const tasks = new Map();
+  const stack = [];
+  const close = (until) => {
+    while (stack.length && stack[stack.length - 1].end <= until) {
+      const f = stack.pop();
+      const key = f.e.name;
+      const row = self.get(key) || [0, 0];
+      row[f.raf ? 0 : 1] += Math.max(0, f.self);
+      self.set(key, row);
+      if (!stack.length && !f.sawRaf) {
+        const top = f.first || f.e.name;
+        tasks.set(top, (tasks.get(top) || 0) + f.e.dur);
+      }
+      if (stack.length && f.sawRaf) stack[stack.length - 1].sawRaf = true;
+    }
+  };
+  for (const e of xs) {
+    close(e.ts);
+    const up = stack[stack.length - 1];
+    if (up) {
+      up.self -= e.dur;
+      if (!up.first) up.first = e.name;
+    }
+    const isRaf = e.name === 'FireAnimationFrame';
+    stack.push({ e, end: e.ts + e.dur, self: e.dur, raf: isRaf || (up ? up.raf : false), sawRaf: isRaf, first: null });
+  }
+  close(Infinity);
+  const per = (us) => us / 1000 / Math.max(1, frames);
+  const rows = [...self.entries()].map(([k, [a, b]]) => [k, per(a), per(b)]).sort((x, y) => y[1] + y[2] - x[1] - x[2]);
+  return { frames, rows, inside: rows.reduce((a, r) => a + r[1], 0), outside: rows.reduce((a, r) => a + r[2], 0),
+    tasks: [...tasks.entries()].map(([k, v]) => [k, per(v)]).sort((x, y) => y[1] - x[1]) };
+}
+
 function inclusiveTableOf(profile, n) {
   const byId = new Map(profile.nodes.map((x) => [x.id, x]));
   const parent = new Map();
@@ -918,6 +986,33 @@ async function main() {
       s.outside_frame_profile = [...outside.entries()].sort((x, y) => y[1] - x[1]).slice(0, 12)
         .map(([k, v]) => [k, +(v * 100 / tot).toFixed(1)]);
       console.log('  outside frame function, self%: ' + s.outside_frame_profile.map(([k, v]) => `${k} ${v}`).join(', '));
+      /* Where the frame's self time sits by kind: the C6 question, how much is the GL calls. */
+      const kinds = {};
+      profile.samples.forEach((id, i) => {
+        const f = byId.get(id).callFrame;
+        const n = f.functionName;
+        const u = f.url || '';
+        const kind = n === '(idle)' ? 'idle' : n === '(program)' ? 'program' : n === '(garbage collector)' ? 'gc'
+          : n === 'proto.<computed>' || /^(real|wrap)/.test(n) && !u ? 'bench wrapper'
+            : u.includes('.wasm') ? 'wasm' : u ? 'js'
+              : GL_CALL.test(n) ? 'gl call' : CANVAS_CALL.test(n) ? 'canvas2d call' : 'other native';
+        kinds[kind] = (kinds[kind] || 0) + dts[i];
+      });
+      s.self_by_kind = Object.entries(kinds).sort((x, y) => y[1] - x[1]).map(([k, v]) => [k, +(v * 100 / tot).toFixed(1)]);
+      console.log('  self% by kind: ' + s.self_by_kind.map(([k, v]) => `${k} ${v}`).join(', '));
+      s.inclusive = inclusiveTableOf(profile, 60);
+      console.log('  inclusive ms over the sample:\n          ' + s.inclusive);
+    }
+    if (arg('trace')) {
+      const framesAt = await page.evaluate(() => window.__bench.calls);
+      const events = await traceWindow(browser, () => page.waitForTimeout(6000));
+      const frames = (await page.evaluate(() => window.__bench.calls)) - framesAt;
+      s.trace = traceTable(events, frames);
+      if (arg('trace-out')) fs.writeFileSync(`${arg('trace-out')}.${name}.json`, JSON.stringify(events));
+      console.log(`  main thread by trace event, ms per frame over ${frames} frames (self; inside rAF | outside):\n`
+        + s.trace.rows.slice(0, 30).map(([k, a, b]) => `    ${k} ${a.toFixed(2)} | ${b.toFixed(2)}`).join('\n'));
+      console.log(`    total ${s.trace.inside.toFixed(2)} | ${s.trace.outside.toFixed(2)}; tasks that hold no rAF, by top event: `
+        + s.trace.tasks.slice(0, 12).map(([k, v]) => `${k} ${v.toFixed(2)}`).join(', '));
     }
   }
   /* Can the dry-frame row read anything here? A stall long past the queue must. */
