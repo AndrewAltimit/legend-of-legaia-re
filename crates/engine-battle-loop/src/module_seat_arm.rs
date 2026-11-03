@@ -154,8 +154,12 @@ pub fn seat_arm_write(prot_entry: u32) -> Option<SeatArmWrite> {
             .render_scale(0),
         // `0x801F6D2C..0x801F6D54`.
         924 => seat(Lit(0), Lit(0x2000), 0x800).rate(8),
-        // `0x801F6DC0..0x801F6DEC`.
-        925 => seat(Lit(0), Lit(0), 0x800).rate(8),
+        // `0x801F6DC0..0x801F6DF4`: with the colour word `+0x04 = 0x3FFFFFFF`
+        // and the render node's scale `0x300`, which arm 5 grows.
+        925 => seat(Lit(0), Lit(0), 0x800)
+            .rate(8)
+            .colour(0x3FFF_FFFF)
+            .render_scale(0x300),
         // `0x801F6DF4..0x801F6E0C`.
         927 => seat(Lit(0), Lit(0x1C0), 0x800).rate(0),
         // `0x801F746C..0x801F7474`: the origin, facing `0`. The height is

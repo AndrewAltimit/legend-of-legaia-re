@@ -1772,6 +1772,14 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
             if has_bump && exits {
                 holding.insert(phase);
             }
+            let after_bump = |site: u32| {
+                reach.iter().any(|&v| {
+                    img.ins(v).is_some_and(|i| is_phase_store(&i, &alias))
+                        && reach_from(&img, v + 4, &reach, &alias, lo, hi)
+                            .0
+                            .contains(&site)
+                })
+            };
             let timing_of = |site: u32| -> SiteTiming {
                 if !has_bump {
                     return SiteTiming::Every;
@@ -1790,7 +1798,11 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
                 // The delay slot of a call site is part of it.
                 match (bump, exit) {
                     (true, false) => SiteTiming::Pass,
-                    (false, true) => SiteTiming::Hold,
+                    // A site a phase store falls through to runs on the pass
+                    // as well (PROT 0925's arm 1 advances inside its stream
+                    // poll, then kills the band's flash on every pass,
+                    // `0x801F6C14..0x801F6C6C`).
+                    (false, true) if !after_bump(site) => SiteTiming::Hold,
                     _ => SiteTiming::Every,
                 }
             };

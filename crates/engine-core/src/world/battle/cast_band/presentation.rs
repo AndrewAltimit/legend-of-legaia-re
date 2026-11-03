@@ -82,6 +82,8 @@ const BODY_PACED: [u32; 4] = [910, 911, 912, 913];
 
 /// Modules whose fades a hand port already spawns.
 const FADES_PORTED_BY_HAND: [u32; 3] = [905, 954, 966];
+/// The `FUN_80024E80` call of PROT 0934's hit ladder.
+const OZMA_LADDER_FADE_DECODED_SITE: u32 = 0x801F_907C;
 /// Modules whose message-bar raise a hand port already makes: PROT 0940
 /// (Glare's caption, raised as the roll resolves), 0941 (the enemy Steal's
 /// composed line) and 0954 (Fatal Decision, ported whole).
@@ -194,6 +196,12 @@ impl World {
         // that held fade unkillable.
         let mut spawned_now: Vec<u32> = Vec::new();
         for s in &sites {
+            // PROT 0934's ladder fade, spawned per hit by its hand port
+            // (`World::ozma_hit_ladder`): the site sits inside the arm's
+            // threshold test, which the decoder cannot place.
+            if entry == 934 && s.va == OZMA_LADDER_FADE_DECODED_SITE {
+                continue;
+            }
             // A site behind a test of the module's own word runs only on
             // the passes the word admits; a word the engine does not carry
             // leaves the site to its timing.

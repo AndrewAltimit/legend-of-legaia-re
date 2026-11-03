@@ -243,6 +243,19 @@ impl CastFxState {
                     }
                 }
             }
+            // Arm 6's pass halts the ring emitter it kept in `0x801F801C`
+            // (`0x801F71BC..0x801F71D4`).
+            925 if phase == 6 && passed => {
+                if let Some(sc) = self.active_summon.as_mut() {
+                    for part in &mut sc.parts {
+                        if part.tag == Some(t::SPIKEFISH_RING_EMITTER_RECORD) {
+                            part.finished = true;
+                        }
+                    }
+                }
+            }
+            // Arm 8's pass flushes the pool (`0x801F7388`).
+            925 if phase == t::SPIKEFISH_OUTCOME_ARM && passed => self.flush_module_part_pool(),
             934 if phase == 0 || (phase == 10 && passed) => self.module_ozma_word = 0,
             _ => {}
         }

@@ -114,6 +114,11 @@ pub const SPIKEFISH_RING_RECORDS: [u32; 2] = [0x801F_7F98, 0x801F_7FD0];
 /// arm 1 seats it in (`li v0,0x7` at `0x801F7BC4`).
 pub const SPIKEFISH_RING_ARM: u8 = 7;
 
+/// The record arm 4 seats on the creature, keeps in the handle `0x801F801C`
+/// and arm 6 halts on its pass: the part whose op-`0x20` seats a ring every
+/// 24 frames.
+pub const SPIKEFISH_RING_EMITTER_RECORD: u32 = 0x801F_7D3C;
+
 /// PROT 0925 (Spikefish) - the stager `0x801F7AE8`, two arms, every seat
 /// through the pool wrapper `FUN_80050ED4` at `0x1000`:
 ///

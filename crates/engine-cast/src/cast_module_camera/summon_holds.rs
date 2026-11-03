@@ -60,8 +60,8 @@
 //! cite the gate and the re-arm stores.
 
 use super::{
-    ArmDirection, CaptureDrift, ModuleCamSeats, ModuleCamState, ModuleProfile, ModuleShot,
-    SPEED_SCALAR,
+    ArmDirection, CaptureDrift, ModuleCamSeats, ModuleCamState, ModuleCaption, ModuleProfile,
+    ModuleShot, ModuleSpawn, SPEED_SCALAR, SpawnAnchor, SpawnRecord,
 };
 
 /// One arm's wait.
@@ -405,8 +405,36 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
     false
 }
 
-/// PROT 0925's director: the holds of [`SPIKEFISH`] plus the body's camera
-/// writes. Every shot is a `FUN_801D829C` call on a zeroed stack trio with
+/// A spawn off the zeroed stack trios `sp+0x30` / `sp+0x20` of PROT 0925's
+/// arms 6 and 7: every record's own `WORLD_SET` places it.
+const fn spikefish_zeroed(record: u32) -> ModuleSpawn {
+    ModuleSpawn {
+        record: SpawnRecord::Module(record),
+        anchor: SpawnAnchor::Literal {
+            pos: [0; 3],
+            rot: [0; 3],
+        },
+    }
+}
+
+/// Arm 4's pass (`0x801F6F88`): the ring emitter on the creature.
+const SPIKEFISH_ARM4_SPAWNS: [ModuleSpawn; 1] = [ModuleSpawn {
+    record: SpawnRecord::Module(crate::cast_module_ticks::SPIKEFISH_RING_EMITTER_RECORD),
+    anchor: SpawnAnchor::Creature,
+}];
+/// Arm 6's pass (`0x801F71E0`): the part whose op-`0x20` calls seat the rays.
+const SPIKEFISH_ARM6_SPAWNS: [ModuleSpawn; 1] = [spikefish_zeroed(0x801F_7F2C)];
+/// Arm 7's pass (`0x801F726C..0x801F72D0`): the five shells.
+const SPIKEFISH_ARM7_SPAWNS: [ModuleSpawn; 5] = [
+    spikefish_zeroed(0x801F_7DB0),
+    spikefish_zeroed(0x801F_7DFC),
+    spikefish_zeroed(0x801F_7E48),
+    spikefish_zeroed(0x801F_7E94),
+    spikefish_zeroed(0x801F_7EE0),
+];
+
+/// PROT 0925's director: the holds of [`SPIKEFISH`] plus the body's camera,
+/// caption and spawn writes. Every shot is a `FUN_801D829C` call on a zeroed stack trio with
 /// immediates over it, so its focus is the stage origin; every drift is
 /// the bare frame step `*(0x1F800393)` (the `lbu 0x7F` off `0x1F800314`)
 /// times a constant, one vsync's worth a tick.
@@ -414,15 +442,16 @@ pub fn hold_step(table: &[HoldArm], st: &mut ModuleCamState, phase: u8) -> bool 
 /// | arm | every pass | on the pass |
 /// |---|---|---|
 /// | 0 (`0x801F6AB0`) | - | cut pitch `0`, yaw `0`, TR `(0, 0x500, 0x300)` |
-/// | 3 (`0x801F6E0C..0x801F6E38`) | TR y `-2`, TR z `+8` | - |
+/// | 3 (`0x801F6E0C..0x801F6E38`) | TR y `-2`, TR z `+8` | the spell name (`0x801F6EE8`) |
+/// | 4 (`0x801F6F20..0x801F6F88`) | - | the attack name; the ring emitter on the creature |
 /// | 5 (`0x801F6FAC..0x801F7014`) | TR y `+12`, TR z `+8`, yaw `+8`, pitch `-1` | cut pitch `0x80`, yaw `0`, TR `(0, 0x1400, 0x4000)` (`0x801F7078`) |
-/// | 6 (`0x801F7180`, before the gate) | a `0x40`-frame shot pitch `0`, yaw `0`, TR `(0, 0x2400, 0x2400)` | - |
+/// | 6 (`0x801F7180`, before the gate) | a `0x40`-frame shot pitch `0`, yaw `0`, TR `(0, 0x2400, 0x2400)` | the ray part `0x801F7F2C` |
+/// | 7 | - | the five shells (`0x801F7DB0..0x801F7EE0`) |
 /// | 8 (`0x801F7364`, before the gate) | a `0x20`-frame shot pitch `0`, yaw `0`, TR `(0, 0x2400, 0x4E20)` | - |
 ///
-/// Not carried: arm 5's growth of the creature's render scale (`+0x72 +=
-/// 10 * step` on its model node, `0x801F7018..0x801F7030`) and arm 8's flee
-/// staging, whose reverse-angle tween (`0x801F78C8`) belongs to the run
-/// band it hands the action to.
+/// The creature's own stores are `World::apply_spikefish_writes`. Not carried:
+/// arm 8's flee staging, whose reverse-angle tween (`0x801F78C8`) belongs to
+/// the run band it hands the action to.
 ///
 /// PORT: overlay_summon_spikefish_0925_801f6a00 (PROT 0925; camera arms 0, 3, 5, 6 and 8)
 pub fn spikefish_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -> ArmDirection {
@@ -443,14 +472,29 @@ pub fn spikefish_direct(st: &mut ModuleCamState, phase: u8, _: ModuleCamSeats) -
     };
     match phase {
         0 if !held => base.shot = Some(shot(0, [0, 0x500, 0x300], 1)),
-        3 => base.drift = Some(drift(0, 0, -2 * T, 8 * T)),
+        3 => {
+            base.drift = Some(drift(0, 0, -2 * T, 8 * T));
+            if !held {
+                base.caption = Some(ModuleCaption::SpellName);
+            }
+        }
+        4 if !held => {
+            base.caption = Some(ModuleCaption::AttackName);
+            base.spawns = &SPIKEFISH_ARM4_SPAWNS;
+        }
         5 => {
             base.drift = Some(drift(-T, 8 * T, 12 * T, 8 * T));
             if !held {
                 base.shot = Some(shot(0x80, [0, 0x1400, 0x4000], 1));
             }
         }
-        6 => base.shot = Some(shot(0, [0, 0x2400, 0x2400], 0x40)),
+        6 => {
+            base.shot = Some(shot(0, [0, 0x2400, 0x2400], 0x40));
+            if !held {
+                base.spawns = &SPIKEFISH_ARM6_SPAWNS;
+            }
+        }
+        7 if !held => base.spawns = &SPIKEFISH_ARM7_SPAWNS,
         8 => base.shot = Some(shot(0, [0, 0x2400, 0x4E20], 0x20)),
         _ => {}
     }
@@ -504,7 +548,7 @@ pub fn summon_hold_profile(prot_entry: u32) -> Option<ModuleProfile> {
         owns_phase: false,
         // A director that reports its arms' spawn calls (PROT 0918's, 0922's, 0927's) seats
         // them per arm; the others leave the stager to seat the record set.
-        stages_spawns: matches!(prot_entry, 918 | 919 | 922 | 924 | 927),
+        stages_spawns: matches!(prot_entry, 918 | 919 | 922 | 924 | 925 | 927),
         seat_arm: Some(seat_arm),
         director_body: false,
     })
@@ -716,6 +760,43 @@ mod tests {
                 ([0; 3], tr, [0; 3], frames)
             );
         }
+    }
+
+    /// Each arm's records wait for its pass: nothing of the rings or the rays
+    /// stands while the creature is still coming in.
+    #[test]
+    fn the_spikefish_arms_seat_their_records_on_their_passes() {
+        let seats = ModuleCamSeats::default();
+        let record = |d: &ArmDirection| -> Vec<u32> {
+            d.spawns
+                .iter()
+                .map(|s| match s.record {
+                    SpawnRecord::Module(va) => va,
+                    SpawnRecord::BattleProto(va) => va,
+                })
+                .collect()
+        };
+        let mut st = ModuleCamState::default();
+        for arm in [4, 6, 7] {
+            st.countdown.0 = 100;
+            assert!(record(&spikefish_direct(&mut st, arm, seats)).is_empty());
+        }
+        st.countdown.0 = 0;
+        let pass = spikefish_direct(&mut st, 4, seats);
+        assert_eq!(pass.caption, Some(ModuleCaption::AttackName));
+        assert_eq!(
+            record(&pass),
+            [crate::cast_module_ticks::SPIKEFISH_RING_EMITTER_RECORD]
+        );
+        st.countdown.0 = 0;
+        assert_eq!(
+            spikefish_direct(&mut st, 3, seats).caption,
+            Some(ModuleCaption::SpellName)
+        );
+        st.countdown.0 = 0;
+        assert_eq!(record(&spikefish_direct(&mut st, 6, seats)), [0x801F_7F2C]);
+        st.countdown.0 = 0;
+        assert_eq!(record(&spikefish_direct(&mut st, 7, seats)).len(), 5);
     }
 
     #[test]

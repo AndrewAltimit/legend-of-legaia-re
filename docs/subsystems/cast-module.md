@@ -2192,6 +2192,15 @@ focus is the stage origin. 0918, 0922 and 0927 have
 full directors over the same tables ([below](#prot-0918-0922-and-0927-directors)).
 Each module's profile paces the band, so `0x36` lasts as long as the module.
 
+PROT 0925's records wait for their arms: arm 4's pass seats the ring emitter
+`0x801F7D3C` on the creature and arm 6's halts it (handle `0x801F801C`), arm 6's
+seats the ray part `0x801F7F2C`, arm 7's the five shells `0x801F7DB0..0x801F7EE0`,
+and arm 8's flushes the pool. The creature's stores are
+`World::apply_spikefish_writes`: the seat's colour word `0x3FFFFFFF` and node
+scale `0x300`, arm 5's `+0x72 += 10 * step`, arm 6's freeze (`+0x21D = 0`) with
+the red tint state `+0x21C = 3`. Seating the record set at the band's entry
+draws every additive shell over the whole cast, which is a white frame.
+
 PROT 0924's finale is a one-in-128 kill. Arm 0 draws `rand()`
 (`0x801F6B0C`) and raises the word `0x801F7C4C` only when the low seven bits
 are zero; arm 2 picks its cue off the word (`0x189` on the kill path, `0x18A`

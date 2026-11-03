@@ -31,6 +31,10 @@ const NEAR_BLACK_WORD: u32 = 0x0010_0401;
 const OZMA_LADDER_FIRST: i32 = 0x60;
 /// Each hit's fall of that threshold (`0x801F90E8`).
 const OZMA_LADDER_STEP: i32 = 0x20;
+/// The fade lengths of the ladder's hits and of its closing hit
+/// (`0x801F8FF0`, `0x801F9050`).
+const OZMA_HIT_FLASH_FRAMES: i16 = 0x10;
+const OZMA_LAST_FLASH_FRAMES: i16 = 0xC0;
 /// The fade call in arm `0x18`'s hit block.
 const OZMA_LADDER_FADE_SITE: u32 = 0x801F_907C;
 
@@ -505,8 +509,8 @@ impl World {
     /// targetable monster: the summon roll `FUN_801DD0AC(0x10, 7, seat)`
     /// quartered, plus `0x40 + rand() % 0x40`, its popup pushed, the HP write
     /// clamped to `HP - 1`, the flinch `+0x1EF` (else `+0x1F0`) staged with
-    /// the restage bits `5`, and a white fade over `0x10` frames. The fourth
-    /// hit, at threshold `0`, is the band's fold on the arm's pass.
+    /// the restage bits `5`, and per monster a fade over `0x10` frames. The
+    /// fourth hit, at threshold `0`, is the band's fold on the arm's pass.
     ///
     /// Not carried: the damage tallies the quartered part is booked against
     /// (`0x8007BD14`, or `0x801F6980 + seat * 2` under a group target).
@@ -520,7 +524,15 @@ impl World {
             }
         }
         let threshold = self.casting.module_ozma_ladder;
-        if passed || threshold <= 0 || self.casting.module_cam.countdown.0 > threshold {
+        // The closing hit is the band's fold, with the same flash per monster
+        // over `0xC0` frames (`li v0,0xC0` at `0x801F9050`).
+        if passed {
+            if threshold <= 0 {
+                self.ozma_hit_flashes(monster_count, OZMA_LAST_FLASH_FRAMES);
+            }
+            return;
+        }
+        if threshold <= 0 || self.casting.module_cam.countdown.0 > threshold {
             return;
         }
         self.casting.module_ozma_ladder = threshold - OZMA_LADDER_STEP;
@@ -553,21 +565,34 @@ impl World {
             v.restage |= 0x05;
             self.write_cast_view(s, &v);
         }
+        self.ozma_hit_flashes(monster_count, OZMA_HIT_FLASH_FRAMES);
+    }
+
+    /// The fade one ladder hit spawns inside its loop, one per monster it
+    /// hits (`0x801F9048..0x801F907C`): additive, `(0x60, 0x60, 0x18)` to
+    /// black over `frames`.
+    fn ozma_hit_flashes(&mut self, monster_count: u8, frames: i16) {
+        use legaia_engine_cast::cast_module_ticks::FLAG_NON_TARGETABLE;
         let t = legaia_engine_system::fade::FadeTemplate {
             kind: 1,
-            duration: 0x10,
+            duration: frames,
             start_rgb: [0x60, 0x60, 0x18],
             end_rgb: [0, 0, 0],
             mode: [0, 0, 0],
         };
-        let mut seat = None;
-        legaia_engine_system::fade::spawn_fade(&mut seat, &t, 0);
-        if let Some(state) = seat {
-            self.casting.module_pres.fades.push(HookFade {
-                site: OZMA_LADDER_FADE_SITE,
-                slot: None,
-                state,
-            });
+        for (e, _) in self.ra_seru_row(monster_count) {
+            if self.cast_view(e as u8).flags & FLAG_NON_TARGETABLE != 0 {
+                continue;
+            }
+            let mut seat = None;
+            legaia_engine_system::fade::spawn_fade(&mut seat, &t, 0);
+            if let Some(state) = seat {
+                self.casting.module_pres.fades.push(HookFade {
+                    site: OZMA_LADDER_FADE_SITE,
+                    slot: None,
+                    state,
+                });
+            }
         }
     }
 
@@ -795,6 +820,58 @@ impl World {
             }
             (0xB, true) => self.ra_seru_row_restore(monster_count, true),
             _ => {}
+        }
+    }
+
+    /// PROT 0925 (the Spikefish flute), the stores beside its director
+    /// (`FUN_801F6A00`).
+    ///
+    /// | Arm | Edge | Store |
+    /// |---|---|---|
+    /// | 0, 1 (`0x801F6AEC..0x801F6B78`, `0x801F6C98..0x801F6D24`) | every pass | every party seat and living monster hidden |
+    /// | 5 (`0x801F7018..0x801F7030`) | every pass | the creature's node scale `+0x72 += 10 * step` |
+    /// | 5 (`0x801F70AC..0x801F713C`) | pass | those seats shown again, `+0x04 = 0x20080200` |
+    /// | 6 (`0x801F71DC..0x801F71E4`) | pass | the creature frozen (`+0x21D = 0`), its red tint state `+0x21C = 3` |
+    pub(in crate::world::battle::cast_band) fn apply_spikefish_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        creature: u8,
+    ) {
+        const SHOWN: u32 = 0x2008_0200;
+        const SCALE_PER_TICK: u16 = 10;
+        let party = usize::from(self.party.party_count);
+        if phase <= 1 {
+            for a in self.actors.iter_mut().take(party) {
+                a.battle.render_color = 0;
+                a.battle.render_flag = FLAG_PARKED;
+            }
+            self.ra_seru_row_word(monster_count, 0, FLAG_PARKED);
+        }
+        if phase == 5 {
+            if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                a.battle.render_scale = Some(
+                    a.battle
+                        .render_scale
+                        .unwrap_or(0x1000)
+                        .wrapping_add(SCALE_PER_TICK),
+                );
+            }
+            if passed {
+                for a in self.actors.iter_mut().take(party) {
+                    a.battle.render_color = SHOWN;
+                    a.battle.render_flag = 0;
+                }
+                self.ra_seru_row_word(monster_count, SHOWN, 0);
+            }
+        }
+        if phase == 6
+            && passed
+            && let Some(a) = self.actors.get_mut(usize::from(creature))
+        {
+            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(0);
+            a.battle.render_flag = 3;
         }
     }
 

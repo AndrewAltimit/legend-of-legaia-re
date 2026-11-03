@@ -1680,6 +1680,14 @@ impl World {
                     seat_slot,
                 );
             }
+            if entry == SPIKEFISH_ENTRY {
+                self.apply_spikefish_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
             if entry == 924 {
                 self.apply_rave_writes(
                     phase_in,
