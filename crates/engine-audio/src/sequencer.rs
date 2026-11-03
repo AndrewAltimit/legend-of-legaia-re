@@ -225,6 +225,11 @@ pub struct Sequencer {
     /// Set when a Loop Forever marker (CC 99 value 30) fires; the advance loop
     /// consumes it, rewinds, and clears it.
     pending_loop_forever: bool,
+    /// Voices holding a register write for this vsync's flush, by a volume or a
+    /// pitch change since the last one.
+    staged_voices: u32,
+    /// How many voices the last flush wrote registers for.
+    last_flush_staged: u32,
 
     channels: [ChannelState; CHANNELS],
     /// Active note → voice mappings. Linear search; bounded by SPU voice

@@ -147,8 +147,18 @@ impl Sequencer {
             let is_eot = matches!(event.body, EventBody::Meta(MetaMessage::EndOfTrack));
             self.fire(spu, self.next);
             self.next += 1;
+            // `FUN_8006139C`'s jump stands the cursor past the delta the Loop
+            // Start already read (`+0x08`), so the event there is not waited
+            // for again: `+0x90` is the delta read at the loop end instead,
+            // and the arm that loops for good zeroes even that.
+            let mut after_jump = None;
             if self.pending_loop_forever {
                 self.pending_loop_forever = false;
+                after_jump = Some(if self.loop_repeats >= LOOP_REPEAT_FOREVER {
+                    0
+                } else {
+                    delta_of(&self.seq, self.next)
+                });
                 let target = self.loop_start.unwrap_or(0).min(self.seq.events.len());
                 self.jump_to(target);
             } else if is_eot {
@@ -160,7 +170,7 @@ impl Sequencer {
                     }
                 }
             }
-            let d = delta_of(&self.seq, self.next);
+            let d = after_jump.unwrap_or_else(|| delta_of(&self.seq, self.next));
             if d == 0 {
                 continue;
             }

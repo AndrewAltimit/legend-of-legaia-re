@@ -3,6 +3,20 @@
 use super::*;
 use crate::Spu;
 
+/// Output samples a flush's KON write trails a flush with one staged voice, for
+/// `staged` voices with a register to write. See `docs/subsystems/audio.md`,
+/// [the flush's own cost](../../../docs/subsystems/audio.md#the-flushs-own-cost).
+// REF: FUN_80065BAC, FUN_8006C048
+pub(super) fn flush_key_on_lag(staged: u32) -> u8 {
+    let q8 = staged.saturating_sub(1) * FLUSH_STAGED_VOICE_Q8;
+    ((q8 + 0x80) >> 8).min(u32::from(u8::MAX)) as u8
+}
+
+/// Output samples, Q8, one staged voice costs a flush: `1.2`, fitted per flush
+/// off six mednafen recordings (`1.15..=1.25`, scatter under a sample). A
+/// PCSX-Redux cycle watch reads `1.34`, in cycles, with the same straight line.
+pub(super) const FLUSH_STAGED_VOICE_Q8: u32 = 307;
+
 impl Sequencer {
     pub(super) fn note_on(&mut self, spu: &mut Spu, channel: u8, key: u8, velocity: u8) {
         // A second note-on of a (channel, key) already sounding does NOT
@@ -117,14 +131,18 @@ impl Sequencer {
     /// this at every [`FLUSH_SAMPLES`] boundary.
     pub fn flush_key_ons(&mut self, spu: &mut Spu) {
         if self.pending.is_empty() {
+            self.staged_voices = 0;
+            self.last_flush_staged = 0;
             return;
         }
         self.release_lost_voices(spu);
+        let mut keyed = 0u32;
         for p in std::mem::take(&mut self.pending) {
             let Some(idx) = self.active.iter().position(|n| n.pending == Some(p.id)) else {
                 continue;
             };
             let voice = p.voice as usize;
+            keyed |= 1 << voice;
             // Give the layer the master × velocity effective velocity only -
             // NOT the channel volume. The channel volume (CC7) and pan (CC10)
             // are applied afterward as dynamic channel-expression
@@ -164,6 +182,17 @@ impl Sequencer {
             note.key_on_stamp = spu.voices.get(voice).map_or(0, |v| v.key_on_count());
             note.pending = None;
         }
+        // `FUN_80065BAC` writes the KON mask after its per-voice loop, and every
+        // voice with a staged register costs a `FUN_8006C048` call first.
+        let staged = (self.staged_voices | keyed).count_ones();
+        self.staged_voices = 0;
+        self.last_flush_staged = staged;
+        let lag = flush_key_on_lag(staged);
+        for (v, voice) in spu.voices.iter_mut().enumerate() {
+            if keyed & (1 << v) != 0 {
+                voice.delay_start(lag);
+            }
+        }
     }
 
     /// `0xEn`, `FUN_8006166C` -> `FUN_80067C1C`: re-pitch every voice whose
@@ -189,6 +218,7 @@ impl Sequencer {
                 && let Some(pitch) = self.bank.bent_pitch(n.program, n.tone, n.key, wheel)
             {
                 v.pitch = pitch;
+                self.staged_voices |= 1 << voice;
             }
         }
     }
@@ -207,6 +237,7 @@ impl Sequencer {
             {
                 v.vol_left = l;
                 v.vol_right = r;
+                self.staged_voices |= 1 << note.voice;
             }
         }
     }
@@ -222,6 +253,7 @@ impl Sequencer {
             {
                 v.vol_left = l;
                 v.vol_right = r;
+                self.staged_voices |= 1 << note.voice;
             }
         }
     }

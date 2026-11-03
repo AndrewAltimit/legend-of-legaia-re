@@ -157,9 +157,13 @@ Across `music_01` that splits the scores like this:
 
 A jump touches no voice. Most looping scores hold notes across their loop end (54 of
 the 73 in `music_01`, up to 14 notes), and those keep sounding until the next pass's
-note-off for the key. The jump lands on the event *after* the marker, so it neither
-re-fires the marker nor re-applies its delta, and the integer sample-clock is reset so
-the looped body re-fires on the same sample offset every pass. `Sequencer::set_loop_to` is a viewer's
+note-off for the key. The jump lands on the event *after* the marker with no wait for that
+event's delta: the Loop Start saved the cursor past it (`0x80061410..0x80061424`), and the
+arm that loops for good discards the delta at the loop end and zeroes `+0x90`
+(`0x8006147C..0x80061490`). A counted loop's jump waits the delta read at the loop end
+instead. In `music_01` the delta behind a Loop Start is usually one tick, which is a tenth of a
+vsync of phase per pass when a port waits it again. On the sample clock (`set_exact_tempo`) the
+integer clock is reset so the looped body re-fires on the same sample offset every pass. `Sequencer::set_loop_to` is a viewer's
 choice to repeat a score at its end; no play host sets it.
 
 ### ProgramChange to an unused VAB slot

@@ -1,3 +1,4 @@
+use super::voices::flush_key_on_lag;
 use super::*;
 use crate::Spu;
 use legaia_seq::ChannelMessage;
@@ -475,6 +476,54 @@ fn end_of_track_goes_to_the_head_not_a_marker() {
     }
     assert!(s.loop_count() >= 1);
     assert!(heads > 0, "the rewind lands on the program change at idx 0");
+}
+
+/// `FUN_8006139C`: the Loop Start saves the cursor past the delta it read, and
+/// the loop-for-good arm zeroes the wait, so the event behind the marker waits
+/// on the first pass only. Across `music_01` that delta is usually one tick,
+/// and waiting it every pass moved the tick stream's phase against the vsync.
+#[test]
+fn a_loop_jump_does_not_wait_the_delta_behind_the_loop_start_again() {
+    let mut buf = Vec::new();
+    buf.extend_from_slice(&SEQ_MAGIC);
+    buf.extend_from_slice(&[0x00, 0x01]);
+    buf.extend_from_slice(&[0x01, 0xE0]);
+    buf.extend_from_slice(&[0x07, 0xA1, 0x20]);
+    buf.push(0x04);
+    buf.push(0x02);
+    buf.extend_from_slice(&[0x00, 0xB0, 99, 20]);
+    // The delta behind the marker: 96 ticks, six vsyncs at 120 BPM.
+    buf.extend_from_slice(&[0x60, 0xB0, 6, 127]);
+    buf.extend_from_slice(&[0x00, 0x90, 60, 100]);
+    buf.extend_from_slice(&[0x60, 0xB0, 99, 30]);
+    buf.extend_from_slice(&[0x00, 0xFF, 0x2F]);
+    let mut s = Sequencer::new(Seq::parse(&buf).unwrap(), empty_bank());
+    let mut spu = Spu::new();
+    let mut jumps = Vec::new();
+    let mut count = s.loop_count();
+    for vsync in 0..60 {
+        s.step_vsync(&mut spu);
+        if s.loop_count() != count {
+            count = s.loop_count();
+            jumps.push(vsync);
+        }
+    }
+    let gaps: Vec<i32> = jumps.windows(2).map(|w| w[1] - w[0]).collect();
+    assert!(gaps.len() >= 3, "{jumps:?}");
+    // One pass is the 96 ticks before the loop end alone, not 192.
+    assert!(gaps.iter().all(|&g| g == 6), "{jumps:?}");
+}
+
+/// A flush writes the KON mask after a `FUN_8006C048` call for every voice with
+/// a staged register, so a bigger chord keys later, and a voice re-volumed in
+/// that vsync costs what a keyed one does.
+#[test]
+fn the_kon_write_trails_the_flush_by_its_staged_voices() {
+    assert_eq!(flush_key_on_lag(0), 0);
+    assert_eq!(flush_key_on_lag(1), 0);
+    assert_eq!(flush_key_on_lag(2), 1);
+    assert_eq!(flush_key_on_lag(6), 6);
+    assert_eq!(flush_key_on_lag(11), 12);
 }
 
 /// A finite count jumps back until it runs out: `3` plays the body three times.

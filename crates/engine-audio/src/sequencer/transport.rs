@@ -34,6 +34,8 @@ impl Sequencer {
             loop_busy: false,
             loop_repeats: 0,
             pending_loop_forever: false,
+            staged_voices: 0,
+            last_flush_staged: 0,
             channels: [ChannelState::default(); CHANNELS],
             active: Vec::new(),
             master_vol: 127,
@@ -145,6 +147,12 @@ impl Sequencer {
     pub fn step_vsync(&mut self, spu: &mut Spu) {
         self.flush_pos = 0;
         self.flush_period(spu);
+    }
+
+    /// How many voices the last flush with a key-on wrote registers for: what
+    /// its KON write trails by ([`Self::flush_key_ons`]).
+    pub fn last_flush_staged(&self) -> u32 {
+        self.last_flush_staged
     }
 
     /// Current playhead in PPQN ticks (since start, or since the last loop
