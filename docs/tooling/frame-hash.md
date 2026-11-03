@@ -21,7 +21,7 @@ timing run either, since every frame reads back; that is
 
 ## What a run does
 
-Each of four scenes runs in each of two modes on a fresh page, so no scene inherits another's
+Each of the four default scenes runs in each of two modes on a fresh page, so no scene inherits another's
 state:
 
 | Scene | Drives |
@@ -30,6 +30,7 @@ state:
 | `world_map` | `map01`, the same script |
 | `battle` | `map01`, a forced fight, then the confirm button on a rhythm |
 | `cast` | `map01`, a forced fight with a big summon seeded in flight |
+| `bio_castle` | `jouina`, the same walk: every env morph live. By name only (`--scene`), for a change to them |
 
 | Mode | Is |
 |---|---|
@@ -83,6 +84,12 @@ attribute. Plain `--gl egl` warns. Both forms are repeatable: no tolerance is ap
 PSX mode draws into a single-sample framebuffer of its own on either form, so its frames do not
 depend on the context's MSAA ([the native target](../subsystems/renderer-port.md#the-native-target)):
 a retail run with `--no-msaa` and one without agree.
+
+**A 2D canvas's raster.** Read back every frame, the browser moves the overlay from GPU to
+software raster at a point that depends on how much was drawn between reads, and the two differ
+by a few pixels on a scaled quad. A page that repaints less then reads as drawing something else,
+with the frames forced onto one raster agreeing. So the driver asks every 2D context for
+`willReadFrequently`: the hash reads the software raster, on both sides.
 
 **Nothing else moved a frame.** These change when things happen against the ticks, and hashes
 stayed line for line:

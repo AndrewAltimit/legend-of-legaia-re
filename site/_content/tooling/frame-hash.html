@@ -42,6 +42,7 @@ scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # th
       <tr><td><code>world_map</code></td><td><code>map01</code>, the same script</td></tr>
       <tr><td><code>battle</code></td><td><code>map01</code>, a forced fight, then the confirm button on a rhythm</td></tr>
       <tr><td><code>cast</code></td><td><code>map01</code>, a forced fight with a big summon seeded in flight</td></tr>
+      <tr><td><code>bio_castle</code></td><td><code>jouina</code>, the same walk, every env morph live. By name only (<code>--scene</code>), for a change to them</td></tr>
     </tbody>
   </table>
   </div>
@@ -69,6 +70,7 @@ scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # th
 <section class="doc-section" id="what-was-not-repeatable-and-what-was" data-doc="what-was-not-repeatable-and-what-was">
   <h2>What was not repeatable, and what was</h2>
   <p><strong>A hardware GPU&rsquo;s MSAA resolve.</strong> On the real driver, the same frame on the same bundle comes back now and then with a few pixels off by a little, a different frame each run, in both modes and with every enhancement off. Ask for a context without MSAA and it stops; SwiftShader, which keeps the page&rsquo;s context as it stands, never does it. So the default is SwiftShader and <code>--gl egl --no-msaa</code> is the fast form. No tolerance is applied to either.</p>
+  <p><strong>A 2D canvas&rsquo;s raster.</strong> Read back every frame, the browser moves the overlay from GPU to software raster at a point that depends on how much was drawn between reads, and the two differ by a few pixels on a scaled quad. So the driver asks every 2D context for <code>willReadFrequently</code>, and the hash reads the software raster on both sides.</p>
   <p><strong>Nothing else moved a frame.</strong> Each of these changes when things happen against the ticks, and hashes stayed line for line:</p>
   <div class="table-wrap">
   <table>

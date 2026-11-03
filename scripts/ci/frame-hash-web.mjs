@@ -4,7 +4,7 @@
 //   scripts/ci/frame-hash-web.mjs --site site --out new.txt          # hash one site
 //   scripts/ci/frame-hash-web.mjs --compare base.txt new.txt         # line for line
 //   scripts/ci/frame-hash-web.mjs --site new/site --base-site old/site --out dir
-//       [--scene town01,world_map,battle,cast] [--mode retail,enhanced] [--frames n]
+//       [--scene town01,world_map,battle,cast,bio_castle] [--mode retail,enhanced] [--frames n]
 //       [--gl swiftshader|egl] [--no-msaa] [--shots dir] [--counts out.json]
 //
 // Each scene runs in each mode on a fresh page, stopped off its animation loop and
@@ -62,6 +62,8 @@ const SCENES = {
   world_map: { scene: 'map01', frames: 300, pad: walk },
   battle: { scene: 'map01', frames: 600, force: true, settle: 10, tapFrom: 300, tapEvery: 40 },
   cast: { scene: 'map01', frames: 900, force: true, settle: 10, cast: [0, 138, 3] },
+  /* By name only: a scene whose morphs run every tick, for a change to them. */
+  bio_castle: { scene: 'jouina', frames: 300, pad: walk, optional: true },
 };
 const MODES = {
   /* The page's defaults: a fresh browser profile, every enhancement at its default. */
@@ -78,6 +80,14 @@ function instrument(cfg) {
   const B = (window.__hash = { virtual: false, vt: 0, draws: 0, glCalls: 0, exports: {}, on: false });
   const real = performance.now.bind(performance);
   if (!cfg.realClock) performance.now = () => (B.virtual ? B.vt : real());
+  /* This run reads the overlay back every frame. Left to itself the browser moves a canvas
+   * read back often from GPU to software raster at a point that depends on how much was
+   * drawn between reads, and the two rasters differ by a few pixels: a page that repaints
+   * less would read as drawing something else. Software from the start, on both sides. */
+  const get2d = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (kind, attrs) {
+    return get2d.call(this, kind, kind === '2d' ? { ...attrs, willReadFrequently: true } : attrs);
+  };
   if (cfg.noMsaa) {
     const get = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function (kind, attrs) {
@@ -396,7 +406,7 @@ async function main() {
     poke = { key: m[1], frame: +m[2] };
   }
   const opts = {
-    scenes: arg('scene') ? arg('scene').split(',') : Object.keys(SCENES),
+    scenes: arg('scene') ? arg('scene').split(',') : Object.keys(SCENES).filter((k) => !SCENES[k].optional),
     modes: arg('mode') ? arg('mode').split(',') : ['retail', 'enhanced'],
     frames: +arg('frames', 0),
     gl: arg('gl', 'swiftshader'),
