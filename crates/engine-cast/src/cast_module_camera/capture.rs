@@ -125,6 +125,9 @@ pub struct CaptureCamArm {
     /// quadrant in the pass word, on the host's `rand()` draws
     /// ([`super::rock_point`]).
     pub rock_burst: Option<u8>,
+    /// PROT 0964's Thunder `k = 5`: these two records, on the host's draws, at
+    /// `(0x80 - r % 257, 0x80 - r % 257, 0x100)` (`0x801F767C..0x801F7708`).
+    pub spray: Option<[u32; 2]>,
     /// `(record, count)`: this pass seats `count` copies of a record each on
     /// five `rand()` draws (PROT 0951's arm 4, `0x801F7E34..0x801F7F14`:
     /// `x = r % 64 - 32`, `y = r % 64 - 16`, `z = 0x100`, then the angle trio
@@ -241,6 +244,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
+        (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
@@ -311,7 +315,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
         0x52 => Some(super::POWER_UP_COUNTDOWN),
         0x4A => Some(super::EARTHQUAKE_COUNTDOWN),
-        0xAF => Some(super::ELEMENT_CHANGE_COUNTDOWN),
+        0xAF..=0xB2 => Some(super::ELEMENT_CHANGE_COUNTDOWN),
         // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
         0x5F => Some(0x801F_9018),
         0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),

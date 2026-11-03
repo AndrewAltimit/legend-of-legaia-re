@@ -258,6 +258,10 @@ pub struct ScreenshotConfig {
     /// (`BattleState::land_battle_hud_glides`). Set by the retail-compare image
     /// channel.
     pub seat_hud_glides_landed: bool,
+    /// `LEGAIA_SEAT_AI_COUNTER=<n>`: the capture's monster AI counter
+    /// `0x801C8FE4`, the roll PROT 0964's strike forks on. Set by the
+    /// retail-compare image channel.
+    pub seat_ai_counter: Option<i32>,
     /// `LEGAIA_SEAT_MOVE_LABEL_UNSEEN=1`: the retail capture's art-name
     /// label opened on a commit younger than its displayed frame, so the
     /// captured frame closes the engine's (`BattleState::move_label_closed`).
@@ -1003,6 +1007,9 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             seat_hud_glides_landed: std::env::var_os("LEGAIA_SEAT_HUD_GLIDES_LANDED").is_some(),
+            seat_ai_counter: std::env::var("LEGAIA_SEAT_AI_COUNTER")
+                .ok()
+                .and_then(|v| v.parse().ok()),
             seat_move_label_unseen: std::env::var_os("LEGAIA_SEAT_MOVE_LABEL_UNSEEN").is_some(),
             seat_cam_behind_commit: std::env::var_os("LEGAIA_SEAT_CAM_BEHIND_COMMIT").is_some(),
             seat_spirit_gauge: std::env::var("LEGAIA_SEAT_SPIRIT_GAUGE")

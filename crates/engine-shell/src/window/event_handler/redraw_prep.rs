@@ -150,6 +150,17 @@ impl PlayWindowApp {
                     cam.align_menu_glide_pose(shown, left);
                 }
             }
+            // Ahead of the cast it forks: battle init clears the word.
+            if let Some(n) = sc.seat_ai_counter
+                && self.session.host.world.casting.active_summon.is_none()
+            {
+                self.session
+                    .host
+                    .world
+                    .battle
+                    .monster_ai_state
+                    .set_counter(n);
+            }
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.battle.land_battle_hud_glides();
             }

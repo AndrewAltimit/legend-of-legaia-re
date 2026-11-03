@@ -985,6 +985,7 @@ impl RetailBattle {
             ),
             camera_option: game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION),
             battle_id: game_anchors::u8_at(ram, BATTLE_ID_WORD),
+            ai_counter: game_anchors::u32_at(ram, 0x801C_8FE4),
             hud_glides_landed: (0..HUD_GLIDE_SLOTS).all(|s| {
                 game_anchors::u8_at(ram, ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE) == 0
             }),

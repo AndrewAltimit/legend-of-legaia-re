@@ -506,6 +506,8 @@ pub struct RetailBattle {
     /// `FUN_801D9BBC` leaves once a glide has snapped onto its target
     /// (`0x801D9BE4` skips a record whose `total` byte is zero).
     pub hud_glides_landed: bool,
+    /// The monster AI's counter `0x801C8FE4`: the roll PROT 0964's strike forks on.
+    pub ai_counter: u32,
     /// The HUD widget glides in flight, each as the displayed frame shows
     /// it ([`HudGlideSeat`]); empty when every record has landed.
     pub hud_glides: Vec<HudGlideSeat>,

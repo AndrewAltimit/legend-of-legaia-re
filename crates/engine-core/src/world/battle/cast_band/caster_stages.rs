@@ -163,6 +163,24 @@ impl World {
                     .collect();
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
             }
+            if let Some(records) = self.casting.module_spray.take()
+                && opens_pass
+            {
+                let x = 0x80 - (self.next_rand() % 257) as i16;
+                let y = 0x80 - (self.next_rand() % 257) as i16;
+                let seated: Vec<cmc::ModuleSpawn> = records
+                    .iter()
+                    .map(|&r| cmc::ModuleSpawn {
+                        record: cmc::SpawnRecord::Module(r),
+                        anchor: cmc::SpawnAnchor::LiteralScaled {
+                            pos: [x, y, 0x100],
+                            rot: [0; 3],
+                            scale: 0x1000,
+                        },
+                    })
+                    .collect();
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
             if let Some((record, count)) = self.casting.module_scatter.take()
                 && opens_pass
             {

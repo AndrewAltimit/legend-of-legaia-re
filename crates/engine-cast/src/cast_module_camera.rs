@@ -1025,7 +1025,10 @@ pub use doomsday::{
     doomsday_ring_part_words,
 };
 pub use earthquake::{EARTHQUAKE_COUNTDOWN, ROCK_RECORDS, earthquake_camera, rock_point};
-pub use element_change::{ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, element_change_camera};
+pub use element_change::{
+    ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, ELEMENT_STRIKE_BODY, element_change_camera,
+    element_strike_camera,
+};
 pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;

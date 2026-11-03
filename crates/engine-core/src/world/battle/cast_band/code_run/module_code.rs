@@ -359,6 +359,10 @@ impl World {
             if entry == 944 || entry == 935 {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
+            // PROT 0964's strike picks its opening record off the last roll.
+            if entry == 964 {
+                st.module_words[0] = i32::from(self.cast_element_change_last_roll());
+            }
             let arm = direct(&mut st, ctx.phase, seats);
             self.store_module_cam(st);
             if let Some(v) = arm.latch
@@ -387,6 +391,7 @@ impl World {
             );
             self.casting.module_scatter = arm.scatter;
             self.casting.module_rock_burst = arm.rock_burst;
+            self.casting.module_spray = arm.spray;
             self.casting.module_scatter_pairs = arm.scatter_pairs;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);

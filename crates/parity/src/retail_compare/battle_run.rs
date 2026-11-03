@@ -812,6 +812,9 @@ pub(super) fn battle_image(
     if battle.hud_glides_landed || displayed_menu {
         env.push(("LEGAIA_SEAT_HUD_GLIDES_LANDED", "1".to_string()));
     }
+    if battle.ai_counter != 0 {
+        env.push(("LEGAIA_SEAT_AI_COUNTER", battle.ai_counter.to_string()));
+    }
     if battle.move_label_unseen() {
         env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
     }
