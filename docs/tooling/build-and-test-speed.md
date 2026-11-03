@@ -146,13 +146,13 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
 | `tests` | The Disc-Gated Tests job's `run-disc-tests.sh`. `tests-no-disc`, PR Lint's disc-free suite in the clean tree, runs only when named: it is a second whole build. |
 | `ladder` | Part B, part C on the default stream, and each seed `[continuous_seeds]` lists. |
 | `retail` | `retail-compare.py --images --check`, the audio sweep, the PCM check, capture coverage. |
-| `wasm` | `build-wasm.sh`, `check-wasm-freshness.py --strict`, [`check-pages.mjs`](../../scripts/ci/check-pages.mjs). |
+| `wasm` | `build-wasm.sh`, `check-wasm-freshness.py --strict`, [`check-pages.mjs`](../../scripts/ci/check-pages.mjs), the [cost ratchet](frame-bench.md#cost-ratchet). |
 
 The workflow's steps are read from the file on every run, so a step added there is a gate here with no edit; the Repo Gates job runs `full-gate.py --selftest`, which fails on a step the reader cannot read or one carrying a forbidden command. An Actions expression has no value outside Actions, so a step's `${{ ... }}` variable is empty: `BASE_SHA`'s step takes its self-test branch, and `loosening-base` does the comparison, without the step's `git fetch --depth=1`, which would turn the shared repository shallow. The runner's `CARGO_TARGET_DIR` is replaced by a directory under `--out`, because `select-ci-target-dir.sh` prunes around whatever it is given.
 
 Every failure is reported with its log, not the first: a gate whose prerequisite failed shows as `BLOCKED`, and the rest still run. A driver's `[skip]` line reads as `SKIP` and the verdict as `PARTIAL`, since a skip is not a pass; only the `repo` group is exempt, where a ratchet skipping for want of the disc is what the runner does. `preflight` fails when the extracted disc, the save library, the captures, the dump corpus, the disc image or a display is missing, because each of those otherwise makes a gate pass without measuring. `tree-unchanged` runs last and fails if a tracked file moved during the run.
 
-Output goes under `--out` (default `target/full-gate`): `logs/<gate>.log`, `timing.md` and `state.json`. `--resume` refuses a tree that has changed since the run it would resume.
+Output goes under `--out` (default `target/full-gate`): `logs/<gate>.log`, `timing.md` and `state.json`. `timing.md` gives each gate's start and length in seconds, which is what a critical path is read from. `--resume` refuses a tree that has changed since the run it would resume.
 
 Three flags set the load on a shared box: `--max-cpu` is the budget each gate is weighed against, `--jobs` is what `retail-compare`, the audio sweep and libtest get, and `--cargo-jobs` is `CARGO_BUILD_JOBS`. `--memory-max` is the `systemd-run --user --scope` cap on each engine-looping gate. A gate over the budget starts when the budget has room, or alone.
 

@@ -1,0 +1,100 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; browser frame hash</div>
+  <h1>Browser frame hash: did this bundle draw the same picture?</h1>
+  <p class="lede"><code>scripts/ci/frame-hash-web.mjs</code> is the browser&rsquo;s equivalence proof for a change that should move how fast a frame arrives and nothing else. It steps the play page one sim tick at a time on a scripted pad, reads every frame back, hashes it and compares two bundles line for line. Hashes are never committed: they differ between drivers.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Two sites, base and new, are each stepped through the page's own single-step path on a pad script keyed by frame number. Each frame is read back and hashed into one line. The two files are compared line for line, and the first differing frame is named by column: GL canvas, overlay canvas or engine state.">
+      <rect class="dg-node" x="10" y="20" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="85" y="50">Base site</text>
+      <rect class="dg-node" x="10" y="100" width="150" height="50" rx="4"/>
+      <text class="dg-label" x="85" y="130">New site</text>
+      <rect class="dg-node-accent" x="220" y="50" width="210" height="70" rx="4"/>
+      <text class="dg-label" x="325" y="78">PlayView.step(), _frame()</text><text class="dg-sub" x="325" y="98">one tick, pad keyed by frame</text>
+      <rect class="dg-node" x="490" y="50" width="170" height="70" rx="4"/>
+      <text class="dg-label" x="575" y="78">Read back, hash</text><text class="dg-sub" x="575" y="98">gl, overlay, state</text>
+      <rect class="dg-node" x="720" y="50" width="150" height="70" rx="4"/>
+      <text class="dg-label" x="795" y="78">Line for line</text><text class="dg-sub" x="795" y="98">first differing frame</text>
+      <path class="dg-edge" d="M160 45 L218 70" marker-end="url(#fh-arrow)"/>
+      <path class="dg-edge" d="M160 125 L218 100" marker-end="url(#fh-arrow)"/>
+      <path class="dg-edge" d="M430 85 L488 85" marker-end="url(#fh-arrow)"/>
+      <path class="dg-edge" d="M660 85 L718 85" marker-end="url(#fh-arrow)"/>
+      <defs><marker id="fh-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    </svg>
+    <figcaption>Each scene runs in each mode on a fresh page, so no scene inherits another&rsquo;s state. The hash run is never the timing run, since every frame reads back.</figcaption>
+  </figure>
+  <div class="cli"><code>scripts/ci/frame-hash-web.mjs --site site --out new.txt                     # hash one site
+scripts/ci/frame-hash-web.mjs --compare base.txt new.txt                    # line for line
+scripts/ci/frame-hash-web.mjs --site new/site --base-site old/site --out dir   # both, then compare
+scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # the fast form</code></div>
+</section>
+
+<section class="doc-section" id="what-a-run-does" data-doc="what-a-run-does">
+  <h2>What a run does</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Scene</th><th>Drives</th></tr></thead>
+    <tbody>
+      <tr><td><code>town01</code></td><td>A dense town, walked down, up and left by the pad script</td></tr>
+      <tr><td><code>world_map</code></td><td><code>map01</code>, the same script</td></tr>
+      <tr><td><code>battle</code></td><td><code>map01</code>, a forced fight, then the confirm button on a rhythm</td></tr>
+      <tr><td><code>cast</code></td><td><code>map01</code>, a forced fight with a big summon seeded in flight</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Two modes: <code>retail</code> ticks the page&rsquo;s own Retail-faithful and PSX rasterisation boxes (a 320x240 canvas), and <code>enhanced</code> is a fresh browser profile&rsquo;s defaults. The scene is entered and the page&rsquo;s animation loop stopped in one task, so no frame runs on the wall clock. Each frame is then the page&rsquo;s own single step: <code>PlayView.step()</code>, then <code>_frame()</code>, which runs one sim tick and resyncs the sim clock.</p>
+  <p>Each line holds three hashes. <code>gl</code> is the default framebuffer read back, <code>ov</code> the 2D overlay canvas the menus and dialogue draw on, and <code>st</code> the engine&rsquo;s <code>state_json</code>. A difference in <code>st</code> is the simulation; one in <code>gl</code> alone is the renderer. DOM text and a movie&rsquo;s own canvas are not in it.</p>
+</section>
+
+<section class="doc-section" id="what-makes-agreeing-mean-something" data-doc="what-makes-agreeing-mean-something">
+  <h2>What makes agreeing mean something</h2>
+  <p>A run fails if a scene is vacuous: under a tenth of its frames distinct, over half blank, a pad script that did not move the player, or a battle that never came up. These were all run:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Check</th><th>How</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>One bundle, two runs</td><td>Run twice, compare</td><td>Agree</td></tr>
+      <tr><td>Two builds of one tree</td><td><code>build-wasm.sh --fast</code> twice, the second into a fresh target directory</td><td>The same bytes, and agree</td></tr>
+      <tr><td>The shipped build against the iteration build</td><td><code>build-wasm.sh</code> against <code>--fast</code>: different bytes</td><td>Agree</td></tr>
+      <tr><td>A pixel moved, by the driver</td><td><code>--poke scene/mode:frame</code> changes one pixel before the read</td><td>Exactly that frame differs</td></tr>
+      <tr><td>A pixel moved, in the page</td><td>A scratch site whose frame clears one pixel</td><td>Every frame of every scene and mode differs, in the <code>gl</code> column only</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="doc-section" id="what-was-not-repeatable-and-what-was" data-doc="what-was-not-repeatable-and-what-was">
+  <h2>What was not repeatable, and what was</h2>
+  <p><strong>A hardware GPU&rsquo;s MSAA resolve.</strong> On the real driver, the same frame on the same bundle comes back now and then with a few pixels off by a little, a different frame each run, in both modes and with every enhancement off. Ask for a context without MSAA and it stops; SwiftShader, which keeps the page&rsquo;s context as it stands, never does it. So the default is SwiftShader and <code>--gl egl --no-msaa</code> is the fast form. No tolerance is applied to either.</p>
+  <p><strong>Nothing else moved a frame.</strong> Each of these changes when things happen against the ticks, and hashes stayed line for line:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Moved</th><th>How</th><th>Reads as</th></tr></thead>
+    <tbody>
+      <tr><td>The wall clock</td><td><code>--real-clock</code></td><td>The stepped path reads no clock that reaches a frame</td></tr>
+      <tr><td>The audio pump and disc reads</td><td><code>--jitter seed</code></td><td>The sim is not paced by audio</td></tr>
+      <tr><td>The prewarm and the disc fill</td><td><code>--idle ms</code>, <code>--no-fill-wait</code></td><td>Neither changes what is drawn</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A live frame&rsquo;s ticks come from the wall clock, which the step replaces. The ocean&rsquo;s wall-clock CLUT animation belongs to the world-overview page. A movie is paced by the mixer&rsquo;s XA cursor, the page&rsquo;s audio position or the wall clock, so a movie is outside this oracle.</p>
+</section>
+
+<section class="doc-section" id="when-two-runs-differ" data-doc="when-two-runs-differ">
+  <h2>When two runs differ</h2>
+  <p><code>--compare</code> names the column first, which splits simulation from renderer. <code>--shots dir --shot-every n</code> writes PNGs and waits between frames, which can hide a difference; <code>--raw dir</code> writes every frame&rsquo;s raw RGBA after the run. <code>--uncheck play-ssao,play-dyn-light</code> clears the page&rsquo;s own option boxes first, and <code>--no-msaa</code> asks for a context without MSAA. All of these are Sony-derived: a scratch directory, never the repo.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="see-also">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="frame-bench.html">Frame benchmark</a>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="../subsystems/browser-host.html">Browser host</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/frame-hash.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

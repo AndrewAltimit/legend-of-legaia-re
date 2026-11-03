@@ -783,6 +783,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/full-game-ladder.html", "Full-game ladder", "tooling/full-game-ladder", "tooling/full-game-ladder.html"),
     ("tooling/soak-harness.html", "Soak harness", "tooling/soak-harness", "tooling/soak-harness.html"),
     ("tooling/frame-bench.html", "Frame benchmark", "tooling/frame-bench", "tooling/frame-bench.html"),
+    ("tooling/frame-hash.html", "Browser frame hash", "tooling/frame-hash", "tooling/frame-hash.html"),
     ("tooling/build-and-test-speed.html", "Build and test speed", "tooling/build-and-test-speed", "tooling/build-and-test-speed.html"),
     ("tooling/porting-by-reimplementation.html", "Porting by reimplementation", "tooling/porting-by-reimplementation", "tooling/porting-by-reimplementation.html"),
     ("tooling/reusing-for-other-ps1-games.html", "Reusing for other PS1 games", "tooling/reusing-for-other-ps1-games", "tooling/reusing-for-other-ps1-games.html"),

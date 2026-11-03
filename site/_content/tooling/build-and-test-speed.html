@@ -108,12 +108,12 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
       <tr><td><code>tests</code></td><td>The disc-gated suite; the disc-free suite only when named</td></tr>
       <tr><td><code>ladder</code></td><td>Part B, part C on the default stream, and each listed seed</td></tr>
       <tr><td><code>retail</code></td><td><a href="retail-compare.html">Retail comparison</a>, the audio sweep, the PCM check, capture coverage</td></tr>
-      <tr><td><code>wasm</code></td><td>The bundle build, its strict freshness check and the page checks</td></tr>
+      <tr><td><code>wasm</code></td><td>The bundle build, its strict freshness check, the page checks and the <a href="frame-bench.html#cost-ratchet">cost ratchet</a></td></tr>
     </tbody>
   </table>
   </div>
   <p>The workflow&rsquo;s steps are read from the file on every run, so a step added there is a gate here with no edit. Every failure is reported with its log: a gate whose prerequisite failed shows as <code>BLOCKED</code>, and the rest still run. A driver&rsquo;s <code>[skip]</code> line reads as <code>SKIP</code> and the verdict as <code>PARTIAL</code>, since a skip is not a pass; only the <code>repo</code> group is exempt, where a ratchet skipping for want of the disc is what the runner does. <code>preflight</code> fails when the data a gate needs is missing, and <code>tree-unchanged</code> runs last and fails if a tracked file moved during the run.</p>
-  <p>Output goes under <code>--out</code> (default <code>target/full-gate</code>): one log per gate, <code>timing.md</code> and <code>state.json</code>. <code>--max-cpu</code>, <code>--jobs</code>, <code>--cargo-jobs</code> and <code>--memory-max</code> set the load on a shared box.</p>
+  <p>Output goes under <code>--out</code> (default <code>target/full-gate</code>): one log per gate, <code>timing.md</code> (each gate&rsquo;s start and length, which is what a critical path is read from) and <code>state.json</code>. <code>--max-cpu</code>, <code>--jobs</code>, <code>--cargo-jobs</code> and <code>--memory-max</code> set the load on a shared box.</p>
 </section>
 
 <section class="doc-section" id="profiling" data-doc="profiling-without-perf">
