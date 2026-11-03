@@ -143,12 +143,12 @@ impl LegaiaRuntime {
                 // editor extension); it hands back a committed rebind. A
                 // title-opened Load has no scene yet, and no Status screen
                 // either, so it steps the session alone.
-                rebound = match self.scene_host.host() {
+                rebound = match self.scene_host.host_mut() {
                     Some(host) => field_menu_dispatch::tick_open_subsession(
                         session.as_mut(),
                         edge,
                         key.as_deref(),
-                        &host.world,
+                        &mut host.world,
                     ),
                     None => {
                         session.tick_pad_edge_with_key(edge, key.as_deref());

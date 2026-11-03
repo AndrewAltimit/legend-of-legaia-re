@@ -9,7 +9,6 @@ use super::*;
 pub enum EquipScreenPhase {
     SlotPicker,
     ItemPicker,
-    Confirm,
 }
 
 /// Owned view model of the Equip screen - the sibling of
@@ -59,10 +58,8 @@ pub struct EquipScreenModel {
     pub phase: EquipScreenPhase,
     /// Cursor row inside the active phase column.
     pub cursor: u16,
-    /// Active slot index in `ItemPicker` / `Confirm`.
+    /// Active slot index in `ItemPicker`.
     pub active_slot: u8,
-    /// Pending-swap label above the Yes/No prompt.
-    pub confirm_label: Option<String>,
     /// Roster slot of the character being equipped.
     pub char_slot: u8,
     /// The party-window row that character sits on (its place in the
@@ -298,24 +295,10 @@ pub fn equip_screen_model(
         })
         .collect();
 
-    let (phase, cursor, active_slot, confirm_label) = match session.state() {
-        EquipState::SlotPicker { cursor } => {
-            (EquipScreenPhase::SlotPicker, cursor as u16, cursor, None)
-        }
-        EquipState::ItemPicker { slot, cursor } => {
-            (EquipScreenPhase::ItemPicker, cursor, slot, None)
-        }
-        EquipState::Confirm {
-            slot,
-            item_id,
-            cursor,
-        } => (
-            EquipScreenPhase::Confirm,
-            cursor as u16,
-            slot,
-            Some(format!("Equip {}?", name_of(item_id))),
-        ),
-        EquipState::Done(_) => (EquipScreenPhase::SlotPicker, 0, 0, None),
+    let (phase, cursor, active_slot) = match session.state() {
+        EquipState::SlotPicker { cursor } => (EquipScreenPhase::SlotPicker, cursor as u16, cursor),
+        EquipState::ItemPicker { slot, cursor } => (EquipScreenPhase::ItemPicker, cursor, slot),
+        EquipState::Done => (EquipScreenPhase::SlotPicker, 0, 0),
     };
 
     // Candidates + stat compare only matter past the slot picker.
@@ -351,12 +334,8 @@ pub fn equip_screen_model(
                 }
             })
             .collect();
-        // The item the compare block previews: the hovered row in the
-        // picker, the pending item in the confirm phase.
-        let considered = match session.state() {
-            EquipState::Confirm { item_id, .. } => Some(item_id),
-            _ => items.get(cursor as usize).map(|it| it.id),
-        };
+        // The item the compare block previews: the hovered row.
+        let considered = items.get(cursor as usize).map(|it| it.id);
         (names, counts, icons, considered)
     };
     let candidate_pages = candidate_names.len().div_ceil(LIST_PAGE_ROWS) as u16;
@@ -494,7 +473,6 @@ pub fn equip_screen_model(
         cursor,
         // The row the active slot draws on (its place in the browse order).
         active_slot: crate::equip_session::browse_row_for_slot(active_slot) - 1,
-        confirm_label,
         char_slot,
         slot_cursor: match session.state() {
             EquipState::SlotPicker { .. } if session.slot_cursor_hidden() => None,

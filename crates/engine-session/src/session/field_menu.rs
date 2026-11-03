@@ -274,7 +274,7 @@ impl<S: AudioSink> BootSession<S> {
             }
         }
         // No key table here: a headless driver has no bindings to rebind.
-        let _ = tick_open_subsession(active, edge, None, &self.host.world);
+        let _ = tick_open_subsession(active, edge, None, &mut self.host.world);
         if !self
             .field_menu_sub
             .as_ref()

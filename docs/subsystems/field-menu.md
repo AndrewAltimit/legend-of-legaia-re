@@ -1467,7 +1467,14 @@ equipped item to the bag, buzz `0x37` on an empty slot) and the bag classes
 `0x6000` / `0x9000` (take one copy via `FUN_80042EE0` + `FUN_80043048`, return
 the old item via `FUN_800421D4`, write the slot). Every other row - including
 the equipped row - falls through to the shared tail at `0x801DA1DC`, which
-steps the hand to the next slot row (wrapping at 8) and returns to `0x13`.
+steps the hand to the next slot row (wrapping at 8) and returns to `0x13`. So
+do a commit and a refusal: there is no Yes/No step, and the screen stays up, so
+a player equips down the rows with one press each.
+
+Both appliers write the live record and bag on the frame of the press. The
+port's `EquipSession` edits copies and lists each swap;
+`tick_open_subsession` drains the list onto the world every frame, so the
+character picker's rebuild on another member reads the commit.
 
 #### The `0x801E43E8` run is three tables, not one
 

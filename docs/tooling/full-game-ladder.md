@@ -203,8 +203,7 @@ continuous run is the only pass in which those writes are load-bearing:
   the members who have joined, does - in a session where no New Game ran.
 - **The pause menu's commits.** The seeded pad hand opens the Equip screen
   only to guard a boss's element. A hand that has to wear what it finds
-  uses the Best Equipment row, whose swaps do not end the session and so
-  travel a different path back to the record than a single-slot confirm.
+  uses the Best Equipment row on top of the single-slot confirms.
 - **Growth.** Levels, gold and the bag are whatever the run earned. The
   seeded passes flee every random encounter, which costs them nothing; a
   run that does the same reaches its first boss at level 1.

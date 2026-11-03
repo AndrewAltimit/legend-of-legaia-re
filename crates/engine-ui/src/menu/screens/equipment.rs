@@ -66,8 +66,6 @@ pub enum EquipDrawPhase {
     SlotPicker,
     /// Cursor on the candidate-item list for the active slot.
     ItemPicker,
-    /// Yes/No confirmation prompt (`cursor` == 0 for Yes, 1 for No).
-    Confirm,
 }
 
 /// Plain-data view of the whole equip screen for
@@ -97,10 +95,8 @@ pub struct EquipScreenView<'a> {
     /// header is cursor row 0 of `DAT_801E46C0` - and it is what
     /// `engine-menus::equip_session::EquipState::SlotPicker` carries.
     pub cursor: u16,
-    /// Active slot index when in `ItemPicker` / `Confirm`.
+    /// Active slot index when in `ItemPicker`.
     pub active_slot: u8,
-    /// Optional pending swap label rendered above the Yes/No prompt.
-    pub confirm_label: Option<&'a str>,
     /// Emit ASCII `>` cursors. `false` when the caller draws the retail
     /// pointing-hand sprite instead ([`equip_screen_sprites_for`]).
     pub text_cursor: bool,
@@ -307,23 +303,6 @@ pub fn equip_screen_draws_for_with(
                 c.name
             };
             str_at(&mut out, name, x, y, white);
-        }
-
-        // Confirm prompt at the bottom of the list window.
-        if view.phase == EquipDrawPhase::Confirm {
-            let prompt_y = ly + 150;
-            if let Some(label) = view.confirm_label {
-                str_at(&mut out, label, lx, prompt_y, white);
-            }
-            for (i, opt) in ["Yes", "No"].iter().enumerate() {
-                let x = lx + 10 + i as i32 * 50;
-                let selected = i as u16 == view.cursor;
-                let color = if selected { gold } else { white };
-                if selected {
-                    str_at(&mut out, ">", x - 10, prompt_y + LIST_PITCH, color);
-                }
-                str_at(&mut out, opt, x, prompt_y + LIST_PITCH, color);
-            }
         }
     }
 
@@ -545,7 +524,6 @@ mod tests {
             phase,
             cursor,
             active_slot,
-            confirm_label: None,
             text_cursor: true,
         }
     }

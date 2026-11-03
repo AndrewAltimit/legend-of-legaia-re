@@ -1106,7 +1106,6 @@ pub struct EquipComposeInput<'a> {
     pub phase: crate::EquipDrawPhase,
     pub cursor: u16,
     pub active_slot: u8,
-    pub confirm_label: Option<&'a str>,
     pub char_slot: usize,
     pub slot_cursor: Option<u16>,
     pub pictogram_rows: usize,
@@ -1163,7 +1162,6 @@ pub fn equip_screen_compose(ctx: &PauseMenuCtx, input: &EquipComposeInput<'_>) -
         phase: input.phase,
         cursor: input.cursor,
         active_slot: input.active_slot,
-        confirm_label: input.confirm_label,
         text_cursor: input.text_cursor,
     };
     pause_screen_draws(

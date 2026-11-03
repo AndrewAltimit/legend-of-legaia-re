@@ -97,7 +97,7 @@ impl EquipSession {
             );
             for slot in ARMAMENT_ENGINE_SLOTS {
                 if self.record.equip[slot] != before[slot] {
-                    self.best_swaps
+                    self.swaps
                         .push((slot as u8, before[slot], self.record.equip[slot]));
                 }
             }

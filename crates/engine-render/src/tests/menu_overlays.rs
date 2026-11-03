@@ -583,7 +583,6 @@ fn equip_view<'a>(
         phase,
         cursor: 0,
         active_slot: 0,
-        confirm_label: None,
         text_cursor: true,
     }
 }
@@ -744,41 +743,6 @@ fn equip_screen_draws_item_picker_fills_list_window_and_stat_compare() {
             .iter()
             .any(|d| d.dst.0 >= mx + 0xe4 && d.dst.1 == my + 0x55)
     );
-}
-
-#[test]
-fn equip_screen_draws_confirm_phase_shows_yes_no_prompt() {
-    let font = legaia_font::synthetic_for_tests();
-    let slots = vec![EquipSlotRow {
-        label: "Weapon",
-        current_name: "Iron Sword",
-    }];
-    let candidates = vec![EquipCandidateRow {
-        name: "Steel Sword",
-        icon: 0x24,
-    }];
-    let mut view = equip_view(&slots, &candidates, &[], EquipDrawPhase::Confirm);
-    view.confirm_label = Some("Equip Steel Sword?");
-    let with_confirm = equip_screen_draws_for_with(
-        &font,
-        None,
-        &view,
-        EQUIP_PARTY_PEN,
-        EQUIP_LIST_PEN,
-        EQUIP_MAIN_PEN,
-    );
-    let picker = equip_view(&slots, &candidates, &[], EquipDrawPhase::ItemPicker);
-    let without = equip_screen_draws_for_with(
-        &font,
-        None,
-        &picker,
-        EQUIP_PARTY_PEN,
-        EQUIP_LIST_PEN,
-        EQUIP_MAIN_PEN,
-    );
-    // The confirm phase layers the label + Yes/No prompt on top of the
-    // candidate list.
-    assert!(with_confirm.len() > without.len());
 }
 
 /// The equip-screen sprites pin the retail placements: pictograms at

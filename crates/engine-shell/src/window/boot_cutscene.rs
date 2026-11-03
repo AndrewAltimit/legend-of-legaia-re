@@ -584,7 +584,7 @@ impl PlayWindowApp {
                         active_sub,
                         pressed,
                         pending_key,
-                        &self.session.host.world,
+                        &mut self.session.host.world,
                     );
                     if active_sub.is_done() {
                         // Fold the outcome into the world through the one

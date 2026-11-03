@@ -480,7 +480,6 @@ fn compose_equip(ctx: &PauseMenuCtx<'_>, phase: EquipDrawPhase) -> PauseMenuDraw
             phase,
             cursor: 1,
             active_slot: 0,
-            confirm_label: matches!(phase, EquipDrawPhase::Confirm).then_some("Equip Item 21?"),
             char_slot: 0,
             slot_cursor: matches!(phase, EquipDrawPhase::SlotPicker).then_some(1),
             pictogram_rows: 5,
@@ -642,10 +641,6 @@ fn every_pause_screen_composes_on_both_chrome_passes() {
             (
                 "equip: item picker",
                 compose_equip(&ctx, EquipDrawPhase::ItemPicker),
-            ),
-            (
-                "equip: confirm",
-                compose_equip(&ctx, EquipDrawPhase::Confirm),
             ),
             ("arts editor", compose_arts(&ctx)),
             ("spell target select", compose_spell_target(&ctx)),

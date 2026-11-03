@@ -1029,11 +1029,9 @@ pub fn equip_compose_input(m: &ps::EquipScreenModel, text_cursor: bool) -> Equip
         phase: match m.phase {
             Tag::SlotPicker => ui::EquipDrawPhase::SlotPicker,
             Tag::ItemPicker => ui::EquipDrawPhase::ItemPicker,
-            Tag::Confirm => ui::EquipDrawPhase::Confirm,
         },
         cursor: m.cursor,
         active_slot: m.active_slot,
-        confirm_label: m.confirm_label.as_deref(),
         char_slot: m.party_row as usize,
         slot_cursor: m.slot_cursor,
         pictogram_rows: m.pictogram_rows,

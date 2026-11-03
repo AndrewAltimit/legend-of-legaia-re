@@ -224,16 +224,16 @@ fn equip_opens_on_the_character_picker() {
         _ => panic!("expected Equip"),
     };
     assert_eq!(state(&s), (0, true));
-    tick_open_subsession(&mut s, PadButton::Down.mask(), None, &w);
+    tick_open_subsession(&mut s, PadButton::Down.mask(), None, &mut w);
     assert_eq!(state(&s), (1, true));
-    tick_open_subsession(&mut s, PadButton::Down.mask(), None, &w);
+    tick_open_subsession(&mut s, PadButton::Down.mask(), None, &mut w);
     assert_eq!(state(&s), (1, true), "the walk stops at the last member");
-    tick_open_subsession(&mut s, PadButton::Cross.mask(), None, &w);
+    tick_open_subsession(&mut s, PadButton::Cross.mask(), None, &mut w);
     assert_eq!(state(&s), (1, false));
-    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &w);
+    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &mut w);
     assert_eq!(state(&s), (1, true));
     assert!(!s.is_done());
-    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &w);
+    tick_open_subsession(&mut s, PadButton::Circle.mask(), None, &mut w);
     assert!(s.is_done());
 }
 
@@ -407,8 +407,51 @@ fn tick_pad_edge_spells_circle_cancels() {
     assert!(s.is_done());
 }
 
+/// A swap reaches the record on the frame of the press: the character picker
+/// rebuilds its session from the live record, so Best Equipment or a slot
+/// commit on one member has to survive walking to the next.
 #[test]
-fn apply_equip_outcome_writes_back_to_roster() {
+fn a_commit_is_live_before_the_character_picker_rebuilds() {
+    let mut w = fresh_world();
+    w.install_present_party_list(vec![0, 1]);
+    w.party.inventory.clear();
+    w.party.inventory.insert(0x25, 1);
+    let mut equip_table = EquipmentTable::new();
+    equip_table.set(
+        0x25,
+        legaia_engine_battle::battle_stats::ItemModifier::default(),
+    );
+    let mut s = FieldMenuSubsession::build(
+        FieldMenuRow::Equip,
+        &w,
+        &OptionsState::default(),
+        &fresh_save_slots(),
+        &ChainLibrary::new(),
+        &SpellCatalog::vanilla(),
+        &equip_table,
+    );
+    let press = |s: &mut FieldMenuSubsession, w: &mut World, button: PadButton| {
+        tick_open_subsession(s, button.mask(), None, w);
+    };
+    press(&mut s, &mut w, PadButton::Cross);
+    press(&mut s, &mut w, PadButton::Down);
+    press(&mut s, &mut w, PadButton::Down);
+    press(&mut s, &mut w, PadButton::Cross);
+    press(&mut s, &mut w, PadButton::Cross);
+    assert_eq!(w.party.roster.members[0].equipment().slots[1], 0x25);
+    assert_eq!(w.party.inventory.get(&0x25), None);
+    press(&mut s, &mut w, PadButton::Circle);
+    press(&mut s, &mut w, PadButton::Down);
+    press(&mut s, &mut w, PadButton::Up);
+    assert_eq!(w.party.roster.members[0].equipment().slots[1], 0x25);
+    let FieldMenuSubsession::Equip { session, .. } = &s else {
+        panic!("expected Equip variant");
+    };
+    assert_eq!(session.record().equip[1], 0x25);
+}
+
+#[test]
+fn apply_equip_swaps_writes_back_to_roster() {
     let mut w = fresh_world();
     // EquipSession's items_for_slot encodes target slot in the upper
     // 3 bits (slot = id >> 5). Use 0x25 for slot 1 so we don't
@@ -432,23 +475,22 @@ fn apply_equip_outcome_writes_back_to_roster() {
     );
     // Slot-browse row 0 is Best Equipment, so slot 1 (where item 0x25
     // lives) is row 2: two steps down, confirm into the item picker,
-    // confirm the single item, confirm Yes.
+    // confirm the single item, which commits it.
     // The Equip row opens on its character picker; confirm hands the pad
     // to the slot browse.
     s.tick_pad_edge(PadButton::Cross.mask());
     for _ in 0..2 {
         s.tick_pad_edge(PadButton::Down.mask());
     }
-    for _ in 0..3 {
+    for _ in 0..2 {
         s.tick_pad_edge(PadButton::Cross.mask());
     }
-    assert!(s.is_done());
+    assert!(!s.is_done(), "a commit leaves the slot browse up");
     if let FieldMenuSubsession::Equip {
         session, char_slot, ..
-    } = &s
+    } = &mut s
     {
-        let outcome = apply_equip_outcome(session, *char_slot, &mut w);
-        assert!(matches!(outcome, Some(EquipOutcome::Committed { .. })));
+        assert!(apply_equip_swaps(session, *char_slot, &mut w));
         // Roster member 0's slot 1 byte now matches the equipped id.
         assert_eq!(w.party.roster.members[0].equipment().slots[1], 0x25);
         // ...and the equipped item LEFT the bag (no duplication). Slot 1 was
@@ -503,13 +545,12 @@ fn best_equipment_reaches_the_roster_when_the_session_is_cancelled() {
     assert!(s.is_done());
     let FieldMenuSubsession::Equip {
         session, char_slot, ..
-    } = &s
+    } = &mut s
     else {
         panic!("expected Equip variant");
     };
-    assert_eq!(session.best_equipment_swaps().len(), 1);
-    let outcome = apply_equip_outcome(session, *char_slot, &mut w);
-    assert_eq!(outcome, Some(EquipOutcome::Cancelled));
+    assert_eq!(session.swaps().len(), 1);
+    assert!(apply_equip_swaps(session, *char_slot, &mut w));
     assert!(
         w.party.roster.members[0].equipment().slots.contains(&0x45),
         "the swap Best Equipment made must be on the live record"
@@ -524,7 +565,7 @@ fn best_equipment_reaches_the_roster_when_the_session_is_cancelled() {
 /// Equipping over an occupied slot returns the swapped-out item to the bag
 /// and removes the newly-equipped one - no item loss, no duplication.
 #[test]
-fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
+fn apply_equip_swaps_returns_the_swapped_out_item_to_the_bag() {
     let mut w = fresh_world();
     w.party.inventory.clear();
     w.party.inventory.insert(0x25, 1);
@@ -560,25 +601,16 @@ fn apply_equip_outcome_returns_the_swapped_out_item_to_the_bag() {
         s.tick_pad_edge(PadButton::Down.mask());
     }
     s.tick_pad_edge(PadButton::Cross.mask());
-    for _ in 0..2 {
-        s.tick_pad_edge(PadButton::Cross.mask());
-    }
-    assert!(s.is_done());
+    s.tick_pad_edge(PadButton::Cross.mask());
+    assert!(!s.is_done());
     let FieldMenuSubsession::Equip {
         session, char_slot, ..
-    } = &s
+    } = &mut s
     else {
         panic!("expected Equip variant");
     };
-    let outcome = apply_equip_outcome(session, *char_slot, &mut w);
-    assert!(matches!(
-        outcome,
-        Some(EquipOutcome::Committed {
-            removed: 0x26,
-            added: 0x25,
-            ..
-        })
-    ));
+    assert_eq!(session.swaps(), [(1, 0x26, 0x25)]);
+    assert!(apply_equip_swaps(session, *char_slot, &mut w));
     assert_eq!(w.party.roster.members[0].equipment().slots[1], 0x25);
     // 0x25 left the bag, 0x26 came back into it.
     assert_eq!(
@@ -707,7 +739,7 @@ fn the_journal_travels_and_arms_challenges() {
         PadButton::Left.mask(),
         PadButton::Cross.mask(),
     ] {
-        tick_open_subsession(&mut sub, edge, None, &world);
+        tick_open_subsession(&mut sub, edge, None, &mut world);
     }
     assert!(sub.is_done());
     let done = finish_subsession(sub, &mut world);
@@ -719,7 +751,7 @@ fn the_journal_travels_and_arms_challenges() {
 
     let mut sub = open_journal(&mut FieldMenuSession::new(), view).unwrap();
     for edge in [PadButton::Right.mask(), PadButton::Cross.mask()] {
-        tick_open_subsession(&mut sub, edge, None, &world);
+        tick_open_subsession(&mut sub, edge, None, &mut world);
     }
     let done = finish_subsession(sub, &mut world);
     assert!(!done.close_menu);

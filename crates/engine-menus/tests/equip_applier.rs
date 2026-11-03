@@ -243,8 +243,7 @@ fn the_equip_screen_confirm_runs_the_applier() {
     s.input(cross); // open the Helmet slot's candidate list
     // Retail's armament list leads with the Remove verb on an empty slot
     // too, and opens on row 1: the hand is already on the first bag candidate.
-    s.input(cross); // pick the candidate -> Yes/No
-    s.input(cross); // confirm Yes
+    s.input(cross); // pick the candidate: retail commits on this press
     let events = s.drain_events();
     assert!(
         events
