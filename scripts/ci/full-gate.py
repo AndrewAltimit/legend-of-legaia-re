@@ -903,6 +903,7 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
             if r and r["status"] in OK_STATUSES and not p.gates[n].always:
                 pending.remove(n)
                 results[n] = {**r, "resumed": True}
+                results[n].pop("start", None)  # seconds into an earlier run
                 say(f"keep   {n}: {r['status']} from the run being resumed")
 
     # `cargo test --workspace` runs the ladder's two default parts, so they wait for
@@ -971,6 +972,7 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                     with open(log_path, "wb") as log:
                         code = g.cmd(log)
                     results[n] = finish(p, g, code, log_path, time.time() - t, None)
+                    results[n]["start"] = round(t - t0, 1)
                     say(f"{results[n]['status']:<6} {n} {results[n]['wall']:.0f}s {results[n]['detail']}")
                     save()
                     continue
@@ -994,6 +996,7 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                 cpu -= r.gate.cpu
                 held -= set(r.gate.locks)
                 results[r.gate.name] = finish(p, r.gate, code, r.log_path, time.time() - r.started, r.gh_env)
+                results[r.gate.name]["start"] = round(r.started - t0, 1)
                 res = results[r.gate.name]
                 say(f"{res['status']:<6} {r.gate.name} {res['wall']:.0f}s {res['detail']}")
                 save()
@@ -1016,11 +1019,13 @@ def report(p: Plan, order: list[str], skipped: set[str], results: dict) -> int:
     serial = sum((r or {}).get("wall", 0) for _, r in rows)
 
     def table(rows2) -> list[str]:
-        lines = ["| Gate | Group | Status | Seconds | Detail |", "|---|---|---|---:|---|"]
+        lines = ["| Gate | Group | Status | Start | Seconds | Detail |", "|---|---|---|---:|---:|---|"]
         for n, r in rows2:
             r = r or {"status": UNRUN, "wall": 0, "detail": ""}
             detail = str(r.get("detail", "")).replace("|", "\\|")
-            lines.append(f"| {n} | {p.gates[n].group} | {r['status']} | {r.get('wall', 0):.0f} | {detail} |")
+            # Seconds into this run; a gate this run did not start (blocked, reused) has none.
+            start = f"{r['start']:.0f}" if "start" in r else ""
+            lines.append(f"| {n} | {p.gates[n].group} | {r['status']} | {start} | {r.get('wall', 0):.0f} | {detail} |")
         return lines
 
     head = git(p.root, "rev-parse", "--short=12", "HEAD").strip()
@@ -1188,6 +1193,8 @@ def selftest() -> int:
         check(code == 1, "a failed gate must exit 1")
         table = (a.out / "timing.md").read_text()
         check("bad-one" in table and "bad-two" in table and "after-bad" in table, "timing table lost a failure")
+        check(re.search(r"^\| bad-one \| g \| FAIL \| \d+ \| \d+ \|", table, re.M), "timing table lost a gate's start")
+        check(re.search(r"^\| reused \| g \| PASS \|  \| 0 \|", table, re.M), "a reused gate has no start in this run")
         for line in ("--bless", "python3 x.py --update-baseline", "git push origin", "x --propose p"):
             try:
                 p.add(Gate("nope-" + line, "g", line))
