@@ -109,24 +109,6 @@ pub fn title_band_sprites(
     let tpx = TITLE_ART_POS.0;
     let tpy = TITLE_ART_POS.1;
     let mut out: Vec<SpriteDraw> = Vec::new();
-    let push = |out: &mut Vec<SpriteDraw>,
-                src: (u32, u32, u32, u32),
-                dsx: i32,
-                dsy: i32,
-                tint: [f32; 4]| {
-        let (_, _, sw, sh) = src;
-        out.push(SpriteDraw {
-            dst: (
-                sx0 + (tpx + dsx) * si,
-                sy0 + (tpy + dsy) * si,
-                sw * scale,
-                sh * scale,
-            ),
-            src,
-            color: tint,
-        });
-    };
-
     let wm = title_pak::TITLE_BAND_WORDMARK;
     let brightness = (lum * alpha * 128.0).round().clamp(0.0, 255.0) as u8;
     out.extend(backdrop_dim_sprites(
@@ -139,9 +121,19 @@ pub fn title_band_sprites(
         scale,
     ));
 
+    // The prompt phase is the port's own: retail's sub-mode `0x10` is one state
+    // and draws the rows straight away. The prompt stands where those rows are
+    // about to, since at the band's position in the TIM it would land on the
+    // TM line ([`title_strip_rows`]' `0xBE`).
     if state.press_start {
         let ps = title_pak::TITLE_BAND_PRESS_START;
-        push(&mut out, ps, ps.0 as i32, ps.1 as i32, color);
+        let x = TITLE_STRIP_CENTRE_X - (ps.2 >> 1) as i32;
+        let y = (0xA0 + 0xAE) / 2 - (ps.3 >> 1) as i32;
+        out.push(SpriteDraw {
+            dst: (sx0 + x * si, sy0 + y * si, ps.2 * scale, ps.3 * scale),
+            src: ps,
+            color,
+        });
     }
 
     // The rows and the two copyright lines stand where the menu overlay's
@@ -324,6 +316,31 @@ pub fn title_strip_sprites(
 
 #[cfg(test)]
 mod tests {
+    /// The prompt must clear the two copyright lines and the wordmark's rows:
+    /// at the band's own TIM position it printed over the TM line.
+    #[test]
+    fn press_start_clears_the_copyright_lines() {
+        let mut st = TitleBandState::card(1.0);
+        st.press_start = true;
+        let out = title_band_sprites(st, (0, 0), 1);
+        let band = legaia_ui_formats::title_pak::TITLE_BAND_PRESS_START;
+        let prompt = out
+            .iter()
+            .find(|d| d.src == band)
+            .expect("the prompt draws");
+        let bottom = prompt.dst.1 + prompt.dst.3 as i32;
+        for line in out
+            .iter()
+            .filter(|d| d.src == TITLE_STRIP_RECORDS[2] || d.src == TITLE_STRIP_RECORDS[5])
+        {
+            assert!(
+                bottom <= line.dst.1,
+                "prompt bottom {bottom} over {:?}",
+                line.dst
+            );
+        }
+    }
+
     use super::*;
 
     #[test]
