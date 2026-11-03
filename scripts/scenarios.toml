@@ -124,6 +124,8 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
+
+[[scenarios]]
 label = "character_tmd_pointers"
 start = 0x8007C018
 end = 0x8007C02C
@@ -2470,6 +2472,8 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
+
+[[scenarios]]
 label = "party_hp_readout_triple"
 start = 0x800EC9E8
 end = 0x800ED0E0
@@ -4380,6 +4384,8 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "jouinc"
 topics = ["field", "jouinc", "scene coverage", "door hop"]
+
+[[scenarios]]
 label = "kor_ghost_knight_pre_v_windhash"
 backup_fingerprint = "219e43ef9ace59bab192ded5b67c1c401770207bc7fd60b8be76a59fd1635620"
 description = "kor battle: Ghost Knight (monster id 18) is about to cast V-Windhash (spell 0x57, module 0947) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 7406 vsyncs in."
