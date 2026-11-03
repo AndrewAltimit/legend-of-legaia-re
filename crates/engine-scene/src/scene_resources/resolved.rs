@@ -48,14 +48,21 @@ impl ResolvedTmd {
     /// REF: FUN_8001C604, FUN_8005B038
     pub fn with_group_deltas(&self, group: u32, deltas: &[[i16; 3]]) -> ResolvedTmd {
         let mut out = self.clone();
-        if let Some(obj) = out.tmd.objects.get_mut(group as usize) {
+        out.stage_group_deltas(group, deltas);
+        out
+    }
+
+    /// [`Self::with_group_deltas`] on a copy the caller already holds: a
+    /// slot's morph stages several groups onto one clone, and it runs per
+    /// slot per tick.
+    pub fn stage_group_deltas(&mut self, group: u32, deltas: &[[i16; 3]]) {
+        if let Some(obj) = self.tmd.objects.get_mut(group as usize) {
             for (v, d) in obj.vertices.iter_mut().zip(deltas.iter()) {
                 v.x = v.x.wrapping_add(d[0]);
                 v.y = v.y.wrapping_add(d[1]);
                 v.z = v.z.wrapping_add(d[2]);
             }
         }
-        out
     }
 
     pub fn build_filtered_vram_mesh(&self, vram: &Vram) -> legaia_tmd::mesh::VramMesh {

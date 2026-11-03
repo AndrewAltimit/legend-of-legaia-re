@@ -49,6 +49,7 @@ impl LegaiaRuntime {
     /// applies after this returns; `false` for a picker / door /
     /// opening-chain entry.
     pub(crate) fn enter_field_core(&mut self, name: &str, resume: bool) -> Result<String, String> {
+        self.field_morph_last.clear();
         let host = self
             .scene_host
             .host_mut()

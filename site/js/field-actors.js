@@ -81,6 +81,32 @@
     }
   }
 
+  /* How far from the actor's origin this pose can put a vertex, before the draw's
+   * scale. A bone is rigid (`R . v + T`), so an object's vertices stay within its
+   * rest radius of the bone's translation; poseInto collapses an object past the
+   * clip's bones onto the origin. A sound bound off the bones alone, with no
+   * vertex posed. */
+  function poseReach(n, bones) {
+    if (n.radiiBase !== n.base || n.radiiIds !== n.objectIds) {
+      const radii = [];
+      for (let v = 0; v < n.objectIds.length; v++) {
+        const o = n.objectIds[v];
+        const r = Math.hypot(n.base[v * 3], n.base[v * 3 + 1], n.base[v * 3 + 2]);
+        if (!(radii[o] >= r)) radii[o] = r;
+      }
+      n.radii = radii;
+      n.radiiBase = n.base;
+      n.radiiIds = n.objectIds;
+    }
+    let reach = 0;
+    const parts = bones.length / 6;
+    for (let p = 0; p < parts; p++) {
+      const r = (n.radii[p] || 0) + Math.hypot(bones[p * 6], bones[p * 6 + 1], bones[p * 6 + 2]);
+      if (r > reach) reach = r;
+    }
+    return reach;
+  }
+
   /* The shatter renderer's draw (`FUN_80029888`; kernel
    * `legaia_render_kernels::shatter`): a body breaking into its triangles no
    * longer shares a vertex between two of them, so it draws from a
@@ -260,6 +286,8 @@
         }
       }
       let posed = false;
+      let deferred = null;
+      let deferredReach = 0;
       const cs = n.i * CLIP_STATE_STRIDE;
       if (clipStates && cs + CLIP_STATE_STRIDE <= clipStates.length) {
         const f = clipStates[cs];
@@ -269,10 +297,21 @@
         if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
           const bones = a.live_bones(n.i);
           if (bones.length) {
-            poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
-            renderer.updateSceneMeshPositions(n.meshId, n.out);
-            n.lastFrame = f; n.lastGen = gen;
-            posed = true;
+            const pose = () => {
+              poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
+              renderer.updateSceneMeshPositions(n.meshId, n.out);
+              n.lastFrame = f; n.lastGen = gen;
+            };
+            /* A page that settles its draws against the frame's camera and
+             * lights (`renderer.settleHook`) poses a plain actor there, when it
+             * is known whether anything will read the pose. */
+            if (o.deferPose && !morphMoved && !(shatterStates && shatterStates[n.i])) {
+              deferred = pose;
+              deferredReach = poseReach(n, bones);
+            } else {
+              pose();
+              posed = true;
+            }
           }
         }
       } else if ((o.advance || morphMoved) && n.frameCount > 1) {
@@ -337,6 +376,10 @@
         npcSlot: n.slot | 0,
       }, o.extra || {});
       if (shardNclip !== undefined) actorDraw.nclip = shardNclip;
+      if (deferred) {
+        actorDraw.pendingPose = deferred;
+        actorDraw.poseReach = deferredReach;
+      }
       const tk = n.i * 4;
       if (ntint && tk + 3 < ntint.length && ntint[tk + 3] > 0) {
         actorDraw.cue = { far: [ntint[tk], ntint[tk + 1], ntint[tk + 2]], nearZ: -1, farZ: 0, maxIr0: ntint[tk + 3] };

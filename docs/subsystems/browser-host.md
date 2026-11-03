@@ -325,6 +325,28 @@ ticking under the wipe until the menu spawns, the hand-over takes one tick,
 and from then on each tick is one menu step (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-play/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
+## Settling a frame's draws
+
+A frame's cost on a weak CPU is mostly work whose answer nothing reads: at a
+town's camera most bodies are off screen. Each saving below keeps the picture
+the unconditional work gives, and the [frame-hash oracle](../tooling/frame-hash.md)
+pins that in both modes.
+
+| Work | Skipped when | What keeps it right |
+|---|---|---|
+| A draw in `renderAssembled`'s opaque, SSAO and blend passes (`boxOffScreen`) | The body's box lies past one side of the clip volume | Skipping leaves the others' order alone: the mesh keeps its seat in the grouping map even with no placement on screen, since depth ties and blend runs read that order. The depth planes are not tested, because depth writes move them; a curved overworld frame tests X alone, because the curvature moves Y. |
+| A posed actor's pose, upload, normals and draw (`pendingPose`, `_settleDraws`) | A sphere round the pose reaches neither the camera nor a light | The sphere comes off the bones (`poseReach`): a bone is rigid, so a vertex stays within its object's rest radius of the translation. The actor's `lastFrame` stays put, so the first frame anything can see it poses it to its current clip frame. |
+| A VDF morph's mesh build (`_morphHeld`, `_settleMorphs`) | A sphere round each placement reaches neither the camera nor a light | `field_morph_reach` bounds the move off the live deltas and holds them, so a morph whose lanes ended unseen still lands on the last state it reached. The sphere covers the stale mesh as well as the true one, so neither can show. |
+| The overlay canvas's clear, parse and blits (`_overlayPainted`) | The shop and dialog answers are the strings last painted | The canvas keeps its pixels. Every other painter on it (the other layers, the developer menu, a stopped view's boot screens) drops the key. |
+| A HUD readout's DOM write (`setText` in `play.html`) | The string is the one shown | Assigning `textContent` replaces the text node even when equal, and that sends the page through style, layout and paint. |
+
+The pose and morph decisions wait for `renderer.settleHook`, a one-shot that
+`renderAssembled` calls once `vp` and `lightFrame` are this frame's: the lights
+are picked against the camera that draws, so nothing earlier in the frame knows
+them. None of this runs in PSX mode, whose vertex stage can bring a far corner
+back on screen (`gteSaturateClip`), or for a VR session, whose eyes draw later
+with their own matrices.
+
 ## Live battles (`play_battle`)
 
 `enter_field` arms the engine's live gameplay loop - the browser twin of the

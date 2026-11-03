@@ -74,6 +74,9 @@ pub(crate) fn play_page_gain(slider: f32) -> f32 {
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
 /// `SceneHost` plus the render state for the scene it is running.
+/// One env-pack slot's morph: `(group, deltas)` per group a lane targets.
+pub(crate) type MorphDeltas = Vec<(u32, Vec<[i16; 3]>)>;
+
 #[wasm_bindgen]
 pub struct LegaiaRuntime {
     pub(crate) world: World,
@@ -122,6 +125,9 @@ pub struct LegaiaRuntime {
     pub(crate) field_vram_dirty: bool,
     /// [`Self::field_morph_positions`]'s answers, per morph state.
     pub(crate) field_morph_memo: legaia_engine_scene::scene_assembly::HybridPositionsMemo,
+    /// Each env-pack slot's last morph deltas (`field_morph_reach`), `(group,
+    /// deltas)`; dropped with the scene's field build.
+    pub(crate) field_morph_last: std::collections::HashMap<u32, MorphDeltas>,
     /// Enhanced lighting's derived light sets for the running scene
     /// ([`crate::play_lighting`]), built on the first lit frame after a
     /// scene entry.
@@ -487,6 +493,7 @@ impl LegaiaRuntime {
             field_vram_anim: None,
             field_vram_dirty: false,
             field_morph_memo: Default::default(),
+            field_morph_last: Default::default(),
             scene_lights: None,
             battle_intro: None,
             intro_readback: false,

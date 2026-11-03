@@ -435,6 +435,26 @@ function boxOutsideClip(m, cx, cy, cz, ex, ey, ez) {
   return false;
 }
 
+/* Whether no corner of a box (centre, half extents) can land a fragment: all of
+ * it lies past one side of the GL clip volume under column-major `m`. Only the
+ * sides the vertex stage leaves alone count, because the depth planes move with
+ * the page's depth writes and the overworld's curvature moves Y: `xOnly` leaves
+ * top and bottom out as well. The half-space test holds for any w, so a box
+ * behind the eye reads correctly. */
+function boxOffScreen(m, cx, cy, cz, ex, ey, ez, xOnly) {
+  const wc = m[3] * cx + m[7] * cy + m[11] * cz + m[15];
+  const wr0 = m[3] * ex, wr1 = m[7] * ey, wr2 = m[11] * ez;
+  const slack = Math.abs(wc) * 1e-3 + 1e-3;
+  const axes = xOnly ? 1 : 2;
+  for (let axis = 0; axis < axes; axis++) {
+    const r0 = m[axis] * ex, r1 = m[axis + 4] * ey, r2 = m[axis + 8] * ez;
+    const pc = m[axis] * cx + m[axis + 4] * cy + m[axis + 8] * cz + m[axis + 12];
+    if (wc + pc + Math.abs(wr0 + r0) + Math.abs(wr1 + r1) + Math.abs(wr2 + r2) < -slack) return true;
+    if (wc - pc + Math.abs(wr0 - r0) + Math.abs(wr1 - r1) + Math.abs(wr2 - r2) < -slack) return true;
+  }
+  return false;
+}
+
 /* Top-down orthographic view-projection.
  *
  * Camera looks straight down (-Y) by default; `cam.pitch` tilts it toward

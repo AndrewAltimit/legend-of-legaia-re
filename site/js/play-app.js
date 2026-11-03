@@ -530,6 +530,11 @@ void main() { o_color = texture(u_layer, v_uv); }
       this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
       this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
       this._overlayActive = false;
+      /* Env-pack slots whose morph waits for a viewer (`_settleMorphs`), to
+       * whether a frame has already passed it over. */
+      this._morphHeld = new Map();
+      /* The key of what `_drawOverlayBase` last painted (play-view-overlay.js). */
+      this._overlayPainted = null;
       /* Whether this session CAN draw the retail reading box on the overlay
        * canvas: the engine exports the draw builder and the font atlas is
        * uploaded. The page's DOM `.play-dialog` fallback keys off this.
@@ -864,6 +869,8 @@ void main() { o_color = texture(u_layer, v_uv); }
     }
 
     stop() {
+      /* The boot screens paint the overlay canvas while the view is stopped. */
+      this._overlayPainted = null;
       if (this.raf) cancelAnimationFrame(this.raf);
       this.raf = 0;
     }
