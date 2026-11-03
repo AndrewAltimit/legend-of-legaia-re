@@ -19,14 +19,6 @@ impl Camera {
                     apply_trigger,
                     mode,
                 } => {
-                    // An `apply == 0` beat is retail's immediate snap. Bank
-                    // it for the host's cutscene interp before the merge
-                    // below folds it into one `camera_state` - see
-                    // [`Self::camera_snap_beats`].
-                    if apply_trigger == 0 {
-                        self.camera_snap_beats
-                            .push(params.iter().map(|p| (p.slot, p.value)).collect());
-                    }
                     // Op-0x45 slot layout, pinned from the Camera Configure
                     // apply handler `FUN_801DE084` (writes the camera globals)
                     // + the view build `FUN_800172C0` (Euler kernel

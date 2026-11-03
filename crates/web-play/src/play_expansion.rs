@@ -387,7 +387,6 @@ impl LegaiaRuntime {
         if let Some(distance) = preset.and_then(camera_distance) {
             self.scene_host.camera_mut().distance = distance;
         }
-        self.cutscene_glide.reset();
         let _ = self.seat_enter(legaia_engine_mode::mode::GameMode::MainInit);
         if self.live_battles {
             // The map rolls no retail encounters (its zones name pack

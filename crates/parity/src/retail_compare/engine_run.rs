@@ -390,6 +390,16 @@ fn seed_and_settle(
                     eprintln!("script gate met t={t}: {}", g.trace(&session.host.world));
                 }
                 met_at = Some(t);
+                // The glide in flight, as far along as retail's and set out
+                // from retail's pose, where its endpoint is the engine's:
+                // the channel then scores the shot, not the history that
+                // started it.
+                if let (Some(pairs), Some(left)) =
+                    (&retail.scripts.glide_pairs, retail.scripts.glide_left)
+                    && session.camera.seat_glide_pairs(pairs)
+                {
+                    session.camera.align_glide_frames_left(left);
+                }
                 break;
             }
             if t == legaia_engine_capture::script_gate::SCRIPT_RESUME_TICK && !g.resumed_early.get()

@@ -30,11 +30,11 @@
 //!   retail's "a slow frame is a slow game".
 //!
 //! Everything that advances in retail-frame time counts ticks, never
-//! redraws. The cutscene glide ([`CutsceneGlide`]) diffs
+//! redraws. The camera mover ([`Camera::tick`]) diffs
 //! [`legaia_engine_vm::frame_clock::FrameClock::display_frames`], so a redraw on which no tick
 //! ran advances it by nothing.
 
-use legaia_engine_camera::psx_camera::{CutsceneCameraInterp, FieldCameraView};
+use legaia_engine_camera::psx_camera::FieldCameraView;
 
 use crate::camera::{Camera, CameraWorld};
 use crate::camera_rig::CameraRig;
@@ -171,87 +171,41 @@ pub fn camera_after_world_tick<W: FrameStepWorld + ?Sized>(
     }
 }
 
-/// The cutscene camera's between-beat glide plus the clock it advances on.
+/// A scripted shot's view: the live camera globals.
 ///
-/// The interpolator ([`CutsceneCameraInterp`]) moves each component over the
-/// staging beat's `apply` frames, and `apply` is a count of retail display
-/// frames. [`Self::advance`] therefore steps it by the display frames the
-/// world ran since the previous call - `0` on a redraw that ran no tick. Both
-/// hosts used to floor that count at `1`, which advanced the glide once per
-/// *redraw*: at 120 Hz a glide finished in half its frames.
+/// Retail has one pose. An `apply == 0` Configure writes the ten globals, an
+/// `apply != 0` one hands the mover `(live, target)` pairs, and `FUN_800172C0`
+/// builds the frame's view from the globals whichever ran
+/// ([`Camera::tick`] steps the mover on display frames). A second glide kept
+/// beside them, armed by comparing targets on the frame a host looked, missed
+/// any shot that opened on a snap and a glide in one slice: `taiku2`'s
+/// arrival runs `45 07 .. 00 00` and `45 07 .. 58 02` back to back, and the
+/// frame stood on the 600-frame glide's end pose from its first frame.
 ///
-/// A scene entry drops the glide ([`Self::reset`]): retail's field entry
-/// (`FUN_80025C24`) rewrites the camera globals and kills the mover in
-/// flight, so no pose survives a door for the next scene's first beat to
-/// glide from. The native window used to keep its interpolator across a door
-/// whose destination opened on a timeline, gliding the new scene's first shot
-/// out of the old scene's pose; the page reset.
-#[derive(Debug, Clone, Default)]
-pub struct CutsceneGlide {
-    interp: CutsceneCameraInterp,
-    /// [`legaia_engine_vm::frame_clock::FrameClock::display_frames`] at the previous advance.
-    mark: u64,
-    /// A capture alignment the next [`Self::advance`] lands after its step:
-    /// every gliding component this many display frames short of its target
-    /// ([`Self::align_frames_left`]).
-    align_left: Option<u32>,
-}
-
-impl CutsceneGlide {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Display frames since the previous call, and move the mark to `now`.
-    /// `0` when no world tick ran in between.
-    pub fn take_steps(&mut self, now: u64) -> u32 {
-        let steps = u32::try_from(now.saturating_sub(self.mark)).unwrap_or(u32::MAX);
-        self.mark = now;
-        steps
-    }
-
-    /// This frame's cutscene view: replay the `apply == 0` beats banked on
-    /// `camera` as snaps (a snap and a glide committed in one tick glide from
-    /// the snapped pose), then step the glide toward `target` by the display
-    /// frames elapsed since the last call.
-    pub fn advance<W: FrameStepWorld + ?Sized>(
-        &mut self,
-        world: &W,
-        camera: &mut Camera,
-        target: FieldCameraView,
-    ) -> FieldCameraView {
-        for comps in camera.take_camera_snap_beats() {
-            self.interp.snap_components(&comps);
-        }
-        let rig = world.camera_rig();
-        let apply = u32::from(rig.state.apply_trigger);
-        let mode = rig.state.mode;
-        let steps = self.take_steps(world.display_frames());
-        let view = self.interp.glide_view(target, apply, mode, steps);
-        match self.align_left.take() {
-            Some(left) => self.interp.set_frames_left(left).unwrap_or(view),
-            None => view,
-        }
-    }
-
-    /// Have the next [`Self::advance`] leave every gliding component exactly
-    /// `left` display frames short of its target - the retail-compare image
-    /// channel's alignment of a capture taken mid-glide
-    /// ([`CutsceneCameraInterp::set_frames_left`]). Not a game path.
-    pub fn align_frames_left(&mut self, left: u32) {
-        self.align_left = Some(left);
-    }
-
-    /// No scripted shot owns this frame: drop the held pose so the next shot
-    /// snaps in, and drop the banked snaps, which would otherwise land on it.
-    pub fn idle(&mut self, camera: &mut Camera) {
-        self.interp.reset();
-        camera.clear_camera_snap_beats();
-    }
-
-    /// Drop the held pose (scene entry, a direct scene pick).
-    pub fn reset(&mut self) {
-        self.interp.reset();
+/// `target` (`camera_view::cutscene_view`) answers only for the two globals
+/// with no usable value: an eye depth or `H` of `0` is the reset state, not a
+/// shot.
+///
+/// REF: FUN_800172C0, FUN_801DC0BC, FUN_801DE084
+pub fn scripted_view(camera: &Camera, target: FieldCameraView) -> FieldCameraView {
+    use crate::camera::CUTSCENE_WORLD_SCALE as S;
+    let g = &camera.globals;
+    let angle = |v: i32| v as f32 / 4096.0 * std::f32::consts::TAU;
+    FieldCameraView {
+        focus: g.focus_world().map(|v| v as f32),
+        pitch: angle(g.0[0]),
+        yaw: angle(g.0[1]),
+        roll: angle(g.0[2]),
+        h: if g.h() > 1 { g.h() as f32 } else { target.h },
+        tr_eye: [
+            g.0[3] as f32 / S,
+            g.0[4] as f32 / S,
+            if g.0[5].abs() > 1 {
+                g.0[5] as f32 / S
+            } else {
+                target.tr_eye[2]
+            },
+        ],
     }
 }
 
@@ -309,12 +263,49 @@ mod tests {
         assert_eq!(s.drain(7.0 * MS), 1);
     }
 
-    /// An idle redraw (no tick ran) steps the glide by zero.
+    fn target() -> FieldCameraView {
+        FieldCameraView {
+            focus: [0.0; 3],
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+            h: 512.0,
+            tr_eye: [0.0, 0.0, 2000.0],
+        }
+    }
+
+    /// `taiku2`'s arrival: the snap and the 600-frame glide run in one slice,
+    /// and half way along the frame stands half way along, not on the end
+    /// pose the merged staging holds.
     #[test]
-    fn idle_redraws_take_no_steps() {
-        let mut g = CutsceneGlide::new();
-        assert_eq!(g.take_steps(10), 10);
-        assert_eq!(g.take_steps(10), 0);
-        assert_eq!(g.take_steps(12), 2);
+    fn a_snap_and_a_glide_in_one_slice_draw_the_glide() {
+        let mut cam = Camera::default();
+        cam.globals.0 = [80, -900, 0, -3860, 323, 28864, -1984, 0, -2272, 536];
+        let mut mv = legaia_engine_camera::camera_mover::CameraMover::default();
+        mv.arm(
+            cam.globals.0,
+            [60, -940, 0, 380, -908, 28864, -1984, 0, -2272, 536],
+            600,
+            1,
+        );
+        cam.mover = Some(mv);
+        cam.align_glide_frames_left(300);
+        let v = scripted_view(&cam, target());
+        let to_units = v.pitch / std::f32::consts::TAU * 4096.0;
+        assert!((to_units - 70.0).abs() < 0.01, "{to_units}");
+        assert!((v.tr_eye[0] - -1740.0 / 6.0).abs() < 0.01);
+        assert_eq!(v.h, 536.0);
+        assert_eq!(v.focus, [1984.0, 0.0, 2272.0]);
+    }
+
+    /// The reset state's zero depth and `H` are not a shot.
+    #[test]
+    fn a_zero_depth_and_h_fall_back_to_the_staged_target() {
+        let mut cam = Camera::default();
+        cam.globals.0[5] = 0;
+        cam.globals.0[9] = 0;
+        let v = scripted_view(&cam, target());
+        assert_eq!(v.h, 512.0);
+        assert_eq!(v.tr_eye[2], 2000.0);
     }
 }

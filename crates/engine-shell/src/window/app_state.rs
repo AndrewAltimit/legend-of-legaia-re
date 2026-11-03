@@ -1072,12 +1072,6 @@ pub(super) struct PlayWindowApp {
     /// the browser page's FMV lane consults too
     /// ([`legaia_engine_system::movie::movie_audio::MovieScore`]).
     pub(super) movie_score: legaia_engine_system::movie::movie_audio::MovieScore,
-    /// Eases the in-engine cutscene camera between Camera Configure beats so
-    /// the opening choreography blends instead of cutting, on the shared
-    /// retail-display-frame clock (`frame_step::CutsceneGlide`, the browser
-    /// page's twin). Reset (snaps) while no cutscene timeline is active and
-    /// on every scene entry.
-    pub(super) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// Wall-clock to sim-tick accumulator: the shared frame-step rule
     /// (`frame_step::SimStepper`) the browser page drains through too.
     pub(super) sim_stepper: legaia_engine_field::frame_step::SimStepper,

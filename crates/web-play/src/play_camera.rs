@@ -92,20 +92,9 @@ impl LegaiaRuntime {
             .host_view_at(aabb)
             .expect("checked above")
             .scripted_target();
-        let (host, camera) = self.scene_host.host_cam_mut().expect("checked above");
-        let world = &host.world;
-        let cutscene = if scripted {
-            // The shared kernel (`frame_step::CutsceneGlide`, the native
-            // window's twin): replay the banked `apply == 0` snaps, then step
-            // the glide by the display frames the world ran since the last
-            // call - zero on a redraw that ran no tick.
-            Some(self.cutscene_glide.advance(world, camera, target))
-        } else {
-            // Nothing is interpolating, so a banked snap would move a pose
-            // no draw reads.
-            self.cutscene_glide.idle(camera);
-            None
-        };
+        let (_, camera) = self.scene_host.host_cam().expect("checked above");
+        let cutscene =
+            scripted.then(|| legaia_engine_field::frame_step::scripted_view(camera, target));
         // The fog pool's next render step projects through this shot
         // (`BootSession::step_field_fog`).
         if let Some(session) = self.scene_host.session_mut() {

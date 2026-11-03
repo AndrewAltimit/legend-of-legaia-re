@@ -281,6 +281,11 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_frames_left`]).
     /// Set by the retail-compare image channel.
     pub seat_menu_glide_left: Option<f32>,
+    /// `LEGAIA_SEAT_GLIDE_PAIRS=<start,end;...>`: a retail state's camera
+    /// mover pair block, which the captured frame's glide sets out from
+    /// ([`legaia_engine_field::camera::Camera::seat_glide_pairs`]). Set by the
+    /// retail-compare image channel.
+    pub seat_glide_pairs: Option<[(i32, i32); 10]>,
     /// `LEGAIA_SEAT_MENU_GLIDE_POSE=pitch,tx,ty,tz,fx,fy,fz`: the pose retail's
     /// own table puts that displayed frame on, which the seat stands on in
     /// place of the engine's arm
@@ -1013,6 +1018,9 @@ impl ScreenshotConfig {
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
+            seat_glide_pairs: std::env::var("LEGAIA_SEAT_GLIDE_PAIRS")
+                .ok()
+                .and_then(|v| legaia_engine_capture::script_gate::glide_pairs_from_env(&v)),
             seat_menu_glide_left: std::env::var("LEGAIA_SEAT_MENU_GLIDE_LEFT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

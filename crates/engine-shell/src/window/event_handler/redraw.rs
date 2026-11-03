@@ -195,6 +195,11 @@ impl PlayWindowApp {
             w.presentation.fade.as_ref().map(|f| f.age_vsyncs()),
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
+        eprintln!("capture object moves {:?}", w.object_draw_displacements());
+        eprintln!(
+            "capture field camera: globals {:?} mover {:?}",
+            self.session.camera.globals, self.session.camera.mover,
+        );
         // Every battle body's draw inputs: where it stands, which clip and
         // keyframe it shows, and its tint state / colour word.
         for (i, a) in w

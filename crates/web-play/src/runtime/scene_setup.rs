@@ -106,10 +106,8 @@ impl LegaiaRuntime {
         // `SceneEntered` tick otherwise runs. Without it a scene picked
         // mid-cutscene kept the interrupted shot's globals and focus latch
         // and was framed by the old scene's camera. The native
-        // `BootSession::enter_field_live` is the paired site; the glide
-        // interpolator is this host's own and goes with it.
+        // `BootSession::enter_field_live` is the paired site.
         self.scene_host.camera_mut().reset_for_scene_entry();
-        self.cutscene_glide.reset();
         if !world_map {
             // Retail reaches the field through the mode table, not through a
             // call: whoever wants the field stores `MAIN INIT` (2) and mode

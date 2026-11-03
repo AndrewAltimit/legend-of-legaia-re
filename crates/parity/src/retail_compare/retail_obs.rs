@@ -646,6 +646,12 @@ impl RetailObs {
         if let Some([r, g, b]) = self.clear_rgb {
             env.push(("LEGAIA_SEAT_CLEAR", format!("{r},{g},{b}")));
         }
+        if let Some(pairs) = &self.scripts.glide_pairs {
+            env.push((
+                "LEGAIA_SEAT_GLIDE_PAIRS",
+                legaia_engine_capture::script_gate::glide_pairs_env(pairs),
+            ));
+        }
         if let Some([x, y, z]) = self.seat_eye {
             env.push(("LEGAIA_SEAT_EYE", format!("{x},{y},{z}")));
         }

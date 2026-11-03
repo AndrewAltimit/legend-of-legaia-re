@@ -1628,12 +1628,12 @@ answers "is this code executed", not "does a frame change".
 Two of the shared kernels above were live on both hosts and entered by no
 ladder on either, and the two have different answers.
 
-**The snap-beat bank is a ladder gap.** `Camera::take_camera_snap_beats` runs
-once per frame from each host's cutscene camera interp, and only there, so a
+**The scripted view is a ladder gap.** `frame_step::scripted_view` runs once per
+frame from each host's camera resolve, and only in the scripted branch, so a
 ladder that never parks in a scripted beat never reaches it - every rung this
 tree had opened on a town or an arena. `crates/web-play/tests/screen_effect_page_prims.rs`
 adds the rung, and the assertion is the published camera frame's own `arm`
-word: `"cutscene"` is the branch that calls the bank, so the rung cannot pass
+word: `"cutscene"` is the branch that calls it, so the rung cannot pass
 by entering a scene that never leaves the follow arm.
 
 **The ocean fallback is a content gap, and no ladder closes it.**

@@ -124,24 +124,6 @@ pub struct Camera {
     /// the target it composes and the ease that walks the globals toward
     /// it. See [`crate::camera_zone`] and [`Self::zone_follow_tick`].
     pub zone: ZoneFollow,
-    /// This frame's `apply_trigger == 0` Configure beats, as packed-component
-    /// snaps for the host's [`legaia_engine_camera::psx_camera::CutsceneCameraInterp`].
-    ///
-    /// Retail's mover snaps the live camera globals to an `apply == 0` beat
-    /// immediately. The field VM runs until yield, so a snap beat followed by
-    /// a glide beat in the same tick (`map01`'s fly-in: the aerial snap, then
-    /// the descent with no yield between) commits both before any host looks,
-    /// and the merged [`Self::globals`] only carries the glide beat's
-    /// targets, so a host that reads the merged state alone glides from the
-    /// wrong pose.
-    ///
-    /// Filled by [`Self::route_camera_events`] and drained by
-    /// [`Self::take_camera_snap_beats`]. It lives here because this is where
-    /// the beats are: `route_camera_events` consumes every
-    /// `FieldEvent::CameraConfigure` off the world queue and does not restore
-    /// it, so a host looking for them in its own later drain of
-    /// `pending_field_events` finds none.
-    pub camera_snap_beats: Vec<Vec<(u8, u16)>>,
 }
 
 /// The state of the **zone-driven field follow camera** - the engine side
@@ -392,7 +374,6 @@ impl Default for Camera {
             last_field_frame: 0,
             script_owns_focus: false,
             zone: ZoneFollow::default(),
-            camera_snap_beats: Vec::new(),
         }
     }
 }
@@ -428,22 +409,25 @@ impl Camera {
         }
     }
 
-    /// Take this frame's `apply_trigger == 0` Configure beats as packed
-    /// component snaps, ready for
-    /// [`legaia_engine_camera::psx_camera::CutsceneCameraInterp::snap_components`].
-    /// Both hosts call it once per frame, right before arming the glide;
-    /// empty on every frame no snap beat executed. See
-    /// [`Self::camera_snap_beats`].
-    pub fn take_camera_snap_beats(&mut self) -> Vec<Vec<(usize, f32)>> {
-        std::mem::take(&mut self.camera_snap_beats)
-            .iter()
-            .map(|b| legaia_engine_camera::psx_camera::CutsceneCameraInterp::snap_components_for(b))
-            .collect()
-    }
-
-    /// Drop any banked snap beats - the host's cutscene interp is not live
-    /// this frame, so replaying them would snap a pose nothing reads.
-    pub fn clear_camera_snap_beats(&mut self) {
-        self.camera_snap_beats.clear();
+    /// Stand the glide in flight on a retail state's own pair block - a
+    /// capture-alignment aid like [`Self::align_glide_frames_left`], not a
+    /// game path. The mover's start pose is the live globals at the beat, so
+    /// it holds how long everything before the beat took (`concnow`'s walks
+    /// into `P2[13]`), and the state's `+0x90` block records it. Taken only
+    /// when the block lands where the engine's own glide lands: a wrong
+    /// endpoint is a wrong shot, and has to go on reading as one. Returns
+    /// whether it took.
+    ///
+    /// REF: FUN_801DC0BC, FUN_801DD310 (the pair block)
+    pub fn seat_glide_pairs(&mut self, pairs: &[(i32, i32); 10]) -> bool {
+        let Some(mv) = self.mover.as_mut() else {
+            return false;
+        };
+        if mv.pairs.iter().zip(pairs).any(|(a, b)| a.1 != b.1) {
+            return false;
+        }
+        mv.pairs = *pairs;
+        self.globals.0 = mv.values();
+        true
     }
 }

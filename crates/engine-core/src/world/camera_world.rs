@@ -1248,31 +1248,19 @@ mod tests {
         for hz in [60.0f64, 120.0, 144.0] {
             let mut world = World::default();
             let mut camera = Camera::default();
-            let mut glide = legaia_engine_field::frame_step::CutsceneGlide::new();
             let mut stepper = legaia_engine_field::frame_step::SimStepper::new();
-            let start = legaia_engine_camera::psx_camera::FieldCameraView {
-                focus: [0.0, 0.0, 0.0],
-                pitch: 0.0,
-                yaw: 0.0,
-                roll: 0.0,
-                h: 512.0,
-                tr_eye: [0.0, 0.0, 1000.0],
-            };
-            let target = legaia_engine_camera::psx_camera::FieldCameraView {
-                focus: [600.0, 0.0, 0.0],
-                ..start
-            };
-            // First call snaps the pose to `start`.
-            glide.advance(&world, &mut camera, start);
-            world.camera.state.apply_trigger = 60;
-            world.camera.state.mode = 1;
+            let mut mover = legaia_engine_camera::camera_mover::CameraMover::default();
+            let mut target = [0; 10];
+            target[6] = -600;
+            mover.arm([0; 10], target, 60, 1);
+            camera.mover = Some(mover);
             let mut arrived_at = None;
             for _ in 0..(hz as u32 * 2) {
                 for _ in 0..stepper.drain(1.0 / hz) {
                     world.clock.display_frames += 1;
                 }
-                let v = glide.advance(&world, &mut camera, target);
-                if arrived_at.is_none() && (v.focus[0] - 600.0).abs() < 1e-3 {
+                camera.tick(&world);
+                if arrived_at.is_none() && camera.globals.0[6] == -600 {
                     arrived_at = Some(world.clock.display_frames);
                 }
             }

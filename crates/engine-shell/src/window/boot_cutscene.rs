@@ -1030,10 +1030,8 @@ impl PlayWindowApp {
         // `ActorSpawned` is the only variant the shared drain answers, and
         // there is deliberately no `CameraConfigure` arm: the session tick's
         // `Camera::route_camera_events` has already consumed every one off
-        // the world queue and does not restore it. The `apply == 0` snap
-        // beats are banked on the camera instead
-        // (`Camera::take_camera_snap_beats`, replayed by
-        // `frame_step::CutsceneGlide::advance`).
+        // the world queue and does not restore it; the shot lives in the
+        // camera globals (`frame_step::scripted_view`).
         self.session
             .host
             .world

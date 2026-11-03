@@ -159,7 +159,7 @@ fn play_page_draws_the_field_screen_effect_wash() {
 /// entered** - the reach export finds them live and never executed. Each gets
 /// a rung, and the second rung's answer is a negative one.
 ///
-/// `Camera::take_camera_snap_beats` runs once per frame from the page's
+/// `frame_step::scripted_view` runs once per frame from the page's
 /// `resolve_camera_frame`, but only inside the scripted branch, so a ladder
 /// that never parks in a cutscene never reaches it. The published camera
 /// frame names the arm it took, which is the assertion.

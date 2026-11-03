@@ -19,7 +19,7 @@ builds for native and `wasm32` alike.
 
 | Module | Covers |
 |---|---|
-| `psx_camera` | The GTE camera build and projection as one column-major 4x4 (`psx_camera_vp`), its inverse, and `CutsceneCameraInterp`, the between-beat glide. |
+| `psx_camera` | The GTE camera build and projection as one column-major 4x4 (`psx_camera_vp`) and its inverse. |
 | `projection` | `BattleCamPose`, the GTE constants (`GTE_H`, `GTE_OFX`, `GTE_OFY`, the NDC bias, near / far planes) and the battle view-projection `battle_vp`. |
 | `camera_mover` | The op-`0x45` cutscene glide, `FUN_801DC0BC`, in its native integer law. |
 | `battle_camera` | The camera-angle tween step table (`FUN_801D829C`) and the shake jitter (`FUN_801D9D30`). |
@@ -47,12 +47,6 @@ matrices carry the PSX `scale(1,-1,1)` and the projection's trailing flip
 cancels it. A host that instead keeps raw retail Y-down world state (the
 native window's field frame) post-multiplies one more `scale(1,-1,1)` and
 lands on the same net transform.
-
-`CutsceneCameraInterp` - the between-beat glide for op-`0x45` Camera Configure
-(`PORT: FUN_801DC0BC`, the `f32` rendition of `camera_mover`'s integer law) -
-lives here rather than in the wgpu-linked renderer crate, which is what lets
-the browser play page ease a scripted shot instead of snapping every
-`apply > 0` beat.
 
 Which camera owns a given frame, and what its inputs are, is one layer up:
 the frame type and its matrix in `engine-field::camera_frame`, the resolver

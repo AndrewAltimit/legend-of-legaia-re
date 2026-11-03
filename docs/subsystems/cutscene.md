@@ -1441,8 +1441,8 @@ globals.
 
 **Port and validation.**
 [`legaia_engine_camera::camera_mover`](../../crates/engine-camera/src/camera_mover.rs) is the
-integer law verbatim, plus `curve_unit` as the normalized `f32` shape the renderer-side
-[`CutsceneCameraInterp`](../../crates/engine-camera/src/psx_camera.rs) evaluates.
+integer law verbatim, and both hosts draw a scripted shot from the globals it writes
+([`frame_step::scripted_view`](../../crates/engine-field/src/frame_step.rs)).
 
 - Against a live headless capture of the retail mover, 2471 of 2480 sampled
   `(axis, start, end, t, d, curve) -> global` tuples reproduce exactly; the rest resolve under a
@@ -1528,8 +1528,8 @@ values are on
 the executing oracle is `crates/engine-core/tests/thread_camera_roll_execution.rs`.
 
 Engine side: `Camera::roll`, the shared op-`0x45` decode `camera_view::cutscene_view`, the
-shared projection `psx_camera::psx_camera_vp` (rotation `Rx * Ry * Rz`), and
-`CutsceneCameraInterp`'s tenth packed component, so a roll glides on the beat's own curve. Both
+shared projection `psx_camera::psx_camera_vp` (rotation `Rx * Ry * Rz`), and the mover's third
+axis, so a roll glides on the beat's own curve. Both
 hosts frame the shot from that one decode and that one matrix.
 
 ### Record pacing - the 60 Hz sub-clock
@@ -1726,8 +1726,8 @@ same frame.
   `tr_eye` is divided by `6` - the perspective divide makes `6x`-geometry-at-`z` and
   `1x`-geometry-at-`z/6` project to identical pixels (the same trick as the follow view's
   `FIELD_CAM_DEPTH = 1200 = 7200/6`).
-- `CutsceneCameraInterp` moves the rendered pose toward each new beat with the mover's curves:
-  `apply == 0` snaps (a hard cut), `apply > 0` glides over `apply` display frames with the
+- The rendered pose is the live globals (`frame_step::scripted_view`), which the mover walks
+  toward each new beat: `apply == 0` snaps (a hard cut), `apply > 0` glides over `apply` display frames with the
   beat's curve on **every** slot. `opdeene` mixes both: the entry shot snaps, but the
   mid-prologue forest dolly is `apply 840` paired with a `760`-frame `WaitFrames`, so the
   camera glides continuously while the crawl scrolls. `opurud`'s `apply 2300` eye glide is
@@ -2811,10 +2811,6 @@ Three details of these bodies are visible only in the disassembly; the port
   particle.
 
 ## Open items
-
-- **Cutscene camera re-seed** (a port difference). `CutsceneCameraInterp` arms glides per
-  component where retail re-seeds all ten axes per apply beat
-  ([engine port](#timeline-execution-engine-port)).
 
 Answered elsewhere: the XA clip-table writer is `FUN_801CFA78` in PROT 0895 and the
 `(clip_id, chan)` cue census is complete over `SCUS_942.54` and the static overlay corpus

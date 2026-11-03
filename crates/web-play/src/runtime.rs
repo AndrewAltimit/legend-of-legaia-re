@@ -138,11 +138,6 @@ pub struct LegaiaRuntime {
     /// the bare field: a host that never lands a capture (a headless run, a
     /// cached page without the readback) keeps the transition on screen.
     pub(crate) intro_readback: bool,
-    /// The between-beat cutscene glide and its display-frame clock - the
-    /// shared kernel (`frame_step::CutsceneGlide`) the native window owns
-    /// one of too. Without it every `apply > 0` Camera Configure beat snapped
-    /// on this host.
-    pub(crate) cutscene_glide: legaia_engine_field::frame_step::CutsceneGlide,
     /// The engine camera [`Self::play_camera_vp`] last handed the page: the
     /// matrix and the frame it was built from. The field FX pass reads the
     /// frame back only when the page draws through that exact matrix, so the
@@ -498,7 +493,6 @@ impl LegaiaRuntime {
             // The host framing bias the retail follow view is rendered with,
             // pushed in exactly where the native window pushes it
             // (`window/run.rs`), through the one shared expression.
-            cutscene_glide: Default::default(),
             engine_camera: None,
             last_frame_field_view: None,
             sim_stepper: Default::default(),

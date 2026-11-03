@@ -151,6 +151,27 @@ pub struct ScriptGate {
     pub walk: Option<(u8, i16)>,
 }
 
+/// A retail camera mover's pair block as `LEGAIA_SEAT_GLIDE_PAIRS`:
+/// `start,end` per axis, `;` between axes.
+pub fn glide_pairs_env(pairs: &[(i32, i32); 10]) -> String {
+    pairs
+        .iter()
+        .map(|(s, e)| format!("{s},{e}"))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Inverse of [`glide_pairs_env`].
+pub fn glide_pairs_from_env(v: &str) -> Option<[(i32, i32); 10]> {
+    let mut out = [(0, 0); 10];
+    let mut axes = v.trim().split(';');
+    for slot in &mut out {
+        let (s, e) = axes.next()?.split_once(',')?;
+        *slot = (s.trim().parse().ok()?, e.trim().parse().ok()?);
+    }
+    axes.next().is_none().then_some(out)
+}
+
 impl ScriptGate {
     /// `<flat index>:<head hex>:<pc>:<wait>:<op>[:<glide left>][:s<system pc>][:t<row>.<counter>][:l<cursor>]`
     /// - `LEGAIA_SCRIPT_GATE` for `play-window`.

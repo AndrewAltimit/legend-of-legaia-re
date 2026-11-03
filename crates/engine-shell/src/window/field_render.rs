@@ -207,9 +207,7 @@ impl PlayWindowApp {
     pub(super) fn rebuild_scene_render_state(&mut self) {
         // Every caller swapped the scene. Retail's field entry
         // (`FUN_80025C24`) rewrites the camera globals and kills the mover, so
-        // no glide pose survives the door - the next scene's first scripted
-        // shot snaps in, as on the browser page (`CutsceneGlide::reset`).
-        self.cutscene_glide.reset();
+        // no glide pose survives the door.
         let started = std::time::Instant::now();
         legaia_engine_render::profile::startup("scene swap begins");
         match build_window_scene_resources(&self.session) {

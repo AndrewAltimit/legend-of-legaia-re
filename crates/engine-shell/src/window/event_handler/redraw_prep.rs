@@ -121,7 +121,9 @@ impl PlayWindowApp {
                 && let Some(left) = sc.script_gate.as_ref().and_then(|g| g.glide_left)
                 && left > 0
             {
-                self.cutscene_glide.align_frames_left(left as u32);
+                if let Some(pairs) = &sc.seat_glide_pairs {
+                    self.session.camera.seat_glide_pairs(pairs);
+                }
                 self.session.camera.align_glide_frames_left(left);
             }
             // A capture no pose reaches stands the camera on this frame's
@@ -688,14 +690,9 @@ impl PlayWindowApp {
         self.sync_battle_ground_ambient();
     }
 
-    /// This frame's cutscene camera, eased through the shared glide kernel;
-    /// `None` while no cutscene timeline owns the camera.
+    /// This frame's cutscene camera (`frame_step::scripted_view`); `None`
+    /// while no cutscene timeline owns the camera.
     pub(super) fn resolve_cutscene_camera(&mut self) -> Option<CutsceneCam> {
-        // Ease the in-engine cutscene camera between Camera Configure
-        // beats. Done here (outside the renderer borrow below) so the
-        // interpolator can take `&mut self`; while no cutscene timeline
-        // owns the scene the interp is reset so the next opening shot
-        // snaps in rather than sweeping from a stale pose.
         // The cutscene camera also owns the WORLD-MAP frame while the opening
         // chain's map01 leg runs its timeline: retail's Rim Elm fly-in is
         // three op-0x45 beats in map01's opening record (snap to the high
@@ -706,33 +703,9 @@ impl PlayWindowApp {
         // force-walk bands - keeps the ordinary field / walk camera.
         if legaia_engine_world_views::camera_view::cutscene_owns_camera(&self.session.host.world) {
             let (focus, pitch, yaw, roll, h, tr_eye) = self.cutscene_view();
-            // Glide pacing from the op-`0x45` `apply_trigger` (retail
-            // `FUN_801DE084` → `FUN_801DB510`): a Configure with `apply == 0`
-            // commits its camera targets IMMEDIATELY (snap cut), while
-            // `apply > 0` stages them and the per-frame mover glides the live
-            // globals there over exactly `apply` frames - the mover law
-            // (curve per mode nibble, 1 apply unit = 1 sim tick) is
-            // capture-pinned; see `CutsceneCameraInterp`. opdeene's beats mix
-            // both: the entry shot snaps (`apply 0`), the mid-prologue grove
-            // drift glides (`apply 840`, paired with a 760-frame WaitFrames),
-            // and the crater-rim tableau dolly glides (`apply 480`) WHILE the
-            // narration text scrolls - the "3D keeps playing under the
-            // crawl" retail behaviour. The interp arms glides PER COMPONENT
-            // on target change (see `CutsceneCameraInterp::glide`), so the
-            // H-only re-poke one frame after the tableau beat cannot snap
-            // the in-flight dolly (the earlier whole-tuple ease-rate model
-            // did exactly that, tele-porting the eye into the crater-rim
-            // geometry - the "opening shot buried in a gold wall" report).
-            //
-            // Advanced in RETAIL DISPLAY-FRAME time, not render-frame or
-            // sim-tick time, through the shared kernel
-            // (`frame_step::CutsceneGlide`): retail's mover (`FUN_801DC0BC`)
-            // credits one unit per display frame, so `apply` is a duration in
-            // display frames and a redraw on which no tick ran advances the
-            // glide by nothing. The kernel also replays this frame's snap
-            // beats first (retail order: the mover snaps to an `apply 0` beat,
-            // then glides from there when a same-tick follow-up beat
-            // re-stages - the map01 fly-in pair).
+            // The shot is the live camera globals, which the op-`0x45` beats
+            // and the mover (`FUN_801DC0BC`) wrote this tick
+            // (`frame_step::scripted_view`).
             let target = legaia_engine_camera::psx_camera::FieldCameraView {
                 focus,
                 pitch,
@@ -741,11 +714,7 @@ impl PlayWindowApp {
                 h,
                 tr_eye,
             };
-            let v = self.cutscene_glide.advance(
-                &self.session.host.world,
-                &mut self.session.camera,
-                target,
-            );
+            let v = legaia_engine_field::frame_step::scripted_view(&self.session.camera, target);
             let out = (v.focus, v.pitch, v.yaw, v.roll, v.h, v.tr_eye);
             let apply = self.session.host.world.camera.state.apply_trigger;
             if std::env::var_os("LEGAIA_DIAG_CUTCAM").is_some() {
@@ -759,10 +728,6 @@ impl PlayWindowApp {
             }
             Some(out)
         } else {
-            // Nothing is interpolating this frame, so a banked snap would
-            // move a pose no draw reads - drop them rather than let them
-            // land on the next shot.
-            self.cutscene_glide.idle(&mut self.session.camera);
             None
         }
     }

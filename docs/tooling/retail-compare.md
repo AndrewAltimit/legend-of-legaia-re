@@ -3892,11 +3892,38 @@ state's own oscillators are written over the engine's
 back by the display lag (`LEGAIA_SEAT_FLOOR_BOBS`). `concnow_field_door_hop_settled`
 `image` `.658` to `.948`, `footing` `.96` to `1`.
 
-`concnow_field_door_hop` itself stays low (`image` `.49`, `camera` `.752`). It is
-caught `9` of `280` frames into `P2[13]`'s `WaitFrames` behind a `45 07`, and the
-pose that ease starts from is how long the walks before it took. The script gate
-resumes the record from its start with the player already on his retail tile, so
-those walks end at once and the ease starts from an earlier pose.
+### A glide's start pose is history
+
+`concnow_field_door_hop` is caught `9` of `120` frames into the `45 07` glide before
+`P2[13]`'s `WaitFrames`, and that glide sets out from the live globals, so its start
+pose is how long the walks before it took. The script gate resumes the record from its
+start with the player already on his retail tile, so those walks end at once and the
+ease set out from an earlier pose (`pitch` `169` against `237`).
+
+The state records the start: the mover's `+0x90` block holds `(start, end)` per axis.
+`RetailScripts::glide_pairs` carries it, and on a met gate both sides stand the mover on
+it (`Camera::seat_glide_pairs`, the image child's `LEGAIA_SEAT_GLIDE_PAIRS`) with
+retail's progress, the headless sample on the RAM's and the child on the displayed
+pass's. It takes only when the block's ends are the engine's own: a wrong endpoint is a
+wrong shot and goes on reading as one. `concnow_field_door_hop` `camera` `.752` to `1`,
+`image` `.49` to `.888`; `kor5_post_436_organic` `camera` `.993` to `1`.
+
+### A scripted shot draws the globals
+
+`taiku2_field_door_hop` opens on a `45 07` snap and a `600`-frame `45 07` glide in one
+slice. The `camera` channel read `1` while the frame sat `25` px off, because the
+channel reads the globals and the hosts drew through a second glide of their own, armed
+by comparing staged targets when a host first looked. That glide saw only the merged
+end pose, and the shot stood on it from its first frame. A fit of the state's
+`POLY_FT4` corners against the sky mesh (`LEGAIA_DIAG_DRAW_TRIS`) named the two
+rotations: `(71, -919)` in retail, `(60, -940)` in the engine. Both hosts now draw the
+globals (`frame_step::scripted_view`).
+
+The same record walks the sky dome, a placed object, with `C1 14 84 4A`. That arm is
+now live on an object target, and an object's leg spends the frame step once a game
+frame: at step `1` the `64 * s / 128` step truncates to nothing, at step `2` it moves
+one unit, which is `2135` in the state from the `A3 14 10 0F` seat at `1984`. `image`
+`.530` to `.996`.
 
 ### A script-held height is not a footing
 
@@ -4198,12 +4225,9 @@ a compose the port gets wrong:
   (`FUN_801DC0BC` on the actor lists) is `69` frames into an `80`-frame
   linear glide whose pair block runs pitch `-100 -> 700`, yaw `-780 -> 0`,
   eye Z `2740 -> 8320`, `H` `448 -> 400`. Retail reads `590 / -108 / 407`,
-  eye Z `7552` - exactly the pairs at `69 / 80` - and the headless seed
-  `600 / -98 / 406`, eye Z `7622`, the same pairs at `70 / 80`: the glide
-  law and its endpoints agree, and the frame-skip history that put retail's
-  counter on `69` does not replay. The `camera` channel keeps reporting
-  that one frame; the image child lands the glide on retail's progress
-  ([above](#mid-script-states)) and the frame matches.
+  eye Z `7552` - exactly the pairs at `69 / 80`. The frame-skip history that
+  put retail's counter on `69` does not replay, so both sides stand the glide
+  on retail's progress ([below](#a-glides-start-pose-is-history)).
 - `retona_field_card_boot` was caught a few frames into the card load's
   arrival: the op `4C 12` word `0x8007BCB8..BA` reads `27` (mid-ramp), and
   the fog pool holds 27 particles whose ages are all under half of the
