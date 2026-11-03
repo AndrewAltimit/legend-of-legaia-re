@@ -139,6 +139,9 @@ impl World {
         self.casting.module_cam.row_aim =
             legaia_engine_battle_vm::battle_target_group::target_group_aim(9, &slots);
         self.casting.module_cam.creature_clip = clip;
+        self.casting.module_cam.creature_word_up = seat
+            .and_then(|s| self.actors.get(s as usize))
+            .is_some_and(|a| a.battle.render_color != 0);
         // `+0x21B`, the loop counter the anim tick keeps on the creature
         // (`World::mirrors_loop_counter`).
         self.casting.module_cam.creature_loops = seat

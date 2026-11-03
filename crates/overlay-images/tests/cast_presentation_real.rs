@@ -288,6 +288,25 @@ fn decode_every_module() {
 /// countdown `0x801F92E4` is at or under `scalar << 7`
 /// (`0x801F75C4..0x801F75D0`): both the ramp store and the clear behind it
 /// carry the guard, and no site outside a word compare does.
+/// PROT 0925's arm 1 advances inside its stream poll and falls through to the
+/// kill of the band's flash, so the kill runs on the pass that moved the phase.
+#[test]
+fn a_site_a_phase_store_falls_through_to_runs_on_the_pass() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] cast presentation: no LEGAIA_DISC_BIN / extracted/");
+        return;
+    };
+    let mut archive =
+        legaia_prot::archive::Archive::open(&dir.join("PROT.DAT")).expect("open PROT.DAT");
+    let bytes = read_entry(&mut archive, 925);
+    let p = cast_presentation::decode(&bytes, content_end(&bytes, SLOT_B_LINK_BASE));
+    let kill = p
+        .arm_sites(None, 1)
+        .find(|s| matches!(s.call, PresentationCall::ActorKill { .. }))
+        .expect("arm 1 kills the band's flash");
+    assert_eq!(kill.timing, SiteTiming::Every, "{}", dump(&p));
+}
+
 #[test]
 fn kemaro_arm_eight_ramps_its_wash_behind_the_countdown() {
     use cast_presentation::{WordGuard, WordTest};

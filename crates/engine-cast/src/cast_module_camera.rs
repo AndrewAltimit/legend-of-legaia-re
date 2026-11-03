@@ -148,6 +148,9 @@ pub struct ModuleCamState {
     /// a dead one faded out - fed in by the host each tick for a settle
     /// gate ([`summon_holds::Gate::Settle`]).
     pub row_settled: bool,
+    /// The creature seat's colour word `+0x04` still up, as the host last saw
+    /// it (PROT 0915's arm `0xD` holds on it through the seat's fade).
+    pub creature_word_up: bool,
     /// The creature seat's playing clip `+0x1D9`, as the host last saw it
     /// (fed each tick, like [`Self::creature_live`]). `None` before the seat
     /// exists or where the host plays no clip on it: a clip gate then
