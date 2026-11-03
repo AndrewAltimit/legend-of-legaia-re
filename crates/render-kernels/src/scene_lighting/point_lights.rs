@@ -43,8 +43,9 @@ pub struct ScenePointLight {
     /// World position (retail Y-down field frame - the same space the
     /// scene draws' model matrices target).
     pub pos: [f32; 3],
-    /// Light colour, 0..=1 per channel (a *gain* colour: the fragment's
-    /// baked colour is scaled by `1 + Σ colour_i * att_i * ...`).
+    /// Light colour, 0..=1 per channel: the hue at the emitter's own drawn
+    /// brightness (a *gain* colour: the fragment's baked colour is scaled by
+    /// `1 + Σ colour_i * att_i * ...`).
     pub color: [f32; 3],
     /// Influence radius in world units; the attenuation reaches exactly
     /// zero here ([`point_attenuation`]).
@@ -59,6 +60,10 @@ pub struct EmitterSample {
     pub color: [f32; 3],
     /// Ranking weight: `sqrt(area) * luminance`.
     pub weight: f32,
+    /// How bright the emitter is drawn, 0..=1: the largest channel of its
+    /// drawn colour ([`Self::color`] holds only the hue). A faint additive
+    /// sheet casts a faint light; a flame casts a full one.
+    pub brightness: f32,
 }
 
 fn tri_area(a: [f32; 3], b: [f32; 3], c: [f32; 3]) -> f32 {
@@ -99,6 +104,7 @@ fn sample_from_tri(pos: [[f32; 3]; 3], color: [u8; 3]) -> Option<EmitterSample> 
         pos: centroid(pos[0], pos[1], pos[2]),
         color: rgb,
         weight: area.sqrt() * lum,
+        brightness: lum,
     })
 }
 
@@ -106,8 +112,9 @@ fn sample_from_tri(pos: [[f32; 3]; 3], color: [u8; 3]) -> Option<EmitterSample> 
 /// data, model space). A triangle is a sample when
 /// [`textured_prim_glows`] holds for it and it is small enough to be a
 /// prop ([`EMIT_MAX_TRI_AREA`]). With `texels` (`(vram, uvs)`), a glow prim
-/// whose modulation is neutral takes its light colour from its own texels
-/// (an additive green glow casts green), instead of the assumed flame.
+/// takes its light colour and brightness from its own texels through its
+/// modulation (an additive green glow casts green, a faint additive sheet
+/// casts faintly), instead of the assumed full-strength flame.
 pub fn vram_mesh_emitters(
     positions: &[[f32; 3]],
     cba_tsb: &[[u16; 2]],
@@ -144,6 +151,7 @@ pub fn vram_mesh_emitters(
                 if m > 0.05 {
                     s.color = modulated.map(|v| v / m);
                     s.weight *= m.min(1.0);
+                    s.brightness = m.min(1.0);
                 }
             }
             out.push(s);
@@ -244,6 +252,7 @@ pub fn curated_mesh_sample(hit: &CuratedHit) -> EmitterSample {
         pos: hit.center,
         color: hit.entry.light,
         weight: (hit.entry.radius / RADIUS_SCALE).powi(2),
+        brightness: 1.0,
     }
 }
 
@@ -261,6 +270,7 @@ pub fn transform_samples(samples: &[EmitterSample], model: &Mat4) -> Vec<Emitter
 struct Cluster {
     pos_sum: Vec3,
     color_sum: Vec3,
+    brightness_sum: f32,
     weight: f32,
     extent: f32,
 }
@@ -291,6 +301,7 @@ pub fn cluster_all_scene_lights(samples: &[EmitterSample]) -> Vec<ScenePointLigh
             if d < CLUSTER_MERGE_DIST {
                 c.pos_sum += sp * s.weight;
                 c.color_sum += Vec3::from(s.color) * s.weight;
+                c.brightness_sum += s.brightness * s.weight;
                 c.weight += s.weight;
                 c.extent = c.extent.max(d);
                 merged = true;
@@ -301,6 +312,7 @@ pub fn cluster_all_scene_lights(samples: &[EmitterSample]) -> Vec<ScenePointLigh
             clusters.push(Cluster {
                 pos_sum: sp * s.weight,
                 color_sum: Vec3::from(s.color) * s.weight,
+                brightness_sum: s.brightness * s.weight,
                 weight: s.weight,
                 extent: 0.0,
             });
@@ -312,7 +324,9 @@ pub fn cluster_all_scene_lights(samples: &[EmitterSample]) -> Vec<ScenePointLigh
         .iter()
         .map(|c| {
             let w = c.weight.max(1e-6);
-            let color = (c.color_sum / w).clamp(Vec3::ZERO, Vec3::ONE);
+            // The hue's weighted mean, at the weighted mean of how bright
+            // the samples draw.
+            let color = (c.color_sum / w * (c.brightness_sum / w)).clamp(Vec3::ZERO, Vec3::ONE);
             ScenePointLight {
                 pos: (c.pos_sum / w - Vec3::Y * LIGHT_LIFT).to_array(),
                 color: color.to_array(),

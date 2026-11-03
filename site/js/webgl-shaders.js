@@ -977,16 +977,15 @@ vec3 dyn_far(vec3 far_rgb) {
 /* Twin of engine-render's dyn_light: the mood's ambient floor + a soft
  * |N.L| key light + a screen-centred pool, capped at DYN_MAX_GAIN over the
  * baked colour, plus the point lights up to DYN_TOTAL_MAX_GAIN. An emissive
- * prim (TSB / blend bit 13) skips the mood and draws at the emissive gain
- * plus the light falling on it. vn = the smoothed vertex normal (zero =
+ * prim (TSB / blend bit 13) skips the mood and the point lights and draws
+ * at the emissive gain. vn = the smoothed vertex normal (zero =
  * none), gn = the facet normal. Identity while u_dyn_dir.w is 0. */
 vec3 dyn_light(vec3 rgb, vec3 vn, vec3 gn, bool emissive) {
   if (u_dyn_dir.w < 0.5) return rgb;
   vec3 n = dot(vn, vn) < 1e-8 ? gn : vn;
   vec3 pg = point_gain(n);
   if (emissive) {
-    return clamp(rgb * min(vec3(u_dyn_ambient.a) + pg, vec3(DYN_TOTAL_MAX_GAIN)),
-                 vec3(0.0), vec3(1.0));
+    return clamp(rgb * u_dyn_ambient.a, vec3(0.0), vec3(1.0));
   }
   float lambert = DYN_LAMBERT_FALLBACK;
   float n_len = length(n);
