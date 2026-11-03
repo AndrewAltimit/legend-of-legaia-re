@@ -2114,7 +2114,7 @@ fn site_exit_phase(img: &Image, alias: &BTreeSet<usize>, va: u32) -> Option<Phas
         Stop,
     }
     let mut pending: Option<After> = None;
-    for _ in 0..96 {
+    for _ in 0..192 {
         let i = img.ins(at)?;
         if is_phase_store(&i, alias) {
             return match r[i.rt()] {
@@ -2167,9 +2167,13 @@ fn site_exit_phase(img: &Image, alias: &BTreeSet<usize>, va: u32) -> Option<Phas
             Some(After::Clobber)
         } else if i.is_j() {
             Some(After::Jump(i.jump_target()))
-        } else if i.is_branch() || i.is_jr() {
+        } else if i.is_jr() {
             Some(After::Stop)
         } else {
+            // A conditional branch is an arm's clamp, status test or seat loop
+            // on the way to its one phase store (PROT 0955's stat buffs cap
+            // each word at 999 between the raise and the store, PROT 0953's
+            // arm 0 walks the seats): the run goes on past it.
             None
         };
         at += 4;
