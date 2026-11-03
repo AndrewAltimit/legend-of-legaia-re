@@ -39,6 +39,8 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import functools
+import functools
 import re
 import sys
 from dataclasses import dataclass
@@ -268,11 +270,20 @@ def html_style_sheet(text: str) -> str:
     return "".join(out)
 
 
+@functools.lru_cache(maxsize=16)
+def parsed_sheet(sheet: int, label: str, text: str) -> tuple[Decl, ...]:
+    """One stylesheet's declarations. Each page is scanned against the same
+    prefix of linked sheets, and re-parsing that prefix per page was nearly
+    all of a run. The key holds everything `scan_sources` stamps on a `Decl`,
+    so a shared one always carries the same values."""
+    return tuple(parse(strip_comments(text)))
+
+
 def scan_sources(sources: list[tuple[str, str]]) -> list[Finding]:
     """Scan stylesheets given in cascade order as (label, css_text) pairs."""
     decls: list[Decl] = []
     for sheet, (label, text) in enumerate(sources):
-        for d in parse(strip_comments(text)):
+        for d in parsed_sheet(sheet, label, text):
             d.source = label
             d.sheet = sheet
             decls.append(d)

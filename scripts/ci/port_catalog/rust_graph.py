@@ -127,8 +127,19 @@ def build_rust_graph(
             or c.impl_type in named_types.get(caller.path, ())
         ]
 
+    # Every name is resolved once per calling file: `gated` reads only the
+    # caller's path, and most names recur in most fns of a file. The whole of
+    # a catalog run's largest pass was re-resolving them.
+    def uids(cands: list[RustFn]) -> frozenset[int]:
+        return frozenset(c.uid for c in cands)
+
+    free_uids = {name: uids(cands) for name, cands in free_by_name.items()}
+    no_uids: frozenset[int] = frozenset()
+
     edges: dict[int, set[int]] = defaultdict(set)
     for src in srcs.values():
+        method_uids: dict[tuple[Path, str], frozenset[int]] = {}
+        bare_uids: dict[tuple[Path, str], frozenset[int]] = {}
         for f in src.fns:
             calls = f.calls
             targets: set[int] = set()
@@ -147,18 +158,26 @@ def build_rust_graph(
                 )
                 targets.update(c.uid for c in cands)
             for name in calls.methods:
-                targets.update(c.uid for c in gated(f, methods_by_name.get(name, [])))
+                key = (f.path, name)
+                hit = method_uids.get(key)
+                if hit is None:
+                    hit = method_uids[key] = uids(gated(f, methods_by_name.get(name, [])))
+                targets |= hit
             for name in calls.bares:
-                targets.update(c.uid for c in gated(f, by_name.get(name, [])))
+                key = (f.path, name)
+                hit = bare_uids.get(key)
+                if hit is None:
+                    hit = bare_uids[key] = uids(gated(f, by_name.get(name, [])))
+                targets |= hit
             # A field declaration (`name: Type`) or a struct-literal key
             # (`Foo { name: v }`) is not a function value: the strict graph
             # leaves the names used only that way out. `::` is not a field
             # separator (`FIELD_COLON_RE`).
             for name in calls.idents:
-                targets.update(c.uid for c in free_by_name.get(name, []))
+                targets |= free_uids.get(name, no_uids)
             if not strict:
                 for name in calls.field_idents:
-                    targets.update(c.uid for c in free_by_name.get(name, []))
+                    targets |= free_uids.get(name, no_uids)
             targets.discard(f.uid)
             edges[f.uid] |= targets
     return fns, edges

@@ -3,6 +3,7 @@
 Rows: `ui_host_drift.rows.sim_pairs`.
 """
 
+import functools
 import re
 
 from ui_host_drift.roots import REPO
@@ -22,6 +23,7 @@ ROWS_FILE = "scripts/ci/ui_host_drift/rows/sim_pairs.py"
 NATIVE_STEP_SPLICE_DEPTH = 8
 
 
+@functools.lru_cache(maxsize=1)
 def native_step_bodies() -> dict[str, str]:
     """Comment-stripped body of every fn the native redraw step files define."""
     out: dict[str, str] = {}
@@ -69,6 +71,7 @@ def splice_native_steps(body: str, steps: dict[str, str] | None = None, depth: i
     return "".join(out)
 
 
+@functools.lru_cache(maxsize=None)
 def site_source(rel: str, fn_name: str | None) -> tuple[str | None, str]:
     """The source a [`SIM_PAIRS`] site names: one fn body, or the whole file.
 
