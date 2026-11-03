@@ -308,3 +308,16 @@ codegen-units = 256
 
 [profile.dev-fast.package."*"]
 codegen-units = 16
+
+# The bundle's iteration profile (`scripts/ci/build-wasm.sh --fast`): no LTO, and
+# the incremental cache over the workspace crates, so a page check after an edit
+# does not wait for the shipped build. The site never ships it: the stamp records
+# the profile and `check-wasm-freshness.py --strict` refuses it.
+# docs/tooling/build-and-test-speed.md#the-wasm-bundle.
+[profile.wasm-fast]
+inherits = "release-test"
+incremental = true
+codegen-units = 256
+
+[profile.wasm-fast.package."*"]
+codegen-units = 16

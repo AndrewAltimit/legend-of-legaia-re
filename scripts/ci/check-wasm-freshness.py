@@ -22,6 +22,7 @@ hash of every source input, and this script recomputes it:
 
     python3 scripts/ci/check-wasm-freshness.py            # warn (exit 0)
     python3 scripts/ci/check-wasm-freshness.py --strict    # fail (exit 1)
+    python3 scripts/ci/check-wasm-freshness.py --strict --any-profile   # a --fast bundle counts
     python3 scripts/ci/check-wasm-freshness.py --write     # stamp (build-wasm.sh)
 
 Run it before believing anything you see on a locally served play page, and
@@ -75,14 +76,16 @@ BUNDLE_ARTIFACTS = [
 ]
 
 # Inputs outside the crate closure that still change the bundle's behaviour.
-EXTRA_INPUTS = ["Cargo.lock", "scripts/ci/build-wasm.sh"]
+# The root manifest holds the profiles the bundle is built under.
+EXTRA_INPUTS = ["Cargo.lock", "Cargo.toml", "scripts/ci/build-wasm.sh"]
 
 # Stamp format version. Bump when the hashed set changes in a way that should
 # invalidate every existing stamp rather than read as a source edit. Version 2
 # added un-ignored untracked files to the set: every version-1 stamp was
 # computed over a set that could not see a new module, so they are all
-# unreliable rather than merely old.
-STAMP_VERSION = 2
+# unreliable rather than merely old. Version 3 added the root manifest, whose
+# profiles decide what the bundle is, and the `profile` field.
+STAMP_VERSION = 3
 
 
 def run(cmd: list[str]) -> str:
@@ -192,6 +195,16 @@ def main() -> int:
         help="exit 1 when the bundle is stale, instead of warning",
     )
     ap.add_argument("--quiet", action="store_true", help="only print on trouble")
+    ap.add_argument(
+        "--profile",
+        default="release",
+        help="with --write: the cargo profile the bundle was built under",
+    )
+    ap.add_argument(
+        "--any-profile",
+        action="store_true",
+        help="with --strict: accept an iteration bundle (build-wasm.sh --fast) too",
+    )
     args = ap.parse_args()
 
     current, inputs = compute()
@@ -211,6 +224,7 @@ def main() -> int:
                     ),
                     "stamp_version": STAMP_VERSION,
                     "source_stamp": current,
+                    "profile": args.profile,
                     "input_count": len(inputs),
                     "files": per_file_hashes(inputs),
                 },
@@ -262,6 +276,18 @@ def main() -> int:
         return 1 if args.strict else 0
 
     if recorded.get("source_stamp") == current:
+        # The sources match, so a page shows this tree's behaviour; an iteration
+        # build still is not the bundle that ships, and its size and speed say
+        # nothing about that one.
+        built = recorded.get("profile", "release")
+        if built != "release":
+            print(
+                f"[check-wasm-freshness] site/wasm/ matches {len(inputs)} sources, "
+                f"built under `{built}`, not the shipped profile. Run "
+                "scripts/ci/build-wasm.sh for the shipped bundle.",
+                file=sys.stderr,
+            )
+            return 1 if args.strict and not args.any_profile else 0
         if not args.quiet:
             print(f"[check-wasm-freshness] OK - site/wasm/ matches {len(inputs)} sources")
         return 0

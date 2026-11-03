@@ -7,10 +7,26 @@
 #
 # Requirements: rustup target add wasm32-unknown-unknown; cargo install wasm-pack
 #
-# Re-run this any time the web-viewer crate or anything it depends on changes,
-# then commit both pkg/* and site/wasm/* together.
+# Re-run this any time the web-viewer crate or anything it depends on changes.
+# Neither output is committed.
+#
+# `--fast` builds the iteration bundle instead: the `wasm-fast` profile with no
+# wasm-opt pass, so a page check after an edit does not wait for the shipped
+# build. It behaves as the shipped bundle does, larger and slower; the stamp says
+# which it is, and `check-wasm-freshness.py --strict` refuses it. What it costs:
+# docs/tooling/build-and-test-speed.md#the-wasm-bundle.
 
 set -euo pipefail
+
+PROFILE_ARGS=(--release)
+STAMP_PROFILE=release
+if [[ "${1:-}" == "--fast" ]]; then
+    PROFILE_ARGS=(--profile wasm-fast --no-opt)
+    STAMP_PROFILE=wasm-fast
+elif [[ $# -gt 0 ]]; then
+    echo "usage: build-wasm.sh [--fast]" >&2
+    exit 2
+fi
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 PKG_DIR="${REPO}/crates/web-viewer/pkg"
@@ -22,7 +38,7 @@ if ! command -v wasm-pack >/dev/null 2>&1; then
 fi
 
 echo "[build-wasm] building crates/web-viewer for the web target..."
-(cd "${REPO}/crates/web-viewer" && wasm-pack build --target web --release)
+(cd "${REPO}/crates/web-viewer" && wasm-pack build --target web "${PROFILE_ARGS[@]}")
 
 if [[ ! -d "${PKG_DIR}" ]]; then
     echo "ERROR: wasm-pack did not produce ${PKG_DIR}" >&2
@@ -43,7 +59,7 @@ cp "${PKG_DIR}/package.json" "${SITE_DIR}/"
 # mtimes or `git log` gets it wrong, because a branch can build the bundle and
 # then be rebased onto different sources. See check-wasm-freshness.py.
 if command -v python3 >/dev/null 2>&1; then
-    python3 "${REPO}/scripts/ci/check-wasm-freshness.py" --write
+    python3 "${REPO}/scripts/ci/check-wasm-freshness.py" --write --profile "${STAMP_PROFILE}"
 else
     echo "[build-wasm] WARN: no python3; site/wasm/SOURCE_STAMP.json not updated" >&2
 fi
