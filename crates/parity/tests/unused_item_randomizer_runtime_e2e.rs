@@ -93,9 +93,12 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
         "the runtime item-name lookup resolves 0xFD to the injected name"
     );
     // The other ids that shared the empty-string slot stay blank.
-    for id in [0x12u8, 0x1A, 0x52, 0xB9] {
+    for id in [0x12u8, 0x52, 0xB9] {
         assert!(table.name(id).is_none(), "id {id:#x} must stay unnamed");
     }
+    // 0x1A never shared it: its pointer holds `C1 00 " Fist"`, a party-name
+    // substitution and a word.
+    assert_eq!(table.name(0x1A), Some("Vahn Fist"));
     // "Something Good" (the other unused item) is a real named item.
     assert!(
         table.name(0x6B).is_some_and(|n| !n.is_empty()),
