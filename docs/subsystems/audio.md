@@ -3426,6 +3426,14 @@ output takes the 4096-frame `ScriptProcessorNode`. `__LEGAIA_AUDIO_PATH = 'scrip
 on the page forces it, which is how the two are compared. `LegaiaRuntime::audio_stats_json`
 reports the path and the queue.
 
+What either path mixes is the native mix. In Chromium at 48 kHz, the blocks the output
+posts for the title BGM (over `7` s) and for the cues `0x20` and `0x21` (`2` s each), on the
+worklet, on the forced fallback and on a page with `AudioWorkletNode` removed, match a
+`TestAudioSink` render of the same session at the same rate with no differing sample once
+aligned on the first non-zero frame, the leading silence included. Dry frames and queue depth
+change when a block arrives, never its samples. The browser's only other stage is the output
+gain, `WEB_MASTER_TRIM` times the page's slider, against the desktop's master volume.
+
 Measured in Chromium on the play page at 48 kHz, cue fired from a frame callback,
 onset read off a tap on the output node against `AudioContext.currentTime`, device
 latency excluded. The tap's clock steps with the device buffer, which is part of

@@ -46,8 +46,9 @@ that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trac
 | 13 boot installs | does the page's boot make every `world.install_*` / `set_*` call the native boot makes? | derived, `[[boot_install]]` | tables written as field assignments |
 | 14 save routing | does every save / load go through the retail screen's applier? | `SAVE_IO_ROUTES` | the page's save-bar import |
 | 15 engine environment | does an engine crate read a switch from the process environment? | `ENV_KERNEL_ROOTS`, `ENV_ALLOWED_*` | an env read in a crate no browser host links |
+| 16 page cues | does the minigames page play a cue as decoded PCM instead of keying the live SPU? | `MINIGAME_PAGE_SOURCES`, `BGM_BUFFER_HOST` | whether the id it keys is the right one |
 
-Tiers 1-3 and 5-15 live in
+Tiers 1-3 and 5-16 live in
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
 (`--list` prints the full surface table, `--selftest` the detector controls,
 `--quiet` findings only); tier 4 is
@@ -86,6 +87,7 @@ docstring is the text `--help` prints. The package keeps three things apart: the
 | [`rows/boot_installs.py`](../../scripts/ci/ui_host_drift/rows/boot_installs.py) | `BOOT_NATIVE`, `BOOT_WEB_ROOT` |
 | [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py) | `SAVE_IO_ROUTES`, `PAGE_CARD_RACK`, `PAGE_CARD_RACK_RULES` |
 | [`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py) | `ENV_KERNEL_ROOTS`, `ENV_NATIVE_HOST_PATHS`, `ENV_ALLOWED_PREFIXES`, `ENV_ALLOWED_NAMES` |
+| [`rows/page_cues.py`](../../scripts/ci/ui_host_drift/rows/page_cues.py) | `MINIGAME_PAGE_SOURCES`, `BGM_BUFFER_HOST` |
 | [`tiers/`](../../scripts/ci/ui_host_drift/tiers/__init__.py) | the analysis, one module per tier, named as its rows module is (`tiers/screens.py` is tier 1, which has no table) |
 | [`rust_text.py`](../../scripts/ci/ui_host_drift/rust_text.py) | comment stripping, signature and body extraction, whole-word sets |
 | [`controls.py`](../../scripts/ci/ui_host_drift/controls.py), [`selftest.py`](../../scripts/ci/ui_host_drift/selftest.py) | the detector controls and `--selftest` |
@@ -1091,6 +1093,20 @@ read whose name is not allowed. Allowed: the `LEGAIA_DIAG_*` gates, which tier
 non-literal name is never allowed. Out of scope, because no browser host links
 them: `engine-shell`, `engine-render`, `engine-export`, `engine-capture`, and
 `engine-session`'s `native` module.
+
+
+## Tier 16 - minigame cues key the live SPU
+
+`check_page_cues` in [`tiers/page_cues.py`](../../scripts/ci/ui_host_drift/tiers/page_cues.py), rows in
+[`rows/page_cues.py`](../../scripts/ci/ui_host_drift/rows/page_cues.py).
+
+A cue decoded out of a VAB and handed to an `AudioBufferSourceNode` sounds like the game, so
+nothing fails, but it has no ADSR, no retail volume or pan and no reverb send, and it resolves
+against whatever bank the page happened to decode. The tier flags a call to a `*_sfx_*`,
+`*_spin_*` or `*_sting_*` PCM export anywhere in the minigames page's sources, and a hand-built
+Web Audio buffer anywhere except the BGM render in `site/js/minigame-bgm.js`. The Rust half is
+`crates/web-minigames/tests/live_spu_cues_disc.rs`, which compares each cue's mix with the
+director's sample for sample.
 
 ## Two JavaScript-side gates
 

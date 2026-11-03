@@ -837,7 +837,7 @@ Every cue is a bare store into one ring slot (`DAT_8007B6D8[slot] = id`); the ov
 
 **The payout state tallies over time.** It advances its caption timer every frame (starting at `0` on a win, `0x6B` on a loss), moves `11` coins per odd frame while more than `20` are owed and `1` otherwise, ticks `0x209` for each move, and returns to idle with the winning line cleared once nothing is owed and the timer reaches `0x79`.
 
-Port: `SlotMachine` (`take_sounds`, the `CUE_*` constants, `tick_payout`). The world routes the stores as `SfxRingOp::WriteSlot` and the motor through its direct voice-key / voice-stop queues. Both play hosts resolve the runtime rows through `World::runtime_sfx_bundle` (the machine's own `efect.dat` while it is up) against the PROT 1198 bank the residency stages in slot 2. The cash-out menu's three cues ride the same `WriteSlot` stores; being static-table ids (`< 0x200`), they resolve through the class-0 bank, and the minigames page keys them through its static-cue path (`slot_pad`).
+Port: `SlotMachine` (`take_sounds`, the `CUE_*` constants, `tick_payout`). The world routes the stores as `SfxRingOp::WriteSlot` and the motor through its direct voice-key / voice-stop queues. Both play hosts resolve the runtime rows through `World::runtime_sfx_bundle` (the machine's own `efect.dat` while it is up) against the PROT 1198 bank the residency stages in slot 2. The minigames page's `slot_step` hands the same three lists to its own director. The cash-out menu's three cues ride the same `WriteSlot` stores; being static-table ids (`< 0x200`), they resolve through the class-0 bank, and the minigames page keys them through its static-cue path (`slot_pad`).
 
 ### BGM
 

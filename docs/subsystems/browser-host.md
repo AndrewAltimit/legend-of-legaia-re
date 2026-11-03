@@ -1133,6 +1133,19 @@ the same path the play-window uses (raw PROT entry ->
 the fishing species table out of 0972, and the Muscle Dome hand command-id
 table out of the battle overlay 0898. Nothing is shipped with the site.
 
+**Sound.** The page holds the play hosts' `AudioDirector` over one `WebAudioOut`
+([`live_spu`](../../crates/web-minigames/src/live_spu.rs)), opened inside a user
+gesture. A tab change is that game's mode entry (`minigame_audio_enter`): the old
+game's voices and armed cues go, and the new game's banks stage as its door warp
+stages them, through `SfxBankResidency` and the runtime bundle the play hosts name.
+Every cue keys a voice there, with the kernel's ring slot where the kernel gives one
+(`slot_step`, `fishing_pond_tick`, the tally's armed cues), so its ADSR, volume, pan,
+reverb send and closed-slot silence are the play hosts'. `live_spu_cues_disc` renders
+each cue against the director and requires the same samples. Tier 16 of
+[`host-drift.md`](../tooling/host-drift.md) rejects a cue played as a decoded buffer.
+Only the BGM is a buffer: an offline render on its own context at the same unity gain,
+so the BGM to cue balance is the SPU's.
+
 Per game: `<g>_start` / a step or input method
 (`dance_press` / `baka_choose` / `slot_step`, one packed pad word a frame /
 `fishing_pond_start` + `fishing_pond_tick` / `muscle_commit` +
@@ -1183,7 +1196,7 @@ capture-pinned `+4`-line draw-environment offset), the dancer face-stamp
 windows with the pose blits replayed (`dance_face_rgba`; dancer 0 = Noa's
 field atlas, PROT 0874 §2), the SFX cue bank (PROT 1228 descriptors +
 the PROT 1231 sample VAB - a TOC-tail entry) plus the direct-keyed hit
-stings (`dance_sting_pcm`), and the real BGM pair rendered through the
+stings (`dance_sting_key`), and the real BGM pair rendered through the
 from-scratch SPU (`dance_bgm_pcm_i16`). Consumed by
 `site/js/minigame-dance.js`; see `docs/subsystems/minigame-dance.md`.
 Disc-gated oracle: `crates/web-minigames/tests/minigames_dance_api.rs`.
