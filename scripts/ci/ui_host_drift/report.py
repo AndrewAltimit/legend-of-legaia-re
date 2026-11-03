@@ -12,6 +12,7 @@ from ui_host_drift.controls import (
     SELFTEST_CONTENT,
     SELFTEST_DIAG,
     SELFTEST_ENV_READS,
+    SELFTEST_PAGE_CUES,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
     SELFTEST_PATH_STRINGS,
@@ -44,6 +45,7 @@ from ui_host_drift.tiers.boot_installs import boot_install_calls, check_boot_ins
 from ui_host_drift.tiers.constant_pairs import check_constant_pairs, normalise_value
 from ui_host_drift.tiers.diag_gates import check_diag_gates, initialiser_is_off
 from ui_host_drift.tiers.env_reads import check_env_reads, env_read_violations
+from ui_host_drift.tiers.page_cues import check_page_cues, page_cue_violations
 from ui_host_drift.tiers.entry_symmetry import check_entry_symmetry
 from ui_host_drift.tiers.enum_coverage import check_enum_coverage
 from ui_host_drift.tiers.frame_content import check_frame_content
@@ -207,6 +209,13 @@ def main() -> int:
             )
             return 2
 
+    for _label, src, bgm_host, want in SELFTEST_PAGE_CUES:
+        if bool(page_cue_violations(src, bgm_host)) != want:
+            print(
+                "ERROR: built-in page-cue control failed; run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
     for _label, src, want in SELFTEST_ENV_READS:
         if env_read_violations(src) != want:
             print(
@@ -400,6 +409,11 @@ def main() -> int:
     # environment is one a wasm32 host, which has none, can never throw.
     env_problems, env_scanned = check_env_reads()
     problems.extend(env_problems)
+
+    # The minigames page's cue half: a cue decoded to PCM and played by hand
+    # has no ADSR, retail volume or reverb.
+    cue_problems, _cue_files = check_page_cues()
+    problems.extend(cue_problems)
 
     if not args.quiet:
         print(

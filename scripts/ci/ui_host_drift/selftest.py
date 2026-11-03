@@ -9,6 +9,7 @@ from ui_host_drift.controls import (
     SELFTEST_CONTENT,
     SELFTEST_DIAG,
     SELFTEST_ENV_READS,
+    SELFTEST_PAGE_CUES,
     SELFTEST_FRAME,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
@@ -33,6 +34,7 @@ from ui_host_drift.rust_text import (
 from ui_host_drift.tiers.constant_pairs import normalise_value
 from ui_host_drift.tiers.diag_gates import initialiser_is_off
 from ui_host_drift.tiers.env_reads import env_read_violations
+from ui_host_drift.tiers.page_cues import page_cue_violations
 from ui_host_drift.tiers.frame_content import CONTENT_FN_RE, kernel_engine_calls
 from ui_host_drift.tiers.frame_paths import frame_path_scan
 from ui_host_drift.tiers.owned_types import owns_type
@@ -149,6 +151,12 @@ def run_selftest() -> int:
         else:
             print(f"  FAIL  diag toggle: {label}")
             failures += 1
+    for label, src, bgm_host, want in SELFTEST_PAGE_CUES:
+        if bool(page_cue_violations(src, bgm_host)) == want:
+            print(f"  ok    page cues: {label}")
+        else:
+            print(f"  FAIL  page cues: {label}")
+            failures += 1
     for label, src, want in SELFTEST_ENV_READS:
         if env_read_violations(src) == want:
             print(f"  ok    env read: {label}")
@@ -214,6 +222,7 @@ def run_selftest() -> int:
         + len(SELFTEST_PAGE_KEYS)
         + len(SELFTEST_DIAG)
         + len(SELFTEST_ENV_READS)
+        + len(SELFTEST_PAGE_CUES)
         + len(SELFTEST_RENDER)
         + len(SELFTEST_OWNERSHIP)
         + len(SELFTEST_VARIANT_USE)

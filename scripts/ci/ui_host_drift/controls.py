@@ -553,3 +553,15 @@ SELFTEST_ENV_READS: list[tuple[str, str, list[tuple[str, object]]]] = [
     ("a read in a comment", '// std::env::var_os("LEGAIA_ARTS_SAVED_LIST")', []),
     ("temp_dir is not a read", "let d = std::env::temp_dir();", []),
 ]
+
+# Detector controls for tier 16: `(label, source, bgm_host, should_flag)`.
+SELFTEST_PAGE_CUES: list[tuple[str, str, bool, bool]] = [
+    ("a cue decoded through the wasm export", "const pcm = api.slot_sfx_pcm(id);", False, True),
+    ("a sting's rate read for a hand-made buffer", "api.dance_sting_rate(r, l);", False, True),
+    ("a buffer played by hand", "const src = ctx.createBufferSource();", False, True),
+    ("the BGM host may build its loop buffer", "var src = ctx.createBufferSource();", True, False),
+    ("not even the BGM host decodes a cue", "api.muscle_sfx_pcm(row, 0);", True, True),
+    ("keying the live SPU is the fix", "MgSpu.cue(api, id);", False, False),
+    ("a comment naming the old shape is not the shape", "/* slot_sfx_pcm( */ go();", False, False),
+    ("the BGM export is not a cue", "api.dance_bgm_pcm_i16(alt, 45);", False, False),
+]
