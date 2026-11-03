@@ -263,6 +263,9 @@ pub struct App {
     // Audio tab.
     vab_sel: usize,
     seq_loop: bool,
+    /// Waveforms of the samples the Audio tab has shown, by entry, bank and
+    /// sample: its rows are virtual, so only what scrolls past is decoded.
+    waves: HashMap<(usize, usize, usize), Vec<u8>>,
     player: Player,
     // Extract mode.
     out_text: String,
@@ -368,6 +371,7 @@ impl App {
             reveal: None,
             vab_sel: 0,
             seq_loop: false,
+            waves: HashMap::new(),
             player,
             out_text,
             job: None,
@@ -1223,7 +1227,7 @@ impl App {
             let clear_w = if self.filter.is_empty() { 0.0 } else { 28.0 };
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text("scene, place name, category or index (Ctrl+F)")
+                    .hint_text("scene, place name, kind or index (Ctrl+F)")
                     .desired_width((ui.available_width() - clear_w - 16.0).max(80.0)),
             );
             if !self.filter.is_empty()
@@ -1246,17 +1250,31 @@ impl App {
                 self.filter.clear();
             }
         });
-        let mut classes: Vec<&'static str> = (0..lib.entries.len())
-            .filter_map(|p| self.explorer.class_of(p).map(|c| c.name()))
+        // The kinds this disc has, with how many entries each holds.
+        let count = |kind: &str| {
+            (0..lib.entries.len())
+                .filter(|&p| {
+                    self.explorer
+                        .class_of(p)
+                        .is_some_and(|c| crate::kind_of_class(c.name()) == kind)
+                })
+                .count()
+        };
+        let kinds: Vec<(&'static str, usize)> = crate::KINDS
+            .iter()
+            .map(|&k| (k, count(k)))
+            .filter(|&(_, n)| n > 0)
             .collect();
-        classes.sort_unstable();
-        classes.dedup();
-        egui::ComboBox::from_label("Category")
-            .selected_text(self.class_filter.as_deref().unwrap_or("all"))
+        egui::ComboBox::from_label("Show")
+            .selected_text(self.class_filter.as_deref().unwrap_or("Everything"))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.class_filter, None, "all");
-                for c in classes {
-                    ui.selectable_value(&mut self.class_filter, Some(c.to_string()), c);
+                ui.selectable_value(&mut self.class_filter, None, "Everything");
+                for (k, n) in kinds {
+                    ui.selectable_value(
+                        &mut self.class_filter,
+                        Some(k.to_string()),
+                        format!("{k} ({n})"),
+                    );
                 }
             });
         let filter = self.filter.trim().to_string();
@@ -1353,11 +1371,16 @@ impl App {
                                     .class_of(pos)
                                     .map(|c| c.name())
                                     .unwrap_or("...");
+                                let kind = if class == "..." {
+                                    class
+                                } else {
+                                    crate::kind_of_class(class)
+                                };
                                 let text = format!(
                                     "{:04}  {:>8}  {}",
                                     e.index,
                                     human_size(e.size_bytes),
-                                    class
+                                    kind
                                 );
                                 let sel = self.explorer.selected == Some(pos);
                                 let resp =
@@ -1365,7 +1388,7 @@ impl App {
                                 if self.reveal == Some(pos) {
                                     resp.scroll_to_me(Some(egui::Align::Center));
                                 }
-                                if resp.clicked() {
+                                if resp.on_hover_text(class).clicked() {
                                     clicked = Some(pos);
                                 }
                             }
@@ -1596,6 +1619,9 @@ impl App {
             ui.label("Retail CDNAME block")
                 .on_hover_text("CDNAME #define numbers are raw-TOC indices, two above extraction indices (docs/formats/cdname.md)");
             value(ui, lib.retail_block(e.index).unwrap_or("-").to_string());
+            ui.end_row();
+            ui.label("Kind");
+            value(ui, crate::kind_of_class(a.class.name()).to_string());
             ui.end_row();
             ui.label("Category");
             value(ui, a.class.name().to_string());
@@ -2075,6 +2101,7 @@ impl App {
             ui.label("No VAB sound banks or SEQ sequences in this entry.");
             return;
         }
+        let playing = self.player.now_playing.is_some();
         ui.horizontal(|ui| {
             match &self.player.now_playing {
                 Some(n) => {
@@ -2092,7 +2119,7 @@ impl App {
                     ui.label("Stopped");
                 }
             }
-            if ui.button("Stop").clicked() {
+            if ui.add_enabled(playing, egui::Button::new("Stop")).clicked() {
                 self.player.stop();
             }
         });
@@ -2181,7 +2208,19 @@ impl App {
                 for i in range {
                     let span = &v.report.vag_samples[i];
                     ui.horizontal(|ui| {
-                        ui.monospace(format!("sample {i:3}  {:>7} B", span.size));
+                        // Length, not bytes: 28 PCM samples per 16-byte ADPCM block.
+                        let secs = (span.size / 16 * 28) as f32
+                            / legaia_engine_audio::vab_bind::VAB_SAMPLE_RATE as f32;
+                        ui.monospace(format!("sample {i:3}  {secs:>5.2} s"));
+                        let wave = self
+                            .waves
+                            .entry((a.index as usize, v.offset, i))
+                            .or_insert_with(|| {
+                                export::vag_pcm(a, &v, i)
+                                    .map(|pcm| export::wave_peaks(&pcm))
+                                    .unwrap_or_default()
+                            });
+                        draw_wave(ui, wave);
                         if ui.small_button("Play").clicked() {
                             match export::vag_pcm(a, &v, i) {
                                 Ok(pcm) => {
@@ -3140,6 +3179,23 @@ fn hex_view(ui: &mut egui::Ui, bytes: &[u8]) {
                 ui.monospace(s);
             }
         });
+}
+
+/// A sample's waveform as a row of peak bars, one per horizontal point.
+fn draw_wave(ui: &mut egui::Ui, peaks: &[u8]) {
+    let size = egui::vec2(export::WAVE_POINTS as f32, 16.0);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let p = ui.painter_at(rect);
+    let ink = crate::theme::c(crate::theme::palette(ui).info);
+    let mid = rect.center().y;
+    for (x, &peak) in peaks.iter().enumerate() {
+        let h = (f32::from(peak) / 255.0 * rect.height() * 0.5).max(0.5);
+        let x = rect.left() + x as f32 + 0.5;
+        p.line_segment(
+            [egui::pos2(x, mid - h), egui::pos2(x, mid + h)],
+            egui::Stroke::new(1.0, ink),
+        );
+    }
 }
 
 #[cfg(test)]

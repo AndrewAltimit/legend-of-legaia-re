@@ -148,6 +148,28 @@ pub fn vag_pcm(a: &Analysis, v: &VabRef, sample: usize) -> Result<Vec<i16>> {
     legaia_vab::decode_vag(body)
 }
 
+/// The width of a sample's waveform in the Audio tab.
+pub const WAVE_POINTS: usize = 120;
+
+/// `pcm` folded into [`WAVE_POINTS`] peak levels, 255 at full scale.
+pub fn wave_peaks(pcm: &[i16]) -> Vec<u8> {
+    if pcm.is_empty() {
+        return Vec::new();
+    }
+    (0..WAVE_POINTS)
+        .map(|p| {
+            let from = p * pcm.len() / WAVE_POINTS;
+            let to = ((p + 1) * pcm.len() / WAVE_POINTS).max(from + 1);
+            let peak = pcm[from..to.min(pcm.len())]
+                .iter()
+                .map(|s| s.unsigned_abs())
+                .max()
+                .unwrap_or(0);
+            (u32::from(peak) * 255 / 32768) as u8
+        })
+        .collect()
+}
+
 pub fn vag_wav(a: &Analysis, v: &VabRef, sample: usize, out: &Path) -> Result<()> {
     let pcm = vag_pcm(a, v, sample)?;
     let f = std::fs::File::create(out).with_context(|| format!("create {}", out.display()))?;
@@ -178,6 +200,19 @@ pub fn bytes(data: &[u8], out: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wave_peaks_cover_the_sample_at_a_fixed_width() {
+        assert!(wave_peaks(&[]).is_empty());
+        let short = wave_peaks(&[i16::MIN, 0, 16384]);
+        assert_eq!(short.len(), WAVE_POINTS);
+        assert_eq!(short[0], 255);
+        let long: Vec<i16> = (0..10_000)
+            .map(|i| if i < 5000 { 0 } else { 8192 })
+            .collect();
+        let p = wave_peaks(&long);
+        assert_eq!((p[0], p[WAVE_POINTS - 1]), (0, 63));
+    }
 
     #[test]
     fn grey_ramp_spans_black_to_white_and_is_opaque() {

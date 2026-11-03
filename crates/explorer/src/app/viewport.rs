@@ -92,6 +92,7 @@ impl Viewport {
                     "Textured (retail shading)",
                 )
                 .on_hover_text(textured_hint);
+                ui.selectable_value(&mut self.shading, Shading::Wireframe, "Wireframe");
                 ui.selectable_value(&mut self.shading, Shading::Lit, "Untextured + viewer light")
                     .on_hover_text(LIT_HINT);
             })
@@ -99,6 +100,7 @@ impl Viewport {
             .on_hover_text(match self.shading {
                 Shading::Textured => textured_hint,
                 Shading::Lit => LIT_HINT,
+                Shading::Wireframe => "The model's edges alone, seen through.",
             });
         if ui
             .button("Reset")
@@ -120,6 +122,7 @@ fn shading_name(s: Shading) -> &'static str {
     match s {
         Shading::Textured => "Textured (retail)",
         Shading::Lit => "Untextured + light",
+        Shading::Wireframe => "Wireframe",
     }
 }
 
