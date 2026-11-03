@@ -4039,3 +4039,344 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "map01"
 topics = ["battle", "enemy attack", "Frog", "map01", "harvest"]
+
+# ----------------------------------------------------------------------
+# Retail pause-menu screens and scenes the corpus had not compared. Every
+# block names its source state, its route and anything it pokes.
+# ----------------------------------------------------------------------
+
+[[scenarios]]
+label = "menu_root_conc_retail"
+backup_fingerprint = "c37cef382a65b33e3fa8f9b1e43fafc11eef7844837165b16d487c3a0a751e2a"
+description = "Pause menu root list over conc, cursor on Items, sub-screen 0x801E46A4 = 0x01. SELECT at vsync 60, checkpoint at 240. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "pause root", "retail-compare"]
+
+[[scenarios]]
+label = "menu_items_conc_retail"
+backup_fingerprint = "5da338657e763fce1ff5f9e42355ccf897924ec099288268c5c8dc56ca211210"
+description = "Items screen of the pause menu over conc, Use / Throw Out / Arrange picker, first bag page, sub-screen 0x05. SELECT 60, CROSS 240, checkpoint 420. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "items", "retail-compare"]
+
+[[scenarios]]
+label = "menu_magic_conc_retail"
+backup_fingerprint = "915f6ad2b69b433b78a4817782c99916b571833f71abcdd52439f4b3f82490be"
+description = "Magic screen of the pause menu over conc, cursor on Vahn, sub-screen 0x0E. SELECT 60, DOWN 200, CROSS 260, checkpoint 460. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "magic", "retail-compare"]
+
+[[scenarios]]
+label = "menu_equip_candidates_conc_retail"
+backup_fingerprint = "d2dbff5e04cecffee2ca6c918bf8c6b994d043557d47d3db01b69d0a8c057295"
+description = "Equip candidate list of the pause menu over conc, Vahn, first slot (weapon), cursor on the worn Astral Sword, sub-screen 0x14. SELECT 60, DOWN 200 240, CROSS 280 420, DOWN 540, CROSS 600, checkpoint 760. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "equip", "retail-compare"]
+
+[[scenarios]]
+label = "load_grid_pause_conc_retail"
+backup_fingerprint = "0ea5d83f51ff30a63e6864efe0b8ad52fd632f0e4afbb8810d75068c5601bd71"
+description = "Pause menu Load grid over conc, SLOT 1 = the library card playthrough-endgame-7saves.mcr, cursor on cell 0, sub-screen 0x18, card-screen sub-mode 0x0B. SELECT 60, five DOWNs to 360, CROSS 420 (Load row), CROSS 560 (pill), checkpoint 1040. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+memory_card = "playthrough-endgame-7saves.mcr"
+topics = ["menu", "load screen", "memory card", "retail-compare"]
+
+[[scenarios]]
+label = "jouinc_field_door_hop"
+backup_fingerprint = "d2eb6651c54b96f5876ffd47f62f21df3f2eae93a1831c3d52f86165663579ff"
+description = "jouinc free field run, player in control. RETAIL disc: jouind_field_card_boot crossed jouind:78:115 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 510 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jouinc"
+topics = ["field", "jouinc", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "koin2_field_door_hop"
+backup_fingerprint = "a628f0ca69862ab3d114c3a9d906fc1e0ec400661c6b3c77575165282317df29"
+description = "koin2 free field run, player in control. RETAIL disc: kor_field_route_walk crossed kor:21:9 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 522 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "koin2"
+topics = ["field", "koin2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "korout_field_door_hop"
+backup_fingerprint = "7e80654ec51f39f88b29a99dd3ba46f9e939680068722df598095475a53d8cb8"
+description = "korout free field run, player in control. RETAIL disc: kor_field_route_walk crossed kor:15:3 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 613 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "korout"
+topics = ["field", "korout", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "balden2_field_door_hop"
+backup_fingerprint = "926984006f03418bdf4254a3f134d13925a90adc36882ed7d2cba5631ccc54b1"
+description = "balden2 free field run, player in control. RETAIL disc: balden_field_route_walk crossed balden:119:103 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 523 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "balden2"
+topics = ["field", "balden2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "jagaroom_field_door_hop"
+backup_fingerprint = "0f3061a2bb6034bbd7c55ee1744c3d7c8244c57f339c511b34fc4b65ef39a623"
+description = "jagaroom free field run, player in control. RETAIL disc: retockin_field_route_walk crossed retockin:27:57 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 571 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jagaroom"
+topics = ["field", "jagaroom", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "map02_field_door_hop"
+backup_fingerprint = "b55d5cd8ed3f930e08dad4f4a71605f59f5a11ff4708124075fb34b77f6a5994"
+description = "map02 free field run, player in control. RETAIL disc: ropeway_field_route_walk crossed ropeway:30:9;map02:92:61;stone:57:70;tunnela:125:58 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 568 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map02"
+topics = ["field", "map02", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "stone_field_door_hop"
+backup_fingerprint = "fbe63e8b7e3649cba7d93322a86964d16446bf22627147b9688bae5cdb87c342"
+description = "stone free field run, player in control. RETAIL disc: ropeway_field_route_walk crossed ropeway:30:9;map02:92:61;stone:57:70;tunnela:125:58 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 1083 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "stone"
+topics = ["field", "stone", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "tunnela_field_door_hop"
+backup_fingerprint = "85efdfa9518e648e4761f7905745041892b4a6ab72de814699cd6ba9dbd6b5b0"
+description = "tunnela free field run, player in control. RETAIL disc: ropeway_field_route_walk crossed ropeway:30:9;map02:92:61;stone:57:70;tunnela:125:58 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 1689 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "tunnela"
+topics = ["field", "tunnela", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "station_field_door_hop"
+backup_fingerprint = "a4b9933304506e3179ffb58c2cce59d67f51f405549c31cc789f65fb03887fe8"
+description = "station free field run, player in control. RETAIL disc: ropeway_field_route_walk crossed ropeway:30:38 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 529 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "station"
+topics = ["field", "station", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "ropeway2_field_door_hop"
+backup_fingerprint = "3960134d58f3df54c101eb52adc81a6cb9644269138d847531808e95453ff581"
+description = "ropeway2 free field run, player in control. RETAIL disc: ropeway_field_route_walk crossed ropeway:29:36 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 582 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "ropeway2"
+topics = ["field", "ropeway2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "rayman2_field_door_hop"
+backup_fingerprint = "8f69855dca35e1a2ec7538b91a68a9d6d8cea0a2192e9ca1f616b162adf74d18"
+description = "rayman2 free field run. RETAIL disc: tunnela_field_door_hop crossed tunnela:125:58 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 588 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rayman2"
+topics = ["field", "rayman2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "jouina_field_door_hop"
+backup_fingerprint = "427df830e653af5fdbb480eb370f3c1f673d05783620be818bbede084b7dc072"
+description = "jouina free field run. RETAIL disc: jouinc_field_door_hop crossed jouinc:38:7;jouinb:9:16 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 960 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jouina"
+topics = ["field", "jouina", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "jouinb_field_door_hop"
+backup_fingerprint = "75850483841b952c4ab376e51e4f6a66695b8d81495843ba8589588a3c25f8a6"
+description = "jouinb free field run. RETAIL disc: jouinc_field_door_hop crossed jouinc:38:7;jouinb:9:16 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 510 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jouinb"
+topics = ["field", "jouinb", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "map03_field_door_hop"
+backup_fingerprint = "892152316773d8adb30c1b0ff03fe71a390e544a0916e58c4f2b9a21121a4184"
+description = "map03 free field run. RETAIL disc: korout_field_door_hop crossed korout:68:25 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 521 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map03"
+topics = ["field", "map03", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "dolk2_field_door_hop"
+backup_fingerprint = "5d99440b5d00d2ac49e87a529c52a9f4c0bfe2fac30bb4d06364e98d943c0803"
+description = "dolk2 free field run. RETAIL disc: vozz_field_card_boot crossed vozz:62:2;map01:54:71 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1061 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "dolk2"
+topics = ["field", "dolk2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "map01_field_door_hop"
+backup_fingerprint = "19653bbb999f4696bd62744657513ac897a4d4277be261e7d5058467c1d4834c"
+description = "map01 free field run. RETAIL disc: vozz_field_card_boot crossed vozz:62:2;map01:54:71 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 537 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "map01"
+topics = ["field", "map01", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "town0b_field_door_hop"
+backup_fingerprint = "a38835a73fdfc19ff949b8d52cc5d8f8934aabdc761780c779feb40f489e28ab"
+description = "town0b free field run. RETAIL disc, pad only, no pokes: rim_elm_gimard_victory played forward by autorun_door_hop.lua (Cross through the fight and the dialogue), saved 1341 vsyncs in."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "town0b"
+topics = ["field", "town0b", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "suimon_field_door_hop"
+backup_fingerprint = "221d5b8913e4489d82427b68f76dc908015c927d18f753140ee3a4b132820464"
+description = "suimon free field run. RETAIL disc: vozz_field_card_boot crossed vozz:62:2;map01:56:61 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1029 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "suimon"
+topics = ["field", "suimon", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "jiji_field_door_hop"
+backup_fingerprint = "ab86185deb8636d0120065c1db7eb5b0c5b7d90be889b26ac314bcacd696c764"
+description = "jiji free field run. RETAIL disc: vozz_field_card_boot crossed vozz:62:2;map01:91:109 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1086 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jiji"
+topics = ["field", "jiji", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "geremi_field_door_hop"
+backup_fingerprint = "32887c8b05a3a49549be07f0cc231defab7aa1bc9087749cb4567556825a237b"
+description = "geremi free field run. RETAIL disc: map02_field_door_hop crossed map02:59:25 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 541 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "geremi"
+topics = ["field", "geremi", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "movie_mv2_t300_retail"
+backup_fingerprint = "e68e9ed7be515e38aef3ebc5a7c86440a7c22cc8a06128608867b02a0cc8fa31"
+description = "MV2.STR (fmv id 1) on screen, 300 vsyncs after master mode 0x1A. RETAIL disc: conc_field_card_boot, autorun_movie_state.lua makes the two stores of op 4C E2 at vsync 60 (LEGAIA_FMV=1); the movie frame does not depend on the source state's story."
+phase = "cutscene"
+expected_game_mode = 0x1A
+expected_active_scene = "conc"
+ram_poked = ["0x8007BA78 = 1, 0x8007B83C = 0x1A (the op's two stores, once, at vsync 60)"]
+topics = ["cutscene", "movie", "MV2.STR", "retail-compare"]
+
+[[scenarios]]
+label = "movie_mv2_t900_retail"
+backup_fingerprint = "e8b7099b543e33982e02514664f20b2bc12812a756601bf3589127dd73810217"
+description = "MV2.STR (fmv id 1) on screen, 900 vsyncs after master mode 0x1A. RETAIL disc: conc_field_card_boot, autorun_movie_state.lua makes the two stores of op 4C E2 at vsync 60 (LEGAIA_FMV=1); the movie frame does not depend on the source state's story."
+phase = "cutscene"
+expected_game_mode = 0x1A
+expected_active_scene = "conc"
+ram_poked = ["0x8007BA78 = 1, 0x8007B83C = 0x1A (the op's two stores, once, at vsync 60)"]
+topics = ["cutscene", "movie", "MV2.STR", "retail-compare"]
+
+[[scenarios]]
+label = "station3_field_door_hop"
+backup_fingerprint = "a71d5c8b7bc5b59fb5fca2aaa1043243b594bcd7a8342cc08edfaec99473db46"
+description = "station3 free field run. RETAIL disc: uru_field_run crossed uru:39:5;map03:68:17 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1065 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "station3"
+topics = ["field", "station3", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "bubu2_field_door_hop"
+backup_fingerprint = "f6506aa81bb8087c133c9acfd57d2c1dafd3a61d7c17b2e35debbad520e20bc9"
+description = "bubu2 free field run. RETAIL disc: uru_field_run crossed uru:39:5;map03:92:52 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1062 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "bubu2"
+topics = ["field", "bubu2", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "concnow_field_door_hop"
+backup_fingerprint = "e10afa09d192a4fbda0abd319c45c4e3cc43a879389d01f8a86e773e33bb7894"
+description = "concnow free field run. RETAIL disc: uru_field_run crossed uru:39:5;map03:66:101 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1047 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "concnow"
+topics = ["field", "concnow", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "nilboa_field_door_hop"
+backup_fingerprint = "cf8fa7513d5e4819c6c20f9a1c7ee3c4ad2ef15db692df0a92637d4d3fc8471c"
+description = "nilboa free field run. RETAIL disc: uru_field_run crossed uru:39:5;map03:93:67 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1093 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "nilboa"
+topics = ["field", "nilboa", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "bylon_field_door_hop"
+backup_fingerprint = "8717ccb533122aac26c20c01e05eeb1eca1b60442befd5be6c954af0e8593496"
+description = "bylon free field run. RETAIL disc: vozz_field_card_boot crossed vozz:62:2;map01:93:69 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1067 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "bylon"
+topics = ["field", "bylon", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "rayman_field_door_hop"
+backup_fingerprint = "58ceb73494e05c506763928c1315c8b7cd282cb33d342a4eb72f96b02998c710"
+description = "rayman free field run. RETAIL disc: tunnelb_field_card_boot crossed tunnelb:12:105 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 548 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "rayman"
+topics = ["field", "rayman", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "deroa_field_door_hop"
+backup_fingerprint = "92932448e0b715bb6944771ee9256046e38733fb070096e00248cc50696bd537"
+description = "deroa free field run. RETAIL disc: chitei2_field_card_boot crossed chitei2:51:18;deroa:23:21;map03:66:101 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 500 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "deroa"
+topics = ["field", "deroa", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "bubu1_field_door_hop"
+backup_fingerprint = "73e28b28e5b5ef14efaae8102561789af174e95ca6e1b732338a31a5e8e158d9"
+description = "bubu1 free field run. RETAIL disc: deene_field_card_walk crossed deene:18:23;map03:92:52 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1086 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "bubu1"
+topics = ["field", "bubu1", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "concnow_field_door_hop_settled"
+backup_fingerprint = "0c5c58c9bb1696ddeeeb88e4a1d0f3b9a28ebd0edc9e081f2d33499df10d66e4"
+description = "concnow free field run. RETAIL disc: map03_field_door_hop crossed map03:66:101 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1178 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "concnow"
+topics = ["field", "concnow", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "jouinc_field_door_hop_settled"
+backup_fingerprint = "a1fe7a861a8397f10aefcee8f198581cb63bf9ab19f1d80382647691168169b4"
+description = "jouinc free field run. RETAIL disc: jouind_field_card_boot crossed jouind:78:115 by autorun_door_hop.lua: player position held on each door walk-on tile, door records run as the disc wrote them, saved 1120 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "jouinc"
+topics = ["field", "jouinc", "scene coverage", "door hop"]

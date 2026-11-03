@@ -475,3 +475,28 @@ pub fn camera_block_from_env(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod morph_weight_seed_tests {
+    use super::*;
+
+    #[test]
+    fn morph_weight_seeds_round_trip_the_environment_form() {
+        let seeds = vec![
+            MorphWeightSeed {
+                up_rate: 68,
+                down_rate: 68,
+                weight: 3960,
+                descending: true,
+            },
+            MorphWeightSeed {
+                up_rate: 34,
+                down_rate: 40,
+                weight: 0,
+                descending: false,
+            },
+        ];
+        assert_eq!(morph_weights_from_env(&morph_weights_env(&seeds)), seeds);
+        assert!(morph_weights_from_env("").is_empty());
+    }
+}
