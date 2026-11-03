@@ -3,6 +3,7 @@
 //
 //   scripts/ci/frame-bench-web.mjs [--site site] [--scene town01,..] [--frames 600]
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
+//       [--reenter] [--entry-profile]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
 // own file input, enters each scene through the page's own scene list and times the
@@ -10,6 +11,10 @@
 // Needs a built bundle (scripts/ci/build-wasm.sh) and playwright-core; PLAYWRIGHT_CORE
 // names its directory when `~/.npm/_npx` does not hold one. A bundle built with
 // `web-viewer`'s `bench-alloc` feature also reports wasm allocations per frame.
+//
+// `--reenter` enters each scene a second time, right after the first entry, and reports
+// that too: what a door back into a scene costs. `--entry-profile` samples each scene
+// entry and each battle's first frames and prints time by function, self and inclusive.
 //
 // A browser's timers are coarse, and the frame function is only the page's main-thread
 // cost: the GPU process's own work is not in it. It prints numbers and asserts nothing.
@@ -137,6 +142,26 @@ function summarise(b, frames) {
     first_ms: b.firstFrame, entry_worst_ms: b.entryWorst || 0, exports, gl };
 }
 
+/* Time by function, callees included. */
+function inclusiveTableOf(profile, n) {
+  const byId = new Map(profile.nodes.map((x) => [x.id, x]));
+  const parent = new Map();
+  for (const x of profile.nodes) for (const c of x.children || []) parent.set(c, x.id);
+  const name = (x) => x.callFrame.functionName || '(anon)';
+  const incl = new Map();
+  profile.samples.forEach((id, i) => {
+    const seen = new Set();
+    for (let at = id; at !== undefined; at = parent.get(at)) {
+      const k = name(byId.get(at));
+      if (seen.has(k)) continue;
+      seen.add(k);
+      incl.set(k, (incl.get(k) || 0) + profile.timeDeltas[i]);
+    }
+  });
+  return [...incl.entries()].sort((x, y) => y[1] - x[1]).filter(([k]) => !k.startsWith('(')).slice(0, n)
+    .map(([k, v]) => `${k} ${(v / 1000).toFixed(0)}`).join('\n          ');
+}
+
 async function main() {
   const server = spawn('python3', ['-u', '-m', 'http.server', '0', '--bind', '127.0.0.1', '--directory', site],
     { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -184,19 +209,32 @@ async function main() {
   /* The disc load, by export. */
   await page.evaluate(async () => {
     const m = await window.LegaiaWasm.load();
-    const f = m.LegaiaRuntime.prototype.load_disc;
-    m.LegaiaRuntime.prototype.load_disc = function (...a) {
-      const t = performance.now();
-      const r = f.apply(this, a);
-      window.__bench.loadDisc = performance.now() - t;
-      return r;
-    };
+    for (const k of ['load_disc', 'load_disc_image']) {
+      const f = m.LegaiaRuntime.prototype[k];
+      if (!f) continue;
+      m.LegaiaRuntime.prototype[k] = function (...a) {
+        const t = performance.now();
+        const r = f.apply(this, a);
+        window.__bench.loadDisc = performance.now() - t;
+        return r;
+      };
+    }
   });
   const fileInput = await page.$('input[type=file]');
   const t1 = Date.now();
+  const cdpLoad = await page.context().newCDPSession(page);
+  if (arg('entry-profile')) {
+    await cdpLoad.send('Profiler.enable');
+    await cdpLoad.send('Profiler.setSamplingInterval', { interval: 1000 });
+    await cdpLoad.send('Profiler.start');
+  }
   await fileInput.setInputFiles(disc);
   await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
   out.startup.disc_ready_ms = Date.now() - t1;
+  if (arg('entry-profile')) {
+    const { profile } = await cdpLoad.send('Profiler.stop');
+    console.log('  disc load inclusive ms:\n          ' + inclusiveTableOf(profile, 40));
+  }
   out.startup.load_disc_export_ms = await page.evaluate(() => window.__bench.loadDisc);
   await page.evaluate(async () => {
     window.__bench.wrapRuntime(window.__playRuntime);
@@ -206,6 +244,8 @@ async function main() {
 
   const cdp = await page.context().newCDPSession(page);
   /* A CPU profile of the scene entry alone, stopped from the page. */
+  const inclusiveTable = inclusiveTableOf;
+  const profiling = () => arg('profile') || arg('entry-profile');
   const selfTable = (profile, n) => {
     const byId = new Map(profile.nodes.map((x) => [x.id, x]));
     const self = new Map();
@@ -219,18 +259,32 @@ async function main() {
       .map(([k, v]) => `${k} ${(v / 1000).toFixed(0)}ms`).join(', ') + ` (total ${(tot / 1000).toFixed(0)}ms)`;
   };
   await page.exposeFunction('__benchEntered', async () => {
-    if (!arg('profile')) return;
+    if (!profiling()) return;
     const { profile } = await cdp.send('Profiler.stop');
     console.log('  entry self: ' + selfTable(profile, 24));
+    if (arg('entry-profile')) console.log('  entry inclusive ms:\n          ' + inclusiveTable(profile, 60));
+  });
+  /* The battle edge's own: from the force to the first frames after it. */
+  await page.exposeFunction('__benchBattleProfile', async (phase) => {
+    if (!arg('entry-profile')) return;
+    if (phase === 'start') {
+      await cdp.send('Profiler.enable');
+      await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
+      await cdp.send('Profiler.start');
+    } else {
+      const { profile } = await cdp.send('Profiler.stop');
+      console.log('  battle entry self: ' + selfTable(profile, 24));
+      console.log('  battle entry inclusive ms:\n          ' + inclusiveTable(profile, 60));
+    }
   });
   for (const name of names) {
     const sc = SCENES[name];
-    if (arg('profile')) {
+    if (profiling()) {
       await cdp.send('Profiler.enable');
       await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
       await cdp.send('Profiler.start');
     }
-    const r = await page.evaluate(async ({ sc, FRAMES, SKIP }) => {
+    const r = await page.evaluate(async ({ sc, FRAMES, SKIP, reenter }) => {
       const B = window.__bench;
       B.on = false; B.frames = []; B.exports = {}; B.gl = {}; B.firstFrame = undefined; B.entryWorst = 0;
       const btn = document.querySelector(`[data-scene="${sc.scene}"]`);
@@ -240,6 +294,12 @@ async function main() {
       btn.click();
       B.on = false;
       const entry = performance.now() - t;
+      let reentry = null;
+      if (reenter) {
+        const t2 = performance.now();
+        btn.click();
+        reentry = performance.now() - t2;
+      }
       const entryExports = Object.entries(B.exports)
         .map(([k, e]) => [k, +e.ms.toFixed(1), e.calls])
         .sort((x, y) => y[1] - x[1]).slice(0, 8);
@@ -247,13 +307,25 @@ async function main() {
       if (window.__benchEntered) await window.__benchEntered();
       const view = window.__playView;
       B.wrapView(view);
-      if (sc.cast) window.__playRuntime.debug_seed_inflight_cast(...sc.cast);
-      if (sc.battle) window.__playRuntime.debug_force_battle(-1);
-      const before = B.calls;
       const wait = (pred) => new Promise((res) => {
         const check = () => (pred() ? res() : setTimeout(check, 20));
         check();
       });
+      if (sc.battle) {
+        /* Settled in the field first, so the battle edge's frame stands alone. */
+        const settled = B.calls;
+        await wait(() => B.calls - settled >= 10);
+        await window.__benchBattleProfile('start');
+      }
+      if (sc.cast) window.__playRuntime.debug_seed_inflight_cast(...sc.cast);
+      B.firstFrame = undefined; B.entryWorst = 0;
+      if (sc.battle) window.__playRuntime.debug_force_battle(-1);
+      const before = B.calls;
+      if (sc.battle) {
+        /* Past the swirl: the battle edge lands on the intro's last frames. */
+        await wait(() => B.calls - before >= SKIP);
+        await window.__benchBattleProfile('stop');
+      }
       await wait(() => B.calls - before >= SKIP);
       if (sc.pad === 'walk') {
         const send = (code, type) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
@@ -281,17 +353,18 @@ async function main() {
       const alloc1 = window.__wasmAllocTotals ? window.__wasmAllocTotals() : null;
       const ls = B.longTasks.slice();
       B.longTasks.length = 0;
-      return { entryExports, entry_ms: entry, wall_ms: wall, frames: B.frames, firstFrame: B.firstFrame, entryWorst: B.entryWorst,
+      return { entryExports, entry_ms: entry, reentry_ms: reentry, wall_ms: wall, frames: B.frames, firstFrame: B.firstFrame, entryWorst: B.entryWorst,
         exports: B.exports, gl: B.gl, alloc: alloc0 && [alloc1[0] - alloc0[0], alloc1[1] - alloc0[1]],
         longtasks: ls, heap: performance.memory ? performance.memory.usedJSHeapSize : 0,
         state: view.scene, battle: typeof view.rt.state_json === 'function' ? view.rt.state_json().slice(0, 200) : '' };
-    }, { sc, FRAMES, SKIP });
+    }, { sc, FRAMES, SKIP, reenter: !!arg('reenter') });
     if (arg('shots')) {
       fs.mkdirSync(arg('shots'), { recursive: true });
       await page.screenshot({ path: path.join(arg('shots'), `${name}.png`) });
     }
     const s = summarise({ exports: r.exports, gl: r.gl, firstFrame: r.firstFrame, entryWorst: r.entryWorst }, r.frames);
     s.entry_ms = r.entry_ms;
+    s.reentry_ms = r.reentry_ms;
     s.entry_exports = r.entryExports;
     s.fps = FRAMES / (r.wall_ms / 1000);
     s.longtasks = r.longtasks.length;
@@ -300,7 +373,7 @@ async function main() {
     s.heap_mb = r.heap / 1048576;
     out.scenes[name] = s;
     console.log(`${name}: frame avg ${s.avg_ms.toFixed(2)} p50 ${s.p50_ms.toFixed(2)} p99 ${s.p99_ms.toFixed(2)} max ${s.max_ms.toFixed(1)} ms; `
-      + `entry ${s.entry_ms.toFixed(0)} ms, first ${(s.first_ms || 0).toFixed(0)}, worst-entry ${s.entry_worst_ms.toFixed(0)}; ${s.fps.toFixed(0)} fps; `
+      + `entry ${s.entry_ms.toFixed(0)} ms${s.reentry_ms === null ? '' : `, re-entry ${s.reentry_ms.toFixed(0)}`}, first ${(s.first_ms || 0).toFixed(0)}, worst-entry ${s.entry_worst_ms.toFixed(0)}; ${s.fps.toFixed(0)} fps; `
       + `allocs/frame ${s.allocs_per_frame === undefined ? '-' : s.allocs_per_frame.toFixed(0)}; heap ${s.heap_mb.toFixed(0)} MB; long tasks ${s.longtasks}`);
     console.log('  exports: ' + s.exports.slice(0, 14).map((e) => `${e.k} ${e.ms.toFixed(2)}ms/${e.calls.toFixed(1)}x${e.kb >= 1 ? '/' + e.kb.toFixed(0) + 'KB' : ''}`).join(', '));
     console.log('  entry: ' + r.entryExports.map(([k, ms, c]) => `${k} ${ms}ms/${c}x`).join(', '));

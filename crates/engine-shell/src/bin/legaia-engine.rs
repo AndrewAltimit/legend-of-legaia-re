@@ -664,6 +664,14 @@ fn main() -> Result<()> {
         } => cmd_inventory(item, party_size, &script),
         Cmd::Equip { slot, item } => cmd_equip(slot, item),
         Cmd::GteReplay { trace, verbose } => cmd_gte_replay(&trace, verbose),
+        Cmd::EntryBench {
+            extracted_root,
+            scenes,
+            repeat,
+        } => {
+            let scenes: Vec<String> = scenes.split(',').map(str::to_string).collect();
+            legaia_engine_shell::window::cmd_entry_bench(&extracted_root, &scenes, repeat)
+        }
         Cmd::Title {
             script,
             no_save,

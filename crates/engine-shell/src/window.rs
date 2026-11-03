@@ -40,6 +40,8 @@ mod camera;
 /// ported retail dev-menu kernels.
 #[path = "window/dev_menu.rs"]
 mod dev_menu;
+#[path = "window/entry_bench.rs"]
+mod entry_bench;
 #[path = "window/event_handler.rs"]
 mod event_handler;
 #[path = "window/field_render.rs"]
@@ -92,6 +94,7 @@ pub(crate) use geometry::{
 // The procedural battle ground grid lives in `legaia-scene-formats` so all three
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
+pub use entry_bench::cmd_entry_bench;
 pub use headless::HeadlessPlayWindow;
 pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub use run::cmd_play_window;

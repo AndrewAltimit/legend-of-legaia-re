@@ -11,6 +11,7 @@ how far to trust it on a shared box.
     scripts/ci/frame-bench.py --scene town01 --mode enhanced
     scripts/ci/frame-bench.py --json out.json         # raw rows, for a before / after diff
     scripts/ci/frame-bench.py --exe path/to/engine    # another build, unbuilt
+    scripts/ci/frame-bench.py --entry --base-exe old  # scene + battle entry, paired
 
 The build carries `engine-shell`'s `bench-alloc` feature: the counting allocator
 is the only thing it adds. See docs/subsystems/renderer-port.md#frame-profiler.
@@ -84,6 +85,46 @@ def run_one(exe, extracted, name, mode, frames, skip, workdir):
     return row
 
 
+def run_entry(exe, extracted, scenes):
+    """One `entry-bench` process: {(scene, step): ms}. No window, no GPU."""
+    p = subprocess.run([str(exe), "entry-bench", "--extracted-root", str(extracted), "--scenes", scenes],
+                       capture_output=True, text=True, timeout=600)
+    rows = {}
+    for scene, step, ms in re.findall(r"^\[entry\] (\S+) (.+) ([\d.]+)$", p.stdout, re.M):
+        rows[(scene, step)] = float(ms)
+    if not rows:
+        raise RuntimeError(f"entry-bench: no rows (status {p.returncode}):\n{p.stderr[-500:]}")
+    return rows
+
+
+def entry_table(exe, base, extracted, scenes, repeat, out):
+    """Scene and battle entry by step, fastest of `repeat` with its spread. With a
+    base build the two alternate run by run, so a busy box hits both alike."""
+    runs = {"new": []}
+    if base:
+        runs["base"] = []
+    for _ in range(repeat):
+        if base:
+            runs["base"].append(run_entry(base, extracted, scenes))
+        runs["new"].append(run_entry(exe, extracted, scenes))
+    fmt = lambda v: f"{min(v):.1f} ({max(v) - min(v):.1f})"
+    keys = list(runs["new"][0])
+    print("Entry by step, ms: fastest (spread). `scene+` is the second entry, as a door back.")
+    print("| scene | step | " + ("base | " if base else "") + "new |")
+    print("|---|---|" + ("---|" if base else "") + "---|")
+    total = {k: [sum(r.values()) for r in v] for k, v in runs.items()}
+    for key in keys:
+        cells = [fmt([r[key] for r in runs["new"] if key in r])]
+        if base:
+            b = [r[key] for r in runs["base"] if key in r]
+            cells.insert(0, fmt(b) if b else "")
+        print(f"| {key[0]} | {key[1]} | " + " | ".join(cells) + " |")
+    print("| all | total | " + (fmt(total["base"]) + " | " if base else "") + fmt(total["new"]) + " |")
+    if out:
+        Path(out).write_text(json.dumps({k: [{" ".join(kk): vv for kk, vv in r.items()} for r in v]
+                                         for k, v in runs.items()}, indent=1))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--scene", action="append", choices=list(SCENES))
@@ -93,9 +134,19 @@ def main():
     ap.add_argument("--repeat", type=int, default=3)
     ap.add_argument("--exe", help="use this binary instead of building")
     ap.add_argument("--json", help="write the raw rows here")
+    ap.add_argument("--entry", action="store_true", help="time scene and battle entry instead of frames")
+    ap.add_argument("--entry-scenes", default="town01,jouina,map01,koin1")
+    ap.add_argument("--base-exe", help="with --entry: a build to pair against, run by run")
     a = ap.parse_args()
 
     extracted = REPO / "extracted"
+    if a.entry and (extracted / "PROT.DAT").exists():
+        exe = Path(a.exe) if a.exe else REPO / "target" / PROFILE / "legaia-engine"
+        if not a.exe:
+            subprocess.run(["cargo", "build", "-p", "legaia-engine-shell", "--bin", "legaia-engine",
+                            "--profile", PROFILE], cwd=REPO, check=True)
+        entry_table(exe, a.base_exe, extracted.resolve(), a.entry_scenes, a.repeat, a.json)
+        return 0
     if not (extracted / "PROT.DAT").exists() or not os.environ.get("DISPLAY"):
         print("[skip] frame-bench needs extracted/ and a display")
         return 0
