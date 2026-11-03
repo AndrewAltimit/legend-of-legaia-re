@@ -69,7 +69,7 @@ impl World {
             // rays and final blasts).
             e if Self::runs_part_stager_calls(e) => self.run_part_stager_calls(e),
             922 => self.casting.run_puera_stager_calls(&mut ctx),
-            927 => self.run_juggernaut_stager_calls(),
+            927 => self.run_juggernaut_stager_calls(spell_id),
             // PROT 0923's stager is reached through its parts' op-`0x20`
             // calls, never off the phase: its arm 0 (the stage byte `3`) runs
             // when the record that calls it does. A retail cast holds
@@ -260,7 +260,7 @@ impl World {
         if entry == 927
             && let Some(d) = direction
         {
-            self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count);
+            self.apply_juggernaut_writes(ctx.phase, !d.hold, ctx.monster_count, spell_id);
         }
         if entry == 918
             && let Some(d) = direction

@@ -35,6 +35,7 @@ impl World {
         phase: u8,
         passed: bool,
         monster_count: u8,
+        spell_id: u8,
     ) {
         let party = usize::from(self.party.party_count);
         let monsters = usize::from(monster_count);
@@ -182,7 +183,7 @@ impl World {
                 }
             }
             26 => {
-                self.juggernaut_final_hits();
+                self.juggernaut_final_hits(spell_id);
                 self.casting.module_cam.creature_floor_clip = false;
                 self.casting.module_creature_clip_kind = 0;
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
@@ -232,17 +233,13 @@ impl World {
     /// `0x801F8698`). A party cast makes it on each of those calls and the rolls
     /// are its damage, so the band folds nothing and only banks their XP; a
     /// monster's cast of the id has no such roll and lands through the fold.
-    fn juggernaut_stager_sweep(&mut self) {
-        let Some((caster, spell_id)) = self
-            .casting
-            .summon_stager
-            .as_ref()
-            .map(|st| (st.caster, st.spell_id))
-            .filter(|(caster, _)| *caster < self.party.party_count)
-        else {
+    fn juggernaut_stager_sweep(&mut self, spell_id: u8) {
+        // The band has its stager out of the world for this tick.
+        let caster = self.battle_ctx.active_actor;
+        if caster >= self.party.party_count {
             self.fold_pending_cast();
             return;
-        };
+        }
         self.run_cast_module_aoe_as(caster, spell_id, super::super::AOE_STAGER_WORKING_ARM);
         if self.casting.pending_cast.is_some() {
             self.casting.module_skips_fold = true;
@@ -263,17 +260,13 @@ impl World {
     /// The kill-capable hit on arm 26's pass (`0x801F7DD4..0x801F7F24`): every
     /// live monster takes the summon roll again, clamped to its HP, staging its
     /// reaction with the animation rate at `2`.
-    fn juggernaut_final_hits(&mut self) {
+    fn juggernaut_final_hits(&mut self, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks as ticks;
-        let Some((caster, spell_id)) = self
-            .casting
-            .summon_stager
-            .as_ref()
-            .map(|st| (st.caster, st.spell_id))
-            .filter(|(caster, _)| *caster < self.party.party_count)
-        else {
+        // The band has its stager out of the world for this tick.
+        let caster = self.battle_ctx.active_actor;
+        if caster >= self.party.party_count {
             return;
-        };
+        }
         let ctx = self.cast_module_ctx();
         let map = self.cast_seat_map();
         let mut seats = self.cast_seat_row();
@@ -306,7 +299,7 @@ impl World {
     /// come up, long before the body's arm 26).
     ///
     /// REF: FUN_801F85A8
-    pub(in crate::world::battle::cast_band) fn run_juggernaut_stager_calls(&mut self) {
+    pub(in crate::world::battle::cast_band) fn run_juggernaut_stager_calls(&mut self, spell_id: u8) {
         use legaia_engine_cast::cast_module_ticks as ticks;
         let calls = std::mem::take(&mut self.casting.module_stager_calls);
         for (arm, caller) in calls {
@@ -324,7 +317,7 @@ impl World {
             }
             self.casting.module_shake += ticks::juggernaut_stager_shake(arm);
             if arm == super::super::AOE_STAGER_WORKING_ARM || arm == 3 {
-                self.juggernaut_stager_sweep();
+                self.juggernaut_stager_sweep(spell_id);
             }
         }
     }
