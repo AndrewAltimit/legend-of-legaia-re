@@ -30,6 +30,15 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
 scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --score-only --retail-lag 4
 ```
 
+Several casts go through
+[`cast-sequence-batch.py`](../../scripts/ci/cast-sequence-batch.py): a file of
+`<name> <arguments>` lines, the retail recordings side by side (`--jobs`), then the
+engine runs one at a time. A retail recording is a
+[headless](pcsx-redux-automation.md#headless-runs) emulator at 1x (`--window` opens
+one) and holds no display lock. Two recordings of one cast are not byte-identical,
+in a window or not ([why, and what does hold](pcsx-redux-automation.md#a-recording-is-not-byte-repeatable-at-any-speed)),
+so a residual smaller than two retail runs differ from each other is noise.
+
 Each stage is reused until something it depends on changes. The retail
 recording stays until `--recapture`; the seed's child command until `--reseed`;
 the engine recording while `engine-key.txt` matches a hash of the binary, the

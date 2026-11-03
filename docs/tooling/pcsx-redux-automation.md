@@ -39,6 +39,7 @@ apply to every probe and are worth knowing before reading a result:
 - [Why PCSX-Redux](#why-pcsx-redux)
 - [Setup](#setup)
 - [The harness](#the-harness)
+- [Headless runs](#headless-runs)
 - [The probe pattern](#the-probe-pattern)
 - [Fast whole-playthrough capture (two-tier model)](#fast-whole-playthrough-capture-two-tier-model)
 - [Patched-disc taint](#patched-disc-taint)
@@ -207,6 +208,71 @@ The wrapper:
 The `-stdout` flag is what makes the autorun's `PCSX.log(...)`
 calls visible to the parent shell.
 
+The runner compiles the probe with `luajit -bl` first when `luajit` is installed,
+and stops the emulator if the log shows a probe dying at load. Lua's cap of 60
+upvalues per function is the usual cause, and without these a probe that does
+not compile idles in the emulator until whatever timeout wraps the run.
+
+## Headless runs
+
+`--headless` runs the emulator with `-no-ui`: no window and no display, the Null
+audio backend, a private profile, and private copies of the memory cards. It keeps
+the 1x pace and the guest timing of a windowed run, so it is the default for
+[`cast-sequence.py`](cast-sequence-oracle.md) (`--window` asks for the window).
+Several run side by side with no display lock. A run that has to write a memory
+card names its card with `LEGAIA_MCD1`; a shared card still takes the shared lock.
+
+Where a windowed run's time goes:
+
+| Cost | Where | What removes it |
+|---|---|---|
+| The window | ImGui and GL present on every vsync, on the emulator's thread, sensitive to everything else on the display | `-no-ui` |
+| The audio device | `callback` pushes to the real backend (a socket round trip per period); the 1x throttle waits on its clock, and rounds each wait up to a period | `Backend: Null` |
+| The throttle | `Counters::update` waits for the audio clock (`Scaler` percent of 1x) | `Scaler`, with the catch below |
+| XA feed | `FeedXA` blocks the emulator's thread on a full stream (up to 200 ms): XA plays at 1x whatever the scaler | `Xa: false`; guest-invisible, but only matters above 1x |
+| The disc | `UvFile::readAt` hops to the libuv thread per sector and blocks on the reply | `FullCaching`; only matters above 1x |
+
+The probe's own work (RAM reads, CSV writes, the raw frame dumps) does not show up:
+a recording with its frame dumps off takes as long as one with them on.
+
+### A recording is not byte-repeatable, at any speed
+
+PCSX-Redux's SPU runs on its own thread, paced by wall-clock time against the audio
+output (`SPU::impl::MainThread`, `src/spu/spu.cc`), not by the emulated clock. The
+voice table at `0x801CDB4C` differs between two runs at the same vsync. The likely
+reading, not yet traced instruction by instruction, is that the game's sound driver
+reads SPU state, and its per-frame cost moves with what it finds. When a frame
+crosses a vsync the adaptive frame step `*(0x1F800393)` moves a vsync early, and the
+frames after it shift.
+
+Two windowed runs of one cast at 1x can therefore differ in half their frames, and
+two headless runs by the same amount. What holds across runs of either kind: the
+action-state and module-phase path, the HP columns, the sound cue ids, the number of
+game frames to within one, and most frames compared at the same game frame (the
+`frame` column). So compare recordings on those, and show that a difference is more
+than the noise of two runs of the same kind before believing it.
+
+The shift grows with the speed. `Scaler` above 100 is not a free fast-forward: at 2x
+to 4x a cast that holds byte-identical at 1x shifts in about one run out of three.
+Making the process's whole monotonic clock run fast with an `LD_PRELOAD` shim, which
+keeps the SPU's ratio to the emulated clock at 1, lowers that and does not remove it.
+A recording that would not differ needs the SPU stepped from the emulated clock,
+which is a change to the emulator.
+
+`--turbo` is `--headless` with the disc in memory and the scaler at
+`LEGAIA_SCALER` (default `2000`). It is for **making states**, where any valid run of
+the game is as good as another: a door hop or a harvest. Never for a recording that
+gets compared.
+
+### The debugger core pauses itself
+
+Under `-debugger`, a read of unmapped memory pauses the emulator
+(`Memory::read8`, `src/core/psxmem.cc`) after returning the same `0xFF` the
+recompiler returns, and nothing resumes it. A probe that writes a game's action
+queue can send it there. [`autorun_cast_sequence.lua`](../../scripts/pcsx-redux/autorun_cast_sequence.lua)
+resumes on `ExecutionFlow::Pause` and logs it; another breakpoint probe doing the
+same hangs at 0% CPU until its timeout.
+
 ## The probe pattern
 
 Every autorun script under `scripts/pcsx-redux/` follows the same
@@ -354,6 +420,9 @@ on_capture = function(ctx, _elapsed)
     end
 end,
 ```
+
+The emulator quits `quit_delay` vsyncs (30) after the capture ends, wherever in
+`LEGAIA_FRAMES` that was.
 
 ### Symbolic breakpoint addresses
 

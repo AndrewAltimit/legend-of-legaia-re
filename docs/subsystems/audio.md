@@ -3253,6 +3253,9 @@ identity. A resumed SPU fits the recording at correlation `1.0000`, lag `0`, lev
 **`0.750`**, in every band, in every state tried, which puts that factor in the
 recorder and not in the console; the oracle divides it out
 (`MEDNAFEN_RECORD_GAIN`). The WAVs are Sony-derived and stay under `captures/`.
+Each recording has a private home, disc stage and X server, so `--capture --jobs N`
+runs them side by side with the same bytes. `-nothrottle` changes neither the bytes
+nor the speed: the emulator is not being held back by its throttle here.
 
 **Three channels.**
 

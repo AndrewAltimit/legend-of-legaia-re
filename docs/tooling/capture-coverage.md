@@ -127,6 +127,10 @@ keeps the whole emulator state from that action's `0x0A`, ahead of the pick, whi
 replays the same cast for the [cast-sequence oracle](cast-sequence-oracle.md). A
 cast the AI will not pick in the rounds given still needs `--monster-pick`.
 
+A state is a valid run of the game whichever way it was reached, so state-making runs
+take `run_probe.sh --fast --turbo`: no display, several at once, well above 1x
+([headless runs](pcsx-redux-automation.md#headless-runs)).
+
 The scene rows are filled the same way: with `LEGAIA_SCENES=1` the probe also
 saves one field state per scene its walk reaches, once the loaded scene has
 run a settle window and the player has moved in it. A save point in an
