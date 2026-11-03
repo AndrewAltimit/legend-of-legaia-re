@@ -392,6 +392,7 @@ impl World {
             self.casting.module_scatter = arm.scatter;
             self.casting.module_rock_burst = arm.rock_burst;
             self.casting.module_spray = arm.spray;
+            self.casting.module_ring = arm.ring;
             self.casting.module_scatter_pairs = arm.scatter_pairs;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);

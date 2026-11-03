@@ -995,6 +995,7 @@ mod scythe_wind;
 mod seru;
 mod spoon;
 mod steal;
+mod stone_circle;
 pub mod summon_holds;
 mod swordie;
 mod terror_scream;
@@ -1054,6 +1055,9 @@ pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camer
 pub use seru::*;
 pub use spoon::*;
 pub use steal::{STEAL_BODY, steal_camera};
+pub use stone_circle::{
+    RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,
+};
 pub use swordie::*;
 pub use terror_scream::{TERROR_SCREAM_BODY, terror_scream_camera};
 pub use theeder_gizam::*;

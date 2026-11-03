@@ -152,6 +152,8 @@ local function ok_ptr(p) return p ~= nil and p >= 0x80000000 and p < 0x80200000 
 local function band(st)
     if st == 0x1E then return "attack" end
     if st == 0x2B or st == 0x2C then return "magic" end
+    -- A heal-class spell runs the Spirit / Item flow (FUN_801E2EFC's 0x3C arm).
+    if st == 0x3E or st == 0x3F then return "magic" end
     if st == 0x6F or st == 0x70 then return "module" end
     return nil
 end

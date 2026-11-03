@@ -374,7 +374,12 @@ impl World {
                     text: Some(text),
                     exit: Some(exit),
                 } if passed
-                    && paced
+                    && (paced
+                        || legaia_engine_cast::cast_module_camera::capture_camera_director(
+                            entry,
+                            body.unwrap_or(legaia_engine_cast::cast_module_camera::SINGLE_BODY),
+                        )
+                        .is_some())
                     && exit.from_arm(phase_in) == phase_out
                     && !MESSAGE_BARS_PORTED_BY_HAND.contains(&entry)
                     && sites

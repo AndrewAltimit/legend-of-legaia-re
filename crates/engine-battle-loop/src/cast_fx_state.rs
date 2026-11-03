@@ -146,6 +146,8 @@ pub struct CastFxState {
     pub module_rock_burst: Option<u8>,
     /// PROT 0964's Thunder spray records, for the frame the host opens.
     pub module_spray: Option<[u32; 2]>,
+    /// PROT 0941's ring records and rot trio, for the frame the host opens.
+    pub module_ring: Option<([u32; 3], [i16; 3])>,
     /// PROT 0957's arms 4 to 6 seat their scatter pairs this pass
     /// ([`legaia_engine_cast::cast_module_camera::capture::CaptureCamArm::scatter_pairs`]).
     pub module_scatter_pairs: bool,
@@ -466,6 +468,7 @@ impl CastFxState {
             module_scatter: None,
             module_rock_burst: None,
             module_spray: None,
+            module_ring: None,
             module_scatter_pairs: false,
             module_scatter_y: 0,
             module_ribbons_on_scatter_y: false,

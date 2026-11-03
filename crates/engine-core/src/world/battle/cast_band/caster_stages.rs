@@ -163,6 +163,36 @@ impl World {
                     .collect();
                 self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
             }
+            if let Some((records, rot)) = self.casting.module_ring.take() {
+                let mut used = [false; 8];
+                for i in 0..8u16 {
+                    // `rand() % 8` until an unused slot comes up; its slot times
+                    // `0x40` lands on each record's `+0x54`, `+0x42 = 1`.
+                    let mut slot = 0u16;
+                    for _ in 0..0x400 {
+                        slot = (self.next_rand() % 8) as u16;
+                        if !used[usize::from(slot)] {
+                            used[usize::from(slot)] = true;
+                            break;
+                        }
+                    }
+                    let (s, c) = legaia_engine_system::trig::trig12(i << 9);
+                    for record in records {
+                        self.casting.seat_stager_spawn(
+                            run.prot_entry,
+                            &legaia_engine_cast::cast_module_ticks::StagerSpawn {
+                                record,
+                                pos: [s / 2, 0, c / 2],
+                                rot,
+                                pokes: vec![(0x54, slot << 6), (0x42, 1)],
+                                patches: Vec::new(),
+                                halve_speed: false,
+                                scale: 0x1000,
+                            },
+                        );
+                    }
+                }
+            }
             if let Some(records) = self.casting.module_spray.take()
                 && opens_pass
             {

@@ -632,6 +632,21 @@ pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
             0x801F_826C,
         ],
     ),
+    (
+        941,
+        &[
+            0x801F_8218,
+            0x801F_7E70,
+            0x801F_7ED8,
+            0x801F_7F38,
+            0x801F_7FDC,
+            0x801F_8020,
+            0x801F_8070,
+            0x801F_80C0,
+            0x801F_8108,
+            0x801F_8154,
+        ],
+    ),
     (942, &[0x801F_81B8]),
     (
         964,
@@ -811,7 +826,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
         ),
         957 => body == Some(super::THUNDER_STORM_BODY),
-        941 => body == Some(super::STEAL_BODY),
+        941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
         944 => body == Some(super::CURSE_ALL_BODY),
         _ => false,
     }
@@ -835,7 +850,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
         ),
         957 => body == Some(super::THUNDER_STORM_BODY),
-        941 => body == Some(super::STEAL_BODY),
+        941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         942 => body == Some(super::POWER_UP_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
