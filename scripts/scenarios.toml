@@ -124,8 +124,6 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-
-[[scenarios]]
 label = "character_tmd_pointers"
 start = 0x8007C018
 end = 0x8007C02C
@@ -2472,8 +2470,6 @@ start = 0x801C0000
 end = 0x80200000
 
 [[scenarios.watchpoints]]
-
-[[scenarios]]
 label = "party_hp_readout_triple"
 start = 0x800EC9E8
 end = 0x800ED0E0
