@@ -970,7 +970,7 @@ impl MapDef {
             return Ok(Some((*s).clone()));
         }
         let grid = self.tile_grid()?;
-        let field = heightfield(self, t, &grid)?;
+        let field = (*memoed_heightfield(self, t, &grid)?).clone();
         let s = surface(self, t, &grid, field);
         surface_memo_put(key, std::sync::Arc::new(s.clone()));
         Ok(Some(s))
@@ -984,7 +984,7 @@ impl MapDef {
         let Some(t) = &self.terrain else {
             return Ok(vec![0u8; grid.width * grid.height]);
         };
-        let field = heightfield(self, t, grid)?;
+        let field = memoed_heightfield(self, t, grid)?;
         Ok(self.terrain_walls_in(grid, &field))
     }
 
@@ -1116,6 +1116,57 @@ fn surface_memo_put(key: SurfaceKey, s: std::sync::Arc<TerrainSurface>) {
     while memo.len() > SURFACE_MEMO {
         memo.remove(0);
     }
+}
+
+/// [`heightfield`] with the last few built kept, for an equal input. The
+/// validator's terrain rules build one per terrain map per pass, and it is
+/// most of a pass; a workbench edit outside `[terrain]` builds nothing new.
+fn memoed_heightfield(
+    def: &MapDef,
+    t: &TerrainDef,
+    grid: &TileGrid,
+) -> Result<std::sync::Arc<Heightfield>> {
+    type FieldMemo = Vec<(FieldKey, std::sync::Arc<Heightfield>)>;
+    static MEMO: std::sync::Mutex<FieldMemo> = std::sync::Mutex::new(Vec::new());
+    let lock = || {
+        MEMO.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    let key = FieldKey {
+        map: SurfaceKey {
+            terrain: t.clone(),
+            tiles: def.tiles.clone(),
+            size: def.size,
+            floor_heights: def.floor_heights.clone(),
+        },
+        grid: grid.clone(),
+    };
+    {
+        let mut memo = lock();
+        if let Some(i) = memo.iter().position(|(k, _)| *k == key) {
+            // Most recently used last.
+            let hit = memo.remove(i);
+            let field = hit.1.clone();
+            memo.push(hit);
+            return Ok(field);
+        }
+    }
+    let field = std::sync::Arc::new(heightfield(def, t, grid)?);
+    let mut memo = lock();
+    memo.retain(|(k, _)| *k != key);
+    memo.push((key, field.clone()));
+    while memo.len() > SURFACE_MEMO {
+        memo.remove(0);
+    }
+    Ok(field)
+}
+
+/// What [`heightfield`] reads: the map's fields and the grid resolved from
+/// them, which [`MapDef::terrain_walls`] takes from its caller.
+#[derive(PartialEq)]
+struct FieldKey {
+    map: SurfaceKey,
+    grid: TileGrid,
 }
 
 fn heightfield(def: &MapDef, t: &TerrainDef, grid: &TileGrid) -> Result<Heightfield> {
