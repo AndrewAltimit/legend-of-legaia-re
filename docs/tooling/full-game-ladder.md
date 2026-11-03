@@ -848,7 +848,7 @@ Over part C the largest share is the pad tier's path search; the engine's tick c
 - The per-cell table keeps a cell's stamp, parent and cost together, so a probe touches one cache line.
 - A coarse grid answers the actor-box and door probes for a cell with nothing near it, which is almost every cell.
 
-Run it under `release-test`, not `dev-fast`; see [`build-and-test-speed.md`](build-and-test-speed.md).
+Profiles and how a speedup is proved: [`build-and-test-speed.md`](build-and-test-speed.md). The route is what stays fixed, and part C's trace is byte-identical across runs; part B's trace is not, even on one binary, since its frame counts move between runs from the `jou` beats on while its report table holds, so compare part B by that table.
 
 ## How to read a stall
 

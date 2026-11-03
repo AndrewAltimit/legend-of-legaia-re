@@ -14,15 +14,15 @@ What a build and a test run spend their time on, and what to run so an edit does
 
 | Profile | Use it for | What it is |
 |---|---|---|
-| `dev-fast` | The edit-build-test loop: one crate's tests, one oracle, a short replay. | `release-test`'s optimisation level with rustc's incremental cache over the workspace crates. Dependencies are built as `release-test` builds them. |
-| `release-test` | The full-game ladder, the soak, `retail-compare`, anything long; and the last run before a commit touching simulation. It is what CI runs. | `release`'s optimisation level, no LTO, 16 codegen units. |
+| `dev-fast` | The edit-build-test loop: one crate's tests, an oracle, a replay, a ladder run after an edit. | `release-test`'s optimisation level with rustc's incremental cache over the workspace crates. Dependencies are built as `release-test` builds them. |
+| `release-test` | What CI runs, so the last run before a commit; and what the `scripts/ci/*.py` drivers build. | `release`'s optimisation level, no LTO, 16 codegen units. |
 | `release` | Shipped binaries only. | Thin LTO, one codegen unit. |
 
 ```bash
 cargo test -p legaia-engine-shell --profile dev-fast --test integration foo::
 ```
 
-`dev-fast` binaries lose the inlining across codegen units, so they run about a third slower: a recompile saved is worth more than that on anything short, and less on a half-hour ladder. Its output lands in `target/dev-fast/`, beside `target/release-test/`, and the first build under it costs a build of the dependencies (sccache holds those, when it is configured).
+`dev-fast` binaries lose some inlining across codegen units, and run a few percent slower for it on the ladder, with the whole suite's outcomes the same, test for test. Its output lands in `target/dev-fast/`, beside `target/release-test/`, and the first build under it costs a build of the dependencies (sccache holds those, when it is configured).
 
 CI stays on `release-test`, and a change is not verified until it has run there. `dev-fast` is a local choice and no script or workflow names it.
 
@@ -81,4 +81,4 @@ scripts/profile/report.py /tmp/bin /tmp/run.<pid> --under 'plan_search$'
 
 On a shared machine compare CPU seconds, not wall clock, and compare two binaries by running them side by side: a loaded box inflates even CPU time, through cache and memory contention.
 
-A speedup is proved by the output, not the timing. For the ladder, the trace with its wall-clock fields stripped: `LEGAIA_FGL_TRACE=1` before and after must match line for line. For a patcher feature, the `.ppf` from a fixed seed must hash the same.
+A speedup is proved by the output, not the timing. For part C of the ladder, the trace with its wall-clock fields stripped: `LEGAIA_FGL_TRACE=1` before and after must match line for line. For a patcher feature, the `.ppf` from a fixed seed must hash the same.
