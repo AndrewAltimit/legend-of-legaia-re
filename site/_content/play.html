@@ -402,6 +402,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
 <script src="js/load-progress.js"></script>
+<script src="js/play-disc.js"></script>
 <script src="js/legaia-saves.js"></script>
 -->
 <header class="page-header">
@@ -1172,9 +1173,10 @@ div.play-vis-head { cursor: default; }
   let scenes = [];
   let active = null;
 
-  /* Disc bytes cached from the initial upload so a poisoned engine instance can
-   * be re-instantiated without re-reading the file (Bug-3 recovery). */
-  let discBytes = null;
+  /* The disc image (js/play-disc.js): consumers read their sectors off it, and
+   * a poisoned engine instance is rebuilt from it with no new pick (Bug-3
+   * recovery). */
+  let disc = null;
   /* Re-entrancy + rapid-failure guards for the recovery path. */
   let recovering = false;
   let recoveryTimes = [];
@@ -1337,12 +1339,6 @@ div.play-vis-head { cursor: default; }
   /* The engine reads the files it keeps out of the page's image, so the image
    * is not copied into wasm memory (a cached bundle without the export gets
    * the whole of it). */
-  function loadDiscInto(rt, bytes) {
-    return typeof rt.load_disc_image === 'function'
-      ? rt.load_disc_image(bytes, '')
-      : rt.load_disc(bytes, '');
-  }
-
   /* The first scene entry's one-time work that reads nothing a scene or a save
    * decides, done while the page sits at "Pick a boot mode": the renderer's
    * shaders and the menu assets. A pick that beats the idle callback builds
@@ -1373,7 +1369,8 @@ div.play-vis-head { cursor: default; }
       /* The engine's module compiles while the image is read. */
       const wasmLoad = wasm ? null : LegaiaWasm.load();
       if (wasmLoad) wasmLoad.catch(() => {});
-      const bytes = await prog.read(file, `Reading ${file.name}`);
+      if (disc) disc.close();
+      disc = window.__playDisc = await LegaiaPlayDisc.open(file, prog, `Reading ${file.name}`);
       prog.indeterminate('Starting the engine…');
       if (!wasm) {
         wasm = await wasmLoad;
@@ -1381,15 +1378,12 @@ div.play-vis-head { cursor: default; }
       runtime = new wasm.LegaiaRuntime();
       prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
       await prog.paint();   /* the parse below blocks the main thread */
-      /* Keep the raw disc bytes so a trapped engine can be rebuilt in place
-       * (no re-upload) - see `recoverRuntime`. */
-      discBytes = bytes;
       /* The raw disc stays page-side: the runtime keeps only PROT.DAT + the
        * executable, and hands back raw-sector extents (`disc_file_extent_json`)
-       * so a consumer can slice a named file - an XA voice bank, a movie -
+       * so a consumer can read a named file - an XA voice bank, a movie -
        * without the engine holding a second copy of the image. */
-      window.__playDiscBytes = bytes;
-      const count = loadDiscInto(runtime, bytes);
+      const count = await disc.loadInto(runtime);
+      disc.startFill();
       prog.done(`${count} PROT entries. Pick a boot mode.`);
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
@@ -1666,24 +1660,22 @@ div.play-vis-head { cursor: default; }
     expansionMsg('Off: the game as it shipped. The pack\'s progress stays in your saves.');
   });
 
-  /* Slice a named ISO file's raw Mode2/2352 sectors out of the disc bytes
-   * the page holds. `null` when no disc is up or the file is absent. */
-  window.__playSliceDiscFile = function (path) {
-    const bytes = window.__playDiscBytes;
-    if (!bytes || !runtime || typeof runtime.disc_file_extent_json !== 'function') return null;
+  /* Read a named ISO file's raw Mode2/2352 sectors off the disc. Resolves to
+   * `null` when no disc is up or the file is absent or unreadable. */
+  async function readDiscFile(path) {
+    if (!disc || !runtime || typeof runtime.disc_file_extent_json !== 'function') return null;
     let ext = null;
     try { ext = JSON.parse(runtime.disc_file_extent_json(path)); } catch (e) { ext = null; }
     if (!ext || ext.lba == null) return null;
-    const RAW = 2352;
     const sectors = Math.ceil(ext.size / 2048);
-    const start = ext.lba * RAW, end = Math.min(bytes.length, start + sectors * RAW);
-    if (start >= end) return null;
-    return bytes.subarray(start, end);
-  };
+    await disc.prefetch(ext.lba, sectors);
+    const bytes = disc.span(ext.lba, sectors);
+    return bytes && bytes.length ? bytes : null;
+  }
 
   /* CD-XA voice banks (the arts shouts on XA2/XA4/XA6, the battle stings
    * and grunts on XA27/XA30): the engine names the files it stages natively,
-   * the page slices each out of the disc bytes it holds and hands the raw
+   * the page reads each off the disc and hands the raw
    * sectors over for decode. Pure decode, no audio needed, staggered onto
    * idle time so the UI stays responsive (XA27 is the heavy one). */
   function installXaBanks() {
@@ -1699,11 +1691,9 @@ div.play-vis-head { cursor: default; }
     const next = () => {
       const path = wanted.shift();
       if (!path || window.__playRuntime !== rt) return;
-      try {
-        const sectors = window.__playSliceDiscFile(path);
-        if (sectors) rt.play_xa_install(path, sectors);
-      } catch (e) { console.warn('xa install', path, e); }
-      idle(next);
+      readDiscFile(path).then((sectors) => {
+        if (sectors && window.__playRuntime === rt) rt.play_xa_install(path, sectors);
+      }).catch((e) => { console.warn('xa install', path, e); }).finally(() => idle(next));
     };
     idle(next);
   }
@@ -2235,8 +2225,8 @@ div.play-vis-head { cursor: default; }
    * re-upload). Guarded against re-entrancy and against a scene that traps every
    * frame: after a few rapid failures it falls back to the opening scene, then
    * gives up (a page refresh clears everything). */
-  function recoverRuntime() {
-    if (recovering || !discBytes || !wasm || !view) return;
+  async function recoverRuntime() {
+    if (recovering || !disc || !wasm || !view) return;
     recovering = true;
 
     const now = performance.now();
@@ -2244,10 +2234,10 @@ div.play-vis-head { cursor: default; }
     recoveryTimes.push(now);
 
     try {
-      /* A fresh LegaiaRuntime allocates a clean SceneHost; loading the cached
-       * disc bytes re-parses PROT.DAT in place. */
+      /* A fresh LegaiaRuntime allocates a clean SceneHost; loading the disc
+       * again re-parses PROT.DAT in place. */
       const fresh = new wasm.LegaiaRuntime();
-      loadDiscInto(fresh, discBytes);
+      await disc.loadInto(fresh);
       runtime = fresh;
       window.__playRuntime = runtime;
       remountCards();
@@ -2588,7 +2578,7 @@ div.play-vis-head { cursor: default; }
      * draw faces in (each decode hands the engine the whole image). */
     if (embedQuery.get('xwpreview') === '1') return false;
     if (LegaiaSaves.portraitCanvases()) return false;
-    if (portraitHarvestBusy || !discBytes) return false;
+    if (portraitHarvestBusy || !disc) return false;
     /* The runtime that loaded the disc reads the three faces off it (the
      * free `disc_portrait_rgba` copies the whole image into the engine for
      * each face); the bar asks again on its next render until it is up. */

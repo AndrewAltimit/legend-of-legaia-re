@@ -882,23 +882,24 @@ void main() { o_color = texture(u_layer, v_uv); }
     }
 
     /* Serve one lazy CD-XA staging request per frame: the engine names a
-     * file's read span (`play_xa_stage_requests_json`), the page slices those
-     * raw 2352-byte sectors out of the disc bytes it holds and hands them
-     * back (`play_xa_install_span`), which decodes that one channel and
-     * replays the clip request. No disc bytes on the page means no request
-     * can be served; the engine keeps listing it, silently. */
+     * file's read span (`play_xa_stage_requests_json`), the page hands those
+     * raw 2352-byte sectors back (`play_xa_install_span`), which decodes that
+     * one channel and replays the clip request. Sectors not resident yet
+     * (js/play-disc.js) are read now and served on a later frame. No disc on
+     * the page, or sectors it cannot read, means the request is not served;
+     * the engine keeps listing it, silently. */
     _serveXaStage(rt) {
       if (typeof rt.play_xa_stage_requests_json !== 'function') return;
-      const bytes = window.__playDiscBytes;
-      if (!bytes) return;
+      const disc = window.__playDisc;
+      if (!disc) return;
       let reqs = [];
       try { reqs = JSON.parse(rt.play_xa_stage_requests_json()) || []; } catch (e) { return; }
       const req = reqs[0];
       if (!req) return;
-      const RAW = 2352;
-      const start = req.lba * RAW, end = Math.min(bytes.length, start + req.sectors * RAW);
-      if (start >= end) return;
-      try { rt.play_xa_install_span(req.path, bytes.subarray(start, end), req.channel); }
+      const sectors = disc.span(req.lba, req.sectors);
+      if (!sectors) { disc.prefetch(req.lba, req.sectors); return; }
+      if (!sectors.length) return;
+      try { rt.play_xa_install_span(req.path, sectors, req.channel); }
       catch (e) { console.warn('xa stage', req.path, e); }
     }
 

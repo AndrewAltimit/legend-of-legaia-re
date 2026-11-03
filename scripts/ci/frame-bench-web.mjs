@@ -234,7 +234,7 @@ async function main() {
   /* The disc load, by export. */
   await page.evaluate(async () => {
     const m = await window.LegaiaWasm.load();
-    for (const k of ['load_disc', 'load_disc_image']) {
+    for (const k of ['load_disc', 'load_disc_image', 'load_disc_spans']) {
       const f = m.LegaiaRuntime.prototype[k];
       if (!f) continue;
       m.LegaiaRuntime.prototype[k] = function (...a) {

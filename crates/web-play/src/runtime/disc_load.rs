@@ -29,10 +29,39 @@ impl LegaiaRuntime {
         image: &js_sys::Uint8Array,
         cdname_text: String,
     ) -> Result<u32, JsValue> {
-        let source = PageImage(image);
+        let source = SpanImage::new(image.length() as usize, vec![(0, image.clone())]);
         let (prot, cdname, scus) = self.read_disc_files(&source)?;
         let prot = prot.unwrap_or_else(|| image.to_vec());
         self.install_disc(prot, cdname, scus, cdname_text)
+    }
+
+    /// [`Self::load_disc_image`] over the parts of an image the page has read:
+    /// `blocks[i]` holds raw sectors from `lbas[i]`, of an image `image_len`
+    /// bytes long. The walk and the three files it extracts read nothing else,
+    /// which [`Self::disc_image_missing`] settles first.
+    pub fn load_disc_spans(
+        &mut self,
+        image_len: f64,
+        lbas: &[u32],
+        blocks: Vec<js_sys::Uint8Array>,
+        cdname_text: String,
+    ) -> Result<u32, JsValue> {
+        let source = SpanImage::from_page(image_len, lbas, blocks);
+        let (prot, cdname, scus) = self.read_disc_files(&source)?;
+        let prot = prot.ok_or_else(|| JsValue::from_str("load_disc: not a Mode 2/2352 image"))?;
+        self.install_disc(prot, cdname, scus, cdname_text)
+    }
+
+    /// The first sectors [`Self::load_disc_spans`] would read that the blocks
+    /// do not hold, as `[lba, count]`; empty once they hold all of them.
+    pub fn disc_image_missing(
+        &self,
+        image_len: f64,
+        lbas: &[u32],
+        blocks: Vec<js_sys::Uint8Array>,
+    ) -> Vec<u32> {
+        let source = SpanImage::from_page(image_len, lbas, blocks);
+        missing_span(&source).map_or(Vec::new(), |(lba, count)| vec![lba as u32, count as u32])
     }
 
     /// Raw-sector extent of a named file on the loaded disc image, as
@@ -267,12 +296,67 @@ impl LegaiaRuntime {
 /// `PROT.DAT`, `CDNAME.TXT` and the executable off a disc walk.
 type DiscFiles = (Option<Vec<u8>>, Option<String>, Option<Vec<u8>>);
 
-/// The page's disc image as an [`legaia_iso::iso9660::ImageSource`].
-struct PageImage<'a>(&'a js_sys::Uint8Array);
+/// Bytes a [`SpanImage`] block copies raw sectors out of: the page's arrays, in
+/// one crossing per call.
+trait BlockBytes {
+    fn byte_len(&self) -> usize;
+    fn copy_range(&self, start: usize, out: &mut [u8]);
+}
 
-impl legaia_iso::iso9660::ImageSource for PageImage<'_> {
+impl BlockBytes for js_sys::Uint8Array {
+    fn byte_len(&self) -> usize {
+        self.length() as usize
+    }
+
+    fn copy_range(&self, start: usize, out: &mut [u8]) {
+        self.subarray(start as u32, (start + out.len()) as u32)
+            .copy_to(out);
+    }
+}
+
+/// An image the page holds in parts, as an
+/// [`legaia_iso::iso9660::ImageSource`]. A read the blocks do not cover fails,
+/// and remembers what it asked for.
+struct SpanImage<B> {
+    len: usize,
+    /// Each block's first sector and its raw sectors.
+    blocks: Vec<(usize, B)>,
+    missing: std::cell::Cell<Option<(usize, usize)>>,
+}
+
+impl<B> SpanImage<B> {
+    fn new(len: usize, blocks: Vec<(usize, B)>) -> Self {
+        Self {
+            len,
+            blocks,
+            missing: std::cell::Cell::new(None),
+        }
+    }
+}
+
+impl SpanImage<js_sys::Uint8Array> {
+    fn from_page(image_len: f64, lbas: &[u32], blocks: Vec<js_sys::Uint8Array>) -> Self {
+        let blocks = lbas.iter().map(|&l| l as usize).zip(blocks).collect();
+        Self::new(image_len as usize, blocks)
+    }
+}
+
+impl<B: BlockBytes> SpanImage<B> {
+    /// The block holding these sectors whole, and its first sector.
+    fn holder(&self, lba: usize, count: usize) -> Option<&(usize, B)> {
+        self.blocks.iter().find(|(first, bytes)| {
+            *first <= lba && (lba + count - first) * 2352 <= bytes.byte_len()
+        })
+    }
+
+    fn holds(&self, lba: usize, count: usize) -> bool {
+        self.holder(lba, count).is_some()
+    }
+}
+
+impl<B: BlockBytes> legaia_iso::iso9660::ImageSource for SpanImage<B> {
     fn image_len(&self) -> usize {
-        self.0.length() as usize
+        self.len
     }
 
     fn read_user_data(&self, lba: usize, count: usize, out: &mut Vec<u8>) -> bool {
@@ -282,23 +366,107 @@ impl legaia_iso::iso9660::ImageSource for PageImage<'_> {
         // A batch per crossing: one `subarray` per sector costs more than the
         // copies do on a file the size of PROT.DAT.
         const BATCH: usize = 512;
-        if (lba + count) * RAW > self.image_len() {
+        if (lba + count) * RAW > self.len {
             return false;
         }
+        let Some((first, bytes)) = self.holder(lba, count) else {
+            if self.missing.get().is_none() {
+                self.missing.set(Some((lba, count)));
+            }
+            return false;
+        };
         let mut raw = vec![0u8; BATCH.min(count) * RAW];
         let mut at = lba;
         let end = lba + count;
         while at < end {
             let n = BATCH.min(end - at);
             let slice = &mut raw[..n * RAW];
-            self.0
-                .subarray((at * RAW) as u32, ((at + n) * RAW) as u32)
-                .copy_to(slice);
+            bytes.copy_range((at - first) * RAW, slice);
             for sector in slice.as_chunks::<RAW>().0 {
                 out.extend_from_slice(&sector[DATA_OFFSET..DATA_OFFSET + DATA]);
             }
             at += n;
         }
         true
+    }
+}
+
+/// The first sectors a disc load would read that `image` lacks: the walk's own
+/// reads, then the three files it extracts, from their directory records.
+fn missing_span<B: BlockBytes>(image: &SpanImage<B>) -> Option<(usize, usize)> {
+    let files = legaia_iso::image::walk_iso_source(image);
+    if image.missing.get().is_some() {
+        return image.missing.get();
+    }
+    files
+        .iter()
+        .filter(|f| ["PROT.DAT", "CDNAME.TXT", "SCUS_942.54"].contains(&f.path.as_str()))
+        .map(|f| (f.lba as usize, (f.size as usize).div_ceil(2048)))
+        .find(|&(lba, count)| !image.holds(lba, count))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_iso::image::{extract_prot_dat_source, extract_scus_source, walk_iso_source};
+
+    impl BlockBytes for &[u8] {
+        fn byte_len(&self) -> usize {
+            self.len()
+        }
+
+        fn copy_range(&self, start: usize, out: &mut [u8]) {
+            out.copy_from_slice(&self[start..start + out.len()]);
+        }
+    }
+
+    /// A real disc read in parts through the walk the page runs: sectors
+    /// arrive only as the walk names them, and the load's reads come out as
+    /// they do over the whole image.
+    #[test]
+    fn a_disc_read_in_parts_reads_as_the_whole_image() {
+        let Ok(path) = std::env::var("LEGAIA_DISC_BIN") else {
+            return;
+        };
+        let disc = std::fs::read(path).expect("disc");
+        const RAW: usize = 2352;
+        let mut blocks: Vec<(usize, &[u8])> = vec![(16, &disc[16 * RAW..17 * RAW])];
+        let mut rounds = 0;
+        let image = loop {
+            let image = SpanImage::new(disc.len(), blocks.clone());
+            let Some((lba, count)) = missing_span(&image) else {
+                break image;
+            };
+            blocks.push((lba, &disc[lba * RAW..(lba + count) * RAW]));
+            rounds += 1;
+            assert!(rounds < 256, "the walk does not settle");
+        };
+        let held: usize = image.blocks.iter().map(|(_, b)| b.len()).sum();
+        assert!(
+            held < disc.len() / 2,
+            "the load read {held} bytes of the image"
+        );
+        assert_eq!(walk_iso_source(&image), walk_iso_source(disc.as_slice()));
+        assert!(extract_prot_dat_source(&image) == extract_prot_dat_source(disc.as_slice()));
+        assert!(extract_scus_source(&image) == extract_scus_source(disc.as_slice()));
+    }
+
+    #[test]
+    fn a_read_outside_the_blocks_names_its_sectors() {
+        let raw = vec![0u8; 2352 * 4];
+        let image = SpanImage::new(2352 * 100, vec![(10, raw.as_slice())]);
+        let mut out = Vec::new();
+        use legaia_iso::iso9660::ImageSource;
+        assert!(image.read_user_data(10, 4, &mut out));
+        assert_eq!(out.len(), 2048 * 4);
+        assert!(!image.read_user_data(12, 3, &mut out));
+        assert_eq!(image.missing.get(), Some((12, 3)));
+        // The first miss is the one the page reads next.
+        assert!(!image.read_user_data(50, 1, &mut out));
+        assert_eq!(image.missing.get(), Some((12, 3)));
+        // Past the image's end is no miss.
+        let past = SpanImage::new(2352, vec![(0, raw.as_slice())]);
+        assert!(!past.read_user_data(5, 1, &mut out));
+        assert_eq!(past.missing.get(), None);
     }
 }

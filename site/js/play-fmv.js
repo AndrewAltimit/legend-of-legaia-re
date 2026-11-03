@@ -8,12 +8,13 @@
  * world is held, and whether a pad edge may abort it (retail: the attract
  * movie only, on a face button / Select - routed engine-side off the pad word
  * the page already feeds, so this file reads no keyboard at all). The page's
- * job is the part the runtime cannot do: it still holds the raw disc bytes,
+ * job is the part the runtime cannot do: it reads the raw disc sectors,
  * it owns the screen, and it owns the audio clock.
  *
- *   1. `play_fmv_wanted_json()` non-null -> slice `window.__playDiscBytes` at
- *      `first_sector * 2352` for `sector_count` raw sectors and hand them to
- *      `play_fmv_install(sectors)`.
+ *   1. `play_fmv_wanted_json()` non-null -> take `sector_count` raw sectors at
+ *      `first_sector` off `window.__playDisc` (js/play-disc.js) and hand them
+ *      to `play_fmv_install(sectors)`. Sectors not resident yet are read first;
+ *      the engine holds the world until the install.
  *   2. `play_fmv_active()` -> `play_fmv_audio_start()` puts the XA track on
  *      the ENGINE mixer's XA lane (the native window's `play_xa`), so the
  *      movie sits behind the same master trim and volume slider as BGM and
@@ -42,9 +43,6 @@
 (function () {
   'use strict';
 
-  /* Raw Mode-2 sector size. Paired with RAW_SECTOR_SIZE in
-   * crates/web-play/src/play_fmv.rs. */
-  const RAW_SECTOR = 2352;
   /* The retail decode screen the frame is centred on. */
   const SCREEN_W = 320, SCREEN_H = 240;
 
@@ -95,19 +93,26 @@
     st.host = host;
   }
 
-  /* Slice the wanted sector window out of the page's disc bytes and install
-   * it. A page without the bytes installs an empty slice on purpose: the
-   * engine then finishes the beat unplayed on its next tick instead of
-   * waiting out its install timeout. */
+  /* Install the wanted sector window off the page's disc. A page without the
+   * disc, or that cannot read those sectors, installs an empty slice on
+   * purpose: the engine then finishes the beat unplayed on its next tick
+   * instead of waiting out its install timeout. */
   function install(rt, wanted) {
-    const disc = window.__playDiscBytes;
+    const disc = window.__playDisc;
     let slice = new Uint8Array(0);
-    if (disc && disc.length) {
-      const start = wanted.first_sector * RAW_SECTOR;
-      const end = Math.min(disc.length, start + wanted.sector_count * RAW_SECTOR);
-      if (end > start) slice = disc.subarray(start, end);
+    if (disc) {
+      const resident = disc.span(wanted.first_sector, wanted.sector_count);
+      if (resident) {
+        slice = resident;
+      } else if (disc.failedSpan(wanted.first_sector, wanted.sector_count)) {
+        console.warn('fmv: the disc would not read; skipping', wanted.path);
+      } else {
+        /* This service polls every frame: the next one after the read installs. */
+        disc.prefetch(wanted.first_sector, wanted.sector_count);
+        return;
+      }
     } else {
-      console.warn('fmv: no disc bytes on the page (window.__playDiscBytes); skipping', wanted.path);
+      console.warn('fmv: no disc on the page (window.__playDisc); skipping', wanted.path);
     }
     let ok = false;
     try { ok = rt.play_fmv_install(slice); } catch (e) { console.warn('fmv: install failed', e); }

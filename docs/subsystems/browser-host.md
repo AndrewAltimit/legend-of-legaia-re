@@ -166,6 +166,32 @@ narration input lock, and the retail intro-skip
 establishing-sweep timeline runs through to the name-entry overlay it opens
 (`play_name_entry` below).
 
+## The disc image
+
+The play page reads a disc in three stages (`site/js/play-disc.js`):
+
+1. **Before the engine.** A short read of the volume descriptor and root
+   directory finds `PROT.DAT`. The page reads the sectors up to its end while
+   the wasm module compiles. On the retail image that is under a third of the
+   file, and `SCUS_942.54`, `CDNAME.TXT` and every directory sit inside it.
+2. **The load.** `disc_image_missing` runs the runtime's own walk over what was
+   read and names any sector it lacks, which the page reads and offers again.
+   `load_disc_spans` then copies `PROT.DAT` and the executable across and the
+   page lets those sectors go. Anything that is not a Mode 2/2352 image with a
+   `PROT.DAT` in its root (a bare `PROT.DAT`) is read whole and goes to
+   `load_disc_image`, as is a source with no `Blob` behind it.
+3. **Behind it.** A worker reads the XA and movie files in one read and moves the
+   buffer to the page without a copy. `DMY.DAT`, which no consumer asks for, stays
+   on the disc.
+
+A consumer asks `span(lba, sectors)`, which answers from what is resident
+or null. Movies and XA staging poll every frame anyway, so a span that beats the
+worker is read with `prefetch` and the consumer installs on the next frame it
+polls. The engine holds the world until a movie installs
+(`INSTALL_TIMEOUT_FRAMES`), and a span that will not read (the file moved) makes
+the movie finish unplayed, as a page with no disc does. A trapped engine is
+rebuilt by reading the head again (`recoverRuntime`).
+
 ## FMV beats (`play_fmv`)
 
 An FMV the field VM triggers (or the title's attract countdown, `fmv_id 0`)
@@ -173,8 +199,8 @@ holds the world in `SceneMode::Cutscene` until the movie finishes, as the
 native window does. The runtime names the segment
 (`play_fmv_wanted_json`: the STR file plus the `fmv_segment_window` narrowing
 shared with the native `cutscene_av` - `MV3.STR` carries several ids), the
-page slices those raw sectors out of the disc bytes it still holds
-(`window.__playDiscBytes` + `disc_file_extent_json`, so the runtime never
+page takes those raw sectors off its disc image
+(`window.__playDisc`, [The disc image](#the-disc-image), so the runtime never
 keeps a second copy of the image), `play_fmv_install` demuxes the video and
 decodes the XA track through `legaia_mdec::str_av` - the native window's
 kernel, so both hosts agree on the frame list, frame rate and soundtrack -
