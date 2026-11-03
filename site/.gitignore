@@ -177,11 +177,13 @@
 /subsystems/world-map.html
 /subsystems/world-overview-viewer.html
 /tooling/address-reference-scan.html
+/tooling/build-and-test-speed.html
 /tooling/byte-accounting.html
 /tooling/determinism-replay.html
 /tooling/disc-coverage.html
 /tooling/expansion-workbench.html
 /tooling/extraction.html
+/tooling/frame-bench.html
 /tooling/full-game-ladder.html
 /tooling/ghidra.html
 /tooling/index.html
