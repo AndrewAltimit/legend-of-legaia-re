@@ -120,6 +120,25 @@ impl<'a> BundleSource<'a> {
     }
 }
 
+/// `entry` as a bundle in its own right: the asset-table classes, which win
+/// over the embedded form wherever a block carries one.
+pub(crate) fn table_bundle(entry: &SceneEntry) -> Option<BundleSource<'_>> {
+    match entry.class {
+        Class::SceneAssetTable => {
+            let table = legaia_scene_formats::scene_asset_table::detect(&entry.bytes)?;
+            Some(BundleSource::Plain { entry, table })
+        }
+        Class::SceneScriptedAssetTable => {
+            let info = legaia_scene_formats::scene_scripted_asset_table::detect(&entry.bytes)?;
+            let table = legaia_scene_formats::scene_asset_table::detect(
+                &entry.bytes[info.asset_table_offset..],
+            )?;
+            Some(BundleSource::Scripted { entry, info, table })
+        }
+        _ => None,
+    }
+}
+
 /// Find the scene's 7-descriptor asset table inside a loaded scene.
 ///
 /// Walks the scene entries in CDNAME order and returns the first
@@ -140,25 +159,8 @@ impl<'a> BundleSource<'a> {
 /// resolves the same `table_offset` + `data_offset` against the extended
 /// footprint.
 pub fn find_bundle<'a>(scene: &'a Scene) -> Option<BundleSource<'a>> {
-    for entry in &scene.entries {
-        match entry.class {
-            Class::SceneAssetTable => {
-                if let Some(t) = legaia_scene_formats::scene_asset_table::detect(&entry.bytes) {
-                    return Some(BundleSource::Plain { entry, table: t });
-                }
-            }
-            Class::SceneScriptedAssetTable => {
-                if let Some(info) =
-                    legaia_scene_formats::scene_scripted_asset_table::detect(&entry.bytes)
-                    && let Some(table) = legaia_scene_formats::scene_asset_table::detect(
-                        &entry.bytes[info.asset_table_offset..],
-                    )
-                {
-                    return Some(BundleSource::Scripted { entry, info, table });
-                }
-            }
-            _ => {}
-        }
+    if let Some(bundle) = scene.entries.iter().find_map(table_bundle) {
+        return Some(bundle);
     }
 
     // v12-family fallback: probe the SceneV12Table entries for an embedded
