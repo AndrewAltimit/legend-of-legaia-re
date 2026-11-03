@@ -675,11 +675,18 @@ impl World {
         monster_count: u8,
         creature: u8,
     ) {
-        // The creature's rate: `1` from arm 4's pass (`0x801F707C` on) and on
-        // every pass of arm 6 (`0x801F77FC`), so the clip it holds the eye
-        // close-up on barely moves; `4` through arm 7.
+        // The creature's rate: `1` on arm 4's pass (`0x801F70A4`), which the
+        // clip that pass stages rises from to `4` at its commit (`0x8004B080`),
+        // so arm 5 runs at `4`; `1` again on every pass of arm 6 (`0x801F77FC`),
+        // so the clip it holds the eye close-up on barely moves; `4` through
+        // arm 7.
         match (phase, passed) {
-            (4, true) | (6, _) => self.casting.module_cam.creature_rate = Some(1),
+            (4, true) => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.anim_rate = AnimRate(1);
+                }
+            }
+            (6, _) => self.casting.module_cam.creature_rate = Some(1),
             (7, _) => self.casting.module_cam.creature_rate = Some(4),
             _ => {}
         }

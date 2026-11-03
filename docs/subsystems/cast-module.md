@@ -2401,7 +2401,9 @@ quartered roll and the creature closes on a target at eight units a tick, tradin
 for another once in reach. Those hits clamp to live HP and are what kills: the module
 has no other hit, so the band folds nothing for it.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
-2 and 7 over its holds. The twenty parts of arm 4 ride the creature's decoded pose
+2 and 7 over its holds. Arm 4's pass stores rate `1` beside the clip it stages, and the commit lifts it to
+`4` (`0x8004B080`), so arm 5 runs at `4` until arm 6 stores `1` again: the eye close-up
+sits on that cursor. The twenty parts of arm 4 ride the creature's decoded pose
 objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 5..7
 (`seat_spoon_eye_parts`) from the same pool the creature's own draw reads.
 Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`).
