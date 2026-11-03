@@ -227,6 +227,7 @@ How the runtime engine works.
 | [`dependency-policy.md`](docs/tooling/dependency-policy.md) | Third-party inputs: the 14-day publish cooldown, what is pinned where (lockfile, action SHAs, CI tools, the Ghidra image digest), and the `cargo deny check advisories` gate with its `deny.toml`. |
 | [`ratchet-integrity.md`](docs/tooling/ratchet-integrity.md) | What keeps a ratchet honest: `check-baseline-loosening.py` (a baselined value that moved the wrong way needs a ledger entry) and the disc-test tally (a skip is not a pass). |
 | [`frame-bench.md`](docs/tooling/frame-bench.md) | Frame time, allocations and startup per scene on both hosts: `scripts/ci/frame-bench.py`, `frame-bench-web.mjs`. A documented benchmark, not a gate. |
+| [`build-and-test-speed.md`](docs/tooling/build-and-test-speed.md) | Which profile for which job (`dev-fast` for the edit loop, `release-test` for CI and long runs), what an edit costs, the linker, per-test timing, and profiling with `scripts/profile/` where `perf` is refused. |
 | [`doc-density.md`](docs/tooling/doc-density.md) | The two hard doc gates: `check-doc-density.py` (>800-char lines, >150-word cells) and `check-md-links.py` (relative links + `#anchors`). Bypass `LEGAIA_SKIP_PRECOMMIT=1`. |
 | [`translation/`](docs/tooling/translation/index.md) | `legaia-patcher translate` - community language packs: disc text → editable YAML → in-place reimport; pages for pack format, space and budgets, dialog import, UI strings, textures and fonts. Beginner guide: [`guides/translating.md`](docs/guides/translating.md). Exported packs carry game text - gitignored, never commit. |
 | [`expansion-workbench.md`](docs/tooling/expansion-workbench.md) | The site's in-browser expansion-pack editor over the user's disc: section editors, the tile painter and its corner-height overlay, validation with click-to-field, `.lxpack` export, the IndexedDB autosave and play hand-off keys. Session crate `web-expansion`. |
@@ -363,7 +364,7 @@ Jython analysis scripts that run inside the `ghidra` compose service, sorted int
 
 ### Host-side scripts - [`scripts/`](scripts/README.md)
 
-Helper scripts that run on the host (not in the Ghidra container), mapped in [`scripts/README.md`](scripts/README.md): `ci/` (the pre-commit + CI gates and build/install helpers), `ghidra-analysis/` (overlay extraction + MIPS/GTE disassembly), `asset-investigation/` (TIM/TMD/slot-4/scene RE one-offs), `recomp/` (static-recomp differential oracle), `vrc-diorama/` (VRChat battle diorama), `vrchat-world/` (Unity kit for `export-glb` output), `models/` (custom-monster mesh generators), `lib/` (sourced bash helpers), `git-hooks/` (the shipped hook), `engine/` + `replays/` (determinism-replay fixtures), plus `pcsx-redux/` + `mednafen/` capture automation.
+Helper scripts that run on the host (not in the Ghidra container), mapped in [`scripts/README.md`](scripts/README.md): `ci/` (the pre-commit + CI gates and build/install helpers), `ghidra-analysis/` (overlay extraction + MIPS/GTE disassembly), `asset-investigation/` (TIM/TMD/slot-4/scene RE one-offs), `recomp/` (static-recomp differential oracle), `vrc-diorama/` (VRChat battle diorama), `vrchat-world/` (Unity kit for `export-glb` output), `models/` (custom-monster mesh generators), `profile/` (CPU sampler for where `perf` is refused), `lib/` (sourced bash helpers), `git-hooks/` (the shipped hook), `engine/` + `replays/` (determinism-replay fixtures), plus `pcsx-redux/` + `mednafen/` capture automation.
 
 `scripts/scenarios.toml` (the capture-scenario manifest) and `manage-states.py` stay at the top level as operational entry points.
 
@@ -374,6 +375,7 @@ cargo build --release                                    # all binaries → targ
 cargo fmt --all -- --check                               # CI gate
 cargo clippy --all-targets --workspace -- -D warnings    # CI gate (warnings = failure)
 cargo test --workspace --profile release-test           # CI's test profile: release opt-level, no LTO
+cargo test -p legaia-engine-shell --profile dev-fast --test integration foo::  # the edit loop: incremental, results unchanged; long ladders and CI stay on release-test
 cargo test -p legaia-lzs                                 # single-crate
 cargo test --workspace test_name                         # single test by name
 cargo test -p legaia-engine-shell --test integration foo::  # one tests/foo.rs (a crate with several tests/*.rs builds them as one `integration` binary)
