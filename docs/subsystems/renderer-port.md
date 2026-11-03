@@ -823,6 +823,10 @@ Two companion knobs make it a repeatable benchmark:
 | `LEGAIA_PROFILE=1` | Enable the breakdown. |
 | `LEGAIA_PROFILE_FRAMES=N` | Print a final summary and exit after `N` frames. |
 | `LEGAIA_VSYNC=off` | Configure the surface with an uncapped present mode. |
+| `LEGAIA_PROFILE_SKIP=N` | Leave the first `N` frames out of the closing `[bench]` line. |
+
+`scripts/ci/frame-bench.py` runs these over a fixed scene set
+([`frame-bench.md`](../tooling/frame-bench.md)).
 
 `LEGAIA_VSYNC=off` matters for measurement: with the default `AutoVsync`
 the frame time is pinned to the display refresh interval and the whole cost
@@ -839,6 +843,16 @@ bytes into freshly allocated GPU buffers - dominates the field frame in a
 populated town. `LEGAIA_POSE_CACHE_VERIFY=1` re-checks the memo against the
 live pose on every cache hit and logs any mismatch, which is what pins the
 `(slot, frame)` key as non-aliasing.
+
+**A rebuilt mesh writes over last frame's buffers.** A posed body, a live prop
+and a morph are rebuilt into a mesh of the same size per frame. A buffer dropped
+within two frames of its birth goes back to a pool
+([`buffer_pool`](../../crates/engine-render/src/renderer/buffer_pool.rs)), and the
+next mesh of its exact size takes it. A long-lived mesh frees its buffers as ever.
+
+**The shadow stage draws only what each light reaches.** A draw whose box lies
+wholly outside a lamp's frustum writes no depth into that lamp's layer, so leaving
+it out moves no shadow.
 
 ## Retail draw-decision kernels (reference ports)
 

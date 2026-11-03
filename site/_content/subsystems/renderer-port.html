@@ -131,7 +131,7 @@
 
 <section class="doc-section" id="profiler">
   <h2>Frame profiler</h2>
-  <p><code>LEGAIA_PROFILE=1</code> prints a rolling one-second timing breakdown from the native window: frame average and percentiles, draw counts, and the tick / pose / draw-list / encode / submit / present split. It is free when off - every entry point short-circuits on one cached flag.</p>
+  <p><code>LEGAIA_PROFILE=1</code> prints a rolling one-second timing breakdown from the native window: frame average and percentiles, draw counts, and the tick / pose / draw-list / encode / submit / present split. It is free when off - every entry point short-circuits on one cached flag. <code>scripts/ci/frame-bench.py</code> and <code>frame-bench-web.mjs</code> run it, and the browser's own counters, over a fixed scene set.</p>
 </section>
 
 <section class="doc-section" id="see-also">

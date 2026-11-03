@@ -41,6 +41,8 @@ SCENES = {
     "world_map": (["--scene", "map01", "--world-map"], {}),
     # The fight's idle prompt.
     "battle": (["--scene", "map01", "--battle", "0", "--party", "0,1,2"], {}),
+    # A pack map: its entry builds the map's whole mesh set from the toml.
+    "pack_map": (["--expansion", str(REPO / "packs" / "sample"), "--map", "isles_beach"], {}),
     # A big summon: the cast runs from the first prompt through the whole span.
     "summon_cast": (
         ["--scene", "map01", "--battle", "0", "--party", "0,1,2"],

@@ -181,11 +181,23 @@ async function main() {
     await window.LegaiaWasm.load();
     return performance.now() - t;
   });
+  /* The disc load, by export. */
+  await page.evaluate(async () => {
+    const m = await window.LegaiaWasm.load();
+    const f = m.LegaiaRuntime.prototype.load_disc;
+    m.LegaiaRuntime.prototype.load_disc = function (...a) {
+      const t = performance.now();
+      const r = f.apply(this, a);
+      window.__bench.loadDisc = performance.now() - t;
+      return r;
+    };
+  });
   const fileInput = await page.$('input[type=file]');
   const t1 = Date.now();
   await fileInput.setInputFiles(disc);
   await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
   out.startup.disc_ready_ms = Date.now() - t1;
+  out.startup.load_disc_export_ms = await page.evaluate(() => window.__bench.loadDisc);
   await page.evaluate(async () => {
     window.__bench.wrapRuntime(window.__playRuntime);
     const m = await window.LegaiaWasm.load();
@@ -193,16 +205,46 @@ async function main() {
   });
 
   const cdp = await page.context().newCDPSession(page);
+  /* A CPU profile of the scene entry alone, stopped from the page. */
+  const selfTable = (profile, n) => {
+    const byId = new Map(profile.nodes.map((x) => [x.id, x]));
+    const self = new Map();
+    profile.samples.forEach((id, i) => {
+      const f = byId.get(id).callFrame;
+      const k = f.functionName || '(anon)';
+      self.set(k, (self.get(k) || 0) + profile.timeDeltas[i]);
+    });
+    const tot = [...self.values()].reduce((a, x) => a + x, 0);
+    return [...self.entries()].sort((x, y) => y[1] - x[1]).slice(0, n)
+      .map(([k, v]) => `${k} ${(v / 1000).toFixed(0)}ms`).join(', ') + ` (total ${(tot / 1000).toFixed(0)}ms)`;
+  };
+  await page.exposeFunction('__benchEntered', async () => {
+    if (!arg('profile')) return;
+    const { profile } = await cdp.send('Profiler.stop');
+    console.log('  entry self: ' + selfTable(profile, 24));
+  });
   for (const name of names) {
     const sc = SCENES[name];
+    if (arg('profile')) {
+      await cdp.send('Profiler.enable');
+      await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
+      await cdp.send('Profiler.start');
+    }
     const r = await page.evaluate(async ({ sc, FRAMES, SKIP }) => {
       const B = window.__bench;
       B.on = false; B.frames = []; B.exports = {}; B.gl = {}; B.firstFrame = undefined; B.entryWorst = 0;
       const btn = document.querySelector(`[data-scene="${sc.scene}"]`);
       if (!btn) throw new Error('no scene button ' + sc.scene);
       const t = performance.now();
+      B.on = true;
       btn.click();
+      B.on = false;
       const entry = performance.now() - t;
+      const entryExports = Object.entries(B.exports)
+        .map(([k, e]) => [k, +e.ms.toFixed(1), e.calls])
+        .sort((x, y) => y[1] - x[1]).slice(0, 8);
+      B.exports = {}; B.gl = {}; B.frames = [];
+      if (window.__benchEntered) await window.__benchEntered();
       const view = window.__playView;
       B.wrapView(view);
       if (sc.cast) window.__playRuntime.debug_seed_inflight_cast(...sc.cast);
@@ -232,13 +274,14 @@ async function main() {
       const alloc1 = window.__wasmAllocTotals ? window.__wasmAllocTotals() : null;
       const ls = B.longTasks.slice();
       B.longTasks.length = 0;
-      return { entry_ms: entry, wall_ms: wall, frames: B.frames, firstFrame: B.firstFrame, entryWorst: B.entryWorst,
+      return { entryExports, entry_ms: entry, wall_ms: wall, frames: B.frames, firstFrame: B.firstFrame, entryWorst: B.entryWorst,
         exports: B.exports, gl: B.gl, alloc: alloc0 && [alloc1[0] - alloc0[0], alloc1[1] - alloc0[1]],
         longtasks: ls, heap: performance.memory ? performance.memory.usedJSHeapSize : 0,
         state: view.scene, battle: typeof view.rt.state_json === 'function' ? view.rt.state_json().slice(0, 200) : '' };
     }, { sc, FRAMES, SKIP });
     const s = summarise({ exports: r.exports, gl: r.gl, firstFrame: r.firstFrame, entryWorst: r.entryWorst }, r.frames);
     s.entry_ms = r.entry_ms;
+    s.entry_exports = r.entryExports;
     s.fps = FRAMES / (r.wall_ms / 1000);
     s.longtasks = r.longtasks.length;
     s.longtask_max = r.longtasks.reduce((a, x) => Math.max(a, x), 0);
@@ -249,6 +292,7 @@ async function main() {
       + `entry ${s.entry_ms.toFixed(0)} ms, first ${(s.first_ms || 0).toFixed(0)}, worst-entry ${s.entry_worst_ms.toFixed(0)}; ${s.fps.toFixed(0)} fps; `
       + `allocs/frame ${s.allocs_per_frame === undefined ? '-' : s.allocs_per_frame.toFixed(0)}; heap ${s.heap_mb.toFixed(0)} MB; long tasks ${s.longtasks}`);
     console.log('  exports: ' + s.exports.slice(0, 14).map((e) => `${e.k} ${e.ms.toFixed(2)}ms/${e.calls.toFixed(1)}x${e.kb >= 1 ? '/' + e.kb.toFixed(0) + 'KB' : ''}`).join(', '));
+    console.log('  entry: ' + r.entryExports.map(([k, ms, c]) => `${k} ${ms}ms/${c}x`).join(', '));
     console.log('  gl: ' + s.gl.slice(0, 12).map(([k, c]) => `${k} ${c.toFixed(0)}`).join(', '));
     if (arg('profile')) {
       // Self time by function, garbage collector included.
