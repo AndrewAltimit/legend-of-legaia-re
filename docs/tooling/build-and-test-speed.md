@@ -141,7 +141,7 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
 | Group | What runs |
 |---|---|
 | `repo` | Every `run:` step of `main-ci.yml`'s Repo Gates job, in a clean `git worktree add HEAD`, with no disc in the environment and none of the gitignored data; and `git ls-files site \| git check-ignore --no-index --stdin`. |
-| `tree` | `fmt`, both clippy passes and the wasm type-check, read from the PR Lint job; Repo Gates' ratchet steps again where the data is; `check-baseline-loosening.py --base`; [`revert-scan.py`](../../scripts/ci/revert-scan.py). |
+| `tree` | `fmt`, both clippy passes and the wasm type-check, read from the PR Lint job; Repo Gates' ratchet steps again where the data is; `byte-sweep`, which writes the sweep the byte-accounting ratchet reads; `check-baseline-loosening.py --base`; [`revert-scan.py`](../../scripts/ci/revert-scan.py). |
 | `build` | One build of `legaia-engine` and one of the ladder's test binary, each copied aside so the gates below it read one binary whatever cargo relinks later. |
 | `tests` | The Disc-Gated Tests job's `run-disc-tests.sh`. `tests-no-disc`, PR Lint's disc-free suite in the clean tree, runs only when named: it is a second whole build. |
 | `ladder` | Part B, part C on the default stream, and each seed `[continuous_seeds]` lists. |
@@ -157,6 +157,8 @@ Output goes under `--out` (default `target/full-gate`): `logs/<gate>.log`, `timi
 Three flags set the load on a shared box: `--max-cpu` is the budget each gate is weighed against, `--jobs` is what `retail-compare`, the audio sweep and libtest get, and `--cargo-jobs` is `CARGO_BUILD_JOBS`. `--memory-max` is the `systemd-run --user --scope` cap on each engine-looping gate. A gate over the budget starts when the budget has room, or alone.
 
 What saves time beyond running side by side: `cargo test --workspace` already runs parts B and C, so `ladder-b` and `ladder-c` read their verdict out of the suite's log, and run on their own only when the suite did not reach them; the seeds share one binary and skip cargo's lock; `wasm-build` is answered by a freshness stamp that vouches for a shipped-profile bundle from this tree; and the drivers read `LEGAIA_ENGINE_BIN`, so the suite's relink of `target/release-test/legaia-engine` with other features cannot pull the binary out from under them. Ratchet modes measure fresh whatever the flags: `--check` reads no result cache.
+
+On the shared box the whole gate takes a little over an hour under the default budget; the table's own column adds up to more than three and a half hours for the same gates one after another, which is what a hand-run list costs.
 
 ## Profiling without perf
 

@@ -3,7 +3,8 @@
 `site/wasm/` is **build output and is not committed**. Two things produce it:
 
 - [`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh), for browsing
-  `site/` locally (~9 min cold).
+  `site/` locally (about 6 min cold; `--fast` is
+  [the edit loop](build-and-test-speed.md#the-wasm-bundle)).
 - The `deploy-pages` job in `main-ci.yml`, which runs its own `wasm-pack build`
   into that path before publishing. **The deployed site is always built from
   source** and has never loaded a committed bundle.

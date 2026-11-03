@@ -281,6 +281,12 @@ def libtest_detail(text: str) -> tuple[str | None, str]:
     return None, f"{passed} passed, {failed} failed" + (f": {shown}" if shown else "")
 
 
+def regressions(text: str) -> tuple[str | None, str]:
+    """Retail-compare's own list of what dropped, by label and channel."""
+    rows = re.findall(r"^\[regression\] (\S+): ([\d.]+) < baseline ([\d.]+)", text, re.M)
+    return None, ", ".join(f"{label} {now}<{base}" for label, now, base in rows)
+
+
 def tail_detail(pattern: str) -> Callable[[str], tuple[str | None, str]]:
     def read(text: str) -> tuple[str | None, str]:
         found = re.findall(pattern, text, re.M)
@@ -357,8 +363,30 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
                 scope="cargo fmt" not in step.run,
             )
         )
+    # The byte-accounting ratchet reads a sweep nothing else produces.
+    p.add(
+        Gate(
+            "byte-sweep",
+            "tree",
+            f"cargo build -p legaia-asset --profile {PROFILE} --bin asset\n"
+            f"python3 scripts/asset-investigation/byte-account-sweep.py --asset target/{PROFILE}/asset --jobs {a.jobs}\n",
+            cpu=a.jobs,
+            locks=("cargo-rt",),
+            scope=True,
+            needs=("preflight",),
+        )
+    )
     for step in ratchets:
-        p.add(Gate("data-" + slug(step.name), "tree", step.run, env=step_env(step), needs=("preflight",)))
+        byte = "byte-account" in step.run
+        p.add(
+            Gate(
+                "data-" + slug(step.name),
+                "tree",
+                step.run,
+                env=step_env(step),
+                needs=("preflight", "byte-sweep") if byte else ("preflight",),
+            )
+        )
     p.add(
         Gate(
             "loosening-base",
@@ -511,7 +539,7 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
             locks=("display",),
             scope=True,
             needs=("engine-bin",),
-            read_log=tail_detail(r"^(?:\[check\]|retail-compare|.*(?:drops?|below baseline|regress).*)$"),
+            read_log=regressions,
         )
     )
     p.add(
@@ -726,7 +754,6 @@ def gate_env(p: Plan, g: Gate) -> dict[str, str]:
     # an older binary with a straight face.
     env.pop("CARGO_TARGET_DIR", None)
     env["CARGO_BUILD_JOBS"] = str(p.a.cargo_jobs)
-    env.setdefault("RUST_LOG", "error")
     # What .cargo/config.toml sets for what cargo spawns; the binaries here are run by hand.
     env.setdefault("GLIBC_TUNABLES", "glibc.malloc.hugetlb=1")
     for k in g.unset:
