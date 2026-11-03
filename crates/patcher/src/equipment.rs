@@ -50,7 +50,7 @@ pub fn equipment_pool(scus: &[u8]) -> Result<Vec<EquipmentItem>> {
     // The join lives in `legaia-gamedata`, which the engine's bonus-drop
     // twin calls too, so the two pools cannot drift.
     Ok(Database::load()
-        .equipment_pool_by_name(|id| table.name(id).map(str::to_string))
+        .equipment_pool_by_name(|id| table.pool_name(id).map(str::to_string))
         .into_iter()
         .map(|(id, price)| EquipmentItem { id, price })
         .collect())

@@ -61,7 +61,7 @@ pub fn valid_item_pool(scus: &[u8]) -> Result<Vec<u8>> {
         .context("SCUS_942.54 is not a PSX-EXE / item table absent")?;
     let mut pool = Vec::new();
     for id in 1..=u8::MAX {
-        if table.name(id).is_some() {
+        if table.pool_name(id).is_some() {
             pool.push(id);
         }
     }

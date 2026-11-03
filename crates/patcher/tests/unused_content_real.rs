@@ -226,7 +226,7 @@ fn seru_bell_name_injection_names_only_the_accessory() {
         base_table.name(SERU_BELL_ID).is_none(),
         "0xFD starts unnamed"
     );
-    let shared_unnamed = [0x12u8, 0x1A, 0x52, 0xB9];
+    let shared_unnamed = [0x12u8, 0x52, 0xB9];
     for &id in &shared_unnamed {
         assert!(base_table.name(id).is_none(), "id {id:#x} starts unnamed");
     }

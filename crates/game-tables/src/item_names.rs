@@ -334,6 +334,22 @@ impl ItemNameTable {
         self.names.get(id as usize)?.as_deref()
     }
 
+    /// `id`'s name as the randomizer pools and the curated gamedata join read
+    /// it: no hero in a party-named weapon, and none at all for `0x1A`'s retail
+    /// string, which no pool holds. Keying the pools on this form keeps a seed's output stable
+    /// whatever [`Self::name`] prints.
+    pub fn pool_name(&self, id: u8) -> Option<&str> {
+        let name = self.name(id)?;
+        let Some(&(_, record)) = PARTY_NAMED_ITEMS.iter().find(|(item, _)| *item == id) else {
+            return Some(name);
+        };
+        // A patch can repoint the slot at a name of its own: that one stands.
+        let Some(word) = name.strip_prefix(DEFAULT_PARTY_NAMES[record]) else {
+            return Some(name);
+        };
+        (record != 0).then(|| word.trim_start())
+    }
+
     /// Info-window description for item `id` (the record `+8` string the
     /// shared item-info panel `FUN_801D0F1C` draws at `WY + 0x10`), or
     /// `None` for an empty slot. Line breaks are `'\n'`.
@@ -463,5 +479,25 @@ mod tests {
         assert!(file_offset_for_va(&scus, 0x8000_0000).is_none());
         assert!(file_offset_for_va(&scus, 0x8FFF_FFFF).is_none());
         assert!(file_offset_for_va(b"nope", TABLE_VA).is_none());
+    }
+
+    #[test]
+    fn pool_name_drops_the_party_substitution() {
+        let mut names: Vec<Option<String>> = vec![None; 256];
+        names[0x05] = Some("Healing Berry".into());
+        names[0x1A] = Some("Vahn Fist".into());
+        names[0x1C] = Some("Noa Feral".into());
+        names[0x20] = Some("Gala Mace".into());
+        let table = ItemNameTable::from_names(names);
+        assert_eq!(table.pool_name(0x05), Some("Healing Berry"));
+        assert_eq!(table.pool_name(0x1A), None);
+        assert_eq!(table.pool_name(0x1C), Some("Feral"));
+        assert_eq!(table.pool_name(0x20), Some("Mace"));
+        assert_eq!(table.name(0x20), Some("Gala Mace"));
+
+        let mut names: Vec<Option<String>> = vec![None; 256];
+        names[0x1A] = Some("Custom Item".into());
+        let patched = ItemNameTable::from_names(names);
+        assert_eq!(patched.pool_name(0x1A), Some("Custom Item"));
     }
 }
