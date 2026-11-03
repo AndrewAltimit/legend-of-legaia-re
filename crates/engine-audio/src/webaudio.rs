@@ -353,6 +353,18 @@ impl WebAudioOut {
         )
     }
 
+    /// Hold the output queue past its target ahead of a known long frame
+    /// ([`MixPump::brace`]), or end that. The script-processor path has no
+    /// queue and ignores it.
+    pub fn brace_for_stall(&self, on: bool) {
+        let mut pump = self.inner.pump.borrow_mut();
+        if on {
+            pump.brace();
+        } else {
+            pump.release();
+        }
+    }
+
     /// Set the post-mixer gain. `1.0` matches the native cpal path, and the
     /// browser hosts drive it from a user-facing volume control rather than
     /// from a fixed compensation factor - the mixer's nominal level is the

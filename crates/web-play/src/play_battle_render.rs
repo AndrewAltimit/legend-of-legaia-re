@@ -369,11 +369,27 @@ impl LegaiaRuntime {
             Some(legaia_engine_battle::encounter::EncounterPhase::Transition { .. })
         ) && host.world.battle.intro.is_some();
         if !in_transition {
+            // The hand-over frame is under way: no top-up can land inside it,
+            // so the queue already holds all it will. It plays back down from
+            // here.
+            #[cfg(target_arch = "wasm32")]
+            if self.battle_prewarm_step.is_some()
+                && let Some(out) = self.audio_out.as_ref()
+            {
+                out.brace_for_stall(false);
+            }
             self.battle_prewarm_step = None;
             return;
         }
         let step = match self.battle_prewarm_step {
             None => {
+                // The hand-over frame runs long, whatever is ready for it. A
+                // cue fired from here to just past it sounds later by the
+                // brace, a third of the page's own queue.
+                #[cfg(target_arch = "wasm32")]
+                if let Some(out) = self.audio_out.as_ref() {
+                    out.brace_for_stall(true);
+                }
                 self.battle_prewarm_step = Some(0);
                 return;
             }

@@ -19,6 +19,12 @@
 //!
 //! Time is frames played, not a wall clock: a suspended context plays nothing,
 //! so it asks for nothing and nothing here decays.
+//!
+//! A page that knows a long frame is coming can [`MixPump::brace`] for it: the
+//! queue fills past the target by a third, and comes back down on its own once
+//! released, by asking for nothing until it has played down. The samples are
+//! the ones it would have mixed anyway; what moves is when a block is handed
+//! over, so a cue fired while braced sounds later by that third.
 
 /// The floor: below about one 60 Hz frame the top-up cadence itself is what the
 /// queue would have to ride out.
@@ -46,6 +52,10 @@ pub struct MixPump {
     dry_frames: u64,
     window_from: u64,
     low_point: u64,
+    /// The queue is being held past the target, or is still playing down from
+    /// that: its low points say nothing about what the page's frames need.
+    braced: bool,
+    bracing: bool,
 }
 
 impl MixPump {
@@ -59,6 +69,8 @@ impl MixPump {
             dry_frames: 0,
             window_from: 0,
             low_point: u64::MAX,
+            braced: false,
+            bracing: false,
         }
     }
 
@@ -75,11 +87,19 @@ impl MixPump {
             u64::from(frames(self.rate, TARGET_MIN_MS)),
             u64::from(frames(self.rate, TARGET_MAX_MS)),
         );
-        self.low_point = self.low_point.min(low);
         if low < low_water || dry > 0 {
             let target = u64::from(self.target) + low_water.saturating_sub(low) + dry;
             self.target = target.min(highest) as u32;
         }
+        if self.braced {
+            if !self.bracing && self.depth() <= u64::from(self.target) {
+                self.braced = false;
+            }
+            self.window_from = self.played;
+            self.low_point = u64::MAX;
+            return;
+        }
+        self.low_point = self.low_point.min(low);
         if self.played - self.window_from >= u64::from(self.rate * WINDOW_SECS) {
             if self.low_point > low_water {
                 let excess = (self.low_point - low_water) / 2;
@@ -92,12 +112,30 @@ impl MixPump {
 
     /// Frames to mix and hand over now; `0` when the queue is near enough full.
     pub fn take(&mut self) -> u32 {
-        let want = u64::from(self.target).saturating_sub(self.depth()) as u32;
+        let target = if self.bracing {
+            self.target + self.target / 3
+        } else {
+            self.target
+        };
+        let want = u64::from(target).saturating_sub(self.depth()) as u32;
         if want < MIN_BLOCK_FRAMES {
             return 0;
         }
         self.sent += u64::from(want);
         want
+    }
+
+    /// Hold the queue a third past the target until [`Self::release`], ahead
+    /// of a frame known to run long.
+    pub fn brace(&mut self) {
+        self.braced = true;
+        self.bracing = true;
+    }
+
+    /// End a [`Self::brace`]: the queue plays down to the target, and the
+    /// target's window starts again from there.
+    pub fn release(&mut self) {
+        self.bracing = false;
     }
 
     /// Frames handed over and not yet played, as of the last report.
@@ -233,6 +271,48 @@ mod tests {
         p.take();
         p.report(u64::from(START), u64::from(RATE), 0);
         assert_eq!(p.target(), frames(RATE, TARGET_MAX_MS));
+    }
+
+    #[test]
+    fn a_brace_fills_past_the_target_and_plays_back_down_without_moving_it() {
+        let mut p = MixPump::new(RATE);
+        p.take();
+        p.brace();
+        assert_eq!(p.take(), START / 3);
+        assert_eq!(p.depth(), u64::from(START + START / 3));
+        // Held: what plays is replaced, and the deep low points are not read
+        // as room to give back, however long it lasts.
+        let mut played = 0;
+        for _ in 0..2000 {
+            played += 384;
+            p.report(played, 0, u64::from(START));
+            p.take();
+        }
+        assert_eq!(p.target(), START);
+        assert_eq!(p.depth(), u64::from(START + START / 3));
+        // Released: nothing is asked for until the queue is back at the target.
+        p.release();
+        played += u64::from(START / 6);
+        p.report(played, 0, u64::from(START));
+        assert_eq!(p.take(), 0);
+        played += u64::from(START / 6);
+        p.report(played, 0, u64::from(START));
+        assert_eq!(p.depth(), u64::from(START));
+        assert_eq!(p.target(), START);
+        played += 384;
+        p.report(played, 0, u64::from(START) - 384);
+        assert_eq!(p.take(), 384);
+    }
+
+    /// A stall that outruns the brace still raises the target.
+    #[test]
+    fn a_brace_does_not_hide_a_dry_output() {
+        let mut p = MixPump::new(RATE);
+        p.take();
+        p.brace();
+        p.take();
+        p.report(u64::from(START), 960, 0);
+        assert_eq!(u64::from(p.target()), u64::from(START) + LOW + 960);
     }
 
     #[test]
