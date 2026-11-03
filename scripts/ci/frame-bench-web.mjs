@@ -452,6 +452,65 @@ function inclusiveTableOf(profile, n) {
     .map(([k, v]) => `${k} ${(v / 1000).toFixed(0)}`).join('\n          ');
 }
 
+/* The longest unbroken stretches of the frame function in a profile, longest first, each
+ * as a call tree of the time it spent. A table over a whole window lets many ordinary
+ * frames outweigh the one a player feels. Uncapped, frames can run together: read this
+ * with --vsync. */
+function worstFramesOf(profile, count) {
+  const byId = new Map(profile.nodes.map((x) => [x.id, x]));
+  const parent = new Map();
+  for (const x of profile.nodes) for (const c of x.children || []) parent.set(c, x.id);
+  /* Build ids and wasm-bindgen's shims say nothing a reader can use. */
+  const name = (id) => (byId.get(id).callFrame.functionName || '(anon)').replace(/\[[0-9a-f]{12,}\]/g, '');
+  const memo = new Map();
+  const inFrame = (id) => {
+    if (memo.has(id)) return memo.get(id);
+    const r = name(id) === '_frame' || (parent.has(id) && inFrame(parent.get(id)));
+    memo.set(id, r);
+    return r;
+  };
+  const runs = [];
+  let run = null;
+  profile.samples.forEach((id, i) => {
+    if (inFrame(id)) {
+      if (!run) runs.push((run = { at: i, end: i, us: 0 }));
+      run.end = i;
+      run.us += profile.timeDeltas[i];
+    } else if (run && (name(id) === '(garbage collector)'
+        || (name(id) === '(program)' && profile.timeDeltas[i] < 3000))) {
+      /* Inside the frame: the collector, and the browser's own work a stack does not show. */
+      run.us += profile.timeDeltas[i];
+    } else run = null;
+  });
+  runs.sort((a, b) => b.us - a.us);
+  const tree = (r) => {
+    const root = { kids: new Map(), us: 0 };
+    for (let i = r.at; i <= r.end; i++) {
+      const chain = [];
+      for (let at = profile.samples[i]; at !== undefined; at = parent.get(at)) chain.push(name(at));
+      /* From the frame function down. */
+      let node = root;
+      const from = chain.lastIndexOf('_frame');
+      for (let k = from < 0 ? 0 : from; k >= 0; k--) {
+        if (!node.kids.has(chain[k])) node.kids.set(chain[k], { kids: new Map(), us: 0 });
+        node = node.kids.get(chain[k]);
+        node.us += profile.timeDeltas[i];
+      }
+    }
+    const lines = [];
+    const walk = (node, depth) => {
+      for (const [k, kid] of [...node.kids.entries()].sort((x, y) => y[1].us - x[1].us)) {
+        if (kid.us < r.us / 250) continue;
+        lines.push(`${' '.repeat(depth)}${(kid.us / 1000).toFixed(1)} ${k.slice(0, 110)}`);
+        walk(kid, depth + 1);
+      }
+    };
+    walk(root, 0);
+    return lines.join('\n          ');
+  };
+  return runs.slice(0, count).map((r) => ({ ms: r.us / 1000, tree: tree(r) }));
+}
+
 /* Run in the page: every export counted, and allocations where the bundle counts them. */
 async function wrapForBench() {
   window.__bench.wrapRuntime(window.__playRuntime);
@@ -736,10 +795,19 @@ async function main() {
       await cdp.send('Profiler.enable');
       await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
       await cdp.send('Profiler.start');
+    } else if (phase === 'stop-first-fight') {
+      /* The fight before a second_fight row's: its entry, results and way back. */
+      const { profile } = await cdp.send('Profiler.stop');
+      for (const w of worstFramesOf(profile, 3)) {
+        console.log(`  first fight frame ${w.ms.toFixed(1)} ms:\n          ` + w.tree);
+      }
     } else {
       const { profile } = await cdp.send('Profiler.stop');
       console.log('  battle entry self: ' + selfTable(profile, 24));
       console.log('  battle entry inclusive ms:\n          ' + inclusiveTable(profile, 60));
+      for (const w of worstFramesOf(profile, 3)) {
+        console.log(`  battle edge frame ${w.ms.toFixed(1)} ms:\n          ` + w.tree);
+      }
     }
   });
   for (const name of names) {
@@ -788,6 +856,7 @@ async function main() {
          * party strong enough and the confirm button, results screens included. If
          * it will not end, the way back to the field is the scene list. */
         await after(10);
+        await window.__benchBattleProfile('start');
         window.__playRuntime.cheat_apply('level', 99, '');
         window.__playRuntime.debug_force_battle(-1);
         const t = performance.now();
@@ -803,6 +872,8 @@ async function main() {
           await new Promise((res) => setTimeout(res, 120));
         }
         firstFightEnded = !view._battle;
+        await after(10);
+        await window.__benchBattleProfile('stop-first-fight');
         if (!firstFightEnded) btn.click();
       }
       /* The output comes up a moment after the pick. A battle edge read before it
