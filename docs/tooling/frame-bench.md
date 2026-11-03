@@ -76,8 +76,8 @@ enters each scene twice in a row, and `--reload` reloads the page once the disc 
 up and times a returning visitor's load from the page's own disc cache. `--idle ms`
 waits at the boot-mode prompt before the first pick, which is when the page prewarms
 the first entry; without it the bench's pick beats the prewarm. The summary
-line reports the disc read, the `load_disc_image` export and the module's memory
-size.
+line reports the head of the disc's read, the disc-load export (`load_disc_spans`) and
+the module's memory size.
 
 A bundle built with `web-viewer`'s `bench-alloc` feature adds wasm allocations per
 frame (`wasm-pack build --target web --release -- --features bench-alloc`). A wasm
