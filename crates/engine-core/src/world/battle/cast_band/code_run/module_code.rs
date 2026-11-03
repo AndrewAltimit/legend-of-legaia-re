@@ -210,12 +210,27 @@ impl World {
                 // a capture replay holds it.
                 let held = st.sideband_busy;
                 st.sideband_busy |= self.battle_ctx.menu_open != 0;
-                // The poll arm returns busy ahead of anything else it does.
+                // The poll holds the arm's way out, not what runs ahead of it:
+                // PROT 0917's arm 1 rises to TR y `0x800` first
+                // (`iRam800840bc` under `0x800`), PROT 0919's drifts while its
+                // word runs. An arm that would pass makes none of its exit's
+                // stores, and keeps its drain and its drift.
                 let polling = st.sideband_busy
                     && legaia_engine_cast::cast_module_camera::sideband_wait_arm(entry)
                         == Some(ctx.phase);
                 let d = if polling {
-                    legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
+                    let mut ahead = st;
+                    let d = direct(&mut ahead, ctx.phase, seats);
+                    if d.hold {
+                        st = ahead;
+                        d
+                    } else {
+                        st.countdown = ahead.countdown;
+                        legaia_engine_cast::cast_module_camera::ArmDirection {
+                            drift: d.drift,
+                            ..legaia_engine_cast::cast_module_camera::ArmDirection::HOLD
+                        }
+                    }
                 } else {
                     direct(&mut st, ctx.phase, seats)
                 };

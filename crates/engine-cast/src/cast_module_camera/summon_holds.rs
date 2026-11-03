@@ -535,6 +535,9 @@ pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
         (931, 0x1E) => 0x801F_87B0,
         (932, 0x16) => 0x801F_8218,
         (934, 0x19) => 0x801F_91D0,
+        // Terra's white rise and its fade-out leave through a shared tail.
+        (933, 3) => 0x801F_6E14,
+        (933, 4) => 0x801F_6EEC,
         _ => return None,
     })
 }

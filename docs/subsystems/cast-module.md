@@ -2238,7 +2238,7 @@ so the arm holds for whatever of that the band head did not cover. The
 engine's side-band is resident, but the byte is up for the reads' CD time
 (`World::tick_sideband_token`, `sideband_token_vsyncs`), and
 `cast_module_camera::sideband_wait_arm` names the arm: the band holds a director
-there while the byte is up, ahead of anything else the arm does. Among the
+there while the byte is up. The poll holds the arm's way out, not what runs ahead of it: PROT 0917's arm 1 finishes its rise first, and PROT 0919's drifts while its word runs. Among the
 corpus's summon states only `jedo_summon_mid_cast` sits in a poll arm with the
 byte still up (`8`, one pass into the sustain).
 
