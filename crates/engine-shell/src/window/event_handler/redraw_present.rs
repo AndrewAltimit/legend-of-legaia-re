@@ -271,6 +271,7 @@ impl PlayWindowApp {
         // description (`encode_frame` stages everything it reads), and
         // `Renderer::render` leaves nothing a later frame samples.
         if capture_child_skips_present() {
+            r.flush_frame_uploads();
             return;
         }
         if let Err(e) = r.render(target(scene)) {

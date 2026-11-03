@@ -140,6 +140,16 @@ impl Renderer {
         }
     }
 
+    /// Hand the queue a frame's uploads without drawing anything. A frame's
+    /// meshes are written through the queue, and only a submission flushes
+    /// those writes and retires the buffers the last frame dropped: a capture
+    /// child that skips [`Self::render`] for thousands of frames calls this
+    /// instead, or it holds every frame's meshes until its capture.
+    pub fn flush_frame_uploads(&self) {
+        self.queue.submit(std::iter::empty());
+        let _ = self.device.poll(wgpu::PollType::Poll);
+    }
+
     /// Render one frame into an offscreen texture at the current surface
     /// size and read it back to a CPU RGBA8 buffer (no window / no present).
     /// This is the headless screenshot path - the deterministic replacement
