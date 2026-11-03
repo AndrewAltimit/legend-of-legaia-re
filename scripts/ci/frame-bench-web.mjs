@@ -3,7 +3,7 @@
 //
 //   scripts/ci/frame-bench-web.mjs [--site site] [--scene town01,..] [--frames 600]
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
-//       [--reenter] [--entry-profile] [--reload]
+//       [--reenter] [--entry-profile] [--reload] [--idle ms]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
 // own file input, enters each scene through the page's own scene list and times the
@@ -18,6 +18,9 @@
 //
 // `--reload` reloads the page once the disc is up and times a returning visitor's load,
 // the disc coming from the page's own cache.
+//
+// `--idle` waits that long at the boot-mode prompt before the first pick, as a player
+// reading it does: the page prewarms the first entry then.
 //
 // A browser's timers are coarse, and the frame function is only the page's main-thread
 // cost: the GPU process's own work is not in it. It prints numbers and asserts nothing.
@@ -277,6 +280,7 @@ async function main() {
     out.startup.reload_disc_ready_ms = Date.now() - tr;
     out.startup.reload_file_read_ms = await page.evaluate(() => window.__bench.fileRead);
   }
+  if (arg('idle')) await page.waitForTimeout(+arg('idle'));
   const cdp = await page.context().newCDPSession(page);
   /* A CPU profile of the scene entry alone, stopped from the page. */
   const inclusiveTable = inclusiveTableOf;

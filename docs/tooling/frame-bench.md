@@ -73,7 +73,9 @@ page's cost is swamped by the fragment work.
 `--entry-profile` samples the disc load, each scene entry and each battle's first
 frames and prints time by function, self and inclusive of callees. `--reenter`
 enters each scene twice in a row, and `--reload` reloads the page once the disc is
-up and times a returning visitor's load from the page's own disc cache. The summary
+up and times a returning visitor's load from the page's own disc cache. `--idle ms`
+waits at the boot-mode prompt before the first pick, which is when the page prewarms
+the first entry; without it the bench's pick beats the prewarm. The summary
 line reports the disc read, the `load_disc_image` export and the module's memory
 size.
 
