@@ -21,6 +21,8 @@ const META_TAIL_TICKS: u32 = 4;
 const OZMA_HIT_WORD: u32 = 0x3FF0_03FF;
 /// The word PROT 0919's arm 2 gives the creature.
 const SPOON_SEAT_WORD: u32 = 0x000F_FFFF;
+/// The top of the clip row PROT 0919's arm 2 opens (`0x8008401E`).
+const SPOON_CLIP_START: i16 = -0x280;
 /// The engine's stand-in for a retail `+0x04 = 0` under an idle tint arm:
 /// retail's first ease takes it off zero, and the engine's zero is its resting
 /// neutral.
@@ -583,6 +585,22 @@ impl World {
         monster_count: u8,
         creature: u8,
     ) {
+        // Arm 3 lifts the row's top a frame product a pass, and its pass puts
+        // the creature back on no clip (`0x801F6F28`, `0x801F6F70`).
+        if phase == 3 {
+            let step = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK as i16;
+            self.casting.module_spoon_clip = self.casting.module_spoon_clip.saturating_add(step);
+            self.object_effect
+                .write(1, [0, 0, 0, -0x8000, self.casting.module_spoon_clip]);
+            if passed {
+                self.casting.module_creature_clip_kind = 0;
+                self.casting.module_cam.creature_floor_clip = false;
+                self.object_effect.write(1, [0, 0, 0, -0x7FFF, 0]);
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.floor_clip = false;
+                }
+            }
+        }
         if !passed {
             return;
         }
@@ -596,9 +614,17 @@ impl World {
                 self.ra_seru_row_word(monster_count, 0, FLAG_PARKED);
             }
             2 => {
+                // Object-effect row 1 from `-0x280` up, `+0x42 = 2`
+                // (`0x801F6DB8..0x801F6DE4`): the creature rises through it.
+                self.casting.module_spoon_clip = SPOON_CLIP_START;
+                self.object_effect
+                    .write(1, [0, 0, 0, -0x8000, SPOON_CLIP_START]);
+                self.casting.module_creature_clip_kind = 2;
+                self.casting.module_cam.creature_floor_clip = true;
                 if let Some(a) = self.actors.get_mut(usize::from(creature)) {
                     a.battle.render_color = SPOON_SEAT_WORD;
                     a.battle.render_flag = 0;
+                    a.battle.floor_clip = true;
                 }
             }
             7 => {

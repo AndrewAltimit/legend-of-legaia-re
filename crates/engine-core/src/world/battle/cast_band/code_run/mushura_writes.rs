@@ -21,6 +21,7 @@ impl World {
     ///
     /// | arm | every pass | its pass |
     /// |---|---|---|
+    /// | 5 | - | the creature on the slanted clip row |
     /// | 6 | `+0x38 += 3 * step` | the spin word zeroed |
     /// | 7, 8 | spin word `+= step >> 3`, facing `= word * -0x14`, `+0x38 += k * step - word / 4` (`k` `3`, `2`) | arm 8: facing `0xB00` |
     /// | 9 | - | the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
@@ -40,6 +41,25 @@ impl World {
         caster: u8,
         spell_id: u8,
     ) {
+        // Arm 5's pass raises `+0x42 = 2` over object-effect row 1, tilted by
+        // `-0x400` and cut at the victim's plane less `0x800`; arm 9's drops it
+        // to the floor row: the creature comes up out of a slanted plane.
+        if phase == 5 && passed {
+            let z = self
+                .actors
+                .get(usize::from(victim))
+                .map_or(0, |v| v.move_state.world_z);
+            self.object_effect
+                .write(1, [-0x400, 0, 0, z.wrapping_sub(0x800), 0x7FFF]);
+            self.casting.module_creature_clip_kind = 2;
+            self.casting.module_cam.creature_floor_clip = true;
+            if let Some(a) = self.actors.get_mut(usize::from(seat)) {
+                a.battle.floor_clip = true;
+            }
+        }
+        if phase == 9 && passed {
+            self.casting.module_creature_clip_kind = 1;
+        }
         let step = legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
         let Some(a) = self.actors.get_mut(usize::from(seat)) else {
             return;

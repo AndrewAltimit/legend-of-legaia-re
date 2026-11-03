@@ -2379,6 +2379,10 @@ to the band's fold; retail's own writes can kill.
 Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of arms
 2 and 7 over its holds; the twenty parts of arm 4 ride the creature's decoded pose
 objects `ctx+0x6F4`, which no director can read, and are not carried.
+Spoon and Mushura raise their creature's `+0x42 = 2` over object-effect row 1, as
+Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pass on arm
+3, so the creature rises through it; Mushura's is tilted `-0x400` and cut at the
+victim's plane less `0x800`.
 Iota hides its creature until arm 3's seat and again from arm 8, and shrinks the row
 into the eye of its vortex on arm 9 (`World::apply_iota_writes`).
 
