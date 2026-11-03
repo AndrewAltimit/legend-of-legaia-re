@@ -224,7 +224,7 @@ pub fn object_prim_refs(tmd: &Tmd, blob: &[u8], object: usize) -> Vec<PrimRef> {
                 cba: p.cba,
                 tsb: p.tsb,
                 corners,
-                uvs: p.uvs.clone(),
+                uvs: p.uvs.to_vec(),
             });
         }
     }

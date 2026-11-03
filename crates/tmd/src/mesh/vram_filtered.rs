@@ -81,21 +81,26 @@ pub struct LitVertex {
 /// kind 9 (flat quad, `FUN_8004423C`) from `+0x14`, after its four
 /// vertices; kind 10 (gouraud tri, `FUN_80044434`) from `+0x12..+0x16`,
 /// trailing its vertices, and kind 11 (gouraud quad) likewise.
-fn lit_normal_offsets(flags: u16, n_verts: usize, vertex_offset: usize) -> Option<Vec<usize>> {
+fn lit_normal_offsets(
+    flags: u16,
+    n_verts: usize,
+    vertex_offset: usize,
+) -> Option<legaia_prims::Corners<usize>> {
     if !(0x10..=0x17).contains(&flags) {
         return None;
     }
     let gouraud = flags >= 0x14;
     let quad = (flags >> 1) & 1 == 1;
-    Some(if gouraud {
-        (0..n_verts)
-            .map(|i| vertex_offset + n_verts * 2 + i * 2)
-            .collect()
-    } else if quad {
-        vec![vertex_offset + n_verts * 2; n_verts]
+    let flat = if gouraud || quad {
+        vertex_offset + n_verts * 2
     } else {
-        vec![vertex_offset.checked_sub(2)?; n_verts]
-    })
+        vertex_offset.checked_sub(2)?
+    };
+    let mut out = legaia_prims::Corners::new();
+    for i in 0..n_verts {
+        out.push(if gouraud { flat + i * 2 } else { flat });
+    }
+    Some(out)
 }
 
 /// Each corner's object-local normal for a lit-row prim (`None` outside
@@ -106,20 +111,20 @@ pub(super) fn lit_prim_normals(
     o: &crate::Object,
     flags: u16,
     prim: &legaia_prims::Prim,
-) -> Option<Vec<Option<[i16; 3]>>> {
+) -> Option<legaia_prims::Corners<Option<[i16; 3]>>> {
     let n_verts = prim.vertex_indices_raw.len();
     let offs = legaia_prims::vertex_offset_bytes(flags)
         .and_then(|vo| lit_normal_offsets(flags, n_verts, vo))?;
-    Some(
-        offs.iter()
-            .map(|&off| {
-                let at = prim.bytes_offset + off;
-                let raw = u16::from_le_bytes([*buf.get(at)?, *buf.get(at + 1)?]);
-                let n = o.normals.get(usize::from(raw & 0x7FF8) / 8)?;
-                Some([n.x, n.y, n.z])
-            })
-            .collect(),
-    )
+    let mut out = legaia_prims::Corners::new();
+    for &off in &offs {
+        let at = prim.bytes_offset + off;
+        out.push((|| {
+            let raw = u16::from_le_bytes([*buf.get(at)?, *buf.get(at + 1)?]);
+            let n = o.normals.get(usize::from(raw & 0x7FF8) / 8)?;
+            Some([n.x, n.y, n.z])
+        })());
+    }
+    Some(out)
 }
 
 /// The object colour word's `[R, G, B]` (object header `+0x18`).
