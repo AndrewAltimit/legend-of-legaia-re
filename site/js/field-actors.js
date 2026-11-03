@@ -230,6 +230,7 @@
       rec.out = new Float32Array(base.length);
       rec.lastFrame = -1;
       rec.lastGen = -1;
+      rec.heldBones = null;
       /* A morph staged on the old base must be re-read onto the new one. */
       rec.morphGen = undefined;
     }
@@ -295,12 +296,15 @@
          * (`ActorLook::pose_key_bits`): a head turning on a held frame. */
         const gen = clipStates[cs + 1] + ':' + clipStates[cs + 2] + ':' + clipStates[cs + 3];
         if (f >= 0 && (morphMoved || f !== n.lastFrame || gen !== n.lastGen)) {
-          const bones = a.live_bones(n.i);
+          /* An actor held back last frame has already asked for this pose. */
+          const bones = n.heldBones && n.heldFrame === f && n.heldGen === gen
+            ? n.heldBones : a.live_bones(n.i);
           if (bones.length) {
             const pose = () => {
               poseInto(n.out, n.base, n.objectIds, bones, bones.length / 6, 0);
               renderer.updateSceneMeshPositions(n.meshId, n.out);
               n.lastFrame = f; n.lastGen = gen;
+              n.heldBones = null;
             };
             /* A page that settles its draws against the frame's camera and
              * lights (`renderer.settleHook`) poses a plain actor there, when it
@@ -308,6 +312,7 @@
             if (o.deferPose && !morphMoved && !(shatterStates && shatterStates[n.i])) {
               deferred = pose;
               deferredReach = poseReach(n, bones);
+              n.heldBones = bones; n.heldFrame = f; n.heldGen = gen;
             } else {
               pose();
               posed = true;
