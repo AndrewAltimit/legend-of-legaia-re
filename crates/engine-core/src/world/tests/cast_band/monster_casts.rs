@@ -96,7 +96,8 @@ fn element_change_writes_the_ai_counter_it_rerolls_against() {
         let before = world.battle.monster_ai_state.counter();
         world.casting.module_phase = 0;
         let mut done = false;
-        for _ in 0..200 {
+        // The director's gates: `scalar << 8` and `scalar << 6` at `scalar` a tick.
+        for _ in 0..400 {
             let run = world.run_cast_module_code(0xAF, 3).expect("band entry");
             if !run.busy {
                 done = true;

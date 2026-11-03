@@ -331,6 +331,8 @@ struct CastSeqRecorder {
 /// Action state `0x28`, cast begin: the state every Magic action - a party
 /// summon, a monster spell, a capture-class cast - passes through first.
 const CAST_BEGIN_STATE: u8 = 0x28;
+/// Action state `0x3C`: where a heal-class Magic action begins instead.
+const HEAL_BEGIN_STATE: u8 = 0x3C;
 
 impl PlayWindowApp {
     /// `LEGAIA_DIAG_CAST_SEQ=<dir>` instrument: the engine side of the
@@ -454,7 +456,9 @@ impl PlayWindowApp {
                 rec.start = Some(tick);
                 tick
             }
-            None if st == CAST_BEGIN_STATE && rec.seat.is_none_or(|s| s == acting) => {
+            None if (st == CAST_BEGIN_STATE || st == HEAL_BEGIN_STATE)
+                && rec.seat.is_none_or(|s| s == acting) =>
+            {
                 eprintln!("cast sequence: cast begin at tick {tick} (seat {acting})");
                 rec.start = Some(tick);
                 tick

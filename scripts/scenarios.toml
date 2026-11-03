@@ -5194,3 +5194,156 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "nilboa"
 topics = ["battle", "enemy cast", "Rock Lizard", "Earthquake", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "ropeway_orb_pre_heal"
+backup_fingerprint = "02aa53b912c26fcf8ad2336dd8f5ee94a156865b8aa83b016b822b38c8ad2725"
+description = "ropeway battle: Orb (monster id 83) is about to cast Heal (spell 0x2E) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 3425 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy cast", "Orb", "Heal", "ropeway", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_ropeway_orb_heal_mid_cast"
+backup_fingerprint = "42ddd0e6b74d9d7aa223e030d192673379d0a435f3fe3aa25fc7a614cba82ada"
+description = "ropeway battle: Orb (monster id 83) mid-cast Heal (spell 0x2E): category 2, action state 0x3E. RETAIL disc: ropeway_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 3440 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "ropeway"
+topics = ["battle", "enemy cast", "Orb", "Heal", "ropeway", "harvest"]
+
+[[scenarios]]
+label = "battle_deene_neo_bison_strike"
+backup_fingerprint = "6349adeab26c7838decdc5e1b377e5f678f4a56347e0c0207c3a6b4655391cbe"
+description = "deene battle: Neo Bison (monster id 59) mid physical attack: category 3, action state 0x1E. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 3423 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy attack", "Neo Bison", "deene", "harvest"]
+
+[[scenarios]]
+label = "deene_garnet_pre_heal"
+backup_fingerprint = "afa938d58e15468bf2ff997c4610f3e9bf2c0b12febfe45fa73ee8140530c00e"
+description = "deene battle: Garnet (monster id 111) is about to cast Heal (spell 0x2E) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 14801 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy cast", "Garnet", "Heal", "deene", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_deene_garnet_heal_mid_cast"
+backup_fingerprint = "472c5d9650f4a92ca547d00b2f6462da19005a356acca0a2bc26a1d78ac41775"
+description = "deene battle: Garnet (monster id 111) mid-cast Heal (spell 0x2E): category 2, action state 0x3E. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 14816 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy cast", "Garnet", "Heal", "deene", "harvest"]
+
+[[scenarios]]
+label = "battle_deene_garnet_strike"
+backup_fingerprint = "3a14e8d0f5b4101b3f6cd5d09726541f7354bdb3f931f3f4458ba4d9a2eb5c50"
+description = "deene battle: Garnet (monster id 111) mid physical attack: category 3, action state 0x1E. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1688 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy attack", "Garnet", "deene", "harvest"]
+
+[[scenarios]]
+label = "deroa_spoon_v2_pre_hyper_heal"
+backup_fingerprint = "850ad7c06fe4c38c9ed9a526c1cbd16cc83ffb98110d9978750f860d9ffd3aa8"
+description = "deroa battle: Spoon $2 (monster id 148) is about to cast Hyper Heal (spell 0x2F) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: deroa_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 1350 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy cast", "Spoon $2", "Hyper Heal", "deroa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_deroa_spoon_v2_hyper_heal_mid_cast"
+backup_fingerprint = "159c590ed7cfcd2613b257cfb1f16b8c02d9b2e6a3e78dbdee33f85549b2baad"
+description = "deroa battle: Spoon $2 (monster id 148) mid-cast Hyper Heal (spell 0x2F): category 2, action state 0x3E. RETAIL disc: deroa_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 1365 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy cast", "Spoon $2", "Hyper Heal", "deroa", "harvest"]
+
+[[scenarios]]
+label = "battle_deroa_spoon_v2_strike"
+backup_fingerprint = "ee38e48865261ca9adb6232ba887fb4596b36244dbd31eca57f5c637fa9103e9"
+description = "deroa battle: Spoon $2 (monster id 148) mid physical attack: category 3, action state 0x1E. RETAIL disc: deroa_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1875 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy attack", "Spoon $2", "deroa", "harvest"]
+
+[[scenarios]]
+label = "taiku_thermo_pre_void_accessories"
+backup_fingerprint = "ef86d7d338a3f7ad131fe1b525ec91241036b0be73c5422aed931901dfc37091"
+description = "taiku battle: Thermo (monster id 91) is about to cast Void Accessories (spell 0x73, module 0955) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 1330 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Thermo", "Void Accessories", "taiku", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_taiku_thermo_void_accessories_mid_cast"
+backup_fingerprint = "1bb4e368dc7bc4bc3a407b6963d418146b5b823d00af54769e5ed94e81e5392d"
+description = "taiku battle: Thermo (monster id 91) mid-cast Void Accessories (spell 0x73, module 0955): category 2, action state 0x70. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 1479 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Thermo", "Void Accessories", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_thermo_strike"
+backup_fingerprint = "773af60517bd4d9de1a2e1ee4d8c53f78466f33b9ee9e568d768d1e8e90c5a37"
+description = "taiku battle: Thermo (monster id 91) mid physical attack: category 3, action state 0x1E. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 3765 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Thermo", "taiku", "harvest"]
+
+[[scenarios]]
+label = "taiku_topaz_pre_hyper_heal"
+backup_fingerprint = "752555fdbf9075dc9fd302725c838f78fcafaa28a5618fb7f414a3ee60c800c7"
+description = "taiku battle: Topaz (monster id 112) is about to cast Hyper Heal (spell 0x2F) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 2650 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Topaz", "Hyper Heal", "taiku", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_taiku_topaz_hyper_heal_mid_cast"
+backup_fingerprint = "b752d965250682c1141e507ce5cafd93d72cbe3c32e92692954a65e4da078b40"
+description = "taiku battle: Topaz (monster id 112) mid-cast Hyper Heal (spell 0x2F): category 2, action state 0x3E. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 2665 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy cast", "Topaz", "Hyper Heal", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_topaz_strike"
+backup_fingerprint = "f5c7f6cb8748e71f73d454845def53c19e06f387166cec1ea910939860c75998"
+description = "taiku battle: Topaz (monster id 112) mid physical attack: category 3, action state 0x1E. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1136 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Topaz", "taiku", "harvest"]
+
+[[scenarios]]
+label = "retona_viguro_v2_pre_thunder_break"
+backup_fingerprint = "41c676574ce52e0e34e96d12ee198e629121376ebee120520e95529a790785a8"
+description = "retona battle: Viguro $2 (monster id 134) is about to cast Thunder Break (spell 0x30) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: retona_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 3479 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy cast", "Viguro $2", "Thunder Break", "retona", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "chitei2_kemaro_v2_pre_lava_breath"
+backup_fingerprint = "9ccc3cf02e9ad72f31b3d747e206e7f8c85e499391ba7ca9ba74343d2e6157da"
+description = "chitei2 battle: Kemaro $2 (monster id 145) is about to cast Lava Breath (spell 0x46) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: chitei2_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 5305 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "chitei2"
+topics = ["battle", "enemy cast", "Kemaro $2", "Lava Breath", "chitei2", "harvest", "pre-cast"]

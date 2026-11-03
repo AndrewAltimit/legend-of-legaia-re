@@ -155,6 +155,10 @@ seeded, and the recorder on:
 | `LEGAIA_DIAG_CAST_SEQ_SEAT` | only a cast by this seat (retail numbering) starts the recording |
 | `LEGAIA_DIAG_CAST_SEQ_EVERY` / `_TAIL` / `_MAX` | frame cadence in ticks (`1`), ticks past the Done band before exit (`60`), frame cap (`2000`; the driver passes `4000`, past the retail side's span) |
 
+A monster's AI counter `0x801C8FE4` travels with the state
+(`LEGAIA_SEAT_AI_COUNTER`): PROT 0964's strike forks on it, and a replay that starts
+from a cleared word plays another element's arms.
+
 The child's mode-3 cycler and mode-4 scroller seats (`LEGAIA_SEAT_CLUT_FX`,
 `LEGAIA_SEAT_VRAM_RECTS`) are dropped with the drive: each holds one capture
 instant, and a whole run under them leaves the evolved-Cort arena's flesh on

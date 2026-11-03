@@ -56,6 +56,11 @@ or its frame is a fade.
 | mode classes | the corpus classes | a state of the class |
 | menu screens | the pause-menu sub-screens, the title family (word clear) and the prize exchange `0x20` | a menu state's sub-screen word `DAT_801E46A4` |
 
+A heal-class spell runs the Spirit / Item flow `0x3C..=0x40`
+([the magic arm's override](../subsystems/battle-action.md#outer-dispatch---ctx7-action-state-cursor)),
+so a category `2` action in that band counts as well; the harvester saves it at
+`0x3E`, and the oracle begins its recording there.
+
 An action counts only while it is on screen: the action-state cursor
 `ctx[+0x07]` sits in the attack chain `0x14..=0x20`, the magic / item flow
 `0x28..=0x2E`, the summon flow `0x32..=0x38` or the module sequence
@@ -121,7 +126,7 @@ the battle flags stay the scene's. Those region rows are the only RAM it writes
 before the fight, and they stay resident in the saved states. `LEGAIA_TOUGH=1` keeps
 a low-level party alive (live HP, readout and pending delta together: the readout
 alone parks state `0x51`), `LEGAIA_WOUND=<round>` cuts the monsters to a third of
-their HP so a heal arm has a patient, and `LEGAIA_FINISH=1` ends the fight after the
+their HP so a heal arm has a patient (`LEGAIA_WOUND_EVERY=1` repeats the cut each round), and `LEGAIA_FINISH=1` ends the fight after the
 Spirit rounds. The action in each state is the AI's own, and `LEGAIA_SAVE_PRE=1`
 keeps the whole emulator state from that action's `0x0A`, ahead of the pick, which
 replays the same cast for the [cast-sequence oracle](cast-sequence-oracle.md). A

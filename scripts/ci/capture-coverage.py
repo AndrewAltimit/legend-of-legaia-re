@@ -235,7 +235,9 @@ def build(census: dict, baseline: dict) -> dict:
             continue
         for mid in set(b["monster_ids"]):
             mo.cover(mid, lab, sco)
-        acting = b["band"] in ("attack", "magic", "summon", "module")
+        acting = b["band"] in ("attack", "magic", "summon", "module") or (
+            b["band"] == "spirit" and b["category"] == 2  # a heal-class cast
+        )
         if not acting:
             continue
         q = b["queued_action"]

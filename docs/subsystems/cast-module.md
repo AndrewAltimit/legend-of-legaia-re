@@ -2826,6 +2826,42 @@ runs this arm at step `4`, and the engine's trail only matches its density when
 held at the same step (`LEGAIA_BATTLE_FRAME_STEP=4,112`). Arm 3's shot closes on the
 victim as the countdown falls.
 
+### PROT 0935 (Earthquake)
+
+The caster turns on its target and holds the shot pitch `0`, yaw `0x800 - facing`,
+TR `(0, 0x600, 0xA00)` while clip `9` plays. Arm 1 waits for the clip's window to run
+once, drops the rate to `0` and seats seven records around the caster; arm 2 pins the
+node cursor at `0x130`; arm 3 walks TR y and z until the node reaches `0x160`. Arms 4
+and 5 shake TR y on the pass word's low bit and burst a rock pair a battle frame at a
+point off two `rand() % 1023 + 0x100` draws, the quadrant walking with the same word.
+Arms 3 and 4 re-arm their countdown by `step << 8`, not `scalar << 8`, so the rock
+arms last as long as retail's frame step says.
+
+### PROT 0964 (Element Change, Rogue Wind / Thunder / Flame)
+
+`0xAF` cuts to the caster, then hides every party seat each pass while TR z creeps.
+`0xB0`..`0xB2` run one body: arm 1 forks on the AI counter `0x801C8FE4`, the roll
+Element Change last accepted, into three six-arm variants that share their shape (the
+camera walks and cuts sit on the same `k`), with only Wind's first walk and first cut
+differing. The body's creature, seated by `FUN_801F19EC` at arm 1's exit, is not
+carried.
+
+### PROT 0941 (Stone Circle, `0xB9`)
+
+The charge record's part calls the stager, which seats the column; arm 1 hides the
+party, then cuts up to pitch `0x200` over the origin and seats three records at each of
+eight ring points, a `rand() % 8` slot landing on each one's `+0x54`.
+
+### The stagers of the enemy cells
+
+A part's op `0x20` reaches a module's stager. A charge record whose whole program is
+that call draws nothing itself: PROT 0942's Power Up glow and PROT 0941's column come
+from `FUN_801F8118` and `FUN_801F7DB0`, not from the record the arm seats. The table at
+`0x801F6734` names one stager per image; `enemy_cast_stager_spawns` carries PROT 0935,
+0941, 0942, 0951 and 0964. PROT 0936, 0937, 0943, 0945, 0950, 0953, 0955, 0956, 0957,
+0958 and 0963 hold stagers of the same shape that do not run yet, and their parts' calls
+are dropped (`World::runs_part_stager_calls`).
+
 ### PROT 0948 (Cross Beam)
 
 The image's other routine, `0x801F726C`, is the beam's packet builder, called
