@@ -1647,9 +1647,8 @@ fabricate a damaged bundle, which is a fixture, not a playthrough.
 
 ### A shared kernel has no address, so this instrument is silent about it
 
-The same wave replaced five per-frame decisions each play host had been making
-locally with one `engine-core` kernel apiece - the camera's snap-beat bank,
-the occlusion fade's arming gate and body centre, the save-select phase
+Per-frame decisions each play host once made locally now sit in one `engine-core`
+kernel apiece - the occlusion fade's arming gate and body centre, the save-select phase
 layout, the field HUD's projection. None of them appears in this report, ever,
 and the reason is structural rather than a gap: they carry no `// PORT:` tag,
 because they are not ports of a retail routine with an address. The report
@@ -1669,11 +1668,9 @@ Reading the coverage exports directly for the symbol - which is what one has
 to do for an untagged kernel - puts the occlusion pair and the cull-mode
 selector on **both** hosts, the save-select phase layout and the page's HUD
 projection on the page only (they have no second host to reach), and leaves
-two entered by neither: the camera's snap-beat **drain**, which both hosts
-call but only inside a frame a scripted shot owns, and the ocean-head
-animation fallback, which needs a kingdom bundle with no CLUT-walk table. Both
-are ordinary `(a)` content gaps; neither can ever be a row here, because
-neither has an address for the report to key on.
+one entered by neither: the ocean-head animation fallback, which needs a kingdom
+bundle with no CLUT-walk table. It is an ordinary `(a)` content gap, and it can
+never be a row here, because it has no address for the report to key on.
 
 ### A wire is two halves, and a refresh can enter only one of them
 

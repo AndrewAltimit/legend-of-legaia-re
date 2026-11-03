@@ -1803,7 +1803,7 @@ screens.
 | drag / wheel / double-click | `engine-field::camera::follow_knobs` |
 | `F3` debug orbit | `Camera::debug_orbit_by` (un-gated by cutscenes, field-only) |
 | camera-distance preset | `OptionsState::cycle_camera_distance` |
-| snap-beat bank | on `Camera`, beside `route_camera_events` |
+| scripted shot | `engine-field::frame_step::scripted_view`, over the camera globals the op-`0x45` beats and the mover write |
 | battle | `battle_cam_script::battle_vp`; inputs `engine-core::battle_cam_inputs`; state `BattleState::camera`, read through `World::battle_cam_pose`; armed on `world.mode`, never on a render resource |
 | script-arc follow (`FUN_801DB510` / `FUN_801DAA50`) | `World::script_arc_follow_camera` |
 | scene viewport | Native hands the renderer its stage rect (`Renderer::set_scene_viewport`), so 3D draws inside the integer-scaled 4:3 stage as on the page's canvas. |
