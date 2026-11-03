@@ -875,9 +875,8 @@ frame-skip factor per logic tick (`t = min(t + DAT_1F800393, d)`,
 frame-skip history since its beat, and the engine's counter lands a frame
 or two past retail's. On the frame it captures, the image child puts the
 glide exactly the gate's frames short of its end
-(`Camera::align_glide_frames_left` for the mover the follow frame reads,
-`CutsceneGlide::align_frames_left` for the op-`0x45` shot), keeping the
-engine's own start and end poses. `kor5_post_436_organic` was one frame
+(`Camera::align_glide_frames_left`), keeping the engine's own start and end
+poses. `kor5_post_436_organic` was one frame
 further along an 80-frame linear glide (pitch `600` against retail's `590`,
 eye Z `7622` against `7552`); on a tiled floor that one frame cost a quarter
 of the image score.
