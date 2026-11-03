@@ -270,7 +270,14 @@ async function main() {
       await wait(() => B.calls - start >= FRAMES);
       const wall = performance.now() - tw;
       B.on = false;
-      if (B.walk) { clearInterval(B.walk); B.walk = null; }
+      if (B.walk) {
+        clearInterval(B.walk);
+        B.walk = null;
+        /* A key left down would walk the next scene through its doors. */
+        for (const code of ['ArrowUp', 'ArrowDown']) {
+          window.dispatchEvent(new KeyboardEvent('keyup', { code, key: code, bubbles: true }));
+        }
+      }
       const alloc1 = window.__wasmAllocTotals ? window.__wasmAllocTotals() : null;
       const ls = B.longTasks.slice();
       B.longTasks.length = 0;
