@@ -159,6 +159,8 @@ body.xw-preview .play-canvas { height: 100%; aspect-ratio: auto; }
   pointer-events: none;
 }
 .play-notice.is-hidden { display: none; }
+.play-quality-note { margin: 0.4rem 0 0; font-size: 0.8rem; color: var(--text-dim, var(--text)); }
+.play-quality-note.is-hidden { display: none; }
 .play-keys-sub {
   grid-column: 1 / -1; margin-top: 0.35rem; font-size: 0.7rem;
   text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim);
@@ -476,6 +478,12 @@ div.play-vis-head { cursor: default; }
             <div class="play-dialog is-hidden" id="play-dialog"></div>
             <div class="play-notice is-hidden" id="play-notice" role="status" aria-live="polite"></div>
           </div>
+          <!-- The automatic step-down's note (play-quality-ladder.js): beside the
+               picture for as long as a step is in force, so a screenshot can be explained. -->
+          <p class="play-quality-note is-hidden" id="play-quality-note" role="status">
+            <span id="play-quality-text"></span>
+            <button type="button" id="play-quality-restore">Put it back</button>
+          </p>
           <!-- A minigame's status rows and key hints, as the engine exports
                them (`play_mg_caption_json`, play-minigames.js
                `captionSync`): shown here rather than in the frame, where the
@@ -1119,6 +1127,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/webgl-bloom.js"></script>
 <script src="js/webgl-ssao.js"></script>
 <script src="js/webgl-psx-target.js"></script>
+<script src="js/play-quality-ladder.js"></script>
 <script src="js/pad-bindings.js"></script>
 <script src="js/field-actors.js"></script>
 <script src="js/play-view-constants.js"></script>
@@ -1814,6 +1823,12 @@ div.play-vis-head { cursor: default; }
          * may have been unchecked before the first scene was entered). */
         if (window.__playApplySeeThrough) window.__playApplySeeThrough();
         if (window.__playApplyRenderToggles) window.__playApplyRenderToggles();
+        /* Not on an embedded picture (the workbench preview sizes its own canvas),
+         * and not on a page asked to hold still (`frame-bench-web.mjs`). */
+        const q = new URLSearchParams(location.search);
+        if (q.get('embed') !== '1' && q.get('xwpreview') !== '1' && q.get('autoquality') !== '0') {
+          window.__playArmQualityLadder();
+        }
       }
       const st = run(view);
       activePackMap = (st && st.expansion_map && st.expansion_map.id) || null;
@@ -3107,7 +3122,33 @@ div.play-vis-head { cursor: default; }
     view.setDynShadows(!!dynShadowsEl.checked);
     if (view.setBloom) view.setBloom(!!bloomEl.checked);
     if (view.setSsao) view.setSsao(!!ssaoEl.checked);
+    showQualitySteps(view.qualitySteps());
   }
+  /* The automatic step-down's note: what is off, and that the saved options are
+   * not. `?autoquality=0` leaves the ladder unarmed. */
+  const qualityNoteEl = document.getElementById('play-quality-note');
+  const QUALITY_NAMES = {
+    ssao: 'ambient occlusion off', shadows: 'lamp shadows off',
+    scale75: '3D picture at 75%', scale50: '3D picture at 50%',
+  };
+  function showQualitySteps(steps) {
+    /* 50% says it for 75%. */
+    const shown = steps.filter((id) => id !== 'scale75' || !steps.includes('scale50'));
+    qualityNoteEl.classList.toggle('is-hidden', !shown.length);
+    document.getElementById('play-quality-text').textContent = shown.length
+      ? `Lowered for this session to hold the frame rate: ${shown.map((id) => QUALITY_NAMES[id]).join(', ')}. Your saved options are unchanged.`
+      : '';
+  }
+  document.getElementById('play-quality-restore').addEventListener('click', () => {
+    if (view) view.restoreQuality();
+    canvas.focus();
+  });
+  window.__playArmQualityLadder = () => {
+    view.armQualityLadder(() => retailModeEl.checked || psxRenderEl.checked, (steps, stepped) => {
+      showQualitySteps(steps);
+      if (stepped && window.__playShowNotice) window.__playShowNotice('Quality lowered to hold the frame rate');
+    });
+  };
   function syncRenderToggles() {
     const rt = window.__playRuntime;
     if (rt && typeof rt.enhanced_lighting === 'function') {
@@ -3124,9 +3165,17 @@ div.play-vis-head { cursor: default; }
   psxRenderEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   dynLightEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
   timeOfDayEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
-  dynShadowsEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  dynShadowsEl.addEventListener('change', () => {
+    if (view) view.noteQualityChoice('shadows');
+    applyRenderToggles();
+    canvas.focus();
+  });
   bloomEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
-  ssaoEl.addEventListener('change', () => { applyRenderToggles(); canvas.focus(); });
+  ssaoEl.addEventListener('change', () => {
+    if (view) view.noteQualityChoice('ssao');
+    applyRenderToggles();
+    canvas.focus();
+  });
   window.__playApplyRenderToggles = applyRenderToggles;
   window.__playSyncRenderToggles = syncRenderToggles;
 
@@ -3440,6 +3489,7 @@ div.play-vis-head { cursor: default; }
    * PSX rasterisation and the entry pulse are session switches the page
    * holds, so their shipped defaults (off / on) are set here. */
   document.getElementById('play-visuals-reset').addEventListener('click', () => {
+    if (view) view.restoreQuality();
     if (retailModeEl.checked) {
       retailModeEl.checked = false;
       rtCall('set_retail_mode', false);
@@ -3864,9 +3914,17 @@ div.play-vis-head { cursor: default; }
     time_of_day: () => { syncRenderToggles(); applyRenderToggles(); },
     volumetric_fog: () => syncGroundFog(),
     enhanced_lighting: () => { syncRenderToggles(); applyRenderToggles(); },
-    light_shadows: () => { syncRenderToggles(); applyRenderToggles(); },
+    light_shadows: () => {
+      if (view) view.noteQualityChoice('shadows');
+      syncRenderToggles();
+      applyRenderToggles();
+    },
     bloom: () => { syncRenderToggles(); applyRenderToggles(); },
-    ssao: () => { syncRenderToggles(); applyRenderToggles(); },
+    ssao: () => {
+      if (view) view.noteQualityChoice('ssao');
+      syncRenderToggles();
+      applyRenderToggles();
+    },
     camera_distance: () => syncCameraDistance(),
     precise_movement: () => syncPreciseMove(),
     /* `End`: reload the active pack from the library's copy - the one the

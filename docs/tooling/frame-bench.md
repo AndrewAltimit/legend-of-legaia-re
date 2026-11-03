@@ -158,6 +158,9 @@ that queue, which no capped page builds.
 context without MSAA, and `--canvas-scale s` draws the GL canvas at `s` of its size. With
 `--gl swiftshader --vsync` they read what one rung of quality costs on a GPU that is short of
 it; the shape holds for a software rasteriser, and a tiler may rank them differently.
+`--auto-quality` leaves the page's [quality step-down](../subsystems/browser-host.md#the-quality-step-down-play-quality-ladderjs)
+armed; otherwise a slow run would read whatever rung the page had stepped to by then, so it is
+off by default. A row says when the page stepped during it.
 
 `--entry-profile` samples the disc load, each scene entry and each battle's first
 frames and prints time by function, self and inclusive of callees. `--reenter`

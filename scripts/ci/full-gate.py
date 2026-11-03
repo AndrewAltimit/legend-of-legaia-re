@@ -626,6 +626,18 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
     )
     p.add(
         Gate(
+            "quality-ladder",
+            "wasm",
+            "node scripts/ci/quality-ladder-web.mjs",
+            needs=("wasm-freshness",),
+            locks=("display",),
+            cpu=2,
+            scope=True,
+            read_log=tail_detail(r"^quality ladder: .*$"),
+        )
+    )
+    p.add(
+        Gate(
             "cost-ratchet",
             "wasm",
             "python3 scripts/ci/cost-ratchet.py --check",

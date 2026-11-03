@@ -854,7 +854,11 @@ void main() { o_color = texture(u_layer, v_uv); }
       if (this.vr && this.vr.isActive()) return;   /* the XR loop is driving */
       const tick = () => {
         this.raf = requestAnimationFrame(tick);
+        /* Ahead of the draw: resizing the canvas after one would throw its frame away. */
+        const t0 = performance.now();
+        if (this._quality) this._sampleQuality(t0);
         this._frame();
+        this._frameCost = performance.now() - t0;
       };
       this.raf = requestAnimationFrame(tick);
     }
@@ -985,8 +989,13 @@ void main() { o_color = texture(u_layer, v_uv); }
       if (!this._windowSize) {
         this._windowSize = canvases.map((c) => [c.width, c.height]);
       }
+      /* A quality step scales the 3D canvas alone: the overlay canvas keeps
+       * its text at the window's size. */
+      const scale = this._qualityOff('scale50') ? 0.5 : this._qualityOff('scale75') ? 0.75 : 1;
       canvases.forEach((c, i) => {
-        const [w, h] = this.psxRender ? [320, 240] : this._windowSize[i];
+        const [ww, wh] = this._windowSize[i];
+        const [w, h] = this.psxRender ? [320, 240]
+          : c === this.canvas ? [Math.round(ww * scale), Math.round(wh * scale)] : [ww, wh];
         if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
         c.style.imageRendering = this.psxRender ? 'pixelated' : '';
       });
@@ -999,7 +1008,8 @@ void main() { o_color = texture(u_layer, v_uv); }
     /* The point lights' shadow sub-layer (the native window's `Y`); on
      * unless the "Lamp shadows" box is cleared. */
     setDynShadows(on) {
-      this.dynShadows = !!on;
+      this._dynShadowsWanted = !!on;
+      this.dynShadows = this._dynShadowsWanted && !this._qualityOff('shadows');
     }
 
     /* Bloom (the native window's F10): drawn by `_drawBloom` over the
@@ -1014,10 +1024,76 @@ void main() { o_color = texture(u_layer, v_uv); }
      * webgl-ssao.js between its opaque and blend draws. */
     setSsao(on) {
       this.ssao = !!on;
-      this.renderer.ssaoFrame = this.ssao
+      this.renderer.ssaoFrame = this.ssao && !this._qualityOff('ssao')
         ? (vp) => (this.rt && typeof this.rt.play_ssao_frame === 'function'
           ? this.rt.play_ssao_frame(vp) : null)
         : null;
+    }
+
+    /* The automatic step-down (play-quality-ladder.js), armed by the play page.
+     *
+     * A rung is a view-side state over the player's option, which it never
+     * touches: `rt.set_ssao` and the rest persist, so nothing here calls them,
+     * and the option box keeps reading what the player chose. The setters above
+     * fold the rung in, so a page re-apply cannot lift it. Retail mode and PSX
+     * rasterisation are `exempt`: no rung steps, and one already stepped stops
+     * counting while they hold. Lives only as long as the page.
+     *
+     * `onStep(ids, stepped)` tells the page what is off now, for its note;
+     * `stepped` is true when the ladder just took a step. */
+    armQualityLadder(exempt, onStep) {
+      this._qualityExempt = exempt;
+      this._qualityNote = onStep;
+      this._quality = new window.LegaiaQualityLadder(QUALITY_RUNGS.map((r) => ({
+        id: r.id,
+        applicable: () => r.applicable(this),
+        apply: () => this._applyQuality(),
+      })), exempt);
+    }
+
+    _qualityOff(id) {
+      const q = this._quality;
+      return !!q && q.stepped.includes(id) && !q.chosen.has(id) && !this._qualityExempt();
+    }
+
+    _applyQuality() {
+      this.setSsao(this.ssao);
+      this.setDynShadows(this._dynShadowsWanted !== false);
+      this._applyNativeResolution();
+    }
+
+    /* The player decided about this rung (its box or its key). */
+    noteQualityChoice(id) {
+      if (!this._quality) return;
+      this._quality.choose(id);
+      this._applyQuality();
+      if (this._qualityNote) this._qualityNote(this.qualitySteps());
+    }
+
+    /* The rungs in force, for the note and for a check. */
+    qualitySteps() {
+      return this._quality ? this._quality.stepped.filter((id) => this._qualityOff(id)) : [];
+    }
+
+    /* The note's undo: everything back, and no more steps this session. */
+    restoreQuality() {
+      if (!this._quality) return;
+      this._quality.disarm();
+      this._quality.stepped.length = 0;
+      this._applyQuality();
+      if (this._qualityNote) this._qualityNote([]);
+    }
+
+    _sampleQuality(t0) {
+      const counts = !this.paused && !document.hidden && !this._fmvUp();
+      if (this._quality.sample(t0, this._frameCost || 0, counts) && this._qualityNote) {
+        this._qualityNote(this.qualitySteps(), true);
+      }
+    }
+
+    _fmvUp() {
+      try { return typeof this.rt.play_fmv_active === 'function' && this.rt.play_fmv_active(); }
+      catch (e) { return false; }
     }
 
     /* Stage this frame's camera.
@@ -1073,6 +1149,15 @@ void main() { o_color = texture(u_layer, v_uv); }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
     }
   }
+
+  /* The rungs, in the order the ladder spends them; see browser-host.md for
+   * what each is measured to pay. `applicable` skips a rung already off. */
+  const QUALITY_RUNGS = [
+    { id: 'ssao', applicable: (v) => !!v.ssao },
+    { id: 'scale75', applicable: (v) => !v.psxRender },
+    { id: 'scale50', applicable: (v) => !v.psxRender },
+    { id: 'shadows', applicable: (v) => !!v.dynLighting && v._dynShadowsWanted !== false },
+  ];
 
   window.PlayView = PlayView;
   /* Drawn by PlayView._drawScreenPrims (play-view-frame.js). */

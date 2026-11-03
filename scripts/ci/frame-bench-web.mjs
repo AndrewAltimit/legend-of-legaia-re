@@ -5,7 +5,7 @@
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
 //       [--reenter] [--entry-profile] [--reload] [--idle ms]
 //       [--vsync] [--paths] [--card file.mcr] [--card-block n] [--cpu-throttle n]
-//       [--uncheck id,id] [--no-msaa] [--canvas-scale s]
+//       [--uncheck id,id] [--no-msaa] [--canvas-scale s] [--auto-quality]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
 // own file input, enters each scene through the page's own scene list and times the
@@ -37,6 +37,9 @@
 // context without MSAA, and `--canvas-scale s` draws the GL canvas at s of its size: what
 // one rung of the quality ladder costs. Each is a page state a player can reach or the
 // page can step to; none is a claim about a device.
+//
+// `--auto-quality` leaves the page's automatic step-down armed. Off by default, or a slow
+// run would measure whatever rung the page had stepped to by then.
 //
 // A browser's timers are coarse, and the frame function is only the page's main-thread
 // cost: the GPU, display, audio pump and memory rows are what it leaves out. See
@@ -74,6 +77,7 @@ const CARD = arg('card', DEFAULT_CARD);
 const UNCHECK = arg('uncheck') ? arg('uncheck').split(',') : [];
 const NO_MSAA = !!arg('no-msaa');
 const CANVAS_SCALE = +arg('canvas-scale', 1);
+const PLAY_URL = arg('auto-quality') ? 'play.html' : 'play.html?autoquality=0';
 
 const disc = process.env.LEGAIA_DISC_BIN;
 const wasmPath = path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm');
@@ -457,7 +461,7 @@ async function playerPath(browser, port, kind, errors) {
   page.on('pageerror', (e) => { errors.push(e.message); console.error('PAGEERR', e.message); });
   await page.addInitScript(instrument, NO_MSAA);
   if (THROTTLE) await (await context.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
-  await page.goto(`http://127.0.0.1:${port}/play.html`);
+  await page.goto(`http://127.0.0.1:${port}/${PLAY_URL}`);
   await (await page.$('input[type=file]')).setInputFiles(disc);
   await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
   await page.evaluate(wrapForBench);
@@ -554,7 +558,7 @@ async function main() {
     await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
   }
   const t0 = Date.now();
-  await page.goto(`http://127.0.0.1:${port}/play.html`);
+  await page.goto(`http://127.0.0.1:${port}/${PLAY_URL}`);
   out.startup.page_load_ms = Date.now() - t0;
   out.renderer = await rendererString(page);
   out.gpu_timer = await page.evaluate(() => {
@@ -823,6 +827,7 @@ async function main() {
         gaps: B.gaps, gpuMs: B.gpu.ms, gpuDisjoint: B.gpu.disjoint, pump: B.pump, audioEdge, battleUp, firstFightEnded,
         audioSteady: steady0 && steady1 && { dry_frames: steady1.dry_frames - steady0.dry_frames, played_frames: steady1.played - steady0.played,
           rate: steady1.rate, target_before: steady0.target, target_after: steady1.target, context: steady1.context },
+        qualitySteps: view.qualitySteps ? view.qualitySteps() : [], canvasNow: [view.canvas.width, view.canvas.height],
         longtasks: ls, heap: performance.memory ? performance.memory.usedJSHeapSize : 0,
         state: view.scene, battle: typeof view.rt.state_json === 'function' ? view.rt.state_json().slice(0, 200) : '' };
     }, { sc, FRAMES, SKIP, reenter: !!arg('reenter'), canvasScale: CANVAS_SCALE });
@@ -846,6 +851,8 @@ async function main() {
       if (!r.battleUp) console.log(`  ${name}: NOT A BATTLE ROW, the page's battle scene never came up in 30 s`);
     }
     s.audio_steady = r.audioSteady;
+    s.quality_steps = r.qualitySteps;
+    if (r.qualitySteps.length) console.log(`  the page stepped down during this row: ${r.qualitySteps.join(', ')}; canvas ${r.canvasNow.join('x')}`);
     s.memory = await memoryRow(page);
     s.entry_ms = r.entry_ms;
     s.reentry_ms = r.reentry_ms;

@@ -111,6 +111,22 @@
   </div>
 </section>
 
+<section class="doc-section" id="quality-step-down">
+  <h2>The quality step-down</h2>
+  <p>No code on the page looks at the device, so on a GPU short of the defaults the page steps its own picture down. The decision is <code>site/js/play-quality-ladder.js</code>, with no GL, DOM or engine in it.</p>
+  <ul>
+    <li><strong>When.</strong> Two 4-second windows in a row whose median frame gap is over 40 ms. A median means one stall cannot cause a step; a gap over a second, a paused view or a movie restarts the count; a window whose frame function already takes half the gap is left alone, because no rung relieves the main thread.</li>
+    <li><strong>What, in order.</strong> Ambient occlusion off, the 3D canvas at 75%, at 50%, lamp shadows off: by what each pays under SwiftShader, where ambient occlusion and the 50% canvas are each worth about half the GPU&rsquo;s frame, 75% about a fifth, lamp shadows a few percent. SwiftShader is a proxy; a tiled phone GPU may rank them otherwise.</li>
+    <li><strong>Down only, and session only.</strong> Nothing steps back up on its own, and the state ends with the page.</li>
+    <li><strong>It never writes an option.</strong> A rung is view-side state over the player&rsquo;s option, and the boxes keep reading what the player chose.</li>
+    <li><strong>A player&rsquo;s choice wins.</strong> Touching a rung&rsquo;s box or key takes that rung out of the ladder. &ldquo;Put it back&rdquo; on the note, or Reset to defaults, restores everything and disarms it for the session.</li>
+    <li><strong>Retail is exempt.</strong> While Retail-faithful or PSX rasterisation holds, no rung steps and one already stepped stops counting.</li>
+    <li><strong>It says so.</strong> A note under the picture names what is off for as long as it is off.</li>
+  </ul>
+  <p>MSAA is not a rung: it is fixed when a context is created, and it is the smallest of the measured costs, so the context keeps it. <code>?autoquality=0</code> leaves the ladder unarmed. The native window has no ladder.</p>
+  <p>A capped page does not stall on a slow GPU the way an uncapped bench run does: the browser holds back <code>requestAnimationFrame</code> while frames are pending, so cost spreads evenly and the main thread stays free for the audio pump. Below 15 fps the world itself runs slow, since a display frame runs at most four ticks and drops the rest.</p>
+</section>
+
 <section class="doc-section" id="drift">
   <h2>Keeping two hosts in step</h2>
   <p>The play page and the native window are two framebuffers over one engine, and the failure that costs most is quiet: a screen is wired natively and the web host drifts behind with nothing in any diff to say so.</p>

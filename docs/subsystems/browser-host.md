@@ -606,6 +606,50 @@ through a throwaway SPU and reports its peak sample, so "wired but every cue is
 inaudible" fails a test instead of shipping. Disc-gated oracle:
 `crates/web-play/tests/play_sfx_channel.rs`.
 
+## The quality step-down (`play-quality-ladder.js`)
+
+No code on the page looks at the device, so on a GPU short of the defaults the page
+steps its own picture down. The decision is `site/js/play-quality-ladder.js`, with no GL,
+DOM or engine in it; `PlayView.armQualityLadder` feeds it one sample per animation frame
+and applies what it names.
+
+- **When.** Two 4-second windows in a row whose median frame gap is over 40 ms, which
+  leaves a 30 Hz display alone. A median means one stall cannot cause a step. A gap over a
+  second (a hidden tab, a long load) restarts the count, and so does a paused view or a
+  movie. A window whose frame function already takes half the gap is left alone, because
+  the main thread is what is short and no rung relieves it.
+- **What, in order.** Ambient occlusion off, the 3D canvas at 75%, at 50%, lamp shadows off:
+  by what each pays under SwiftShader, where ambient occlusion and the 50% canvas are each
+  worth about half the GPU's frame, 75% about a fifth, and lamp shadows a few percent.
+  SwiftShader is a proxy: a tiled phone GPU may rank them otherwise. The overlay canvas
+  keeps its size, so text stays sharp.
+- **Down only.** Nothing steps back up on its own within a session, and the state ends with
+  the page.
+- **It never writes an option.** A rung is view-side state over the player's option: the
+  setters fold it in, so a page re-apply cannot lift it, and nothing here calls `rt.set_ssao`
+  or the other persisting setters. The boxes keep reading what the player chose.
+- **A player's choice wins.** Touching a rung's box or key takes that rung out of the ladder
+  for the session and puts it where the player set it. "Put it back" on the note, or Reset to
+  defaults, restores everything and disarms the ladder for the session.
+- **Retail is exempt.** While Retail-faithful or PSX rasterisation holds, no rung steps and
+  one already stepped stops counting.
+- **It says so.** A note under the picture names what is off for as long as it is off, so a
+  screenshot can be explained.
+
+MSAA is not a rung: a context's MSAA is fixed at creation, so stepping it would mean rebuilding
+every GL resource. It is also the smallest of the measured costs, so the context keeps it.
+The workbench's embedded preview does not arm the ladder, and `?autoquality=0` leaves it
+unarmed, which is how `frame-bench-web.mjs` runs unless asked (`--auto-quality`).
+`scripts/ci/quality-ladder-web.mjs` tests the decision on synthetic gaps and, with a disc, the
+page's wiring: the exemptions, the choices and `localStorage` byte for byte. The native
+window has no ladder.
+
+A capped page does not stall on a slow GPU the way an uncapped bench run does. The browser
+holds back `requestAnimationFrame` while frames are pending, so frame cost spreads evenly over
+the gaps and the main thread stays free for the audio pump, which keeps the output fed at single-digit
+frame rates. Below 15 fps the world itself runs slow, since a display frame runs at most
+four ticks (`SimStepper`) and drops the rest.
+
 ## Keeping the two hosts in step
 
 The browser play page and `legaia-engine play-window` are two framebuffers over
