@@ -2780,11 +2780,10 @@ other. Arms 2 to 4 keep a moving point in `0x801F7B48` and seat the blade's
 two sides, `96` units across its heading, around it: once on arm 2 and on
 **every pass** of arms 3 and 4, held or not. The director only names those calls;
 the host seats them on the tick that opens a battle frame, the way PROT 0962's
-rays are seated, so the trail's density follows the frame step. Retail's capture
-runs this arm at step `4`; held at step `4` from the module's first state, the
-engine's arm-3 segment rises from `.352` to `.572` against it, and the rest of that
-gap is the additive overdraw of the trail itself. Arm 3's shot closes on the victim
-as the countdown falls.
+rays are seated, so the trail's density follows the frame step: retail's capture
+runs this arm at step `4`, and the engine's trail only matches its density when
+held at the same step (`LEGAIA_BATTLE_FRAME_STEP=4,112`). Arm 3's shot closes on the
+victim as the countdown falls.
 
 ### PROT 0948 (Cross Beam)
 
