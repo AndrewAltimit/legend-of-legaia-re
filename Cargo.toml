@@ -249,6 +249,47 @@ codegen-units = 1
 # walks are slow enough at `opt-level = 0` to change what is practical to run -
 # but without the whole-program link-time work, which buys nothing for a test
 # binary that is built once and run once. Shipped binaries stay on `release`.
+
+# Optimised for size: the tools and data decoders no frame runs. They are a
+# large share of the browser bundle, which every player downloads, and a seeded
+# patcher run writes the same bytes at either level.
+[profile.release.package.legaia-expansion-format]
+opt-level = "s"
+[profile.release.package.legaia-translate]
+opt-level = "s"
+[profile.release.package.legaia-patcher]
+opt-level = "s"
+[profile.release.package.legaia-party-swap]
+opt-level = "s"
+[profile.release.package.legaia-delilas-party]
+opt-level = "s"
+[profile.release.package.legaia-delilas-challenge]
+opt-level = "s"
+[profile.release.package.legaia-arts-patch]
+opt-level = "s"
+[profile.release.package.legaia-texture-replace]
+opt-level = "s"
+[profile.release.package.legaia-disc-patch]
+opt-level = "s"
+[profile.release.package.legaia-code-hooks]
+opt-level = "s"
+[profile.release.package.legaia-web-patcher]
+opt-level = "s"
+[profile.release.package.legaia-web-expansion]
+opt-level = "s"
+[profile.release.package.legaia-gamedata]
+opt-level = "s"
+[profile.release.package.toml]
+opt-level = "s"
+[profile.release.package.toml_edit]
+opt-level = "s"
+[profile.release.package.toml_parser]
+opt-level = "s"
+[profile.release.package.toml_writer]
+opt-level = "s"
+[profile.release.package.winnow]
+opt-level = "s"
+
 [profile.release-test]
 inherits = "release"
 lto = false

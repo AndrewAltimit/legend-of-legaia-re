@@ -2,7 +2,7 @@
 // Frame-time benchmark of the browser play page, the sibling of frame-bench.py.
 //
 //   scripts/ci/frame-bench-web.mjs [--site site] [--scene town01,..] [--frames 600]
-//       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile]
+//       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
 // own file input, enters each scene through the page's own scene list and times the
@@ -279,6 +279,10 @@ async function main() {
         longtasks: ls, heap: performance.memory ? performance.memory.usedJSHeapSize : 0,
         state: view.scene, battle: typeof view.rt.state_json === 'function' ? view.rt.state_json().slice(0, 200) : '' };
     }, { sc, FRAMES, SKIP });
+    if (arg('shots')) {
+      fs.mkdirSync(arg('shots'), { recursive: true });
+      await page.screenshot({ path: path.join(arg('shots'), `${name}.png`) });
+    }
     const s = summarise({ exports: r.exports, gl: r.gl, firstFrame: r.firstFrame, entryWorst: r.entryWorst }, r.frames);
     s.entry_ms = r.entry_ms;
     s.entry_exports = r.entryExports;
