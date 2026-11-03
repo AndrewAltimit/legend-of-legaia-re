@@ -58,7 +58,8 @@ whitespace. A handful of ids (`0x00`, `0x12`, `0x52`, `0xB9`, `0xFD`) share one 
 and decode to `None`. Id `0x1A` is not one of them: its string is
 `C1 00 " Fist"`, the MES party-name substitution then the word, so it reads as
 the first hero's name ("Vahn Fist"). Its `00` is the substitution's argument,
-not a terminator.
+not a terminator. Ids `0x1C` (`C1 01 " Feral"`) and `0x20` (`C1 02 " Mace"`) take
+the same form for the second and third heroes.
 
 ## Provenance + parser
 

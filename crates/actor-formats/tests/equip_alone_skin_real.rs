@@ -41,7 +41,7 @@ const PINNED: [(&str, &str); 10] = [
     ("gala", "Power Plate"),
     ("gala", "Fighter's Band"),
     ("noa", "Green Clip"),
-    ("gala", "Mace"),
+    ("gala", "Gala Mace"),
     ("noa", "Battle Robe"),
 ];
 

@@ -99,6 +99,8 @@ fn enabling_unused_items_grants_and_names_the_accessory_at_runtime() {
     // 0x1A never shared it: its pointer holds `C1 00 " Fist"`, a party-name
     // substitution and a word.
     assert_eq!(table.name(0x1A), Some("Vahn Fist"));
+    assert_eq!(table.name(0x1C), Some("Noa Feral"));
+    assert_eq!(table.name(0x20), Some("Gala Mace"));
     // "Something Good" (the other unused item) is a real named item.
     assert!(
         table.name(0x6B).is_some_and(|n| !n.is_empty()),

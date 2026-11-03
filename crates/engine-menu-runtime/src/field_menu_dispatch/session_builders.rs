@@ -168,15 +168,18 @@ pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
         name: text
             .and_then(|t| t.item_name(id))
             .map(|name| {
-                // `0x1A`'s string substitutes the hero's record name.
-                match (id, world.party.roster_names().first()) {
-                    (legaia_game_tables::item_names::PARTY_NAMED_ITEM, Some(hero)) => name
-                        .replacen(
-                            legaia_game_tables::item_names::DEFAULT_PARTY_NAMES[0],
-                            hero,
-                            1,
-                        ),
-                    _ => name.to_string(),
+                // Three weapon names substitute a hero's record name.
+                let hero = legaia_game_tables::item_names::PARTY_NAMED_ITEMS
+                    .iter()
+                    .find(|(item, _)| *item == id)
+                    .map(|&(_, record)| record);
+                match hero.and_then(|r| Some((r, world.party.roster_names().get(r).cloned()?))) {
+                    Some((r, renamed)) => name.replacen(
+                        legaia_game_tables::item_names::DEFAULT_PARTY_NAMES[r],
+                        &renamed,
+                        1,
+                    ),
+                    None => name.to_string(),
                 }
             })
             .or_else(|| {

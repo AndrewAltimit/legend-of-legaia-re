@@ -30,11 +30,12 @@
 //! Ids run `0x00..=0xFF`; the pointers leave the data segment past `0xFF`,
 //! which is how [`ItemNameTable::from_scus`] finds the table's extent. A
 //! handful of ids (`0x00`, `0x12`, `0x52`, `0xB9`, `0xFD`) share the empty
-//! string at `0x8007B508` (reserved / gap slots) and decode to `None`. Id
-//! `0x1A`'s string is `C1 00 " Fist"`: the MES party-name substitution, then
-//! the word - retail prints the first hero's record name there. It decodes
-//! with the template name ([`DEFAULT_PARTY_NAMES`]); a host with a save in hand
-//! puts the renamed hero in ([`PARTY_NAMED_ITEM`]).
+//! string at `0x8007B508` (reserved / gap slots) and decode to `None`. Ids
+//! `0x1A`, `0x1C` and `0x20` open with the MES party-name substitution, then
+//! the word (`C1 00 " Fist"`, `C1 01 " Feral"`, `C1 02 " Mace"`) - retail prints
+//! that hero's record name there. They decode with the template name
+//! ([`DEFAULT_PARTY_NAMES`]); a host with a save in hand puts the renamed hero
+//! in ([`PARTY_NAMED_ITEMS`]).
 //!
 //! The display strings carry the same MES control prefixes as every other
 //! in-game string (a leading `0x01` icon escape, `0xCE XX` colour controls);
@@ -113,8 +114,9 @@ fn glyph_char(b: u8, accents: bool) -> Option<char> {
     }
 }
 
-/// The item whose name string opens with a party-name substitution.
-pub const PARTY_NAMED_ITEM: u8 = 0x1A;
+/// The items whose name string opens with a party-name substitution, each with
+/// the record index the substitution names.
+pub const PARTY_NAMED_ITEMS: [(u8, usize); 3] = [(0x1A, 0), (0x1C, 1), (0x20, 2)];
 
 /// The roster's default names, in record order: what a `0xC1 XX` party-name
 /// substitution in an item name decodes to before a save's own names apply.
