@@ -15,7 +15,8 @@ fills from retail RAM.
 ## Retail comparison corpus
 
 - [`retail_compare`](src/retail_compare.rs) (+ `retail_compare_battle`,
-  `retail_compare_image`, `retail_compare_script`, `retail_compare_cli`) -
+  `retail_compare_image`, `retail_compare_script`, `retail_compare_cache`,
+  `retail_compare_cli`, over the worker pool `parallel`) -
   the corpus behind `legaia-engine retail-compare`: enumerate the state
   library, seed the engine from each walkable and battle state, score every
   channel, ratchet the result

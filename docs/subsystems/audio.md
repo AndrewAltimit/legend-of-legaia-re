@@ -3147,7 +3147,8 @@ state's main RAM - so both emulators' states take part - and seeds the engine
 into the state through the retail comparison corpus's seeding, with the audio
 director attached over a device-less output and every settle tick running the
 hosts' audio frame (`BootSession::step_audio_frame`). Driver
-`scripts/ci/audio-sweep.py`, CLI `legaia-engine audio-sweep`, module
+`scripts/ci/audio-sweep.py` (`--jobs` seeds states in parallel; the report is
+the same at any count), CLI `legaia-engine audio-sweep`, module
 [`legaia_parity::audio_sweep`](../../crates/parity/src/audio_sweep.rs).
 
 | Retail word | Reads |

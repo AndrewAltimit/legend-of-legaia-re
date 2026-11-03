@@ -30,6 +30,14 @@ scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu
 scripts/ci/cast-sequence.py --spell 0x86 --state party_basic_attack_vs_gobu_gobu --score-only --retail-lag 4
 ```
 
+Each stage is reused until something it depends on changes. The retail
+recording stays until `--recapture`; the seed's child command until `--reseed`;
+the engine recording while `engine-key.txt` matches a hash of the binary, the
+child's `LEGAIA_*` environment and arguments, the files those name and the
+disc, so an `--engine-only` with nothing changed goes straight to the score
+(`--rerecord` forces it). The score reads and scores its pairs on several
+threads, and the report does not depend on how many.
+
 The output defaults to `captures/cast-sequence/<state>_<spell>/` (gitignored).
 It holds `retail/` (the probe's frames and `meta.csv`), `rc/` (the
 retail-compare child command the engine run is built from), `engine/` (the
