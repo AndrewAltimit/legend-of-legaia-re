@@ -2396,6 +2396,9 @@ Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of
 objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 5..7
 (`seat_spoon_eye_parts`) from the same pool the creature's own draw reads.
 Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`).
+Jedo's creature advances `+0x38 += step << 2` on every pass of arms 5 and 6
+(`0x801F70A0`, `0x801F7214`), from `-0x800` to `-0x400`, which is where arm 10's
+framing expects it.
 Spoon and Mushura raise their creature's `+0x42 = 2` over object-effect row 1, as
 Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pass on arm
 3, so the creature rises through it; Mushura's is tilted `-0x400` and cut at the

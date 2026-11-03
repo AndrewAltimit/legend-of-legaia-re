@@ -160,6 +160,15 @@ clip loops, its cursor in sixteenths of a keyframe and the live pair: the
 engine half of the retail `body.csv`, which a clip that ends early or late
 is read off.
 
+Both sides also write `creature.csv`, the summon creature's clip, staged byte,
+cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a
+walk or a clip the engine does not carry reads directly: Jedo's creature stood at
+`z = -0x800` where retail's advanced to `-0x400`. The Done band includes a flute's flee
+state `0x65`, so the Spikefish cast ends cleanly. A cast's arm can run longer in retail
+than its countdown says: the frame step stops at 4 while a heavy arm's real frame runs
+past 4 vsyncs, so the module's word drains slower per vsync. Ozma's arm 6 runs 462
+vsyncs to the engine's 191. The pairing keys on arms, so those frames pair by arm.
+
 ## The pairing rule
 
 Frames pair on the action-SM clock, never on wall time:
