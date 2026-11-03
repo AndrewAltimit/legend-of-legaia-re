@@ -68,6 +68,9 @@ const MODES = {
   enhanced: [],
   /* The page's own Retail-faithful box and PSX rasterisation, the native --retail --psx-render. */
   retail: ['play-retail-mode', 'play-psx-render'],
+  /* Asked for by name. PSX rasterisation under every pass that reads the screen inside the
+   * frame (ambient occlusion, bloom's scene copy, the fog's depth copy). */
+  'psx-enhanced': ['play-psx-render', 'play-bloom', 'play-ground-fog'],
 };
 
 /* Runs before the page's scripts. */

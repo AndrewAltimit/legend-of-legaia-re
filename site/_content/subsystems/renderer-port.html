@@ -85,6 +85,7 @@
     </tbody>
   </table>
   </div>
+  <p><strong>The play page&rsquo;s PSX frame is single-sample.</strong> The page&rsquo;s context has MSAA, which cannot change after creation and which WebGL cannot turn off on the canvas&rsquo;s framebuffer. So a PSX frame draws into a single-sample framebuffer of its own (<code>site/js/webgl-psx-target.js</code>) and is copied to the canvas once; on the canvas a polygon edge would resolve to a blend of partly covered samples, which neither retail&rsquo;s rasteriser nor the native renderer has. The enhanced mode keeps its MSAA.</p>
   <p><strong>There is no synthetic light.</strong> Retail runs no light source on the field path: shading is baked into each primitive&rsquo;s colour word and the only colour operation is the depth cue. A missing colour stream defaults to white, and white reads as <em>too bright</em>, not unlit - the usual sign that a draw lost its colours.</p>
 </section>
 

@@ -80,7 +80,9 @@ stands, MSAA included, never does it. So the default is SwiftShader, and `--gl e
 the fast form, on a context that differs from a player's by that one
 attribute. Plain `--gl egl` warns. Both forms are repeatable: no tolerance is applied to either.
 
-A context with MSAA is what PSX mode draws into as well, which the native window has no step for.
+PSX mode draws into a single-sample framebuffer of its own on either form, so its frames do not
+depend on the context's MSAA ([the native target](../subsystems/renderer-port.md#the-native-target)):
+a retail run with `--no-msaa` and one without agree.
 
 **Nothing else moved a frame.** These change when things happen against the ticks, and hashes
 stayed line for line:

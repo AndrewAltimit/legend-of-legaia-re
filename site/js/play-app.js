@@ -457,6 +457,17 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* The page may have built it while idle (`play.html`, `prewarmFirstEntry`):
        * the same object on the same canvas, its shaders already compiled. */
       this.renderer = (opts && opts.renderer) || new window.TmdRenderer(canvas);
+      /* PSX rasterisation's frame goes through a single-sample framebuffer of
+       * its own (webgl-psx-target.js). A skipped draw neither draws nor copies. */
+      this._psxTarget = new window.LegaiaPsxTarget(this.renderer.gl);
+      const drawFrame = this._frame;
+      this._frame = (skipDraw) => {
+        const psx = this.psxRender && !skipDraw && !(this.vr && this.vr.isActive());
+        if (psx) this._psxTarget.begin();
+        const r = drawFrame.call(this, skipDraw);
+        if (psx) this._psxTarget.present();
+        return r;
+      };
       /* Every scene mesh carries its primitives' corners for retail's
        * per-primitive near reject, built by the engine's kernel (read
        * through this.rt so a recovered runtime keeps serving it). */
@@ -962,7 +973,8 @@ void main() { o_color = texture(u_layer, v_uv); }
      * overlay canvas take a 320 x 240 backing store, which every pass reads
      * its size from (the viewport, the snap grid, the overlay layout), and
      * the browser magnifies them nearest-neighbour. The snap, the fill rule
-     * and the dither are retail's only at stage scale 1. */
+     * and the dither are retail's only at stage scale 1, and on a single-sample
+     * framebuffer (webgl-psx-target.js). */
     setPsxRender(on) {
       this.psxRender = !!on;
       this._applyNativeResolution();
@@ -1057,6 +1069,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       window.removeEventListener('blur', this._onBlur);
       if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
       if (this._fogPass) { this._fogPass.dispose(); this._fogPass = null; }
+      if (this._psxTarget) { this._psxTarget.dispose(); this._psxTarget = null; }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
     }
   }

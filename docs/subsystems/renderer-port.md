@@ -148,6 +148,15 @@ same with its canvases: PSX rasterisation gives the GL canvas and the overlay
 canvas a `320 x 240` backing store and lets the browser magnify them with
 `image-rendering: pixelated`.
 
+The page's context has MSAA, which cannot change after creation and which WebGL
+cannot turn off on the canvas's framebuffer. So a PSX frame on the page draws into
+a single-sample framebuffer of its own
+([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) and is copied to the
+canvas once: "the screen" is that framebuffer until the frame ends, reads inside
+the frame included. On the canvas itself the fill rule below would not hold, since
+a polygon edge resolves to a blend of partly covered samples. The native renderer
+is single-sample throughout, and the page's enhanced mode keeps its MSAA.
+
 At stage scale 1 PSX mode rasterises the GPU's way, which no fragment trick
 at a window-sized target could. The snapped vertices move half a stage pixel
 down and right (`psx_native_centre`, PSX mode's `psx_params.z = 2`), so the
