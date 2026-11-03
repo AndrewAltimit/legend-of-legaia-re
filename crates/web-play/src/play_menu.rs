@@ -195,6 +195,52 @@ pub(crate) fn quad_json(d: &TextDraw) -> serde_json::Value {
     })
 }
 
+/// [`quad_json`] without a map per quad, for a draw list built every frame: the
+/// same text, written straight to the string. The tint widens to `f64` because
+/// a `Value` holds its floats that way, and the page keys tinted atlas copies
+/// on the digits it reads.
+#[derive(serde::Serialize)]
+pub(crate) struct QuadText<'a> {
+    color: [f64; 4],
+    dst: &'a (i32, i32, u32, u32),
+    src: &'a (u32, u32, u32, u32),
+}
+
+impl<'a> From<&'a TextDraw> for QuadText<'a> {
+    fn from(d: &'a TextDraw) -> Self {
+        Self {
+            color: d.color.map(f64::from),
+            dst: &d.dst,
+            src: &d.src,
+        }
+    }
+}
+
+#[cfg(test)]
+mod quad_text_tests {
+    use super::*;
+
+    /// The string the page parses is the one `quad_json` writes, digit for digit.
+    #[test]
+    fn quad_text_writes_what_quad_json_writes() {
+        for color in [
+            [1.0, 1.0, 1.0, 1.0],
+            [0.0, 0.0, 0.0, 0.5],
+            [0.1, 0.2, 0.7, 0.33],
+            [1.0 / 31.0, 17.0 / 31.0, 248.0 / 255.0, 0.999],
+            [f32::NAN, f32::INFINITY, -0.0, f32::MIN_POSITIVE],
+        ] {
+            let d = TextDraw {
+                dst: (-12, 3000, 276, 3),
+                src: (0, 1, 102, 48),
+                color,
+            };
+            let direct = serde_json::to_string(&QuadText::from(&d)).unwrap();
+            assert_eq!(direct, quad_json(&d).to_string());
+        }
+    }
+}
+
 /// Test-only probes for the disc-gated pause-menu oracles
 /// (`tests/menu_parity.rs`). Native-only so the wasm export surface the page
 /// consumes stays exactly the player-facing API.

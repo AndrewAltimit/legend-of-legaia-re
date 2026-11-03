@@ -3445,6 +3445,7 @@ dependencies = [
  "legaia-vab",
  "legaia-web-minigames",
  "legaia-xa",
+ "serde",
  "serde_json",
  "toml",
  "wasm-bindgen",

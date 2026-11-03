@@ -63,6 +63,7 @@ legaia-vab.workspace = true
 legaia-web-minigames.workspace = true
 legaia-xa.workspace = true
 glam.workspace = true
+serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 wasm-bindgen.workspace = true

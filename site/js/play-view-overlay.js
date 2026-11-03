@@ -159,11 +159,17 @@
           this._ensureMenuBlitters();
           if (this._menuFont) this._menuFont.blit(ctx, dev.texts);
           this._overlayActive = true;
+          this._overlayPainted = null;
         }
       }
     }
 
     _drawOverlayBase(ctx, ov) {
+      /* What the shop and dialog layers last painted (below), and only if
+       * nothing has painted since: every other branch of this method, the
+       * developer menu and a stopped view's title screens leave it null. */
+      const paintedLast = this._overlayPainted;
+      this._overlayPainted = null;
       /* PSX UI is nearest-neighbour: the native wgpu overlay samples the atlas
        * with no filtering, so the integer-scaled tiles butt edge-to-edge. Canvas
        * 2D defaults to bilinear (`imageSmoothingEnabled` true), which bleeds a
@@ -238,9 +244,29 @@
        * black backdrop (`backdrop`), as retail's does. Sits above
        * the dialog check because a merchant's box closes before the shop
        * opens, and a banner should not be hidden by one. */
-      let shop = null;
+      let shopJson = null;
       if (typeof this.rt.play_overlay_draws_json === 'function') {
-        try { shop = JSON.parse(this.rt.play_overlay_draws_json(ov.width, ov.height)); }
+        try { shopJson = this.rt.play_overlay_draws_json(ov.width, ov.height); }
+        catch (e) { shopJson = null; }
+      }
+      let dlgJson = null;
+      if (typeof this.rt.play_dialog_draws_json === 'function') {
+        try { dlgJson = this.rt.play_dialog_draws_json(ov.width, ov.height); }
+        catch (e) { dlgJson = null; }
+      }
+      /* The canvas keeps its pixels. The answers these layers paint from are
+       * all of what they read, so a frame that hands back the strings the last
+       * one painted has nothing to do: the field HUD standing still costs no
+       * parse, no blit and no fresh canvas for the compositor. */
+      const paintKey = [shopJson, dlgJson, this._textWashJson(), this._menuFont, this._menuChrome,
+        ov.width, ov.height];
+      if (paintedLast && paintKey.every((v, i) => v === paintedLast[i])) {
+        this._overlayPainted = paintedLast;
+        return;
+      }
+      let shop = null;
+      if (shopJson !== null) {
+        try { shop = JSON.parse(shopJson); }
         catch (e) { shop = null; }
       }
       /* This layer does NOT own the frame: the battle HUD rides it, and a
@@ -276,8 +302,8 @@
        * this, because the two are seated differently and a page that switches
        * between them mid-conversation shows the box move. */
       let dlg = null;
-      if (typeof this.rt.play_dialog_draws_json === 'function') {
-        try { dlg = JSON.parse(this.rt.play_dialog_draws_json(ov.width, ov.height)); }
+      if (dlgJson !== null) {
+        try { dlg = JSON.parse(dlgJson); }
         catch (e) { dlg = null; }
       }
       if (dlg && dlg.open) {
@@ -289,9 +315,16 @@
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
         this._applyTextWash(ctx, ov);
+        /* Blitters that were still missing at the key's read came up inside
+         * this paint, so the next frame's key differs and paints once more. */
+        this._overlayPainted = paintKey;
         return;
       }
-      if (overlayDrew) { this._applyTextWash(ctx, ov); return; }
+      if (overlayDrew) {
+        this._applyTextWash(ctx, ov);
+        this._overlayPainted = paintKey;
+        return;
+      }
       /* Opening-cutscene narration crawl / title card / "It was the Seru."
        * caption: font-atlas text quads + one faded image quad over the live
        * 3D prologue scene. */
@@ -359,10 +392,17 @@
      * are the PSX ABR modes `legaia_render_kernels::screen_prim::wash_channel`
      * names. Only called right after a branch repainted the canvas, so a
      * wash never compounds across frames. */
+    _textWashJson() {
+      if (typeof this.rt.play_text_layer_washes_json !== 'function') return null;
+      try { return this.rt.play_text_layer_washes_json(); }
+      catch (e) { return null; }
+    }
+
     _applyTextWash(ctx, ov) {
-      if (typeof this.rt.play_text_layer_washes_json !== 'function') return;
+      const json = this._textWashJson();
+      if (json === null) return;
       let washes = null;
-      try { washes = JSON.parse(this.rt.play_text_layer_washes_json()); }
+      try { washes = JSON.parse(json); }
       catch (e) { return; }
       if (!washes || !washes.length || !ov.width || !ov.height) return;
       const img = ctx.getImageData(0, 0, ov.width, ov.height);
