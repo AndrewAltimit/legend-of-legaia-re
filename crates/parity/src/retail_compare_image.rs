@@ -365,6 +365,18 @@ pub fn score(retail: &Frame, engine: &Frame) -> ImageScore {
     }
 }
 
+/// The engine's panel of a side-by-side report image (retail, engine,
+/// difference), as RGBA rows; `None` when the file is missing or unreadable.
+pub(crate) fn engine_panel_rgba(path: &Path) -> Option<Vec<u8>> {
+    let (rgba, w, h) = read_png_rgba(path).ok()?;
+    let panel = w / 3;
+    let mut out = Vec::with_capacity(panel * h * 4);
+    for row in rgba.chunks_exact(w * 4) {
+        out.extend_from_slice(&row[panel * 4..panel * 2 * 4]);
+    }
+    Some(out)
+}
+
 fn read_png_rgba(path: &Path) -> Result<(Vec<u8>, usize, usize)> {
     let dec = png::Decoder::new(std::io::BufReader::new(
         std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?,

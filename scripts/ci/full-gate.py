@@ -542,6 +542,20 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
             read_log=regressions,
         )
     )
+    for mode in ("clean", "enhanced"):
+        p.add(
+            Gate(
+                f"smoke-{mode}",
+                "retail",
+                f"python3 scripts/ci/retail-compare.py --smoke {mode} --no-build --jobs {a.jobs} "
+                f"--smoke-reference \"{drop('retail-compare')}\" --out \"{drop(f'smoke-{mode}')}\"",
+                env=engine_env,
+                cpu=a.jobs,
+                locks=("display",),
+                scope=True,
+                needs=("retail-compare",),
+            )
+        )
     p.add(
         Gate(
             "audio-sweep",

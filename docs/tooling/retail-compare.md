@@ -3386,14 +3386,35 @@ scripts/ci/retail-compare.py --smoke clean      # --retail
 scripts/ci/retail-compare.py --smoke enhanced   # --retail --dynamic-lighting
 ```
 
-The driver runs the image corpus with `legaia-engine retail-compare --render
-<mode> --smoke-check <baseline>`, writes its report to
-`captures/retail-compare-smoke-<mode>/`, and fails a state only when its
-frame scores more than `SMOKE_IMAGE_SLACK` (`0.25`) under the accuracy
-baseline's image score, or when a state it seeded scores no frame
-(`Baseline::smoke_breaks`). It never writes or checks the ratchet:
-`--render` with `--bless` / `--check` is refused. Patched-disc states are
-left out, as they are of the ratchet.
+The driver runs the image corpus in accuracy mode, or takes a finished run with
+`--smoke-reference`, then runs it again with `legaia-engine retail-compare
+--render <mode> --smoke-check <baseline> --smoke-reference <accuracy run>` and
+writes its report to `captures/retail-compare-smoke-<mode>/`.
+
+The frames are measured against the **same engine's accuracy frame**, not
+retail's. These modes are meant to differ from retail, and closeness to retail
+is the wrong question: an even brightness grade fails nearly every pixel of the
+image channel while the frame looks fine, and a state's own accuracy gap has
+nothing to do with the mode. A frame reads as broken when any of these holds
+(`SmokeFrame::broken`):
+
+- `3%` of its pixels moved `96` or more in luma;
+- `2%` of its pixels turned lit (luma `64` and up) where the accuracy frame is
+  black (luma `8` and under), the shape of a halo outside the view;
+- its mean luma moved `45` or more either way.
+
+The same run fails a state it seeded that scored no frame. A white-pixel share
+is deliberately not one of the measures: a summon's flash is white in every
+mode, and a hair of grade tips it over a threshold. The thresholds sit between
+the frames reviewed by eye as fine and enhanced lighting's emitter-brightness
+defect (normalised emitter colour lit the whole scene), which the check catches
+on the worst of its scenes: `rugi` and `conc` on big change, the dance hall on
+light from black, the Baka Fighter scenes on big change. Scenes that defect
+touched more mildly (`koin4`, `korb2`, `keikoku`) stay under them, so the tier
+catches a flood and not a mild over-brightness.
+
+It never writes or checks the ratchet: `--render` with `--bless` / `--check` is
+refused. Patched-disc states are left out, as they are of the ratchet.
 
 ### A box on screen while the record runs on
 

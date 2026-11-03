@@ -12,7 +12,7 @@ directory. See `docs/tooling/retail-compare.md`.
     scripts/ci/retail-compare.py --images        # + frames (needs a display)
     scripts/ci/retail-compare.py --check         # assert the committed ratchet
     scripts/ci/retail-compare.py --bless         # update the baseline (merges: unmeasured states/channels keep their values)
-    scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, loose check, no ratchet
+    scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, broken-frame check, no ratchet
     scripts/ci/retail-compare.py --jobs 1        # one state at a time (default: several, same report)
     scripts/ci/retail-compare.py --fresh         # measure every state, ignoring the result cache
 
@@ -74,9 +74,11 @@ def main() -> int:
     ap.add_argument("--no-build", action="store_true")
     ap.add_argument(
         "--smoke", choices=["clean", "enhanced"],
-        help="smoke tier: render the frames in this mode and check them loosely "
-             "against the accuracy baseline (implies --images; never blesses or checks the ratchet)",
+        help="smoke tier: render the frames in this mode and fail any that reads as broken "
+             "against the same engine's accuracy frame (implies --images; never blesses or checks the ratchet)",
     )
+    ap.add_argument("--smoke-reference",
+                    help="--smoke: an accuracy run's output from this engine, instead of running one first")
     ap.add_argument("--jobs", type=int, default=default_jobs(),
                     help="states run at once; report.json is the same at any count (default %(default)s)")
     ap.add_argument("--fresh", action="store_true",
@@ -114,7 +116,20 @@ def main() -> int:
     if a.images or a.smoke:
         cmd.append("--images")
     if a.smoke:
-        cmd += ["--render", a.smoke, "--smoke-check", str(BASELINE)]
+        reference = a.smoke_reference
+        if reference is None:
+            reference = str(Path(a.out) / "accuracy")
+            first = list(cmd)
+            first[first.index("--out") + 1] = reference
+            first += ["--cache", str(CACHE)]
+            if a.filter:
+                first += ["--filter", a.filter]
+            env = dict(os.environ)
+            env.setdefault("RUST_LOG", "error")
+            code = subprocess.run(first, cwd=REPO, env=env).returncode
+            if code != 0:
+                return code
+        cmd += ["--render", a.smoke, "--smoke-check", str(BASELINE), "--smoke-reference", reference]
     if a.flags_first:
         cmd.append("--flags-first")
     if a.filter:

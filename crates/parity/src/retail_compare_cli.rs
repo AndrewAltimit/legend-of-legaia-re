@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use crate::retail_compare::{
-    Baseline, IMAGE_CHANNELS, RunOptions, SMOKE_IMAGE_SLACK, markdown_report, resolve_dirs,
+    Baseline, IMAGE_CHANNELS, RunOptions, SmokeFrame, markdown_report, resolve_dirs,
     run_corpus_timed, summarise,
 };
 use crate::retail_compare_image::FrameRender;
@@ -58,11 +58,15 @@ pub struct RetailCompareArgs {
     /// checked against the ratchet.
     #[arg(long, value_enum, default_value_t = FrameRender::Psx)]
     pub render: FrameRender,
-    /// Smoke tier: report every image score more than the smoke slack under
-    /// this baseline's, and exit non-zero on any (loose; see
-    /// `Baseline::smoke_breaks`).
-    #[arg(long)]
+    /// Smoke tier: report every frame of a state this baseline scores that
+    /// reads as broken against its accuracy frame, and exit non-zero on any
+    /// (see `Baseline::smoke_breaks`). Needs `--smoke-reference`.
+    #[arg(long, requires = "smoke_reference")]
     pub smoke_check: Option<PathBuf>,
+    /// An accuracy run's output directory (`--images`, same engine): the frames
+    /// `--smoke-check` measures against.
+    #[arg(long)]
+    pub smoke_reference: Option<PathBuf>,
     /// Capture-coverage census: read every corpus state's scene, class and
     /// on-screen battle action plus the disc's monster / spell / formation
     /// lists, write them as JSON to this path and exit without seeding the
@@ -220,20 +224,30 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
     if let Some(p) = args.smoke_check {
         anyhow::ensure!(args.images, "--smoke-check scores frames: pass --images");
         let b: Baseline = serde_json::from_str(&std::fs::read_to_string(&p)?)?;
-        let breaks = b.smoke_breaks(&reports, SMOKE_IMAGE_SLACK);
+        let reference = args
+            .smoke_reference
+            .as_deref()
+            .context("--smoke-check needs --smoke-reference")?;
+        let frame_of = |label: &str| -> Option<SmokeFrame> {
+            let name = format!("{label}.png");
+            let accuracy = crate::retail_compare_image::engine_panel_rgba(&reference.join(&name))?;
+            let frame = crate::retail_compare_image::engine_panel_rgba(&out.join(&name))?;
+            SmokeFrame::measure(&accuracy, &frame)
+        };
+        let breaks = b.smoke_breaks(&reports, &frame_of);
         for r in &breaks {
             eprintln!("[smoke-break] {r}");
         }
         anyhow::ensure!(
             breaks.is_empty(),
-            "{} frame(s) in render mode {:?} broke against the accuracy baseline",
+            "{} frame(s) in render mode {:?} read as broken against the accuracy frames",
             breaks.len(),
             args.render
         );
         println!(
-            "smoke tier {:?} holds within {SMOKE_IMAGE_SLACK} of {}",
+            "smoke tier {:?} holds against the accuracy frames in {}",
             args.render,
-            p.display()
+            reference.display()
         );
     }
     Ok(())
