@@ -159,7 +159,7 @@
         <li><strong>Its own audio stack.</strong> A from-scratch <a href="../subsystems/audio.html">SPU and sequencer</a> on both hosts, with pack music mixed beside them.</li>
         <li><strong>More hosts.</strong> One session in a native window and <a href="../subsystems/browser-host.html">in the browser</a>, with <a href="../subsystems/vr-mode.html">VR</a> on the site's 3D pages.</li>
         <li><strong>Modding as a feature.</strong> <a href="../formats/expansion-pack.html">Expansion packs</a>, <a href="../subsystems/run-rules.html">run rules</a>, <a href="../subsystems/expansion-modes.html">game modes</a> and <a href="../subsystems/netplay.html">netplay</a>.</li>
-        <li><strong>No original code executing.</strong> The engine parses data tables out of the user's <code>SCUS_942.54</code> and overlays, and runs none of their code.</li>
+        <li><strong>No original code executing.</strong> The engine parses data tables out of the user's <code>SCUS_942.54</code> and overlays, and reads a cast module's image to recover which presentation calls each arm makes, but no MIPS executes.</li>
       </ul>
     </div>
   </div>

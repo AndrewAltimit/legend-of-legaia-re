@@ -64,7 +64,7 @@ The project has two coordinated tracks: preserving and documenting every asset, 
 - **Its own audio stack.** A from-scratch [SPU and sequencer](subsystems/audio.md) play the game's banks on both hosts, and pack music mixes beside them.
 - **More hosts.** The same session runs in a native window and [in the browser](subsystems/browser-host.md), with [VR](subsystems/vr-mode.md) on the site's 3D pages.
 - **Modding as a feature.** [Expansion packs](formats/expansion-pack.md) add maps, quests and fights, [run rules](subsystems/run-rules.md) add difficulty and an in-engine randomizer, and [game modes](subsystems/expansion-modes.md) and [netplay](subsystems/netplay.md) are the port's own.
-- **No original code executing.** The engine parses data tables out of `SCUS_942.54` and the overlays on the user's disc, but it runs none of their code, so there is no translated MIPS to carry.
+- **No original code executing.** The engine parses data tables out of `SCUS_942.54` and the overlays on the user's disc, and reads a cast module's image to recover which presentation calls each arm makes (`legaia_overlay_images::cast_presentation`), but no MIPS executes, so there is no translated code to carry.
 
 ### The boundary, stated honestly
 
