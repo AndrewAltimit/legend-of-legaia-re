@@ -894,6 +894,26 @@ impl World {
                     tl.pc = pc + 4;
                     continue;
                 }
+                // The same arm on a placed object (`taiku2`'s `P2[0]` walks
+                // its sky dome, record 20, with `C1 14 84 4A` as the shot
+                // starts): the op seats on the object actor's `+0x94` under
+                // its halt bit, and the record runs on.
+                // REF: FUN_801DE840 (0x801DEE90..0x801DEF1C), FUN_8003774C (the 0x37 / 0x41 arm)
+                if opcode_byte & 0x80 != 0
+                    && let Some(leg) =
+                        super::field_channels::compass_walk_operands(&tl.bytecode, pc)
+                    && let Some((_, ci)) = target
+                    && channels[ci].object_bind
+                {
+                    if pc < tl.visited.len() {
+                        tl.visited[pc] = true;
+                    }
+                    channels[ci].ctx.flags |= 0x400;
+                    let record = channels[ci].ctx.script_id;
+                    host.world.arm_object_glide_leg(record, leg);
+                    tl.pc = pc + 4;
+                    continue;
+                }
                 // Cross-context facing op (`B8 <id> <op0> <op1>` = op 0x38
                 // CAM_CFG against a spawned NPC channel).
                 //
