@@ -462,6 +462,9 @@ pub struct RetailBattle {
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
+    /// The pose the near-camera ghost pass read for that frame
+    /// ([`displayed_ghost_pose`]).
+    pub displayed_ghost_pose: legaia_engine_camera::projection::BattleCamPose,
     /// [`Self::cam_tween`]'s endpoints as the displayed frame's own pass
     /// armed them: the RAM's, moved where a walker moved them
     /// ([`walker_end_shift`]).
@@ -480,6 +483,9 @@ pub struct RetailBattle {
     /// The same arm's frames left on the RAM's own instant, which is what
     /// the headless camera channel reads.
     pub menu_glide_left_live: Option<f32>,
+    /// The pose retail's own table stands that displayed frame on
+    /// ([`displayed_menu_glide_pose`]).
+    pub menu_glide_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     /// The frame driver's entry counter `gp+0x330` ([`ENTRY_COUNTER`]).
     pub entry_counter: u8,
     /// The options screen's Battle Camera word `0x800846C0` (Close `0` /

@@ -225,6 +225,10 @@ pub struct ScreenshotConfig {
     /// that moved between that frame and the RAM's. Set by the
     /// retail-compare image channel (`RetailBattle::engine_image_displayed_seats`).
     pub battle_displayed_seat: Vec<legaia_engine_capture::ground_snap::GroundSnap>,
+    /// `LEGAIA_BATTLE_GHOST_POSE`: the pose the near-camera ghost pass read for
+    /// the displayed frame, one pass older than the pose it stands on
+    /// ([`legaia_engine_core::world::World::refresh_battle_camera_ghost_on`]).
+    pub battle_ghost_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     pub battle_cam_align_displayed: Option<(
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
@@ -274,6 +278,12 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_frames_left`]).
     /// Set by the retail-compare image channel.
     pub seat_menu_glide_left: Option<f32>,
+    /// `LEGAIA_SEAT_MENU_GLIDE_POSE=pitch,tx,ty,tz,fx,fy,fz`: the pose retail's
+    /// own table puts that displayed frame on, which the seat stands on in
+    /// place of the engine's arm
+    /// ([`legaia_engine_battle_vm::battle_cam_script::BattleCamera::align_menu_glide_pose`]).
+    /// Set by the retail-compare image channel.
+    pub seat_menu_glide_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     /// `LEGAIA_SEAT_POPUP_AGE=<engine slot>:<age>`: the newest damage
     /// numeral's age as the retail capture's displayed frame drew it; the
     /// captured frame ages the engine's newest popup on that slot to it.
@@ -945,6 +955,9 @@ impl ScreenshotConfig {
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
+            battle_ghost_pose: std::env::var("LEGAIA_BATTLE_GHOST_POSE")
+                .ok()
+                .and_then(|v| legaia_engine_capture::camera_align::cam_pose_from_env(&v)),
             battle_displayed_seat: std::env::var("LEGAIA_BATTLE_DISPLAYED_SEAT")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
@@ -983,6 +996,17 @@ impl ScreenshotConfig {
             seat_menu_glide_left: std::env::var("LEGAIA_SEAT_MENU_GLIDE_LEFT")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            seat_menu_glide_pose: std::env::var("LEGAIA_SEAT_MENU_GLIDE_POSE")
+                .ok()
+                .and_then(|v| {
+                    let n: Vec<f32> = v.split(',').filter_map(|f| f.trim().parse().ok()).collect();
+                    (n.len() == 7).then(|| legaia_engine_camera::projection::BattleCamPose {
+                        pitch: n[0],
+                        yaw: 0.0,
+                        tr: [n[1], n[2], n[3]],
+                        focus: [n[4], n[5], n[6]],
+                    })
+                }),
             seat_popup_cells: std::env::var("LEGAIA_SEAT_POPUP_CELLS")
                 .map(|v| {
                     v.split(',')

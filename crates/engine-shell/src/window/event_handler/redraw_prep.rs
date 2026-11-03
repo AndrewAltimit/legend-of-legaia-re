@@ -124,6 +124,12 @@ impl PlayWindowApp {
                 self.cutscene_glide.align_frames_left(left as u32);
                 self.session.camera.align_glide_frames_left(left);
             }
+            // A capture no pose reaches stands the camera on this frame's
+            // seats, and the tick's ghost bits read the pose before them: the
+            // pass walks a table, and a seat's jump is none of retail's.
+            if due && sc.battle_ghost_pose.is_none() {
+                self.session.host.world.refresh_battle_camera_ghost();
+            }
             if due && !sc.seat_battle_clips.is_empty() {
                 legaia_engine_capture::clip_cursors::apply_clip_cursors(
                     &mut self.session.host.world,
@@ -138,6 +144,9 @@ impl PlayWindowApp {
                 && let Some(cam) = self.session.host.world.battle.camera.as_mut()
             {
                 cam.align_menu_glide_frames_left(left);
+                if let Some(shown) = sc.seat_menu_glide_pose {
+                    cam.align_menu_glide_pose(shown, left);
+                }
             }
             if due && sc.seat_hud_glides_landed {
                 self.session.host.world.battle.land_battle_hud_glides();
@@ -467,6 +476,7 @@ impl PlayWindowApp {
                 pose.yaw = yaw;
                 cam.stand_on_pose(pose);
             }
+            let ghost_pose = self.screenshot.as_ref().and_then(|sc| sc.battle_ghost_pose);
             let world = &mut self.session.host.world;
             // The near-camera ghost bits are derived from the pose, and the
             // tick computed them on the unaligned one. Re-derive them only
@@ -493,7 +503,10 @@ impl PlayWindowApp {
                         .collect();
                     let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &live);
                 }
-                world.refresh_battle_camera_ghost();
+                match ghost_pose {
+                    Some(pose) => world.refresh_battle_camera_ghost_on(pose),
+                    None => world.refresh_battle_camera_ghost(),
+                }
             }
             // A seat the displayed frame drew elsewhere than the RAM's ground
             // (`LEGAIA_BATTLE_DISPLAYED_SEAT`): moved after the alignment, so
@@ -515,7 +528,10 @@ impl PlayWindowApp {
                 let _ = legaia_engine_capture::ground_snap::snap_battle_ground(world, &seats);
                 legaia_engine_capture::clip_cursors::apply_displayed_clips(world, &clips);
                 if mask == 0xFF {
-                    world.refresh_battle_camera_ghost();
+                    match ghost_pose {
+                        Some(pose) => world.refresh_battle_camera_ghost_on(pose),
+                        None => world.refresh_battle_camera_ghost(),
+                    }
                 }
             }
         }

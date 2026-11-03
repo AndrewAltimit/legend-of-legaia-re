@@ -693,6 +693,15 @@ pub(super) fn battle_image(
         && let Some(left) = battle.menu_glide_left
     {
         env.push(("LEGAIA_SEAT_MENU_GLIDE_LEFT", format!("{left:.2}")));
+        if let Some(p) = battle.menu_glide_pose {
+            env.push((
+                "LEGAIA_SEAT_MENU_GLIDE_POSE",
+                format!(
+                    "{},{},{},{},{},{},{}",
+                    p.pitch, p.tr[0], p.tr[1], p.tr[2], p.focus[0], p.focus[1], p.focus[2]
+                ),
+            ));
+        }
     }
     // The captured phase's glide starts where retail's stood, as the
     // headless channel aligns it (`BattleCamera::align_glide_origin`).
@@ -762,6 +771,10 @@ pub(super) fn battle_image(
             ),
         ));
         if battle.displayed_camera() {
+            env.push((
+                "LEGAIA_BATTLE_GHOST_POSE",
+                legaia_engine_capture::camera_align::cam_pose_to_env(&battle.displayed_ghost_pose),
+            ));
             let seats = battle.engine_image_displayed_seats();
             if !seats.is_empty() {
                 env.push((

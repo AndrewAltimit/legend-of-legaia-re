@@ -482,4 +482,18 @@ fn a_far_framing_arm_stands_its_frames_left_short() {
     assert_eq!(cam.framing_pose().tr, close.tr);
     assert!(cam.align_menu_glide_frames_left(0.0));
     assert_eq!(cam.framing_pose().tr[2], end.tr[2]);
+    // Retail's table stands the pose; a `NaN` keeps the walked component.
+    assert!(cam.align_menu_glide_frames_left(9.0));
+    let walked_pitch = cam.framing_pose().pitch;
+    let shown = BattleCamPose {
+        pitch: f32::NAN,
+        yaw: 7.0,
+        tr: [0.0, 1441.0, 4632.0],
+        focus: [0.0; 3],
+    };
+    assert!(cam.align_menu_glide_pose(shown, 9.0));
+    let p = cam.framing_pose();
+    assert_eq!(p.tr[2], 4632.0);
+    assert_eq!(p.pitch, walked_pitch);
+    assert_eq!(p.yaw, yaw, "the orbit owns the yaw");
 }

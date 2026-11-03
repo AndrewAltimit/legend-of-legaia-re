@@ -415,6 +415,77 @@ pub(super) fn displayed_cam_live_steps(
     }
 }
 
+/// The pose the near-camera ghost pass read for the displayed frame: one pass
+/// behind `shown`, the pose that frame stands on
+/// ([`World::tick_battle_camera_ghost`](legaia_engine_core::world::World)).
+/// `further` is the same walk with one pass more.
+///
+/// Case 7's yaw sits `0x700` past its endpoint on the first pass that armed it
+/// (`0x801D6700`), so a walk back beyond that is a pass of the earlier framing
+/// the re-arm law does not describe, and the earlier framing had all but
+/// landed: `battle_korb2_aluru_strike` stands on yaw `2188` under an endpoint
+/// of `395`, one unit from where case 6 was resting. Such a pass holds `shown`.
+pub(super) fn displayed_ghost_pose(
+    ram: &[u8],
+    ctx: u32,
+    action_state: u8,
+    shown: legaia_engine_camera::projection::BattleCamPose,
+    further: legaia_engine_camera::projection::BattleCamPose,
+) -> legaia_engine_camera::projection::BattleCamPose {
+    const CASE_7_UNWRAP: f32 = 0x700 as f32;
+    if action_state == STRIKE_LOOP_STATE {
+        let (live, end) = retail_cam_tween(ram, ctx);
+        let dir = (end.yaw - live.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
+        // Round the way the walk goes back, away from the endpoint.
+        let moved = if dir < 0.0 {
+            (further.yaw - end.yaw).rem_euclid(4096.0)
+        } else {
+            (end.yaw - further.yaw).rem_euclid(4096.0)
+        };
+        if moved > CASE_7_UNWRAP {
+            return shown;
+        }
+    }
+    further
+}
+
+/// The pose the displayed frame of a walking round prompt stands on, off
+/// retail's own table: the arm's table is linear, so `lag` frames back is the
+/// live word less `lag` increments, on each component still short of its
+/// endpoint ([`displayed_menu_glide_left`]). A component that has landed with
+/// an increment still in the table reads `NaN`: the table no longer says when
+/// it landed, so the engine's arm keeps it (pitch `3` a frame reaches `32`
+/// well ahead of the translation). The yaw is the orbit's.
+pub(super) fn displayed_menu_glide_pose(
+    ram: &[u8],
+    ctx: u32,
+    lag: u16,
+) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+    displayed_menu_glide_left(ram, ctx, lag)?;
+    let (live, end) = retail_cam_tween(ram, ctx);
+    let inc = |k: u32| f32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k * 4) as i16).abs();
+    let back = |l: f32, e: f32, k: u32| {
+        let gap = e - l;
+        if gap == 0.0 {
+            if inc(k) == 0.0 { l } else { f32::NAN }
+        } else {
+            l - gap.signum() * inc(k) * f32::from(lag)
+        }
+    };
+    Some(legaia_engine_camera::projection::BattleCamPose {
+        pitch: back(live.pitch, end.pitch, 0),
+        yaw: live.yaw,
+        tr: [3u32, 4, 5].map(|k| {
+            let i = (k - 3) as usize;
+            back(live.tr[i], end.tr[i], k)
+        }),
+        focus: [6u32, 7, 8].map(|k| {
+            let i = (k - 6) as usize;
+            back(live.focus[i], end.focus[i], k)
+        }),
+    })
+}
+
 /// The live pose the displayed frame was drawn at under a **module shot**:
 /// retail's live camera walked back along a tween table built once.
 ///

@@ -1704,6 +1704,13 @@ fn a_prompt_on_its_far_framing_arm_names_the_frames_left() {
     put8(&mut ram, ctx + 6, 0x28);
     assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);
     put8(&mut ram, ctx + 6, 0x1E);
+    // Retail's own table: the walkers less six increments, a landed pitch
+    // left to the arm.
+    let shown = camera_align::displayed_menu_glide_pose(&ram, ctx, 6).expect("walking");
+    assert_eq!(shown.tr[1], 1327.0 + 6.0 * 19.0);
+    assert_eq!(shown.tr[2], 6750.0 - 6.0 * 353.0);
+    assert!(shown.pitch.is_nan());
+    assert_eq!(shown.focus[2], 0.0);
     put32(&mut ram, 0x8008_40BC, 1280);
     put32(&mut ram, 0x8008_40C0, 7800);
     assert_eq!(camera_align::displayed_menu_glide_left(&ram, ctx, 6), None);

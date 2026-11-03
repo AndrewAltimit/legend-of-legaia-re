@@ -53,13 +53,14 @@ impl World {
         // An active expansion pack's per-tick step (pack-line resolve, quest
         // state re-test); the identity with none.
         self.tick_expansion();
+        // The near-camera ghost pass reads the pose the walker left last
+        // pass: `FUN_8004DC68` sits in the controller node, ahead of the
+        // walker task (`World::tick_battle_camera_ghost`).
+        self.tick_battle_camera_ghost();
         // The battle camera observes the frame this tick produced, in every
         // mode (outside battle it drops its state) - once, here, for every
         // host (`crate::battle_cam_inputs`).
         self.tick_battle_camera();
-        // The near-camera ghost pass reads the pose this tick settled
-        // (`FUN_80046A20` calls `FUN_8004DC68` after its camera update).
-        self.tick_battle_camera_ghost();
         self.tick_battle_anim_pass();
         // The volumetric ground-fog enhancement steps on the tick this frame
         // settled, after every actor moved (`legaia_render_kernels::fog_volume`).

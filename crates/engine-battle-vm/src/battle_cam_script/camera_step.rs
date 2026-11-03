@@ -657,6 +657,34 @@ impl BattleCamera {
         true
     }
 
+    /// [`Self::align_menu_glide_frames_left`] on retail's own table: stand on
+    /// `shown` (pitch, translation and focus; the yaw stays the orbit's) with
+    /// `left` frames of the arm to go, keeping the pose already walked on a
+    /// `NaN` component (one retail's table has landed, so the table no longer
+    /// says where it stood). The engine's arm sets out from the pose its own
+    /// sweep left, so its increments miss retail's by a few percent, which a
+    /// walk of hundreds of units a frame shows at a close-up.
+    /// The capture harness's handle. Nothing in play calls it.
+    pub fn align_menu_glide_pose(&mut self, shown: BattleCamPose, left: f32) -> bool {
+        if self.menu_glide_from.is_none() || self.phase != BattleCamPhase::Menu {
+            return false;
+        }
+        let target = self.menu_pose();
+        let pick = |walked: f32, table: f32| if table.is_nan() { walked } else { table };
+        let mut from = BattleCamPose {
+            pitch: pick(self.pose.pitch, shown.pitch),
+            yaw: self.pose.yaw,
+            tr: std::array::from_fn(|k| pick(self.pose.tr[k], shown.tr[k])),
+            focus: std::array::from_fn(|k| pick(self.pose.focus[k], shown.focus[k])),
+        };
+        let steps = self.frames_to_steps(left.max(0.0).ceil() as u32);
+        let g = Glide::linear(&mut from, target, menu_raw_z(self.formation), steps, false);
+        self.pose = from;
+        self.glides.clear();
+        self.glides.push_back(g);
+        true
+    }
+
     /// Take a capture's live pose outright. A capture on the very pass an art
     /// committed (close-up accumulator `0`: the commit `FUN_8004AD80` zeroes
     /// it after the pass's framing ran) holds a step table armed on the clip

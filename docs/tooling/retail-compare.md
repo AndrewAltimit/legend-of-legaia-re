@@ -2149,6 +2149,22 @@ whole formation where retail's frame is still behind the leader's back:
 RAM's own instant, with no display lag (`RetailBattle::menu_glide_left_live`),
 since it reads the live pose rather than the frame on screen.
 
+The engine's arm sets out from the pose its own sweep left, so its increments
+miss retail's by a few percent (`gaza2_card_first_menu`: TR z `344` a frame
+against `353`), and at hundreds of units a frame that is a body's width on a
+close-up. The image child therefore stands on retail's own table
+(`LEGAIA_SEAT_MENU_GLIDE_POSE`, `displayed_menu_glide_pose`): each walking
+component's live word less the lag's increments. A component the table has
+landed keeps the engine's walk: pitch reaches `32` at `3` a frame well ahead of
+the translation, and the table no longer says when. `gaza2_card_first_menu`
+`.944` to `.963`, `cort_evolved_card_first_menu` `.932` to `.944`.
+
+The evolved-Cort prompt's residual does not move with its cycler seat: removing
+`LEGAIA_SEAT_CLUT_FX` or moving its hue through `12..44` leaves the frame's score
+and error as they were, where dropping the rect file `LEGAIA_SEAT_VRAM_RECTS`
+takes the frame to `.404`. Which of the two writes the row that frame samples is
+not settled.
+
 **The arrival's columns date a prompt capture.** A round-prompt capture of the
 evolved-Cort fight stands somewhere in the life of PROT 0968's crystal columns
 ([battle-command-flow](../subsystems/battle-command-flow.md#what-the-two-boss-stage-modules-do-overlays-968--969)),
@@ -2655,12 +2671,16 @@ an orbit clock. `evil_medallion_rage_battle` is one.
   takes the queue under the cursor (`ActionSteer::played`), and a capture no
   stream reaches on those picks runs the strike-stream fallback at any
   accumulator: the frame reads `.946`, HP `178` and no spark.
-  What remains is the Lippian left of the Frog: the displayed buffer draws it dim
-  and the undisplayed buffer and both ordering tables have no packet for it. The
-  strike's solo commit is what changes between those passes
-  (`FUN_8004E13C`'s `+0x21C = 1` sweep over the bystanders, `0x8004E15C..0x8004E24C`,
-  which `FUN_80050120` arm 1 eases toward `0x20` a lane); the port does not model
-  the sweep, and why the body leaves the table at a non-zero word is open.
+  What remained was the Lippian left of the Frog, opaque on the displayed buffer
+  and absent from the buffer after it. It is the near-camera ghost, not a dim:
+  the ghost pass reads the pose one pass behind the one a frame draws under
+  ([battle-actor-rendering](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)),
+  so the displayed frame's bits come from one pass further back than its pose.
+  The image child takes them there (`LEGAIA_BATTLE_GHOST_POSE`,
+  `displayed_ghost_pose`), and the frame reads `.991`. A strike on its first
+  case-7 arm holds the shown pose instead: the arm's yaw sits `0x700` past its
+  endpoint, and the pass before it belongs to the case-6 framing that had all
+  but landed there.
   The hit count is not the cause: a
   [`--physical` recording](cast-sequence-oracle.md#a-monsters-physical-attack) of
   the strike folds one HP drop on each side.
