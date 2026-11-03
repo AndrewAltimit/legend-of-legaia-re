@@ -30,6 +30,15 @@
     "arts_list_vahn_page3": {
       "battle_track": 1.0
     },
+    "balden2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "balden_devil_pump_pre_multi_cutter": {
+      "battle_track": 1.0
+    },
     "balden_field_route_walk": {
       "ambient": 1.0,
       "playing": 1.0,
@@ -37,7 +46,37 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "balden_orb_v2_pre_jewel_beam": {
+      "battle_track": 1.0
+    },
+    "balden_swordie_v2_pre_vacuum_slicer": {
+      "battle_track": 1.0
+    },
+    "balden_verial_pre_cross_beam": {
+      "battle_track": 1.0
+    },
     "barra_summon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_balden_devil_pump_multi_cutter_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_balden_devil_pump_strike": {
+      "battle_track": 1.0
+    },
+    "battle_balden_orb_v2_jewel_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_balden_orb_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_balden_swordie_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_balden_swordie_v2_vacuum_slicer_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_balden_verial_cross_beam_mid_cast": {
       "battle_track": 1.0
     },
     "battle_chitei2_gilium_strike": {
@@ -50,6 +89,36 @@
       "battle_track": 1.0
     },
     "battle_chitei2_kemaro_lv2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_deene_garnet_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deene_garnet_strike": {
+      "battle_track": 1.0
+    },
+    "battle_deene_ironman_jagged_earth_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deene_ironman_strike": {
+      "battle_track": 1.0
+    },
+    "battle_deene_neo_bison_strike": {
+      "battle_track": 1.0
+    },
+    "battle_deroa_spoon_v2_hyper_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deroa_spoon_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_dohaty_gola_gola_strike": {
+      "battle_track": 1.0
+    },
+    "battle_dohaty_nova_v2_scythe_wind_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_dohaty_nova_v2_strike": {
       "battle_track": 1.0
     },
     "battle_doman_freed_strike": {
@@ -70,16 +139,55 @@
     "battle_gimard_tail_fire_b": {
       "battle_track": 1.0
     },
+    "battle_jou_nova_v3_scythe_wind_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_nova_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_orb_v3_grand_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_orb_v3_strike": {
+      "battle_track": 1.0
+    },
     "battle_jouind_gilium_lv3_strike": {
       "battle_track": 1.0
     },
     "battle_jouind_gilium_lv3_thunder_storm_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_kor_dead_bone_curse_all_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_kor_dead_bone_strike": {
+      "battle_track": 1.0
+    },
+    "battle_kor_ghost_knight_v_windhash_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_kor_shade_fatal_decision_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_kor_shade_strike": {
+      "battle_track": 1.0
+    },
+    "battle_kor_spoon_strike": {
+      "battle_track": 1.0
+    },
     "battle_korb2_aluru_cannon_mid_cast": {
       "battle_track": 1.0
     },
     "battle_korb2_aluru_strike": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_ghost_knight_neo_windhash_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_ghost_knight_strike": {
+      "battle_track": 1.0
+    },
+    "battle_korb2_ghost_knight_windhash_mid_cast": {
       "battle_track": 1.0
     },
     "battle_korb2_kemaro_strike": {
@@ -98,6 +206,9 @@
       "battle_track": 1.0
     },
     "battle_korb2_warhalf_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map01_frog_strike": {
       "battle_track": 1.0
     },
     "battle_map01_gobu_gobu_strike": {
@@ -121,13 +232,55 @@
     "battle_map03_grude_strike": {
       "battle_track": 1.0
     },
+    "battle_map03_heavy_grude_strike": {
+      "battle_track": 1.0
+    },
     "battle_melee_hit_spark": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_lava_face_fissure_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_lava_face_strike": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_lucifer_cross_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_neo_grude_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_neo_grude_strike": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_rock_lizard_earthquake_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_barra_v2_multi_cutter_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_barra_v2_strike": {
       "battle_track": 1.0
     },
     "battle_noaru_gilium_lv2_strike": {
       "battle_track": 1.0
     },
     "battle_noaru_gilium_lv2_thunder_storm_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_slippery_v2_big_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_slippery_v2_poisonous_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_noaru_slippery_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retockin_evil_shadow_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retockin_skull_knight_strike": {
       "battle_track": 1.0
     },
     "battle_retona_hells_rat_steal_mid_cast": {
@@ -151,16 +304,85 @@
     "battle_retona_viguro_lv2_thunder_break_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_rikuroa_caruban_fire_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rikuroa_caruban_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rikuroa_pump_bat_windcutter_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rikuroa_worm_strike": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_curry_devil_cross_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_mad_mantis_strike": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_orb_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_orb_jewel_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_ropeway_orb_strike": {
+      "battle_track": 1.0
+    },
     "battle_rugi_barra_strike": {
       "battle_track": 1.0
     },
     "battle_rugi_barra_windcutter_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_rugi_rogue_element_change_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_rogue_rogue_flame_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_rogue_rogue_thunder_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_rogue_rogue_wind_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_rugi_slippery_poisonous_breath_mid_cast": {
       "battle_track": 1.0
     },
     "battle_rugi_slippery_strike": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_terror_face_fissure_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_terror_face_strike": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_terror_face_terror_scream_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_thermo_strike": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_thermo_void_accessories_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_topaz_hyper_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_topaz_strike": {
+      "battle_track": 1.0
+    },
+    "battle_teien_berserker_spore_gas_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_teien_berserker_stone_circle_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_teien_berserker_strike": {
       "battle_track": 1.0
     },
     "battle_tower_guardian_strike": {
@@ -175,7 +397,16 @@
     "battle_tower_swordie_strike": {
       "battle_track": 1.0
     },
+    "battle_tunnelb_gel_frog_strike": {
+      "battle_track": 1.0
+    },
     "battle_tunnelb_mush_mush_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelb_nova_scythe_wind_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelb_nova_strike": {
       "battle_track": 1.0
     },
     "battle_tunnelb_warman_strike": {
@@ -189,6 +420,25 @@
     },
     "battle_vozz_twin_tomb_strike": {
       "battle_track": 1.0
+    },
+    "bubu1_field_door_hop": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "bubu2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "bylon_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
     },
     "cave01_attached_light": {
       "playing": 1.0,
@@ -218,6 +468,9 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "chitei2_kemaro_v2_pre_lava_breath": {
+      "battle_track": 1.0
+    },
     "conc2_field_route_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -225,6 +478,24 @@
       "track": 1.0
     },
     "conc_field_card_boot": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "concend_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "concnow_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "concnow_field_door_hop_settled": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -248,17 +519,35 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "deene_garnet_pre_heal": {
+      "battle_track": 1.0
+    },
+    "deene_ironman_pre_jagged_earth": {
+      "battle_track": 1.0
+    },
+    "deroa_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "deroa_field_route_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
     },
+    "deroa_spoon_v2_pre_hyper_heal": {
+      "battle_track": 1.0
+    },
     "dohaty_field_card_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "dohaty_nova_v2_pre_scythe_wind": {
+      "battle_track": 1.0
     },
     "doman_arrival_from_korb2": {
       "playing": 1.0,
@@ -345,6 +634,12 @@
     "freed_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "geremi_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "gilium_summon_mid_cast": {
       "battle_track": 1.0
     },
@@ -369,10 +664,54 @@
     "iota_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "jagaroom_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "jedo_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "jiji_field_door_hop": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "jou_field_card_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "jou_nova_v3_pre_scythe_wind": {
+      "battle_track": 1.0
+    },
+    "jou_orb_v3_pre_grand_beam": {
+      "battle_track": 1.0
+    },
+    "jouina_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "jouinb_field_door_hop": {
+      "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "jouinc_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "jouinc_field_door_hop_settled": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -418,6 +757,12 @@
       "track": 1.0
     },
     "koin1b_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "koin2_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -475,6 +820,12 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "kor_ghost_knight_pre_v_windhash": {
+      "battle_track": 1.0
+    },
+    "kor_shade_pre_fatal_decision": {
+      "battle_track": 1.0
+    },
     "korb2_field_card_boot": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -482,6 +833,12 @@
       "track": 1.0
     },
     "korb3_field_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "korout_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -507,6 +864,24 @@
     },
     "koru_thunder_needle_mid_cast": {
       "battle_track": 1.0
+    },
+    "map01_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "map02_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "map03_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
     },
     "mei_house_door_pcsx": {
       "playing": 1.0,
@@ -559,6 +934,30 @@
     "nighto_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "nilboa2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "nilboa_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "nilboa_lava_face_pre_fissure": {
+      "battle_track": 1.0
+    },
+    "nilboa_lucifer_pre_cross_beam": {
+      "battle_track": 1.0
+    },
+    "nilboa_neo_grude_pre_power_up": {
+      "battle_track": 1.0
+    },
+    "nilboa_rock_lizard_pre_earthquake": {
+      "battle_track": 1.0
+    },
     "nivora_cutscene_delilas_intro": {
       "ambient": 1.0,
       "playing": 1.0,
@@ -596,11 +995,20 @@
     "noa_levelup_fight_pre": {
       "battle_track": 1.0
     },
+    "noaru_barra_v2_pre_multi_cutter": {
+      "battle_track": 1.0
+    },
     "noaru_field_card_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "noaru_slippery_v2_pre_big_wave": {
+      "battle_track": 1.0
+    },
+    "noaru_slippery_v2_pre_poisonous_breath": {
+      "battle_track": 1.0
     },
     "nova_summon_mid_cast": {
       "battle_track": 1.0
@@ -635,6 +1043,18 @@
     "puera_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "rayman2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rayman_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "retock_field_card_boot": {
       "playing": 1.0,
       "seq_vol": 1.0,
@@ -666,11 +1086,26 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "retona_viguro_v2_pre_thunder_break": {
+      "battle_track": 1.0
+    },
+    "rikuroa2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "rikuroa_caruban_pre_fire_breath": {
+      "battle_track": 1.0
+    },
     "rikuroa_field_card_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "rikuroa_pump_bat_pre_windcutter": {
+      "battle_track": 1.0
     },
     "rim_elm_gimard_seru_capture_after": {
       "battle_track": 1.0
@@ -714,17 +1149,44 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "ropeway2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "ropeway_curry_devil_pre_cross_beam": {
+      "battle_track": 1.0
+    },
     "ropeway_field_route_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
     },
+    "ropeway_orb_pre_heal": {
+      "battle_track": 1.0
+    },
+    "ropeway_orb_pre_jewel_beam": {
+      "battle_track": 1.0
+    },
     "rugi_field_card_boot": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "rugi_rogue_pre_element_change": {
+      "battle_track": 1.0
+    },
+    "rugi_rogue_pre_rogue_flame": {
+      "battle_track": 1.0
+    },
+    "rugi_rogue_pre_rogue_thunder": {
+      "battle_track": 1.0
+    },
+    "rugi_rogue_pre_rogue_wind": {
+      "battle_track": 1.0
     },
     "s1_newgame_field": {
       "playing": 1.0,
@@ -763,7 +1225,30 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "station3_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "station_field_door_hop": {
+      "playing": 0.0,
+      "tempo": 1.0,
+      "track": 0.0
+    },
+    "stone_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "stone_field_route_walk": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "suimon_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
@@ -781,11 +1266,35 @@
     "swordie_summon_mid_cast": {
       "battle_track": 1.0
     },
+    "taiku2_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "taiku_field_card_walk": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "taiku_terror_face_pre_fissure": {
+      "battle_track": 1.0
+    },
+    "taiku_terror_face_pre_terror_scream": {
+      "battle_track": 1.0
+    },
+    "taiku_thermo_pre_void_accessories": {
+      "battle_track": 1.0
+    },
+    "taiku_topaz_pre_hyper_heal": {
+      "battle_track": 1.0
+    },
+    "teien_berserker_pre_spore_gas": {
+      "battle_track": 1.0
+    },
+    "teien_berserker_pre_stone_circle": {
+      "battle_track": 1.0
     },
     "teien_field_run": {
       "playing": 1.0,
@@ -829,14 +1338,35 @@
       "tempo": 1.0,
       "track": 1.0
     },
+    "town0b_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "tunnela_field_door_hop": {
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
     "tunnelb_field_card_boot": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
     },
+    "tunnelb_nova_pre_scythe_wind": {
+      "battle_track": 1.0
+    },
     "tunnelc_field_route_walk": {
       "ambient": 1.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
+      "tempo": 1.0,
+      "track": 1.0
+    },
+    "uru2_field_door_hop": {
       "playing": 1.0,
       "seq_vol": 1.0,
       "tempo": 1.0,
