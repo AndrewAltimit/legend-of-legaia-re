@@ -12,6 +12,7 @@ how far to trust it on a shared box.
     scripts/ci/frame-bench.py --json out.json         # raw rows, for a before / after diff
     scripts/ci/frame-bench.py --exe path/to/engine    # another build, unbuilt
     scripts/ci/frame-bench.py --entry --base-exe old  # scene + battle entry, paired
+    scripts/ci/frame-bench.py --exe new --base-exe old --repeat 5  # the frame table, paired
 
 The build carries `engine-shell`'s `bench-alloc` feature: the counting allocator
 is the only thing it adds. See docs/subsystems/renderer-port.md#frame-profiler.
@@ -28,6 +29,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -72,15 +74,33 @@ def run_one(exe, extracted, name, mode, frames, skip, workdir):
              LEGAIA_PROFILE_FRAMES=str(frames), LEGAIA_PROFILE_SKIP=str(skip),
              **env)
     (Path(workdir) / "legaia-options.toml").write_text("")
-    p = subprocess.run(cmd, cwd=workdir, env=e, capture_output=True, text=True, timeout=900)
-    m = re.search(r"^\[bench\] (\{.*\})$", p.stderr, re.M)
+    # Run by hand rather than through `subprocess.run`, for the child's own rusage: a
+    # peak read from RUSAGE_CHILDREN would be the worst of every run so far.
+    with tempfile.TemporaryFile() as err:
+        p = subprocess.Popen(cmd, cwd=workdir, env=e, stdout=subprocess.DEVNULL, stderr=err)
+        peak_rss_kb = None
+        deadline = time.monotonic() + 900
+        while peak_rss_kb is None:
+            pid, status, usage = os.wait4(p.pid, os.WNOHANG)
+            if pid:
+                p.returncode = os.waitstatus_to_exitcode(status)
+                peak_rss_kb = usage.ru_maxrss
+            elif time.monotonic() > deadline:
+                p.kill()
+                raise RuntimeError(f"{name}/{mode}: still running after 900 s")
+            else:
+                time.sleep(0.05)
+        err.seek(0)
+        stderr = err.read().decode(errors="replace")
+    m = re.search(r"^\[bench\] (\{.*\})$", stderr, re.M)
     if not m:
-        tail = "\n".join(p.stderr.splitlines()[-5:])
+        tail = "\n".join(stderr.splitlines()[-5:])
         raise RuntimeError(f"{name}/{mode}: no [bench] line (status {p.returncode}):\n{tail}")
     row = json.loads(m.group(1))
+    row["peak_rss_mb"] = peak_rss_kb / 1024
     # Startup and scene entry by step (`profile::startup`), up to the first frame.
     row["startup"] = {}
-    for step, ms in re.findall(r"^\[startup\] (.+?) ([\d.]+) ms \(at", p.stderr, re.M):
+    for step, ms in re.findall(r"^\[startup\] (.+?) ([\d.]+) ms \(at", stderr, re.M):
         row["startup"][step] = row["startup"].get(step, 0.0) + float(ms)
     return row
 
@@ -125,6 +145,39 @@ def entry_table(exe, base, extracted, scenes, repeat, out):
                                          for k, v in runs.items()}, indent=1))
 
 
+def paired_table(exe, base, extracted, a):
+    """The frame table against another build, the two alternating run by run so a
+    busy box hits both alike. Both must carry `bench-alloc`, or allocations read 0."""
+    rows = []
+    fmt = lambda v: f"{min(v):.2f} ({max(v) - min(v):.2f})"
+    with tempfile.TemporaryDirectory(prefix="frame-bench-") as work:
+        for name in a.scene or SCENES:
+            for mode in a.mode or MODES:
+                sides = {"base": [], "new": []}
+                for _ in range(a.repeat):
+                    sides["base"].append(run_one(base, extracted, name, mode, a.frames, a.skip, work))
+                    sides["new"].append(run_one(exe, extracted, name, mode, a.frames, a.skip, work))
+                rows.append({"scene": name, "mode": mode, **sides})
+                print(f"{name}/{mode}: base {fmt([r['avg_ms'] for r in sides['base']])}, "
+                      f"new {fmt([r['avg_ms'] for r in sides['new']])}", file=sys.stderr)
+    print("Fastest (spread) of each side's alternating runs. Allocations, draws and RSS are the fastest run's.")
+    print("| scene | mode | base avg ms | new avg ms | base p99 | new p99 | base allocs | new allocs "
+          "| base draws | new draws | base RSS MB | new RSS MB |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for r in rows:
+        b = min(r["base"], key=lambda x: x["avg_ms"])
+        n = min(r["new"], key=lambda x: x["avg_ms"])
+        print(f"| {r['scene']} | {r['mode']} | {fmt([x['avg_ms'] for x in r['base']])} "
+              f"| {fmt([x['avg_ms'] for x in r['new']])} "
+              f"| {fmt([x['p99_ms'] for x in r['base']])} | {fmt([x['p99_ms'] for x in r['new']])} "
+              f"| {b['allocs_per_frame']:.0f} | {n['allocs_per_frame']:.0f} "
+              f"| {b['draws'][0]}+{b['draws'][1]} | {n['draws'][0]}+{n['draws'][1]} "
+              f"| {b['peak_rss_mb']:.0f} | {n['peak_rss_mb']:.0f} |")
+    if a.json:
+        Path(a.json).write_text(json.dumps(rows, indent=1))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--scene", action="append", choices=list(SCENES))
@@ -136,7 +189,7 @@ def main():
     ap.add_argument("--json", help="write the raw rows here")
     ap.add_argument("--entry", action="store_true", help="time scene and battle entry instead of frames")
     ap.add_argument("--entry-scenes", default="town01,jouina,map01,koin1")
-    ap.add_argument("--base-exe", help="with --entry: a build to pair against, run by run")
+    ap.add_argument("--base-exe", help="a build to pair against, run by run (needs --exe for the frame table)")
     a = ap.parse_args()
 
     extracted = REPO / "extracted"
@@ -158,6 +211,9 @@ def main():
              "--profile", PROFILE, "--features", "bench-alloc"],
             cwd=REPO, check=True)
 
+    if a.base_exe:
+        return paired_table(exe, Path(a.base_exe), extracted.resolve(), a)
+
     rows = []
     with tempfile.TemporaryDirectory(prefix="frame-bench-") as work:
         for name in a.scene or SCENES:
@@ -176,14 +232,14 @@ def main():
         for s in r["stages"]:
             if s not in stages:
                 stages.append(s)
-    print("| scene | mode | avg ms | p99 | max | spread | allocs/frame | KB/frame | draws | "
+    print("| scene | mode | avg ms | p99 | max | spread | allocs/frame | KB/frame | draws | peak RSS MB | "
           + " | ".join(stages) + " |")
-    print("|---|---|---|---|---|---|---|---|---|" + "---|" * len(stages))
+    print("|---|---|---|---|---|---|---|---|---|---|" + "---|" * len(stages))
     for r in rows:
         cells = [f"{r['stages'][s]['ms']:.2f}" if s in r["stages"] else "" for s in stages]
         print(f"| {r['scene']} | {r['mode']} | {r['avg_ms']:.2f} | {r['p99_ms']:.2f} "
               f"| {r['max_ms']:.2f} | {r['spread_ms']:.2f} | {r['allocs_per_frame']:.0f} "
-              f"| {r['alloc_bytes_per_frame'] / 1024:.0f} | {r['draws'][0]}+{r['draws'][1]} | "
+              f"| {r['alloc_bytes_per_frame'] / 1024:.0f} | {r['draws'][0]}+{r['draws'][1]} | {r['peak_rss_mb']:.0f} | "
               + " | ".join(cells) + " |")
     print()
     print("Allocations per frame by stage:")
