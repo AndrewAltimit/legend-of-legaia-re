@@ -808,7 +808,14 @@ impl World {
                     Some(ticks::power_charge_tick(&mut ctx, &mut caster))
                 }
                 (955, Some(ticks::VOID_ACCESSORIES_TICK)) => {
-                    let rolls = Some((self.next_rand(), self.next_rand()));
+                    // Arm 3's two draws (`0x801F6EB4`, `0x801F6F34`); the second
+                    // only behind a filled slot.
+                    let rolls = (ctx.phase == 3).then(|| {
+                        let slot = self.next_rand();
+                        let id = self.cast_victim_accessories(victim_slot)
+                            [(slot % u32::from(ticks::ACCESSORY_SLOTS)) as usize];
+                        (slot, if id != 0 { self.next_rand() } else { 1 })
+                    });
                     let accessories = self.cast_victim_accessories(victim_slot);
                     let (step, outcome) =
                         ticks::void_accessories_tick(&mut ctx, &mut victim, accessories, rolls);
@@ -896,6 +903,7 @@ impl World {
                     }
                     if let Some(outcome) = taken {
                         self.stash_cast_steal(caster_slot, outcome);
+                        self.raise_cast_steal_caption(outcome);
                     }
                     Some(step)
                 }
@@ -1449,6 +1457,40 @@ impl World {
         // runs the same framing on arm 13's pass (`jal` at `0x801F7B6C`,
         // unscaled): arms 14 / 15 frame the victim at `d` and `(d/2, -d/2)`
         // and arm 16 lifts it `sin * d >> 14`, all off that depth.
+        // PROT 0941's Steal halves the depth for the walk (`0x801F7434`) and
+        // puts it back on the steal (`0x801F7B24`); each of the steal's two
+        // passing arms rings a monster's own voice through the funnel by the
+        // caster's id, `(4..=6, 0x43..=0x45, 0x90..=0x92)`.
+        if entry == 941 && body == Some(arms::STEAL_TICK) && ctx.phase != phase_entry {
+            match phase_entry {
+                0 => {
+                    self.battle.camera_frame_height /= 2;
+                    self.battle_ctx.camera_frame_height /= 2;
+                }
+                1 => {
+                    self.battle.camera_frame_height *= 2;
+                    self.battle_ctx.camera_frame_height *= 2;
+                }
+                _ => {}
+            }
+            let id = self
+                .actors
+                .get(usize::from(caster_slot))
+                .and_then(|a| a.battle_monster_id)
+                .unwrap_or(0);
+            let cue = match (phase_entry, id) {
+                (1, 4..=6) => Some(0x1D),
+                (1, 0x43..=0x45) => Some(0x137),
+                (1, 0x90..=0x92) => Some(0x155),
+                (2, 4..=6) => Some(0x1C),
+                (2, 0x43..=0x45) => Some(0x138),
+                (2, 0x90..=0x92) => Some(0x18B),
+                _ => None,
+            };
+            if let Some(cue) = cue {
+                self.route_battle_cue(cue, caster_slot);
+            }
+        }
         if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
             let depth = match (entry, phase_entry) {
                 (903, 10) => Some(legaia_engine_cast::cast_module_camera::GIMARD_WALK_DEPTH as i16),
@@ -1859,6 +1901,12 @@ impl World {
             ctx.phase,
             run.tick_ported && !run.busy,
         );
+        // PROT 0955's Void Accessories composes its line at run time, the
+        // strip's `0xC2`-escape template or the module's `Nothing happened.`
+        // (`0x801F6F94`, `0x801F7048`); the decoder sees both sites.
+        if let Some(out) = run.voided_accessory {
+            self.raise_cast_void_caption(out.voided);
+        }
         if entry == 929 {
             self.mule_backdrop_follow(phase_in, ctx.phase != phase_in);
         }

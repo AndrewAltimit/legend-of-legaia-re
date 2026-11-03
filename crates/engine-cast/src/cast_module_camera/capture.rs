@@ -235,6 +235,8 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
+        (941, super::STEAL_BODY) => Some(super::steal_camera),
+        (955, super::VOID_ACCESSORIES_BODY) => Some(super::void_accessories_camera),
         _ => None,
     }
 }

@@ -240,6 +240,9 @@ pub struct ModuleCamState {
     /// fed by the host for a capture director's row settle (PROT 0965's arm
     /// `0x0C`).
     pub party_settled: bool,
+    /// `FUN_8004E2F0(ctx[+0x13], caster[+0x1DD])` reads zero: the caster stands
+    /// in reach of its victim, the poll PROT 0941's arm 1 walks on.
+    pub caster_in_reach: bool,
     /// The party seats' pairs and headings as a line-up arm found them
     /// ([`capture::CaptureCamArm::party_line_up`]), for the restore.
     pub party_saved: [Option<(i16, i16, u16)>; 3],
@@ -968,6 +971,8 @@ mod capture_spawns;
 pub mod creature;
 mod creature_spawns;
 mod cross_beam;
+mod void_accessories;
+mod steal;
 mod thunder_storm;
 mod doomsday;
 mod evil_seru_magic;
@@ -1011,6 +1016,8 @@ pub use capture_spawns::*;
 pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
+pub use steal::{STEAL_BODY, steal_camera};
+pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
 pub use thunder_storm::{
     STORM_RAY_RECORD, STORM_SCATTER_PAIRS, STORM_SCATTER_RECORDS, THUNDER_STORM_BODY,
     THUNDER_STORM_COUNTDOWN, thunder_storm_camera,

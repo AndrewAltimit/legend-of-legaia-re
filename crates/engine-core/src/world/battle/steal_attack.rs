@@ -158,6 +158,58 @@ impl World {
         }
     }
 
+    /// The message bar PROT 0955's Void Accessories raises: the voided item's
+    /// name in the template at `0x801F9AFC`, or the line at `0x801F9B14`.
+    pub(in crate::world) fn raise_cast_void_caption(&mut self, voided: Option<u8>) {
+        let text = match voided {
+            Some(item) => format!("`{}' has been removed.", self.cast_item_name(item)),
+            None => "Nothing happened.".to_string(),
+        };
+        self.raise_cast_message_bar(text);
+    }
+
+    fn cast_item_name(&self, item: u8) -> String {
+        self.menu
+            .text
+            .as_ref()
+            .and_then(|t| t.item_name(item))
+            .map(str::to_string)
+            .or_else(|| self.tables.item_catalog.get(item).map(|e| e.name.to_string()))
+            .unwrap_or_default()
+    }
+
+    fn raise_cast_message_bar(&mut self, text: String) {
+        self.battle_ctx.message_id = legaia_overlay_images::cast_presentation::MESSAGE_BAR_ELEMENT;
+        self.battle.steal_caption = Some(legaia_engine_battle::battle_steal::StealCaption {
+            text,
+            owner: self.battle_ctx.active_actor,
+        });
+        self.battle.message_bar_glide = Some(
+            legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
+        );
+    }
+
+    /// The message bar PROT 0941's Steal raises with its outcome
+    /// (`FUN_801D8DE8(0x5B, 0)` at `0x801F7AF8`): a bag item's line composed
+    /// from the module's strings at `0x801F839C` / `0x801F83B4` around the
+    /// item's name, `0x801F83A0` when the bag held nothing, `0x801F83C4` on a
+    /// missed roll.
+    pub(in crate::world) fn raise_cast_steal_caption(
+        &mut self,
+        outcome: legaia_engine_cast::cast_arm_ticks::StealOutcome,
+    ) {
+        use legaia_engine_cast::cast_arm_ticks::StealOutcome;
+        let text = match outcome {
+            StealOutcome::FromBag { item } => {
+                format!("`{}' was stolen.", self.cast_item_name(item))
+            }
+            StealOutcome::BagEmpty => "Nothing was stolen.".to_string(),
+            StealOutcome::FromMonster { hit: false, .. } => "Failed to steal an item.".to_string(),
+            StealOutcome::FromMonster { .. } => return,
+        };
+        self.raise_cast_message_bar(text);
+    }
+
     /// Close the caption once a different seat holds the action. Retail
     /// closes element `0x5B` through the HUD element machinery rather than
     /// from this arm; holding it for the rest of the killer's action is the

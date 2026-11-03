@@ -646,7 +646,21 @@ pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
         ],
     ),
     (951, &[0x801F_8348, 0x801F_836C]),
-    (955, &[0x801F_95DC, 0x801F_9630, 0x801F_9684, 0x801F_96D8]),
+    (
+        955,
+        &[
+            0x801F_95DC,
+            0x801F_9630,
+            0x801F_9684,
+            0x801F_96D8,
+            0x801F_9790,
+            0x801F_980C,
+            0x801F_9888,
+            0x801F_9904,
+            0x801F_9990,
+            0x801F_9A0C,
+        ],
+    ),
     (
         957,
         &[
@@ -736,8 +750,12 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
-        955 => body == Some(super::TERROR_SCREAM_BODY),
+        955 => matches!(
+            body,
+            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+        ),
         957 => body == Some(super::THUNDER_STORM_BODY),
+        941 => body == Some(super::STEAL_BODY),
         _ => false,
     }
 }
@@ -753,8 +771,12 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         940 => body == Some(0x801F_7240),
         944 => body == Some(0x801F_6A04),
         946..=948 => true,
-        955 => body == Some(super::TERROR_SCREAM_BODY),
+        955 => matches!(
+            body,
+            Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
+        ),
         957 => body == Some(super::THUNDER_STORM_BODY),
+        941 => body == Some(super::STEAL_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         942 => body == Some(super::POWER_UP_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
