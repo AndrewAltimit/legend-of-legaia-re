@@ -146,7 +146,7 @@ binary and so misses everything; the cache pays for re-running a wider
 key leaves out is the GPU driver. A state whose image child failed or whose seed
 failed is not stored. The newest three generations are kept.
 
-`--bless`, `--check` and `--smoke` always measure: the driver never hands them
+`--bless`, `--check` and a `--smoke` run's own frames always measure (the accuracy run a smoke run compares against may reuse the cache): the driver never hands them
 the cache, and the subcommand refuses `--cache` beside a baseline flag. Use
 `--fresh` for a re-measure, for instance to see whether a score is a flake.
 
