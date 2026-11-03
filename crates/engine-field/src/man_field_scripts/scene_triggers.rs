@@ -986,6 +986,11 @@ pub struct BossStagerPlacement {
     /// (off-field until its own script stations it). A parked stager with no
     /// station leg has no reachable approach point - consumers skip it.
     pub spawn_parked: bool,
+    /// `true` when the record opens on the spawn-prologue marker, so the
+    /// placement installer has run its head at scene load and the seat it
+    /// took on the story flags stands ([`FUN_8003A1E4`]'s `0x24` / `0x25`
+    /// gate).
+    pub spawn_prologue: bool,
 }
 
 /// Recover every boss-stager placement from a scene's MAN: walk each
@@ -1065,6 +1070,7 @@ pub fn boss_stager_placements(man_file: &ManFile, man: &[u8]) -> Vec<BossStagerP
                 station_world,
                 spawn_world: (p.world_x, p.world_z),
                 spawn_parked: (p.tile_x, p.tile_z) == PARKED_SENTINEL_TILE,
+                spawn_prologue: matches!(man.get(start + p.script_pc0), Some(0x24 | 0x25)),
             });
         }
     }

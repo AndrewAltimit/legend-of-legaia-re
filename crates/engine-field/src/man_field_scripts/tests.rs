@@ -859,6 +859,18 @@ fn boss_stager_placements_decodes_gate_station_and_row() {
     );
     assert!(!s.spawn_parked, "helper places the actor at tile (3, 4)");
 
+    assert!(
+        !s.spawn_prologue,
+        "no 0x24 / 0x25 lead: no load-time pre-run"
+    );
+
+    // `town0b` `P1[36]`'s shape: a spawn-prologue lead, whose flag arms the
+    // installer resolves at load.
+    let (mf, man) = man_with_placement_script(&[
+        0x25, 0x71, 0x42, 0x00, 0x00, 0x4C, 0x51, 69, 75, 6, 24, 0x3E, 0xFF, 0x11, 0x21,
+    ]);
+    assert!(boss_stager_placements(&mf, &man)[0].spawn_prologue);
+
     // A record without the battle op yields no site.
     let (mf, man) = man_with_placement_script(&[0x71, 0x42, 0x00, 0x00, 0x21]);
     assert!(boss_stager_placements(&mf, &man).is_empty());
