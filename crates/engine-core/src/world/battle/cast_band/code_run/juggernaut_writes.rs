@@ -182,6 +182,7 @@ impl World {
                 }
             }
             26 => {
+                self.juggernaut_final_hits();
                 self.casting.module_cam.creature_floor_clip = false;
                 self.casting.module_creature_clip_kind = 0;
                 if let Some(a) = creature.and_then(|c| self.actors.get_mut(c)) {
@@ -227,6 +228,76 @@ impl World {
         }
     }
 
+    /// One sweep of the stager's arms 3 and 4 (arm 3 falls into arm 4 at
+    /// `0x801F8698`). A party cast makes it on each of those calls and the rolls
+    /// are its damage, so the band folds nothing and only banks their XP; a
+    /// monster's cast of the id has no such roll and lands through the fold.
+    fn juggernaut_stager_sweep(&mut self) {
+        let Some((caster, spell_id)) = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .map(|st| (st.caster, st.spell_id))
+            .filter(|(caster, _)| *caster < self.party.party_count)
+        else {
+            self.fold_pending_cast();
+            return;
+        };
+        self.run_cast_module_aoe_as(caster, spell_id, super::super::AOE_STAGER_WORKING_ARM);
+        if self.casting.pending_cast.is_some() {
+            self.casting.module_skips_fold = true;
+            self.fold_pending_cast();
+        }
+        self.bank_juggernaut_hit_xp(caster, spell_id);
+    }
+
+    /// The fold banks only the first sweep's rolls, and the later hits have no
+    /// fold to bank through.
+    fn bank_juggernaut_hit_xp(&mut self, caster: u8, spell_id: u8) {
+        let gain = std::mem::take(&mut self.casting.module_hit_xp);
+        if gain != 0 {
+            self.accrue_summon_spell_xp(caster, spell_id, gain);
+        }
+    }
+
+    /// The kill-capable hit on arm 26's pass (`0x801F7DD4..0x801F7F24`): every
+    /// live monster takes the summon roll again, clamped to its HP, staging its
+    /// reaction with the animation rate at `2`.
+    fn juggernaut_final_hits(&mut self) {
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        let Some((caster, spell_id)) = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .map(|st| (st.caster, st.spell_id))
+            .filter(|(caster, _)| *caster < self.party.party_count)
+        else {
+            return;
+        };
+        let ctx = self.cast_module_ctx();
+        let map = self.cast_seat_map();
+        let mut seats = self.cast_seat_row();
+        for i in 0..ctx.monster_count {
+            let seat = ticks::FIRST_MONSTER_SEAT.saturating_add(i);
+            let hittable = seats
+                .get(usize::from(seat))
+                .is_some_and(ticks::aoe_seat_is_hittable);
+            let Some(target) = map.engine(seat).filter(|_| hittable) else {
+                continue;
+            };
+            let roll = self
+                .summon_module_roll(caster, target, spell_id)
+                .map_or(0, |r| r as i32);
+            if let Some(v) = seats.get_mut(usize::from(seat)) {
+                ticks::apply_hit_floor_zero(v, roll);
+                legaia_engine_cast::seru_magic_ticks::stage_reaction_bits(v);
+                v.anim_rate = 2;
+            }
+        }
+        self.write_cast_seat_row(&seats);
+        self.bank_juggernaut_hit_xp(caster, spell_id);
+    }
+
     /// Run the op-`0x20` calls PROT 0927's parts made since its last tick
     /// through its stager `FUN_801F85A8`, in call order: the spawn arms seat
     /// their records on the caller, arms 3..5 raise the salmon fades and the
@@ -253,7 +324,7 @@ impl World {
             }
             self.casting.module_shake += ticks::juggernaut_stager_shake(arm);
             if arm == super::super::AOE_STAGER_WORKING_ARM || arm == 3 {
-                self.fold_pending_cast();
+                self.juggernaut_stager_sweep();
             }
         }
     }
