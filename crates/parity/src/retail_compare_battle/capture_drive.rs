@@ -209,6 +209,110 @@ impl RetailBattle {
         Some((live.yaw as i32 - i32::from(accum / (8 * step) * step * 4)).rem_euclid(4096) as u16)
     }
 
+    /// The pose the displayed frame of a turning shot stood on, for a capture
+    /// on the shot's own pass (`0x2B` at one pass of accumulator): two passes
+    /// back along the case-6 walk the shot cut off.
+    ///
+    /// The shot closes each component in one frame, so the table's steps name
+    /// the pass before it (`N - 1`). That pass ran no arm: the `0x2A`
+    /// terminator calls neither `FUN_801DC0A0` nor `FUN_801D5854`
+    /// (`0x801E4774..0x801E479C`), so it walked on the increment of the pass
+    /// before it, `N - 2`, the one the display shows, which armed case 6
+    /// (`ceil(gap / 0xC)`) and walked in the same pass. Both moves share that
+    /// increment, and the increment is the gap's, so [`stale_pass_gap`]
+    /// inverts them. Yaw takes case 6's endpoint from the counter
+    /// `ctx[+0x6DA]`, less the prologue's drift over the passes since.
+    ///
+    /// The table's steps are unsigned. Pitch and TR y take the sign that
+    /// stands nearer case 6's endpoint. TR z and the focus come from the
+    /// framing of the action before ([`Self::previous_actor_bearing`]): the
+    /// sign is inferred, and `None` where no earlier actor this round names
+    /// one (the far framing comes from elsewhere).
+    pub fn retake_turning_pose(&self) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+        let yaw_n1 = self.retake_turning_yaw()?;
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (step, _) = self.step_run;
+        if self.cam_style != 0 || accum != 8 * u16::from(step) {
+            return None;
+        }
+        let [_, pass_n, pass_n1, pass_n2] = self.recent_steps.map(i32::from);
+        let (s1, s2) = (pass_n1, pass_n2);
+        let drift = |s: i32| (s * 4 / 3).max(1);
+        let (live, end) = self.cam_tween;
+        let [pitch_step, _, _, _, try_step, trz_step, fx_step, _, fz_step] =
+            self.cam_tween_steps.map(i32::from);
+        let back = |v_n1: i32, end6: i32| {
+            let d = v_n1 - end6;
+            end6 + d.signum() * stale_pass_gap(d.abs(), s1, s2)
+        };
+        // Pitch and TR y: the side of the shot's endpoint case 6 stands on.
+        let near = |shot_end: i32, step: i32, end6: i32| {
+            let (a, b) = (shot_end + step, shot_end - step);
+            if (a - end6).abs() <= (b - end6).abs() {
+                a
+            } else {
+                b
+            }
+        };
+        let wrap_i = |a: f32| {
+            let a = a as i32 & 0xFFF;
+            if a >= 0x800 { a - 0x1000 } else { a }
+        };
+        let tr_y6 = legaia_engine_battle_vm::battle_cam_script::ACTION_TR_Y as i32;
+        let pitch = back(near(wrap_i(end.pitch), pitch_step, 0), 0);
+        let tr_y = back(near(end.tr[1] as i32, try_step, tr_y6), tr_y6);
+        // Yaw: case 6's endpoint on the pass that armed it.
+        let pool = usize::from(self.active_actor);
+        let facing = i32::from((*self.facing.get(pool)?)?);
+        let counter = i32::from(self.walk_yaw_base) - drift(pass_n) - drift(pass_n1);
+        let end6 = (counter - facing).rem_euclid(4096);
+        let gap = (end6 - i32::from(yaw_n1) + 2048).rem_euclid(4096) - 2048;
+        let yaw = (end6 - gap.signum() * stale_pass_gap(gap.abs(), s1, s2)).rem_euclid(4096);
+        // TR z and the focus: from the framing of the action before.
+        let [fx, fz] = live_pair(live.focus);
+        let (sx, sz) = self.previous_actor_bearing([fx, fz], [fx_step, fz_step])?;
+        let tr_z = end.tr[2] as i32 - stale_pass_gap(trz_step, s1, s2);
+        Some(legaia_engine_camera::projection::BattleCamPose {
+            pitch: pitch.rem_euclid(4096) as f32,
+            yaw: yaw as f32,
+            tr: [0.0, tr_y as f32, tr_z as f32],
+            focus: [
+                (fx + sx * stale_pass_gap(fx_step, s1, s2)) as f32,
+                0.0,
+                (fz + sz * stale_pass_gap(fz_step, s1, s2)) as f32,
+            ],
+        })
+    }
+
+    /// The signs `(x, z)` from `focus` towards the earlier actor of this round
+    /// whose bearing best fits the focus record's unsigned steps: case 6 walks
+    /// off the framing of the action before, in a straight line per component
+    /// ratio. `None` on a round's first action, or with no spent seat.
+    fn previous_actor_bearing(&self, focus: [i32; 2], steps: [i32; 2]) -> Option<(i32, i32)> {
+        if self.turn_cursor == 0 {
+            return None;
+        }
+        let party = 0..usize::from(self.party_count.clamp(1, 3));
+        let monsters = 3..3 + usize::from(self.monster_count);
+        let fit = party
+            .chain(monsters)
+            .filter(|&s| s != usize::from(self.active_actor))
+            .filter(|&s| self.init_keys.get(s).copied().flatten() == Some(0))
+            .filter_map(|s| {
+                let [x, z] = (*self.ground.get(s)?)?;
+                let v = [i32::from(x) - focus[0], i32::from(z) - focus[1]];
+                let len = f64::from(v[0]).hypot(f64::from(v[1]));
+                (len > 0.0).then(|| {
+                    let cos = f64::from(v[0].abs() * steps[0] + v[1].abs() * steps[1]) / len;
+                    (cos, v)
+                })
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0))?;
+        Some((fit.1[0].signum(), fit.1[1].signum()))
+    }
+
     /// A monster's capture-band gate ([`SpanGate::CaptureFade`]): captured
     /// within the display lag of the band's entry, its displayed frame is a
     /// pass before the band's first arm, whose parts retail had not spawned
@@ -1410,4 +1514,23 @@ pub(super) fn run_drive(
     }
     session.host.world.input.set_pad(0);
     Ok(reached)
+}
+
+/// A float pose's ground pair as whole units.
+fn live_pair(focus: [f32; 3]) -> [i32; 2] {
+    [focus[0] as i32, focus[2] as i32]
+}
+
+/// The gap to case 6's endpoint one pass before `gap`, across the terminator
+/// pass that walked on its increment: `gap` stands `s1` (that pass's step)
+/// past the armed pass, which took `s2` of the same increment
+/// `ceil(gap_before / 0xC)` (case 6's duration, `FUN_801D829C`). A recording of
+/// Aluru Cannon walks TR z `4772, 4808, 4856` to `4915` on `s2 = 3`, `s1 = 4`.
+pub fn stale_pass_gap(gap: i32, s1: i32, s2: i32) -> i32 {
+    (0..=gap + 1)
+        .find(|&k| {
+            let before = gap + (s1 + s2) * k;
+            (before + 11) / 12 == k
+        })
+        .map_or(gap, |k| gap + s1 * k)
 }

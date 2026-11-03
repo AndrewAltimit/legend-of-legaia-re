@@ -447,6 +447,10 @@ pub struct ScreenshotConfig {
     /// before a turning shot stood on (`RetailBattle::retake_turning_yaw` in
     /// `legaia-parity`).
     pub retake_yaw: Option<f32>,
+    /// `LEGAIA_CAPTURE_RETAKE_POSE=pitch,yaw,x,y,z,fx,fy,fz`: on a shot retake,
+    /// the whole pose the displayed frame stood on
+    /// (`RetailBattle::retake_turning_pose` in `legaia-parity`).
+    pub retake_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
     /// pass before the band's first arm spawned its parts, and it stands on
@@ -1135,6 +1139,17 @@ impl ScreenshotConfig {
             retake_yaw: std::env::var("LEGAIA_CAPTURE_RETAKE_YAW")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),
+            retake_pose: std::env::var("LEGAIA_CAPTURE_RETAKE_POSE")
+                .ok()
+                .and_then(|v| {
+                    let f: Vec<f32> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+                    (f.len() == 8).then(|| legaia_engine_camera::projection::BattleCamPose {
+                        pitch: f[0],
+                        yaw: f[1],
+                        tr: [f[2], f[3], f[4]],
+                        focus: [f[5], f[6], f[7]],
+                    })
+                }),
             retake_across_entry: std::env::var("LEGAIA_CAPTURE_RETAKE_ENTRY")
                 .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),

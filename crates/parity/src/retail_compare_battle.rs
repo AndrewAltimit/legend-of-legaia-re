@@ -459,6 +459,14 @@ pub struct RetailBattle {
         legaia_engine_camera::projection::BattleCamPose,
         legaia_engine_camera::projection::BattleCamPose,
     ),
+    /// The step magnitude of each of the tween table's nine records
+    /// ([`retail_cam_tween`]'s order): a one-frame shot's step is the whole
+    /// gap it closed, so it names the pose the pass before stood on.
+    pub cam_tween_steps: [u16; 9],
+    /// The turn cursor `ctx[+0x1A]`: order entries this round has consumed.
+    pub turn_cursor: u8,
+    /// The newest passes' frame steps ([`recent_pass_steps`]), newest first.
+    pub recent_steps: [u8; 4],
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,

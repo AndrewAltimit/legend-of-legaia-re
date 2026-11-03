@@ -3719,6 +3719,27 @@ recording of Aluru Cannon reads `629` on the pass before the shot and `645` on
 its first. On a step-`4` capture the display is one pass older again, a case-6
 step off that yaw.
 
+Such a capture is also one the RAM can walk the whole way back
+(`RetailBattle::retake_turning_pose`, `LEGAIA_CAPTURE_RETAKE_POSE`). The shot
+closes every component in one frame, so the tween table's steps name the pose
+of the terminator pass before it, and that pass armed nothing: it walked on the
+increment of the pass before it, the one the display shows, which armed case 6
+at `ceil(gap / 0xC)` and walked in the same pass. Both moves share one
+increment, which is the older gap's, so the gap inverts (`stale_pass_gap`).
+Retail's recording walks TR z `4772`, `4808`, `4856` to `4915` on steps `3` and
+`4`. Yaw's endpoint is the counter less the prologue's drift since that pass,
+minus the facing. `recent_pass_steps` reads the capture inside the frame
+driver's wait, past the pass's own bookkeeping, so its slot `k` is the step of
+the pass `k - 1` back: Aluru Cannon's ring reads `4, 4, 4, 3`, and step `3` is
+the armed pass's, as the recording shows and as the pose's score peaks.
+
+The table's steps are unsigned. Pitch and TR y take the sign nearer case 6's
+endpoint. TR z comes from below and the focus from the bearing of the earlier
+actor this round that best fits the two focus steps, since case 6 walks off the
+framing of the action before; those signs are inference, measured on one
+capture. A round's first action walks off the far framing and keeps the
+yaw-only retake.
+
 A monster's capture-band gate within the lag of the band's entry retakes the
 same way (`RetailBattle::retake_across_band_entry`,
 `LEGAIA_CAPTURE_RETAKE_ENTRY`): its displayed frame is the pass before the

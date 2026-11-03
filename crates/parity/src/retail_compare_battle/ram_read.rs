@@ -939,6 +939,14 @@ impl RetailBattle {
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
             cam_tween: retail_cam_tween(ram, ctx),
+            cam_tween_steps: std::array::from_fn(|k| {
+                game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k as u32 * 4)
+            }),
+            turn_cursor: game_anchors::u8_at(ram, ctx + 0x1A),
+            recent_steps: {
+                let steps = recent_pass_steps(ram);
+                [steps[0], steps[1], steps[2], steps[3]]
+            },
             displayed_cam_live,
             displayed_ghost_pose,
             displayed_cam_end: {

@@ -944,7 +944,22 @@ pub(super) fn battle_image(
                     battle.drive_display_lag().to_string(),
                 ));
                 env.push(("LEGAIA_CAPTURE_RETAKE_SHOT", "1".to_string()));
-                if let Some(yaw) = battle.retake_turning_yaw() {
+                if let Some(p) = battle.retake_turning_pose() {
+                    env.push((
+                        "LEGAIA_CAPTURE_RETAKE_POSE",
+                        format!(
+                            "{},{},{},{},{},{},{},{}",
+                            p.pitch,
+                            p.yaw,
+                            p.tr[0],
+                            p.tr[1],
+                            p.tr[2],
+                            p.focus[0],
+                            p.focus[1],
+                            p.focus[2]
+                        ),
+                    ));
+                } else if let Some(yaw) = battle.retake_turning_yaw() {
                     env.push(("LEGAIA_CAPTURE_RETAKE_YAW", yaw.to_string()));
                 }
             } else {

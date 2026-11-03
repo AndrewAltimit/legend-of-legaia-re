@@ -1892,4 +1892,47 @@ fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
     assert_eq!(b.retake_turning_yaw(), Some(3825));
     b.queued_shot = 0x07;
     assert_eq!(b.retake_turning_yaw(), None, "not a turning shot");
+    // The whole pose: `battle_korb2_aluru_cannon_mid_cast`'s table and steps.
+    b.queued_shot = 0x0E;
+    b.step_run = (4, 3);
+    b.recent_steps = [4, 4, 4, 3];
+    b.walk_yaw_base = 2088;
+    b.cam_style = 0;
+    b.cam_tween.0.focus = [474.0, 0.0, 978.0];
+    b.cam_tween.1.pitch = 4080.0;
+    b.cam_tween.1.tr = [0.0, 768.0, 4915.0];
+    b.cam_tween_steps = [19, 16, 0, 0, 507, 79, 10, 0, 96];
+    b.party_count = 3;
+    b.monster_count = 2;
+    b.active_actor = 4;
+    b.turn_cursor = 3;
+    b.init_keys = [144, 0, 0, 0, 0, 0, 0, 0].map(Some).to_vec();
+    b.ground = [
+        [-154, -831],
+        [755, -978],
+        [-754, -781],
+        [558, -652],
+        [474, 978],
+    ]
+    .map(Some)
+    .to_vec();
+    b.facing = vec![None, None, None, None, Some(2265)];
+    let p = b.retake_turning_pose().expect("a pose");
+    assert_eq!(
+        (p.pitch, p.yaw, p.tr, p.focus),
+        (7.0, 3757.0, [0.0, 1271.0, 4772.0], [492.0, 0.0, 802.0])
+    );
+    // A round's first action walks off the far framing: no earlier seat.
+    b.turn_cursor = 0;
+    assert!(b.retake_turning_pose().is_none());
+}
+
+/// The recorded case-6 tail of Aluru Cannon: TR z `4772` walks `+36` on the
+/// armed pass (step `3`) and `+48` on the terminator's (step `4`), its stale
+/// increment `12` (`ceil(143 / 12)`), and the shot closes the last `59`.
+#[test]
+fn a_stale_pass_walks_back_on_the_armed_increment() {
+    assert_eq!(stale_pass_gap(59, 4, 3), 107);
+    assert_eq!(stale_pass_gap(19, 4, 3), 35);
+    assert_eq!(stale_pass_gap(0, 4, 3), 0);
 }

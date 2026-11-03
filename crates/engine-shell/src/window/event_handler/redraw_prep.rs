@@ -484,6 +484,13 @@ impl PlayWindowApp {
                 pose.yaw = yaw;
                 cam.stand_on_pose(pose);
             }
+            // ... or the whole pose it stood on.
+            if let Some(pose) = self.screenshot.as_ref().and_then(|sc| sc.retake_pose)
+                && std::env::var_os("LEGAIA_DIAG_CAPTURE_TICK").is_some()
+                && let Some(cam) = self.session.host.world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(pose);
+            }
             let ghost_pose = self.screenshot.as_ref().and_then(|sc| sc.battle_ghost_pose);
             let world = &mut self.session.host.world;
             // The near-camera ghost bits are derived from the pose, and the
