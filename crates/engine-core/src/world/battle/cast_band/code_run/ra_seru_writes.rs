@@ -342,10 +342,17 @@ impl World {
                     }
                 }
             }
+            // Every seat `3..7` with a word up, a killed one too (the loop
+            // tests `+0x04` alone, `0x801F84F8..0x801F8548`): the rate holds a
+            // dying monster's clip at `2`, over its commit's rise to `4`.
             (0x14, _) => {
-                for (e, _) in self.ra_seru_row(monster_count) {
+                let map = self.cast_seat_map();
+                let seats: Vec<usize> = (0..monster_count)
+                    .filter_map(|i| map.engine(3 + i).map(usize::from))
+                    .collect();
+                for e in seats {
                     if let Some(a) = self.actors.get_mut(e)
-                        && a.battle.render_color != 0
+                        && (a.battle.render_color != 0 || a.battle.render_flag != FLAG_PARKED)
                     {
                         a.battle.facing_angle =
                             a.battle.facing_angle.wrapping_add((0x20 * D) as u16) & 0xFFF;

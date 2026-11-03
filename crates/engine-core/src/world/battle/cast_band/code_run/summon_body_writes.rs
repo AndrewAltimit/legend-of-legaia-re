@@ -232,6 +232,14 @@ impl World {
                     &mut v,
                     u32::from(dmg),
                 );
+            } else if entry == 908 {
+                // PROT 0908's stages the flinch with no knockdown fork
+                // (`0x801F77B4..0x801F77D4`): arm 9's clip `2` on Gobu Gobu.
+                legaia_engine_cast::seru_magic_ticks::apply_hit_cap_hp_minus_one(
+                    &mut v,
+                    u32::from(dmg),
+                );
+                legaia_engine_cast::seru_magic_ticks::stage_reaction_alt_only(&mut v);
             } else {
                 legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             }

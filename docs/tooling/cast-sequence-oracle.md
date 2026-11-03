@@ -201,7 +201,15 @@ Frames pair on the action-SM clock, never on wall time:
    [game clock](#the-game-clock), pairs with the engine frame `k` ticks into
    the aligned segment, clamped to that segment's last tick. An engine arm
    that ends early is compared at its last frame for the rest of retail's
-   arm, which is what a viewer would see.
+   arm, which is what a viewer would see. The offset runs from the key's first
+   row, inside the frame whose pass moved the key, so on a step-`4` arm the pair
+   reads a retail image up to one step older than the engine tick it scores:
+   Ozma's arm 6 shows a constant `2` in pitch and a flipped shake bit. Counting
+   from that frame's last row zeroes those camera words and drops `within` on
+   the same casts (Iota `.508` to `.477`, Ozma arm 18 `.567` to `.347`), because a
+   part or fade spawned by the pass already took that frame's whole step in
+   retail and one tick in the engine. The rule stays; read a small camera residual
+   on a slow arm against it.
 
 Each pair is scored with the corpus metric (`within`, the fraction of `8 x 8`
 blocks within `24` per channel; [The image channel](retail-compare.md#the-image-channel)).
