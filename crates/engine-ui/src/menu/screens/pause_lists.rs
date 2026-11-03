@@ -1127,11 +1127,12 @@ pub(crate) fn page_arrow_sprites(
 
 /// The kernel's two 8x8 page-triangle spots, right then left: ICO `0x28` at
 /// `(WX + w + 4, WY + h/2 - 3)` and ICO `0x27` at `(WX - 0xC, ..)`, on the live
-/// list rect (`0x80032FE4..0x8003304C`). Off the pen that is `(X + 0x84, Y + 0x53)`
-/// and `(X - 0xC, Y + 0x53)`.
+/// list rect (`0x80032FE4..0x8003304C`), which stands `(2, 5)` off the pen. Off the
+/// pen that is `(X + 0x86, Y + 0x58)` and `(X - 0xA, Y + 0x58)`, measured on
+/// `menu_equip_candidates_conc_retail`.
 pub(crate) fn list_page_arrow_spots(list_pen: (i32, i32)) -> ((i32, i32), (i32, i32)) {
     let (lx, ly) = list_pen;
-    ((lx + 0x84, ly + 0x53), (lx - 0x0c, ly + 0x53))
+    ((lx + 0x86, ly + 0x58), (lx - 0x0a, ly + 0x58))
 }
 
 /// The page triangles as retail draws them, the font's 8x8 ICO `0x27` / `0x28`
@@ -1783,13 +1784,13 @@ mod pause_list_tests {
                 .any(|d| d.dst.0 == 174 - 0x0c && d.dst.1 == 22 + 0x0c + 2 * 0x0e)
         );
         // Page 1 of 6 -> right arrow at the pinned spot, no left arrow.
-        let arrow_y = 22 + 0x53 - 4;
+        let arrow_y = 22 + 0x58 - 4;
         assert!(
             items_list
                 .iter()
-                .any(|d| d.dst.0 == 174 + 0x84 - 4 && d.dst.1 == arrow_y)
+                .any(|d| d.dst.0 == 174 + 0x86 - 4 && d.dst.1 == arrow_y)
         );
-        assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x0c - 4));
+        assert!(!items_list.iter().any(|d| d.dst.0 == 174 - 0x0a - 4));
         // Single page -> no arrows at the arrow row besides the hand.
         assert!(!items_cmd.iter().any(|d| d.dst.1 == arrow_y));
     }
