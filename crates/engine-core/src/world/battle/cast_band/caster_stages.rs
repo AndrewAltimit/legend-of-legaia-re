@@ -139,6 +139,30 @@ impl World {
                     },
                 );
             }
+            // PROT 0935's arms 4 and 5: two draws for the point, a third for
+            // the yaw (`0x801F7480..0x801F7690`).
+            if let Some(w) = self.casting.module_rock_burst.take()
+                && opens_pass
+                && let Some(caster) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+            {
+                let c = (caster.move_state.world_x, caster.move_state.world_z);
+                let dx = (self.next_rand() % 1023) as i32;
+                let dz = (self.next_rand() % 1023) as i32;
+                let yaw = (self.next_rand() % 4095) as i16;
+                let (x, z) = cmc::rock_point(c, w, dx, dz);
+                let seated: Vec<cmc::ModuleSpawn> = cmc::ROCK_RECORDS
+                    .iter()
+                    .map(|&r| cmc::ModuleSpawn {
+                        record: cmc::SpawnRecord::Module(r),
+                        anchor: cmc::SpawnAnchor::LiteralScaled {
+                            pos: [x, 0, z],
+                            rot: [0, yaw, 0],
+                            scale: 0x1000,
+                        },
+                    })
+                    .collect();
+                self.stage_module_arm_spawns(run.prot_entry, &seated, run.camera_shot, None);
+            }
             if let Some((record, count)) = self.casting.module_scatter.take()
                 && opens_pass
             {

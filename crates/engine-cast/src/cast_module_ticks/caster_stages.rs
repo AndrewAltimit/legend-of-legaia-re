@@ -96,7 +96,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0936 Hyper Crush: `0x0D` at `0x801F6BA0`, then `0x0B` at `0x801F6EB0`.
     CasterStageRow {

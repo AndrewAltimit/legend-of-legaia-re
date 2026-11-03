@@ -356,7 +356,7 @@ impl World {
             let mut st = self.module_cam_with_yaw_base();
             self.feed_capture_cam(caster_slot, victim_slot, &mut st);
             // Curse All frames on the target row's centroid (`FUN_801DCEAC`).
-            if entry == 944 {
+            if entry == 944 || entry == 935 {
                 self.feed_seru_cam(entry, caster_slot, &mut st);
             }
             let arm = direct(&mut st, ctx.phase, seats);
@@ -386,6 +386,7 @@ impl World {
                     .copied(),
             );
             self.casting.module_scatter = arm.scatter;
+            self.casting.module_rock_burst = arm.rock_burst;
             self.casting.module_scatter_pairs = arm.scatter_pairs;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);

@@ -121,6 +121,10 @@ pub struct CaptureCamArm {
     pub others_live_only: bool,
     /// The `MoveImage` (`FUN_80058490`) the arm issues on this pass.
     pub vram_move: Option<super::ModuleVramMove>,
+    /// PROT 0935's arms 4 and 5: the pass's rock pair at a point off the
+    /// quadrant in the pass word, on the host's `rand()` draws
+    /// ([`super::rock_point`]).
+    pub rock_burst: Option<u8>,
     /// `(record, count)`: this pass seats `count` copies of a record each on
     /// five `rand()` draws (PROT 0951's arm 4, `0x801F7E34..0x801F7F14`:
     /// `x = r % 64 - 32`, `y = r % 64 - 16`, `z = 0x100`, then the angle trio
@@ -192,6 +196,8 @@ pub struct CaptureSeatWrite {
     pub colour: Option<u32>,
     pub render_flag: Option<u8>,
     pub cursor_reset: bool,
+    /// A store into the seat's node cursor `+0x68` (12.4).
+    pub seek: Option<u16>,
 }
 
 impl CaptureSeatWrite {
@@ -233,6 +239,8 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
+        (935, SINGLE_BODY) => Some(super::earthquake_camera),
+        (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
@@ -302,6 +310,8 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
         0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
         0x52 => Some(super::POWER_UP_COUNTDOWN),
+        0x4A => Some(super::EARTHQUAKE_COUNTDOWN),
+        0xAF => Some(super::ELEMENT_CHANGE_COUNTDOWN),
         // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
         0x5F => Some(0x801F_9018),
         0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),

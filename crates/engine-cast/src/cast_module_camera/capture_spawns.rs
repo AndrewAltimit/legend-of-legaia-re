@@ -619,6 +619,19 @@ pub const CAPTURE_SPAWN_ENTRIES: [u32; 9] = [938, 940, 944, 946, 959, 960, 961, 
 /// ([`capture_director_seats_all`]), listed for the disc check that each names
 /// a record of its module.
 pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
+    (
+        935,
+        &[
+            0x801F_8028,
+            0x801F_8074,
+            0x801F_811C,
+            0x801F_80C0,
+            0x801F_8178,
+            0x801F_81CC,
+            0x801F_8238,
+            0x801F_826C,
+        ],
+    ),
     (942, &[0x801F_81B8]),
     (
         947,
@@ -748,6 +761,8 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 /// shell no retail frame of the cast holds).
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
+        935 => true,
+        964 => body == Some(super::ELEMENT_CHANGE_BODY),
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
@@ -769,6 +784,8 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
 /// Breath and PROT 0962's other bodies.
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
+        935 => true,
+        964 => body == Some(super::ELEMENT_CHANGE_BODY),
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),

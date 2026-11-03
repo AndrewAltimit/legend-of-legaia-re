@@ -973,6 +973,8 @@ mod creature_spawns;
 mod cross_beam;
 mod curse_all;
 mod doomsday;
+mod earthquake;
+mod element_change;
 mod evil_seru_magic;
 mod freed;
 mod gilium_palma_horn;
@@ -1022,6 +1024,8 @@ pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,
 };
+pub use earthquake::{EARTHQUAKE_COUNTDOWN, ROCK_RECORDS, earthquake_camera, rock_point};
+pub use element_change::{ELEMENT_CHANGE_BODY, ELEMENT_CHANGE_COUNTDOWN, element_change_camera};
 pub use evil_seru_magic::*;
 pub use freed::*;
 pub use gilium_palma_horn::*;

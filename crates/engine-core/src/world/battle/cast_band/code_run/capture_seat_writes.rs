@@ -108,6 +108,11 @@ impl World {
         {
             p.seek_sixteenths(0);
         }
+        if let Some(at) = w.seek
+            && let Some(p) = a.battle_animation.as_mut()
+        {
+            p.seek_sixteenths(at);
+        }
         if w.loop_release {
             a.battle.hit_count_bound = 0;
             if let Some(p) = a.battle_animation.as_mut() {
