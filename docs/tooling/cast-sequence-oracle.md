@@ -37,7 +37,12 @@ engine runs one at a time. A retail recording is a
 [headless](pcsx-redux-automation.md#headless-runs) emulator at 1x (`--window` opens
 one) and holds no display lock. Two recordings of one cast are not byte-identical,
 in a window or not ([why, and what does hold](pcsx-redux-automation.md#a-recording-is-not-byte-repeatable-at-any-speed)),
-so a residual smaller than two retail runs differ from each other is noise.
+so a residual smaller than two retail runs differ from each other is noise. On a
+`--monster-pick` run the approach is not pinned either: a one-vsync slip moves where
+the blind CROSS taps land in the rounds before the pick, so the inject can come a
+round later (a window and a headless run of one state inject hundreds of vsyncs
+apart). The cast from its begin keeps its action path and cues, and the engine side
+takes its ground from the recording.
 
 Each stage is reused until something it depends on changes. The retail
 recording stays until `--recapture`; the seed's child command until `--reseed`;
