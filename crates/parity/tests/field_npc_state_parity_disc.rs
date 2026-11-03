@@ -76,6 +76,54 @@ struct KnownDivergence {
 /// engine's).
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
+        label: "balden2_field_door_hop",
+        key: "vis:62",
+        class: "a-reported",
+        note: "the balden_field_route_walk entry's P1[62] seat, reached through the door: the install slice runs one pass late",
+    },
+    KnownDivergence {
+        label: "town0b_field_door_hop",
+        key: "vis:36",
+        class: "c",
+        note: "open: retail parks flat 72 under flag 0x147 and the channel context parks too, yet npcs.positions holds the seat after the entry pre-run; the writer is not found (open-rev-eng-threads)",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop",
+        key: "vis:2",
+        class: "c",
+        note: "open: retail holds the pair placed on the arrival record, a cold entry parks it; whether the arrival record's seat or a spawn prologue places them is unmeasured",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop",
+        key: "vis:3",
+        class: "c",
+        note: "open: retail holds the pair placed on the arrival record, a cold entry parks it; whether the arrival record's seat or a spawn prologue places them is unmeasured",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop_settled",
+        key: "vis:2",
+        class: "c",
+        note: "open: retail holds the pair placed on the arrival record, a cold entry parks it; whether the arrival record's seat or a spawn prologue places them is unmeasured",
+    },
+    KnownDivergence {
+        label: "concnow_field_door_hop_settled",
+        key: "vis:3",
+        class: "c",
+        note: "open: retail holds the pair placed on the arrival record, a cold entry parks it; whether the arrival record's seat or a spawn prologue places them is unmeasured",
+    },
+    KnownDivergence {
+        label: "concend_field_door_hop",
+        key: "vis:1",
+        class: "c",
+        note: "open: the same placed pair as concnow's arrival, with the record still holding the pad; unmeasured",
+    },
+    KnownDivergence {
+        label: "concend_field_door_hop",
+        key: "vis:2",
+        class: "c",
+        note: "open: the same placed pair as concnow's arrival, with the record still holding the pad; unmeasured",
+    },
+    KnownDivergence {
         label: "rim_elm_zoom_intro",
         key: "vis:*",
         class: "b",
