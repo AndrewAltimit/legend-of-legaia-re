@@ -87,6 +87,9 @@ tree it is committed with), writes the report to `--out` (default
 `captures/retail-compare/`), and exits 0 with a `[skip]` line when the
 library or the extracted disc is missing; it looks for both in the worktree
 and then in the main checkout.
+`LEGAIA_ENGINE_BIN` names another binary to run with `--no-build`, which is how
+[`full-gate.py`](build-and-test-speed.md#the-full-gate) holds one copy across its
+gates; the audio and coverage drivers read it too.
 
 Two things make it fast, and neither moves a score
 ([below](#parallel-states-and-the-result-cache)): states run in parallel

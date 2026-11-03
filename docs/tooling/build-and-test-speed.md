@@ -6,10 +6,12 @@ What a build and a test run spend their time on, and what to run so an edit does
 
 - [Which profile](#which-profile)
 - [What an edit costs](#what-an-edit-costs)
+- [The wasm bundle](#the-wasm-bundle)
 - [The linker](#the-linker)
 - [Where a test run goes](#where-a-test-run-goes)
 - [Page faults](#page-faults)
 - [The commit-time gates](#the-commit-time-gates)
+- [The full gate](#the-full-gate)
 - [Profiling without perf](#profiling-without-perf)
 
 ## Which profile
@@ -45,6 +47,35 @@ Two things that look like costs and are not worth chasing: the test harness of e
 `cargo test -p <crate>` and `cargo test --workspace` resolve different feature sets, so switching between them rebuilds the shared dependencies the first time, not every time: cargo keeps both. `--test integration` is a third selection with its own set under `engine-shell`.
 
 sccache misses on workspace crates between checkouts by design: the checkout path is in `-C metadata` and `CARGO_MANIFEST_DIR`. What it serves is dependencies. It passes incremental crates through uncached, so under `dev-fast` it covers the dependencies and rustc's own cache covers the workspace.
+
+## The wasm bundle
+
+The shipped bundle is `scripts/ci/build-wasm.sh`: `release` (thin LTO, one codegen unit) plus `wasm-opt` stripping. Measured with `CARGO_BUILD_JOBS=4` on the shared box, wall clock, sccache warm:
+
+| What | Shipped | `--fast` |
+|---|---|---|
+| Clean target directory | about 6 min | about 5 min |
+| Nothing changed | 35 s | 5 s |
+| One line, `engine-core` | 4.5 min | 30 s |
+| One line, `web-play` | 2 min | 30 s |
+| One line, `xa` (low in the graph) | 4.5 min | 35 s |
+| A function body, `engine-core` | - | 55 s |
+| `.wasm`, raw / gzip | 21.3 / 6.9 MB | 33.4 / 8.3 MB |
+
+A one-line edit in `engine-core` costs three quarters of a clean build, and no one step is why. It is the chain above the edit, each crate compiled whole: `engine-core` itself about 85 s, `web-play` 55 s, the final thin-LTO link 35 s, the rest of the stack 70 s, and `wasm-bindgen` plus the strip pass 33 s. The strip is fast only by comparison, about 25 s across a dozen threads, because Binaryen parses and rewrites the module to do it; a full `-O` pass is what takes twenty minutes.
+
+The obvious knob stays where it is. `codegen-units = 16` under the same LTO takes the `engine-core` edit to under 3 min and the bundle to 7.13 MB gzipped against 6.86, which every player downloads. A target directory reused across worktrees gains nothing either: workspace crates hash their path, and sccache already serves the dependencies, which is why a clean build is minutes.
+
+So the iteration path is a separate build:
+
+```bash
+scripts/ci/build-wasm.sh --fast   # site/wasm/ from the wasm-fast profile, no wasm-opt
+scripts/ci/check-pages.mjs        # the same page checks run on it
+```
+
+`wasm-fast` is `release-test` with the incremental cache over the workspace crates, the `dev-fast` recipe for the browser target. `opt-level = 1` is no faster to rebuild and runs slower, so it keeps `release-test`'s level. It lands in `site/wasm/` where a page expects it, and the freshness stamp records the profile: `check-wasm-freshness.py --strict` refuses it, so neither a claim that a fix is live nor the full gate can rest on it. Run `build-wasm.sh` once before either.
+
+`scripts/ci/check-wasm-target.sh` stays the cheapest question, whether the browser host compiles: about 90 s from clean, 30 to 60 s after an edit.
 
 ## The linker
 
@@ -94,6 +125,38 @@ A gate added to step 3 has to read the tree only, and not read another gate's ou
 In the Repo Gates job the one step that compiles is last for the same reason, and it builds into the per-toolchain target directory the other jobs use. Built into the cache root, `select-ci-target-dir.sh` in the next job pruned it as stale, and every run compiled `asset` from nothing.
 
 A gate that is slow is usually repeating itself. `check-css-cascade-order.py` keeps its parse of the shared stylesheet across pages, and the catalog's call graph resolves a name once per calling file. For a gate, the proof is its output: `port-catalog.py --live-audit` must write `target/port-catalog/` byte for byte as before.
+
+## The full gate
+
+[`scripts/ci/full-gate.py`](../../scripts/ci/full-gate.py) is the end-of-work gate as one command. It reports and never decides: nothing it runs blesses, proposes or pushes, and a command that carries such a flag is refused before the run starts.
+
+```bash
+scripts/ci/full-gate.py                       # everything
+scripts/ci/full-gate.py --list                # the gates, their groups and commands
+scripts/ci/full-gate.py --only repo,lint-*    # gate names, globs or groups; needs come along
+scripts/ci/full-gate.py --skip 'ladder-seed-*'
+scripts/ci/full-gate.py --resume              # rerun what did not pass, on the same tree
+```
+
+| Group | What runs |
+|---|---|
+| `repo` | Every `run:` step of `main-ci.yml`'s Repo Gates job, in a clean `git worktree add HEAD`, with no disc in the environment and none of the gitignored data; and `git ls-files site \| git check-ignore --no-index --stdin`. |
+| `tree` | `fmt`, both clippy passes and the wasm type-check, read from the PR Lint job; Repo Gates' ratchet steps again where the data is; `check-baseline-loosening.py --base`; [`revert-scan.py`](../../scripts/ci/revert-scan.py). |
+| `build` | One build of `legaia-engine` and one of the ladder's test binary, each copied aside so the gates below it read one binary whatever cargo relinks later. |
+| `tests` | The Disc-Gated Tests job's `run-disc-tests.sh`. `tests-no-disc`, PR Lint's disc-free suite in the clean tree, runs only when named: it is a second whole build. |
+| `ladder` | Part B, part C on the default stream, and each seed `[continuous_seeds]` lists. |
+| `retail` | `retail-compare.py --images --check`, the audio sweep, the PCM check, capture coverage. |
+| `wasm` | `build-wasm.sh`, `check-wasm-freshness.py --strict`, [`check-pages.mjs`](../../scripts/ci/check-pages.mjs). |
+
+The workflow's steps are read from the file on every run, so a step added there is a gate here with no edit; the Repo Gates job runs `full-gate.py --selftest`, which fails on a step the reader cannot read or one carrying a forbidden command. An Actions expression has no value outside Actions, so a step's `${{ ... }}` variable is empty: `BASE_SHA`'s step takes its self-test branch, and `loosening-base` does the comparison, without the step's `git fetch --depth=1`, which would turn the shared repository shallow. The runner's `CARGO_TARGET_DIR` is replaced by a directory under `--out`, because `select-ci-target-dir.sh` prunes around whatever it is given.
+
+Every failure is reported with its log, not the first: a gate whose prerequisite failed shows as `BLOCKED`, and the rest still run. A driver's `[skip]` line reads as `SKIP` and the verdict as `PARTIAL`, since a skip is not a pass; only the `repo` group is exempt, where a ratchet skipping for want of the disc is what the runner does. `preflight` fails when the extracted disc, the save library, the captures, the dump corpus, the disc image or a display is missing, because each of those otherwise makes a gate pass without measuring. `tree-unchanged` runs last and fails if a tracked file moved during the run.
+
+Output goes under `--out` (default `target/full-gate`): `logs/<gate>.log`, `timing.md` and `state.json`. `--resume` refuses a tree that has changed since the run it would resume.
+
+Three flags set the load on a shared box: `--max-cpu` is the budget each gate is weighed against, `--jobs` is what `retail-compare`, the audio sweep and libtest get, and `--cargo-jobs` is `CARGO_BUILD_JOBS`. `--memory-max` is the `systemd-run --user --scope` cap on each engine-looping gate. A gate over the budget starts when the budget has room, or alone.
+
+What saves time beyond running side by side: `cargo test --workspace` already runs parts B and C, so `ladder-b` and `ladder-c` read their verdict out of the suite's log, and run on their own only when the suite did not reach them; the seeds share one binary and skip cargo's lock; `wasm-build` is answered by a freshness stamp that vouches for a shipped-profile bundle from this tree; and the drivers read `LEGAIA_ENGINE_BIN`, so the suite's relink of `target/release-test/legaia-engine` with other features cannot pull the binary out from under them. Ratchet modes measure fresh whatever the flags: `--check` reads no result cache.
 
 ## Profiling without perf
 

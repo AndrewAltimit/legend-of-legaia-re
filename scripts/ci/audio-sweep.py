@@ -108,7 +108,7 @@ def main() -> int:
              "--features", "oracles", "--bin", "legaia-engine"],
             cwd=REPO, check=True,
         )
-    exe = REPO / "target" / PROFILE / "legaia-engine"
+    exe = Path(os.environ.get("LEGAIA_ENGINE_BIN") or REPO / "target" / PROFILE / "legaia-engine")
     cmd = [str(exe), "audio-sweep", "--out", a.out,
            "--library", str(library), "--extracted-root", str(extracted),
            "--manifest", str(REPO / "scripts" / "scenarios.toml"), "--jobs", str(a.jobs)]

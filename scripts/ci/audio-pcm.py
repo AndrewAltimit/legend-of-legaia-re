@@ -222,7 +222,7 @@ def main() -> int:
              "--features", "oracles", "--bin", "legaia-engine"],
             cwd=REPO, check=True,
         )
-    exe = REPO / "target" / PROFILE / "legaia-engine"
+    exe = Path(os.environ.get("LEGAIA_ENGINE_BIN") or REPO / "target" / PROFILE / "legaia-engine")
     want = lambda label: not a.filter or any(f in label for f in a.filter.split(","))
     if a.capture:
         capture_missing(want, library, manifest, out, disc, a.jobs)

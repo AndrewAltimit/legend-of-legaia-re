@@ -105,7 +105,7 @@ def run_census(out: Path, build: bool) -> Path | None:
     env = dict(os.environ)
     env.setdefault("RUST_LOG", "error")
     subprocess.run(
-        [str(REPO / "target" / PROFILE / "legaia-engine"), "retail-compare",
+        [os.environ.get("LEGAIA_ENGINE_BIN") or str(REPO / "target" / PROFILE / "legaia-engine"), "retail-compare",
          "--library", str(library), "--extracted-root", str(extracted),
          "--manifest", str(REPO / "scripts" / "scenarios.toml"),
          "--out", str(out), "--census", str(census), "--jobs", str(rc.default_jobs())],
