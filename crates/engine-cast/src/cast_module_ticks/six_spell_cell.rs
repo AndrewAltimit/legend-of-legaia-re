@@ -262,7 +262,10 @@ pub fn melt_spray_tick(
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F767C (phase chain + the turn steal; packet arms unported)
+/// The camera arms, gates and ring records are
+/// `cast_module_camera::terror_scream_camera`.
+///
+/// PORT: FUN_801F767C (phase chain + the turn steal)
 pub fn terror_scream_tick(
     ctx: &mut CastModuleCtx,
     victim: &mut CastActorState,

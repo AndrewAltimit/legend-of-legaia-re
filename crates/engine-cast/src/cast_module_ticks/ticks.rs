@@ -524,13 +524,12 @@ pub const POWER_UP_CHARGE_RENDER_FLAG: u8 = 7;
 ///
 /// `agl_record` is the record's `+0x0E`; the caller supplies it because the
 /// record table is the host's, not the kernel's. The per-arm countdown gate
-/// (`0x801F88B4` minus `scratch[0x1F80037D] * scratch[0x1F800393]` each
-/// frame) is **not** ported - it is per-frame timing, the same class this
-/// module's header disclaims for every body here.
+/// (`0x801F88B4`) and the camera arms are
+/// `cast_module_camera::power_up_camera`.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
-/// PORT: FUN_801F7D34 (phase machine + the AGL-base buff; packet arms and the countdown gate unported)
+/// PORT: FUN_801F7D34 (phase machine + the AGL-base buff)
 pub fn power_up_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,

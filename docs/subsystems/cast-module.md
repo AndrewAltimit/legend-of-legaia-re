@@ -2762,6 +2762,30 @@ colour word `+0x04` never drains to the zero the row polls wait for - and the
 summon stager's Linger phase ends the band anyway. The bound is twice the
 longest post-hit tail a ported module runs (Palma's settle arm `0xC8`).
 
+### PROT 0942 (Power Up)
+
+`cast_module_camera::power_up_camera` carries the `0x52` body (`0x801F7D34`): the
+charge record and a twelve-frame shot on arm 0, then a slow `0x100`-frame pull-out
+under the `+0x21C = 7` tint that reads as the caster turning red. The message bar
+goes up through the [presentation decode](#module-notes) off the image's own
+`FUN_801D8DE8` call, on the pass that leaves arm 0.
+
+### PROT 0947 (V-Windhash and Neo Windhash)
+
+The caster winds up and swings a blade of light across the stage. Its body
+(`0x801F69F0`) is a chain body with a director, `cast_module_camera::v_windhash_camera`.
+Arm 0 hides every party seat and live monster and shows the caster alone; arm 2
+swaps the victim in and the caster out, so neither is ever on screen with the
+other. Arms 2 to 4 keep a moving point in `0x801F7B48` and seat the blade's
+two sides, `96` units across its heading, around it: once on arm 2 and on
+**every pass** of arms 3 and 4, held or not. The director only names those calls;
+the host seats them on the tick that opens a battle frame, the way PROT 0962's
+rays are seated, so the trail's density follows the frame step. Retail's capture
+runs this arm at step `4`; held at step `4` from the module's first state, the
+engine's arm-3 segment rises from `.352` to `.572` against it, and the rest of that
+gap is the additive overdraw of the trail itself. Arm 3's shot closes on the victim
+as the countdown falls.
+
 ### PROT 0948 (Cross Beam)
 
 The image's other routine, `0x801F726C`, is the beam's packet builder, called
@@ -2775,6 +2799,16 @@ trail of core, glow and flare quads that dims by `2` per segment, the right
 beam the left's mirror run `0x20` steps behind, all under ABR 1.
 `World::cross_beam_draw` carries the counter and `legaia_render_kernels::cast_beam`
 builds the packets for both hosts.
+
+### PROT 0951 (Scythe Wind)
+
+`cast_module_camera::scythe_wind_camera` carries arms 2 to 5 of the `0x5B` body
+(`0x801F77E8`); arms 0 and 1 are the walk into reach. Arm 2 slows both seats to
+rate `1`, and arms 3 and 4 put each back as they pass. Arms 3 to 5 re-aim a
+twelve-frame shot on every pass, so the framing trails a countdown-driven endpoint
+rather than cutting. Below `scalar << 6`, arm 4 seats four scattered records a
+pass, each on five `rand()` draws of the world stream. Arm 0's `MoveImage` copies
+the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)`; the wind draws through the copy.
 
 ### PROT 0954 (Fatal Decision)
 
@@ -2823,6 +2857,14 @@ fold.
   reaction clip), as do the HP / MP arms on a petrified victim and a steal
   that finds nothing.
 
+- **The tick.** The epilogue every arm leaves through (`0x801F8530..0x801F859C`)
+  takes the angle's remainder over `0x200` and calls
+  `FUN_8004FE5C(0xFD, ctx[+0x13])` when it rose since the last pass, so the wheel
+  clicks once a slot, about every sixteen vsyncs while it spins. The router's ring
+  id is `0x299`.
+- **The settle.** Arm 12 reads the victim's clip off the reaction channel, and a
+  party seat at zero HP settles on its Defeat pose, the engine's clip `8`.
+
 Not ported: the `FUN_801D5854(caster, 8)` framing arms 11 and 12 re-arm each
 pass, and the full heal's party-seat CLUT reload and effect-list spawn
 (`FUN_800583C8`, `FUN_801E22C8`). Arm 12's settle wait has no bound in retail;
@@ -2842,6 +2884,14 @@ Skeleton fight (group `7` too) holds that page at `(640, 0)` with its CLUT on
 row 490. The engine streams nothing per turn;
 `engine-core::battle_sideband_textures` writes every formation group's pages
 into the battle-entry VRAM log both hosts replay.
+
+### PROT 0955 (Terror Scream)
+
+`cast_module_camera::terror_scream_camera` carries the `0x70` body (`0x801F767C`).
+Its opening frames by the caster's own monster id: Terror Face (`0x7F`) stages clip
+`7` on the far framing and a slow pitch drift, `0x28..=0x2A` clip `9` and
+`0x83..=0x85` clip `8` on the near framing and a yaw drift. Arms 1 and 2 each cut
+to a seat and seat the same four ring records on it, the caster and then the victim.
 
 ### PROT 0957 (Death Game)
 
@@ -3600,7 +3650,7 @@ through one `World` seam, so a live cast reaches every routine below.
 
 Left out, per function: the GPU-packet arms (except Theeder's, Swordie's,
 Slippery's rain and Cross Beam's, which are drawn), the camera arms of
-modules with no director, and the per-arm frame gating of bodies with no
+modules with no director (`capture_camera_director` names the ported ones), and the per-arm frame gating of bodies with no
 director or countdown table. PROT 0957's roulette sprites are the packet
 arm still owed. PROT 0916's light bands are drawn
 ([its notes](#prot-0916-aluru)).

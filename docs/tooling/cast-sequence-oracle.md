@@ -474,7 +474,19 @@ the fast core with a plain `--caster`:
 | `gaza2_pre_neo_star_slash` / `cort_evolved_pre_doomsday` | the same two casts; **patched resident executable** |
 
 The action in each is the probe's, not the AI's: a capture is a statement
-about the cast, not about when the monster would have chosen it.
+about the cast, not about when the monster would have chosen it. A
+`<scene>_<monster>_pre_<spell>` state from the
+[harvest route](capture-coverage.md#filling-the-worklist) is the opposite: saved
+at the action's `0x0A`, ahead of a pick the AI makes itself. Pass the seat the
+fight gave the caster (the formation row's order, which `--filter`'s report names as
+`seat=`). The probe writes the target the cast began on to `done.txt`
+(`cast_target`), and the engine child lands a single-target cast there
+(`,t<slot>` on `LEGAIA_BATTLE_MONSTER_CAST`): the victim's voice cue and every
+victim shot follow it.
+
+A cast with a pad-driven hold needs `LEGAIA_PARK` past it: Fatal Decision's arm 6
+holds about `1200` vsyncs on an undecided party victim, which the default bound
+reads as a park.
 
 A saved state keeps the executable its source state held. The first Gaza 2
 and evolved-Cort states were made on patched discs (`battle_gaza2_prompt`,

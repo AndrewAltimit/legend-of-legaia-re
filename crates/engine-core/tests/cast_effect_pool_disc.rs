@@ -814,4 +814,17 @@ fn every_creature_arm_spawn_names_a_record_of_its_module() {
             known.len()
         );
     }
+    // The records a director works out its own points for, off its arms.
+    for &(entry, records) in cmc::CAPTURE_DIRECTOR_RECORDS {
+        let m = pool.module(entry).expect("module in the pool");
+        for &va in records {
+            let parsed = legaia_overlay_images::summon_overlay::parse_records_at(
+                &m.bytes,
+                &[(va - base) as usize],
+            )
+            .iter()
+            .any(|p| base + p.record_off as u32 == va);
+            assert!(parsed, "PROT {entry}: {va:#010X} is no record of the image");
+        }
+    }
 }

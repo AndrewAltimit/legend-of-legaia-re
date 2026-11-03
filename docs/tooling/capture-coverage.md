@@ -112,6 +112,21 @@ column) is the source to start from; a town has no encounters. From a
 probe-poked pre-cast state (`koru_pre_*`) it saves the forced cast mid-module
 instead, and the new state inherits that state's poke.
 
+A fight need not wait for the walk to find it. `LEGAIA_WANT=147+18;15+120` names
+formations by their monster ids. In the field the probe finds the scene's row
+holding exactly those ids, points every region of the live MAN's region table at
+that row alone, and runs the step counter `0x8007B5FC` down, so the next step rolls
+it through retail's own `FUN_801D9E1C`: the stage id, the world-map return point and
+the battle flags stay the scene's. Those region rows are the only RAM it writes
+before the fight, and they stay resident in the saved states. `LEGAIA_TOUGH=1` keeps
+a low-level party alive (live HP, readout and pending delta together: the readout
+alone parks state `0x51`), `LEGAIA_WOUND=<round>` cuts the monsters to a third of
+their HP so a heal arm has a patient, and `LEGAIA_FINISH=1` ends the fight after the
+Spirit rounds. The action in each state is the AI's own, and `LEGAIA_SAVE_PRE=1`
+keeps the whole emulator state from that action's `0x0A`, ahead of the pick, which
+replays the same cast for the [cast-sequence oracle](cast-sequence-oracle.md). A
+cast the AI will not pick in the rounds given still needs `--monster-pick`.
+
 The scene rows are filled the same way: with `LEGAIA_SCENES=1` the probe also
 saves one field state per scene its walk reaches, once the loaded scene has
 run a settle window and the player has moved in it. A save point in an

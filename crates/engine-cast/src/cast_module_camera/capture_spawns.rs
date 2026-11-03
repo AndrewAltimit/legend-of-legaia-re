@@ -613,8 +613,40 @@ const E961_LOWERED_FORMATION: u8 = 0xB5;
 
 /// The capture-class entries whose spawns are seated per arm instead of by
 /// the pager.
-pub const CAPTURE_SPAWN_ENTRIES: [u32; 13] = [
-    938, 940, 944, 946, 947, 948, 951, 955, 959, 960, 961, 962, 966,
+pub const CAPTURE_SPAWN_ENTRIES: [u32; 9] = [938, 940, 944, 946, 959, 960, 961, 962, 966];
+
+/// The records each director that works out its own points seats
+/// ([`capture_director_seats_all`]), listed for the disc check that each names
+/// a record of its module.
+pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
+    (942, &[0x801F_81B8]),
+    (
+        947,
+        &[
+            0x801F_7900,
+            0x801F_795C,
+            0x801F_79B8,
+            0x801F_7A00,
+            0x801F_79DC,
+            0x801F_7A44,
+            0x801F_7A88,
+        ],
+    ),
+    (
+        948,
+        &[
+            0x801F_8564,
+            0x801F_85B8,
+            0x801F_860C,
+            0x801F_867C,
+            0x801F_86F0,
+            0x801F_8748,
+            0x801F_87A4,
+            0x801F_87FC,
+        ],
+    ),
+    (951, &[0x801F_8348, 0x801F_836C]),
+    (955, &[0x801F_95DC, 0x801F_9630, 0x801F_9684, 0x801F_96D8]),
 ];
 
 /// Halfword stores a capture arm makes into a part it has just seated, as
@@ -681,6 +713,21 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
     matches!((prot_entry, phase), (940, 1 | 3))
 }
 
+/// Whether the director of `prot_entry`'s body `body` names every record the
+/// body seats, on its own arms: nothing of the module's image goes in on the
+/// band's first tick. The rest of a multi-body cell's records belong to its
+/// other bodies (PROT 0951's Chaos Flare under Scythe Wind drew a large pink
+/// shell no retail frame of the cast holds).
+pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
+    match prot_entry {
+        947 | 948 => true,
+        942 => body == Some(super::POWER_UP_BODY),
+        951 => body == Some(super::SCYTHE_WIND_BODY),
+        955 => body == Some(super::TERROR_SCREAM_BODY),
+        _ => false,
+    }
+}
+
 /// Whether the body `body` of capture-class module `prot_entry` (the
 /// trampoline's pick for the queued action, [`crate::cast_module_ticks::capture_tick_body`])
 /// has its spawns seated per arm. A multi-body cell keeps the pager
@@ -694,6 +741,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         946..=948 => true,
         955 => body == Some(super::TERROR_SCREAM_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
+        942 => body == Some(super::POWER_UP_BODY),
         959 => body == Some(super::MEGATON_PRESS_BODY),
         960 => matches!(
             body,

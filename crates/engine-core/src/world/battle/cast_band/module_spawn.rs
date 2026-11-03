@@ -339,6 +339,12 @@ impl World {
         let Some(entry) = self.cast_module_for(spell_id) else {
             return;
         };
+        if legaia_engine_cast::cast_module_camera::capture_director_seats_all(
+            entry,
+            legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id),
+        ) {
+            return;
+        }
         let Some(module) = self
             .casting
             .effect_pool

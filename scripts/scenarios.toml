@@ -4756,3 +4756,201 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "tunnelb"
 topics = ["battle", "enemy attack", "Nova", "tunnelb", "harvest"]
+
+[[scenarios]]
+label = "nilboa_neo_grude_pre_power_up"
+backup_fingerprint = "82de52d3ed31d37908a38d897c4f798f9db0bb5db7dfaa34e430705e5cb1813b"
+description = "nilboa battle: Neo Grude (monster id 105) is about to cast Power Up (spell 0x52, module 0942) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: nilboa_pre_entry_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 3312 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Neo Grude", "Power Up", "nilboa", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_nilboa_neo_grude_power_up_mid_cast"
+backup_fingerprint = "d8bd02c1921e5b1b300b7494278b6272a2fa4e6556902250e4774a23ab858046"
+description = "nilboa battle: Neo Grude (monster id 105) mid-cast Power Up (spell 0x52, module 0942): category 2, action state 0x70. RETAIL disc: nilboa_pre_entry_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 3461 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy cast", "Neo Grude", "Power Up", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_neo_grude_strike"
+backup_fingerprint = "b6f56e35f79f9d1871f29d7650545b468d5ec9de0055f3f1ee2dcd9ff74fdc55"
+description = "nilboa battle: Neo Grude (monster id 105) mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_pre_entry_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 5740 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Neo Grude", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "noaru_barra_v2_pre_multi_cutter"
+backup_fingerprint = "12c75ed554ed54d52f271bb96ee4663e138e9394909ae7e742a7524fab5c5632"
+description = "noaru battle: Barra $2 (monster id 142) is about to cast Multi Cutter (spell 0x65) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 7032 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Barra $2", "Multi Cutter", "noaru", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_noaru_barra_v2_multi_cutter_mid_cast"
+backup_fingerprint = "4272655cb0d87d26e1adb580740f21c77ceadb398c79a061f34b48f44e79a496"
+description = "noaru battle: Barra $2 (monster id 142) mid-cast Multi Cutter (spell 0x65): category 2, action state 0x2B. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 7047 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Barra $2", "Multi Cutter", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_barra_v2_strike"
+backup_fingerprint = "011e48bc7e9922e357beee823e72c8c812a4962e73190be89d821200ca52113f"
+description = "noaru battle: Barra $2 (monster id 142) mid physical attack: category 3, action state 0x1E. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1660 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy attack", "Barra $2", "noaru", "harvest"]
+
+[[scenarios]]
+label = "noaru_slippery_v2_pre_big_wave"
+backup_fingerprint = "8b7e782bfd5ae3340ece00983100fe415dda5751e859d5ef2a39c87cf8e21103"
+description = "noaru battle: Slippery $2 (monster id 151) is about to cast Big Wave (spell 0x56, module 0946) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 2906 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Slippery $2", "Big Wave", "noaru", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_noaru_slippery_v2_big_wave_mid_cast"
+backup_fingerprint = "b4b6b4fa05132241bed31f73babca0f29db193e93f5c2962286b2a0721594388"
+description = "noaru battle: Slippery $2 (monster id 151) mid-cast Big Wave (spell 0x56, module 0946): category 2, action state 0x70. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 3055 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Slippery $2", "Big Wave", "noaru", "harvest"]
+
+[[scenarios]]
+label = "noaru_slippery_v2_pre_poisonous_breath"
+backup_fingerprint = "dcffd220af5f7e338f25ec06c2daa386d9b20ba14e6236c01b175ea41625bf3b"
+description = "noaru battle: Slippery $2 (monster id 151) is about to cast Poisonous Breath (spell 0x67) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 5245 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Slippery $2", "Poisonous Breath", "noaru", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_noaru_slippery_v2_poisonous_breath_mid_cast"
+backup_fingerprint = "e61f4e875f2022be937409b76e92e3eefc3fb23ac8670ea4bf42ef807a45e6a7"
+description = "noaru battle: Slippery $2 (monster id 151) mid-cast Poisonous Breath (spell 0x67): category 2, action state 0x2B. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 5260 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy cast", "Slippery $2", "Poisonous Breath", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_slippery_v2_strike"
+backup_fingerprint = "8cf1f6fb7b1ac0011bc16d35117de0cb058457762b5da8707f26ef7ce39a23d9"
+description = "noaru battle: Slippery $2 (monster id 151) mid physical attack: category 3, action state 0x1E. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1353 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy attack", "Slippery $2", "noaru", "harvest"]
+
+[[scenarios]]
+label = "jou_orb_v3_pre_grand_beam"
+backup_fingerprint = "d01d9d320c45b1f048028be8e5ad2fa90abacea39273cd4285042d91e93ee8ac"
+description = "jou battle: Orb $3 (monster id 85) is about to cast Grand Beam (spell 0x63) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 1586 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy cast", "Orb $3", "Grand Beam", "jou", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_jou_orb_v3_grand_beam_mid_cast"
+backup_fingerprint = "7b618f1fc1119ede12c44e01e223a0244e36355226c50fc8988f31e758b4bd48"
+description = "jou battle: Orb $3 (monster id 85) mid-cast Grand Beam (spell 0x63): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 1601 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy cast", "Orb $3", "Grand Beam", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_orb_v3_strike"
+backup_fingerprint = "868d6503240bb8c876865f7e421e1f093829580972ecf722408d69c78acc1611"
+description = "jou battle: Orb $3 (monster id 85) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 1962 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Orb $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "jou_nova_v3_pre_scythe_wind"
+backup_fingerprint = "4e1c24f1dc674af743bb215e9968b451460fbe9658533a1963b4b069fc467ea3"
+description = "jou battle: Nova $3 (monster id 97) is about to cast Scythe Wind (spell 0x5B, module 0951) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 16540 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy cast", "Nova $3", "Scythe Wind", "jou", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_jou_nova_v3_scythe_wind_mid_cast"
+backup_fingerprint = "a78dafaf2c222e99f3f52fc61bcb63d06b25082549a624893be93884d153160a"
+description = "jou battle: Nova $3 (monster id 97) mid-cast Scythe Wind (spell 0x5B, module 0951): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 16689 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy cast", "Nova $3", "Scythe Wind", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_nova_v3_strike"
+backup_fingerprint = "74da23ea8c8b0187f7abe0862ee731351a9911ea519ecbcd466c30d05df2ab08"
+description = "jou battle: Nova $3 (monster id 97) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 17899 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Nova $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_heavy_grude_strike"
+backup_fingerprint = "833c25f14396679311ef4135176859918f573d4604631a69907f4e4077b11ac3"
+description = "map03 battle: Heavy Grude (monster id 106) mid physical attack: category 3, action state 0x1E. RETAIL disc: field_walled_collision_pin played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 950 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Heavy Grude", "map03", "harvest"]
+
+[[scenarios]]
+label = "dohaty_nova_v2_pre_scythe_wind"
+backup_fingerprint = "8b2d0887310ed48741f0014d6e72c36357146abe85d112395d82035a8f8dfc63"
+description = "dohaty battle: Nova $2 (monster id 96) is about to cast Scythe Wind (spell 0x5B, module 0951) by its own AI pick; saved at the action state 0x0A before the pick, which replays the cast. RETAIL disc: dohaty_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); no write to the action queue. Saved 953 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dohaty"
+topics = ["battle", "enemy cast", "Nova $2", "Scythe Wind", "dohaty", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "battle_dohaty_nova_v2_scythe_wind_mid_cast"
+backup_fingerprint = "add8485a3f0f9f11ee33812726ad7242bf07cc9d3c8b6f3ec3b89076a8dc6c64"
+description = "dohaty battle: Nova $2 (monster id 96) mid-cast Scythe Wind (spell 0x5B, module 0951): category 2, action state 0x70. RETAIL disc: dohaty_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the cast is the AI's own. Saved 1102 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dohaty"
+topics = ["battle", "enemy cast", "Nova $2", "Scythe Wind", "dohaty", "harvest"]
+
+[[scenarios]]
+label = "battle_dohaty_nova_v2_strike"
+backup_fingerprint = "95f377e2611a846c7efccb27b86e98626da451bd037f27fef6ce5e1af8f64e57"
+description = "dohaty battle: Nova $2 (monster id 96) mid physical attack: category 3, action state 0x1E. RETAIL disc: dohaty_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 4857 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dohaty"
+topics = ["battle", "enemy attack", "Nova $2", "dohaty", "harvest"]
+
+[[scenarios]]
+label = "battle_dohaty_gola_gola_strike"
+backup_fingerprint = "adf8422c1d8b3e664f27963a436231a42688f01700f4f5935334f87e75708291"
+description = "dohaty battle: Gola Gola (monster id 98) mid physical attack: category 3, action state 0x1E. RETAIL disc: dohaty_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the attack is the AI's own. Saved 2182 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dohaty"
+topics = ["battle", "enemy attack", "Gola Gola", "dohaty", "harvest"]

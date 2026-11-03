@@ -213,6 +213,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (947, SINGLE_BODY) => Some(super::v_windhash_camera),
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
+        (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
         _ => None,
     }
@@ -277,6 +278,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
         0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
         0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
+        0x52 => Some(super::POWER_UP_COUNTDOWN),
         // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
         0x5F => Some(0x801F_9018),
         0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),
