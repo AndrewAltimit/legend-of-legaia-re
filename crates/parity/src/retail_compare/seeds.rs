@@ -1458,6 +1458,9 @@ pub struct RetailMenu {
     /// [`CARD_SCREEN_SUBMODE`] on the live title menu or the pill row over
     /// it). Reached from the title, not from a field.
     pub title_screen: Option<TitleScreen>,
+    /// The casino prize counter: the op `49 07` operand's block, armed
+    /// directly since no root row reaches it.
+    pub prize_block: Option<u8>,
 }
 
 /// A title front-end screen the seed drives the boot front end to, read off
@@ -1485,8 +1488,8 @@ impl RetailMenu {
     /// Classify a menu-class capture's sub-screen id. The pause menu runs
     /// over a walkable scene with the id set; the title / boot family (the
     /// attract loop, the title picker, the card-boot save select) holds it
-    /// clear, and a script-entered screen (the casino prize exchange,
-    /// `0x20`) is no root row's.
+    /// clear, and the casino prize exchange (`0x20`) is entered by script,
+    /// no root row's.
     pub(super) fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
         use legaia_engine_menus::field_menu::FieldMenuRow;
         let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
@@ -1499,6 +1502,7 @@ impl RetailMenu {
                 card_grid,
                 title_continue: true,
                 title_screen: None,
+                prize_block: None,
             });
         }
         let title_screen = match game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) {
@@ -1518,6 +1522,7 @@ impl RetailMenu {
                 card_grid: false,
                 title_continue: false,
                 title_screen: Some(screen),
+                prize_block: None,
             });
         }
         if subscreen == 0 {
@@ -1535,6 +1540,19 @@ impl RetailMenu {
                 card_grid: false,
                 title_continue: false,
                 title_screen: None,
+                prize_block: None,
+            });
+        }
+        if subscreen == MENU_PRIZE_EXCHANGE {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                // The disc's one counter, `koin1`'s, is `49 07 00`.
+                prize_block: Some(0),
             });
         }
         let (row, equip_depth) = match subscreen {
@@ -1557,12 +1575,16 @@ impl RetailMenu {
             card_grid: card_grid && matches!(row, FieldMenuRow::Load | FieldMenuRow::Save),
             title_continue: false,
             title_screen: None,
+            prize_block: None,
         })
     }
 }
 
 /// The root list's own sub-screen id: the pause menu with no row open.
 pub const MENU_ROOT: u8 = 0x01;
+
+/// The casino prize counter's sub-screen id, script-entered through op `49 07`.
+pub const MENU_PRIZE_EXCHANGE: u8 = 0x20;
 
 /// Prefix of the reason a menu-class state carries when it is not a
 /// pause-menu screen the seed can drive to.

@@ -167,6 +167,10 @@ record runs with its gates and its flag writes, so a door the story has not
 opened refuses and ends the run; nothing is poked but the position, and the
 scenario says so. It saves one state per scene it arrives in, once the pad
 moves the player there.
+`LEGAIA_REFUSE` sets how long a door gets before it counts as refused: a bed
+or cutscene door runs a long record first. A door whose record tests a story
+flag the source state lacks takes `LEGAIA_FLAGS_SET` / `LEGAIA_FLAGS_CLEAR`,
+written once at the start, and the scenario names them in `ram_poked`.
 
 A harvested state is a candidate, not a corpus state, until:
 

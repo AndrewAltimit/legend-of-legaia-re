@@ -31,15 +31,6 @@
 //! A placement retail holds on the park seat ([`npc_parked`]) whose flat a
 //! beat parks is stood on retail's park coordinates, with retail's heading:
 //! the beat's last walk turned it, and nothing draws it there.
-//!
-//! So is a park a placement's own spawn section chose on the flags of the
-//! visit's entry. A seed spawns it over the state's flags, which can be later
-//! ones: `town0b` `P1[36]` (flat `72`) parks on `0x147` / `0x148` / `0x22F` and
-//! stands at tile `(15, 21)` on `0x141`, and `town0b_field_door_hop` holds it
-//! parked with `0x141` up, raised by the Gimard fight after the entry ran. A
-//! placement retail parks whose spawn section holds a park behind a flag test
-//! counts as a beat's park. A section that parks with no test is the engine's
-//! own to reproduce, and still scores as a miss.
 
 use std::collections::BTreeMap;
 
@@ -77,21 +68,6 @@ pub fn beat_move_targets(man: &[u8]) -> BeatMoves {
     let Ok(mf) = legaia_scene_formats::man_section::parse(man) else {
         return out;
     };
-    let n0 = mf.header.partition_counts[0].max(0) as usize;
-    let n1 = mf.header.partition_counts[1].max(0) as usize;
-    for rec in 0..n1 {
-        let Some((start, pc0, len)) =
-            legaia_engine_field::man_field_scripts::partition_record_span(&mf, man, 1, rec)
-        else {
-            continue;
-        };
-        let Some(body) = man.get(start..start + len) else {
-            continue;
-        };
-        if spawn_section_parks_on_a_flag(body, pc0) {
-            out.parks.insert((n0 + rec) as u16);
-        }
-    }
     let n2 = mf.header.partition_counts[2].max(0) as usize;
     for rec in 0..n2 {
         let Some((start, pc0, len)) =
@@ -129,28 +105,6 @@ pub fn beat_move_targets(man: &[u8]) -> BeatMoves {
     out
 }
 
-/// Whether a partition-1 record's spawn section (its head, up to the first op
-/// `0x21`) parks the placement behind a story-flag test.
-fn spawn_section_parks_on_a_flag(body: &[u8], pc0: usize) -> bool {
-    let mut tested = false;
-    for insn in LinearWalker::new(body, pc0).flatten() {
-        if insn.opcode == 0x21 {
-            return false;
-        }
-        match &insn.info {
-            InsnInfo::SystemFlag {
-                target: Some(_), ..
-            } if insn.extended.is_none() => tested = true,
-            InsnInfo::MenuCtrl {
-                kind: MenuCtrlKind::Nibble5NpcRun { x_enc, z_enc, .. },
-                ..
-            } if insn.extended.is_none() && (*x_enc, *z_enc) == PARK => return tested,
-            _ => {}
-        }
-    }
-    false
-}
-
 /// The retail placements standing exactly on a beat's `MOVE_TO` target for
 /// them, or parked where a beat parks them ([`beat_move_targets`]), as seats.
 pub fn scripted_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec<WalkerSeed> {
@@ -176,17 +130,6 @@ pub fn scripted_seats(beats: &BeatMoves, facings: &[ActorFacing]) -> Vec<WalkerS
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_spawn_section_parks_only_behind_a_flag_test() {
-        const PARK_OP: [u8; 6] = [0x4C, 0x51, 0x7F, 0x7F, 0, 0];
-        let tested = [&[0x71, 0x41, 0x06, 0x00][..], &PARK_OP, &[0x21]].concat();
-        assert!(spawn_section_parks_on_a_flag(&tested, 0));
-        let bare = [&PARK_OP[..], &[0x21]].concat();
-        assert!(!spawn_section_parks_on_a_flag(&bare, 0));
-        let past_the_head = [&[0x71, 0x41, 0x06, 0x00, 0x21][..], &PARK_OP].concat();
-        assert!(!spawn_section_parks_on_a_flag(&past_the_head, 0));
-    }
 
     #[test]
     fn grid_bytes_decode_to_tile_centres_and_far_edges() {

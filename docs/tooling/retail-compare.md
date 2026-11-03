@@ -408,11 +408,7 @@ engine verdict:
   parks (`A3 <flat> 7F 7F`, or the run-to-tile `CC <flat> 51 7F 7F`), is
   stood on retail's park coordinates with retail's heading, which the beat's
   last walk turned and nothing draws there
-  ([the npcs channel](#the-npcs-channel)). So is a park a placement's own spawn
-  section chose behind a flag test on the flags of the visit's entry: `town0b`
-  flat `72` parks on `0x147`, `0x148` or `0x22F` and stands at tile `(15, 21)` on
-  `0x141`, which the Gimard fight raised after `town0b_field_door_hop`'s entry ran
-  (`npcs` `.973` to `1`).
+  ([the npcs channel](#the-npcs-channel)).
 - **Timing.** Retail's frame is one instant; the engine's is a fixed tick
   after entry. Two kinds of script history are held through the headless
   warm-up instead of being run as game time: the field VM's script-counter
@@ -2975,9 +2971,12 @@ score the image channel only. A scenario that names a `memory_card` mounts it
 even short of the grid: no card contents show there, but the port's title
 greys CONTINUE on a rack with no save (a port guard retail does not have), so
 the drive onto CONTINUE needs one. Any other title sub-mode (the launch fade
-`0x16` a card-boot capture is caught in) and a screen no root row routes to
-(the casino prize exchange, `0x20`) are kept with a `menu not seedable:`
-reason and counted as classified limits.
+`0x16` a card-boot capture is caught in) is kept with a `menu not seedable:`
+reason and counted as a classified limit.
+
+The casino prize exchange (`0x20`) is entered by script and no root row routes to
+it, so the seed arms it the way the counter's op `49 07 00` does
+(`LEGAIA_SEAT_PRIZE`, `World::try_arm_prize_exchange`) in place of a pad drive.
 
 ### Card screens
 
@@ -3802,6 +3801,12 @@ state's own oscillators are written over the engine's
 `World::seed_floor_ladder`) at the headless sample, and on the capture frame taken
 back by the display lag (`LEGAIA_SEAT_FLOOR_BOBS`). `concnow_field_door_hop_settled`
 `image` `.658` to `.948`, `footing` `.96` to `1`.
+
+`concnow_field_door_hop` itself stays low (`image` `.49`, `camera` `.752`). It is
+caught `9` of `280` frames into `P2[13]`'s `WaitFrames` behind a `45 07`, and the
+pose that ease starts from is how long the walks before it took. The script gate
+resumes the record from its start with the player already on his retail tile, so
+those walks end at once and the ease starts from an earlier pose.
 
 ### A script-held height is not a footing
 

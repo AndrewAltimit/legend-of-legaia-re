@@ -185,7 +185,9 @@ fn a_menu_capture_is_classified_by_its_subscreen() {
     let m = RetailMenu::from_ram(&ram_with_subscreen(0x14), "map01").unwrap();
     assert_eq!((m.row, m.equip_depth), (FieldMenuRow::Equip, 2));
     assert!(RetailMenu::from_ram(&ram_with_subscreen(0), "opdeene").is_err());
-    assert!(RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").is_err());
+    let m = RetailMenu::from_ram(&ram_with_subscreen(0x20), "koin1").unwrap();
+    assert_eq!(m.prize_block, Some(0));
+    assert!(RetailMenu::from_ram(&ram_with_subscreen(0x21), "koin1").is_err());
 }
 
 fn field_run_ram(label: &str, loaded_define: u16) -> Vec<u8> {

@@ -626,7 +626,10 @@ pub(super) fn menu_image(
         .map(|(t, b)| format!("{}:{b:?}", first + t))
         .collect::<Vec<_>>()
         .join(",");
-    let mut extra = vec!["--pad-script".to_string(), script];
+    let mut extra = Vec::new();
+    if !script.is_empty() {
+        extra.extend(["--pad-script".to_string(), script]);
+    }
     if let Some(card) = frame.card {
         match card_save_dir(opts.out_dir, &entry.label, card) {
             Ok(dir) => extra.extend(["--save-dir".to_string(), dir.display().to_string()]),
@@ -638,11 +641,14 @@ pub(super) fn menu_image(
             }
         }
     }
-    let env: Vec<(&str, String)> = if retail.save_allowed {
+    let mut env: Vec<(&str, String)> = if retail.save_allowed {
         vec![("LEGAIA_SEAT_SAVE_ALLOWED", "1".to_string())]
     } else {
         Vec::new()
     };
+    if let Some(block) = menu.prize_block {
+        env.push(("LEGAIA_SEAT_PRIZE", format!("{first}:{block}")));
+    }
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,

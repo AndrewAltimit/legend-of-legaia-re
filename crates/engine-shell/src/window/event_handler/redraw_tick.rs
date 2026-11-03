@@ -402,6 +402,14 @@ impl PlayWindowApp {
         {
             let _ = self.session.host.world.debug_arm_scene_shop(idx);
         }
+        if let Some((t, block)) = self.screenshot.as_ref().and_then(|sc| sc.prize_at)
+            && t == self.tick_no
+        {
+            self.session
+                .host
+                .world
+                .try_arm_prize_exchange(&[0x49, 0x07, block]);
+        }
         if self.screenshot.is_some() {
             let scripted_pad = self
                 .screenshot
