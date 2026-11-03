@@ -225,6 +225,7 @@ and the inline sprite atlas.
 |---|---|---|
 | Animation effect arm | `FUN_8004998C` at `0x8004A634..0x8004A81C` calls `FUN_801DFDF0(id, sp+0x10, actor+0x46)` (`ghidra/scripts/funcs/8004998c.txt`) | `BattleActionHost::ui_element` spawns at the acting actor's battle seat with its `facing_angle` |
 | Per-action effect-script walk | `FUN_801DEA50` -> `FUN_801DFDF0` ([`battle-action.md`](battle-action.md#the-per-action-effect-script-fun_801dea50)) | `World::route_battle_effect_spawns` -> `World::try_spawn_effect` |
+| Move-power launch run `+0x0E`, at the script's terminator | `FUN_801DEA50` (`0x801DF3E0..0x801DF508`, [`move-power.md`](../formats/move-power.md#effect-list-framing)) | `World::spawn_launch_run` |
 | Move-power effect-id lists | `+0x12` / `+0x16` lists dispatched by `FUN_801e09f8` | `World::spawn_move_fx` |
 | Per-move effect-list spawner | `FUN_801e22c8` (called by the battle effect driver `FUN_800402f4`), 5-byte-stride list at `0x801F6470` | `engine-battle-vm::battle_cue_group::expand_cue_group` + `cue_group_for` |
 
