@@ -546,11 +546,16 @@
       'border-radius:10px;background:var(--bg-card,#1a1e26);text-align:left;}',
       '.disc-info-head{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;min-width:0;}',
       '.disc-info-dot{flex:none;width:.55rem;height:.55rem;border-radius:50%;',
-      'background:var(--ok,#46c98d);box-shadow:0 0 0 0 rgba(70,201,141,.45);',
-      'animation:disc-info-pulse 2.4s ease-out infinite;}',
-      '@keyframes disc-info-pulse{0%{box-shadow:0 0 0 0 rgba(70,201,141,.45)}',
-      '70%{box-shadow:0 0 0 7px rgba(70,201,141,0)}100%{box-shadow:0 0 0 0 rgba(70,201,141,0)}}',
-      '@media (prefers-reduced-motion:reduce){.disc-info-dot{animation:none;}}',
+      'background:var(--ok,#46c98d);position:relative;}',
+      /* The pulse is on the compositor: a box-shadow animation would repaint
+       * the page on the main thread every frame the card is up, the game
+       * running below it included. */
+      '.disc-info-dot::after{content:"";position:absolute;inset:0;border-radius:50%;',
+      'background:rgba(70,201,141,.45);opacity:0;pointer-events:none;',
+      'animation:disc-info-pulse 2.4s ease-out 3;}',
+      '@keyframes disc-info-pulse{0%{transform:scale(1);opacity:1}',
+      '70%{transform:scale(2.6);opacity:0}100%{transform:scale(1);opacity:0}}',
+      '@media (prefers-reduced-motion:reduce){.disc-info-dot::after{animation:none;}}',
       '.disc-info-title{font-weight:650;color:var(--text-bright,#e8ebf1);',
       'overflow-wrap:anywhere;min-width:0;}',
       '.disc-info-badge{flex:none;font-family:var(--font-mono,monospace);font-size:.72rem;',
