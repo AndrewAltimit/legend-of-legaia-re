@@ -27,7 +27,9 @@ inline-script dialogue runner. Drives `site/play.html`.
 
 The split is deliberate:
 
-- **`runtime`** - the simulation. `load_disc` (user's own image, in memory, in
+- **`runtime`** - the simulation. `load_disc_image` (`load_disc`'s twin that leaves
+  the image on the page's side and copies across only `PROT.DAT`, `CDNAME.TXT` and
+  the executable) and `load_disc` (user's own image, in memory, in
   their browser), `enter_field(name)`, `set_pad(mask)` (PSX pad word),
   `set_camera_azimuth(units)` (so the d-pad remaps camera-relative),
   `tick_frame()` (calls `BootSession::tick` - the native frame order - and

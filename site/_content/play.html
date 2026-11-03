@@ -1334,6 +1334,38 @@ div.play-vis-head { cursor: default; }
 
   /* ---------------- boot ---------------- */
 
+  /* The engine reads the files it keeps out of the page's image, so the image
+   * is not copied into wasm memory (a cached bundle without the export gets
+   * the whole of it). */
+  function loadDiscInto(rt, bytes) {
+    return typeof rt.load_disc_image === 'function'
+      ? rt.load_disc_image(bytes, '')
+      : rt.load_disc(bytes, '');
+  }
+
+  /* The first scene entry's one-time work that reads nothing a scene or a save
+   * decides, done while the page sits at "Pick a boot mode": the renderer's
+   * shaders and the menu assets. A pick that beats the idle callback builds
+   * them where it always did. */
+  let prewarmedRenderer = null;
+  function prewarmFirstEntry(rt) {
+    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 100));
+    idle(() => {
+      if (view || runtime !== rt) return;
+      try { if (typeof rt.play_prewarm === 'function') rt.play_prewarm(); } catch (e) { console.warn(e); }
+      idle(() => {
+        if (view || prewarmedRenderer) return;
+        try {
+          prewarmedRenderer = new window.TmdRenderer(canvas);
+          /* The context is opaque: keep the picker's empty frame its CSS colour. */
+          const gl = prewarmedRenderer.gl;
+          gl.clearColor(5 / 255, 7 / 255, 12 / 255, 1);
+          gl.clear(gl.COLOR_BUFFER_BIT);
+        } catch (e) { /* the entry reports it */ }
+      });
+    });
+  }
+
   async function load(file) {
     statusEl.textContent = 'Loading the engine…';
     const prog = LoadProgress.create(statusEl);
@@ -1357,7 +1389,7 @@ div.play-vis-head { cursor: default; }
        * so a consumer can slice a named file - an XA voice bank, a movie -
        * without the engine holding a second copy of the image. */
       window.__playDiscBytes = bytes;
-      const count = runtime.load_disc(bytes, '');
+      const count = loadDiscInto(runtime, bytes);
       prog.done(`${count} PROT entries. Pick a boot mode.`);
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
@@ -1388,6 +1420,7 @@ div.play-vis-head { cursor: default; }
         if (entry) resumeSession(entry);
         else saveMsg('The session in the resume link is no longer in this browser.', true);
       }
+      prewarmFirstEntry(runtime);
     } catch (err) {
       prog.fail(`Couldn't load: ${err.message || err}`);
       console.warn(err);
@@ -1738,6 +1771,7 @@ div.play-vis-head { cursor: default; }
     try {
       if (!view) {
         view = new window.PlayView(runtime, canvas, {
+          renderer: prewarmedRenderer,
           onState: onState,
           menuOverlay: menuCanvas,
           onScene: (name) => { active = name; activePackMap = null; renderList(searchEl.value); },
@@ -2213,7 +2247,7 @@ div.play-vis-head { cursor: default; }
       /* A fresh LegaiaRuntime allocates a clean SceneHost; loading the cached
        * disc bytes re-parses PROT.DAT in place. */
       const fresh = new wasm.LegaiaRuntime();
-      fresh.load_disc(discBytes, '');
+      loadDiscInto(fresh, discBytes);
       runtime = fresh;
       window.__playRuntime = runtime;
       remountCards();

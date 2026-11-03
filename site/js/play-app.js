@@ -454,7 +454,9 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* One binding table, read from the engine rather than typed here. */
       adoptPadBindings(runtime);
       this.canvas = canvas;
-      this.renderer = new window.TmdRenderer(canvas);
+      /* The page may have built it while idle (`play.html`, `prewarmFirstEntry`):
+       * the same object on the same canvas, its shaders already compiled. */
+      this.renderer = (opts && opts.renderer) || new window.TmdRenderer(canvas);
       /* Every scene mesh carries its primitives' corners for retail's
        * per-primitive near reject, built by the engine's kernel (read
        * through this.rt so a recovered runtime keeps serving it). */

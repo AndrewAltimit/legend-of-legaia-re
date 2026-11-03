@@ -14,23 +14,82 @@ impl LegaiaRuntime {
     ///
     /// Returns the number of PROT entries parsed. Nothing leaves the browser.
     pub fn load_disc(&mut self, raw_bytes: Vec<u8>, cdname_text: String) -> Result<u32, JsValue> {
-        use legaia_iso::image::{
-            extract_cdname_txt, extract_prot_dat, extract_scus, is_mode2_2352_disc,
-        };
+        let (prot, cdname, scus) = self.read_disc_files(raw_bytes.as_slice())?;
+        // `raw_bytes` is `PROT.DAT` itself when the walk found no disc.
+        let prot = prot.unwrap_or(raw_bytes);
+        self.install_disc(prot, cdname, scus, cdname_text)
+    }
 
-        self.disc_files = legaia_iso::image::walk_iso_files(&raw_bytes);
+    /// [`Self::load_disc`] over the page's own copy of the image. The image
+    /// stays on the page's side: only the files the runtime keeps cross into
+    /// wasm memory, which a wasm instance cannot give back once it has grown
+    /// to hold a whole disc.
+    pub fn load_disc_image(
+        &mut self,
+        image: &js_sys::Uint8Array,
+        cdname_text: String,
+    ) -> Result<u32, JsValue> {
+        let source = PageImage(image);
+        let (prot, cdname, scus) = self.read_disc_files(&source)?;
+        let prot = prot.unwrap_or_else(|| image.to_vec());
+        self.install_disc(prot, cdname, scus, cdname_text)
+    }
+
+    /// Raw-sector extent of a named file on the loaded disc image, as
+    /// `{"lba": N, "size": bytes}` (`null` when the disc walk found no such
+    /// path). `path` is relative to the ISO root, e.g. `XA2.XA` or
+    /// `MOV/MV3.STR`; the page slices `discBytes` at `lba * 2352` for
+    /// `ceil(size / 2048) * 2352` bytes and hands the sectors back through
+    /// the consumer's own install call.
+    pub fn disc_file_extent_json(&self, path: &str) -> String {
+        let want = path.trim_start_matches('/').to_ascii_uppercase();
+        self.disc_files
+            .iter()
+            .find(|f| f.path.to_ascii_uppercase() == want)
+            .map(|f| serde_json::json!({ "lba": f.lba, "size": f.size }).to_string())
+            .unwrap_or_else(|| "null".to_string())
+    }
+
+    /// `true` if a disc has been loaded.
+    pub fn disc_loaded(&self) -> bool {
+        self.scene_host.host().is_some()
+    }
+}
+
+impl LegaiaRuntime {
+    /// Walk a disc image: note its files, and hand back `PROT.DAT` (`None` when
+    /// the bytes are not a disc image at all), `CDNAME.TXT` and the executable.
+    fn read_disc_files<S: legaia_iso::iso9660::ImageSource + ?Sized>(
+        &mut self,
+        image: &S,
+    ) -> Result<DiscFiles, JsValue> {
+        use legaia_iso::image::{
+            extract_cdname_txt_source, extract_prot_dat_source, extract_scus_source,
+            is_mode2_2352_source, walk_iso_source,
+        };
+        self.disc_files = walk_iso_source(image);
         // A director built before this disc loaded learns its XA extents.
         self.sync_xa_file_extents();
-        let (prot_bytes, auto_cdname, scus) = if is_mode2_2352_disc(&raw_bytes) {
-            let prot = extract_prot_dat(&raw_bytes)
-                .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;
-            let cdname = extract_cdname_txt(&raw_bytes);
-            let scus = extract_scus(&raw_bytes);
-            (prot, cdname, scus)
-        } else {
-            (raw_bytes, None, None)
-        };
+        if !is_mode2_2352_source(image) {
+            return Ok((None, None, None));
+        }
+        let prot = extract_prot_dat_source(image)
+            .ok_or_else(|| JsValue::from_str("load_disc: PROT.DAT not found in disc image"))?;
+        Ok((
+            Some(prot),
+            extract_cdname_txt_source(image),
+            extract_scus_source(image),
+        ))
+    }
 
+    /// Build the session over a disc's `PROT.DAT`, `CDNAME.TXT` and executable.
+    fn install_disc(
+        &mut self,
+        prot_bytes: Vec<u8>,
+        auto_cdname: Option<String>,
+        scus: Option<Vec<u8>>,
+        cdname_text: String,
+    ) -> Result<u32, JsValue> {
         let cdname_resolved = if !cdname_text.is_empty() {
             Some(cdname_text.as_str())
         } else {
@@ -203,24 +262,43 @@ impl LegaiaRuntime {
         self.apply_options_side_effects();
         Ok(count)
     }
+}
 
-    /// Raw-sector extent of a named file on the loaded disc image, as
-    /// `{"lba": N, "size": bytes}` (`null` when the disc walk found no such
-    /// path). `path` is relative to the ISO root, e.g. `XA2.XA` or
-    /// `MOV/MV3.STR`; the page slices `discBytes` at `lba * 2352` for
-    /// `ceil(size / 2048) * 2352` bytes and hands the sectors back through
-    /// the consumer's own install call.
-    pub fn disc_file_extent_json(&self, path: &str) -> String {
-        let want = path.trim_start_matches('/').to_ascii_uppercase();
-        self.disc_files
-            .iter()
-            .find(|f| f.path.to_ascii_uppercase() == want)
-            .map(|f| serde_json::json!({ "lba": f.lba, "size": f.size }).to_string())
-            .unwrap_or_else(|| "null".to_string())
+/// `PROT.DAT`, `CDNAME.TXT` and the executable off a disc walk.
+type DiscFiles = (Option<Vec<u8>>, Option<String>, Option<Vec<u8>>);
+
+/// The page's disc image as an [`legaia_iso::iso9660::ImageSource`].
+struct PageImage<'a>(&'a js_sys::Uint8Array);
+
+impl legaia_iso::iso9660::ImageSource for PageImage<'_> {
+    fn image_len(&self) -> usize {
+        self.0.length() as usize
     }
 
-    /// `true` if a disc has been loaded.
-    pub fn disc_loaded(&self) -> bool {
-        self.scene_host.host().is_some()
+    fn read_user_data(&self, lba: usize, count: usize, out: &mut Vec<u8>) -> bool {
+        const RAW: usize = 2352;
+        const DATA_OFFSET: usize = 24;
+        const DATA: usize = 2048;
+        // A batch per crossing: one `subarray` per sector costs more than the
+        // copies do on a file the size of PROT.DAT.
+        const BATCH: usize = 512;
+        if (lba + count) * RAW > self.image_len() {
+            return false;
+        }
+        let mut raw = vec![0u8; BATCH.min(count) * RAW];
+        let mut at = lba;
+        let end = lba + count;
+        while at < end {
+            let n = BATCH.min(end - at);
+            let slice = &mut raw[..n * RAW];
+            self.0
+                .subarray((at * RAW) as u32, ((at + n) * RAW) as u32)
+                .copy_to(slice);
+            for sector in slice.as_chunks::<RAW>().0 {
+                out.extend_from_slice(&sector[DATA_OFFSET..DATA_OFFSET + DATA]);
+            }
+            at += n;
+        }
+        true
     }
 }

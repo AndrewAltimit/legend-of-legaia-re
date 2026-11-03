@@ -125,11 +125,44 @@ fn image_user_data(image: &[u8], lba: usize) -> Option<&[u8]> {
     image.get(base..base + USER_DATA_SIZE)
 }
 
+/// A Mode 2/2352 image read by sector range rather than held as one slice: the
+/// readers below reach it through this, so a browser can walk a disc that stays
+/// on the page's side of the boundary and copy across only the files it keeps.
+pub trait ImageSource {
+    /// The image's size in bytes.
+    fn image_len(&self) -> usize;
+    /// Append the 2048-byte user-data payloads of `count` sectors from `lba` to
+    /// `out`. `false` when a sector runs past the image's end.
+    fn read_user_data(&self, lba: usize, count: usize, out: &mut Vec<u8>) -> bool;
+}
+
+impl ImageSource for [u8] {
+    fn image_len(&self) -> usize {
+        self.len()
+    }
+
+    fn read_user_data(&self, lba: usize, count: usize, out: &mut Vec<u8>) -> bool {
+        (lba..lba + count).all(|s| {
+            image_user_data(self, s)
+                .map(|d| out.extend_from_slice(d))
+                .is_some()
+        })
+    }
+}
+
 /// The root directory record of an **in-memory** Mode 2/2352 image, read off
 /// the primary volume descriptor at LBA 16. `None` when the image is not
 /// ISO 9660.
 pub fn root_in_image(image: &[u8]) -> Option<DirectoryRecord> {
-    let pvd = image_user_data(image, 16)?;
+    root_in_source(image)
+}
+
+/// [`root_in_image`] over an [`ImageSource`].
+pub fn root_in_source<S: ImageSource + ?Sized>(image: &S) -> Option<DirectoryRecord> {
+    let mut pvd = Vec::with_capacity(USER_DATA_SIZE);
+    if !image.read_user_data(16, 1, &mut pvd) {
+        return None;
+    }
     if pvd[0] != 1 || &pvd[1..6] != b"CD001" {
         return None;
     }
@@ -149,13 +182,21 @@ pub fn list_directory_in_image(
     image: &[u8],
     dir: &DirectoryRecord,
 ) -> Option<Vec<DirectoryRecord>> {
+    list_directory_in_source(image, dir)
+}
+
+/// [`list_directory_in_image`] over an [`ImageSource`].
+pub fn list_directory_in_source<S: ImageSource + ?Sized>(
+    image: &S,
+    dir: &DirectoryRecord,
+) -> Option<Vec<DirectoryRecord>> {
     if !dir.is_dir || dir.size > MAX_DIRECTORY_BYTES {
         return None;
     }
     let sector_count = dir.size.div_ceil(USER_DATA_SIZE as u32) as usize;
     let mut buf = Vec::with_capacity(sector_count * USER_DATA_SIZE);
-    for i in 0..sector_count {
-        buf.extend_from_slice(image_user_data(image, dir.lba as usize + i)?);
+    if !image.read_user_data(dir.lba as usize, sector_count, &mut buf) {
+        return None;
     }
     buf.truncate(dir.size as usize);
 
@@ -202,15 +243,20 @@ pub fn list_directory_in_image(
 /// stripped. Returns `None` if the image isn't ISO 9660, a directory on the
 /// way can't be read, or the path does not name a file.
 pub fn find_path_in_image(image: &[u8], path: &str) -> Option<(u32, u32)> {
-    let mut dir = root_in_image(image)?;
+    find_path_in_source(image, path)
+}
+
+/// [`find_path_in_image`] over an [`ImageSource`].
+pub fn find_path_in_source<S: ImageSource + ?Sized>(image: &S, path: &str) -> Option<(u32, u32)> {
+    let mut dir = root_in_source(image)?;
     let components: Vec<&str> = path.split('/').filter(|c| !c.is_empty()).collect();
     let (last, parents) = components.split_last()?;
     for comp in parents {
-        dir = list_directory_in_image(image, &dir)?
+        dir = list_directory_in_source(image, &dir)?
             .into_iter()
             .find(|rec| rec.name.eq_ignore_ascii_case(comp))?;
     }
-    list_directory_in_image(image, &dir)?
+    list_directory_in_source(image, &dir)?
         .into_iter()
         .find(|rec| rec.name.eq_ignore_ascii_case(last))
         .and_then(|rec| (!rec.is_dir).then_some((rec.lba, rec.size)))
@@ -233,11 +279,19 @@ pub fn find_file_in_image(image: &[u8], name: &str) -> Option<(u32, u32)> {
 ///
 /// Returns `None` if the file isn't found or a sector runs past the image.
 pub fn read_file_in_image(image: &[u8], name: &str) -> Option<Vec<u8>> {
-    let (lba, size) = find_file_in_image(image, name)?;
+    read_file_in_source(image, name)
+}
+
+/// [`read_file_in_image`] over an [`ImageSource`].
+pub fn read_file_in_source<S: ImageSource + ?Sized>(image: &S, name: &str) -> Option<Vec<u8>> {
+    if name.contains('/') {
+        return None;
+    }
+    let (lba, size) = find_path_in_source(image, name)?;
     let sector_count = (size as usize).div_ceil(USER_DATA_SIZE);
     let mut out = Vec::with_capacity(sector_count * USER_DATA_SIZE);
-    for i in 0..sector_count {
-        out.extend_from_slice(image_user_data(image, lba as usize + i)?);
+    if !image.read_user_data(lba as usize, sector_count, &mut out) {
+        return None;
     }
     out.truncate(size as usize);
     Some(out)
