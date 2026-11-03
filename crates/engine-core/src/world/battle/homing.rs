@@ -77,6 +77,39 @@ impl World {
         self.casting.homing_holds_lists = fold_pending.then_some(caster as u8);
     }
 
+    /// The terminator's own spawns, the run of bytes from record `+0x0E` up to
+    /// the first zero: a bit-7 byte goes to the 2D pool `FUN_801DFDF0` at slot
+    /// `k`'s position and heading, any other to the `0x801F6324` prototype at
+    /// slot `0`'s position and rotation trio, and its actor becomes slot `k`'s
+    /// handle. The run does not wait on the flight and has no fold to defer
+    /// to. Aluru Cannon's `2C 29` is the charge at the muzzle, up before the
+    /// slot's phase `1` is out. `0x801F6418`'s CLUT stage is the table arm's.
+    // PORT: FUN_801DEA50 (`0x801DF3E0..0x801DF508`, the `+0x0E` launch run)
+    pub(in crate::world) fn spawn_launch_run(&mut self, caster: usize, record: Option<usize>) {
+        use legaia_engine_effects::action_effect_script as fx;
+        let Some(raw) = record.and_then(|idx| {
+            let cat = self.tables.move_power.as_ref()?;
+            cat.record_at_index(idx).map(|rec| rec.raw)
+        }) else {
+            return;
+        };
+        let slots = self.casting.homing.slots;
+        for (k, &byte) in raw[0x0E..].iter().take_while(|&&b| b != 0).enumerate() {
+            let direct = byte & fx::EFFECT_DIRECT_BIT != 0;
+            let s = slots[if direct { k.min(slots.len() - 1) } else { 0 }];
+            self.battle.effect_spawns.push(
+                legaia_engine_battle::battle_events::BattleEffectSpawn {
+                    actor_slot: caster as u8,
+                    effect: byte & !fx::EFFECT_DIRECT_BIT,
+                    direct,
+                    at: (s.pos[0], s.pos[1], s.pos[2]),
+                    facing: s.heading,
+                    homing_slot: Some(k.min(slots.len() - 1) as u8),
+                },
+            );
+        }
+    }
+
     /// Whether actor `slot`'s committed action is a cast whose fold
     /// (`World::cast_spell_on_slots`) will stage a move-FX scene that has not
     /// run yet: a Magic-category action (`+0x1DE == 2`) on a move that is
@@ -282,6 +315,42 @@ mod tests {
     fn a_landed_slot_rings_the_record_cue_once() {
         let mut world = world_with_a_landing_flight(0x49);
         assert_eq!(ticks(&mut world), vec![SfxRingOp::Push(0x49)]);
+    }
+
+    #[test]
+    fn the_terminator_spawns_its_launch_run_up_to_the_zero() {
+        let mut buf = vec![0u8; MOVE_POWER_TABLE_FILE_OFFSET + 44 * MOVE_POWER_RECORD_STRIDE + 64];
+        let rec = MOVE_POWER_TABLE_FILE_OFFSET + MOVE_POWER_RECORD_STRIDE;
+        buf[MOVE_ID_INDEX_MAP_FILE_OFFSET + 4] = 1;
+        buf[rec] = 1;
+        // Aluru Cannon's run, then a list byte past the zero the walk never reads.
+        buf[rec + 0x0E] = 0x2C;
+        buf[rec + 0x0F] = 0x29;
+        buf[rec + 0x12] = 0x2A;
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.tables.move_power = Some(
+            legaia_engine_battle::move_power::MovePowerCatalog::from_overlay_0898(&buf)
+                .expect("synthetic catalog parses"),
+        );
+        world
+            .casting
+            .homing
+            .seed(Some(1), (5, -6, 7), &[None; 4], |_| 0);
+        world.spawn_launch_run(4, Some(1));
+        let spawns = world.drain_battle_effect_spawns();
+        assert_eq!(
+            spawns
+                .iter()
+                .map(|s| (s.effect, s.direct, s.at, s.homing_slot))
+                .collect::<Vec<_>>(),
+            vec![
+                (0x2C, false, (5, -6, 7), Some(0)),
+                (0x29, false, (5, -6, 7), Some(1)),
+            ]
+        );
     }
 
     #[test]

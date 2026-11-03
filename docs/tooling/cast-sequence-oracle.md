@@ -311,6 +311,10 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   may replay rounds until its target and clip match, and a recording started on
   an earlier one reads as a strike that "lands nothing".
 
+On the retail side the same switch starts on a state held on `0x2B`, with
+`--retail-only`: `LEGAIA_RAM_AT` then films a monster cast from the state on the
+fast core, where the `--monster-pick` run is an interpreter's.
+
 Once the capture's own instant is passed, nothing holds the two rounds together:
 the block roll, the monster's next queue byte and any later pick draw on each
 side's own stream. So the channel's number mixes rule differences with deals.
