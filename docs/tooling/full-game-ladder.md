@@ -28,6 +28,7 @@ flowchart LR
 - [Segments and tiers](#segments-and-tiers)
 - [The continuous run](#the-continuous-run)
 - [How to run](#how-to-run)
+- [What the time goes to](#what-the-time-goes-to)
 - [How to read a stall](#how-to-read-a-stall)
 - [Seeding](#seeding)
 - [How the seated tier plays a segment](#how-the-seated-tier-plays-a-segment)
@@ -821,7 +822,7 @@ deal: a change that shifts one draw re-deals every later encounter and boss
 turn. `[continuous_seeds]` in the baseline records the score on other
 streams, one row per `LEGAIA_FGL_RNG_SEED` value, and a dealt run asserts
 its own row `>=` (a seed with no row falls back to `[continuous] reached`).
-Each run is a full New Game, about twenty minutes, so the set is run one
+Each run is a full New Game, so the set is run one
 seed at a time:
 
 ```bash
@@ -837,6 +838,17 @@ before the fighter learned to guard against Stone
 second attempt on most streams, as the Cort notes above describe.
 
 The ratchet asserts every per-segment tier, both headline counts and the tier sum `>=` the baseline. Raise the baseline in a reviewed edit from the block the run prints; never lower it to make a red run green. The trace and debug switches are under [Diagnostics](#diagnostics).
+
+### What the time goes to
+
+Over part C the largest share is the pad tier's path search; the engine's tick comes second, most of that in battles, and LZS decoding of the party's and monsters' battle files third. The search is kept cheap in four ways, none of which can change a route:
+
+- A search whose inputs have all been seen is answered from a memo: the walls, the blockers, the doors, the pads and their clock phases, the avoid set, the start and the goal hash to a key, and the route comes back with the press waypoints it recorded. A walk re-asking from where it stands is most of the calls.
+- The frontier is one small heap per `f` value, popping in exactly `(f, g, x, z)` order.
+- The per-cell table keeps a cell's stamp, parent and cost together, so a probe touches one cache line.
+- A coarse grid answers the actor-box and door probes for a cell with nothing near it, which is almost every cell.
+
+Run it under `release-test`, not `dev-fast`; see [`build-and-test-speed.md`](build-and-test-speed.md).
 
 ## How to read a stall
 

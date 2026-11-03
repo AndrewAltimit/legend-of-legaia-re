@@ -294,3 +294,17 @@ opt-level = "s"
 inherits = "release"
 lto = false
 codegen-units = 16
+
+# The iteration profile: `release-test` with rustc's incremental cache over the
+# workspace crates, so an edit in a mid-graph crate recompiles the codegen units
+# it touched and not every crate above it whole. Dependencies stay as
+# `release-test` builds them (they do not change, and sccache keeps them). The
+# binaries run slower for it; results do not change. CI and the long ladders
+# stay on `release-test`: docs/tooling/build-and-test-speed.md.
+[profile.dev-fast]
+inherits = "release-test"
+incremental = true
+codegen-units = 256
+
+[profile.dev-fast.package."*"]
+codegen-units = 16
