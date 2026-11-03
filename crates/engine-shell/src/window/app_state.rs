@@ -231,8 +231,9 @@ pub(in crate::window) const STARTUP_HINT_DURATION: std::time::Duration =
     std::time::Duration::from_secs(12);
 
 /// The start-up key hint's line: a player who opens the window from Explorer
-/// or a file manager is told nowhere else that `F12` lists the keys.
-pub(in crate::window) const STARTUP_HINT_TEXT: &str = "F12 or ? lists the keys - Esc twice quits";
+/// or a file manager is told nowhere else that `F12` opens the settings.
+pub(in crate::window) const STARTUP_HINT_TEXT: &str =
+    "F12 or Select+Start: settings - Esc twice quits";
 
 /// The one-line key hint a player's window shows when it opens. Armed only
 /// for an interactive window (`cmd_play_window_with_record`, no
@@ -1027,8 +1028,14 @@ pub(super) struct PlayWindowApp {
     /// The last hotkey's notice line and when it went up; drawn under the
     /// quit prompt for [`NOTICE_DURATION`].
     pub(super) notice: Option<(String, std::time::Instant)>,
-    /// The hotkey help panel (`F12` / `?`) is up.
+    /// The `F12` / `?` panel is up (`window::settings_panel`).
     pub(super) hotkey_help: bool,
+    /// Which page of that panel is up.
+    pub(super) panel_page: super::settings_panel::PanelPage,
+    /// The settings page's row cursor.
+    pub(super) settings_cursor: usize,
+    /// The options file would not save: said on the settings page.
+    pub(super) options_save_error: std::cell::RefCell<Option<String>>,
     /// The start-up line pointing at that panel ([`StartupHint`]).
     pub(super) startup_hint: StartupHint,
     /// The help key held down, so its auto-repeat does not flip the panel.

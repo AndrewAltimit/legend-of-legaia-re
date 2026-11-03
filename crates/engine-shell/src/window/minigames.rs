@@ -170,7 +170,7 @@ impl PlayWindowApp {
 }
 
 /// The window's own title, shown whenever no minigame caption is up.
-pub(super) const WINDOW_TITLE: &str = "legaia-engine";
+pub(super) const WINDOW_TITLE: &str = "Legend of Legaia";
 
 impl PlayWindowApp {
     /// The live minigame's status caption (`engine-minigame-scenes::minigame_status`),

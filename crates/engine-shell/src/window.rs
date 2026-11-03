@@ -73,6 +73,7 @@ mod save_rack_disk;
 mod screens;
 #[path = "window/session_steps.rs"]
 mod session_steps;
+mod settings_panel;
 #[path = "window/str_player.rs"]
 mod str_player;
 #[path = "window/title_save_draws.rs"]
@@ -154,9 +155,15 @@ impl PlayWindowApp {
         }
         let path = std::path::PathBuf::from(OPTIONS_CONFIG_FILE);
         let to_save = self.options_pins.persistable(&self.options_state);
-        if let Err(e) = to_save.save(&path) {
-            log::warn!("options: save to {} failed: {e:#}", path.display());
-        }
+        // A settings page that silently forgets is worse than one that says
+        // so: the page shows this in place of its control line.
+        *self.options_save_error.borrow_mut() = match to_save.save(&path) {
+            Ok(()) => None,
+            Err(e) => {
+                log::warn!("options: save to {} failed: {e:#}", path.display());
+                Some("Could not save these settings (see the log)".to_string())
+            }
+        };
     }
 
     /// A `--screenshot` / `--screenshot-every` / `--key-script` run: a capture,

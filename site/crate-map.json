@@ -3739,7 +3739,8 @@
     "scene-formats",
     "seq",
     "tim",
-    "vab"
+    "vab",
+    "xa"
    ],
    "dev_deps": [
     "arts-patch",
@@ -4879,6 +4880,7 @@
     "explorer",
     "extract",
     "mdec",
+    "parity",
     "web-minigames",
     "web-play",
     "web-viewer"

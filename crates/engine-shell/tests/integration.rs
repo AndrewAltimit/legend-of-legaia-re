@@ -6,6 +6,7 @@
 //! `cargo test -p legaia-engine-shell --test integration <name>::`.
 
 mod arts_swing_ladder;
+mod attract_skip;
 mod av_decode_oracle;
 mod battle_depth_replay;
 mod battle_spell_plate_disc;

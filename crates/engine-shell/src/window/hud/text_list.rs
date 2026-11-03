@@ -84,7 +84,10 @@ impl PlayWindowApp {
             stage.extend(text_draws_for(&layout, (8, y), color));
         }
         if self.hotkey_help {
-            stage.extend(self.hotkey_help_stage_draws());
+            stage.extend(match self.panel_page() {
+                crate::window::settings_panel::PanelPage::Settings => self.settings_stage_draws(),
+                crate::window::settings_panel::PanelPage::Keys => self.hotkey_help_stage_draws(),
+            });
         }
         let (stage_origin, stage_scale) = self.save_select_stage(w, h);
         legaia_engine_ui::scale_stage_text_draws(&mut stage, stage_origin, stage_scale);
@@ -93,7 +96,13 @@ impl PlayWindowApp {
 
     /// A translucent dark plate behind window text (the font atlas's solid
     /// texel, tinted), so the line reads over a bright scene. Stage pixels.
-    fn push_scrim(&self, out: &mut Vec<TextDraw>, at: (i32, i32), size: (u32, u32), alpha: f32) {
+    pub(in crate::window) fn push_scrim(
+        &self,
+        out: &mut Vec<TextDraw>,
+        at: (i32, i32),
+        size: (u32, u32),
+        alpha: f32,
+    ) {
         if let Some(src) = self.battle_hud_solid_src() {
             out.push(TextDraw {
                 dst: (at.0, at.1, size.0, size.1),
@@ -146,6 +155,11 @@ impl PlayWindowApp {
             out.extend(text_draws_for(&self.font.layout_ascii(s), at, color));
         };
         put("Keys", (l.x0, l.y0), HEADING);
+        if self.netplay.is_none() && self.netplay_menu.is_none() {
+            let back = "L1/R1 or Tab: settings";
+            let w = self.font.layout_ascii(back).advance_x as i32;
+            put(back, (l.x0 + l.width - w, l.y0), TEXT);
+        }
         let mut y = l.y0 + l.line_h + 2;
         put("Esc", (l.x0, y), KEY);
         put(HELP_QUIT, (l.x0 + l.key_w, y), TEXT);
@@ -809,8 +823,8 @@ impl PlayWindowApp {
 }
 
 /// The help panel's fixed rows.
-const HELP_QUIT: &str = "Quit (press twice)";
-const HELP_SELF: &str = "This help (also ?)";
+const HELP_QUIT: &str = "Close (2x: quit)";
+const HELP_SELF: &str = "Close (also ?)";
 const HELP_FOOTER: &str = "Rebind pad keys: Options > Key Config";
 /// The mouse's camera controls (`window/camera.rs`): drag orbits and tilts,
 /// the wheel zooms, a double-click puts the retail framing back.

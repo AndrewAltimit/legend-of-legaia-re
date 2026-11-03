@@ -131,7 +131,33 @@ impl PlayWindowApp {
         self.notice = Some((text, std::time::Instant::now()));
     }
 
-    /// `F12` or `/` (the `?` key): the hotkey help panel, on or off. Window
+    /// `Tab` and `Enter` while the panel is up: flip its page, step the
+    /// row. Only the press is taken: the `Enter` of a `Right Shift` + `Enter`
+    /// that opened the panel still has its release to clear Start with.
+    pub(super) fn panel_key(&mut self, code: KeyCode, state: ElementState, repeat: bool) -> bool {
+        if !self.hotkey_help || state != ElementState::Pressed {
+            return false;
+        }
+        match code {
+            KeyCode::Tab => {
+                if !repeat {
+                    self.flip_panel();
+                }
+                true
+            }
+            KeyCode::Enter | KeyCode::NumpadEnter if self.panel_holds_game() => {
+                if !repeat
+                    && self.panel_page() == super::super::super::settings_panel::PanelPage::Settings
+                {
+                    self.change_setting(1);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// `F12` or `/` (the `?` key): the settings and key panel, on or off. Window
     /// chrome on keys no pad binding can hold (`keycode_to_name` has neither),
     /// so it never takes a button off the keyboard.
     pub(super) fn help_key(&mut self, code: KeyCode, state: ElementState) -> bool {
@@ -143,8 +169,11 @@ impl PlayWindowApp {
         match state {
             ElementState::Pressed if self.help_key_held != Some(code) => {
                 self.help_key_held = Some(code);
-                self.hotkey_help = !self.hotkey_help;
-                self.startup_hint.dismiss();
+                if self.hotkey_help {
+                    self.hotkey_help = false;
+                } else {
+                    self.open_panel();
+                }
             }
             ElementState::Released if self.help_key_held == Some(code) => {
                 self.help_key_held = None;
