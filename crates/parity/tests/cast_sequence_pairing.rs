@@ -89,7 +89,7 @@ fn frames_pair_on_the_action_clock_with_retail_display_lag() {
 
     let retail = Side::read(&rd).unwrap();
     let engine = Side::read(&ed).unwrap();
-    let r = compare("synthetic", &retail, &engine, Lag::Auto, |_, _, _| {}).unwrap();
+    let r = compare("synthetic", &retail, &engine, Lag::Auto).unwrap();
 
     // The first two grabs display rows before the recording: unpaired.
     assert_eq!(r.unpaired_retail, 2);
@@ -159,7 +159,7 @@ fn an_overrunning_retail_frame_costs_no_game_time() {
 
     let retail = Side::read(&rd).unwrap();
     let engine = Side::read(&ed).unwrap();
-    let r = compare("overrun", &retail, &engine, Lag::Fixed(0), |_, _, _| {}).unwrap();
+    let r = compare("overrun", &retail, &engine, Lag::Fixed(0)).unwrap();
     assert!(r.game_clock);
     assert_eq!(r.pairs.len(), 12);
     for p in &r.pairs {

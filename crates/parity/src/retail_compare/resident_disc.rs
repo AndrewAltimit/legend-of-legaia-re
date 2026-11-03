@@ -58,7 +58,7 @@ fn cache_dir(image: &Path, cache_root: &Path) -> PathBuf {
 
 /// The stamp a cache directory keeps of the image it was extracted from: a
 /// re-written image (same name, new bytes) re-extracts.
-fn stamp_of(image: &Path) -> Result<String> {
+pub(crate) fn stamp_of(image: &Path) -> Result<String> {
     let meta = std::fs::metadata(image).with_context(|| format!("stat {}", image.display()))?;
     let mtime = meta
         .modified()

@@ -247,13 +247,14 @@ pub struct CorpusEntry {
 pub fn enumerate_corpus(manifest: &ScenarioManifest, library: &Path) -> Vec<CorpusEntry> {
     let mut out: Vec<CorpusEntry> = Vec::new();
     let mut seen = std::collections::HashSet::new();
+    const EMULATORS: [&str; 2] = ["mednafen", "pcsx-redux"];
+    let backups = legaia_ram_image::scenarios::LibraryIndex::open(library, &EMULATORS);
     for sc in &manifest.scenarios {
         let Some(fp) = sc.backup_fingerprint.as_deref() else {
             continue;
         };
-        for emulator in ["mednafen", "pcsx-redux"] {
-            let Some(path) = legaia_ram_image::scenarios::library_backup_for(emulator, library, fp)
-            else {
+        for emulator in EMULATORS {
+            let Some(path) = backups.backup_for(emulator, fp) else {
                 continue;
             };
             if seen.insert(path.clone()) {

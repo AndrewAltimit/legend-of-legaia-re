@@ -288,22 +288,24 @@ pub fn census(
     library: &Path,
     manifest: &ScenarioManifest,
     filter: Option<&str>,
+    jobs: usize,
 ) -> Result<Census> {
     let scus = std::fs::read(extracted.join("SCUS_942.54"))
         .with_context(|| format!("read {}/SCUS_942.54", extracted.display()))?;
     let cdname = legaia_prot::cdname::parse(&extracted.join("CDNAME.TXT"))?;
-    let mut states = Vec::new();
-    for entry in enumerate_corpus(manifest, library) {
-        if let Some(f) = filter
-            && !f
-                .split(',')
-                .any(|alt| !alt.is_empty() && entry.label.contains(alt))
-        {
-            continue;
-        }
+    let entries: Vec<_> = enumerate_corpus(manifest, library)
+        .into_iter()
+        .filter(|entry| {
+            filter.is_none_or(|f| {
+                f.split(',')
+                    .any(|alt| !alt.is_empty() && entry.label.contains(alt))
+            })
+        })
+        .collect();
+    let states = crate::parallel::parallel_map(&entries, jobs, |entry| {
         crate::retail_compare_image::set_capture_emulator(entry.emulator);
-        states.push(read_state(&entry, &scus, &cdname));
-    }
+        read_state(entry, &scus, &cdname)
+    });
     let disc = disc_lists(extracted, &scus, &cdname)?;
     Ok(Census { states, disc })
 }

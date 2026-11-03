@@ -53,7 +53,7 @@ Flags worth knowing:
 | `--caster <seat>` | Seat whose queued action is rewritten (default `0`; `255` = whichever party seat acts first). A seat `>= 3` is a monster: the engine side then seeds `LEGAIA_BATTLE_MONSTER_CAST` |
 | `--target <seat>` | Target seat (default `3`) |
 | `--every <n>` | Retail vsyncs between frames (default `2`; the engine records every tick) |
-| `--recapture` / `--reseed` | Re-run the retail capture / the retail-compare seed instead of using the cache |
+| `--recapture` / `--reseed` / `--rerecord` | Re-run the retail capture / the retail-compare seed / the engine recording instead of using the cache |
 | `--formation <bytes>` | Retail only: overwrite the formation row `FUN_801DA600` returns. The engine has no seam to seat the same monsters, so a forced formation compares different fights |
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |

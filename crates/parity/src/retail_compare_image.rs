@@ -513,6 +513,7 @@ pub fn engine_frame_with(
     if render == FrameRender::Psx && CAPTURE_EMULATOR.with(|c| c.get()) == "pcsx-redux" {
         cmd.env("LEGAIA_PSX_CAPTURE_RASTER", "pcsx-redux");
     }
+    cmd.env("LEGAIA_CAPTURE_NO_PRESENT", "1");
     cmd.args(["play-window", "--no-audio"])
         .args(render.child_args())
         .args(["--scene", scene])

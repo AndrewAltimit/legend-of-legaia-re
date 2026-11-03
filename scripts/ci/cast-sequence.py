@@ -28,6 +28,7 @@ The outputs hold retail pixels and RAM: they live under the gitignored
 
 import argparse
 import csv
+import hashlib
 import json
 import os
 import shlex
@@ -178,7 +179,7 @@ def child_cmd(a, out: Path) -> Path | None:
     env = dict(os.environ, LEGAIA_RC_CHILD_LOG="1", RUST_LOG="error")
     cmd = [str(EXE), "retail-compare", "--out", str(out / "rc"), "--library", str(library),
            "--extracted-root", str(extracted), "--manifest", str(REPO / "scripts" / "scenarios.toml"),
-           "--images", "--filter", a.state]
+           "--images", "--filter", f"={a.state}"]
     print(f"[engine] seeding {a.state} through retail-compare")
     subprocess.run(cmd, cwd=REPO, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if not kept.exists():
@@ -200,6 +201,29 @@ def retail_rand_seed(out: Path, key: str) -> str | None:
             if r.get("rand") and int(r["st7"]) == st7 and int(r["phase"]) == phase:
                 seed = int(r["rand"])
     return None if seed is None else f"{st7}:{phase}:{seed}"
+
+
+def record_key(exe: str, env: dict, args: list[str]) -> str:
+    """What an engine recording is a function of: the binary's bytes, the
+    child's `LEGAIA_*` environment and arguments, the contents of every file
+    an argument names, and the disc's identity. The child is tick-locked, so a
+    matching key means the recording it already made."""
+    h = hashlib.sha256()
+    with open(exe, "rb") as f:
+        while chunk := f.read(1 << 20):
+            h.update(chunk)
+    for k, v in sorted(env.items()):
+        if k.startswith(("LEGAIA_", "WGPU_")):
+            h.update(f"{k}={v}\0".encode())
+    for t in args:
+        h.update(f"{t}\0".encode())
+        p = Path(t)
+        if p.is_file():
+            h.update(p.read_bytes())
+        elif (p / "PROT.DAT").is_file():
+            st = (p / "PROT.DAT").stat()
+            h.update(f"{st.st_size} {st.st_mtime_ns}\0".encode())
+    return h.hexdigest()
 
 
 def run_engine(a, out: Path) -> bool:
@@ -265,8 +289,6 @@ def run_engine(a, out: Path) -> bool:
         target = target if 0 <= target < 3 else a.target
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     edir = out / "engine"
-    if edir.exists():
-        shutil.rmtree(edir)
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
         "LEGAIA_DIAG_CAST_SEQ_SEAT": str(caster),
@@ -288,6 +310,15 @@ def run_engine(a, out: Path) -> bool:
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
         + " " + shlex.join([exe] + args) + "\n")
+    key = record_key(exe, env, args)
+    key_file = out / "engine-key.txt"
+    if (not a.rerecord and (edir / "meta.csv").exists() and key_file.exists()
+            and key_file.read_text() == key):
+        print(f"[engine] cached: {edir} (same binary, command and inputs; --rerecord to run it again)")
+        return True
+    key_file.unlink(missing_ok=True)
+    if edir.exists():
+        shutil.rmtree(edir)
     seed = "pad drive" if a.physical else "inflight" if caster < 3 else "monster cast"
     print(f"[engine] recording the action ({seed} seed, seat {caster})")
     r = subprocess.run([exe] + args, cwd=work, env=env, capture_output=True, text=True,
@@ -296,6 +327,8 @@ def run_engine(a, out: Path) -> bool:
     if not (edir / "meta.csv").exists():
         print(f"[engine] FAILED: the action never began (status {r.returncode}); see {out / 'engine.log'}")
         return False
+    if r.returncode == 0:
+        key_file.write_text(key)
     print(f"[engine] {sum(1 for _ in edir.glob('e_*.png'))} frames")
     return True
 
@@ -381,6 +414,8 @@ def main() -> int:
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")
     ap.add_argument("--recapture", action="store_true", help="re-run the retail capture")
+    ap.add_argument("--rerecord", action="store_true",
+                    help="run the engine recording even when its binary, command and inputs match the last one")
     ap.add_argument("--reseed", action="store_true", help="re-run retail-compare for the child command")
     ap.add_argument("--engine-only", action="store_true", help="skip the retail stage (needs a cached capture)")
     ap.add_argument("--retail-only", action="store_true")

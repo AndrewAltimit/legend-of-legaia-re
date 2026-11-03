@@ -13,6 +13,8 @@ directory. See `docs/tooling/retail-compare.md`.
     scripts/ci/retail-compare.py --check         # assert the committed ratchet
     scripts/ci/retail-compare.py --bless         # update the baseline (merges: unmeasured states/channels keep their values)
     scripts/ci/retail-compare.py --smoke clean   # smoke tier: clean 3x frames, loose check, no ratchet
+    scripts/ci/retail-compare.py --jobs 1        # one state at a time (default: several, same report)
+    scripts/ci/retail-compare.py --fresh         # measure every state, ignoring the result cache
 
 Exit 0 and a `[skip]` line when the library or the extracted disc is missing,
 matching the repo's disc-gated convention.
@@ -27,6 +29,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 BASELINE = REPO / "scripts" / "ci" / "retail-compare-baseline.json"
 PROFILE = "release-test"
+# Results reused when the binary, disc, state and environment all match
+# (`crates/parity/src/retail_compare_cache.rs`). Holds retail pixels: gitignored.
+CACHE = REPO / "target" / "retail-compare-cache"
+
+
+def default_jobs() -> int:
+    """Image children mostly wait on the driver: the corpus scales to about a
+    dozen on the 20-core box, and half the cores leaves room for other work."""
+    return max(1, min(8, (os.cpu_count() or 2) // 2))
 
 
 def main_checkout() -> Path:
@@ -66,7 +77,13 @@ def main() -> int:
         help="smoke tier: render the frames in this mode and check them loosely "
              "against the accuracy baseline (implies --images; never blesses or checks the ratchet)",
     )
+    ap.add_argument("--jobs", type=int, default=default_jobs(),
+                    help="states run at once; report.json is the same at any count (default %(default)s)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="measure every state: read no cached result (--bless, --check and --smoke always do)")
     a = ap.parse_args()
+    if a.bless and a.no_build:
+        ap.error("--bless always builds: a baseline must come from the tree it is committed with")
     if a.smoke and (a.bless or a.check):
         ap.error("--smoke is the smoke tier: it never blesses or checks the ratchet")
     if a.smoke and a.out == str(REPO / "captures" / "retail-compare"):
@@ -90,7 +107,10 @@ def main() -> int:
     exe = REPO / "target" / PROFILE / "legaia-engine"
     cmd = [str(exe), "retail-compare", "--out", a.out,
            "--library", str(library), "--extracted-root", str(extracted),
-           "--manifest", str(REPO / "scripts" / "scenarios.toml")]
+           "--manifest", str(REPO / "scripts" / "scenarios.toml"),
+           "--jobs", str(a.jobs), "--progress"]
+    if not (a.fresh or a.bless or a.check or a.smoke):
+        cmd += ["--cache", str(CACHE)]
     if a.images or a.smoke:
         cmd.append("--images")
     if a.smoke:

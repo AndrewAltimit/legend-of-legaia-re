@@ -22,6 +22,7 @@ way `mednafen-state vram-dump --display-crop` reads it.
 | frame channel | [`retail_compare_image.rs`](../../crates/parity/src/retail_compare_image.rs) | Crop retail's frame, render the engine's, the metric |
 | `legaia-engine retail-compare` | [`retail_compare_cli.rs`](../../crates/parity/src/retail_compare_cli.rs) | Human report (markdown + JSON + side-by-side PNGs) |
 | PCSX-Redux GPU reader | [`legaia_pcsx_redux::gpu`](../../crates/pcsx-redux/src/gpu.rs) | VRAM + GP1 control log out of a `.sstate` |
+| result cache | [`retail_compare_cache.rs`](../../crates/parity/src/retail_compare_cache.rs) | Reuses a state's result when every input matches |
 | driver | [`scripts/ci/retail-compare.py`](../../scripts/ci/retail-compare.py) | Resolves the gitignored data, builds, runs, blesses / checks |
 | ratchet test | [`retail_compare_corpus.rs`](../../crates/engine-shell/tests/retail_compare_corpus.rs) | Disc-gated; fails on any per-state channel drop |
 | baseline | [`retail-compare-baseline.json`](../../scripts/ci/retail-compare-baseline.json) | Scores and classes only - no pixels, no RAM |
@@ -47,6 +48,7 @@ the sections after them define the model the scores come from.
 ## Contents
 
 - [Running it](#running-it)
+  - [Parallel states and the result cache](#parallel-states-and-the-result-cache)
 - [Reading the report](#reading-the-report)
 - [The ratchet](#the-ratchet)
 - [The corpus](#the-corpus)
@@ -72,25 +74,68 @@ scripts/ci/retail-compare.py --filter town01  # only matching labels (a,b = eith
 scripts/ci/retail-compare.py --filter =battle_gaza2_park_0x19  # that label exactly
 scripts/ci/retail-compare.py --smoke clean    # smoke tier: clean 3x frames, loose check
 scripts/ci/retail-compare.py --smoke enhanced # smoke tier: + enhanced lighting
+scripts/ci/retail-compare.py --images --jobs 12 # more states at once
+scripts/ci/retail-compare.py --images --fresh # measure every state, reuse nothing
 
 LEGAIA_SAVES_LIBRARY=... LEGAIA_EXTRACTED_DIR=... \
   cargo test -p legaia-engine-shell --profile release-test --test integration retail_compare_corpus:: -- --nocapture
 ```
 
 The driver builds `legaia-engine` under the `release-test` profile first
-(`--no-build` skips that), writes the report to `--out` (default
+(`--no-build` skips that, and `--bless` refuses it: a baseline comes from the
+tree it is committed with), writes the report to `--out` (default
 `captures/retail-compare/`), and exits 0 with a `[skip]` line when the
 library or the extracted disc is missing; it looks for both in the worktree
 and then in the main checkout.
 
+Two things make it fast, and neither moves a score
+([below](#parallel-states-and-the-result-cache)): states run in parallel
+(`--jobs`), and a state whose inputs all match a previous run is reused from a
+cache under `target/retail-compare-cache/` (`--fresh` ignores it).
+
 The subcommand is `legaia-engine retail-compare`, which takes `--library`,
 `--extracted-root`, `--manifest`, `--out`, `--images`, `--filter`,
 `--flags-first`, `--write-baseline` (the driver's `--bless`),
-`--check-baseline` (the driver's `--check`), and `--render` / `--smoke-check`
-(the driver's `--smoke`, [below](#the-smoke-tier)). It builds only with
+`--check-baseline` (the driver's `--check`), `--render` / `--smoke-check`
+(the driver's `--smoke`, [below](#the-smoke-tier)), and `--jobs`, `--cache` and
+`--progress`, which the driver sets for you. It builds only with
 `engine-shell`'s `oracles` feature, which the driver passes to its own
 `cargo build`; a binary built without it names the feature instead of
 running ([crate README](../../crates/engine-shell/README.md#parity-oracles)).
+
+### Parallel states and the result cache
+
+**`--jobs`.** A state's seed is its own engine session and its image child its
+own process, so states run side by side on worker threads, default half the
+cores up to 8 from the driver and 1 from the subcommand. Most of a child's wall
+clock is the Vulkan driver coming up and scene load, which is why this scales
+to about a dozen children. `report.json` is the same at any count: reports come
+back in corpus order, the files a state writes are named for its label, states
+sharing a label run in turn, and the resident-disc extraction takes a lock.
+`timings.json` beside the report holds each state's wall clock, and `--progress`
+prints it as states finish. The disc-gated ratchet test reads `LEGAIA_RC_JOBS`.
+
+The window children overlap on the display, which does not matter: the capture
+is an offscreen draw and the tick lock paces them. A child runs with
+`LEGAIA_CAPTURE_NO_PRESENT=1`, so its window stays blank: the frames before the
+capture build the same scene description but skip the window draw, since the
+capture and the recorder each draw their own frame from that description and
+`Renderer::render` leaves nothing a later frame samples. To watch a kept child
+by hand, drop that variable from its `.cmd.sh`.
+
+**The result cache.** One state's report and side-by-side PNG, under a key
+hashing everything the result is a function of
+([`retail_compare_cache.rs`](../../crates/parity/src/retail_compare_cache.rs)):
+the binary's bytes, the disc, the state file, its memory card, its manifest row,
+the frame mode and every `LEGAIA_*` / `WGPU_*` variable. A rebuild is a new
+binary and so misses everything; the cache pays for re-running a wider
+`--filter`, resuming an interrupted run, and looking at a report again. What the
+key leaves out is the GPU driver. A state whose image child failed or whose seed
+failed is not stored. The newest three generations are kept.
+
+`--bless`, `--check` and `--smoke` always measure: the driver never hands them
+the cache, and the subcommand refuses `--cache` beside a baseline flag. Use
+`--fresh` for a re-measure, for instance to see whether a score is a flake.
 
 ## Reading the report
 

@@ -108,7 +108,7 @@ def run_census(out: Path, build: bool) -> Path | None:
         [str(REPO / "target" / PROFILE / "legaia-engine"), "retail-compare",
          "--library", str(library), "--extracted-root", str(extracted),
          "--manifest", str(REPO / "scripts" / "scenarios.toml"),
-         "--out", str(out), "--census", str(census)],
+         "--out", str(out), "--census", str(census), "--jobs", str(rc.default_jobs())],
         cwd=REPO, env=env, check=True,
     )
     return census

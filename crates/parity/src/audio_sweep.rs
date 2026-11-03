@@ -577,23 +577,24 @@ pub fn run_sweep(
     library: &Path,
     extracted: &Path,
     filter: Option<&str>,
+    jobs: usize,
 ) -> Result<Vec<AudioSweepRow>> {
     let scus = std::fs::read(extracted.join("SCUS_942.54")).context("read SCUS_942.54")?;
     let cdname = legaia_prot::cdname::parse(&extracted.join("CDNAME.TXT"))?;
     let bank = TrackBank::load(&SceneHost::open_extracted(extracted)?);
-    let mut rows = Vec::new();
-    for entry in enumerate_corpus(manifest, library) {
-        if excluded_state(&entry) {
-            continue;
-        }
-        if let Some(f) = filter
-            && !f.split(',').filter(|a| !a.is_empty()).any(|a| {
-                a.strip_prefix('=')
-                    .map_or(entry.label.contains(a), |x| entry.label == x)
+    let entries: Vec<_> = enumerate_corpus(manifest, library)
+        .into_iter()
+        .filter(|entry| !excluded_state(entry))
+        .filter(|entry| {
+            filter.is_none_or(|f| {
+                f.split(',').filter(|a| !a.is_empty()).any(|a| {
+                    a.strip_prefix('=')
+                        .map_or(entry.label.contains(a), |x| entry.label == x)
+                })
             })
-        {
-            continue;
-        }
+        })
+        .collect();
+    Ok(crate::parallel::parallel_map(&entries, jobs, |entry| {
         let mut row = AudioSweepRow {
             label: entry.label.clone(),
             emulator: entry.emulator.to_string(),
@@ -605,20 +606,18 @@ pub fn run_sweep(
             channels: BTreeMap::new(),
             detail: BTreeMap::new(),
         };
-        let mut obs = match crate::retail_compare::read_retail(&entry, &scus) {
+        let mut obs = match crate::retail_compare::read_retail(entry, &scus) {
             Ok(o) => o,
             Err(e) => {
                 row.unseeded = Some(format!("unreadable state: {e:#}"));
-                rows.push(row);
-                continue;
+                return row;
             }
         };
-        let (ram, env) = match read_state(&entry, &scus) {
+        let (ram, env) = match read_state(entry, &scus) {
             Ok(x) => x,
             Err(e) => {
                 row.unseeded = Some(format!("unreadable state: {e:#}"));
-                rows.push(row);
-                continue;
+                return row;
             }
         };
         row.retail = RetailAudio::from_ram(&ram, &bank, env);
@@ -632,8 +631,7 @@ pub fn run_sweep(
         }
         if !matches!(obs.class, StateClass::Field | StateClass::WorldMap) {
             row.unseeded = Some(format!("{:?}: not a walkable state", obs.class));
-            rows.push(row);
-            continue;
+            return row;
         }
         // A walked capture whose manifest names its door is entered through
         // it, so the music the door kept comes from the engine's own door
@@ -656,9 +654,8 @@ pub fn run_sweep(
             }
             Err(e) => row.unseeded = Some(format!("seed failed: {e:#}")),
         }
-        rows.push(row);
-    }
-    Ok(rows)
+        row
+    }))
 }
 
 /// Per-channel mean over the scored states, and how many states scored it.
@@ -699,6 +696,9 @@ pub struct AudioSweepArgs {
     /// several; `=label` matches exactly).
     #[arg(long)]
     pub filter: Option<String>,
+    /// States seeded at once. The report is the same at any count. Default 1.
+    #[arg(long, default_value_t = 1)]
+    pub jobs: usize,
 }
 
 pub fn run(args: AudioSweepArgs) -> Result<()> {
@@ -707,7 +707,13 @@ pub fn run(args: AudioSweepArgs) -> Result<()> {
     let library = args.library.or(l).context("no save library")?;
     let extracted = args.extracted_root.or(e).context("no extracted disc")?;
     let manifest = ScenarioManifest::from_path(&manifest_path)?;
-    let rows = run_sweep(&manifest, &library, &extracted, args.filter.as_deref())?;
+    let rows = run_sweep(
+        &manifest,
+        &library,
+        &extracted,
+        args.filter.as_deref(),
+        args.jobs,
+    )?;
     if let Some(dir) = args.out.parent() {
         std::fs::create_dir_all(dir)?;
     }

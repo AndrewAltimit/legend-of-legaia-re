@@ -1279,6 +1279,20 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
 /// Write a [`CaptureImage`] (RGBA8, row-major) to a PNG file. Used by the
 /// `--screenshot` harness in the redraw path.
 pub fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
+    write_capture_png_at(path, img, png::Compression::default())
+}
+
+/// [`write_capture_png`] at the fastest compression: the same pixels in a
+/// larger file, for a recorder that writes every frame.
+pub fn write_recorder_png(path: &Path, img: &CaptureImage) -> Result<()> {
+    write_capture_png_at(path, img, png::Compression::Fast)
+}
+
+fn write_capture_png_at(
+    path: &Path,
+    img: &CaptureImage,
+    compression: png::Compression,
+) -> Result<()> {
     if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating screenshot dir {}", dir.display()))?;
@@ -1288,6 +1302,7 @@ pub fn write_capture_png(path: &Path, img: &CaptureImage) -> Result<()> {
     let mut enc = png::Encoder::new(std::io::BufWriter::new(file), img.width, img.height);
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
+    enc.set_compression(compression);
     enc.write_header()
         .context("png header")?
         .write_image_data(&img.rgba)

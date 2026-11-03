@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 
 use crate::retail_compare::{
     Baseline, IMAGE_CHANNELS, RunOptions, SMOKE_IMAGE_SLACK, markdown_report, resolve_dirs,
-    run_corpus, summarise,
+    run_corpus_timed, summarise,
 };
 use crate::retail_compare_image::FrameRender;
 
@@ -69,6 +69,19 @@ pub struct RetailCompareArgs {
     /// engine ([`crate::retail_coverage`], `docs/tooling/capture-coverage.md`).
     #[arg(long)]
     pub census: Option<PathBuf>,
+    /// States run at once, each on a worker thread with its own image child.
+    /// `report.json` is the same at any count; states with one label run in
+    /// turn. Default 1.
+    #[arg(long, default_value_t = 1)]
+    pub jobs: usize,
+    /// Reuse (and fill) per-state results under this directory, keyed on the
+    /// binary, the disc, the state and the environment
+    /// ([`crate::retail_compare_cache`]). Refused with the ratchet flags.
+    #[arg(long)]
+    pub cache: Option<PathBuf>,
+    /// One line on stderr as each state finishes.
+    #[arg(long, default_value_t = false)]
+    pub progress: bool,
 }
 
 pub fn run(args: RetailCompareArgs) -> Result<()> {
@@ -83,6 +96,7 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
             &library,
             &manifest,
             args.filter.as_deref(),
+            args.jobs,
         )?;
         std::fs::write(p, serde_json::to_string_pretty(&c)?)?;
         println!(
@@ -104,11 +118,19 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         "--render {:?} is the smoke tier: use --smoke-check, not the baseline ratchet",
         args.render
     );
+    // The ratchet only ever takes a fresh measurement.
+    anyhow::ensure!(
+        args.cache.is_none()
+            || (args.write_baseline.is_none()
+                && args.check_baseline.is_none()
+                && args.smoke_check.is_none()),
+        "--cache is for iterating: a baseline write or check always measures"
+    );
     crate::retail_compare_image::set_frame_render(args.render);
     let exe = std::env::current_exe()?;
     std::fs::create_dir_all(&args.out)?;
     let out = std::fs::canonicalize(&args.out)?;
-    let reports = run_corpus(&RunOptions {
+    let (reports, timings) = run_corpus_timed(&RunOptions {
         extracted: &extracted,
         library: &library,
         manifest: &manifest,
@@ -120,7 +142,16 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         } else {
             crate::retail_compare::SeedOrder::Resume
         },
+        jobs: args.jobs,
+        cache: args.cache.as_deref(),
+        progress: args.progress,
     })?;
+    // Beside the report rather than in it: `report.json` is a pure function
+    // of the states and the binary.
+    std::fs::write(
+        out.join("timings.json"),
+        serde_json::to_string_pretty(&timings)?,
+    )?;
     let summary = summarise(&reports);
     std::fs::write(out.join("report.md"), markdown_report(&reports, &summary))?;
     std::fs::write(
@@ -139,6 +170,13 @@ pub fn run(args: RetailCompareArgs) -> Result<()> {
         summary.mean_state_score,
         out.join("report.md").display()
     );
+    let cached = timings.iter().filter(|t| t.cached).count();
+    if cached > 0 {
+        println!(
+            "  {cached} of {} state(s) reused from the cache",
+            timings.len()
+        );
+    }
     for (ch, (mean, n)) in &summary.channels {
         println!("  {ch:<10} {mean:.3} over {n}");
     }

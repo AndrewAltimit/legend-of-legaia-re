@@ -266,10 +266,26 @@ impl PlayWindowApp {
                 }
             }
         }
+        // A capture child's frames before its capture reach nobody: the
+        // capture and the recorder each draw their own frame from the scene
+        // description (`encode_frame` stages everything it reads), and
+        // `Renderer::render` leaves nothing a later frame samples.
+        if capture_child_skips_present() {
+            return;
+        }
         if let Err(e) = r.render(target(scene)) {
             log::error!("render: {e:#}");
         }
     }
+}
+
+/// `LEGAIA_CAPTURE_NO_PRESENT=1` (the retail comparison's image child): frames
+/// are not drawn to the window, only to the capture. Most of a capture child's
+/// GPU time and all of its display traffic otherwise goes on frames nobody
+/// sees.
+fn capture_child_skips_present() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("LEGAIA_CAPTURE_NO_PRESENT").is_some())
 }
 
 /// The `LEGAIA_DIAG_CAST_SEQ` recorder's run state
@@ -476,7 +492,7 @@ impl PlayWindowApp {
                         width: legaia_parity::retail_compare_image::FRAME_W as u32,
                         height: legaia_parity::retail_compare_image::FRAME_H as u32,
                     };
-                    match write_capture_png(&rec.dir.join(&name), &img) {
+                    match write_recorder_png(&rec.dir.join(&name), &img) {
                         Ok(()) => {
                             rec.shots += 1;
                             shot = name;
