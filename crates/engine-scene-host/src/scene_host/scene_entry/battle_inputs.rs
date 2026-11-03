@@ -64,8 +64,8 @@ impl SceneHost {
     /// Returns `None` if the entry can't be read.
     pub(crate) fn monster_archive_bytes(&mut self) -> Option<Arc<Vec<u8>>> {
         if self.monster_archive_cache.is_none() {
-            match self.index.entry_bytes_extended(MONSTER_ARCHIVE_PROT_ENTRY) {
-                Ok(b) => self.monster_archive_cache = Some(Arc::new(b)),
+            match self.index.entry_bytes(MONSTER_ARCHIVE_PROT_ENTRY) {
+                Ok(b) => self.monster_archive_cache = Some(b),
                 Err(err) => {
                     eprintln!(
                         "[scene] monster archive (PROT {MONSTER_ARCHIVE_PROT_ENTRY}) load skipped: {err:#}"

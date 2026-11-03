@@ -368,7 +368,7 @@ impl LegaiaRuntime {
     pub(crate) fn enter_battle_render(
         &mut self,
         stage: Option<BattleStage>,
-        archive: Option<Vec<u8>>,
+        archive: Option<std::sync::Arc<Vec<u8>>>,
     ) {
         self.battle_render = None;
         // The party's forms are the engine's to build (normally already done

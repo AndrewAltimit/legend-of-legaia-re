@@ -45,7 +45,7 @@
 //! hold.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::summon_overlay::{SUMMON_OVERLAY_LINK_BASE, SummonPart};
 
@@ -151,14 +151,19 @@ impl CastModuleRecords {
     /// resolves record pointers that belong to the *next* module's own load at
     /// the shared link base.
     pub fn parse(prot_entry: u32, bytes: &[u8]) -> Self {
-        let overlay = crate::summon_overlay::parse(bytes, SUMMON_OVERLAY_LINK_BASE);
-        let own_end = crate::slot_b_module::content_end(bytes, SUMMON_OVERLAY_LINK_BASE);
+        Self::parse_shared(prot_entry, Arc::from(bytes))
+    }
+
+    fn parse_shared(prot_entry: u32, bytes: Arc<[u8]>) -> Self {
+        let overlay = crate::summon_overlay::parse(&bytes, SUMMON_OVERLAY_LINK_BASE);
+        let own_end = crate::slot_b_module::content_end(&bytes, SUMMON_OVERLAY_LINK_BASE);
+        let presentation = Arc::new(crate::cast_presentation::decode(&bytes, own_end));
         Self {
             prot_entry,
-            bytes: Arc::from(bytes),
+            bytes,
             spawn_sites: overlay.spawn_sites,
             parts: overlay.parts,
-            presentation: Arc::new(crate::cast_presentation::decode(bytes, own_end)),
+            presentation,
         }
     }
 
@@ -168,11 +173,23 @@ impl CastModuleRecords {
     }
 }
 
+/// One band image and its parse, made when something first reads the module.
+#[derive(Debug, Clone)]
+struct LazyModule {
+    bytes: Arc<[u8]>,
+    parsed: OnceLock<CastModuleRecords>,
+}
+
 /// The band, indexed by PROT entry. Built once (the images are static disc
 /// data) and read per cast.
+///
+/// [`CastModuleRecords::parse`] is a pure function of the image and costs far
+/// more than the rest of a first scene entry, while a fight reads a handful of
+/// the 64 modules. So a module parses on its first read: every reader gets the
+/// same complete records it would have got at install.
 #[derive(Debug, Clone, Default)]
 pub struct CastEffectPool {
-    modules: BTreeMap<u32, CastModuleRecords>,
+    modules: BTreeMap<u32, LazyModule>,
 }
 
 impl CastEffectPool {
@@ -188,14 +205,23 @@ impl CastEffectPool {
         if !is_cast_module_prot(prot_entry) {
             return false;
         }
-        self.modules
-            .insert(prot_entry, CastModuleRecords::parse(prot_entry, bytes));
+        self.modules.insert(
+            prot_entry,
+            LazyModule {
+                bytes: Arc::from(bytes),
+                parsed: OnceLock::new(),
+            },
+        );
         true
     }
 
     /// The module at `prot_entry`, if loaded.
     pub fn module(&self, prot_entry: u32) -> Option<&CastModuleRecords> {
-        self.modules.get(&prot_entry)
+        let m = self.modules.get(&prot_entry)?;
+        Some(
+            m.parsed
+                .get_or_init(|| CastModuleRecords::parse_shared(prot_entry, m.bytes.clone())),
+        )
     }
 
     /// The module a [`CastKey`] resolves to, if the key is in bounds and the
@@ -216,7 +242,7 @@ impl CastEffectPool {
 
     /// Every loaded entry, ascending.
     pub fn entries(&self) -> impl Iterator<Item = &CastModuleRecords> {
-        self.modules.values()
+        self.modules.keys().filter_map(|&entry| self.module(entry))
     }
 }
 

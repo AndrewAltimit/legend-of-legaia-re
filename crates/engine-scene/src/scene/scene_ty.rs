@@ -718,7 +718,7 @@ impl Scene {
             return Ok(None);
         }
         if let Some(bundle) = crate::scene_bundle::find_bundle(self) {
-            let entry_bytes = index.entry_bytes_extended(bundle.entry_idx())?;
+            let entry_bytes = index.entry_bytes(bundle.entry_idx())?;
             if let Some(man) = crate::scene_bundle::extract_man_payload(&bundle, &entry_bytes)? {
                 return Ok(Some(man));
             }

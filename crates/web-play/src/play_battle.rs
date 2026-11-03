@@ -103,14 +103,12 @@ impl LegaiaRuntime {
                 // native window runs on its own edge.
                 let archive = host
                     .index
-                    .entry_bytes_extended(
-                        legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX,
-                    )
+                    .entry_bytes(legaia_engine_session::battle_stage::MONSTER_ARCHIVE_PROT_INDEX)
                     .ok();
                 let stage = legaia_engine_session::battle_stage::stage_battle_world(
                     host,
                     self.scus.as_deref(),
-                    archive.as_deref(),
+                    archive.as_deref().map(Vec::as_slice),
                 );
                 // 3D layer: battle VRAM + backdrop / grid / monster /
                 // party meshes ([`crate::play_battle_render`]).
