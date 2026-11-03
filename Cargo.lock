@@ -2398,6 +2398,7 @@ name = "legaia-engine-scene"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "legaia-actor-formats",
  "legaia-anm",
  "legaia-container-formats",

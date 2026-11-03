@@ -358,6 +358,64 @@ pub fn build_hybrid_env_mesh_lit(
     (mesh, flat, lit)
 }
 
+/// [`hybrid_env_positions_memo`]'s answers. Past its budget it starts over.
+#[derive(Default)]
+pub struct HybridPositionsMemo {
+    answers: std::collections::HashMap<u64, Vec<f32>>,
+    bytes: usize,
+}
+
+const HYBRID_MEMO_BYTES: usize = 64 << 20;
+
+/// The positions of [`build_hybrid_env_mesh`], flat. A VDF morph walks a fixed
+/// set of envelope states and re-asks per slot per tick, and the costly half
+/// of the build is the coplanar resolve, a function of the two halves it is
+/// handed: the halves are built and hashed, and the resolve runs once per state.
+pub fn hybrid_env_positions_memo(
+    rtmd: &ResolvedTmd,
+    vram: &legaia_tim::Vram,
+    memo: &mut HybridPositionsMemo,
+) -> Vec<f32> {
+    let (mut mesh, _) = rtmd.build_filtered_vram_mesh_lit_vertices(vram);
+    let mut cmesh = legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw);
+    let mut h = 0u64;
+    let mut mix = |bytes: &[u8]| {
+        let (words, rest) = bytes.as_chunks::<8>();
+        for w in words {
+            h = (h ^ u64::from_le_bytes(*w))
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                .rotate_left(29);
+        }
+        for &b in rest {
+            h = (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01B3);
+        }
+        h = h.rotate_left(7) ^ bytes.len() as u64;
+    };
+    mix(bytemuck::cast_slice(&mesh.positions));
+    mix(bytemuck::cast_slice(&mesh.indices));
+    mix(bytemuck::cast_slice(&mesh.cba_tsb));
+    mix(bytemuck::cast_slice(&mesh.uvs));
+    mix(bytemuck::cast_slice(&mesh.colors));
+    mix(bytemuck::cast_slice(&cmesh.positions));
+    mix(bytemuck::cast_slice(&cmesh.indices));
+    mix(bytemuck::cast_slice(&cmesh.colors));
+    mix(bytemuck::cast_slice(&cmesh.blend));
+    if let Some(pos) = memo.answers.get(&h) {
+        return pos.clone();
+    }
+    legaia_tmd::mesh::resolve_hybrid(&mut mesh, &mut cmesh);
+    let (mesh, _) = merge_hybrid_halves(mesh, &cmesh);
+    let pos: Vec<f32> = mesh.positions.iter().flatten().copied().collect();
+    let size = pos.len() * 4;
+    if memo.bytes + size > HYBRID_MEMO_BYTES {
+        memo.answers.clear();
+        memo.bytes = 0;
+    }
+    memo.bytes += size;
+    memo.answers.insert(h, pos.clone());
+    pos
+}
+
 /// [`build_hybrid_env_mesh`] **posed** at one set of per-object rigid
 /// transforms (frame 0 of a placed prop's object-bind clip): both halves go
 /// through the `*_posed_rot` builders - the same `R . v + T` bake the native
@@ -694,6 +752,27 @@ mod tests {
             );
             assert_eq!(mesh.uvs[v], [0, 0]);
         }
+    }
+
+    /// The memo answers what the build answers, on a miss and on a hit.
+    #[test]
+    fn hybrid_positions_memo_is_the_build() {
+        use super::{HybridPositionsMemo, build_hybrid_env_mesh, hybrid_env_positions_memo};
+        let raw = synth_mixed_tmd();
+        let tmd = legaia_tmd::parse(&raw).unwrap();
+        let rtmd = super::ResolvedTmd {
+            entry_idx: 0,
+            offset: 0,
+            byte_len: raw.len(),
+            tmd,
+            raw,
+        };
+        let vram = legaia_tim::Vram::new();
+        let (mesh, _) = build_hybrid_env_mesh(&rtmd, &vram);
+        let want: Vec<f32> = mesh.positions.iter().flatten().copied().collect();
+        let mut memo = HybridPositionsMemo::default();
+        assert_eq!(hybrid_env_positions_memo(&rtmd, &vram, &mut memo), want);
+        assert_eq!(hybrid_env_positions_memo(&rtmd, &vram, &mut memo), want);
     }
 
     /// The colour half's blend words must survive the hybrid merge in the

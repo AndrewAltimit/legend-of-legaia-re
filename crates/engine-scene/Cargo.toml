@@ -39,6 +39,7 @@ legaia-scene-formats.workspace = true
 legaia-seq.workspace = true
 legaia-tim.workspace = true
 legaia-tmd.workspace = true
+bytemuck.workspace = true
 legaia-ui-formats.workspace = true
 legaia-vab.workspace = true
 

@@ -200,11 +200,15 @@ pub(super) fn tag_windows(
         let Some(&[cba, tsb]) = cba_tsb.get(i0) else {
             continue;
         };
-        let corner: Vec<[u8; 2]> = tri
-            .iter()
-            .filter_map(|&i| uvs.get(i as usize).copied())
-            .collect();
-        if prim_window_art(vram, cba, tsb, &corner).is_some() {
+        let mut corner = [[0u8; 2]; 3];
+        let mut corners = 0;
+        for &i in tri {
+            if let Some(&uv) = uvs.get(i as usize) {
+                corner[corners] = uv;
+                corners += 1;
+            }
+        }
+        if prim_window_art(vram, cba, tsb, &corner[..corners]).is_some() {
             for &i in tri {
                 if let Some(ct) = cba_tsb.get_mut(i as usize) {
                     ct[1] |= WINDOW_BIT;
