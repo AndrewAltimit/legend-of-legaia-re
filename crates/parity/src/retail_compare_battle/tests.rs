@@ -1985,7 +1985,7 @@ fn a_commit_capture_stands_two_steps_behind_the_tables_depth() {
     b.action_state = 0x1F;
     b.queued_category = 3;
     b.caster_latched = 0x1E;
-    b.committed_queue = vec![0x0C, 0x0F, 0x0F, 0x1A, 0x1E];
+    b.committed_queue[..5].copy_from_slice(&[0x0C, 0x0F, 0x0F, 0x1A, 0x1E]);
     b.display_phase_lag = 2;
     b.cam_accum = 0;
     b.cam_tween.0.tr[2] = 1945.0;
