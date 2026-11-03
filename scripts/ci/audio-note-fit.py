@@ -129,7 +129,8 @@ def fit(args: argparse.Namespace, prefix: Path) -> None:
     rows = []
     for start in sorted({s["start"] for s in fitted}):
         offs = [s["off"] for s in fitted if s["start"] == start]
-        rows.append((start, staged.get(start, 0), float(np.median(offs))))
+        held = next(s["note"] for s in fitted if s["start"] == start)
+        rows.append((start, staged.get(start, 0), float(np.median(offs)), held))
     in_grid = [r for r in rows if abs(r[2]) < 25]
     if len(in_grid) > 2:
         xs = np.array([r[1] for r in in_grid], dtype=float)
@@ -139,8 +140,9 @@ def fit(args: argparse.Namespace, prefix: Path) -> None:
         print(f"per flush: offset = {icept:+.2f} {slope:+.3f} * staged voices, scatter {scatter:.2f}")
     off_grid = [r for r in rows if abs(round(r[2] / VSYNC)) >= 1]
     print(f"flushes a vsync off: {len(off_grid)} of {len(rows)}")
-    for start, voices, off in off_grid[:20]:
-        print(f"  {start / 44100:7.3f} s  {voices:2} staged  {off:+6.0f} samples")
+    for start, voices, off, held in off_grid[:20]:
+        print(f"  {start / 44100:7.3f} s  {voices:2} staged  {off:+6.0f} samples  "
+              f"pitch {held['pitch']:04x} tone {held['addr']:x} adsr {held['adsr1']:04x} {held['adsr2']:04x}")
 
 
 def main() -> None:

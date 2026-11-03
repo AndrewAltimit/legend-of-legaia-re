@@ -3340,10 +3340,14 @@ falls mid-sample, and the fitted line is not an integer.
 
 **CD-XA.** The silenced recording of a state with a one-shot sounding, the resumed SPU
 subtracted, is the CD input alone (`xa` channel, `--xa-wav`). On
-`battle_melee_hit_spark` it is `XA2` channel 9 from source sample `35889`, and through
-the port's rate converter and cue gain that channel fits it at correlation `0.9955`,
-level `-0.13` dB, residual `-20` dB, with no lag drift across the `0.25` s left of the
-clip. On the page, a shout fired through the live output and read off the output node
+`battle_melee_hit_spark` it is `XA2` channel 9 from source sample `35891`, and through
+the port's rate converter and cue gain that channel fits it at correlation `0.9990`,
+level `-0.13` dB, residual `-27` dB, with no lag drift across the `0.25` s left of the
+clip. The start has to stand on the converter's six-step phase: the score repeats every six
+source samples, and three off it reads `0.991` on the same audio. The `-0.13` dB is not the CD
+volume, whose attenuation matrix reads unity in the state (`DecodeVolume`), and it stands across
+every window; whether it is mednafen's filter against the published zig-zag rows is not settled here.
+On the page, a shout fired through the live output and read off the output node
 is that channel's sibling (`XA2` channel 14) at correlation `0.993` and no lag drift
 across a second, at the mix's `0.81` of the decoded channel. Its first sample lands
 `205` ms past the call: `SHOUT_CD_RESPONSE_DELAY` plus the queue. The start against a

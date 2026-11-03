@@ -64,7 +64,9 @@ CORE_STATES = ["mei_house_inside", "keikoku_chest_pre", "title_screen_new_game"]
 SHORT_WINDOWS = {"title_screen_new_game": 10}
 # A state with a CD-XA one-shot sounding: the decoded channel it reads, where in
 # that channel the state stands, and the stereo samples before the clip's stop.
-XA_STATES = {"battle_melee_hit_spark": ("XA2_file1_ch9.wav", 35889, 11025)}
+# The start is on the converter's own six-step phase: it repeats every 6 samples,
+# and three off reads a correlation of `0.991` against `0.999` on the same audio.
+XA_STATES = {"battle_melee_hit_spark": ("XA2_file1_ch9.wav", 35891, 11025)}
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
 CORR_SLACK = 0.002
 LEVEL_SLACK = 0.05

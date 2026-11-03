@@ -332,7 +332,10 @@ Answered questions: [settled audio](re-settled-threads/audio.md); falsified read
 
 [Real retail PCM](../subsystems/audio.md#real-retail-pcm) scores a clip's rate, level and
 waveform on the CD input alone, on native and on the page. Its start is the modelled
-`SHOUT_CD_RESPONSE_DELAY`; a mednafen state just ahead of a one-shot cue would score it.
+`SHOUT_CD_RESPONSE_DELAY` (`150` ms). Under PCSX-Redux (`autorun_cast_voice_xa.lua`,
+`xa_start.csv`) a clip start reaches the CD level's rise a flat `54.6` ms later whichever clip it
+reads, so that emulator models no seek and bounds the delay from below. A mednafen state just ahead
+of a one-shot cue, with the trigger read off RAM, would score it.
 
 ## Title / boot / overlays
 
