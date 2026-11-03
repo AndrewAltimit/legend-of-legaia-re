@@ -88,6 +88,7 @@ Each scene row carries these beside it, so one run answers where a weak device p
 | `cadence` | gaps between frame-function starts, and how many ran over 33 ms | What the display got; see `--vsync` |
 | `main thread per frame` | the renderer's own `TaskDuration` over the window, less the frame function | What runs outside it, the audio pump named |
 | `audio across the battle edge` | `audio_stats_json` before the force and after the hand-over | Dry frames a stall cost; the queue target's move |
+| `audio over the timed frames` | `audio_stats_json` around the timed window | Whether the output stays fed at this frame rate, with no edge in it |
 | `memory MB` | process RSS off `/proc`, wasm, resident disc bytes, JS heap, a GL tally | Who holds what |
 
 **The GPU span is not GPU time.** The query runs from its begin to its end on the GPU's
@@ -149,7 +150,14 @@ inside it, and the battle edge would land in the timed window or nowhere.
 `Emulation.setCPUThrottlingRate`, and the output calls it a proxy. It shows which costs
 scale with the CPU. It says nothing of what a device does: it leaves the GPU process, the
 compositor and the worklet as they were. With `--gl swiftshader` it is the pessimistic end
-of what a desktop can stand in for.
+of what a desktop can stand in for. Read it with `--vsync`: uncapped, the page queues GPU
+work until a backpressure block of over a second, and frame-function p99 and dry audio read
+that queue, which no capped page builds.
+
+`--uncheck id,id` clears those option boxes once the disc is up, `--no-msaa` asks for a
+context without MSAA, and `--canvas-scale s` draws the GL canvas at `s` of its size. With
+`--gl swiftshader --vsync` they read what one rung of quality costs on a GPU that is short of
+it; the shape holds for a software rasteriser, and a tiler may rank them differently.
 
 `--entry-profile` samples the disc load, each scene entry and each battle's first
 frames and prints time by function, self and inclusive of callees. `--reenter`

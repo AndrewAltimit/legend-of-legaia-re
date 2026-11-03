@@ -5,6 +5,7 @@
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
 //       [--reenter] [--entry-profile] [--reload] [--idle ms]
 //       [--vsync] [--paths] [--card file.mcr] [--card-block n] [--cpu-throttle n]
+//       [--uncheck id,id] [--no-msaa] [--canvas-scale s]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
 // own file input, enters each scene through the page's own scene list and times the
@@ -31,6 +32,11 @@
 //
 // `--cpu-throttle n` slows the renderer's main thread n times. It is a proxy, and the
 // output says so: it shows which costs scale with the CPU and says nothing of a device.
+//
+// `--uncheck id,id` clears those option boxes once the disc is up, `--no-msaa` asks for a
+// context without MSAA, and `--canvas-scale s` draws the GL canvas at s of its size: what
+// one rung of the quality ladder costs. Each is a page state a player can reach or the
+// page can step to; none is a claim about a device.
 //
 // A browser's timers are coarse, and the frame function is only the page's main-thread
 // cost: the GPU, display, audio pump and memory rows are what it leaves out. See
@@ -65,6 +71,9 @@ const VSYNC = !!arg('vsync');
 const THROTTLE = +arg('cpu-throttle', 0);
 const DEFAULT_CARD = path.join(REPO, 'saves/library/cards/playthrough-ladder-pro00-14.mcr');
 const CARD = arg('card', DEFAULT_CARD);
+const UNCHECK = arg('uncheck') ? arg('uncheck').split(',') : [];
+const NO_MSAA = !!arg('no-msaa');
+const CANVAS_SCALE = +arg('canvas-scale', 1);
 
 const disc = process.env.LEGAIA_DISC_BIN;
 const wasmPath = path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm');
@@ -74,8 +83,14 @@ if (!disc || !fs.existsSync(disc) || !fs.existsSync(wasmPath)) {
 }
 
 // Runs in the page, before any of its scripts.
-function instrument() {
+function instrument(noMsaa) {
   const B = (window.__bench = { t0: performance.now(), wasmLoad: null, gl: {}, exports: {}, on: false, frames: [], gaps: [], lastStart: null });
+  if (noMsaa) {
+    const get = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (kind, attrs) {
+      return get.call(this, kind, /^webgl/.test(kind) ? { ...attrs, antialias: false } : attrs);
+    };
+  }
   // GL calls, counted on the context's own prototype.
   const wrapGl = (proto) => {
     for (const k of Object.getOwnPropertyNames(proto)) {
@@ -413,6 +428,11 @@ function printRows(s) {
   } else if (s.audio_edge === null) {
     console.log('  audio across the battle edge: no reading, the output never came up');
   }
+  if (s.audio_steady) {
+    const a = s.audio_steady;
+    console.log(`  audio over the timed frames: ${a.dry_frames} dry frames (${(a.dry_frames * 1000 / a.rate).toFixed(0)} ms), `
+      + `${a.played_frames} played (${(a.played_frames * 1000 / a.rate).toFixed(0)} ms); queue target ${a.target_before} -> ${a.target_after}; context ${a.context}`);
+  }
   if (mem) {
     const mb = (x) => (x === null || x === undefined ? '-' : x.toFixed(0));
     const h = mem.gl_held;
@@ -435,7 +455,7 @@ async function playerPath(browser, port, kind, errors) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await context.newPage();
   page.on('pageerror', (e) => { errors.push(e.message); console.error('PAGEERR', e.message); });
-  await page.addInitScript(instrument);
+  await page.addInitScript(instrument, NO_MSAA);
   if (THROTTLE) await (await context.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
   await page.goto(`http://127.0.0.1:${port}/play.html`);
   await (await page.$('input[type=file]')).setInputFiles(disc);
@@ -528,7 +548,7 @@ async function main() {
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
   const errors = [];
   page.on('pageerror', (e) => { errors.push(e.message); console.error('PAGEERR', e.message); });
-  await page.addInitScript(instrument);
+  await page.addInitScript(instrument, NO_MSAA);
   if (THROTTLE) {
     console.log(`[proxy] main thread throttled ${THROTTLE}x (Emulation.setCPUThrottlingRate): a proxy, not a device measure`);
     await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
@@ -594,6 +614,16 @@ async function main() {
     out.startup.reload_file_read_ms = await page.evaluate(() => window.__bench.fileRead);
   }
   await page.evaluate(wrapForBench);
+  if (UNCHECK.length) {
+    await page.evaluate((ids) => {
+      for (const id of ids) {
+        const el = document.getElementById(id);
+        if (!el) throw new Error('no option box ' + id);
+        if (el.checked) el.click();
+      }
+    }, UNCHECK);
+    out.unchecked = UNCHECK;
+  }
   if (arg('idle')) await page.waitForTimeout(+arg('idle'));
   const cdp = await page.context().newCDPSession(page);
   /* The main thread's whole account: the renderer's own task time, of which the
@@ -647,7 +677,7 @@ async function main() {
       await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
       await cdp.send('Profiler.start');
     }
-    const r = await page.evaluate(async ({ sc, FRAMES, SKIP, reenter }) => {
+    const r = await page.evaluate(async ({ sc, FRAMES, SKIP, reenter, canvasScale }) => {
       const B = window.__bench;
       B.on = false; B.frames = []; B.exports = {}; B.gl = {}; B.firstFrame = undefined; B.entryWorst = 0;
       const btn = document.querySelector(`[data-scene="${sc.scene}"]`);
@@ -670,6 +700,11 @@ async function main() {
       if (window.__benchEntered) await window.__benchEntered();
       const view = window.__playView;
       B.wrapView(view);
+      if (canvasScale !== 1) {
+        const c = view.canvas;
+        c.width = Math.round(960 * canvasScale);
+        c.height = Math.round(720 * canvasScale);
+      }
       const wait = (pred) => new Promise((res) => {
         const check = () => (pred() ? res() : setTimeout(check, 20));
         check();
@@ -751,6 +786,7 @@ async function main() {
         }, 3500);
       }
       const alloc0 = window.__wasmAllocTotals ? window.__wasmAllocTotals() : null;
+      const steady0 = audio();
       await window.__benchTask('start');
       B.gaps = []; B.lastStart = null; B.gpu.ms = []; B.gpu.disjoint = 0;
       B.pump = { ms: 0, calls: 0, max: 0 };
@@ -760,6 +796,7 @@ async function main() {
       await wait(() => B.calls - start >= FRAMES);
       const wall = performance.now() - tw;
       B.on = false;
+      const steady1 = audio();
       await window.__benchTask('stop');
       /* The queries still in flight land within a few frames. */
       {
@@ -784,9 +821,11 @@ async function main() {
       return { entryExports, entry_ms: entry, reentry_ms: reentry, wall_ms: wall, frames: B.frames, firstFrame: B.firstFrame, entryWorst: B.entryWorst,
         exports: B.exports, gl: B.gl, alloc: alloc0 && [alloc1[0] - alloc0[0], alloc1[1] - alloc0[1]],
         gaps: B.gaps, gpuMs: B.gpu.ms, gpuDisjoint: B.gpu.disjoint, pump: B.pump, audioEdge, battleUp, firstFightEnded,
+        audioSteady: steady0 && steady1 && { dry_frames: steady1.dry_frames - steady0.dry_frames, played_frames: steady1.played - steady0.played,
+          rate: steady1.rate, target_before: steady0.target, target_after: steady1.target, context: steady1.context },
         longtasks: ls, heap: performance.memory ? performance.memory.usedJSHeapSize : 0,
         state: view.scene, battle: typeof view.rt.state_json === 'function' ? view.rt.state_json().slice(0, 200) : '' };
-    }, { sc, FRAMES, SKIP, reenter: !!arg('reenter') });
+    }, { sc, FRAMES, SKIP, reenter: !!arg('reenter'), canvasScale: CANVAS_SCALE });
     if (arg('shots')) {
       fs.mkdirSync(arg('shots'), { recursive: true });
       await page.screenshot({ path: path.join(arg('shots'), `${name}.png`) });
@@ -806,6 +845,7 @@ async function main() {
       }
       if (!r.battleUp) console.log(`  ${name}: NOT A BATTLE ROW, the page's battle scene never came up in 30 s`);
     }
+    s.audio_steady = r.audioSteady;
     s.memory = await memoryRow(page);
     s.entry_ms = r.entry_ms;
     s.reentry_ms = r.reentry_ms;

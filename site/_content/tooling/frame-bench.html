@@ -85,7 +85,8 @@ scripts/ci/frame-bench-web.mjs --cpu-throttle 6               # a proxy, labelle
       <tr><td><code>--idle ms</code></td><td>Waits at the boot-mode prompt before the first pick, which is when the page prewarms the first entry.</td></tr>
       <tr><td><code>--vsync</code></td><td>Leaves the browser&rsquo;s frame limit on, so the cadence row reads whether the page holds the display&rsquo;s rate rather than how fast it can go. It moves the frame function too: uncapped, the main thread blocks on the GPU inside its GL calls, so compare like with like.</td></tr>
       <tr><td><code>--paths</code></td><td>A New Game and a card load, each on a fresh page; <code>--card</code> and <code>--card-block</code> pick the save.</td></tr>
-      <tr><td><code>--cpu-throttle n</code></td><td>Slows the renderer&rsquo;s main thread. A proxy, and the output says so: it shows which costs scale with the CPU and says nothing of a device.</td></tr>
+      <tr><td><code>--cpu-throttle n</code></td><td>Slows the renderer&rsquo;s main thread. A proxy, and the output says so: it shows which costs scale with the CPU and says nothing of a device. Read it with <code>--vsync</code>: uncapped, the page queues GPU work until a backpressure block of over a second, which no capped page builds.</td></tr>
+      <tr><td><code>--uncheck id,id</code>, <code>--no-msaa</code>, <code>--canvas-scale s</code></td><td>Clear option boxes, ask for a context without MSAA, draw the GL canvas at a fraction of its size. With <code>--gl swiftshader --vsync</code> they read what one rung of quality costs on a GPU short of it; a tiler may rank them differently.</td></tr>
     </tbody>
   </table>
   </div>
