@@ -592,6 +592,15 @@ impl World {
                     && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
                 {
                     self.commit_staged_battle_anim_at_boundary(i);
+                    // This tick's pose is the old clip wrapped to frame 0, which
+                    // retail's commit never decodes. A new clip shorter than the
+                    // model takes its extra objects from the pose it keeps, so
+                    // keep the one before the wrap (Ozma's shell halves stay
+                    // folded on the shoulders through its 15-part clips).
+                    let a = &mut self.actors[i];
+                    if let Some(before) = a.battle_pose_history.get(1).map(|f| f.pose.clone()) {
+                        a.pose_frame = Some(before);
+                    }
                 }
             }
             // `+0x1F7`, written for every node right after its cursor

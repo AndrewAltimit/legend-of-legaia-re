@@ -1368,6 +1368,10 @@ impl World {
                             legaia_engine_cast::seru_magic_ticks::ORB_CLEANSE_MIN_LEVEL,
                         );
                         legaia_engine_cast::seru_magic_ticks::spoon_cure_sweep(&mut seats, cleanse);
+                        // ...and raises the roster panels the way Orb's arm 9 does
+                        // (`FUN_801D8DE8(6, 0)` and `(0x4E + i, 0)`,
+                        // `0x801F83E4..0x801F8450`).
+                        self.battle.raise_module_roster_panels();
                         self.write_cast_seat_row(&seats);
                         caster = seats.get(r_caster).copied().unwrap_or(caster);
                         victim = seats.get(r_victim).copied().unwrap_or(victim);

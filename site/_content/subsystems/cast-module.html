@@ -131,6 +131,7 @@
   </table>
   </div>
   <p>These modules write HP with the paired accumulate convention, so they keep the invariant the <a href="battle-action-exit-gates.html#hp-gate">HP-readout gate</a> depends on.</p>
+  <p>A few player summons split the roll: Zenoir's sites land a quarter, three quarters and two thirds, Swordie's four slashes and Mushura's run-over hits a quarter each. Their hits are the whole of the cast's damage, so the band folds nothing on top, and the rolls still train the spell and feed the spirit gauge.</p>
 </section>
 
 <section class="doc-section" id="camera">
@@ -168,6 +169,7 @@
   </figure>
   <p>Both modes are ported whole in <code>render-kernels::cast_colour_wash</code> (<code>scanline_prims</code> for the textured one). Both hosts composite screen primitives after their 3D pass, so they draw the wash as a far-plane primitive ahead of the scene instead. The scanline mode is Mule&rsquo;s underwater backdrop: before it was ported the creature&rsquo;s whole performance played over black. From its ninth arm on, Mule&rsquo;s module also ends every pass by pointing the backdrop&rsquo;s sample origin at the live camera (the start column from the yaw and the sideways eye offset, the start row from the pitch and the eye height), so the backdrop pans as the shots turn. Two per-line offset arrays the emitter also adds have no writer anywhere on the disc, so the port reads them as zero.</p>
   <p>A module's ramp of the wash can sit behind a test of its own countdown. Kemaro's dive arm fades the wash out only over the last eighth of its countdown, so retail plays the dive over the full blue wash; the decoder that reads the modules' presentation calls off the disc now folds that test, and the port runs the ramp only on the passes the countdown allows. Before, the wash was gone a few frames into the arm and Kemaro's sky drew dark and warm where retail's is lavender.</p>
+  <p>A retail battle frame normally starts from an opaque black rect in the farthest bucket. A second, subtractive wash (<code>FUN_8004695C</code>, drained by <code>FUN_80046978</code>) takes its place: Ozma's arms that arm it draw additive layers with no opaque stage under them, so the frame builds toward white over the frames before it and the wash takes some of it back. The native target keeps its frame on those frames; a target that clears gets no quad, because there it could only darken the frame's own pixels.</p>
 </section>
 
 <section class="doc-section" id="port">

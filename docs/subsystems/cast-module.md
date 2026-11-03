@@ -980,6 +980,10 @@ gives each exactly one owner:
   except Plasma Strike's burst.
 - **The tick** owns the outcome where a body rolls in-tick, and the fold is
   waived:
+  - PROT 0927 for a party caster: both stager sweeps (arms 3 and 4,
+    `0x801F8758`, leaving 1 HP) and arm 26's hit (`0x801F7E0C`, which can kill)
+    take the whole summon roll, so three hits are the cast's damage and the fold
+    only banks their XP.
   - The player summons whose hits are scaled rolls, through
     `World::summon_module_roll`: PROT 0908's three sites (`/ 4`, `* 3 / 4`,
     `* 2 / 3`), PROT 0910's four slashes (`/ 4` each) and PROT 0915's two sites
@@ -2391,6 +2395,7 @@ Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of
 2 and 7 over its holds. The twenty parts of arm 4 ride the creature's decoded pose
 objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 5..7
 (`seat_spoon_eye_parts`) from the same pool the creature's own draw reads.
+Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`).
 Spoon and Mushura raise their creature's `+0x42 = 2` over object-effect row 1, as
 Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pass on arm
 3, so the creature rises through it; Mushura's is tilted `-0x400` and cut at the
@@ -4182,12 +4187,15 @@ both (`BattleActionHost::capture_band_exit` / `summon_band_exit`).
 wants it held re-arms it every pass. The drain draws it subtractive (ABR `2`)
 in the farthest bucket, under the whole scene: it darkens what the buffer
 still holds from an earlier frame, and everything the frame draws lands on
-top of it at full strength. A battle frame does not clear, so what the drain
+top of it at full strength. It also stands in for the frame's clear: the same
+bucket otherwise holds an opaque black rect, as Ozma's arm 25 does in a retail
+ordering table where its arm 18 holds the `(64, 64, 64)` quad. So what the drain
 leaves is the picture: the arms that arm it draw additive layers with no opaque
 stage under them, and those layers build on each other from frame to frame. A
-retail ordering table of Ozma's arm 16 rasterised on black matches the engine's
-old frame, dark teal with thin red rays, where the displayed frame is white:
-the white is the same packets over the earlier frames.
+retail ordering table of Ozma's arm 16 rasterised on black matches a cleared
+engine frame, dark teal with thin red rays, where the displayed frame is white:
+the white is the same packets over the earlier frames. The first frame no arm arms
+it clears, and arm 25's rays fade on black.
 
 The engine reproduces this where its target outlives a frame
 ([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)):
