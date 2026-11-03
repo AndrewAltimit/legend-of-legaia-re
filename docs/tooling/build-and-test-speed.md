@@ -55,7 +55,7 @@ The shipped bundle is `scripts/ci/build-wasm.sh`: `release` (thin LTO, one codeg
 | What | Shipped | `--fast` |
 |---|---|---|
 | Clean target directory | about 6 min | about 5 min |
-| Nothing changed | 35 s | 5 s |
+| Nothing changed | 35 s | 15 s |
 | One line, `engine-core` | 4.5 min | 30 s |
 | One line, `web-play` | 2 min | 30 s |
 | One line, `xa` (low in the graph) | 4.5 min | 35 s |
