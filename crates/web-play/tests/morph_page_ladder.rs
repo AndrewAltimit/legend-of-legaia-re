@@ -132,7 +132,11 @@ fn a_held_morph_builds_the_mesh_the_page_would_have_drawn() {
     for (slot, (pos, reach)) in &eager {
         rt.field_mesh(*slot).expect("the slot builds");
         let rest = rt.field_mesh_positions();
-        assert_eq!(rest.len(), pos.len(), "slot {slot}: the stream changed size");
+        assert_eq!(
+            rest.len(),
+            pos.len(),
+            "slot {slot}: the stream changed size"
+        );
         let moved = pos
             .iter()
             .zip(&rest)
