@@ -147,10 +147,14 @@ local SAVE_INJECT  = probe.getenv_num("LEGAIA_SAVE_INJECT", 0) ~= 0
 local inject_saved = false
 local PRESS_UNTIL  = probe.getenv_num("LEGAIA_PRESS_UNTIL", 600)
 local PRESS_PERIOD = probe.getenv_num("LEGAIA_PRESS_PERIOD", 60)
-local PARTY_SPD    = probe.getenv_num("LEGAIA_PARTY_SPD", 0)
 local MP_TOPUP     = probe.getenv_num("LEGAIA_MP_TOPUP", 999)
-local LEARN_LEVEL = probe.getenv_num("LEGAIA_LEARN_LEVEL", 0)
-local MONSTER_HP = probe.getenv_num("LEGAIA_MONSTER_HP", 0)
+-- Hung off `probe`: on_capture sits at Lua's 60-upvalue cap, and one over it
+-- fails the whole file at load.
+probe.cast_cfg = {
+    party_spd = probe.getenv_num("LEGAIA_PARTY_SPD", 0),
+    learn_level = probe.getenv_num("LEGAIA_LEARN_LEVEL", 0),
+    monster_hp = probe.getenv_num("LEGAIA_MONSTER_HP", 0),
+}
 local POKE32 = {}
 for kv in string.gmatch(probe.getenv("LEGAIA_POKE32", ""), "[^,]+") do
     local a, v = string.match(kv, "^%s*([^=]+)=(.+)$")
@@ -302,7 +306,7 @@ probe.run({
             sstate = SSTATE_PATH, spell = string.format("0x%02X", SPELL),
             caster_seat = CASTER_SEAT, target_seat = TARGET_SEAT,
             inject_state = INJECT_STATE, force_row = FORCE_ROW,
-            party_spd = PARTY_SPD, monster_pick = MONSTER_PICK and 1 or 0, shot_every = SHOT_EVERY, tail = TAIL,
+            party_spd = probe.cast_cfg.party_spd, monster_pick = MONSTER_PICK and 1 or 0, shot_every = SHOT_EVERY, tail = TAIL,
         })
         meta = probe.csv_open(probe.out_path("meta.csv"),
             "vsync,st7,phase,acting,step,flow,c6d8,c6da,c87c,cd7960,loader," ..
@@ -409,10 +413,10 @@ probe.run({
         end
         local in_battle = u8(cx) >= 1 and u8(cx) <= 3 and u8(cx + 1) >= 1 and u8(cx + 1) <= 4
             and (FORCE_ROW == "" or forced_row)
-        if in_battle and PARTY_SPD > 0 and not injected then
+        if in_battle and probe.cast_cfg.party_spd > 0 and not injected then
             for sx = 0, 2 do
                 local a = actor(sx)
-                if a ~= nil and u16(a + 0x14E) > 0 then probe.write_u16(a + 0x164, PARTY_SPD) end
+                if a ~= nil and u16(a + 0x14E) > 0 then probe.write_u16(a + 0x164, probe.cast_cfg.party_spd) end
             end
         end
         local st7 = u8(cx + 7)
@@ -443,11 +447,11 @@ probe.run({
                 end
             end
             for _, pv in ipairs(POKE32) do probe.write_u32(pv[1], pv[2]) end
-            if LEARN_LEVEL > 0 then
+            if probe.cast_cfg.learn_level > 0 then
                 for _, s in ipairs(seats) do
                     local rec = 0x80084708 + s * 0x414
                     probe.write_u8(rec + 0x13D, SPELL)
-                    probe.write_u8(rec + 0x161, LEARN_LEVEL)
+                    probe.write_u8(rec + 0x161, probe.cast_cfg.learn_level)
                 end
             end
             PCSX.log(string.format("[inject t%d] spell=0x%02X target=%d acting=%d",
@@ -495,12 +499,12 @@ probe.run({
             caster_at_cast = acting
             target_at_cast = u8(actor(acting) + 0x1DD)
             PCSX.log(string.format("[cast t%d] caster=%d ground=%s", elapsed, acting, ground_at_cast))
-            if MONSTER_HP > 0 then
+            if probe.cast_cfg.monster_hp > 0 then
                 for s = 3, 7 do
                     local a = actor(s)
                     if a ~= nil and u16(a + 0x14C) > 0 then
-                        probe.write_u16(a + 0x14C, MONSTER_HP)
-                        probe.write_u16(a + 0x172, MONSTER_HP)
+                        probe.write_u16(a + 0x14C, probe.cast_cfg.monster_hp)
+                        probe.write_u16(a + 0x172, probe.cast_cfg.monster_hp)
                     end
                 end
             end
