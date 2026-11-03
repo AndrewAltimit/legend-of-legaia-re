@@ -284,19 +284,37 @@ fn fixed_seed_and_options_produce_pinned_bytes() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
         return;
     };
-    let mut got = Vec::new();
-    for (name, opts) in cases() {
-        let (patched, summary) = run(image.clone(), &opts);
-        if name == "untouched" {
-            assert!(patched == image, "an all-off run must not change the image");
-        } else {
-            assert!(
-                patched != image,
-                "{name}: the run changed nothing\n{summary}"
-            );
-        }
-        got.push((name, hex(&patched), hex(summary.as_bytes())));
-    }
+    // Each case is an independent run over its own copy of the image, so they
+    // run side by side; the table below is still in `cases()` order.
+    let image = &image;
+    let got: Vec<_> = std::thread::scope(|scope| {
+        let runs: Vec<_> = cases()
+            .into_iter()
+            .map(|(name, opts)| {
+                scope.spawn(move || {
+                    let (patched, summary) = run(image.clone(), &opts);
+                    if name == "untouched" {
+                        assert!(
+                            patched == *image,
+                            "an all-off run must not change the image"
+                        );
+                    } else {
+                        assert!(
+                            patched != *image,
+                            "{name}: the run changed nothing\n{summary}"
+                        );
+                    }
+                    (name, hex(&patched), hex(summary.as_bytes()))
+                })
+            })
+            .collect();
+        runs.into_iter()
+            .map(|run| {
+                run.join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    });
     let mut table = String::new();
     for (name, img, sum) in &got {
         table.push_str(&format!("    (\"{name}\", \"{img}\", \"{sum}\"),\n"));
