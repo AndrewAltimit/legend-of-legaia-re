@@ -18,9 +18,12 @@
   const recent = [];
   const started = Date.now();
 
+  /* A failing frame says the same thing sixty times a second: one line, counted. */
   function note(line) {
-    const secs = ((Date.now() - started) / 1000).toFixed(1);
-    recent.push(`[${secs}s] ${String(line).slice(0, 400)}`);
+    const text = String(line).slice(0, 400);
+    const last = recent[recent.length - 1];
+    if (last && last.text === text) { last.count++; return; }
+    recent.push({ at: ((Date.now() - started) / 1000).toFixed(1), text, count: 1 });
     if (recent.length > KEEP) recent.shift();
   }
 
@@ -76,7 +79,8 @@
       lines.push(`${key}: ${ask(() => localStorage.getItem(key))}`);
     }
     lines.push(`Recent warnings and errors (${recent.length}):`);
-    return lines.concat(recent).join('\n') + '\n';
+    const list = recent.map((r) => `[${r.at}s] ${r.text}${r.count > 1 ? ` (x${r.count})` : ''}`);
+    return lines.concat(list).join('\n') + '\n';
   }
 
   /* No clipboard on a plain-http page, or no permission: the text goes in a box. */

@@ -181,7 +181,6 @@ pub const FEATURE_STOP_SYMBOL: u8 = 7;
 /// The bonus round (`6`) passes depth `0` with target `-1`, which searches
 /// nothing and lands the reel on the next row: the three numbers you
 /// multiply are your own timing.
-// PORT: FUN_801d2114 (per-reel stop: target symbol + search depth by feature mode)
 pub fn stop_plan(rng: &mut SlotRng, feature_mode: u8, normal_target: u8) -> (usize, Option<u8>) {
     let (depth, target, _) = stop_plan_with_budget(rng, feature_mode, normal_target);
     (depth, target)
@@ -189,6 +188,7 @@ pub fn stop_plan(rng: &mut SlotRng, feature_mode: u8, normal_target: u8) -> (usi
 
 /// [`stop_plan`] with the reel's roll-in budget `DAT_801d3cf0[reel]`, the frames
 /// it may turn before it locks wherever it stands ([`roll_to_row`]).
+// PORT: FUN_801d2114 (per-reel stop: target symbol + search depth by feature mode)
 pub fn stop_plan_with_budget(
     rng: &mut SlotRng,
     feature_mode: u8,

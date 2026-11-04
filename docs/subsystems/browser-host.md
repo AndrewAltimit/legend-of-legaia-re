@@ -218,7 +218,7 @@ A line nothing listed is deferred: it plays when its row is served, a read and a
 a frame after the request. Neither path reaches the simulation, which never reads the XA
 lane back.
 
-**A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `legaia_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds.
+**A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `legaia_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds, and `SYSTEM.CNF` for another region's disc, which the desktop programs also refuse.
 
 A file with no `PROT.DAT` in its root is asked before it is read whole, so an archive of several gigabytes is refused without reading it; an image whose `PROT.DAT` is whole but whose later files are missing is asked after that first read. A refused file leaves the disc cache (the `{ rejected: true }` an `onLoad` may answer in `RomCache.attach`), so the next visit does not fail on it again with nothing picked. A bare `PROT.DAT` is still taken.
 

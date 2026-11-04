@@ -19,6 +19,9 @@ pub fn disc_problem_head_len() -> usize {
 
 const HEAD_SECTORS: usize = 128;
 
+/// The executable of the one disc the engine runs.
+const USA_EXECUTABLE: &str = "SCUS_942.54";
+
 /// [`problem`] for the page: two sentences for the player, empty when the file
 /// may be tried.
 #[wasm_bindgen]
@@ -71,12 +74,36 @@ pub fn problem(name: &str, head: &[u8], file_len: u64) -> Option<String> {
                 .into(),
         );
     }
+    // The desktop programs refuse another region's disc the same way. A patched
+    // USA disc keeps its executable and passes.
+    if let Some(cnf) = legaia_iso::iso9660::read_file_in_source(head, "SYSTEM.CNF")
+        && let Ok(detected) = legaia_iso::region::parse(&cnf)
+        && !detected.executable.eq_ignore_ascii_case(USA_EXECUTABLE)
+    {
+        return Some(format!(
+            "This is the {} release ({}). The engine runs the USA disc ({USA_EXECUTABLE}): \
+             choose that one.",
+            detected.region.name(),
+            detected.executable,
+        ));
+    }
     None
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The page asks ahead of its read, and a refused file leaves the cache.
+    #[test]
+    fn the_page_asks_and_forgets() {
+        let page = include_str!("../../../site/_content/play.html");
+        assert!(page.contains("wasm.disc_file_problem("));
+        assert!(page.contains("disc_problem_head_len()"));
+        assert!(page.contains("return { rejected: refused }"));
+        let cache = include_str!("../../../site/js/rom-cache.js");
+        assert!(cache.contains("v.rejected"));
+    }
 
     #[test]
     fn a_compressed_image_is_named() {
@@ -110,6 +137,27 @@ mod tests {
     #[test]
     fn a_bare_prot_dat_is_tried() {
         assert_eq!(problem("PROT.DAT", b"not a sector", 5000), None);
+    }
+
+    /// The disc with its `SYSTEM.CNF` naming the PAL executable. Skips without a
+    /// disc.
+    #[test]
+    fn another_regions_disc_is_refused() {
+        let Ok(path) = std::env::var("LEGAIA_DISC_BIN") else {
+            return;
+        };
+        let Ok(bytes) = std::fs::read(&path) else {
+            return;
+        };
+        let mut head = bytes[..disc_problem_head_len()].to_vec();
+        // Past the directory record of the same name.
+        let at = head
+            .windows(12)
+            .position(|w| w == b"\\SCUS_942.54")
+            .expect("the boot line in the head");
+        head[at + 1..at + 12].copy_from_slice(b"SCES_019.44");
+        let p = problem("disc.bin", &head, bytes.len() as u64).unwrap();
+        assert!(p.contains("SCES_019.44"), "{p}");
     }
 
     /// The disc's own bytes: whole, it is fine; its first sectors alone read
