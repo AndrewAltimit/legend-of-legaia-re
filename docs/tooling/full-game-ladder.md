@@ -670,6 +670,10 @@ party still holds when it reaches the door, and what a reload hands back:
   fit save within three milestones beside the latest one, as a player keeps an
   older slot. Once the latest save, unfit, has lost twice, the next reload is the
   fit one, and the stretches between are played again each as itself.
+- **A lone trainee goes back to the bed early.** A member alone with a working
+  rest ends an outing under four fifths of its HP, not 55%: nothing shares the
+  hits, and a level-1 Noa who walked on at 90 of 150 from `cave01`'s Terra met
+  three foes she could neither beat nor outrun.
 
 ### A rest that stops resting
 

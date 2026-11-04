@@ -467,7 +467,18 @@ fn pad_train_from(
         }
         let xp0 = party_xp(session);
         let gold0 = session.host.world.party.money;
-        let left = outing(session, if has_rest { 550 } else { 650 })?;
+        // A lone member with a working bed goes back to it early: nothing shares
+        // the hits, and a level-1 Noa who walked on at 90 of 150 HP from `cave01`'s
+        // Terra met three foes she could neither beat nor outrun.
+        let lone = session.host.world.present_party_list().len() == 1;
+        let floor = if lone && rest_works_here(session) {
+            800
+        } else if has_rest {
+            550
+        } else {
+            650
+        };
+        let left = outing(session, floor)?;
         let gained = party_xp(session) - xp0.min(party_xp(session))
             + u64::try_from(session.host.world.party.money - gold0).unwrap_or(0);
         if trace {
