@@ -1108,7 +1108,7 @@ fn list_text_ink(staging: u8) -> [f32; 4] {
 
 /// One menu-glyph sprite cell (numeral or arrow) at stage `pen`, mapped to
 /// the surface.
-fn list_cell_draw(
+pub(crate) fn list_cell_draw(
     font: &legaia_font::Font,
     id: u16,
     pen: (i32, i32),
@@ -1131,7 +1131,7 @@ fn list_cell_draw(
 }
 
 /// One name run in `ink` on stage pen `(pen, y)`; returns the pen advance.
-fn list_name_run(
+pub(crate) fn list_name_run(
     font: &legaia_font::Font,
     run: &[u8],
     ink: u8,

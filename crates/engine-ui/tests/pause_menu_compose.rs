@@ -256,6 +256,13 @@ fn compose_status(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
     ];
     let equip_rows = [("Weapon", "Sword"), ("Armor", "Vest")];
     let panel = StatusPanelView {
+        seru: None,
+        page: 0,
+        skills: &[],
+        spells: &[],
+        moves: &[],
+        list: None,
+        scroll: 0,
         name: "Vahn",
         level: 5,
         xp: 400,
@@ -272,6 +279,8 @@ fn compose_status(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
     };
     let names = ["Vahn", "Noa"];
     let satellite = StatusSatelliteView {
+        page: 0,
+        seru: None,
         party_names: &names,
         cursor: 0,
         name: "Vahn",
@@ -281,6 +290,7 @@ fn compose_status(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         ctx,
         PauseScreen::Status(StatusScreenView {
             panel: &panel,
+            icon_page: Default::default(),
             satellite: &satellite,
             ap: 40,
             atr_char: 0,

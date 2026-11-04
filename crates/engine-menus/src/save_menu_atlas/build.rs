@@ -500,6 +500,9 @@ pub fn menu_font_cells(
         }
         push(ids::PAGE_PREV, 7, (96, 48, 8, 8));
         push(ids::PAGE_NEXT, 7, (96, 56, 8, 8));
+        push(ids::SERU_TAG, 8, (0xD8, 0x30, 12, 12));
+        push(ids::LIST_UP, 7, (0xA8, 0x40, 8, 8));
+        push(ids::LIST_DOWN, 7, (0xA8, 0x48, 8, 8));
     }
     cells
 }

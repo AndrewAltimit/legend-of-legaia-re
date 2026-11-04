@@ -34,7 +34,7 @@ use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::inventory_use::{
     InventoryContext, InventoryUseSession, TargetRow as InvTargetRow,
 };
-use legaia_engine_menus::list_order::{LIST_ORDER_STEP_MAGIC, ListOrderRow, ListOrderSession};
+use legaia_engine_menus::list_order::ListOrderSession;
 use legaia_engine_menus::options::{OptionsInput, OptionsSession, OptionsState};
 use legaia_engine_menus::pause_screens::stat_record_from_character;
 use legaia_engine_menus::pause_screens::{ItemDetailText, ItemDisplayText};
@@ -147,10 +147,7 @@ impl FieldMenuSubsession {
                 }
             }
             FieldMenuRow::Magic => Self::Spells(build_spell_session(world, spell_catalog)),
-            FieldMenuRow::Status => Self::Status(
-                StatusScreenSession::new(status_snapshots(world))
-                    .with_spell_rows(status_spell_rows(world, spell_catalog)),
-            ),
+            FieldMenuRow::Status => Self::Status(StatusScreenSession::new(status_snapshots(world))),
             FieldMenuRow::Load => {
                 Self::Save(SaveSelectSession::for_rack(SaveSelectMode::Load, save_rack))
             }
@@ -293,17 +290,6 @@ impl FieldMenuSubsession {
                 });
             }
             Self::Status(s) => {
-                // Confirm on the shown character opens the reorder page -
-                // retail's own route, the confirm arm of sub-screen `0x15`'s
-                // character picker (`0x801DA3C8`). An empty list takes the
-                // reject arm (`ListOrderSession::open` answers `None`) and
-                // the press does nothing, exactly as retail buzzes and stays.
-                if pressed & PadButton::Cross.mask() != 0
-                    && let Some(order) = open_status_list_order(s)
-                {
-                    *self = Self::ListOrder(order);
-                    return;
-                }
                 let _ = s.tick(StatusInput::from_pad_edge(pressed));
             }
             Self::Save(s) => {

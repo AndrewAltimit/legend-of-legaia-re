@@ -51,6 +51,13 @@ pub fn tick_open_subsession(
     {
         apply_equip_swaps(session, *char_slot, world);
     }
+    // The Status page's list permuted its own copy; replay its exchanges onto
+    // the live record through the ported swap.
+    if let FieldMenuSubsession::Status(status) = active
+        && let Some(list) = status.take_closed_list()
+    {
+        let _ = apply_list_order_outcome(&list, world);
+    }
     active.take_rebound_mapping()
 }
 

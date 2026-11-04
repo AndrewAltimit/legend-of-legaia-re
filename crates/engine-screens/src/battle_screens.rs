@@ -820,7 +820,11 @@ pub fn battle_text_draws(
                 if let Some(model) = legaia_engine_battle_hud::battle_spell_menu_model(w) {
                     out.extend(crate::with_battle_spell_frame(&model, |frame| {
                         legaia_engine_ui::battle_item_ui::battle_spell_window_text(
-                            font, frame, origin, scale,
+                            font,
+                            frame,
+                            crate::pause_screens::list_arrows_blink(Some(w)),
+                            origin,
+                            scale,
                         )
                     }));
                 }
@@ -837,7 +841,11 @@ pub fn battle_text_draws(
         if let Some(model) = legaia_engine_battle_hud::battle_item_menu_model(w) {
             out.extend(crate::with_battle_item_frame(&model, |frame| {
                 legaia_engine_ui::battle_item_ui::battle_item_window_text(
-                    font, frame, origin, scale,
+                    font,
+                    frame,
+                    crate::pause_screens::list_arrows_blink(Some(w)),
+                    origin,
+                    scale,
                 )
             }));
         }

@@ -143,15 +143,19 @@ impl World {
             InventoryContext, InventoryUseSession, TargetRow,
         };
         let names = self.party.roster_names();
-        let mut items: Vec<u8> = self
+        // One entry per stack, each carrying its count: the window's rows
+        // print the bag's count (the list builder `FUN_80030628`).
+        let (mut items, mut counts): (Vec<u8>, Vec<u8>) = self
             .party
             .inventory
             .iter()
-            .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
-            .collect();
+            .filter(|(_, qty)| **qty > 0)
+            .map(|(id, qty)| (*id, *qty))
+            .unzip();
         // An expansion pack's battle consumables, under this fight's
         // aliases (none without a pack).
         items.extend(self.pack_battle_item_ids());
+        counts.resize(items.len(), 1);
         let pc = self.party.party_count.clamp(1, 3) as usize;
         let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
@@ -206,6 +210,7 @@ impl World {
             targets,
             InventoryContext::Battle,
         )
+        .with_bag_counts(counts)
     }
 
     /// Drive the open battle inventory submenu one frame from [`World::input`].

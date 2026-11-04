@@ -42,15 +42,16 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
         // window, growth values (the parenthesised number) from the
         // `+0x122..+0x12D` record window, ordered ATK/UDF/LDF | SPD/INT/AGL
         // (docs/subsystems/field-menu.md).
-        let live = member.live_stats();
         let growth = member.record_stats();
+        let block = status_stat_block(world, member, i as u8, hms.hp_max, hms.mp_max);
+        let word = |w: usize| block[w].clamp(0, 999) as u16;
         let stat_pairs: [(u16, u16); 6] = [
-            (live.atk, growth.atk),
-            (live.udf, growth.udf),
-            (live.ldf, growth.ldf),
-            (live.spd, growth.spd),
-            (live.int, growth.int),
-            (live.agl, growth.agl),
+            (word(3), growth.atk),
+            (word(4), growth.udf),
+            (word(5), growth.ldf),
+            (word(6), growth.spd),
+            (word(7), growth.int),
+            (word(2), growth.agl),
         ];
         // The grid's seven rows read the record through retail's own offset
         // tables (FUN_801D33D8 `0x801D3B4C..`): row 0 the per-character
@@ -123,9 +124,154 @@ pub fn status_snapshots(world: &World) -> Vec<StatusSnapshot> {
             // seats and roster indices coincide for `i < party_count`
             // (`World::enter_battle` seats the roster in order).
             status_flags: world.battle.status_effects.display_flags(i as u8),
+            seru_level: status_seru_level(member, i),
+            skills: status_skills(world, member),
+            spells: status_spells(world, member, i),
+            moves: status_moves(world, member, i),
         });
     }
     out
+}
+
+/// The stat block the status grid prints (`DAT_801EF080`, seeded by
+/// `FUN_801CF5D0` and summed by `FUN_801CF650`): the record's words plus the
+/// worn equipment's bonuses.
+fn status_stat_block(
+    world: &World,
+    member: &legaia_save::CharacterRecord,
+    slot: u8,
+    hp_max: u16,
+    mp_max: u16,
+) -> [i32; 8] {
+    let mut record = legaia_engine_menus::pause_screens::stat_record_from_character(member);
+    record.equip = legaia_engine_menus::equip_session::engine_equip_from_record(record.equip, slot);
+    legaia_engine_menus::pause_screens::menu_stat_block(
+        &record,
+        &world.tables.equipment_table,
+        hp_max,
+        mp_max,
+    )
+}
+
+/// The record's Ra-Seru byte's slot per character (`0x8007B424`).
+const RA_SERU_SLOT: [usize; 3] = [3, 2, 3];
+/// The first item id of each character's Ra-Seru run (`0x8007B434`).
+const RA_SERU_BASE: [u8; 3] = [0x01, 0x0A, 0x13];
+
+/// The worn Ra-Seru's level: the item id's place in its character's run
+/// (`0x801D3524..0x801D35C8`).
+fn status_seru_level(member: &legaia_save::CharacterRecord, char_slot: usize) -> Option<u8> {
+    let id = member.equipment().slots[*RA_SERU_SLOT.get(char_slot)?];
+    (id != 0).then(|| id.wrapping_sub(RA_SERU_BASE[char_slot]).wrapping_add(1))
+}
+
+/// The Skills page's rows: the record's three Goods bytes, each whose item
+/// grants a passive under `0x40` (`0x801D3EBC..0x801D3F38`).
+fn status_skills(
+    world: &World,
+    member: &legaia_save::CharacterRecord,
+) -> Vec<legaia_engine_menus::status_screen::StatusSkillRow> {
+    let Some(text) = world.menu.text.as_ref() else {
+        return Vec::new();
+    };
+    let Some(passives) = text.passives.as_ref() else {
+        return Vec::new();
+    };
+    member.equipment().slots[5..8]
+        .iter()
+        .filter_map(|&id| {
+            let (_, record) = passives.passive(id)?;
+            Some(legaia_engine_menus::status_screen::StatusSkillRow {
+                item_name: text.item_name(id).unwrap_or_default().to_string(),
+                effect_name: record.name.clone().unwrap_or_default(),
+                description: record.description.clone().unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+/// The Magic page's rows: empty with no Ra-Seru worn (`0x801D412C`), else the
+/// record's `+0x13D` / `+0x161` list.
+fn status_spells(
+    world: &World,
+    member: &legaia_save::CharacterRecord,
+    char_slot: usize,
+) -> Vec<legaia_engine_menus::status_screen::StatusSpellRow> {
+    if status_seru_level(member, char_slot).is_none() {
+        return Vec::new();
+    }
+    let names = world
+        .menu
+        .text
+        .as_ref()
+        .and_then(|t| t.spell_names.as_ref());
+    let ability = legaia_engine_battle::spells::record_ability_word(member);
+    let list = member.spell_list();
+    list.ids[..usize::from(list.count).min(list.ids.len())]
+        .iter()
+        .zip(list.levels)
+        .map(|(&id, level)| {
+            let mp = names.and_then(|n| n.mp(id)).unwrap_or(0);
+            legaia_engine_menus::status_screen::StatusSpellRow {
+                spell_id: id,
+                name: names
+                    .and_then(|n| n.name(id))
+                    .unwrap_or_default()
+                    .to_string(),
+                icon: names.and_then(|n| n.icon(id)),
+                level,
+                mp_cost: legaia_engine_battle_vm::battle_formulas::mp_cost_after_ability_bits(
+                    u16::from(mp),
+                    legaia_engine_battle_vm::battle_formulas::MpCostModifier::from_ability_flags(
+                        ability,
+                    ),
+                ),
+                description: names
+                    .and_then(|n| n.desc(id))
+                    .unwrap_or_default()
+                    .to_string(),
+            }
+        })
+        .collect()
+}
+
+/// The Moves page's rows: the record's `+0x186` ids against the arts table,
+/// keyed on `[character, id]` (`0x801D4468..0x801D44D4`). The AP halves with
+/// the record's `+0xF8` bit `0x800` (`0x801D4520..0x801D4534`).
+fn status_moves(
+    world: &World,
+    member: &legaia_save::CharacterRecord,
+    char_slot: usize,
+) -> Vec<legaia_engine_menus::status_screen::StatusMoveRow> {
+    let Some(text) = world.menu.text.as_ref() else {
+        return Vec::new();
+    };
+    let Some(arts) = text.arts.as_ref() else {
+        return Vec::new();
+    };
+    let halved =
+        u32::from_le_bytes(member.ability_bits()[4..8].try_into().unwrap_or([0; 4])) & 0x800 != 0;
+    let list = member.displayed_skills();
+    list.ids[..usize::from(list.count).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| {
+            let at = arts
+                .iter()
+                .position(|e| usize::from(e.character as u8) == char_slot && e.index == id)?;
+            let e = &arts[at];
+            Some(legaia_engine_menus::status_screen::StatusMoveRow {
+                id,
+                name_bytes: e.name_bytes.clone(),
+                ap: if halved { e.ap >> 1 } else { e.ap },
+                glyphs: e.glyphs.clone(),
+                description: text
+                    .art_descriptions
+                    .as_ref()
+                    .and_then(|d| d.get(at).cloned())
+                    .unwrap_or_default(),
+            })
+        })
+        .collect()
 }
 
 /// The Status-menu "Next Level" number. Retail (`FUN_801D33D8`) draws the

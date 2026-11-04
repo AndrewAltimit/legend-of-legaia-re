@@ -1674,7 +1674,7 @@ pub fn retail_older_buffer_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
 /// by the root row whose confirm opens it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetailMenu {
     /// `DAT_801E46A4`.
     pub subscreen: u8,
@@ -1697,6 +1697,16 @@ pub struct RetailMenu {
     /// The casino prize counter: the op `49 07` operand's block, armed
     /// directly since no root row reaches it.
     pub prize_block: Option<u8>,
+    /// A gold shop's sub-screen: the op `49 00` instruction bytes off the
+    /// entry-context pointer `_DAT_8007B450`, armed directly since no root
+    /// row reaches it.
+    pub shop_instr: Option<Vec<u8>>,
+    /// The presses past the root row's confirm (or past the shop's arm) that
+    /// reach this screen: a list behind a command window, a Status page.
+    pub path: Vec<legaia_engine_system::input::PadButton>,
+    /// The world map's map display (game mode `0x0D`): `L1` over a world-map
+    /// field, not a menu-overlay screen at all.
+    pub map_display: bool,
 }
 
 /// A title front-end screen the seed drives the boot front end to, read off
@@ -1728,6 +1738,20 @@ impl RetailMenu {
     /// no root row's.
     pub(super) fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
         use legaia_engine_menus::field_menu::FieldMenuRow;
+        if game_anchors::u8_at(ram, GAME_MODE) == GAME_MODE_MAP_DISPLAY {
+            return Ok(Self {
+                subscreen: 0,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: true,
+            });
+        }
         let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
         let card_grid = game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) == CARD_SUBMODE_GRID;
         if subscreen == 0 && card_grid {
@@ -1739,6 +1763,9 @@ impl RetailMenu {
                 title_continue: true,
                 title_screen: None,
                 prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
             });
         }
         let title_screen = match game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) {
@@ -1759,6 +1786,9 @@ impl RetailMenu {
                 title_continue: false,
                 title_screen: Some(screen),
                 prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
             });
         }
         if subscreen == 0 {
@@ -1777,6 +1807,9 @@ impl RetailMenu {
                 title_continue: false,
                 title_screen: None,
                 prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
             });
         }
         if subscreen == MENU_PRIZE_EXCHANGE {
@@ -1789,9 +1822,32 @@ impl RetailMenu {
                 title_screen: None,
                 // The disc's one counter, `koin1`'s, is `49 07 00`.
                 prize_block: Some(0),
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
+            });
+        }
+        if let Some(path) = shop_path(subscreen) {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                prize_block: None,
+                shop_instr: Some(shop_instruction(ram).ok_or_else(|| {
+                    format!(
+                        "shop sub-screen 0x{subscreen:02X} with no op 0x49 at the entry context"
+                    )
+                })?),
+                path,
+                map_display: false,
             });
         }
         let (row, equip_depth) = match subscreen {
+            MENU_ITEMS_USE | MENU_ITEMS_THROW => (FieldMenuRow::Items, 0),
+            MENU_SPELL_LIST => (FieldMenuRow::Magic, 0),
             MENU_EQUIP_PICK => (FieldMenuRow::Equip, 0),
             MENU_EQUIP_SLOTS => (FieldMenuRow::Equip, 1),
             MENU_EQUIP_CANDIDATES => (FieldMenuRow::Equip, 2),
@@ -1812,9 +1868,91 @@ impl RetailMenu {
             title_continue: false,
             title_screen: None,
             prize_block: None,
+            shop_instr: None,
+            path: pause_path(ram, subscreen),
+            map_display: false,
         })
     }
 }
+
+/// The presses past a pause-menu row's confirm that reach `subscreen`.
+fn pause_path(ram: &[u8], subscreen: u8) -> Vec<legaia_engine_system::input::PadButton> {
+    use legaia_engine_system::input::PadButton as P;
+    match subscreen {
+        MENU_ITEMS_USE => vec![P::Cross],
+        MENU_ITEMS_THROW => vec![P::Down, P::Cross],
+        MENU_SPELL_LIST => vec![P::Cross],
+        MENU_STATUS => {
+            // `FUN_801DA2A0`: the party cursor `DAT_801E46C4`, the page cursor
+            // `DAT_801E46C0` in its two columns of four (fold `5..=8` to
+            // `0..=3`), and steps `3..=7` with the page's list holding the pad.
+            let mut path = Vec::new();
+            let member = game_anchors::u32_at(ram, MENU_CURSOR_B) & 0xFFF;
+            path.extend(std::iter::repeat_n(P::Down, member as usize));
+            let page = match game_anchors::u32_at(ram, MENU_CURSOR_A) & 0xFFF {
+                c @ 5..=8 => c - 5,
+                c => c,
+            };
+            path.extend(std::iter::repeat_n(P::Right, page as usize));
+            if game_anchors::u32_at(ram, MENU_STEP) >= 3 {
+                path.push(P::Cross);
+            }
+            path
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The presses from a gold shop's root window to `subscreen`; `None` when it
+/// is no shop screen (`0x801E4F40` ids `0x1A..=0x1F`,
+/// [shop](../../../docs/subsystems/shop.md)). The buy lists' hand starts on
+/// the first row, which is the row the probe that made the state confirms.
+fn shop_path(subscreen: u8) -> Option<Vec<legaia_engine_system::input::PadButton>> {
+    use legaia_engine_system::input::PadButton as P;
+    Some(match subscreen {
+        0x1A => vec![],
+        0x1B => vec![P::Cross],
+        0x1C | 0x1D => vec![P::Cross, P::Cross],
+        0x1E => vec![P::Down, P::Cross],
+        0x1F => vec![P::Down, P::Cross, P::Cross],
+        _ => return None,
+    })
+}
+
+/// The op `0x49` sub-`0` instruction a shop session opened on, from the
+/// opcode byte: `_DAT_8007B450` points past the opcode at the record whose
+/// `+2` is the id count.
+fn shop_instruction(ram: &[u8]) -> Option<Vec<u8>> {
+    let record = game_anchors::u32_at(ram, SHOP_ENTRY_CONTEXT);
+    let opcode = (1..=2).map(|back| record.wrapping_sub(back)).find(|&va| {
+        (0x8000_0000..0x8020_0000).contains(&va) && game_anchors::u8_at(ram, va) == 0x49
+    })?;
+    let start = (opcode & 0x1F_FFFF) as usize;
+    ram.get(start..(start + 0x100).min(ram.len()))
+        .map(<[u8]>::to_vec)
+}
+
+/// The game-mode word `_DAT_8007B83C`.
+const GAME_MODE: u32 = 0x8007_B83C;
+/// The map display's game mode ([world-map](../../../docs/subsystems/world-map.md)).
+pub const GAME_MODE_MAP_DISPLAY: u8 = 0x0D;
+
+/// Items screen's Use list (`FUN_801D7E50`).
+pub const MENU_ITEMS_USE: u8 = 0x06;
+/// Items screen's Throw Out list (`FUN_801D8734`).
+pub const MENU_ITEMS_THROW: u8 = 0x07;
+/// Magic screen's spell list (`FUN_801D9110`).
+pub const MENU_SPELL_LIST: u8 = 0x0F;
+/// The Status row's screen (`FUN_801DA2A0`).
+pub const MENU_STATUS: u8 = 0x15;
+/// The sub-screen's step counter `DAT_801E46AC`.
+const MENU_STEP: u32 = 0x801E_46AC;
+/// `DAT_801E46C0`, the menu's second cursor word.
+const MENU_CURSOR_A: u32 = 0x801E_46C0;
+/// `DAT_801E46C4`, the menu's party cursor word.
+const MENU_CURSOR_B: u32 = 0x801E_46C4;
+/// `_DAT_8007B450`, the entry context a script-opened menu screen reads.
+const SHOP_ENTRY_CONTEXT: u32 = 0x8007_B450;
 
 /// The root list's own sub-screen id: the pause menu with no row open.
 pub const MENU_ROOT: u8 = 0x01;

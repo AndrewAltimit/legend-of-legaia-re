@@ -478,7 +478,55 @@ pub fn status_draws(
         .iter()
         .map(|e| (e.label, e.item_name.as_str()))
         .collect();
+    let seru_name = match snap.slot {
+        0 => ctx.label(MenuLabel::Meta, "Meta"),
+        1 => ctx.label(MenuLabel::Terra, "Terra"),
+        _ => ctx.label(MenuLabel::Ozma, "Ozma"),
+    };
+    let seru = snap.seru_level.map(|level| (seru_name, level));
+    let list = s.list().map(|l| ui::StatusListView {
+        cursor: l.cursor(),
+        scroll: l.scroll_top(),
+        latched: l.latched(),
+    });
+    let skills: Vec<ui::StatusSkillRowView<'_>> = snap
+        .skills
+        .iter()
+        .map(|r| ui::StatusSkillRowView {
+            item_name: &r.item_name,
+            effect_name: &r.effect_name,
+            description: &r.description,
+        })
+        .collect();
+    let spells: Vec<ui::StatusSpellRowView<'_>> = snap
+        .spells
+        .iter()
+        .map(|r| ui::StatusSpellRowView {
+            name: &r.name,
+            icon: r.icon,
+            level: r.level,
+            mp_cost: r.mp_cost,
+            description: &r.description,
+        })
+        .collect();
+    let moves: Vec<ui::StatusMoveRowView<'_>> = snap
+        .moves
+        .iter()
+        .map(|r| ui::StatusMoveRowView {
+            name_bytes: &r.name_bytes,
+            ap: r.ap,
+            glyphs: &r.glyphs,
+            description: &r.description,
+        })
+        .collect();
     let panel = ui::StatusPanelView {
+        seru,
+        page: s.page(),
+        skills: &skills,
+        spells: &spells,
+        moves: &moves,
+        list,
+        scroll: 0,
         name: &snap.name,
         level: snap.level,
         xp: snap.xp,
@@ -499,11 +547,25 @@ pub fn status_draws(
         cursor: s.cursor() as usize,
         name: &snap.name,
         level: snap.level,
+        page: s.page(),
+        seru,
+    };
+    let window_row = |row: usize, scroll: usize| {
+        (row >= scroll && row < scroll + legaia_engine_menus::list_order::LIST_ORDER_PAGE_ROWS)
+            .then(|| row - scroll)
+    };
+    let icon_page = ui::StatusIconPage {
+        page: s.page(),
+        seru: seru.is_some(),
+        skills: snap.skills.len(),
+        hand_row: list.and_then(|l| window_row(l.cursor, l.scroll)),
+        latched_row: list.and_then(|l| l.latched.and_then(|r| window_row(r, l.scroll))),
     };
     pause_screen_draws(
         ctx,
         PauseScreen::Status(StatusScreenView {
             panel: &panel,
+            icon_page,
             satellite: &satellite,
             ap: snap.ap as u16,
             // ATR icon by roster character id (slot) of the highlighted
@@ -1002,7 +1064,7 @@ pub fn equip_draws(
 
 /// The kind-4 kernel's blink gate on the frame word retail reads
 /// (`0x80084570 & 0x18`), the play clock's vsync counter.
-fn list_arrows_blink(world: Option<&World>) -> bool {
+pub(crate) fn list_arrows_blink(world: Option<&World>) -> bool {
     world.is_none_or(|w| {
         let vsyncs = w
             .clock

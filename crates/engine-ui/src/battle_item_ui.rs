@@ -22,10 +22,9 @@
 //!   511 sub-palette 7 - the save-select / dialog hand) at
 //!   `(167, 45 + 14*row)`: seat [`HAND_SEAT`], and the two captures one
 //!   Down press apart pin the **row pitch** at 14 ([`ROW_PITCH`]).
-//! * Eight rows fit a page ([`ROWS_PER_PAGE`]); the header reads
-//!   `PAGE <n>/<pages>` with the value right-aligned to the count column.
-//! * Counts are right-aligned at the interior's right edge
-//!   ([`COUNT_RIGHT_X`]).
+//! * Eight rows fit a page ([`ROWS_PER_PAGE`]); the header is the list
+//!   kernel's `PAGE` sprites and digits ([`LIST_HEADER_RECT`]).
+//! * Counts are the kernel's three-cell number field ([`COUNT_CELLS_X`]).
 //! * A **breadcrumb trail** of gold tab plates (`Begin`, the acting
 //!   member's name, `Item`) sits top-left - the same tab-banner 3-slice
 //!   the pause menu's title tab uses.
@@ -90,11 +89,16 @@ pub const ROW_PITCH: i32 = 14;
 pub const ROWS_PER_PAGE: usize = 8;
 /// Row text pen for row 0 (screenshot-read).
 pub const ROW_TEXT_SEAT: (i32, i32) = (186, 47);
-/// Right edge the per-row count is right-aligned to (screenshot-read).
-pub const COUNT_RIGHT_X: i32 = 307;
-/// `PAGE` header label pen (screenshot-read); the `n/m` value is
-/// right-aligned to [`COUNT_RIGHT_X`] on the same line.
-pub const PAGE_SEAT: (i32, i32) = (248, 33);
+/// The per-row count's three-cell number field, `WX + 0x6C` off the list
+/// kernel's pen `WX = 174` (`gaza2` item window capture).
+pub const COUNT_CELLS_X: i32 = 282;
+/// The list header's `(x, y, w)` for [`crate::shop_screen::page_header_draws`]
+/// (`battle_item_window_gaza2_retail`: tag at x 249, y 35; digits at 279, 293, 299).
+pub const LIST_HEADER_RECT: (i32, i32, i32) = (174, 37, 131);
+/// The next-page triangle's seat (same capture).
+pub const PAGE_NEXT_SEAT: (i32, i32) = (308, 94);
+/// The previous-page triangle's seat: the kernel's `WX - 0xC` off the same list.
+pub const PAGE_PREV_SEAT: (i32, i32) = (162, 94);
 /// Description line pen (screenshot-read).
 pub const DESC_SEAT: (i32, i32) = (16, 132);
 /// First breadcrumb tab's glyph pen (screenshot-read: the `Begin` plate
@@ -132,8 +136,6 @@ pub fn crumb_layout(
 
 // ----------------------------------------------------------------- palette
 
-/// Row ink for the highlighted row.
-pub const ROW_SELECTED: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 /// Row ink for an unselected admissible row.
 pub const ROW_IDLE: [f32; 4] = [0.82, 0.85, 0.92, 1.0];
 /// Row ink for a row the context filter refuses (kept visible, dimmed).
@@ -348,12 +350,59 @@ fn emit_layout(
     out.extend(draws);
 }
 
+/// Map draws from stage pixels to the surface.
+fn to_stage(draws: &mut [TextDraw], stage_origin: (i32, i32), scale: i32) {
+    for d in draws {
+        d.dst.0 = stage_origin.0 + d.dst.0 * scale;
+        d.dst.1 = stage_origin.1 + d.dst.1 * scale;
+        d.dst.2 *= scale as u32;
+        d.dst.3 *= scale as u32;
+    }
+}
+
+/// The list kernel's header on the battle windows: the `PAGE` tag and page
+/// digits (UI-icon sprites, the shop's), and the two page triangles while the
+/// frame word's blink is up (`0x80032FC0`).
+///
+/// PORT: FUN_80032A44 (header and page triangles)
+fn list_header_draws(
+    out: &mut Vec<TextDraw>,
+    font: &legaia_font::Font,
+    (page, pages): (usize, usize),
+    page_arrows: bool,
+    stage_origin: (i32, i32),
+    scale: i32,
+) {
+    let (x, y, w) = LIST_HEADER_RECT;
+    let mut draws = crate::shop_screen::page_header_draws(font, (x, y, w), page, pages);
+    if page_arrows {
+        let mut tri = |id: u16, at: (i32, i32)| {
+            if let Some(c) = font.sprite_cell(id) {
+                draws.push(TextDraw {
+                    dst: (at.0, at.1, c.w, c.h),
+                    src: (c.atlas_x, c.atlas_y, c.w, c.h),
+                    color: [1.0, 1.0, 1.0, 1.0],
+                });
+            }
+        };
+        if page < pages {
+            tri(legaia_font::sprite_cell_ids::PAGE_NEXT, PAGE_NEXT_SEAT);
+        }
+        if page > 1 {
+            tri(legaia_font::sprite_cell_ids::PAGE_PREV, PAGE_PREV_SEAT);
+        }
+    }
+    to_stage(&mut draws, stage_origin, scale);
+    out.append(&mut draws);
+}
+
 /// The window's text half: breadcrumb labels, the `PAGE n/m` header, the
 /// visible rows (name + right-aligned count, or the target roster during
 /// target select) and the description line.
 pub fn battle_item_window_text(
     font: &legaia_font::Font,
     frame: &BattleItemMenuFrame<'_>,
+    page_arrows: bool,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<TextDraw> {
@@ -380,24 +429,11 @@ pub fn battle_item_window_text(
 
     match frame.targets {
         None => {
-            // PAGE header.
-            emit(
+            list_header_draws(
                 &mut out,
                 font,
-                "PAGE",
-                PAGE_SEAT,
-                PAGE_LABEL_INK,
-                stage_origin,
-                scale,
-            );
-            let pages = format!("{}/{}", frame.page() + 1, frame.pages());
-            let pw = font.layout_ascii(&pages).advance_x as i32;
-            emit(
-                &mut out,
-                font,
-                &pages,
-                (COUNT_RIGHT_X - pw, PAGE_SEAT.1),
-                white,
+                (frame.page() + 1, frame.pages()),
+                page_arrows,
                 stage_origin,
                 scale,
             );
@@ -405,13 +441,9 @@ pub fn battle_item_window_text(
             let base = frame.page() * ROWS_PER_PAGE;
             for (i, row) in frame.rows.iter().skip(base).take(ROWS_PER_PAGE).enumerate() {
                 let y = ROW_TEXT_SEAT.1 + i as i32 * ROW_PITCH;
-                let ink = if !row.admissible {
-                    ROW_DIMMED
-                } else if frame.cursor == Some(base + i) {
-                    ROW_SELECTED
-                } else {
-                    ROW_IDLE
-                };
+                // The kernel inks a row by its enable bit alone; the hand is
+                // what marks the row under the cursor.
+                let ink = if row.admissible { ROW_IDLE } else { ROW_DIMMED };
                 emit(
                     &mut out,
                     font,
@@ -421,17 +453,10 @@ pub fn battle_item_window_text(
                     stage_origin,
                     scale,
                 );
-                let count = format!("{}", row.count);
-                let cw = font.layout_ascii(&count).advance_x as i32;
-                emit(
-                    &mut out,
-                    font,
-                    &count,
-                    (COUNT_RIGHT_X - cw, y),
-                    ink,
-                    stage_origin,
-                    scale,
-                );
+                let mut cells =
+                    crate::num_field_draws(font, u64::from(row.count), COUNT_CELLS_X, y, 3, ink);
+                to_stage(&mut cells, stage_origin, scale);
+                out.append(&mut cells);
             }
         }
         Some(_) => {
@@ -563,42 +588,25 @@ pub fn battle_spell_window_sprites(
 pub fn battle_spell_window_text(
     font: &legaia_font::Font,
     frame: &BattleSpellMenuFrame<'_>,
+    page_arrows: bool,
     stage_origin: (i32, i32),
     stage_scale: u32,
 ) -> Vec<TextDraw> {
     let scale = stage_scale.max(1) as i32;
     let mut out = Vec::new();
     let white = [1.0, 1.0, 1.0, 1.0];
-    emit(
+    list_header_draws(
         &mut out,
         font,
-        "PAGE",
-        PAGE_SEAT,
-        PAGE_LABEL_INK,
-        stage_origin,
-        scale,
-    );
-    let pages = format!("{}/{}", frame.page() + 1, frame.pages());
-    let pw = font.layout_ascii(&pages).advance_x as i32;
-    emit(
-        &mut out,
-        font,
-        &pages,
-        (COUNT_RIGHT_X - pw, PAGE_SEAT.1),
-        white,
+        (frame.page() + 1, frame.pages()),
+        page_arrows,
         stage_origin,
         scale,
     );
     let base = frame.page() * ROWS_PER_PAGE;
     for (i, row) in frame.rows.iter().skip(base).take(ROWS_PER_PAGE).enumerate() {
         let y = ROW_TEXT_SEAT.1 + i as i32 * ROW_PITCH;
-        let ink = if !row.admissible {
-            ROW_DIMMED
-        } else if frame.cursor == Some(base + i) {
-            ROW_SELECTED
-        } else {
-            ROW_IDLE
-        };
+        let ink = if row.admissible { ROW_IDLE } else { ROW_DIMMED };
         // Retail draws the raw name string, so its leading `0xCE op 0x20`
         // draws the plate at the row pen and the name one table width plus
         // a space on - with the escape sprites attached, lay it out whole.
@@ -813,7 +821,7 @@ mod tests {
     fn text_rows_land_on_the_pinned_pens() {
         let font = legaia_font::Font::placeholder();
         let all = rows(2);
-        let draws = battle_item_window_text(&font, &frame(&all, 0), (0, 0), 1);
+        let draws = battle_item_window_text(&font, &frame(&all, 0), true, (0, 0), 1);
         assert!(!draws.is_empty());
         // Something draws on row 0's baseline and row 1's baseline.
         for row in 0..2i32 {
@@ -823,15 +831,12 @@ mod tests {
                 "row {row} has no glyphs at y={y}"
             );
         }
-        // Counts end at the pinned right edge.
-        // Row 0's count is "1"; its pen is right-aligned so the advance
-        // ends exactly at the pinned column edge.
-        let count_pen = COUNT_RIGHT_X - font.layout_ascii("1").advance_x as i32;
+        // Row 0's count "1" sits in the last of the field's three cells.
         assert!(
             draws
                 .iter()
-                .any(|d| d.dst.0 == count_pen && d.dst.1 == ROW_TEXT_SEAT.1),
-            "count column is right-aligned to x={COUNT_RIGHT_X}"
+                .any(|d| d.dst.0 >= COUNT_CELLS_X + 16 && d.dst.1 == ROW_TEXT_SEAT.1),
+            "count is right-aligned in its cells from x={COUNT_CELLS_X}"
         );
         // Description line at its pen.
         assert!(draws.iter().any(|d| d.dst.1 == DESC_SEAT.1));
@@ -888,20 +893,25 @@ mod tests {
             );
         }
         assert!(!sprites.is_empty(), "the breadcrumb trail stays");
-        let draws = battle_item_window_text(&font, &f, (0, 0), 1);
+        let draws = battle_item_window_text(&font, &f, true, (0, 0), 1);
         // No text on the strip's row (the bar's), none in the list band, no
         // PAGE header, no description line - the crumbs alone.
         let has = |y: i32| draws.iter().any(|d| d.dst.1 == y);
         assert!(!has(TARGET_NAME_SEAT.1), "the bar's row is the HUD's");
         assert!(!has(TARGET_HP_LABEL_SEAT.1), "no HP/MP text stand-ins");
         assert!(!has(ROW_TEXT_SEAT.1), "no roster column in the list band");
-        assert!(!has(PAGE_SEAT.1), "no PAGE header during target select");
+        assert!(
+            !draws
+                .iter()
+                .any(|d| d.dst.0 > 240 && d.dst.1 < ROW_TEXT_SEAT.1),
+            "no PAGE header during target select"
+        );
         assert!(!has(DESC_SEAT.1), "the description closes with its window");
         assert!(has(CRUMB_SEAT0.1), "breadcrumb labels drawn");
         // The third breadcrumb is the held item's name, not `Item`.
         assert_eq!(f.third_crumb(), all[1].name);
         // By contrast, browsing draws the description at its pen.
-        let browse = battle_item_window_text(&font, &frame(&all, 1), (0, 0), 1);
+        let browse = battle_item_window_text(&font, &frame(&all, 1), true, (0, 0), 1);
         assert!(browse.iter().any(|d| d.dst.1 == DESC_SEAT.1));
     }
 
@@ -1006,7 +1016,7 @@ mod tests {
                 "tab plate at x {x}"
             );
         }
-        let text = battle_spell_window_text(&font, &frame, (0, 0), 1);
+        let text = battle_spell_window_text(&font, &frame, true, (0, 0), 1);
         assert!(!text.is_empty());
         for t in &text {
             let in_list = t.dst.0 >= LIST_WINDOW.0;
@@ -1054,7 +1064,7 @@ mod tests {
             description: &[],
             level_mp: None,
         };
-        let text = battle_spell_window_text(&font, &frame, (0, 0), 1);
+        let text = battle_spell_window_text(&font, &frame, true, (0, 0), 1);
         let y = ROW_TEXT_SEAT.1;
         let plate = text
             .iter()

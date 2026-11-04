@@ -51,6 +51,11 @@ pub enum MenuLabel {
     ApUsed,
     Command,
     NoMoves,
+    /// The Ra-Seru names the Status screen's header prints
+    /// (`0x801E46D4 + char * 4`).
+    Meta,
+    Terra,
+    Ozma,
     /// The shop picker and notes.
     Buy,
     Sell,
@@ -103,7 +108,7 @@ pub enum MenuLabel {
 
 impl MenuLabel {
     /// Every label, in pool order.
-    pub const ALL: [MenuLabel; 67] = [
+    pub const ALL: [MenuLabel; 70] = [
         Self::DisplayOff,
         Self::Gradual,
         Self::Immediate,
@@ -163,6 +168,9 @@ impl MenuLabel {
         Self::ApUsed,
         Self::Command,
         Self::NoMoves,
+        Self::Meta,
+        Self::Terra,
+        Self::Ozma,
         Self::Buy,
         Self::Sell,
         Self::Quit,
@@ -235,6 +243,9 @@ impl MenuLabel {
             Self::ApUsed => 0x801C_EB58,
             Self::Command => 0x801C_EB64,
             Self::NoMoves => 0x801C_EB70,
+            Self::Meta => 0x801C_E998,
+            Self::Terra => 0x801C_E990,
+            Self::Ozma => 0x801C_E988,
             Self::Buy => 0x801C_EB94,
             Self::Sell => 0x801C_EB9C,
             Self::Quit => 0x801C_EBA4,
@@ -352,6 +363,6 @@ mod tests {
         assert!(vas.iter().all(|&v| (0x801C_E81C..0x801C_EC78).contains(&v)));
         vas.sort_unstable();
         vas.dedup();
-        assert_eq!(vas.len(), 67);
+        assert_eq!(vas.len(), 70);
     }
 }

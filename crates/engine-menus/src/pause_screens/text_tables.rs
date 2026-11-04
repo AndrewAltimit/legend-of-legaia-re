@@ -15,6 +15,8 @@ pub struct MenuTextTables {
     /// The arts-name table (`DAT_80075EC4`, [`legaia_art::arts_table`]) - what
     /// the `0xC5` markup token resolves against, keyed on `[character, art]`.
     pub arts: Option<Vec<legaia_art::arts_table::ArtTableEntry>>,
+    /// Each arts-table record's description string, parallel to [`Self::arts`].
+    pub art_descriptions: Option<Vec<Vec<u8>>>,
     /// The post-battle level-up window's seven lines, raw MES bytes, index
     /// `mask - 1` (screen elements `0x45..=0x4B`,
     /// [`legaia_ui_formats::screen_elements::RECORD_LEVEL_UP_BASE`]).
@@ -37,6 +39,7 @@ impl MenuTextTables {
             spell_names: legaia_game_tables::spell_names::SpellNameTable::from_scus(scus),
             passives: legaia_game_tables::accessory_passive::AccessoryPassiveTable::from_scus(scus),
             arts: legaia_art::arts_table::parse_from_scus(scus),
+            art_descriptions: legaia_art::arts_table::raw_descriptions_from_scus(scus),
             level_up_lines: (1..=7)
                 .map(|mask| {
                     legaia_ui_formats::screen_elements::payload_string(

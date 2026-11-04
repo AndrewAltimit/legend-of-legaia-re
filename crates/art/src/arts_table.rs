@@ -309,6 +309,24 @@ pub fn parse_from_scus(scus: &[u8]) -> Option<Vec<ArtTableEntry>> {
     Some(out)
 }
 
+/// Every record's description string (`+0x10` pointer) as stored, `|` line
+/// breaks kept, parallel to [`parse_from_scus`]: the Status screen's Moves list
+/// prints it under the row the hand is on (`0x801D46D8`).
+pub fn raw_descriptions_from_scus(scus: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let map = ExeMap::parse(scus)?;
+    let mut out = Vec::new();
+    for i in 0..64usize {
+        let o = map.off(TABLE_VA + (i * RECORD_STRIDE) as u32)?;
+        let rec = scus.get(o..o + RECORD_STRIDE)?;
+        if rec[0] == SENTINEL_KEY || character_for_row(rec[0]).is_none() {
+            break;
+        }
+        let ptr = u32::from_le_bytes(rec[0x10..0x14].try_into().ok()?);
+        out.push(read_raw_name(scus, &map, ptr).unwrap_or_default());
+    }
+    Some(out)
+}
+
 /// One arts-table record with the raw editing metadata an in-place rewriter
 /// needs: the record's own file offset, the `+8` command-glyph pointer, plus
 /// the decoded view. The `+8` pointer is the lever the arts-combo randomizer

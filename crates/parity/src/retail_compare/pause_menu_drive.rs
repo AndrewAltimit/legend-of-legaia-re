@@ -22,6 +22,13 @@ pub const CARD_READ_SETTLE_TICKS: u64 = 160;
 /// Ticks the prize counter's windows take to slide in after the arm.
 pub const PRIZE_SETTLE_TICKS: u64 = 90;
 
+/// Ticks the map display takes to fade up after `L1`.
+pub const MAP_DISPLAY_SETTLE_TICKS: u64 = 120;
+
+/// Ticks between two scripted presses inside a shop: the widget scripts of
+/// the screen a confirm opens run before the next one takes the pad.
+pub const SHOP_PRESS_GAP: u64 = 45;
+
 /// The pad edges that reach `menu` from a settled field, as `(tick offset,
 /// button)` pairs from the first press: `Start`, `Down` until the root
 /// cursor (opening on row `0`) sits on the row, `Cross`. The Equip row opens
@@ -32,6 +39,15 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
     use legaia_engine_system::input::PadButton;
     if menu.prize_block.is_some() {
         return Vec::new();
+    }
+    if menu.map_display {
+        return vec![(0, PadButton::L1)];
+    }
+    if menu.shop_instr.is_some() {
+        return (0u64..)
+            .zip(&menu.path)
+            .map(|(i, b)| (PRIZE_SETTLE_TICKS + i * SHOP_PRESS_GAP, *b))
+            .collect();
     }
     let mut out = vec![(0, PadButton::Start)];
     let mut t = MENU_OPEN_WIPE_TICKS;
@@ -47,6 +63,9 @@ pub fn pause_menu_presses(menu: &RetailMenu) -> Vec<(u64, legaia_engine_system::
         press(PadButton::Down);
     }
     press(PadButton::Cross);
+    for b in &menu.path {
+        press(*b);
+    }
     if menu.equip_depth >= 1 {
         press(PadButton::Cross);
     }
@@ -67,6 +86,12 @@ pub fn pause_menu_drive_ticks(menu: &RetailMenu) -> u64 {
     if menu.prize_block.is_some() {
         return PRIZE_SETTLE_TICKS;
     }
+    if menu.map_display {
+        return MAP_DISPLAY_SETTLE_TICKS;
+    }
+    if menu.shop_instr.is_some() {
+        return PRIZE_SETTLE_TICKS + menu.path.len() as u64 * SHOP_PRESS_GAP + PRIZE_SETTLE_TICKS;
+    }
     let settle = if menu.card_grid {
         CARD_READ_SETTLE_TICKS
     } else if menu.subscreen == MENU_ROOT {
@@ -86,6 +111,9 @@ pub(super) fn drive_pause_menu(
 ) -> Result<Option<u8>> {
     use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::EquipState;
+    use legaia_engine_menus::pause_screens::PauseItemsFocus;
+    use legaia_engine_menus::spell_menu::SpellMenuPhase;
+    let other_row_id = |sub: &FieldMenuSubsession| sub.row().retail_subscreen();
     if let Some(block) = menu.prize_block {
         // A headless session reads no menu overlay on boot; its table is what
         // the arm stands on.
@@ -104,6 +132,12 @@ pub(super) fn drive_pause_menu(
             .is_some()
             .then_some(MENU_PRIZE_EXCHANGE));
     }
+    if let Some(instr) = &menu.shop_instr {
+        let armed = session.host.world.try_arm_field_shop(instr);
+        let mut screen = legaia_engine_menu_runtime::menu_runtime::MenuRuntime::new("");
+        session.poll_field_overlay(&mut screen);
+        return Ok(armed.then_some(menu.subscreen));
+    }
     let presses = pause_menu_presses(menu);
     for t in 0..=pause_menu_drive_ticks(menu) {
         let mask = presses
@@ -114,6 +148,9 @@ pub(super) fn drive_pause_menu(
         session.tick()?;
     }
     session.host.world.input.set_pad(0);
+    if menu.map_display {
+        return Ok(session.host.world.map_display_owns_pad().then_some(0));
+    }
     Ok(match (&session.field_menu, &session.field_menu_sub) {
         (None, _) => None,
         (Some(_), None) => Some(0x01),
@@ -124,6 +161,17 @@ pub(super) fn drive_pause_menu(
             FieldMenuSubsession::Equip { session, .. } => match session.state() {
                 EquipState::SlotPicker { .. } => MENU_EQUIP_SLOTS,
                 _ => MENU_EQUIP_CANDIDATES,
+            },
+            FieldMenuSubsession::Items(items) => match items.focus {
+                PauseItemsFocus::Command => other_row_id(sub),
+                PauseItemsFocus::ThrowOutList | PauseItemsFocus::ThrowOutConfirm => {
+                    MENU_ITEMS_THROW
+                }
+                _ => MENU_ITEMS_USE,
+            },
+            FieldMenuSubsession::Spells(spells) => match spells.phase() {
+                SpellMenuPhase::CharSelect { .. } => other_row_id(sub),
+                _ => MENU_SPELL_LIST,
             },
             other => other.row().retail_subscreen(),
         }),

@@ -32,6 +32,8 @@ pub const LIST_ORDER_PAGE_ROWS: usize = 7;
 /// their running twins; only `6` carries the swap arm, which is why a
 /// session built for another source browses without ever latching.
 pub const LIST_ORDER_STEP_MAGIC: u8 = 6;
+/// The Moves list's running step (browse only: no exchange arm).
+pub const LIST_ORDER_STEP_MOVES: u8 = 7;
 
 /// One row of the page: the id the record holds and the label to print.
 #[derive(Debug, Clone, PartialEq, Eq)]

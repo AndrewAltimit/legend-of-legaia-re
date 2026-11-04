@@ -174,6 +174,10 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_SEAT_PRIZE=<tick>:<block>`: arm the casino prize counter (op
     /// `49 07 <block>`) at that tick, which no root row reaches.
     pub prize_at: Option<(u64, u8)>,
+    /// `LEGAIA_SEAT_SHOP=<tick>:<hex>`: arm a gold shop from the op `49 00`
+    /// instruction bytes a retail state's entry context holds, which no root
+    /// row reaches. Set by the retail-compare child.
+    pub shop_instr_at: Option<(u64, Vec<u8>)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_engine_capture::phase_gate::PhaseGate`]) instead of
@@ -975,6 +979,13 @@ impl ScreenshotConfig {
             prize_at: std::env::var("LEGAIA_SEAT_PRIZE").ok().and_then(|v| {
                 let (t, b) = v.split_once(':')?;
                 Some((t.parse().ok()?, b.parse().ok()?))
+            }),
+            shop_instr_at: std::env::var("LEGAIA_SEAT_SHOP").ok().and_then(|v| {
+                let (t, hex) = v.split_once(':')?;
+                let bytes = (0..hex.len() / 2)
+                    .map(|i| u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok())
+                    .collect::<Option<Vec<u8>>>()?;
+                Some((t.parse().ok()?, bytes))
             }),
             shop_at: std::env::var("LEGAIA_CAPTURE_SHOP").ok().and_then(|v| {
                 let (idx, tick) = v.trim().split_once('@')?;

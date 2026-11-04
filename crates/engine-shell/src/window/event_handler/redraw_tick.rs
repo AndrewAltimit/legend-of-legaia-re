@@ -410,6 +410,15 @@ impl PlayWindowApp {
                 .world
                 .try_arm_prize_exchange(&[0x49, 0x07, block]);
         }
+        if let Some(instr) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.shop_instr_at.as_ref())
+            .filter(|(t, _)| *t == self.tick_no)
+            .map(|(_, instr)| instr.clone())
+        {
+            let _ = self.session.host.world.try_arm_field_shop(&instr);
+        }
         if self.screenshot.is_some() {
             let scripted_pad = self
                 .screenshot

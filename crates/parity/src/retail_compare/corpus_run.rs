@@ -748,6 +748,10 @@ pub(super) fn menu_image(
     if let Some(block) = menu.prize_block {
         env.push(("LEGAIA_SEAT_PRIZE", format!("{first}:{block}")));
     }
+    if let Some(instr) = &menu.shop_instr {
+        let hex: String = instr.iter().map(|b| format!("{b:02x}")).collect();
+        env.push(("LEGAIA_SEAT_SHOP", format!("{first}:{hex}")));
+    }
     match crate::retail_compare_image::engine_frame_with(
         exe,
         opts.extracted,
