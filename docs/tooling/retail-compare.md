@@ -2651,6 +2651,12 @@ The yaw counter runs through the same wait with no store of its own, so the band
 That capture's `image` reads `.414` to `.805` on the RAM's word and `.986` on
 the displayed one.
 
+A monster's magic band seats the same word: the clip commit raises the latch
+(`0x8004E2C0`), so the weight and the ambient base run from there, and a frame
+the RAM holds after a clip's first passes drew both a display lag earlier
+(`RetailBattle::displayed_ambient_base`, `LEGAIA_BATTLE_AMBIENT_BASE`). This is
+what the ice stage's `battle_noaru_*` casts were reading darker than retail.
+
 A capture past the band's start read its counter that many ticks into `0x70`
 too, so for a `0x70` gate the hold stands short of retail's counter by the
 module ticks the band takes to reach the gate's arm and countdown

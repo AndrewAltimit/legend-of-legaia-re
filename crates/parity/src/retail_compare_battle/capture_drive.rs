@@ -428,7 +428,7 @@ impl RetailBattle {
         if !landed {
             return None;
         }
-        let passes = case6_walk_passes(&self.pass_ring);
+        let passes = case6_walk_passes(&self.ring_steps);
         let start = self.walk_start(pin)?;
         let caster = usize::from(self.active_actor);
         let [gx, gz] = (*self.ground.get(caster)?)?;
@@ -1369,6 +1369,20 @@ impl RetailBattle {
         } else {
             w.saturating_sub(64 * self.display_phase_lag)
         })
+    }
+
+    /// The ambient base the displayed frame coloured the ground grid from, on a
+    /// monster's magic capture: the latch is up, so `FUN_80050120` took `8` a
+    /// channel a vsync off the base since that frame was drawn, from a ceiling of
+    /// `0x80`. A base on the floor `0x20` may have sat there for those vsyncs, so
+    /// it stays as read, the way a weight on a ceiling does
+    /// ([`Self::displayed_backdrop_cue`]).
+    pub fn displayed_ambient_base(&self) -> Option<u8> {
+        if !self.monster_magic_band_age() {
+            return None;
+        }
+        let base = u16::from(self.ambient_word).checked_sub(0x40)?;
+        (base > 0x20).then(|| (base + 8 * self.display_lag).min(0x80) as u8)
     }
 
     /// A monster's Attack captured in a round every party seat committed

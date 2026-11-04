@@ -607,6 +607,9 @@ pub(super) fn battle_image(
     if let Some(w) = battle.displayed_backdrop_cue() {
         env.push(("LEGAIA_BATTLE_BACKDROP_CUE", w.to_string()));
     }
+    if let Some(b) = battle.displayed_ambient_base() {
+        env.push(("LEGAIA_BATTLE_AMBIENT_BASE", b.to_string()));
+    }
     // The cast's live parts where retail's passes had put them: a part
     // rolled off `rand()` or aged by the frame-skip history stands where no
     // replay reproduces.

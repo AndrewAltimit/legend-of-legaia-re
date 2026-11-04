@@ -517,6 +517,9 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_BATTLE_BACKDROP_CUE=<weight>`: the backdrop pair's depth-cue
     /// weight a capture-band capture holds, stood on at the captured phase.
     pub battle_backdrop_cue: Option<u16>,
+    /// `LEGAIA_BATTLE_AMBIENT_BASE=<base>`: the ambient base the captured frame's
+    /// ground grid is coloured from (`RetailBattle::displayed_ambient_base`).
+    pub battle_ambient_base: Option<u8>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -1221,6 +1224,9 @@ impl ScreenshotConfig {
                 .and_then(|v| {
                     legaia_engine_battle_loop::battle_state::CaptureApproach::from_env(&v)
                 }),
+            battle_ambient_base: std::env::var("LEGAIA_BATTLE_AMBIENT_BASE")
+                .ok()
+                .and_then(|s| s.parse().ok()),
             battle_backdrop_cue: std::env::var("LEGAIA_BATTLE_BACKDROP_CUE")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

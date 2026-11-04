@@ -385,6 +385,15 @@ impl PlayWindowApp {
         {
             self.session.host.world.seat_battle_backdrop_cue(w);
         }
+        if let Some(b) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_ambient_base)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+        {
+            self.session.host.world.battle.ambient_stored = [b; 3];
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)

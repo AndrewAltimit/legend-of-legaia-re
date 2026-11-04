@@ -995,7 +995,7 @@ impl RetailBattle {
                 game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k as u32 * 4)
             }),
             turn_cursor: game_anchors::u8_at(ram, ctx + 0x1A),
-            pass_ring: recent_pass_steps(ram),
+            ambient_word: game_anchors::u8_at(ram, 0x8007_B7B0),
             cam_depth: game_anchors::u16_at(ram, ctx + 0x6D0),
             seat_category: (0..8u32)
                 .map(|slot| {
