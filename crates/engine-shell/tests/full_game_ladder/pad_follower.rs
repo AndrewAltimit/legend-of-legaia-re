@@ -48,6 +48,10 @@ pub(super) fn inert_band(
     })
 }
 
+/// `LEGAIA_FGL_WALK_DEBUG`, read once: the walk's per-step line asks each frame.
+static WALK_DEBUG: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some());
+
 pub(super) fn pad_avoid(session: &NativeSession, keep: Option<(i16, i16)>) -> HashSet<(i32, i32)> {
     use legaia_engine_field::man_field_scripts::partition2_record_gates;
     let mut out = hazards(session, "");
@@ -572,9 +576,7 @@ pub(super) fn pad_walk(
         pad_budget(session)?;
         watch_clocks(session);
         // Per overworld tile: the encounter step counter it left behind.
-        if std::env::var_os("LEGAIA_FGL_WALK_DEBUG").is_some()
-            && session.host.world.mode == SceneMode::WorldMap
-        {
+        if *WALK_DEBUG && session.host.world.mode == SceneMode::WorldMap {
             let (x, z) = player_xz(session);
             let t = dispatch_tile(x, z);
             if traced_tile != Some(t) {

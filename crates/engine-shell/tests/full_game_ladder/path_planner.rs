@@ -892,8 +892,54 @@ struct PlanMemo {
 /// The cells [`PlanMemo`] may hold before it starts over.
 const PLAN_MEMO_CELLS: usize = 4_000_000;
 
+/// Lattice cells a side the wall table holds: the whole `0x4000`-unit grid.
+const WALL_TABLE_SIDE: usize = 512;
+
+/// [`World::field_dir_blocked`] per lattice cell and direction, for one wall
+/// grid: a search asks it twelve probes a cell, and its answer is a function of
+/// the grid alone. A byte holds four answers and which of them are known.
+#[derive(Default)]
+struct WallTable {
+    grid: u64,
+    cells: Vec<u8>,
+}
+
+impl WallTable {
+    fn for_grid(mut self, grid: u64) -> Self {
+        if self.grid != grid || self.cells.is_empty() {
+            self.grid = grid;
+            self.cells.clear();
+            self.cells.resize(WALL_TABLE_SIDE * WALL_TABLE_SIDE, 0);
+        }
+        self
+    }
+
+    fn blocked(&mut self, w: &legaia_engine_core::world::World, cell: Cell, dir: usize) -> bool {
+        let (cx, cz) = cell_center(cell);
+        let (x, z) = (cell.0 as usize, cell.1 as usize);
+        if x >= WALL_TABLE_SIDE || z >= WALL_TABLE_SIDE {
+            return w.field_dir_blocked(cx, cz, dir);
+        }
+        let byte = &mut self.cells[z * WALL_TABLE_SIDE + x];
+        let bit = 1u8 << dir;
+        if *byte & (bit << 4) == 0 {
+            *byte |= bit << 4;
+            if w.field_dir_blocked(cx, cz, dir) {
+                *byte |= bit;
+            }
+        }
+        *byte & bit != 0
+    }
+}
+
 thread_local! {
     static PLAN_MEMO: std::cell::RefCell<PlanMemo> = std::cell::RefCell::new(PlanMemo::default());
+    static WALL_TABLE: std::cell::Cell<Option<WallTable>> = const { std::cell::Cell::new(None) };
+    /// [`overworld_portal_sites`] per scene: a function of the scene's script
+    /// and triggers, asked afresh at every walk.
+    static PORTAL_SITES: std::cell::RefCell<
+        HashMap<String, std::rc::Rc<Vec<legaia_engine_field::man_field_scripts::OverworldPortalSite>>>,
+    > = std::cell::RefCell::new(HashMap::new());
 }
 
 /// The A* behind [`plan_path`]: the route toward `goal`'s tile - or toward
@@ -1044,11 +1090,17 @@ pub(super) fn plan_search(
     // Everything below reads the world only through what has been gathered
     // above and the wall grid, so these inputs name the search's result. A
     // debug run prints as it searches, so it always searches.
+    let grid_key = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        w.terrain.collision_grid.hash(&mut h);
+        h.finish()
+    };
     let memo_key = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
         (from, goal, gc).hash(&mut h);
-        w.terrain.collision_grid.hash(&mut h);
+        grid_key.hash(&mut h);
         blockers.hash_boxes(&mut h);
         doors.hash(&mut h);
         platforms.hash(&mut h);
@@ -1088,6 +1140,10 @@ pub(super) fn plan_search(
     let start_f = s.h(from);
     s.nodes.open.push(start_f, 0, from);
     let mut best = from;
+    let mut walls = WALL_TABLE
+        .with(std::cell::Cell::take)
+        .unwrap_or_default()
+        .for_grid(grid_key);
     // Reused per expanded cell: the platforms and door leaves this cell may
     // pass, and the doors its step probes can touch.
     let mut skip: Vec<(i16, i16)> = Vec::new();
@@ -1176,7 +1232,7 @@ pub(super) fn plan_search(
                 }
                 continue;
             }
-            if w.field_dir_blocked(cx, cz, dir) {
+            if walls.blocked(w, cur, dir) {
                 continue;
             }
             let (nt, ct) = (dispatch_tile(nx, nz), dispatch_tile(cx, cz));
@@ -1270,6 +1326,7 @@ pub(super) fn plan_search(
             s.step(None, cur, next, gcur + 1);
         }
     }
+    WALL_TABLE.with(|t| t.set(Some(walls)));
     let cells = s.nodes.len();
     PLAN_STATS.with(|p| {
         let (n, total) = p.get();
@@ -1367,7 +1424,13 @@ pub(super) fn hazards(session: &NativeSession, dest: &str) -> HashSet<(i32, i32)
             )
             .is_none_or(|(c1, c2)| w.p2_record_gates_pass(&c1, &c2))
         };
-        for s in overworld_portal_sites(&mf, &man, &triggers) {
+        let sites = PORTAL_SITES.with(|m| {
+            m.borrow_mut()
+                .entry(name.clone())
+                .or_insert_with(|| std::rc::Rc::new(overworld_portal_sites(&mf, &man, &triggers)))
+                .clone()
+        });
+        for s in sites.iter() {
             if s.scene_name != dest && live(s.record) {
                 out.insert((i32::from(s.overworld_x), i32::from(s.overworld_z)));
             }

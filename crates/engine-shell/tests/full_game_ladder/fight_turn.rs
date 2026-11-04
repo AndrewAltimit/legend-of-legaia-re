@@ -720,9 +720,9 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         }
         // A press is an edge: alternate the wanted mask with neutral.
         let want = fight_pad(session);
-        if std::env::var_os("LEGAIA_FGL_PAD_DEBUG").is_some()
+        if t % 97 == 0
+            && std::env::var_os("LEGAIA_FGL_PAD_DEBUG").is_some()
             && t - foe_dropped_at > 6000
-            && t % 97 == 0
         {
             let w = &session.host.world;
             eprintln!(
