@@ -960,6 +960,28 @@ fn the_dance_hall_runs_its_ambient_tree_on_its_own_vram() {
     assert_eq!(world.clock.frame_step, 2);
 }
 
+/// A door entry skips the hall's art pack (`0x801CF190`), so the cells the
+/// field's cyclers paint reach the hall as the field last painted them, and the
+/// cells they do not paint stay the hall's.
+#[test]
+fn a_door_entry_carries_the_fields_painted_cells_into_the_hall() {
+    let mut world = World::default();
+    let rect = (16, 506, 2, 1);
+    world.ambient.cell_captures.insert(rect, vec![1, 2]);
+    let mut field = legaia_tim::Vram::new();
+    field.write_block(16, 506, 3, 1, &[0x34, 0x12, 0x78, 0x56, 0xBC, 0x1A]);
+    let mut hall = legaia_tim::Vram::new();
+    world.carry_walked_in_cells(&field, &mut hall);
+    assert_eq!(hall.pixel(16, 506), 0x1234);
+    assert_eq!(hall.pixel(17, 506), 0x5678);
+    assert_eq!(hall.pixel(18, 506), 0, "outside the cycled cell");
+    // A hall already staged has replaced the field's seat.
+    world.stage_dance_ambient(&[]);
+    let mut again = legaia_tim::Vram::new();
+    world.carry_walked_in_cells(&field, &mut again);
+    assert_eq!(again.pixel(16, 506), 0);
+}
+
 /// `FUN_801D387C` arms `0` and `1`, the hall cyclers' follow-the-leader hook.
 #[test]
 fn the_hall_hook_copies_the_leader_and_sets_v() {

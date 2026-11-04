@@ -666,3 +666,54 @@ fn the_player_clip_is_the_displayed_frame_of_the_party_bank() {
         112 - 8 * crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16
     );
 }
+
+/// The hall's leader program, off `minigame_dance_retail_go_in`'s record shape:
+/// setup, the outer loop's hue step and dark V, then the strobe loop.
+fn dance_leader_words() -> Vec<i16> {
+    let mut w: Vec<i16> = vec![0x4000, 0, 0x2B, 0, 0, 0, 0x2E, 0, 0, 0];
+    w.extend([
+        0x2C, 16, 507, 16, 1, 0x1A, 0x4000, 0x2D, 96, 0, 0, 0x20, 1, -200,
+    ]);
+    w.extend([0x18, 3]);
+    for v in [100, 100, -50, -50, -50, -50] {
+        w.extend([0x2D, 0, 0, v, 0x09, 1]);
+    }
+    w.extend([0x09, 7, 0x19, 0x09, 0, 0x1B, 8]);
+    w
+}
+
+/// A run walked back: the go-in state holds the leader just past its last `-50`
+/// at `V -200`, and three runs back it stood at `-50`.
+#[test]
+fn the_dance_leader_strobe_walks_back_to_the_displayed_v() {
+    let words = dance_leader_words();
+    let pc = words.iter().rposition(|&w| w == 7).unwrap() - 1;
+    let (syn, at) = dance_leader_strobe(&words, pc).unwrap();
+    let adds = cycler_displayed_adds(&syn, at, 0, [192, 0, -200], [0; 3], 3, 2).unwrap();
+    assert_eq!(adds, [192, 0, -50]);
+    assert_eq!(
+        dance_leader_strobe(&words, 3),
+        None,
+        "a PC outside the loop"
+    );
+}
+
+/// A follower's loop length is how far behind the leader it can stand: the
+/// floor's rows wait twice, so they copy every other pass.
+#[test]
+fn a_dance_follower_copies_on_its_loops_period() {
+    let head = [
+        0x4000, 0, 0x2B, 0, 0, 0, 0x2E, 0, 0, 0, 0x2C, 0, 506, 16, 1, 0x1A, 0x4000,
+    ];
+    let mut floor: Vec<i16> = head.to_vec();
+    floor.extend([0x20, 0, 0, 0x2D, 0x80, 0, 0, 0x09, 0, 0x09, 0, 0x1B, 8]);
+    let f = dance_follower(&floor, 26).unwrap();
+    assert_eq!((f.offset, f.period, f.since_copy), ([0x80, 0, 0], 2, 0));
+    assert_eq!(f.copy_at_or_before(3), 4);
+    assert_eq!(dance_follower(&floor, 28).unwrap().copy_at_or_before(3), 3);
+    let mut wall: Vec<i16> = head.to_vec();
+    wall.extend([0x20, 0, 0, 0x09, 0, 0x1B, 8]);
+    let f = dance_follower(&wall, 22).unwrap();
+    assert_eq!((f.offset, f.period, f.copy_at_or_before(3)), ([0; 3], 1, 3));
+    assert_eq!(dance_follower(&dance_leader_words(), 22), None);
+}

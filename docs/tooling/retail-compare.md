@@ -3190,7 +3190,15 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
 - **The contest hub's first visit** (arm byte `DAT_801D1A78` in `0..=5` or
   `0x15`), sampled at the capture's level `0x801D1A84` or hold `0x801D1A70`.
-- **The Baka Fighter's title card** (cabinet state `DAT_801DBF44 = 1`).
+- **The Baka Fighter's title card** (cabinet state `DAT_801DBF44 = 1`), sampled at the capture's card clock `DAT_801DBE94`: the card's whole picture is a function of that clock, and a state word alone stands the engine on the fade-in.
+
+A dance frame stands the display lag behind the RAM, so the gate takes the banner counter and the `GO!` accumulator back two game frames.
+
+The hall's light show is palette work on a clock of game frames, whose lengths the capture measured and the engine's fixed tick does not, and its base palettes are the walked-in field's last paint ([dance](../subsystems/minigame-dance.md#the-halls-palettes-are-the-fields-last-paint)). So a dance state's image child takes three seats, none of which changes the game:
+
+- `LEGAIA_SEAT_CELL_SOURCES`: the palettes the cyclers captured (`retail_cell_sources`, `+0xAC` inline under `0x11` texels wide, else the heap buffer `+0xA8`), written into the hall's VRAM ahead of the tree's first pass.
+- `LEGAIA_SEAT_CLUT_FX`: each cycler's adds as the displayed frame painted them. The leader is walked back through its strobe loop and each follower stands on the leader's adds at the pass of its last copy (`dance_cell_displayed`), so the floor's every-other-pass rows land a run behind the walls' on some frames.
+- `LEGAIA_SEAT_VRAM_RECTS`: the strip scroller's texels.
 
 The seed takes the warp at tick `20`, ahead of the talk `koin1`'s sign-up counter
 opens at tick `31` on a player the save leaves standing there; retail's warp is

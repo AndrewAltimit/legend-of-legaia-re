@@ -178,7 +178,10 @@ impl<'a> HostView<'a> {
     /// projecting through the follow frame instead shifted every blob off its
     /// body by the same screen offset during a scripted event.
     pub fn drop_shadow_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
-        if !World::fog_mode(self.world.mode) && self.world.pack_mode_stage().is_none() {
+        if !World::fog_mode(self.world.mode)
+            && self.world.pack_mode_stage().is_none()
+            && self.world.mode != SceneMode::Dance
+        {
             return Vec::new();
         }
         let Some(view) = self.frame(cutscene).field_view() else {

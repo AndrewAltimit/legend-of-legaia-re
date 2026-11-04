@@ -385,7 +385,10 @@ impl RetailObs {
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
             cell_fx: if matches!(
                 class,
-                StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Minigame
+                StateClass::Field
+                    | StateClass::WorldMap
+                    | StateClass::Battle
+                    | StateClass::Minigame
             ) {
                 retail_cell_fx(ram)
             } else {

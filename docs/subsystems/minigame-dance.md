@@ -591,7 +591,13 @@ The tree runs at the hall's frame step, `DAT_1F800393 = 3` in every parked dance
 
 Port: `World::stage_dance_ambient` moves the walked-in scene's ambient seat aside and installs the hall's, `World::step_dance_ambient` repaints the hall's own VRAM (the native window's venue copy, the page's `play_mg_dance_ambient_step`), and `MoveVmHostImpl::ext_20` carries arms `0` and `1` while the seat is the hall's. The walked-in scene's VRAM effects stop for the length of the dance, as they do in retail with that overlay swapped out.
 
-One gap stays in this tree's reproduction. The leader's rows match retail's program row for row (`9` rows per `0x18 3` loop, a `9 7` of three frames among them), but its phase is a clock of game frames, and a capture's frames were not all of one length ([above](#step-marker-tiles)): `minigame_dance_retail_go_in` holds gate `8` on loop count `3`, where the engine at the same `GO!` value holds gate `56`. Unlike the tiles, the leader's followers repaint VRAM, so seating it means seating every cycler's phase; the floor's colour in those two frames is what that leaves. Retail's VRAM also carries a white-keyed `64 x 128` block at `(384, 128)` the port's does not.
+A follower's loop sets how far it can stand behind the leader. Most run `20 0 _, 09 0`, a copy every pass. The floor's two cells `(0, 506)` and `(16, 506)` run `20 0 _, 2D 0x80 0 0, 09 0, 09 0`: they copy every other pass and sit half a turn of hue off, so on a strobe frame the floor can show a different `V` from the walls.
+
+### The hall's palettes are the field's last paint
+
+The init loads the art pack only with the field-entry word `_DAT_8007B8B8` clear (`lw` at `0x801CF190`, `bne` at `0x801CF198`, `jal 0x8002541C` at `0x801CF1A0`). A door entry has the word up, so the hall stands on the VRAM `koin3` left, and the tree's op `0x2C`s capture their cells from there. `koin3` runs cyclers on the same cells, so what they capture is whatever strobe the field last painted, not the disc's palette. In the three retail count-in states the floor's captured entries read `0xB484, 0xB4A3, 0xB483` where the disc's palette has `0x99F4, 0x95B4, 0x95D4`: the disc's orange floor, turned to blue and darkened. Every later hue the hall shows is a rotation of that paint, so the hall's colours depend on the frame the player left the field on.
+
+Port: `World::carry_walked_in_cells`, called by both hosts just before `stage_dance_ambient`, copies each cell the walked-in scene's cyclers paint into the hall's VRAM. The rest of the hall's VRAM stays the venue build's. Retail's VRAM also carries a white-keyed `64 x 128` block at `(384, 128)` the port's does not, and nothing the count-in draws samples it.
 
 ## HUD
 

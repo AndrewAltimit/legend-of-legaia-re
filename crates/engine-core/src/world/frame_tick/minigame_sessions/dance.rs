@@ -57,11 +57,7 @@ impl World {
     /// entry where the disc's palette has `(20, 15, 6)`.
     ///
     /// PORT: FUN_801cef54 (the art pack's door-entry skip)
-    pub fn carry_walked_in_cells(
-        &self,
-        walked_in: &legaia_tim::Vram,
-        hall: &mut legaia_tim::Vram,
-    ) {
+    pub fn carry_walked_in_cells(&self, walked_in: &legaia_tim::Vram, hall: &mut legaia_tim::Vram) {
         if self.ambient.venue_restore.is_some() {
             return;
         }

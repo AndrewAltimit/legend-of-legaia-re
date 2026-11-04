@@ -1218,6 +1218,12 @@ impl LegaiaRuntime {
                 && let Some(bytes) =
                     legaia_engine_minigame_scenes::dance_venue::venue_stager_bytes(&h.index)
             {
+                if let (Some(res), Some(hall)) = (
+                    h.resources.as_ref(),
+                    self.minigame_ui.dance_ambient_vram.as_mut(),
+                ) {
+                    h.world.carry_walked_in_cells(&res.vram, hall);
+                }
                 h.world.stage_dance_ambient(&bytes);
             }
         }

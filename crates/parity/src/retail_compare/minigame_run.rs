@@ -298,12 +298,23 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
         }
         (Some(MinigameSubId::Dance), Some((state, counter))) => {
             use legaia_engine_minigames::dance::CountInStage as S;
+            // The frame on screen stands the display lag behind the RAM's
+            // counters, each `DANCE_FRAME_STEP` a game frame.
+            let lag = i64::from(
+                crate::retail_compare_battle::DISPLAY_LAG_PASSES as i16 * DANCE_FRAME_STEP,
+            );
             let go = i64::from(mg.phase2) * 2;
             world.mode == SceneMode::Dance
                 && m.dance_countin.as_ref().is_some_and(|c| match state {
-                    3 => i64::from(c.frame()) >= i64::from(counter),
-                    4 => c.stage() == S::GoIn && c.view().go.is_some_and(|b| i64::from(b) >= go),
-                    _ => c.stage() == S::GoOut && c.view().go.is_some_and(|b| i64::from(b) <= go),
+                    3 => i64::from(c.frame()) >= i64::from(counter) - lag,
+                    4 => {
+                        c.stage() == S::GoIn
+                            && c.view().go.is_some_and(|b| i64::from(b) >= go - 2 * lag)
+                    }
+                    _ => {
+                        c.stage() == S::GoOut
+                            && c.view().go.is_some_and(|b| i64::from(b) <= go + 2 * lag)
+                    }
                 })
         }
         (Some(MinigameSubId::BakaFighter), Some((_, clock))) => {
