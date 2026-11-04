@@ -355,6 +355,11 @@ pub const SCYTHE_WIND_POWER: u16 = 0x80;
 /// `0x801F7FAC`, `+0x1DC = 1`, `+0x1DA = +0x1F1`, `+0x10 +=`, `+0x14C -=` and
 /// the face-away store.
 ///
+/// Arm 2's pass, staging the caster's swing, drops caster and victim to rate
+/// `1` (`0x801F7B78`, `0x801F7B84`), and the commit lifts the caster to `4`, so
+/// the swing's cue comes late against its clip. Arm 3's pass restores the caster
+/// (`0x801F7D20`).
+///
 /// Wired: `World::run_cast_module_code`.
 ///
 /// The camera arms, gates and wind records are
@@ -363,10 +368,21 @@ pub const SCYTHE_WIND_POWER: u16 = 0x80;
 /// PORT: FUN_801F77E8 (phase table + damage/staging)
 pub fn scythe_wind_tick(
     ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
     victim: &mut CastActorState,
     hit: Option<i32>,
 ) -> CastTickStep {
     run_tick_latched(ctx, |c| {
+        match c.phase {
+            2 => {
+                caster.anim_rate = 1;
+                victim.anim_rate = 1;
+            }
+            3 => caster.anim_rate = ANIM_RATE_NORMAL,
+            // The damage arm; the fold lands its hit.
+            4 => victim.anim_rate = ANIM_RATE_NORMAL,
+            _ => {}
+        }
         if let Some(roll) = hit {
             victim.anim_rate = ANIM_RATE_NORMAL;
             apply_hit_floor_zero(victim, roll);

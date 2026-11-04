@@ -1469,6 +1469,14 @@ re-arms literals. Four arms do not fit one word:
 - PROT 0935's arms 1 and 3 hold on the caster's `+0x21B` and on its model's
   `+0x68`, which no table carries; the rows keep only their seeds.
 
+**Spore Gas's four hits** are not a fold. Arm 3's pass seeds a beat word at `scalar <<
+5`; arm 4 counts a hit each time it runs out and re-arms it at `scalar << 4`, so the hits
+land `33`, `49`, `65` and `81` passes in (`SporeGasBeat`). Each rolls `FUN_801DD4B0(0x60)`,
+keeps a third, stages `+0x1EF`, `+0x1EF`, `+0x1F0`, `+0x1F1` in turn, and hits 1 to 3 roll
+Rot's left, right and low limb on `rand & 1`, `rand % 3 != 0` and `rand & 3 != 0` behind
+the record's two immunity bits (`+0x6BC & 0x11000000`). A victim that dies takes the
+knockdown and ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
+
 **Settle waits** are carried (`ChainSettle`, held by the band's caller). Each
 tests a seat the same way: live (`+0x14C != 0`) once its playing clip `+0x1D9`
 is back at `0`, dead once it reads the down clip `8`.

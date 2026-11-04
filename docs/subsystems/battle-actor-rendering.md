@@ -287,7 +287,9 @@ Outside the commit, a cast's arms slow the seats they strike, beside each reacti
 stage, and so pace its knockdown and get-up. Earthquake stores `4` and restores `8` in
 its own `0xFF` arm. The Rogue strikes and Stone Circle store `2` on the hit and again
 on every pass of their next arm, so a commit's decay to `4` lasts one frame
-(`cast_module_ticks::party_rate_sweep`, `ChainArm::hit_rate`). A move-power record
+(`cast_module_ticks::party_rate_sweep`, `ChainArm::hit_rate`). Scythe Wind's arm 2 drops caster and victim to `1` as it stages the swing, so
+the caster's commit lifts it to `4` and the victim idles at `1` until the damage arm.
+A move-power record
 whose `+0x16` list holds `0xFF` (Thunder Break) stores `0x20` on its victim for as long
 as a landed slot's counter runs (`0x801E1800..0x801E1824`), so the body shivers until
 the hit; the hit's commit decays that to `4`. The Done tail's restore puts every seat

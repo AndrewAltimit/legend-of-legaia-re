@@ -132,7 +132,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[1]),
     },
     // PROT 0940 `0x3C`: `0x8007BD0C[seat - 3] == 0xA9` stages `9`
     // (`0x801F6B44`), anything else `8` (`0x801F6B64`).

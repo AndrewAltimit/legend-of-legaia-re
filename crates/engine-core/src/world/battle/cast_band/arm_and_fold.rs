@@ -281,7 +281,7 @@ impl World {
     /// Turn battle slot `victim` to face `caster` along the two live pairs
     /// `+0x34` / `+0x38` - the homing hit arm's turn
     /// (`FUN_801E09F8`, `0x801E1A20..0x801E1A54`).
-    fn turn_victim_to_caster(&mut self, victim: u8, caster: u8) {
+    pub(in crate::world) fn turn_victim_to_caster(&mut self, victim: u8, caster: u8) {
         let (Some(v), Some(c)) = (
             self.actors.get(usize::from(victim)),
             self.actors.get(usize::from(caster)),

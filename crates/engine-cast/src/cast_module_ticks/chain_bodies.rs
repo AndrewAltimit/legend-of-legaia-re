@@ -634,8 +634,8 @@ pub const HYPER_LIGHTNING_CHAIN: ChainBody = ChainBody {
 /// `+0x1F1`. Arm 5 waits for the victim to settle and stores `0xFF`; `0xFF`
 /// clears the busy register (`fp`).
 ///
-/// Not ported: the packet arms and the per-hit status
-/// rolls (the fold lands the cast's outcome as one hit). Countdowns:
+/// The four hits are the band's ([`SporeGasBeat`]; the fold owes the cast
+/// nothing). Not ported: the packet arms. Countdowns:
 /// `capture_countdown::SPORE_GAS`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0939; phase chain + caster staging; packet arms unported)
@@ -655,6 +655,79 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
         arm(DONE, 0x801F_746C, Finish),
     ],
 };
+
+/// The pace of PROT 0939's four hits. Arm 3's pass zeroes the hit count
+/// `0x801F7AF8` and seeds the word `0x801F7AF4` with `scalar << 5`
+/// (`0x801F6F94..0x801F6FB8`). Every pass of arm 4 under four hits drains it by
+/// the product, and a negative word counts the next hit and re-arms by
+/// `scalar << 4` (`0x801F7054..0x801F7098`), with the victim alive and not
+/// Stoned or not.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SporeGasBeat {
+    /// Hits counted, `0..=4`. A victim that dies stores `4` (`0x801F73D0`).
+    pub hits: u8,
+    word: i32,
+}
+
+impl SporeGasBeat {
+    /// Arm 3's pass.
+    pub const fn armed() -> Self {
+        Self {
+            hits: 0,
+            word: crate::cast_module_camera::SPEED_SCALAR << 5,
+        }
+    }
+
+    /// One pass of arm 4: the hit this pass counts, if any.
+    pub fn tick(&mut self) -> Option<u8> {
+        if self.hits >= 4 {
+            return None;
+        }
+        self.word -= crate::cast_module_camera::SPEED_SCALAR;
+        if self.word >= 0 {
+            return None;
+        }
+        self.word += crate::cast_module_camera::SPEED_SCALAR << 4;
+        self.hits += 1;
+        Some(self.hits)
+    }
+}
+
+/// PROT 0939's one wrapper site, `FUN_801DD4B0(0x60)` at `0x801F70E0`, which the
+/// four hits share. It stands apart from [`CAST_DAMAGE_SHAPES`], whose rows the
+/// fold's power lookup reads.
+pub const SPORE_GAS_SHAPE: CastDamageShape = CastDamageShape {
+    prot_entry: 939,
+    routine: 0x801F_69D8,
+    wrapper: CastWrapper::Respect,
+    never_kills: false,
+    powers: &[0x60],
+};
+
+/// PROT 0939 hit `k`'s reaction: index into the `+0x1EF..=+0x1F1` trio, hits 1
+/// and 2 the first, hit 3 the second, hit 4 the knockdown
+/// (`0x801F71A8`, `0x801F7224`, `0x801F72BC`, `0x801F73A4`).
+pub const fn spore_gas_reaction(hit: u8) -> usize {
+    match hit {
+        1 | 2 => 0,
+        3 => 1,
+        _ => 2,
+    }
+}
+
+/// PROT 0939 hit `k`'s Rot roll on one `rand()`: the limb it lands, `0` left,
+/// `1` right, `2` low (`+0x16E |= 8 / 0x10 / 0x20`). Hit 1 is `rand & 1`
+/// (`0x801F7204`), hit 2 `rand % 3 != 0` (`0x801F7280`), hit 3 `rand & 3 != 0`
+/// (`0x801F7318`). Hit 4 draws nothing, and the caller draws only behind the
+/// record's two immunity bits (`+0x6BC & 0x11000000`, the sites' guards).
+pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
+    match hit {
+        1 if roll & 1 != 0 => Some(0),
+        2 if !roll.is_multiple_of(3) => Some(1),
+        3 if roll & 3 != 0 => Some(2),
+        _ => None,
+    }
+}
 
 /// PROT 0942's `0xAA` tick body, `0x801F69F4..0x801F7D34`.
 ///
@@ -1182,6 +1255,27 @@ mod chain_tests {
                 }
             }
         }
+    }
+
+    /// `teien_berserker_pre_spore_gas`: hits 33, 49, 65 and 81 passes into arm 4
+    /// (retail's cues sound `36`, `52`, `68`, `84` vsyncs in on a `3`-vsync lag).
+    #[test]
+    fn spore_gas_lands_four_hits_on_its_beat() {
+        let mut beat = SporeGasBeat::armed();
+        let hits: Vec<(u32, u8)> = (1..=200u32)
+            .filter_map(|pass| beat.tick().map(|k| (pass, k)))
+            .collect();
+        assert_eq!(hits, [(33, 1), (49, 2), (65, 3), (81, 4)]);
+        assert_eq!(
+            [1, 2, 3, 4].map(spore_gas_reaction),
+            [0, 0, 1, 2],
+            "the trio's indices"
+        );
+        assert_eq!(spore_gas_rot(1, 2), None);
+        assert_eq!(spore_gas_rot(1, 3), Some(0));
+        assert_eq!(spore_gas_rot(2, 3), None);
+        assert_eq!(spore_gas_rot(3, 4), None);
+        assert_eq!(spore_gas_rot(3, 5), Some(2));
     }
 
     /// The struck seats' rates and the party-row stores the measured reactions

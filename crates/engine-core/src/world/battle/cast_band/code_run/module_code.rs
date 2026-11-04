@@ -563,11 +563,27 @@ impl World {
             victim = self.cast_view(victim_slot);
             seat = self.cast_view(seat_slot);
         }
+        if entry == 939 {
+            if phase_in == 3 {
+                self.casting.spore_gas_beat = ticks::SporeGasBeat::armed();
+            }
+            if phase_in == 4
+                && let Some(hit) = self.casting.spore_gas_beat.tick()
+            {
+                self.spore_gas_hit(hit, caster_slot, victim_slot);
+            }
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+            (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+        }
         if let Some(arm) = chain.and_then(|c| c.arm(phase_in))
             && !capture_held
         {
             if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
                 self.casting.module_hit_arm = Some(phase_in);
+                // PROT 0939's hits are its own, on their beat.
+                self.casting.module_skips_fold = entry == 939;
                 self.fold_pending_cast_at_rate(arm.hit_rate);
                 // The arm runs on the seats the hit left (a dead victim
                 // takes PROT 0956's reaction branch, not its turn-steal).
@@ -804,9 +820,12 @@ impl World {
                 (951, Some(ticks::CHAOS_FLARE_TICK)) => {
                     Some(ticks::chaos_flare_tick(&mut ctx, &mut victim, None))
                 }
-                (951, Some(ticks::SCYTHE_WIND_TICK)) => {
-                    Some(ticks::scythe_wind_tick(&mut ctx, &mut victim, None))
-                }
+                (951, Some(ticks::SCYTHE_WIND_TICK)) => Some(ticks::scythe_wind_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                )),
                 (952, Some(ticks::BLOODY_HORNS_TICK)) => Some(ticks::bloody_horns_tick(
                     &mut ctx,
                     &mut caster,
@@ -1955,6 +1974,74 @@ impl World {
 }
 
 impl World {
+    /// One of PROT 0939's four hits, `hit` counting from `1`
+    /// (`0x801F70B0..0x801F7400`): skipped on a dead or Stoned victim (the count
+    /// still moved), else `FUN_801DD4B0(0x60)` cut to a third and clamped, the
+    /// hit's reaction clip with `+0x1DC = 1`, its Rot roll behind the record's
+    /// immunity bits, and the victim turned on the caster. A dead victim takes
+    /// the knockdown and ends the count.
+    fn spore_gas_hit(&mut self, hit: u8, caster_slot: u8, victim_slot: u8) {
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        const IMMUNE: u32 = 0x1100_0000;
+        let v = usize::from(victim_slot);
+        let Some(a) = self.actors.get(v) else {
+            return;
+        };
+        if a.battle.hp == 0 || self.battle.actor_is_petrified(victim_slot) {
+            return;
+        }
+        let Some(roll) =
+            self.capture_module_roll_site(&ticks::SPORE_GAS_SHAPE, 0, caster_slot, victim_slot)
+        else {
+            return;
+        };
+        let roll = roll.max(0) / 3;
+        // The HP and bar writes of the hit arm; this body picks its own clip.
+        let staged = self.actors[v].battle.queued_anim;
+        self.apply_effect_child_hit(v, roll);
+        self.actors[v].battle.queued_anim = staged;
+        self.battle
+            .hit_fx
+            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                target_slot: victim_slot,
+                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                is_heal: false,
+                is_crit: false,
+            });
+        let party = victim_slot < self.party.party_count;
+        let immune = party
+            && self
+                .party
+                .character_ability_bits
+                .get(v)
+                .is_some_and(|&b| b & IMMUNE != 0);
+        if hit < 4
+            && !immune
+            && let Some(limb) = ticks::spore_gas_rot(hit, self.next_rand())
+        {
+            self.battle.status_effects.apply(
+                victim_slot,
+                legaia_engine_battle_vm::status_effects::StatusKind::Rot,
+            );
+            self.battle.status_effects.set_rot_limb(victim_slot, limb);
+        }
+        let dead = self.actors[v].battle.hp == 0;
+        if dead {
+            self.casting.spore_gas_beat.hits = 4;
+        }
+        let clip = self.battle_reaction_map(v).map(|m| {
+            m[if dead {
+                2
+            } else {
+                ticks::spore_gas_reaction(hit)
+            }]
+        });
+        if let Some(clip) = clip {
+            self.commit_battle_reaction_entry(v, clip);
+        }
+        self.turn_victim_to_caster(victim_slot, caster_slot);
+    }
+
     /// [`Self::fold_pending_cast`] for a chain arm that stores a rate on each
     /// seat it strikes, beside the reaction ([`ticks::ChainArm::hit_rate`]). The
     /// clip commit that follows decays anything off normal to `4`.

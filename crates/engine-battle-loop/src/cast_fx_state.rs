@@ -71,6 +71,8 @@ pub struct CastFxState {
     /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
     /// once, with the level check, when the cast folds or its fold is waived.
     pub module_hit_xp: u32,
+    /// PROT 0939 arm 4's pace, armed by arm 3's pass.
+    pub spore_gas_beat: legaia_engine_cast::cast_module_ticks::SporeGasBeat,
     /// The module's hit stages no reaction (PROT 0918's): the fold lands its
     /// HP and leaves the victim's clip alone.
     pub module_fold_quiet: bool,
@@ -453,6 +455,7 @@ impl CastFxState {
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,
+            spore_gas_beat: Default::default(),
             module_fold_quiet: false,
             fatal_decision: None,
             fatal_banner: None,
