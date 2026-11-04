@@ -84,10 +84,11 @@
         if (typeof this.rt.play_host_key !== 'function') return false;
         const taken = this.rt.play_host_key(e.code);
         if (taken === 'chat') {
-          /* The line sits in the Online panel, which may be folded. */
+          /* The line sits in the Online panel, in folds that may be shut. */
           const chat = document.getElementById('play-net-chat');
-          const panel = chat && chat.closest('details');
-          if (panel) panel.open = true;
+          for (let d = chat && chat.closest('details'); d; d = d.parentElement.closest('details')) {
+            d.open = true;
+          }
           if (chat) chat.focus();
         }
         return !!taken;

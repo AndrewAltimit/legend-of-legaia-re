@@ -28,6 +28,7 @@ names = [
     "menu_label",
     "mode_state_json",
     "name_entry_state_json",
+    "play_net_state_json",
     "play_battle_camera_json",
     "play_battle_face_count",
     "play_battle_tutorial_json",
