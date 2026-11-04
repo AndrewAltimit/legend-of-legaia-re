@@ -359,7 +359,8 @@ fn a_summon_rolls_what_retail_rolls() {
         cpu.mem.wr8(rec + 0x13D, SPELL);
         cpu.mem.wr8(rec + 0x161, r.level);
         cpu.mem.wr32(rec + 8, 0);
-        cpu.mem.wr8(actor(7) + 0x1DD, if round % 2 == 0 { 3 } else { 9 });
+        cpu.mem
+            .wr8(actor(7) + 0x1DD, if round % 2 == 0 { 3 } else { 9 });
         state.set(r.seed);
         cpu.regs.r[V0] = 0;
         let stop = cpu.call(KERNEL, &[0x12, 7, u32::from(target)]);

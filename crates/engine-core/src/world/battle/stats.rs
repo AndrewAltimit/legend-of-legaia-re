@@ -91,7 +91,7 @@ impl World {
     /// PORT: FUN_801E791C (roll + compare via
     /// `battle_formulas::escape_roll`; the success-side flee staging stays
     /// with the run band in `battle_action`)
-    pub(in crate::world) fn roll_battle_escape(&mut self) -> bool {
+    pub fn roll_battle_escape(&mut self) -> bool {
         use legaia_engine_battle_vm::battle_formulas::{
             EscapeActor, EscapeFlags, escape_enemy_score, escape_party_score, escape_roll,
         };
@@ -251,7 +251,7 @@ impl World {
     /// plus the 1-in-8 gate draw only when the score compare passes).
     ///
     /// REF: FUN_801EC0DC
-    pub(in crate::world) fn monster_flee_roll(&mut self, slot: u8) -> bool {
+    pub fn monster_flee_roll(&mut self, slot: u8) -> bool {
         use legaia_engine_battle_vm::battle_formulas::FleeActor;
         let pc = (self.party.party_count as usize).min(self.actors.len());
         let fold = |world: &Self, i: usize| FleeActor {
@@ -280,17 +280,14 @@ impl World {
             })
             .collect();
         let target = fold(self, slot as usize);
+        // The live `+0x168` (`0x801EC2B8`), which the seat seed installed under
+        // this fight's own boost profile. Reading the record back here took the
+        // scripted profile for every random encounter too.
         let target_int = self
-            .actors
+            .battle
+            .accuracy
             .get(slot as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            // The INT the seed installed, under the enemy stat scale (the
-            // catalog's `intel` is the scripted profile's `[4]`).
-            .map(|d| {
-                crate::world::field_loop::scale_monster_def(d, self.run_enemy_stat_permille(d.id))
-                    .installed_stats(true)[4]
-            })
+            .copied()
             .unwrap_or(0);
         let no_escape = u8::from(self.battle.no_escape);
         legaia_engine_battle_vm::battle_formulas::monster_escape_roll(

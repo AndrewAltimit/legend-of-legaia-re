@@ -91,6 +91,9 @@ pub const LEVEL_UP_AGL_CAP: u16 = 0x118;
 /// `FUN_801E9504`'s cap on the base ATK, UDF, LDF, SPD and INT it grows (`0x3E7`).
 pub const LEVEL_UP_STAT_CAP: u16 = 0x3E7;
 
+/// The cumulative EXP a record can hold (`0x8004F2C4`).
+pub const RECORD_XP_CAP: u32 = 9_999_999;
+
 impl LevelUpTracker {
     pub fn new() -> Self {
         Self::default()
@@ -326,11 +329,12 @@ impl LevelUpTracker {
             return None;
         }
         let old_level = self.level[slot];
+        // A member at the top level keeps earning (`FUN_8004E568` credits before
+        // `FUN_801E9504` looks at the level), up to the cap at `0x8004F2C4`.
+        self.xp[slot] = self.xp[slot].saturating_add(xp).min(RECORD_XP_CAP);
         if old_level >= MAX_LEVEL {
             return None;
         }
-
-        self.xp[slot] = self.xp[slot].saturating_add(xp);
 
         let mut new_level = old_level;
         loop {

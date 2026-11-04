@@ -5,7 +5,9 @@
 mod arts_roll;
 mod battle_seed;
 mod common;
+mod escape;
 mod item_apply;
 mod level_up;
 mod melee_hit;
+mod spoils;
 mod stat_aggregator;

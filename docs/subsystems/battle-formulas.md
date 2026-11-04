@@ -1729,18 +1729,29 @@ fields inline in each monster record
 
 ```text
 // NTSC-U (SCUS_942.54)
-gold = sum over dead enemies (record.gold >> 1)              // 0x8004EFBC
+// A seat pays when +0x14C == 0 and +0x227 == 0: it died and was not captured,
+// so a Seru the Ra-Seru took pays nothing and neither does a monster that ran.
+gold = sum over paying seats (record.gold >> 1)              // 0x8004EFBC
 if a living member has +0xF4 bit 0x10000:  gold += gold >> 2 // Golden Book, 0x8004F094
 if _DAT_8007BAC0 != 0:  gold = 0                             // 0x8004F0AC
 gold = gold - (gold >> 1)                                    // second halving, 0x8004F0DC
 purse (0x8008459C) = min(purse + gold, 99,999,999)
 
-exp  = sum over dead enemies record.exp
+exp  = sum over paying seats record.exp
 exp -= exp >> 2                                              // x3/4, 0x8004F0B8
-share = ceil(exp / living_members)                           // divu, 0x8004F198
+n = members with +0x14C != 0, not Stoned, seat byte != 4
+share = ceil(exp / n)                                        // divu, 0x8004F198
 if _DAT_8007BAC0 != 0:  share = 0                            // 0x8004F274
-each living member: level-up applier FUN_801E9504(share)
+each member:
+  +0x14C == 0:  +0x14C = 1                                   // stood back up
+  not Stoned:   xp = min(xp + share (twice with +0xF4 bit 0x8000), 9,999,999)
+                level-up applier FUN_801E9504
+then the drop walk                                           // 0x8004F3D8
 ```
+
+The order is load-bearing: `FUN_801E9504` draws eight `rand()` per level, ahead of
+the drop walk, and a fallen member's Items Up counts because the loop above has
+already stood them up when the scan reads `+0x14C != 0`.
 
 | Record field | Meaning |
 |---|---|

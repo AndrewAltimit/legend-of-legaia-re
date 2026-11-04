@@ -271,12 +271,7 @@ impl World {
     /// victim's HP before the hit), the spirit gauge and the rumble. Banks with
     /// the cast's fold ([`Self::fold_cast`]'s waiver or the fold itself).
     /// `None` for a monster's cast, which rolls elsewhere.
-    pub fn summon_module_roll(
-        &mut self,
-        caster: u8,
-        target: u8,
-        spell_id: u8,
-    ) -> Option<u32> {
+    pub fn summon_module_roll(&mut self, caster: u8, target: u8, spell_id: u8) -> Option<u32> {
         let mut roll = u32::from(self.player_summon_predamage(caster, target, spell_id)?);
         if !self.expansion_casting_pack(caster, spell_id)
             && self

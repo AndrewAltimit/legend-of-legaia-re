@@ -60,3 +60,15 @@ block breaker's quarter damage and the drain clip had no port, the shared
 finisher's no-damage floor had been wired onto a routine that has none, the Spirit
 percent wraps at a byte in this routine alone, and a block the roll grants spends
 the approach terms even when the verdict is then overturned.
+
+The spoils arm of `FUN_8004E568` showed the port paying EXP and gold for every
+seat in the formation, where retail pays for a seat that died and was not
+captured: a Seru the Ra-Seru took pays nothing, and neither does a monster that
+ran. The level-ups draw `rand()` ahead of the drop walk, and the port drew them in
+the other order, so a level-up changed which item dropped. A Stoned member takes no
+EXP and is not counted in the split, a fallen member's Items Up still counts because
+the EXP loop has stood them up at 1 HP before the scan, and a level 99 member keeps
+earning up to the record's cap.
+
+The monster flee roll `FUN_801EC0DC` read the fleeing monster's INT back off its
+record under the scripted fight's profile even in a random encounter.

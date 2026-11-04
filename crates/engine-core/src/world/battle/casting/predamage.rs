@@ -186,7 +186,12 @@ impl World {
     ///
     /// PORT: FUN_801DD6B4 (live wiring; pure kernel in
     /// `battle_damage_wrappers::atk_wrapper_predamage`)
-    pub fn capture_bypass_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+    pub fn capture_bypass_predamage(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power: i32,
+    ) -> Option<u16> {
         use legaia_engine_battle_vm::battle_damage_wrappers::{
             ATK_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
             atk_wrapper_predamage,
@@ -263,7 +268,12 @@ impl World {
         self.spell_table_class(move_id) == Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
     }
 
-    pub fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+    pub fn capture_respect_predamage(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power: i32,
+    ) -> Option<u16> {
         use legaia_engine_battle_vm::battle_damage_wrappers::{
             INT_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
             int_wrapper_predamage,
@@ -364,12 +374,7 @@ impl World {
     ///
     /// PORT: FUN_801dd0ac (summon branch, live wiring; pure kernel in
     /// battle_formulas::summon_predamage_lazy)
-    pub fn player_summon_predamage(
-        &mut self,
-        caster: u8,
-        target: u8,
-        spell_id: u8,
-    ) -> Option<u16> {
+    pub fn player_summon_predamage(&mut self, caster: u8, target: u8, spell_id: u8) -> Option<u16> {
         use legaia_engine_battle_vm::battle_formulas::{
             DamageFinish, DefenderResist, SummonRollActor, damage_finish_lazy,
             summon_predamage_lazy,

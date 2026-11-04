@@ -95,19 +95,29 @@ impl World {
         // Living-member count drives the divisor. We pull HP from
         // `BattleActor` (the live mirror) so the resolver sees the
         // post-battle state, not the record's saved HP.
+        // Retail credits a member standing and not Stoned (`0x8004F21C`), and
+        // divides by those members less seat byte `4` (`0x8004F180..0x8004F1BC`).
         let alive: Vec<u8> = (0..party_count as u8)
-            .filter(|&i| self.actors.get(i as usize).is_some_and(|a| a.battle.hp > 0))
+            .filter(|&i| {
+                self.actors.get(i as usize).is_some_and(|a| a.battle.hp > 0)
+                    && self.raw_status_word(i)
+                        & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                        == 0
+            })
             .collect();
         if alive.is_empty() {
             return Vec::new();
         }
+        let divisor = alive
+            .iter()
+            .filter(|&&i| self.party_roster_slot(usize::from(i)) != 3)
+            .count()
+            .max(1) as u32;
         // Retail scales the summed EXP by 3/4 then ceiling-divides among the
         // living members (`FUN_8004E568` `8004e568.txt:461`), NOT a plain
         // floor-divide of the raw sum.
-        let per_member_xp = legaia_engine_battle_vm::battle_formulas::victory_exp_per_member(
-            xp_reward,
-            alive.len() as u32,
-        );
+        let per_member_xp =
+            legaia_engine_battle_vm::battle_formulas::victory_exp_per_member(xp_reward, divisor);
         if per_member_xp == 0 {
             return Vec::new();
         }
@@ -194,7 +204,8 @@ impl World {
         // capture takedown). The engine logs captures by monster id, so each
         // logged id claims the earliest formation seat carrying it.
         let mut captured = self.seru.battle_captures.clone();
-        for slot in &formation.slots {
+        let first_seat = usize::from(self.party.party_count);
+        for (k, slot) in formation.slots.iter().enumerate() {
             let taken = captured
                 .iter()
                 .position(|&id| id == slot.monster_id)
@@ -203,6 +214,23 @@ impl World {
             let Some(def) = catalog.get(slot.monster_id) else {
                 continue;
             };
+            drop_seats.push(legaia_engine_battle_vm::battle_formulas::VictoryDropSeat {
+                item: def.drop_item.unwrap_or(0),
+                chance_pct: def.drop_chance_pct,
+                captured: taken,
+            });
+            // Only a seat that died and was not captured pays
+            // (`0x8004F00C..0x8004F05C`: `+0x14C == 0` and `+0x227 == 0`): a
+            // Seru taken by the Ra-Seru pays no EXP or gold, nor does a seat
+            // that fled. The drop walk below reads every seat regardless.
+            if taken
+                || self
+                    .actors
+                    .get(first_seat + k)
+                    .is_some_and(|a| a.battle.hp != 0)
+            {
+                continue;
+            }
             // `WorldToggles::exp_rate_permille` (the `--exp-scale` twin)
             // scales each record's EXP before the sum, as the patch scales
             // the record field; `1000` is the identity.
@@ -213,53 +241,8 @@ impl World {
             gold_acc = gold_acc.saturating_add(
                 legaia_engine_battle_vm::battle_formulas::victory_gold_per_monster(def.gold),
             );
-            drop_seats.push(legaia_engine_battle_vm::battle_formulas::VictoryDropSeat {
-                item: def.drop_item.unwrap_or(0),
-                chance_pct: def.drop_chance_pct,
-                captured: taken,
-            });
         }
-        // The drop roll (`0x8004F3D8..0x8004F5A0`). The Items Up bonus reads
-        // the living members' second ability word (`+0xF8 & 0x20000`, the
-        // bit the steal attack's doubling also reads); the no-reward gate is
-        // the whole special-battle word `_DAT_8007BAC0` (`0x8004F480`), so an
-        // arena leg and a Ra-Seru-forbidden fight both skip the seat loop.
-        let party_n = self.party.party_count as usize;
-        let items_up = (0..party_n).any(|i| {
-            self.actors.get(i).is_some_and(|a| a.battle.hp > 0)
-                && self
-                    .party
-                    .roster
-                    .members
-                    .get(self.party_roster_slot(i))
-                    .is_some_and(|rec| {
-                        let b = rec.ability_bits();
-                        u32::from_le_bytes([b[4], b[5], b[6], b[7]])
-                            & legaia_engine_battle::battle_steal::ITEMS_UP_BIT
-                            != 0
-                    })
-        });
         let no_reward = self.special_battle_word() != 0;
-        let item = legaia_engine_battle_vm::battle_formulas::victory_drop_roll(
-            &drop_seats,
-            items_up,
-            no_reward,
-            || self.next_rand(),
-        );
-        let mut drops: Vec<u8> = Vec::new();
-        // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
-        if item != 0 && self.held_count_by_id(item) != legaia_engine_battle::battle_steal::HELD_CAP
-        {
-            drops.push(item);
-            // An expansion pack item's fight alias lands in the pack bag.
-            let _ = self.grant_item_id(item, 1);
-        }
-        // The bonus equipment drop (`WorldToggles::bonus_drop`, the
-        // `--equipment-drops` twin) rolls here, where the hook joins: right
-        // after the normal drop grant, at `0x8004F610`. The no-reward arm
-        // reaches the same join (`0x8004F570` -> `0x8004F5A0` -> `0x8004F610`),
-        // so a special battle rolls it too, as on a patched disc.
-        self.roll_bonus_equipment_drop();
         // The +25% gold bonus fires when a living party member carries bit
         // `0x10000` of the SECOND ability word (`FUN_8004E568` tests the u32
         // at record `+0xF8`): overall bit 48 of the `+0xF4` bitfield = byte 6,
@@ -305,6 +288,49 @@ impl World {
         } else {
             Vec::new()
         };
+        // The members' level-ups draw first: retail reaches the drop walk only
+        // after the EXP loop's `FUN_801E9504` calls (`0x8004F2F8`), and each
+        // level taken is eight draws of the one `rand()` stream.
+        // The drop roll (`0x8004F3D8..0x8004F5A0`). The Items Up bonus reads
+        // the seated members' second ability word (`+0xF8 & 0x20000`, the
+        // bit the steal attack's doubling also reads); the no-reward gate is
+        // the whole special-battle word `_DAT_8007BAC0` (`0x8004F480`), so an
+        // arena leg and a Ra-Seru-forbidden fight both skip the seat loop.
+        let party_n = self.party.party_count as usize;
+        // Every seated member counts: the EXP loop has already stood the fallen
+        // back up at 1 HP (`0x8004F20C`) when this scan reads `+0x14C != 0`.
+        let items_up = (0..party_n).any(|i| {
+            self.party
+                .roster
+                .members
+                .get(self.party_roster_slot(i))
+                .is_some_and(|rec| {
+                    let b = rec.ability_bits();
+                    u32::from_le_bytes([b[4], b[5], b[6], b[7]])
+                        & legaia_engine_battle::battle_steal::ITEMS_UP_BIT
+                        != 0
+                })
+        });
+        let item = legaia_engine_battle_vm::battle_formulas::victory_drop_roll(
+            &drop_seats,
+            items_up,
+            no_reward,
+            || self.next_rand(),
+        );
+        let mut drops: Vec<u8> = Vec::new();
+        // `FUN_80042F4C(item) == 99` skips the grant (`0x8004F5A8..0x8004F5BC`).
+        if item != 0 && self.held_count_by_id(item) != legaia_engine_battle::battle_steal::HELD_CAP
+        {
+            drops.push(item);
+            // An expansion pack item's fight alias lands in the pack bag.
+            let _ = self.grant_item_id(item, 1);
+        }
+        // The bonus equipment drop (`WorldToggles::bonus_drop`, the
+        // `--equipment-drops` twin) rolls here, where the hook joins: right
+        // after the normal drop grant, at `0x8004F610`. The no-reward arm
+        // reaches the same join (`0x8004F570` -> `0x8004F5A0` -> `0x8004F610`),
+        // so a special battle rolls it too, as on a patched disc.
+        self.roll_bonus_equipment_drop();
         // The spoils routine adds the gold to the purse and saturates it at
         // 99,999,999 (`lui a3,0x5f5` / `ori a3,a3,0xe0ff` at `0x8004F0C4`,
         // `slt` + store at `0x8004F0EC..0x8004F0FC`) - a cap ten times the

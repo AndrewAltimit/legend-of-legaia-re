@@ -361,8 +361,7 @@ Retail leaves a battle only through `finish_battle`'s path. The port's hosts can
 
 `World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`) turns a defeated formation into its side-effects:
 
-- Sums each `MonsterDef::exp` and distributes it via `World::apply_battle_xp`: an equal split among surviving party members (integer divide, remainder dropped; dead members get zero), with per-character level-up checks against `LevelUpTracker::xp_table`.
-- Sums each `MonsterDef::gold` into `World::party.money` (saturating).
+- Takes the EXP and gold of the seats that died and were not captured and distributes the EXP via `World::apply_battle_xp`: scaled 3/4 and ceiling-split over the members standing and not Stoned, with per-character level-up checks against `LevelUpTracker::xp_table`; the gold is halved twice ([battle-formulas.md](battle-formulas.md#victory-spoils-rewards)) and saturates `World::party.money`.
 - Rolls the one drop retail offers through `battle_formulas::victory_drop_roll`: one `rand() % 100` per enemy seat against its percent chance, the last winning seat's item, then a 1-in-4 gate (see [battle-formulas.md](battle-formulas.md#victory-spoils-rewards)). The item joins `BattleRewards::drops` and the inventory unless 99 are already held.
 - Returns `BattleRewards { xp, gold, level_ups, drops }` for the result window.
 
