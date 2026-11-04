@@ -309,9 +309,9 @@ fn a_spend_past_the_victims_hp_downs_it() {
     assert_eq!(world.actors[1].battle.liveness, 0);
 }
 
-/// No retail item row resolves to the strike class, so a vanilla catalog seeded
-/// from an untouched table installs no such marker - the seeder sweeping the id
-/// space is what makes an edited table reach the arm.
+/// No item row resolves to the strike class, and with no battle-usable row at
+/// id `0xFE` either, a table seeds no strike marker: the Point Card reaches the
+/// arm by id, through its own descriptor's battle bit.
 #[test]
 fn a_table_without_a_class_14_row_seeds_no_strike_item() {
     let world = world_with(&book_rows(), 3);

@@ -556,7 +556,8 @@ impl ItemCatalog {
             let Some(eff) = table.effect(id) else {
                 continue;
             };
-            if eff.class != POINT_CARD_STRIKE_CLASS && id != crate::shop::POINT_CARD_ITEM_ID {
+            let the_card = id == crate::shop::POINT_CARD_ITEM_ID && eff.battle_usable();
+            if eff.class != POINT_CARD_STRIKE_CLASS && !the_card {
                 continue;
             }
             let name = self
