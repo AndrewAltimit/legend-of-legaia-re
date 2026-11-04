@@ -84,7 +84,7 @@ def _load_retail_compare_driver():
     return mod
 
 
-def run_census(out: Path, build: bool) -> Path | None:
+def run_census(out: Path, build: bool, jobs: int | None = None) -> Path | None:
     rc = _load_retail_compare_driver()
     library = rc.resolve("LEGAIA_SAVES_LIBRARY", "saves/library", Path.is_dir)
     extracted = rc.resolve(
@@ -108,7 +108,7 @@ def run_census(out: Path, build: bool) -> Path | None:
         [os.environ.get("LEGAIA_ENGINE_BIN") or str(REPO / "target" / PROFILE / "legaia-engine"), "retail-compare",
          "--library", str(library), "--extracted-root", str(extracted),
          "--manifest", str(REPO / "scripts" / "scenarios.toml"),
-         "--out", str(out), "--census", str(census), "--jobs", str(rc.default_jobs())],
+         "--out", str(out), "--census", str(census), "--jobs", str(jobs or rc.default_jobs())],
         cwd=REPO, env=env, check=True,
     )
     return census
@@ -310,10 +310,11 @@ def main() -> int:
     ap.add_argument("--census", type=Path, help="report from this census JSON instead of running one")
     ap.add_argument("--out", type=Path, default=REPO / "captures" / "capture-coverage")
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--jobs", type=int, help="census children (default: retail-compare's)")
     ap.add_argument("--rows", type=int, default=40, help="worklist rows per dimension")
     ap.add_argument("--summary", action="store_true", help="print the headline table only")
     a = ap.parse_args()
-    census_path = a.census or run_census(a.out, not a.no_build)
+    census_path = a.census or run_census(a.out, not a.no_build, a.jobs)
     if census_path is None:
         return 0
     census = json.loads(census_path.read_text())

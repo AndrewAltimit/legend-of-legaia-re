@@ -81,6 +81,19 @@ FAILURE_LINE = re.compile(r"\b(?:FAILED|problem\(s\)|error(?:\[|:)|panicked|fail
 ANSI = re.compile(r"\x1b(?:\[[0-9;]*[A-Za-z]|\([A-Z0-9])")
 SKIP_LINE = re.compile(r"^\s*\[skip\]|\bSKIPPED\b|^\[no baseline\]", re.M)
 
+# The order gates are offered to the budget, ahead of plan order. The wall clock is
+# set by the chain the display lock serialises (retail-compare, the smokes, the page
+# gates), and two six-core gates side by side fill the default budget, so that chain
+# and the cargo-rt chain under the tests each hold a slot from the start. Lints come
+# early because a lint failure is worth hearing about in the first minutes. The seeds
+# need a slot and block nothing, so they take what is left.
+START_FIRST = (
+    "engine-bin", "ladder-bin", "tests-build", "tests-disc",
+    "lint-clippy", "lint-clippy-engine-shell-oracles", "lint-wasm32-type-check",
+    "retail-compare", "smoke-clean", "smoke-enhanced",
+    "wasm-build", "wasm-freshness", "pages", "quality-ladder", "cost-ratchet",
+)
+
 PASS, FAIL, WARN, SKIP, BLOCKED, UNRUN = "PASS", "FAIL", "WARN", "SKIP", "BLOCKED", "NOT RUN"
 OK_STATUSES = (PASS, WARN, SKIP)
 
@@ -584,7 +597,7 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
         Gate(
             "capture-coverage",
             "retail",
-            f"python3 scripts/ci/capture-coverage.py --no-build --summary --out \"{drop('capture-coverage')}\"",
+            f"python3 scripts/ci/capture-coverage.py --no-build --summary --jobs {a.jobs} --out \"{drop('capture-coverage')}\"",
             env=engine_env,
             cpu=a.jobs,
             scope=True,
@@ -891,6 +904,14 @@ def select(p: Plan) -> tuple[list[str], set[str]]:
     return [n for n in p.gates if n in chosen], skipped
 
 
+def start_order(order: list[str]) -> list[str]:
+    """`order` as the scheduler offers it: START_FIRST, the rest, then the seeds."""
+    seed = lambda n: n.startswith("ladder-seed-")  # noqa: E731
+    first = [n for n in START_FIRST if n in order]
+    rest = [n for n in order if n not in first and not seed(n)]
+    return first + rest + [n for n in order if seed(n)]
+
+
 def children_cpu() -> float:
     """User + system seconds of every child reaped so far, descendants included."""
     use = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -900,7 +921,7 @@ def children_cpu() -> float:
 def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
     a = p.a
     results: dict[str, dict] = {}
-    pending = list(order)
+    pending = start_order(order)
     running: list[Running] = []
     held: set[str] = set()
     cpu = 0
@@ -1186,6 +1207,12 @@ def selftest() -> int:
         for must in ("tests-disc", "ladder-b", "ladder-c", "ladder-seed-3", "retail-compare", "pages", "lint-clippy"):
             check(must in plan.gates, f"the plan has no {must}")
 
+    # Start order: the same gates, the chains first, the seeds last.
+    names = ["lint-clippy", "ladder-seed-3", "other", "retail-compare", "engine-bin"]
+    got = start_order(names)
+    check(sorted(got) == sorted(names), f"start order lost a gate: {got}")
+    check(got == ["engine-bin", "lint-clippy", "retail-compare", "other", "ladder-seed-3"], f"start order {got}")
+
     # The scheduler on fakes: every failure reported, nothing after a failed need,
     # a skip marked, a forbidden command refused, locks and budget respected.
     with tempfile.TemporaryDirectory() as td:
@@ -1257,8 +1284,8 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=REPO / "target" / "full-gate")
     ap.add_argument("--base", default="main", help="the revision baselines and revert-scan compare against (default %(default)s)")
     ap.add_argument("--max-cpu", type=int, default=12, help="the budget gates are weighed against (default %(default)s)")
-    ap.add_argument("--jobs", type=int, default=8, help="retail-compare, audio sweep, libtest threads (default %(default)s)")
-    ap.add_argument("--cargo-jobs", type=int, default=8, help="CARGO_BUILD_JOBS (default %(default)s)")
+    ap.add_argument("--jobs", type=int, default=6, help="retail-compare, audio sweep, libtest threads (default %(default)s)")
+    ap.add_argument("--cargo-jobs", type=int, default=6, help="CARGO_BUILD_JOBS (default %(default)s)")
     ap.add_argument("--memory-max", default="24G", help="systemd scope cap per engine-looping gate, or 'off' (default %(default)s)")
     ap.add_argument("--keep-clean-tree", action="store_true", help="leave the clean worktree to inspect a repo gate")
     a = ap.parse_args()
