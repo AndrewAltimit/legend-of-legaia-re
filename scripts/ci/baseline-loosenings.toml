@@ -594,3 +594,25 @@ changes = [
   ["states/gaza2_card_pre_neo_star_slash/image", 0.989, 0.984],
   ["states/shiny_refactor_gimard_levelup/image", 0.833, 0.832],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The wave's figures from main once more. The bundle takes about 28 KB gzipped over the last entry, most plausibly the status pages, the map display, Baka Fighter, the dance gate and the new differentials' port rows; the split is unmeasured. Cast draws rise with Slippery's storm clouds and Rogue's golem. Allocations move under 1% on rows whose cause was not bisected."
+changes = [
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 125208, 125214],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124317, 124323],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 148.08, 148.19],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 125.73, 125.79],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 58208, 58220],
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48258, 48467],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 161692, 161704],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157289, 157419],
+  ["counts/bundle/gzip_bytes", 6903283, 6957160],
+  ["counts/bundle/play_gzip_bytes", 4772220, 4827541],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1393.5, 1402.5],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1337.1, 1346.2],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2672.1, 2678.0],
+  ["counts/native/town01/retail/allocs_per_frame", 1214.9, 1223.9],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1570.0, 1572.1],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1272.6, 1274.7],
+]

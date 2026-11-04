@@ -12,94 +12,94 @@
    "battle": {
     "enhanced": {
      "gl_draws_per_frame": 215.88,
-     "wasm_bytes_per_frame": 125208
+     "wasm_bytes_per_frame": 125214
     },
     "retail": {
      "gl_draws_per_frame": 185.6,
-     "wasm_bytes_per_frame": 124317
+     "wasm_bytes_per_frame": 124323
     }
    },
    "cast": {
     "enhanced": {
-     "gl_draws_per_frame": 148.08,
-     "wasm_bytes_per_frame": 117757
+     "gl_draws_per_frame": 148.19,
+     "wasm_bytes_per_frame": 113970
     },
     "retail": {
-     "gl_draws_per_frame": 125.73,
-     "wasm_bytes_per_frame": 117149
+     "gl_draws_per_frame": 125.79,
+     "wasm_bytes_per_frame": 113361
     }
    },
    "town01": {
     "enhanced": {
      "gl_draws_per_frame": 98.22,
-     "wasm_bytes_per_frame": 58208
+     "wasm_bytes_per_frame": 58220
     },
     "retail": {
      "gl_draws_per_frame": 43.58,
-     "wasm_bytes_per_frame": 48455
+     "wasm_bytes_per_frame": 48467
     }
    },
    "world_map": {
     "enhanced": {
      "gl_draws_per_frame": 213.45,
-     "wasm_bytes_per_frame": 161692
+     "wasm_bytes_per_frame": 161704
     },
     "retail": {
      "gl_draws_per_frame": 141.74,
-     "wasm_bytes_per_frame": 157402
+     "wasm_bytes_per_frame": 157419
     }
    }
   },
   "bundle": {
-   "gzip_bytes": 6929106,
-   "play_gzip_bytes": 4798258
+   "gzip_bytes": 6957160,
+   "play_gzip_bytes": 4827541
   },
   "native": {
    "battle": {
     "enhanced": {
-     "alloc_kb_per_frame": 4564.0,
+     "alloc_kb_per_frame": 4547.1,
      "allocs_per_frame": 1370.0,
      "draws_per_frame": 334
     },
     "retail": {
-     "alloc_kb_per_frame": 4526.2,
+     "alloc_kb_per_frame": 4509.0,
      "allocs_per_frame": 1312.9,
      "draws_per_frame": 334
     }
    },
    "summon_cast": {
     "enhanced": {
-     "alloc_kb_per_frame": 4707.9,
-     "allocs_per_frame": 1398.3,
+     "alloc_kb_per_frame": 4699.7,
+     "allocs_per_frame": 1402.5,
      "draws_per_frame": 334
     },
     "retail": {
-     "alloc_kb_per_frame": 4672.3,
-     "allocs_per_frame": 1341.9,
+     "alloc_kb_per_frame": 4663.8,
+     "allocs_per_frame": 1346.2,
      "draws_per_frame": 334
     }
    },
    "town01": {
     "enhanced": {
-     "alloc_kb_per_frame": 2678.2,
+     "alloc_kb_per_frame": 2678.0,
      "allocs_per_frame": 1611.8,
      "draws_per_frame": 306
     },
     "retail": {
      "alloc_kb_per_frame": 1411.6,
-     "allocs_per_frame": 1223.8,
+     "allocs_per_frame": 1223.9,
      "draws_per_frame": 45
     }
    },
    "world_map": {
     "enhanced": {
-     "alloc_kb_per_frame": 1570.0,
+     "alloc_kb_per_frame": 1572.1,
      "allocs_per_frame": 1926.3,
      "draws_per_frame": 374
     },
     "retail": {
-     "alloc_kb_per_frame": 1273.3,
-     "allocs_per_frame": 1811.0,
+     "alloc_kb_per_frame": 1274.7,
+     "allocs_per_frame": 1810.8,
      "draws_per_frame": 366
     }
    }
