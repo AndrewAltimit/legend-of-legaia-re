@@ -18,9 +18,7 @@ path = "tests/integration.rs"
 [dev-dependencies]
 legaia-disc-patch.workspace = true
 legaia-engine-battle.workspace = true
-legaia-engine-battle-vm.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-menus.workspace = true
 legaia-game-tables.workspace = true
-legaia-iso.workspace = true
 legaia-save.workspace = true

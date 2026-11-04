@@ -3170,11 +3170,9 @@ version = "0.1.0"
 dependencies = [
  "legaia-disc-patch",
  "legaia-engine-battle",
- "legaia-engine-battle-vm",
  "legaia-engine-core",
  "legaia-engine-menus",
  "legaia-game-tables",
- "legaia-iso",
  "legaia-save",
 ]
 
