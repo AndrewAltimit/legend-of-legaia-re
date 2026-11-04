@@ -3421,6 +3421,13 @@ between a 25 ms floor and a 190 ms cap. A page's depth is what its own longest f
 need. The main thread's arithmetic cannot supply that low point, because reports stack
 up behind a stall and read stale.
 
+A long frame the page can see coming needs no learning. Across a battle's encounter
+transition the page braces (`MixPump::brace`): the queue fills a third past the target,
+and once the transition hands over it plays back down, asking for nothing until it is
+at the target. The target does not move for it. The samples are the ones the mix would
+have made; what moves is when a block is handed over, so a cue fired from the transition
+to just past the hand-over sounds later by that third.
+
 Where `audioWorklet` is missing (an insecure origin) or its module will not load, the
 output takes the 4096-frame `ScriptProcessorNode`. `__LEGAIA_AUDIO_PATH = 'script'`
 on the page forces it, which is how the two are compared. `LegaiaRuntime::audio_stats_json`

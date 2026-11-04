@@ -54,6 +54,8 @@ impl SceneHost {
             battle_tutorial_loaded: false,
             cast_effect_pool_loaded: false,
             battle_party_forms: None,
+            party_form_memo: Default::default(),
+            battle_stage_memo: Default::default(),
             last_minigame_warp: None,
             pending_entry_seat: None,
             pending_scene_override: None,

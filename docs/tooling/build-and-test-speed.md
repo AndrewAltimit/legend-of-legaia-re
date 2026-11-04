@@ -50,7 +50,7 @@ sccache misses on workspace crates between checkouts by design: the checkout pat
 
 ## The wasm bundle
 
-The shipped bundle is `scripts/ci/build-wasm.sh`: `release` (thin LTO, one codegen unit) plus `wasm-opt` stripping. Measured with `CARGO_BUILD_JOBS=4` on the shared box, wall clock, sccache warm:
+The shipped bundles are `scripts/ci/build-wasm.sh`: `release` (one codegen unit) plus `wasm-opt` stripping. Both root crates are `cdylib` + `rlib`, and cargo runs LTO only when every crate type allows it, so the profile's `lto` does not reach them. Measured over the tool bundle with `CARGO_BUILD_JOBS=4` on the shared box, wall clock, sccache warm:
 
 | What | Shipped | `--fast` |
 |---|---|---|
@@ -60,20 +60,24 @@ The shipped bundle is `scripts/ci/build-wasm.sh`: `release` (thin LTO, one codeg
 | One line, `web-play` | 2 min | 30 s |
 | One line, `xa` (low in the graph) | 4.5 min | 35 s |
 | A function body, `engine-core` | - | 55 s |
-| `.wasm`, raw / gzip | 21.3 / 6.9 MB | 33.4 / 8.3 MB |
+| Tool `.wasm`, raw / gzip | 21.4 / 6.9 MB | 33.4 / 8.3 MB |
+| Play `.wasm`, raw / gzip | 14.5 / 4.8 MB | 22.1 / 5.7 MB |
 
-A one-line edit in `engine-core` costs three quarters of a clean build, and no one step is why. It is the chain above the edit, each crate compiled whole: `engine-core` itself about 85 s, `web-play` 55 s, the final thin-LTO link 35 s, the rest of the stack 70 s, and `wasm-bindgen` plus the strip pass 33 s. The strip is fast only by comparison, about 25 s across a dozen threads, because Binaryen parses and rewrites the module to do it; a full `-O` pass is what takes twenty minutes.
+A one-line edit in `engine-core` costs three quarters of a clean build, and no one step is why. It is the chain above the edit, each crate compiled whole: `engine-core` itself about 85 s, `web-play` 55 s, the final link 35 s, the rest of the stack 70 s, and `wasm-bindgen` plus the strip pass 33 s. The strip is fast only by comparison, about 25 s across a dozen threads, because Binaryen parses and rewrites the module to do it; a full `-O` pass is what takes twenty minutes.
 
-The obvious knob stays where it is. `codegen-units = 16` under the same LTO takes the `engine-core` edit to under 3 min and the bundle to 7.13 MB gzipped against 6.86, which every player downloads. A target directory reused across worktrees gains nothing either: workspace crates hash their path, and sccache already serves the dependencies, which is why a clean build is minutes.
+The second bundle costs one more final link, `wasm-bindgen` and strip pass, not a second chain: the two builds share every rlib. That rests on two choices in its manifests. `web-play` lists the tool bundle's `web-sys` features, because each bundle is a cargo build of its own and features unify per build, and a shorter list compiles `web-sys` and everything above it twice. The play crate keeps the `rlib` type, because a lone `cdylib` turns LTO on for that bundle alone, which recompiles the whole graph with bitcode and came out larger, 5.18 against 4.77 MB gzip.
+
+The obvious knob stays where it is. `codegen-units = 16` takes the `engine-core` edit to under 3 min and the bundle to 7.13 MB gzipped against 6.86, which every player downloads. A target directory reused across worktrees gains nothing either: workspace crates hash their path, and sccache already serves the dependencies, which is why a clean build is minutes.
 
 So the iteration path is a separate build:
 
 ```bash
-scripts/ci/build-wasm.sh --fast   # site/wasm/ from the wasm-fast profile, no wasm-opt
+scripts/ci/build-wasm.sh --fast   # both bundles from the wasm-fast profile, no wasm-opt
+scripts/ci/build-wasm.sh --fast --only play   # one bundle; --strict refuses the mix
 scripts/ci/check-pages.mjs        # the same page checks run on it
 ```
 
-`wasm-fast` is `release-test` with the incremental cache over the workspace crates, the `dev-fast` recipe for the browser target. `opt-level = 1` is no faster to rebuild and runs slower, so it keeps `release-test`'s level. It lands in `site/wasm/` where a page expects it, and the freshness stamp records the profile: `check-wasm-freshness.py --strict` refuses it, so neither a claim that a fix is live nor the full gate can rest on it. Run `build-wasm.sh` once before either.
+`wasm-fast` is `release-test` with the incremental cache over the workspace crates, the `dev-fast` recipe for the browser target. `opt-level = 1` is no faster to rebuild and runs slower, so it keeps `release-test`'s level. They land in `site/wasm/` where a page expects them, and the freshness stamp records the profile: `check-wasm-freshness.py --strict` refuses it, so neither a claim that a fix is live nor the full gate can rest on them. Run `build-wasm.sh` once before either.
 
 `scripts/ci/check-wasm-target.sh` stays the cheapest question, whether the browser host compiles: about 90 s from clean, 30 to 60 s after an edit.
 
@@ -146,19 +150,19 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
 | `tests` | The Disc-Gated Tests job's `run-disc-tests.sh`. `tests-no-disc`, PR Lint's disc-free suite in the clean tree, runs only when named: it is a second whole build. |
 | `ladder` | Part B, part C on the default stream, and each seed `[continuous_seeds]` lists. |
 | `retail` | `retail-compare.py --images --check`, the audio sweep, the PCM check, capture coverage. |
-| `wasm` | `build-wasm.sh`, `check-wasm-freshness.py --strict`, [`check-pages.mjs`](../../scripts/ci/check-pages.mjs). |
+| `wasm` | `build-wasm.sh`, `check-wasm-freshness.py --strict`, [`check-pages.mjs`](../../scripts/ci/check-pages.mjs), the [cost ratchet](frame-bench.md#cost-ratchet). |
 
 The workflow's steps are read from the file on every run, so a step added there is a gate here with no edit; the Repo Gates job runs `full-gate.py --selftest`, which fails on a step the reader cannot read or one carrying a forbidden command. An Actions expression has no value outside Actions, so a step's `${{ ... }}` variable is empty: `BASE_SHA`'s step takes its self-test branch, and `loosening-base` does the comparison, without the step's `git fetch --depth=1`, which would turn the shared repository shallow. The runner's `CARGO_TARGET_DIR` is replaced by a directory under `--out`, because `select-ci-target-dir.sh` prunes around whatever it is given.
 
 Every failure is reported with its log, not the first: a gate whose prerequisite failed shows as `BLOCKED`, and the rest still run. A driver's `[skip]` line reads as `SKIP` and the verdict as `PARTIAL`, since a skip is not a pass; only the `repo` group is exempt, where a ratchet skipping for want of the disc is what the runner does. `preflight` fails when the extracted disc, the save library, the captures, the dump corpus, the disc image or a display is missing, because each of those otherwise makes a gate pass without measuring. `tree-unchanged` runs last and fails if a tracked file moved during the run.
 
-Output goes under `--out` (default `target/full-gate`): `logs/<gate>.log`, `timing.md` and `state.json`. `--resume` refuses a tree that has changed since the run it would resume.
+Output goes under `--out` (default `target/full-gate`): `logs/<gate>.log`, `timing.md` and `state.json`. `timing.md` gives each gate's start, length and CPU seconds, which are what a critical path and a gate's real share of the budget are read from. `--resume` refuses a tree that has changed since the run it would resume.
 
 Three flags set the load on a shared box: `--max-cpu` is the budget each gate is weighed against, `--jobs` is what `retail-compare`, the audio sweep and libtest get, and `--cargo-jobs` is `CARGO_BUILD_JOBS`. `--memory-max` is the `systemd-run --user --scope` cap on each engine-looping gate. A gate over the budget starts when the budget has room, or alone.
 
-What saves time beyond running side by side: `cargo test --workspace` already runs parts B and C, so `ladder-b` and `ladder-c` read their verdict out of the suite's log, and run on their own only when the suite did not reach them; the seeds share one binary and skip cargo's lock; `wasm-build` is answered by a freshness stamp that vouches for a shipped-profile bundle from this tree; and the drivers read `LEGAIA_ENGINE_BIN`, so the suite's relink of `target/release-test/legaia-engine` with other features cannot pull the binary out from under them. Ratchet modes measure fresh whatever the flags: `--check` reads no result cache.
+The budget and the jobs flags fit together: at the default twelve and six, two heavy gates run side by side, where a job count above six makes each heavy gate run alone. What sets the wall clock is the chain the `display` lock serialises: `retail-compare`, the two smokes, `pages`, `quality-ladder`, `cost-ratchet`. `tests-build` and `tests-disc` hold `cargo-rt` beside it, and that is the second chain. So the scheduler offers those two chains the budget first, with the lints among them because a lint failure is worth hearing about early, and the seeds last: they block nothing and each takes one core. The order is `START_FIRST` in the script; `timing.md` keeps plan order.
 
-On the shared box the whole gate takes a little over an hour under the default budget; the table's own column adds up to more than three and a half hours for the same gates one after another, which is what a hand-run list costs.
+What saves time beyond running side by side: `cargo test --workspace` already runs parts B and C, so `ladder-b` and `ladder-c` read their verdict out of the suite's log, and run on their own only when the suite did not reach them; the seeds share one binary and skip cargo's lock; `wasm-build` is answered by a freshness stamp that vouches for a shipped-profile bundle from this tree; and the drivers read `LEGAIA_ENGINE_BIN`, so the suite's relink of `target/release-test/legaia-engine` with other features cannot pull the binary out from under them. Ratchet modes measure fresh whatever the flags: `--check` reads no result cache.
 
 ## Profiling without perf
 
@@ -173,4 +177,4 @@ scripts/profile/report.py /tmp/bin /tmp/run.<pid> --under 'plan_search$'
 
 On a shared machine compare CPU seconds, not wall clock, and compare two binaries by running them side by side: a loaded box inflates even CPU time, through cache and memory contention.
 
-A speedup is proved by the output, not the timing. For part C of the ladder, the trace with its wall-clock fields stripped: `LEGAIA_FGL_TRACE=1` before and after must match line for line. For a patcher feature, the `.ppf` from a fixed seed must hash the same.
+A speedup is proved by the output, not the timing. For part C of the ladder, the trace with its wall-clock fields stripped: `LEGAIA_FGL_TRACE=1` before and after must match line for line, on any stream; the wall-clock fields are the `[run N]` and `[seg N]` durations and the test harness's own `finished in`. The trace repeats on one binary, so a difference is the change's ([what keeps it so](full-game-ladder.md#what-the-time-goes-to)). For a patcher feature, the `.ppf` from a fixed seed must hash the same.

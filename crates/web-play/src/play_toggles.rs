@@ -81,6 +81,9 @@ pub struct PageToggles {
     /// saved-chain list instead of retail's per-press input
     /// (`WorldToggles::arts_saved_list`). Off by default.
     pub arts_saved_list: bool,
+    /// `LEGAIA_BATTLE_MEMO_VERIFY`: rebuild behind every hit of the battle
+    /// edge's memos (`WorldToggles::battle_memo_verify`). Off by default.
+    pub battle_memo_verify: bool,
     /// Retail's 5-bit texture modulation on the overlay's tinted atlases
     /// (the native `Renderer::set_ui_psx_tint`). On by default: it is retail
     /// behaviour.
@@ -104,6 +107,7 @@ impl Default for PageToggles {
             retail: false,
             entry_pulse: true,
             battle_frame_cadence: legaia_engine_core::world::DEFAULT_BATTLE_SM_FRAME_CADENCE,
+            battle_memo_verify: false,
             arts_saved_list: false,
             ui_psx_tint: true,
             psx_render: false,
@@ -162,6 +166,7 @@ impl LegaiaRuntime {
         };
         if let Some(host) = self.scene_host.host_mut() {
             switches.apply(&mut host.world.toggles);
+            host.world.toggles.battle_memo_verify = t.battle_memo_verify;
         }
         self.persist_page_toggles();
     }
@@ -234,6 +239,13 @@ impl LegaiaRuntime {
     /// `DEFAULT_BATTLE_SM_FRAME_CADENCE`.
     pub fn set_battle_frame_cadence(&mut self, on: bool) {
         self.page_toggles.battle_frame_cadence = on;
+        self.apply_page_toggles();
+    }
+
+    /// Rebuild behind every hit of the battle edge's memos and trap on a
+    /// difference (the native `LEGAIA_BATTLE_MEMO_VERIFY`). A check, and slow.
+    pub fn set_battle_memo_verify(&mut self, on: bool) {
+        self.page_toggles.battle_memo_verify = on;
         self.apply_page_toggles();
     }
 

@@ -13,8 +13,9 @@
  *
  *   1. `play_fmv_wanted_json()` non-null -> take `sector_count` raw sectors at
  *      `first_sector` off `window.__playDisc` (js/play-disc.js) and hand them
- *      to `play_fmv_install(sectors)`. Sectors not resident yet are read first;
- *      the engine holds the world until the install.
+ *      to `play_fmv_install(sectors)`. The sectors are read when the beat asks;
+ *      the engine holds the world until the install, and they are let go right
+ *      after it, since the install copies them and demuxes once.
  *   2. `play_fmv_active()` -> `play_fmv_audio_start()` puts the XA track on
  *      the ENGINE mixer's XA lane (the native window's `play_xa`), so the
  *      movie sits behind the same master trim and volume slider as BGM and
@@ -65,6 +66,7 @@
     lastIdx: -1,
     active: false,
     finished: false,
+    asked: null,       /* the window this page has the disc holding for a beat */
   };
 
   function hasApi(rt) {
@@ -93,6 +95,12 @@
     st.host = host;
   }
 
+  /* Let the disc drop the window a beat asked for: installed, or no longer wanted. */
+  function letGo() {
+    if (st.asked) st.asked.disc.release(st.asked.first, st.asked.count, true);
+    st.asked = null;
+  }
+
   /* Install the wanted sector window off the page's disc. A page without the
    * disc, or that cannot read those sectors, installs an empty slice on
    * purpose: the engine then finishes the beat unplayed on its next tick
@@ -108,6 +116,7 @@
         console.warn('fmv: the disc would not read; skipping', wanted.path);
       } else {
         /* This service polls every frame: the next one after the read installs. */
+        st.asked = { disc, first: wanted.first_sector, count: wanted.sector_count };
         disc.prefetch(wanted.first_sector, wanted.sector_count);
         return;
       }
@@ -117,6 +126,7 @@
     let ok = false;
     try { ok = rt.play_fmv_install(slice); } catch (e) { console.warn('fmv: install failed', e); }
     if (!ok) console.warn('fmv: engine rejected the movie', wanted.path);
+    letGo();
   }
 
   function startAudio(rt) {
@@ -250,6 +260,10 @@
         const j = rt.play_fmv_wanted_json();
         wanted = (j && j !== 'null') ? JSON.parse(j) : null;
       } catch (e) { wanted = null; }
+      /* Past the install timeout, or a rebuilt engine: a read still in flight
+       * lands with nobody waiting and is dropped. */
+      if (st.asked && (!wanted || wanted.first_sector !== st.asked.first
+        || wanted.sector_count !== st.asked.count || window.__playDisc !== st.asked.disc)) letGo();
       if (wanted) install(rt, wanted);
       return false;
     }

@@ -982,16 +982,36 @@ impl World {
         pack_slot: usize,
         rtmd: &legaia_engine_scene::scene_resources::ResolvedTmd,
     ) -> Option<legaia_engine_scene::scene_resources::ResolvedTmd> {
-        let mut morphed: Option<legaia_engine_scene::scene_resources::ResolvedTmd> = None;
-        for (group, obj) in rtmd.tmd.objects.iter().enumerate() {
-            if let Some(deltas) =
-                self.current_morph_deltas(pack_slot, group as u32, obj.vertices.len())
-            {
-                let base = morphed.take().unwrap_or_else(|| rtmd.clone());
-                morphed = Some(base.with_group_deltas(group as u32, &deltas));
+        let deltas = self.morph_env_deltas(pack_slot, rtmd);
+        (!deltas.is_empty()).then(|| {
+            let mut morphed = rtmd.clone();
+            for (group, d) in &deltas {
+                morphed.stage_group_deltas(*group, d);
             }
-        }
-        morphed
+            morphed
+        })
+    }
+
+    /// The live deltas [`Self::morphed_env_tmd`] stages, `(group, deltas)` per
+    /// group a lane targets; empty when none does. A host that holds a morph
+    /// back while nothing can see it keeps these, because the mesh a morph
+    /// leaves behind is its last state, and the lanes are gone by the time it
+    /// is seen again.
+    pub fn morph_env_deltas(
+        &self,
+        pack_slot: usize,
+        rtmd: &legaia_engine_scene::scene_resources::ResolvedTmd,
+    ) -> Vec<(u32, Vec<[i16; 3]>)> {
+        rtmd.tmd
+            .objects
+            .iter()
+            .enumerate()
+            .filter_map(|(group, obj)| {
+                let group = group as u32;
+                let d = self.current_morph_deltas(pack_slot, group, obj.vertices.len())?;
+                Some((group, d))
+            })
+            .collect()
     }
 
     /// Drain the `(pack_slot, group)` pairs whose morph deltas changed

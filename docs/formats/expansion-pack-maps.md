@@ -772,9 +772,10 @@ Retail scene entry is untouched.
 
 Several products of a map's preparation and of every scene build are
 derived again for an equal input on the next entry, and are kept by content
-instead: a terrain's resolved surface (`MapDef::terrain_surface`, which the
-validator, the rest checks and the mesh library each ask for), each
-decoration mesh a bake places (`tmd_ops::BakeCache`), and per mesh the
+instead: a terrain's heights (`MapDef::terrain_field`, which the validator, the
+rest checks and the surface read) and its resolved surface
+(`MapDef::terrain_surface`, which the mesh library and the field image ask
+for), each decoration mesh a bake places (`tmd_ops::BakeCache`), and per mesh the
 occluder triangles, fog surfaces and coplanar planes and the coplanar lifts
 of the whole draw list (`legaia_engine_scene::mesh_memo`, kept for the last
 two builds within a byte budget). The browser page keeps each static

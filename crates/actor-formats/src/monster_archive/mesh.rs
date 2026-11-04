@@ -128,8 +128,20 @@ impl MonsterMesh {
         slot: u8,
         vram: &mut legaia_tim::Vram,
     ) -> Option<legaia_tmd::mesh::VramMesh> {
+        self.battle_render_mesh_with_object_ids(slot, vram)
+            .map(|(mesh, _)| mesh)
+    }
+
+    /// [`Self::battle_render_mesh`] and the per-vertex object ids of the same
+    /// walk ([`legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids`]).
+    pub fn battle_render_mesh_with_object_ids(
+        &self,
+        slot: u8,
+        vram: &mut legaia_tim::Vram,
+    ) -> Option<(legaia_tmd::mesh::VramMesh, Vec<u32>)> {
         let tmd = legaia_tmd::parse(self.tmd_bytes()).ok()?;
-        let mut mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&tmd, self.tmd_bytes());
+        let (mut mesh, object_ids) =
+            legaia_tmd::mesh::tmd_to_vram_mesh_with_object_ids(&tmd, self.tmd_bytes());
 
         // Inject the texture pool at the loader's per-slot VRAM coords so the
         // relocated CBA/TSB resolve against populated VRAM.
@@ -158,7 +170,7 @@ impl MonsterMesh {
             ct[0] = relocate_cba(ct[0], slot);
             ct[1] = relocate_tsb(ct[1], slot);
         }
-        Some(mesh)
+        Some((mesh, object_ids))
     }
 }
 

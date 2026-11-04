@@ -38,8 +38,16 @@ const disc = arg('no-disc') ? null : process.env.LEGAIA_DISC_BIN;
 const BENIGN_CONSOLE = [
   /favicon/,
 ];
-// What the bundle must export, by the page that holds it.
-const BUNDLE_EXPORTS = ['LegaiaRuntime', 'LegaiaMinigames', 'LegaiaModes'];
+// What each bundle must export, by a page that holds it, and the path it must come from:
+// a page on the wrong bundle still runs if that bundle has the exports, so the path counts.
+const BUNDLE_CHECKS = [
+  { page: 'play.html', from: '/wasm/play/legaia_web_play_bundle_bg.wasm', exports: ['LegaiaRuntime', 'LegaiaMinigames', 'LegaiaModes'] },
+  { page: 'minigames.html', from: '/wasm/play/legaia_web_play_bundle_bg.wasm', exports: ['LegaiaMinigames'] },
+  { page: 'modes.html', from: '/wasm/play/legaia_web_play_bundle_bg.wasm', exports: ['LegaiaModes'] },
+  { page: 'viewer.html', from: '/wasm/legaia_web_viewer_bg.wasm', exports: ['LegaiaViewer', 'LegaiaRuntime'] },
+  { page: 'tooling/rom-patcher.html', from: '/wasm/legaia_web_viewer_bg.wasm', exports: ['patch_rom'] },
+  { page: 'tooling/expansion-workbench.html', from: '/wasm/legaia_web_viewer_bg.wasm', exports: ['ExpansionWorkbench'] },
+];
 // A uniform frame compresses to almost nothing; a drawn scene does not.
 const NOT_BLANK_BYTES = 20000;
 const TOWN_FRAMES = 120;
@@ -97,8 +105,8 @@ function watch(page, base, failures, labelOf) {
 }
 
 async function main() {
-  if (!fs.existsSync(path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm'))) {
-    die(`no bundle under ${site}/wasm; run scripts/ci/build-wasm.sh`);
+  for (const f of [['wasm', 'legaia_web_viewer_bg.wasm'], ['wasm', 'play', 'legaia_web_play_bundle_bg.wasm']]) {
+    if (!fs.existsSync(path.join(site, ...f))) die(`no ${f.join('/')} under ${site}; run scripts/ci/build-wasm.sh`);
   }
   const list = pages();
   if (!list.includes('play.html')) die(`no generated pages under ${site}; run python3 site/_gen.py`);
@@ -156,17 +164,23 @@ async function main() {
 
   // 2. The bundle runs.
   if (want('bundle')) {
-    const context = await browser.newContext();
-    const page = await context.newPage();
-    watch(page, base, failures, 'bundle');
-    await page.goto(base + 'play.html', { waitUntil: 'load' });
-    const missing = await page.evaluate(async (names) => {
-      const m = await window.LegaiaWasm.load();
-      return names.filter((n) => !m[n]);
-    }, BUNDLE_EXPORTS);
-    if (missing.length) failures.push(`bundle: no export ${missing.join(', ')}`);
-    await context.close();
-    console.log('[check-pages] bundle instantiates');
+    for (const c of BUNDLE_CHECKS) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      watch(page, base, failures, `bundle on ${c.page}`);
+      const fetched = [];
+      page.on('request', (r) => { if (r.url().includes('.wasm')) fetched.push(new URL(r.url()).pathname); });
+      await page.goto(base + c.page, { waitUntil: 'load' });
+      const missing = await page.evaluate(async (names) => {
+        const m = await window.LegaiaWasm.load();
+        return names.filter((n) => !m[n]);
+      }, c.exports);
+      if (missing.length) failures.push(`bundle on ${c.page}: no export ${missing.join(', ')}`);
+      if (!fetched.includes(c.from)) failures.push(`bundle on ${c.page}: fetched ${fetched.join(', ') || 'no module'}, not ${c.from}`);
+      else if (fetched.some((u) => u !== c.from)) failures.push(`bundle on ${c.page}: also fetched ${fetched.filter((u) => u !== c.from).join(', ')}`);
+      await context.close();
+    }
+    console.log(`[check-pages] each bundle instantiates on its pages (${BUNDLE_CHECKS.length} pages)`);
   }
 
   // 3. The modes page, which needs no disc.

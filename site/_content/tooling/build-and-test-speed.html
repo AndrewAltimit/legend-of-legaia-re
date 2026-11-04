@@ -50,8 +50,9 @@
 
 <section class="doc-section" id="wasm" data-doc="the-wasm-bundle">
   <h2>The wasm bundle</h2>
-  <p>The shipped bundle is <code>scripts/ci/build-wasm.sh</code>: <code>release</code> plus <code>wasm-opt</code> stripping. A one-line edit in <code>engine-core</code> costs three quarters of a clean build, and no one step is why: it is the chain above the edit, each crate compiled whole, then the thin-LTO link. So the iteration path is a separate build.</p>
-  <div class="cli"><code>scripts/ci/build-wasm.sh --fast   # site/wasm/ from the wasm-fast profile, no wasm-opt
+  <p>The shipped bundles are <code>scripts/ci/build-wasm.sh</code>: <code>release</code> plus <code>wasm-opt</code> stripping, the tool bundle into <code>site/wasm/</code> and the play bundle into <code>site/wasm/play/</code>. They share every rlib, so the second costs one more link and strip. A one-line edit in <code>engine-core</code> costs three quarters of a clean build, and no one step is why: it is the chain above the edit, each crate compiled whole, then the link. So the iteration path is a separate build.</p>
+  <div class="cli"><code>scripts/ci/build-wasm.sh --fast   # both bundles from the wasm-fast profile, no wasm-opt
+scripts/ci/build-wasm.sh --fast --only play   # one bundle; --strict refuses the mix
 scripts/ci/check-pages.mjs        # the same page checks run on it</code></div>
   <div class="table-wrap">
   <table>
@@ -60,7 +61,8 @@ scripts/ci/check-pages.mjs        # the same page checks run on it</code></div>
       <tr><td>Clean target directory</td><td>about 6 min</td><td>about 5 min</td></tr>
       <tr><td>One line, <code>engine-core</code></td><td>4.5 min</td><td>30 s</td></tr>
       <tr><td>One line, <code>web-play</code></td><td>2 min</td><td>30 s</td></tr>
-      <tr><td><code>.wasm</code>, raw / gzip</td><td>21.3 / 6.9 MB</td><td>33.4 / 8.3 MB</td></tr>
+      <tr><td>Tool <code>.wasm</code>, raw / gzip</td><td>21.4 / 6.9 MB</td><td>33.4 / 8.3 MB</td></tr>
+      <tr><td>Play <code>.wasm</code>, raw / gzip</td><td>14.5 / 4.8 MB</td><td>22.1 / 5.7 MB</td></tr>
     </tbody>
   </table>
   </div>
@@ -108,18 +110,19 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
       <tr><td><code>tests</code></td><td>The disc-gated suite; the disc-free suite only when named</td></tr>
       <tr><td><code>ladder</code></td><td>Part B, part C on the default stream, and each listed seed</td></tr>
       <tr><td><code>retail</code></td><td><a href="retail-compare.html">Retail comparison</a>, the audio sweep, the PCM check, capture coverage</td></tr>
-      <tr><td><code>wasm</code></td><td>The bundle build, its strict freshness check and the page checks</td></tr>
+      <tr><td><code>wasm</code></td><td>The bundle build, its strict freshness check, the page checks and the <a href="frame-bench.html#cost-ratchet">cost ratchet</a></td></tr>
     </tbody>
   </table>
   </div>
   <p>The workflow&rsquo;s steps are read from the file on every run, so a step added there is a gate here with no edit. Every failure is reported with its log: a gate whose prerequisite failed shows as <code>BLOCKED</code>, and the rest still run. A driver&rsquo;s <code>[skip]</code> line reads as <code>SKIP</code> and the verdict as <code>PARTIAL</code>, since a skip is not a pass; only the <code>repo</code> group is exempt, where a ratchet skipping for want of the disc is what the runner does. <code>preflight</code> fails when the data a gate needs is missing, and <code>tree-unchanged</code> runs last and fails if a tracked file moved during the run.</p>
-  <p>Output goes under <code>--out</code> (default <code>target/full-gate</code>): one log per gate, <code>timing.md</code> and <code>state.json</code>. <code>--max-cpu</code>, <code>--jobs</code>, <code>--cargo-jobs</code> and <code>--memory-max</code> set the load on a shared box.</p>
+  <p>Output goes under <code>--out</code> (default <code>target/full-gate</code>): one log per gate, <code>timing.md</code> (each gate&rsquo;s start, length and CPU seconds, which are what a critical path and a gate&rsquo;s real share of the budget are read from) and <code>state.json</code>. <code>--max-cpu</code>, <code>--jobs</code>, <code>--cargo-jobs</code> and <code>--memory-max</code> set the load on a shared box.</p>
+  <p>At the default budget of twelve and six jobs, two heavy gates run side by side. What sets the wall clock is the chain the <code>display</code> lock serialises: <code>retail-compare</code>, the two smokes, <code>pages</code>, <code>quality-ladder</code>, <code>cost-ratchet</code>. The scheduler offers that chain and the <code>cargo-rt</code> chain under the tests the budget first, with the lints among them, and the seeds last: they block nothing and each takes one core.</p>
 </section>
 
 <section class="doc-section" id="profiling" data-doc="profiling-without-perf">
   <h2>Profiling without perf</h2>
   <p>Where <code>perf</code> is refused, <code>scripts/profile/sampler.c</code> gets the same answer with no privilege and no rebuild: a preload library that takes a stack every 10 ms of CPU time, and <code>scripts/profile/report.py</code> to read it. On a shared machine compare CPU seconds, not wall clock, and compare two binaries by running them side by side.</p>
-  <p>A speedup is proved by the output, not the timing. For part C of the ladder, that is the trace with its wall-clock fields stripped; for a patcher feature, the <code>.ppf</code> from a fixed seed must hash the same.</p>
+  <p>A speedup is proved by the output, not the timing. For part C of the ladder, that is the trace with its wall-clock fields stripped, which repeats on one binary, so a difference is the change's; for a patcher feature, the <code>.ppf</code> from a fixed seed must hash the same.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

@@ -92,6 +92,14 @@
 
     _frame(skipDraw) {
       const rt = this.rt;
+      /* A movie's opaque overlay covers the GL view and the engine holds the
+       * world under it: the frame syncs with the engine as ever and issues no
+       * GL draw, as a VR session's does. Every pass that reads the frame reads
+       * one drawn earlier in the same frame, so the first frame after the movie
+       * draws what it would have. The 2D overlay and the transition readback's
+       * declaration follow what the page would otherwise show. */
+      const presenting = !skipDraw;
+      if (this._movieCovers()) skipDraw = true;
       /* Gamepad buttons enter the same held / pulse sets the keyboard
        * fills, so every reader below (menu, name entry, field tick) sees
        * one pad word whichever device pressed it. */
@@ -107,14 +115,16 @@
        * and the ticks: while the timeline owns the scene the pad is frozen
        * and the pause menu stays shut, exactly as the native window gates. */
       this._cut = null;
-      if (typeof rt.play_cutscene_state_json === 'function') {
+      /* A frame that ticks reads it after them (`_frameTicks`), and nothing
+       * between here and there reads it. */
+      if (!advance && typeof rt.play_cutscene_state_json === 'function') {
         try { this._cut = JSON.parse(rt.play_cutscene_state_json()); }
         catch (e) { this._cut = null; }
       }
 
       /* FMV beats (STR / MDEC): the engine holds the world in
-       * `SceneMode::Cutscene` while a movie is open; the movie lane slices
-       * the segment out of the page's disc bytes, installs it, draws the
+       * `SceneMode::Cutscene` while a movie is open; the movie lane reads
+       * the segment off the page's disc, installs it, draws the
        * frames over the GL view and finishes the beat. The sim keeps
        * ticking - the hold is engine-side. */
       if (window.LegaiaPlayFmv) {
@@ -270,10 +280,15 @@
        * their positions re-uploaded - env mesh id == pack slot here. */
       if (typeof rt.field_morph_slots === 'function') {
         const morphSlots = rt.field_morph_slots();
+        const settles = !skipDraw && !this.psxRender && typeof rt.field_morph_reach === 'function';
         for (let i = 0; i < morphSlots.length; i++) {
-          const pos = rt.field_morph_positions(morphSlots[i]);
-          if (pos.length) this.renderer.updateSceneMeshPositions(morphSlots[i], pos);
+          if (settles) {
+            if (!this._morphHeld.has(morphSlots[i])) this._morphHeld.set(morphSlots[i], false);
+          } else {
+            this._morphNow(rt, morphSlots[i]);
+          }
         }
+        if (!settles) this._flushMorphHeld(rt);
       }
       const pt = rt.player_transform();
       let draws;
@@ -457,6 +472,9 @@
           ? rt.play_npc_culled(this.debugCamera) : null,
         /* Actor draw: exempt from the occlusion fade, like the player. */
         extra: { noOccl: true },
+        /* Settled in `_settleDraws`, which a VR session's own draws and PSX
+         * mode's vertex stage go without. */
+        deferPose: !skipDraw && !this.psxRender,
       });
 
       /* Tile board (field-VM op 0x49). A board is installed at RUNTIME by the
@@ -581,6 +599,9 @@
                 if (meshId >= 0) {
                   this.renderer.uploadSceneMesh(meshId, pos, rt.play_dynamic_mesh_uvs(),
                     rt.play_dynamic_mesh_cba_tsb(), idx, flat.length ? flat : null);
+                  /* Not the authored rest a VDF morph's reach is measured from. */
+                  const blended = this.renderer.sceneMeshes.get(meshId);
+                  if (blended) blended.blendedRest = true;
                 }
               }
               continue;
@@ -618,7 +639,10 @@
       this._draws = draws;
       /* `skipDraw`: a VR session owns the framebuffer and re-issues this draw
        * once per eye with the XR view matrices. */
-      if (!skipDraw) this.renderer.renderAssembled(this._draws, this._ext, this.cam);
+      if (!skipDraw) {
+        this.renderer.settleHook = (placements, vp) => this._settleDraws(rt, placements, vp);
+        this.renderer.renderAssembled(this._draws, this._ext, this.cam);
+      }
       this._fogFrameOk = true;
       this._editorFrame = !skipDraw;
       }
@@ -664,7 +688,7 @@
       /* The retail pause menu / dialog reading box overlay: engine-driven,
        * blitted onto the 2D overlay canvas over the GL view. Skipped while VR
        * presents. */
-      if (!skipDraw) this._drawOverlay();
+      if (presenting) this._drawOverlay();
       /* ... and the screen primitives that cover it. */
       this._drawScreenPrimsOver();
 
@@ -687,7 +711,7 @@
        * that will read it back (a VR session, which skips this, keeps the
        * transition from its first frame). */
       if (typeof rt.play_set_intro_readback === 'function') {
-        rt.play_set_intro_readback(!skipDraw);
+        rt.play_set_intro_readback(presenting);
       }
       if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
           rt.play_intro_wants_capture()) {
@@ -726,6 +750,110 @@
           rt.play_land_frame_grab(buf, cw, ch);
         } catch (e) { /* presentation-only */ }
       }
+    }
+
+    /* The field draws' work that only a viewer needs, done or dropped now that
+     * this frame's camera and lights are known (`renderer.settleHook`).
+     *
+     * An actor whose pose moved and that nothing can see stays out of the frame:
+     * no pose, no upload, no normals and no draw. Its `lastFrame` has not moved,
+     * so the first frame anything can see it poses it to its current frame. A
+     * morph's mesh build waits the same way, and the slot stays held. Neither
+     * mesh is read by anything but its draws in this file's frame, and the engine
+     * keeps its own copies of what it tests against: nothing on a later frame
+     * reads what this frame did not build. */
+    _settleDraws(rt, placements, vp) {
+      const r = this.renderer;
+      let out = placements;
+      for (let i = 0; i < placements.length; i++) {
+        const p = placements[i];
+        if (!p.pendingPose) {
+          if (out !== placements) out.push(p);
+          continue;
+        }
+        const pose = p.pendingPose;
+        p.pendingPose = null;
+        const scale = p.scale != null ? p.scale : 1;
+        if (r.sphereUnseen(vp, p.x, p.y, p.z, (p.poseReach + 1) * Math.abs(scale))) {
+          if (out === placements) out = placements.slice(0, i);
+          continue;
+        }
+        pose();
+        if (out !== placements) out.push(p);
+      }
+      if (this._morphHeld.size) this._settleMorphs(rt, out, vp);
+      return out;
+    }
+
+    /* A held morph builds on the first frame one of its placements can be seen.
+     * Until then every vertex lies within the reach of the last state uploaded
+     * and the reach of the current one from the mesh the buffer holds, so a sphere
+     * round that box bounds both the stale mesh and the true one, with room for
+     * the coplanar resolve's nudges (half a unit per layer). */
+    _settleMorphs(rt, placements, vp) {
+      const r = this.renderer;
+      const held = this._morphHeld;
+      let byMesh = null;
+      for (const [slot, waited] of held) {
+        let reach = rt.field_morph_reach(slot);
+        /* The lanes are gone. With nothing held back the mesh is already the
+         * last state; held back, it still has to get there. */
+        if (reach < 0) {
+          if (!waited) { held.delete(slot); continue; }
+          reach = -1 - reach;
+        }
+        const m = r.sceneMeshes.get(slot);
+        if (m && m.aabb && !m.blendedRest) {
+          if (!byMesh) {
+            byMesh = new Map();
+            for (const p of placements) {
+              if (!held.has(p.meshId)) continue;
+              if (!byMesh.has(p.meshId)) byMesh.set(p.meshId, []);
+              byMesh.get(p.meshId).push(p);
+            }
+          }
+          const b = m.aabb;
+          const bound = b.radius + ((m.morphReach || 0) + reach) * Math.sqrt(3) + 16;
+          const list = byMesh.get(slot) || [];
+          let unseen = true;
+          for (let i = 0; i < list.length && unseen; i++) {
+            const mm = r._placementModel(list[i], m);
+            const s = Math.hypot(mm[0], mm[1], mm[2]);
+            unseen = r.sphereUnseen(vp,
+              mm[0] * b.cx + mm[4] * b.cy + mm[8] * b.cz + mm[12],
+              mm[1] * b.cx + mm[5] * b.cy + mm[9] * b.cz + mm[13],
+              mm[2] * b.cx + mm[6] * b.cy + mm[10] * b.cz + mm[14], bound * s);
+          }
+          if (unseen) { held.set(slot, true); continue; }
+        }
+        this._morphBuild(rt, slot, reach);
+        held.delete(slot);
+      }
+    }
+
+    _morphBuild(rt, slot, reach) {
+      const pos = rt.field_morph_positions(slot);
+      if (!pos.length) return;
+      const m = this.renderer.sceneMeshes.get(slot);
+      if (m) m.morphReach = reach;
+      this.renderer.updateSceneMeshPositions(slot, pos);
+    }
+
+    /* A morph with no settling to wait for: the mesh now, if a lane is live. */
+    _morphNow(rt, slot) {
+      const reach = typeof rt.field_morph_reach === 'function' ? rt.field_morph_reach(slot) : 0;
+      if (reach >= 0) this._morphBuild(rt, slot, reach);
+    }
+
+    /* What was held back when the frame stopped settling (PSX mode came on, a VR
+     * session began): draw it as it stands. */
+    _flushMorphHeld(rt) {
+      for (const [slot, waited] of this._morphHeld) {
+        const reach = rt.field_morph_reach(slot);
+        if (reach >= 0) this._morphBuild(rt, slot, reach);
+        else if (waited) this._morphBuild(rt, slot, -1 - reach);
+      }
+      this._morphHeld.clear();
     }
 
     /* One frame of the screen-space PSX primitive pass.

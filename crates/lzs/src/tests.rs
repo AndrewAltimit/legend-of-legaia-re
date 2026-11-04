@@ -323,3 +323,240 @@ fn back_reference_reads_zeros_from_initial_window() {
     let out = decompress(&input, 3).unwrap();
     assert_eq!(out, &[0, 0, 0]);
 }
+
+// --- Production decoder against the reference ring decoder ----------------
+
+/// SplitMix64: deterministic, and no dependency for one test module.
+struct Rng(u64);
+
+impl Rng {
+    fn next(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    }
+    fn below(&mut self, n: usize) -> usize {
+        (self.next() % n as u64) as usize
+    }
+    fn bytes(&mut self, n: usize) -> Vec<u8> {
+        (0..n).map(|_| self.next() as u8).collect()
+    }
+}
+
+/// Bytes, `consumed`, and the error text on a failed decode: all equal.
+fn assert_matches_reference(input: &[u8], expected: usize) {
+    let new = decompress_tracked(input, expected).map_err(|e| e.to_string());
+    let old = reference_decoder::decode(input, expected);
+    match (&new, &old) {
+        (Ok((n, nc)), Ok((o, oc))) => {
+            assert_eq!(
+                nc,
+                oc,
+                "consumed, {} input bytes, size {expected}",
+                input.len()
+            );
+            if n != o {
+                let at = n.iter().zip(o).position(|(a, b)| a != b);
+                panic!(
+                    "output differs at {at:?}, lengths {} and {}, {} input bytes, size {expected}",
+                    n.len(),
+                    o.len(),
+                    input.len()
+                );
+            }
+        }
+        (Err(n), Err(o)) => assert_eq!(n, o, "{} input bytes, size {expected}", input.len()),
+        _ => panic!(
+            "one failed: new {:?}, old {:?}, {} input bytes, size {expected}",
+            new.as_ref().map(|r| r.1),
+            old.as_ref().map(|r| r.1),
+            input.len()
+        ),
+    }
+}
+
+/// A stream built token by token.
+#[derive(Default)]
+struct Stream {
+    bytes: Vec<u8>,
+    control_at: usize,
+    bits: u32,
+}
+
+impl Stream {
+    fn control_bit(&mut self, literal: bool) {
+        if self.bits == 8 || self.bytes.is_empty() {
+            self.control_at = self.bytes.len();
+            self.bytes.push(0);
+            self.bits = 0;
+        }
+        if literal {
+            self.bytes[self.control_at] |= 1 << self.bits;
+        }
+        self.bits += 1;
+    }
+    fn literal(&mut self, v: u8) {
+        self.control_bit(true);
+        self.bytes.push(v);
+    }
+    fn reference(&mut self, base: usize, len: usize) {
+        self.control_bit(false);
+        self.bytes.push(base as u8);
+        self.bytes
+            .push((((base >> 8) as u8) << 4) | (len - 3) as u8);
+    }
+}
+
+/// Every position at every interesting cursor: both ends of the distance range
+/// (a position equal to the cursor is the 4096 case), reads that straddle the
+/// start of the output, and copies that wrap the ring either way.
+#[test]
+fn reference_positions_match_the_ring_at_each_cursor() {
+    let mut rng = Rng(0x11);
+    for written in [
+        0usize, 1, 2, 5, 17, 18, 4076, 4077, 4078, 4079, 4095, 4096, 4097, 4114, 8192, 8210,
+    ] {
+        let mut prefix = Stream::default();
+        for _ in 0..written {
+            prefix.literal(rng.next() as u8);
+        }
+        let cursor = (0xFEE + written) & 0xFFF;
+        let every_position = written < 32;
+        for base in 0..0x1000usize {
+            let near = |at: usize| {
+                (base.wrapping_sub(at) & 0xFFF).min(at.wrapping_sub(base) & 0xFFF) <= 24
+            };
+            let (near_cursor, near_seam) = (near(cursor), near(0xFEE));
+            if !(every_position || near_cursor || near_seam || base % 61 == 0) {
+                continue;
+            }
+            for len in [3usize, 4, 17, 18] {
+                let mut s = Stream {
+                    bytes: prefix.bytes.clone(),
+                    control_at: prefix.control_at,
+                    bits: prefix.bits,
+                };
+                s.reference(base, len);
+                s.literal(0xA5);
+                // The whole stream, a stop at every point inside the copy, and
+                // one more byte than the stream can produce.
+                assert_matches_reference(&s.bytes, written + len + 1);
+                for stop in 1..len {
+                    assert_matches_reference(&s.bytes, written + stop);
+                }
+                assert_matches_reference(&s.bytes, written + len + 2);
+            }
+        }
+    }
+}
+
+/// LZS decodes most input without error, so garbage is the common case for a
+/// scanner: random bytes, at sizes that finish, stop short or run out.
+#[test]
+fn random_garbage_matches_the_reference() {
+    let mut rng = Rng(0x22);
+    for _ in 0..4000 {
+        let len = rng.below(1200);
+        let input = rng.bytes(len);
+        for expected in [
+            0,
+            1,
+            rng.below(32),
+            rng.below(len + 1),
+            rng.below(len * 3 + 1),
+            rng.below(len * 18 + 65),
+            rng.below(0x4000),
+        ] {
+            assert_matches_reference(&input, expected);
+        }
+    }
+    // Sizes past anything the input can yield, up to the allocation guard.
+    for _ in 0..200 {
+        let len = rng.below(64);
+        let input = rng.bytes(len);
+        for expected in [
+            len * 18 + 63,
+            len * 18 + 64,
+            len * 18 + 65,
+            1 << 24,
+            1 << 40,
+            usize::MAX,
+        ] {
+            assert_matches_reference(&input, expected);
+        }
+    }
+}
+
+/// Reference-heavy streams long enough to wrap the ring many times, with the
+/// mix of zeros, near copies and far copies random bytes rarely give.
+#[test]
+fn random_reference_streams_wrap_the_ring_like_the_reference() {
+    let mut rng = Rng(0x33);
+    for _ in 0..120 {
+        let literal_percent = [0, 3, 25, 60][rng.below(4)];
+        let tokens = 200 + rng.below(6000);
+        let mut s = Stream::default();
+        let mut written = 0usize;
+        for _ in 0..tokens {
+            if rng.below(100) < literal_percent {
+                s.literal(rng.next() as u8);
+                written += 1;
+            } else {
+                let len = 3 + rng.below(16);
+                let cursor = (0xFEE + written) & 0xFFF;
+                let base = match rng.below(4) {
+                    0 => cursor.wrapping_sub(1 + rng.below(32)) & 0xFFF,
+                    1 => (cursor + rng.below(32)) & 0xFFF,
+                    _ => rng.below(0x1000),
+                };
+                s.reference(base, len);
+                written += len;
+            }
+        }
+        assert_matches_reference(&s.bytes, written);
+        assert_matches_reference(&s.bytes, rng.below(written + 1));
+        assert_matches_reference(&s.bytes, written + 1 + rng.below(32));
+        for _ in 0..16 {
+            let cut = rng.below(s.bytes.len());
+            assert_matches_reference(&s.bytes[..cut], written);
+            // Flip bytes: the same shape, with the tokens re-dealt from there on.
+            let mut flipped = s.bytes.clone();
+            let at = rng.below(flipped.len());
+            flipped[at] ^= 1 + rng.below(255) as u8;
+            assert_matches_reference(&flipped, written);
+        }
+    }
+}
+
+/// Every truncation and every size of a real encoder stream.
+#[test]
+fn encoder_streams_truncated_everywhere_match_the_reference() {
+    let mut rng = Rng(0x44);
+    let mut plain = Vec::new();
+    while plain.len() < 6000 {
+        match rng.below(3) {
+            0 => plain.extend(std::iter::repeat_n(rng.next() as u8, 1 + rng.below(64))),
+            1 => {
+                let n = 1 + rng.below(32);
+                plain.extend(rng.bytes(n));
+            }
+            _ => {
+                let from = rng.below(plain.len() + 1);
+                let n = (plain.len() - from).min(1 + rng.below(40));
+                plain.extend_from_within(from..from + n);
+            }
+        }
+    }
+    for packed in [compress(&plain), compress_optimal(&plain)] {
+        assert_matches_reference(&packed, plain.len());
+        assert_eq!(decompress(&packed, plain.len()).unwrap(), plain);
+        for cut in 0..packed.len() {
+            assert_matches_reference(&packed[..cut], plain.len());
+        }
+        for size in 0..plain.len() {
+            assert_matches_reference(&packed, size);
+        }
+    }
+}

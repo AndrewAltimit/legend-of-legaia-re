@@ -281,7 +281,7 @@ pub(super) fn talk_hop(
         false
     }
     let w = &session.host.world;
-    let slots: Vec<u8> = w
+    let mut slots: Vec<u8> = w
         .npcs
         .positions
         .keys()
@@ -294,6 +294,10 @@ pub(super) fn talk_hop(
                     .any(|r| fmv.contains(r))
         })
         .collect();
+    // The placements live in a hash map, whose order is drawn per process:
+    // `town0d` has three such talks, and the order they are walked to decides
+    // the run's frame counts from there on.
+    slots.sort_unstable();
     if slots.is_empty() {
         return None;
     }

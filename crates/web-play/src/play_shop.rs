@@ -320,6 +320,7 @@ impl LegaiaRuntime {
     /// Like the dialog box (and unlike the pause menu) these composite over
     /// the live field - retail draws both over the running scene.
     pub fn play_overlay_draws_json(&mut self, surface_w: u32, surface_h: u32) -> String {
+        use crate::play_menu::QuadText;
         const CLOSED: &str = r#"{"open":false,"sprites":[],"texts":[]}"#;
         // A party wipe holds the frozen battle frame and adds nothing to it:
         // retail's next frame after the wipe store is the title overlay
@@ -458,16 +459,27 @@ impl LegaiaRuntime {
         sprites.extend(minigame_sprites);
         texts.extend(minigame_texts);
 
-        serde_json::json!({
-            "open": true,
+        #[derive(serde::Serialize)]
+        struct OverlayDraws<'a> {
+            backdrop: &'static str,
+            open: bool,
+            sprites: Vec<QuadText<'a>>,
+            texts: Vec<QuadText<'a>>,
+        }
+        serde_json::to_string(&OverlayDraws {
             // A shop is a menu-overlay session: the field overlay is swapped
             // out and the screen behind its windows is black
             // (`MenuRuntime::covers_field`). The page paints the backdrop
             // before the quads.
-            "backdrop": if self.menu.covers_field() { "black" } else { "none" },
-            "sprites": sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
-            "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
+            backdrop: if self.menu.covers_field() {
+                "black"
+            } else {
+                "none"
+            },
+            open: true,
+            sprites: sprites.iter().map(QuadText::from).collect(),
+            texts: texts.iter().map(QuadText::from).collect(),
         })
-        .to_string()
+        .unwrap_or_else(|_| CLOSED.to_string())
     }
 }

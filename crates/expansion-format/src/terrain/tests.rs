@@ -415,3 +415,55 @@ fn the_abyss_darkens_with_depth_and_leaves_the_floor_alone() {
     assert!(sum(&d.colors) < sum(&l.colors));
     assert_eq!(l.colors[0], d.colors[0], "the high corner is untouched");
 }
+
+/// The field the rest checks and the workbench's preview read through the
+/// memo is the one a whole build makes and the one the surface carries, over
+/// a run of edits that come back to earlier inputs.
+#[test]
+fn the_memoed_field_is_the_whole_build_over_edits() {
+    let mats = "materials = [{ name = \"a\", chars = \".\", lift = 3, roughness = 2, cells = [{ tpage = 1, clut = 1, tile = 1 }] }, { name = \"b\", chars = \"^\", cells = [{ tpage = 2, clut = 2, tile = 2 }] }]";
+    let shapes = "shapes = [{ kind = \"plateau\", rect = [1, 1, 3, 2], height = 40, edge = 1.5, roughness = 0.5, seed = 3 }, { kind = \"flatten\", at = [6.0, 3.0], radius = 2.0, strength = 0.8 }, { kind = \"smooth\", at = [2.0, 2.0], radius = 2.0, strength = 0.5 }, { kind = \"noise\", amplitude = 4, scale = 2.0, octaves = 3, seed = 9 }]";
+    let base = map(&format!("[terrain]\nsmooth = 1\n{mats}\n{shapes}"));
+    let mut edits = vec![base.clone()];
+    for (c, r, ch) in [
+        (0, 0, '^'),
+        (9, 5, '^'),
+        (4, 2, '.'),
+        (5, 3, '.'),
+        (2, 4, '^'),
+    ] {
+        let mut m = edits.last().unwrap().clone();
+        let mut row: Vec<char> = m.tiles.rows[r].chars().collect();
+        row[c] = ch;
+        m.tiles.rows[r] = row.into_iter().collect();
+        edits.push(m);
+    }
+    let mut ladder = base.clone();
+    ladder.floor_heights = vec![0, 90];
+    edits.push(ladder);
+    let mut shaped = base.clone();
+    shaped.terrain.as_mut().unwrap().shapes.pop();
+    edits.push(shaped);
+    // Forwards, backwards and forwards again: cold, then from the memo.
+    let order = (0..edits.len())
+        .chain((0..edits.len()).rev())
+        .chain(0..edits.len());
+    for i in order {
+        let m = &edits[i];
+        let grid = m.tile_grid().unwrap();
+        let whole = heightfield(m, m.terrain.as_ref().unwrap(), &grid).unwrap();
+        assert_eq!(*m.terrain_field().unwrap().unwrap(), whole, "edit {i}");
+        assert_eq!(m.terrain_heightfield().unwrap().unwrap(), whole, "edit {i}");
+        assert_eq!(
+            m.terrain_surface().unwrap().unwrap().field,
+            whole,
+            "edit {i}"
+        );
+    }
+    // The edits do change the field: a memo that answered one input for all
+    // would pass the rest.
+    let first = base.terrain_field().unwrap().unwrap();
+    for m in &edits[1..] {
+        assert_ne!(*m.terrain_field().unwrap().unwrap(), *first);
+    }
+}

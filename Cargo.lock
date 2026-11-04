@@ -3445,10 +3445,20 @@ dependencies = [
  "legaia-vab",
  "legaia-web-minigames",
  "legaia-xa",
+ "serde",
  "serde_json",
  "toml",
  "wasm-bindgen",
  "web-sys",
+]
+
+[[package]]
+name = "legaia-web-play-bundle"
+version = "0.1.0"
+dependencies = [
+ "legaia-web-minigames",
+ "legaia-web-play",
+ "wasm-bindgen",
 ]
 
 [[package]]

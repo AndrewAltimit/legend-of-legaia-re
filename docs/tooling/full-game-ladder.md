@@ -848,7 +848,9 @@ Over part C the largest share is the pad tier's path search; the engine's tick c
 - The per-cell table keeps a cell's stamp, parent and cost together, so a probe touches one cache line.
 - A coarse grid answers the actor-box and door probes for a cell with nothing near it, which is almost every cell.
 
-Profiles and how a speedup is proved: [`build-and-test-speed.md`](build-and-test-speed.md). The route is what stays fixed, and part C's trace is byte-identical across runs; part B's trace is not, even on one binary, since its frame counts move between runs from the `jou` beats on while its report table holds, so compare part B by that table.
+Profiles and how a speedup is proved: [`build-and-test-speed.md`](build-and-test-speed.md). The route is what stays fixed: with the wall-clock fields stripped, the trace of part C, and of part B, is byte-identical across runs of one binary on one stream.
+
+That holds because nothing the hand does may follow a std `HashMap` or `HashSet`'s iteration order, which `RandomState` draws per process. `World::npcs.positions` is such a map, so the hand sorts every slot list it takes from it. The trap is real: `town0d` has three talks that lead to `jou` (P1[1..=3]), and the order `talk_hop` walks them moves every frame number after them, in a run that still reaches every milestone. A trace that moves between runs of one binary is checked first by pinning the keys: preload a `getrandom` that returns a fixed stream. If two pinned runs match and two pins differ, the keys are the cause; the time, threads and heap addresses that stay live under a pin are not.
 
 ## How to read a stall
 

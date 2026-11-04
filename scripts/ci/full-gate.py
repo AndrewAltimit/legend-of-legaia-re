@@ -20,7 +20,7 @@ What it runs, in groups:
     tests    the workspace tests with the disc (read from the Disc-Gated Tests job)
     ladder   part B, part C default, and every seed `[continuous_seeds]` names
     retail   retail-compare --images --check, audio sweep, PCM check, capture coverage
-    wasm     the bundle build, its freshness, headless page checks
+    wasm     the bundle build, its freshness, headless page checks, the cost ratchet
 
 Run lines come out of the workflow file each time, so a step added there is a
 gate here with no edit. A step's name becomes its gate's name: `ci-<slug>`.
@@ -53,6 +53,7 @@ import hashlib
 import json
 import os
 import re
+import resource
 import shutil
 import signal
 import subprocess
@@ -79,6 +80,19 @@ DATA_PATHS = ("extracted/PROT.DAT", "saves/library", "captures", "ghidra/scripts
 FAILURE_LINE = re.compile(r"\b(?:FAILED|problem\(s\)|error(?:\[|:)|panicked|failure|regress\w*|drops?|Diff in)\b", re.I)
 ANSI = re.compile(r"\x1b(?:\[[0-9;]*[A-Za-z]|\([A-Z0-9])")
 SKIP_LINE = re.compile(r"^\s*\[skip\]|\bSKIPPED\b|^\[no baseline\]", re.M)
+
+# The order gates are offered to the budget, ahead of plan order. The wall clock is
+# set by the chain the display lock serialises (retail-compare, the smokes, the page
+# gates), and two six-core gates side by side fill the default budget, so that chain
+# and the cargo-rt chain under the tests each hold a slot from the start. Lints come
+# early because a lint failure is worth hearing about in the first minutes. The seeds
+# need a slot and block nothing, so they take what is left.
+START_FIRST = (
+    "engine-bin", "ladder-bin", "tests-build", "tests-disc",
+    "lint-clippy", "lint-clippy-engine-shell-oracles", "lint-wasm32-type-check",
+    "retail-compare", "smoke-clean", "smoke-enhanced",
+    "wasm-build", "wasm-freshness", "pages", "quality-ladder", "cost-ratchet",
+)
 
 PASS, FAIL, WARN, SKIP, BLOCKED, UNRUN = "PASS", "FAIL", "WARN", "SKIP", "BLOCKED", "NOT RUN"
 OK_STATUSES = (PASS, WARN, SKIP)
@@ -583,7 +597,7 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
         Gate(
             "capture-coverage",
             "retail",
-            f"python3 scripts/ci/capture-coverage.py --no-build --summary --out \"{drop('capture-coverage')}\"",
+            f"python3 scripts/ci/capture-coverage.py --no-build --summary --jobs {a.jobs} --out \"{drop('capture-coverage')}\"",
             env=engine_env,
             cpu=a.jobs,
             scope=True,
@@ -614,6 +628,14 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
     )
     p.add(
         Gate(
+            "play-disc",
+            "wasm",
+            "node scripts/ci/play-disc-check.mjs --disc",
+            cpu=1,
+        )
+    )
+    p.add(
+        Gate(
             "pages",
             "wasm",
             f'node scripts/ci/check-pages.mjs --out "{drop("pages")}"',
@@ -622,6 +644,31 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
             cpu=2,
             scope=True,
             read_log=tail_detail(r"^\[check-pages\] .*$"),
+        )
+    )
+    p.add(
+        Gate(
+            "quality-ladder",
+            "wasm",
+            "node scripts/ci/quality-ladder-web.mjs",
+            needs=("wasm-freshness",),
+            locks=("display",),
+            cpu=2,
+            scope=True,
+            read_log=tail_detail(r"^quality ladder: .*$"),
+        )
+    )
+    p.add(
+        Gate(
+            "cost-ratchet",
+            "wasm",
+            "python3 scripts/ci/cost-ratchet.py --check",
+            needs=("wasm-freshness",),
+            # Its native half builds a bench-alloc engine and drives the window.
+            locks=("display", "cargo-rt"),
+            cpu=a.cargo_jobs,
+            scope=True,
+            read_log=tail_detail(r"^\[cost-ratchet\] .*$"),
         )
     )
 
@@ -746,11 +793,15 @@ def wasm_fresh(root: Path) -> tuple[str, str] | None:
 def bundle_size(root: Path) -> str:
     import gzip
 
-    f = root / "site" / "wasm" / "legaia_web_viewer_bg.wasm"
-    if not f.exists():
-        return ""
-    raw = f.read_bytes()
-    return f"{len(raw)} bytes, {len(gzip.compress(raw, 6))} gzip"
+    parts = []
+    for key, f in (
+        ("play", root / "site" / "wasm" / "play" / "legaia_web_play_bundle_bg.wasm"),
+        ("tool", root / "site" / "wasm" / "legaia_web_viewer_bg.wasm"),
+    ):
+        if f.exists():
+            raw = f.read_bytes()
+            parts.append(f"{key} {len(raw)} bytes, {len(gzip.compress(raw, 6))} gzip")
+    return "; ".join(parts)
 
 
 # -- Running ------------------------------------------------------------------
@@ -865,10 +916,24 @@ def select(p: Plan) -> tuple[list[str], set[str]]:
     return [n for n in p.gates if n in chosen], skipped
 
 
+def start_order(order: list[str]) -> list[str]:
+    """`order` as the scheduler offers it: START_FIRST, the rest, then the seeds."""
+    seed = lambda n: n.startswith("ladder-seed-")  # noqa: E731
+    first = [n for n in START_FIRST if n in order]
+    rest = [n for n in order if n not in first and not seed(n)]
+    return first + rest + [n for n in order if seed(n)]
+
+
+def children_cpu() -> float:
+    """User + system seconds of every child reaped so far, descendants included."""
+    use = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return use.ru_utime + use.ru_stime
+
+
 def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
     a = p.a
     results: dict[str, dict] = {}
-    pending = list(order)
+    pending = start_order(order)
     running: list[Running] = []
     held: set[str] = set()
     cpu = 0
@@ -903,6 +968,7 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
             if r and r["status"] in OK_STATUSES and not p.gates[n].always:
                 pending.remove(n)
                 results[n] = {**r, "resumed": True}
+                results[n].pop("start", None)  # seconds into an earlier run
                 say(f"keep   {n}: {r['status']} from the run being resumed")
 
     # `cargo test --workspace` runs the ladder's two default parts, so they wait for
@@ -971,6 +1037,7 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                     with open(log_path, "wb") as log:
                         code = g.cmd(log)
                     results[n] = finish(p, g, code, log_path, time.time() - t, None)
+                    results[n]["start"] = round(t - t0, 1)
                     say(f"{results[n]['status']:<6} {n} {results[n]['wall']:.0f}s {results[n]['detail']}")
                     save()
                     continue
@@ -979,6 +1046,9 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                 cpu += g.cpu
                 held |= set(g.locks)
             for r in list(running):
+                # What a reap adds to the children's total is that gate's CPU, so read
+                # it each time round: two gates ending together still come out apart.
+                seen_cpu = children_cpu()
                 code = r.proc.poll()
                 if code is None and time.time() - r.started > r.gate.timeout:
                     try:
@@ -994,6 +1064,8 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                 cpu -= r.gate.cpu
                 held -= set(r.gate.locks)
                 results[r.gate.name] = finish(p, r.gate, code, r.log_path, time.time() - r.started, r.gh_env)
+                results[r.gate.name]["start"] = round(r.started - t0, 1)
+                results[r.gate.name]["cpu"] = round(children_cpu() - seen_cpu, 1)
                 res = results[r.gate.name]
                 say(f"{res['status']:<6} {r.gate.name} {res['wall']:.0f}s {res['detail']}")
                 save()
@@ -1014,13 +1086,17 @@ def report(p: Plan, order: list[str], skipped: set[str], results: dict) -> int:
     skips = [(n, r) for n, r in rows if r and r["status"] == SKIP]
     warns = [(n, r) for n, r in rows if r and r["status"] == WARN]
     serial = sum((r or {}).get("wall", 0) for _, r in rows)
+    cpu_total = sum((r or {}).get("cpu", 0) for _, r in rows)
 
     def table(rows2) -> list[str]:
-        lines = ["| Gate | Group | Status | Seconds | Detail |", "|---|---|---|---:|---|"]
+        lines = ["| Gate | Group | Status | Start | Seconds | CPU s | Detail |", "|---|---|---|---:|---:|---:|---|"]
         for n, r in rows2:
             r = r or {"status": UNRUN, "wall": 0, "detail": ""}
             detail = str(r.get("detail", "")).replace("|", "\\|")
-            lines.append(f"| {n} | {p.gates[n].group} | {r['status']} | {r.get('wall', 0):.0f} | {detail} |")
+            # Seconds into this run; a gate this run did not start (blocked, reused) has none.
+            start = f"{r['start']:.0f}" if "start" in r else ""
+            cpu = f"{r['cpu']:.0f}" if "cpu" in r else ""
+            lines.append(f"| {n} | {p.gates[n].group} | {r['status']} | {start} | {r.get('wall', 0):.0f} | {cpu} | {detail} |")
         return lines
 
     head = git(p.root, "rev-parse", "--short=12", "HEAD").strip()
@@ -1028,7 +1104,8 @@ def report(p: Plan, order: list[str], skipped: set[str], results: dict) -> int:
     out = [
         f"# Full gate at {head}: {verdict}",
         "",
-        f"Wall clock {wall / 60:.1f} min; the same gates one after another {serial / 60:.1f} min.",
+        f"Wall clock {wall / 60:.1f} min; the same gates one after another {serial / 60:.1f} min; "
+        f"{cpu_total / 60:.1f} CPU min.",
         "",
         *table(rows),
     ]
@@ -1142,6 +1219,12 @@ def selftest() -> int:
         for must in ("tests-disc", "ladder-b", "ladder-c", "ladder-seed-3", "retail-compare", "pages", "lint-clippy"):
             check(must in plan.gates, f"the plan has no {must}")
 
+    # Start order: the same gates, the chains first, the seeds last.
+    names = ["lint-clippy", "ladder-seed-3", "other", "retail-compare", "engine-bin"]
+    got = start_order(names)
+    check(sorted(got) == sorted(names), f"start order lost a gate: {got}")
+    check(got == ["engine-bin", "lint-clippy", "retail-compare", "other", "ladder-seed-3"], f"start order {got}")
+
     # The scheduler on fakes: every failure reported, nothing after a failed need,
     # a skip marked, a forbidden command refused, locks and budget respected.
     with tempfile.TemporaryDirectory() as td:
@@ -1188,6 +1271,8 @@ def selftest() -> int:
         check(code == 1, "a failed gate must exit 1")
         table = (a.out / "timing.md").read_text()
         check("bad-one" in table and "bad-two" in table and "after-bad" in table, "timing table lost a failure")
+        check(re.search(r"^\| bad-one \| g \| FAIL \| \d+ \| \d+ \| \d+ \|", table, re.M), "timing table lost a gate's start")
+        check(re.search(r"^\| reused \| g \| PASS \|  \| 0 \|  \|", table, re.M), "a reused gate has no start in this run")
         for line in ("--bless", "python3 x.py --update-baseline", "git push origin", "x --propose p"):
             try:
                 p.add(Gate("nope-" + line, "g", line))
@@ -1211,8 +1296,8 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=REPO / "target" / "full-gate")
     ap.add_argument("--base", default="main", help="the revision baselines and revert-scan compare against (default %(default)s)")
     ap.add_argument("--max-cpu", type=int, default=12, help="the budget gates are weighed against (default %(default)s)")
-    ap.add_argument("--jobs", type=int, default=8, help="retail-compare, audio sweep, libtest threads (default %(default)s)")
-    ap.add_argument("--cargo-jobs", type=int, default=8, help="CARGO_BUILD_JOBS (default %(default)s)")
+    ap.add_argument("--jobs", type=int, default=6, help="retail-compare, audio sweep, libtest threads (default %(default)s)")
+    ap.add_argument("--cargo-jobs", type=int, default=6, help="CARGO_BUILD_JOBS (default %(default)s)")
     ap.add_argument("--memory-max", default="24G", help="systemd scope cap per engine-looping gate, or 'off' (default %(default)s)")
     ap.add_argument("--keep-clean-tree", action="store_true", help="leave the clean worktree to inspect a repo gate")
     a = ap.parse_args()

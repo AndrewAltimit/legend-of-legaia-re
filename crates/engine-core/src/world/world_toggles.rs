@@ -164,6 +164,11 @@ pub struct WorldToggles {
     /// [`Self::pin_retail`], where the roll - and the `rand()` draw it takes
     /// at battle entry, which retail never makes - is skipped entirely.
     pub shiny_seru: bool,
+    /// Rebuild behind every hit of the battle edge's memos
+    /// (`SceneHost::battle_stage_resources`, the party-form memo) and panic on
+    /// a difference. A check, and slow: off unless a host raises it, the native
+    /// hosts from `LEGAIA_BATTLE_MEMO_VERIFY`, the page from `set_battle_memo_verify`.
+    pub battle_memo_verify: bool,
     /// Run-away EXP (the engine twin of the patcher's `--flee-exp`): a
     /// successful escape banks [`FLEE_EXP_PCT`] percent of the fled
     /// formation's listed EXP into every party member's cumulative XP. Off by
@@ -386,6 +391,7 @@ impl WorldToggles {
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,
+            battle_memo_verify: false,
             flee_exp: false,
             exp_rate_permille: EXP_RATE_RETAIL,
             fortress_encounter_fix: true,

@@ -42,6 +42,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       this.sceneMeshes.set(meshId, m);
     }
     m.aabb = computeAabb(positions);
+    m.morphReach = 0;
     m.vertexCount = positions.length / 3;
     gl.bindVertexArray(m.vao);
 
@@ -409,6 +410,14 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     this.lastLogDepth = !!(this.logDepth && cam && cam.yaw != null);
     /* Enhanced lighting (identity unless the play page opted in). */
     this._stageLighting(vp);
+    /* The one point of the frame where both this frame's camera and its lights
+     * are known: the page settles what it held back until it could tell
+     * whether anything will see it. One-shot, like `preSceneHook`. */
+    if (this.settleHook) {
+      const settle = this.settleHook;
+      this.settleHook = null;
+      placements = settle(placements, vp);
+    }
     this._renderLightShadows(placements);
 
     /* Advance the water CLUT animation on wall-clock time, regardless
@@ -590,12 +599,33 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       gl.uniform1i(this.locFogEnable, 0);
     }
 
-    /* Group draws by meshId so we bind each VAO once per frame. */
+    /* Group draws by meshId so we bind each VAO once per frame. A placement
+     * wholly off screen goes no further: most of a town is, and its draws
+     * would cost three passes for no fragment. Nothing here changes a pixel,
+     * so this is not a port's cull of retail geometry. The mesh keeps its seat
+     * in the map even when none of its placements is on screen, or the meshes
+     * that follow would draw in another order, and depth ties and blend runs
+     * read that order. A posed mesh that stays off screen keeps its normals
+     * dirty for the frame it comes back.
+     *
+     * PSX mode draws them all: the GTE's register limits move a far corner
+     * from off screen to on (gteSaturateClip), so no bound on the vertices
+     * bounds what its vertex stage writes. The overworld's curvature moves Y,
+     * so a curved frame judges X alone. */
     const byMesh = new Map();
+    const cullOff = !this.psxMode;
+    const xOnly = this.overworldCurve > 0 || this.overworldCurveBias !== 0;
+    const cullMvp = this._cullMvp || (this._cullMvp = new Float32Array(16));
     for (const p of placements) {
-      if (!this.sceneMeshes.has(p.meshId)) continue;
+      const m = this.sceneMeshes.get(p.meshId);
+      if (!m) continue;
       let list = byMesh.get(p.meshId);
       if (!list) { list = []; byMesh.set(p.meshId, list); }
+      const b = m.aabb;
+      if (cullOff && b) {
+        mulMat4Into(cullMvp, vp, this._placementModel(p, m));
+        if (boxOffScreen(cullMvp, b.cx, b.cy, b.cz, b.sx * 0.5, b.sy * 0.5, b.sz * 0.5, xOnly)) continue;
+      }
       list.push(p);
     }
     let flatColorsOn = false;
@@ -645,7 +675,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
       let meanDepth = -1;
       for (const [meshId, list] of byMesh) {
         const m = this.sceneMeshes.get(meshId);
-        if (m.indexCount === 0) continue;
+        if (m.indexCount === 0 || list.length === 0) continue;
         /* Hybrid env meshes carry an untextured vertex-colour half; flip the
          * FS flat branch on only for them (state-change once per mesh). */
         const wantFlat = !!m.hasFlat;
@@ -714,7 +744,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     let blendMean = -1;
     for (const [meshId, list] of byMesh) {
       const m = this.sceneMeshes.get(meshId);
-      if (!m || !m.semiRanges || m.indexCount === 0) continue;
+      if (!m || !m.semiRanges || m.indexCount === 0 || list.length === 0) continue;
       if (!blendOn) {
         gl.enable(gl.BLEND);
         gl.depthMask(false);
@@ -838,6 +868,38 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
   }
 
+  /* Whether a sphere in the draw frame can touch no pixel and no shadow this
+   * frame: off screen by the sides `renderAssembled` culls on, and out of reach
+   * of every light's frustum. False under PSX mode, whose vertex stage can bring
+   * a far corner back on screen. */
+  sphereUnseen(vp, x, y, z, r) {
+    if (this.psxMode) return false;
+    const wc = vp[3] * x + vp[7] * y + vp[11] * z + vp[15];
+    const slack = Math.abs(wc) * 1e-3 + 1e-3;
+    const xOnly = this.overworldCurve > 0 || this.overworldCurveBias !== 0;
+    let off = false;
+    for (let axis = 0; axis < (xOnly ? 1 : 2) && !off; axis++) {
+      const pc = vp[axis] * x + vp[axis + 4] * y + vp[axis + 8] * z + vp[axis + 12];
+      for (let sign = 1; sign >= -1; sign -= 2) {
+        const reach = r * Math.hypot(vp[3] + sign * vp[axis], vp[7] + sign * vp[axis + 4],
+          vp[11] + sign * vp[axis + 8]);
+        if (wc + sign * pc + reach < -slack) off = true;
+      }
+    }
+    if (!off) return false;
+    const f = this.lightFrame;
+    if (!this.dynLighting || !this.dynShadows || !f || !this.shadowProgram) return true;
+    const g = 1 / Math.tan(SHADOW_FOV / 2);
+    for (let li = 0; li < f.count; li++) {
+      const lr = f.pr[li * 4 + 3];
+      const lfar = Math.max(lr, Math.max(lr * SHADOW_NEAR_FRAC, SHADOW_NEAR_MIN) * 2);
+      const side = lfar / g + r;
+      if (Math.abs(x - f.pr[li * 4]) <= side && Math.abs(z - f.pr[li * 4 + 2]) <= side
+          && y - r <= f.pr[li * 4 + 1] && y + r >= f.pr[li * 4 + 1] - lfar) return false;
+    }
+    return true;
+  }
+
   /* Model matrix for one renderAssembled placement (shared by the opaque
    * and blend passes so both draw at identical transforms). */
   _placementModel(p, m) {
@@ -853,8 +915,11 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
      * static placement's never moves: the last answer stands while its inputs
      * do. */
     const c = p._modelMemo;
+    /* Only a centroid anchor reads the box, and a posed mesh's box is new with
+     * every pose. */
+    const memoBox = p.anchor === 'centroid' ? aabb : null;
     if (c && c.x === p.x && c.y === p.y && c.z === p.z && c.rotY === rotY && c.scale === scale
-        && c.anchor === p.anchor && c.aabb === aabb) {
+        && c.anchor === p.anchor && c.aabb === memoBox) {
       return c.model;
     }
     let model;
@@ -867,7 +932,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     } else {
       model = placementModelScaled(p.x, p.z, rotY, scale);
     }
-    p._modelMemo = { x: p.x, y: p.y, z: p.z, rotY, scale, anchor: p.anchor, aabb, model };
+    p._modelMemo = { x: p.x, y: p.y, z: p.z, rotY, scale, anchor: p.anchor, aabb: memoBox, model };
     return model;
   }
 

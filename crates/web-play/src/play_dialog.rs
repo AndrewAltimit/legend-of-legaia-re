@@ -89,12 +89,7 @@ impl LegaiaRuntime {
         let (origin, scale) = crate::play_menu::stage_transform(surface_w, surface_h);
         let mut texts = frame.stage_texts;
         ui::scale_stage_text_draws(&mut texts, origin, scale);
-        serde_json::json!({
-            "open": true,
-            "sprites": frame.sprites.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
-            "texts": texts.iter().map(crate::play_menu::quad_json).collect::<Vec<_>>(),
-        })
-        .to_string()
+        crate::play_menu::open_quads_json(&frame.sprites, &texts)
     }
 }
 

@@ -164,5 +164,5 @@ names = ["set_ui_psx_tint", "ui_psx_tint"]
 
 [[waiver]]
 kind = "probe"
-reason = "Measurement hooks a headless audio run calls from the page's console: the output's path, queue and latencies, and firing a battle shout to measure a CD-XA clip's start and level."
-names = ["audio_stats_json", "play_xa_probe_fire_shout"]
+reason = "Measurement hooks a headless run calls from the page's console: firing a battle shout to measure a CD-XA clip's start and level, and the battle memos' verify switch (rebuild behind every hit, panic on a difference)."
+names = ["play_xa_probe_fire_shout", "set_battle_memo_verify"]

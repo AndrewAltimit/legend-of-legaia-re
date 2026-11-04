@@ -32,11 +32,11 @@ plain `impl` blocks, so the page's JS API is the same whichever host links it.
 
 ## The bundle
 
-An `rlib`, like `web-play`. The wasm module the site loads is
-[`legaia-web-viewer`](../web-viewer/README.md)'s `cdylib`, which links this
-crate through `web-play`; wasm-bindgen gathers the exports of every linked
-crate, so `LegaiaMinigames` reaches the page through the same
-`legaia_web_viewer.js` as the rest.
+An `rlib`, like `web-play`. The minigames and modes pages' wasm module is
+[`legaia-web-play-bundle`](../web-play-bundle/README.md)'s `cdylib`, which names this
+crate; wasm-bindgen gathers the exports of every linked crate, so `LegaiaMinigames`
+reaches the page through `legaia_web_play_bundle.js`. The tool bundle links this crate
+through `web-play`.
 
 ## What it must not depend on
 

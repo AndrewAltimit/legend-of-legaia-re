@@ -17,6 +17,8 @@
     /* Rebuild the GPU-side scene from whatever the engine currently holds.
      * Runs on entry and whenever the engine walks through a door. */
     _rebuild() {
+      /* The slots name another scene's meshes now. */
+      this._morphHeld.clear();
       /* Per-scene FX mesh caches + dynamic actor set (mesh ids are per
        * scene upload; a rebuild replaces the whole scene mesh table). */
       this._fieldFx = { fxMeshes: new Map(), packMeshes: new Map() };

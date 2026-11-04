@@ -15,6 +15,7 @@ mod categorize_coverage;
 mod field_map_real;
 mod formation_census_real;
 mod inherited_tail_real;
+mod lzs_decoder_reference_real;
 mod overlay_data_consumers_real;
 mod packer_buffer_slack_real;
 mod parser_robustness_fuzz;

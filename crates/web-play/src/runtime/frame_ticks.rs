@@ -14,7 +14,7 @@ use legaia_engine_session::{TickClaims, TickOwner};
 
 /// What one frame's ticks did ([`LegaiaRuntime::frame_ticks`]), for the
 /// page's follow-up.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct FrameTicksReport {
     /// Sim ticks taken. `0` = the frame ran none and its edges are kept for
     /// the next one that does.
@@ -201,6 +201,7 @@ impl LegaiaRuntime {
             }
         }
         r.player_rig_rebuilt = self.player_rig_gen != rig_gen;
+        self.step_battle_prewarm();
         Ok(r)
     }
 }
@@ -214,16 +215,7 @@ impl LegaiaRuntime {
         let r = self
             .frame_ticks(steps, edge, pad)
             .map_err(|e| JsValue::from_str(&e))?;
-        Ok(serde_json::json!({
-            "ticks": r.ticks,
-            "menu_ticked": r.menu_ticked,
-            "menu_opened": r.menu_opened,
-            "name_committed": r.name_committed,
-            "scenes": r.scenes,
-            "player_rig_rebuilt": r.player_rig_rebuilt,
-            "quit": r.quit,
-        })
-        .to_string())
+        serde_json::to_string(&r).map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 

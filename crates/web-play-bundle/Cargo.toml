@@ -1,0 +1,27 @@
+[package]
+name = "legaia-web-play-bundle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The wasm module the play, minigames and modes pages load; see README.md. The same
+# crate types as `legaia-web-viewer`, though nothing links this crate: cargo runs
+# LTO only when every crate type allows it, and a lone cdylib would turn it on for
+# this bundle alone. That compiles the whole graph a second time, with bitcode,
+# and came out larger (5.18 against 4.77 MB gzip).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+legaia-web-play.workspace = true
+legaia-web-minigames.workspace = true
+wasm-bindgen.workspace = true
+
+[features]
+# Measurement build: a counting global allocator and `bench_alloc_totals`, read
+# by `scripts/ci/frame-bench-web.mjs`.
+bench-alloc = []
+
+# The same strip as `legaia-web-viewer`: the two bundles are one recipe.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["--strip-debug", "--strip-producers"]

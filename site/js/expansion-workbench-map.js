@@ -45,7 +45,7 @@ const TOOLS = [
 // View state survives the tab re-rendering on every structural edit.
 const V = {
   map: null, tool: 'paint', brush: '.', cell: 22, heights: true, walk: true, sel: null,
-  scroll: {}, preview: {}, previewTimer: null, objects: {}, objectsPending: null, pick: null,
+  scroll: {}, preview: {}, previewTimer: null, previewEditAt: -Infinity, previewEdit: null, objects: {}, objectsPending: null, pick: null,
   propObject: 0, drag: null, npcs: {}, npcModel: null,
   // The JSON (and session generation) each map's last preview request was
   // made from, and the open render's redraw (a late preview draws there).
@@ -1006,9 +1006,10 @@ export function renderMaps(ctx, el) {
   redraw();
   const sc = V.scroll[V.map];
   if (sc) requestAnimationFrame(() => { wrap.scrollLeft = sc[0]; wrap.scrollTop = sc[1]; });
-  // A map opened for the first time asks for its preview at once (the
-  // canvas draws from the legend meanwhile).
-  schedulePreview(ctx, !V.preview[V.map]);
+  // What this render shows is asked for at once: a stroke's end, an edit
+  // that re-renders, or a map opened for the first time (the canvas draws
+  // from the legend meanwhile).
+  schedulePreview(ctx, true);
 }
 
 function newMap(ctx) {
@@ -1027,15 +1028,22 @@ function newMap(ctx) {
   };
 }
 
-/* The open map's `map_preview`, a moment after an edit: built in the
- * validation worker (ctx.mapPreviewLater) and drawn when it lands. A map
- * whose JSON (and the session's files) are what the last request was made
- * from is not asked again: a re-render of the tab costs no preview. An
- * answer for a map edited since it was asked is dropped - the edit asked
- * for the next one. */
+/* The open map's `map_preview`: built in the validation worker
+ * (ctx.mapPreviewLater) and drawn when it lands. The first edit after a pause
+ * asks at once; the rest of a burst (a drag edits every frame) ask when it
+ * pauses. A map whose JSON (and the session's files) are what the last
+ * request was made from is not asked again: a re-render of the tab costs no
+ * preview. An answer for a map edited since it was asked is dropped - the
+ * edit asked for the next one. */
+const PREVIEW_BURST_MS = 140;
+
 function schedulePreview(ctx, now) {
   clearTimeout(V.previewTimer);
-  V.previewTimer = setTimeout(() => requestPreview(ctx), now ? 0 : 140);
+  const at = performance.now();
+  const burst = at - V.previewEditAt < PREVIEW_BURST_MS;
+  // The re-render a stroke's end makes is not an edit of its own.
+  if (!now || !burst) V.previewEditAt = at;
+  V.previewTimer = setTimeout(() => requestPreview(ctx), now || !burst ? 0 : PREVIEW_BURST_MS);
 }
 
 function requestPreview(ctx) {
@@ -1046,6 +1054,7 @@ function requestPreview(ctx) {
   const key = (ctx.sessionGen ? ctx.sessionGen() : 0) + ':' + json;
   if (V.previewKey[id] === key) return;
   V.previewKey[id] = key;
+  V.previewEdit = V.previewEditAt;
   const answer = (pv) => {
     const cur = ctx.pack && ctx.pack.maps && ctx.pack.maps[id];
     if (!cur || JSON.stringify(cur) !== json) return;
@@ -1055,6 +1064,9 @@ function requestPreview(ctx) {
     V.redraw();
     refreshRest();
     if (first) refreshTierLabels(pv);
+    // The last edit to its preview on the canvas.
+    if (V.previewEdit != null && ctx.notePreviewDrawn) ctx.notePreviewDrawn(performance.now() - V.previewEdit);
+    V.previewEdit = null;
   };
   if (ctx.mapPreviewLater) ctx.mapPreviewLater(id, json, answer);
   else answer(ctx.mapPreview(map));

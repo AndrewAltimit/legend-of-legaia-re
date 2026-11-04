@@ -26,13 +26,14 @@ layer's borrowed-slice readers.
 
 ## The bundle
 
-This crate is an `rlib`. The wasm module the site loads is
-[`legaia-web-viewer`](../web-viewer/README.md)'s `cdylib`, which links this
-crate: wasm-bindgen gathers the `#[wasm_bindgen]` exports of every linked
-crate, so `LegaiaRuntime` (and, through this crate, `LegaiaMinigames`) reach the page through the
-same `legaia_web_viewer.js` as the viewer exports, and the site's JS API does
-not depend on which crate an export lives in.
-[`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh) builds it.
+This crate is an `rlib`. The play page's wasm module is
+[`legaia-web-play-bundle`](../web-play-bundle/README.md)'s `cdylib`; wasm-bindgen
+gathers the `#[wasm_bindgen]` exports of every linked crate, so `LegaiaRuntime`
+(and, through this crate, `LegaiaMinigames`) reach the page through
+`legaia_web_play_bundle.js`. [`legaia-web-viewer`](../web-viewer/README.md)'s tool
+bundle links this crate too, for the field actor layer, so the same exports are in
+that module as well.
+[`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh) builds both.
 
 ## What it must not depend on
 

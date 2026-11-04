@@ -478,6 +478,7 @@ options is safe by default. A headless comparison against retail calls
 | WebXR [VR mode](vr-mode.md) | off | Stereo presentation on the site's WebGL pages, not the wgpu path. |
 | [Run rules](run-rules.md) (the New Game rules screen: difficulty, New Game+, ironman, randomizer, Boss Rush) | retail rules, screen **on** (off under `--retail`) | Run-wide twists chosen per run and carried in its saves; each folds in at its reader as an identity under the default rules, so a run with none is bit-identical and writes no `LGXF` block. |
 | `World::poll_minigame_escape` (Start inside a minigame) | **on**, not a knob | Leaves any of the five mode-24 minigames (Baka Fighter from its player select on: on the attract card Start begins the game). Retail quits each through its own overlay's SM - a different control in a different overlay per game, and only some of those arms are ported - so this is the one exit every game shares ([below](#every-minigame-must-be-leavable)). Each game's own `exit_*` runs, so the cash-out / leg report / point bank match a deliberate exit. |
+| The play page's quality step-down ([`play-quality-ladder.js`](browser-host.md#the-quality-step-down-play-quality-ladderjs); `?autoquality=0` unarms it) | armed, provisional | Session-only: on a sustained missed cadence, turns enhancements off and scales the 3D canvas; never writes an option, exempt under retail and PSX rasterisation. Browser only. |
 
 Two directions are worth having straight, because they are not uniform:
 

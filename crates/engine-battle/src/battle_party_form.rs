@@ -138,14 +138,16 @@ enum VramWrite {
 /// monster pages, then these). A headless session never replays it.
 #[derive(Debug, Clone, Default)]
 pub struct VramWriteLog {
-    writes: Vec<VramWrite>,
+    /// Shared, so a memoised build's log appends without copying its pixels
+    /// ([`PartyFormMemo`]).
+    writes: Vec<Arc<VramWrite>>,
 }
 
 impl VramWriteLog {
     /// Apply every recorded write to `vram`, in recording order.
     pub fn replay(&self, vram: &mut legaia_tim::Vram) {
         for w in &self.writes {
-            match w {
+            match &**w {
                 VramWrite::Tim(t) => vram.upload_tim(t),
                 VramWrite::Block {
                     fb_x,
@@ -161,6 +163,11 @@ impl VramWriteLog {
         }
     }
 
+    /// Record every write of `other` after this log's own, in order.
+    pub fn append(&mut self, other: &VramWriteLog) {
+        self.writes.extend(other.writes.iter().cloned());
+    }
+
     /// Number of recorded writes.
     pub fn len(&self) -> usize {
         self.writes.len()
@@ -174,23 +181,23 @@ impl VramWriteLog {
 
 impl VramSink for VramWriteLog {
     fn upload_tim(&mut self, tim: &legaia_tim::Tim) {
-        self.writes.push(VramWrite::Tim(tim.clone()));
+        self.writes.push(Arc::new(VramWrite::Tim(tim.clone())));
     }
     fn write_block(&mut self, fb_x: u16, fb_y: u16, w_words: u16, h: u16, bytes: &[u8]) {
-        self.writes.push(VramWrite::Block {
+        self.writes.push(Arc::new(VramWrite::Block {
             fb_x,
             fb_y,
             w_words,
             h,
             bytes: bytes.to_vec(),
-        });
+        }));
     }
     fn write_clut_row(&mut self, fb_x: u16, fb_y: u16, bytes: &[u8]) {
-        self.writes.push(VramWrite::ClutRow {
+        self.writes.push(Arc::new(VramWrite::ClutRow {
             fb_x,
             fb_y,
             bytes: bytes.to_vec(),
-        });
+        }));
     }
 }
 
@@ -207,6 +214,115 @@ pub struct BattlePartyForms {
     pub battle_serial: u32,
     pub forms: Vec<PartyBattleForm>,
     pub vram_writes: VramWriteLog,
+}
+
+/// What a battle-form build reads besides the disc: the present-party
+/// ordinal (the band), the roster slot (the content) and the five equipment
+/// bytes the assembly splices. [`build_party_battle_form`] is a pure function
+/// of these and the disc, and writes VRAM only through its sink.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PartyFormKey {
+    pub member: usize,
+    pub cslot: usize,
+    pub equipped: [u8; 5],
+}
+
+/// One finished build: the form as built, the VRAM writes it made, in order.
+type MemoisedForm = Option<Arc<(PartyBattleForm, VramWriteLog)>>;
+
+/// How many builds a memo holds: a full party's, and as many again for the
+/// party or the equipment it had last.
+const PARTY_FORM_MEMO_CAP: usize = 6;
+
+/// Finished battle-form builds over one disc, keyed on [`PartyFormKey`], so a
+/// fight in the same clothes does not decode the player files again. A hit
+/// hands back the build's form and replays its recorded writes, in the order
+/// the build made them.
+///
+/// [`Self::verify`] rebuilds behind every hit and panics on a difference.
+#[derive(Default)]
+pub struct PartyFormMemo {
+    /// Set by whoever seats the memo, from `WorldToggles::battle_memo_verify`.
+    pub verify: bool,
+    sources: Option<Option<Arc<PartyFormSources>>>,
+    /// Oldest first.
+    forms: Vec<(PartyFormKey, MemoisedForm)>,
+}
+
+impl PartyFormMemo {
+    /// The fallback pack and rest poses, parsed once.
+    pub fn sources(&mut self, disc: &impl PartyFormDisc) -> Option<Arc<PartyFormSources>> {
+        self.sources
+            .get_or_insert_with(|| PartyFormSources::load(disc).map(Arc::new))
+            .clone()
+    }
+
+    /// The build for `key`, from the memo or from the disc. Its form is the
+    /// caller's to install; `vram` takes the build's writes either way.
+    pub fn form(
+        &mut self,
+        disc: &impl PartyFormDisc,
+        sources: &PartyFormSources,
+        vram: &mut VramWriteLog,
+        key: PartyFormKey,
+    ) -> Option<PartyBattleForm> {
+        let built = self.built(disc, sources, key)?;
+        vram.append(&built.1);
+        Some(built.0.clone())
+    }
+
+    /// Have the build for `key` ready, as a later [`Self::form`] asks for it.
+    /// Nothing else observes this.
+    pub fn prepare(
+        &mut self,
+        disc: &impl PartyFormDisc,
+        sources: &PartyFormSources,
+        key: PartyFormKey,
+    ) {
+        let _ = self.built(disc, sources, key);
+    }
+
+    fn built(
+        &mut self,
+        disc: &impl PartyFormDisc,
+        sources: &PartyFormSources,
+        key: PartyFormKey,
+    ) -> MemoisedForm {
+        if let Some((_, built)) = self.forms.iter().find(|(k, _)| *k == key) {
+            if self.verify {
+                let fresh = build_logged(disc, sources, key);
+                assert_eq!(
+                    format!("{:?}", fresh.as_deref()),
+                    format!("{:?}", built.as_deref()),
+                    "memoised battle form differs from a fresh build: {key:?}"
+                );
+            }
+            return built.clone();
+        }
+        let built = build_logged(disc, sources, key);
+        if self.forms.len() == PARTY_FORM_MEMO_CAP {
+            self.forms.remove(0);
+        }
+        self.forms.push((key, built.clone()));
+        built
+    }
+}
+
+fn build_logged(
+    disc: &impl PartyFormDisc,
+    sources: &PartyFormSources,
+    key: PartyFormKey,
+) -> MemoisedForm {
+    let mut log = VramWriteLog::default();
+    let form = build_party_battle_form(
+        disc,
+        sources,
+        &mut log,
+        key.member,
+        key.cslot,
+        &key.equipped,
+    )?;
+    Some(Arc::new((form, log)))
 }
 
 /// Everything one party member's battle form carries, once its pixels and
@@ -230,12 +346,12 @@ pub struct PartyBattleForm {
     pub rest_pose: Vec<BonePose>,
     /// Every action-stream slot plus the equipment-spliced swings
     /// (`0xC..=0xF`); `None` on a fallback.
-    pub action_clips: Option<Vec<Option<MonsterAnimation>>>,
+    pub action_clips: Option<Arc<Vec<Option<MonsterAnimation>>>>,
     /// The art-animation bank (record[0] `+0x58`); empty on a fallback.
-    pub art_bank: Vec<Option<MonsterAnimation>>,
+    pub art_bank: Arc<Vec<Option<MonsterAnimation>>>,
     /// The bank's records - the arts the queue-builder matches. Empty on a
     /// fallback.
-    pub art_records: Vec<bca::ArtAnimRecord>,
+    pub art_records: Arc<Vec<bca::ArtAnimRecord>>,
     /// Per-action face tracks, present only when the facial animator can
     /// run: an assembled form whose band holds the real texture-pool pixels
     /// (the face-frame strip the stamps copy from), for characters `0..=2`
@@ -433,9 +549,9 @@ fn assemble(
         tmd_bytes: asm.tmd,
         idle: Some(idle),
         rest_pose,
-        action_clips: Some(clips),
-        art_bank,
-        art_records,
+        action_clips: Some(Arc::new(clips)),
+        art_bank: Arc::new(art_bank),
+        art_records: Arc::new(art_records),
         face_tracks,
         art_face_tracks,
         model_table,
@@ -481,8 +597,8 @@ fn fallback(
         idle: None,
         rest_pose,
         action_clips: None,
-        art_bank: Vec::new(),
-        art_records: Vec::new(),
+        art_bank: Arc::default(),
+        art_records: Arc::default(),
         face_tracks: None,
         art_face_tracks: Vec::new(),
         model_table: None,

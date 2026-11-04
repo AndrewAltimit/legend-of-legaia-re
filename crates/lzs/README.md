@@ -48,6 +48,13 @@ marker, and the `.lzs` container layout is this game's. Check a target's
 decompressor against all three before reusing the crate
 ([reusing for other PS1 games](../../docs/tooling/reusing-for-other-ps1-games.md#legaia-lzs)).
 
+### The decoder holds no ring
+
+`decompress_tracked` uses its output as the ring, with a read from before the
+start of the output reading zero; the page on the format gives the mapping
+([`lzs.md`](../../docs/formats/lzs.md#the-ports-decoder)). `src/reference_decoder.rs`
+is the plain ring decoder it is compared against, and is test code only.
+
 ### Why "decompresses without error" is not a validity signal
 
 The 4096-byte ring buffer initialises to zeros, so most random byte streams

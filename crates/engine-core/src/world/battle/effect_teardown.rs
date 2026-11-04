@@ -122,7 +122,7 @@ impl World {
     /// Idempotent.
     // REF: FUN_8001E1B4 (the actor free-stack + list-sentinel reset)
     pub fn teardown_battle_effects(&mut self) {
-        self.effect_pool = vm::effect_vm::Pool::new();
+        *self.effect_pool = vm::effect_vm::Pool::new();
         let data_pool = self.casting.effect_pool.take();
         self.casting = legaia_engine_battle_loop::cast_fx_state::CastFxState::new();
         self.casting.effect_pool = data_pool;

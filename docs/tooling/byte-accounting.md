@@ -1499,6 +1499,10 @@ never exceeds `accounted`). It skips and passes without extracted data, like eve
 disc-dependent test. The range algebra and the residue classifier are unit-tested on synthetic
 buffers inside the module, including the two ordering traps above.
 
+Every walker decodes LZS through one function, and `set_lzs_observer` lets a test see each input and
+expected size it is handed. `crates/disc-audit/tests/lzs_decoder_reference_real.rs` uses that as the
+census of the disc's streams, to hold the production decoder to the reference one.
+
 Three of its cases are corpus-wide rather than per-entry, because the claim they guard is about a
 family: every filler slot carries the same fill file and a tail that appears in some other entry at
 the same offset, every count-4 / 5 bundle's `FLAG` slot decompresses to that fill file, and both

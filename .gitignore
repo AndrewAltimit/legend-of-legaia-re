@@ -115,9 +115,8 @@ legaia_*.yaml
 # User-local overlay sweep spec (path/label pairs; example committed as .example).
 scripts/overlays.spec
 
-# WASM build output - tracked in the repo so the site works without a local rebuild.
-# Regenerate via scripts/ci/build-wasm.sh when crates/web-viewer or its deps change.
-# site/wasm/.gitignore allows only the specific artifacts needed by viewer.html.
+# WASM build output is never committed: site/wasm/.gitignore ignores the directory,
+# scripts/ci/build-wasm.sh fills it.
 
 # Local docker compose env (UID/GID overrides). The committed
 # `.env.example` documents the available variables; users copy it to

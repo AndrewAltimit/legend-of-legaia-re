@@ -345,6 +345,37 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     const flipY = new Float32Array([1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
     const smvp = this._shadowMvp || (this._shadowMvp = new Float32Array(16));
     const ground = this.groundEnable && this.ground && this.ground.indexCount > 0 ? this.ground : null;
+    /* Each body's world box, once for all the lights: its centre through the
+     * model, its half extents through the absolute rotation. A body with no box
+     * reads as reaching everywhere. */
+    let box = this._shadowBoxes;
+    if (!box || box.length < placements.length * 6) {
+      box = this._shadowBoxes = new Float64Array(placements.length * 12);
+    }
+    const bodyMesh = [], bodyModel = [];
+    let bodies = 0;
+    for (const p of placements) {
+      const mesh = this.sceneMeshes.get(p.meshId);
+      if (!mesh || mesh.indexCount === 0) continue;
+      const mm = this._placementModel(p, mesh);
+      const b = mesh.aabb;
+      const o = bodies * 6;
+      if (b) {
+        const hx = b.sx * 0.5, hy = b.sy * 0.5, hz = b.sz * 0.5;
+        box[o] = mm[0] * b.cx + mm[4] * b.cy + mm[8] * b.cz + mm[12];
+        box[o + 1] = mm[1] * b.cx + mm[5] * b.cy + mm[9] * b.cz + mm[13];
+        box[o + 2] = mm[2] * b.cx + mm[6] * b.cy + mm[10] * b.cz + mm[14];
+        box[o + 3] = Math.abs(mm[0]) * hx + Math.abs(mm[4]) * hy + Math.abs(mm[8]) * hz;
+        box[o + 4] = Math.abs(mm[1]) * hx + Math.abs(mm[5]) * hy + Math.abs(mm[9]) * hz;
+        box[o + 5] = Math.abs(mm[2]) * hx + Math.abs(mm[6]) * hy + Math.abs(mm[10]) * hz;
+      } else {
+        box.fill(0, o, o + 3);
+        box.fill(Infinity, o + 3, o + 6);
+      }
+      bodyMesh[bodies] = mesh;
+      bodyModel[bodies] = mm;
+      bodies++;
+    }
     for (let li = 0; li < n; li++) {
       gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, this.shadowTex, 0, li);
       gl.clear(gl.DEPTH_BUFFER_BIT);
@@ -355,12 +386,21 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         gl.drawElements(gl.TRIANGLES, ground.indexCount, gl.UNSIGNED_INT, 0);
       }
       /* Only what this light's frustum touches: a body wholly outside writes
-       * no depth into the layer, so leaving it out moves no shadow. */
-      for (const p of placements) {
-        const mesh = this.sceneMeshes.get(p.meshId);
-        if (!mesh || mesh.indexCount === 0) continue;
-        mulMat4Into(smvp, lvp, this._placementModel(p, mesh));
+       * no depth into the layer, so leaving it out moves no shadow. The box
+       * test below is the exact one; this bound is what most of a scene fails
+       * first, off the world boxes above. The frustum hangs from the light:
+       * `far` below it at most, and `far / g` to a side (the matrix above). */
+      const lx = f.pr[li * 4], ly = f.pr[li * 4 + 1], lz = f.pr[li * 4 + 2];
+      const lfar = Math.max(f.pr[li * 4 + 3], Math.max(f.pr[li * 4 + 3] * SHADOW_NEAR_FRAC, SHADOW_NEAR_MIN) * 2);
+      const lside = lfar / g;
+      for (let bi = 0; bi < bodies; bi++) {
+        const o = bi * 6;
+        if (box[o] + box[o + 3] < lx - lside || box[o] - box[o + 3] > lx + lside
+            || box[o + 2] + box[o + 5] < lz - lside || box[o + 2] - box[o + 5] > lz + lside
+            || box[o + 1] - box[o + 4] > ly || box[o + 1] + box[o + 4] < ly - lfar) continue;
+        const mesh = bodyMesh[bi];
         const b = mesh.aabb;
+        mulMat4Into(smvp, lvp, bodyModel[bi]);
         if (b && boxOutsideClip(smvp, b.cx, b.cy, b.cz, b.sx * 0.5, b.sy * 0.5, b.sz * 0.5)) continue;
         gl.uniformMatrix4fv(this.locShadowMvp, false, smvp);
         gl.bindVertexArray(mesh.vao);
@@ -476,12 +516,20 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
   _setCue(c) {
     const gl = this.gl;
     if (!this.locCue) return;
-    if (c && c.far && c.maxIr0 > 0) {
-      gl.uniform4f(this.locCue, c.nearZ, c.farZ, c.maxIr0, 1);
-      gl.uniform3f(this.locCueFar, c.far[0], c.far[1], c.far[2]);
-    } else {
-      gl.uniform4f(this.locCue, 0, 0, 0, 0);
-      gl.uniform3f(this.locCueFar, 0, 0, 0);
+    const on = c && c.far && c.maxIr0 > 0;
+    /* What the program holds, so the overworld's decorations, each with a cue
+     * record of its own and most with the same far colour, write only what
+     * moved. This is the two uniforms' only writer. */
+    const s = this._cueStaged || (this._cueStaged = [NaN, NaN, NaN, NaN, NaN, NaN]);
+    const nearZ = on ? c.nearZ : 0, farZ = on ? c.farZ : 0, ir0 = on ? c.maxIr0 : 0;
+    const r = on ? c.far[0] : 0, g = on ? c.far[1] : 0, b = on ? c.far[2] : 0;
+    if (nearZ !== s[0] || farZ !== s[1] || ir0 !== s[2]) {
+      gl.uniform4f(this.locCue, nearZ, farZ, ir0, on ? 1 : 0);
+      s[0] = nearZ; s[1] = farZ; s[2] = ir0;
+    }
+    if (r !== s[3] || g !== s[4] || b !== s[5]) {
+      gl.uniform3f(this.locCueFar, r, g, b);
+      s[3] = r; s[4] = g; s[5] = b;
     }
   }
 

@@ -93,7 +93,7 @@ impl PlayWindowApp {
         // the battle base, so the dome renders textured behind the actors;
         // fall back to the field VRAM when the scene has no stage.
         let base = match &stage {
-            Some(s) => s.vram.clone(),
+            Some(s) => s.resources.vram.clone(),
             None => field_base,
         };
         let Some(r) = self.win.renderer.as_ref() else {
@@ -133,13 +133,14 @@ impl PlayWindowApp {
         // and second-copy transform this host consumes through
         // `legaia_scene_formats::battle_backdrop`.
         if let Some(BattleStage {
-            dome: (tmd, raw),
+            resources,
             second,
             grid_far,
             outdoor,
             ..
         }) = &stage
         {
+            let (tmd, raw) = &resources.dome;
             // Retail's backdrop registration edits the object list rather
             // than truncating it: it drops index 1 and keeps the rest
             // (`legaia_scene_formats::battle_backdrop`, ported from `FUN_800513f0`).

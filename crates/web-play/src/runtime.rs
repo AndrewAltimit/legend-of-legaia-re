@@ -74,6 +74,9 @@ pub(crate) fn play_page_gain(slider: f32) -> f32 {
 /// Bridge object the play page instantiates once. Holds a `World` +
 /// `MenuRuntime` for the disc-free path, and - once `load_disc` has run - a
 /// `SceneHost` plus the render state for the scene it is running.
+/// One env-pack slot's morph: `(group, deltas)` per group a lane targets.
+pub(crate) type MorphDeltas = Vec<(u32, Vec<[i16; 3]>)>;
+
 #[wasm_bindgen]
 pub struct LegaiaRuntime {
     pub(crate) world: World,
@@ -122,6 +125,9 @@ pub struct LegaiaRuntime {
     pub(crate) field_vram_dirty: bool,
     /// [`Self::field_morph_positions`]'s answers, per morph state.
     pub(crate) field_morph_memo: legaia_engine_scene::scene_assembly::HybridPositionsMemo,
+    /// Each env-pack slot's last morph deltas (`field_morph_reach`), `(group,
+    /// deltas)`; dropped with the scene's field build.
+    pub(crate) field_morph_last: std::collections::HashMap<u32, MorphDeltas>,
     /// Enhanced lighting's derived light sets for the running scene
     /// ([`crate::play_lighting`]), built on the first lit frame after a
     /// scene entry.
@@ -355,6 +361,9 @@ pub struct LegaiaRuntime {
     /// Monotonic battle-render build counter; the page re-uploads the battle
     /// scene when `play_battle_generation` changes.
     pub(crate) battle_render_generation: u32,
+    /// The next step of [`Self::step_battle_prewarm`], `usize::MAX` past the
+    /// last; `None` outside an encounter transition.
+    pub(crate) battle_prewarm_step: Option<usize>,
     /// This frame's built battle FX geometry (effect-pool billboards + the 3D
     /// FX model draw list), rebuilt by `play_battle_fx_sync` and read back by
     /// the `play_battle_fx_*` accessors ([`crate::play_battle_fx`]).
@@ -487,6 +496,7 @@ impl LegaiaRuntime {
             field_vram_anim: None,
             field_vram_dirty: false,
             field_morph_memo: Default::default(),
+            field_morph_last: Default::default(),
             scene_lights: None,
             battle_intro: None,
             intro_readback: false,
@@ -548,6 +558,7 @@ impl LegaiaRuntime {
             battle_hud: legaia_engine_battle::battle_hud_state::BattleHud::new(),
             encounter_banner: None,
             prev_scene_mode: None,
+            battle_prewarm_step: None,
             battle_render: None,
             battle_render_generation: 0,
             battle_fx: Default::default(),

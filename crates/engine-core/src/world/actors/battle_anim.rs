@@ -661,9 +661,7 @@ impl World {
         if commit_after {
             self.commit_staged_battle_anim(i);
         }
-        if hits {
-            let before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
-            self.tick_battle_hit_events_seat(i);
+        if hits && let Some(before) = self.tick_battle_hit_events_seat(i) {
             for (k, b) in before.into_iter().enumerate() {
                 if k != i
                     && let (Some(a), Some(f)) = (self.actors.get(k), foreign.get_mut(k))

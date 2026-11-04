@@ -299,12 +299,49 @@ impl LegaiaRuntime {
         slots
     }
 
+    /// How far env-pack slot `slot`'s morph moves any vertex coordinate from
+    /// its authored place, in world units, for the page to judge whether the
+    /// morph can be seen before it pays for the mesh build. Reads the live
+    /// deltas and holds them, so [`Self::field_morph_positions`] builds the last
+    /// state a morph reached even once its lanes are gone. With no live lane
+    /// the answer is negative: `-1 - reach` of the held state, or `-1` if there
+    /// is none.
+    pub fn field_morph_reach(&mut self, slot: u32) -> f32 {
+        let s = slot as usize;
+        let live = self
+            .field
+            .as_ref()
+            .and_then(|f| f.env_tmds.get(s).copied())
+            .and_then(|res_idx| {
+                let host = self.scene_host.host()?;
+                let rtmd = host.resources.as_ref()?.tmds.get(res_idx)?;
+                Some(host.world.morph_env_deltas(s, rtmd))
+            })
+            .unwrap_or_default();
+        let is_live = !live.is_empty();
+        if is_live {
+            self.field_morph_last.insert(slot, live);
+        }
+        let reach = self
+            .field_morph_last
+            .get(&slot)
+            .into_iter()
+            .flatten()
+            .flat_map(|(_, deltas)| deltas.iter().flatten())
+            .map(|c| c.unsigned_abs())
+            .max()
+            .map_or(0.0, f32::from);
+        if is_live { reach } else { -1.0 - reach }
+    }
+
     /// Morphed vertex positions for env-pack slot `slot`: the plain
-    /// (`anim 0`) hybrid mesh build with the live VDF deltas staged onto
-    /// the TMD group vertices. Stream order matches the uploaded rest-pose
-    /// mesh (the prim walk is position-independent); empty when no morph
-    /// targets the slot.
+    /// (`anim 0`) hybrid mesh build with the VDF deltas staged onto the TMD
+    /// group vertices - the live ones, or those [`Self::field_morph_reach`]
+    /// last held. Stream order matches the uploaded rest-pose mesh (the prim
+    /// walk is position-independent); empty when no morph ever targeted the
+    /// slot.
     pub fn field_morph_positions(&mut self, slot: u32) -> Vec<f32> {
+        self.field_morph_reach(slot);
         let s = slot as usize;
         let Some(res_idx) = self.field.as_ref().and_then(|f| f.env_tmds.get(s).copied()) else {
             return Vec::new();
@@ -318,9 +355,13 @@ impl LegaiaRuntime {
         let Some(rtmd) = res.tmds.get(res_idx) else {
             return Vec::new();
         };
-        let Some(m) = host.world.morphed_env_tmd(s, rtmd) else {
+        let Some(held) = self.field_morph_last.get(&slot) else {
             return Vec::new();
         };
+        let mut m = rtmd.clone();
+        for (group, deltas) in held {
+            m.stage_group_deltas(*group, deltas);
+        }
         legaia_engine_scene::scene_assembly::hybrid_env_positions_memo(
             &m,
             &res.vram,

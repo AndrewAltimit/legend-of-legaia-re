@@ -10,9 +10,16 @@ The browser side is five crates:
 - [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames` (the play page holds one for the art it draws over an in-world minigame) and `LegaiaModes`, whose pack loader lists the game-modes page's instances.
 - [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
 - [`legaia-web-expansion`](../../crates/web-expansion/README.md) - the expansion workbench (`catalog`, `session`, `wasm`): an engine-layer crate whose previews are the engine's own kernels.
-- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the `cdylib` the site loads.
+- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the tool bundle's `cdylib`.
+- [`legaia-web-play-bundle`](../../crates/web-play-bundle/README.md) - the play bundle's `cdylib`, over `web-play` and `web-minigames` alone.
 
-`web-viewer` depends on `web-play`, `web-patcher` and `web-expansion`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
+`web-viewer` depends on `web-play`, `web-patcher` and `web-expansion`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate a `cdylib` links.
+
+So the site has two modules: the play bundle in `site/wasm/play/`, which the pages in [`page-bundles.toml`](../../scripts/ci/page-bundles.toml) load (play, minigames, modes), and the tool bundle in `site/wasm/`, a superset, which every other page loads. Within a bundle, which crate an export lives in is invisible to the site's JS; between them, a page on the play bundle naming a tool export fails [export reach](../tooling/host-drift.md#page-export-reach).
+
+A framed page holds its own bundle: the expansion workbench is on the tool bundle and its 3D preview, `play.html?xwpreview=1`, on the play bundle, so that page loads both.
+
+A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
 
 ## Playing the port in the browser (`runtime` + `play`)
 
@@ -180,17 +187,50 @@ The play page reads a disc in three stages (`site/js/play-disc.js`):
    page lets those sectors go. Anything that is not a Mode 2/2352 image with a
    `PROT.DAT` in its root (a bare `PROT.DAT`) is read whole and goes to
    `load_disc_image`, as is a source with no `Blob` behind it.
-3. **Behind it.** A worker reads the XA and movie files in one read and moves the
-   buffer to the page without a copy. `DMY.DAT`, which no consumer asks for, stays
-   on the disc.
+3. **By span.** The XA and movie files stay in the `Blob`, which is disk-backed, and
+   a consumer reads the window it names when it names it. `DMY.DAT`, which no
+   consumer asks for, stays there too.
 
-A consumer asks `span(lba, sectors)`, which answers from what is resident
-or null. Movies and XA staging poll every frame anyway, so a span that beats the
-worker is read with `prefetch` and the consumer installs on the next frame it
-polls. The engine holds the world until a movie installs
-(`INSTALL_TIMEOUT_FRAMES`), and a span that will not read (the file moved) makes
-the movie finish unplayed, as a page with no disc does. A trapped engine is
-rebuilt by reading the head again (`recoverRuntime`).
+A consumer that polls every frame asks `span(lba, sectors)`, which answers from what
+is resident or null, and `prefetch` on null; it installs on the first frame after the
+read lands. A window asked through `prefetch` is held until its consumer calls
+`release`, so eviction cannot take it between the read and the install. `read` is the
+form for a consumer that uses the bytes once and right away (the voice banks): it
+answers with the bytes themselves and keeps nothing.
+
+`span` answers only from one block that covers the whole window. Neighbours are not
+stitched: a window across two blocks is read again, and the wider block replaces any
+it covers. What is left once released stays under `RESIDENT_CAP`, oldest use out first.
+The cap (32 MiB) holds the largest XA file beside the largest set of clips one scene
+reads ahead. A read landing with nobody waiting is dropped.
+
+**Movies.** The window is read when the beat asks and dropped at the install, which
+copies it and demuxes once. The engine holds the world until then, bounded by
+`INSTALL_TIMEOUT_FRAMES` (600 ticks, wall time unless the page runs below about 15 fps),
+which is about 3 MB/s for `MV1.STR`. A read past it finishes the beat unplayed and the
+hand-off runs, as a page with no disc does.
+
+**Voice clips.** A scene's and a round's likely lines are on
+`play_xa_stage_requests_json` before they are raised (`prestage_xa_clip`), so
+`_serveXaStage` reads every listed file ahead, widest span per file, and installs one
+row per frame, oldest first. A line whose row was served plays on the call that raises it.
+A line nothing listed is deferred: it plays when its row is served, a read and at least
+a frame after the request. Neither path reaches the simulation, which never reads the XA
+lane back.
+
+**Failures.** A read that fails is tried three times, a quarter of a second and half a
+second apart. Then the window is reported failed until its release: the movie finishes
+unplayed, the clip's row is installed empty and dropped. The next ask reads again. Since
+the bytes are not in memory, a file moved or changed on disk during a session costs
+every movie and clip not yet read.
+
+**A trapped engine** is rebuilt by reading the head again (`recoverRuntime`), which goes
+to the `Blob` and not through the cap, and the voice banks are read again the same way.
+
+While a movie is up its overlay covers the GL view, and the frame skips its GL draws:
+the world is held, and every pass that reads the frame (bloom, fog, ambient occlusion,
+the transition capture) reads one drawn earlier in the same frame. The sync with the
+engine still runs each frame, and the 2D overlay is still drawn.
 
 ## FMV beats (`play_fmv`)
 
@@ -325,6 +365,30 @@ ticking under the wipe until the menu spawns, the hand-over takes one tick,
 and from then on each tick is one menu step (`play_menu_input`). A tick after the menu closes goes back to the field. Parity is asserted by the disc-gated `crates/web-play/tests/menu_parity.rs`
 oracle, which walks the whole card flow.
 
+## Settling a frame's draws
+
+A frame's cost on a weak CPU is mostly work whose answer nothing reads: at a
+town's camera most bodies are off screen. Each saving below keeps the picture
+the unconditional work gives, and the [frame-hash oracle](../tooling/frame-hash.md)
+pins that in both modes.
+
+| Work | Skipped when | What keeps it right |
+|---|---|---|
+| A draw in `renderAssembled`'s opaque, SSAO and blend passes (`boxOffScreen`) | The body's box lies past one side of the clip volume | Skipping leaves the others' order alone: the mesh keeps its seat in the grouping map even with no placement on screen, since depth ties and blend runs read that order. The depth planes are not tested, because depth writes move them; a curved overworld frame tests X alone, because the curvature moves Y. |
+| A posed actor's pose, upload, normals and draw (`pendingPose`, `_settleDraws`) | A sphere round the pose reaches neither the camera nor a light | The sphere comes off the bones (`poseReach`): a bone is rigid, so a vertex stays within its object's rest radius of the translation. The actor's `lastFrame` stays put, so the first frame anything can see it poses it to its current clip frame. |
+| A VDF morph's mesh build (`_morphHeld`, `_settleMorphs`) | A sphere round each placement reaches neither the camera nor a light | `field_morph_reach` bounds the move off the live deltas and holds them, so a morph whose lanes ended unseen still lands on the last state it reached. The sphere covers the stale mesh as well as the true one, so neither can show. |
+| The overlay canvas's clear, parse and blits (`_overlayPainted`) | The pause menu's answer, or the shop and dialog answers, are the strings last painted | The canvas keeps its pixels. Every other painter on it (the other layers, the developer menu, a stopped view's boot screens) drops the key. |
+| The kernel over a whole atlas for a new ink (`AtlasBlitter._tintThroughPalette`) | Always: the kernel sees the atlas's distinct texels, and the answer goes to the texels with coverage | `tint_texel` reads one texel and the colour, and a transparent texel stays transparent under every tint. The index is built with the blitter, during scene entry. The menu chrome takes dozens of tints over a few rects (its window bands), so a tinted copy fills only the rects asked for, on a canvas of the same size at the same coordinates. |
+| Reading the overlay back for a text wash (`_applyTextWash`, `_washHeld`) | Past the quads this paint made, and on every frame of a fade but its first | Outside the quads the canvas is empty, and the wash leaves alpha 0 alone. A fade is the same quads under another wash, so the unwashed pixels of its first frame stand for the rest; a readback waits on the GPU. A shop's black backdrop reads the whole canvas. A frame with no wash paints. |
+| A HUD readout's DOM write (`setText` in `play.html`) | The string is the one shown | Assigning `textContent` replaces the text node even when equal, and that sends the page through style, layout and paint. |
+
+The pose and morph decisions wait for `renderer.settleHook`, a one-shot that
+`renderAssembled` calls once `vp` and `lightFrame` are this frame's: the lights
+are picked against the camera that draws, so nothing earlier in the frame knows
+them. None of this runs in PSX mode, whose vertex stage can bring a far corner
+back on screen (`gteSaturateClip`), or for a VR session, whose eyes draw later
+with their own matrices.
+
 ## Live battles (`play_battle`)
 
 `enter_field` arms the engine's live gameplay loop - the browser twin of the
@@ -408,6 +472,26 @@ field VRAM. The damage numerals, the `N HIT` / `TOTAL` combo cluster and the
 effect atlas through the shared `legaia_engine_ui::battle_numerals` builder the
 native window emits through; the font-atlas layout is only the fallback for
 frames before the battle VRAM exists.
+
+
+### Battle edge prewarm
+
+The hand-over frame reads a lot off the disc, and all of it is known when the transition
+starts: the party, its equipment and the fight's stage. So `play_frame_ticks` runs one step of
+`SceneHost::prewarm_battle_edge` per display frame while the encounter session sits in
+`Transition`, from the frame after the transition arms, whose capture is that frame's cost:
+the entries the edge reads, each member's battle form, the stage's resources.
+
+The steps fill two memos on the scene host and the disc index's cache, and write nothing else,
+so no frame or tick can see whether they ran. `PartyFormMemo` holds finished battle-form builds
+keyed on the band, the roster slot and the five equipment bytes; a hit hands back the form and
+appends the VRAM writes the build recorded, in its order. `SceneHost::battle_stage_resources`
+holds the last stage, keyed on the block, the stage stream and a pack's tint, and does not hold
+a scene over an expansion map's synthetic layer. A key the edge reads differently from the
+prewarm's is a miss and builds as it would have. Both hosts and the headless drivers go through
+the memos; only this page prewarms. `WorldToggles::battle_memo_verify` rebuilds behind every hit
+and panics on a difference: the native hosts raise it from `LEGAIA_BATTLE_MEMO_VERIFY=1`, this
+page from `set_battle_memo_verify`.
 
 ## Battle effects (`play_battle_fx`)
 
@@ -605,6 +689,50 @@ controller's rumble actuator ([`audio.md`](audio.md#not-ssapi-the-0x801ce628-clu
 through a throwaway SPU and reports its peak sample, so "wired but every cue is
 inaudible" fails a test instead of shipping. Disc-gated oracle:
 `crates/web-play/tests/play_sfx_channel.rs`.
+
+## The quality step-down (`play-quality-ladder.js`)
+
+No code on the page looks at the device, so on a GPU short of the defaults the page
+steps its own picture down. The decision is `site/js/play-quality-ladder.js`, with no GL,
+DOM or engine in it; `PlayView.armQualityLadder` feeds it one sample per animation frame
+and applies what it names.
+
+- **When.** Two 4-second windows in a row whose median frame gap is over 40 ms, which
+  leaves a 30 Hz display alone. A median means one stall cannot cause a step. A gap over a
+  second (a hidden tab, a long load) restarts the count, and so does a paused view or a
+  movie. A window whose frame function already takes half the gap is left alone, because
+  the main thread is what is short and no rung relieves it.
+- **What, in order.** Ambient occlusion off, the 3D canvas at 75%, at 50%, lamp shadows off:
+  by what each pays under SwiftShader, where ambient occlusion and the 50% canvas are each
+  worth about half the GPU's frame, 75% about a fifth, and lamp shadows a few percent.
+  SwiftShader is a proxy: a tiled phone GPU may rank them otherwise. The overlay canvas
+  keeps its size, so text stays sharp.
+- **Down only.** Nothing steps back up on its own within a session, and the state ends with
+  the page.
+- **It never writes an option.** A rung is view-side state over the player's option: the
+  setters fold it in, so a page re-apply cannot lift it, and nothing here calls `rt.set_ssao`
+  or the other persisting setters. The boxes keep reading what the player chose.
+- **A player's choice wins.** Touching a rung's box or key takes that rung out of the ladder
+  for the session and puts it where the player set it. "Put it back" on the note, or Reset to
+  defaults, restores everything and disarms the ladder for the session.
+- **Retail is exempt.** While Retail-faithful or PSX rasterisation holds, no rung steps and
+  one already stepped stops counting.
+- **It says so.** A note under the picture names what is off for as long as it is off, so a
+  screenshot can be explained.
+
+MSAA is not a rung: a context's MSAA is fixed at creation, so stepping it would mean rebuilding
+every GL resource. It is also the smallest of the measured costs, so the context keeps it.
+The workbench's embedded preview does not arm the ladder, and `?autoquality=0` leaves it
+unarmed, which is how `frame-bench-web.mjs` runs unless asked (`--auto-quality`).
+`scripts/ci/quality-ladder-web.mjs` tests the decision on synthetic gaps and, with a disc, the
+page's wiring: the exemptions, the choices and `localStorage` byte for byte. The native
+window has no ladder.
+
+A capped page does not stall on a slow GPU the way an uncapped bench run does. The browser
+holds back `requestAnimationFrame` while frames are pending, so frame cost spreads evenly over
+the gaps and the main thread stays free for the audio pump, which keeps the output fed at single-digit
+frame rates. Below 15 fps the world itself runs slow, since a display frame runs at most
+four ticks (`SimStepper`) and drops the rest.
 
 ## Keeping the two hosts in step
 

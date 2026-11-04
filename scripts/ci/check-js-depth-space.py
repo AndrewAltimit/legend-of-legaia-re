@@ -56,6 +56,9 @@ WAIVED = {
     ("play-app.js", "FS_LAYER"): "the text-layer composite "
     "(`ScreenPrimPass.drawLayer`) draws with the depth test disabled and the "
     "depth mask off, so its fragment depth is neither compared nor written",
+    ("webgl-psx-target.js", "FS"): "the copy of a finished PSX frame to the "
+    "canvas draws with the depth test disabled, so its fragment depth is neither "
+    "compared nor written",
     # --- lane L ---
     ("webgl-bloom.js", "FS_EXTRACT"): "the bloom extract draws into its own "
     "quarter-size target with no depth attachment",

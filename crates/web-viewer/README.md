@@ -1,13 +1,15 @@
 # legaia-web-viewer
 
-The WebAssembly bundle behind the static site. It takes a disc image the
+The tool bundle: the WebAssembly module behind every page of the static site but
+play, minigames and modes, which load the smaller
+[`legaia-web-play-bundle`](../web-play-bundle/README.md). It takes a disc image the
 visitor picks - a full Mode2/2352 `.bin`, a raw `PROT.DAT`, or a single
 `.tim` - and nothing leaves the browser.
 
-## One bundle, two crates
+## One bundle, several crates
 
-The site loads one wasm module, and it is this crate's `cdylib`. One of
-the products in it is this crate's own; the others are linked in:
+This crate's `cdylib` is a superset of the play bundle. One of the products in it
+is this crate's own; the others are linked in:
 
 | Product | What it is | Where |
 |---|---|---|
@@ -57,6 +59,9 @@ wasm-pack build crates/web-viewer --target web
 # local previewing:
 scripts/ci/build-wasm.sh
 ```
+
+Keep both crate types: cargo runs LTO only when every crate type allows it, so
+dropping `rlib` changes this bundle's bytes and the whole graph's build.
 
 The generated `pkg/` is consumed by the static site under
 [`site/`](../../site/). `site/wasm/` is gitignored - the build script

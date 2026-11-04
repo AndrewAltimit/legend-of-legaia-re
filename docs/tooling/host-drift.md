@@ -1171,6 +1171,16 @@ the picker's Fishing row and a Reset keys button over `pad_bindings_reset`
 (natively `legaia-engine config reset`) - and waived the rest. It runs in CI
 and the pre-commit hook.
 
+The gate holds the other direction for the play bundle. A page in
+[`page-bundles.toml`](../../scripts/ci/page-bundles.toml) loads a module with no
+inspector, patcher or workbench exports, and naming one fails only when a player
+reaches that line, or not at all where the page tests for the export first. So no
+source such a page loads may name a class or free function only `web-viewer`,
+`web-patcher` or `web-expansion` export: its HTML, its `<script src>`s, the template's,
+and whatever those import. Comments do not count, and methods need no list, since a
+method is reachable only through its class. The rule tests itself on planted text at
+each run, so a broken export scan fails rather than reading as a clean page.
+
 ## What a waiver may say
 
 Both waiver files are validated for staleness on every run, so they cannot

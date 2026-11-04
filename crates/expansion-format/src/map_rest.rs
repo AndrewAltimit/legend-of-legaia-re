@@ -27,7 +27,7 @@ use std::fmt;
 
 use crate::map::{MapDef, PropMesh, TileGrid, WallMesh};
 use crate::map_detail::DecorSource;
-use crate::terrain::TerrainSurface;
+use crate::terrain::Heightfield;
 
 /// How far a base may sit from the surface under it and still rest on it,
 /// world units.
@@ -99,7 +99,7 @@ fn items(def: &MapDef) -> Vec<Item<'_>> {
 struct Floors<'a> {
     def: &'a MapDef,
     grid: &'a TileGrid,
-    surface: Option<TerrainSurface>,
+    field: Option<std::sync::Arc<Heightfield>>,
     ladder: [i16; crate::map::FLOOR_TIERS],
 }
 
@@ -108,7 +108,7 @@ impl<'a> Floors<'a> {
         Self {
             def,
             grid,
-            surface: def.terrain_surface().ok().flatten(),
+            field: def.terrain_field().ok().flatten(),
             ladder: def.floor_ladder().unwrap_or_default(),
         }
     }
@@ -129,11 +129,10 @@ impl<'a> Floors<'a> {
     /// image's builder places it: its own tile's tier, or the terrain under
     /// its origin.
     fn item_floor(&self, it: &Item<'_>) -> f32 {
-        match &self.surface {
-            Some(s) => {
+        match &self.field {
+            Some(f) => {
                 let [x, z] = self.xz(it);
-                s.field
-                    .sample_world(x.round() as i32, z.round() as i32)
+                f.sample_world(x.round() as i32, z.round() as i32)
                     .unwrap_or(0) as f32
             }
             None => self.tier(it.tile[0], it.tile[1]),
@@ -143,8 +142,8 @@ impl<'a> Floors<'a> {
     /// The ground under world `(x, z)`.
     fn ground(&self, x: f32, z: f32) -> Option<f32> {
         let (xi, zi) = (x.round() as i32, z.round() as i32);
-        match &self.surface {
-            Some(s) => s.field.sample_world(xi, zi).map(|h| h as f32),
+        match &self.field {
+            Some(f) => f.sample_world(xi, zi).map(|h| h as f32),
             None => {
                 let (c, r) = self.def.tile_at_world(self.grid, xi, zi)?;
                 Some(self.tier(c, r))
@@ -643,7 +642,7 @@ fn gather(
             };
             let (cx, cz) = def.tile_centre(d.tile[0], d.tile[1]);
             let xz = [cx as f32 + d.offset[0], cz as f32 + d.offset[2]];
-            let floor = match &floors.surface {
+            let floor = match &floors.field {
                 Some(_) => floors.ground(xz[0], xz[1]).unwrap_or(0.0),
                 None => floors.tier(d.tile[0], d.tile[1]),
             };

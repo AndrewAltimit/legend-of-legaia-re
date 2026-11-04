@@ -326,6 +326,7 @@ const NAV = [
       { href: 'tooling/full-game-ladder.html', text: 'Full-game ladder', key: 'tooling/full-game-ladder' },
       { href: 'tooling/soak-harness.html', text: 'Soak harness', key: 'tooling/soak-harness' },
       { href: 'tooling/frame-bench.html', text: 'Frame benchmark', key: 'tooling/frame-bench' },
+      { href: 'tooling/frame-hash.html', text: 'Browser frame hash', key: 'tooling/frame-hash' },
       { href: 'tooling/build-and-test-speed.html', text: 'Build and test speed', key: 'tooling/build-and-test-speed' },
       { heading: 'Beyond Legaia' },
       { href: 'tooling/porting-by-reimplementation.html', text: 'Porting by reimplementation', key: 'tooling/porting-by-reimplementation' },

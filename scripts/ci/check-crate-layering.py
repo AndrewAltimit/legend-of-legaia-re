@@ -36,6 +36,7 @@ ENGINE_LAYER_EXTRA = {
     "web-expansion",
     "web-minigames",
     "web-play",
+    "web-play-bundle",
     "web-viewer",
 }
 

@@ -40,71 +40,100 @@ pub fn decompress(input: &[u8], expected_output_size: usize) -> Result<Vec<u8>> 
 /// Useful for validating container sections - a section that consumes more
 /// input bytes than the gap to the next section's offset is mis-parsed.
 pub fn decompress_tracked(input: &[u8], expected_output_size: usize) -> Result<(Vec<u8>, usize)> {
-    let mut window = [0u8; WINDOW_SIZE];
-    let mut window_pos: usize = WINDOW_START_POS;
     // `expected_output_size` is attacker-controlled (the container header's
     // per-section size, or a value a bulk scanner derives from junk bytes). A
-    // value near `usize::MAX` would make `with_capacity` attempt a multi-GiB
-    // up-front allocation (capacity-overflow / OOM) before the decode loop ever
-    // runs and bails on EOF. The decoder can never emit more than one output
-    // byte per ~1.5 input bytes (a back-ref copies up to 18 bytes from 2 input
-    // bytes plus its control bit), so the input length is a tight upper bound on
-    // realisable output. Reserve `min(expected, plausible-from-input)` and let
-    // the `Vec` grow naturally on the (valid) path where the bound is generous;
-    // this is behaviour-preserving for any real stream.
-    let reserve_hint = expected_output_size.min(input.len().saturating_mul(18).saturating_add(64));
-    let mut out: Vec<u8> = Vec::with_capacity(reserve_hint);
+    // value near `usize::MAX` would make the allocation below attempt a
+    // multi-GiB buffer (capacity-overflow / OOM) before the decode loop ever
+    // runs and bails on EOF. A token emits at most 18 bytes for its 2 input
+    // bytes, so a size above this bound always ends in the EOF errors below,
+    // and the bound is never written past.
+    let output_bound = expected_output_size.min(input.len().saturating_mul(18).saturating_add(64));
+    // The output doubles as the ring, which is never kept. With `written` bytes
+    // out, the write cursor is `(0xFEE + written) & 0xFFF`, and ring cell `r`
+    // holds the newest output byte whose position has that residue, or the
+    // ring's initial zero if none has it yet. So a reference reads at one fixed
+    // distance behind the cursor for its whole length, and a read from before
+    // the start of the output is a zero.
+    //
+    // Only bytes below `written` are final: the whole-length copy below runs
+    // past a shorter reference's end, which later tokens overwrite.
+    let mut out = vec![0u8; output_bound];
+    let mut written = 0usize;
     let mut src = 0usize;
     let mut control: u32 = 0;
 
-    while out.len() < expected_output_size {
+    while written < expected_output_size {
         if (control & 0x100) == 0 {
             if src >= input.len() {
                 bail!(
                     "EOF reading control byte at out={}/{}, src={}",
-                    out.len(),
+                    written,
                     expected_output_size,
                     src
                 );
             }
             control = (input[src] as u32) | 0xFF00;
             src += 1;
+            // A group of eight literals, when all eight are there and wanted.
+            if control == 0xFFFF && src + 8 <= input.len() && written + 8 <= expected_output_size {
+                out[written..written + 8].copy_from_slice(&input[src..src + 8]);
+                src += 8;
+                written += 8;
+                control = 0;
+                continue;
+            }
         }
 
         if (control & 1) != 0 {
             if src >= input.len() {
                 bail!(
                     "EOF reading literal at out={}/{}",
-                    out.len(),
+                    written,
                     expected_output_size
                 );
             }
-            let v = input[src];
+            out[written] = input[src];
             src += 1;
-            out.push(v);
-            window[window_pos] = v;
-            window_pos = (window_pos + 1) & 0xFFF;
+            written += 1;
         } else {
             if src + 2 > input.len() {
                 bail!(
                     "EOF reading back-ref at out={}/{}",
-                    out.len(),
+                    written,
                     expected_output_size
                 );
             }
-            let b0 = input[src] as u32;
-            let b1 = input[src + 1] as u32;
+            let b0 = input[src] as usize;
+            let b1 = input[src + 1] as usize;
             src += 2;
             let base = b0 | ((b1 & 0xF0) << 4);
-            let len = ((b1 & 0x0F) + 3) as usize;
-            for n in 0..len {
-                let read_pos = ((base + n as u32) & 0xFFF) as usize;
-                let v = window[read_pos];
-                out.push(v);
-                window[window_pos] = v;
-                window_pos = (window_pos + 1) & 0xFFF;
-                if out.len() >= expected_output_size {
-                    break;
+            // Stops early if it reaches the expected size.
+            let len = ((b1 & 0x0F) + 3).min(expected_output_size - written);
+            // 1..=4096: a position equal to the cursor reads the oldest cell.
+            let distance = ((WINDOW_START_POS + written).wrapping_sub(base + 1) & 0xFFF) + 1;
+            if distance >= MAX_MATCH && written >= distance && written + MAX_MATCH <= out.len() {
+                // No overlap and room to spare: one fixed-size copy, with no
+                // length to branch on.
+                let (done, rest) = out.split_at_mut(written);
+                let from = written - distance;
+                let from: &[u8; MAX_MATCH] = done[from..from + MAX_MATCH].try_into().unwrap();
+                let to: &mut [u8; MAX_MATCH] = (&mut rest[..MAX_MATCH]).try_into().unwrap();
+                *to = *from;
+                written += len;
+            } else {
+                let zeros = distance.saturating_sub(written).min(len);
+                out[written..written + zeros].fill(0);
+                written += zeros;
+                if distance == 1 && zeros < len {
+                    let run = out[written - 1];
+                    out[written..written + len - zeros].fill(run);
+                    written += len - zeros;
+                } else {
+                    // Forward byte by byte: it may overlap its own output.
+                    for _ in zeros..len {
+                        out[written] = out[written - distance];
+                        written += 1;
+                    }
                 }
             }
         }
@@ -577,5 +606,7 @@ pub fn decompress_container_strict(file: &[u8]) -> Result<Vec<Vec<u8>>> {
     Ok(out)
 }
 
+#[cfg(test)]
+mod reference_decoder;
 #[cfg(test)]
 mod tests;

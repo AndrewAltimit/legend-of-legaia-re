@@ -28,7 +28,11 @@
    * shader runs). Without it - an older wasm bundle - the canvas multiply
    * stands in. */
   class AtlasBlitter {
-    constructor(rgba, w, h, tinter) {
+    /* `lazyRects`: this sheet takes many tints over a few of its rects (the window
+     * bands of the menu chrome), so a tinted copy fills only the rects it is asked
+     * for. Same canvas, same coordinates, same pixels where any draw reads them. */
+    constructor(rgba, w, h, tinter, lazyRects) {
+      this.lazyRects = !!lazyRects;
       this.w = w; this.h = h;
       this.rgba = new Uint8Array(rgba);
       this.tinter = typeof tinter === 'function' ? tinter : null;
@@ -37,6 +41,8 @@
       const bctx = this.base.getContext('2d');
       bctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), w, h), 0, 0);
       this.cache = new Map();
+      /* While the page is entering a scene, not on the first menu's frame. */
+      if (this.tinter) this._indexTexels();
     }
     /* A tinter over the runtime's `psx_tint_atlas`, or null when the loaded
      * bundle predates it. */
@@ -46,6 +52,92 @@
     }
     /* Forget the tinted copies (after the runtime's tint mode changed). */
     invalidate() { this.cache.clear(); }
+    /* The tint kernel reads one texel and the colour, and an atlas holds few
+     * distinct texels, most of them nothing: the kernel sees the palette, not the
+     * sheet, and the answer goes only to the texels with any coverage. A transparent
+     * texel stays transparent under every tint, and a canvas holds no colour under
+     * alpha 0. Tinting a new colour is what a first menu, dialog or results screen
+     * stalls on. */
+    _indexTexels() {
+      const px = new Uint32Array(this.rgba.buffer, this.rgba.byteOffset, this.rgba.byteLength >> 2);
+      let solid = 0;
+      for (let i = 0; i < px.length; i++) if (px[i] >>> 24) solid++;
+      const at = new Uint32Array(solid);
+      const index = new Uint16Array(solid);
+      const seen = new Map();
+      const palette = [];
+      let last = 0, lastAt = -1, n = 0;
+      for (let i = 0; i < px.length; i++) {
+        const v = px[i];
+        if (!(v >>> 24)) continue;
+        if (v !== last || lastAt < 0) {
+          let k = seen.get(v);
+          if (k === undefined) {
+            k = palette.length;
+            seen.set(v, k);
+            palette.push(v);
+          }
+          last = v;
+          lastAt = k;
+        }
+        at[n] = i;
+        index[n++] = lastAt;
+      }
+      /* A true-colour sheet past the index's reach goes through whole. */
+      this.texelIndex = palette.length < 0xFFFF ? index : null;
+      this.texelAt = at;
+      this.texelPalette = new Uint8Array(new Uint32Array(palette).buffer);
+      if (this.lazyRects && this.texelIndex) {
+        const dense = new Uint16Array(this.w * this.h).fill(0xFFFF);
+        for (let i = 0; i < n; i++) dense[at[i]] = index[i];
+        this.texelDense = dense;
+      }
+    }
+    /* The copy for tint `col` with rect `s` filled in. */
+    _tintedRect(col, s) {
+      const key = col[0] + ',' + col[1] + ',' + col[2];
+      let e = this.cache.get(key);
+      if (!e) {
+        const tinted = this.tinter(this.texelPalette, col[0], col[1], col[2]);
+        const canvas = document.createElement('canvas');
+        canvas.width = this.w; canvas.height = this.h;
+        e = { canvas, ctx: canvas.getContext('2d'), filled: new Set(),
+          lut: new Uint32Array(tinted.buffer, tinted.byteOffset, tinted.byteLength >> 2) };
+        this.cache.set(key, e);
+      }
+      const rect = s[0] + ',' + s[1] + ',' + s[2] + ',' + s[3];
+      if (!e.filled.has(rect)) {
+        e.filled.add(rect);
+        const x0 = Math.max(0, Math.floor(s[0])), y0 = Math.max(0, Math.floor(s[1]));
+        const x1 = Math.min(this.w, Math.ceil(s[0] + s[2])), y1 = Math.min(this.h, Math.ceil(s[1] + s[3]));
+        if (x1 > x0 && y1 > y0) {
+          const rw = x1 - x0, rh = y1 - y0;
+          const out = new Uint32Array(rw * rh);
+          const dense = this.texelDense, lut = e.lut;
+          for (let y = 0, o = 0; y < rh; y++) {
+            const row = (y0 + y) * this.w + x0;
+            for (let x = 0; x < rw; x++, o++) {
+              const k = dense[row + x];
+              if (k !== 0xFFFF) out[o] = lut[k];
+            }
+          }
+          e.ctx.putImageData(new ImageData(new Uint8ClampedArray(out.buffer), rw, rh), x0, y0);
+        }
+      }
+      return e.canvas;
+    }
+    _tintThroughPalette(col) {
+      if (this.texelIndex === null) {
+        const whole = this.tinter(this.rgba, col[0], col[1], col[2]);
+        return new Uint32Array(whole.buffer, whole.byteOffset, whole.byteLength >> 2);
+      }
+      const tinted = this.tinter(this.texelPalette, col[0], col[1], col[2]);
+      const lut = new Uint32Array(tinted.buffer, tinted.byteOffset, tinted.byteLength >> 2);
+      const index = this.texelIndex, at = this.texelAt;
+      const out = new Uint32Array(this.w * this.h);
+      for (let i = 0; i < index.length; i++) out[at[i]] = lut[index[i]];
+      return out;
+    }
     _tinted(col) {
       const r = Math.round(col[0] * 255), g = Math.round(col[1] * 255), b = Math.round(col[2] * 255);
       if (this.tinter) {
@@ -54,11 +146,11 @@
         const key = col[0] + ',' + col[1] + ',' + col[2];
         let cv = this.cache.get(key);
         if (cv) return cv;
-        const out = this.tinter(this.rgba, col[0], col[1], col[2]);
+        const out = this._tintThroughPalette(col);
         cv = document.createElement('canvas');
         cv.width = this.w; cv.height = this.h;
         cv.getContext('2d').putImageData(
-          new ImageData(new Uint8ClampedArray(out), this.w, this.h), 0, 0);
+          new ImageData(new Uint8ClampedArray(out.buffer, out.byteOffset, out.byteLength), this.w, this.h), 0, 0);
         this.cache.set(key, cv);
         return cv;
       }
@@ -87,7 +179,8 @@
         const s = d.src, dst = d.dst, col = d.color;
         if (!s || !dst || s[2] <= 0 || s[3] <= 0 || dst[2] <= 0 || dst[3] <= 0) continue;
         ctx.globalAlpha = col ? col[3] : 1;
-        ctx.drawImage(this._tinted(col || [1, 1, 1, 1]),
+        const c = col || [1, 1, 1, 1];
+        ctx.drawImage(this.tinter && this.texelDense ? this._tintedRect(c, s) : this._tinted(c),
           s[0], s[1], s[2], s[3], dst[0], dst[1], dst[2], dst[3]);
       }
       ctx.globalAlpha = 1;

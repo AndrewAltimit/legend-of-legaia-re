@@ -92,6 +92,7 @@ members = [
     "crates/web-minigames",
     "crates/web-patcher",
     "crates/web-play",
+    "crates/web-play-bundle",
     "crates/web-viewer",
 ]
 

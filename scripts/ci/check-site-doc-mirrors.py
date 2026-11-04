@@ -112,6 +112,8 @@ MIRRORS = [
      "site/_content/tooling/porting-by-reimplementation.html"),
     ("docs/tooling/frame-bench.md",
      "site/_content/tooling/frame-bench.html"),
+    ("docs/tooling/frame-hash.md",
+     "site/_content/tooling/frame-hash.html"),
     ("docs/tooling/build-and-test-speed.md",
      "site/_content/tooling/build-and-test-speed.html"),
     ("docs/tooling/reusing-for-other-ps1-games.md",

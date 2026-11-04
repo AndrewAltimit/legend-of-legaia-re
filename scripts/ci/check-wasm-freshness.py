@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Is your local `site/wasm/` bundle built from the sources in this tree?
+"""Are your local `site/wasm/` bundles built from the sources in this tree?
 
 `site/wasm/` is build output and is not committed (see `site/wasm/.gitignore`).
 But a locally built bundle still goes stale the moment you pull, switch branches
@@ -23,7 +23,18 @@ hash of every source input, and this script recomputes it:
     python3 scripts/ci/check-wasm-freshness.py            # warn (exit 0)
     python3 scripts/ci/check-wasm-freshness.py --strict    # fail (exit 1)
     python3 scripts/ci/check-wasm-freshness.py --strict --any-profile   # a --fast bundle counts
-    python3 scripts/ci/check-wasm-freshness.py --write     # stamp (build-wasm.sh)
+    python3 scripts/ci/check-wasm-freshness.py --strict --bundle play   # one bundle
+    python3 scripts/ci/check-wasm-freshness.py --write --bundle tool    # stamp (build-wasm.sh)
+
+There are two bundles, each with its own stamp and its own source closure: the
+tool bundle in `site/wasm/` (`legaia-web-viewer`) and the play bundle in
+`site/wasm/play/` (`legaia-web-play-bundle`). The tool bundle links the play host,
+so an edit in `web-play` stales both; an edit in `web-viewer` stales only the tool
+bundle, and the play bundle's stamp stays good. Asked about both, `--strict` also
+refuses two bundles built under different profiles, even with `--any-profile`: a
+site with one iteration bundle in it is not any build anyone meant to serve, and
+the page you check is on one of them while the page you did not check is on the
+other.
 
 Run it before believing anything you see on a locally served play page, and
 especially before telling someone a play-page fix is live. `--strict` is the form
@@ -61,18 +72,26 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SITE_WASM = REPO / "site" / "wasm"
-STAMP = SITE_WASM / "SOURCE_STAMP.json"
-ROOT_CRATE = "legaia-web-viewer"
 
-# The artifacts a served page actually loads. Checked for existence, because the
-# stamp is not the bundle: with the bundle deleted and the stamp left behind, a
-# stamp-only comparison reports "fresh" about a page that cannot load at all.
-# `site/wasm/` is gitignored, so ordinary `git clean -xdf` removes these while
-# leaving nothing in a diff to say so.
-BUNDLE_ARTIFACTS = [
-    "legaia_web_viewer_bg.wasm",
-    "legaia_web_viewer.js",
+
+class Bundle:
+    def __init__(self, key: str, root_crate: str, rel_dir: str, stem: str) -> None:
+        self.key = key
+        self.root_crate = root_crate
+        self.rel_dir = rel_dir
+        self.dir = REPO / rel_dir
+        self.stamp = self.dir / "SOURCE_STAMP.json"
+        # The artifacts a served page actually loads. Checked for existence,
+        # because the stamp is not the bundle: with the bundle deleted and the
+        # stamp left behind, a stamp-only comparison reports "fresh" about a page
+        # that cannot load at all. `site/wasm/` is gitignored, so ordinary
+        # `git clean -xdf` removes these while leaving nothing in a diff to say so.
+        self.artifacts = [f"{stem}_bg.wasm", f"{stem}.js"]
+
+
+BUNDLES = [
+    Bundle("tool", "legaia-web-viewer", "site/wasm", "legaia_web_viewer"),
+    Bundle("play", "legaia-web-play-bundle", "site/wasm/play", "legaia_web_play_bundle"),
 ]
 
 # Inputs outside the crate closure that still change the bundle's behaviour.
@@ -84,8 +103,9 @@ EXTRA_INPUTS = ["Cargo.lock", "Cargo.toml", "scripts/ci/build-wasm.sh"]
 # added un-ignored untracked files to the set: every version-1 stamp was
 # computed over a set that could not see a new module, so they are all
 # unreliable rather than merely old. Version 3 added the root manifest, whose
-# profiles decide what the bundle is, and the `profile` field.
-STAMP_VERSION = 3
+# profiles decide what the bundle is, and the `profile` field. Version 4 is the
+# split into two bundles with a closure each.
+STAMP_VERSION = 4
 
 
 def run(cmd: list[str]) -> str:
@@ -95,8 +115,8 @@ def run(cmd: list[str]) -> str:
     return out.stdout
 
 
-def source_closure() -> list[str]:
-    """Workspace crate dirs the bundle compiles, from cargo's own resolve graph.
+def source_closure(root_crate: str) -> list[str]:
+    """Workspace crate dirs a bundle compiles, from cargo's own resolve graph.
 
     Derived rather than listed so a new dependency edge cannot quietly fall
     outside the stamp - the failure mode would be a gate that reports fresh
@@ -107,9 +127,9 @@ def source_closure() -> list[str]:
     by_id = {p["id"]: p for p in meta["packages"]}
     nodes = {n["id"]: n for n in meta["resolve"]["nodes"]}
 
-    roots = [i for i in members if by_id[i]["name"] == ROOT_CRATE]
+    roots = [i for i in members if by_id[i]["name"] == root_crate]
     if not roots:
-        sys.exit(f"[check-wasm-freshness] {ROOT_CRATE} is not a workspace member")
+        sys.exit(f"[check-wasm-freshness] {root_crate} is not a workspace member")
 
     seen: set[str] = set()
 
@@ -171,8 +191,8 @@ def stamp_for(files: list[str]) -> str:
     return digest.hexdigest()
 
 
-def compute() -> tuple[str, list[str]]:
-    inputs = tracked_files(source_closure() + EXTRA_INPUTS)
+def compute(bundle: Bundle) -> tuple[str, list[str]]:
+    inputs = tracked_files(source_closure(bundle.root_crate) + EXTRA_INPUTS)
     return stamp_for(inputs), inputs
 
 
@@ -182,17 +202,142 @@ def per_file_hashes(files: list[str]) -> dict[str, str]:
     }
 
 
+def write_stamp(bundle: Bundle, profile: str) -> int:
+    current, inputs = compute(bundle)
+    bundle.dir.mkdir(parents=True, exist_ok=True)
+    bundle.stamp.write_text(
+        json.dumps(
+            {
+                "comment": (
+                    f"Content hash of the sources {bundle.rel_dir}/ was built from. "
+                    "Written by scripts/ci/build-wasm.sh; read by "
+                    "scripts/ci/check-wasm-freshness.py. Untracked local "
+                    "state - do not commit it and do not hand-edit it; "
+                    "editing it to silence the check is how you end up "
+                    "testing a bundle you did not build."
+                ),
+                "stamp_version": STAMP_VERSION,
+                "source_stamp": current,
+                "profile": profile,
+                "input_count": len(inputs),
+                "files": per_file_hashes(inputs),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n"
+    )
+    print(f"[check-wasm-freshness] {bundle.key}: stamped {len(inputs)} inputs -> {current[:16]}")
+    return 0
+
+
+def check_bundle(bundle: Bundle, args: argparse.Namespace) -> tuple[bool, str | None]:
+    """`(fresh, profile)`. `fresh` is False for anything `--strict` refuses."""
+    name = f"{bundle.key} bundle, {bundle.rel_dir}/"
+    current, inputs = compute(bundle)
+
+    # Existence before freshness: "your bundle is out of date" is the wrong
+    # answer when there is no bundle, and "fresh" would be actively false.
+    missing = [n for n in bundle.artifacts if not (bundle.dir / n).exists()]
+    if missing:
+        print(
+            f"[check-wasm-freshness] NO BUNDLE: {bundle.rel_dir}/ is missing "
+            + ", ".join(missing)
+            + f".\n    Nothing can serve the pages on the {bundle.key} bundle. Run "
+            "scripts/ci/build-wasm.sh.",
+            file=sys.stderr,
+        )
+        if bundle.stamp.exists():
+            print(
+                "    (A SOURCE_STAMP.json is present without the artifacts it "
+                "describes - stale leftover, not a built bundle.)",
+                file=sys.stderr,
+            )
+        return False, None
+
+    if not bundle.stamp.exists():
+        print(
+            f"[check-wasm-freshness] WARN: no {bundle.rel_dir}/SOURCE_STAMP.json - cannot "
+            "tell whether the shipped bundle matches this tree. Run "
+            "scripts/ci/build-wasm.sh to create one.",
+            file=sys.stderr,
+        )
+        return False, None
+
+    recorded = json.loads(bundle.stamp.read_text())
+
+    if recorded.get("stamp_version") != STAMP_VERSION:
+        print(
+            f"[check-wasm-freshness] WARN: the {bundle.key} stamp is format v"
+            f"{recorded.get('stamp_version')}, this checker is v{STAMP_VERSION}. "
+            "Rebuild to re-stamp.",
+            file=sys.stderr,
+        )
+        return False, None
+
+    built = recorded.get("profile", "release")
+    if recorded.get("source_stamp") == current:
+        # The sources match, so a page shows this tree's behaviour; an iteration
+        # build still is not the bundle that ships, and its size and speed say
+        # nothing about that one.
+        if built != "release":
+            print(
+                f"[check-wasm-freshness] {name} matches {len(inputs)} sources, "
+                f"built under `{built}`, not the shipped profile. Run "
+                "scripts/ci/build-wasm.sh for the shipped bundle.",
+                file=sys.stderr,
+            )
+            return args.any_profile, built
+        if not args.quiet:
+            print(f"[check-wasm-freshness] OK - {name} matches {len(inputs)} sources")
+        return True, built
+
+    # Name the drifted files. "The bundle is stale" is not actionable on its own;
+    # which source moved tells you whether it is web-visible.
+    was = recorded.get("files", {})
+    now = per_file_hashes(inputs)
+    changed = sorted(k for k in now if was.get(k) != now[k])
+    dropped = sorted(k for k in was if k not in now)
+
+    print(
+        f"[check-wasm-freshness] STALE: {name} was built from different "
+        "sources than this tree.",
+        file=sys.stderr,
+    )
+    for f in changed[:20]:
+        kind = "added" if f not in was else "changed"
+        print(f"    {kind:8s} {f}", file=sys.stderr)
+    if len(changed) > 20:
+        print(f"    ... and {len(changed) - 20} more changed", file=sys.stderr)
+    for f in dropped[:10]:
+        print(f"    removed  {f}", file=sys.stderr)
+    if len(dropped) > 10:
+        print(f"    ... and {len(dropped) - 10} more removed", file=sys.stderr)
+    print(
+        "\n    A locally served page loads the bundle you built, not these "
+        "sources. If any change above is web-visible, run "
+        "scripts/ci/build-wasm.sh before claiming it is fixed.",
+        file=sys.stderr,
+    )
+    return False, built
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument(
         "--write",
         action="store_true",
-        help="record the current stamp (build-wasm.sh calls this)",
+        help="record the current stamp of --bundle (build-wasm.sh calls this)",
+    )
+    ap.add_argument(
+        "--bundle",
+        choices=[b.key for b in BUNDLES],
+        help="one bundle; the default is both (--write needs it)",
     )
     ap.add_argument(
         "--strict",
         action="store_true",
-        help="exit 1 when the bundle is stale, instead of warning",
+        help="exit 1 when a bundle is stale, instead of warning",
     )
     ap.add_argument("--quiet", action="store_true", help="only print on trouble")
     ap.add_argument(
@@ -203,123 +348,31 @@ def main() -> int:
     ap.add_argument(
         "--any-profile",
         action="store_true",
-        help="with --strict: accept an iteration bundle (build-wasm.sh --fast) too",
+        help="with --strict: accept iteration bundles (build-wasm.sh --fast) too, "
+        "as long as both are iteration bundles",
     )
     args = ap.parse_args()
 
-    current, inputs = compute()
-
+    chosen = [b for b in BUNDLES if args.bundle in (None, b.key)]
     if args.write:
-        STAMP.parent.mkdir(parents=True, exist_ok=True)
-        STAMP.write_text(
-            json.dumps(
-                {
-                    "comment": (
-                        "Content hash of the sources site/wasm/ was built from. "
-                        "Written by scripts/ci/build-wasm.sh; read by "
-                        "scripts/ci/check-wasm-freshness.py. Untracked local "
-                        "state - do not commit it and do not hand-edit it; "
-                        "editing it to silence the check is how you end up "
-                        "testing a bundle you did not build."
-                    ),
-                    "stamp_version": STAMP_VERSION,
-                    "source_stamp": current,
-                    "profile": args.profile,
-                    "input_count": len(inputs),
-                    "files": per_file_hashes(inputs),
-                },
-                indent=2,
-                sort_keys=True,
-            )
-            + "\n"
-        )
-        print(f"[check-wasm-freshness] stamped {len(inputs)} inputs -> {current[:16]}")
-        return 0
+        if not args.bundle:
+            ap.error("--write needs --bundle")
+        return write_stamp(chosen[0], args.profile)
 
-    # Existence before freshness: "your bundle is out of date" is the wrong
-    # answer when there is no bundle, and "fresh" would be actively false.
-    missing = [n for n in BUNDLE_ARTIFACTS if not (SITE_WASM / n).exists()]
-    if missing:
+    results = [check_bundle(b, args) for b in chosen]
+    ok = all(fresh for fresh, _ in results)
+
+    profiles = {profile for _, profile in results if profile}
+    if len(results) > 1 and len(profiles) > 1:
         print(
-            "[check-wasm-freshness] NO BUNDLE: site/wasm/ is missing "
-            + ", ".join(missing)
-            + ".\n    Nothing can serve the play page. Run "
-            "scripts/ci/build-wasm.sh.",
+            f"[check-wasm-freshness] MIXED PROFILES: the bundles were built under "
+            f"{' and '.join(sorted(profiles))}. Run scripts/ci/build-wasm.sh, with or "
+            "without --fast, and without --only.",
             file=sys.stderr,
         )
-        if STAMP.exists():
-            print(
-                "    (A SOURCE_STAMP.json is present without the artifacts it "
-                "describes - stale leftover, not a built bundle.)",
-                file=sys.stderr,
-            )
-        return 1 if args.strict else 0
+        ok = False
 
-    if not STAMP.exists():
-        print(
-            "[check-wasm-freshness] WARN: no site/wasm/SOURCE_STAMP.json - cannot "
-            "tell whether the shipped bundle matches this tree. Run "
-            "scripts/ci/build-wasm.sh to create one.",
-            file=sys.stderr,
-        )
-        return 1 if args.strict else 0
-
-    recorded = json.loads(STAMP.read_text())
-
-    if recorded.get("stamp_version") != STAMP_VERSION:
-        print(
-            f"[check-wasm-freshness] WARN: stamp is format v"
-            f"{recorded.get('stamp_version')}, this checker is v{STAMP_VERSION}. "
-            "Rebuild to re-stamp.",
-            file=sys.stderr,
-        )
-        return 1 if args.strict else 0
-
-    if recorded.get("source_stamp") == current:
-        # The sources match, so a page shows this tree's behaviour; an iteration
-        # build still is not the bundle that ships, and its size and speed say
-        # nothing about that one.
-        built = recorded.get("profile", "release")
-        if built != "release":
-            print(
-                f"[check-wasm-freshness] site/wasm/ matches {len(inputs)} sources, "
-                f"built under `{built}`, not the shipped profile. Run "
-                "scripts/ci/build-wasm.sh for the shipped bundle.",
-                file=sys.stderr,
-            )
-            return 1 if args.strict and not args.any_profile else 0
-        if not args.quiet:
-            print(f"[check-wasm-freshness] OK - site/wasm/ matches {len(inputs)} sources")
-        return 0
-
-    # Name the drifted files. "The bundle is stale" is not actionable on its own;
-    # which source moved tells you whether it is web-visible.
-    was = recorded.get("files", {})
-    now = per_file_hashes(inputs)
-    changed = sorted(k for k in now if was.get(k) != now[k])
-    dropped = sorted(k for k in was if k not in now)
-
-    print(
-        "[check-wasm-freshness] STALE: site/wasm/ was built from different "
-        "sources than this tree.",
-        file=sys.stderr,
-    )
-    for name in changed[:20]:
-        kind = "added" if name not in was else "changed"
-        print(f"    {kind:8s} {name}", file=sys.stderr)
-    if len(changed) > 20:
-        print(f"    ... and {len(changed) - 20} more changed", file=sys.stderr)
-    for name in dropped[:10]:
-        print(f"    removed  {name}", file=sys.stderr)
-    if len(dropped) > 10:
-        print(f"    ... and {len(dropped) - 10} more removed", file=sys.stderr)
-    print(
-        "\n    A locally served play page loads the bundle you built, not these "
-        "sources. If any change above is web-visible, run "
-        "scripts/ci/build-wasm.sh before claiming it is fixed.",
-        file=sys.stderr,
-    )
-    return 1 if args.strict else 0
+    return 1 if args.strict and not ok else 0
 
 
 if __name__ == "__main__":

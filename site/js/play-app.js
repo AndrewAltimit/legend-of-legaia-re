@@ -457,6 +457,17 @@ void main() { o_color = texture(u_layer, v_uv); }
       /* The page may have built it while idle (`play.html`, `prewarmFirstEntry`):
        * the same object on the same canvas, its shaders already compiled. */
       this.renderer = (opts && opts.renderer) || new window.TmdRenderer(canvas);
+      /* PSX rasterisation's frame goes through a single-sample framebuffer of
+       * its own (webgl-psx-target.js). A skipped draw neither draws nor copies. */
+      this._psxTarget = new window.LegaiaPsxTarget(this.renderer.gl);
+      const drawFrame = this._frame;
+      this._frame = (skipDraw) => {
+        const psx = this.psxRender && !skipDraw && !this._movieCovers() && !(this.vr && this.vr.isActive());
+        if (psx) this._psxTarget.begin();
+        const r = drawFrame.call(this, skipDraw);
+        if (psx) this._psxTarget.present();
+        return r;
+      };
       /* Every scene mesh carries its primitives' corners for retail's
        * per-primitive near reject, built by the engine's kernel (read
        * through this.rt so a recovered runtime keeps serving it). */
@@ -519,6 +530,11 @@ void main() { o_color = texture(u_layer, v_uv); }
       this._menuFont = null;      /* AtlasBlitter for the dialog-font atlas */
       this._menuChrome = undefined;  /* AtlasBlitter | null (null once resolved to "no chrome") */
       this._overlayActive = false;
+      /* Env-pack slots whose morph waits for a viewer (`_settleMorphs`), to
+       * whether a frame has already passed it over. */
+      this._morphHeld = new Map();
+      /* The key of what `_drawOverlayBase` last painted (play-view-overlay.js). */
+      this._overlayPainted = null;
       /* Whether this session CAN draw the retail reading box on the overlay
        * canvas: the engine exports the draw builder and the font atlas is
        * uploaded. The page's DOM `.play-dialog` fallback keys off this.
@@ -843,12 +859,18 @@ void main() { o_color = texture(u_layer, v_uv); }
       if (this.vr && this.vr.isActive()) return;   /* the XR loop is driving */
       const tick = () => {
         this.raf = requestAnimationFrame(tick);
+        /* Ahead of the draw: resizing the canvas after one would throw its frame away. */
+        const t0 = performance.now();
+        if (this._quality) this._sampleQuality(t0);
         this._frame();
+        this._frameCost = performance.now() - t0;
       };
       this.raf = requestAnimationFrame(tick);
     }
 
     stop() {
+      /* The boot screens paint the overlay canvas while the view is stopped. */
+      this._overlayPainted = null;
       if (this.raf) cancelAnimationFrame(this.raf);
       this.raf = 0;
     }
@@ -881,26 +903,69 @@ void main() { o_color = texture(u_layer, v_uv); }
       } catch (e) { console.warn('play audio enable', e); }
     }
 
-    /* Serve one lazy CD-XA staging request per frame: the engine names a
-     * file's read span (`play_xa_stage_requests_json`), the page hands those
-     * raw 2352-byte sectors back (`play_xa_install_span`), which decodes that
-     * one channel and replays the clip request. Sectors not resident yet
-     * (js/play-disc.js) are read now and served on a later frame. No disc on
-     * the page, or sectors it cannot read, means the request is not served;
-     * the engine keeps listing it, silently. */
+    /* A movie is up: read before the frame's service and ticks, so a frame and its
+     * PSX target agree. The overlay shows in the same frame this first reads true
+     * (`LegaiaPlayFmv.service`) and goes in the frame after this last does. */
+    _movieCovers() {
+      return !!this.rt && typeof this.rt.play_fmv_active === 'function' && this.rt.play_fmv_active();
+    }
+
+    /* Serve one lazy CD-XA staging request per frame, oldest first: the engine
+     * names a file's read span (`play_xa_stage_requests_json`), the page hands
+     * those raw 2352-byte sectors back (`play_xa_install_span`), which decodes
+     * that one channel and replays the clip request. A scene's and a round's
+     * likely lines are listed before they are raised, so every listed file is read
+     * now (js/play-disc.js), widest span per file, and the disc holds it until no
+     * row names that file. A span that will not read is installed empty, which
+     * drops its row: the engine counts the clip unstaged, and the rows behind it
+     * go on. No disc on the page means nothing is served. */
     _serveXaStage(rt) {
       if (typeof rt.play_xa_stage_requests_json !== 'function') return;
       const disc = window.__playDisc;
       if (!disc) return;
       let reqs = [];
       try { reqs = JSON.parse(rt.play_xa_stage_requests_json()) || []; } catch (e) { return; }
+      const want = this._xaWant(disc, reqs);
       const req = reqs[0];
       if (!req) return;
-      const sectors = disc.span(req.lba, req.sectors);
-      if (!sectors) { disc.prefetch(req.lba, req.sectors); return; }
-      if (!sectors.length) return;
+      let sectors = disc.span(req.lba, req.sectors);
+      if (!sectors) {
+        const widest = want.get(req.lba);
+        if (!disc.failedSpan(req.lba, widest)) return;
+        console.warn('xa stage: the disc would not read', req.path);
+        disc.release(req.lba, widest);
+        want.delete(req.lba);
+        sectors = new Uint8Array(0);
+      } else if (!sectors.length) {
+        return;
+      }
       try { rt.play_xa_install_span(req.path, sectors, req.channel); }
       catch (e) { console.warn('xa stage', req.path, e); }
+    }
+
+    /* Have the disc read and hold what these rows name, within what may stay
+     * resident (the oldest row is read whatever its size), and let go of what no
+     * row names any more. Rows of one file share its widest read, since each
+     * span starts at the file's first sector. */
+    _xaWant(disc, reqs) {
+      const want = new Map();
+      for (const r of reqs) want.set(r.lba, Math.max(want.get(r.lba) || 0, r.sectors));
+      const held = this._xaHeld;
+      if (held) {
+        for (const [lba, n] of held.want) {
+          if (held.disc !== disc || want.get(lba) !== n) held.disc.release(lba, n);
+        }
+      }
+      const { RAW, RESIDENT_CAP } = window.LegaiaPlayDisc;
+      let room = RESIDENT_CAP, oldest = true;
+      for (const [lba, n] of want) {
+        if (!oldest && n * RAW > room) { want.delete(lba); continue; }
+        room -= n * RAW;
+        oldest = false;
+        disc.prefetch(lba, n);
+      }
+      this._xaHeld = { disc, want };
+      return want;
     }
 
     /* A WASM trap (or any throw from an engine call) during the frame poisons
@@ -962,7 +1027,8 @@ void main() { o_color = texture(u_layer, v_uv); }
      * overlay canvas take a 320 x 240 backing store, which every pass reads
      * its size from (the viewport, the snap grid, the overlay layout), and
      * the browser magnifies them nearest-neighbour. The snap, the fill rule
-     * and the dither are retail's only at stage scale 1. */
+     * and the dither are retail's only at stage scale 1, and on a single-sample
+     * framebuffer (webgl-psx-target.js). */
     setPsxRender(on) {
       this.psxRender = !!on;
       this._applyNativeResolution();
@@ -973,8 +1039,13 @@ void main() { o_color = texture(u_layer, v_uv); }
       if (!this._windowSize) {
         this._windowSize = canvases.map((c) => [c.width, c.height]);
       }
+      /* A quality step scales the 3D canvas alone: the overlay canvas keeps
+       * its text at the window's size. */
+      const scale = this._qualityOff('scale50') ? 0.5 : this._qualityOff('scale75') ? 0.75 : 1;
       canvases.forEach((c, i) => {
-        const [w, h] = this.psxRender ? [320, 240] : this._windowSize[i];
+        const [ww, wh] = this._windowSize[i];
+        const [w, h] = this.psxRender ? [320, 240]
+          : c === this.canvas ? [Math.round(ww * scale), Math.round(wh * scale)] : [ww, wh];
         if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
         c.style.imageRendering = this.psxRender ? 'pixelated' : '';
       });
@@ -987,7 +1058,8 @@ void main() { o_color = texture(u_layer, v_uv); }
     /* The point lights' shadow sub-layer (the native window's `Y`); on
      * unless the "Lamp shadows" box is cleared. */
     setDynShadows(on) {
-      this.dynShadows = !!on;
+      this._dynShadowsWanted = !!on;
+      this.dynShadows = this._dynShadowsWanted && !this._qualityOff('shadows');
     }
 
     /* Bloom (the native window's F10): drawn by `_drawBloom` over the
@@ -1002,10 +1074,76 @@ void main() { o_color = texture(u_layer, v_uv); }
      * webgl-ssao.js between its opaque and blend draws. */
     setSsao(on) {
       this.ssao = !!on;
-      this.renderer.ssaoFrame = this.ssao
+      this.renderer.ssaoFrame = this.ssao && !this._qualityOff('ssao')
         ? (vp) => (this.rt && typeof this.rt.play_ssao_frame === 'function'
           ? this.rt.play_ssao_frame(vp) : null)
         : null;
+    }
+
+    /* The automatic step-down (play-quality-ladder.js), armed by the play page.
+     *
+     * A rung is a view-side state over the player's option, which it never
+     * touches: `rt.set_ssao` and the rest persist, so nothing here calls them,
+     * and the option box keeps reading what the player chose. The setters above
+     * fold the rung in, so a page re-apply cannot lift it. Retail mode and PSX
+     * rasterisation are `exempt`: no rung steps, and one already stepped stops
+     * counting while they hold. Lives only as long as the page.
+     *
+     * `onStep(ids, stepped)` tells the page what is off now, for its note;
+     * `stepped` is true when the ladder just took a step. */
+    armQualityLadder(exempt, onStep) {
+      this._qualityExempt = exempt;
+      this._qualityNote = onStep;
+      this._quality = new window.LegaiaQualityLadder(QUALITY_RUNGS.map((r) => ({
+        id: r.id,
+        applicable: () => r.applicable(this),
+        apply: () => this._applyQuality(),
+      })), exempt);
+    }
+
+    _qualityOff(id) {
+      const q = this._quality;
+      return !!q && q.stepped.includes(id) && !q.chosen.has(id) && !this._qualityExempt();
+    }
+
+    _applyQuality() {
+      this.setSsao(this.ssao);
+      this.setDynShadows(this._dynShadowsWanted !== false);
+      this._applyNativeResolution();
+    }
+
+    /* The player decided about this rung (its box or its key). */
+    noteQualityChoice(id) {
+      if (!this._quality) return;
+      this._quality.choose(id);
+      this._applyQuality();
+      if (this._qualityNote) this._qualityNote(this.qualitySteps());
+    }
+
+    /* The rungs in force, for the note and for a check. */
+    qualitySteps() {
+      return this._quality ? this._quality.stepped.filter((id) => this._qualityOff(id)) : [];
+    }
+
+    /* The note's undo: everything back, and no more steps this session. */
+    restoreQuality() {
+      if (!this._quality) return;
+      this._quality.disarm();
+      this._quality.stepped.length = 0;
+      this._applyQuality();
+      if (this._qualityNote) this._qualityNote([]);
+    }
+
+    _sampleQuality(t0) {
+      const counts = !this.paused && !document.hidden && !this._fmvUp();
+      if (this._quality.sample(t0, this._frameCost || 0, counts) && this._qualityNote) {
+        this._qualityNote(this.qualitySteps(), true);
+      }
+    }
+
+    _fmvUp() {
+      try { return typeof this.rt.play_fmv_active === 'function' && this.rt.play_fmv_active(); }
+      catch (e) { return false; }
     }
 
     /* Stage this frame's camera.
@@ -1057,9 +1195,19 @@ void main() { o_color = texture(u_layer, v_uv); }
       window.removeEventListener('blur', this._onBlur);
       if (this._screenPrims) { this._screenPrims.dispose(); this._screenPrims = null; }
       if (this._fogPass) { this._fogPass.dispose(); this._fogPass = null; }
+      if (this._psxTarget) { this._psxTarget.dispose(); this._psxTarget = null; }
       if (this.renderer) { this.renderer.dispose(); this.renderer = null; }
     }
   }
+
+  /* The rungs, in the order the ladder spends them; see browser-host.md for
+   * what each is measured to pay. `applicable` skips a rung already off. */
+  const QUALITY_RUNGS = [
+    { id: 'ssao', applicable: (v) => !!v.ssao },
+    { id: 'scale75', applicable: (v) => !v.psxRender },
+    { id: 'scale50', applicable: (v) => !v.psxRender },
+    { id: 'shadows', applicable: (v) => !!v.dynLighting && v._dynShadowsWanted !== false },
+  ];
 
   window.PlayView = PlayView;
   /* Drawn by PlayView._drawScreenPrims (play-view-frame.js). */

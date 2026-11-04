@@ -486,8 +486,14 @@ def version_script_srcs(page: str) -> str:
     return _STYLE_HREF_RE.sub(sub, _SCRIPT_SRC_RE.sub(sub, page))
 
 
-def _wasm_version() -> str:
-    """Short content version of the shipped WASM bundle (glue + binary).
+def _page_bundle(active_key: str) -> str:
+    """The bundle a page holds: `play` for a row of page-bundles.toml, else `tool`."""
+    table = tomllib.loads((REPO_ROOT / "scripts/ci/page-bundles.toml").read_text(encoding="utf-8"))
+    return "play" if active_key in table["play"] else "tool"
+
+
+def _wasm_version(bundle: str = "tool") -> str:
+    """Short content version of one shipped WASM bundle (glue + binary).
 
     Injected into every page as `window.LEGAIA_WASM_V`; the JS wasm
     loaders append it as `?v=` to BOTH the glue module import and the
@@ -496,9 +502,17 @@ def _wasm_version() -> str:
     module - only a URL that changes with the bytes does. `0` when the
     bundle is absent (CI builds it at deploy).
     """
-    glue = _asset_hash("wasm/legaia_web_viewer.js") or ""
-    bg = _asset_hash("wasm/legaia_web_viewer_bg.wasm") or ""
+    stem = "wasm/play/legaia_web_play_bundle" if bundle == "play" else "wasm/legaia_web_viewer"
+    glue = _asset_hash(f"{stem}.js") or ""
+    bg = _asset_hash(f"{stem}_bg.wasm") or ""
     return f"{glue[:6]}{bg[:6]}" if glue or bg else "0"
+
+
+def _wasm_globals(active_key: str) -> str:
+    """What `js/wasm-loader.js` reads: the page's bundle, and that bundle's version."""
+    bundle = _page_bundle(active_key)
+    version = f'window.LEGAIA_WASM_V="{_wasm_version(bundle)}";'
+    return f'window.LEGAIA_WASM_BUNDLE="play";{version}' if bundle == "play" else version
 
 
 # Applies a stored light-theme choice before first paint, so a reader who
@@ -563,7 +577,7 @@ def html_template(page_title: str, depth: int, active_key: str, body: str, extra
   <script>{THEME_BOOT_JS}</script>
   {FONT_LINKS}
   <link rel="stylesheet" href="{css}">
-  <script>window.LEGAIA_WASM_V="{_wasm_version()}";</script>
+  <script>{_wasm_globals(active_key)}</script>
   <script src="{util_js}"></script>
   <script src="{wasm_js}"></script>
   {extra_head}
@@ -783,6 +797,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/full-game-ladder.html", "Full-game ladder", "tooling/full-game-ladder", "tooling/full-game-ladder.html"),
     ("tooling/soak-harness.html", "Soak harness", "tooling/soak-harness", "tooling/soak-harness.html"),
     ("tooling/frame-bench.html", "Frame benchmark", "tooling/frame-bench", "tooling/frame-bench.html"),
+    ("tooling/frame-hash.html", "Browser frame hash", "tooling/frame-hash", "tooling/frame-hash.html"),
     ("tooling/build-and-test-speed.html", "Build and test speed", "tooling/build-and-test-speed", "tooling/build-and-test-speed.html"),
     ("tooling/porting-by-reimplementation.html", "Porting by reimplementation", "tooling/porting-by-reimplementation", "tooling/porting-by-reimplementation.html"),
     ("tooling/reusing-for-other-ps1-games.html", "Reusing for other PS1 games", "tooling/reusing-for-other-ps1-games", "tooling/reusing-for-other-ps1-games.html"),

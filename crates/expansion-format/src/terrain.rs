@@ -941,11 +941,17 @@ impl MapDef {
 
     /// The map's terrain heights, `None` with no `[terrain]`.
     pub fn terrain_heightfield(&self) -> Result<Option<Heightfield>> {
+        Ok(self.terrain_field()?.map(|f| (*f).clone()))
+    }
+
+    /// [`Self::terrain_heightfield`] without the copy: the field one of the
+    /// last few built, handed back for an equal input ([`memoed_heightfield`]).
+    pub fn terrain_field(&self) -> Result<Option<std::sync::Arc<Heightfield>>> {
         let Some(t) = &self.terrain else {
             return Ok(None);
         };
         let grid = self.tile_grid()?;
-        heightfield(self, t, &grid).map(Some)
+        memoed_heightfield(self, t, &grid).map(Some)
     }
 
     /// The map's terrain resolved for drawing ([`TerrainSurface`]), `None`
@@ -953,9 +959,10 @@ impl MapDef {
     ///
     /// The surface is a pure function of the map's `terrain`, `tiles`,
     /// `size` and `floor_heights`, and building it is the costly half of a
-    /// terrain map's preparation, which asks for it several times over (the
-    /// validator, the rest checks, the mesh library); the last few built are
-    /// kept ([`SURFACE_MEMO`]) and handed back for an equal input.
+    /// terrain map's preparation, which asks for it more than once (the mesh
+    /// library, the field image); the last few built are kept
+    /// ([`SURFACE_MEMO`]) and handed back for an equal input. A caller that
+    /// wants only the heights asks [`Self::terrain_field`].
     pub fn terrain_surface(&self) -> Result<Option<TerrainSurface>> {
         let Some(t) = &self.terrain else {
             return Ok(None);
@@ -1086,9 +1093,10 @@ struct SurfaceKey {
     floor_heights: Vec<i16>,
 }
 
-/// How many built surfaces [`MapDef::terrain_surface`] keeps: room for every
-/// terrain map of a pack the size of the sample pack, which a validation pass walks
-/// before the entry asks for its own.
+/// How many built surfaces [`MapDef::terrain_surface`] and built fields
+/// [`memoed_heightfield`] keep: room for every terrain map of a pack the size of
+/// the sample pack, which a validation pass walks before the entry asks for its
+/// own.
 const SURFACE_MEMO: usize = 8;
 
 type SurfaceMemo = Vec<(SurfaceKey, std::sync::Arc<TerrainSurface>)>;
@@ -1120,7 +1128,8 @@ fn surface_memo_put(key: SurfaceKey, s: std::sync::Arc<TerrainSurface>) {
 
 /// [`heightfield`] with the last few built kept, for an equal input. The
 /// validator's terrain rules build one per terrain map per pass, and it is
-/// most of a pass; a workbench edit outside `[terrain]` builds nothing new.
+/// most of a pass; a workbench edit outside `[terrain]` builds nothing new, and
+/// the painter's preview of a tile edit builds it once for all its readers.
 fn memoed_heightfield(
     def: &MapDef,
     t: &TerrainDef,

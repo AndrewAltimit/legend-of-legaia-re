@@ -2279,7 +2279,15 @@ frame. Pinned by
 `crates/engine-scene-host/tests/field_unspawned_actor_draw_disc.rs`.
 
 **The site play page** (`site/js/play-view-frame.js`) applies the same crop and
-actor cull and adds nothing; the per-body occluder cull it once carried is deleted. A per-body occlusion
+actor cull and removes nothing visible. It does not issue a draw that cannot
+land a fragment: outside PSX mode, a body whose box lies wholly past the left,
+right, top or bottom of the clip volume is left out of `renderAssembled`'s
+passes, at the same draw order, and a posed actor or a morph that neither the
+camera nor a light can reach is not built until something can
+([browser host](browser-host.md#settling-a-frames-draws)). The rule holds: the
+picture is the one every body drawn would give, and the frame-hash oracle pins
+that. PSX mode keeps every draw, because the GTE's register limits move a far
+corner from off screen to on. The per-body occluder cull it once carried is deleted. A per-body occlusion
 cull (drop a body the eye-to-player segment pierces) is the wrong tool even
 in exact segment-vs-AABB form, because placement boxes are axis-aligned over
 whole terrain tiles, walls and buildings, so the segment sweeps through a

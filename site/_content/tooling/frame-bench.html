@@ -1,7 +1,7 @@
 <header class="page-header">
   <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; frame benchmark</div>
   <h1>Frame benchmark: what the engine costs a player</h1>
-  <p class="lede">Two drivers measure the engine on a fixed set of scenes and on the way into them: <code>scripts/ci/frame-bench.py</code> on the native window and <code>scripts/ci/frame-bench-web.mjs</code> on the browser play page. They print tables and assert nothing. A frame-time gate on a shared machine can only flake, so the numbers belong in a before / after comparison on one machine, and not in the repo.</p>
+  <p class="lede">Two drivers measure the engine on a fixed set of scenes and on the way into them: <code>scripts/ci/frame-bench.py</code> on the native window and <code>scripts/ci/frame-bench-web.mjs</code> on the browser play page. They print tables and assert nothing. A frame-time gate on a shared machine can only flake, so the numbers belong in a before / after comparison on one machine, and not in the repo. What does gate is <a href="#cost-ratchet">the cost ratchet</a>, on counts rather than times; the proof that a browser change drew the same picture is the <a href="frame-hash.html">frame hash</a>.</p>
 </header>
 
 <section class="doc-section" id="at-a-glance" data-doc="-">
@@ -45,13 +45,14 @@
   <h2>Native</h2>
   <div class="cli"><code>scripts/ci/frame-bench.py                                  # every scene, both fidelities
 scripts/ci/frame-bench.py --scene town01 --mode enhanced --repeat 5
-scripts/ci/frame-bench.py --json before.json               # raw rows for a diff</code></div>
+scripts/ci/frame-bench.py --json before.json               # raw rows for a diff
+scripts/ci/frame-bench.py --exe new --base-exe old --repeat 5   # the two builds alternating</code></div>
   <p>The driver builds <code>legaia-engine</code> with <code>engine-shell</code>&rsquo;s <code>bench-alloc</code> feature and runs <code>play-window</code> tick-locked: one sim tick per drawn frame whatever the wall clock did, so every run walks the same frames and only the time varies. The audio director runs over a device-less output. It prints the fastest of <code>--repeat</code> runs with the spread between them, which says how far to trust a row on a busy box.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Table</th><th>Reads</th></tr></thead>
     <tbody>
-      <tr><td>Frame time</td><td>average, p99, worst, allocations and bytes per frame, draw counts, then time per stage</td></tr>
+      <tr><td>Frame time</td><td>average, p99, worst, allocations and bytes per frame, draw counts, the process&rsquo;s peak RSS, then time per stage</td></tr>
       <tr><td>Allocations by stage</td><td>which stage the allocations happen in</td></tr>
       <tr><td>Startup by step</td><td>process up to first frame: renderer and pipelines, VRAM, each mesh family, actors</td></tr>
     </tbody>
@@ -68,22 +69,95 @@ scripts/ci/frame-bench.py --entry --entry-scenes town01,koin1</code></div>
   <h2>Browser</h2>
   <div class="cli"><code>scripts/ci/build-wasm.sh                                      # or point --site at a scratch copy
 scripts/ci/frame-bench-web.mjs --scene town01,battle --profile
-scripts/ci/frame-bench-web.mjs --site /path/to/other/site --json out.json</code></div>
+scripts/ci/frame-bench-web.mjs --site /path/to/other/site --json out.json
+scripts/ci/frame-bench-web.mjs --paths --vsync                # the player's ways in; at the display's rate
+scripts/ci/frame-bench-web.mjs --cpu-throttle 6               # a proxy, labelled one</code></div>
   <p>It serves a <code>site/</code> directory itself, loads the disc named by <code>LEGAIA_DISC_BIN</code> through the page&rsquo;s own file input, and enters each scene through the page&rsquo;s own scene list. Each row reports the page&rsquo;s frame function as a main-thread cost, every wasm export&rsquo;s time, calls and returned bytes per frame, GL calls per frame, long tasks, and the scene-entry time.</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Flag</th><th>Adds</th></tr></thead>
     <tbody>
-      <tr><td><code>--profile</code></td><td>A CPU profile: self time by function, garbage collector included, and the call chains of the heaviest.</td></tr>
+      <tr><td><code>--profile</code></td><td>A CPU profile: self time by function and by kind (JS, wasm, GL calls, the rest), garbage collector included, an inclusive table, and the call chains of the heaviest.</td></tr>
+      <tr><td><code>--screens [scene]</code></td><td>The long tasks outside scene and battle entry: the pause menu&rsquo;s rows, a talk, a first shop, or with <code>map01</code> a whole fight to its results. Each step&rsquo;s worst frame, then the longest frames as call trees.</td></tr>
+      <tr><td><code>--trace</code></td><td>A browser trace over six seconds: main-thread self time per trace event, inside and outside the animation-frame callback. It names what a profile calls <code>(program)</code>: style, layout, paint. <code>--trace-out file</code> writes the events, invalidation tracking included.</td></tr>
       <tr><td><code>--gl egl</code> / <code>swiftshader</code></td><td>The default asks for a real GPU and the output names the renderer it got; a software rasteriser swamps the page&rsquo;s cost with fragment work.</td></tr>
-      <tr><td><code>--entry-profile</code></td><td>Samples the disc load, each scene entry and each battle&rsquo;s first frames; time by function, self and inclusive.</td></tr>
+      <tr><td><code>--entry-profile</code></td><td>Samples the disc load, each scene entry and each battle&rsquo;s first frames; time by function, self and inclusive. A battle row adds its three longest frames as call trees; read those with <code>--vsync</code>.</td></tr>
       <tr><td><code>--reenter</code></td><td>Enters each scene twice in a row.</td></tr>
       <tr><td><code>--reload</code></td><td>Reloads the page once the disc is up and times a returning visitor&rsquo;s load from the page&rsquo;s own disc cache.</td></tr>
       <tr><td><code>--idle ms</code></td><td>Waits at the boot-mode prompt before the first pick, which is when the page prewarms the first entry.</td></tr>
+      <tr><td><code>--vsync</code></td><td>Leaves the browser&rsquo;s frame limit on, so the cadence row reads whether the page holds the display&rsquo;s rate rather than how fast it can go. It moves the frame function too: uncapped, the main thread blocks on the GPU inside its GL calls, so compare like with like.</td></tr>
+      <tr><td><code>--paths</code></td><td>A New Game and a card load, each on a fresh page; <code>--card</code> and <code>--card-block</code> pick the save.</td></tr>
+      <tr><td><code>--cpu-throttle n</code></td><td>Slows the renderer&rsquo;s main thread. A proxy, and the output says so: it shows which costs scale with the CPU and says nothing of a device. Read it with <code>--vsync</code>: uncapped, the page queues GPU work until a backpressure block of over a second, which no capped page builds.</td></tr>
+      <tr><td><code>--uncheck id,id</code>, <code>--no-msaa</code>, <code>--canvas-scale s</code></td><td>Clear option boxes, ask for a context without MSAA, draw the GL canvas at a fraction of its size. With <code>--gl swiftshader --vsync</code> they read what one rung of quality costs on a GPU short of it; a tiler may rank them differently.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>The summary line reports the head of the disc&rsquo;s read, the disc-load export (<code>load_disc_spans</code>) and the module&rsquo;s memory size. A bundle built with <code>web-viewer</code>&rsquo;s <code>bench-alloc</code> feature adds wasm allocations per frame. A wasm profile names its functions by index; <code>wasm-bindgen --keep-debug</code> over the cargo artifact gives a file whose name section resolves them.</p>
+  <p>The summary line reports the head of the disc&rsquo;s read, the disc-load export (<code>load_disc_spans</code>) and the module&rsquo;s memory size. A play bundle built with <code>web-play-bundle</code>&rsquo;s <code>bench-alloc</code> feature adds wasm allocations per frame. A wasm profile names its functions by index; <code>wasm-bindgen --keep-debug</code> over the cargo artifact gives a file whose name section resolves them.</p>
+</section>
+
+<section class="doc-section" id="left-out" data-doc="-">
+  <h2>What the frame function leaves out</h2>
+  <p>Each browser scene row carries these beside it, so one run answers where a weak device pays.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Row</th><th>Reads</th><th>Read it as</th></tr></thead>
+    <tbody>
+      <tr><td><code>gpu span</code></td><td>The timer query around the frame function</td><td>An upper bound on GPU work: the query spans the wait for the main thread&rsquo;s next commands, so its lower edge is the frame function</td></tr>
+      <tr><td><code>cadence</code></td><td>Gaps between frame-function starts, and how many ran over 33 ms</td><td>What the display got, with <code>--vsync</code></td></tr>
+      <tr><td><code>main thread per frame</code></td><td>The renderer&rsquo;s own task time, less the frame function</td><td>What runs outside it. The audio pump is named: the worklet only plays blocks, and the mix runs in its report handler on the main thread</td></tr>
+      <tr><td><code>audio across the battle edge</code></td><td><code>audio_stats_json</code> before the force and after the hand-over</td><td>Dry frames a stall cost. A run ends with a 1000 ms stall that has to read dry frames, or the output says the row proves nothing</td></tr>
+      <tr><td><code>memory MB</code></td><td>Process RSS off <code>/proc</code>, wasm, resident disc bytes, JS heap, a GL tally</td><td>Who holds what. The tally is what the page asked for, not the driver&rsquo;s account</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A battle row waits for the page&rsquo;s battle scene, not a frame count: the intro runs on sim ticks, so on a page drawing faster than the sim ticks a frame count ends inside it. The <code>second_fight</code> scene plays a first fight to its end, results included, then forces the fight the row times, which is where a memo would show.</p>
+</section>
+
+<section class="doc-section" id="expansion-packs" data-doc="expansion-packs">
+  <h2>Expansion packs</h2>
+  <div class="cli"><code>scripts/ci/pack-bench-web.mjs --maps genesis_1f,isles_beach        # the workbench's painter
+scripts/ci/pack-bench-web.mjs --entry --map isles_beach             # the play page's first map
+scripts/ci/pack-bench-web.mjs --cpu-throttle 4 --profile            # a proxy, labelled one</code></div>
+  <p>The painter's rows run from a single painted tile: what the press and its release hold the page, the frame that shows the tile, when the <code>map_preview</code> left, when its answer was on the canvas, and the worker's share. A CPU throttle reaches the page's thread and not the worker. <code>--entry</code> reports the library row's Enable up to the scene list, then the click on a map up to its second frame, with the top wasm exports of each. Native startup on a pack map is <code>frame-bench.py</code>'s <code>pack_map</code> row.</p>
+</section>
+
+<section class="doc-section" id="another-machine" data-doc="another-machine">
+  <h2>Another machine</h2>
+  <div class="cli"><code>python scripts/ci/machine-bench.py --disc game.bin --extracted extracted --exe new/legaia-engine.exe --base-exe old/legaia-engine.exe --site new-site --base-site old-site</code></div>
+  <p><code>scripts/ci/machine-bench.py</code> runs one machine's base against tip with no Rust or wasm toolchain: two release binaries and two built sites are its inputs. It runs the native frame and entry tables, then the page's rows at a display's pace, uncapped and under CPU throttle, and zips the logs, JSON and a description of the machine for sending back. The archive holds times and counts, with no screenshots and no disc bytes.</p>
+  <p>It runs on Linux and Windows. On Windows the page's <code>--gl egl</code> means ANGLE's Direct3D backend, the process memory rows read empty, and a native row's peak RSS reads 0. A release binary has no <code>bench-alloc</code>, so its allocations read 0 too.</p>
+</section>
+
+<section class="doc-section" id="movie-start" data-doc="movie-start">
+  <h2>Movie start</h2>
+  <p><code>scripts/ci/movie-timeline-web.mjs</code> times a movie's start on the play page, hooked from outside so a player's page carries none of it. Each run prints a JSON line, from the request: span resident, install, first decode, first picture, first sound (the mixer's cursor passing zero, ahead of the device by its queue), first motion, the worst display-frame gap, long tasks, wasm memory and the box's busy share over the window.</p>
+  <div class="cli"><code>scripts/ci/movie-timeline-web.mjs --again --append out.jsonl                 # a read, then a second play
+scripts/ci/movie-timeline-web.mjs --evict --again --append out.jsonl         # the read reaches storage
+scripts/ci/movie-timeline-web.mjs --route attract --append out.jsonl         # the title's countdown arms MV1
+scripts/ci/movie-timeline-web.mjs --read-delay 9000 --watch 13000            # walk the install timeout</code></div>
+  <p>It is one start per run, because the claim it tests is intermittent: the distribution is the caller's, over a run count, with each run under the display lock. <code>--evict</code> drops the disc from the OS page cache. <code>--ctx-suspend</code> stands in for an output slow to start, since the driver's browser has no autoplay gate. <code>--read-delay</code> holds only the movie's own read, in flight; <code>--no-fill</code> and <code>--no-fill-wait</code> matter only to an older bundle's fill (<code>--site</code>). <code>--cpu-throttle</code> and <code>--gl swiftshader</code> are proxies.</p>
+</section>
+
+<section class="doc-section" id="cost-ratchet" data-doc="cost-ratchet">
+  <h2>Cost ratchet</h2>
+  <div class="cli"><code>scripts/ci/cost-ratchet.py --check                # the gate, against scripts/ci/cost-baseline.json
+scripts/ci/cost-ratchet.py --measure --runs 10    # the spread between runs, nothing compared
+scripts/ci/cost-ratchet.py --write-baseline       # after a real change, with its ledger entry</code></div>
+  <p>Times flake and counts should not, so this ratchets counts, each from a tick-locked run that walks the same frames every time. It is the <code>cost-ratchet</code> gate in <code>full-gate.py</code>. A rise past a count&rsquo;s room fails; raising the baseline is a loosening, which <code>check-baseline-loosening.py</code> sends to the ledger with its reason.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Count</th><th>Read from</th><th>Spread over ten runs of one tree</th><th>Room</th></tr></thead>
+    <tbody>
+      <tr><td>Bundle gzip bytes</td><td>The shipped wasm</td><td>None</td><td>0.5%</td></tr>
+      <tr><td>Browser GL draws per frame</td><td><code>frame-hash-web.mjs --counts</code></td><td>None</td><td>None</td></tr>
+      <tr><td>Browser wasm bytes returned per frame</td><td>The same</td><td>None</td><td>0.5%</td></tr>
+      <tr><td>Native draws per frame</td><td><code>play-window</code>&rsquo;s <code>[bench]</code> line</td><td>None</td><td>None</td></tr>
+      <tr><td>Native allocations per frame</td><td>The same, on a <code>bench-alloc</code> binary</td><td>Under 0.05%</td><td>0.5%</td></tr>
+      <tr><td>Native KB allocated per frame</td><td>The same</td><td>Under 0.05%</td><td>0.5%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>None of the room covers a wobble. It is the size of rise not worth a ledger entry; a draw always gets one. The bundle is read only off the shipped build: a <code>--fast</code> bundle is a <code>[skip]</code>, and a skip is not a pass.</p>
 </section>
 
 <section class="doc-section" id="shapes" data-doc="what-the-numbers-have-shown">
@@ -98,7 +172,9 @@ scripts/ci/frame-bench-web.mjs --site /path/to/other/site --json out.json</code>
     <li><strong>A page need not read what it may never play.</strong> The image is the largest read on the way in, and two thirds of it is movies and XA, which reach the page behind the engine (<a href="../subsystems/browser-host.html#disc-image">the disc image</a>).</li>
     <li><strong>The scene picker&rsquo;s first pick walks every scene.</strong> The arrival catalog reads each scene&rsquo;s MAN and <code>.MAP</code> to find its doors, once per process. A door, a New Game and a card load do not build it.</li>
     <li><strong>The capture frame&rsquo;s cost is the GPU, not the bytes.</strong> <code>readPixels</code> on the battle transition&rsquo;s arming frame waits for that frame to finish, and the wait does not shrink with the size of the read. An asynchronous read would land the capture frames later, which moves the transition.</li>
-    <li><strong>The worst battle-edge frame is the stage, not the capture.</strong> Where the transition hands over, one <code>play_frame_ticks</code> builds the battle stage and party forms.</li>
+    <li><strong>The worst battle-edge frame is the hand-over, not the capture.</strong> Where the transition hands over, one frame runs the fight&rsquo;s first tick and builds and uploads its whole render. Decoding the party&rsquo;s battle files and building the stage were the largest items; a memo holds them across fights and the transition&rsquo;s frames fill it ahead of a first fight.</li>
+    <li><strong>A first fight&rsquo;s hand-over pays for cold code.</strong> The same frame in a second fight is a fraction of the first&rsquo;s, and no memo reaches that.</li>
+    <li><strong>An uncapped row&rsquo;s entry can be the GPU&rsquo;s queue.</strong> With the frame limit off, the first <code>bufferData</code> after a heavy row blocks until the queue drains. With <code>--vsync</code> it is gone.</li>
   </ul>
 </section>
 
@@ -109,6 +185,7 @@ scripts/ci/frame-bench-web.mjs --site /path/to/other/site --json out.json</code>
     <a href="../subsystems/renderer-port.html#profiler">Frame profiler</a>
     <a href="../subsystems/browser-host.html">Browser host</a>
     <a href="build-and-test-speed.html">Build and test speed</a>
+    <a href="frame-hash.html">Browser frame hash</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/frame-bench.md" target="_blank" rel="noopener">Full doc</a>
   </div>
 </section>

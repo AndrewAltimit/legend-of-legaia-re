@@ -4,11 +4,17 @@
  * docs/tooling/site-shell.md). Defines `window.LegaiaPlayDisc`.
  *
  * Only the sectors up to the end of PROT.DAT are read before the engine comes
- * up; they cross into the runtime (`load_disc_spans`) and are let go. A worker
- * then reads the XA and movie files behind them, so that a movie or a voice
- * clip finds its sectors resident and starts in the frame it asked, as it does
- * with a whole image in memory. A request that beats the worker reads its own
- * span: `span` answers null until then, and the consumer asks again next frame.
+ * up; they cross into the runtime (`load_disc_spans`) and are let go. The XA and
+ * movie files behind them stay in the `Blob`, which is disk-backed, and are read
+ * by span when a consumer names one: `span` answers null until the read lands,
+ * and the consumer asks again next frame. What has landed stays resident under
+ * `RESIDENT_CAP`, oldest use out first.
+ *
+ * Three ways to hold bytes across a wait, and eviction can break none of them:
+ * a window `prefetch` named is kept until its consumer calls `release`; `read`
+ * answers with the bytes themselves; a read in flight is not in `blocks` to be
+ * evicted at all. A read that lands with nobody left waiting (a movie past its
+ * install timeout) is dropped.
  *
  * Anything that is not a Mode 2/2352 image with a PROT.DAT in its root (a bare
  * PROT.DAT, an unknown image, a source with no Blob) is read whole and handed
@@ -20,6 +26,14 @@
    * `DATA_OFFSET` in crates/web-play/src/runtime/disc_load.rs. */
   const RAW = 2352, DATA_OFFSET = 24, DATA = 2048;
   const EMPTY = new Uint8Array(0);
+  /* What may stay resident once its consumers are done, in bytes. Room for the
+   * largest XA file (18.3 MiB) beside the largest set of clips one scene reads
+   * ahead (11.3 MiB, jagaroom), the two a repeat can hit. A movie is dropped at
+   * its install and a voice bank never lands, so neither needs room here; a window
+   * a consumer holds is outside the cap. */
+  const RESIDENT_CAP = 32 * 1048576;
+  /* A read that fails is tried this many times, this far apart in ms. */
+  const READ_TRIES = 3, READ_RETRY_MS = 250;
 
   function blobOf(source) {
     if (source instanceof Blob) return source;
@@ -66,33 +80,21 @@
     return { protEnd: prot.lba + prot.sectors, dmyLba: found['DMY.DAT'] ? found['DMY.DAT'].lba : 0 };
   }
 
-  /* One read off the main thread; the buffer moves to the page without a copy.
-   * Inline: a worker's own URL carries no content stamp (`_gen.py` stamps the
-   * pages' references), so a file would go stale in a visitor's cache. */
-  const FILL_WORKER = `self.onmessage = async (e) => {
-    const { blob, start, end } = e.data;
-    try {
-      const buffer = await blob.slice(start, end).arrayBuffer();
-      self.postMessage({ buffer }, [buffer]);
-    } catch (err) {
-      self.postMessage({ error: String(err) });
-    }
-  };`;
-
   class PlayDisc {
     constructor(blob, layout) {
       this.blob = blob;
       this.layout = layout;
       this.size = blob ? blob.size : 0;
-      /* What is resident: `{ start, end, bytes }` in file bytes. */
+      /* What is resident: `{ start, end, bytes }` in file bytes, oldest use first. */
       this.blocks = [];
       /* The sectors up to PROT.DAT's end, until the runtime has its copy. */
       this.head = null;
       /* The whole image, when it is not one this file can read in parts. */
       this.whole = null;
-      this.reads = new Map();
-      this.failed = new Set();
-      this.worker = null;
+      /* The reads in flight: `{ start, end, land, promise }`. */
+      this.reads = new Set();
+      /* The windows consumers wait on: `start:end` -> `{ start, end, failed }`. */
+      this.holds = new Map();
       this.closed = false;
     }
 
@@ -133,41 +135,6 @@
       return rt.load_disc_spans(this.size, Uint32Array.from(lbas), blocks, '');
     }
 
-    /* Read the XA and movie files behind PROT.DAT, off the main thread. The
-     * trailing DMY.DAT holds nothing a consumer asks for, and is still there
-     * through `prefetch`. A worker that cannot run leaves the on-demand path. */
-    startFill() {
-      if (!this.layout || this.worker || this.closed) return;
-      const start = this.layout.protEnd * RAW;
-      const end = this.layout.dmyLba > this.layout.protEnd ? this.layout.dmyLba * RAW : this.size;
-      if (start >= end) return;
-      const t = performance.now();
-      try {
-        const url = URL.createObjectURL(new Blob([FILL_WORKER], { type: 'text/javascript' }));
-        const w = new Worker(url);
-        URL.revokeObjectURL(url);
-        this.worker = w;
-        w.onmessage = (e) => {
-          w.terminate();
-          this.worker = null;
-          if (this.closed) return;
-          if (e.data.error) { console.warn('disc fill', e.data.error); return; }
-          this.fillMs = performance.now() - t;
-          /* It covers what requests read ahead of it. */
-          this.blocks = this.blocks.filter((b) => b.start < start || b.end > end);
-          this.blocks.push({ start, end, bytes: new Uint8Array(e.data.buffer) });
-        };
-        w.onerror = (e) => {
-          console.warn('disc fill', e.message);
-          w.terminate();
-          this.worker = null;
-        };
-        w.postMessage({ blob: this.blob, start, end });
-      } catch (e) {
-        console.warn('disc fill', e);
-      }
-    }
-
     /* The window `lba` + `sectors` names, clamped to the image as a subarray
      * of the image would be. */
     _extent(lba, sectors) {
@@ -176,49 +143,147 @@
     }
 
     /* Those raw sectors if they are resident, else null. An empty array for a
-     * window wholly past the image's end, where there is nothing to wait for. */
+     * window wholly past the image's end, where there is nothing to wait for.
+     * The one block covering the whole window answers: neighbours are not
+     * stitched, so a window across two blocks reads again. */
     span(lba, sectors) {
       const [start, end] = this._extent(lba, sectors);
       if (start >= end) return EMPTY;
-      for (const b of this.blocks) {
-        if (b.start <= start && end <= b.end) return b.bytes.subarray(start - b.start, end - b.start);
+      for (let i = this.blocks.length - 1; i >= 0; i--) {
+        const b = this.blocks[i];
+        if (b.start <= start && end <= b.end) {
+          if (i !== this.blocks.length - 1) {
+            this.blocks.splice(i, 1);
+            this.blocks.push(b);
+          }
+          return b.bytes.subarray(start - b.start, end - b.start);
+        }
       }
       return null;
     }
 
-    /* Make those sectors resident. The one read of a span settles every asker;
-     * a failed span (the file moved, say) is not tried again - `failedSpan`
-     * tells the consumer so it can stop waiting. */
+    /* Make those sectors resident and keep them so until `release`. The one read
+     * of a window settles every asker, and a read already covering it serves.
+     * A window that will not read (the file moved, say) stays out until its
+     * `release`; `failedSpan` tells the consumer so it can stop waiting. */
     prefetch(lba, sectors) {
       const [start, end] = this._extent(lba, sectors);
+      if (start >= end || !this.blob) return Promise.resolve();
       const key = start + ':' + end;
-      const known = this.reads.get(key);
-      if (known) return known;
-      if (start >= end || !this.blob || this.failed.has(key) || this.span(lba, sectors)) return Promise.resolve();
-      const read = readBlob(this.blob, start, end).then((bytes) => {
-        this.blocks.push({ start, end, bytes });
-      }, (e) => {
-        console.warn('disc read', start, end, e);
-        this.failed.add(key);
-      }).finally(() => { this.reads.delete(key); });
-      this.reads.set(key, read);
-      return read;
+      const hold = this.holds.get(key);
+      if (!hold) this.holds.set(key, { start, end, failed: false });
+      else if (hold.failed) return Promise.resolve();
+      if (this.span(lba, sectors)) return Promise.resolve();
+      const rec = this._covering(start, end) || this._begin(start, end);
+      rec.land = true;
+      return rec.promise.then(() => {});
+    }
+
+    /* The consumer of a `prefetch` window is done: what it held is evictable, or
+     * gone with `drop`, and a failure is forgotten so the next ask reads again. */
+    release(lba, sectors, drop) {
+      const [start, end] = this._extent(lba, sectors);
+      this.holds.delete(start + ':' + end);
+      if (drop) {
+        this.blocks = this.blocks.filter((b) => b.bytes === this.whole || this._held(b)
+          || !(b.start <= start && end <= b.end));
+      }
+      this._evict();
     }
 
     failedSpan(lba, sectors) {
       const [start, end] = this._extent(lba, sectors);
-      return this.failed.has(start + ':' + end);
+      const hold = this.holds.get(start + ':' + end);
+      return !!(hold && hold.failed);
+    }
+
+    /* Those raw sectors as a promise, for a consumer that uses them once and
+     * right away: null if they will not read. They are not kept resident for it. */
+    read(lba, sectors) {
+      const [start, end] = this._extent(lba, sectors);
+      if (start >= end) return Promise.resolve(EMPTY);
+      const resident = this.span(lba, sectors);
+      if (resident) return Promise.resolve(resident);
+      if (!this.blob) return Promise.resolve(null);
+      const rec = this._covering(start, end) || this._begin(start, end);
+      return rec.promise.then((bytes) => bytes && bytes.subarray(start - rec.start, end - rec.start));
+    }
+
+    _covering(start, end) {
+      for (const r of this.reads) if (r.start <= start && end <= r.end) return r;
+      return null;
+    }
+
+    _begin(start, end) {
+      const rec = { start, end, land: false, promise: null };
+      rec.promise = this._readTried(start, end).then((bytes) => {
+        this.reads.delete(rec);
+        if (rec.land && !this.closed) this._land(rec, bytes);
+        return bytes;
+      }, (e) => {
+        this.reads.delete(rec);
+        console.warn('disc read', start, end, e);
+        for (const h of this.holds.values()) {
+          if (rec.start <= h.start && h.end <= rec.end) h.failed = true;
+        }
+        return null;
+      });
+      this.reads.add(rec);
+      return rec;
+    }
+
+    async _readTried(start, end) {
+      for (let tried = 1; ; tried++) {
+        try {
+          const bytes = await readBlob(this.blob, start, end);
+          if (bytes.length !== end - start) throw new Error(`short read: ${bytes.length} of ${end - start}`);
+          return bytes;
+        } catch (e) {
+          if (tried >= READ_TRIES || this.closed) throw e;
+          await new Promise((res) => setTimeout(res, READ_RETRY_MS * tried));
+        }
+      }
+    }
+
+    /* A read arrives. Dropped when a consumer no longer waits on any of it or a
+     * block already covers it (a narrower read that a wider one beat); blocks it
+     * covers go, since it answers for them. */
+    _land(rec, bytes) {
+      const { start, end } = rec;
+      const block = { start, end, bytes };
+      if (!this._held(block)) return;
+      if (this.blocks.some((b) => b.start <= start && end <= b.end)) return;
+      this.blocks = this.blocks.filter((b) => b.bytes === this.whole || b.start < start || b.end > end);
+      this.blocks.push(block);
+      this._evict();
+    }
+
+    _held(block) {
+      for (const h of this.holds.values()) {
+        if (block.start <= h.start && h.end <= block.end) return true;
+      }
+      return false;
+    }
+
+    _evict() {
+      let total = 0;
+      for (const b of this.blocks) if (b.bytes !== this.whole) total += b.end - b.start;
+      if (total <= RESIDENT_CAP) return;
+      this.blocks = this.blocks.filter((b) => {
+        if (total <= RESIDENT_CAP || b.bytes === this.whole || this._held(b)) return true;
+        total -= b.end - b.start;
+        return false;
+      });
     }
 
     /* A new disc replaced this one. */
     close() {
       this.closed = true;
-      if (this.worker) this.worker.terminate();
-      this.worker = null;
       this.blocks = [];
+      this.holds.clear();
       this.head = null;
     }
   }
 
-  window.LegaiaPlayDisc = { open: PlayDisc.open, RAW: RAW };
+  window.LegaiaPlayDisc = { open: PlayDisc.open, RAW: RAW, RESIDENT_CAP: RESIDENT_CAP };
 }());

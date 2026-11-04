@@ -745,8 +745,8 @@ python3 -m http.server -d site      # then open /play.html
 Nothing is uploaded: the disc image you pick stays in the tab.
 
 Rebuild after changing anything the page compiles - which is most of the
-workspace, not just the four `crates/web-*` crates (`web-viewer` over `web-play`, `web-minigames` and `web-patcher`). To check whether the bundle you built
-still matches your sources:
+workspace, not just the `crates/web-*` crates (the play page's bundle is `web-play-bundle` over `web-play` and `web-minigames`, the tool pages' is `web-viewer`). To check whether the bundles you built
+still match your sources:
 
 ```bash
 python3 scripts/ci/check-wasm-freshness.py

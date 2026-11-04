@@ -299,6 +299,7 @@ class TmdRenderer {
      * `set_backface_cull`), staged per frame by the play page. 0 = both
      * sides, the default every other page keeps. */
     this.nclipCull = 0;
+    this.settleHook = null;
     this.overworldCurve = 0;
     this.overworldCurveBias = 0;
     /* Retail's per-primitive near reject for the assembled scene pass:
