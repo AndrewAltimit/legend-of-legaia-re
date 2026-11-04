@@ -68,8 +68,12 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 ///   once it is spent the arm stores phase `0xFF`;
 /// * `0xFF` - holds (retail returns `0`: the module is done).
 ///
-/// Not carried: the creature's own `+0x36` rise in arms 2 and 3, the arm 3 /
-/// 5 captions, the arm 6 breath parts, the arm 7..9 fades; arm 8's
+/// The creature's clips are staged here: arm 2's exit stores `+0x1DA` bare, so
+/// clip 1 waits for the appear clip's end (`0x801F6D14`), and arm 7's exit
+/// bumps `+0x1DA` and `+0x1DC` together (`0x801F7414`, `0x801F741C`). Its rise
+/// out of the floor in arms 2 and 3 is `World::apply_slippery_rise`.
+///
+/// Not carried: the arm 3 / 5 captions, the arm 6 breath parts, the arm 7..9 fades; arm 8's
 /// group-target framing (a target byte of `8` or more frames the group
 /// centre through `FUN_801DCEAC` with a doubled TR z) frames the latched
 /// victim seat instead; and arm 10's wait for every monster to be idle
@@ -119,6 +123,7 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 return ArmDirection::HOLD.nudged(push);
             }
             st.countdown.add(1 << 6);
+            st.creature_stage = Some(1);
             ArmDirection::PASS.nudged(push)
         }
         3 => {
@@ -161,6 +166,8 @@ pub fn slippery_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats
                 return ArmDirection::HOLD.nudged(nudge(-p, 0, 0, 0));
             }
             st.countdown.add(1 << 5);
+            st.creature_stage = Some(2);
+            st.creature_restage = true;
             on_creature(0, 0x800, [0, 0x400, 0x600], 1)
         }
         8 => {

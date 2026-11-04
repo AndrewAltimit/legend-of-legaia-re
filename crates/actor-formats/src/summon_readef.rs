@@ -583,7 +583,12 @@ fn parse_part_entry(pool: &[u8], entry_off: usize) -> Option<MonsterAnimation> {
     }
     let head_end = (entry_off + PART_HEAD_BYTES).min(pool.len());
     Some(MonsterAnimation {
-        variant_track: Default::default(),
+        // The draw pass bounds its channels on this stream's own part count
+        // (`**(node[+0x4C] + 0x88)`, `FUN_80048A08`).
+        variant_track: crate::monster_archive::VariantTrack {
+            stream_parts: part_count.min(usize::from(u8::MAX)) as u8,
+            ..Default::default()
+        },
         action_id,
         rate,
         // Summon actor-pool entries share the action-entry head family, so
@@ -648,6 +653,12 @@ pub struct SummonCast {
     /// The cast's keyframe clips, in the actor record's `+0x4C` table order.
     /// Clip 0 is the cast's opening pose loop; the rest are its phases.
     pub clips: Vec<MonsterAnimation>,
+    /// The record's clip morphs, addressed by the 1-based lane index a clip's
+    /// entry carries at `+0x04` / `+0x08` (`table[index - 1]`), as a monster
+    /// record's are ([`crate::monster_archive::clip_morph_table`]): the battle
+    /// draw blends them onto the creature while the clip plays. Ozma's shoulder
+    /// shell draws out into its spikes this way, on clip 3's lane 1.
+    pub clip_morphs: Vec<Option<crate::monster_archive::ClipMorph>>,
 }
 
 impl SummonCast {
@@ -695,6 +706,7 @@ pub fn parse_cast(summon_dat: &[u8], spell_id: u8) -> Result<SummonCast> {
         .iter()
         .filter_map(|&off| parse_part_entry(&part_pool, off as usize))
         .collect();
+    let clip_morphs = cast_clip_morphs(actor, &part_pool, &rec.part_offsets);
 
     // Compose a monster-shaped block: the record verbatim (so `tmd_offset`
     // still points at the TMD) with the trimmed pool appended as the tail the
@@ -733,7 +745,35 @@ pub fn parse_cast(summon_dat: &[u8], spell_id: u8) -> Result<SummonCast> {
             texture_pool_offset,
         },
         clips,
+        clip_morphs,
     })
+}
+
+/// The morph table of an actor record: the entries in `part_pool` name lanes
+/// by 1-based index, and the record's offsets past its `+0x4C` table resolve
+/// them, `actor[(index + part_count + 0x12) * 4]` - the monster loader's rule
+/// (`0x80054768..0x8005478C`). The morph bytes sit in the record itself, also
+/// for the four-slot groups whose entries live in the raw slot.
+fn cast_clip_morphs(
+    actor: &[u8],
+    part_pool: &[u8],
+    part_offsets: &[u32],
+) -> Vec<Option<crate::monster_archive::ClipMorph>> {
+    let max_index = part_offsets
+        .iter()
+        .flat_map(|&e| [e as usize + 4, e as usize + 8])
+        .filter_map(|o| legaia_bytes::u32_le(part_pool, o))
+        .filter(|&ix| ix < 0x100)
+        .max()
+        .unwrap_or(0);
+    (1..=max_index as usize)
+        .map(|ix| {
+            let off = legaia_bytes::u32_le(actor, (ix + part_offsets.len() + 0x12) * 4)?;
+            (off != 0)
+                .then(|| crate::monster_archive::parse_clip_morph(actor, off))
+                .flatten()
+        })
+        .collect()
 }
 
 /// The stat head of a cast's actor record: the fields the battle loader copies
@@ -1037,6 +1077,25 @@ mod tests {
         pool.push(0);
         pool[PART_STREAM_OFFSET] = 0;
         assert!(parse_part_entry(&pool, 0).is_none());
+    }
+
+    /// A morph table resolves through the record's offsets past its `+0x4C`
+    /// table, by the 1-based lane index an entry names.
+    #[test]
+    fn cast_clip_morphs_resolve_an_entrys_lane_through_the_record() {
+        let mut actor = vec![0u8; 0x200];
+        // One part entry, so lane 1 reads the word at `(1 + 1 + 0x12) * 4`.
+        actor[0x50..0x54].copy_from_slice(&0x100u32.to_le_bytes());
+        actor[0x101..0x105].copy_from_slice(&[0, 25, 28, 255]);
+        let mut pool = vec![0u8; 0x20];
+        pool[4..8].copy_from_slice(&1u32.to_le_bytes());
+        let table = cast_clip_morphs(&actor, &pool, &[0]);
+        assert_eq!(table.len(), 1);
+        let m = table[0].as_ref().expect("lane 1 parses");
+        assert_eq!(m.keys, [0, 25, 28, 255]);
+        assert!(m.records.is_empty());
+        // No lane named: no table.
+        assert!(cast_clip_morphs(&actor, &[0u8; 0x20], &[0]).is_empty());
     }
 
     #[test]

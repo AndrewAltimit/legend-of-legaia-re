@@ -109,6 +109,95 @@ impl World {
         }
     }
 
+    /// PROT 0920 (Slippery)'s creature comes up out of the floor: arm 2's exit
+    /// seats it at `y = -(scalar << 8)` (`0x801F6D18..0x801F6D28`), and arm 3
+    /// lifts it `4 p` a pass until its word runs out, then stands it on the
+    /// floor (`0x801F6D94..0x801F6DE0`).
+    pub(in crate::world::battle::cast_band) fn apply_slippery_rise(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        creature: u8,
+    ) {
+        let Some(a) = self.actors.get_mut(usize::from(creature)) else {
+            return;
+        };
+        match (phase, passed) {
+            (2, true) => a.move_state.world_y = -0x800,
+            (3, true) => a.move_state.world_y = 0,
+            (3, false) => {
+                let lift =
+                    (4 * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK) as i16;
+                a.move_state.world_y = a.move_state.world_y.saturating_add(lift).min(0);
+            }
+            _ => {}
+        }
+    }
+
+    /// PROT 0931 (Jedo)'s stores on the row and the creature, outside its
+    /// director.
+    ///
+    /// PORT: overlay_summon_jedo_0931_801f6a58 (arms 0, 1, 5, 6, 23, 30, 31)
+    pub(in crate::world::battle::cast_band) fn apply_jedo_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        creature: u8,
+    ) {
+        // What arm 26's cut reads off the row, its middle.
+        let row = self.ra_seru_row(monster_count);
+        if !row.is_empty() {
+            let sum: i32 = row
+                .iter()
+                .map(|&(e, _)| -4 * self.battle_display_trio(e).map_or(0, |d| d[1] as i32))
+                .sum();
+            self.casting.module_cam.jedo_row_tr_y = (sum / row.len() as i32) as i16;
+        }
+        match (phase, passed) {
+            // Arm 0's re-seat onto the alternate family at half its reach,
+            // facing `0x800` (`0x801F6B74..0x801F6C5C`); arm 1 hides the row.
+            (0, true) => self.ra_seru_row_seat(monster_count, |x, z| (x / 2, z / 2), None),
+            (1, _) => self.ra_seru_row_word(monster_count, 0, FLAG_PARKED),
+            // The advance `+0x38 += step << 2` of arms 5 and 6 (`0x801F70AC`,
+            // `0x801F7220`), which arm 10's framing is built on.
+            (5 | 6, _) => {
+                if let (Some(c), Some(a)) = (
+                    self.casting.module_cam.creature,
+                    self.actors.get_mut(usize::from(creature)),
+                ) {
+                    a.move_state.world_z = c.z;
+                }
+            }
+            // Arm 23's pass shows the row, frozen on its last pose, and stands
+            // the creature up facing it (`0x801F7DC4..0x801F7E28`).
+            (23, true) => {
+                self.ra_seru_row_word(monster_count, WORD_NEUTRAL, 0);
+                for (e, _) in self.ra_seru_row(monster_count) {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.anim_rate = AnimRate(0);
+                    }
+                }
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.facing_angle = 0x200;
+                    a.move_state.world_y = 0x400;
+                }
+            }
+            // Arm 30 lets the row's last frames run out under the shatter
+            // (`0x801F8768..0x801F8784`).
+            (30, _) => {
+                for (e, _) in self.ra_seru_row(monster_count) {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.anim_rate = AnimRate(2);
+                    }
+                }
+            }
+            // The last arm puts back what arm 0 parked (`0x801F8904..0x801F8984`).
+            (31, true) => self.ra_seru_row_restore(monster_count, false),
+            _ => {}
+        }
+    }
+
     /// PROT 0914 (Gola Gola).
     ///
     /// | Arm | Edge | Store |
@@ -200,6 +289,11 @@ impl World {
             }
             (1, _) => self.ra_seru_row_word(monster_count, 0, FLAG_PARKED),
             (0xB, true) => self.ra_seru_row_word(monster_count, WORD_NEUTRAL, 0),
+            // Arm 4 saved channels 14 and 16 of the creature's model table
+            // (`0x801F6F5C..0x801F6F94`) and this pass stores the second into the
+            // first (`0x801F7738..0x801F7758`): the sword in its hand, which no
+            // stream's part count reaches on its own channel.
+            (0xC, true) => self.casting.creature_channel_object = Some((14, 16)),
             (0x12, true) => {
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {

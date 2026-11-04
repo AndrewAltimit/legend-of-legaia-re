@@ -25,6 +25,7 @@ impl World {
     ///
     /// PORT: FUN_801F19EC (the seat, facing, target and rate stores, and the seat's presentation, shatter and anim-id-ring resets)
     pub fn seat_summon_actor(&mut self, slot: usize) {
+        self.casting.creature_channel_object = None;
         let staged = self.casting.summon_stager.as_ref().map(|st| {
             let caster = self.actors.get(st.caster as usize);
             let spawn = match caster.filter(|_| self.module_seats_on_caster(st.spell_id)) {

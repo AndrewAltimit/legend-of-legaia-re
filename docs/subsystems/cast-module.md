@@ -2363,6 +2363,16 @@ arm 0, back to `0x1000` on arm 27) is carried (`BattleActor::render_scale`).
 
 <a id="summon-creature-directors"></a>
 
+Two modules write the creature's per-channel model table
+(`*(node + 0x44) + 4 + channel * 4`), the one [the draw pass](battle-actor-rendering.md#model-table)
+reads. PROT 0932 saves channels 14 and 16 on arm 4 and stores the second into the
+first on arm `0xC` (`0x801F7738..0x801F7758`): object 16, which no stream's part count
+reaches on its own channel, is drawn on channel 14 from then on. PROT 0931 saves
+channels 6 and 22 on arm 4, and the tail of every pass stores object 22 into channel
+6 while the creature plays clip 4 or later (`0x801F89A0..0x801F89F0`). The port
+carries the store as `CastFxState::creature_channel_object`; the anim pass poses the
+object on the channel, and `battle_drawn_objects` swaps which of the two draws.
+
 The summon modules whose tick bodies are not ported (PROT 0914..0917, 0921,
 0923, 0928..0934, with 0920 above) each run a director that carries the
 body's whole phase chain, read off its own disassembly
@@ -2434,7 +2444,16 @@ objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 
 Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`).
 Jedo's creature advances `+0x38 += step << 2` on every pass of arms 5 and 6
 (`0x801F70A0`, `0x801F7214`), from `-0x800` to `-0x400`, which is where arm 10's
-framing expects it.
+framing expects it. Arm 23's pass stands it at `y = 0x400`, facing `0x200`, and shows the row
+frozen under the neutral word (`0x801F7DC4..0x801F7E28`), which arm 0 parked at
+half its reach (`World::apply_jedo_writes`). Arm 26's cut takes its TR y off the
+living row, `-4 * +0x3E` averaged (`0x801F80C8..0x801F812C`). A retail recording's
+`creature.csv` reads these directly.
+
+Slippery's creature comes up out of the floor: arm 2's exit seats it at
+`y = -(scalar << 8)` and stages clip 1 bare, arm 3 lifts it `4 p` a pass and stands
+it on the floor (`0x801F6D18..0x801F6DE0`, `World::apply_slippery_rise`), and arm 7's
+exit bumps clip 2.
 Spoon and Mushura raise their creature's `+0x42 = 2` over object-effect row 1, as
 Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pass on arm
 3, so the creature rises through it; Mushura's is tilted `-0x400` and cut at the

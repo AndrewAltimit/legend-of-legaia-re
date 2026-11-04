@@ -115,6 +115,9 @@ pub struct ModuleCamState {
     pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
+    /// PROT 0931's arm 26 TR y: `-4 * +0x3E` averaged over the living monsters
+    /// (`0x801F80C8..0x801F812C`), the row's middle. The host keeps it current.
+    pub jedo_row_tr_y: i16,
     /// The creature's live seat, as the host last moved it (its walk-in).
     /// Fed in by the host each tick; `None` before it is seated.
     pub creature_live: Option<ModuleSeat>,

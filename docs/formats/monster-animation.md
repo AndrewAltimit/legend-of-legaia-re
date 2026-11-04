@@ -470,7 +470,7 @@ One part maps to one [TMD](tmd.md) object (a rigid body part). Across the retail
 roster the part count equals the TMD object count for >98% of actions (one model
 carries an extra non-animated object).
 
-A clip with fewer parts than the model leaves the extra objects where the last clip left them: the decoder `FUN_8004998C` writes the pose pool `ctx+0x6F4` only as far as the stream's count. Ozma's clips 2 and 3 are 15 parts over 21 objects, and in retail RAM entries 15..20 hold clip 1's final pose, folded onto the shoulders, through both clips. The engine carries the tail the same way, from the pose before a looping clip's wrap (`World::tick_battle_animations`).
+A clip with fewer parts than the model leaves the extra objects where the last clip left them: the decoder `FUN_8004998C` writes the pose pool `ctx+0x6F4` only as far as the stream's count. Ozma's clips 2 and 3 are 15 parts over 21 objects, and in retail RAM entries 15..20 hold clip 1's final pose, folded onto the shoulders, through both clips. The engine carries the tail the same way, from the pose before a looping clip's wrap (`World::tick_battle_animations`). Those poses are held but not drawn: the draw pass stops at the stream's part count ([the model table](../subsystems/battle-actor-rendering.md#model-table)), and a retail table of Ozma's arm 21 holds a fifth of arm 9's prims on the shell's CLUT `0x7980`.
 
 The transform is **absolute model-space**, not a delta from a rest pose: each TMD
 object is modelled at its own local origin (all parts overlap near `(0,0,0)`),

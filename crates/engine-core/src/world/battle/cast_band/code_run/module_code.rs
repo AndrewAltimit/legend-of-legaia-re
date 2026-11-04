@@ -1842,6 +1842,27 @@ impl World {
                     seat_slot,
                 );
             }
+            if entry == legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY {
+                self.apply_slippery_rise(phase_in, ctx.phase != phase_in, seat_slot);
+            }
+            if entry == 931 && phase_in >= 4 {
+                // The tail every pass runs (`0x801F89A0..0x801F89F0`): arm 4 saved
+                // channels 6 and 22 of the creature's model table, and from clip
+                // 4 on channel 6 draws object 22.
+                let clip = self
+                    .actors
+                    .get(usize::from(seat_slot))
+                    .map_or(0, |a| a.battle.current_anim);
+                self.casting.creature_channel_object = (clip >= 4).then_some((6, 22));
+            }
+            if entry == 931 {
+                self.apply_jedo_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
             if entry == 932 {
                 self.apply_meta_writes(
                     phase_in,

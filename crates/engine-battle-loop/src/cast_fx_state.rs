@@ -45,6 +45,11 @@ pub struct CastFxState {
     /// Actor slot a host seated the summon creature at
     /// (`World::seat_summon_actor`); `None` while no creature is out.
     pub summon_actor_slot: Option<u8>,
+    /// A module's store into the seated creature's per-channel model table
+    /// (`*(node + 0x44) + 4 + channel * 4`) as `(channel, object)`: from then
+    /// on the channel draws that object rather than its own, as PROT 0932's arm
+    /// `0xC` and PROT 0931's tail have it.
+    pub creature_channel_object: Option<(u8, u8)>,
     /// The seated creature's render-node size `+0x58`: its `summon.dat`
     /// actor record's byte `+0x1F << 5` (`lbu v1,0x1f(v1)` / `sll v1,v1,0x5`
     /// / `sh v1,0x58(v0)` in the seat installer `FUN_801F19EC`,
@@ -449,6 +454,7 @@ impl CastFxState {
             effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
+            creature_channel_object: None,
             summon_body_radius: None,
             pending_cast: None,
             module_phase: 0,

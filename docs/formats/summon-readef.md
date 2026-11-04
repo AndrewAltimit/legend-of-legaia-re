@@ -646,3 +646,9 @@ Provenance: `ghidra/scripts/funcs/overlay_battle_801f17f8.txt`,
 `800558fc.txt`, `80055a5c.txt`, `800559ec.txt`, `80055b4c.txt`,
 `8003e8a8.txt`, `8003e964.txt`, `8003e4e8.txt`,
 `overlay_magic_capture_801e295c.txt`, `overlay_battle_action_801daba4.txt`.
+
+## Clip morphs in an actor record
+
+A cast's part entries name [clip-morph lanes](monster-animation.md#clip-morphs-fun_800495c8--fun_80049858) at `+0x04` / `+0x08` as a monster's do, and the words past the record's `+0x4C` table resolve them: `actor[(index + part_count + 0x12) * 4]`, an offset into the actor-record slot. The morph bytes sit in the record for the four-slot groups too, whose entries live in the raw slot's part pool. A RAM image of Ozma's arm 21 holds the resolved pointer to clip 3's envelope `(25, 28, 255, 255)`.
+
+The lanes are what changes a creature's silhouette in mid-cast. Ozma's shoulder shell draws out into its spikes on clip 3's lane 1 (three records) from frame 25; Terra's clip 1 names two lanes. Viguro, Orb, Freed, Mushura, Aluru, Kemaro, Juggernaut and the Item-band twins carry lanes as well. Parser `summon_readef::parse_cast` (`SummonCast::clip_morphs`); `engine-session::battle_stage` installs the table on the creature's seat, and both hosts blend it through `World::battle_morphed_tmd`.
