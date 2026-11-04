@@ -782,6 +782,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     };
     let trace_acts = trace && std::env::var_os("LEGAIA_FGL_TRACE_ACTS").is_some();
     let mut last_act = (usize::MAX, 0u8);
+    let mut last_module_phase = u8::MAX;
     let mut last_cmd: [String; 3] = Default::default();
     let mut hp_prev = hp_all(session);
     let foe_hp = |s: &NativeSession| -> u32 {
@@ -1015,6 +1016,36 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
         }
         if trace_acts {
             let w = &session.host.world;
+            if let Some(c) = w
+                .casting
+                .summon_actor_slot
+                .and_then(|s| w.actors.get(usize::from(s)))
+                && w.casting.module_phase != last_module_phase
+            {
+                last_module_phase = w.casting.module_phase;
+                let seats: Vec<(usize, i16, i16)> = w
+                    .actors
+                    .iter()
+                    .enumerate()
+                    .take(6)
+                    .filter(|(_, a)| a.active)
+                    .map(|(i, a)| (i, a.move_state.world_x, a.move_state.world_z))
+                    .collect();
+                eprintln!(
+                    "    [cast] t={t} module phase {} creature ({}, {}) facing {:#x} target {} clip {} seats {seats:?} body {:?}",
+                    w.casting.module_phase,
+                    c.move_state.world_x,
+                    c.move_state.world_z,
+                    c.battle.facing_angle,
+                    c.battle.active_target,
+                    c.battle.current_anim,
+                    w.actors
+                        .iter()
+                        .take(6)
+                        .map(|a| a.battle.seat)
+                        .collect::<Vec<_>>(),
+                );
+            }
             let who = usize::from(w.battle_ctx.active_actor);
             let now = (who, w.battle_ctx.action_state);
             if now != last_act {
@@ -1127,6 +1158,28 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             target.and_then(|t| w.actors.get(usize::from(t)).map(|a| a.battle.liveness)),
             w.actors.get(caster).map(|a| a.battle.params),
         );
+        if let Some(c) = w
+            .casting
+            .summon_actor_slot
+            .and_then(|s| w.actors.get(usize::from(s)))
+        {
+            let ms = &c.move_state;
+            eprintln!(
+                "    [battle]   creature at ({}, {}) facing {:#x} target {} victim at {:?} module victim {:?} in range {:?} clip {:?}",
+                ms.world_x,
+                ms.world_z,
+                c.battle.facing_angle,
+                c.battle.active_target,
+                target.and_then(|t| w.actors.get(usize::from(t)).map(|a| (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.battle.facing_angle
+                ))),
+                w.casting.module_cam.victim_slot,
+                w.casting.module_cam.creature_in_range,
+                w.casting.module_cam.creature_clip,
+            );
+        }
         for (s, a) in w.actors.iter().enumerate().take(12) {
             eprintln!(
                 "    [battle]   seat {s}: active {} hp {} mon {:?} anim {} queued {} reaction {:?}/{:?} pose {:?} color {:#x} rflag {:#x} flags {:#x}",

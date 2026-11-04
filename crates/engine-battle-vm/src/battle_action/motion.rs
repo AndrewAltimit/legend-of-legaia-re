@@ -137,6 +137,23 @@ pub fn range_metric(inp: &RangeInputs, sin: i16, cos: i16) -> u16 {
     if in_range { 0 } else { d as i16 as u16 }
 }
 
+/// How far past a target [`walked_past`] still reads a walker as having just
+/// crossed it: more than a whole root step of the fastest clip seen (510), and
+/// well short of the 2048 a module seats its creature back from the victim.
+const WALKED_PAST_REACH: i32 = 1024;
+
+/// Whether a walker at `pos` heading along 12-bit `facing` has the target `at`
+/// just behind it. A port guard, not a retail read: see
+/// `World::creature_ran_past`.
+pub fn walked_past(pos: (i16, i16), facing: u16, at: (i16, i16)) -> bool {
+    let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+    let (dx, dz) = (
+        i32::from(at.0) - i32::from(pos.0),
+        i32::from(at.1) - i32::from(pos.1),
+    );
+    dx.abs() + dz.abs() <= WALKED_PAST_REACH && dx * i32::from(sin) + dz * i32::from(cos) < 0
+}
+
 /// One tick of the playing clip's approach/retreat drive (`FUN_80047430`'s
 /// root-motion term), truncated per call - the shift retail applies once a
 /// battle frame. Live callers go through [`root_motion_raw`] and carry the
@@ -446,5 +463,20 @@ mod tests {
         let angle = crate::battle_approach::approach_angle(bearing) as u16;
         let (sin, cos) = trig12(angle);
         assert_eq!(range_metric(&inp, sin, cos), range_metric(&inp, sin, cos));
+    }
+}
+
+#[cfg(test)]
+mod walked_past_tests {
+    use super::walked_past;
+
+    #[test]
+    fn only_a_target_just_behind_the_walker_reads_as_passed() {
+        // Zenoir's walk: facing 0x638 from (-768, 768) onto (729, -1018).
+        let at = (729, -1018);
+        assert!(!walked_past((-768, 768), 0x638, at), "starts well short");
+        assert!(!walked_past((544, -798), 0x638, at), "still ahead of it");
+        assert!(walked_past((872, -1187), 0x638, at), "one step beyond it");
+        assert!(!walked_past((9936, 26970), 0x638, at), "far off the stage");
     }
 }
