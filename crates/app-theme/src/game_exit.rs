@@ -141,6 +141,54 @@ fn shorten_paths(s: &str) -> String {
         .join(" ")
 }
 
+/// How many of the log's last lines a report carries.
+pub const REPORT_LOG_LINES: usize = 40;
+/// A longer log line is cut to this many characters.
+const REPORT_LINE_MAX: usize = 300;
+
+/// The text a player pastes into a bug report about a failed game: the
+/// program, its version, the system, how the game ended, the reason, and the
+/// end of the log. `home` is cut out of every line (a path under it reads
+/// `~/...`), so a report does not name the account it came from.
+pub fn report_text(
+    program: &str,
+    version: &str,
+    headline: &str,
+    detail: Option<&str>,
+    log: Option<&str>,
+    home: Option<&str>,
+) -> String {
+    let mut out = format!(
+        "{program} {version} on {} {}\n{headline}\n",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    if let Some(d) = detail {
+        out.push_str(d);
+        out.push('\n');
+    }
+    if let Some(log) = log {
+        out.push_str("--- end of the log ---\n");
+        let lines: Vec<&str> = log.lines().collect();
+        for line in &lines[lines.len().saturating_sub(REPORT_LOG_LINES)..] {
+            let cut: String = line.chars().take(REPORT_LINE_MAX).collect();
+            match home.filter(|h| !h.is_empty()) {
+                Some(h) => out.push_str(&cut.replace(h, "~")),
+                None => out.push_str(&cut),
+            }
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The account's home folder, as [`report_text`] takes it.
+pub fn home_folder() -> Option<String> {
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+}
+
 /// `[2026-01-01T00:00:00Z INFO  module] text` -> `text`.
 pub fn strip_log_prefix(line: &str) -> &str {
     if line.starts_with('[')
@@ -161,6 +209,32 @@ fn capitalise_first(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_report_carries_the_end_of_the_log_without_the_home_folder() {
+        let log: String = (0..100)
+            .map(|n| format!("line {n} /home/someone/disc.bin\n"))
+            .collect();
+        let r = report_text(
+            "legaia-engine",
+            "1.2.3",
+            "The game crashed.",
+            Some("why"),
+            Some(&log),
+            Some("/home/someone"),
+        );
+        assert!(r.starts_with("legaia-engine 1.2.3 on "), "{r}");
+        assert!(r.contains("The game crashed.\nwhy\n"), "{r}");
+        assert!(r.contains("line 99 ~/disc.bin"), "{r}");
+        assert!(!r.contains("line 59 "), "only the last lines: {r}");
+        assert!(!r.contains("/home/someone"), "{r}");
+    }
+
+    #[test]
+    fn a_report_needs_no_log() {
+        let r = report_text("x", "1", "It stopped.", None, None, None);
+        assert!(r.ends_with("It stopped.\n"), "{r}");
+    }
 
     #[test]
     fn failure_detail_reads_the_engine_error_chain() {

@@ -372,7 +372,8 @@
    "scope": "The desktop programs' one palette (dark and light) and spacing values: Explorer's egui theme, the game launcher, the play window's own chrome; plus the failed-game wording (<code>game_exit</code>) the launcher and Explorer share. No dependencies.",
    "dependents": [
     "engine-shell",
-    "explorer"
+    "explorer",
+    "web-play"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/app-theme/README.md"
   },
@@ -4140,15 +4141,22 @@
    "dev_deps": [
     "actor-formats",
     "art",
+    "container-formats",
     "disc-patch",
     "engine-battle",
     "engine-battle-loop",
     "engine-battle-vm",
+    "engine-cast",
     "engine-core",
     "engine-menus",
+    "engine-minigames",
     "engine-system",
+    "engine-vm",
     "game-tables",
-    "save"
+    "lzs",
+    "minigame-formats",
+    "save",
+    "scene-formats"
    ],
    "bins": [],
    "lib": true,
@@ -4714,6 +4722,7 @@
    "package": "legaia-web-play",
    "deps": [
     "actor-formats",
+    "app-theme",
     "art",
     "engine-audio",
     "engine-battle",
@@ -4771,6 +4780,7 @@
     "boot_continue",
     "boot_title",
     "cards",
+    "disc_problem",
     "field_actors",
     "field_npc",
     "field_scene_anim",

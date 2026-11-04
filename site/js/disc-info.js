@@ -784,6 +784,15 @@
     renderAt(input, inputPlacement(input), source);
   }
 
+  /* The page refused this disc: its panel goes, and a read still running does
+   * not bring it back. */
+  function clearFor(input) {
+    if (!input) return;
+    var entry = panelFor(input, inputPlacement(input));
+    entry.key = null;
+    entry.panel.style.display = 'none';
+  }
+
   /* For pages with their own <input> (no RomCache): wire change directly. */
   function attachInput(input) {
     if (!input) return;
@@ -835,6 +844,7 @@
   window.DiscInfo = {
     identify: identify,
     onDisc: onDisc,
+    clearFor: clearFor,
     attachInput: attachInput,
     intoCached: intoCached,
   };

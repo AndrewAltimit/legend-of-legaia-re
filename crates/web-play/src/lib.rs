@@ -11,6 +11,7 @@
 pub mod boot_continue;
 pub mod boot_title;
 pub mod cards;
+pub mod disc_problem;
 pub mod field_actors;
 pub mod field_npc;
 pub mod field_scene_anim;

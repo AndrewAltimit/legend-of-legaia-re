@@ -172,8 +172,8 @@ impl App {
                 ui.label("Pick a movie or an XA audio file on the left.");
                 ui.label(
                     RichText::new(
-                        "Movies decode with the Iki MDEC decoder and play with their XA soundtrack; \
-                         XA files hold several channels each (voice lines, streamed music).",
+                        "Movies play with their soundtrack. Each CD-XA audio file holds several \
+                         channels of voice lines or streamed music, to play or save as WAV.",
                     )
                     .weak(),
                 );
@@ -198,7 +198,15 @@ impl App {
                 Some((_, Ok(Loaded::Xa(tracks)))) => View::Xa(
                     tracks
                         .iter()
-                        .map(|t| (t.file_no, t.ch_no, t.sample_rate, t.channels, t.duration_secs()))
+                        .map(|t| {
+                            (
+                                t.file_no,
+                                t.ch_no,
+                                t.sample_rate,
+                                t.channels,
+                                t.duration_secs(),
+                            )
+                        })
                         .collect(),
                 ),
                 Some((_, Ok(Loaded::Str(m)))) => View::Str(Arc::clone(m)),

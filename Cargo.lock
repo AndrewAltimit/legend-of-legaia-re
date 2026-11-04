@@ -2584,6 +2584,7 @@ name = "legaia-engine-shell"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "clap",
  "dirs",
  "env_logger",
@@ -3423,6 +3424,7 @@ dependencies = [
  "glam",
  "js-sys",
  "legaia-actor-formats",
+ "legaia-app-theme",
  "legaia-art",
  "legaia-engine-audio",
  "legaia-engine-battle",

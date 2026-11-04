@@ -218,6 +218,10 @@ A line nothing listed is deferred: it plays when its row is served, a read and a
 a frame after the request. Neither path reaches the simulation, which never reads the XA
 lane back.
 
+**A file that is not a disc.** `disc_file_problem(name, head, size)` (`disc_problem`) says what a picked file is in the desktop programs' words, from its first sectors and its length: `legaia_iso::sniff` for a compressed image, an archive, a patch or a 2048-byte `.iso`, `legaia_app_theme::disc_text` for an image cut short, with how much of the disc it holds.
+
+A file with no `PROT.DAT` in its root is asked before it is read whole, so an archive of several gigabytes is refused without reading it; an image whose `PROT.DAT` is whole but whose later files are missing is asked after that first read. A refused file leaves the disc cache (the `{ rejected: true }` an `onLoad` may answer in `RomCache.attach`), so the next visit does not fail on it again with nothing picked. A bare `PROT.DAT` is still taken.
+
 **Failures.** A read that fails is tried three times, a quarter of a second and half a
 second apart. Then the window is reported failed until its release: the movie finishes
 unplayed, the clip's row is installed empty and dropped. The next ask reads again. Since
@@ -231,6 +235,10 @@ While a movie is up its overlay covers the GL view, and the frame skips its GL d
 the world is held, and every pass that reads the frame (bloom, fog, ambient occlusion,
 the transition capture) reads one drawn earlier in the same frame. The sync with the
 engine still runs each frame, and the 2D overlay is still drawn.
+
+## The report button (`play-report.js`)
+
+*Copy report* beside the disc picker puts on the clipboard what a bug report needs: the bundle's version, the browser, the GL renderer, the window, the disc file's name and size, the status line, `state_json` and `mode_state_json`, the stored options and switches, and the page's last warnings and errors (the module wraps `console.warn` / `console.error` and listens for uncaught errors from before any other script runs; an engine trap is noted too). It holds no disc bytes. A call into a trapped engine answers `(unavailable: ...)`, since a report is most wanted then. With no clipboard (a plain-http page, a refused permission) the text goes in a selected box under the bar. The desktop twin is `legaia_app_theme::game_exit::report_text`, on the launcher's Ctrl+C and Explorer's error banner.
 
 ## FMV beats (`play_fmv`)
 

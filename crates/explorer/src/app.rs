@@ -279,6 +279,8 @@ pub struct App {
     engine: Option<PathBuf>,
     /// A game started with Play, while it runs.
     game: Option<crate::launch::Game>,
+    /// The banner a failed game put up and the report its button copies.
+    error_report: Option<(String, String)>,
     /// The folder the last export or extraction wrote into, for the
     /// status line's *Show folder* button.
     last_written: Option<PathBuf>,
@@ -388,6 +390,7 @@ impl App {
                 .ok()
                 .and_then(|exe| crate::launch::find_engine(&exe)),
             game: None,
+            error_report: None,
             last_written: None,
             status_seen: None,
             appearance_applied: false,
@@ -875,13 +878,13 @@ impl App {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| lib.source.path().display().to_string());
                 ui.label(format!(
-                    "{kind} {name}: {} PROT entries, {} ISO files{}",
-                    lib.entries.len(),
-                    lib.iso_files.len(),
+                    "{kind} {name}{}: {} archive entries, {} files",
                     lib.region
                         .as_ref()
-                        .map(|r| format!(", region {r}"))
-                        .unwrap_or_default()
+                        .map(|r| format!(", {r}"))
+                        .unwrap_or_default(),
+                    lib.entries.len(),
+                    lib.iso_files.len(),
                 ))
                 .on_hover_text(lib.source.path().display().to_string());
                 // Another region's disc browses fine but cannot start the
@@ -933,12 +936,20 @@ impl App {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal_top(|ui| {
-                        if ui
-                            .small_button("Copy")
-                            .on_hover_text("Copy this message to the clipboard")
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(e.clone());
+                        // A failed game's banner copies the whole report: the
+                        // banner is one line, a bug report wants the log's end.
+                        let report = self
+                            .error_report
+                            .as_ref()
+                            .filter(|(banner, _)| banner == e)
+                            .map(|(_, report)| report.clone());
+                        let (label, hint) = if report.is_some() {
+                            ("Copy report", "Copy a report of this failure, with the end of the log, for a bug report")
+                        } else {
+                            ("Copy", "Copy this message to the clipboard")
+                        };
+                        if ui.small_button(label).on_hover_text(hint).clicked() {
+                            ui.ctx().copy_text(report.unwrap_or_else(|| e.clone()));
                         }
                         dismiss = ui.small_button("Dismiss").clicked();
                         // In a vertical child the wrapped lines count
@@ -1241,17 +1252,28 @@ impl App {
             Err(headline) => {
                 // The launcher's words for the same failure: how it ended,
                 // then the reason its log gives, if it gives one.
-                let mut msg = headline;
+                use legaia_app_theme::game_exit;
+                let log_text = log.as_ref().and_then(|l| std::fs::read_to_string(l).ok());
+                let why = log_text.as_deref().and_then(game_exit::failure_detail);
+                let mut msg = headline.clone();
+                if let Some(why) = &why {
+                    msg.push(' ');
+                    msg.push_str(why);
+                }
                 if let Some(log) = &log {
-                    if let Some(why) = std::fs::read_to_string(log)
-                        .ok()
-                        .and_then(|t| legaia_app_theme::game_exit::failure_detail(&t))
-                    {
-                        msg.push(' ');
-                        msg.push_str(&why);
-                    }
                     msg.push_str(&format!("\nFull log: {}", log.display()));
                 }
+                self.error_report = Some((
+                    msg.clone(),
+                    game_exit::report_text(
+                        "legaia-explorer",
+                        env!("CARGO_PKG_VERSION"),
+                        &headline,
+                        why.as_deref(),
+                        log_text.as_deref(),
+                        game_exit::home_folder().as_deref(),
+                    ),
+                ));
                 self.explorer.error = Some(msg);
             }
         }
@@ -1309,18 +1331,21 @@ impl App {
             .map(|&k| (k, count(k)))
             .filter(|&(_, n)| n > 0)
             .collect();
-        egui::ComboBox::from_label("Show")
-            .selected_text(self.class_filter.as_deref().unwrap_or("Everything"))
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.class_filter, None, "Everything");
-                for (k, n) in kinds {
-                    ui.selectable_value(
-                        &mut self.class_filter,
-                        Some(k.to_string()),
-                        format!("{k} ({n})"),
-                    );
-                }
-            });
+        ui.horizontal(|ui| {
+            ui.label("Show:");
+            egui::ComboBox::from_id_salt("browse_kind")
+                .selected_text(self.class_filter.as_deref().unwrap_or("Everything"))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.class_filter, None, "Everything");
+                    for (k, n) in kinds {
+                        ui.selectable_value(
+                            &mut self.class_filter,
+                            Some(k.to_string()),
+                            format!("{k} ({n})"),
+                        );
+                    }
+                });
+        });
         let filter = self.filter.trim().to_string();
         let filtering = !filter.is_empty() || self.class_filter.is_some();
         // The rows the search shows, per block, in disc order.
@@ -1608,9 +1633,12 @@ impl App {
             // no gap to read as separate, and the six fit one row of the
             // narrowest pane.
             ui.spacing_mut().item_spacing.x = 2.0;
+            // An entry with big counts would wrap the last tab onto a row of
+            // its own at the narrowest pane; the counts go first.
+            let room_for_counts = ui.available_width() >= TAB_COUNTS_MIN_WIDTH;
             for t in Tab::ALL {
                 let n = count(t);
-                let label = tab_label(t.name(), n);
+                let label = tab_label(t.name(), n.filter(|_| room_for_counts));
                 let enabled = n.is_none_or(|n| n > 0);
                 let resp = ui
                     .add_enabled(enabled, egui::Button::selectable(shown == t, label))
@@ -2218,7 +2246,9 @@ impl App {
                 ui.checkbox(&mut self.seq_loop, "loop");
             });
             for s in a.seqs.clone() {
-                ui.horizontal(|ui| {
+                // Wrapped: the label and the two buttons outrun the pane at
+                // the minimum window width.
+                ui.horizontal_wrapped(|ui| {
                     ui.monospace(format!(
                         "SEQ @ 0x{:X}  {:.1} BPM, {} PPQN",
                         s.offset, s.bpm, s.ppqn
@@ -2475,6 +2505,21 @@ impl App {
                     match ExtractOutDir::of(&out) {
                         ExtractOutDir::New => ui.label(RichText::new("A new folder.").weak()),
                         ExtractOutDir::Empty => ui.label(RichText::new("An empty folder.").weak()),
+                        // The run just finished is why it has files; that is
+                        // not a warning.
+                        ExtractOutDir::HasFiles
+                            if self
+                                .job
+                                .as_ref()
+                                .is_some_and(|j| j.outcome().is_some() && j.options.out == out) =>
+                        {
+                            ui.label(
+                                RichText::new(
+                                    "Another run here replaces the files with the same names.",
+                                )
+                                .weak(),
+                            )
+                        }
                         ExtractOutDir::HasFiles => ui.label(
                             RichText::new(
                                 "This folder already has files: ones with the same names are \
@@ -3144,6 +3189,9 @@ fn cycle_tab(from: Tab, forward: bool, enabled: impl Fn(Tab) -> bool) -> Tab {
         .find(|&t| enabled(t))
         .unwrap_or(from)
 }
+
+/// The preview pane's width below which the tab labels leave out their counts.
+const TAB_COUNTS_MIN_WIDTH: f32 = 430.0;
 
 /// A preview tab's label: its name with the count of what it shows, the
 /// count left out when there is nothing (the tab is disabled then).

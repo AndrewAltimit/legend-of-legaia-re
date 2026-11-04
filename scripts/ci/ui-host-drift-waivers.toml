@@ -762,7 +762,7 @@ reason = "The step itself is one pair of shared calls on both hosts (`legaia_eng
 [[frame_content]]
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
-native_only = ["chrome_frame", "entry_bytes", "frame", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "restore_dance_ambient", "set_assets", "stage_dance_ambient", "stage_dance_hud_vram", "step_dance_ambient", "still_sheet_rgba", "venue_stager_bytes", "walk_heightfield"]
+native_only = ["carry_walked_in_cells", "chrome_frame", "entry_bytes", "frame", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "restore_dance_ambient", "set_assets", "stage_dance_ambient", "stage_dance_hud_vram", "step_dance_ambient", "still_sheet_rgba", "venue_stager_bytes", "walk_heightfield"]
 web_only = ["apply", "course", "last_result", "of_mode", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
 reason = """
 Everything the step does to the world or the audio director is a session step
@@ -781,7 +781,8 @@ fn of that name; the walk excludes both by name.
 
 Native-only, the window uploading to wgpu inside this step what the page bakes
 elsewhere. `restore_dance_ambient` / `stage_dance_ambient` / `step_dance_ambient` /
-`venue_stager_bytes` run the hall's ambient tree: the native step calls them
+`venue_stager_bytes` run the hall's ambient tree, and `carry_walked_in_cells`
+paints the field's last cells into its VRAM ahead of the stage: the native step calls them
 directly, the page through its own export `play_mg_dance_ambient_step`, which
 its venue bake's frame calls. The venue's placement moved out of this step into
 `append_venue_draw`, so `place_point` and `rotate` no longer list. `walk_heightfield` uploads the dance venue

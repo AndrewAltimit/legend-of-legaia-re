@@ -182,8 +182,8 @@ impl App {
                 ui.label("Pick a party member or a monster on the left.");
                 ui.label(
                     RichText::new(
-                        "Party members are assembled from their player files (PROT 863..866) with \
-                         the equipment you choose; monsters come from the monster archive (PROT 867).",
+                        "The party can wear any equipment you pick. Every battle animation plays or steps \
+                         frame by frame, and Export saves the model as a .glb.",
                     )
                     .weak(),
                 );

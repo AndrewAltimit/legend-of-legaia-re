@@ -67,8 +67,8 @@ lettered in the game's own dialog font, read from that disc.
 ### Choosing the disc
 
 *Choose disc...* opens the system file dialog (`Ctrl+O` does too); dragging
-the `.bin` (or `.cue`) onto the window, or typing its path and pressing
-`Enter`, works as well. On Linux the dialog goes through the desktop's
+the `.bin` (or `.cue`) onto the window, or typing or pasting (`Ctrl+V`) its
+path and pressing `Enter`, works as well. On Linux the dialog goes through the desktop's
 file-chooser portal; where no portal runs, the drag-and-drop and typed-path
 routes still work.
 
@@ -197,7 +197,9 @@ moved) turns the disc card back into the picker with that reason. Otherwise
 the help box names the log, `legaia-engine-game.log` in the saves folder, and
 the reason the log gives - a panic's message, or the root of the error chain
 the engine exits with. A crash leaves no reason in the log, and none is
-invented from the lines before it. A panic on any of the game's threads (the
+invented from the lines before it. `Ctrl+C` then copies a report for a bug
+report: how the game ended, the reason and the end of the log, with your home
+folder cut out of it. A panic on any of the game's threads (the
 audio mixer inside the sound callback, the controller reader) ends the
 process, so it is reported instead of the game playing on silent or deaf to
 the pad. Run from a terminal, the game's output still prints there too.

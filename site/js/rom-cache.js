@@ -33,6 +33,9 @@
  *     unless autoLoad === false, calls onLoad(cachedSource) so the page
  *     renders with zero clicks. With autoLoad:false the chip still shows
  *     (so a button-driven loader can pull the disc via resolve()).
+ *   - an onLoad whose promise resolves to `{ rejected: true }` found the file is
+ *     no disc it can use: it leaves the cache, so the next visit does not fail
+ *     on it again with nothing picked.
  *
  * One disc, one delivery. `attach` has two mouths - the cached-disc auto-load
  * and the input's own `change` - and they are not exclusive: a returning
@@ -257,7 +260,10 @@
             if (failed && delivered === key) delivered = null;
           };
         };
-        r.then(settle(false), settle(true));
+        r.then(function (v) {
+          settle(false)();
+          if (v && v.rejected) reject(key);
+        }, settle(true));
       };
       if (inFlight) inFlight.then(start, start);
       else start();
@@ -280,10 +286,22 @@
      * otherwise neither cache it nor update the top-bar chip. */
     function forgotten() { try { input.value = ''; } catch (e) { /* read-only */ } }
 
+    /* The page refused the disc it was handed. The pick's own put may still be
+     * running, and landing after the clear would cache the file after all. */
+    var caching = Promise.resolve();
+    function reject(key) {
+      caching.then(clear).catch(function () {}).then(function () {
+        chip.style.display = 'none';
+        forgotten();
+        if (window.DiscInfo && window.DiscInfo.clearFor) window.DiscInfo.clearFor(input);
+        if (delivered === key) delivered = null;
+      });
+    }
+
     input.addEventListener('change', function () {
       var f = input.files && input.files[0];
       if (!f) return;
-      put(f).then(function () {
+      caching = put(f).then(function () {
         renderChip(chip, { name: f.name, size: f.size }, false, forgotten);
       }).catch(function (e) {
         console.warn('RomCache: could not cache disc -', e);
