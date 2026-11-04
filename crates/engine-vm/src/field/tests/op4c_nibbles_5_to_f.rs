@@ -426,21 +426,21 @@ fn op_4c_n6_sub_61_plain_or_one_shot_never_halts() {
 }
 
 #[test]
-fn op_4c_n8_sub_0_acquires_and_advances_three() {
-    let bytecode = [0x4Cu8, 0x80, 0x03, 0xAA, 0xBB, 0xCC];
+fn op_4c_n8_sub_0_acquires_and_walks_past_the_records() {
+    let bytecode = [0x4Cu8, 0x80, 0x02, 0xAA, 0x00, 0xBB, 0x00, 0x21];
     let mut host = TestHost {
         halt_acquire_predicate: true,
         ..TestHost::default()
     };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Advance { next_pc: 3 });
+    assert_eq!(r, StepResult::Advance { next_pc: 7 });
     assert_eq!(ctx.flags & 0x400, 0x400);
     assert!(host.halt_acquire_calls.iter().any(|(w, _, _)| *w == 0x80));
     assert_eq!(host.n_8_sub_0_allocator_calls.len(), 1);
     let (count, tail) = &host.n_8_sub_0_allocator_calls[0];
-    assert_eq!(*count, 3);
-    assert_eq!(tail.as_slice(), &[0xAA, 0xBB, 0xCC]);
+    assert_eq!(*count, 2);
+    assert_eq!(tail.as_slice(), &[0xAA, 0x00, 0xBB, 0x00, 0x21]);
 }
 
 #[test]
