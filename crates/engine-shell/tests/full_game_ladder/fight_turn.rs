@@ -322,7 +322,11 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
         let magic = || {
             !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor))
                 && !refused()
-                && !miracle_ready(w, cmd.actor)
+                && if racing_a_finisher(w) {
+                    race_cast(w, cmd.actor)
+                } else {
+                    !miracle_ready(w, cmd.actor)
+                }
         };
         let heal_spell = || {
             !refused()
@@ -921,6 +925,9 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             // what beat them.
             if trace {
                 eprintln!("    [battle] lost to a boss of element {boss_element:?}");
+            }
+            if boss == Some(KORU_MONSTER_ID) {
+                RACE_LOST.with(|l| l.set(true));
             }
             // A boss that Stoned a member beat the party with the stone, not
             // its element: Zora's Glare petrifies one member a cast, and the

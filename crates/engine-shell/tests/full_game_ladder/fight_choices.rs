@@ -329,17 +329,24 @@ pub(super) fn wanted_mp_item(
     }
     // Only against a foe of twenty times the party's largest HP or more
     // (Songi, 48000 to ~1950): in a shorter fight the drinks cost turns the
-    // Arts and heals win it with (Van Saryu at 11x lost two seeds in ten).
+    // Arts and heals win it with (Van Saryu at 11x lost two seeds in ten). A
+    // race drinks too, while a cast is still to come and worth more than the
+    // swings the drink and the cast give up: Aluru's 1600 against about 500.
     let n = w.party.party_count.clamp(1, 3) as usize;
     let ours = (0..n)
         .map(|i| u32::from(w.actors[i].battle.max_hp))
         .max()
         .unwrap_or(1)
         .max(1);
-    if !(n..w.actors.len()).any(|i| {
-        let a = &w.actors[i].battle;
-        a.hp > 0 && u32::from(a.max_hp) >= ours * 20
-    }) {
+    let wanted = if racing_a_finisher(w) {
+        !finisher_round(w) && race_spell_gain(w, actor, true).is_some()
+    } else {
+        (n..w.actors.len()).any(|i| {
+            let a = &w.actors[i].battle;
+            a.hp > 0 && u32::from(a.max_hp) >= ours * 20
+        })
+    };
+    if !wanted {
         return None;
     }
     let cost = best_spell_cost(w, actor)?;
@@ -347,17 +354,22 @@ pub(super) fn wanted_mp_item(
     if mp >= cost {
         return None;
     }
-    ids.filter_map(|id| {
+    let drinks = ids.filter_map(|id| {
         let e = w.tables.item_catalog.get(id)?;
         match e.effect {
             ItemEffect::HealMp { amount } if e.usable_in_battle => Some((amount, id)),
             _ => None,
         }
-    })
+    });
+    // A race's drink is the turn's only one: the largest.
+    if racing_a_finisher(w) {
+        return drinks.max().map(|(_, id)| (id, actor));
+    }
     // The smallest drink that pays for the spell, else the largest.
-    .filter(|&(a, _)| mp + u32::from(a) >= cost)
-    .min()
-    .map(|(_, id)| (id, actor))
+    drinks
+        .filter(|&(a, _)| mp + u32::from(a) >= cost)
+        .min()
+        .map(|(_, id)| (id, actor))
 }
 
 /// The Fury Boost worth using now, and on whom (the acting member itself):
@@ -405,6 +417,15 @@ pub(super) fn wanted_fury_item(
         return None;
     }
     if !miracle_armed(w, actor) {
+        return None;
+    }
+    // In a race the boost buys Miracles, and those cost Spirit too: it is the
+    // opening turn's, and only for a member about a race's income (near half
+    // the price) short of one. Any other member casts or swings that turn.
+    if racing_a_finisher(w)
+        && (w.battle.monster_ai_state.mode_flags != 0
+            || w.actors[i].battle.spirit_gauge.saturating_mul(2) < miracle_spirit_price(w, actor))
+    {
         return None;
     }
     let roster = w.party_roster_slot(i);
@@ -559,7 +580,8 @@ pub(super) fn wanted_power_item(
                 .copied()
                 .flatten()
                 .is_some()
-                || miracle_ready(w, m))
+                || miracle_ready(w, m)
+                || fury_pending(w, m))
             && !w
                 .battle
                 .buffs
@@ -568,6 +590,19 @@ pub(super) fn wanted_power_item(
     })?;
     let mut ids = ids;
     attack_elixir(&mut ids).map(|id| (id, target))
+}
+
+/// Whether member `m` has committed a Fury Boost this round: a Miracle typist
+/// from the next, so the ramp handed out now reaches its first Miracle.
+fn fury_pending(w: &legaia_engine_core::world::World, m: u8) -> bool {
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+    use legaia_engine_menus::items::ItemEffect;
+    matches!(
+        w.battle.round_flow.pending.get(usize::from(m)),
+        Some(Some(PendingPartyAction::Item { item_id, .. }))
+            if w.tables.item_catalog.get(*item_id)
+                .is_some_and(|e| matches!(e.effect, ItemEffect::ActionGauge))
+    )
 }
 
 /// Whether `actor` is (or is about to be) a Miracle typist through a Fury
@@ -618,6 +653,67 @@ pub(super) fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> 
         .max()
         .unwrap_or(u16::MAX);
     u32::from(press) * miracle.commands.len() as u32 <= u32::from(w.actors[i].battle.agl)
+}
+
+/// The Spirit `actor`'s Miracle Art asks of the gauge: ordinal 0 of the bank at
+/// its command count (99, halved by AP Used Down before the multiply).
+pub(super) fn miracle_spirit_price(w: &legaia_engine_core::world::World, actor: u8) -> u16 {
+    let roster = w.party_roster_slot(usize::from(actor));
+    let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
+    let len = legaia_art::MIRACLE_ARTS
+        .iter()
+        .find(|m| m.character == character)
+        .map_or(0, |m| m.commands.len());
+    legaia_engine_battle::ap_gauge::art_spirit_cost(
+        0,
+        len as u8,
+        w.character_ability_bits_word1(roster as u8)
+            & legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT
+            != 0,
+    )
+}
+
+/// What a race's best damage spell of `actor` should deal against Koru, if its
+/// MP pays for it or `any` asks for what it knows regardless, and only where
+/// that beats what its turn deals otherwise. `None` for a member about to type
+/// its Miracle. A summon deals about ten per point of catalog power (Freed 80
+/// -> 850, Aluru 180 -> 1660) and a press of the entry about a hundred (nine
+/// presses, 1000), and what its Arts have been measured to deal this battle
+/// also stands against the cast.
+fn race_spell_gain(w: &legaia_engine_core::world::World, actor: u8, any: bool) -> Option<u32> {
+    use legaia_engine_battle::spells::SpellEffect;
+    const PER_POWER: u32 = 10;
+    const PER_PRESS: u32 = 100;
+    let i = usize::from(actor);
+    let a = w.actors.get(i)?;
+    if miracle_ready(w, actor) && a.battle.spirit_gauge >= miracle_spirit_price(w, actor) {
+        return None;
+    }
+    let m = w.party.roster.members.get(w.party_roster_slot(i))?;
+    let list = m.spell_list();
+    let best = list.ids[..(list.count as usize).min(list.ids.len())]
+        .iter()
+        .filter_map(|&id| {
+            let d = w.tables.spell_catalog.get(id)?;
+            match d.effect {
+                SpellEffect::Damage { base_power, .. }
+                    if any || a.battle.mp >= u16::from(d.mp_cost) =>
+                {
+                    Some(u32::from(base_power) * spell_affinity_pct(w, id) * PER_POWER / 100)
+                }
+                _ => None,
+            }
+        })
+        .max()?;
+    let press = u32::from(legaia_engine_battle::arts_command_input::FAVORED_COST);
+    let swings = (u32::from(a.battle.agl) / press).min(9) * PER_PRESS;
+    let measured = DEALT.with(|d| d.borrow().get(&(actor, ART_KIND)).copied().unwrap_or(0));
+    (best > swings.max(measured)).then_some(best)
+}
+
+/// Whether a race's turn goes to Magic: [`race_spell_gain`] on what the MP pays.
+pub(super) fn race_cast(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    race_spell_gain(w, actor, false).is_some()
 }
 
 /// Whether `actor`'s Miracle marker is armed (a Ra-Seru equipped): the queue
@@ -731,7 +827,12 @@ pub(super) fn wanted_spell(
     } else {
         reserve
     };
-    let floor = floor.max(reserve);
+    // A race keeps nothing back: nothing a heal lifts survives the finisher.
+    let floor = if racing_a_finisher(w) {
+        0
+    } else {
+        floor.max(reserve)
+    };
     let mp = w
         .actors
         .get(usize::from(m.actor))
@@ -920,6 +1021,17 @@ pub(super) fn arts_plan(
         .flat_map(|(base, consts)| std::iter::once(base).chain(consts))
         .collect();
     let armed = miracle_armed(w, s.actor);
+    let gauge = w
+        .actors
+        .get(usize::from(s.actor))
+        .map_or(0, |a| a.battle.spirit_gauge);
+    // In a race a member with a Miracle Art to save for keeps its Spirit:
+    // Koru takes about 2500..3200 from a Miracle (99 AP), about 1000 from nine
+    // plain swings (0 AP) and about 1200 from a Super (54 AP), so AP spent
+    // short of the Miracle buys next to nothing.
+    let saving = racing_a_finisher(w) && armed;
+    let pays = |cmds: &[Command]| spirit_pays(w, s.actor, cmds, gauge);
+    let swings = |cmds: &[Command]| spirit_pays(w, s.actor, cmds, if saving { 0 } else { gauge });
     let mut normal: Vec<(legaia_art::ActionConstant, &[Command])> = w
         .tables
         .art_records
@@ -941,6 +1053,7 @@ pub(super) fn arts_plan(
         && cost(m.commands) <= s.pool_max
         && m.commands.len() <= MAX_ENTRY
         && open(m.commands)
+        && pays(m.commands)
     {
         return bytes(m.commands);
     }
@@ -960,7 +1073,7 @@ pub(super) fn arts_plan(
     });
     if let Some(input) = supers
         .into_iter()
-        .filter(|inp| inp.len() <= MAX_ENTRY && cost(inp) <= s.pool_max && open(inp))
+        .filter(|inp| inp.len() <= MAX_ENTRY && cost(inp) <= s.pool_max && open(inp) && swings(inp))
         .max_by_key(|inp| inp.len())
     {
         return bytes(&input);
@@ -969,9 +1082,14 @@ pub(super) fn arts_plan(
     let mut plan: Vec<Command> = Vec::new();
     let mut pool = s.pool_max;
     loop {
+        let with = |c: &[Command]| {
+            let mut next = plan.clone();
+            next.extend_from_slice(c);
+            swings(&next)
+        };
         let art = arts
             .iter()
-            .filter(|c| cost(c) <= pool && plan.len() + c.len() <= MAX_ENTRY)
+            .filter(|c| cost(c) <= pool && plan.len() + c.len() <= MAX_ENTRY && with(c))
             .max_by_key(|c| {
                 (
                     c.len(),
@@ -983,9 +1101,17 @@ pub(super) fn arts_plan(
             plan.extend_from_slice(c);
             continue;
         }
-        let Some(&d) = [Command::Left, Command::Right, Command::Down, Command::Up]
+        // A race's swings go where they hit hardest: the staged command picks
+        // the power scalar (`0x801F64EC[(id - 0x0C) % 5]`), 12 for the left
+        // arm against 22 for Low, and every other fight's hand keeps its order.
+        let order = if saving {
+            [Command::Down, Command::Up, Command::Right, Command::Left]
+        } else {
+            [Command::Left, Command::Right, Command::Down, Command::Up]
+        };
+        let Some(&d) = order
             .iter()
-            .filter(|&&d| s.cost_of(d) <= pool && open(&[d]))
+            .filter(|&&d| s.cost_of(d) <= pool && open(&[d]) && with(&[d]))
             .min_by_key(|&&d| s.cost_of(d))
         else {
             break;
@@ -997,6 +1123,55 @@ pub(super) fn arts_plan(
         plan.push(d);
     }
     plan.into_iter().map(|c| c.as_byte()).collect()
+}
+
+/// Whether a Spirit gauge at `gauge` pays for every art `arrows` would match, in
+/// the order the queue builder walks them (`FUN_801EED1C`,
+/// `legaia_art::tokenize_bank_gated`). A price the gauge cannot cover ends the
+/// walk at that start, so one art too dear leaves the whole string plain
+/// swings: a player reads the AP plate before typing. Learn verdicts are not
+/// asked here; they decide only a new art's starter.
+pub(super) fn spirit_pays(
+    w: &legaia_engine_core::world::World,
+    actor: u8,
+    arrows: &[legaia_art::Command],
+    gauge: u16,
+) -> bool {
+    let roster = w.party_roster_slot(usize::from(actor));
+    let character = legaia_engine_battle::battle_arts::character_for_slot(roster as u8);
+    let bank = w.art_bank_rows(character);
+    let halved = w.character_ability_bits_word1(roster as u8)
+        & legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT
+        != 0;
+    let mut q = [0u8; legaia_art::QUEUE_LEN];
+    for (dst, c) in q.iter_mut().zip(arrows) {
+        *dst = c.as_action().as_byte();
+    }
+    let mut spirit = gauge;
+    let mut refused = false;
+    legaia_art::tokenize_bank_gated(
+        &legaia_art::bank_view(&bank),
+        q,
+        [0u32; legaia_art::QUEUE_LEN],
+        miracle_armed(w, actor),
+        None,
+        |ordinal, len| {
+            let cost = legaia_engine_battle::ap_gauge::art_spirit_cost(
+                usize::from(ordinal),
+                len.min(0xFF) as u8,
+                halved,
+            );
+            if (spirit as i16) < cost as i16 {
+                refused = true;
+                return legaia_art::ArtRun::Refuse;
+            }
+            spirit = spirit.wrapping_sub(cost);
+            legaia_art::ArtRun::Take {
+                starter: legaia_art::ActionConstant::RegularStarter.as_byte(),
+            }
+        },
+    );
+    !refused
 }
 
 /// The ring press for one arts-entry direction byte.

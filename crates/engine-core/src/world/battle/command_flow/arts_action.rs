@@ -301,7 +301,7 @@ impl World {
     /// The battle-action host's `character_ability_bits_high` is the same
     /// word reached through a battle ordinal; this one takes the roster slot,
     /// which is what the arts paths already carry.
-    pub(in crate::world) fn character_ability_bits_word1(&self, roster: u8) -> u32 {
+    pub fn character_ability_bits_word1(&self, roster: u8) -> u32 {
         self.party
             .roster
             .members

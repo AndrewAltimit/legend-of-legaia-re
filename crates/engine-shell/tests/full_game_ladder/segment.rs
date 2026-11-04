@@ -1033,6 +1033,7 @@ pub(super) fn run_segment(
     // loses by a few dozen HP on a given stream.
     let mut seated_prepare: Option<u8> = None;
     let mut seated_attempt = 0u32;
+    RACE_LOST.with(|l| l.set(false));
     LEARNED_CADENCE.with(|l| l.set(None));
     let seated = loop {
         seated_attempt += 1;
@@ -1168,6 +1169,7 @@ pub(super) fn run_segment(
         let mut prepare: Option<u8> = None;
         let mut attempt = 0u32;
         LEARNED_CADENCE.with(|l| l.set(None));
+        RACE_LOST.with(|l| l.set(false));
         loop {
             attempt += 1;
             LOST_TO_ELEMENT.with(|l| l.set(None));

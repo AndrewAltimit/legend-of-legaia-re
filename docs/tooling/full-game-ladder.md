@@ -1604,28 +1604,35 @@ way, the run beats Songi on the first attempt on both streams. The retail
 party also carries about twenty Seru spells a member to the run's five to
 ten.
 
-Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
+Koru (`nilboa` P2[20], monster `0xB6`, 20000 HP) is a race. Its pick arm casts by the
 battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
 Dead End Crisis (`0xA1`), which in this fight writes a flat 9999 to every
 party seat - and the scene runs it with no scripted-loss latch, so the party
-must deal 20000 inside four rounds while each round's cast takes 600..700 off
-one member. The hand fights it without heal turns (`racing_a_finisher`):
-Vahn and Noa type their Fury-boosted Miracle Arts every round, Gala casts or
-hands out the attack Elixir, and spends a turn on a heal only when an Arts
-member would not live through Koru's biggest hit so far, never on the
-finisher's own round. A seated beat whose band stages a fight tops a party
-not near full up first, as the pad walk does, and the seated pass reloads a
-boss wipe with a fresh hand up to `PAD_WIPE_ATTEMPTS` times, as the pad pass
-does: on one stream the race is won or lost by a few dozen HP.
+must deal 20000 inside five rounds while each round's cast takes 500..700 off
+one member. The hand fights it without heal turns (`racing_a_finisher`), and
+spends a turn on a heal only when a Miracle typist would not live through
+Koru's biggest hit so far, never on the finisher's own round. A seated beat
+whose band stages a fight tops a party not near full up first, as the pad walk
+does, and both passes reload a boss wipe with a fresh hand up to
+`PAD_WIPE_ATTEMPTS` times.
 
-Koru (monster `0xB6`, 20000 HP) is a timed fight: its AI casts the
-all-party finisher on round counter `4` (`timed_fight.rs`), so the party
-has five rounds. Spells and short Arts strings fall a few hundred HP
-short. The fighter spends a member's first turn on a Fury Boost when that
-buys a Miracle Art (the `+0x1F9` byte makes every later round boundary
-restore the pool to `base * 7 / 5 + 8`), prefers the Miracle over any
-summon once the live pool pays for it, and has a member with no Miracle
-hand Power Elixirs to the Miracle typists.
+The race is won on Spirit as much as on damage. A Miracle Art's price is 99 AP
+(`11 x 9`, ordinal 0 of the bank's walk) and the queue builder asks for it in
+the walk (`FUN_801EED1C`, [`arts-command-gauge.md`](../subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)): typed short of 99, the walk ends and all nine arrows
+stay plain swings. A member earns about a hundred over the race, `+8` an action
+and a third of the gauge for a hit of a quarter of its HP, so no member types one
+every round. Measured against Koru at level 32: a Miracle about 2600..4500, a Super
+(54 AP) about 1200, nine plain presses of Low about 1000..1750 for no AP at all.
+So the hand:
+
+- Reads the gauge before typing (`spirit_pays`, the builder's own gate over `legaia_art::tokenize_bank_gated`). No fight's plan names an art the gauge cannot pay.
+- Saves its AP in a race: a Miracle typist swings Low, the command with the largest power scalar (`0x801F64EC`: Left 12, Right 18, High 20, Low 22), until 99 is up. Low beats the arm for Vahn by 1750 to 1050 and draws level for Noa.
+- Spends a member's first turn on a Fury Boost when that buys the nine presses (the `+0x1F9` byte makes every later round boundary restore the pool to `base * 7 / 5 + 8`) and its gauge stands within a race's income of the price (`wanted_fury_item`). A member further off casts from the first round instead.
+- Has a member with no Miracle hand Power Elixirs to the typists, from the opening round: the ramp reaches the first Miracle, and it is worth more than the summon the giver gives up.
+- Casts when the turn's Miracle is out of reach and the best spell should beat the member's swings (`race_spell_gain`): about ten per point of catalog power against about a hundred a press, and any Arts hit measured this battle. Retail's level-25 party is this case, Aluru at 1500..1700 each. A race keeps no MP back and drinks the largest MP item while a cast is still to come.
+- Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where the undressed run has one.
+
+The first attempt goes in the Goods the run chose and loses by thousands; the dressed reload wins, with the margin of a member's last swing to spare on the run's own party and a round's worth on retail's.
 
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
@@ -2046,20 +2053,15 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   fought one member at a time out of the party's one bag
   ([guards and boss reads](#guards-and-boss-reads)).
 - Koru (P2[20]'s challenge, F32, 20000 HP) is a race against its round-4
-  finisher ([`KORU_MONSTER_ID`](#guards-and-boss-reads)), and the retail
-  party wins it on Miracle Arts: Vahn and Noa drink a Fury Boost in the first
-  round and type their nine-command Miracle every round after (about 2500
-  each). A Miracle costs nine presses at the arm's price (30), 270 from the
+  finisher ([`KORU_MONSTER_ID`](#guards-and-boss-reads)), won on Miracle Arts and the
+  AP to pay for them. A Miracle costs nine presses at the arm's price (30), 270 from the
   action gauge, and a Fury Boost lifts the gauge to `base * 7 / 5 + 8`, so it
   fits from a base AGL of 188. The anchors' party holds that at level 25
   (Vahn 202, Noa 189, the AGL Boost accessory's +20% included). AGL grows by
   its own divisor in the level-up applier (`0x18C0` against every other
-  stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)); an engine
-  that divided it by `0x24C0` grew it two a level where retail grows three,
-  and its level-31 party (Vahn 157, Noa 177) lost the race at about half
-  Koru's HP on every stream. With the divisor corrected the run's party
+  stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)). The run's party
   reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
-  beats Koru on the first or second attempt. The ledge band P2[20] is
+  beats Koru on its second attempt, dressed for the race. The ledge band P2[20] is
   reached from its other tiles ([how the pad tier
   walks](#how-the-pad-tier-walks)), and the stretch then plays the chain
   that opens `deene`'s dock ([overworld and dungeon

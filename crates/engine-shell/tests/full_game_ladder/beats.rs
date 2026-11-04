@@ -674,6 +674,9 @@ pub(super) fn play_beats(
                 // does before such a band. Koru (`nilboa` P2[20], see
                 // [`KORU_MONSTER_ID`]) is met straight off the tunnel beats
                 // at 50..80% and is a race no heal turn can be spared in.
+                if fight_band_tiles(session).contains(&(i32::from(tile.0), i32::from(tile.1))) {
+                    pad_dress_for_race(session);
+                }
                 if party_hp_permille(session) < 900
                     && fight_band_tiles(session).contains(&(i32::from(tile.0), i32::from(tile.1)))
                 {
