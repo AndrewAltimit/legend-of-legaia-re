@@ -970,6 +970,30 @@ fn is_epilogue(img: &Image, va: u32) -> bool {
     false
 }
 
+/// Whether the code at `va` does nothing but move the phase: the load, the
+/// increment and the store, in a `j`'s delay slot or not.
+fn is_bare_advance(img: &Image, va: u32, alias: &BTreeSet<usize>) -> bool {
+    let Some(load) = img.ins(va) else {
+        return false;
+    };
+    if !is_phase_load(&load, alias) {
+        return false;
+    }
+    for k in 1..6 {
+        let Some(i) = img.ins(va + 4 * k) else {
+            return false;
+        };
+        if is_phase_store(&i, alias) {
+            return true;
+        }
+        // `nop`, `addiu`, and the `j` whose delay slot holds the store.
+        if !(i.w == 0 || i.op() == 0x09 || i.is_j()) {
+            return false;
+        }
+    }
+    false
+}
+
 /// Instructions an arm reaches from its entry, not entering another arm.
 fn arm_reach(
     img: &Image,
@@ -1755,11 +1779,13 @@ pub fn decode(bytes: &[u8], own_end: usize) -> CastPresentation {
 
         // An arm the table points at the shared exit is no arm of its own:
         // the other arms reach that code too, so it does not stop a walk.
+        // Nor is an arm the table points at the shared phase bump: PROT 0933's
+        // arm `0xD` is `0x801F8614`, the block every other arm jumps to.
         let entries: BTreeSet<u32> = d
             .arms
             .values()
             .copied()
-            .filter(|&e| !is_epilogue(&img, e))
+            .filter(|&e| !is_epilogue(&img, e) && !is_bare_advance(&img, e, &alias))
             .collect();
         let cands = candidate_sites(&img, lo, hi);
         let mut holding = BTreeSet::new();

@@ -284,6 +284,7 @@ impl World {
     /// |---|---|---|
     /// | 0 (`0x801F6B20..0x801F6C80`) | pass | backdrop weight `0x1000`; row parked and re-seated at `x / 4`, `z / 4 + 0x500`, facing `0x800`, scale `0x800` |
     /// | 1 (`0x801F6CF4`) | every | row hidden |
+    /// | 6, 7 (`0x801F70C8..0x801F7154`, `0x801F7234..0x801F72C0`) | every | each part in the pool but handle `0`: `+0x7A += step`, `+0x16 += 4 * step`, killed at a level `+0x78` of `0xA00` or under |
     /// | 8 (`0x801F745C`, `0x801F7478`) | pass | creature rate `2`; row shown |
     /// | 9 (`0x801F7590`) | pass | orbit words zeroed |
     /// | `0xA`, `0xC` (`0x801F75E4..`) | every | the row's orbit about `(0, 0x613)` |
@@ -305,6 +306,24 @@ impl World {
         monster_count: u8,
         creature: u8,
     ) {
+        // The pool the arms walk holds the stager's two whirl records, one a
+        // pass's worth of them each; a pass runs a step of these ticks.
+        if matches!(phase, 6 | 7)
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            const WHIRL_RECORDS: [u32; 2] = [0x801F_8838, 0x801F_88F0];
+            for part in scene
+                .parts
+                .iter_mut()
+                .filter(|p| !p.finished && p.tag.is_some_and(|t| WHIRL_RECORDS.contains(&t)))
+            {
+                part.state.field_7a = part.state.field_7a.wrapping_add(1);
+                part.state.world_y = part.state.world_y.wrapping_add(4);
+                if part.state.field_78 <= 0xA00 {
+                    part.finished = true;
+                }
+            }
+        }
         use legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as D;
         const ORBIT_Z: i32 = 0x613;
         let seat_of = |count: u8, i: usize| {

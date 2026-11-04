@@ -2246,3 +2246,8 @@ is a gapless partition - is on
 - [`re-settled-threads.md`](re-settled-threads.md) - the answered questions, each with an evidence grade.
 - [`docs/tooling/ghidra.md` § decompiler artifacts](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims) - the seven C-rendering artifacts that produced several of the readings above.
 - [`docs/tooling/call-target-integrity.md`](../tooling/call-target-integrity.md) - why a decoded `jal` target is a property of the bytes, not the load base.
+
+### Iota's dark frame as a plane fight
+
+Reading: two records on one camera-relative plane fight in the depth buffer and darken the frame. `ot-raster.py` on a retail table reproduces the screen with both layers drawn in chain order, and retail's two layers sit two buckets apart, but pushing one of them back moved the score by little because the cause was elsewhere: the textures those layers sample scrolled at three times retail's speed, and a part the arm kills stood on the screen. Measure the pages' shift against a retail VRAM before reading a depth order into a frame's colour.
+

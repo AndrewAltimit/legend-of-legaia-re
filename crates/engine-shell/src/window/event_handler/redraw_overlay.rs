@@ -87,8 +87,11 @@ impl FxFrame {
         // mask for that word, `0x80043520..0x80043540`). So none takes the
         // field pass's winding cull, which would judge a double-sided node
         // by its winding.
+        // Each of a part's prims links at its own mean depth, so a long ray
+        // sorts behind a body by its middle, whatever its near end crosses:
+        // in PSX mode the whole prim takes that one depth.
         for (mesh, model) in summon_part_draws {
-            nclip_marks.push((draws.len(), 0));
+            nclip_marks.push((draws.len(), legaia_engine_render::DRAW_WORD_MEAN_DEPTH));
             draws.push(SceneDraw {
                 mesh,
                 mvp: fx_cam * *model,

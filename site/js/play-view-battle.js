@@ -485,7 +485,7 @@
           rt.play_battle_fx_positions(), rt.play_battle_fx_uvs(),
           rt.play_battle_fx_cba_tsb(), rt.play_battle_fx_indices(),
           rt.play_battle_fx_flat_rgba());
-        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL });
+        draws.push({ meshId: BATTLE_FX_BILLBOARD_MESH, model: IDENTITY_MODEL, meanDepth: true });
       }
       const n = rt.play_battle_fx_model_count();
       if (!n) return;
@@ -506,7 +506,7 @@
           }
         }
         if (!b.fxMeshes.get(tmd)) continue;
-        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16) });
+        draws.push({ meshId, model: mats.subarray(i * 16, i * 16 + 16), meanDepth: true });
       }
     }
 

@@ -294,7 +294,10 @@ both hosts draw them at their corners' mean `w`: `DRAW_WORD_MEAN_DEPTH` on the
 draw's NCLIP word stages `flags.w = -1` (`prim_mean_depth` over
 `prim_c0..prim_c3` on the vertex stage), and the page's `meanDepth` placement
 keys its log depth on the same mean (`primMeanW`). A wall quad nearer by mean
-now paints over the horizon mist as retail's does. Worked on Sol Tower's stage:
+now paints over the horizon mist as retail's does. A cast's effect parts draw the
+same way on both hosts: a long additive ray is one prim at its mean depth, so a ray
+retail links behind a creature stays behind it where its near end crosses the body
+(`DRAW_WORD_MEAN_DEPTH` on the native part draws, `meanDepth` on the page's). Worked on Sol Tower's stage:
 `battle_kor_dead_bone_strike` `.969` to `.993`, `battle_korb2_kemaro_strike`
 `.971` to `.990`, `battle_kor_spoon_strike` `.966` to `.984`. Clean rendering
 keeps per-pixel depth: a mean pops as the camera turns, which the retail frame

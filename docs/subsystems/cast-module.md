@@ -2378,7 +2378,9 @@ The stores Meta, Terra and Ozma make on other seats are
 `World::apply_meta_writes`, `apply_terra_writes` and `apply_ozma_writes`, tabled
 on each: the monster row re-seated in front of the creature and put back, hidden
 and shown, the creature's animation rate arm by arm (which is what keeps its
-clips on retail's frames), Terra's orbit of the row, and Ozma's blue ease
+clips on retail's frames), Terra's orbit of the row and the whirl its arms 6 and 7
+walk (each pooled part's `+0x7A` and height climbing, killed at a level of `0xA00`
+or under, so four stand where twenty have been seated), and Ozma's blue ease
 (`+0x21C = 4`, `FUN_80050120`'s arm 4) and the loop window its arm `0x12` writes
 into clip `3`'s entry. Ozma's arms 5..9 also store TR y straight, a rise word with
 a shake on the low bit of a pass word, and draw eight streak ribbons on a ring.
