@@ -2482,3 +2482,9 @@ Grade: capture and disassembly. An arm's per-pass spawn call seated once per one
 Grade: disassembly and capture. The word `0x801DC8B8` reads is the anim node's `+0x68` cursor, signed, in sixteenths of a keyframe, and each state in the magic band that runs the case holds an endpoint of `ring[1] * 2 + 0x700 - facing`, slot `1` of the cursor ring being the pass's value ahead of its anim tick. The engine handed the case, and `FUN_801D71B8`'s arms, the cursor rounded down to a whole keyframe, which aimed Rugi's Poisonous Breath `17` units short and Devil Pump's Multi Cutter `24`. A moving endpoint also takes the displayed frame's walk back: the capture channel's `clip_clock_end_shift` gives the walk its `24` a pass, and Poisonous Breath's `3350` under `3368` walks to the `3320` an image scan of the frame finds independently.
 
 Owning page: [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#the-cast-drivers-clip-clock).
+
+### Noa's stand in Scythe Wind
+
+Grade: capture. Noa stood `60` px off retail's in `battle_jou_nova_v3_scythe_wind_mid_cast` because the frame was on the replay's camera. PROT 0951's arms `3..=5` re-aim every pass, so the child's alignment agreed on no component and dropped the pose it was given, which is also why a yaw scan of that frame moved nothing. Standing on the walked-back pose reads `.691` to `.942`, and the two other Scythe Wind states rise with it.
+
+Owning page: [`retail-compare.md`](../../tooling/retail-compare.md#a-shot-that-re-aims-every-pass).

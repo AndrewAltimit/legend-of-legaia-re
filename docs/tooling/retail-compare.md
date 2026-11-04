@@ -3809,6 +3809,15 @@ off the cursor ring when the RAM's endpoint fits the case's law, and the walk ba
 runs against it (`displayed_cam_live_steps`'s `end_shift`). This is a read of the
 capture and changes no game state.
 
+#### A shot that re-aims every pass
+
+The alignment takes only the components whose endpoint the replay's framing agrees
+with, which suits a shot armed once. A shot re-armed every pass reads its inputs on
+its own clock, so it agrees on nothing and the child would keep the replay's pose.
+The monster strike loop and Scythe Wind's arms `3..=5` stand on the walked-back pose
+outright instead (`RetailBattle::stand_on_displayed_pose`,
+`LEGAIA_BATTLE_CAM_STAND_DISPLAYED`).
+
 #### A shot armed after the displayed frame
 
 The magic band's shot arms on the first `0x2B` pass

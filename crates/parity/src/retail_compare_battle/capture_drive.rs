@@ -215,11 +215,23 @@ impl RetailBattle {
     /// reads the law. The same stand over every battle state loses badly
     /// (`cort_evolved_final_crisis_mid_cast` `1.000` to `.344`): those shots
     /// were not armed by the pass the table describes.
+    ///
+    /// Scythe Wind's arms `3..=5` are the same shape: each held pass re-aims
+    /// the shot (`scythe_wind_camera`'s sweep, `0x801F7C04` / `0x801F7D30` /
+    /// `0x801F8008`), so the table describes its pass, and the replay's sweep
+    /// reads its own countdown and heading. `battle_jou_nova_v3_scythe_wind_mid_cast`
+    /// reads `.691` on the replay's pose, with Noa near the camera `60` px off,
+    /// and `.942` here; every other cast in the corpus's band falls.
     pub fn stand_on_displayed_pose(&self) -> bool {
-        matches!(
+        let strike = matches!(
             (self.seed_plan(), self.span_gate),
             (SeedPlan::Action { seat, state: 0x1E }, SpanGate::Age { .. }) if seat >= 3
-        ) && self.queued_category == 3
+        ) && self.queued_category == 3;
+        let scythe_sweep = self.active_actor >= 3
+            && self.action_state == 0x70
+            && self.queued_action == 0x5B
+            && (3..=5).contains(&self.module_phase);
+        strike || scythe_sweep
     }
 
     /// A monster's magic-band capture: [`SpanGate::Age`] on a monster seat,

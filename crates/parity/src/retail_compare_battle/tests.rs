@@ -2059,6 +2059,12 @@ fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
     b.active_actor = 4;
     b.action_state = 0x2B;
     assert!(!b.stand_on_displayed_pose(), "a cast");
+    b.action_state = 0x70;
+    b.queued_action = 0x5B;
+    b.module_phase = 3;
+    assert!(b.stand_on_displayed_pose(), "Scythe Wind's sweep");
+    b.module_phase = 2;
+    assert!(!b.stand_on_displayed_pose(), "the arm that arms once");
 }
 
 /// The recorded case-6 tail of Aluru Cannon: TR z `4772` walks `+36` on the
