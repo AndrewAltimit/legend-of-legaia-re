@@ -1126,14 +1126,14 @@ impl BattleDrive {
             let seat = engine_seat(seat, pc);
             if seat >= pc {
                 world.battle.forced_monster_cast = Some((seat, queued));
-                // A party seat keeps its number; the caster's own retail
-                // seat is re-keyed to its engine seat.
+                // A party seat keeps its number; a monster seat, the caster's
+                // own or the patient of its Heal, is re-keyed to its engine seat.
                 world.battle.forced_monster_target = self
                     .steering()
                     .and_then(|s| s.target)
                     .and_then(|t| match t {
                         0..3 => Some(t),
-                        t if engine_seat(t, pc) == seat => Some(seat),
+                        t if t < 8 => Some(engine_seat(t, pc)),
                         _ => None,
                     });
             }

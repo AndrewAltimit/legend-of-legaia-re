@@ -817,8 +817,8 @@ impl RetailBattle {
             // at its own increment (`jou_nova_v3_pre_scythe_wind`: yaw `2251`
             // on `2` a vsync reads best at `2242`, where the re-arm's widening
             // share took it to `2233`).
-            let unarmed_setup =
-                game_anchors::u8_at(ram, ctx + 6) == 0xFF && PRE_SEED_STATES.contains(&action_state);
+            let unarmed_setup = game_anchors::u8_at(ram, ctx + 6) == 0xFF
+                && PRE_SEED_STATES.contains(&action_state);
             let walk = |steps: &[u8]| {
                 if action_state == CAPTURE_FADE_STATE || module_shot || unarmed_setup {
                     displayed_module_cam_live(ram, ctx, steps)

@@ -1243,6 +1243,10 @@ impl RetailBattle {
                         || (seat >= 3
                             && matches!(self.queued_category, 2 | 3)
                             && self.target_code < 3)
+                        // A monster's Heal on another monster: the Spirit band
+                        // films its patient (`FUN_801D5854` on the stacked target
+                        // in `0x3F` / `0x40`) and names it on the plaque.
+                        || (seat >= 3 && self.queued_category == 2 && self.target_code < 8)
                         // A monster cast on itself (Cort's Ultra Charge,
                         // `+0x1DD == ctx[+0x13]`): retail's cast-begin skips
                         // the facing store for a self target (`beq v0,t2` at
