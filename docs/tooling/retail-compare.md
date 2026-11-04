@@ -1962,7 +1962,9 @@ the Done band `0x50..=0x5A` - the acting seat and its target, whose clips run
 with the action the seed has already placed. The capture-class band
 `0x6F..=0x71` seats them all the same while they idle (clip `0`): its slot-B
 module paces itself on its own countdown and stages no clip on either seat, so
-the loop's cursor is time since the loop began. The summon band's invoke and
+the loop's cursor is time since the loop began. The setup passes `0x0A` / `0x0B`
+ahead of the seed have staged nothing yet and count as out of flight
+(`rikuroa_caruban_pre_fire_breath`'s Caruban fills the frame: `.675` to `.938`). The summon band's invoke and
 freeze (`0x32..=0x34`) are seated the same way: they stage no clip on the
 victim before the module's hit, so `gimard_summon_start`'s idling Gobu Gobu
 reads its loop's own clock (`.955` to `.979` on the battle-frame cadence,

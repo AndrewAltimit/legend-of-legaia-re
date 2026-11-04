@@ -804,7 +804,12 @@ impl RetailBattle {
                 // action SM sits through the command flow: no action runs,
                 // so the commanding member's idle loop is a clock like any
                 // other seat's (`delilas_che_hammer_gaps_v3`'s Che).
-                let in_flight = !matches!(self.action_state, 0 | 0xFD | 0xFF)
+                // `0x0A` / `0x0B` are the setup passes ahead of the seed `0x0C`:
+                // the acting seat has staged nothing yet, so its idle loop is a
+                // clock too (`rikuroa_caruban_pre_fire_breath`'s Caruban, a
+                // close-up its sway fills, reads `.675` on the replay's cursor
+                // and `.938` on retail's).
+                let in_flight = !matches!(self.action_state, 0 | 0x0A | 0x0B | 0xFD | 0xFF)
                     && staged
                     && !(0x50..=0x5A).contains(&self.action_state);
                 let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
