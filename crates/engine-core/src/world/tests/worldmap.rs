@@ -944,3 +944,15 @@ fn world_map_talk_probe_waits_out_an_engaging_script() {
         "a running beat engages the player: no talk opens under it"
     );
 }
+
+/// `_DAT_8007B605` is one global only the roll writes: a scene's first roll still
+/// tests the last scene's formation row.
+#[test]
+fn the_anti_repeat_latch_crosses_a_scene() {
+    use legaia_engine_battle::region_encounter::RegionEncounterTable;
+    let mut world = World::new();
+    world.encounters.last_formation = 3;
+    world.set_field_regions(Some(RegionEncounterTable::new("next")));
+    let tracker = world.terrain.region_tracker.as_ref().expect("tracker");
+    assert_eq!(tracker.last_formation(), 3);
+}

@@ -101,3 +101,11 @@ denominator on `0x29`; monster `0xB6` casting past its five round cases; Tetsu's
 post-amble missing whole; and a pass that failed on its target forgetting the cast it
 had stored. The generator's spell ids stop at the table's end, and a second test holds
 every shipped record to that bound.
+
+The encounter roll `FUN_801D9E1C` found the anti-repeat latch cleared on every scene
+entry, where retail's one global stands across them; the counter, the rate shifts, the
+story-group walk and the region's battle setup all match. The death arm of
+`FUN_8004AD80` and the MP-cost leaf `FUN_80035394` match. The death arm's table test
+leaves out row `0xBF`, which holds the neighbouring table's `[9, 0]`: retail would add
+item `0` there and the port refuses it, and a second test holds that no shipped monster
+reaches such a row.

@@ -622,6 +622,9 @@ pub struct RegionEncounterRoll {
     pub formation_id: u8,
 }
 
+/// `_DAT_8007B605` on the executable's image, before any roll has written it.
+pub const BOOT_LAST_FORMATION: u8 = 0xFF;
+
 /// Per-scene region-keyed encounter state (the `FUN_801D9E1C` step counter +
 /// anti-repeat latch).
 #[derive(Clone, Debug)]
@@ -634,8 +637,9 @@ pub struct RegionEncounterTracker {
     /// `_DAT_8007B5F8` user setting.
     setting: EncounterRateSetting,
     /// `_DAT_8007B605` - the previous formation id, for the one-step
-    /// anti-repeat. `None` until the first trigger.
-    last_formation: Option<u8>,
+    /// anti-repeat. One retail global: `0xFF` on the executable's image, written
+    /// only by the roll, so it stands across scenes, battles and doors.
+    last_formation: u8,
     /// Master suppression (post-battle grace / cutscene). When set, steps never
     /// advance the counter.
     suppressed: bool,
@@ -652,7 +656,7 @@ impl RegionEncounterTracker {
             table,
             counter: ENCOUNTER_COUNTER_BASE,
             setting: EncounterRateSetting::default(),
-            last_formation: None,
+            last_formation: BOOT_LAST_FORMATION,
             suppressed: false,
             modifiers: EncounterRateModifiers::default(),
             rate_permille: 1000,
@@ -722,11 +726,21 @@ impl RegionEncounterTracker {
         self.counter = counter;
     }
 
-    /// Reset per-scene state (scene change). Re-seeds the counter and clears
-    /// the anti-repeat latch.
+    /// The anti-repeat latch `_DAT_8007B605`.
+    pub fn last_formation(&self) -> u8 {
+        self.last_formation
+    }
+
+    /// Overwrite the anti-repeat latch: the world seeds a freshly installed
+    /// tracker from its carried value, as it does the step counter.
+    pub fn set_last_formation(&mut self, formation: u8) {
+        self.last_formation = formation;
+    }
+
+    /// Reset per-scene state (scene change). Re-seeds the counter; the
+    /// anti-repeat latch is not per-scene.
     pub fn reset(&mut self) {
         self.counter = ENCOUNTER_COUNTER_BASE;
-        self.last_formation = None;
         self.suppressed = false;
     }
 
@@ -767,7 +781,7 @@ impl RegionEncounterTracker {
         let count = region.formation_count;
         let pick = (rng() % count as u32) as u8;
         let mut formation_id = region.formation_base.wrapping_add(pick);
-        if Some(formation_id) == self.last_formation {
+        if formation_id == self.last_formation {
             // Advance one and wrap to base at the slice end.
             let end = region.formation_base.wrapping_add(count);
             formation_id = formation_id.wrapping_add(1);
@@ -775,7 +789,7 @@ impl RegionEncounterTracker {
                 formation_id = region.formation_base;
             }
         }
-        self.last_formation = Some(formation_id);
+        self.last_formation = formation_id;
 
         // Counter reset: 0x3ce + (rng_a % 0x1e7) - (rng_b % 0x1e7).
         self.counter = encounter_counter_reroll(&mut rng);

@@ -128,6 +128,7 @@ impl World {
                 tracker.counter()
             );
             self.encounters.step_counter = tracker.counter();
+            self.encounters.last_formation = tracker.last_formation();
             self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {

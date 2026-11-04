@@ -726,6 +726,7 @@ impl World {
             tracker.select_group(|flag| self.encounter_condition_flag_test(flag));
             let roll = tracker.on_step(wx, wz, || self.next_rand());
             self.encounters.step_counter = tracker.counter();
+            self.encounters.last_formation = tracker.last_formation();
             self.world_map.region_tracker = Some(tracker);
             if let Some(roll) = roll {
                 self.world_map.pending_encounter = Some(roll.formation_id as u16);
@@ -794,6 +795,7 @@ impl World {
         let mut tracker =
             legaia_engine_battle::region_encounter::RegionEncounterTracker::new(table);
         tracker.set_counter(self.encounters.step_counter);
+        tracker.set_last_formation(self.encounters.last_formation);
         self.world_map.region_tracker = Some(tracker);
         self.world_map.last_tile = None;
         self.world_map.seat_hold_tile = None;
@@ -825,6 +827,7 @@ impl World {
             let mut tracker =
                 legaia_engine_battle::region_encounter::RegionEncounterTracker::new(t);
             tracker.set_counter(self.encounters.step_counter);
+            tracker.set_last_formation(self.encounters.last_formation);
             tracker
         });
         self.refresh_encounter_rollable();

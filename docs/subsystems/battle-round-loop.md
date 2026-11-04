@@ -90,6 +90,8 @@ The tracker's trigger branch is destructive: it draws RNG, latches the anti-repe
 
 The MAN formation-row index the roll produces and the `World::tables.formation_table` key the battle load resolves are pinned equal across the scene corpus by [`scene_encounter_formations_disc.rs`](../../crates/engine-scene-host/tests/scene_encounter_formations_disc.rs), which also carries the New-Game-reset regression.
 
+The roll's anti-repeat latch `_DAT_8007B605` is one global, `0xFF` on the executable's image, and only the roll writes it. Scene entry leaves it alone, so a scene's first roll still tests the last scene's formation row; `EncounterState::last_formation` carries it between trackers.
+
 `World::force_encounter(row)` arms a named row through the same bracket. It is the engine side of `play-window --battle` ([playing-and-viewing.md](../guides/playing-and-viewing.md#getting-into-a-battle-on-purpose)) and does not shortcut into `enter_battle_from_formation`, so the harness exercises the path it verifies.
 
 ### Scripted-battle entry (`3E FF <row>`)

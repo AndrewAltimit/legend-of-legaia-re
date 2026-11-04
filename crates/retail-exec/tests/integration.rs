@@ -5,6 +5,8 @@
 mod arts_roll;
 mod battle_seed;
 mod common;
+mod death_spoils;
+mod encounter_roll;
 mod escape;
 mod field_walls;
 mod inventory;
