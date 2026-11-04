@@ -3180,6 +3180,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-cast",
  "legaia-engine-core",
+ "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
@@ -3189,6 +3190,7 @@ dependencies = [
  "legaia-game-tables",
  "legaia-lzs",
  "legaia-minigame-formats",
+ "legaia-render-kernels",
  "legaia-save",
  "legaia-scene-formats",
 ]

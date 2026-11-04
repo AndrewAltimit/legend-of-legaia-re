@@ -392,6 +392,12 @@ impl FishAi {
         }
     }
 
+    /// `(timer, phase, ceiling)`: the countdown `DAT_801D9110`, the surge phase
+    /// `DAT_801D9068` and the depth ceiling `DAT_801D929C`, for the differential.
+    pub fn probe(&self) -> (i32, i32, i32) {
+        (self.timer, self.phase, self.ceiling)
+    }
+
     /// Advance one hooked frame.
     ///
     /// `bias` is `DAT_801D9108` (the hook's strength `+ 0x400`,

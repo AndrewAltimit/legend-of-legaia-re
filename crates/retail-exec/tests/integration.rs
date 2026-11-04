@@ -17,6 +17,7 @@ mod death_spoils;
 mod encounter_roll;
 mod escape;
 mod field_vm;
+mod fishing_fight;
 mod field_walls;
 mod inventory;
 mod item_apply;
