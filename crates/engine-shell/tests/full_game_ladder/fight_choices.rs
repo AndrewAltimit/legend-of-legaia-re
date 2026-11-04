@@ -582,14 +582,35 @@ pub(super) fn wanted_power_item(
                 .is_some()
                 || miracle_ready(w, m)
                 || fury_pending(w, m))
-            && !w
+            && (!w
                 .battle
                 .buffs
                 .iter()
                 .any(|b| b.slot == m && b.stat == BuffStat::Attack)
+                || race_ramp_again(w, actor, m))
     })?;
     let mut ids = ids;
     attack_elixir(&mut ids).map(|id| (id, target))
+}
+
+/// Whether a second ramp on typist `m` beats what `giver` deals with the turn.
+/// Each use ramps the scalars again ([`legaia_engine_battle_vm::battle_formulas::buff_ramp`]),
+/// worth a fifth of what `m` still has to deal: its best measured Arts hit, for
+/// about half the rounds left, is the hand's estimate of that.
+fn race_ramp_again(w: &legaia_engine_core::world::World, giver: u8, m: u8) -> bool {
+    const FINISHER_MODE: u32 = 4;
+    if !racing_a_finisher(w) {
+        return false;
+    }
+    let mode = u32::from(w.battle.monster_ai_state.mode_flags);
+    let rounds_left = (FINISHER_MODE + 1).saturating_sub(mode);
+    let best = DEALT.with(|d| d.borrow().get(&(m, ART_KIND)).copied().unwrap_or(0));
+    let gain = best / 5 * rounds_left / 2;
+    let press = u32::from(legaia_engine_battle::arts_command_input::FAVORED_COST);
+    let own = race_spell_gain(w, giver, false).unwrap_or_else(|| {
+        (u32::from(w.actors[usize::from(giver)].battle.agl) / press).min(9) * 100
+    });
+    gain > own
 }
 
 /// Whether member `m` has committed a Fury Boost this round: a Miracle typist
@@ -1029,7 +1050,12 @@ pub(super) fn arts_plan(
     // Koru takes about 2500..3200 from a Miracle (99 AP), about 1000 from nine
     // plain swings (0 AP) and about 1200 from a Super (54 AP), so AP spent
     // short of the Miracle buys next to nothing.
-    let saving = racing_a_finisher(w) && armed;
+    let saving = racing_a_finisher(w)
+        && armed
+        && legaia_art::MIRACLE_ARTS
+            .iter()
+            .find(|m| m.character == character)
+            .is_some_and(|m| cost(m.commands) <= s.pool_max);
     let pays = |cmds: &[Command]| spirit_pays(w, s.actor, cmds, gauge);
     let swings = |cmds: &[Command]| spirit_pays(w, s.actor, cmds, if saving { 0 } else { gauge });
     let mut normal: Vec<(legaia_art::ActionConstant, &[Command])> = w
