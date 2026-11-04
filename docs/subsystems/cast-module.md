@@ -2428,8 +2428,8 @@ the reaction staged in the `OR` form (`World::apply_summon_pre_hits`,
 `seru_magic_ticks::summon_pre_hit`). Mushura's is quartered and floored at
 `1`. Each of Mushura's and Zenoir's rolls also adds to the readout's value
 window `0x801F6980` through the finisher, and the module trades the raw roll
-there for the amount it applied; every Mushura roll keeps the readout flag down,
-so its cluster never opens at all. PROT 0933's pre-hit stages no reaction
+there for the amount it applied; every Mushura roll keeps the readout flag down
+until arm `0xC`'s pass raises it, which opens the [value rows](battle-hud.md). PROT 0933's pre-hit stages no reaction
 (`0x801F7D2C..0x801F7D3C`), and PROT 0928's parks the flinch at rate `0`
 (`0x801F81C8`) until arm `0x13` sets the row going: neither sounds a cue before
 the kill. Not carried: the `0x10` / `0x12` mode the wrapper is called with, and

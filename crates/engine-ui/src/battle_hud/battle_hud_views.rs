@@ -512,6 +512,9 @@ pub struct BattleHudFrame<'a> {
     /// The target plaque's offset below its rest seat while its raise glide
     /// runs (`engine-battle-hud::battle_target_plaque_dy`).
     pub target_plaque_dy: i32,
+    /// The value window's name plates (`engine-battle-hud::battle_multi_readout_plates`):
+    /// name, element badge, content-box `x` and rise, one per row.
+    pub multi_plates: &'a [(String, Option<u8>, i32, i32)],
     /// The active-actor bar's offset below its rest seat while its raise
     /// glide runs (`engine-battle-hud::battle_readout_bar_dy`):
     /// positive from the seed's raise until it lands. `0` at rest.

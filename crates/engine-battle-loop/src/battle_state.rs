@@ -490,9 +490,6 @@ pub struct BattleState {
     /// readout flag `DAT_8007B64C` its wrapper hits clear and a later arm
     /// raises (PROT 0959's barrage, `BattleHud::hold_combo`).
     pub combo_cluster_held: bool,
-    /// The held cluster is thrown away instead of opened (PROT 0915, whose
-    /// rolls all keep the readout flag down).
-    pub combo_cluster_dropped: bool,
     /// A debug seed that makes the next party killing blow's steal roll
     /// land - the retail comparison corpus's way into a capture that shows
     /// the death-spoils caption: the capture holds the outcome of a
@@ -1274,7 +1271,6 @@ impl BattleState {
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
             forced_guard: [false; 3],
             combo_cluster_held: false,
-            combo_cluster_dropped: false,
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,

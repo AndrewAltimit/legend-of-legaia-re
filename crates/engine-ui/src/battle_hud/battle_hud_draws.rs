@@ -888,6 +888,34 @@ pub fn battle_hud_draws_for(
         stage_text(&mut text, font, name, content_x + lead, content_y, ink);
     }
 
+    // ---- The value window's name plates ----
+    //
+    // Records `0x60..=0x63`, on the blue class like the target plaque, their
+    // fixed content width `0x3C` from the record, one per row of a cast
+    // aimed at the whole monster row (`FUN_801E805C`'s flag pass).
+    for (name, badge_index, x, dy) in frame.multi_plates {
+        let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        let plate_y = BAR_Y + *dy;
+        plate_run(
+            &mut text,
+            &mut sprites,
+            *x - PLATE_CAP_W,
+            plate_y,
+            0x3C,
+            false,
+        );
+        let content_y = plate_y + PLAQUE_CONTENT_DY;
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, *x, content_y);
+        }
+        stage_text(&mut text, font, name, *x + lead, content_y, ink);
+    }
+
     // ---- The target-select plaque ----
     //
     // Placement record `0x29`: `FUN_801D5854`'s target-cursor arm measures

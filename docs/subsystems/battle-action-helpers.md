@@ -1248,7 +1248,7 @@ The engine runs it at each party dispatch - a strike, an arts string and a singl
 
 The seed state raises the per-action **target banner**. Retail's seed body ends every category arm at the same `jal 0x801e6d84` (`0x801E3028`). Category `5` (Run / Defend) is the one arm that returns before raising anything; categories `0` and `4` raise the caster banner and skip the target arm.
 
-Port: `battle_action::dispatch::raise_target_banner` runs `plan_target_banner` (`engine-battle-vm::battle_cue_group`) and raises each HUD element id it lists through `BattleActionHost::ui_element`. Two retail inputs are abstracted, neither of which reaches the id list: `ctx[+0x24B]` (the `target == 9` override slot, passed as `0`) and the `FUN_80035F04` descriptor width the banner-width term subtracts.
+Port: `battle_action::dispatch::raise_target_banner` runs `plan_target_banner` (`engine-battle-vm::battle_cue_group`) and raises each HUD element id it lists through `BattleActionHost::ui_element`. The HUD arms the value rows itself ([battle-hud](battle-hud.md), `battle_multi_readout_rows`). Two retail inputs are abstracted, neither of which reaches the id list: `ctx[+0x24B]` (the `target == 9` override slot, passed as `0`) and the `FUN_80035F04` descriptor width the banner-width term subtracts.
 
 <a id="battle-helper-functions"></a>
 ## Dump aliases in the `0x801Fxxxx` band

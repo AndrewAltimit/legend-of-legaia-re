@@ -745,6 +745,25 @@ reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
 0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the
 band's fold.
 
+**A row-aimed cast opens value rows instead.** The action seed `FUN_801E6D84`
+lists every living monster in `0x801F6978` when the target is the every-enemy code
+`9` and no lone survivor replaced it (`ctx[+0x24B]`), and always for spells `0x82`,
+`0x86` and `0x8D`, whose single target stays on the plate list. The finisher then
+adds each hit to its target's halfword in the value window `0x801F6980`
+(`0x801DE3C4..0x801DE43C`) with `_DAT_8007BD14` left at `0`, so the flag pass finds
+no cluster to open. It opens a pair of records per row instead (`0x801E8128..`): the
+row's name plate `0x60..=0x63`, rising from `y = 236` to `194`, and its value record
+`0x5C..=0x5F` at the same `x`, gliding in from `160` right; `0x801F6834` lists the
+records by row count, so one row rests at `x = 244` and four at `16 / 92 / 168 / 244`.
+`FUN_801E805C` draws a row's digits as `16` px cells under its value record and the
+`DAMAGE` word once, over the last row. A hit that keeps the flag down counts without
+opening: PROT 0915's rolls store `0` there and its arm `0xC`'s pass raises it
+(`0x801F7DA0`), so `0x8D` holds `75`, then `2574`, in the window from arm 8 on and
+shows the rows only at arm `0xD`. Retail states: `0x8D` reads count `1`, window
+`2574` and `_DAT_8007BD14 = 0` in arm `0xC`; `0x82` and `0x86` read the same shape,
+`+0x1DD` staying `3` under `0x82`. Port: `BattleHud::multi_readout`,
+`battle_value_readout::multi_row_cluster`, `battle_multi_readout_plates`.
+
 **A party-wide cast opens nothing.** The flag a cast hit raises is the
 finisher's: `FUN_801DDB30` stores `0x78` and adds the hit to the damage word
 `_DAT_8007BD14` only when the attacker's `+0x1DD` is a slot (`sltiu v0,v1,7`

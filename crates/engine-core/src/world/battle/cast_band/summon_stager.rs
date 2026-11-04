@@ -337,12 +337,10 @@ impl World {
                 };
                 if strike {
                     // The fold's own finisher raises the readout flag the
-                    // module's pre-hits kept down. PROT 0915 has no fold: every
-                    // one of its rolls stores `0` there, so its cluster never
-                    // opens and the hits it counted go with it.
+                    // module's pre-hits kept down. PROT 0915 has no fold: its
+                    // rolls store `0` there and arm `0xC`'s pass raises it
+                    // (`li v0,0x78` at `0x801F7DA0`).
                     self.battle.combo_cluster_held = false;
-                    self.battle.combo_cluster_dropped =
-                        self.cast_module_for(st.spell_id) == Some(915);
                     self.fold_pending_cast();
                     st.phase = SummonPhase::Linger;
                     st.frames = 0;
@@ -351,9 +349,6 @@ impl World {
             }
             SummonPhase::Linger => {
                 st.frames = st.frames.saturating_add(1);
-                if st.frames == 2 {
-                    self.battle.combo_cluster_dropped = false;
-                }
                 // A module still running owns the creature's clip: PROT 0934
                 // holds clip `3` through its closing arm `0x19`.
                 if st.frames == 1

@@ -241,6 +241,7 @@ pub fn battle_hud_frame_draws(
     let plaque = bh::battle_active_actor(w);
     let third_tab = bh::battle_breadcrumb_third_tab(w);
     let target_plaque = bh::battle_target_plaque(w);
+    let multi_plates = bh::battle_multi_readout_plates(w, inputs.hud);
     let target_select = bh::battle_target_select_plaque(w);
     let move_name = bh::battle_move_name(w);
     let message_bar = bh::battle_message_bar(w);
@@ -303,6 +304,7 @@ pub fn battle_hud_frame_draws(
             target_plaque: target_plaque.as_ref().map(|(n, b)| (n.as_str(), *b)),
             plaque_dy: bh::battle_action_plaque_dy(w),
             target_plaque_dy: bh::battle_target_plaque_dy(w),
+            multi_plates: &multi_plates,
             bar_dy: bh::battle_readout_bar_dy(w),
             panels_dy: bh::battle_round_prompt_panels_dy(w),
             target_select: target_select.as_ref().map(|(n, b)| (n.as_str(), *b)),

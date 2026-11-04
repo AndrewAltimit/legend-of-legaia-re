@@ -925,7 +925,7 @@ impl World {
         }
     }
 
-    fn living_monster_slots(&self) -> Vec<usize> {
+    pub fn living_monster_slots(&self) -> Vec<usize> {
         let pc = usize::from(self.party.party_count);
         (pc..self.actors.len().min(pc + 5))
             .filter(|&s| {

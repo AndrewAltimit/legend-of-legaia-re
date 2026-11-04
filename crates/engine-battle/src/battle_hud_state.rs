@@ -112,11 +112,50 @@ pub struct BattleHud {
     combo_actor: Option<u8>,
     /// Hits land without opening the cluster ([`Self::hold_combo`]).
     combo_held: bool,
+    /// The value window of a cast aimed at the whole monster row
+    /// ([`MultiReadout`]); the combo cluster stays shut while it is armed.
+    pub multi_readout: Option<MultiReadout>,
     /// The action in flight is a melee string (armed [`ComboStyle::HitTotal`]):
     /// its hits count on the cluster without opening it, and only the hit
     /// that lands the target's accumulated total opens it
     /// ([`Self::land_combo_total`]).
     combo_melee: bool,
+}
+
+/// The value window `0x801F6980` a cast aimed at the whole monster row keeps
+/// instead of the combo cluster: the action seed lists the targets
+/// (`FUN_801E6D84`), the finisher adds each hit to its target's row
+/// (`0x801DE3C4..0x801DE43C`) and raises the readout flag, and the flag's pass
+/// opens a value record and a name plaque per row (`FUN_801E805C`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MultiReadout {
+    /// The acting seat the window was armed for.
+    pub actor: u8,
+    /// `(target slot, running value)`, in the seed's list order.
+    pub rows: Vec<(u8, u32)>,
+    /// A raised flag opened the rows; a held hit counts without opening.
+    pub open: bool,
+    /// Frames since the latest raise opened the rows, or since the close.
+    pub age: u16,
+    /// The `0x51` teardown closed them: they glide back out.
+    pub closing: bool,
+}
+
+impl MultiReadout {
+    /// The rows' offset off their rest seat, on the combo cluster's glide:
+    /// the value records' two seats stand `160` apart as record `0x50`'s do.
+    pub fn slide(&self) -> i32 {
+        if self.closing {
+            COMBO_SLIDE_IN_X - combo_slide(self.age)
+        } else {
+            combo_slide(self.age)
+        }
+    }
+
+    /// The rows' values, in list order.
+    pub fn values(&self) -> Vec<u32> {
+        self.rows.iter().map(|&(_, v)| v).collect()
+    }
 }
 
 /// The combo counter cluster's running values.
@@ -177,6 +216,7 @@ impl BattleHud {
             combo_style: None,
             combo_actor: None,
             combo_held: false,
+            multi_readout: None,
             combo_melee: false,
         }
     }
@@ -308,6 +348,19 @@ impl BattleHud {
         if !popup.is_heal
             && popup.status.is_none()
             && popup.amount > 0
+            && let Some(m) = self.multi_readout.as_mut()
+        {
+            if let Some(row) = m.rows.iter_mut().find(|(s, _)| *s == popup.slot) {
+                row.1 += u32::from(popup.amount);
+                if !self.combo_held {
+                    m.open = true;
+                    m.closing = false;
+                    m.age = 0;
+                }
+            }
+        } else if !popup.is_heal
+            && popup.status.is_none()
+            && popup.amount > 0
             && let Some(style) = self.combo_style
         {
             let held = self.combo_held || self.combo_melee;
@@ -345,16 +398,16 @@ impl BattleHud {
     /// `0x801F7F18`) and its arm `0x0F` raises it once as it passes
     /// (`0x801F802C..0x801F8034`), so the eleven hits open the cluster on the
     /// barrage's last pass, already counted. Releasing a held cluster opens
-    /// it then. Dropping one, for a cast that never raises the flag, loses
-    /// what it counted.
-    pub fn drop_held_combo(&mut self) {
-        if self.combo.as_ref().is_some_and(|c| c.hidden) {
-            self.combo = None;
-        }
-    }
-
+    /// it then.
     /// Hold (or release) the cluster's opening: see the note above.
     pub fn hold_combo(&mut self, held: bool) {
+        if self.combo_held
+            && !held
+            && let Some(m) = self.multi_readout.as_mut().filter(|m| !m.open)
+        {
+            m.open = m.rows.iter().any(|&(_, v)| v > 0);
+            m.age = 0;
+        }
         if self.combo_held
             && !held
             && let Some(c) = self.combo.as_mut().filter(|c| c.hidden)
@@ -408,6 +461,26 @@ impl BattleHud {
         self.combo_melee = style == Some(ComboStyle::HitTotal);
     }
 
+    /// Arm the value window for `actor`'s action on the listed targets, or
+    /// disarm it for an action that lists none. An action arms it once: the
+    /// seed lists the monsters living when it ran.
+    pub fn arm_multi_readout(&mut self, actor: u8, rows: Option<Vec<u8>>) {
+        match rows {
+            Some(rows) => {
+                if self.multi_readout.as_ref().is_none_or(|m| m.actor != actor) {
+                    self.multi_readout = Some(MultiReadout {
+                        actor,
+                        rows: rows.into_iter().map(|s| (s, 0)).collect(),
+                        open: false,
+                        age: 0,
+                        closing: false,
+                    });
+                }
+            }
+            None => self.multi_readout = None,
+        }
+    }
+
     /// Close the cluster in the action SM's `0x51` fade-down, as retail
     /// does: the band's teardown (countdown under `0xC`, latched once per
     /// action, `0x801E6158..0x801E6214`) hard-resets the element list
@@ -426,6 +499,10 @@ impl BattleHud {
         if closed && let Some(c) = self.combo.as_mut().filter(|c| !c.closing) {
             c.closing = true;
             c.age = 0;
+        }
+        if closed && let Some(m) = self.multi_readout.as_mut().filter(|m| m.open && !m.closing) {
+            m.closing = true;
+            m.age = 0;
         }
     }
 
@@ -482,6 +559,9 @@ impl BattleHud {
         }
         if let Some(c) = &mut self.combo {
             c.age = c.age.saturating_add(1);
+        }
+        if let Some(m) = &mut self.multi_readout {
+            m.age = m.age.saturating_add(1);
         }
         // A closed cluster is gone once its slide-out has run.
         if self
