@@ -7,7 +7,8 @@ How [`legaia-engine-render`](../../crates/engine-render/README.md) draws a frame
 The 3D mesh pipelines carry the PSX rasterisation traits below. Only three
 of them - the GTE's register limits, vertex snap and dithering - are gated, by
 `Renderer::set_psx_mode(true)` (off by default); the rest are unconditional,
-and semi-transparency has its own switch. The hosts run PSX mode on the
+and semi-transparency has its own switch. PSX mode also sets the
+field's [draw order](#the-field-sorts-by-each-primitives-link). The hosts run PSX mode on the
 [native target](#the-native-target), the frame drawn at the display's own
 `320 x 240`.
 
