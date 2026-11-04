@@ -245,6 +245,39 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
 
+### Freed's ghost draws solid
+
+`open` `battle_doman_boogie_pump_windcutter_mid_cast` (image `0.19`, the worst new
+state) and `battle_uru2_nurga_glare_mid_cast`: retail's `+0x8` on seat 3 reads
+`0x83000000` and the body draws faint. The port's ghost pass raises the same word
+on the same seat, measured in the image child, yet Freed `$2` (id 93) draws opaque
+and fills the frame from beside the camera. So the pass is right and the draw is
+not: the suspects are the path this mesh takes to its TSB words or its CLUT's STP
+bits. Retail's row `484` carries STP on every non-zero entry. Grade `capture`.
+
+### The map display pointer's ink
+
+`partial` On `world_map_display_map01_retail` the pointer draws dark red with shaded
+facets; the port draws its colour word as ABE `1` additive over the ground, bright
+orange. Grade `capture` for the frame; the record's program is `disassembly`
+([world-map](../subsystems/world-map.md#the-map-display---prot-0981)). The frame
+says the word's blend does not reach the pixel. Closing it wants a packet read of
+the pointer's prims under `FUN_801CE850`.
+
+### A battle target surface's replay
+
+`open` `battle_item_target_gaza2_retail` (`ctx[+0x06] = 0x64`) and
+`battle_magic_target_gaza2_retail` (`0x5C`) hold a party pick reached through a
+window; `BattleDrive::Menu`'s steer only reaches the cursor through the Attack arm,
+so neither drive lands. Both states are held on disk under `captures/` and not in
+the catalog until the drive can take a window's row first.
+
+### The results frame's camera
+
+`partial` `battle_results_gimard_retail` matches the win pose and the window and
+scores `0.81` on a framing some pixels off (`camera` `0.86`). The camera's phase on
+the results drift is not placed by the seed. Grade `capture`.
+
 ### Zenoir's walk over a small window
 
 **Status: open.** Retail's arithmetic lets Zenoir's creature step over a victim's range window (510 units a pass against a window 448 across, `+0x1F = 14`) and hold arm 8 for good ([cast-module.md](../subsystems/cast-module.md#prot-0908-zenoir)). The port hit this in about one Zenoir cast in two hundred and guards it. Not settled: whether a retail fight does it, since the frame step `4` is a measurement of one recording, and a step of `3` (382 units) cannot miss. Evidence that closes it: a PCSX-Redux recording of Zenoir against monster 27, 36 or 63 reading the creature's `+0x34` through arm 8.

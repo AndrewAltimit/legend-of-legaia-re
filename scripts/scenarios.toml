@@ -6407,3 +6407,552 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "chitei2"
 topics = ["battle", "enemy cast", "Kemaro $2", "Lava Breath", "chitei2", "harvest", "pre-cast"]
+
+[[scenarios]]
+label = "menu_use_list_conc_retail"
+backup_fingerprint = "966feb965da5ec13f3f3856c4f47290460bdfa938fd43a532a52b5232a94b63f"
+description = "Items Use list over conc, every row dim with the party full, sub-screen 0x06. SELECT 60, CROSS 240 420, checkpoint 600. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "lists", "retail-compare"]
+
+[[scenarios]]
+label = "menu_throw_list_conc_retail"
+backup_fingerprint = "8a146b9a099ba6d5e3bc837ae6dc6f2be940fc27a28e6627f6be780804bbd57d"
+description = "Items Throw Out list over conc, sub-screen 0x07. SELECT 60, CROSS 240, DOWN 400, CROSS 460, checkpoint 640. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "lists", "retail-compare"]
+
+[[scenarios]]
+label = "menu_spell_list_conc_retail"
+backup_fingerprint = "ec628c2bb9e1f36ed7714cd887910d64e6955b729d0973f9768b98998eb83a08"
+description = "Magic spell list over conc, Vahn, sub-screen 0x0F. SELECT 60, DOWN 200, CROSS 260 460, checkpoint 620. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "lists", "retail-compare"]
+
+[[scenarios]]
+label = "menu_status_skills_conc_retail"
+backup_fingerprint = "d2e230e539cfbe089e452b682c3bc714aaf25f42abcc56a4cadb44788abd28ca"
+description = "Status screen's Skills page over conc, sub-screen 0x15, page cursor 1. SELECT 60, DOWN 200 240 280, CROSS 340, RIGHT 500, checkpoint 620. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "status", "retail-compare"]
+
+[[scenarios]]
+label = "menu_status_magic_conc_retail"
+backup_fingerprint = "c683e6dd7e11f2df44c775d0089d4ee8e4516e30c59a9bb4b3e2fc8d549bf871"
+description = "Status screen's Magic page, list parked, page cursor 2. As the Skills page, RIGHT 500 640, checkpoint 760. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "status", "retail-compare"]
+
+[[scenarios]]
+label = "menu_status_moves_conc_retail"
+backup_fingerprint = "89312b0ac4295dcf51d38bb2bba1bf462d907b968ca3ce3aed34ebbc9acdf40c"
+description = "Status screen's Moves page, list parked, page cursor 3. As the Skills page, RIGHT 500 640 780, checkpoint 900. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "status", "retail-compare"]
+
+[[scenarios]]
+label = "menu_status_magic_list_conc_retail"
+backup_fingerprint = "6a742dca9d60563517a22e39c6904082d4b439952cb950906f80cb360c36bc67"
+description = "Status screen's Magic list holding the pad, step 6. RIGHT 500 640, CROSS 780, checkpoint 940. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "status", "retail-compare"]
+
+[[scenarios]]
+label = "menu_status_moves_list_conc_retail"
+backup_fingerprint = "686fec4ba5ca20b4ce0f3f3fea826f67f56d2441c9430049492792ac8b02583e"
+description = "Status screen's Moves list holding the pad, step 7, Command arrows up. RIGHT 500 640 780, CROSS 900, checkpoint 1060. RETAIL disc, pad only, no pokes: conc_field_card_boot (autorun_menu_screen_dump.lua, --fast), party = Vahn, Noa, Gala at the endgame card's save."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "conc"
+topics = ["menu", "status", "retail-compare"]
+
+[[scenarios]]
+label = "shop_arms_root_retock_retail"
+backup_fingerprint = "6adc240eecdef93e982d732f9192ce388cee08a9db523f7c19b74e786a040575"
+description = "retock Arms Shop, sub-screen 0x1A, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "shop_arms_buy_retock_retail"
+backup_fingerprint = "73d9cc3ef6b8b4b4d42e601401809a2771f5ddc392d2d2d6bbaf1fa77164af22"
+description = "retock Arms Shop, sub-screen 0x1B, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "shop_arms_recipient_retock_retail"
+backup_fingerprint = "46572bc2c0dbb6a5df4993a1768bd3665eb634ff543c752065ba646c1e33ed9a"
+description = "retock Arms Shop, sub-screen 0x1C, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "shop_items_root_retock_retail"
+backup_fingerprint = "e552c9f6fdec680d6be7160fb28d7e0a42427979fe4fa4e840d36e1f445b67bf"
+description = "retock Items Shop, sub-screen 0x1A, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "shop_items_buy_retock_retail"
+backup_fingerprint = "dfd5e7c0e6ddb39ec1d4aa633152e13a9816343ffb511285738d6238b330a895"
+description = "retock Items Shop, sub-screen 0x1B, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "shop_sell_list_retock_retail"
+backup_fingerprint = "836453f52d3f7be9bb9c5c2f255b681c3a51e5477cdcd6c29c49e32210e9ded3"
+description = "retock Items Shop, sub-screen 0x1E, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "shop_sell_quantity_retock_retail"
+backup_fingerprint = "b3dc8aa7d15a4e33682bf6d9555570208ea790fa5124181e27cdf066a7988c8e"
+description = "retock Items Shop, sub-screen 0x1F, after the talk with its merchant; the camera stands where the door left it. RETAIL disc: retock_field_card_boot by autorun_screen_walk.lua --turbo: a tile poke onto the shop's door, the player's position poked beside the merchant for the talk, then pad only; no other RAM written."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "world_map_display_map01_retail"
+backup_fingerprint = "402a1b7e62c553815820bb9c4a635d46dfeb730b03297c38e0b062c6d06e7b05"
+description = "Map display (game mode 0x0D) over map01, East Voz Forest label up, mini-map panel on. RETAIL disc, pad only: map01_field_door_hop, L1 120 vsyncs in, saved 240 later (autorun_screen_walk.lua --turbo). Inherits the door hop's tile pokes."
+phase = "field"
+expected_game_mode = 0x0D
+expected_active_scene = "map01"
+topics = ["world map", "map display", "retail-compare"]
+
+[[scenarios]]
+label = "battle_results_gimard_retail"
+backup_fingerprint = "851efc92e394969b4805c0e98da57b2074baceff9efcca3fe37850f2bc4c960e"
+description = "Results window after the Rim Elm Gimard fight, 'Vahn won the battle!', action state 0x5A. RETAIL disc, no input: rim_elm_gimard_victory played forward 490 vsyncs (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "town0b"
+topics = ["battle", "results", "retail-compare"]
+
+[[scenarios]]
+label = "battle_item_window_gaza2_retail"
+backup_fingerprint = "247a3fb4bc23502058389d02e77ca21f6ff313727819f7d9bedc2c6201761306"
+description = "Gaza boss fight's item window, ctx[+0x06] 0x3C. CROSS 30, UP 50, saved 90 vsyncs on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_magic_window_gaza2_retail"
+backup_fingerprint = "719ddf0ffb1c668c520e785eb796901d7197f3eb8a14233cbb83c90af743fe80"
+description = "Gaza boss fight's magic window, ctx[+0x06] 0x46. CROSS 30, RIGHT 50, saved 90 vsyncs on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_auto_prompt_gaza2_retail"
+backup_fingerprint = "6fd6c624709d5727f32560ebc5bb169d12c29af1339d6c41bfd9db58bb53d6fd"
+description = "Gaza boss fight's Auto / Command prompt, ctx[+0x06] 0x78. CROSS 30, LEFT 50, saved 90 vsyncs on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_commit_confirm_gaza2_retail"
+backup_fingerprint = "8e8361dc6708bc363a055f1aa42925d08dcd15748025d48aa669654668c53b17"
+description = "Gaza boss fight's commit confirm after three Spirit commits, ctx[+0x06] 0x6E. CROSS 30, DOWN 50 110 170, saved 90 vsyncs on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_map01_evil_fly_strike"
+backup_fingerprint = "815ddf11e0a7a25035e5b56a3fa1bb14e3ef8f827f0b30b7126ffe392c579d1d"
+description = "map01 battle, formation [1]: monster id 1 mid physical attack: category 3, action state 0x1E. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_stone_gold_face_strike"
+backup_fingerprint = "594e438db6afc1a7200bdc92eeb4b64099c23de415fd72de1cbd729464d0878b"
+description = "stone battle, formation [125]: monster id 125 mid physical attack: category 3, action state 0x1E. RETAIL disc: stone_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "stone"
+topics = ["battle", "enemy attack", "stone", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa2_golem_jagged_earth_mid_cast"
+backup_fingerprint = "6db7b1c108bca06b9797577f9bf04f4060d3c09675b5e8efc331d4e386a990e2"
+description = "rikuroa2 battle, formation [128]: monster id 128 mid-cast spell 0x35: category 2, action state 0x2B. RETAIL disc: rikuroa2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa2"
+topics = ["battle", "enemy attack", "rikuroa2", "harvest"]
+
+[[scenarios]]
+label = "battle_uru2_nurga_glare_mid_cast"
+backup_fingerprint = "71de671801924f711f0aa4333e2891570e3511c5c76447fc068ccd8db760a8d0"
+description = "uru2 battle, formation [93, 132]: monster id 132 mid-cast spell 0x3C: category 2, action state 0x70. RETAIL disc: uru2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "uru2"
+topics = ["battle", "enemy attack", "uru2", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_songi_strike"
+backup_fingerprint = "2c82de51596fff321ba09bf10a96ce478e4012c2087bf0cae75d0ca5993b73d4"
+description = "retona battle, formation [136]: monster id 136 mid physical attack: category 3, action state 0x1E. RETAIL disc: retona_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_jagaroom_van_saryu_earthquake_mid_cast"
+backup_fingerprint = "0f708feff784aba023e4567eef2b23404077a5b9a0afd61e86bd8d767d6bf0f2"
+description = "jagaroom battle, formation [137]: monster id 137 mid-cast spell 0x4A: category 2, action state 0x70. RETAIL disc: jagaroom_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jagaroom"
+topics = ["battle", "enemy attack", "jagaroom", "harvest"]
+
+[[scenarios]]
+label = "battle_jagaroom_van_saryu_strike"
+backup_fingerprint = "81ed0171efc690f26d329ee6cf1d8e51642e8bdfe1c4761316b3757a46f3e575"
+description = "jagaroom battle, formation [137]: monster id 137 mid physical attack: category 3, action state 0x1E. RETAIL disc: jagaroom_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jagaroom"
+topics = ["battle", "enemy attack", "jagaroom", "harvest"]
+
+[[scenarios]]
+label = "battle_dohaty_dohati_chaos_breath_mid_cast"
+backup_fingerprint = "9a745b02c577f0016d607157eededc1f4ac03245f097f3cd6eb5d3ecc691f79e"
+description = "dohaty battle, formation [138]: monster id 138 mid-cast spell 0x4E: category 2, action state 0x70. RETAIL disc: dohaty_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dohaty"
+topics = ["battle", "enemy attack", "dohaty", "harvest"]
+
+[[scenarios]]
+label = "battle_dohaty_dohati_strike"
+backup_fingerprint = "d92c74786152c5360d264d993eaa23da155fe04e0f93e4a69c99587ea03c8d43"
+description = "dohaty battle, formation [138]: monster id 138 mid physical attack: category 3, action state 0x1E. RETAIL disc: dohaty_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dohaty"
+topics = ["battle", "enemy attack", "dohaty", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelc_xain_bloody_horns_mid_cast"
+backup_fingerprint = "1cd2b347c949a1e42ad9bf119784821b11cf3ce88aa98b473e1f53650551037f"
+description = "tunnelc battle, formation [139]: monster id 139 mid-cast spell 0x5C: category 2, action state 0x70. RETAIL disc: tunnelc_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelc"
+topics = ["battle", "enemy attack", "tunnelc", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelc_xain_terio_punch_mid_cast"
+backup_fingerprint = "359fca7c92f3a8d842df8f15ae74cb41d290aaa6c8d732ac32966f611bd8233a"
+description = "tunnelc battle, formation [139]: monster id 139 mid-cast spell 0x5D: category 2, action state 0x70. RETAIL disc: tunnelc_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelc"
+topics = ["battle", "enemy attack", "tunnelc", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelc_xain_bull_charge_mid_cast"
+backup_fingerprint = "c546e73dc31fdc1b2fe9edff7e7a901302a13edc9c7a53ca8567fcfccb7cdb4b"
+description = "tunnelc battle, formation [139]: monster id 139 mid-cast spell 0x5E: category 2, action state 0x70. RETAIL disc: tunnelc_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelc"
+topics = ["battle", "enemy attack", "tunnelc", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelc_xain_strike"
+backup_fingerprint = "40bf87190a994500a84c6dbe50a15935e676ea29987626800ea24f7e8598b9a6"
+description = "tunnelc battle, formation [139]: monster id 139 mid physical attack: category 3, action state 0x1E. RETAIL disc: tunnelc_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelc"
+topics = ["battle", "enemy attack", "tunnelc", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_gaza_165_astral_slash_mid_cast"
+backup_fingerprint = "a5c5cb75bc15ef4957efaedabfc9bfe301ffe1d39830a8f8fe51d4a650d85493"
+description = "kor battle, formation [165]: monster id 165 mid-cast spell 0xB8: category 2, action state 0x70. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_gaza_165_strike"
+backup_fingerprint = "729fc8d0ff17ffe9c2a2a17ee20dab8f8baed051f7ecd1571efeb245c8692865"
+description = "kor battle, formation [165]: monster id 165 mid physical attack: category 3, action state 0x1E. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_gaza_166_astral_wave_mid_cast"
+backup_fingerprint = "8569da4ac00216e4a7d24fcf33919df65be6a6195a700fbdd5d517aa38f6feec"
+description = "kor battle, formation [166]: monster id 166 mid-cast spell 0x6A: category 2, action state 0x2B. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_kor_gaza_166_strike"
+backup_fingerprint = "966342d0a4edfba7789c5a099b2ce88ff20dc663bcf3ddfc7605aea6ffa68c8d"
+description = "kor battle, formation [166]: monster id 166 mid physical attack: category 3, action state 0x1E. RETAIL disc: kor_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "kor"
+topics = ["battle", "enemy attack", "kor", "harvest"]
+
+[[scenarios]]
+label = "battle_deene_lapis_lapis_wave_mid_cast"
+backup_fingerprint = "da7f8b8968a6bd56ee657c8d1cd3161ca58d80626e50b4bcfb469c6bb4ee9b4e"
+description = "deene battle, formation [167]: monster id 167 mid-cast spell 0xB5: category 2, action state 0x70. RETAIL disc: deene_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deene"
+topics = ["battle", "enemy attack", "deene", "harvest"]
+
+[[scenarios]]
+label = "battle_deroa_jette_shadow_break_mid_cast"
+backup_fingerprint = "c3d9bd0b03b8bbe4902e4d62fc0ecf389a5620e81c7071fcc8637cd33325babb"
+description = "deroa battle, formation [170, 170]: monster id 170 mid-cast spell 0xAB: category 2, action state 0x70. RETAIL disc: deroa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy attack", "deroa", "harvest"]
+
+[[scenarios]]
+label = "battle_deroa_jette_clone_mid_cast"
+backup_fingerprint = "71bf86a03f9583777b3b727269bb45adb8e5c672db23abeeafdf468d9056a0d4"
+description = "deroa battle, formation [170]: monster id 170 mid-cast spell 0xAE: category 2, action state 0x70. RETAIL disc: deroa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy attack", "deroa", "harvest"]
+
+[[scenarios]]
+label = "battle_deroa_jette_strike"
+backup_fingerprint = "8138e801a399bc3d91e3d3c05f59fca8a9fea5dee3e1974ffafb50d2cf642736"
+description = "deroa battle, formation [170, 170]: monster id 170 mid physical attack: category 3, action state 0x1E. RETAIL disc: deroa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy attack", "deroa", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_caruban_2_fire_breath_mid_cast"
+backup_fingerprint = "a41a3495ed081467a91fe2e7b0265940ccbb79e3514e649617f146963e16970e"
+description = "rugi battle, formation [171]: monster id 171 mid-cast spell 0x25: category 2, action state 0x2B. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_caruban_2_strike"
+backup_fingerprint = "79ead7f8e9221047819db7aabbf90eecb98d700f49e7d274da7539a0dbb90ebe"
+description = "rugi battle, formation [171]: monster id 171 mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_caruban_3_fire_breath_mid_cast"
+backup_fingerprint = "8defa4405208b0ff880c93cd83d5c517e975d12eee0c113e8cbe63478ece0872"
+description = "rugi battle, formation [172]: monster id 172 mid-cast spell 0x25: category 2, action state 0x2B. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_caruban_3_strike"
+backup_fingerprint = "d4b62e1bac0556a577af00263ed15237ca27948055dd73de6835287954963abe"
+description = "rugi battle, formation [172]: monster id 172 mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_berserker_2_strike"
+backup_fingerprint = "b2ecae7d995e12df9e528d1bf34c3e7b0c2053bb3b4facc1b7890484ecfec2f7"
+description = "rugi battle, formation [173]: monster id 173 mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_berserker_3_strike"
+backup_fingerprint = "85a3018219763e3150dca104cc130f79115ed52fd2fad9ddd750e28098797ffb"
+description = "rugi battle, formation [174]: monster id 174 mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_noaru_songi_chaos_flare_mid_cast"
+backup_fingerprint = "9ca78a786196e330235125f6ff8d1c03cb436a02c7cfd8d1769058cedacdb65b"
+description = "noaru battle, formation [179]: monster id 179 mid-cast spell 0x36: category 2, action state 0x70. RETAIL disc: noaru_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "noaru"
+topics = ["battle", "enemy attack", "noaru", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_cort_181_strike"
+backup_fingerprint = "56c4635113e779df5b6efd693ef63edf53fdecec03237f4f87263b4418c9028e"
+description = "jou battle, formation [181]: monster id 181 mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_cave01_black_piura_strike"
+backup_fingerprint = "86bc916b439daa53fca1a76c9c3a54f398ffb3eaa2142c9ee88021d8af803e85"
+description = "cave01 battle, formation [20]: monster id 20 mid physical attack: category 3, action state 0x1E. RETAIL disc: cave01_attached_light played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "cave01"
+topics = ["battle", "enemy attack", "cave01", "harvest"]
+
+[[scenarios]]
+label = "battle_cave01_theeder_thunderbolt_mid_cast"
+backup_fingerprint = "ee5a64475267b1b565614dc6b6b0a3e0eab4754960897ef1d44b88529d132d28"
+description = "cave01 battle, formation [25, 22]: monster id 25 mid-cast spell 0x26: category 2, action state 0x2B. RETAIL disc: cave01_attached_light played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "cave01"
+topics = ["battle", "enemy attack", "cave01", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_lip_kid_kiss_of_death_mid_cast"
+backup_fingerprint = "1dafea382571a321218716e46b88de19984026ef1c13a9b96a168e1fff198730"
+description = "map02 battle, formation [58, 32]: monster id 32 mid-cast spell 0x6E: category 2, action state 0x70. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_boogie_pump_windcutter_mid_cast"
+backup_fingerprint = "a3e5afc93c05c4040eaf9538e91a7a5783f4c8ff2acb26f88f544ca3762bdece"
+description = "doman battle, formation [93, 48]: monster id 48 mid-cast spell 0x3A: category 2, action state 0x2B. RETAIL disc: doman_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy attack", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_doman_boogie_pump_strike"
+backup_fingerprint = "88b9e4d6e4a5ebb5d93b37b4881e4a90a406669b2069a2cde7b9d8268be9bb3c"
+description = "doman battle, formation [93, 48]: monster id 48 mid physical attack: category 3, action state 0x1E. RETAIL disc: doman_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "doman"
+topics = ["battle", "enemy attack", "doman", "harvest"]
+
+[[scenarios]]
+label = "battle_vell_lippian_strike"
+backup_fingerprint = "7b070f85257985377b7ed66a109ddcc86da0312be0bc4149426586c8fb1e914d"
+description = "vell battle, formation [49, 31]: monster id 31 mid physical attack: category 3, action state 0x1E. RETAIL disc: vell_fog_field played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vell"
+topics = ["battle", "enemy attack", "vell", "harvest"]
+
+[[scenarios]]
+label = "battle_vell_nighto_49_strike"
+backup_fingerprint = "5695c1bdf5d3f91302ad8bee15ddfa2e1b3217570bdb46ba19ebb3b6e31c93fd"
+description = "vell battle, formation [49, 31]: monster id 49 mid physical attack: category 3, action state 0x1E. RETAIL disc: vell_fog_field played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vell"
+topics = ["battle", "enemy attack", "vell", "harvest"]
+
+[[scenarios]]
+label = "battle_geremi_spikefish_strike"
+backup_fingerprint = "fe11d26e3e3df52038e49d70fb04372ee410537b43ba8d73c340db7e1199f395"
+description = "geremi battle, formation [70, 50]: monster id 70 mid physical attack: category 3, action state 0x1E. RETAIL disc: geremi_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "geremi"
+topics = ["battle", "enemy attack", "geremi", "harvest"]
+
+[[scenarios]]
+label = "battle_town01_killer_bee_strike"
+backup_fingerprint = "8f853ab252f955981ac6ea814135d5855c7032b18d73c98d22044e55c2b39522"
+description = "town01 battle, formation [62, 62, 62, 63]: monster id 62 mid physical attack: category 3, action state 0x1E. RETAIL disc: town01_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "town01"
+topics = ["battle", "enemy attack", "town01", "harvest"]
+
+[[scenarios]]
+label = "battle_town01_queen_bee_strike"
+backup_fingerprint = "095ecda19965b1defbb1a973827aa6ab984fc87c56a3a1dfde5bb2a23cef3e8f"
+description = "town01 battle, formation [62, 62, 62, 63]: monster id 63 mid physical attack: category 3, action state 0x1E. RETAIL disc: town01_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "town01"
+topics = ["battle", "enemy attack", "town01", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_gobu_gobu_steal_mid_cast"
+backup_fingerprint = "6049d9e859d2e262bb2d2aba1f129f1476b7767fc13cd2215e77e4d5d94ea22b"
+description = "map01 battle, formation [4, 7]: monster id 4 mid-cast spell 0x51: category 2, action state 0x70. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and maximum raised to 9999 at round prompts (LEGAIA_TOUGH=2, kept on the HUD), monster HP written to 1 after the Spirit rounds (LEGAIA_FINISH); the action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "map01", "harvest"]

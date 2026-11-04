@@ -1308,7 +1308,8 @@ What state `0x3C` puts on screen, read out of its own display list. The
 | item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
 | description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line |
 | hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7) at `(167, 45 + 14*row)` - row pitch 14 |
-| rows | eight per page; `PAGE n/m` header top-right, counts right-aligned at the interior's right edge |
+| rows | eight per page on the list kernel's pen `WX = 174`: name at `WX + 0xC`, the bag count in the three-cell number field at `WX + 0x6C`; a row's ink is its enable bit, not the hand |
+| header | the kernel's `PAGE` tag and digits, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 35)`, digits at x `279`, `293`, `299`); the page triangles at `(308, 94)` and `(162, 94)` blink on the frame word |
 | breadcrumbs | gold tab plates `Begin` \| acting member's name \| `Item` top-left, replacing the actor-name plaque while the window is up |
 
 Content pens (row text, header, description line, breadcrumb seats) are
