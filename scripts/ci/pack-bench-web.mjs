@@ -23,7 +23,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { launchChromium, serveSite } from './browser-session.mjs';
+import { launchChromium, playBundle, serveSite } from './browser-session.mjs';
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf('--' + name);
@@ -36,7 +36,7 @@ const MAPS = arg('maps', 'genesis_1f,isles_beach,isles_village').split(',');
 const REPEAT = +arg('repeat', 5);
 const MAP = arg('map', 'isles_beach');
 const disc = process.env.LEGAIA_DISC_BIN;
-if (!disc || !fs.existsSync(disc) || !fs.existsSync(path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm'))) {
+if (!disc || !fs.existsSync(disc) || !playBundle(site)) {
   console.log('[skip] pack-bench-web needs LEGAIA_DISC_BIN and a built site/wasm bundle');
   process.exit(0);
 }

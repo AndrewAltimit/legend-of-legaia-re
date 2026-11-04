@@ -45,7 +45,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { launchChromium, rendererString, serveSite } from './browser-session.mjs';
+import { launchChromium, playBundle, rendererString, serveSite } from './browser-session.mjs';
 
 const argv = process.argv;
 const arg = (name, dflt) => {
@@ -334,9 +334,9 @@ async function hashSite(site, opts) {
   const { port, stop } = await serveSite(site);
   const browser = await launchChromium({ gl: opts.gl, vsync: false });
   const header = [`# site ${site}`];
-  const wasm = path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm');
-  header.push(`# wasm sha256 ${crypto.createHash('sha256').update(fs.readFileSync(wasm)).digest('hex')}`);
-  const stampPath = path.join(site, 'wasm', 'SOURCE_STAMP.json');
+  const bundle = playBundle(site);
+  header.push(`# wasm sha256 ${crypto.createHash('sha256').update(fs.readFileSync(bundle.wasm)).digest('hex')}`);
+  const stampPath = bundle.stamp;
   if (fs.existsSync(stampPath)) {
     const stamp = JSON.parse(fs.readFileSync(stampPath));
     header.push(`# wasm profile ${stamp.profile} source ${String(stamp.source_stamp).slice(0, 16)}`);
@@ -470,7 +470,7 @@ async function main() {
   }
   const site = path.resolve(arg('site', path.join(REPO, 'site')));
   const disc = process.env.LEGAIA_DISC_BIN;
-  if (!disc || !fs.existsSync(disc) || !fs.existsSync(path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm'))) {
+  if (!disc || !fs.existsSync(disc) || !playBundle(site)) {
     console.log('[skip] frame-hash-web needs LEGAIA_DISC_BIN and a built site/wasm bundle');
     process.exit(0);
   }

@@ -53,14 +53,21 @@ def frame_bench():
 
 
 def read_bundle(site: Path) -> tuple[dict[str, float], str]:
-    wasm = site / "wasm" / "legaia_web_viewer_bg.wasm"
-    stamp = site / "wasm" / "SOURCE_STAMP.json"
-    if not wasm.exists() or not stamp.exists():
-        return {}, f"no bundle under {site}/wasm"
-    profile = json.loads(stamp.read_text()).get("profile")
-    if profile != "release":
-        return {}, f"the bundle under {site}/wasm is a {profile} build, not the shipped one"
-    return {"bundle/gzip_bytes": len(gzip.compress(wasm.read_bytes(), 6))}, ""
+    """`bundle/gzip_bytes` is the tool bundle, `bundle/play_gzip_bytes` the one players load."""
+    found: dict[str, float] = {}
+    for key, rel, stem in (
+        ("bundle/gzip_bytes", "wasm", "legaia_web_viewer"),
+        ("bundle/play_gzip_bytes", "wasm/play", "legaia_web_play_bundle"),
+    ):
+        wasm = site / rel / f"{stem}_bg.wasm"
+        stamp = site / rel / "SOURCE_STAMP.json"
+        if not wasm.exists() or not stamp.exists():
+            return found, f"no bundle under {site}/{rel}"
+        profile = json.loads(stamp.read_text()).get("profile")
+        if profile != "release":
+            return found, f"the bundle under {site}/{rel} is a {profile} build, not the shipped one"
+        found[key] = len(gzip.compress(wasm.read_bytes(), 6))
+    return found, ""
 
 
 def read_browser(site: Path) -> tuple[dict[str, float], str]:

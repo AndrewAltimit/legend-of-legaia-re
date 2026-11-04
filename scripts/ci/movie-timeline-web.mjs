@@ -32,7 +32,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { launchChromium, serveSite } from './browser-session.mjs';
+import { launchChromium, playBundle, serveSite } from './browser-session.mjs';
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf('--' + name);
@@ -41,7 +41,7 @@ const arg = (name, dflt) => {
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const site = path.resolve(arg('site', path.join(REPO, 'site')));
 const disc = process.env.LEGAIA_DISC_BIN;
-if (!disc || !fs.existsSync(disc) || !fs.existsSync(path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm'))) {
+if (!disc || !fs.existsSync(disc) || !playBundle(site)) {
   console.log('[skip] movie-timeline-web needs LEGAIA_DISC_BIN and a built site/wasm bundle');
   process.exit(0);
 }

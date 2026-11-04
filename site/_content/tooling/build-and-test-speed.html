@@ -50,8 +50,9 @@
 
 <section class="doc-section" id="wasm" data-doc="the-wasm-bundle">
   <h2>The wasm bundle</h2>
-  <p>The shipped bundle is <code>scripts/ci/build-wasm.sh</code>: <code>release</code> plus <code>wasm-opt</code> stripping. A one-line edit in <code>engine-core</code> costs three quarters of a clean build, and no one step is why: it is the chain above the edit, each crate compiled whole, then the thin-LTO link. So the iteration path is a separate build.</p>
-  <div class="cli"><code>scripts/ci/build-wasm.sh --fast   # site/wasm/ from the wasm-fast profile, no wasm-opt
+  <p>The shipped bundles are <code>scripts/ci/build-wasm.sh</code>: <code>release</code> plus <code>wasm-opt</code> stripping, the tool bundle into <code>site/wasm/</code> and the play bundle into <code>site/wasm/play/</code>. They share every rlib, so the second costs one more link and strip. A one-line edit in <code>engine-core</code> costs three quarters of a clean build, and no one step is why: it is the chain above the edit, each crate compiled whole, then the link. So the iteration path is a separate build.</p>
+  <div class="cli"><code>scripts/ci/build-wasm.sh --fast   # both bundles from the wasm-fast profile, no wasm-opt
+scripts/ci/build-wasm.sh --fast --only play   # one bundle; --strict refuses the mix
 scripts/ci/check-pages.mjs        # the same page checks run on it</code></div>
   <div class="table-wrap">
   <table>
@@ -60,7 +61,8 @@ scripts/ci/check-pages.mjs        # the same page checks run on it</code></div>
       <tr><td>Clean target directory</td><td>about 6 min</td><td>about 5 min</td></tr>
       <tr><td>One line, <code>engine-core</code></td><td>4.5 min</td><td>30 s</td></tr>
       <tr><td>One line, <code>web-play</code></td><td>2 min</td><td>30 s</td></tr>
-      <tr><td><code>.wasm</code>, raw / gzip</td><td>21.3 / 6.9 MB</td><td>33.4 / 8.3 MB</td></tr>
+      <tr><td>Tool <code>.wasm</code>, raw / gzip</td><td>21.4 / 6.9 MB</td><td>33.4 / 8.3 MB</td></tr>
+      <tr><td>Play <code>.wasm</code>, raw / gzip</td><td>14.5 / 4.8 MB</td><td>-</td></tr>
     </tbody>
   </table>
   </div>

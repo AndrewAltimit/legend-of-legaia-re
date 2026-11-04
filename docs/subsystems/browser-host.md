@@ -10,9 +10,16 @@ The browser side is five crates:
 - [`legaia-web-minigames`](../../crates/web-minigames/README.md) - the minigames page's `LegaiaMinigames` (the play page holds one for the art it draws over an in-world minigame) and `LegaiaModes`, whose pack loader lists the game-modes page's instances.
 - [`legaia-web-patcher`](../../crates/web-patcher/README.md) - the ROM patcher, texture replacer and language-pack workbench (`rom_patcher`, `texture_registry`, `texture_pack`, `translate_workbench`); it names no engine crate.
 - [`legaia-web-expansion`](../../crates/web-expansion/README.md) - the expansion workbench (`catalog`, `session`, `wasm`): an engine-layer crate whose previews are the engine's own kernels.
-- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the `cdylib` the site loads.
+- [`legaia-web-viewer`](../../crates/web-viewer/README.md) - the asset inspectors, and the tool bundle's `cdylib`.
+- [`legaia-web-play-bundle`](../../crates/web-play-bundle/README.md) - the play bundle's `cdylib`, over `web-play` and `web-minigames` alone.
 
-`web-viewer` depends on `web-play`, `web-patcher` and `web-expansion`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate the `cdylib` links, so `LegaiaRuntime` and `LegaiaMinigames` reach the page from the same `legaia_web_viewer.js` as `LegaiaViewer`: which crate an export lives in is invisible to the site's JS. A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
+`web-viewer` depends on `web-play`, `web-patcher` and `web-expansion`, and `web-play` on `web-minigames`, never the reverse. wasm-bindgen collects the `#[wasm_bindgen]` exports of every crate a `cdylib` links.
+
+So the site has two modules: the play bundle in `site/wasm/play/`, which the pages in [`page-bundles.toml`](../../scripts/ci/page-bundles.toml) load (play, minigames, modes), and the tool bundle in `site/wasm/`, a superset, which every other page loads. Within a bundle, which crate an export lives in is invisible to the site's JS; between them, a page on the play bundle naming a tool export fails [export reach](../tooling/host-drift.md#page-export-reach).
+
+A framed page holds its own bundle: the expansion workbench is on the tool bundle and its 3D preview, `play.html?xwpreview=1`, on the play bundle, so that page loads both.
+
+A module name below is unique across the crates, except `field_npc`, which each crate has - `web-play`'s holds the catalog and its builders, `web-viewer`'s the NPC page's exports over them.
 
 ## Playing the port in the browser (`runtime` + `play`)
 

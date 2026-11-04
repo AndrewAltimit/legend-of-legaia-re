@@ -7,7 +7,7 @@
 <section class="doc-section" id="at-a-glance">
   <h2>At a glance</h2>
   <dl class="kv">
-    <dt>Crates</dt><dd><code>legaia-web-play</code> (the play runtime, over <code>legaia-web-minigames</code>, the minigames runtime) and <code>legaia-web-patcher</code> (the ROM patcher) under <code>legaia-web-viewer</code> (the inspectors and the <code>cdylib</code> the site loads): one wasm bundle, four products</dd>
+    <dt>Crates</dt><dd><code>legaia-web-play</code> (the play runtime, over <code>legaia-web-minigames</code>, the minigames runtime) and <code>legaia-web-patcher</code> (the ROM patcher) under <code>legaia-web-viewer</code> (the inspectors and the tool bundle&rsquo;s <code>cdylib</code>); <code>legaia-web-play-bundle</code> is the play bundle&rsquo;s, which the play, minigames and modes pages load: two wasm bundles</dd>
     <dt>Session</dt><dd><code>legaia_engine_session::BootSession</code> over the page&rsquo;s audio output - the type the native window runs</dd>
     <dt>Frame</dt><dd><code>tick_frame()</code> calls the session&rsquo;s tick in the native frame order and returns the scene a door just walked into</dd>
     <dt>Draw side</dt><dd>Resolved against the <em>same</em> scene resources the host built at scene entry; nothing is decoded twice</dd>

@@ -21,6 +21,16 @@ block under `crates/web-play/src/` and requires each to be
 A waiver that matches no export, or matches one the page now reaches, is
 stale and fails too, so the table cannot outlive what it excuses.
 
+It also holds the other direction of the play bundle. A page in
+`scripts/ci/page-bundles.toml` loads `site/wasm/play/`, which has no inspector,
+patcher or workbench exports, and a page that names one fails only when a player
+reaches that line, as `x is not a function`, or not at all where the page
+tests for the export first. So no source such a page loads - its own HTML, its
+`<script src>`s, the template's, and anything those import - may name a
+class or free function only the tool bundle's crates export. Comments do not count.
+A method is reachable only through its class, so the classes and free functions
+are the whole surface.
+
     python3 scripts/ci/check-page-export-reach.py          # check
     python3 scripts/ci/check-page-export-reach.py --list   # every unreached export and its waiver
 
@@ -39,6 +49,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 WEB_PLAY_SRC = REPO / "crates" / "web-play" / "src"
 SITE_SOURCES = [REPO / "site" / "js", REPO / "site" / "_content"]
+PAGE_BUNDLES = REPO / "scripts" / "ci" / "page-bundles.toml"
+CRATES = REPO / "crates"
+# The crates each bundle links that the other does not count here: the play bundle
+# is `web-play` over `web-minigames`, and the tool bundle is those plus these.
+TOOL_ONLY_CRATES = ("web-viewer", "web-patcher", "web-expansion")
+PLAY_CRATES = ("web-play", "web-minigames")
+# What `html_template` in site/_gen.py puts on every page.
+TEMPLATE_SCRIPTS = ("site-util.js", "wasm-loader.js", "layout.js", "main.js")
 WAIVERS = REPO / "scripts" / "ci" / "page-export-reach-waivers.toml"
 KINDS = {
     "probe": "a read-only state or diagnostic read a headless driver or oracle takes",
@@ -89,6 +107,97 @@ def reached_names(text: str) -> set[str]:
         re.findall(r"['\"]([a-z][a-z0-9_]*)['\"]", text)
     )
     return words | {p + c for p in prefixes for c in called}
+
+
+EXPORT_RE = re.compile(
+    r"#\[wasm_bindgen([^\]]*)\](?:\s*#\[[^\]]*\])*\s*pub\s+(?:async\s+)?(?:fn|struct|enum)\s+([A-Za-z0-9_]+)"
+)
+JS_NAME_RE = re.compile(r"js_name\s*=\s*\"?([A-Za-z0-9_]+)")
+
+
+def module_names(crates: tuple[str, ...]) -> set[str]:
+    """The classes and free functions these crates add to a module's namespace."""
+    out: set[str] = set()
+    for crate in crates:
+        for path in sorted((CRATES / crate / "src").rglob("*.rs")):
+            for attrs, name in EXPORT_RE.findall(path.read_text(encoding="utf-8")):
+                js = JS_NAME_RE.search(attrs)
+                out.add(js.group(1) if js else name)
+    return out
+
+
+def tool_only_names() -> set[str]:
+    return module_names(TOOL_ONLY_CRATES) - module_names(PLAY_CRATES)
+
+
+def strip_comments(text: str) -> str:
+    """Source text without `/* */`, `<!-- -->` and line comments: prose may name anything."""
+    text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
+    text = re.sub(r"<!--.*?-->", " ", text, flags=re.S)
+    return re.sub(r"(^|[\s;{}(),])//[^\n]*", r"\1", text)
+
+
+def page_sources(key: str) -> list[Path]:
+    """A page's HTML and every site script it loads, following imports."""
+    js_root = REPO / "site" / "js"
+    page = REPO / "site" / "_content" / f"{key}.html"
+    seen: dict[Path, None] = {page: None}
+    queue = [page] + [js_root / n for n in TEMPLATE_SCRIPTS]
+    while queue:
+        path = queue.pop()
+        seen[path] = None
+        text = path.read_text(encoding="utf-8", errors="replace")
+        refs = re.findall(r"""src=["'](?:\.\./)*js/([^"'?]+)""", text)
+        refs += re.findall(r"""(?:from\s+|import\s*\(\s*|import\s+)["']\./([^"'?]+\.js)""", text)
+        refs += re.findall(r"""new URL\(\s*["']\./([^"'?]+\.js)""", text)
+        for ref in refs:
+            dep = js_root / ref
+            if dep.is_file() and dep not in seen:
+                seen[dep] = None
+                queue.append(dep)
+    return list(seen)
+
+
+def named_tool_exports(text: str, tool_only: set[str]) -> set[str]:
+    return tool_only & set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", strip_comments(text)))
+
+
+def check_page_bundles(tool_only: set[str]) -> tuple[list[str], int]:
+    """Every problem, and how many pages the table puts on the play bundle."""
+    keys = tomllib.loads(PAGE_BUNDLES.read_text(encoding="utf-8"))["play"]
+    problems: list[str] = []
+    for key in keys:
+        if not (REPO / "site" / "_content" / f"{key}.html").is_file():
+            problems.append(f"PAGE BUNDLE {key!r} in {PAGE_BUNDLES.name}: no such page")
+            continue
+        for path in page_sources(key):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for name in sorted(named_tool_exports(text, tool_only)):
+                problems.append(
+                    f"WRONG BUNDLE {key}.html loads {path.relative_to(REPO)}, which names `{name}`: only the "
+                    f"tool bundle exports it. Move the export into {' or '.join(PLAY_CRATES)}, or take the "
+                    f"page off the play row of {PAGE_BUNDLES.relative_to(REPO)}"
+                )
+    return problems, len(keys)
+
+
+def selftest(tool_only: set[str]) -> list[str]:
+    """The rule against planted text, so a broken export scan cannot read as a clean page."""
+    out = []
+    for must in ("LegaiaViewer", "ExpansionWorkbench", "Workbench", "patch_rom"):
+        if must not in tool_only:
+            out.append(f"SELFTEST: `{must}` is not among the tool-only exports; the scan is broken")
+    for must_not in ("LegaiaRuntime", "LegaiaMinigames", "LegaiaModes", "card_saves_json"):
+        if must_not in tool_only:
+            out.append(f"SELFTEST: `{must_not}` reads as tool-only; the scan is broken")
+    if named_tool_exports("const v = new wasm.LegaiaViewer();", tool_only) != {"LegaiaViewer"}:
+        out.append("SELFTEST: a constructed tool class was not caught")
+    if named_tool_exports("wasm.patch_rom(a); // keep", tool_only) != {"patch_rom"}:
+        out.append("SELFTEST: a called tool function was not caught")
+    prose = "/* `LegaiaViewer`'s exports */\n// patch_rom\n<!-- Workbench -->\nconst u = 'https://x/y';"
+    if named_tool_exports(prose, tool_only):
+        out.append("SELFTEST: a comment read as a use")
+    return out
 
 
 def load_waivers() -> list[dict]:
@@ -143,6 +252,10 @@ def main() -> int:
                 f"and a reason"
             )
 
+    tool_only = tool_only_names()
+    bundle_problems, play_pages = check_page_bundles(tool_only)
+    problems += selftest(tool_only) + bundle_problems
+
     print(
         f"[page-export-reach] {len(exports)} LegaiaRuntime exports, {len(exports) - len(unreached)} "
         f"named by the page, {len(unreached)} waived or flagged"
@@ -151,6 +264,10 @@ def main() -> int:
         for p in problems:
             print(f"  - {p}")
         return 1
+    print(
+        f"[page-export-reach] {play_pages} pages on the play bundle name none of the "
+        f"{len(tool_only)} tool-only exports"
+    )
     print("[page-export-reach] ok")
     return 0
 

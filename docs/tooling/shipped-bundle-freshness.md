@@ -1,13 +1,19 @@
 # Local wasm bundle freshness
 
-`site/wasm/` is **build output and is not committed**. Two things produce it:
+`site/wasm/` is **build output and is not committed**. It holds two bundles: the
+tool bundle at its top (`legaia-web-viewer`) and the play bundle in `site/wasm/play/`
+(`legaia-web-play-bundle`), which the pages in
+[`page-bundles.toml`](../../scripts/ci/page-bundles.toml) load. Two things produce
+them:
 
 - [`scripts/ci/build-wasm.sh`](../../scripts/ci/build-wasm.sh), for browsing
   `site/` locally (about 6 min cold; `--fast` is
   [the edit loop](build-and-test-speed.md#the-wasm-bundle)).
-- The `deploy-pages` job in `main-ci.yml`, which runs its own `wasm-pack build`
-  into that path before publishing. **The deployed site is always built from
-  source** and has never loaded a committed bundle.
+- The `deploy-pages` job in `main-ci.yml`, which runs the same script, then
+  `--strict` below, before publishing: a deploy missing `site/wasm/play/` would
+  publish a play page that cannot start. **The deployed site is always built from
+  source** and has never loaded a committed bundle. The stamps stop at that step and
+  are not published.
 
 So there is nothing to keep in sync in the repository. What remains is a question
 about your working copy: *does the bundle I built still match the code I am
@@ -79,6 +85,15 @@ iteration bundle, whose pages behave as the shipped ones do, and `--strict` refu
 it, because its size and speed say nothing about what ships. `--strict --any-profile`
 accepts it.
 
+Each bundle has its own stamp beside it and its own closure from its root crate. The
+tool bundle links the play host, so an edit in `web-play` stales both, while an edit
+in `web-viewer` stales only the tool bundle. `--bundle play` asks about one. Asked
+about both, `--strict` refuses bundles built under different profiles, even with
+`--any-profile`, since a site with one iteration bundle in it is a build nobody
+meant to serve: the page you checked is on one and the page you did not is on the
+other. `build-wasm.sh --only play` makes that state on purpose, for an edit loop on
+one page.
+
 ### "Tracked files only" was a third way of guessing wrong
 
 The enumeration was a plain `git ls-files`, which is the index and nothing else.
@@ -96,11 +111,13 @@ computed under the old set is treated as unreliable rather than merely old.
 ## Running it
 
 ```bash
-scripts/ci/build-wasm.sh                              # build + stamp
+scripts/ci/build-wasm.sh                              # build both + stamp
+scripts/ci/build-wasm.sh --fast --only play           # the play page's edit loop
 python3 scripts/ci/check-wasm-freshness.py            # warn, exit 0
 python3 scripts/ci/check-wasm-freshness.py --strict   # fail, exit 1
-python3 scripts/ci/check-wasm-freshness.py --strict --any-profile   # a --fast bundle counts
-scripts/ci/check-wasm.sh --full                       # wasm-pack build + strict
+python3 scripts/ci/check-wasm-freshness.py --strict --any-profile   # --fast bundles count
+python3 scripts/ci/check-wasm-freshness.py --strict --bundle play   # one bundle
+scripts/ci/check-wasm.sh --full                       # shipped build + strict
 ```
 
 Run it before believing a locally served play page, and especially before telling
@@ -111,8 +128,8 @@ anyone a play-page fix is live. When stale it names the drifted files, because
 
 The stamp answers "is the bundle on disk built from this tree?". A *served*
 bundle has a second staleness axis the stamp cannot see: the browser's own HTTP
-cache. `site/js/wasm-loader.js` versions both `site/wasm/` URLs with a content hash
-of the bundle (see
+cache. `site/js/wasm-loader.js` versions both URLs of the page's bundle with a content hash
+of that bundle (see
 [`site-shell.md`](site-shell.md#script-cache-busting-is-content-addressed)), so
 a rebuild changes the URLs - but only once `_gen.py` regenerates the pages
 that carry the hash. A rebuilt bundle served under pages generated before it

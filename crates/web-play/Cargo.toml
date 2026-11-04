@@ -8,9 +8,9 @@ license.workspace = true
 # integration binary is built.
 autotests = false
 
-# An rlib only: the wasm bundle is `legaia-web-viewer`'s cdylib, which links
-# this crate, so its `#[wasm_bindgen]` exports land in the one module the site
-# loads.
+# An rlib only: the wasm bundles are the cdylibs of `legaia-web-play-bundle` and
+# `legaia-web-viewer`, which both link this crate, so its `#[wasm_bindgen]`
+# exports land in both modules.
 [lib]
 crate-type = ["rlib"]
 
@@ -72,9 +72,17 @@ console_error_panic_hook.workspace = true
 
 [dependencies.web-sys]
 workspace = true
+# The tool bundle's whole list, though this crate names only `console`, `Window`
+# and `Storage`: each bundle is a build of its own and cargo unifies features per
+# build, so a shorter list here compiles `web-sys` and everything above it twice.
 features = [
     "console",
     "Window",
+    "Document",
+    "Element",
+    "HtmlCanvasElement",
+    "CanvasRenderingContext2d",
+    "ImageData",
     "Storage",
 ]
 

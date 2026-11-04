@@ -1,0 +1,10 @@
+# Which wasm bundle a page loads. A page in `play` holds `site/wasm/play/`
+# (`crates/web-play-bundle`); every other page holds `site/wasm/`
+# (`crates/web-viewer`), which is a superset.
+#
+# Read by site/_gen.py, which tells the page, and by
+# scripts/ci/check-page-export-reach.py, which fails a page here that names an
+# export only the tool bundle has. Entries are page keys: the path under
+# site/_content/ without `.html`.
+
+play = ["play", "minigames", "modes"]

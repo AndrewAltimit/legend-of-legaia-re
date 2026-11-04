@@ -1,8 +1,8 @@
 # Everything in this directory is build output. Nothing here is committed.
 #
-# Produced either by `scripts/ci/build-wasm.sh` for local browsing, or by the
-# `deploy-pages` job in main-ci.yml, which runs its own `wasm-pack build` into
-# this path before publishing. The deployed site has therefore never loaded a
+# Produced by `scripts/ci/build-wasm.sh`, for local browsing and in the
+# `deploy-pages` job in main-ci.yml before publishing, with the play bundle in
+# `play/`. The deployed site has therefore never loaded a
 # committed bundle.
 #
 # It used to be committed anyway, and the cost was one-sided: 87 commits of a

@@ -13,7 +13,7 @@
 // page's frame function, with every wasm export and the GL calls wrapped in counters.
 // Needs a built bundle (scripts/ci/build-wasm.sh) and playwright-core; PLAYWRIGHT_CORE
 // names its directory when `~/.npm/_npx` does not hold one. A bundle built with
-// `web-viewer`'s `bench-alloc` feature also reports wasm allocations per frame.
+// `web-play-bundle`'s `bench-alloc` feature also reports wasm allocations per frame.
 //
 // `--reenter` enters each scene a second time, right after the first entry, and reports
 // that too: what a door back into a scene costs. `--entry-profile` samples each scene
@@ -50,7 +50,7 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
-import { chromiumProcesses, largestOf, launchChromium, rendererString, serveSite } from './browser-session.mjs';
+import { chromiumProcesses, largestOf, launchChromium, playBundle, rendererString, serveSite } from './browser-session.mjs';
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf('--' + name);
@@ -81,8 +81,8 @@ const CANVAS_SCALE = +arg('canvas-scale', 1);
 const PLAY_URL = arg('auto-quality') ? 'play.html' : 'play.html?autoquality=0';
 
 const disc = process.env.LEGAIA_DISC_BIN;
-const wasmPath = path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm');
-if (!disc || !fs.existsSync(disc) || !fs.existsSync(wasmPath)) {
+const bundle = playBundle(site);
+if (!disc || !fs.existsSync(disc) || !bundle) {
   console.log('[skip] frame-bench-web needs LEGAIA_DISC_BIN and a built site/wasm bundle');
   process.exit(0);
 }
@@ -766,9 +766,9 @@ async function main() {
   const browser = await launchChromium({ gl: GL, vsync: VSYNC });
   const out = { wasm: {}, startup: {}, scenes: {}, paths: {}, pacing: VSYNC ? 'vsync' : 'uncapped',
     cpu_throttle: THROTTLE ? { rate: THROTTLE, proxy: true } : null };
-  const raw = fs.readFileSync(wasmPath);
+  const raw = fs.readFileSync(bundle.wasm);
   out.wasm = { bytes: raw.length, gzip: zlib.gzipSync(raw, { level: 6 }).length };
-  const glue = fs.readFileSync(path.join(site, 'wasm', 'legaia_web_viewer.js'));
+  const glue = fs.readFileSync(bundle.glue);
   out.wasm.glue_bytes = glue.length;
 
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();

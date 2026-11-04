@@ -384,11 +384,15 @@ browser. `webgl-tmd.js` and `webgl-math.js` both changed content while still
 shipping `?v=zfight-1`; `layout.js` carried no marker at all. A content hash
 cannot be forgotten - it changes exactly when the bytes change, and only then.
 
-`site/wasm/` is versioned the same way, through one loader.
+`site/wasm/` is versioned the same way, through one loader, which also picks the
+bundle: `_gen.py` reads [`page-bundles.toml`](../../scripts/ci/page-bundles.toml) and
+sets `window.LEGAIA_WASM_BUNDLE` on a page it lists, whose `LEGAIA_WASM_V` is then the
+play bundle's. A call site never names a bundle. The expansion workbench's validation
+worker is the one other holder of the module's URLs, and takes the tool bundle's.
 [`site/js/wasm-loader.js`](../../site/js/wasm-loader.js) is a classic script the
 page template puts in every `<head>`; `LegaiaWasm.load()` imports the glue and
 passes the binary URL into the wasm-bindgen `init` explicitly, both carrying
-`?v=` from `window.LEGAIA_WASM_V` (a hash of the glue and the binary, written by
+`?v=` from `window.LEGAIA_WASM_V` (a hash of that bundle's glue and binary, written by
 `_gen.py`). Both halves matter: the glue fetches its binary through
 `import.meta.url`, which drops any query on the glue, so busting the glue alone
 can pair new glue with a cached binary. The loader is also the only import site,

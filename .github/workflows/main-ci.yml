@@ -6,7 +6,7 @@
 #     clippy, wasm32 type-check, then the disc-free test suite) on every
 #     push to the PR, so a red test stops a merge instead of breaking main.
 #     The release builds (`ci`) stay on push-to-main and workflow_dispatch.
-#     The deploy-pages job packages the wasm build with `wasm-pack`.
+#     The deploy-pages job packages both wasm bundles with `scripts/ci/build-wasm.sh`.
 #   - No scenarios symlink to materialize.
 #   - cargo runs directly on the runner (no docker-compose `rust-ci` service
 #     in this repo yet; the only compose service here is `ghidra`).
@@ -376,8 +376,8 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
-      - name: Build web-viewer for wasm32
-        run: cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer
+      - name: Build both wasm bundles' crates for wasm32
+        run: cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer -p legaia-web-play-bundle
 
   # -- Disc-Gated Test Suite --------------------------------------------------
   disc-test:
@@ -457,11 +457,27 @@ jobs:
       - name: Add wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
-      - name: Build web-viewer WASM
-        run: wasm-pack build crates/web-viewer --target web --release --out-dir ../../site/wasm
+      # Both bundles, by the same script a local build runs: the play page loads
+      # site/wasm/play/, so a deploy that built only the tool bundle would publish a
+      # site whose play page cannot start.
+      - name: Build both WASM bundles
+        run: scripts/ci/build-wasm.sh
 
       - name: Generate site pages
         run: python3 site/_gen.py
+
+      # Refuses a missing artifact, a stale stamp or a non-shipped profile on either
+      # bundle, and a page that does not carry its bundle's version. The stamps are
+      # local build state, so they stop at this step and do not publish.
+      - name: Refuse a site missing a bundle
+        run: |
+          python3 scripts/ci/check-wasm-freshness.py --strict
+          grep -q 'LEGAIA_WASM_BUNDLE="play"' site/play.html
+          if grep -q 'LEGAIA_WASM_V="0"' site/play.html site/viewer.html; then
+            echo "a page carries no bundle version" >&2
+            exit 1
+          fi
+          rm -f site/wasm/SOURCE_STAMP.json site/wasm/play/SOURCE_STAMP.json
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1

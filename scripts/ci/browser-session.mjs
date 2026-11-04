@@ -20,6 +20,21 @@ export function playwrightCore() {
   throw new Error('playwright-core not found; set PLAYWRIGHT_CORE');
 }
 
+/* The files of the bundle a site's play page loads: `{ wasm, glue, stamp }`, or null
+ * with none built. A site from before the play bundle had one module for every page,
+ * and the drivers still read it, because a paired run's base can be such a site. */
+export function playBundle(site) {
+  const of = (dir, stem) => ({
+    wasm: path.join(site, dir, `${stem}_bg.wasm`),
+    glue: path.join(site, dir, `${stem}.js`),
+    stamp: path.join(site, dir, 'SOURCE_STAMP.json'),
+  });
+  const play = of('wasm/play', 'legaia_web_play_bundle');
+  if (fs.existsSync(play.wasm)) return play;
+  const whole = of('wasm', 'legaia_web_viewer');
+  return fs.existsSync(whole.wasm) ? whole : null;
+}
+
 /* A static server over `site`, on a port of its own: `{ port, stop }`. */
 export async function serveSite(site) {
   const server = spawn('python3', ['-u', '-m', 'http.server', '0', '--bind', '127.0.0.1', '--directory', site],

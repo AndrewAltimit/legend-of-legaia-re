@@ -46,8 +46,8 @@ use legaia_disc_audit::tim_catalog;
 use legaia_disc_audit::tim_deep_catalog;
 use legaia_iso::image::{extract_prot_dat, extract_scus};
 use legaia_prot::toc_index::{EntryMeta, parse_prot_toc};
-#[cfg(feature = "bench-alloc")]
-mod bench_alloc;
+// The measurement build's counting allocator is `legaia-web-play-bundle`'s:
+// `frame-bench-web.mjs` reads it on the play page.
 
 use wasm_bindgen::Clamped;
 use wasm_bindgen::prelude::*;

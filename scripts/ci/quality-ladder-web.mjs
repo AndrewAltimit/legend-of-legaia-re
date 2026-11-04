@@ -20,7 +20,7 @@ import fs from 'fs';
 import path from 'path';
 import vm from 'vm';
 import { fileURLToPath } from 'url';
-import { launchChromium, serveSite } from './browser-session.mjs';
+import { launchChromium, playBundle, serveSite } from './browser-session.mjs';
 
 const arg = (name, dflt) => {
   const i = process.argv.indexOf('--' + name);
@@ -123,7 +123,7 @@ const run = (x, ms, gap, cost = 1, counts = true) => {
 
 /* --- The page --- */
 const disc = process.env.LEGAIA_DISC_BIN;
-if (!disc || !fs.existsSync(disc) || !fs.existsSync(path.join(site, 'wasm', 'legaia_web_viewer_bg.wasm'))) {
+if (!disc || !fs.existsSync(disc) || !playBundle(site)) {
   console.log('[skip] the page half needs LEGAIA_DISC_BIN and a built site/wasm bundle');
 } else {
   const { port, stop } = await serveSite(site);

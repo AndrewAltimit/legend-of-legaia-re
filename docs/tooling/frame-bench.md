@@ -190,8 +190,10 @@ the first entry; without it the bench's pick beats the prewarm. The summary
 line reports the head of the disc's read, the disc-load export (`load_disc_spans`) and
 the module's memory size.
 
-A bundle built with `web-viewer`'s `bench-alloc` feature adds wasm allocations per
-frame (`wasm-pack build --target web --release -- --features bench-alloc`). A wasm
+The driver reads the play bundle, the one the page loads, or a site's single module
+if it predates the split, so a paired run can have one as its base. A play bundle
+built with `web-play-bundle`'s `bench-alloc` feature adds wasm allocations per frame
+(`wasm-pack build crates/web-play-bundle --target web --release -- --features bench-alloc`). A wasm
 profile names its functions by index; `wasm-bindgen --keep-debug` over the cargo
 artifact gives a file whose name section resolves them.
 

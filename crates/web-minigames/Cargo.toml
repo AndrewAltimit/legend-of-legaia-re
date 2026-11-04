@@ -6,9 +6,9 @@ license.workspace = true
 # tests/integration.rs gathers every tests/*.rs into one binary.
 autotests = false
 
-# An rlib only: the wasm bundle is `legaia-web-viewer`'s cdylib, which links
-# this crate (through `legaia-web-play`), so its `#[wasm_bindgen]` exports land
-# in the one module the site loads.
+# An rlib only: the wasm bundles are the cdylibs of `legaia-web-play-bundle` and
+# `legaia-web-viewer`, which both link this crate, so its `#[wasm_bindgen]`
+# exports land in both modules.
 [lib]
 crate-type = ["rlib"]
 

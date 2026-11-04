@@ -657,7 +657,8 @@ cell's four corner heights.
 ## The 3D preview
 
 **Open 3D preview** on the Maps tab (and the Cutscenes, Battle, Cards and Modes tabs) frames the play
-page itself, as `play.html?xwpreview=1`, above the editor. It is not a second
+page itself, as `play.html?xwpreview=1`, above the editor, on its own module: the
+play bundle, beside the tool bundle the workbench holds. It is not a second
 renderer: the framed page runs its own `LegaiaRuntime`, reads the disc from
 the site's shared disc cache, loads the working pack's `.lxpack` and enters
 the map through the play page's own entry

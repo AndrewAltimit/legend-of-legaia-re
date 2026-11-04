@@ -50,7 +50,7 @@ sccache misses on workspace crates between checkouts by design: the checkout pat
 
 ## The wasm bundle
 
-The shipped bundle is `scripts/ci/build-wasm.sh`: `release` (thin LTO, one codegen unit) plus `wasm-opt` stripping. Measured with `CARGO_BUILD_JOBS=4` on the shared box, wall clock, sccache warm:
+The shipped bundles are `scripts/ci/build-wasm.sh`: `release` (one codegen unit) plus `wasm-opt` stripping. Both root crates are `cdylib` + `rlib`, and cargo runs LTO only when every crate type allows it, so the profile's `lto` does not reach them. Measured over the tool bundle with `CARGO_BUILD_JOBS=4` on the shared box, wall clock, sccache warm:
 
 | What | Shipped | `--fast` |
 |---|---|---|
@@ -60,20 +60,24 @@ The shipped bundle is `scripts/ci/build-wasm.sh`: `release` (thin LTO, one codeg
 | One line, `web-play` | 2 min | 30 s |
 | One line, `xa` (low in the graph) | 4.5 min | 35 s |
 | A function body, `engine-core` | - | 55 s |
-| `.wasm`, raw / gzip | 21.3 / 6.9 MB | 33.4 / 8.3 MB |
+| Tool `.wasm`, raw / gzip | 21.4 / 6.9 MB | 33.4 / 8.3 MB |
+| Play `.wasm`, raw / gzip | 14.5 / 4.8 MB | - |
 
-A one-line edit in `engine-core` costs three quarters of a clean build, and no one step is why. It is the chain above the edit, each crate compiled whole: `engine-core` itself about 85 s, `web-play` 55 s, the final thin-LTO link 35 s, the rest of the stack 70 s, and `wasm-bindgen` plus the strip pass 33 s. The strip is fast only by comparison, about 25 s across a dozen threads, because Binaryen parses and rewrites the module to do it; a full `-O` pass is what takes twenty minutes.
+A one-line edit in `engine-core` costs three quarters of a clean build, and no one step is why. It is the chain above the edit, each crate compiled whole: `engine-core` itself about 85 s, `web-play` 55 s, the final link 35 s, the rest of the stack 70 s, and `wasm-bindgen` plus the strip pass 33 s. The strip is fast only by comparison, about 25 s across a dozen threads, because Binaryen parses and rewrites the module to do it; a full `-O` pass is what takes twenty minutes.
 
-The obvious knob stays where it is. `codegen-units = 16` under the same LTO takes the `engine-core` edit to under 3 min and the bundle to 7.13 MB gzipped against 6.86, which every player downloads. A target directory reused across worktrees gains nothing either: workspace crates hash their path, and sccache already serves the dependencies, which is why a clean build is minutes.
+The second bundle costs one more final link, `wasm-bindgen` and strip pass, not a second chain: the two builds share every rlib. That rests on two choices in its manifests. `web-play` lists the tool bundle's `web-sys` features, because each bundle is a cargo build of its own and features unify per build, and a shorter list compiles `web-sys` and everything above it twice. The play crate keeps the `rlib` type, because a lone `cdylib` turns LTO on for that bundle alone, which recompiles the whole graph with bitcode and came out larger, 5.18 against 4.77 MB gzip.
+
+The obvious knob stays where it is. `codegen-units = 16` takes the `engine-core` edit to under 3 min and the bundle to 7.13 MB gzipped against 6.86, which every player downloads. A target directory reused across worktrees gains nothing either: workspace crates hash their path, and sccache already serves the dependencies, which is why a clean build is minutes.
 
 So the iteration path is a separate build:
 
 ```bash
-scripts/ci/build-wasm.sh --fast   # site/wasm/ from the wasm-fast profile, no wasm-opt
+scripts/ci/build-wasm.sh --fast   # both bundles from the wasm-fast profile, no wasm-opt
+scripts/ci/build-wasm.sh --fast --only play   # one bundle; --strict refuses the mix
 scripts/ci/check-pages.mjs        # the same page checks run on it
 ```
 
-`wasm-fast` is `release-test` with the incremental cache over the workspace crates, the `dev-fast` recipe for the browser target. `opt-level = 1` is no faster to rebuild and runs slower, so it keeps `release-test`'s level. It lands in `site/wasm/` where a page expects it, and the freshness stamp records the profile: `check-wasm-freshness.py --strict` refuses it, so neither a claim that a fix is live nor the full gate can rest on it. Run `build-wasm.sh` once before either.
+`wasm-fast` is `release-test` with the incremental cache over the workspace crates, the `dev-fast` recipe for the browser target. `opt-level = 1` is no faster to rebuild and runs slower, so it keeps `release-test`'s level. They land in `site/wasm/` where a page expects them, and the freshness stamp records the profile: `check-wasm-freshness.py --strict` refuses it, so neither a claim that a fix is live nor the full gate can rest on them. Run `build-wasm.sh` once before either.
 
 `scripts/ci/check-wasm-target.sh` stays the cheapest question, whether the browser host compiles: about 90 s from clean, 30 to 60 s after an edit.
 

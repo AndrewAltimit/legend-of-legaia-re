@@ -793,11 +793,15 @@ def wasm_fresh(root: Path) -> tuple[str, str] | None:
 def bundle_size(root: Path) -> str:
     import gzip
 
-    f = root / "site" / "wasm" / "legaia_web_viewer_bg.wasm"
-    if not f.exists():
-        return ""
-    raw = f.read_bytes()
-    return f"{len(raw)} bytes, {len(gzip.compress(raw, 6))} gzip"
+    parts = []
+    for key, f in (
+        ("play", root / "site" / "wasm" / "play" / "legaia_web_play_bundle_bg.wasm"),
+        ("tool", root / "site" / "wasm" / "legaia_web_viewer_bg.wasm"),
+    ):
+        if f.exists():
+            raw = f.read_bytes()
+            parts.append(f"{key} {len(raw)} bytes, {len(gzip.compress(raw, 6))} gzip")
+    return "; ".join(parts)
 
 
 # -- Running ------------------------------------------------------------------

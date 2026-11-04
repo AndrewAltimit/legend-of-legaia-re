@@ -3453,6 +3453,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-web-play-bundle"
+version = "0.1.0"
+dependencies = [
+ "legaia-web-minigames",
+ "legaia-web-play",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "legaia-web-viewer"
 version = "0.1.0"
 dependencies = [

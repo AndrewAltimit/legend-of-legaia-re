@@ -34,7 +34,7 @@ cd "$REPO"
 
 PKG_ARGS=("$@")
 if [[ ${#PKG_ARGS[@]} -eq 0 ]]; then
-    PKG_ARGS=(-p legaia-web-viewer)
+    PKG_ARGS=(-p legaia-web-viewer -p legaia-web-play-bundle)
 fi
 
 if ! rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown; then

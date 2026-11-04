@@ -50,11 +50,6 @@ wasm-bindgen.workspace = true
 js-sys.workspace = true
 console_error_panic_hook.workspace = true
 
-[features]
-# Measurement build: a counting global allocator and `bench_alloc_totals`, read
-# by `scripts/ci/frame-bench-web.mjs`.
-bench-alloc = []
-
 [dependencies.web-sys]
 workspace = true
 features = [

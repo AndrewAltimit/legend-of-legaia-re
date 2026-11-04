@@ -25,7 +25,7 @@ image is read through the format layer's `legaia_iso::image` and
 
 ## The bundle
 
-An `rlib`. The wasm module the site loads is
+An `rlib`. The ROM patcher's wasm module is the tool bundle,
 [`legaia-web-viewer`](../web-viewer/README.md)'s `cdylib`, which names this
 crate with `extern crate` (nothing else there references it, and rustc links
 only referenced crates), so these exports reach the page through the same
