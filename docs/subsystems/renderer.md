@@ -823,9 +823,11 @@ The window bytes are relative tile offsets, so the double loop runs
 - takes the four corner tiers from the collision grid at `+0x4000` (`& 0xf`,
   through the height ladder), `RTPT`s them, and near-clips on `OTZ < 0x40`;
 - indexes the object-record table at the block's base by `cell & 0x1FF`
-  (`* 0x20`), taking the tile's UVs from record `+0x14`, its tpage / CLUT
-  from `+0x1C` / `+0x1D`, and OR-ing the semi-transparency bit when `+0x1A`
-  is non-zero;
+  (`* 0x20`), taking the tile from record `+0x14`, its tpage from `+0x15`, its
+  CLUT from `+0x16`, and OR-ing the semi-transparency bit and ABR `+0x1A - 1` when
+  `+0x1A` is non-zero. The tile's high `V` and `U` are `31` past its origin plus the
+  signed `+0x1C` / `+0x1D` (`0x801F6EE4..0x801F6F0C`), so a cell can stretch over
+  several atlas tiles, as `deene`'s rock face does;
 - sorts on `cell & 0x8000`: set, the packet goes in the bucket its farthest
   vertex `Z` picks (`(max SZ >> 5) + 2`, the `sub` / `bgez` / `move` steps at
   `0x801F6FAC..0x801F6FD8`); clear, it goes in the fixed far bucket
