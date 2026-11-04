@@ -120,3 +120,14 @@ at the commit: the action SM calls it at state `0x3F`'s timer (`0x801E4134`), so
 showed on the bar before the user moved, and any `rand()` it drew came ahead of the
 band's. The Point Card was not offered at all, on a catalog note that no item reaches
 its arm: it does, by id, through state `0x3E`. Selectors 9 and 10 match.
+
+The Arts entry `FUN_801D0748` state `0x50`, driven with a pad script, found a pool that
+cannot pay the first command leaving for the review screen with an empty string, where
+retail stays in entry. The round sweep `FUN_801D88CC` stops at seven slots, so a fifth
+monster seat keeps its spent gauge and its stream; the port reset it. The magic-level
+check `FUN_801E70BC` matches.
+
+The walk step `FUN_801D01B0`, with its helpers, found the port reading the held mask
+where everything after the slide resolver reads the resolved one, so a skid along a wall
+neither turned the player nor took the diagonal's quarter off. The cut also has a camera
+mode gate the port lacked, and the terrain slow tile had no port at all.

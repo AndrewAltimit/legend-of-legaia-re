@@ -147,9 +147,9 @@ impl World {
     /// camera-remapped mask through this function and feeds the result to
     /// [`Self::advance_with_collision`], the same order retail uses
     /// (`jal 0x80046494` at `0x801D03EC` inside `FUN_801D01B0`, result kept
-    /// in `s0` at `0x801D0404`). Only the step reads the resolved mask - the
-    /// heading and the diagonal speed cut stay on the held one. The precise
-    /// free-angle path keeps its own vector step and does not resolve.
+    /// in `s0` at `0x801D0404`). Everything after it reads the resolved mask:
+    /// the clip base, the heading, the diagonal speed cut and the step. The
+    /// precise free-angle path keeps its own vector step and does not resolve.
     ///
     /// The "wiring it moves every pinned wall rest" worry was measured and
     /// is false for the oracle that carried it: on the live grid of both

@@ -114,6 +114,9 @@ pub trait CameraWorld {
     fn requeue_field_events(&mut self, events: Vec<FieldEvent>);
     /// Publish the field actor cull's camera view.
     fn set_npc_cull_view(&mut self, view: Option<FieldCullView>);
+    /// Publish the parameter block's mode byte `0x8007B607` the walk step reads
+    /// for its diagonal cut; `None` while the follow camera is not composing.
+    fn set_camera_mode_byte(&mut self, _mode: Option<u8>) {}
     /// Publish the live visible-tile window to the fog pool.
     fn set_fog_view_window(&mut self, window: [i8; 4]);
     /// The world's `rand()` stream state.

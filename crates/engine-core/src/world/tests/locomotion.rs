@@ -173,8 +173,10 @@ fn locomotion_stops_at_wall_and_slides_along_it() {
     // player along that wall: the painted band is finite, so the resolver's
     // perpendicular sweep finds more open ground on the `+X` side and ORs
     // that bit into the mask the step loop walks. The pre-wire stepper
-    // stopped dead at `x = 200`.
-    assert_eq!(world.actors[0].move_state.world_x, 208);
+    // stopped dead at `x = 200`. The resolved mask is a diagonal, so the walk
+    // takes its quarter off: six units of the eight, as `s3` reads it at
+    // `0x801D0600`.
+    assert_eq!(world.actors[0].move_state.world_x, 206);
 }
 
 #[test]

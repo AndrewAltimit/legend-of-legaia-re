@@ -43,6 +43,13 @@ impl World {
         // identity: screen-up walks world `Z+`, screen-right walks `X+`.
         let dir = Self::remap_pad_direction(held, self.field_pad_ring_rotation()) & 0xF000;
 
+        (dir, Self::heading_of_direction_mask(dir))
+    }
+
+    /// The engine heading of a post-remap direction mask: retail's eight-way
+    /// store `0x801D04B8..0x801D0548` plus the engine's half turn. `Z+` = 0,
+    /// `X+` = quarter turn.
+    fn heading_of_direction_mask(dir: u16) -> i16 {
         let wx = if dir & 0x2000 != 0 {
             1
         } else if dir & 0x8000 != 0 {
@@ -57,13 +64,8 @@ impl World {
         } else {
             0
         };
-        let bits = dir;
-
-        // Heading: atan2(wx, wz) in 12-bit units. Z+ = 0, X+ = quarter turn.
-        let heading = (((wx as f32).atan2(wz as f32) / std::f32::consts::TAU * 4096.0).round()
-            as i32
-            & 0x0FFF) as i16;
-        (bits, heading)
+        (((wx as f32).atan2(wz as f32) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF)
+            as i16
     }
 
     /// Continuous (non-quantised) camera-relative movement decode for the
@@ -263,6 +265,20 @@ impl World {
             self.decode_field_direction()
         };
         self.locomotion.last_move_dir_bits = dir_bits;
+        // Retail runs the camera-remapped mask through the wall-slide resolver
+        // before anything reads it (`jal 0x80046494` at `0x801D03EC`, result in
+        // `s0` at `0x801D0404`, and `s3 = s0 & 0xF000` at `0x801D04B4`). So the
+        // clip base, the heading, the diagonal speed cut and the step all see
+        // the perpendicular bit a wall adds: a player skidding along a wall
+        // turns into the skid and takes the diagonal's quarter off. The precise
+        // free-angle path keeps its own vector step and does not resolve.
+        let (dir_bits, heading) = if !self.locomotion.precise_movement && dir_bits != 0 {
+            let ms = &self.actors[slot].move_state;
+            let resolved = self.resolve_field_slide(dir_bits, ms.world_x, ms.world_z);
+            (resolved, Self::heading_of_direction_mask(resolved))
+        } else {
+            (dir_bits, heading)
+        };
         // The clip base (`_DAT_8007BDD8`) the settle tail strides into the
         // player's clip: idle, walk or run off this frame's direction and base
         // step, the scene sentinel under `_DAT_8007B6A8`
@@ -293,12 +309,32 @@ impl World {
         let mult = self.actors[slot].move_state.field_72 as i32;
         let ratio = i32::from(ratio);
         let mut speed = ((self.field_base_step() * mult) >> 12) * ratio;
-        // Diagonal normalise (camera mode 4, both axes pressed): x0.75.
-        // The precise path normalises its vector instead (below), so the
-        // fixed cut only applies to the quantised path.
+        // Terrain slow (`0x801D05B8..0x801D05E8`): the object-grid word of the
+        // tile the player stands on carries `0x4000`, and the scene control
+        // byte `+0x61` is `1`.
+        if self.locomotion.scene_ctrl_61 == 1 {
+            let ms = &self.actors[slot].move_state;
+            let (tx, tz) = (i32::from(ms.world_x) >> 7, i32::from(ms.world_z) >> 7);
+            let cell = usize::try_from(tz * 0x80 + tx)
+                .ok()
+                .and_then(|i| self.terrain.object_cells.get(i).copied())
+                .unwrap_or(0);
+            if cell & 0x4000 != 0 {
+                speed >>= 1;
+            }
+        }
+        // Diagonal normalise: x0.75 under camera mode 4 with both axes pressed
+        // (`lbu 0x8007B607 >> 4 == 4`, `0x801D05EC..0x801D0614`). Any other mode
+        // walks a diagonal at full speed on each axis. The precise path
+        // normalises its vector instead (below), so the fixed cut only applies
+        // to the quantised path.
         let z_pressed = dir_bits & 0x5000 != 0;
         let x_pressed = dir_bits & 0xA000 != 0;
-        if precise.is_none() && z_pressed && x_pressed {
+        if precise.is_none()
+            && z_pressed
+            && x_pressed
+            && self.locomotion.camera_mode_byte.is_none_or(|m| m >> 4 == 4)
+        {
             speed -= speed >> 2;
         }
         if speed <= 0 {
@@ -318,15 +354,7 @@ impl World {
         if let Some(((wx, wz), _, _)) = precise {
             self.advance_with_collision_vector(slot, wx, wz, speed);
         } else {
-            // Retail runs the camera-remapped mask through the wall-slide
-            // resolver before the step loop (`jal 0x80046494` at
-            // `0x801D03EC`, result kept in `s0` at `0x801D0404`), so the
-            // mask the per-axis loop walks can carry a perpendicular bit
-            // the pad never asked for - the skid along a wall. The heading
-            // and the diagonal speed cut stay on the HELD mask; only the
-            // step reads the resolved one.
-            let step_bits = self.resolve_field_slide(dir_bits, before.0, before.1);
-            self.advance_with_collision(slot, step_bits, speed);
+            self.advance_with_collision(slot, dir_bits, speed);
         }
         // Walk-regen accumulator (retail `_DAT_801F2274`): a frame in which
         // the step actually committed counts as walked.

@@ -3178,6 +3178,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-core",
  "legaia-engine-menus",
+ "legaia-engine-system",
  "legaia-game-tables",
  "legaia-save",
 ]

@@ -22,3 +22,4 @@ mod round_open;
 mod spoils;
 mod stat_aggregator;
 mod validator;
+mod walk_step;

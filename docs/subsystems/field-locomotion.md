@@ -152,8 +152,8 @@ World coordinates are plain `s16` at 1-unit resolution; one collision tile is `0
    | `0x8000` | X - | `1` |
 
 5. **Speed.** `speed = ((base_step * player[+0x72]) >> 12) * DAT_1f800393`, with two modifiers:
-   - **Terrain slow.** If the player's current collision tile has flag `0x4000` set and the scene control byte `_DAT_801c6ea4[+0x61] == 1`, `speed >>= 1` (mud / shallow water).
-   - **Diagonal normalise.** Under camera mode 4 with both axes pressed, `speed -= speed >> 2` (x0.75).
+   - **Terrain slow.** If the object-grid word of the player's tile (`+0x8000 + tile_z*0x100 + tile_x*2`) has `0x4000` set and the scene control byte `_DAT_801c6ea4[+0x61] == 1` (op `4C DF`, cleared by the scene reset), `speed >>= 1`. Port: `World::step_field_locomotion` over `locomotion.scene_ctrl_61`.
+   - **Diagonal normalise.** With both axes in the resolved mask and the camera block's mode nibble (`0x8007B607 >> 4`) at `4`, `speed -= speed >> 2` (x0.75); under any other mode a diagonal walks at full speed on each axis. The follow camera publishes the byte to the walk (`CameraWorld::set_camera_mode_byte`); a run with no camera takes the mode-4 arm.
 6. **Step loop.** The loop advances **2 units per iteration** until `speed` units are consumed. Each iteration tests the candidate axis with `FUN_801cfe4c` and commits only if clear (or the debug no-clip `_DAT_8007b98c` / `_DAT_8007b850 & 2` is on):
 
    ```text
@@ -336,7 +336,7 @@ Otherwise it walks a 4-entry direction table at `DAT_800766BC` (8-byte stride: `
 2. **Slide-direction search.** If blocked, it sweeps the signed seven-entry offset table at `DAT_800766EC`, probing sideways along the free axis (the `dx == 0` and `dy == 0` arms take the X and Z sweeps) and summing the offsets that come back walkable.
 3. **Sign picks the slide.** A negative total ORs in `(&DAT_800766DC)[i*2]`, a positive total `(&DAT_800766DE)[i*2]`. A total of exactly zero adds nothing, so a symmetric dead end leaves the player stopped.
 
-The original direction bit is ORed in regardless, and the resolved mask is cached to `gp+0x9c4`. Under the debug flag (`gp+0x3b8 & 1`) each stage prints (`HIT`, `chk %d`, `pad %x not %x`, `pl_angle %d`). Only the step loop reads the resolved mask; the heading and the diagonal speed cut stay on the held one.
+The original direction bit is ORed in regardless, and the resolved mask is cached to `gp+0x9c4`. Under the debug flag (`gp+0x3b8 & 1`) each stage prints (`HIT`, `chk %d`, `pad %x not %x`, `pl_angle %d`). Everything after the call reads the resolved mask (`s3 = s0 & 0xF000` at `0x801D04B4`): the clip base, the heading, the diagonal speed cut and the step loop. A player skidding along a wall turns into the skid and takes the diagonal's quarter off. The [retail kernel differential](../tooling/retail-kernel-differential.md) holds it.
 
 Provenance: `ghidra/scripts/funcs/80046494.txt`; the three tables are static `SCUS_942.54` data. Port: [`World::resolve_field_slide`](../../crates/engine-core/src/world/field_movement/direction_probes.rs), a pure resolver over `World::field_tile_is_wall`, called from `World::step_field_locomotion` and fed to `World::advance_with_collision`. All hosts share that kernel; the opt-in precise free-angle path keeps its own vector step.
 

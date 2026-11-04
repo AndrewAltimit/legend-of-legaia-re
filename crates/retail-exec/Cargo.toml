@@ -24,5 +24,6 @@ legaia-engine-battle-loop.workspace = true
 legaia-engine-battle-vm.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-menus.workspace = true
+legaia-engine-system.workspace = true
 legaia-game-tables.workspace = true
 legaia-save.workspace = true
