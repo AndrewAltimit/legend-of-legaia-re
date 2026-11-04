@@ -46,13 +46,13 @@
     },
     "retail": {
      "gl_draws_per_frame": 141.74,
-     "wasm_bytes_per_frame": 157407
+     "wasm_bytes_per_frame": 157402
     }
    }
   },
   "bundle": {
-   "gzip_bytes": 6929058,
-   "play_gzip_bytes": 4798185
+   "gzip_bytes": 6929106,
+   "play_gzip_bytes": 4798258
   },
   "native": {
    "battle": {
@@ -62,7 +62,7 @@
      "draws_per_frame": 334
     },
     "retail": {
-     "alloc_kb_per_frame": 4526.1,
+     "alloc_kb_per_frame": 4526.2,
      "allocs_per_frame": 1312.9,
      "draws_per_frame": 334
     }
@@ -81,8 +81,8 @@
    },
    "town01": {
     "enhanced": {
-     "alloc_kb_per_frame": 2678.3,
-     "allocs_per_frame": 1612.0,
+     "alloc_kb_per_frame": 2678.2,
+     "allocs_per_frame": 1611.8,
      "draws_per_frame": 306
     },
     "retail": {
@@ -93,13 +93,13 @@
    },
    "world_map": {
     "enhanced": {
-     "alloc_kb_per_frame": 1569.9,
+     "alloc_kb_per_frame": 1570.0,
      "allocs_per_frame": 1926.3,
      "draws_per_frame": 374
     },
     "retail": {
-     "alloc_kb_per_frame": 1273.4,
-     "allocs_per_frame": 1810.8,
+     "alloc_kb_per_frame": 1273.3,
+     "allocs_per_frame": 1811.0,
      "draws_per_frame": 366
     }
    }

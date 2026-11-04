@@ -568,3 +568,17 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1272.6, 1273.4],
   ["counts/native/world_map/retail/allocs_per_frame", 1806.9, 1810.8],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The wave's figures from main once more: the entry above's kernels, plus 73 gzipped bytes for the Zenoir creature's range guard. The allocation rows differ from the entry above by run-to-run moves within the ratchet's room."
+changes = [
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157289, 157402],
+  ["counts/bundle/gzip_bytes", 6903283, 6929106],
+  ["counts/bundle/play_gzip_bytes", 4772220, 4798258],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4524.2, 4526.2],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2672.1, 2678.2],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1597.2, 1611.8],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1272.6, 1273.3],
+  ["counts/native/world_map/retail/allocs_per_frame", 1806.9, 1811.0],
+]
