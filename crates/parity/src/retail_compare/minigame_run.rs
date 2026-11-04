@@ -52,6 +52,8 @@ const DANCE_GO: u32 = 0x801D_515C;
 const HUB_CARD_HOLD: u32 = 0x801D_1A70;
 /// The Baka Fighter cabinet's state word (`DAT_801DBF44`, PROT 0976).
 const BAKA_STATE: u32 = 0x801D_BF44;
+/// The title card's clock (`DAT_801DBE94`), the `t` `FUN_801D59D4` draws from.
+const BAKA_CARD_CLOCK: u32 = 0x801D_BE94;
 /// The tick the seed takes the warp on, after the scene entry settles and
 /// ahead of any talk the save's seat would walk into: `koin1`'s sign-up
 /// counter opens its refusal line at tick `31` when the player is left there,
@@ -175,7 +177,10 @@ impl RetailMinigame {
                 game_anchors::u32_at(ram, HUB_HOLD),
             )),
             Some(MinigameSubId::Fishing) => Some((game_anchors::u32_at(ram, FISHING_STATE), 0)),
-            Some(MinigameSubId::BakaFighter) => Some((game_anchors::u32_at(ram, BAKA_STATE), 0)),
+            Some(MinigameSubId::BakaFighter) => Some((
+                game_anchors::u32_at(ram, BAKA_STATE),
+                game_anchors::u32_at(ram, BAKA_CARD_CLOCK),
+            )),
             _ => None,
         };
         let phase2 = match minigame {
@@ -301,11 +306,12 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
                     _ => c.stage() == S::GoOut && c.view().go.is_some_and(|b| i64::from(b) <= go),
                 })
         }
-        (Some(MinigameSubId::BakaFighter), _) => {
+        (Some(MinigameSubId::BakaFighter), Some((_, clock))) => {
             world.mode == SceneMode::BakaFighter
-                && m.baka_fighter
-                    .as_ref()
-                    .is_some_and(|f| f.cabinet().state() == 1)
+                && m.baka_fighter.as_ref().is_some_and(|f| {
+                    f.cabinet().state() == 1
+                        && i64::from(f.cabinet().intro_clock()) >= i64::from(clock)
+                })
         }
         (Some(MinigameSubId::MuscleDome), Some((arm, count))) => {
             world.mode == SceneMode::MuscleDome
@@ -469,7 +475,7 @@ pub(super) fn run_minigame(
             Some(MinigameSubId::Dance) => ("K", engine.reached.unwrap_or(0) + 1),
             Some(MinigameSubId::MuscleDome) => ("M", engine.reached.unwrap_or(0) + 1),
             Some(MinigameSubId::Fishing) => ("L", FRAME_TICKS_PAST_WARP),
-            Some(MinigameSubId::BakaFighter) => ("B", engine.reached.unwrap_or(0) + 1 + 60),
+            Some(MinigameSubId::BakaFighter) => ("B", engine.reached.unwrap_or(0) + 1),
             _ => ("O", FRAME_TICKS_PAST_WARP),
         };
         let extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
