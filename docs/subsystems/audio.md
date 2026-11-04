@@ -479,6 +479,16 @@ flight (`0x801E0238`, requested against loaded) and sub-op `0xA` until bit
 3 (`0x801E0288`). Sub-op 1 waits on nothing: it stores the word
 (`0x801E012C`) and the next poller call starts the walk.
 
+Stage 6 latches the requested index of that call (`0x800247B4..0x800247C4`), not the one
+stage 2 read. A new word arriving past stage 2 therefore plays the old track with the
+walk reporting the new one loaded; the port's `route_bgm_events` starts the newer word
+instead. No library state catches a walk in that window, so whether a script reaches it
+is unmeasured.
+
+Stage 4's commit also closes battle source 5 (`0x80024750..0x80024760`) and rests every
+source's volume at `0` until stage 6: the only thing that stops a battle theme is the next
+walk.
+
 A scene's entry start does not take this time on screen. The field init
 calls the poller in a loop with no `VSync` until requested and loaded agree
 (`0x801D72D4..0x801D7320`), so the settle runs down in microseconds and the
@@ -3215,12 +3225,12 @@ word `2015`); the sweep counts those as one track.
 
 | Channel | Scores | Result |
 |---|---|---|
-| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 85 of 85 walkable states |
-| `playing` | that sequence is playing exactly when the engine's gate is open | 85 of 85 |
-| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 80 of 80 |
-| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 80 of 80 |
-| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 19 of 20 |
-| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 129 of 129 battle states |
+| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | every walkable state |
+| `playing` | that sequence is playing exactly when the engine's gate is open | every walkable state |
+| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | every state on one track |
+| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | every state on one track |
+| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | every state with a cue voice |
+| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | every battle state scored |
 
 Battle states are not seeded - the battle half of the corpus is
 `retail_compare_battle`'s - so their channel tests the rule on retail's
@@ -3240,7 +3250,7 @@ installs a door record no tile spawns), and the session ticks until it holds
 the captured scene. Whatever track sounds there is the engine's own door
 logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
 `kor4`, `P2[13]` / `P2[9]`) and `retockin_field_route_walk` (from `retock`,
-`P2[18]`) are seeded this way and match retail; with the sub-op 6 latch
+`P2[18]`) and `station_field_door_hop` (from `ropeway`, `P2[27]`) are seeded this way and match retail; with the sub-op 6 latch
 disabled the first three fail again (the head start replaces the kept
 track), while `retockin` passes either way because its entry parks.
 
@@ -3266,23 +3276,11 @@ swap walk ([above](#the-swap-takes-a-settle-and-a-read)) settles
 `kor5_post_436_organic`, captured between a commit and the install (flags
 `0x19`, no field-BGM source open, requested `1009` against loaded `1023`):
 the engine seeded there holds the committed track as retail's poller does.
-What it still reports:
-
-- **`tower_field_walk`** - the one-shot on voice 22 reads as cue `0x30`
-  (inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 /
-  6 and its note is 63, which is static row `0x30` (program 2, tone 3, note
-  63, category 6, mapped to VAB slot 6 in the state) and the only row that
-  fits among the cues `tower`'s scripts fire. `tower`'s lift pads (partition-0 records `2..17`, gate-0
-  object binds) fire it as the first op of their activation arm
-  (`36 00 80 30 00`), and retail's pad `17` context is parked at `+0xF4`
-  past its `ExecMove`, so the random walk had just stepped on it. The
-  engine runs the same record on contact: the lifts are prop-bank entries,
-  so a touch resumes the record from its parked cursor, and the cue, the
-  `4C 60` flicker and the jump follow in that order
-  (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`). The row misses
-  because the seed stands the player still: the touch is history the
-  capture holds (the record's context at `+0xF4`, the cue voice keyed) and
-  a seat does not replay it.
+`tower_field_walk` holds a one-shot on voice 22 that reads as cue `0x30`
+(inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 / 6 and its note
+is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op of their
+activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
+(`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
 ## Real retail PCM
 
@@ -3559,10 +3557,6 @@ timer throttling does not touch.
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)); the track it picks is
   checked by the sweep's `battle_track` channel.
-- **The sweep's open row** ([above](#the-audio-state-sweep)) is
-  `tower`'s lift cue, which sounded on a contact
-  before the capture: seeding it means resuming the lift's context mid-record (`+0xF4`) with its cue voice
-  still keyed, which no seed does yet.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer

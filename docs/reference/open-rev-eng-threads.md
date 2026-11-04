@@ -327,6 +327,17 @@ Answered questions: [settled battle / arts / level-up](re-settled-threads/battle
 
 Answered questions: [settled audio](re-settled-threads/audio.md); falsified readings: [audio / sound driver](re-do-not-re-walk.md#audio--sound-driver).
 
+### A new track word during a swap's read
+
+*Status:* open
+
+The poller's stage 6 latches the requested index of its own call, so a word that changes
+after stage 2's read plays the old track and reports the new one loaded
+(`0x800247B4..0x800247C4`, [swap](../subsystems/audio.md#the-swap-takes-a-settle-and-a-read)).
+The port starts the newer word. A linear census of the disc's op-`0x35` sub-op `1` pairs
+closer than the walk's `66` vsyncs, or a script timeline that holds two, would say whether
+any shipped scene reaches it.
+
 ### A CD-XA clip's start against a retail trigger
 
 *Status:* open

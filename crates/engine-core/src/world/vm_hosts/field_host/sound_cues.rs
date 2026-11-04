@@ -40,6 +40,7 @@ impl FieldHostImpl<'_> {
         {
             self.world.audio.bgm_script_paused = false;
             self.world.audio.current_bgm = Some(text_id);
+            self.world.audio.bgm_swap.cancel();
             self.world.pending_field_events.push(FieldEvent::Bgm {
                 text_id,
                 sub_op: crate::world::BGM_SUB_OP_ENGINE_LATCH,
@@ -61,6 +62,12 @@ impl FieldHostImpl<'_> {
                     .audio
                     .bgm_swap
                     .start(crate::world::World::BGM_SWAP_READ_VSYNCS);
+            }
+            // The park word ends a walk in flight: the poller copies requested
+            // onto loaded and leaves before the stage table (`0x80024558` ->
+            // `0x8002458C`), so a later select's barrier has nothing to wait on.
+            if text_id == crate::world::BGM_PARK_SENTINEL {
+                self.world.audio.bgm_swap.cancel();
             }
             self.world.audio.current_bgm = Some(text_id);
             // Sub-op 9 also raises the script-owned start bit 0 of
