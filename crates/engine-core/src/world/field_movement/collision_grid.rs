@@ -451,10 +451,11 @@ impl World {
         if self.terrain.collision_grid.len() < FIELD_GRID_LEN {
             return false;
         }
-        if x < 0 || z < 0 {
-            return true; // off the grid origin reads as a wall (clamp inside)
-        }
-        let zc = ((z as i32) >> 6) + 2;
+        // A negative coordinate wraps through the masks as a past-the-end one
+        // does: retail has no origin test. `z` divides toward zero (`addiu
+        // v0,v0,0x3f` under `bgez`), `x` always takes the `0x3F` bias.
+        let z = i32::from(z);
+        let zc = ((if z < 0 { z + 0x3F } else { z }) >> 6) + 2;
         let xc = (((x as i32) + 0x3F) >> 6) - 1;
         let col = (xc / 2) & 0x7F;
         let row = ((zc - (zc >> 31)) >> 1) & 0x7F;

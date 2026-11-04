@@ -86,3 +86,9 @@ nothing in battle.
 
 The action validator's kernel matches over every arm. Its battle host read the raw
 word alone, so a member poisoned by a hit had nothing a cure could target.
+
+The bag's accessor family, run as a stream of mixed operations, showed normalize
+`FUN_800423E0` to be one pass of two cursors rather than a whole compaction: one call
+can pass a hole by, and the slot order after it differed from the port's. The walk
+step's wall probes `FUN_801CFE4C` match, except that a negative coordinate wraps
+through the grid's masks where the port called it a wall.

@@ -79,7 +79,7 @@ Every access materialises the block base inline and indexes by slot. Most produc
 | `FUN_80042310` | consume by id - zeroes the emptied id in place and returns; never compacts on its own |
 | `FUN_80042EE0` | find-slot-by-id - linear scan of the active window, returns the slot index or none |
 | `FUN_80043048` | consume-by-slot - the consume decrement addressed by index; zeroes the id in place when the count reaches 0 |
-| `FUN_800423E0` | normalize - calls window setup first, merges duplicate stacks (cap 99), pulls occupied slots down into holes |
+| `FUN_800423E0` | normalize - calls window setup first, merges duplicate stacks (cap 99), pulls occupied slots down into holes; one pass of two cursors, so a call can leave a hole behind |
 | `FUN_8004313C` | window setup - the sole SCUS writer of `gp[+0x2D2 / +0x2D4 / +0x2D6]` |
 
 Every helper scans and bound-checks only inside the window the last call to `FUN_8004313C` installed.

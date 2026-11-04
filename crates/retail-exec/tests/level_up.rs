@@ -78,8 +78,11 @@ fn a_level_up_grows_the_record_retail_grows() {
         for (i, rec) in records.iter().enumerate() {
             cpu.mem.load(RECORDS + i as u32 * STRIDE, rec);
         }
-        cpu.mem
-            .wr32(RECORDS + who as u32 * STRIDE, start_xp + share);
+        // ... capped there at 9,999,999 (`0x8004F2C4`).
+        cpu.mem.wr32(
+            RECORDS + who as u32 * STRIDE,
+            (start_xp + share).min(9_999_999),
+        );
         let seed = rng.next();
         state.set(seed);
         assert_eq!(cpu.call(APPLIER, &[who as u32]), Stop::Returned);

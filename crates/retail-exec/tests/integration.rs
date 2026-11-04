@@ -6,6 +6,8 @@ mod arts_roll;
 mod battle_seed;
 mod common;
 mod escape;
+mod field_walls;
+mod inventory;
 mod item_apply;
 mod level_up;
 mod melee_hit;
