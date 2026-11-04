@@ -2,5 +2,6 @@
 //! disc against the Rust kernel that claims to port it. Skips without
 //! `LEGAIA_DISC_BIN`, so CI runs without disc data.
 
+mod battle_seed;
 mod common;
 mod stat_aggregator;
