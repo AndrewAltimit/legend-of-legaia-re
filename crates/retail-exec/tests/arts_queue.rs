@@ -45,7 +45,7 @@ fn an_arrow_string_builds_the_queue_retail_builds() {
     let mut w = World::new();
     let mut combos: [Vec<Vec<Command>>; 3] = Default::default();
     let mut banks = Vec::new();
-    for ch in 0..3usize {
+    for (ch, combo_list) in combos.iter_mut().enumerate() {
         let file = disc.read_entry(863 + ch).expect("player file");
         let rec0 = decode_record0(&file).expect("record0");
         let bank = art_animation_bank(&rec0).expect("art bank");
@@ -60,7 +60,7 @@ fn an_arrow_string_builds_the_queue_retail_builds() {
                 .filter_map(|&b| Command::from_byte(b))
                 .collect();
             if !commands.is_empty() {
-                combos[ch].push(commands.clone());
+                combo_list.push(commands.clone());
             }
             let mut extra = vec![r.stream_source];
             extra.extend_from_slice(&r.chain_sources);
