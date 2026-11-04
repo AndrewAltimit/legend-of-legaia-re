@@ -2846,6 +2846,13 @@ camera walks and cuts sit on the same `k`), with only Wind's first walk and firs
 differing. The body's creature, seated by `FUN_801F19EC` at arm 1's exit, is not
 carried.
 
+Arm 1 holds the opening's ray emitter `0x801F8FF0` through its countdown: every
+eleven units its op `0x20` calls `FUN_801F8BF8`'s arm 1, four `0x801F9008` rays on
+six `rand()` draws each. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
+past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
+arm. The arm's phase store sits behind the fork on the last roll, which the
+presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
+
 ### PROT 0941 (Stone Circle, `0xB9`)
 
 The charge record's part calls the stager, which seats the column; arm 1 hides the

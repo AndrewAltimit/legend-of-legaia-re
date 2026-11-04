@@ -582,6 +582,10 @@ pub fn gate_va(prot_entry: u32, arm: u8) -> Option<u32> {
         // Terra's white rise and its fade-out leave through a shared tail.
         (933, 3) => 0x801F_6E14,
         (933, 4) => 0x801F_6EEC,
+        // Rogue Wind / Thunder / Flame's arm 1: its phase store sits behind the
+        // fork on the last roll, and the flush and white past the countdown
+        // test. Flushed on the first tick, the fork's rays ended as they spawned.
+        (964, 1) => 0x801F_6E2C,
         _ => return None,
     })
 }
@@ -594,6 +598,12 @@ pub const JUGGERNAUT_DAMAGE_ARM: u8 = 26;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rogue_strike_arm_one_flushes_past_its_countdown() {
+        let gate = gate_va(964, 1).expect("the arm's countdown test");
+        assert!(0x801F_6E34 > gate && 0x801F_6E74 > gate, "flush and white");
+    }
 
     /// Walk `table` one tick per call, the body advancing one arm per pass
     /// (or along `jumps`), and return each visited arm's dwell in ticks.
