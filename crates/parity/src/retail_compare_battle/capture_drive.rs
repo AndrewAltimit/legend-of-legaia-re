@@ -1580,8 +1580,11 @@ impl RetailBattle {
                     // stands the fight's stream on it (`strike_deal`).
                     played: (seat >= 3 && state == 0x1E && self.queued_category == 3)
                         .then_some(self.committed_queue),
-                    ramps: (seat >= 3 && state == 0x1E && self.queued_category == 3)
-                        .then_some(self.approach_terms),
+                    ramps: (seat >= 3 && state == 0x1E && self.queued_category == 3).then_some((
+                        self.approach_terms.0,
+                        self.approach_terms.1,
+                        self.acting_attack,
+                    )),
                     // On a dynamic art slot the cursor cannot tell a starter
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which

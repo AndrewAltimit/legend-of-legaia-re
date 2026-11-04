@@ -258,12 +258,12 @@ def record_key(exe: str, env: dict, args: list[str]) -> str:
     return h.hexdigest()
 
 
-def retail_hit_words(out: Path, skip: int) -> list[int]:
+def retail_hit_words(out: Path) -> list[int]:
     """The seed word retail held going into each melee hit of a `--physical`
     recording's first action. A hit's spark burst makes its frame draw tens of
     times where any other frame draws once or twice, so the frame is read off
-    the distance between two rows' words on the BIOS generator. `skip` steps the
-    word on, for a draw that frame makes ahead of the hit."""
+    the distance between two rows' words on the BIOS generator. The word steps on
+    once, for the frame driver's discard (`0x80046D2C`) ahead of the hit."""
     step = lambda w: (w * 0x41C64E6D + 0x3039) & 0xFFFFFFFF
     words, prev, settled = [], None, False
     with open(out / "retail" / "meta.csv") as f:
@@ -278,10 +278,7 @@ def retail_hit_words(out: Path, skip: int) -> list[int]:
                 while s != w and n < 256:
                     s, n = step(s), n + 1
                 if HIT_FRAME_DRAWS <= n < 256 and not settled:
-                    start = prev
-                    for _ in range(skip):
-                        start = step(start)
-                    words.append(start)
+                    words.append(step(prev))
             prev = w
     return words
 
@@ -380,7 +377,7 @@ def run_engine(a, out: Path) -> bool:
             return False
         env["LEGAIA_CAST_RAND_SEED"] = seed
     if a.strike_deal:
-        env["LEGAIA_STRIKE_DEAL"] = ",".join(str(w) for w in retail_hit_words(out, a.strike_deal_skip))
+        env["LEGAIA_STRIKE_DEAL"] = ",".join(str(w) for w in retail_hit_words(out))
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -492,10 +489,8 @@ def main() -> int:
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
     ap.add_argument("--strike-deal", action="store_true",
-                    help="--physical: stand the engine's strike on the capture's queue and retail's "
-                         "word at each hit (block rolls, damage, cue picks), so what differs is rules")
-    ap.add_argument("--strike-deal-skip", type=int, default=0, metavar="N",
-                    help="--strike-deal: draws the hit's frame makes ahead of the hit")
+                    help="--physical: stand the engine's strike on the capture's queue, approach terms, "
+                         "ATK and retail's word at each hit, so what differs is rules")
     ap.add_argument("--engine-env", action="append", default=[], metavar="K=V",
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")

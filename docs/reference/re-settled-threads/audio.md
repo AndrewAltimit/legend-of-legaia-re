@@ -364,10 +364,11 @@ out. See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).
 
 *Status:* resolved - grade `capture`
 
-Dealt retail's hand (`--strike-deal`: the state's queue and approach terms, retail's seed word going
-into each hit), the strike recordings match cue for cue: the swing, the block or flinch voice, the impact
-pick and their times. So the block roll, its draw order and the damage rolls all hold; what the plain
-score reads is two streams dealing two hands. The frame driver's discard at `0x80046D2C` runs ahead of the
+Dealt retail's hand (`--strike-deal`: the state's queue, approach terms and ATK, retail's seed word going
+into each hit), most strike recordings match cue for cue: the swing, the block or flinch voice, the impact
+pick and their times, which no chance could do across their hits. So the block roll, its draw order and the
+damage rolls hold, and what the plain score reads is mostly two streams dealing two hands. The rest are
+not all read: see the oracle's list of what the deal leaves out. The frame driver's discard at `0x80046D2C` runs ahead of the
 hit, so a block roll's words sit one step past the frame's first word. See
 [the oracle](../../tooling/cast-sequence-oracle.md#a-monsters-physical-attack).
 

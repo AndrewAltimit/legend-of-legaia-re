@@ -358,27 +358,31 @@ side's own stream. So the channel's number mixes rule differences with deals.
 cue under the seat and clip it landed in, with its offset from the clip's commit,
 on both sides, so a clip both sides played can be read cue for cue.
 
-`--strike-deal` takes the deal out of the score as well (`--strike-deal-skip 1` with it). When the
-capture's gate opens, the engine child stands on the hand retail held:
+`--strike-deal` takes the deal out of the score as well. When the capture's gate opens, the engine child stands on the hand retail held:
 
 - the striker's queue `+0x1DF..` off the state. A monster's swings were rolled at its pick, so the
   drive's gate holds only the bytes up to the cursor;
 - the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` off the state. They feed the first hit's block roll,
   and the replay walked in from elsewhere to a target facing elsewhere: `battle_rugi_barra_strike`
   holds `393` / `64`, the replay `86` / `116`;
+- the striker's working ATK `+0x158` off the state: `battle_map02_mad_ogre_strike` stands on a Power
+  Charge's `257` where the replay, which never cast it, holds `206`;
 - the seed word `0x80009010` going into each hit, off the recording's `rand` column. A hit's spark burst
   makes its frame draw tens of times where any other frame draws once, so the frames read straight
-  off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of
-  the hit, which is the skip of `1`: the block roll draws from the word one step on.
+  off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of the
+  hit, so the word steps on once.
 
 ```bash
-scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal --strike-deal-skip 1
+scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal
 ```
 
-A recording dealt this way that still parts from retail parts on a rule. Measured over the strike
-states, the block verdicts, the damage rolls and the flinch's impact cue all land as retail's, each
-hit in turn. The score without the option mixes those with the deal, so use it to ask whether a strike
-sounds right, and the plain score only to see what one fight dealt.
+Most strike recordings dealt this way match retail cue for cue: block verdict, damage rolls, the flinch's
+impact pick and the times. The ones that still part are not proven to part on a rule, because the deal is
+not complete. An emitter's draw can fall ahead of the hit: Nova's second hit follows a frame with an extra draw,
+and retail's verdict comes out only one word further on. Stepping every hit by the frame before's draws fixes
+Nova and breaks others, so the option keeps the one step the disassembly gives. A walk-clip capture's gate
+can also open past the first swing (`battle_retona_king_frog_strike`), and a defender's own stats stay the
+replay's. Read a residual by hand, as `battle_map02_mad_ogre_strike`'s Power Charge was read.
 
 What thirteen strike states show (`warhalf`, `warman`, `frog`, `spoon`,
 `gilium_lv2`, `hells_rat`, `gizam`, `wolf`, `guardian`, `freed`, `barra`,

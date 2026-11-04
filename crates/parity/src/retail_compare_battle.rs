@@ -576,6 +576,8 @@ pub struct RetailBattle {
     /// `ctx[+0x6D2]` / `ctx[+0x6D4]`: the approach terms the next melee hit's
     /// block roll reads.
     pub approach_terms: (i16, i16),
+    /// The active seat's working ATK `+0x158`.
+    pub acting_attack: u16,
     /// `ctx[+0x15]` - the strike cursor into that queue.
     pub strike_cursor: u8,
     /// A monster strike gated on its first swing clip has its strike stream

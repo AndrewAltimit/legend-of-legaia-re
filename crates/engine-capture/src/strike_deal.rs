@@ -9,7 +9,7 @@
 //! This stands the engine's fight on what retail held when the capture's gate
 //! opens: the capture's queue `+0x1DF..` (the drive's own `played` bytes), its
 //! approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` (the replay walked in from elsewhere,
-//! to a target facing elsewhere) and the seed word `0x80009010` retail held going into each hit, from the
+//! to a target facing elsewhere), the striker's working ATK and the seed word `0x80009010` retail held going into each hit, from the
 //! recording's per-vsync `rand` column. What still differs is the rules. A play
 //! host never sets it; unset, the engine runs its own stream.
 
@@ -42,9 +42,12 @@ pub fn apply_strike_deal(world: &mut World, hand: &StrikeHand, deal: &StrikeDeal
         let n = hand.queue.len().min(a.battle.params.len());
         a.battle.params[..n].copy_from_slice(&hand.queue[..n]);
     }
-    if let Some((attack, guard)) = hand.ramps {
+    if let Some((attack, guard, atk)) = hand.ramps {
         world.battle.attack_ramp = attack;
         world.battle.guard_ramp = guard;
+        if let Some(slot) = world.battle.attack.get_mut(actor) {
+            *slot = atk;
+        }
     }
     world.battle.capture_hit_rand = VecDeque::from(deal.hit_words.clone());
 }

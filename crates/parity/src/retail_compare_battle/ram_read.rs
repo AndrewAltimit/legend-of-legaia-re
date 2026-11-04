@@ -1105,6 +1105,7 @@ impl RetailBattle {
                 game_anchors::u16_at(ram, ctx + 0x6D2) as i16,
                 game_anchors::u16_at(ram, ctx + 0x6D4) as i16,
             ),
+            acting_attack: active.map_or(0, |p| game_anchors::u16_at(ram, p + 0x158)),
             committed_queue: std::array::from_fn(|i| {
                 active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
             }),
