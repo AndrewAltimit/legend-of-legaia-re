@@ -53,6 +53,7 @@ import hashlib
 import json
 import os
 import re
+import resource
 import shutil
 import signal
 import subprocess
@@ -890,6 +891,12 @@ def select(p: Plan) -> tuple[list[str], set[str]]:
     return [n for n in p.gates if n in chosen], skipped
 
 
+def children_cpu() -> float:
+    """User + system seconds of every child reaped so far, descendants included."""
+    use = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return use.ru_utime + use.ru_stime
+
+
 def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
     a = p.a
     results: dict[str, dict] = {}
@@ -1006,6 +1013,9 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                 cpu += g.cpu
                 held |= set(g.locks)
             for r in list(running):
+                # What a reap adds to the children's total is that gate's CPU, so read
+                # it each time round: two gates ending together still come out apart.
+                seen_cpu = children_cpu()
                 code = r.proc.poll()
                 if code is None and time.time() - r.started > r.gate.timeout:
                     try:
@@ -1022,6 +1032,7 @@ def run_all(p: Plan, order: list[str], skipped: set[str], prior: dict) -> dict:
                 held -= set(r.gate.locks)
                 results[r.gate.name] = finish(p, r.gate, code, r.log_path, time.time() - r.started, r.gh_env)
                 results[r.gate.name]["start"] = round(r.started - t0, 1)
+                results[r.gate.name]["cpu"] = round(children_cpu() - seen_cpu, 1)
                 res = results[r.gate.name]
                 say(f"{res['status']:<6} {r.gate.name} {res['wall']:.0f}s {res['detail']}")
                 save()
@@ -1042,15 +1053,17 @@ def report(p: Plan, order: list[str], skipped: set[str], results: dict) -> int:
     skips = [(n, r) for n, r in rows if r and r["status"] == SKIP]
     warns = [(n, r) for n, r in rows if r and r["status"] == WARN]
     serial = sum((r or {}).get("wall", 0) for _, r in rows)
+    cpu_total = sum((r or {}).get("cpu", 0) for _, r in rows)
 
     def table(rows2) -> list[str]:
-        lines = ["| Gate | Group | Status | Start | Seconds | Detail |", "|---|---|---|---:|---:|---|"]
+        lines = ["| Gate | Group | Status | Start | Seconds | CPU s | Detail |", "|---|---|---|---:|---:|---:|---|"]
         for n, r in rows2:
             r = r or {"status": UNRUN, "wall": 0, "detail": ""}
             detail = str(r.get("detail", "")).replace("|", "\\|")
             # Seconds into this run; a gate this run did not start (blocked, reused) has none.
             start = f"{r['start']:.0f}" if "start" in r else ""
-            lines.append(f"| {n} | {p.gates[n].group} | {r['status']} | {start} | {r.get('wall', 0):.0f} | {detail} |")
+            cpu = f"{r['cpu']:.0f}" if "cpu" in r else ""
+            lines.append(f"| {n} | {p.gates[n].group} | {r['status']} | {start} | {r.get('wall', 0):.0f} | {cpu} | {detail} |")
         return lines
 
     head = git(p.root, "rev-parse", "--short=12", "HEAD").strip()
@@ -1058,7 +1071,8 @@ def report(p: Plan, order: list[str], skipped: set[str], results: dict) -> int:
     out = [
         f"# Full gate at {head}: {verdict}",
         "",
-        f"Wall clock {wall / 60:.1f} min; the same gates one after another {serial / 60:.1f} min.",
+        f"Wall clock {wall / 60:.1f} min; the same gates one after another {serial / 60:.1f} min; "
+        f"{cpu_total / 60:.1f} CPU min.",
         "",
         *table(rows),
     ]
@@ -1218,8 +1232,8 @@ def selftest() -> int:
         check(code == 1, "a failed gate must exit 1")
         table = (a.out / "timing.md").read_text()
         check("bad-one" in table and "bad-two" in table and "after-bad" in table, "timing table lost a failure")
-        check(re.search(r"^\| bad-one \| g \| FAIL \| \d+ \| \d+ \|", table, re.M), "timing table lost a gate's start")
-        check(re.search(r"^\| reused \| g \| PASS \|  \| 0 \|", table, re.M), "a reused gate has no start in this run")
+        check(re.search(r"^\| bad-one \| g \| FAIL \| \d+ \| \d+ \| \d+ \|", table, re.M), "timing table lost a gate's start")
+        check(re.search(r"^\| reused \| g \| PASS \|  \| 0 \|  \|", table, re.M), "a reused gate has no start in this run")
         for line in ("--bless", "python3 x.py --update-baseline", "git push origin", "x --propose p"):
             try:
                 p.add(Gate("nope-" + line, "g", line))
