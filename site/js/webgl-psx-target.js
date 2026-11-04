@@ -17,7 +17,17 @@
  * error. Every sample of a pixel covered by one full-screen triangle holds that
  * pixel's colour, so the resolve hands back the same bytes.
  *
- * A context without MSAA has nothing to avoid, and this does nothing on one.
+ * A context without MSAA has nothing to avoid, and this does nothing on one,
+ * until a cast needs a frame that outlives its draw.
+ *
+ * That frame is the one thing this target has that the canvas does not. A retail
+ * battle frame's farthest bucket holds an opaque black rect, and an arm that arms
+ * the wash has it hold a subtractive quad instead, so the frame's additive layers
+ * sum over the frames before. Retail's earlier frame is the same display page two
+ * game frames back, eight vsyncs at the frame step a heavy arm runs at, so a ring of
+ * eight pictures stands behind the target: each persisting frame loads the oldest
+ * and takes its slot. The native renderer's ring (`FRAME_PERSIST_VSYNCS`) is the same
+ * one; docs/subsystems/renderer-port.md says why.
  *
  * Classic script. */
 (function () {
@@ -34,6 +44,9 @@ uniform sampler2D u_frame;
 out vec4 o;
 void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0); }`;
 
+  /* How far back a persisting frame reads: the native `FRAME_PERSIST_VSYNCS`. */
+  const FRAME_PERSIST_VSYNCS = 8;
+
   class PsxTarget {
     constructor(gl) {
       this.gl = gl;
@@ -41,21 +54,53 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       this.live = false;
       this.fbo = null;
       this.bindReal = null;
+      this.broken = false;
+      /* The ring of earlier frames, built by the first cast that may need it. */
+      this.ring = [];
+      this.ringNext = 0;
+      this.ringFbo = null;
+      /* The last frame's picture, kept while `keepLast` holds. */
+      this.last = null;
+      this.lastValid = false;
+      /* The running frame loaded an earlier one, and the frame before it did. */
+      this.loaded = false;
+      this.persisting = false;
     }
 
     /* Point `null` at this framebuffer and start the frame on an empty picture,
-     * which is what the canvas's own buffer hands a frame after a composite. */
-    begin() {
-      if (!this.needed) return;
+     * which is what the canvas's own buffer hands a frame after a composite.
+     * `keepLast`: a cast module is resident, so this frame or a later one may ask
+     * for the picture the last frame left (`loadEarlierFrame`). */
+    begin(keepLast) {
+      if (this.broken || (!this.needed && !keepLast && !this.fbo)) return;
       const gl = this.gl;
+      const hadFrame = !!this.fbo && this.w === gl.drawingBufferWidth && this.h === gl.drawingBufferHeight;
       this._ensure(gl.drawingBufferWidth, gl.drawingBufferHeight);
       this.live = true;
       this.bindReal(gl.FRAMEBUFFER, this.fbo);
       gl.disable(gl.SCISSOR_TEST);
       gl.colorMask(true, true, true, true);
       gl.depthMask(true);
+      this.loaded = false;
+      this.lastValid = !!keepLast && hadFrame && this._keepLast();
       gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 1]);
       gl.clearBufferfi(gl.DEPTH_STENCIL, 0, 1, 0);
+    }
+
+    /* The cleared frame takes the picture of an earlier one instead, and `true`
+     * says so; `false` leaves the caller to clear. */
+    loadEarlierFrame() {
+      if (!this.live || !this.lastValid) return false;
+      this._ensureRing();
+      if (!this.persisting) {
+        /* The frames before a persisting run are all the earlier frames it has. */
+        for (const slot of this.ring) this._copy(this.last, slot);
+        this.ringNext = 0;
+        this.persisting = true;
+      }
+      this._copy(this.ring[this.ringNext], this.tex);
+      this.loaded = true;
+      return true;
     }
 
     /* Copy the frame to the canvas, with the GL state the frame left put back. */
@@ -63,6 +108,13 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       if (!this.live) return;
       this.live = false;
       const gl = this.gl;
+      if (this.loaded) {
+        /* The presented frame takes the oldest slot of the ring. */
+        this._copy(this.tex, this.ring[this.ringNext]);
+        this.ringNext = (this.ringNext + 1) % this.ring.length;
+      } else {
+        this.persisting = false;
+      }
       const on = [gl.BLEND, gl.DEPTH_TEST, gl.CULL_FACE, gl.SCISSOR_TEST, gl.STENCIL_TEST,
         gl.SAMPLE_ALPHA_TO_COVERAGE, gl.SAMPLE_COVERAGE, gl.RASTERIZER_DISCARD]
         .filter((cap) => gl.isEnabled(cap));
@@ -93,8 +145,68 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       for (const cap of on) gl.enable(cap);
     }
 
+    /* A colour texture the size of the frame, with the frame's format. */
+    _colorTexture(w, h) {
+      const gl = this.gl;
+      const unit = gl.getParameter(gl.ACTIVE_TEXTURE);
+      gl.activeTexture(gl.TEXTURE0);
+      const was = gl.getParameter(gl.TEXTURE_BINDING_2D);
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      /* RGB, as the canvas is (`alpha: false`): a read gives alpha 1, a blend sees 1. */
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, w, h);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.bindTexture(gl.TEXTURE_2D, was);
+      gl.activeTexture(unit);
+      return tex;
+    }
+
+    /* One frame-sized picture onto another, with both framebuffer bindings left on
+     * this target's framebuffer. */
+    _copy(from, to) {
+      const gl = this.gl;
+      if (!this.ringFbo) this.ringFbo = [gl.createFramebuffer(), gl.createFramebuffer()];
+      const [read, draw] = this.ringFbo;
+      this.bindReal(gl.READ_FRAMEBUFFER, read);
+      gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, from, 0);
+      this.bindReal(gl.DRAW_FRAMEBUFFER, draw);
+      gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, to, 0);
+      const mask = gl.getParameter(gl.COLOR_WRITEMASK);
+      const scissor = gl.isEnabled(gl.SCISSOR_TEST);
+      if (scissor) gl.disable(gl.SCISSOR_TEST);
+      gl.colorMask(true, true, true, true);
+      gl.blitFramebuffer(0, 0, this.w, this.h, 0, 0, this.w, this.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.colorMask(mask[0], mask[1], mask[2], mask[3]);
+      if (scissor) gl.enable(gl.SCISSOR_TEST);
+      this.bindReal(gl.FRAMEBUFFER, this.fbo);
+    }
+
+    /* Hold what the target has before this frame clears it. `true` when it did. */
+    _keepLast() {
+      if (!this.last) this.last = this._colorTexture(this.w, this.h);
+      this._copy(this.tex, this.last);
+      return true;
+    }
+
+    _ensureRing() {
+      if (this.ring.length) return;
+      for (let i = 0; i < FRAME_PERSIST_VSYNCS; i++) this.ring.push(this._colorTexture(this.w, this.h));
+    }
+
+    _dropRing() {
+      const gl = this.gl;
+      for (const t of this.ring) gl.deleteTexture(t);
+      this.ring = [];
+      if (this.last) gl.deleteTexture(this.last);
+      this.last = null;
+      this.lastValid = false;
+      this.persisting = false;
+    }
+
     _ensure(w, h) {
       if (this.fbo && this.w === w && this.h === h) return;
+      this._dropRing();
       const gl = this.gl;
       if (!this.bindReal) {
         const real = gl.bindFramebuffer.bind(gl);
@@ -127,17 +239,7 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       }
       this.w = w;
       this.h = h;
-      const unit = gl.getParameter(gl.ACTIVE_TEXTURE);
-      gl.activeTexture(gl.TEXTURE0);
-      const was = gl.getParameter(gl.TEXTURE_BINDING_2D);
-      this.tex = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, this.tex);
-      /* RGB, as the canvas is (`alpha: false`): a read gives alpha 1, a blend sees 1. */
-      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGB8, w, h);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-      gl.bindTexture(gl.TEXTURE_2D, was);
-      gl.activeTexture(unit);
+      this.tex = this._colorTexture(w, h);
       this.depth = gl.createRenderbuffer();
       gl.bindRenderbuffer(gl.RENDERBUFFER, this.depth);
       /* The format browsers back the canvas's depth with: the fog pass copies it. */
@@ -150,6 +252,7 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
         console.warn('psx target: incomplete framebuffer; drawing on the canvas');
         this.needed = false;
+        this.broken = true;
       }
       this.bindReal(gl.FRAMEBUFFER, null);
     }
@@ -158,6 +261,9 @@ void main() { o = vec4(texelFetch(u_frame, ivec2(gl_FragCoord.xy), 0).rgb, 1.0);
       if (!this.bindReal) return;
       const gl = this.gl;
       this.live = false;
+      this._dropRing();
+      if (this.ringFbo) for (const f of this.ringFbo) gl.deleteFramebuffer(f);
+      this.ringFbo = null;
       delete gl.bindFramebuffer;
       delete gl.getParameter;
       gl.deleteFramebuffer(this.fbo);

@@ -688,8 +688,18 @@ earlier frame is the same display page two game frames back, eight vsyncs at the
 frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
 rather than building on the last one, which fills the buffer eight times too
 fast. The frame step itself is the engine's fixed reading of those arms, not a
-measurement of the running frame's cost. The window's own target and the
-browser's canvas still clear: there the additive arms draw dimmer than retail.
+measurement of the running frame's cost.
+
+The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
+([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) holds the same ring,
+`renderAssembled` asks it for the picture at the scene's clear (after the frame's
+ticks, through `play_cast_frame_persists`) and `play_cast_module_resident` keeps
+the last frame while one may be asked for. Bloom stands the frames down on both
+hosts, since it reads the frame it adds to. The page's text layer is a canvas of
+its own, so a name plaque's letters do not enter the ring as the window's do. The
+window's own target and the browser's clean-rasterisation canvas still clear:
+there the additive arms draw dimmer than retail. Both hosts advance the ring once
+per drawn frame, which is a vsync only on a 60 Hz display.
 
 **Backdrops draw first.** A screen primitive whose four corners sit at the
 far plane (`ScreenPrim::is_backdrop`) is one retail links into the farthest

@@ -6,6 +6,25 @@ use super::*;
 
 #[wasm_bindgen]
 impl LegaiaRuntime {
+    /// Whether this frame builds on the frames before it instead of a clear
+    /// (`World::cast_frame_persists`), the question the native window hands
+    /// `Renderer::set_frame_persist`. The page's PSX target answers it
+    /// (`webgl-psx-target.js`).
+    pub fn play_cast_frame_persists(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| h.world.cast_frame_persists())
+    }
+
+    /// Whether a cast module is resident, so a frame may soon build on the
+    /// ones before it (`World::cast_module_resident`): the PSX target keeps
+    /// the last frame's picture while this holds.
+    pub fn play_cast_module_resident(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| h.world.cast_module_resident())
+    }
+
     /// Enable / disable the live battle loop for subsequently-entered scenes
     /// (and the currently-running one). On by default - the play page rolls
     /// the disc's own step-driven encounters like retail. Off = the old

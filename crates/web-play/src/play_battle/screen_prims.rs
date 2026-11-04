@@ -129,6 +129,16 @@ impl LegaiaRuntime {
             ),
             None => (Vec::new(), Vec::new()),
         };
+        // A cast's frames build on the last one under PSX rasterisation, the
+        // one mode whose target outlives a frame on either host
+        // (`LegaiaRuntime::play_cast_frame_persists`), and the armed wash drains
+        // what they hold from under the scene.
+        if self.page_toggles.psx_render
+            && let Some(h) = self.scene_host.host()
+            && h.world.cast_frame_persists()
+        {
+            under.extend(h.world.cast_armed_wash_prim());
+        }
         // The multiplayer room screen / roaming panel, as the native window
         // appends it.
         under.extend(self.netplay_prims());

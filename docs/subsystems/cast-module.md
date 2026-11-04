@@ -4285,8 +4285,8 @@ engine frame, dark teal with thin red rays, where the displayed frame is white:
 the white is the same packets over the earlier frames. The first frame no arm arms
 it clears, and arm 25's rays fade on black.
 
-The engine reproduces this where its target outlives a frame
-([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)):
+The engine reproduces this where its target outlives a frame, PSX rasterisation on
+both hosts ([renderer-port](renderer-port.md#a-casts-frames-build-on-earlier-ones)):
 `World::cast_armed_wash_prim` is the drain, drawn as a backdrop. A cleared
 target gets no quad, since it could only darken the frame's own pixels:
 composited that way, Horn's arm-9 wash (`0x202020` a pass) took that much off

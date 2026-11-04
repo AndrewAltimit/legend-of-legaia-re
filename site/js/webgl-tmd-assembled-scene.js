@@ -395,7 +395,12 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.clearColor(this.clearColor[0], this.clearColor[1], this.clearColor[2], this.clearColor[3]);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    /* A frame that builds on an earlier one (a cast's armed wash, under PSX
+     * rasterisation: webgl-psx-target.js) has its picture loaded by the hook
+     * and clears the depth alone. */
+    gl.clear(this.loadFrameHook && this.loadFrameHook()
+      ? gl.DEPTH_BUFFER_BIT
+      : gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     /* Orbit-3D vs legacy ortho top-down: a cam carrying a `yaw` field
      * opts into the perspective orbit path (the world-overview page and

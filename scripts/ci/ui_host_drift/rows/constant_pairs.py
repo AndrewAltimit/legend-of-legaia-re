@@ -24,6 +24,17 @@ from ui_host_drift.rows.host_files import (
 # `(8, 60)` and is deliberately NOT paired with the level-up pen, because
 # nothing says the battle HUD and the level-up banner must move together.
 CONSTANT_PAIRS: list[dict[str, object]] = [
+    {
+        "what": "how many frames back a persisting cast frame reads - each "
+        "host's target keeps a ring this long (retail's same page, two game "
+        "frames back at frame step 4); a shorter ring fills the additive arms "
+        "faster on one host",
+        "native": (
+            "crates/engine-render/src/renderer/native_target.rs",
+            "FRAME_PERSIST_VSYNCS",
+        ),
+        "web": ("site/js/webgl-psx-target.js", "FRAME_PERSIST_VSYNCS"),
+    },
     # Two pause-menu rows used to sit at the head of this list - the pinned
     # window-descriptor rect table and the near-fullscreen sub-screen rect.
     # They are gone because the constants are: both live once in
