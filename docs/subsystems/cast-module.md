@@ -3973,11 +3973,10 @@ the enemy row the target picker walks.
 A recording holds a fade spawned on a pass one frame step along its ramp by the time that
 frame is drawn, which is what `FUN_80024E80` handing a new actor to a list the frame is
 still walking would do (`capture`; the walk order is an inference). On a step-`4` arm that is
-four vsyncs: without it Vera's rise reads a step behind through arm 4 and Slippery's arm-7
-wash through arm 8. The director's fades and the presentation hook's exit-pass sites step at
-once. Fades a part's stager calls do not: Juggernaut's read right unstepped, and a part
-tick can fall after the fade's in the walk. Theeder's arm 11 flash reads a step ahead under
-the rule, which is still open.
+four vsyncs: without it Slippery's arm-7 wash reads a step behind through arm 8. The
+presentation hook's exit-pass sites step at once. Fades a part's stager calls do not:
+Juggernaut's read right unstepped, and a part tick can fall after the fade's in the walk.
+Theeder's arm 11 flash reads a step ahead under the rule, which is still open.
 
 ### The creature seat
 
