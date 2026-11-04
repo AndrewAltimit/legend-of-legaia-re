@@ -467,6 +467,10 @@ pub struct BattleState {
     /// row `(224, 476)` holds, copied there once the battle's VRAM has loaded
     /// (`World::apply_battle_vram_moves`). `None` on every ordinary fight.
     pub cue_clut_seed: Option<u8>,
+    /// Capture alignment: the roll a state past Element Change's arm 0
+    /// accepted (`0x801C8FE4`), which the replay's arm 0 takes in place of its
+    /// own. `None` on every ordinary fight.
+    pub element_roll_seed: Option<u8>,
     /// With [`Self::forced_monster_cast`]: dispatch that cast the moment the
     /// battle's first command prompt opens, in place of the party's
     /// commands, as [`Self::inflight_seed`] does for a party caster - the
@@ -1261,6 +1265,7 @@ impl BattleState {
             forced_monster_cast: None,
             forced_monster_target: None,
             cue_clut_seed: None,
+            element_roll_seed: None,
             forced_monster_cast_at_prompt: false,
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
             forced_guard: [false; 3],

@@ -845,6 +845,11 @@ impl World {
                             rolls.push(self.next_rand());
                         }
                     }
+                    // A capture past arm 0 names the roll its arm accepted.
+                    let (rolls, last_roll) = match self.battle.element_roll_seed.take() {
+                        Some(roll) if ctx.phase == 0 => (vec![u32::from(roll)], u8::MAX),
+                        _ => (rolls, last_roll),
+                    };
                     let mut cursor = rolls.into_iter();
                     let (step, outcome) =
                         ticks::element_change_tick(&mut ctx, &mut seats, last_roll, || {

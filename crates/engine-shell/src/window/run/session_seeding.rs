@@ -463,6 +463,14 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
     {
         world.battle.cue_clut_seed = Some(x);
     }
+    // `LEGAIA_SEAT_ELEMENT_ROLL=<n>`: the roll the state's Element Change
+    // accepted (`BattleState::element_roll_seed`).
+    if let Some(n) = std::env::var("LEGAIA_SEAT_ELEMENT_ROLL")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+    {
+        world.battle.element_roll_seed = Some(n);
+    }
     // `LEGAIA_BATTLE_GUARD=seat[,seat..]`: party seats that stand in the
     // Spirit stance (`+0x1DE == 4`) when the fight opens - a capture's
     // guarding member, which the cast-sequence oracle's monster cast lands

@@ -819,6 +819,11 @@ pub(super) fn battle_image(
     if battle.ai_counter != 0 {
         env.push(("LEGAIA_SEAT_AI_COUNTER", battle.ai_counter.to_string()));
     }
+    // Element Change's arm 0 rolled its element into that counter: a capture
+    // past it names the roll the replay's own arm must land on.
+    if battle.queued_action == 0xAF && battle.action_state == 0x70 && battle.module_phase > 0 {
+        env.push(("LEGAIA_SEAT_ELEMENT_ROLL", battle.ai_counter.to_string()));
+    }
     if battle.move_label_unseen() {
         env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
     }
