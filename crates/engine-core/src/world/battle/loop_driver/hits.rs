@@ -57,15 +57,18 @@ impl World {
 
     /// Actor `i`'s hit walk and event-path commit, as its own anim tick runs
     /// them, and the re-walk bookkeeping of the commits it lands.
-    pub(in crate::world) fn tick_battle_hit_events_seat(&mut self, i: usize) {
-        let commits_before: Vec<u32> = self.actors.iter().map(|a| a.battle_clip_commits).collect();
-        self.tick_battle_hit_events_for(i);
+    ///
+    /// Returns every seat's commit count from just before the walk's first
+    /// step able to commit, or `None` when the walk took no such step and so
+    /// landed no commit, which is nearly every seat on nearly every tick.
+    pub(in crate::world) fn tick_battle_hit_events_seat(&mut self, i: usize) -> Option<Vec<u32>> {
+        let commits_before = self.tick_battle_hit_events_for(i)?;
         // Retail runs this walk inside actor `i`'s own anim tick, so a
         // commit it lands on `i` itself or on a seat whose tick comes
         // later in the pass is that seat's own-tick commit - walked
         // again at the new clip's first frame (`0x80047BC4..0x80047C38`).
         // One landed on an earlier seat waits for that seat's next tick.
-        for (k, before) in commits_before.into_iter().enumerate() {
+        for (k, &before) in commits_before.iter().enumerate() {
             if k >= i
                 && self.actors.get(k).map(|a| a.battle_clip_commits) != Some(before)
                 && !self.battle.hit_commit_rewalk.contains(&k)
@@ -73,11 +76,19 @@ impl World {
                 self.battle.hit_commit_rewalk.push(k);
             }
         }
+        Some(commits_before)
+    }
+
+    /// Every seat's commit count, read ahead of a step that may commit.
+    fn battle_clip_commit_counts(&self) -> Vec<u32> {
+        self.actors.iter().map(|a| a.battle_clip_commits).collect()
     }
 
     /// One actor's slice of [`Self::tick_battle_hit_events`]: the hit walk
-    /// of actor `i`'s committed clip and its event-path commit.
-    fn tick_battle_hit_events_for(&mut self, i: usize) {
+    /// of actor `i`'s committed clip and its event-path commit. Only
+    /// [`Self::resolve_hit_event`] and the boundary commit can land a clip
+    /// commit, so the seats' counts are read ahead of the first of them.
+    fn tick_battle_hit_events_for(&mut self, i: usize) -> Option<Vec<u32>> {
         use legaia_engine_battle_vm::battle_action::{
             ActorFlags, event_commit_due, hit_event_admits,
         };
@@ -92,9 +103,7 @@ impl World {
                 _ => (None, false),
             }
         };
-        let Some((src, frame)) = source else {
-            return;
-        };
+        let (src, frame) = source?;
         // The loop-window arm's re-zero (`0x80047840..0x80047878`): on a
         // rewind, a party slot playing dynamic slot `0x11` under a latched
         // Hyper / Super constant restarts its hit index and effect cursor,
@@ -114,6 +123,7 @@ impl World {
         }
         let frame_u8 = frame.clamp(0, 255) as u8;
         let hit_index = self.actors[i].battle.input_cursor;
+        let mut commits_before = None;
         if let Some(hit) = hit_event_admits(
             state,
             &src.power_run,
@@ -123,6 +133,7 @@ impl World {
         ) {
             // The epilogue bump (`0x801EECDC..0x801EECE8`), on every
             // resolved call.
+            commits_before = Some(self.battle_clip_commit_counts());
             self.actors[i].battle.input_cursor = hit_index.wrapping_add(1);
             self.resolve_hit_event(i as u8, hit, src.power_run, src.event_frames);
         }
@@ -133,6 +144,9 @@ impl World {
             .has(ActorFlags::ADVANCE_DONE);
         let four_slot = Self::committed_four_slot_beat(&self.actors[i]);
         if staged_behind && event_commit_due(&src.event_frames, four_slot, src.event_lock, frame) {
+            if commits_before.is_none() {
+                commits_before = Some(self.battle_clip_commit_counts());
+            }
             // The cut takes the entry's `+0x0E` displacement pro-rated by
             // how far the clip got - no HP test on this path, unlike the
             // natural end (`+0x228` taken as clear, as there).
@@ -153,6 +167,7 @@ impl World {
             }
             self.commit_staged_battle_anim_at_boundary(i);
         }
+        commits_before
     }
 
     /// Resolve one admitted hit event of `attacker`'s committed clip: the
