@@ -2642,6 +2642,9 @@ up, unless the word sits on a ceiling (`RetailBattle::displayed_backdrop_cue`).
 The Spirit / Item band past its pre-arm (`0x3D..=0x40`) seats the word the same way: `0x3C` raises the
 latch and `0x3D` waits out the caster's idle, so the weight carries that idle's phase, which a replay does not
 reach (`battle_deene_garnet_heal_mid_cast`: retail `0x500`, the replay on `0x800`, `image` `.77` to `.93`).
+The yaw counter runs through the same wait with no store of its own, so the band takes retail's word on the seed's
+`0x800` rung however far the replay's has drifted (`ActionSteer::rung`; `battle_bubu2_spoon_heal_mid_cast`: retail
+`2064`, the replay `2136`, `image` `.70` to `.996`).
 That capture's `image` reads `.414` to `.805` on the RAM's word and `.986` on
 the displayed one.
 

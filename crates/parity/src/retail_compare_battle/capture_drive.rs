@@ -6,6 +6,9 @@ use super::*;
 /// The rung the Attack arm stands the yaw counter `ctx[+0x6DA]` on as the
 /// seed enters `0x14` (`0x801E2F20`).
 const ATTACK_YAW_RUNG: u16 = 0x200;
+/// The rung the seed pass stands the counter on (`0x801E2CF8`), which a Spirit
+/// band action climbs from with no store of its own.
+const SEED_YAW_RUNG: u16 = 0x800;
 /// The shortest walk [`RetailBattle::party_approach`] places: under a few
 /// passes the replay's own arrival is as near as the estimate.
 const PARTY_WALK_MIN_VSYNCS: u32 = 8;
@@ -1302,8 +1305,19 @@ impl RetailBattle {
                     yaw: Some(self.walk_yaw_base),
                     // An Attack's counter climbs from the arm's `0x200`
                     // unless a swing re-seed could have moved it.
-                    rung: (self.queued_category == 3 && !self.swing_reseed_entry)
-                        .then_some(ATTACK_YAW_RUNG),
+                    // A Spirit band action's climbs from the seed's, and how
+                    // far by the stage wait's end is the caster's idle phase
+                    // (`battle_bubu2_spoon_heal_mid_cast`: retail `2064`, the
+                    // replay `2136`, past the clock's slack).
+                    rung: if self.queued_category == 3 && !self.swing_reseed_entry {
+                        Some(ATTACK_YAW_RUNG)
+                    } else if self.queued_category == 2
+                        && super::SPIRIT_STAGE_STATES.contains(&self.action_state)
+                    {
+                        Some(SEED_YAW_RUNG)
+                    } else {
+                        None
+                    },
                     coin: Some(self.track_coin),
                     message: self.timed_message,
                     // An empty content word is the counter swap's only on
