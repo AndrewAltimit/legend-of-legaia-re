@@ -954,6 +954,8 @@ div.play-vis-head { cursor: default; }
             <kbd data-key="KeyE">E</kbd><span>R1</span>
             <kbd data-key="Digit1">1</kbd><span>L2</span>
             <kbd data-key="Digit2">2</kbd><span>R2</span>
+            <kbd>`</kbd><span>Game modes (Tab or ` in a room: the room screen)</span>
+            <kbd>\</kbd><span>Card menu, with a pack that has cards</span>
             <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
             <kbd>Wheel</kbd><span>Zoom in / out</span>
             <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
@@ -3032,6 +3034,16 @@ div.play-vis-head { cursor: default; }
    * rebuilt (a WASM trap makes a fresh instance at the default). */
   const volEl    = document.getElementById('play-volume');
   const volValEl = document.getElementById('play-volume-value');
+  /* Remembered as the window's launcher remembers its master volume; this
+   * slider's scale is the page's own, so it keeps a store of its own. */
+  const VOLUME_KEY = 'legaia.play-volume';
+  try {
+    const stored = parseFloat(localStorage.getItem(VOLUME_KEY));
+    if (stored >= 0 && stored <= parseFloat(volEl.max)) {
+      volEl.value = String(stored);
+      volValEl.textContent = stored === 0 ? 'mute' : `${stored}x`;
+    }
+  } catch (e) { /* the default level */ }
   function applyVolume() {
     const v = parseFloat(volEl.value);
     volValEl.textContent = v === 0 ? 'mute' : `${v}x`;
@@ -3047,7 +3059,10 @@ div.play-vis-head { cursor: default; }
       try { rt.audio_set_gain(on ? v : 0); } catch (e) { /* audio not up yet */ }
     }
   }
-  volEl.addEventListener('input', applyVolume);
+  volEl.addEventListener('input', () => {
+    try { localStorage.setItem(VOLUME_KEY, volEl.value); } catch (e) { /* this session only */ }
+    applyVolume();
+  });
   window.__playApplyVolume = applyVolume;
   if (window.LegaiaSound) {
     window.LegaiaSound.onChange(applyVolume);

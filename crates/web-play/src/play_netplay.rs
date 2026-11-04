@@ -10,7 +10,7 @@
 
 use crate::runtime::LegaiaRuntime;
 use legaia_engine_mode::mode::SceneMode;
-use legaia_engine_netplay::room::{NetPlay, pack_identity};
+use legaia_engine_netplay::room::{NetPlay, RoomKey, pack_identity};
 use legaia_netplay::protocol::RoomCode;
 use legaia_render_kernels::screen_prim::ScreenPrim;
 use wasm_bindgen::prelude::*;
@@ -124,6 +124,37 @@ impl LegaiaRuntime {
         if let Some(net) = self.netplay.as_mut() {
             net.toggle_screen();
         }
+    }
+
+    /// A key press in a room (`NetPlay::room_key`, the table the native window
+    /// asks): `"reaction"` / `"screen"` when it was acted on, `"chat"` when the
+    /// page should open its chat line, `""` when the room does not want the
+    /// key. A front-end screen keeps its keys, as natively.
+    pub fn play_net_key(&mut self, code: &str) -> String {
+        if self.netplay.is_none() || self.play_host_front_end_up() {
+            return String::new();
+        }
+        let pad_bound = legaia_engine_system::input::key_name_for_dom_code(code).is_some_and(|k| {
+            crate::pad_bindings::live_mapping()
+                .pad_button_for_key(k)
+                .is_some()
+        });
+        let Some(net) = self.netplay.as_mut() else {
+            return String::new();
+        };
+        match net.room_key(code, pad_bound) {
+            Some(RoomKey::Reaction(i)) => {
+                net.emote(i);
+                "reaction"
+            }
+            Some(RoomKey::ToggleScreen) => {
+                net.toggle_screen();
+                "screen"
+            }
+            Some(RoomKey::BeginChat) => "chat",
+            None => "",
+        }
+        .to_string()
     }
 
     /// Send a chat line.

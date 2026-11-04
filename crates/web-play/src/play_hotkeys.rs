@@ -67,6 +67,12 @@ impl LegaiaRuntime {
 }
 
 impl LegaiaRuntime {
+    /// Whether a front-end screen owns the page's frame: the native window's
+    /// `boot_ui.is_active()` gate on its room, mode and card keys.
+    pub(crate) fn play_host_front_end_up(&self) -> bool {
+        self.hotkey_screens().any()
+    }
+
     /// The front-end screens owning the page's frame, as the hotkey gate
     /// reads them.
     fn hotkey_screens(&self) -> FrontEndScreens {
@@ -174,6 +180,19 @@ mod tests {
     /// The page shows the notices: a page that never calls the exports
     /// leaves every press of a page-held key (and every refused key) silent,
     /// which is the drift the native window's notice line closed.
+    #[test]
+    fn the_page_takes_the_room_and_mode_keys() {
+        let view = include_str!("../../../site/js/play-view-input.js");
+        for export in ["play_net_key", "play_pack_mode_key", "play_cards_key"] {
+            assert!(view.contains(export), "{export}");
+        }
+        // A room asks ahead of the hotkeys: `T` on its screen is the chat line.
+        assert!(
+            view.find("this._hostKey(e)").unwrap()
+                < view.find("this.rt.play_host_hotkey(").unwrap()
+        );
+    }
+
     #[test]
     fn the_page_shows_hotkey_notices() {
         let view = include_str!("../../../site/js/play-view-input.js");

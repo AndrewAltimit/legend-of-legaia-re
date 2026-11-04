@@ -39,6 +39,27 @@ impl LegaiaRuntime {
         .to_string()
     }
 
+    /// The backslash key, the native window's `key_card_screen`: the active
+    /// pack's card menu over the field or the overworld, or close the screen
+    /// it is inside. `true` when the press was taken.
+    pub fn play_cards_key(&mut self) -> bool {
+        if self.play_host_front_end_up() {
+            return false;
+        }
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let w = &mut host.world;
+        if w.card_screen_open() {
+            w.close_card_screen();
+        } else if matches!(w.mode, SceneMode::Field | SceneMode::WorldMap) {
+            w.open_card_menu();
+        } else {
+            return false;
+        }
+        true
+    }
+
     /// Open a card screen over the field or the overworld: `"menu"`,
     /// `"binder"`, or `"dealer"` / `"dealer:<id>"`. `false` when it could not
     /// open (no scene, no pack cards, another screen up, unknown dealer).

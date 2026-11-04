@@ -6,6 +6,7 @@
 
 mod field_hunt;
 mod harness;
+mod keys;
 mod modes;
 mod party;
 mod roaming;
