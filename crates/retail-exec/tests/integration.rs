@@ -4,5 +4,6 @@
 
 mod battle_seed;
 mod common;
+mod item_apply;
 mod level_up;
 mod stat_aggregator;
