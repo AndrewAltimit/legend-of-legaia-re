@@ -313,7 +313,7 @@ fn art_shout_pcm_lands_in_the_mix_after_the_cd_delay() {
     let clip_rate = clip.sample_rate;
     let clip_pcm = clip.pcm.clone();
 
-    let delay = legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY;
+    let delay = legaia_engine_audio::xa_start_delay(0, false);
     let mut mix = legaia_engine_audio::OfflineMixer::new(44_100);
     mix.play_xa_shout(
         clip_pcm,

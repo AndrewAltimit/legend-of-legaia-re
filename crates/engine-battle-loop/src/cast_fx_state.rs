@@ -66,6 +66,10 @@ pub struct CastFxState {
     /// `World::run_cast_module_code`. Zeroed when a cast is armed, exactly
     /// as retail's `0x801E4B1C` does.
     pub module_phase: u8,
+    /// The spell and arm of a cast voice not yet raised: the head cue's call
+    /// sits on one arm of the module's phase byte
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm`]).
+    pub module_voice_due: Option<(u8, u8)>,
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
@@ -458,6 +462,7 @@ impl CastFxState {
             summon_body_radius: None,
             pending_cast: None,
             module_phase: 0,
+            module_voice_due: None,
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,

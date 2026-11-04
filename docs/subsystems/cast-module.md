@@ -3603,6 +3603,13 @@ That id selects the `XA*.XA` file, the sector-filter channel and the read
 span the CD-XA clip starter `FUN_8003D53C` runs with. Nothing about the caster
 enters the choice.
 
+The call sits on one arm of the phase byte `ctx[+0x279]`, after the arm that seeks
+(`FUN_8003EAE4`) and the poll of the drive (`FUN_8003F2B8(1)`): arm `3` in PROT 0903..0905,
+`4` in 0906..0908, `2` in most of the rest and `0` in the capture band from 0935
+(`module_head_cue_arm` walks each tick's dispatch). So a cast is heard well after
+it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
+call is outside its tick, and raises at the arming seam.
+
 The cast-audio dispatcher `FUN_801F3990` emits a different, character-split
 band (`char_kind * 0x10 + 0xF8..0xFC`, plus `0x20C..0x20E` on the enemy leg).
 A cast cannot reach it: its one caller is battle-SM state `0x3D`, entered only

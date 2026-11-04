@@ -24,8 +24,8 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use legaia_engine_audio::bgm_tail::{BgmTail, TailBorrow};
 use legaia_engine_audio::{
-    ArtsShoutBank, AudioSink, PendingCue, SHOUT_CD_RESPONSE_DELAY, Sequencer, SfxBank,
-    SfxFireBatch, SfxScheduler, VabBank, XaClipBank,
+    ArtsShoutBank, AudioSink, PendingCue, Sequencer, SfxBank, SfxFireBatch, SfxScheduler, VabBank,
+    XaClipBank,
 };
 use legaia_engine_core::world::SideBandBank;
 use legaia_engine_mode::sfx_residency::SharedRegionBank;
@@ -132,6 +132,9 @@ pub struct AudioDirector<S: AudioSink> {
     xa_pending: Vec<XaStageRequest>,
     /// The XA lane's request counters ([`Self::xa_stats`]).
     xa_stats: XaLaneStats,
+    /// The next clip's file is not the one the drive is parked on
+    /// ([`Self::set_xa_seeking`]): its start takes the seek.
+    xa_seeking: bool,
     /// The battle audio duck, in retail's own units: `_DAT_8007B910` is the
     /// live level (seeded `0xD7` = [`DUCK_LEVEL_REF`] by the cold reset
     /// `FUN_8001FFA4`), ramped one unit per vsync toward a target the action
@@ -248,6 +251,7 @@ impl<S: AudioSink> AudioDirector<S> {
             xa_extents: BTreeMap::new(),
             xa_pending: Vec::new(),
             xa_stats: XaLaneStats::default(),
+            xa_seeking: false,
             duck_level: DUCK_LEVEL_REF,
             duck_target: DUCK_LEVEL_REF,
             duck_applied: DUCK_LEVEL_REF,

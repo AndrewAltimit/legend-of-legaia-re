@@ -285,10 +285,9 @@ fn spar_somersault_voices_the_starter_line_then_the_shout_and_both_reach_the_mix
         "no XA difference before the first clip request"
     );
     // Each request takes the one drive: whatever was sounding stops on the
-    // request frame (the shout cuts the NEW ARTS line short), the CD-response delay (`SHOUT_CD_RESPONSE_DELAY`, 6615
-    // samples - eight whole 735-sample ticks) holds the new clip silent, and
-    // then it plays.
-    let delay_ticks = (legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY as usize / 735) as u32;
+    // request frame (the shout cuts the NEW ARTS line short), the drive's start delay (`xa_start_delay`, at least
+    // four whole 735-sample ticks) holds the new clip silent, and then it plays.
+    let delay_ticks = (legaia_engine_audio::xa_start_delay(0, false) as usize / 735) as u32;
     for &(t, slot, ch, _) in &voiced.clips {
         let held: u64 = (t..t + delay_ticks).map(diff).sum();
         let energy: u64 = (t + delay_ticks + 1..t + 45).map(diff).sum();

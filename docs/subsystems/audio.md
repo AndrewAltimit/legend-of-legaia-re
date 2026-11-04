@@ -2477,7 +2477,7 @@ The engine wires this end-to-end:
 - **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
 - **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
-Two timing behaviours model the retail CD/XA sequencing contract: a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modelled seek / first-sector latency; the recomp cross-reference established that the shout **trails** the clip install) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
+Two timing behaviours model the retail CD/XA sequencing contract: the drive's start ([`xa_start_delay`](#a-clips-start)) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
 
 `OfflineMixer` exposes the same mixing core device-free. Oracles: `engine-session/tests/arts_voice_spar_disc.rs` plays the Rim Elm spar through the real boot (tables and banks) and asserts the battle's CD-XA request sequence - item voice, Spirit line, the Somersault's first-use starter line (`XA1` channel 1), its shout (`XA2` channel `0xC` under Tetsu's formation) - and, differencing a voiced run against a bank-less one, that each clip is silent through the CD delay and then reaches the mix. `engine-session/tests/arts_shout_battle.rs` covers the unresolved (bank-picked) path; `engine-core/tests/battle_shout_cue.rs` is the disc-free cue-emission check (known art, three arts in one entry, first use, a staged selector, the silent synthetic baseline).
 
@@ -3415,9 +3415,27 @@ volume, whose attenuation matrix reads unity in the state (`DecodeVolume`), and 
 every window; whether it is mednafen's filter against the published zig-zag rows is not settled here.
 On the page, a shout fired through the live output and read off the output node
 is that channel's sibling (`XA2` channel 14) at correlation `0.993` and no lag drift
-across a second, at the mix's `0.81` of the decoded channel. Its first sample lands
-`205` ms past the call: `SHOUT_CD_RESPONSE_DELAY` plus the queue. The start against a
-retail trigger is not scored, because no library state stands just ahead of a cue.
+across a second, at the mix's `0.81` of the decoded channel.
+
+<a id="a-clips-start"></a>
+**A clip's start.** A mid-cast state plays on into its module's head cue with no input, so a run
+stepped frame by frame (`scripts/mednafen/xa-start.py`) reads the frame the starter ran off the
+drive-state word `0x8007BC20`, and the same run's recording, with the resumed SPU subtracted, places
+the channel's first sample by correlation. Both are on one clock, the state being sample `0`.
+
+| Head parked in | Runs | Call to first sample, less the channel's place |
+|---|---|---|
+| the clip's file | 14 (Orb, Juggernaut, Viguro, Swordie, Freed, Puera, Aluru, Iota, Terra, Slippery, Gilium, Palma, Horn, Jedo) | `62` or `88` ms |
+| another file (`XA8`, playing `XA7`) | 4 (Zenoir, Gizam, Theeder, Nighto) | `371` ms, within a millisecond |
+
+The channel's place is one double-speed sector per channel, `1 / 150` s, because channel `n`'s first
+sector lies `n` sectors into the file: over the runs, Juggernaut's channel `7` and Viguro's `0` read the
+same base with it taken off. Each frame's bracket is a vsync wide, and the `62` / `88` split is not traced.
+Port: `legaia_engine_audio::xa_start_delay`, with `module_head_seek` naming the parked file for a
+cast's voice. A shout or a melee line takes the parked figure: the battle selector
+([`FUN_8004DA00`](#streamed-cue-census-fun_8003eae4--fun_80019794)) has the head in that file. These are mednafen's
+drive timings, and PCSX-Redux models no seek at all (`54.6` ms flat, `xa_start.csv`); no console has been
+timed. The browser's output queue adds about `55` ms on the page.
 
 **The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is `59.8261` Hz,
 an NTSC frame of 263 lines of 3413 video clocks at 53.693175 MHz, `737.1365` samples, where
@@ -3546,8 +3564,6 @@ timer throttling does not touch.
 - **ADPCM rounding** is the remaining difference on the
   [real retail PCM](#real-retail-pcm) core channel; the track channel's rest is a fraction of a
   sample per flush ([the flush's own cost](#the-flushs-own-cost)) and retail's own cues.
-- **A CD-XA clip's start against a retail trigger** is unscored: it wants a mednafen
-  state just ahead of a cue ([above](#real-retail-pcm)).
 - **Two emitter inputs are constants.** The per-row scale pair is set once:
   the boot-time mode initialiser `FUN_8001DCF8` stores `0x80`, `0x80`, `0` at
   `0x80091658..0x80091660` (`0x8001DD60..0x8001DD74`), the pair's only writer

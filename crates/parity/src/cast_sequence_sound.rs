@@ -92,6 +92,10 @@ pub struct SoundReport {
     pub score: f64,
     /// The same over the id multisets alone, whatever the time.
     pub id_score: f64,
+    /// The CD-XA clips on the same clock: retail's starter calls off a
+    /// `--sfx-callers` log against the engine's `xa.csv`. `None` without the log.
+    #[serde(default)]
+    pub voice: Option<Box<SoundReport>>,
 }
 
 fn read_cues(path: &Path, retail: bool) -> Result<Vec<Cue>> {
@@ -135,13 +139,73 @@ pub fn compare_dirs(retail: &Side, engine: &Side, tolerance: u64) -> Result<Opti
     if !rp.exists() || !ep.exists() {
         return Ok(None);
     }
-    Ok(Some(compare(
+    let mut report = compare(
         retail,
         engine,
         &read_cues(&rp, true)?,
         &read_cues(&ep, false)?,
         tolerance,
-    )))
+    );
+    let (rv, ev) = (retail.dir.join("sfxcall.csv"), engine.dir.join("xa.csv"));
+    if rv.exists() && ev.exists() {
+        report.voice = Some(Box::new(compare(
+            retail,
+            engine,
+            &read_voice_calls(&rv)?,
+            &read_voice_clips(&ev)?,
+            tolerance,
+        )));
+    }
+    Ok(Some(report))
+}
+
+/// A `--sfx-callers` log's dispatcher calls that take the CD-XA arm
+/// (`FUN_8004FCC8`, `id >= 0x100`).
+fn read_voice_calls(path: &Path) -> Result<Vec<Cue>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    Ok(text
+        .lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split(',').map(str::trim).collect();
+            let (t, id) = (f.first()?.parse().ok()?, f.get(2)?.parse().ok()?);
+            (*f.get(1)? == "dispatch" && id >= 0x100).then_some(Cue {
+                t,
+                id,
+                st7: 0,
+                phase: 0,
+            })
+        })
+        .collect())
+}
+
+/// The engine's clip requests (`tick,st7,phase,clip,channel,dur`), as the cue
+/// id the dispatcher makes each from (`0x8004FCC8..0x8004FD7C`: slots `0x1A`,
+/// `0x1B`, `0x1C` remap from `1`, `3`, `5`).
+fn read_voice_clips(path: &Path) -> Result<Vec<Cue>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    Ok(text
+        .lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<i64> = l.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            let [t, st7, phase, clip, channel, ..] = f[..] else {
+                return None;
+            };
+            let slot = match clip {
+                0x1A => 1,
+                0x1B => 3,
+                0x1C => 5,
+                n => n,
+            };
+            Some(Cue {
+                t: t as u64,
+                id: (0x100 + slot * 8 + channel) as i32,
+                st7: st7 as u8,
+                phase: phase as u8,
+            })
+        })
+        .collect())
 }
 
 /// Match two cue lists (see the module docs).
@@ -293,6 +357,7 @@ pub fn compare(
         timing,
         missing,
         extra,
+        voice: None,
     }
 }
 
@@ -378,6 +443,18 @@ pub fn markdown(s: &SoundReport) -> String {
                 id(c.id),
                 c.t,
                 c.key
+            ));
+        }
+    }
+    if let Some(v) = &s.voice {
+        out.push_str(&format!(
+            "\n**CD-XA clips**: retail {}, engine {}.\n\n",
+            v.retail_cues, v.engine_cues
+        ));
+        for p in v.matched.iter().chain(&v.timing) {
+            out.push_str(&format!(
+                "- `{:#05x}`: retail vsync {}, projected tick {}, engine tick {}, dt {:+}\n",
+                p.id, p.retail_vsync, p.projected_tick, p.engine_tick, p.dt
             ));
         }
     }

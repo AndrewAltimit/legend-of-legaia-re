@@ -70,7 +70,7 @@ pub use sfx::{
     classify_cue, key_on_voice_attr, voice_clip_span,
 };
 pub use sfx_ring::{CueDrainState, CueSlot, CueVoice, CueVoicePlan, SfxCueRing, plan_cue_voices};
-pub use shout::{ArtsShoutBank, SHOUT_CD_RESPONSE_DELAY, ShoutClip};
+pub use shout::{ArtsShoutBank, ShoutClip, xa_start_delay};
 pub use sink::{
     AudioSink, DESKTOP_MASTER_VOLUME_DEFAULT, VOLUME_LEVEL_UNITY, master_volume_gain,
     volume_level_gain,

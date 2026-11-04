@@ -19,6 +19,7 @@ impl World {
         use legaia_engine_cast::seru_magic_ticks as ticks_a;
 
         let entry = self.cast_module_for(spell_id)?;
+        self.raise_cast_voice_on_arm(arm);
         // PROT 0954's body is ported whole - camera, records, wheel and
         // outcomes - and drives the band on its own
         // (`world::battle::fatal_decision`).

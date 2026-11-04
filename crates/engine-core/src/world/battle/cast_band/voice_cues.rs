@@ -4,22 +4,58 @@
 use super::*;
 
 impl World {
-    /// Raise the paged module's **own** CD-XA voice - the head cue every
+    /// Schedule the paged module's **own** CD-XA voice - the head cue every
     /// slot-B image calls the dispatcher `FUN_8004FCC8` with near its head
-    /// (`docs/subsystems/cast-module.md`, "The cast's own CD-XA voice"),
-    /// scanned off the module's bytes at cast time
-    /// ([`legaia_engine_battle_vm::battle_cast_cue::module_head_cue`]) and run
-    /// through the dispatcher's CD-XA arm
-    /// ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`]).
+    /// (`docs/subsystems/cast-module.md`, "The cast's own CD-XA voice"). The
+    /// call sits on one arm of the phase byte, past the module's seek and its
+    /// stream wait, so the cast is heard when that arm's pass runs
+    /// ([`Self::raise_cast_voice_on_arm`]). An image whose call no arm holds
+    /// raises it here.
     ///
-    /// Retail raises it from inside the module's first tick, after the
-    /// module's own poll of the side-band stage byte; the port raises it at
-    /// the arming seam, the frame the module becomes resident - which is
-    /// the same frame, since the port's side-band is resident rather than
-    /// streamed (`VoiceCueGates::side_band_stage` is `0` here for that
-    /// reason). The other gate is live: a cast inside the previous clip's
-    /// read span (`battle_xa_busy_frames`, retail's `gp+0x91C`) plays no
-    /// voice, exactly as `FUN_8003DE7C(1)` declines it.
+    /// The same scan names the file the module's head seek parks the drive on,
+    /// which decides how long the clip takes to start.
+    pub(super) fn emit_cast_module_voice(&mut self, spell_id: u8) {
+        self.casting.module_voice_due = None;
+        self.audio.xa_parked_clip = None;
+        let Some(entry) = self.cast_module_for(spell_id) else {
+            return;
+        };
+        let Some(pool) = self.casting.effect_pool.clone() else {
+            return;
+        };
+        let Some(module) = pool.module(entry) else {
+            return;
+        };
+        self.audio.xa_parked_clip =
+            legaia_engine_battle_vm::battle_cast_cue::module_head_seek(&module.bytes);
+        // PROT 0924 draws its kill roll on arm 0, ahead of the cue's arm.
+        if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
+            self.ultimate_rave_verdict();
+        }
+        match legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm(&module.bytes) {
+            Some(arm) => self.casting.module_voice_due = Some((spell_id, arm)),
+            None => self.raise_cast_module_voice(spell_id),
+        }
+    }
+
+    /// The module's pass on `arm` makes the head cue's call once `arm` has
+    /// reached the cue's. An arm that leaves the module (a chain that skips the
+    /// cue's arm) still raises it on the next pass it runs.
+    pub fn raise_cast_voice_on_arm(&mut self, arm: u8) {
+        if let Some((spell_id, due)) = self.casting.module_voice_due
+            && arm >= due
+        {
+            self.casting.module_voice_due = None;
+            self.raise_cast_module_voice(spell_id);
+        }
+    }
+
+    /// Scan the module's head cue and run it through the dispatcher's CD-XA arm
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`]). The
+    /// other gate is the live one: a cast inside the previous clip's read span
+    /// (`battle_xa_busy_frames`, retail's `gp+0x91C`) plays no voice, exactly as
+    /// `FUN_8003DE7C(1)` declines it. The port's side-band is resident, so
+    /// `VoiceCueGates::side_band_stage` is `0`.
     ///
     /// The request lands on [`crate::world::AudioState::battle_xa_cues`],
     /// the `(clip_slot, channel, dur)` channel both hosts already play
@@ -29,7 +65,7 @@ impl World {
     ///
     /// REF: FUN_8004FCC8 (the CD-XA arm), FUN_8003D53C (the starter the
     /// request stands for)
-    pub(super) fn emit_cast_module_voice(&mut self, spell_id: u8) {
+    fn raise_cast_module_voice(&mut self, spell_id: u8) {
         let Some(entry) = self.cast_module_for(spell_id) else {
             return;
         };
@@ -43,9 +79,6 @@ impl World {
         else {
             return;
         };
-        // PROT 0924 picks its cue off arm 0's kill roll; the arming seam is
-        // the module's first tick, so the roll is drawn here, ahead of the
-        // cue, as retail's arm 0 draws it ahead of arm 2's.
         let id = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
         } else {

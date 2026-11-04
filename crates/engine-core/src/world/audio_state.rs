@@ -57,6 +57,10 @@ pub struct AudioState {
     /// funnel resolves (`XA27` for `0x10C`). Drained by the hosts into the
     /// XA mixing path ([`crate::world::World::drain_battle_xa_cues`]).
     pub battle_xa_cues: Vec<legaia_engine_system::sound_state::XaVoiceClip>,
+    /// The clip file a cast module's head seek parked the drive on
+    /// (`FUN_8003EAE4(0, slot)`), `None` outside one. A clip in another file
+    /// takes the seek before it sounds.
+    pub xa_parked_clip: Option<u32>,
     /// Cast voices this round's committed spells **may** raise, listed at the
     /// round's start so a host whose clip decode is asynchronous can have
     /// them resident before the cast arms
@@ -334,6 +338,7 @@ impl AudioState {
             sound_bank_ready: true,
             battle_sfx_cues: Vec::new(),
             battle_xa_cues: Vec::new(),
+            xa_parked_clip: None,
             battle_xa_prestage: Vec::new(),
             battle_xa_busy_frames: 0,
             battle_sfx_bank: None,

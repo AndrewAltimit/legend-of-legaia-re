@@ -338,6 +338,8 @@ struct CastSeqRecorder {
     /// director's command record), the engine half of the retail probe's
     /// cue-ring file. Empty without an audio director (`--no-audio`).
     sfx: std::io::BufWriter<std::fs::File>,
+    /// `xa.csv`: the CD-XA clip requests each tick, `tick,st7,phase,clip,channel,dur`.
+    xa: std::io::BufWriter<std::fs::File>,
     /// Director commands already read ([`AudioCommandLog::count`]).
     ///
     /// [`AudioCommandLog::count`]: legaia_engine_session::audio_director::AudioCommandLog::count
@@ -409,6 +411,8 @@ impl PlayWindowApp {
             let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
             let mut sfx = std::io::BufWriter::new(std::fs::File::create(dir.join("sfx.csv")).ok()?);
             let _ = writeln!(sfx, "tick,st7,phase,id,kind");
+            let mut xa = std::io::BufWriter::new(std::fs::File::create(dir.join("xa.csv")).ok()?);
+            let _ = writeln!(xa, "tick,st7,phase,clip,channel,dur");
             if self.session.bgm.is_none() {
                 eprintln!(
                     "cast sequence: no audio director (--no-audio) - sfx.csv stays empty \
@@ -419,6 +423,7 @@ impl PlayWindowApp {
                 cam,
                 body,
                 sfx,
+                xa,
                 sfx_seen: 0,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
                 tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
@@ -444,6 +449,7 @@ impl PlayWindowApp {
         // ring, `SfxNow` a blip), read before any early return so a cue
         // before the cast never lands on its first tick.
         let mut due: Vec<(i32, &'static str)> = Vec::new();
+        let mut clips: Vec<(u32, u32, u32)> = Vec::new();
         if let Some(d) = self.session.bgm.as_ref() {
             let log = d.commands();
             let fresh = log.count().saturating_sub(rec.sfx_seen);
@@ -458,6 +464,7 @@ impl PlayWindowApp {
                     C::SfxDue(id) => due.push((i32::from(id), "queue")),
                     C::RingDue(id) => due.push((i32::from(id), "ring")),
                     C::SfxNow(id) => due.push((i32::from(id), "now")),
+                    C::XaClip(clip, channel, dur) => clips.push((clip, channel, dur)),
                     _ => {}
                 }
             }
@@ -637,6 +644,13 @@ impl PlayWindowApp {
                 w.casting.module_phase
             );
         }
+        for (clip, channel, dur) in &clips {
+            let _ = writeln!(
+                rec.xa,
+                "{tick},{st},{},{clip},{channel},{dur}",
+                w.casting.module_phase
+            );
+        }
         // The live camera pose each tick (`cam.csv`), the series the retail
         // probe writes beside it: a module shot's tween reads off it.
         {
@@ -778,6 +792,7 @@ impl PlayWindowApp {
         let _ = rec.cam.flush();
         let _ = rec.body.flush();
         let _ = rec.sfx.flush();
+        let _ = rec.xa.flush();
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();
             let _ = rec.cam.flush();

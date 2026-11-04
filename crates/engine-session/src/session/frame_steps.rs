@@ -311,6 +311,12 @@ impl<S: AudioSink> BootSession<S> {
         let cues = world.drain_battle_sfx_cues();
         let shouts = world.drain_battle_shout_cues();
         let xa_cues = world.drain_battle_xa_cues();
+        // The head seek parks the drive for the module's voice alone.
+        let xa_parked = if xa_cues.is_empty() {
+            None
+        } else {
+            world.audio.xa_parked_clip.take()
+        };
         let xa_prestage = world.drain_battle_xa_prestage();
         let queued = cues.len() as u32;
         let Some(bgm) = self.bgm.as_mut() else {
@@ -334,6 +340,7 @@ impl<S: AudioSink> BootSession<S> {
             bgm.prestage_xa_clip(xa.clip, xa.channel, xa.duration_sectors);
         }
         for xa in &xa_cues {
+            bgm.set_xa_seeking(xa_parked.is_some_and(|parked| parked != xa.clip));
             let fired = bgm
                 .play_xa_clip(xa.clip, xa.channel, xa.duration_sectors)
                 .is_some();

@@ -131,8 +131,8 @@ impl<S: AudioSink> AudioDirector<S> {
     /// them resolves the call itself and queues the clip as an ordinary
     /// [`Self::play_xa_clip`] request). Resolves the cue against the bank's
     /// channel pools (retail `FUN_8004C140` selection, no immediate repeat)
-    /// and stages the clip with the modeled CD-response start delay
-    /// ([`SHOUT_CD_RESPONSE_DELAY`]), so the shout starts *after* the clip
+    /// and stages the clip with the drive's start delay
+    /// ([`legaia_engine_audio::xa_start_delay`]), so the shout starts *after* the clip
     /// install that requested it - never before. A clip that is sounding
     /// stops for it ([`AudioSink::play_xa_shout`]). Returns the fired
     /// channel, or `None` when the bank is absent or the art is unvoiced.
@@ -153,7 +153,7 @@ impl<S: AudioSink> AudioDirector<S> {
             sample_rate,
             legaia_xa::Channels::Mono,
             XA_CUE_GAIN,
-            SHOUT_CD_RESPONSE_DELAY,
+            legaia_engine_audio::xa_start_delay(u32::from(channel), false),
         );
         self.xa_stats.shouts_fired += 1;
         self.xa_stats.last_shout = Some((cslot, action, channel));
@@ -344,7 +344,7 @@ impl<S: AudioSink> AudioDirector<S> {
             clip.sample_rate,
             channels,
             XA_CUE_GAIN,
-            SHOUT_CD_RESPONSE_DELAY,
+            legaia_engine_audio::xa_start_delay(u32::from(ch), self.xa_seeking),
         );
         self.xa_stats.clips_fired += 1;
         self.xa_stats.last_clip = Some((slot, ch, frames));
@@ -405,6 +405,12 @@ impl<S: AudioSink> AudioDirector<S> {
             let _ = self.play_xa_clip(u32::from(slot), u32::from(channel), req.duration_sectors);
         }
         true
+    }
+
+    /// Whether the clip about to be requested reads a file other than the one
+    /// the drive is parked on (`World::xa_clip_seeks`).
+    pub fn set_xa_seeking(&mut self, seeking: bool) {
+        self.xa_seeking = seeking;
     }
 
     /// The XA lane's request counters.

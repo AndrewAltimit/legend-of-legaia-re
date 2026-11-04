@@ -126,6 +126,9 @@ const JAL_SFX_FUNNEL: u32 = jal_word(0x8004_FE5C);
 /// `jal FUN_80056798` - the BIOS `rand` the two coin-flip modules (PROT 0936
 /// / 0937) reduce to `v0 % 2` and add to their base id.
 const JAL_BIOS_RAND: u32 = jal_word(0x8005_6798);
+/// `jal FUN_8003EAE4` - the drive seek a module parks the head with ahead of
+/// its voice, `(0, clip slot)`.
+const JAL_DRIVE_SEEK: u32 = jal_word(0x8003_EAE4);
 
 /// Words scanned back from a call site for the instruction that formed its
 /// argument register. Twelve covers every literal site in the band and the
@@ -250,6 +253,287 @@ fn rand_span_before(words: &[u32], site: usize) -> u8 {
 ///
 /// REF: FUN_8004FCC8, FUN_8004FE5C (the two dispatchers the sites call)
 pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
+    head_cue_site(image).map(|(cue, _)| cue)
+}
+
+/// The arm of the module's phase byte `ctx[+0x279]` whose pass makes the head
+/// cue's call. The arm the cue sits in decides when a cast is heard: PROT 0904
+/// reaches its call on arm `3`, `119` vsyncs after the arm-2 stream wait begins,
+/// PROT 0927 on arm `2` (`capture`, caller log, Theeder and Juggernaut).
+///
+/// The tick dispatches on the phase with a compare tree or a jump table, so
+/// each phase value is walked through the dispatch code from the first
+/// `lbu rt,0x279(rs)` of the function that holds the call, to the first
+/// instruction that is not dispatch. The cue's arm is the one whose body starts
+/// nearest ahead of the call. `None` when the call is outside any such
+/// function: the caller then has no arm to wait for.
+///
+/// REF: FUN_8004FCC8 (the call this places)
+pub fn module_head_cue_arm(image: &[u8]) -> Option<u8> {
+    let (_, site) = head_cue_site(image)?;
+    let func = legaia_overlay_images::slot_b_module::framed_functions(image)
+        .into_iter()
+        .find(|f| f.start / 4 <= site && site < f.end / 4)?;
+    let words: Vec<u32> = image
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    let lo = func.start / 4;
+    let head = lo..site.min(lo + DISPATCH_HEAD_WORDS);
+    // PROT 0908 reads the byte ahead of its dispatch for another test, and
+    // reloads it through a saved `addiu s5, v1, 0x279`: the dispatch is the
+    // load whose walk reaches the most arm bodies.
+    let pointers: Vec<u32> = words[head.clone()]
+        .iter()
+        .filter(|&&w| (w >> 26) == 0x09 && w & 0xFFFF == 0x279)
+        .map(|&w| (w >> 16) & 0x1F)
+        .collect();
+    let bodies = head
+        .filter(|&i| {
+            let w = words[i];
+            (w >> 26) == 0x24
+                && (w & 0xFFFF == 0x279
+                    || (w & 0xFFFF == 0 && pointers.contains(&((w >> 21) & 0x1F))))
+        })
+        .map(|load| dispatch_bodies(&words, lo, load))
+        .max_by_key(|bodies| {
+            let mut seen: Vec<usize> = bodies.iter().flatten().copied().collect();
+            seen.sort_unstable();
+            seen.dedup();
+            seen.len()
+        })?;
+    let mut best: Option<(usize, u8)> = None;
+    for (phase, body) in bodies.into_iter().enumerate() {
+        let Some(body) = body else { continue };
+        if body <= site && best.is_none_or(|(at, _)| body > at) {
+            best = Some((body, phase as u8));
+        }
+    }
+    best.map(|(_, phase)| phase)
+}
+
+/// The clip file the module's head seek parks the drive on: the slot of the
+/// first `FUN_8003EAE4` call in the image's own content that forms it as a
+/// literal. PROT 0904's is `7` (`XA8`) and its voice plays from `6` (`XA7`), so
+/// that clip starts with a seek; PROT 0927 seeks and plays `0xE`.
+///
+/// REF: FUN_8003EAE4
+pub fn module_head_seek(image: &[u8]) -> Option<u32> {
+    let end = match legaia_overlay_images::slot_b_module::content_end(
+        image,
+        legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE,
+    ) {
+        0 => image.len(),
+        n => n.min(image.len()),
+    };
+    let words: Vec<u32> = image[..end & !3]
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect();
+    words.iter().enumerate().find_map(|(site, &w)| {
+        (w == JAL_DRIVE_SEEK)
+            .then(|| match resolve_arg(&words, site, 5) {
+                ArgSource::Literal(slot) => Some(u32::from(slot)),
+                _ => None,
+            })
+            .flatten()
+    })
+}
+
+/// The arm body each phase reaches from the phase load at word `load`.
+fn dispatch_bodies(words: &[u32], lo: usize, load: usize) -> Vec<Option<usize>> {
+    let phase_reg = ((words[load] >> 16) & 0x1F) as usize;
+    let mut constants = [None; 32];
+    for &w in &words[lo..load] {
+        // The prologue's `li`s: PROT 0904's tree compares against one.
+        let (op, rs, rt) = (w >> 26, (w >> 21) & 0x1F, ((w >> 16) & 0x1F) as usize);
+        if op == 0x09 && rs == 0 {
+            constants[rt] = Some(w as u16 as i16 as i32 as u32);
+        } else if (0x20..=0x26).contains(&op) {
+            constants[rt] = None;
+        }
+    }
+    match table_dispatch(words, load, phase_reg as u32) {
+        Some(table) => table.into_iter().map(Some).collect(),
+        None => (0..=MAX_MODULE_PHASE)
+            .map(|phase| {
+                let mut walk = TreeWalk {
+                    words,
+                    regs: constants,
+                    phase_reg,
+                    in_head: true,
+                };
+                walk.set(phase_reg, Some(u32::from(phase)));
+                walk.run(load + 1)
+            })
+            .collect(),
+    }
+}
+
+const STACK_POINTER: usize = 29;
+/// How far into the tick its dispatch's phase load can sit.
+const DISPATCH_HEAD_WORDS: usize = 96;
+/// The highest phase [`module_head_cue_arm`] tries.
+const MAX_MODULE_PHASE: u8 = 63;
+/// How many instructions a phase's way through the dispatch may take.
+const DISPATCH_WALK_LIMIT: usize = 96;
+/// How far past the phase load a jump-table lookup's `jr` can sit.
+const TABLE_LOOKUP_SPAN: usize = 12;
+
+/// The tick's jump table, when it dispatches through one: `sltiu` bound,
+/// `sll idx, phase, 2`, base into a register, `addu`, `lw`, `jr`. The body
+/// address of each phase in bounds.
+fn table_dispatch(words: &[u32], load: usize, phase_reg: u32) -> Option<Vec<usize>> {
+    let base_va = legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE;
+    let mut known = [None::<u32>; 32];
+    let mut index_reg = None;
+    let mut slot_reg: Option<(u32, u32)> = None;
+    let mut word_reg = None;
+    let mut bound = None;
+    for &w in words.get(load + 1..load + 1 + TABLE_LOOKUP_SPAN)? {
+        let (op, rs, rt, rd) = (
+            w >> 26,
+            (w >> 21) & 0x1F,
+            (w >> 16) & 0x1F,
+            (w >> 11) & 0x1F,
+        );
+        let simm = w as u16 as i16 as i32 as u32;
+        match op {
+            0x0B if rs == phase_reg => bound = Some(w & 0xFFFF),
+            0x0F => known[rt as usize] = Some((w & 0xFFFF) << 16),
+            0x09 => known[rt as usize] = known[rs as usize].map(|v: u32| v.wrapping_add(simm)),
+            0 if w & 0x3F == 0 && rt == phase_reg && (w >> 6) & 0x1F == 2 => index_reg = Some(rd),
+            0 if w & 0x3F == 0x21 => {
+                let base = match index_reg {
+                    Some(i) if i == rs => known[rt as usize],
+                    Some(i) if i == rt => known[rs as usize],
+                    _ => None,
+                };
+                if let Some(b) = base {
+                    slot_reg = Some((rd, b));
+                }
+            }
+            0x23 => {
+                if let Some((r, b)) = slot_reg
+                    && r == rs
+                {
+                    word_reg = Some((rt, b.wrapping_add(simm)));
+                }
+            }
+            0 if w & 0x3F == 0x08 => {
+                let (r, table) = word_reg?;
+                if r != rs {
+                    return None;
+                }
+                let at = table.wrapping_sub(base_va) as usize / 4;
+                return (0..bound? as usize)
+                    .map(|p| {
+                        let va = *words.get(at + p)?;
+                        Some(va.wrapping_sub(base_va) as usize / 4)
+                    })
+                    .collect();
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// A phase's way through a compare-tree dispatch: `li`, `slti` / `sltiu` of the
+/// phase, `beq` / `bne`, `j`. Anything else is where an arm's body begins: a
+/// body opens on anything, and walked on as dispatch it would run away.
+struct TreeWalk<'a> {
+    words: &'a [u32],
+    regs: [Option<u32>; 32],
+    phase_reg: usize,
+    /// Still ahead of the tree's first branch, where the tick's head loads
+    /// its pointers between the phase load and the first compare.
+    in_head: bool,
+}
+
+impl TreeWalk<'_> {
+    fn get(&self, r: usize) -> Option<u32> {
+        if r == 0 { Some(0) } else { self.regs[r] }
+    }
+
+    fn set(&mut self, r: usize, v: Option<u32>) {
+        if r != 0 {
+            self.regs[r] = v;
+        }
+    }
+
+    fn step(&mut self, w: u32) -> bool {
+        let (op, rs, rt) = (
+            w >> 26,
+            ((w >> 21) & 0x1F) as usize,
+            ((w >> 16) & 0x1F) as usize,
+        );
+        let simm = w as u16 as i16 as i32 as u32;
+        let a = self.get(rs);
+        match op {
+            0x09 if rs == 0 => self.set(rt, Some(simm)),
+            0x0A if a.is_some() => self.set(rt, a.map(|v| u32::from((v as i32) < simm as i32))),
+            0x0B if a.is_some() => self.set(rt, a.map(|v| u32::from(v < simm))),
+            0x23 | 0x09 if self.in_head => self.set(rt, None),
+            // PROT 0916's tree spills a constant and reloads it mid-way.
+            0x23 if rs == STACK_POINTER => self.set(rt, None),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Walk from word `pc` to the arm body this phase reaches.
+    fn run(&mut self, mut pc: usize) -> Option<usize> {
+        let base = legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE;
+        for _ in 0..DISPATCH_WALK_LIMIT {
+            let w = *self.words.get(pc)?;
+            let (op, rs, rt) = (
+                w >> 26,
+                ((w >> 21) & 0x1F) as usize,
+                ((w >> 16) & 0x1F) as usize,
+            );
+            let branch_to = (pc as i64 + 1 + i64::from(w as u16 as i16)) as usize;
+            let (a, b) = (self.get(rs), self.get(rt));
+            let next: Option<usize> = match op {
+                0x02 => {
+                    Some(((w & 0x03FF_FFFF) << 2).wrapping_sub(base & 0x0FFF_FFFF) as usize / 4)
+                }
+                // A spilled constant only ever separates arm `1`, past every cue.
+                0x04 if rs == self.phase_reg && b.is_none() => Some(pc + 2),
+                0x04 => a
+                    .zip(b)
+                    .map(|(x, y)| if x == y { branch_to } else { pc + 2 }),
+                0x05 => a
+                    .zip(b)
+                    .map(|(x, y)| if x != y { branch_to } else { pc + 2 }),
+                _ => {
+                    if w == 0 || self.step(w) {
+                        pc += 1;
+                        continue;
+                    }
+                    return Some(pc);
+                }
+            };
+            let Some(next) = next else {
+                return Some(pc);
+            };
+            // The delay slot runs either way; an arm's own instruction there
+            // changes nothing the tree reads.
+            let delay = *self.words.get(pc + 1)?;
+            let _ = self.step(delay);
+            self.in_head = false;
+            pc = next;
+        }
+        None
+    }
+}
+
+/// [`module_head_cue`] with the word index of the call it found.
+fn head_cue_site(image: &[u8]) -> Option<(ModuleHeadCue, usize)> {
     // A zero bound is "no layout recognised" (a fixture too small to carry a
     // head table), not "no content": scan the whole image then. Every real
     // band image has a non-zero code end.
@@ -276,12 +560,15 @@ pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
             continue;
         }
         match resolve_arg(&words, site, 4) {
-            ArgSource::Literal(id) => return Some(ModuleHeadCue::Literal(id)),
+            ArgSource::Literal(id) => return Some((ModuleHeadCue::Literal(id), site)),
             ArgSource::RandPlus(base) => {
-                return Some(ModuleHeadCue::Random {
-                    base,
-                    span: rand_span_before(&words, site),
-                });
+                return Some((
+                    ModuleHeadCue::Random {
+                        base,
+                        span: rand_span_before(&words, site),
+                    },
+                    site,
+                ));
             }
             ArgSource::Unknown => continue,
         }
