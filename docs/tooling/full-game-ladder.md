@@ -1519,9 +1519,11 @@ For each member, in order of priority:
 1. **Revive.** A member who is down gets a revive.
 2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear (in a solo duel, clear after the foe's next round too - see [Guards and boss reads](#guards-and-boss-reads)), aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
 3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one. A command ring that answers Magic by reopening itself (a fight whose special word forbids the Ra-Seru chip, or a caster with no spell session) is asked for two seconds and then not again that battle.
-4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved.
+4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved. The finishing blow is no exception: a fully rotted member passes on it.
 
    One or two rotted limbs leave the entry open but refuse their own directions (Left for `0x08`, Right for `0x10`, Up and Down for `0x20`; `rot_blocks`, `0x801D1E60..0x801D1F7C`), so the plan keeps to the open ones: a plan through a rotted arm waited on a Left that never landed, and a `jouinc` fight after a party-wide Rot ran out its budget with the entry half typed.
+
+A plain string goes where it can land. A party swing whose power byte cannot reach the target's record `+0x1E` class misses outright (`FUN_801EC3E4`, `0x801EC488..0x801EC554`, [the limb-vs-height miss](../subsystems/battle-formulas.md#the-limb-vs-height-miss)), and the action ends with the swing: a class-2 foe takes nothing from a whole string of Low. Retail shows the "Miss" a player reads off the first swing; the hand reads the class it stands for and strings High there, Low everywhere else (`plain_order`). Zora and `taiku`'s monsters 112 and 91 are class 2, and a hand keeping its Spirit typed nine Low into Zora for 0 damage, every time.
 
 A member is **in danger** when it is standing and either:
 
@@ -1634,6 +1636,22 @@ So the hand:
 - Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
 - Walks in charged on a reload after any boss wipe (`pad_charge_for_race`, `BOSS_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third. The stance deals nothing, so a charging party flees past half its HP, starts each outing healed, stops once under half its MP, and meets the boss healed. A boss above 15000 HP is a race too for what its typists save (`long_boss`).
 
+A status that takes a member out of the fight is cured ahead of a heal
+(`wanted_cure_item`). Zora's Glare turns a member to stone: Stone lasts the
+battle, its member deals nothing, and the `0x5A` wipe scan counts it as down, so
+a party can wipe with two statues holding near-full HP and Medicine in the bag.
+Medicine's class-3 arm stores the whole status word (`FUN_800402F4`,
+`0x80040E64..`), and the member comes back with the HP it was Stoned at, which
+beats any revive. The heal arm goes first only while a standing member sits
+within one party-wide hit of death.
+
+Against a boss a member's first attack is its Arts string, and a cast after that
+has to beat what the string took (`arts_measured_first`, `wanted_spell`). The MP
+is the party's Spoons, and Gala's Gola Gola took about 550 off Zora for 40 MP
+where her five presses took about 620 for none. Measured at level 33 against
+Zora: Vahn's Miracle about 2900, Noa's about 2200, Gala's Kemaro about 2000 and
+Nova about 1100. A race keeps its own sum (`race_spell_gain`).
+
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
 (`FUN_801E9FD4`, `monster_ai::decide`) rolls Evil Seru Magic (`0xAD`) one time
@@ -1644,6 +1662,13 @@ member of the anchor's lv30 party - more than any member holds - and about
 half that in the Spirit stance. So once the shield has dropped, on the rounds
 the cast can come, every member above 55% of its HP takes Spirit; the others
 are the heal arm's, and the even rounds are the party's to act on.
+
+The shield also stops every plain swing whoever swings it (`FUN_801EC3E4`,
+`0x801ECA84..0x801ECAF8`, a clip below `0x10`), and an art passes at half damage.
+A member keeping its Spirit for the Miracle (`long_boss`) would otherwise type
+nine plain presses for nothing, so behind the shield it takes the stance until
+the gauge pays (`wants_miracle_stance`): `+0x20` a turn where a swung action
+earns `+8`, and half of the foe's round.
 
 A lone member against a foe of several times its HP (the `nilboa` Delilas
 duels) alternates a Spirit round with an Arts round, and holds the stance
@@ -1827,7 +1852,8 @@ clips and matches the same arts a windowed one does. Beyond that:
 |---|---|
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. In part C, an `[aim]` line for each target cursor the aim gave up on, with where the cursor stood. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
-| `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state, each commit, and at each round's command window the round history, statuses, Spirit gauges, MP and the foes' HP. |
+| `LEGAIA_FGL_TRACE_ACTS=1` | With the two above: each change of the acting seat or the action state, with its clip, queue and target. How a string that ends on its first swing shows up. |
 | `LEGAIA_FGL_CAPS=1` | Each script context the engine's anti-hang timeline cap ends (`World::cutscene.capped`): scene, modal or helper, record length, PC and opcode. Retail has no such cap, so each line is a record the engine cut short; over both passes there are none. |
 | `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
 | `LEGAIA_FGL_SHOP_DEBUG=1` | Each pad edge of a shop screen with the hand's next buy and sale, the screen state, the purse and the bag's heals in Healing Flowers' worth. |

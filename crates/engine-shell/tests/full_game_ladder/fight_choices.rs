@@ -267,6 +267,55 @@ pub(super) fn wanted_item(
         .map(|&(_, id)| (id, worst as u8))
 }
 
+/// The cure worth a turn, and who for: in a fight that forbids running, a member
+/// out of the fight under Stone (`+0x16E & 4`) gets Medicine, whose class-3 arm
+/// stores the whole status word (`FUN_800402F4`, `0x80040E64..`). Stone lasts the
+/// battle, its member deals nothing, and the `0x5A` wipe scan counts it as down, so
+/// Zora's Glare wipes a party with HP to spare (Vahn fell beside two statues holding
+/// 1939 and 2035 HP, seven Medicine in the bag and 5933 of 22422 left). The member
+/// comes back with the HP it was Stoned at, which beats any revive; so the cure is
+/// ahead of the heal arm, unless a standing member's HP, with the round's committed
+/// heals landed, sits within one party-wide hit: the heal comes first there, or the
+/// giver is the next one down. Cures the round's earlier members committed count as
+/// landed.
+pub(super) fn wanted_cure_item(
+    w: &legaia_engine_core::world::World,
+    ids: impl Iterator<Item = u8>,
+) -> Option<(u8, u8)> {
+    use legaia_engine_battle_loop::round_flow::PendingPartyAction;
+    use legaia_engine_menus::items::ItemEffect;
+    if !w.battle.no_escape {
+        return None;
+    }
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let cures = |id: u8| {
+        w.tables
+            .item_catalog
+            .get(id)
+            .is_some_and(|e| e.usable_in_battle && matches!(e.effect, ItemEffect::CureAll))
+    };
+    let coming: Vec<usize> = w
+        .battle
+        .round_flow
+        .pending
+        .iter()
+        .enumerate()
+        .take(n)
+        .filter(
+            |(_, p)| matches!(p, Some(PendingPartyAction::Item { item_id, .. }) if cures(*item_id)),
+        )
+        .filter_map(|(actor, _)| ITEM_TARGET.with(|t| t.borrow()[actor]).map(usize::from))
+        .collect();
+    let target = (0..n).find(|&i| stoned(w, i) && !coming.contains(&i))?;
+    let aoe = AOE_HIT.with(std::cell::Cell::get);
+    let hp = projected_hp(w);
+    if (0..n).any(|i| !stoned(w, i) && hp[i] > 0 && hp[i] <= aoe + aoe / 8) {
+        return None;
+    }
+    let mut ids = ids;
+    ids.find(|&id| cures(id)).map(|id| (id, target as u8))
+}
+
 /// The MP the member's strongest damaging spell costs, if it knows one.
 pub(super) fn best_spell_cost(w: &legaia_engine_core::world::World, actor: u8) -> Option<u32> {
     use legaia_engine_battle::spells::SpellEffect;
@@ -966,7 +1015,8 @@ pub(super) fn wanted_spell(
         .actors
         .get(usize::from(m.actor))
         .map_or(0, |a| u32::from(a.battle.mp));
-    m.spells
+    let best = m
+        .spells
         .iter()
         .enumerate()
         .filter(|(_, r)| r.affordable)
@@ -978,8 +1028,21 @@ pub(super) fn wanted_spell(
                     .is_some_and(|d| mp >= floor + u32::from(d.mp_cost))
         })
         .filter_map(|(i, r)| score(r.id).map(|s| (i, s)))
-        .max_by_key(|&(_, p)| p)
-        .map(|(i, _)| i)
+        .max_by_key(|&(_, p)| p)?;
+    // Against a boss the MP is the party's heals: a cast that has taken no more
+    // off it than this member's Arts string spends them for nothing. Gala's Gola Gola
+    // took about 550 off Zora for its MP where her five presses took about 620.
+    if boss_fight(w) && !racing && art.is_some_and(|a| best.1 <= u64::from(a)) {
+        return None;
+    }
+    Some(best.0)
+}
+
+/// Whether `actor` may open the Magic window for a damage spell: against a boss
+/// its first attack is its Arts string, so [`wanted_spell`] has a measure to weigh
+/// the cast against. Behind a Mystic Shield too, since an art passes it.
+pub(super) fn arts_measured_first(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    !boss_fight(w) || DEALT.with(|d| d.borrow().contains_key(&(actor, ART_KIND)))
 }
 
 /// The MP a member keeps back from damage spells in a boss fight
@@ -1241,13 +1304,9 @@ pub(super) fn arts_plan(
         // the power scalar (`0x801F64EC[(id - 0x0C) % 5]`), 12 for the left arm
         // against 22 for Low. Vahn's nine presses take 1750 off Koru on Low and
         // 1050 on the arm; with no art to pay for, Spirit stays for one. A foe
-        // can hold its guard low (`taiku`'s monster 112 and 91 took nothing from
-        // a whole string of Low), so outside a race the string changes height.
-        let order = if !saving && plan.last() == Some(&Command::Down) {
-            [Command::Up, Command::Down, Command::Right, Command::Left]
-        } else {
-            [Command::Down, Command::Up, Command::Right, Command::Left]
-        };
+        // of swing class 2 is out of Low's reach (the "Miss" a player reads off
+        // the first swing, [`plain_order`]), so the string goes High.
+        let order = plain_order(w);
         let Some(&d) = order
             .iter()
             .filter(|&&d| s.cost_of(d) <= pool && open(&[d]) && with(&[d]))
@@ -1262,6 +1321,52 @@ pub(super) fn arts_plan(
         plan.push(d);
     }
     plan.into_iter().map(|c| c.as_byte()).collect()
+}
+
+/// The plain directions in the order worth pressing against the foe the hand
+/// aims at. A party swing whose power byte cannot reach the target's record
+/// `+0x1E` class misses outright (`FUN_801EC3E4`, `0x801EC488..0x801EC554`,
+/// `limb_misses`): a Low swing's power byte is `>= 0x11`, so a class-2 foe (Zora,
+/// and `taiku`'s 112 and 91) takes nothing from a whole string of Low, and the
+/// action ends on the first swing. Retail shows the "Miss"; the hand reads the
+/// class it stands for. A class-3 foe is the mirror, and Low is first there anyway.
+fn plain_order(w: &legaia_engine_core::world::World) -> [legaia_art::Command; 4] {
+    use legaia_art::Command;
+    const OUT_OF_LOWS_REACH: u8 = 2;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let foe = aimed_foe(w, None)
+        .map(|r| n + usize::from(r))
+        .or_else(|| (n..w.actors.len()).find(|&i| w.actors[i].battle.hp > 0));
+    let class = foe
+        .and_then(|i| w.actors[i].battle_monster_id)
+        .and_then(|id| w.tables.monster_catalog.get(id))
+        .map_or(0, |d| d.swing_class);
+    if class == OUT_OF_LOWS_REACH {
+        [Command::Up, Command::Right, Command::Left, Command::Down]
+    } else {
+        [Command::Down, Command::Up, Command::Right, Command::Left]
+    }
+}
+
+/// Whether a Mystic Shield (`_DAT_8007BD84`) stands: it stops every plain swing
+/// (a clip below `0x10`, `FUN_801EC3E4` `0x801ECA84..0x801ECAF8`) whoever swings
+/// it, and an art passes at half damage. The shield is on the screen.
+pub(super) fn shield_up(w: &legaia_engine_core::world::World) -> bool {
+    w.battle.monster_ai_state.flag_bd84 != 0
+}
+
+/// Whether `actor`'s plan would be plain swings this turn because it is keeping
+/// its Spirit for the Miracle Art ([`long_boss`]), and they would be worth less
+/// than the stance: behind a Mystic Shield they deal nothing. A turn in the Spirit
+/// stance earns `+0x20` where a swung action earns `+8`, and halves the foe's round.
+pub(super) fn wants_miracle_stance(w: &legaia_engine_core::world::World, actor: u8) -> bool {
+    let Some(a) = w.actors.get(usize::from(actor)) else {
+        return false;
+    };
+    long_boss(w)
+        && shield_up(w)
+        && miracle_ready(w, actor)
+        && a.battle.spirit_gauge < miracle_spirit_price(w, actor)
 }
 
 /// Whether a Spirit gauge at `gauge` pays for every art `arrows` would match, in
