@@ -1098,6 +1098,18 @@ impl DanceGame {
     // PORT: FUN_801cf470 (beat clock + song-end test, states 10..12)
     // PORT: FUN_801d1358 (per-dancer handler: latch decay, spin, chart auto-feed)
     pub fn advance(&mut self, frame_delta: u32) {
+        self.advance_pressing(frame_delta, None);
+    }
+
+    /// [`Self::advance`] with this frame's press, judged where retail's handler
+    /// reads the pad: in slot 0's turn, so the rivals behind it on the floor see
+    /// what it did. Returns the press's event.
+    pub fn advance_pressing(
+        &mut self,
+        frame_delta: u32,
+        press: Option<DanceDir>,
+    ) -> Option<DanceEvent> {
+        let mut event = None;
         self.advance_step_markers(frame_delta);
         let step = frame_delta * PHASE_PER_DELTA;
         self.phase = (self.phase + step) % BEAT_PHASE_WRAP;
@@ -1109,8 +1121,34 @@ impl DanceGame {
 
         let beat = self.beat_index();
         let rows = self.chart.rows.len();
-        for d in &mut self.dancers {
+        let free_play = self.mode == DanceMode::FreePlay;
+        let timed = self.clip_ticks.is_some();
+        // The per-dancer handler, slot by slot; the human's press comes in
+        // through [`Self::press`] after this pass, at the same beat phase.
+        for i in 0..self.dancers.len() {
+            let lead_gauge = self.dancers[0].gauge;
+            let d = &mut self.dancers[i];
+            // Free play's rivals ride the lead's gauge and bank no triangles
+            // (`0x801D1394..0x801D13BC`).
+            if free_play && i > 0 {
+                d.gauge = lead_gauge;
+                d.tri_meter = 0;
+            }
+            // Groovy-move spin: the dancer turns once per SPIN_TURN_UNITS of
+            // accumulated yaw, `lane + 1` turns in all.
+            if d.spin_turns > 0 {
+                let rate = SPIN_RATE_BASE + d.lane(rows) * SPIN_RATE_PER_LANE;
+                d.spin_acc += rate * frame_delta;
+                if d.spin_acc >= SPIN_TURN_UNITS {
+                    d.spin_acc -= SPIN_TURN_UNITS;
+                    d.spin_turns -= 1;
+                }
+                if d.spin_turns == 0 {
+                    d.spin_acc = 0;
+                }
+            }
             // The bound judge move plays on (the clip driver's cursor).
+            d.move_just_ended = d.move_left > 0 && d.move_left <= frame_delta;
             d.move_left = d.move_left.saturating_sub(frame_delta);
             // Latch decay (`timer -= 2 * delta`; at 0 the latch clears).
             if d.latch_timer > 0 {
@@ -1120,34 +1158,21 @@ impl DanceGame {
                     d.latch = 0;
                 }
             }
-            // Groovy-move spin: the dancer turns once per SPIN_TURN_UNITS of
-            // accumulated yaw, `lane + 1` turns in all.
-            if d.spin_turns > 0 {
-                let rate = SPIN_RATE_BASE + d.lane(rows) * SPIN_RATE_PER_LANE;
-                d.spin_acc += rate * frame_delta;
-                while d.spin_acc >= SPIN_TURN_UNITS && d.spin_turns > 0 {
-                    d.spin_acc -= SPIN_TURN_UNITS;
-                    d.spin_turns -= 1;
-                }
-                if d.spin_turns == 0 {
-                    d.spin_acc = 0;
-                }
-            }
-            // Chain cursor clears once per 8-beat bar.
-            if beat.is_multiple_of(CURSOR_RESET_BEATS) && d.last_reset_beat != Some(beat) {
-                d.last_reset_beat = Some(beat);
+            // The chain cursor stands at zero through the bar's first beat
+            // (`0x801D164C..0x801D1688`, every frame of it).
+            if beat.is_multiple_of(CURSOR_RESET_BEATS) {
                 d.cursor = 0;
             }
-            // Bank one combo slot per 4-beat boundary (the CPU triangle clock).
-            if beat & 3 == 3 && d.last_meter_beat != Some(beat) {
-                d.last_meter_beat = Some(beat);
-                d.tri_meter += 1;
+            // The award routine runs only while a standing loop is bound
+            // (`0x801D168C..0x801D16B4`), and a rival's pad word is read off the
+            // chart inside it, so the feed's schedule stands still with it.
+            if i == 0 {
+                event = press.map(|dir| self.award(0, dir));
             }
-        }
-
-        // The competitors' pad word is synthesised from the chart every frame.
-        for i in 1..self.dancers.len() {
-            if let Some(sym) = self.auto_feed(i) {
+            if i > 0
+                && self.dancers[i].move_left == 0
+                && let Some(sym) = self.auto_feed(i)
+            {
                 match sym {
                     1 => {
                         self.award(i, DanceDir::A);
@@ -1161,6 +1186,14 @@ impl DanceGame {
                     _ => {}
                 }
             }
+            // Bank one combo slot per 4-beat boundary (the CPU triangle clock).
+            let d = &mut self.dancers[i];
+            if beat & 3 == 0 {
+                d.meter_banked = false;
+            } else if beat & 3 == 3 && !d.meter_banked {
+                d.meter_banked = true;
+                d.tri_meter += 1;
+            }
         }
 
         // `FUN_801d1358` rebinds a dancer's loop clip once its judge-triggered
@@ -1168,7 +1201,6 @@ impl DanceGame {
         // choreography bank attached that is the move's own length; a
         // chart-only run has no clip lengths and times it off the note latch
         // the judge arms instead.
-        let timed = self.clip_ticks.is_some();
         for i in 0..self.dancers.len() {
             let d = &self.dancers[i];
             let free = if timed {
@@ -1182,6 +1214,7 @@ impl DanceGame {
         }
         self.sync_dancer_actors();
         self.age_sprite_parts(frame_delta);
+        event
     }
 
     /// Bind dancer `i`'s standing clip: the kind descriptor's dance-groove loop
@@ -1205,18 +1238,27 @@ impl DanceGame {
         let Some(kind) = self.dancers.get(i).map(|d| d.kind) else {
             return;
         };
-        let Some(clip) = self
-            .kinds
-            .get(kind)
-            .and_then(|k| k.moves.get(pair))
-            .copied()
-        else {
+        let Some((clip, loops)) = self.kinds.get(kind).and_then(|k| {
+            let m = k.moves.get(pair).copied()?;
+            Some((m, [k.idle.anim_id & 0x1FF, k.dance.anim_id & 0x1FF]))
+        }) else {
             return;
         };
-        let len = self.clip_len(&clip).unwrap_or(0);
+        // A move that names the dancer's own loop (all of the Disco King's) is no
+        // move at all to the handler: it tests the clip id, not how it got there.
+        let len = if loops.contains(&(clip.anim_id & 0x1FF)) {
+            0
+        } else {
+            self.clip_len(&clip).unwrap_or(0)
+        };
         if let Some(d) = self.dancers.get_mut(i) {
+            // On the tick the last move's end rebinds the loop, the selector has
+            // not run on that loop: the same move bound again finds `+0x5E`
+            // equal, keeps its spent cursor and ends on this tick's step.
+            let same = d.move_just_ended && d.last_move == clip.anim_id & 0x1FF;
+            d.last_move = clip.anim_id & 0x1FF;
             d.bind_move(&clip);
-            d.move_left = len;
+            d.move_left = if same { len.min(1) } else { len };
         }
     }
 
@@ -1233,9 +1275,9 @@ impl DanceGame {
         let rows = self.chart.rows.len();
         let (lane, due) = {
             let d = &self.dancers[i];
-            let due = beat & 3 == 3
-                && d.triangles > 0
-                && self.tables.schedule(d.kind, d.tri_cursor) <= d.tri_meter;
+            // The feed moves its schedule on whether or not a triangle is left
+            // to spend: the award routine is what tests the stock.
+            let due = beat & 3 == 3 && self.tables.schedule(d.kind, d.tri_cursor) <= d.tri_meter;
             (d.lane(rows) as usize, due)
         };
         if due {
@@ -1247,12 +1289,31 @@ impl DanceGame {
         Some(self.cell(lane, beat))
     }
 
+    /// One dancer's live words, for the differential.
+    pub fn dancer_probe(&self, i: usize) -> DancerProbe {
+        let d = &self.dancers[i];
+        DancerProbe {
+            score: d.score,
+            gauge: d.gauge,
+            cursor: d.cursor,
+            triangles: d.triangles,
+            latch: d.latch,
+            latch_timer: d.latch_timer,
+            spin_turns: d.spin_turns,
+            misses: d.misses,
+            landed: d.landed,
+            tri_cursor: d.tri_cursor,
+            tri_meter: d.tri_meter,
+            clip: d.clip,
+        }
+    }
+
     // ---------------------------------------------------------------- press
 
     /// Judge a human press. Square / Circle are judged against the chart cell;
     /// **Triangle spends a groovy-move wildcard** (three per song, any beat,
-    /// worth the big multiplier only on the 4-beat combo slot, and locking input
-    /// out for the length of the spin it throws the dancer into).
+    /// worth the big multiplier only on the 4-beat combo slot). The spin it
+    /// throws the dancer into holds no input of its own; the move clip does.
     // PORT: FUN_801d1af4 (PROT 0980; score / groove-gauge award; pad-word branches)
     pub fn press(&mut self, dir: DanceDir) -> DanceEvent {
         self.award(0, dir)
@@ -1269,7 +1330,7 @@ impl DanceGame {
     /// and the CPU dancers' auto-fed ones run through exactly this path.
     pub(super) fn award(&mut self, i: usize, dir: DanceDir) -> DanceEvent {
         let beat = self.beat_index();
-        if self.dancers[i].locked(beat) {
+        if self.dancers[i].locked() {
             return DanceEvent::Ignored;
         }
         let lane = self.dancers[i].lane(self.chart.rows.len()) as usize;
@@ -1345,7 +1406,9 @@ impl DanceGame {
         d.last_beat = Some(beat);
 
         if dead || want == 0 || want != dir.symbol() {
-            d.misses += 1;
+            // The Circle arm adds its own `2` (`li s5,0x2` at `0x801D20B0`), the
+            // Square arm `1`.
+            d.misses += u32::from(dir.symbol());
             return DanceEvent::Miss;
         }
         d.cursor += 1;
@@ -1372,7 +1435,7 @@ impl DanceGame {
     /// `(lane+1) * 0x19` when it lands on the 4-beat combo slot inside the window
     /// (plus a full `+1000` gauge step, which promotes the lane) and only
     /// `(lane+1) * 3` when it does not, and throws the dancer into a `lane + 1`
-    /// turn spin during which no press is judged.
+    /// turn spin.
     // PORT: FUN_801d1af4 (PROT 0980; the pad-0x10 groovy-move branch)
     pub(super) fn spend_triangle(&mut self, i: usize, beat: u32) -> DanceEvent {
         let rows = self.chart.rows.len();
@@ -1404,14 +1467,12 @@ impl DanceGame {
         };
         d.score = (d.score + points).min(SCORE_MAX);
         // The groovy move: `lane + 1` full turns of the dancer's yaw, spun at
-        // `0x80 + lane * 0x20` units per frame - up to 64 frames of locked-out
-        // input, the whole time retail is playing the move clip.
+        // `0x80 + lane * 0x20` units per frame, picking up from whatever yaw a
+        // spin in progress had left.
         d.spin_turns = lane + 1;
-        d.spin_acc = 0;
         let left = d.triangles;
-        if i == 0 {
-            self.feedback = TRIANGLE_FEEDBACK_WINDOW;
-        }
+        // Whoever spent it (`sw v0,0x5144(v1)` at `0x801D1E38`).
+        self.feedback = TRIANGLE_FEEDBACK_WINDOW;
         DanceEvent::Groovy {
             landed,
             points,
@@ -1420,8 +1481,7 @@ impl DanceGame {
         }
     }
 
-    /// Frames of groovy-move spin still to run on dancer `i` - the window its
-    /// input is disrupted for. The spin rate is read from the dancer's *current*
+    /// Frames of groovy-move spin still to run on dancer `i`. The spin rate is read from the dancer's *current*
     /// lane each frame (`FUN_801d1358`), so a landed triangle's own gauge step
     /// speeds up the move it started.
     pub(super) fn spin_frames_left(&self, i: usize) -> u32 {

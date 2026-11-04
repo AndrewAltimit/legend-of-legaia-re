@@ -267,7 +267,6 @@ impl World {
         let Some(game) = self.minigames.dance.as_mut() else {
             return;
         };
-        game.advance(1);
         // Judge at most one directional press this frame (retail tests all
         // three bits in one pass, but a rhythm player presses one at a time);
         // the scan order is retail's - Triangle, then Square, then Circle.
@@ -282,8 +281,8 @@ impl World {
         let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
             .into_iter()
             .find(|d| pressed & d.pad_bit() != 0);
-        if let Some(dir) = dir {
-            self.minigames.dance_last_judge = Some(game.judge_press(dir));
+        if let Some(event) = game.advance_pressing(1, dir) {
+            self.minigames.dance_last_judge = Some(event.judge());
         }
         let finish_cues = game.take_finish_cues();
         let award_sounds = game.take_award_sounds();

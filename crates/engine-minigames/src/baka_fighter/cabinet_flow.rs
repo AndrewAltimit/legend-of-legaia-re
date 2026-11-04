@@ -26,6 +26,10 @@ impl BakaFight {
         }
         self.f = [FighterState::new(), FighterState::new()];
         self.motion = Default::default();
+        self.player_commit = -1;
+        self.pad_attack = [None; 2];
+        self.push_x = 0;
+        self.push_ease = 0;
         self.stand_z = [0; 2];
         self.camera.round_setup();
         self.setup_pending = true;

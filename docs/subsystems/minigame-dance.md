@@ -238,17 +238,23 @@ So the move is worth `8.3x` an ordinary press plus a lane promotion, but only on
 | Triangle anywhere else | `(lane + 1) * 3` | - |
 | Direction (`pad & 0x80` / `& 0x20`) closing the lane's chain | `+ DAT_801d608c` (the kind's bonus, accuracy-weighted for the human) | `+250` |
 | Direction that matches but does not close the chain | nothing (the cursor advances) | - |
-| Direction that misses | nothing (the miss counter `DAT_801d568c` rises) | - |
+| Direction that misses | nothing (the miss counter `DAT_801d568c` rises, by `1` on Square and `2` on Circle) | - |
 
 **Groove gauge** `DAT_801d544c[player]` is clamped to `[0, 2999]`. The chart row is `gauge / 1000`, so crossing 1000 / 2000 promotes the dancer. **No path in the overlay lowers it** - not a miss, not a dropped chain: every writer in the image is an award, a clamp, or a run / tutorial reset. The how-to script says the same ("the level rises automatically").
 
-**Latch.** Every judged press sets the hit-tier latch `DAT_801d548c[player]` (0/1/2/3) and its timer `DAT_801d54cc[player]` (`0xf`, decayed `2 * frame_delta`), so a held button is not re-judged every frame.
+**Latch.** Every judged press sets the hit-tier latch `DAT_801d548c[player]` (0/1/2/3) and its timer `DAT_801d54cc[player]` (`0xf`, decayed `2 * frame_delta`), so a held button is not re-judged every frame. It runs out in three game frames at the hall's delta, and on a standing loop nothing else holds a dancer, so a second press inside one beat's window counts toward the chain. The chain cursor stands at zero through every frame of a bar's first beat (`0x801D164C..0x801D1688`).
 
 **Feedback** is player 0's only: a sound cue (`_DAT_8007b6de` / `_DAT_8007b6d8`), a banner through the sprite spawner `FUN_801d3fd0`, and the face pose switch `FUN_801d03c4`. See [rating banners](#rating-banners-per-tier-fun_801d1af4-body) and [Sound](#sound).
 
 ### The rival dancers
 
-The competitors run the same award routine off a pad word synthesised from the same chart. They differ from the human only by **kind**, which selects their row of the two [scoring tables](#scoring-tables). A CPU dancer therefore hits every note its own lane calls for (so its gauge climbs and promotes it), takes the flat table bonus for each closed chain, and throws its groovy moves on the disc's schedule. Its cadence is limited by the same latch as the human's plus the move clip it is playing.
+The competitors run the same award routine off a pad word synthesised from the same chart. They differ from the human only by **kind**, which selects their row of the two [scoring tables](#scoring-tables). A CPU dancer therefore hits every note its own lane calls for (so its gauge climbs and promotes it), takes the flat table bonus for each closed chain, and throws its groovy moves on the disc's schedule. Its cadence is limited by the same latch as the human's plus the move clip it is playing, and only those: it presses again as soon as both allow, several times a beat.
+
+The feed sits inside the award routine, so its schedule stands still while a move plays and moves on regardless of the latch and the stock: a due triangle that meets the latch is lost. The read is unbounded (`0x801D18DC..0x801D18F8`), so a free-play Disco King (kind `4`, past the table) reads on into the actor templates that follow it and spends at every combo slot. Free play's rivals copy the lead's gauge each frame and bank nothing (`0x801D1394..0x801D13BC`). A rival's spend arms the feedback window `DAT_801d5144` as the human's does.
+
+All of the Disco King's move clips are his own loop, so a judged press holds him for no time.
+
+`crates/retail-exec/tests/dance_floor.rs` holds `DanceGame` to the bytes through whole songs, every dancer, frame by frame, at frame deltas `1` and `3`.
 
 ## The setumei (how-to) tutorial script (`FUN_801d0750`)
 

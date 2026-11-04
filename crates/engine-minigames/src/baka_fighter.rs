@@ -16,18 +16,17 @@
 //!
 //! **Exchange timing.** A fight built from the disc tables
 //! ([`BakaFight::from_tables`]) carries each fighter's action-record speed and
-//! strike-frame column ([`StrikeTable`]) and runs retail's frame cursor over
-//! the chosen attack ([`StrikeClock`]): the exchange is booked on the tick the
-//! winner's strike keyframe is crossed. The special (type 4) is no player
-//! choice: it is retail's auto-finisher, thrown by whoever just put the foe at
-//! 0 HP, and the round is won by its *last* strike landing - a special with
-//! strikes left keeps playing after its first. What the port still does not model is the clip **tail** - retail
-//! plays each attack clip to its ANM frame count and only then drops back to
-//! idle, while the port clears the exchange once it is booked and paces
-//! re-entry with the retail cooldown decay. A fight built from bare configs
-//! ([`BakaFight::new`]) has no strike data and resolves the tick both sides
-//! have chosen; with no special clip to play, its knockout ends the round on
-//! the spot.
+//! strike-frame column ([`StrikeTable`]) and runs retail's combat tick and
+//! round SM in the pool walk's order, over the clip each seat stands in. The
+//! opponent picks only in answer to the player's commit, the exchange is
+//! booked on the tick the winner's strike keyframe is crossed, the types stand
+//! until a clip ends or someone commits again, and a clip's end clears its
+//! seat's type, lock and streak. The special (type 4) is no player choice: it
+//! is retail's auto-finisher, thrown by whoever just put the foe at 0 HP, and
+//! the round is won by its *last* strike landing. A fight built from bare
+//! configs ([`BakaFight::new`]) has no strike data and resolves the tick both
+//! sides have chosen, on a cooldown of its own; with no special clip to play,
+//! its knockout ends the round on the spot.
 //!
 //! Chain: retail `FUN_801d3468` (match resolution SM) → `FUN_801d3a14`
 //! (exchange win-condition) → `FUN_801d3b18` (damage) → `FUN_801d6660`
@@ -70,10 +69,18 @@ pub const CRIT_HP_BAND: i32 = 0x280;
 /// Per-consecutive-hit damage bonus step (`(combo - 1) * 0x40`).
 pub const COMBO_DAMAGE_STEP: i32 = 0x40;
 
-/// Post-exchange cooldown seed (`FUN_801d3468` writes 200).
+/// The clip a host that staged no clip bank plays: nothing else ends a clip.
+pub(crate) const FALLBACK_CLIP: ClipHeader = ClipHeader {
+    frames: 32,
+    double_step: false,
+    n: 1,
+};
+
+/// The level a hit stores in the rumble words (`FUN_801d3468` writes 200); the
+/// bare-config fight's pacing uses the same figure.
 pub const COOLDOWN_RESET: i32 = 200;
 
-/// Cooldown decay per frame step (`cooldown -= frame_step * 0x10`).
+/// That level's decay per frame step (`level -= frame_step * 0x10`).
 pub const COOLDOWN_DECAY: i32 = 0x10;
 
 #[cfg(test)]

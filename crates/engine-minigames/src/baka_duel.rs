@@ -244,6 +244,13 @@ impl DuelCamera {
         }
     }
 
+    /// Move the focus X with the damage kernel's push.
+    ///
+    /// REF: FUN_801CF388 (`0x801D2028..0x801D206C`)
+    pub fn follow_push(&mut self, step: i32) {
+        self.globals.0[6] = self.globals.0[6].wrapping_sub(step);
+    }
+
     /// The live ten globals.
     pub fn globals(&self) -> RetailCamGlobals {
         self.globals
@@ -297,6 +304,8 @@ impl DuelCamera {
 /// Action record of the hit reaction the damage kernel plays on the struck
 /// side (`base + 6`, `0x801D3C60..0x801D3C70`).
 pub const MOTION_HIT: usize = 5;
+/// The hit reaction to the third attack: `base + 6 + 1` (`0x801D3BE8`).
+pub const MOTION_HIT_THIRD: usize = 6;
 /// The knockdown: `base + 6 + 2`, played instead of the hit when the landed
 /// keyframe is the special's last (`0x801D3C00..0x801D3C18`).
 pub const MOTION_KNOCKDOWN: usize = 7;

@@ -146,9 +146,14 @@ pub(super) struct FighterState {
     pub(super) chosen: Option<BakaAttack>,
     /// "Already committed this exchange" flag (`&DAT_801dbfe8[slot]`).
     pub(super) committed: bool,
+    /// Block `+0x20`: the damage kernel raises it on the struck side and the
+    /// clip end clears it. While it stands the combat tick masks the pad.
+    pub(super) locked: bool,
     /// Pending comeback critical (`&DAT_801dc05c[slot]`).
     pub(super) crit_pending: bool,
-    /// Attack-rate cooldown (`DAT_801dbea0` / `DAT_801dbea4`).
+    /// The bare-config fight's own pacing. A fight on the disc tables is paced
+    /// by the clips; retail's words of this shape are the rumble levels
+    /// ([`BakaFight::rumble`]).
     pub(super) cooldown: i32,
     /// CPU scripted-pattern cursor (`&DAT_801dc044[slot]`, counts DOWN).
     pub(super) ai_cursor: usize,
@@ -173,6 +178,7 @@ impl FighterState {
             hits_taken: 0,
             chosen: None,
             committed: false,
+            locked: false,
             crit_pending: false,
             cooldown: 0,
             ai_cursor: 0,
@@ -202,6 +208,7 @@ impl FighterState {
         self.combo = 0;
         self.chosen = None;
         self.committed = false;
+        self.locked = false;
         self.crit_pending = false;
         self.cooldown = COOLDOWN_RESET;
         self.clock = StrikeClock::default();

@@ -318,7 +318,9 @@ fn special_won_exchange_never_moves_hp_and_never_heals() {
     // so a special-won exchange lands exactly zero HP change.
     let mut f = striking_fight(16, &[9], &[1, 3]);
     throw_special(&mut f, 0);
-    assert!(f.choose(1, BakaAttack::A));
+    // A thrown special shuts both seats' pads (`0x801D43A8`).
+    assert!(!f.choose(1, BakaAttack::A));
+    f.f[1].chosen = Some(BakaAttack::A);
     let mut ticks = 0;
     while f.last_exchange().is_none() {
         f.tick(1);
@@ -347,7 +349,8 @@ fn a_knockout_throws_the_finisher_and_its_last_strike_takes_the_round() {
         assert!(ticks < 10, "the knockout lands");
     }
     // Retail's auto-finisher gate: the round is not over at the KO; the
-    // winner throws the special on its own.
+    // winner throws the special on its own, on its next tick.
+    f.tick(1);
     assert_eq!(f.phase(), MatchPhase::Fighting);
     assert_eq!(f.chosen(0), Some(BakaAttack::Special));
     assert_eq!(f.round_wins(0), 0);
@@ -1224,9 +1227,13 @@ fn a_losers_strike_alone_books_nothing() {
     assert_eq!(f.strike_clock(0).state, StrikeState::Landed);
     assert!(f.last_exchange().is_none());
     assert!(f.choose(1, BakaAttack::B));
-    f.tick(1); // commit tick
+    f.tick(1); // commit tick, which also re-arms slot 0's strike
+    assert_eq!(f.strike_clock(0).state, StrikeState::Armed);
     assert!(f.last_exchange().is_none(), "slot 1 has not struck yet");
-    f.tick(1); // [0,1] -> slot 1 lands
+    // Slot 1's tick runs after the round SM, so its [0,1] books a frame on.
+    f.tick(1);
+    assert!(f.last_exchange().is_none());
+    f.tick(1);
     let r = f.last_exchange().expect("booked on the winner's strike");
     assert_eq!(r.winner, 1);
 }
@@ -1254,6 +1261,55 @@ fn the_special_wins_the_round_only_on_its_last_strike() {
         }
     }
     panic!("the special's last strike never landed: {first:?}");
+}
+
+#[test]
+fn the_opponent_only_ever_answers_the_players_commit() {
+    let tab = strike_table(16, &[2], &[1, 3]);
+    let mut f = BakaFight::new(cfg(0, 10), cfg(1, 10), 1).with_strike_tables([tab.clone(), tab]);
+    for _ in 0..600 {
+        f.tick(1);
+        assert_eq!(
+            f.chosen(1),
+            None,
+            "a player who holds back is never attacked"
+        );
+    }
+    assert!(f.choose(0, BakaAttack::A));
+    f.tick(1);
+    assert!(f.chosen(0).is_some());
+    assert!(f.chosen(1).is_some(), "the answer lands on the same frame");
+}
+
+#[test]
+fn a_clip_end_clears_the_seats_type_lock_and_streak() {
+    let mut f = striking_fight(16, &[2], &[1, 3]);
+    assert!(f.choose(0, BakaAttack::B)); // B beats A
+    assert!(f.choose(1, BakaAttack::A));
+    while f.last_exchange().is_none() {
+        f.tick(1);
+    }
+    assert!(f.locked(1), "the struck seat's pad is masked");
+    assert_eq!(f.combo(1), 1);
+    assert!(!f.choose(1, BakaAttack::A));
+    for _ in 0..64 {
+        f.tick(1);
+    }
+    assert!(!f.locked(1));
+    assert_eq!(f.combo(1), 0, "the streak ends with the reaction clip");
+    assert_eq!(f.chosen(1), None);
+    assert_eq!(f.motion(1).record, 0);
+}
+
+#[test]
+fn a_type_that_stands_lands_its_second_strike() {
+    let mut f = striking_fight(16, &[2, 4], &[1, 3]);
+    assert!(f.choose(0, BakaAttack::B));
+    assert!(f.choose(1, BakaAttack::A));
+    for _ in 0..10 {
+        f.tick(1);
+    }
+    assert_eq!(f.combo(1), 2, "both of the attack's strikes booked");
 }
 
 #[test]

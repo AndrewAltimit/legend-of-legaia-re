@@ -114,8 +114,16 @@ impl World {
             legaia_engine_system::pad::retail_packed(self.input.pad() & !self.input.pad_prev());
         let held = legaia_engine_system::pad::retail_packed(self.input.pad());
         let pot = self.minigames.winnings;
+        // The cabinet's frame opens by zeroing both rumble words and, unless
+        // the Events vibration row is off, copying the duel's two levels into
+        // them (`0x801CF3CC..0x801CF3F4`).
+        let vibration_off = self.event_vibration_off();
         let out = match self.minigames.baka_fighter.as_mut() {
-            Some(f) => f.frame(edge, held, pot),
+            Some(f) => {
+                let [pulse, level] = if vibration_off { [0; 2] } else { f.rumble() };
+                self.rumble.motors = legaia_engine_system::rumble::RumbleMotors { pulse, level };
+                f.frame(edge, held, pot)
+            }
             None => return,
         };
         if out.paid > 0 {

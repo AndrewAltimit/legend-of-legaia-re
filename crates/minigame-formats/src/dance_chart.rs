@@ -124,6 +124,9 @@ pub fn parse_at(overlay: &[u8], off: usize, rows: usize) -> Option<DanceChart> {
 /// through the *same* award routine, only off their own kind's row.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DanceScoreTables {
+    /// The schedule table's words read on past its rows; empty on a table
+    /// built by hand.
+    pub schedule_words: Vec<i32>,
     /// `bonus[kind][lane]` - points a completed direction sequence awards
     /// (`DAT_801d41a4`). Retail rows are `k, 2k, 3k` - the `(lane + 1)` scaling
     /// is baked into the table, not applied by the code.
@@ -145,7 +148,19 @@ impl DanceScoreTables {
 
     /// Combo slots `kind` banks before spending its `n`-th triangle. Out of
     /// range (or an exhausted schedule) reports [`i32::MAX`] = never.
+    ///
+    /// The feed reads `0x801D41E4 + (kind << 6) + (n << 2)` with no bound
+    /// (`0x801D18DC..0x801D18F8`), so a free-play Disco King (kind 4, past the
+    /// table) and a cursor past its row read on through the overlay, and those
+    /// words are what ship: [`Self::schedule_words`] carries them.
     pub fn schedule(&self, kind: usize, n: usize) -> i32 {
+        if !self.schedule_words.is_empty() {
+            return self
+                .schedule_words
+                .get(kind * DANCE_SCHEDULE_SLOTS + n)
+                .copied()
+                .unwrap_or(i32::MAX);
+        }
         self.schedule
             .get(kind)
             .and_then(|r| r.get(n))
@@ -178,7 +193,15 @@ pub fn parse_tables(overlay: &[u8]) -> Option<DanceScoreTables> {
         }
         schedule.push(srow);
     }
-    Some(DanceScoreTables { bonus, schedule })
+    // What the unbounded read can reach: a fifth kind and a cursor run on past it.
+    let schedule_words = (0..(DANCE_SKILL_ROWS + 2) * DANCE_SCHEDULE_SLOTS)
+        .map_while(|i| word(sched_base + i * 4))
+        .collect();
+    Some(DanceScoreTables {
+        bonus,
+        schedule,
+        schedule_words,
+    })
 }
 
 #[cfg(test)]
