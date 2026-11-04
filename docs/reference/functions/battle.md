@@ -1345,7 +1345,7 @@ shifted once more, `sra a0,t4,1` at `0x801F0BB0` - not the `/10` an earlier
 reading took it for) and splices learned arts' arrow strings over the end of
 the still-free queue, paying out of a **local copy** of the Spirit gauge
 `actor[+0x170]` that is never stored back. Each pass is gated on a
-`rand() % 7 + 0x12` Spirit draw and two free slots; the per-arrow cost
+`rand() % 14 + 0x12` Spirit draw and two free slots; the per-arrow cost
 (`0xB`, then `0xA`, then `6` from the fifth pass) is halved under record
 `+0xF8 & 0x800` (`andi 0x800` at `0x801F0D00` - the routine's only test of
 that bit, so the pool arm's AP budget is not halved); a `rand() % 100` roll,

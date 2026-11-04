@@ -5,6 +5,7 @@
 mod arts_gauge;
 mod arts_queue;
 mod arts_roll;
+mod auto_combo;
 mod battle_item;
 mod battle_seed;
 mod cast_damage;

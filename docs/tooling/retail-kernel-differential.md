@@ -152,3 +152,11 @@ spell XP and the Seru debuff landing in a special battle, where the tail returns
 first; spell XP banked off a Stoned victim whose hit the finisher had zeroed; and a
 module's own roll ignoring both seats' Venom and Toxic, drawing a third `rand()` on
 the bypass wrapper, which draws two, and handing a Stoned victim the whole hit.
+
+The Auto assembler `FUN_801F0450`, run whole over the real art banks, found the tail's
+Spirit gate drawing `% 7` where the bytes draw `% 14`, and the pool dropping every
+command past the sixteenth entry, where the scratch has room for all thirty-two. The
+delegated arm's redirect `FUN_801DB124` takes no seat: it reads `ctx[+0x274]`, so the
+roll it follows stands dead or not, and its draws and its rewrite land on the turn
+picker's last pick. The spend loop can spin for ever in retail; the test holds the port
+to ending the spend there.

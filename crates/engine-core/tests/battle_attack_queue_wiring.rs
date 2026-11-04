@@ -29,9 +29,7 @@
 
 use legaia_actor_formats::monster_archive::{MonsterAnimation, PartPose};
 use legaia_engine_battle::monster_catalog::{vanilla_formation_table, vanilla_monster_catalog};
-use legaia_engine_battle_vm::battle_action::{
-    ActionState, SWING_LEFT, SWING_RIGHT, is_swing_command,
-};
+use legaia_engine_battle_vm::battle_action::{ActionState, is_swing_command};
 use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
@@ -180,15 +178,10 @@ fn confirming_attack_seeds_a_non_empty_swing_stream() {
     );
     // The ladder commits through `Auto`, so the round's start runs the pool
     // arm: the default 100-AP gauge buys three 0x1E swings, and with no disc
-    // weights every command sits at weight 8, so the 16-byte candidate
-    // scratch holds only Left and Right.
+    // weights every command sits at weight 8, any of the four.
     assert_eq!(swings.len(), 3, "three pool-arm swings: {swings:02X?}");
     for b in &swings {
-        assert!(
-            *b == SWING_LEFT || *b == SWING_RIGHT,
-            "each swing is a rolled arm command: {b:#04X}"
-        );
-        assert!(is_swing_command(*b));
+        assert!(is_swing_command(*b), "each swing is a command: {b:#04X}");
     }
     assert_eq!(
         w.actors[slot].battle.strike_index, 0,

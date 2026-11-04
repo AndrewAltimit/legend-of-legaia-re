@@ -32,7 +32,7 @@
 //! `*(DAT_801C9360[slot] + 0x58) + 4`) that splices learned arts' arrow
 //! strings over the spend loop's direction queue, paying for each out of a
 //! **local copy** of the Spirit gauge `actor[+0x170]`. Its divisors are
-//! `% 5` (the opening record roll), `% 7` (the Spirit gate), `% 100` (the
+//! `% 5` (the opening record roll), `% 14` (the Spirit gate), `% 100` (the
 //! accept chance), `% 3` (the re-seed) and `% 2` (the step) - an earlier note
 //! here read a `/10`; the `0x66666667` reciprocal is followed by `sra 1`, so
 //! it is `/5`. The halving under record `+0xF8 & 0x800` applies to the
@@ -106,9 +106,10 @@ pub const FIRST_COMMAND: u8 = 0x0C;
 /// One past the last arts command id the pool arm scans (`s2 < 0x10`).
 pub const LAST_COMMAND_EXCL: u8 = 0x10;
 
-/// Candidate-scratch bytes the pool arm clears before filling
-/// (`sp+0x10`, `0x10` entries).
-pub const CANDIDATE_SCRATCH: usize = 0x10;
+/// Room the pool arm's candidates have: `sp+0x10` up to the slot counter at
+/// `sp+0x30`, which is exactly four commands at the default weight of 8. The
+/// loop clears only the first `0x10` of it; the pushes are what fill the rest.
+pub const CANDIDATE_SCRATCH: usize = 0x20;
 
 /// Does the `record[+0xF8]` / `actor[+0x16E]` pair select the auto-fill arm?
 pub const fn gate_selects_auto_fill(ability_word1: u32, status: u16) -> bool {
@@ -378,6 +379,16 @@ pub fn spend_gauge(
         if taken == scratch.len() {
             return out;
         }
+        // Retail spins here for ever: the floor is the cheapest of the four
+        // commands, guarded out or spent or not, so a gauge at the floor with
+        // nothing left it can buy never leaves `0x801F0A64..0x801F0B44`. The
+        // port ends the spend instead; every other round draws the same.
+        if !scratch
+            .iter()
+            .any(|&c| c != 0 && out.gauge_left >= costs(c) as i16)
+        {
+            return out;
+        }
         let slot = (rand().rem_euclid(scratch.len() as i32)) as usize;
         let cmd = scratch[slot];
         if cmd != 0 && out.gauge_left >= costs(cmd) as i16 {
@@ -523,7 +534,7 @@ pub struct ArtsTailResult {
 /// tail of the still-free region of the queue or skips ahead:
 ///
 /// 1. Noa (`char_id == 2`) steps over records `0xD` / `0xE` (`+2`).
-/// 2. **Spirit gate**: stop unless `rand() % 7 + 0x12 < budget` and at least two
+/// 2. **Spirit gate**: stop unless `rand() % 14 + 0x12 < budget` and at least two
 ///    free queue slots remain.
 /// 3. A record whose combo byte `1` is zero (fewer than two arrows) is skipped.
 /// 4. Need vs have: the combo's arrows from byte `1` on (byte `0` is spliced
@@ -588,7 +599,7 @@ pub fn insert_arts(
             // The Spirit gate. Its stop path parks the index at the count
             // (`lbu s4,0x40(sp)` at `0x801F0C78`) and still takes the common
             // advance below, draw included.
-            let threshold = draw() % 7 + TAIL_SPIRIT_THRESHOLD_BASE;
+            let threshold = draw() % 14 + TAIL_SPIRIT_THRESHOLD_BASE;
             if threshold >= budget16(budget) || free < 2 {
                 art = input.art_count;
                 break 'pass;

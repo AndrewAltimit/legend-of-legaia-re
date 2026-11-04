@@ -531,32 +531,38 @@ fn auto_fill_party_queues<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &mut 
         // with an empty list still ends up with a committed Attack.
         let draw = host.rng() as i32;
         let rolled = roll_target_slot(monsters, draw);
-        // The roll goes straight through the dead-target redirect
-        // (`jal 0x801db124` at `0x801F0574`) - a third call site for it, and
-        // unlike the turn picker's two this one carries no `ctx[+0x06]`
-        // command-flow gate, so the redirect is unconditional here.
+        if let Some(actor) = host.actor_mut(slot) {
+            actor.action_category = ActionCategory::Attack.as_byte();
+            actor.active_target = to_engine(rolled);
+        }
+        // The redirect (`jal 0x801db124` at `0x801F0574`) takes no seat: it
+        // reads `ctx[+0x274]`, the turn picker's last pick, so what it sees is
+        // that seat's target and category, not the roll just stored. The roll
+        // stands, dead or not, until the seat's own dispatch redirects it.
         // A side with nobody standing has already ended the fight; retail's
         // retry would spin on it, the port never does.
-        let target = if monster_standing {
-            redirect_dead_target(
-                RedirectQuery {
-                    target_slot: rolled,
-                    category: ActionCategory::Attack.as_byte(),
-                    param0: 0,
-                },
+        let picked = ctx.queued_action;
+        if monster_standing
+            && let Some(a) = seats.engine(picked).and_then(|e| host.actor(e))
+            && a.active_target < 8
+        {
+            let q = RedirectQuery {
+                target_slot: seats.retail(a.active_target).get(),
+                category: a.action_category,
+                param0: a.params[0],
+            };
+            let spell_class = host.spell_table_class(q.param0);
+            if let Some(t) = redirect_dead_target(
+                q,
                 party,
                 monsters,
                 || host.rng() as i32,
                 retail_alive,
-                |_| 0,
-            )
-            .unwrap_or(rolled)
-        } else {
-            rolled
-        };
-        if let Some(actor) = host.actor_mut(slot) {
-            actor.action_category = ActionCategory::Attack.as_byte();
-            actor.active_target = to_engine(target);
+                |_| spell_class,
+            ) && let Some(a) = seats.engine(picked).and_then(|e| host.actor_mut(e))
+            {
+                a.active_target = to_engine(t);
+            }
         }
         let char_id = host.roster_character_id(slot);
         let learned = host.learned_arts(slot);

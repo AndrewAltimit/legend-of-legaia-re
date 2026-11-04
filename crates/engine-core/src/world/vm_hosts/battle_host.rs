@@ -9,6 +9,10 @@ pub(in crate::world) struct BattleHostImpl<'a> {
 }
 
 impl<'a> BattleActionHost for BattleHostImpl<'a> {
+    fn spell_table_class(&self, id: u8) -> u8 {
+        self.world.spell_table_class(id).unwrap_or(0x14)
+    }
+
     fn display_tick(&self) -> u64 {
         self.world.clock.display_frames
     }

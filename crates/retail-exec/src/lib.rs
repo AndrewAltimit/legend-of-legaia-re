@@ -146,6 +146,9 @@ pub struct Cpu {
     /// = all ones, or `1` for a negative signed dividend) instead of stopping.
     /// For a routine with no `break` guard, where that result is what ships.
     pub hardware_zero_div: bool,
+    /// The instruction budget of one call, `0` for the default. A test whose
+    /// routine can spin for ever lowers it to reach that verdict sooner.
+    pub step_budget: u64,
 }
 
 impl Cpu {
@@ -183,7 +186,12 @@ impl Cpu {
         self.regs.r[RA] = RETURN_SENTINEL;
         self.steps = 0;
         self.calls.clear();
-        self.run(entry, 2_000_000)
+        let budget = if self.step_budget == 0 {
+            2_000_000
+        } else {
+            self.step_budget
+        };
+        self.run(entry, budget)
     }
 
     fn run(&mut self, entry: u32, budget: u64) -> Stop {

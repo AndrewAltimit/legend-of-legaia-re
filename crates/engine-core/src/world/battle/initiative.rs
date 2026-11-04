@@ -452,7 +452,7 @@ impl World {
     ///
     /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
     /// REF: FUN_801D0748 (the `0xFE` arm that writes `ctx[7] = 0`)
-    pub(in crate::world) fn run_round_state_zero(&mut self) {
+    pub fn run_round_state_zero(&mut self) {
         let mut ctx = self.battle_ctx.clone();
         let mut host = crate::world::vm_hosts::BattleHostImpl { world: self };
         legaia_engine_battle_vm::battle_action::round_state_zero(&mut host, &mut ctx);

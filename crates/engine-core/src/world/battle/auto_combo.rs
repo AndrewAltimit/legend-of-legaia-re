@@ -33,7 +33,7 @@ use super::*;
 impl World {
     /// Run the pool arm for every flagged Attack commit at the round's start
     /// and park each queue for the seat's dispatch.
-    pub(in crate::world) fn run_auto_attack_pool_arms(&mut self) {
+    pub fn run_auto_attack_pool_arms(&mut self) {
         use legaia_engine_battle_loop::round_flow::PendingPartyAction;
         let party = self.party.party_count.clamp(1, 3);
         self.battle.auto_combo.queues = Default::default();
