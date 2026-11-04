@@ -799,6 +799,14 @@ it, then the last sound-set selection
 evolved-Cort fights then play their event's theme instead of the scene
 entry's track and the default battle theme.
 
+A row is not owned by its record. `teien`'s row `0` is the Berserker fight its
+`P2[1]` stages, and it is also a row a random roll can land on: the
+`teien_berserker_*` states rolled it, so nothing ran the record, the track word
+holds the field's `2054` and the fight plays the default bundle's `2027`. The
+record opens by raising `0x1C8`, which those states hold lowered. The comparison
+seed therefore replays the words only when every flag the record raises on the
+way to its entry op is up (`World::scripted_battle_record_ran`).
+
 A record that starts no track before its entry op fights under the word of
 the arm that spawned it. `nilboa`'s second and third Delilas duels are entered
 by the records the entry script spawns on the return from the duel before

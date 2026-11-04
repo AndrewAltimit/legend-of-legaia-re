@@ -2960,6 +2960,9 @@ record's `3E FF <row>`, the control words after it, and the last sound-set
 selection (`World::replay_scripted_battle_score`, read off the MAN by
 `man_field_scripts::walk_battle_entry_scores`; `play-window --battle` replays
 the same words). Each goes through the field VM's own op-`0x35` handler.
+The replay stands only where the state says the record ran: every system flag it
+raises before the entry op is up (`World::scripted_battle_record_ran`), so a random
+roll that lands on a boss's row keeps the field's word.
 
 **A record that starts no track fights under its spawner's.** `nilboa`'s
 entry script `P1[0]` keys two arms on each duel-return marker. Its install

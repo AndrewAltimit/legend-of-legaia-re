@@ -280,8 +280,13 @@ pub fn run_engine_battle(
             // The same record's op-0x35 words pick the fight's music: a
             // scripted boss's event starts its theme and selects the battle
             // sound set before the entry op (korb3's Gaza: `2028`, set
-            // `-1`), so the forced entry replays them too.
-            world.replay_scripted_battle_score(row);
+            // `-1`), so the forced entry replays them too - when the state
+            // says the record ran. A random roll can land on the same row
+            // (`teien` row `0`, the harvest's Berserker): the record's opening
+            // flag is down and the fight holds the field's own word.
+            if world.scripted_battle_record_ran(row) {
+                world.replay_scripted_battle_score(row);
+            }
             row
         }
         None => {

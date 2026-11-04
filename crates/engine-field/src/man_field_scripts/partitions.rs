@@ -776,6 +776,12 @@ pub struct BattleEntryScore {
     pub row: u8,
     /// The op-`0x35` words to replay, in record order: `(operand, sub_op)`.
     pub words: Vec<(u16, u8)>,
+    /// The system flags the record leaves raised on its way to the entry op
+    /// (its linear walk's SETs, less those it clears again). A state in that
+    /// fight with one of them lowered reached the row some other way: a
+    /// random roll can land on a boss's row (`teien` row `0`, whose record
+    /// `P2[1]` opens on `51 C8`), and then the record never ran.
+    pub raises: Vec<u16>,
 }
 
 /// Every [`BattleEntryScore`] in `man`, across all three partitions: one per
@@ -800,8 +806,23 @@ pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEnt
             let body = &man[script_start..script_start + body_len];
             let mut start_run: Vec<(u16, u8)> = Vec::new();
             let mut sound_set: Option<(u16, u8)> = None;
+            let mut raises: Vec<u16> = Vec::new();
             for insn in LinearWalker::new(body, pc0).flatten() {
                 match insn.info {
+                    InsnInfo::SystemFlag {
+                        kind: FlagKind::Set,
+                        idx,
+                        ..
+                    } => {
+                        if !raises.contains(&idx) {
+                            raises.push(idx);
+                        }
+                    }
+                    InsnInfo::SystemFlag {
+                        kind: FlagKind::Clear,
+                        idx,
+                        ..
+                    } => raises.retain(|&f| f != idx),
                     InsnInfo::Bgm { text_id, sub_op } => match sub_op {
                         1 | 9 => start_run = vec![(text_id, sub_op)],
                         2 | 3 | 4 | 0xA if !start_run.is_empty() => {
@@ -837,6 +858,7 @@ pub fn walk_battle_entry_scores(man_file: &ManFile, man: &[u8]) -> Vec<BattleEnt
                                 record: index,
                                 row: op1,
                                 words,
+                                raises: raises.clone(),
                             });
                         }
                     }
