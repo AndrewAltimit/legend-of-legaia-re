@@ -462,7 +462,7 @@ void main() { o_color = texture(u_layer, v_uv); }
       this._psxTarget = new window.LegaiaPsxTarget(this.renderer.gl);
       const drawFrame = this._frame;
       this._frame = (skipDraw) => {
-        const psx = this.psxRender && !skipDraw && !(this.vr && this.vr.isActive());
+        const psx = this.psxRender && !skipDraw && !this._movieCovers() && !(this.vr && this.vr.isActive());
         if (psx) this._psxTarget.begin();
         const r = drawFrame.call(this, skipDraw);
         if (psx) this._psxTarget.present();
@@ -901,6 +901,13 @@ void main() { o_color = texture(u_layer, v_uv); }
          * so re-assert whatever the page checkbox says. */
         if (typeof window.__playApplyDevMenu === 'function') window.__playApplyDevMenu();
       } catch (e) { console.warn('play audio enable', e); }
+    }
+
+    /* A movie is up: read before the frame's service and ticks, so a frame and its
+     * PSX target agree. The overlay shows in the same frame this first reads true
+     * (`LegaiaPlayFmv.service`) and goes in the frame after this last does. */
+    _movieCovers() {
+      return !!this.rt && typeof this.rt.play_fmv_active === 'function' && this.rt.play_fmv_active();
     }
 
     /* Serve one lazy CD-XA staging request per frame, oldest first: the engine

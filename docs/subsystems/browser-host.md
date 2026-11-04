@@ -220,6 +220,11 @@ every movie and clip not yet read.
 **A trapped engine** is rebuilt by reading the head again (`recoverRuntime`), which goes
 to the `Blob` and not through the cap, and the voice banks are read again the same way.
 
+While a movie is up its overlay covers the GL view, and the frame skips its GL draws:
+the world is held, and every pass that reads the frame (bloom, fog, ambient occlusion,
+the transition capture) reads one drawn earlier in the same frame. The sync with the
+engine still runs each frame, and the 2D overlay is still drawn.
+
 ## FMV beats (`play_fmv`)
 
 An FMV the field VM triggers (or the title's attract countdown, `fmv_id 0`)

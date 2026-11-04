@@ -92,6 +92,14 @@
 
     _frame(skipDraw) {
       const rt = this.rt;
+      /* A movie's opaque overlay covers the GL view and the engine holds the
+       * world under it: the frame syncs with the engine as ever and issues no
+       * GL draw, as a VR session's does. Every pass that reads the frame reads
+       * one drawn earlier in the same frame, so the first frame after the movie
+       * draws what it would have. The 2D overlay and the transition readback's
+       * declaration follow what the page would otherwise show. */
+      const presenting = !skipDraw;
+      if (this._movieCovers()) skipDraw = true;
       /* Gamepad buttons enter the same held / pulse sets the keyboard
        * fills, so every reader below (menu, name entry, field tick) sees
        * one pad word whichever device pressed it. */
@@ -680,7 +688,7 @@
       /* The retail pause menu / dialog reading box overlay: engine-driven,
        * blitted onto the 2D overlay canvas over the GL view. Skipped while VR
        * presents. */
-      if (!skipDraw) this._drawOverlay();
+      if (presenting) this._drawOverlay();
       /* ... and the screen primitives that cover it. */
       this._drawScreenPrimsOver();
 
@@ -703,7 +711,7 @@
        * that will read it back (a VR session, which skips this, keeps the
        * transition from its first frame). */
       if (typeof rt.play_set_intro_readback === 'function') {
-        rt.play_set_intro_readback(!skipDraw);
+        rt.play_set_intro_readback(presenting);
       }
       if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
           rt.play_intro_wants_capture()) {
