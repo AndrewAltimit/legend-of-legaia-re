@@ -633,6 +633,20 @@ The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
 `kor` P1[13]'s talk then raises `0x40A` and the doorway is clear.
 
+### Arriving at a boss
+
+Past Rogue's tower the anchors' party is level 30 and the run's is 48 to 53, so
+a loss there is not a question of levels. What decides those fights is what the
+party still holds when it reaches the door, and what a reload hands back:
+
+- **A fight on the lean does not end the talk.** An encounter rolled on the lean
+  toward a keeper ended the lean, and the failure to face was read as a rest that
+  lifts nobody ([below](#a-rest-that-stops-resting)), which struck `deroa` P1[7]
+  off for the run. The lean now plays the fight and is taken up again. A keeper no
+  walk reaches stays struck off: `bylon` P1[29] listed as a rest stops the
+  bag standing in for one, and a run left `bylon` with Gala at level 8 of 20
+  and 30000 gold poorer.
+
 ### A rest that stops resting
 
 A keeper's record carries the `4C 82` restore on one branch of its story,
