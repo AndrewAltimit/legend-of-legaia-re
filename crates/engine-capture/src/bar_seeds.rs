@@ -16,6 +16,11 @@ pub struct BarSeed {
     pub slot: u8,
     pub hp: u16,
     pub mp: u16,
+    /// A party seat's maximum `+0x14E` where the capture's own word stands
+    /// off its character record's: a probe raised the seat's pool
+    /// (`LEGAIA_TOUGH=2`), which the fight reads and the HUD shows but the
+    /// record never saw. `None` keeps the maximum the record gave the engine.
+    pub hp_max: Option<u16>,
     pub ground: Option<[i16; 2]>,
     /// The heading `+0x46` that goes with [`Self::ground`].
     pub facing: Option<u16>,
@@ -99,6 +104,9 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
         let Some(a) = world.actors.get_mut(usize::from(s.slot)) else {
             continue;
         };
+        if let Some(m) = s.hp_max {
+            a.battle.max_hp = m;
+        }
         a.battle.hp = s.hp;
         a.battle.liveness = a.battle.hp;
         if a.battle.hp_display.is_some() {
@@ -141,7 +149,7 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
     }
 }
 
-/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]][:v],...` for
+/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]][:m<max>][:v],...` for
 /// `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
@@ -165,6 +173,10 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 Some(k) => format!("{head}:k{k}"),
                 None => head,
             };
+            let head = match s.hp_max {
+                Some(m) => format!("{head}:m{m}"),
+                None => head,
+            };
             if s.heal_latch {
                 format!("{head}:v")
             } else {
@@ -183,6 +195,10 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
             let (e, heal_latch) = match e.strip_suffix(":v") {
                 Some(head) => (head, true),
                 None => (e, false),
+            };
+            let (e, hp_max) = match e.rsplit_once(":m") {
+                Some((head, m)) => (head, Some(m.parse().ok()?)),
+                None => (e, None),
             };
             let (e, init_key) = match e.rsplit_once(":k") {
                 Some((head, "")) => (head, Some(0)),
@@ -213,6 +229,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 slot,
                 hp,
                 mp,
+                hp_max,
                 ground,
                 facing,
                 defeat_lanes,

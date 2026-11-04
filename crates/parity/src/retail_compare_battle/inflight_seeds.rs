@@ -71,6 +71,7 @@ impl RetailBattle {
                     slot: legaia_engine_capture::bar_seeds::EMPTY_SEAT_SLOT_BASE + r as u8,
                     hp: 0,
                     mp: 0,
+                    hp_max: None,
                     ground: Some(ground),
                     facing: None,
                     defeat_lanes: None,

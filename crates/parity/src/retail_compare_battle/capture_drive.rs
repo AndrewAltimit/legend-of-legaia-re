@@ -1199,6 +1199,17 @@ impl RetailBattle {
             && self.party_categories.iter().all(|&c| c == 4)
     }
 
+    /// The maximum HP engine slot `slot` stands on when the capture's seat
+    /// word holds what its character record does not: a harvest probe's
+    /// raised pool (`LEGAIA_TOUGH=2`, `autorun_battle_harvest.lua`). The seed
+    /// builds a seat from the record, so such a state's HUD read the record's
+    /// maximum, with every HP clamped under it, beside retail's `9999`.
+    pub fn party_seat_pool_raised(&self, slot: usize, seat: &Combatant) -> Option<u16> {
+        let record = *self.record_hp_max.get(slot)?;
+        (slot < usize::from(self.party_count.clamp(1, 3)) && seat.hp_max > record && record != 0)
+            .then_some(seat.hp_max)
+    }
+
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
     /// (`ActionSteer::walk_clock`).
     pub fn walk_clock_capture(&self) -> bool {

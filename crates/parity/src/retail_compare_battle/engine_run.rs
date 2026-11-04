@@ -436,6 +436,7 @@ pub fn run_engine_battle(
                     slot: u8::try_from(slot).ok()?,
                     hp,
                     mp: c.mp,
+                    hp_max: battle.party_seat_pool_raised(slot, c),
                     ground: ground.get(slot).copied().flatten(),
                     facing: facing.get(slot).copied().flatten(),
                     defeat_lanes: (hp == 0)

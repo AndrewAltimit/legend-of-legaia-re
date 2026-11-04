@@ -891,6 +891,12 @@ impl RetailBattle {
             seat_chars: (0..u32::from(party_count))
                 .map(|s| game_anchors::u8_at(ram, SEAT_CHARS + s))
                 .collect(),
+            record_hp_max: (0..u32::from(party_count))
+                .map(|s| {
+                    let char_id = u32::from(game_anchors::u8_at(ram, SEAT_CHARS + s));
+                    game_anchors::u16_at(ram, 0x8008_4708 + char_id * 0x414 + 0x104)
+                })
+                .collect(),
             party_categories: (0..u32::from(party_count))
                 .map(|s| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + s * 4);
