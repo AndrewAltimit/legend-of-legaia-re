@@ -493,6 +493,16 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             // time the worse draw against foes the party can beat: a lone
             // chapter-1 Vahn on `map01` fled a pair of 99 HP monsters six
             // rounds running and fell at the last.
+            // Out charging, the fight is only worth what the gauge earns: the
+            // stance deals nothing, so a party past half its HP leaves before
+            // the scene's foes finish it.
+            CommandPhase::RoundPrompt { .. }
+                if CHARGING.with(std::cell::Cell::get)
+                    && !w.battle.no_escape
+                    && charge_too_costly(w) =>
+            {
+                PadButton::Right.mask()
+            }
             CommandPhase::RoundPrompt { .. }
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
                     && !CHARGING.with(std::cell::Cell::get)
@@ -523,6 +533,16 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
 }
 
 /// One line of battle state for a stall report.
+/// Whether the party out charging has lost over half its HP
+/// ([`pad_charge_for_race`](super::pad_training::pad_charge_for_race)).
+fn charge_too_costly(w: &legaia_engine_core::world::World) -> bool {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let (hp, max) = w.actors[..n].iter().fold((0u32, 0u32), |(h, m), a| {
+        (h + u32::from(a.battle.hp), m + u32::from(a.battle.max_hp))
+    });
+    hp * 2 < max
+}
+
 pub(super) fn battle_snapshot(session: &NativeSession) -> String {
     let w = &session.host.world;
     let n = w.party.party_count.clamp(1, 3) as usize;

@@ -359,6 +359,7 @@
    "bins": [],
    "lib": true,
    "modules": [
+    "disc_text",
     "game_exit",
     "icons",
     "release_layout",
@@ -1329,6 +1330,7 @@
     "cast_arm_ticks",
     "cast_fatal_decision",
     "cast_module_camera",
+    "cast_module_frame_step",
     "cast_module_impact",
     "cast_module_rumble",
     "cast_module_ticks",
@@ -1847,6 +1849,7 @@
     "engine-scene-host",
     "engine-screens",
     "engine-shell",
+    "parity",
     "web-minigames",
     "web-play"
    ],
@@ -2102,6 +2105,7 @@
     "engine-screens",
     "engine-shell",
     "engine-world-views",
+    "parity",
     "web-minigames",
     "web-play"
    ],
@@ -3725,8 +3729,10 @@
     "engine-effects",
     "engine-expansion",
     "engine-field",
+    "engine-fishing",
     "engine-menu-runtime",
     "engine-menus",
+    "engine-minigames",
     "engine-mode",
     "engine-save-state",
     "engine-scene",
@@ -4132,10 +4138,15 @@
    "package": "legaia-retail-exec",
    "deps": [],
    "dev_deps": [
+    "actor-formats",
+    "art",
     "disc-patch",
     "engine-battle",
+    "engine-battle-loop",
+    "engine-battle-vm",
     "engine-core",
     "engine-menus",
+    "engine-system",
     "game-tables",
     "save"
    ],

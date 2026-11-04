@@ -456,8 +456,15 @@ fn a_clip_clock_endpoint_walks_back_against_the_cursor() {
     assert_eq!(shift, -24);
     let mut end_shift = [0; 9];
     end_shift[1] = shift;
-    let walked =
-        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], end_shift);
+    let walked = camera_align::displayed_cam_live_steps(
+        &ram,
+        ctx,
+        &[3, 3],
+        false,
+        [None; 9],
+        end_shift,
+        false,
+    );
     assert_eq!(walked.yaw, 3320.0);
 
     // Another shot's table: the endpoint is off the law.

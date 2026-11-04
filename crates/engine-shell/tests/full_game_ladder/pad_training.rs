@@ -86,6 +86,8 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
         if typists_charged(session) {
             break;
         }
+        // A fled fight comes back hurt, and an outing below its floor walks nowhere.
+        pad_field_heal(session, 900);
         left = outing(session, 400);
         if !matches!(&left, Ok(None)) || scene_name(session) != here || !walking(session) {
             break;

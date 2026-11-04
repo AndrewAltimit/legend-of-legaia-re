@@ -1242,7 +1242,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hall's tilted video walls inside the back wall: the page drew brick "
         "where the window drew the dancer screens, with every tier green",
         "sites": {
-            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "build_dance_venue_gpu"),
+            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "append_venue_draw"),
             "web": (WEB_MINIGAMES_DANCE, "append_draw"),
         },
         "mode": "symbols_all",
