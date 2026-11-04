@@ -448,15 +448,22 @@ fn a_spin_up_press_latches_for_exactly_one_roll() {
     assert!(m.spin());
     m.tick();
     assert_eq!(m.phase(), SlotPhase::Spinning);
-    m.latch_spin_up(false);
-    assert!(!m.spin_up_pressed(), "no edge, no latch");
     m.latch_spin_up(true);
-    assert!(m.spin_up_pressed(), "a face edge mid spin-up latches");
-    // Run the spin out and start the next: its roll reads the latch, and
-    // state 1 clears it straight after.
+    assert!(
+        !m.spin_up_pressed(),
+        "the timer word sits at 0 through the ramp"
+    );
     while m.phase() == SlotPhase::Spinning {
         m.tick();
     }
+    m.latch_spin_up(false);
+    assert!(!m.spin_up_pressed(), "no edge, no latch");
+    m.latch_spin_up(true);
+    assert!(m.spin_up_pressed(), "the frame that takes it to -1 latches");
+    // The next spin's roll reads the latch, and state 1 clears it straight
+    // after.
+    m.tick();
+    m.latch_spin_up(false);
     for r in 0..REEL_COUNT {
         m.stop_reel(r);
         for _ in 0..0x40 {

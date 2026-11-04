@@ -90,6 +90,10 @@ pub struct SlotMachine {
     pub(super) stopped: [Option<usize>; REEL_COUNT],
     /// Spin-up timer (`DAT_801d3c90`), frames until stopping is allowed.
     pub(super) spin_timer: i32,
+    /// This spin armed the long spin-up: `DAT_801d3c90` started at `0x18`.
+    pub(super) spin_long: bool,
+    /// The last tick ran state `2`, the one the spin-up latch tests in.
+    pub(super) spin_up_last_tick: bool,
     pub(super) phase: SlotPhase,
     /// Feature mode (`DAT_801d3cac`): `0` normal … `6` bonus round.
     pub(super) feature_mode: u8,
@@ -209,9 +213,10 @@ pub(super) fn spin_voice(tone: i32) -> crate::other_game_overlay::VoiceAttrCue {
     }
 }
 
-/// Spin-up frames before the reels may be stopped (visual pacing constant;
-/// the retail `DAT_801d3c90` magnitude is not pinned).
-pub const SPIN_UP_FRAMES: i32 = 30;
+/// Spin-up frames before the reels may be stopped: state `2` ramps the reels up
+/// one at a time, `0xC` a frame to [`SPIN_SPEED`], nine frames each, then one more
+/// to run `DAT_801d3c90` below zero from its `0`.
+pub const SPIN_UP_FRAMES: i32 = 28;
 /// Extra spin-up frames on a bonus spin, and on the first spin after a bonus
 /// round ends (`FUN_801cf0d8` state 1: `DAT_801d3c90 = 0x18` when
 /// `DAT_801d3cac == 6` or `DAT_801d3798`).
@@ -221,9 +226,24 @@ pub const SPIN_UP_FRAMES: i32 = 30;
 /// before the strip it swapped to reaches the row it pays on. The long spin-up
 /// is what buys that travel - on both edges of the bonus round.
 pub const BONUS_SPIN_UP_FRAMES: i32 = 0x18;
-/// Per-reel spin velocities (visual pacing constants, staggered like the
-/// retail ramp so the reels visibly desynchronize).
-pub const SPIN_VELOCITY: [i32; REEL_COUNT] = [0x60, 0x70, 0x80];
+/// A reel's speed at the top of its ramp and through a stop (`0x66` at
+/// `0x801CF610` and in `FUN_801d0554`).
+pub const SPIN_SPEED: i32 = 0x66;
+/// One frame's ramp on the reel state `2` is bringing up.
+pub const SPIN_RAMP: i32 = 0xC;
+
+/// What [`SlotMachine::seat`] stands a machine on.
+#[derive(Debug, Clone, Copy)]
+pub struct SlotSeat {
+    pub strips: [[u8; STRIP_LEN]; REEL_COUNT],
+    pub reel_pos: [i32; REEL_COUNT],
+    pub feature_mode: u8,
+    pub bonus_spins: i32,
+    pub net_take: i32,
+    pub rng_state: u32,
+    pub jitter: i32,
+    pub normal_target: u8,
+}
 
 impl SlotMachine {
     /// A fresh machine over the parsed payout table, its LCG on `seed` (the
@@ -261,6 +281,8 @@ impl SlotMachine {
             reel_vel: [0; REEL_COUNT],
             stopped: [None; REEL_COUNT],
             spin_timer: 0,
+            spin_long: false,
+            spin_up_last_tick: false,
             phase: SlotPhase::Idle,
             feature_mode: 0,
             bonus_spins: 0,
@@ -434,6 +456,35 @@ impl SlotMachine {
             return 0;
         }
         self.tally().iter().product()
+    }
+
+    /// Stand the machine on a seated spin, as the retail differential seeds its
+    /// RAM. `reel_pos` is in this machine's payline frame (retail's `+ 0x10`).
+    pub fn seat(&mut self, seat: SlotSeat) {
+        self.strips = seat.strips;
+        self.reel_pos = seat.reel_pos;
+        self.reel_vel = [0; REEL_COUNT];
+        self.stopped = [None; REEL_COUNT];
+        self.feature_mode = seat.feature_mode;
+        self.bonus_spins = seat.bonus_spins;
+        self.net_take = seat.net_take;
+        self.rng = SlotRng::new(seat.rng_state);
+        self.jitter = seat.jitter;
+        self.normal_target = seat.normal_target;
+        self.phase = SlotPhase::Stopping;
+    }
+
+    /// Evaluate the seated reels as they stand, as `FUN_801D13E8` does.
+    pub fn evaluate_seated(&mut self) -> SpinResult {
+        for r in 0..REEL_COUNT {
+            self.stopped[r] = Some(self.payline_row(r));
+        }
+        self.evaluate_spin()
+    }
+
+    /// The LCG word `DAT_801D3C80`.
+    pub fn rng_state(&self) -> u32 {
+        self.rng.state()
     }
 
     /// The payline row index of `reel`.

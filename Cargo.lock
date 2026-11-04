@@ -3179,8 +3179,10 @@ dependencies = [
  "legaia-engine-cast",
  "legaia-engine-core",
  "legaia-engine-menus",
+ "legaia-engine-minigames",
  "legaia-engine-system",
  "legaia-game-tables",
+ "legaia-minigame-formats",
  "legaia-save",
 ]
 

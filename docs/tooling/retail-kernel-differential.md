@@ -168,3 +168,9 @@ only on a zero. The head of the same builder found the AI companion drawing twen
 `rand()`s a turn, reading the leader's status word off the typed list only, and giving up
 on a row after sixteen target redraws, where retail's redraw has no bound. Her HP and MP
 pinned at 200 and the string the spar's third round forces on the lead had no port.
+
+The slot machine's kernels in PROT 0975 found a resolved win ending every reach and hot
+mode, where a reach stands until its jackpot lands and hot mode ends on a one-in-150 LCG
+draw; the winning line taken by best payout, where retail keeps the highest symbol id; a
+stop always reaching its landing row, where the budget can leave the reel short of it; and
+the per-frame LCG draw missing, so a stop's landing never depended on when it was pressed.
