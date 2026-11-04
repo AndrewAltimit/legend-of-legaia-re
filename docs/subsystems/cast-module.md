@@ -3616,6 +3616,11 @@ Windhash, PROT 0961 and 0962 on the formation's first monster, Terror Scream on 
 with no line outside them (`0x801F7758..0x801F77B8`), and the Rogue strikes on their element. PROT 0944's
 fork on the victim's HP (`0x801F6B20..0x801F6B38`) is not carried.
 
+Glare also sounds its landing, and that is not a voice. Arm 2 of PROT 0940's `0x3C` body counts out at
+`0x801F6F30`, tests Stone, and on a landing calls `FUN_8004FE5C(0xF4, ctx[+0x13])` (`0x15B` for Zora,
+`0x801F7018`, ring id `0x290`) ahead of the guard tests; then it steps to arm 3. The port folds the status-only
+cast on that pass (`World::fold_glare_on_its_arm`) rather than at the band's closing seam.
+
 The cast-audio dispatcher `FUN_801F3990` emits a different, character-split
 band (`char_kind * 0x10 + 0xF8..0xFC`, plus `0x20C..0x20E` on the enemy leg).
 A cast cannot reach it: its one caller is battle-SM state `0x3D`, entered only

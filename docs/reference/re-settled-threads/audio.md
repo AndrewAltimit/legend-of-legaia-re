@@ -359,3 +359,23 @@ Against mednafen's recorded output, the SPU model resumed sample for sample
 reads correlation `1.000` and level within `0.003` dB, and a track from the state's read
 cursor reads within `0.2` dB, under `0.1` dB per band. The recorder's own `0.75` is divided
 out. See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).
+
+### What a monster's strike sounds like against retail's
+
+*Status:* resolved - grade `capture`
+
+Dealt retail's hand (`--strike-deal`: the state's queue and approach terms, retail's seed word going
+into each hit), the strike recordings match cue for cue: the swing, the block or flinch voice, the impact
+pick and their times. So the block roll, its draw order and the damage rolls all hold; what the plain
+score reads is two streams dealing two hands. The frame driver's discard at `0x80046D2C` runs ahead of the
+hit, so a block roll's words sit one step past the frame's first word. See
+[the oracle](../../tooling/cast-sequence-oracle.md#a-monsters-physical-attack).
+
+### Where Glare's landing cue sits
+
+*Status:* resolved - grade `disassembly` (the id and the arm), `capture` (one landed roll)
+
+PROT 0940's `0x3C` arm 2 counts out at `0x801F6F30`, rolls the Stone test (`0x801F6F9C`), calls
+`FUN_8004FE5C(0xF4, ctx[+0x13])` on a landing (`0x15B` for Zora, `0x801F7018`) ahead of the guard tests, and
+steps to arm 3. Ring id `0x290`. The port rolls on that pass, not at the band's closing seam. See
+[the cast module page](../../subsystems/cast-module.md).

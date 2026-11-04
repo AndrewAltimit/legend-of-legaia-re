@@ -358,6 +358,28 @@ side's own stream. So the channel's number mixes rule differences with deals.
 cue under the seat and clip it landed in, with its offset from the clip's commit,
 on both sides, so a clip both sides played can be read cue for cue.
 
+`--strike-deal` takes the deal out of the score as well (`--strike-deal-skip 1` with it). When the
+capture's gate opens, the engine child stands on the hand retail held:
+
+- the striker's queue `+0x1DF..` off the state. A monster's swings were rolled at its pick, so the
+  drive's gate holds only the bytes up to the cursor;
+- the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` off the state. They feed the first hit's block roll,
+  and the replay walked in from elsewhere to a target facing elsewhere: `battle_rugi_barra_strike`
+  holds `393` / `64`, the replay `86` / `116`;
+- the seed word `0x80009010` going into each hit, off the recording's `rand` column. A hit's spark burst
+  makes its frame draw tens of times where any other frame draws once, so the frames read straight
+  off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of
+  the hit, which is the skip of `1`: the block roll draws from the word one step on.
+
+```bash
+scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal --strike-deal-skip 1
+```
+
+A recording dealt this way that still parts from retail parts on a rule. Measured over the strike
+states, the block verdicts, the damage rolls and the flinch's impact cue all land as retail's, each
+hit in turn. The score without the option mixes those with the deal, so use it to ask whether a strike
+sounds right, and the plain score only to see what one fight dealt.
+
 What thirteen strike states show (`warhalf`, `warman`, `frog`, `spoon`,
 `gilium_lv2`, `hells_rat`, `gizam`, `wolf`, `guardian`, `freed`, `barra`,
 `chitei2_gilium`, `mad_ogre`): every clip both sides played carries the same ids
@@ -468,6 +490,18 @@ adds its reaction-channel entry). What the recordings on
 - **The flee's silent walk.** Both flee sites zero the walk record's cue track
   ([the staging](../subsystems/battle-action-helpers.md#the-escape-roll-fun_801e791c)), so a
   Spikefish flee sounds no steps.
+- **A mid-cast state's first segment.** A `battle_*_mid_cast` recording opens part-way into its first
+  state, and the projection counts from there, so every cue in that segment reads late by the state's
+  age: Windhash's `+7..+11` is the state standing about nine vsyncs in. The arm's spacing agrees, and the
+  head cue the engine plays before the state's instant reads as an extra.
+- **The voice waiting on an idle loop.** A heal's `0x20C` fires on the commit state `0x3D` waits for, which
+  the seat's idle clip holds off until its natural end. The recording injects on retail's idle cursor (`256`
+  on `deene_garnet_pre_heal`) and the engine's child on its own (`16`), so the same clip of the same length
+  reads `+6..+49` late. It is the seat's idle phase, not a late line.
+- **A capped recording's last segment.** Fatal Decision's retail run stops inside arm 6 and the engine's
+  segment runs on, so its wheel clicks read as extras past the cut. Both sides click every sixteen vsyncs.
+- **A roll on the wrong side.** Nighto's kill roll takes arm 14 in the engine and goes round it in
+  the retail recording (`13` to `15`, HP unchanged), and its three extras are that hit.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
