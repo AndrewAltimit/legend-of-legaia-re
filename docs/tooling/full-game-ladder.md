@@ -646,6 +646,11 @@ party still holds when it reaches the door, and what a reload hands back:
   walk reaches stays struck off: `bylon` P1[29] listed as a rest stops the
   bag standing in for one, and a run left `bylon` with Gala at level 8 of 20
   and 30000 gold poorer.
+- **Only a race walks for AP.** The walk for AP after a boss wipe
+  (`pad_charge_for_race`) spent every heal in the dungeon, and the attempts it
+  prepared left Zora higher than the attempt before it. Spirit turns earn the same
+  in the boss's own rounds, so only Koru's race takes the walk: that race is lost
+  on the rounds spent standing.
 
 ### A rest that stops resting
 
