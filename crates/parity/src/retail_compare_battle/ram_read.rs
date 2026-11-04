@@ -812,8 +812,15 @@ impl RetailBattle {
             let module_shot = action_state == CAPTURE_MODULE_STATE
                 && game_anchors::u8_at(ram, ctx + 0x279) > 0
                 && module_shot_walking(ram, ctx);
+            // The setup states ahead of the seed arm no framing either
+            // (`0x00` / `0x0A` / `0x0B`): the finished actor's table walks on
+            // at its own increment (`jou_nova_v3_pre_scythe_wind`: yaw `2251`
+            // on `2` a vsync reads best at `2242`, where the re-arm's widening
+            // share took it to `2233`).
+            let unarmed_setup =
+                game_anchors::u8_at(ram, ctx + 6) == 0xFF && PRE_SEED_STATES.contains(&action_state);
             let walk = |steps: &[u8]| {
-                if action_state == CAPTURE_FADE_STATE || module_shot {
+                if action_state == CAPTURE_FADE_STATE || module_shot || unarmed_setup {
                     displayed_module_cam_live(ram, ctx, steps)
                 } else {
                     displayed_cam_live_steps(
