@@ -402,7 +402,12 @@ frame is: its segment, its offset on the game clock, the same offset into
 the aligned engine segment. It matches the nearest unmatched engine cue of
 the same id within the tolerance. A second pass pairs what is left within
 `120` ticks and lists those as **timing** misses with their offset; the rest
-are **missing** (retail only) or **extra** (engine only). The channel's
+are **missing** (retail only) or **extra** (engine only).
+Only the span both sides recorded is compared: cues past the last aligned segment on either side are
+dropped, so a capped retail recording (Fatal Decision's wheel) does not read as engine extras. A
+`--physical` recording's window opens on the state's first vsync and closes at the end of its first
+`0x51` band: a state standing past `0x1E` has its first frame rows on a later seat's action, whose
+states read the same, and the engine stops after the state's own. The channel's
 number is `2 * matched / (retail cues + engine cues)`, once each id's pairs are put back
 in time order (repeats play in order, and the nearest-free pick can cross them); `id score` is the same
 over the id multisets alone, whatever the time.

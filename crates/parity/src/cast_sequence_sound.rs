@@ -77,6 +77,9 @@ pub struct LoneCue {
     pub key: Key,
 }
 
+/// The action state that ends a done band (`0x50`, `0x51`).
+const DONE_BAND_LAST: u8 = 0x51;
+
 /// The sound channel's result.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SoundReport {
@@ -139,12 +142,16 @@ pub fn compare_dirs(retail: &Side, engine: &Side, tolerance: u64) -> Result<Opti
     if !rp.exists() || !ep.exists() {
         return Ok(None);
     }
+    // `spell = 0x00` in the probe's manifest: `LEGAIA_PHYSICAL`, no action injected.
+    let physical = std::fs::read_to_string(retail.dir.join("manifest.txt"))
+        .is_ok_and(|m| m.lines().any(|l| l.replace(' ', "") == "spell=0x00"));
     let mut report = compare(
         retail,
         engine,
         &read_cues(&rp, true)?,
         &read_cues(&ep, false)?,
         tolerance,
+        physical,
     );
     let (rv, ev) = (retail.dir.join("sfxcall.csv"), engine.dir.join("xa.csv"));
     if rv.exists() && ev.exists() {
@@ -154,6 +161,7 @@ pub fn compare_dirs(retail: &Side, engine: &Side, tolerance: u64) -> Result<Opti
             &read_voice_calls(&rv)?,
             &read_voice_clips(&ev)?,
             tolerance,
+            physical,
         )));
     }
     Ok(Some(report))
@@ -215,20 +223,31 @@ pub fn compare(
     rcues: &[Cue],
     ecues: &[Cue],
     tolerance: u64,
+    physical: bool,
 ) -> SoundReport {
     // Retail logs from the inject; the window is the engine's, from cast
-    // begin (the first retail frame row) to the end of the recording.
+    // begin (the first retail frame row) to the end of the recording. A physical
+    // recording has no inject: its action is the state's own, from its first
+    // vsync. The first frame row can be a later seat's action, when the state
+    // stood past `0x1E`.
     let first = retail
         .rows
         .iter()
-        .find(|r| r.shot.is_some())
+        .find(|r| physical || r.shot.is_some())
         .map_or(0, |r| r.t);
+    // The engine's physical recording stops past its first done band. Retail's
+    // runs on into the next seats' actions, whose states read the same.
+    let settled = retail.rows.iter().position(|r| r.st7 == DONE_BAND_LAST);
+    let first_action_end = settled
+        .filter(|_| physical)
+        .and_then(|at| retail.rows[at..].iter().find(|r| r.st7 != DONE_BAND_LAST))
+        .map_or(u64::MAX, |r| r.t);
     let retail = Side {
         dir: retail.dir.clone(),
         rows: retail
             .rows
             .iter()
-            .filter(|r| r.t >= first)
+            .filter(|r| r.t >= first && r.t < first_action_end)
             .cloned()
             .collect(),
     };
@@ -249,6 +268,16 @@ pub fn compare(
     let rs = retail.segments();
     let es = engine.segments();
     let to_engine: BTreeMap<usize, usize> = align(&rs, &es).into_iter().collect();
+    // Only the span both sides recorded is compared: a `--physical` retail
+    // recording runs on into the next actions and the engine stops at its first
+    // done band, and a capped retail recording stops inside a long arm.
+    let (rcues, ecues) = match to_engine.iter().next_back() {
+        Some((&ri, &ei)) => (
+            rcues.into_iter().filter(|c| c.t <= rs[ri].end).collect(),
+            ecues.into_iter().filter(|c| c.t <= es[ei].end).collect(),
+        ),
+        None => (rcues, ecues),
+    };
     let clock = retail.game_clock();
     let game = |t: u64| -> u64 {
         clock
@@ -511,10 +540,42 @@ mod tests {
         // 12 into module phase 3 on both sides.
         let rc = [cue(1000 + 30 + 12, 0x205)];
         let ec = [cue(4 + 13, 0x205)];
-        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE);
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
         assert_eq!(s.matched.len(), 1);
         assert_eq!(s.matched[0].dt, 1);
         assert_eq!(s.score, 1.0);
+    }
+
+    /// A recording whose state stood past `0x1E`: its frame rows open on a later
+    /// seat's action, and the cues to compare are the state's own.
+    #[test]
+    fn a_physical_recording_starts_at_the_states_own_action() {
+        let mut r = side(
+            &[(0x1F, 0, 10), (0x51, 0, 5), (0x1F, 0, 10), (0x51, 0, 5)],
+            1000,
+            true,
+        );
+        for row in &mut r.rows[..15] {
+            row.shot = None;
+        }
+        let e = side(&[(0x1F, 0, 10), (0x51, 0, 5)], 0, true);
+        let rc = [cue(1002, 0x51), cue(1020, 0x60)];
+        let ec = [cue(2, 0x51)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, true);
+        assert_eq!(s.score, 1.0, "{s:?}");
+    }
+
+    /// Retail plays on into the next action, and the engine's recording stops
+    /// at its first done band: the later cues are not missing.
+    #[test]
+    fn cues_past_the_shared_span_are_not_compared() {
+        let r = side(&[(0x1E, 0, 10), (0x50, 0, 5), (0x1E, 0, 10)], 1000, true);
+        let e = side(&[(0x1E, 0, 10), (0x50, 0, 5)], 0, true);
+        let rc = [cue(1002, 0x51), cue(1020, 0x60)];
+        let ec = [cue(2, 0x51)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
+        assert_eq!(s.score, 1.0, "{s:?}");
+        assert!(s.missing.is_empty());
     }
 
     /// Two repeats of one id `6` ticks early on both sides: the nearest-free
@@ -526,7 +587,7 @@ mod tests {
         let e = side(&[(0x35, 3, 100)], 0, true);
         let rc = [cue(1000 + 20, 0x16), cue(1000 + 28, 0x16)];
         let ec = [cue(14, 0x16), cue(22, 0x16)];
-        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE);
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
         assert_eq!(s.matched.iter().map(|p| p.dt).collect::<Vec<_>>(), [-6, -6]);
         assert!(s.timing.is_empty());
     }
@@ -539,7 +600,7 @@ mod tests {
         let e = side(&[(0x28, 0, 200)], 0, true);
         let rc = [cue(10, 0x20), cue(50, 0x21)];
         let ec = [cue(40, 0x20), cue(50, 0x22)];
-        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE);
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
         assert!(s.matched.is_empty());
         assert_eq!(s.timing.len(), 1);
         assert_eq!(s.timing[0].dt, 30);
@@ -554,7 +615,7 @@ mod tests {
     #[test]
     fn silence_scores_one() {
         let r = side(&[(0x28, 0, 10)], 0, true);
-        let s = compare(&r, &r, &[], &[], DEFAULT_TOLERANCE);
+        let s = compare(&r, &r, &[], &[], DEFAULT_TOLERANCE, false);
         assert_eq!(s.score, 1.0);
     }
 }
