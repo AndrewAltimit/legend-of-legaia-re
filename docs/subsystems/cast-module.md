@@ -3386,6 +3386,18 @@ point; arm `0xE` hides the victim and cuts to TR `(-0x80, 0x200, 0x340)` on
 Lu. The decoder reads arm 4's stage byte as `0` (its `s6` is loaded by the
 phase switch ahead of the arm), so the director stores it.
 
+<a id="capture-walk-in-bodies"></a>
+
+**The walking bodies.** PROT 0950 `0x5A`, 0951 `0x36` and `0x5B`, 0952 `0x5C`
+and `0xB8`, 0955 `0x6F` and 0962's charge bodies share one walk-in: arm 0 turns
+both seats (`+ 0x800` onto the caster, the victim back onto it) and stores phase
+`1`, and arms 0 and 1 frame the caster through case 6 every pass. The bodies in
+0951 and 0952 also store the yaw counter `ctx[+0x6DA] = 0x200` on arm 0. The port's
+approach leg holds the module while the caster walks, so it makes these
+calls on the body's behalf (`capture_approach_follows`,
+`capture_approach_yaw_base`) and runs the walk on phase `1`. PROT 0941's Steal
+frames on other arms and keeps its own director.
+
 <a id="prot-0962-koru-charge-bodies"></a>
 
 **0962's charge bodies** (`blade_breath_camera`, `thunder_needle_camera`,

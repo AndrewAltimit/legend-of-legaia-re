@@ -342,15 +342,41 @@ pub fn gigaton_press_camera(
 }
 
 /// Whether a capture body's walk-in arms frame the caster through the
-/// action SM's case 6 on every pass of the approach (PROT 0962 `0xA2`'s arms
-/// 0 and 1). The host's approach leg holds the module while the caster
-/// walks, so it makes the call on the body's behalf.
+/// action SM's case 6 on every pass of the approach, and store phase `1` on
+/// arm 0's pass so the walk runs on arm 1. The host's approach leg holds the
+/// module while the caster walks, so it makes the call on the body's behalf.
+///
+/// `jal 0x801D5854` with `li a1,6` in the delay slot, once in each of the two
+/// arms: PROT 0950 `0x5A` (`0x801F7BC4` / `0x801F7C68`), 0951 `0x36`
+/// (`0x801F6BD4` / `0x801F6C10`) and `0x5B` (`0x801F79B8` / `0x801F7A5C`),
+/// 0952 `0x5C` (`0x801F72E8` / `0x801F738C`) and `0xB8` (`0x801F6BDC` /
+/// `0x801F6C80`), 0955 `0x6F` (`0x801F8128` / `0x801F8170`) and 0962's charge
+/// bodies. PROT 0941's Steal frames on other arms and stays with its director.
 pub fn capture_approach_follows(entry: u32, body: Option<u32>) -> bool {
-    entry == 962
-        && matches!(
+    use crate::cast_module_ticks as t;
+    match entry {
+        950 => body == Some(crate::cast_arm_ticks::ROLLING_FLARE_TICK),
+        951 => matches!(body, Some(t::CHAOS_FLARE_TICK | t::SCYTHE_WIND_TICK)),
+        952 => matches!(body, Some(t::ASTRAL_SLASH_TICK | t::BLOODY_HORNS_TICK)),
+        955 => body == Some(t::MELT_SPRAY_TICK),
+        962 => matches!(
             body,
             Some(BLADE_BREATH_BODY | THUNDER_NEEDLE_BODY | GIGATON_PRESS_BODY)
-        )
+        ),
+        _ => false,
+    }
+}
+
+/// The yaw counter `ctx[+0x6DA]` a walking body's arm 0 stores before its
+/// first case 6 (`li v0,0x200; sh v0,0x6DA(v1)`: PROT 0951 at `0x801F6B14` and
+/// `0x801F78D4`, PROT 0952 at `0x801F6AF8` and `0x801F7204`).
+pub fn capture_approach_yaw_base(entry: u32, body: Option<u32>) -> Option<i32> {
+    use crate::cast_module_ticks as t;
+    match (entry, body?) {
+        (951, t::CHAOS_FLARE_TICK | t::SCYTHE_WIND_TICK)
+        | (952, t::ASTRAL_SLASH_TICK | t::BLOODY_HORNS_TICK) => Some(0x200),
+        _ => None,
+    }
 }
 
 /// `0x801F7EA4..0x801F7F04`, arm 3: four records on the victim's `+0x34` /

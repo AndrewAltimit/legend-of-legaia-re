@@ -1011,8 +1011,8 @@ pub use blade_breath::{
     GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
     THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
     THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
-    gigaton_press_camera, gigaton_press_debris, gigaton_press_jump_height, thunder_needle_camera,
-    thunder_needle_ring,
+    capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
+    gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
