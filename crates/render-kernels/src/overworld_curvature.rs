@@ -85,6 +85,14 @@ const FRAME_OFY: i32 = 114;
 /// two rebuilds (`0x801CE958`, `0x801CEB88`) are the only ones.
 ///
 /// REF: FUN_801CE850
+/// The `clip.w`-to-`SZ` factor of a frame on the overworld with the curvature
+/// table flat: the map display's (`FUN_800271A8(0, 0)` at `0x801CE958`). Retail
+/// still draws the continent through the overworld leaves, so the ground's depth
+/// cue and sort bucket read `SZ` as ever and only the bend goes. It is `1` with
+/// the lane's lowest usable bit set, a difference under one sort bucket at any
+/// `SZ`; the shaders' `MeshUniforms` is full, so the scale carries the flag.
+pub const FLAT_TABLE_SCALE: f32 = 1.0 + 1.0 / 4096.0;
+
 pub const REBUILD_BIAS: i16 = (FRAME_OFY - BUILD_OFY) as i16;
 
 /// The table, built once.
@@ -150,7 +158,7 @@ pub const CURVATURE_REACHABLE: usize = (0xFFFF >> 5) + 1;
 /// still carries.
 pub fn clip_bend_rows(clip_w: f32, scale: f32, bias: i16) -> f32 {
     let bias = f32::from(bias);
-    if scale <= 0.0 || clip_w <= 0.0 {
+    if scale <= 0.0 || scale == FLAT_TABLE_SCALE || clip_w <= 0.0 {
         return bias;
     }
     let sz = ((clip_w * scale).round() as i32).clamp(0, 0xFFFF);
@@ -160,6 +168,15 @@ pub fn clip_bend_rows(clip_w: f32, scale: f32, bias: i16) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_flat_table_scale_leaves_only_the_bias() {
+        assert_eq!(clip_bend_rows(0x9470 as f32, FLAT_TABLE_SCALE, 0), 0.0);
+        assert_eq!(
+            clip_bend_rows(0x9470 as f32, FLAT_TABLE_SCALE, REBUILD_BIAS),
+            -6.0
+        );
+    }
 
     #[test]
     fn the_table_starts_flat_and_bends_down_with_depth() {

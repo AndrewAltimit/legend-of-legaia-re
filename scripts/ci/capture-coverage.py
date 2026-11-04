@@ -58,7 +58,17 @@ MENU_SCREENS = {
     0x00: "title / card boot",
     0x01: "pause root",
     0x05: "Items",
+    0x06: "Items Use list",
+    0x07: "Items Throw Out list",
+    0x09: "Items all-party apply",
+    0x0A: "Items single-target apply",
+    0x0B: "Door of Light confirm",
+    0x0C: "Door of Wind list",
+    0x0D: "Incense confirm",
     0x0E: "Magic",
+    0x0F: "Magic spell list",
+    0x10: "Magic group cast",
+    0x11: "Magic target cast",
     0x12: "Equip character pick",
     0x13: "Equip slot browse",
     0x14: "Equip candidates",
@@ -66,7 +76,29 @@ MENU_SCREENS = {
     0x17: "Options",
     0x18: "Load",
     0x19: "Save",
+    0x1A: "shop Buy / Sell / Quit",
+    0x1B: "shop buy list",
+    0x1C: "shop buy recipient",
+    0x1D: "shop buy quantity",
+    0x1E: "shop sell list",
+    0x1F: "shop sell quantity",
     0x20: "prize exchange",
+    "map": "world map display (game mode 0x0D)",
+}
+# The command flow's surfaces (`ctx[+0x06]`, battle-command-flow.md) plus the
+# results frame of the action SM.
+BATTLE_SURFACES = {
+    0x1E: "round prompt",
+    0x28: "command ring",
+    0x32: "run confirm",
+    0x3C: "item window",
+    0x46: "magic window",
+    0x50: "arts entry",
+    0x5A: "target cursor",
+    0x64: "item target",
+    0x6E: "commit confirm",
+    0x78: "Auto / Command prompt",
+    "results": "results window",
 }
 CLASSES = ("field", "world_map", "battle", "menu", "field_init", "minigame", "cutscene", "other")
 # The summon band the player casts (`FUN_8003EC70(id - 0x79)`, PROT 0903..0934).
@@ -220,7 +252,10 @@ def build(census: dict, baseline: dict) -> dict:
         mc.add(c, c)
     ms = dims["menu_screens"] = Coverage("menu screens")
     for k, v in MENU_SCREENS.items():
-        ms.add(k, f"0x{k:02X} {v}")
+        ms.add(k, f"0x{k:02X} {v}" if isinstance(k, int) else v)
+    bs = dims["battle_surfaces"] = Coverage("battle screens")
+    for k, v in BATTLE_SURFACES.items():
+        bs.add(k, f"0x{k:02X} {v}" if isinstance(k, int) else v)
 
     for s in retail:
         lab, sco, cls = s["label"], scored(s["label"]), s["class"]
@@ -229,7 +264,20 @@ def build(census: dict, baseline: dict) -> dict:
             walk.cover(s["scene"], lab, sco)
         mc.cover(cls, lab, sco)
         if cls == "menu":
-            ms.cover(s["menu_subscreen"] if s["menu_subscreen"] is not None else 0x00, lab, sco)
+            if s["game_mode"] == 0x0D:
+                ms.cover("map", lab, sco)
+            else:
+                ms.cover(s["menu_subscreen"] if s["menu_subscreen"] is not None else 0x00, lab, sco)
+        b = s.get("battle")
+        if b:
+            # The results frame sits past the action SM's Done band.
+            if b["flow"] == 0xFF and b["action_state"] == 0x5A:
+                bs.cover("results", lab, sco)
+            elif b["flow"] != 0xFF:
+                # The arms of a surface sit a few bytes on from its base.
+                base = {0x5C: 0x5A}.get(b["flow"], b["flow"])
+                if base in BATTLE_SURFACES:
+                    bs.cover(base, lab, sco)
         b = s["battle"]
         if not b:
             continue
@@ -274,7 +322,7 @@ def render(result: dict, worklist_rows: int) -> str:
         n, h, s = d.counts()
         out.append(f"| {d.name} | {n} | {h} ({h / n:.0%}) | {s} ({s / n:.0%}) |" if n else f"| {d.name} | 0 | - | - |")
     for key in ("enemy_attacks", "monsters", "enemy_spells", "scene_walk", "cast_modules",
-                "player_casts", "menu_screens", "mode_classes"):
+                "player_casts", "menu_screens", "battle_surfaces", "mode_classes"):
         d = dims[key]
         un = d.uncovered()
         out += ["", f"## Uncovered {d.name} ({len(un)})", ""]

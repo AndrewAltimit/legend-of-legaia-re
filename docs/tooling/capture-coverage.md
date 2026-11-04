@@ -54,7 +54,8 @@ or its frame is a fade.
 | player casts | the named summon-band spells `0x81..=0xA0` of the [spell table](../formats/spell-table.md) | a party seat acts with that id queued, category `1` or `2` |
 | cast modules | the slot-B images PROT `0903..=0966` | an acting cast pages the module ([below](#which-module-a-cast-pages)) |
 | mode classes | the corpus classes | a state of the class |
-| menu screens | the pause-menu sub-screens, the title family (word clear) and the prize exchange `0x20` | a menu state's sub-screen word `DAT_801E46A4` |
+| menu screens | every player-reachable id of the [sub-screen table](../subsystems/save-screen.md#sub-screen-function-pointer-table), the title family (word clear) and the map display (game mode `0x0D`) | a menu state's sub-screen word `DAT_801E46A4` |
+| battle screens | the [command flow](../subsystems/battle-command-flow.md)'s surfaces and the results window | a battle state's `ctx[+0x06]`, or `ctx[+0x07] = 0x5A` past the hand-off |
 
 A heal-class spell runs the Spirit / Item flow `0x3C..=0x40`
 ([the magic arm's override](../subsystems/battle-action.md#outer-dispatch---ctx7-action-state-cursor)),
@@ -180,6 +181,12 @@ moves the player there.
 or cutscene door runs a long record first. A door whose record tests a story
 flag the source state lacks takes `LEGAIA_FLAGS_SET` / `LEGAIA_FLAGS_CLEAR`,
 written once at the start, and the scenario names them in `ram_poked`.
+
+A screen behind a conversation or a menu path takes
+[`autorun_screen_walk.lua`](../../scripts/pcsx-redux/autorun_screen_walk.lua): a
+`LEGAIA_STEPS` list of waits, presses, door or NPC pokes and saves, each stop
+gated on the game mode or the sub-screen word, so a shop's lists come from a town
+state and one run. A step that stays unmet ends the run with what it saved.
 
 A harvested state is a candidate, not a corpus state, until:
 

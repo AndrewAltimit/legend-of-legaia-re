@@ -32,7 +32,9 @@ fn overworld_curvature_entry(i: i32) -> i32 {
 }
 
 fn overworld_curve_clip(clip: vec4<f32>, sz_scale: f32) -> vec4<f32> {
-    if (sz_scale <= 0.0 || clip.w <= 0.0) {
+    // `1 + 1/4096` is `overworld_curvature::FLAT_TABLE_SCALE`: the map
+    // display's flat table.
+    if (sz_scale <= 0.0 || sz_scale == 1.0 + 1.0 / 4096.0 || clip.w <= 0.0) {
         return clip;
     }
     let sz = clamp(i32(round(clip.w * sz_scale)), 0, 0xFFFF);

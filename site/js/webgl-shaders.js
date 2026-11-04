@@ -412,7 +412,9 @@ int overworldCurveEntry(int i) {
 
 vec4 overworldCurve(vec4 clip) {
   float t = u_curve_bias;
-  if (u_curve > 0.0 && clip.w > 0.0) {
+  /* 1 + 1/4096 is overworld_curvature::FLAT_TABLE_SCALE: the map display's
+   * flat table, which keeps the scale for the ground's cue and sort. */
+  if (u_curve > 0.0 && u_curve != 1.0 + 1.0 / 4096.0 && clip.w > 0.0) {
     int sz = clamp(int(floor(clip.w * u_curve + 0.5)), 0, 0xFFFF);
     t += float(overworldCurveEntry((sz >> 5) + 1));
   }

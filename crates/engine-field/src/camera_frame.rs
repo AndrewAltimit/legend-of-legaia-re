@@ -493,8 +493,10 @@ pub fn frame_curve_scale(overworld: bool, frame: &FieldCameraFrame) -> f32 {
         F::Cutscene(_) | F::Follow(_) => CUTSCENE_WORLD_SCALE,
         // The map display flattens the curvature table for its own
         // duration (`FUN_800271A8(0, 0)` at `0x801CE958`, rebuilt from the
-        // saved coefficients on the way out at `0x801CEB88`).
-        F::WorldMapDisplay { .. } => 0.0,
+        // saved coefficients on the way out at `0x801CEB88`). The continent
+        // still goes through the overworld leaves: its depth cue and sort
+        // bucket read the same `SZ` (`world_map_display_map01_retail`).
+        F::WorldMapDisplay { .. } => legaia_render_kernels::overworld_curvature::FLAT_TABLE_SCALE,
         // A minigame venue is never the overworld; flat.
         F::WorldMapTopView { .. } | F::HostDebugOrbit | F::Venue(_) => 0.0,
     }

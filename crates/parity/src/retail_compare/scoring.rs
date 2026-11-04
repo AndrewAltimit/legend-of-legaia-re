@@ -554,7 +554,11 @@ pub fn compare(
             );
         }
     }
-    put("camera", s, d);
+    // The map display's survey camera is staged on the frame, not on the
+    // follow camera's globals the channel reads.
+    if !matches!(&retail.menu, Some(Ok(m)) if m.map_display) {
+        put("camera", s, d);
+    }
     put(
         "bgm",
         f64::from(u8::from(engine.bgm_id == Some(retail.bgm_id))),

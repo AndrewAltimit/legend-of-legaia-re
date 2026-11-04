@@ -472,7 +472,7 @@ probe.run({
                         fh:close()
                         held_pre = nil
                         logf("CKPT %s vsync=%d", name, vsync)
-                    elseif vsync - band_since == (b == "module" and HOLD_MODULE > 0 and HOLD_MODULE
+                    elseif vsync - band_since >= (b == "module" and HOLD_MODULE > 0 and HOLD_MODULE
                             or b == "magic" and HOLD_MAGIC > 0 and HOLD_MAGIC or HOLD)
                         and (per_key[key] or 0) < PER_KEY and caps < MAX_CAPS then
                         local name = string.format("%s_%s_%s_st%02x_v%d",

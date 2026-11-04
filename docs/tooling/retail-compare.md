@@ -3110,6 +3110,20 @@ The casino prize exchange (`0x20`) is entered by script and no root row routes t
 it, so the seed arms it the way the counter's op `49 07 00` does
 (`LEGAIA_SEAT_PRIZE`, `World::try_arm_prize_exchange`) in place of a pad drive.
 
+A gold shop's screens (`0x1A..=0x1F`) are armed the same way, from the op `49 00`
+record the state's entry-context pointer `_DAT_8007B450` names
+(`LEGAIA_SEAT_SHOP`, `World::try_arm_field_shop`), and the press path past the root
+window follows the sub-screen id: a state saved on a buy list's first row replays.
+
+Past a row's confirm, the path reads the state: `0x06` and `0x07` press through the
+Items command window, `0x0F` past the Magic caster picker, and on `0x15` the party
+cursor `DAT_801E46C4`, the page cursor `DAT_801E46C0` and the step word
+`DAT_801E46AC` say how far Down, how far Right, and whether the page's list is open.
+
+The map display (game mode `0x0D`) classes as a menu: a settled overworld field,
+then `L1`. It scores no `camera`: the survey camera is staged on the frame, not on
+the follow camera's globals that channel reads.
+
 ### Card screens
 
 A Load / Save screen on its grid shows a memory card, so it is seeded only
