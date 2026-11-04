@@ -452,6 +452,9 @@ adds its reaction-channel entry). What the recordings on
 - **A deal is not a cue defect.** Void Accessories' three engine-only cues are its
   strip landing where retail's roll said "Nothing happened": `--rand-at 0x70:3` scores
   it `1.000`.
+- **A flinch with its cues skipped.** Palma's three engine-only cues were its pre-hit's
+  flinch: arm `0xF`'s pass stores `8` into each row's `+0x1F6` (`0x801F8360`), one past the
+  track, and `seats.csv` reads the jump with no cue behind it.
 - **The flee's silent walk.** Both flee sites zero the walk record's cue track
   ([the staging](../subsystems/battle-action-helpers.md#the-escape-roll-fun_801e791c)), so a
   Spikefish flee sounds no steps.

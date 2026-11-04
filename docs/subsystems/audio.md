@@ -3308,7 +3308,7 @@ Each recording has a private home, disc stage and X server, so `--capture --jobs
 runs them side by side with the same bytes. `-nothrottle` changes neither the bytes
 nor the speed: the emulator is not being held back by its throttle here.
 
-**Three channels.**
+**The channels.**
 
 - **`core`: the SPU model alone.** A scratch copy of the state has the open
   sequence bitmap `_DAT_801CD2B8` zeroed, so no sequence writes a voice while the
@@ -3332,16 +3332,19 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
 | `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and open |
-| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render: `+1` to `+4.6` dB between `350` Hz and `4` kHz |
+| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
-| `zeto_call_wave_mid_cast` | | `0.9994` | `-30` dB | `+5.09` dB | the cast's own cues hold the level; the score's notes fit |
+| `zeto_call_wave_mid_cast` | | `0.9994` | `-30` dB | `+5.09` dB | the cast's own cues hold the level: `+4` to `+14` dB over the recording's first six seconds, then within `0.11` dB in every two-second window |
 
-The `rimelm` row's residual is the emitter: at lag `0` it correlates `0.43` to `0.53`
-with a silenced run of the same state, where only the game-keyed voices sound, in every
-five-second window. That silenced emitter is louder than the residual (`1190` against
-`800` RMS), so no plain subtraction recovers the music from the recording.
+The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
+stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
+**`emitter`** (`--cue-voices`), mixes the track with the state's cue voices resumed from its SPU
+(voice records owned `0x21`: voices 16..18 here, nothing else stood up). It reads correlation `0.986`,
+level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
+window, so the river is right to the sample. What remains, `-25` to `-27` dB in the clean windows
+and near `-11` dB in others, sits on the music: the same windows move with the note's vsync.
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
