@@ -72,6 +72,14 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     let here = scene_name(session);
     // The walk is taken on its feet: the stance halves what it costs.
     pad_field_heal(session, 900);
+    // A wipe out here unwinds to the reload: the flag must not outlive the walk.
+    struct Charging;
+    impl Drop for Charging {
+        fn drop(&mut self) {
+            CHARGING.with(|c| c.set(false));
+        }
+    }
+    let charging = Charging;
     CHARGING.with(|c| c.set(true));
     let mut left = Ok(None);
     for _ in 0..CHARGE_OUTINGS {
@@ -83,7 +91,7 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
             break;
         }
     }
-    CHARGING.with(|c| c.set(false));
+    drop(charging);
     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
         let w = &session.host.world;
         let cells: Vec<u16> = w

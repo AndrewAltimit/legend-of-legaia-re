@@ -1228,8 +1228,14 @@ pub(super) fn arts_plan(
         // A plain swing goes where it hits hardest: the staged command picks
         // the power scalar (`0x801F64EC[(id - 0x0C) % 5]`), 12 for the left arm
         // against 22 for Low. Vahn's nine presses take 1750 off Koru on Low and
-        // 1050 on the arm; with no art to pay for, Spirit stays for one.
-        let order = [Command::Down, Command::Up, Command::Right, Command::Left];
+        // 1050 on the arm; with no art to pay for, Spirit stays for one. A foe
+        // can hold its guard low (`taiku`'s monster 112 and 91 took nothing from
+        // a whole string of Low), so outside a race the string changes height.
+        let order = if !saving && plan.last() == Some(&Command::Down) {
+            [Command::Up, Command::Down, Command::Right, Command::Left]
+        } else {
+            [Command::Down, Command::Up, Command::Right, Command::Left]
+        };
         let Some(&d) = order
             .iter()
             .filter(|&&d| s.cost_of(d) <= pool && open(&[d]) && with(&[d]))
