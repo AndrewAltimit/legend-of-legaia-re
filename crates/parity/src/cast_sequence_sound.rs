@@ -245,6 +245,7 @@ pub fn compare(
             }
         }
     }
+    let (matched, timing) = uncross(matched, timing, tolerance);
     let missing: Vec<LoneCue> = projected
         .iter()
         .zip(&done)
@@ -293,6 +294,40 @@ pub fn compare(
         missing,
         extra,
     }
+}
+
+/// Re-deal each id's paired engine ticks in time order. Repeats of one id play
+/// in order on both sides, but the matcher takes the nearest free tick per
+/// retail cue and its two passes run apart, so two cues can pair crossed: `-6`,
+/// `-6` read as `+2`, `-14`. In-order pairing never widens the largest gap, so
+/// no pair leaves the tolerance by this.
+fn uncross(
+    matched: Vec<CuePair>,
+    timing: Vec<CuePair>,
+    tolerance: u64,
+) -> (Vec<CuePair>, Vec<CuePair>) {
+    let mut by_id: BTreeMap<i32, Vec<CuePair>> = BTreeMap::new();
+    for pair in matched.into_iter().chain(timing) {
+        by_id.entry(pair.id).or_default().push(pair);
+    }
+    let (mut matched, mut timing) = (Vec::new(), Vec::new());
+    for pairs in by_id.values_mut() {
+        pairs.sort_by_key(|p| p.projected_tick);
+        let mut ticks: Vec<u64> = pairs.iter().map(|p| p.engine_tick).collect();
+        ticks.sort_unstable();
+        for (pair, tick) in pairs.iter_mut().zip(ticks) {
+            pair.engine_tick = tick;
+            pair.dt = tick as i64 - pair.projected_tick as i64;
+            if pair.dt.unsigned_abs() <= tolerance {
+                matched.push(pair.clone());
+            } else {
+                timing.push(pair.clone());
+            }
+        }
+    }
+    matched.sort_by_key(|p| p.retail_vsync);
+    timing.sort_by_key(|p| p.retail_vsync);
+    (matched, timing)
 }
 
 /// The report's markdown section.
@@ -403,6 +438,20 @@ mod tests {
         assert_eq!(s.matched.len(), 1);
         assert_eq!(s.matched[0].dt, 1);
         assert_eq!(s.score, 1.0);
+    }
+
+    /// Two repeats of one id `6` ticks early on both sides: the nearest-free
+    /// matcher pairs the first with the second's tick and leaves the second
+    /// `14` off. They play in order, so they pair in order.
+    #[test]
+    fn repeats_of_one_id_pair_in_order() {
+        let r = side(&[(0x35, 3, 100)], 1000, true);
+        let e = side(&[(0x35, 3, 100)], 0, true);
+        let rc = [cue(1000 + 20, 0x16), cue(1000 + 28, 0x16)];
+        let ec = [cue(14, 0x16), cue(22, 0x16)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE);
+        assert_eq!(s.matched.iter().map(|p| p.dt).collect::<Vec<_>>(), [-6, -6]);
+        assert!(s.timing.is_empty());
     }
 
     /// Same id far off is a timing miss; a wrong id is one missing and one

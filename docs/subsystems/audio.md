@@ -3343,8 +3343,8 @@ stopping the sequences leaves their held notes ringing beside the emitter. The f
 **`emitter`** (`--cue-voices`), mixes the track with the state's cue voices resumed from its SPU
 (voice records owned `0x21`: voices 16..18 here, nothing else stood up). It reads correlation `0.986`,
 level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
-window, so the river is right to the sample. What remains, `-25` to `-27` dB in the clean windows
-and near `-11` dB in others, sits on the music: the same windows move with the note's vsync.
+window, so the river is right to the sample. What remains reads `-25` to `-27` dB in the clean
+windows and near `-11` dB in others; that split is not traced.
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
