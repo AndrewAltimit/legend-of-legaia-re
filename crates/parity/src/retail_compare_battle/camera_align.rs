@@ -313,10 +313,15 @@ pub(super) fn walk_arm_prior_end(ram: &[u8], ctx: u32) -> Option<[Option<i32>; 9
         return None;
     }
     let record = |k: u32| game_anchors::u32_at(ram, actor + RING_RECORD + k * 4);
-    if record(0) != record(1)
-        || record(1) == record(2)
-        || game_anchors::u16_at(ram, actor + CURSOR_RING + 2) != 0
-    {
+    let on_idle_stage = record(0) == record(1)
+        && record(1) != record(2)
+        && game_anchors::u16_at(ram, actor + CURSOR_RING + 2) == 0;
+    // A walk the `+0x76` lock keeps running has no such commit; the arrival is
+    // the walker's nearest slot instead ([`walk_heading`]), and that alone
+    // also holds a pass later (`battle_korb2_warhalf_strike`), checked below.
+    let on_walk =
+        game_anchors::u8_at(ram, actor + 0x1D9) == WALK_CLIP && walk_heading(ram, ctx).is_some();
+    if !on_idle_stage && !on_walk {
         return None;
     }
     let target_slot = u32::from(game_anchors::u8_at(ram, actor + 0x1DD));
@@ -349,8 +354,24 @@ pub(super) fn walk_arm_prior_end(ram: &[u8], ctx: u32) -> Option<[Option<i32>; 9
     } else {
         0
     };
+    let aim = (counter - heading + half_turn).rem_euclid(4096);
+    if !on_idle_stage {
+        // One pass back along case 7's table, the camera still stands on case
+        // 6's aim if that pass was the first arm; had it armed earlier, that
+        // pass would already be a table step or more off the aim.
+        // `battle_nilboa_warfish_strike` stands `2` off with a step of `300`,
+        // `battle_korb2_warhalf_strike` about `566` off with one of `309`.
+        let inc = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 4) as i16);
+        let end = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 6) as i16);
+        let live = i32::from(game_anchors::u16_at(ram, 0x8007_B792) as i16);
+        let step = i32::from(pass_steps(ram)[0].max(1)) * inc.abs();
+        let one_back = live - (end - live).signum() * step;
+        if ((one_back - aim + 2048).rem_euclid(4096) - 2048).abs() >= step {
+            return None;
+        }
+    }
     let mut prior = [None; 9];
-    prior[1] = Some((counter - heading + half_turn).rem_euclid(4096));
+    prior[1] = Some(aim);
     let walker = ring(actor, 2);
     prior[6] = Some(-walker[0]);
     prior[8] = Some(-walker[1]);

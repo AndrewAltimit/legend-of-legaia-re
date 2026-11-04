@@ -370,7 +370,7 @@ pub struct RetailBattle {
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
     /// Each party seat's character record's maximum HP (`0x80084708 +
-    /// char * 0x414 + 0x104`), against which a seat's own word `+0x14E`
+    /// (char - 1) * 0x414 + 0x104`), against which a seat's own word `+0x14E`
     /// shows a probe's raise ([`Self::party_seat_pool_raised`]).
     pub record_hp_max: Vec<u16>,
     /// Each party seat's committed action category `+0x1DE` (`4` = Spirit).

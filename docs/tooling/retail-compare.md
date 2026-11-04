@@ -1470,6 +1470,7 @@ A capture one pass younger holds no framing of case 7's at all on its screen. Th
 Case 7's `0x700` unwrap makes that table's increment large, so walking both passes back along it lands hundreds of units away: `battle_map01_gomboo_strike` stood on yaw `896` where the frame shows about `290`.
 The walk back takes the case-7 pass and then steps away from case 6's aim on that walk's last pass (`walk_arm_prior_end`: `counter - heading` with the style's half turn, on the heading stored the pass before; the focus on the walker's live pair, ring slot `2`).
 It is a reading of the frame on screen, not a capture fault: these states are as faithful as those a pass older.
+A walk the `+0x76` lock keeps running makes no such commit, so there the arrival is the walker's nearest ring slot, and it counts only while one pass back along case 7's table still stands within a table step of case 6's aim (`battle_nilboa_warfish_strike` `2` units off, `.628` to `.992`; `battle_korb2_warhalf_strike`, a pass older, about `566` off, and it keeps the [walk-back above](#battle-states)).
 
 ### The ground at the phase
 

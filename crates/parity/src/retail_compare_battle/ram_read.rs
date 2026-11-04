@@ -893,8 +893,12 @@ impl RetailBattle {
                 .collect(),
             record_hp_max: (0..u32::from(party_count))
                 .map(|s| {
-                    let char_id = u32::from(game_anchors::u8_at(ram, SEAT_CHARS + s));
-                    game_anchors::u16_at(ram, 0x8008_4708 + char_id * 0x414 + 0x104)
+                    // The seat's word is 1-based: `0` names no record.
+                    u32::from(game_anchors::u8_at(ram, SEAT_CHARS + s))
+                        .checked_sub(1)
+                        .map_or(0, |i| {
+                            game_anchors::u16_at(ram, 0x8008_4708 + i * 0x414 + 0x104)
+                        })
                 })
                 .collect(),
             party_categories: (0..u32::from(party_count))

@@ -1203,11 +1203,17 @@ impl RetailBattle {
     /// word holds what its character record does not: a harvest probe's
     /// raised pool (`LEGAIA_TOUGH=2`, `autorun_battle_harvest.lua`). The seed
     /// builds a seat from the record, so such a state's HUD read the record's
-    /// maximum, with every HP clamped under it, beside retail's `9999`.
+    /// maximum, with every HP clamped under it, beside retail's `9999`. Only
+    /// the probe's own value counts: two battle-less states hold other words
+    /// in a seat no fight stood up (`rim_elm_queen_bee_battle`'s `5636`).
     pub fn party_seat_pool_raised(&self, slot: usize, seat: &Combatant) -> Option<u16> {
+        const RAISED_POOL: u16 = 9999;
         let record = *self.record_hp_max.get(slot)?;
-        (slot < usize::from(self.party_count.clamp(1, 3)) && seat.hp_max > record && record != 0)
-            .then_some(seat.hp_max)
+        (slot < usize::from(self.party_count.clamp(1, 3))
+            && seat.hp_max == RAISED_POOL
+            && record != RAISED_POOL
+            && record != 0)
+            .then_some(RAISED_POOL)
     }
 
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
