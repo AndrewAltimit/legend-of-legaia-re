@@ -589,7 +589,7 @@ does to the sequence is read off the libsnd call under it:
 | Sub-op | Arm | Primitive -> libsnd | What the sequence does |
 |---|---|---|---|
 | `2` | `0x801E0138`, sets bit 1 | `FUN_800266E0` -> `FUN_80064370` -> `FUN_800641EC` | **stop**: the channel's notes are killed now (`FUN_800684CC`), the read cursor goes back to the sequence start (`+0x4`), flag `0x4` is raised |
-| `3` | `0x801E015C`, sets bit 1 | `FUN_80026740` -> `FUN_8006282C` -> `FUN_8006275C` | **pause**: flags `0x1` / `0x8` clear and `0x2` raised; the next calc (`FUN_80062F98`) keys the notes off through `FUN_800638D8`, and the cursor is left alone |
+| `3` | `0x801E015C`, sets bit 1 | `FUN_80026740` -> `FUN_8006282C` -> `FUN_8006275C` | **pause**: `FUN_8002657C(0, slot)` first sets the playing sequence's volume to `0`, the sounding notes with it (`FUN_80067E9C`), so they cut at once; then flags `0x1` / `0x8` clear and `0x2` raised; the next calc (`FUN_80062F98`) keys the notes off through `FUN_800638D8`, and the cursor is left alone |
 | `4` | `0x801E0180`, clears bit 1 | `FUN_80026478` -> `FUN_80062880(id, 1, 1)` -> `FUN_800628F0` | **replay**: `FUN_800628F0` resets the read cursor to the sequence start for every mode, then mode `1` raises the play flag |
 
 So no script word resumes a track mid-phrase: the re-attach plays it again
@@ -819,9 +819,9 @@ mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
 | Vsync | Retail | Cause |
 |---|---|---|
 | `T` | mode `8`, the field sequence plays | `FUN_801DA51C`'s hand-off |
-| `T + 3` | field sequence stopped (flag `0x2`, then `0x20`), its notes releasing | the intro init `FUN_801CE8CC`: `FUN_80026740(0x8007052C)` under `_DAT_8007B880 == 0` (`0x801CEB58..0x801CEB70`) |
+| `T + 3` | field sequence stopped (flag `0x2`, then `0x20`), volume `0`: its notes cut, their release unheard | the intro init `FUN_801CE8CC`: `FUN_80026740(0x8007052C)` under `_DAT_8007B880 == 0` (`0x801CEB58..0x801CEB70`) |
 | `T + 7` | three cue voices: the battle-start sound | phase 0's ring store |
-| `T + 80` | the field's last notes have released: silence under the cue | |
+| `T + 80` | the field's last envelopes reach `0` | |
 | `T + 139` | mode `0x14`, source 5 attached and playing | the completion arm: `FUN_8001E54C(5, ..)` + `FUN_80026478(0x8007056C)` (`0x801CF91C..0x801CF930`) |
 | `E` | mode `2`, the battle sequence plays on | |
 | `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0x78)`, while the map reads |
