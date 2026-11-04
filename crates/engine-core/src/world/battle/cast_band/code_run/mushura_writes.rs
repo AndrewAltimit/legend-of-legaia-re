@@ -126,12 +126,17 @@ impl World {
             (0xA, true) => {
                 a.battle.render_color = RED_WORD;
                 a.battle.render_flag = 0xFF;
+                // `lui v0,0x8100` / `sw v0,0x8(s4)` at `0x801F7708..0x801F7710`:
+                // the mode word draws the parked body additive.
+                a.battle.flag_word = 0x8100_0000;
             }
             // `+0x1DD = 9`: no one seat's range stops the clip's root motion
             // any more (`0x801F77B4`), and the arm stores the running clip's
             // root speed `0x50` straight into its entry (`0x801F77A0..0x801F77AC`):
             // the disc's is `0`, so nothing else moves the creature.
             (0xB, true) => {
+                // `sw zero,0x8(s4)` at `0x801F77E0`: opaque again.
+                a.battle.flag_word = 0;
                 a.battle.active_target = 9;
                 if let Some(p) = a.battle_animation.as_mut() {
                     p.set_root_speed(0x50);

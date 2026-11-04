@@ -323,7 +323,7 @@ mod tests {
     #[test]
     fn the_creature_stands_from_arm_one_to_k_five() {
         let mut st = ModuleCamState::default();
-        st.countdown.0 = SPEED_SCALAR;
+        st.countdown.0 = SPEED_SCALAR << 4;
         let held = element_strike_camera(&mut st, 1, ModuleCamSeats::default());
         assert!(held.hold && !held.seats_creature);
         st.countdown.0 = 0;

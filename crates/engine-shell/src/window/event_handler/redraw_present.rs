@@ -581,6 +581,14 @@ impl PlayWindowApp {
             hp.join(","),
             w.rng_state,
         );
+        // `LEGAIA_DIAG_CAST_VRAM_AT=<tick>`: the battle VRAM at that tick
+        // (`vram_<tick>.bin`, 1 MiB BGR555), for a byte comparison with a retail
+        // recording's `sstate_vram.py` image.
+        if std::env::var("LEGAIA_DIAG_CAST_VRAM_AT").is_ok_and(|v| v == tick.to_string())
+            && let Some(v) = self.battle_vram.as_ref()
+        {
+            let _ = std::fs::write(rec.dir.join(format!("vram_{tick}.bin")), v.as_bytes());
+        }
         // `LEGAIA_DIAG_CAST_PARTS=1`: every live part of the cast's scene
         // graph each tick (`parts.csv`) - its record, draw words and
         // channels, the engine half of a part-pool side-by-side.

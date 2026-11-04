@@ -193,6 +193,11 @@ impl World {
                     &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                     *id,
                 );
+                // The fade's own tick runs later in the pass that spawned it:
+                // it takes that frame's step at once.
+                if let Some(f) = seat.as_mut() {
+                    f.step_vsyncs(self.battle_frame_step().max(1));
+                }
                 self.presentation.module_fades.extend(seat);
             }
         }

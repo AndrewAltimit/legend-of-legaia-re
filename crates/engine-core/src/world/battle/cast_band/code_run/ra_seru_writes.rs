@@ -137,6 +137,7 @@ impl World {
                 a.battle.render_flag = FLAG_PARKED;
             }
         }
+        self.slippery_storm_clouds(phase, passed, creature);
         let Some(a) = self.actors.get_mut(usize::from(creature)) else {
             return;
         };
@@ -150,6 +151,51 @@ impl World {
             }
             _ => {}
         }
+    }
+
+    /// PROT 0920's arm 6 builds the storm the backdrop's hide (`ctx[+0x278] = 2`)
+    /// leaves room for. Every fourth pass (`0x801F71DC..0x801F71EC`) it seats one
+    /// of four cloud records, `rand() % 4` (`0x801F7298..0x801F7344`), a quarter of
+    /// the trig table behind the creature at `y = -0x280`, on the creature's angle
+    /// trio. The arm's exit halts every handle it kept (`0x801F715C..0x801F7184`).
+    fn slippery_storm_clouds(&mut self, phase: u8, passed: bool, creature: u8) {
+        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        const CLOUDS: [u32; 4] = [0x801F_8244, 0x801F_8284, 0x801F_82C4, 0x801F_8304];
+        if phase != 6 || self.casting.module_pass_repeat {
+            return;
+        }
+        if passed {
+            if let Some(scene) = self.casting.active_summon.as_mut() {
+                for part in &mut scene.parts {
+                    if part.tag.is_some_and(|t| CLOUDS.contains(&t)) {
+                        part.finished = true;
+                    }
+                }
+            }
+            return;
+        }
+        let n = self.casting.module_pass_counter.wrapping_add(1) & 3;
+        self.casting.module_pass_counter = n;
+        if n != 0 {
+            return;
+        }
+        let Some(a) = self.actors.get(usize::from(creature)) else {
+            return;
+        };
+        let facing = a.battle.facing_angle & 0xFFF;
+        let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+        let pos = [x.wrapping_sub(sin / 4), -0x280, z.wrapping_sub(cos / 4)];
+        let record = CLOUDS[(self.next_rand() % 4) as usize];
+        let spawn = [ModuleSpawn {
+            record: SpawnRecord::Module(record),
+            anchor: SpawnAnchor::LiteralScaled {
+                pos,
+                rot: [0, facing as i16, 0],
+                scale: 0x1000,
+            },
+        }];
+        self.stage_module_arm_spawns(920, &spawn, None, None);
     }
 
     /// PROT 0931 (Jedo)'s stores on the row and the creature, outside its
@@ -741,7 +787,8 @@ impl World {
             // Id `1` (`li a1,0x1` at `0x801F903C`), the bucket under the HUD:
             // a retail table of arm `0x18` links the fade's quad there.
             legaia_engine_system::fade::spawn_fade(&mut seat, &t, 1);
-            if let Some(state) = seat {
+            if let Some(mut state) = seat {
+                state.step_vsyncs(self.battle_frame_step().max(1));
                 self.casting.module_pres.fades.push(HookFade {
                     site: OZMA_LADDER_FADE_SITE,
                     slot: None,

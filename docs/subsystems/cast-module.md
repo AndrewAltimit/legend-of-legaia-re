@@ -2166,7 +2166,10 @@ once a tick through `legaia_render_kernels::cast_rain` on the world's
 `rand()` stream; both hosts draw `World::module_rain_lines` through
 `engine-screens`. Not carried: the arms' captions, breath parts and fades,
 arm `10`'s wait for every monster to be idle, and the group-target framing
-of arm `8`. The splashes are seated into the cast's scene, but the record is
+of arm `8`. Arm `6` builds the storm under the stage byte `2` that hides the backdrop:
+every fourth pass one of the four cloud records `0x801F8244..0x801F8304`, `rand() % 4`,
+stands a quarter of the trig table behind the creature at `y = -0x280`, and the arm's exit
+halts them all (`World::slippery_storm_clouds`). The splashes are seated into the cast's scene, but the record is
 a model-less node and nothing of it draws in the port yet. The streaks
 draw over the scene rather than sorted into it. Slippery's seat arm stores
 only a height (`+0x36 = -(scalar << 8)`, `0x801F6D18..0x801F6D28`) and a clip
@@ -2441,7 +2444,8 @@ and 0920. Without that call the shot reads the band's `0x600` and frames at half
 retail's depth or less.
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
 down the victim's lane (arms 6..8), the heading on its target and the soft-red word
-(arm 9's pass), the parked-red word (arm `0xA`) and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
+(arm 9's pass), the parked-red word with the additive mode word `+0x08 = 0x81000000`
+(arm `0xA`, cleared on arm `0xB`'s pass) and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
 quartered roll and the creature closes on a target at eight units a tick, trading it
 for another once in reach. Those hits clamp to live HP and are what kills: the module
 has no other hit, so the band folds nothing for it.
@@ -3963,6 +3967,14 @@ table's length. The Glare split's clone is seated right after the engine's
 seated monsters (`World::apply_glare_divide_split`), bounded by the same five
 monster seats; at the raw retail index a lone member's clone would land past
 the enemy row the target picker walks.
+
+### A fade takes its spawning frame's step
+
+A recording holds a fade spawned on a pass one frame step along its ramp by the time that
+frame is drawn, which is what `FUN_80024E80` handing a new actor to a list the frame is
+still walking would do (`capture`; the walk order is an inference). On a step-`4` arm that is
+four vsyncs: without it Vera's rise reads a step behind through arm 4. The band spawn sites
+step a new fade at once.
 
 ### The creature seat
 

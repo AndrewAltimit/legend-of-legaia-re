@@ -110,6 +110,12 @@ part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
+`LEGAIA_DIAG_CAST_VRAM_AT=<tick>` writes the battle VRAM at that tick as
+`engine/vram_<tick>.bin`, to hold against a retail recording's
+`LEGAIA_RAM_AT` state through `sstate_vram.py`. A byte comparison of the side-band pages
+and CLUT rows is how a palette or texture reading is settled before a frame's colours are
+argued over: Iota's cycler rows match the kernel entry for entry.
+
 ## What each side records
 
 **Retail.** The probe loads a library PCSX-Redux battle state, taps CROSS past
