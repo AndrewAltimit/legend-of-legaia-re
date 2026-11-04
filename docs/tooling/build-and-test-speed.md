@@ -61,7 +61,7 @@ The shipped bundles are `scripts/ci/build-wasm.sh`: `release` (one codegen unit)
 | One line, `xa` (low in the graph) | 4.5 min | 35 s |
 | A function body, `engine-core` | - | 55 s |
 | Tool `.wasm`, raw / gzip | 21.4 / 6.9 MB | 33.4 / 8.3 MB |
-| Play `.wasm`, raw / gzip | 14.5 / 4.8 MB | - |
+| Play `.wasm`, raw / gzip | 14.5 / 4.8 MB | 22.1 / 5.7 MB |
 
 A one-line edit in `engine-core` costs three quarters of a clean build, and no one step is why. It is the chain above the edit, each crate compiled whole: `engine-core` itself about 85 s, `web-play` 55 s, the final link 35 s, the rest of the stack 70 s, and `wasm-bindgen` plus the strip pass 33 s. The strip is fast only by comparison, about 25 s across a dozen threads, because Binaryen parses and rewrites the module to do it; a full `-O` pass is what takes twenty minutes.
 

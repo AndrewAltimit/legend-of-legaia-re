@@ -4,7 +4,8 @@
 question: does this bundle draw what that bundle draws? It is the browser's equivalence
 proof for a change that should move how fast a frame arrives and nothing else. `retail-compare`
 scores the native window, and `check-pages.mjs` has no pixel check, so nothing else on the
-browser side can tell a batched draw from a broken one.
+browser side can tell a batched draw from a broken one. It hashes the play page, so it
+reads the play bundle, or a site's single module when the base predates that bundle.
 
 ```bash
 scripts/ci/frame-hash-web.mjs --site site --out new.txt                     # hash one site
@@ -72,6 +73,7 @@ script that did not move the player, or a battle that never came up. These were 
 | Check | How | Result |
 |---|---|---|
 | One bundle, two runs | Run twice, compare | Agree |
+| The play bundle against the tool bundle, which links the same play host | One tree, a site with each on the play page | Agree |
 | Two builds of one tree | `build-wasm.sh --fast` twice, the second into a fresh target directory | The same bytes, and agree |
 | The shipped build against the iteration build | `build-wasm.sh` against `--fast`: different bytes | Agree |
 | A pixel moved, by the driver | `--poke scene/mode:frame` changes one pixel before the read | Exactly that frame differs |

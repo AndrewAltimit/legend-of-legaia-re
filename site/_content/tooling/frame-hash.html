@@ -60,6 +60,7 @@ scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # th
     <thead><tr><th>Check</th><th>How</th><th>Result</th></tr></thead>
     <tbody>
       <tr><td>One bundle, two runs</td><td>Run twice, compare</td><td>Agree</td></tr>
+      <tr><td>The play bundle against the tool bundle, which links the same play host</td><td>One tree, a site with each on the play page</td><td>Agree</td></tr>
       <tr><td>Two builds of one tree</td><td><code>build-wasm.sh --fast</code> twice, the second into a fresh target directory</td><td>The same bytes, and agree</td></tr>
       <tr><td>The shipped build against the iteration build</td><td><code>build-wasm.sh</code> against <code>--fast</code>: different bytes</td><td>Agree</td></tr>
       <tr><td>A pixel moved, by the driver</td><td><code>--poke scene/mode:frame</code> changes one pixel before the read</td><td>Exactly that frame differs</td></tr>
