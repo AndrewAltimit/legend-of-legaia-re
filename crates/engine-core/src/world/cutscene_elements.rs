@@ -264,20 +264,20 @@ impl World {
         }
         let mut frame = ElementFrame::default();
         let mut live = std::mem::take(&mut self.cutscene.elements);
-        // The fog pool the ambient emitter spawns into (`FUN_801D629C`):
-        // taken out for the pass so the spawn closure can hold it beside the
-        // element list. Its inputs are the walk-region box the spawner
+        // The fog pool the ambient emitter spawns into (`FUN_801D629C`),
+        // borrowed apart from the element list for the spawn closure. Its
+        // inputs are the walk-region box the spawner
         // clips against (`0x1F800384..87`) and the player position the
         // emitter's scene arm centres its bursts on (`_DAT_80089118/20`
         // hold the negated player X/Z; the follow camera's focus).
-        let mut fog = std::mem::take(&mut self.fog);
+        let [player_x, _, player_z] = self.fog_player_world_pos();
+        let fog = &mut self.fog;
         // `_DAT_1F800394 & 1`, the overworld bit: the emitter's dense profile
         // and the spawner's overworld arm both key on it.
         let overworld = self.mode == SceneMode::WorldMap;
         fog.overworld = overworld;
         fog.curve_bias = self.world_map.curve_bias;
         let window = self.terrain.region_attributes.box_bytes;
-        let [player_x, _, player_z] = self.fog_player_world_pos();
         let trig = legaia_engine_system::rotation_lut::retail_rotation_lut();
         for el in live.iter_mut() {
             match &mut el.kind {
@@ -313,7 +313,6 @@ impl World {
                 }
             }
         }
-        self.fog = fog;
         let before = live.len();
         live.retain(|el| !el.done);
         frame.retired = before - live.len();

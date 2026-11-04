@@ -16,7 +16,10 @@ pub struct World {
     pub mode: SceneMode,
     pub actors: Vec<Actor>,
     pub battle_ctx: BattleActionCtx,
-    pub effect_pool: Pool,
+    pub effect_pool: Box<Pool>,
+    /// A blank pool that stands in for [`Self::effect_pool`] while a walk has
+    /// it out of the world (`with_effect_pool`).
+    pub effect_pool_spare: Option<Box<Pool>>,
     /// Script catalog for the effect VM. Populated at battle-enter time
     /// from PROT 873 (`efect.dat`) pack1 data via
     /// [`legaia_engine_vm::effect_vm::EffectCatalog::from_pack1_bytes`].
@@ -383,7 +386,8 @@ impl World {
             mode: SceneMode::default(),
             actors: (0..MAX_ACTORS).map(|_| Actor::new()).collect(),
             battle_ctx: BattleActionCtx::new(),
-            effect_pool: Pool::new(),
+            effect_pool: Box::new(Pool::new()),
+            effect_pool_spare: None,
             effect_catalog: vm::effect_vm::EffectCatalog::default(),
             debug_effects: Vec::new(),
             field_ctx: FieldCtx::default(),

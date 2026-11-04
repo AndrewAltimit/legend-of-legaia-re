@@ -64,15 +64,7 @@ impl World {
     ///
     /// REF: FUN_801E0088
     pub fn tick_effects(&mut self) {
-        // The pool and the catalog leave the world for the walk, so the
-        // host's `&mut World` aliases neither; `EffectHostImpl` reaches
-        // only the RNG and the pending-burst queue.
-        let mut pool = std::mem::take(&mut self.effect_pool);
-        let catalog = std::mem::take(&mut self.effect_catalog);
-        let mut host = EffectHostImpl { world: self };
-        pool.tick_retail(&mut host, &catalog, 1);
-        self.effect_pool = pool;
-        self.effect_catalog = catalog;
+        self.with_effect_pool(|pool, host, catalog| pool.tick_retail(host, catalog, 1));
         self.debug_effects.retain_mut(|d| {
             d.age_frames += 1;
             d.age_frames < DEBUG_EFFECT_LIFETIME_FRAMES
@@ -321,14 +313,28 @@ impl World {
         angle: u16,
         sweeps: u8,
     ) {
-        // Same hand-off as [`Self::tick_effects`].
-        let mut pool = std::mem::take(&mut self.effect_pool);
+        self.with_effect_pool(|pool, host, catalog| {
+            if let Some(mi) = pool.spawn_by_ui_id(host, ui_id, world_pos, angle, catalog) {
+                pool.catch_up_master(host, catalog, mi, sweeps);
+            }
+        });
+    }
+
+    /// Run `walk` with the pool and the catalog out of the world, so the
+    /// host's `&mut World` aliases neither; `EffectHostImpl` reaches only the
+    /// RNG and the pending-burst queue. The world holds a blank spare pool
+    /// for the walk: the swap moves two pointers, where building a blank pool
+    /// and moving the real one by value cost a share of every tick.
+    fn with_effect_pool(
+        &mut self,
+        walk: impl FnOnce(&mut Pool, &mut EffectHostImpl<'_>, &vm::effect_vm::EffectCatalog),
+    ) {
+        let spare = self.effect_pool_spare.take().unwrap_or_default();
+        let mut pool = std::mem::replace(&mut self.effect_pool, spare);
         let catalog = std::mem::take(&mut self.effect_catalog);
         let mut host = EffectHostImpl { world: self };
-        if let Some(mi) = pool.spawn_by_ui_id(&mut host, ui_id, world_pos, angle, &catalog) {
-            pool.catch_up_master(&mut host, &catalog, mi, sweeps);
-        }
-        self.effect_pool = pool;
+        walk(&mut pool, &mut host, &catalog);
         self.effect_catalog = catalog;
+        self.effect_pool_spare = Some(std::mem::replace(&mut self.effect_pool, pool));
     }
 }
