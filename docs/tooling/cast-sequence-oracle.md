@@ -402,7 +402,8 @@ the aligned engine segment. It matches the nearest unmatched engine cue of
 the same id within the tolerance. A second pass pairs what is left within
 `120` ticks and lists those as **timing** misses with their offset; the rest
 are **missing** (retail only) or **extra** (engine only). The channel's
-number is `2 * matched / (retail cues + engine cues)`; `id score` is the same
+number is `2 * matched / (retail cues + engine cues)`, once each id's pairs are put back
+in time order (repeats play in order, and the nearest-free pick can cross them); `id score` is the same
 over the id multisets alone, whatever the time.
 
 `rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
@@ -455,6 +456,9 @@ adds its reaction-channel entry). What the recordings on
 - **A flinch with its cues skipped.** Palma's three engine-only cues were its pre-hit's
   flinch: arm `0xF`'s pass stores `8` into each row's `+0x1F6` (`0x801F8360`), one past the
   track, and `seats.csv` reads the jump with no cue behind it.
+- **A re-commit outside the juggle window.** Swordie's second slash re-staged its flinch at
+  frame `8` of a clip whose window closes at `8`, so the cursor restarted and `0x21C` sounded
+  twice: the engine's slash arm had left its pass early and the later slashes ran a pass late.
 - **The flee's silent walk.** Both flee sites zero the walk record's cue track
   ([the staging](../subsystems/battle-action-helpers.md#the-escape-roll-fun_801e791c)), so a
   Spikefish flee sounds no steps.

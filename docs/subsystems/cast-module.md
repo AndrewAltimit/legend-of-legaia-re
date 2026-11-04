@@ -864,7 +864,10 @@ over the limit. The tick `0x801F69EC` calls it from three sites
 `0x801F8910`. Arm `9` starts slash `i` once `ctx[+0x6D8]` passes
 `(i + 2) * speed * 16`, so the four slashes overlap, and arm `0x0A` keeps
 calling all four until the last has landed and a `speed << 7` countdown
-(`0x801F8DB0`) has drained. At four vsyncs a tick those gates give arm `7` 65
+(`0x801F8DB0`) has drained. Arm `9` tests its exit once a pass (`0x801F7960`), so at a
+frame step of `4` it leaves on timer `800`, a whole pass past `96 * speed`; leaving on the first
+vsync over that drops the pass's other slash steps and lands the later three hits a pass late.
+At four vsyncs a tick those gates give arm `7` 65
 ticks and arm `9` 25, the measured dwell. Port:
 `seru_magic_ticks::swordie_slash_step`, driven by
 `World::run_cast_module_code` on the world's frame step. Each landing rolls for
