@@ -301,6 +301,74 @@ fn a_monsters_pull_in_walks_back_no_further_than_the_landed_depth() {
     assert_eq!(p.tr[1], 1280.0);
 }
 
+/// `battle_map01_gomboo_strike`'s words: the RAM holds the arrival's idle stage
+/// one cursor past its commit, so the strike loop's first arm was one pass ago
+/// and the frame on screen stands on the walk's last pass, under case 6's aim,
+/// not `2 * 3` vsyncs back along case 7's table.
+#[test]
+fn a_frame_before_the_strike_loops_first_arm_stands_on_case_six() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D264u32, 0x800E_C9E8u32);
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0xD, 1);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x15, 1);
+    put16(&mut ram, ctx + 0x6DA, 578);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE, target);
+    put8(&mut ram, attacker + 0x1DE, 3);
+    for (k, (x, z)) in [
+        (116i32, 266i32),
+        (116, 266),
+        (92, 234),
+        (127, 324),
+        (163, 414),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    put16(&mut ram, attacker + 0x17A, 24);
+    put16(&mut ram, attacker + 0x17C, 0);
+    put32(&mut ram, attacker + 0x234, 0x800F_0000);
+    put32(&mut ram, attacker + 0x238, 0x800F_0000);
+    put32(&mut ram, attacker + 0x23C, 0x800F_0100);
+    // Frame step `3`.
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
+    assert_eq!(frame_step(&ram), 3);
+    // Yaw, then the focus trio (stored negated).
+    put16(&mut ram, 0x8007_B792, 3927);
+    put16(&mut ram, rec(1), 157);
+    put16(&mut ram, rec(1) + 2, 2523);
+    put32(&mut ram, 0x8008_9118, (-155i32) as u32);
+    put16(&mut ram, rec(6), 14);
+    put16(&mut ram, rec(6) + 2, (-30i16) as u16);
+    put32(&mut ram, 0x8008_9120, (-389i32) as u32);
+    put16(&mut ram, rec(8), 30);
+    put16(&mut ram, rec(8) + 2, (-128i16) as u16);
+
+    let prior = camera_align::walk_arm_prior_end(&ram, ctx).expect("the second pass");
+    assert_eq!(prior[6], Some(-92));
+    assert_eq!(prior[8], Some(-234));
+    let p = camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], true, prior, [0; 9], true);
+    assert_eq!((p.focus[0], p.focus[2]), (233.0, 563.0));
+    assert!((280.0..=300.0).contains(&p.yaw), "yaw {}", p.yaw);
+
+    // The commit a pass further on: the frame stands on case 7's own table.
+    put16(&mut ram, attacker + 0x17C, 24);
+    assert!(camera_align::walk_arm_prior_end(&ram, ctx).is_none());
+}
+
 /// `battle_korb2_warhalf_strike`'s words: the walk's last pass read the
 /// attacker off ring slot `3`, heading `1836` onto the target's live pair, and
 /// stood it on `(-96, 287)`, slot `2`. The loop's first arm read that heading,
@@ -347,8 +415,15 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     put16(&mut ram, rec(1) + 2, 3218);
     let mut end_shift = [0; 9];
     end_shift[1] = shift;
-    let walked =
-        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], end_shift);
+    let walked = camera_align::displayed_cam_live_steps(
+        &ram,
+        ctx,
+        &[3, 3],
+        false,
+        [None; 9],
+        end_shift,
+        false,
+    );
     assert_eq!(walked.yaw, 795.0);
 
     // A nearest slot `3` is the loop's third pass: the displayed frame's

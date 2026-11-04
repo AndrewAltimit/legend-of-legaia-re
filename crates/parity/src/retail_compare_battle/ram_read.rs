@@ -415,7 +415,7 @@ const RING_ID: u32 = 0x1FB;
 const RING_CURSOR: u32 = 0x17A;
 /// The clip-record history ring: the committed entry pointer, a word a
 /// battle frame, slot 0 the live one (`FUN_80047430`, `0x80047E58..0x80048060`).
-const RING_RECORD: u32 = 0x234;
+pub(super) const RING_RECORD: u32 = 0x234;
 /// Entries the displayed-clip lookup searches in a monster record's entry
 /// array (`+0x4C`): the archive's own action count bound.
 const MONSTER_ENTRY_SEARCH: u32 = 64;
@@ -823,21 +823,23 @@ impl RetailBattle {
                 if action_state == CAPTURE_FADE_STATE || module_shot || unarmed_setup {
                     displayed_module_cam_live(ram, ctx, steps)
                 } else {
+                    let walk_arm = walk_arm_prior_end(ram, ctx);
                     displayed_cam_live_steps(
                         ram,
                         ctx,
                         steps,
                         confirmed,
-                        {
+                        walk_arm.unwrap_or_else(|| {
                             let summon = summon_route_prior_end(ram, ctx, action_state);
                             let pull_in = strike_pull_in_prior_end(ram, ctx);
                             std::array::from_fn(|k| summon[k].or(pull_in[k]))
-                        },
+                        }),
                         {
                             let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
                             shift[1] = walk_heading(ram, ctx).map_or(0, |h| h.end_shift);
                             shift
                         },
+                        walk_arm.is_some(),
                     )
                 }
             };

@@ -1466,6 +1466,11 @@ A monster strike-clip gate also takes the strike cursor `ctx[+0x15]`: a stream w
 
 Case 7 arms (`0x801E36E8`) before the pass re-faces the attacker (`sh v0,0x46(s3)` at `0x801E371C`), so retail's endpoint subtracts the previous pass's heading while the capture holds this pass's. Within `8` units the snapped probe's yaw endpoint is taken as retail's (`ground_snap::strike_heading_target`): `battle_map01_gobu_gobu_strike` probes `2944` against retail's `2941` on the captured words.
 
+A capture one pass younger holds no framing of case 7's at all on its screen. The walk's next pass commits the arrival's idle stage at cursor `0`, its walker step still runs on case 6's table, and only then does its SM pass arm case 7. So a capture on the commit's next cursor (clip-record ring `+0x234` slots `0` and `1` alike, slot `2` the walk) has walked one pass on case 7's table, and the frame two passes back predates it.
+Case 7's `0x700` unwrap makes that table's increment large, so walking both passes back along it lands hundreds of units away: `battle_map01_gomboo_strike` stood on yaw `896` where the frame shows about `290`.
+The walk back takes the case-7 pass and then steps away from case 6's aim on that walk's last pass (`walk_arm_prior_end`: `counter - heading` with the style's half turn, on the heading stored the pass before; the focus on the walker's live pair, ring slot `2`).
+It is a reading of the frame on screen, not a capture fault: these states are as faithful as those a pass older.
+
 ### The ground at the phase
 
 The undrift search gets each combatant within some units of its captured
