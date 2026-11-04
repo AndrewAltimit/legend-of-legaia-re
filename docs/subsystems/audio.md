@@ -3328,7 +3328,7 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `keikoku_chest_pre` | `1.000` | `0.9986` | `-26` dB | `0.00` dB | |
 | `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
-| `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | |
+| `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and open |
 | `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render: `+1` to `+4.6` dB between `350` Hz and `4` kHz |
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |

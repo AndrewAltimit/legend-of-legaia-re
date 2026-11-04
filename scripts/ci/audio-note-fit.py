@@ -23,7 +23,6 @@ import json
 import os
 import subprocess
 import tempfile
-import wave
 from pathlib import Path
 
 import numpy as np
@@ -35,9 +34,11 @@ PAD = 2000
 
 
 def read_wav(path: Path) -> np.ndarray:
-    with wave.open(str(path)) as w:
-        raw = w.readframes(w.getnframes())
-    return np.frombuffer(raw, dtype="<i2").reshape(-1, 2).astype(np.float32)
+    # The recording is killed mid-run: its RIFF and data sizes stay zero.
+    raw = path.read_bytes()
+    data = raw.find(b"data") + 8
+    frames = (len(raw) - data) // 4
+    return np.frombuffer(raw, dtype="<i2", count=frames * 2, offset=data).reshape(-1, 2).astype(np.float32)
 
 
 def add(mix: np.ndarray, seg: dict, offset: int, sign: int) -> None:
