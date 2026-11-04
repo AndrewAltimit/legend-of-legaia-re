@@ -354,15 +354,15 @@ impl SlotMachine {
             bonus_triggered: false,
             bonus_spin,
         };
-        if let Some((_, sym, _)) = best {
-            if let Some(rounds) = slot_payout::bonus_rounds_for(sym) {
-                // The jackpot symbols kick off the bonus round: 3 rounds for the
-                // red "punch" (id 9), 1 for the blue "kick" (id 8). From the next
-                // spin the display strip starts rotating onto the numerals.
-                self.feature_mode = FEATURE_MODE_BONUS;
-                self.bonus_spins = rounds as i32;
-                result.bonus_triggered = true;
-            }
+        if let Some((_, sym, _)) = best
+            && let Some(rounds) = slot_payout::bonus_rounds_for(sym)
+        {
+            // The jackpot symbols kick off the bonus round: 3 rounds for the
+            // red "punch" (id 9), 1 for the blue "kick" (id 8). From the next
+            // spin the display strip starts rotating onto the numerals.
+            self.feature_mode = FEATURE_MODE_BONUS;
+            self.bonus_spins = rounds as i32;
+            result.bonus_triggered = true;
         }
         // Reach and tease modes stand until their jackpot lands. Hot mode has
         // a one-in-150 chance to end on every spin, won or lost, off the LCG
