@@ -194,8 +194,18 @@
       if (open) {
         this._overlayActive = true;
         this._ensureMenuBlitters();
+        /* As below for the shop and dialog layers: the answer is all this paint
+         * reads, and the canvas keeps what it last painted from it. */
+        let drawsJson;
+        try { drawsJson = this.rt.play_menu_draws_json(ov.width, ov.height); }
+        catch (e) { return; }
+        const menuKey = [drawsJson, this._menuFont, this._menuChrome, ov.width, ov.height];
+        if (paintedLast && menuKey.every((v, i) => v === paintedLast[i])) {
+          this._overlayPainted = paintedLast;
+          return;
+        }
         let draws;
-        try { draws = JSON.parse(this.rt.play_menu_draws_json(ov.width, ov.height)); }
+        try { draws = JSON.parse(drawsJson); }
         catch (e) { return; }
         if (!draws || !draws.open) return;
         /* Native blacks the whole framebuffer while the pause menu is up
@@ -209,6 +219,7 @@
         ctx.fillRect(0, 0, ov.width, ov.height);
         if (this._menuChrome) this._menuChrome.blitDarkened(ctx, draws.sprites, draws.darken);
         if (this._menuFont) this._menuFont.blit(ctx, draws.texts);
+        this._overlayPainted = menuKey;
         return;
       }
       /* Opening name-entry overlay (`town01`'s naming prompt). Modal, so it is
@@ -277,6 +288,7 @@
        * engine's own box geometry says top (`dialog_reading_box_layout`,
        * FUN_801D84D0). So blit and fall through to the dialog layer. */
       let overlayDrew = false;
+      const shopBlack = !!(shop && shop.open && shop.backdrop === 'black');
       if (shop && shop.open) {
         this._ensureMenuBlitters();
         ctx.clearRect(0, 0, ov.width, ov.height);
@@ -314,14 +326,14 @@
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
-        this._applyTextWash(ctx, ov);
+        this._applyTextWash(ctx, ov, shopBlack ? null : [dlg.sprites, dlg.texts, overlayDrew && shop.sprites, overlayDrew && shop.texts]);
         /* Blitters that were still missing at the key's read came up inside
          * this paint, so the next frame's key differs and paints once more. */
         this._overlayPainted = paintKey;
         return;
       }
       if (overlayDrew) {
-        this._applyTextWash(ctx, ov);
+        this._applyTextWash(ctx, ov, shopBlack ? null : [shop.sprites, shop.texts]);
         this._overlayPainted = paintKey;
         return;
       }
@@ -398,33 +410,60 @@
       catch (e) { return null; }
     }
 
-    _applyTextWash(ctx, ov) {
+    /* `quads`: the draw lists this paint made, when they are all it made. */
+    _applyTextWash(ctx, ov, quads) {
       const json = this._textWashJson();
       if (json === null) return;
       let washes = null;
       try { washes = JSON.parse(json); }
       catch (e) { return; }
       if (!washes || !washes.length || !ov.width || !ov.height) return;
-      const img = ctx.getImageData(0, 0, ov.width, ov.height);
-      const px = img.data;
-      for (const [abr, fr, fg, fb] of washes) {
-        const f = [fr, fg, fb];
-        for (let i = 0; i < px.length; i += 4) {
-          if (px[i + 3] === 0) continue;
-          for (let c = 0; c < 3; c++) {
-            const b = px[i + c];
-            let v;
-            switch (abr & 3) {
-              case 0: v = (b + f[c]) >> 1; break;
-              case 1: v = b + f[c]; break;
-              case 2: v = b - f[c]; break;
-              default: v = b + (f[c] >> 2); break;
-            }
-            px[i + c] = v < 0 ? 0 : (v > 255 ? 255 : v);
+      /* Only where this paint put anything: reading a canvas back is the cost. */
+      let x0 = 0, y0 = 0, x1 = ov.width, y1 = ov.height;
+      if (quads) {
+        x0 = ov.width; y0 = ov.height; x1 = 0; y1 = 0;
+        for (const list of quads) {
+          for (const q of list || []) {
+            const d = q.dst;
+            if (!d || d[2] <= 0 || d[3] <= 0) continue;
+            if (d[0] < x0) x0 = d[0];
+            if (d[1] < y0) y0 = d[1];
+            if (d[0] + d[2] > x1) x1 = d[0] + d[2];
+            if (d[1] + d[3] > y1) y1 = d[1] + d[3];
           }
         }
+        x0 = Math.max(0, x0); y0 = Math.max(0, y0);
+        x1 = Math.min(ov.width, x1); y1 = Math.min(ov.height, y1);
+        if (x1 <= x0 || y1 <= y0) return;
       }
-      ctx.putImageData(img, 0, 0);
+      const img = ctx.getImageData(x0, y0, x1 - x0, y1 - y0);
+      const px = img.data;
+      /* One equation per channel, so a table per channel. */
+      const lut = this._washLut || (this._washLut = [new Uint8Array(256), new Uint8Array(256), new Uint8Array(256)]);
+      for (const [abr, fr, fg, fb] of washes) {
+        const f = [fr, fg, fb];
+        for (let c = 0; c < 3; c++) {
+          const t = lut[c], fc = f[c];
+          for (let b = 0; b < 256; b++) {
+            let v;
+            switch (abr & 3) {
+              case 0: v = (b + fc) >> 1; break;
+              case 1: v = b + fc; break;
+              case 2: v = b - fc; break;
+              default: v = b + (fc >> 2); break;
+            }
+            t[b] = v < 0 ? 0 : (v > 255 ? 255 : v);
+          }
+        }
+        const r = lut[0], g = lut[1], bl = lut[2];
+        for (let i = 0; i < px.length; i += 4) {
+          if (px[i + 3] === 0) continue;
+          px[i] = r[px[i]];
+          px[i + 1] = g[px[i + 1]];
+          px[i + 2] = bl[px[i + 2]];
+        }
+      }
+      ctx.putImageData(img, x0, y0);
     }
   });
 })();

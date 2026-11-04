@@ -216,6 +216,22 @@ impl<'a> From<&'a TextDraw> for QuadText<'a> {
     }
 }
 
+/// `{"open":true,"sprites":[..],"texts":[..]}` through [`QuadText`].
+pub(crate) fn open_quads_json(sprites: &[TextDraw], texts: &[TextDraw]) -> String {
+    #[derive(serde::Serialize)]
+    struct OpenQuads<'a> {
+        open: bool,
+        sprites: Vec<QuadText<'a>>,
+        texts: Vec<QuadText<'a>>,
+    }
+    serde_json::to_string(&OpenQuads {
+        open: true,
+        sprites: sprites.iter().map(QuadText::from).collect(),
+        texts: texts.iter().map(QuadText::from).collect(),
+    })
+    .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod quad_text_tests {
     use super::*;

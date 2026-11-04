@@ -96,15 +96,27 @@ impl LegaiaRuntime {
             ));
         }
 
-        serde_json::json!({
-            "open": true,
-            "sprites": sprites.iter().map(quad_json).collect::<Vec<_>>(),
-            "texts": texts.iter().map(quad_json).collect::<Vec<_>>(),
+        #[derive(serde::Serialize)]
+        struct Darken<A, L> {
+            at: A,
+            level: L,
+        }
+        #[derive(serde::Serialize)]
+        struct MenuDraws<'a, A, L> {
             // The page's 2D canvas has no `B - F` composite: it blits the
             // sprites before `at`, subtracts `level` from every channel of
             // what is drawn, and blits the rest past the quad itself.
-            "darken": darken.map(|(at, level)| serde_json::json!({"at": at, "level": level})),
+            darken: Option<Darken<A, L>>,
+            open: bool,
+            sprites: Vec<QuadText<'a>>,
+            texts: Vec<QuadText<'a>>,
+        }
+        serde_json::to_string(&MenuDraws {
+            darken: darken.map(|(at, level)| Darken { at, level }),
+            open: true,
+            sprites: sprites.iter().map(QuadText::from).collect(),
+            texts: texts.iter().map(QuadText::from).collect(),
         })
-        .to_string()
+        .unwrap_or_default()
     }
 }
