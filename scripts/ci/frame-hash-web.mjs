@@ -31,7 +31,7 @@
 //   --poke scene/mode:frame  clear one pixel of that frame before reading it
 //   --jitter seed            sleep between steps, so audio and disc reads move against ticks
 //   --idle ms                wait at the boot prompt, so the page's prewarm lands first
-//   --no-fill-wait           pick the scene without waiting for the disc's fill
+//   --no-fill-wait           pick the scene without waiting for an older bundle's disc fill
 //   --uncheck id,id          clear those option boxes first, to narrow a difference down
 //   --no-msaa                ask for a context without MSAA, the same
 //
@@ -73,6 +73,10 @@ const SCENES = {
   /* Fights back to back until the first level-up (121 XP, 12 a fight here), hashed from the
    * fight before it on. The party is restored each time, and the frames up to there run bare. */
   levelup: { scene: 'map01', frames: 24000, optional: true, screen: 'results', minOverlays: 40, force: true, settle: 10, tapFrom: 300, tapEvery: 20, fights: 11, hashFromFight: 9 },
+  /* By name only: walk, a movie (MV2, armed at frame 90, up for 30 frames), walk on. The frames
+   * under its opaque overlay hash the world's state and not the GL view; the frames after it
+   * say whether anything read what the movie's frames did or did not draw. */
+  movie: { scene: 'town01', frames: 240, pad: walk, optional: true, movie: { at: 90, id: 1, frames: 30 } },
 };
 /* `[frame, key]` taps: open the pause menu, in and out of each row, close it. */
 function menuKeys() {
@@ -213,6 +217,7 @@ async function stepRun(cfg) {
   let battleOver = null;
   let screenFrames = 0;
   let inFight = false, fightsDone = 0, nextForce = -1;
+  let movieEnd = -1;
   for (let n = 0; n < cfg.frames; n++) {
     if (n === 0) B.firstState = rt.state_json();
     if (sc.force && n === sc.settle) {
@@ -224,6 +229,19 @@ async function stepRun(cfg) {
       rt.debug_talk_to_placement((n - sc.talk) / 20);
     }
     if (sc.arm === n) rt.debug_arm_scene_shop(0);
+    if (sc.movie && n === sc.movie.at) {
+      if (!rt.play_fmv_trigger(sc.movie.id)) throw new Error('play_fmv_trigger refused');
+      /* Up to the install, uncounted: the read takes the time it takes, and the world is held. */
+      for (let w = 0; !rt.play_fmv_active(); w++) {
+        if (w > 2000) throw new Error('the movie never installed');
+        B.vt += 1000 / 60;
+        view.step();
+        view._frame();
+        await new Promise((res) => setTimeout(res, 1));
+      }
+      movieEnd = n + sc.movie.frames;
+    }
+    if (sc.movie && n === movieEnd) rt.play_fmv_finish();
     padAt(n);
     B.vt += 1000 / 60;
     /* Counts cover the frame alone: the page's timers (the card's write-back, the XA
@@ -268,6 +286,7 @@ async function stepRun(cfg) {
       gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
       gl.bindFramebuffer(gl.FRAMEBUFFER, prev);
       const words = new Uint32Array(px.buffer);
+      if (window.LegaiaPlayFmv && window.LegaiaPlayFmv.active()) words.fill(n);
       /* How much the frame is showing, off a sample of it. */
       const colours = new Set();
       let lit = 0, seen = 0;
@@ -356,9 +375,9 @@ async function hashSite(site, opts) {
       if (lines.length === 0) header.push(`# renderer ${await rendererString(page)}`);
       await (await page.$('input[type=file]')).setInputFiles(process.env.LEGAIA_DISC_BIN);
       await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
-      /* The XA and movie bytes resident, as a player some seconds in has them. */
+      /* An older bundle's XA and movie bytes resident, as a player some seconds in has them. */
       if (!opts.noFillWait) {
-        await page.waitForFunction(() => window.__playDisc && window.__playDisc.fillMs !== undefined, null, { timeout: 120000 });
+        await page.waitForFunction(() => window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill), null, { timeout: 120000 });
       }
       if (opts.idle) await page.waitForTimeout(opts.idle);
       const r = await page.evaluate(stepRun, cfg);

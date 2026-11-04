@@ -115,8 +115,8 @@
       }
 
       /* FMV beats (STR / MDEC): the engine holds the world in
-       * `SceneMode::Cutscene` while a movie is open; the movie lane slices
-       * the segment out of the page's disc bytes, installs it, draws the
+       * `SceneMode::Cutscene` while a movie is open; the movie lane reads
+       * the segment off the page's disc, installs it, draws the
        * frames over the GL view and finishes the beat. The sim keeps
        * ticking - the hold is engine-side. */
       if (window.LegaiaPlayFmv) {

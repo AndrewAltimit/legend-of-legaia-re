@@ -80,7 +80,8 @@ scripts/ci/frame-hash-web.mjs --gl egl --no-msaa --out new.txt              # th
     <tbody>
       <tr><td>The wall clock</td><td><code>--real-clock</code></td><td>The stepped path reads no clock that reaches a frame</td></tr>
       <tr><td>The audio pump and disc reads</td><td><code>--jitter seed</code></td><td>The sim is not paced by audio</td></tr>
-      <tr><td>The prewarm and the disc fill</td><td><code>--idle ms</code>, <code>--no-fill-wait</code></td><td>Neither changes what is drawn</td></tr>
+      <tr><td>The prewarm, and on an older bundle the disc fill</td><td><code>--idle ms</code>, <code>--no-fill-wait</code></td><td>Neither changes what is drawn</td></tr>
+      <tr><td>A movie&rsquo;s read and its end</td><td>scene <code>movie</code> (by name)</td><td>The frames after a movie agree; the frames under its overlay hash the world&rsquo;s state only</td></tr>
     </tbody>
   </table>
   </div>

@@ -903,26 +903,62 @@ void main() { o_color = texture(u_layer, v_uv); }
       } catch (e) { console.warn('play audio enable', e); }
     }
 
-    /* Serve one lazy CD-XA staging request per frame: the engine names a
-     * file's read span (`play_xa_stage_requests_json`), the page hands those
-     * raw 2352-byte sectors back (`play_xa_install_span`), which decodes that
-     * one channel and replays the clip request. Sectors not resident yet
-     * (js/play-disc.js) are read now and served on a later frame. No disc on
-     * the page, or sectors it cannot read, means the request is not served;
-     * the engine keeps listing it, silently. */
+    /* Serve one lazy CD-XA staging request per frame, oldest first: the engine
+     * names a file's read span (`play_xa_stage_requests_json`), the page hands
+     * those raw 2352-byte sectors back (`play_xa_install_span`), which decodes
+     * that one channel and replays the clip request. A scene's and a round's
+     * likely lines are listed before they are raised, so every listed file is read
+     * now (js/play-disc.js), widest span per file, and the disc holds it until no
+     * row names that file. A span that will not read is installed empty, which
+     * drops its row: the engine counts the clip unstaged, and the rows behind it
+     * go on. No disc on the page means nothing is served. */
     _serveXaStage(rt) {
       if (typeof rt.play_xa_stage_requests_json !== 'function') return;
       const disc = window.__playDisc;
       if (!disc) return;
       let reqs = [];
       try { reqs = JSON.parse(rt.play_xa_stage_requests_json()) || []; } catch (e) { return; }
+      const want = this._xaWant(disc, reqs);
       const req = reqs[0];
       if (!req) return;
-      const sectors = disc.span(req.lba, req.sectors);
-      if (!sectors) { disc.prefetch(req.lba, req.sectors); return; }
-      if (!sectors.length) return;
+      let sectors = disc.span(req.lba, req.sectors);
+      if (!sectors) {
+        const widest = want.get(req.lba);
+        if (!disc.failedSpan(req.lba, widest)) return;
+        console.warn('xa stage: the disc would not read', req.path);
+        disc.release(req.lba, widest);
+        want.delete(req.lba);
+        sectors = new Uint8Array(0);
+      } else if (!sectors.length) {
+        return;
+      }
       try { rt.play_xa_install_span(req.path, sectors, req.channel); }
       catch (e) { console.warn('xa stage', req.path, e); }
+    }
+
+    /* Have the disc read and hold what these rows name, within what may stay
+     * resident (the oldest row is read whatever its size), and let go of what no
+     * row names any more. Rows of one file share its widest read, since each
+     * span starts at the file's first sector. */
+    _xaWant(disc, reqs) {
+      const want = new Map();
+      for (const r of reqs) want.set(r.lba, Math.max(want.get(r.lba) || 0, r.sectors));
+      const held = this._xaHeld;
+      if (held) {
+        for (const [lba, n] of held.want) {
+          if (held.disc !== disc || want.get(lba) !== n) held.disc.release(lba, n);
+        }
+      }
+      const { RAW, RESIDENT_CAP } = window.LegaiaPlayDisc;
+      let room = RESIDENT_CAP, oldest = true;
+      for (const [lba, n] of want) {
+        if (!oldest && n * RAW > room) { want.delete(lba); continue; }
+        room -= n * RAW;
+        oldest = false;
+        disc.prefetch(lba, n);
+      }
+      this._xaHeld = { disc, want };
+      return want;
     }
 
     /* A WASM trap (or any throw from an engine call) during the frame poisons

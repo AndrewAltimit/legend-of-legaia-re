@@ -107,7 +107,8 @@ stayed line for line:
 |---|---|---|
 | The wall clock | `--real-clock` | The stepped path reads no clock that reaches a frame |
 | The audio pump and disc reads | `--jitter seed` sleeps between steps | The sim is not paced by audio |
-| The prewarm and the disc fill | `--idle ms`, `--no-fill-wait` | Neither changes what is drawn |
+| The prewarm, and on an older bundle the disc fill | `--idle ms`, `--no-fill-wait` | Neither changes what is drawn |
+| A movie's read and its end | scene `movie` (by name) | The frames after a movie agree; the frames under its overlay hash the world's state only |
 
 Three readers of `performance.now` on the page do not fail this only because the path does not
 reach them. A live frame's ticks come from the wall clock (`play_drain_sim_steps`), which the

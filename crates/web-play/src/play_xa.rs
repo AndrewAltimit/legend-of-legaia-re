@@ -9,10 +9,10 @@
 //! through `legaia_iso::raw::RawDisc` - channel demux needs the raw
 //! 2352-byte sectors, because the CD-XA subheader that carries the channel
 //! number sits outside the 2048-byte ISO view. The browser has no
-//! filesystem, but it still holds the visitor's disc bytes in the tab, and
-//! the runtime already reports every ISO file's `(lba, size)`
-//! (`LegaiaRuntime::disc_file_extent_json`). So the page slices the raw
-//! sectors of each wanted file out of the bytes it has and hands them to
+//! filesystem, but it holds the visitor's disc as a `Blob` it can read by
+//! span, and the runtime already reports every ISO file's `(lba, size)`
+//! (`LegaiaRuntime::disc_file_extent_json`). So the page reads the raw
+//! sectors of each wanted file (`site/js/play-disc.js`) and hands them to
 //! [`LegaiaRuntime::play_xa_install`], which demuxes + decodes them here and
 //! keeps **only the decoded clips** - the sectors are borrowed for the call
 //! and dropped, so a 30 MB `XA27.XA` costs the page its decoded channels,
@@ -165,11 +165,11 @@ impl LegaiaRuntime {
     /// array of `{ "path", "lba", "sectors", "slot", "channel" }` - the
     /// director's own list (`AudioDirector::xa_stage_requests`), each row
     /// named by the ISO path `disc_file_extent_json` resolves. For each,
-    /// the page slices `bytes.subarray(lba * 2352, (lba + sectors) * 2352)`
-    /// out of the disc bytes it holds and calls
-    /// [`Self::play_xa_install_span`] with the same `path` and `channel`.
-    /// A request stays listed until served, so a page that polls every
-    /// frame sees each one until it installs. Empty before audio is up.
+    /// the page reads raw sectors `lba .. lba + sectors` off the disc and
+    /// calls [`Self::play_xa_install_span`] with the same `path` and
+    /// `channel`. A request stays listed until served, so a page that polls
+    /// every frame sees each one until it installs, and can read every row
+    /// ahead of its turn. Empty before audio is up.
     pub fn play_xa_stage_requests_json(&self) -> String {
         let reqs: Vec<serde_json::Value> = self
             .scene_host
@@ -220,8 +220,8 @@ impl LegaiaRuntime {
     /// each spelled as the ISO path `disc_file_extent_json` resolves (the
     /// files sit in the disc's `XA/` directory; the bare names are returned
     /// before a disc is loaded). The page resolves each through
-    /// `disc_file_extent_json`, slices its disc bytes at `lba * 2352` for
-    /// `ceil(size / 2048) * 2352` bytes, and hands the slice to
+    /// `disc_file_extent_json`, reads `ceil(size / 2048)` raw sectors from
+    /// `lba`, and hands them to
     /// [`Self::play_xa_install`] under the same path. Derived from the same
     /// tables the native boot reads (`legaia_engine_session::xa_banks`),
     /// never hand-listed.

@@ -227,17 +227,18 @@ queue), first motion, the worst display-frame gap, long tasks, wasm memory and t
 busy share over the window.
 
 ```bash
-scripts/ci/movie-timeline-web.mjs --again --append out.jsonl                 # resident span, then a second play
-scripts/ci/movie-timeline-web.mjs --no-fill --evict --again --append out.jsonl  # read on demand from storage
+scripts/ci/movie-timeline-web.mjs --again --append out.jsonl                 # a read, then a second play
+scripts/ci/movie-timeline-web.mjs --evict --again --append out.jsonl         # the read reaches storage
 scripts/ci/movie-timeline-web.mjs --route attract --append out.jsonl         # the title's countdown arms MV1
-scripts/ci/movie-timeline-web.mjs --no-fill --read-delay 9000 --watch 13000  # walk the install timeout
+scripts/ci/movie-timeline-web.mjs --read-delay 9000 --watch 13000            # walk the install timeout
 ```
 
 It is one start per run, because the claim it tests is intermittent: the distribution is
 the caller's, over a run count, with each run under the display lock. `--evict` drops the
 disc from the OS page cache (`posix_fadvise`, no privilege). `--ctx-suspend` stands in for
 an output slow to start, since the driver's browser has no autoplay gate. `--read-delay`
-holds only the movie's own span, and `--settle` lands the request among the voice banks'
+holds only the movie's own read, in flight, `--no-fill` and `--no-fill-wait` matter only to
+an older bundle's fill (`--site`), and `--settle` lands the request among the voice banks'
 staging after the disc load. `--cpu-throttle` and `--gl swiftshader` are proxies.
 
 ## Cost ratchet

@@ -124,11 +124,11 @@ scripts/ci/pack-bench-web.mjs --cpu-throttle 4 --profile            # a proxy, l
 <section class="doc-section" id="movie-start" data-doc="movie-start">
   <h2>Movie start</h2>
   <p><code>scripts/ci/movie-timeline-web.mjs</code> times a movie's start on the play page, hooked from outside so a player's page carries none of it. Each run prints a JSON line, from the request: span resident, install, first decode, first picture, first sound (the mixer's cursor passing zero, ahead of the device by its queue), first motion, the worst display-frame gap, long tasks, wasm memory and the box's busy share over the window.</p>
-  <div class="cli"><code>scripts/ci/movie-timeline-web.mjs --again --append out.jsonl                 # resident span, then a second play
-scripts/ci/movie-timeline-web.mjs --no-fill --evict --again --append out.jsonl  # read on demand from storage
+  <div class="cli"><code>scripts/ci/movie-timeline-web.mjs --again --append out.jsonl                 # a read, then a second play
+scripts/ci/movie-timeline-web.mjs --evict --again --append out.jsonl         # the read reaches storage
 scripts/ci/movie-timeline-web.mjs --route attract --append out.jsonl         # the title's countdown arms MV1
-scripts/ci/movie-timeline-web.mjs --no-fill --read-delay 9000 --watch 13000  # walk the install timeout</code></div>
-  <p>It is one start per run, because the claim it tests is intermittent: the distribution is the caller's, over a run count, with each run under the display lock. <code>--evict</code> drops the disc from the OS page cache. <code>--ctx-suspend</code> stands in for an output slow to start, since the driver's browser has no autoplay gate. <code>--read-delay</code> holds only the movie's own span. <code>--cpu-throttle</code> and <code>--gl swiftshader</code> are proxies.</p>
+scripts/ci/movie-timeline-web.mjs --read-delay 9000 --watch 13000            # walk the install timeout</code></div>
+  <p>It is one start per run, because the claim it tests is intermittent: the distribution is the caller's, over a run count, with each run under the display lock. <code>--evict</code> drops the disc from the OS page cache. <code>--ctx-suspend</code> stands in for an output slow to start, since the driver's browser has no autoplay gate. <code>--read-delay</code> holds only the movie's own read, in flight; <code>--no-fill</code> and <code>--no-fill-wait</code> matter only to an older bundle's fill (<code>--site</code>). <code>--cpu-throttle</code> and <code>--gl swiftshader</code> are proxies.</p>
 </section>
 
 <section class="doc-section" id="cost-ratchet" data-doc="cost-ratchet">

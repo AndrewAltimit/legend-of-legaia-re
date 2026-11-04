@@ -152,7 +152,7 @@
   <h2>The disc image</h2>
   <p>The play page reads a disc in three stages (<code>js/play-disc.js</code>), so a visitor is not waiting on movies they may never play and the wasm memory, which never shrinks, does not hold a whole image.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 880 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The three stages of the play page's disc read. Before the engine: the volume descriptor and root directory find PROT.DAT, and the sectors up to its end are read while the wasm module compiles. The load: disc_image_missing names any sector the runtime's walk lacks, then load_disc_spans copies PROT.DAT and the executable across and the page lets those sectors go. Behind it: a worker reads the XA and movie files in one read and moves the buffer to the page without a copy. DMY.DAT stays on the disc.">
+    <svg viewBox="0 0 880 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The three stages of the play page's disc read. Before the engine: the volume descriptor and root directory find PROT.DAT, and the sectors up to its end are read while the wasm module compiles. The load: disc_image_missing names any sector the runtime's walk lacks, then load_disc_spans copies PROT.DAT and the executable across and the page lets those sectors go. By span: the XA and movie files stay in the disk-backed Blob, and a consumer reads the window it names when it names it.">
       <defs><marker id="bh-disc-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node" x="10" y="20" width="270" height="100" rx="4"/>
       <text class="dg-label" x="145" y="46">1. Before the engine</text>
@@ -163,16 +163,21 @@
       <text class="dg-sub" x="440" y="70">disc_image_missing, then load_disc_spans</text>
       <text class="dg-sub" x="440" y="90">copies only what the runtime keeps</text>
       <rect class="dg-node" x="600" y="20" width="270" height="100" rx="4"/>
-      <text class="dg-label" x="735" y="46">3. Behind it</text>
-      <text class="dg-sub" x="735" y="70">a worker reads XA and movies</text>
-      <text class="dg-sub" x="735" y="90">and moves the buffer without a copy</text>
+      <text class="dg-label" x="735" y="46">3. By span</text>
+      <text class="dg-sub" x="735" y="70">XA and movies stay in the Blob,</text>
+      <text class="dg-sub" x="735" y="90">read when a consumer names them</text>
       <path class="dg-edge" d="M280 70 L303 70" marker-end="url(#bh-disc-arrow)"/>
       <path class="dg-edge" d="M575 70 L598 70" marker-end="url(#bh-disc-arrow)"/>
       <text class="dg-sub" x="440" y="155">on the retail image, stage 1 is under a third of the file</text>
     </svg>
     <figcaption>Anything that is not a Mode 2/2352 image with a <code>PROT.DAT</code> in its root (a bare <code>PROT.DAT</code>, say) is read whole and goes to <code>load_disc_image</code>, as is a source with no <code>Blob</code> behind it.</figcaption>
   </figure>
-  <p>A consumer asks <code>span(lba, sectors)</code>, which answers from what is resident or null. Movies and XA staging poll every frame anyway, so a span that beats the worker is read with <code>prefetch</code> and the consumer installs on the next frame it polls. The engine holds the world until a movie installs, and a span that will not read (the file moved) makes the movie finish unplayed, as a page with no disc does. A trapped engine is rebuilt by reading the head again.</p>
+  <p>A consumer that polls every frame asks <code>span(lba, sectors)</code>, which answers from what is resident or null, and <code>prefetch</code> on null; it installs on the first frame after the read lands. A window asked through <code>prefetch</code> is held until its consumer calls <code>release</code>, so eviction cannot take it between the read and the install. <code>read</code> is the form for a consumer that uses the bytes once and right away (the voice banks): it answers with the bytes themselves and keeps nothing.</p>
+  <p><code>span</code> answers only from one block that covers the whole window. Neighbours are not stitched: a window across two blocks is read again, and the wider block replaces any it covers. What is left once released stays under <code>RESIDENT_CAP</code>, oldest use out first. The cap (32 MiB) holds the largest XA file beside the largest set of clips one scene reads ahead. A read landing with nobody waiting is dropped.</p>
+  <p><strong>Movies.</strong> The window is read when the beat asks and dropped at the install, which copies it and demuxes once. The engine holds the world until then, bounded by <code>INSTALL_TIMEOUT_FRAMES</code> (600 ticks, wall time unless the page runs below about 15 fps), which is about 3 MB/s for <code>MV1.STR</code>. A read past it finishes the beat unplayed and the hand-off runs, as a page with no disc does.</p>
+  <p><strong>Voice clips.</strong> A scene&rsquo;s and a round&rsquo;s likely lines are on <code>play_xa_stage_requests_json</code> before they are raised (<code>prestage_xa_clip</code>), so <code>_serveXaStage</code> reads every listed file ahead, widest span per file, and installs one row per frame, oldest first. A line whose row was served plays on the call that raises it. A line nothing listed is deferred: it plays when its row is served, a read and at least a frame after the request. Neither path reaches the simulation, which never reads the XA lane back.</p>
+  <p><strong>Failures.</strong> A read that fails is tried three times, a quarter of a second and half a second apart. Then the window is reported failed until its release: the movie finishes unplayed, the clip&rsquo;s row is installed empty and dropped. The next ask reads again. Since the bytes are not in memory, a file moved or changed on disk during a session costs every movie and clip not yet read.</p>
+  <p><strong>A trapped engine</strong> is rebuilt by reading the head again (<code>recoverRuntime</code>), which goes to the <code>Blob</code> and not through the cap, and the voice banks are read again the same way.</p>
 </section>
 
 <section class="doc-section" id="battle-edge">

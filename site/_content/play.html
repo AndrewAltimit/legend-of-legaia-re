@@ -1393,7 +1393,6 @@ div.play-vis-head { cursor: default; }
        * so a consumer can read a named file - an XA voice bank, a movie -
        * without the engine holding a second copy of the image. */
       const count = await disc.loadInto(runtime);
-      disc.startFill();
       prog.done(`${count} PROT entries. Pick a boot mode.`);
       statusEl.textContent = `Disc loaded (${count} PROT entries). Pick a boot mode.`;
       modesEl.style.display = 'grid';
@@ -1677,9 +1676,7 @@ div.play-vis-head { cursor: default; }
     let ext = null;
     try { ext = JSON.parse(runtime.disc_file_extent_json(path)); } catch (e) { ext = null; }
     if (!ext || ext.lba == null) return null;
-    const sectors = Math.ceil(ext.size / 2048);
-    await disc.prefetch(ext.lba, sectors);
-    const bytes = disc.span(ext.lba, sectors);
+    const bytes = await disc.read(ext.lba, Math.ceil(ext.size / 2048));
     return bytes && bytes.length ? bytes : null;
   }
 

@@ -180,17 +180,45 @@ The play page reads a disc in three stages (`site/js/play-disc.js`):
    page lets those sectors go. Anything that is not a Mode 2/2352 image with a
    `PROT.DAT` in its root (a bare `PROT.DAT`) is read whole and goes to
    `load_disc_image`, as is a source with no `Blob` behind it.
-3. **Behind it.** A worker reads the XA and movie files in one read and moves the
-   buffer to the page without a copy. `DMY.DAT`, which no consumer asks for, stays
-   on the disc.
+3. **By span.** The XA and movie files stay in the `Blob`, which is disk-backed, and
+   a consumer reads the window it names when it names it. `DMY.DAT`, which no
+   consumer asks for, stays there too.
 
-A consumer asks `span(lba, sectors)`, which answers from what is resident
-or null. Movies and XA staging poll every frame anyway, so a span that beats the
-worker is read with `prefetch` and the consumer installs on the next frame it
-polls. The engine holds the world until a movie installs
-(`INSTALL_TIMEOUT_FRAMES`), and a span that will not read (the file moved) makes
-the movie finish unplayed, as a page with no disc does. A trapped engine is
-rebuilt by reading the head again (`recoverRuntime`).
+A consumer that polls every frame asks `span(lba, sectors)`, which answers from what
+is resident or null, and `prefetch` on null; it installs on the first frame after the
+read lands. A window asked through `prefetch` is held until its consumer calls
+`release`, so eviction cannot take it between the read and the install. `read` is the
+form for a consumer that uses the bytes once and right away (the voice banks): it
+answers with the bytes themselves and keeps nothing.
+
+`span` answers only from one block that covers the whole window. Neighbours are not
+stitched: a window across two blocks is read again, and the wider block replaces any
+it covers. What is left once released stays under `RESIDENT_CAP`, oldest use out first.
+The cap (32 MiB) holds the largest XA file beside the largest set of clips one scene
+reads ahead. A read landing with nobody waiting is dropped.
+
+**Movies.** The window is read when the beat asks and dropped at the install, which
+copies it and demuxes once. The engine holds the world until then, bounded by
+`INSTALL_TIMEOUT_FRAMES` (600 ticks, wall time unless the page runs below about 15 fps),
+which is about 3 MB/s for `MV1.STR`. A read past it finishes the beat unplayed and the
+hand-off runs, as a page with no disc does.
+
+**Voice clips.** A scene's and a round's likely lines are on
+`play_xa_stage_requests_json` before they are raised (`prestage_xa_clip`), so
+`_serveXaStage` reads every listed file ahead, widest span per file, and installs one
+row per frame, oldest first. A line whose row was served plays on the call that raises it.
+A line nothing listed is deferred: it plays when its row is served, a read and at least
+a frame after the request. Neither path reaches the simulation, which never reads the XA
+lane back.
+
+**Failures.** A read that fails is tried three times, a quarter of a second and half a
+second apart. Then the window is reported failed until its release: the movie finishes
+unplayed, the clip's row is installed empty and dropped. The next ask reads again. Since
+the bytes are not in memory, a file moved or changed on disk during a session costs
+every movie and clip not yet read.
+
+**A trapped engine** is rebuilt by reading the head again (`recoverRuntime`), which goes
+to the `Blob` and not through the cap, and the voice banks are read again the same way.
 
 ## FMV beats (`play_fmv`)
 

@@ -628,6 +628,14 @@ def build_plan(a: argparse.Namespace, root: Path) -> Plan:
     )
     p.add(
         Gate(
+            "play-disc",
+            "wasm",
+            "node scripts/ci/play-disc-check.mjs --disc",
+            cpu=1,
+        )
+    )
+    p.add(
+        Gate(
             "pages",
             "wasm",
             f'node scripts/ci/check-pages.mjs --out "{drop("pages")}"',

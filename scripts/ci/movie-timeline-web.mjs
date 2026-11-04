@@ -15,8 +15,9 @@
 //
 // `--route field` enters town01 and writes the movie trigger (`play_fmv_trigger`);
 // `attract` sits on the title until its countdown arms MV1, as a player does.
-// `--no-fill` stops the page's background fill, so the movie's span is read on demand.
-// `--no-fill-wait` asks while the fill is still running. `--evict` drops the disc from the
+// `--no-fill` stops the background fill of an older bundle (`--site`), so the movie's span is
+// read on demand, as every bundle since reads it. `--no-fill-wait` asks while that fill is
+// still running. `--evict` drops the disc from the
 // OS page cache first, so the read reaches storage. `--reload` is a returning visitor: the
 // disc off the page's IndexedDB cache. `--again` plays the movie a second time in the same
 // page. `--settle` is how many display frames town01 runs before the trigger (default 120);
@@ -94,7 +95,18 @@ function hooks(cfg) {
     cache0 = v;
   } });
   const hookDisc = (d) => {
-    if (cfg.noFill) d.startFill = () => {};
+    if (cfg.noFill && d.startFill) d.startFill = () => {};
+    /* A reader with no fill worker: hold the movie's read in flight at the Blob, so what is
+     * walked is the reader's own wait, with the read landing after a timeout included. */
+    if (cfg.readDelay && !d.startFill) {
+      const real = d.blob;
+      d.blob = { size: real.size, slice(s, e) {
+        const b = real.slice(s, e);
+        const held = M.want && s === M.want.first_sector * 2352;
+        return { arrayBuffer: () => (held ? new Promise((res) => setTimeout(res, cfg.readDelay)).then(() => b.arrayBuffer()) : b.arrayBuffer()) };
+      } };
+    }
+    const heldAtTheBlob = cfg.readDelay && !d.startFill;
     const span = d.span.bind(d), prefetch = d.prefetch.bind(d);
     d.span = (lba, n) => {
       const r = span(lba, n);
@@ -119,6 +131,7 @@ function hooks(cfg) {
       /* Only the movie's own span: the voice banks' reads pass. */
       const movie = M.want && lba === M.want.first_sector;
       if (!movie) return prefetch(lba, n);
+      if (heldAtTheBlob) return timedRead(lba, n);
       if (cfg.readDelay && !d.__held) {
         d.__held = true;
         return new Promise((res) => setTimeout(res, cfg.readDelay)).then(() => timedRead(lba, n)).finally(() => { d.__held = false; });
@@ -147,7 +160,7 @@ function hooks(cfg) {
     wrap(rt, 'play_fmv_trigger', (t0) => { M.ev.trigger = t0; });
     wrap(rt, 'play_fmv_wanted_json', (t0, t1, r) => {
       if (r && r !== 'null' && !M.want) { M.want = JSON.parse(r); M.ev.wanted = t0;
-        M.fill_landed_at_want = !!(window.__playDisc && window.__playDisc.fillMs !== undefined); }
+        M.fill_landed_at_want = !!(window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill)); }
       if (M.want && r === 'null' && M.ev.install_start === undefined && M.ev.gave_up === undefined) M.ev.gave_up = t0;
     });
     wrap(rt, 'play_fmv_install', (t0, t1, r, a) => {
@@ -258,7 +271,7 @@ try {
   await page.goto(`http://127.0.0.1:${server.port}/play.html`);
   await (await page.$('input[type=file]')).setInputFiles(disc);
   await page.waitForFunction(() => !!window.__playRuntime, null, { timeout: 300000 });
-  const waitFill = () => page.waitForFunction(() => window.__playDisc && window.__playDisc.fillMs !== undefined, null, { timeout: 180000 });
+  const waitFill = () => page.waitForFunction(() => window.__playDisc && (window.__playDisc.fillMs !== undefined || !window.__playDisc.startFill), null, { timeout: 180000 });
   if (arg('reload')) {
     if (!cfg.noFill) await waitFill();
     /* The cache's put lands after the first read. */

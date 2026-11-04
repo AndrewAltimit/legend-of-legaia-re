@@ -622,7 +622,7 @@ async function memoryRow(page) {
     const gl = window.__playView && window.__playView.renderer && window.__playView.renderer.gl;
     return { wasm_mb: B.memory ? B.memory.buffer.byteLength / 1048576 : null,
       disc_resident_mb: disc ? disc.blocks.reduce((a, b) => a + (b.end - b.start), 0) / 1048576 : null,
-      disc_filled: !!(disc && disc.fillMs !== undefined),
+      disc_filled: !!(disc && (disc.fillMs !== undefined || !disc.startFill)),
       js_heap_mb: performance.memory ? performance.memory.usedJSHeapSize / 1048576 : null,
       gl_held: B.glHeldBytes(),
       canvas: canvas && [canvas.width, canvas.height, !!(gl && gl.getContextAttributes().antialias)] };
