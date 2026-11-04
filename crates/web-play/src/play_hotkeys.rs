@@ -183,9 +183,7 @@ mod tests {
     #[test]
     fn the_page_takes_the_room_and_mode_keys() {
         let view = include_str!("../../../site/js/play-view-input.js");
-        for export in ["play_net_key", "play_pack_mode_key", "play_cards_key"] {
-            assert!(view.contains(export), "{export}");
-        }
+        assert!(view.contains("play_host_key"));
         // A room asks ahead of the hotkeys: `T` on its screen is the chat line.
         assert!(
             view.find("this._hostKey(e)").unwrap()

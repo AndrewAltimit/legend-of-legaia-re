@@ -1787,9 +1787,8 @@ each holds only while its screen or session is up, but they mean the same on bot
 hosts. `NetPlay::room_key` is the room's table (`1`..`5` not bound to a pad button
 send a reaction, `Tab` and backquote flip the room screen, `T` on it starts a chat
 line, which on the page is its chat box), asked ahead of the hotkeys through
-`play_net_key`. Out of a room, backquote and backslash are the mode picker and the
-card menu (`play_pack_mode_key`, `play_cards_key`, the window's `key_pack_modes` and
-`key_card_screen`). Pinned by `play_hotkeys::tests::the_page_takes_the_room_and_mode_keys`
+`play_host_key`. Out of a room, backquote and backslash are the mode picker and the
+card menu, the window's `key_pack_modes` and `key_card_screen`. Pinned by `play_hotkeys::tests::the_page_takes_the_room_and_mode_keys`
 and the `engine-netplay` `keys` test.
 
 ### Controllers

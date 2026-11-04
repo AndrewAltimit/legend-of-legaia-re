@@ -78,19 +78,16 @@
       };
       /* The keys the native window gives a room, the game modes and the cards.
        * A room asks first, as natively (`T` on the room screen is its chat line,
-       * not the camera key; the room's table is `NetPlay::room_key`). */
+       * not the camera key; the room's table is `NetPlay::room_key`), and the
+       * engine holds which key is which. */
       this._hostKey = (e) => {
-        const rt = this.rt;
-        if (typeof rt.play_net_key !== 'function') return false;
-        const room = rt.play_net_key(e.code);
-        if (room === 'chat') {
+        if (typeof this.rt.play_host_key !== 'function') return false;
+        const taken = this.rt.play_host_key(e.code);
+        if (taken === 'chat') {
           const chat = document.getElementById('play-net-chat');
           if (chat) chat.focus();
         }
-        if (room) return true;
-        if (e.code === 'Backquote') return rt.play_pack_mode_key();
-        if (e.code === 'Backslash') return rt.play_cards_key();
-        return false;
+        return !!taken;
       };
       /* The notice line after a press (`"Ground fog: off"`), worded by the
        * engine's `toggle_notice` - the line the native window shows, so a

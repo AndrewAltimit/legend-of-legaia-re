@@ -126,35 +126,26 @@ impl LegaiaRuntime {
         }
     }
 
-    /// A key press in a room (`NetPlay::room_key`, the table the native window
-    /// asks): `"reaction"` / `"screen"` when it was acted on, `"chat"` when the
-    /// page should open its chat line, `""` when the room does not want the
-    /// key. A front-end screen keeps its keys, as natively.
-    pub fn play_net_key(&mut self, code: &str) -> String {
-        if self.netplay.is_none() || self.play_host_front_end_up() {
+    /// A key press outside the pad and the hotkey table: what the native
+    /// window's `netplay_key`, `key_pack_modes` and `key_card_screen` take.
+    /// `"chat"` when the page should open its chat line, `"taken"` when the
+    /// press was acted on, `""` when no one wants the key. A room asks first
+    /// (`NetPlay::room_key`), and a front-end screen keeps its keys, as
+    /// natively.
+    pub fn play_host_key(&mut self, code: &str) -> String {
+        if self.play_host_front_end_up() {
             return String::new();
         }
-        let pad_bound = legaia_engine_system::input::key_name_for_dom_code(code).is_some_and(|k| {
-            crate::pad_bindings::live_mapping()
-                .pad_button_for_key(k)
-                .is_some()
-        });
-        let Some(net) = self.netplay.as_mut() else {
-            return String::new();
+        let room = self.room_key_press(code);
+        if !room.is_empty() {
+            return room.to_string();
+        }
+        let taken = match code {
+            "Backquote" => self.play_pack_mode_key(),
+            "Backslash" => self.play_cards_key(),
+            _ => false,
         };
-        match net.room_key(code, pad_bound) {
-            Some(RoomKey::Reaction(i)) => {
-                net.emote(i);
-                "reaction"
-            }
-            Some(RoomKey::ToggleScreen) => {
-                net.toggle_screen();
-                "screen"
-            }
-            Some(RoomKey::BeginChat) => "chat",
-            None => "",
-        }
-        .to_string()
+        if taken { "taken" } else { "" }.to_string()
     }
 
     /// Send a chat line.
@@ -291,4 +282,34 @@ fn open_socket(url: &str) -> Result<Box<dyn legaia_netplay::transport::Transport
 #[cfg(not(target_arch = "wasm32"))]
 fn open_socket(_url: &str) -> Result<Box<dyn legaia_netplay::transport::Transport>, String> {
     Err("Joining a room needs the browser build.".to_string())
+}
+
+impl LegaiaRuntime {
+    /// A key press in a room: `"chat"`, `"taken"` or `""` when it is not the
+    /// room's.
+    fn room_key_press(&mut self, code: &str) -> &'static str {
+        if self.netplay.is_none() {
+            return "";
+        }
+        let pad_bound = legaia_engine_system::input::key_name_for_dom_code(code).is_some_and(|k| {
+            crate::pad_bindings::live_mapping()
+                .pad_button_for_key(k)
+                .is_some()
+        });
+        let Some(net) = self.netplay.as_mut() else {
+            return "";
+        };
+        match net.room_key(code, pad_bound) {
+            Some(RoomKey::Reaction(i)) => {
+                net.emote(i);
+                "taken"
+            }
+            Some(RoomKey::ToggleScreen) => {
+                net.toggle_screen();
+                "taken"
+            }
+            Some(RoomKey::BeginChat) => "chat",
+            None => "",
+        }
+    }
 }
