@@ -37,7 +37,7 @@ export function playBundle(site) {
 
 /* A static server over `site`, on a port of its own: `{ port, stop }`. */
 export async function serveSite(site) {
-  const server = spawn('python3', ['-u', '-m', 'http.server', '0', '--bind', '127.0.0.1', '--directory', site],
+  const server = spawn(process.platform === 'win32' ? 'python' : 'python3', ['-u', '-m', 'http.server', '0', '--bind', '127.0.0.1', '--directory', site],
     { stdio: ['ignore', 'pipe', 'pipe'] });
   const port = await new Promise((res, rej) => {
     const on = (d) => { const m = /port (\d+)/.exec(String(d)); if (m) res(+m[1]); };
@@ -54,12 +54,18 @@ export async function serveSite(site) {
  * page; off lets requestAnimationFrame run as fast as the page gets through it. */
 export async function launchChromium({ gl = 'egl', vsync = false } = {}) {
   const { chromium } = playwrightCore();
-  const dirs = fs.readdirSync(path.join(os.homedir(), '.cache/ms-playwright')).filter((d) => /^chromium-/.test(d)).sort();
-  const dir = path.join(os.homedir(), '.cache/ms-playwright', dirs[dirs.length - 1]);
-  const exe = [path.join(dir, 'chrome-linux/chrome'), path.join(dir, 'chrome-linux64/chrome')].find((p) => fs.existsSync(p));
+  // Off Linux, playwright finds the browser it installed itself.
+  let exe;
+  if (process.platform === 'linux') {
+    const dirs = fs.readdirSync(path.join(os.homedir(), '.cache/ms-playwright')).filter((d) => /^chromium-/.test(d)).sort();
+    const dir = path.join(os.homedir(), '.cache/ms-playwright', dirs[dirs.length - 1]);
+    exe = [path.join(dir, 'chrome-linux/chrome'), path.join(dir, 'chrome-linux64/chrome')].find((p) => fs.existsSync(p));
+  }
+  // 'egl' is the real GPU: on Windows that is ANGLE's Direct3D backend, as Chrome uses.
+  const realGpu = process.platform === 'win32' ? 'd3d11' : 'gl-egl';
   const glArgs = gl === 'swiftshader'
     ? ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader']
-    : ['--use-gl=angle', '--use-angle=gl-egl', '--ignore-gpu-blocklist'];
+    : ['--use-gl=angle', `--use-angle=${realGpu}`, '--ignore-gpu-blocklist'];
   const pacing = vsync ? [] : ['--disable-frame-rate-limit', '--disable-gpu-vsync'];
   return chromium.launch({ executablePath: exe, headless: true,
     args: [...glArgs, '--enable-webgl', ...pacing, '--autoplay-policy=no-user-gesture-required'] });

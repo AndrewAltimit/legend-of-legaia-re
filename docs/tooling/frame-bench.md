@@ -219,6 +219,26 @@ worker, so `worker_ms` does not scale with it.
 `--entry` reports the library row's Enable up to the scene list, then the click on a map
 up to its second frame, with the top wasm exports of each.
 
+## Another machine
+
+```bash
+python scripts/ci/machine-bench.py --disc game.bin --extracted extracted \
+    --exe new/legaia-engine.exe --base-exe old/legaia-engine.exe --site new-site --base-site old-site
+```
+
+[`scripts/ci/machine-bench.py`](../../scripts/ci/machine-bench.py) runs one machine's base
+against tip with no Rust or wasm toolchain: two release binaries and two built sites are its
+inputs. It runs the native frame and entry tables, then the page's rows at a display's pace,
+uncapped and under CPU throttle, the two sides alternating, and zips the logs, JSON and a
+description of the machine for sending back. The archive holds times and counts, with no
+screenshots and no disc bytes. A step that fails is recorded, and the rest still run.
+
+It runs on Linux and Windows. On Windows the page's `--gl egl` means ANGLE's Direct3D
+backend, as Chrome uses, and the process memory rows read empty, since they come off
+`/proc`. A native row's peak RSS reads 0 there for the same reason, and a release binary has
+no `bench-alloc`, so its allocations read 0 too. `PLAYWRIGHT_CORE` names playwright-core, and
+playwright finds the Chromium it installed.
+
 ## Movie start
 
 [`scripts/ci/movie-timeline-web.mjs`](../../scripts/ci/movie-timeline-web.mjs) times a

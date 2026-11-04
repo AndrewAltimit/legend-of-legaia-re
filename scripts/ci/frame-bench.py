@@ -78,18 +78,21 @@ def run_one(exe, extracted, name, mode, frames, skip, workdir):
     # peak read from RUSAGE_CHILDREN would be the worst of every run so far.
     with tempfile.TemporaryFile() as err:
         p = subprocess.Popen(cmd, cwd=workdir, env=e, stdout=subprocess.DEVNULL, stderr=err)
-        peak_rss_kb = None
+        peak_rss_kb = 0.0  # stays 0 where the platform has no rusage (Windows)
         deadline = time.monotonic() + 900
-        while peak_rss_kb is None:
-            pid, status, usage = os.wait4(p.pid, os.WNOHANG)
-            if pid:
-                p.returncode = os.waitstatus_to_exitcode(status)
-                peak_rss_kb = usage.ru_maxrss
-            elif time.monotonic() > deadline:
+        while True:
+            if hasattr(os, "wait4"):
+                pid, status, usage = os.wait4(p.pid, os.WNOHANG)
+                if pid:
+                    p.returncode = os.waitstatus_to_exitcode(status)
+                    peak_rss_kb = usage.ru_maxrss
+                    break
+            elif p.poll() is not None:
+                break
+            if time.monotonic() > deadline:
                 p.kill()
                 raise RuntimeError(f"{name}/{mode}: still running after 900 s")
-            else:
-                time.sleep(0.05)
+            time.sleep(0.05)
         err.seek(0)
         stderr = err.read().decode(errors="replace")
     m = re.search(r"^\[bench\] (\{.*\})$", stderr, re.M)
@@ -189,10 +192,11 @@ def main():
     ap.add_argument("--json", help="write the raw rows here")
     ap.add_argument("--entry", action="store_true", help="time scene and battle entry instead of frames")
     ap.add_argument("--entry-scenes", default="town01,jouina,map01,koin1")
+    ap.add_argument("--extracted", help="the extracted disc (default: extracted/ in the repo)")
     ap.add_argument("--base-exe", help="a build to pair against, run by run (needs --exe for the frame table)")
     a = ap.parse_args()
 
-    extracted = REPO / "extracted"
+    extracted = Path(a.extracted) if a.extracted else REPO / "extracted"
     if a.entry and (extracted / "PROT.DAT").exists():
         exe = Path(a.exe) if a.exe else REPO / "target" / PROFILE / "legaia-engine"
         if not a.exe:
@@ -200,7 +204,9 @@ def main():
                             "--profile", PROFILE], cwd=REPO, check=True)
         entry_table(exe, a.base_exe, extracted.resolve(), a.entry_scenes, a.repeat, a.json)
         return 0
-    if not (extracted / "PROT.DAT").exists() or not os.environ.get("DISPLAY"):
+    # Only a Linux box can be without a display and still run this far.
+    headless = sys.platform.startswith("linux") and not os.environ.get("DISPLAY")
+    if not (extracted / "PROT.DAT").exists() or headless:
         print("[skip] frame-bench needs extracted/ and a display")
         return 0
 
