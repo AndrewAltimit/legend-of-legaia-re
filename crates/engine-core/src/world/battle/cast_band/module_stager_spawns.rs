@@ -150,9 +150,6 @@ impl World {
                         &legaia_engine_battle_vm::battle_action::summon_fade_template(t),
                         1,
                     );
-                    if let Some(f) = fade.as_mut() {
-                        f.step_vsyncs(self.battle_frame_step().max(1));
-                    }
                     self.presentation.module_fades.extend(fade);
                 }
                 continue;
