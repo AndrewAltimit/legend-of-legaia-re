@@ -31,6 +31,15 @@ state:
 | `battle` | `map01`, a forced fight, then the confirm button on a rhythm |
 | `cast` | `map01`, a forced fight with a big summon seeded in flight |
 | `bio_castle` | `jouina`, the same walk: every env morph live. By name only (`--scene`), for a change to them |
+| `menu` | `town01`, the pause menu opened and each row entered and left. By name only |
+| `dialog` | `town01`, each placement talked to in turn until one answers, then confirm through its pages. By name only |
+| `shop` | `bylon`, the scene's first shop armed, a pick, a close. By name only |
+| `results` | `map01`, a fight played to its result windows and the fade out of them. By name only |
+| `levelup` | `map01`, eleven fights back to back with the first level-ups on the way, hashed from the ninth fight's end. By name only |
+
+The last five are the overlay's own screens, where the GL column says little. Each fails its run
+if its screen never came up (`menu` up, `shop` up, a dialog's draws open, a battle over) or if it
+shows too few distinct overlays, and the run prints both figures.
 
 | Mode | Is |
 |---|---|

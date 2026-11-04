@@ -5,6 +5,7 @@
 //       [--skip 120] [--json out.json] [--gl swiftshader|egl] [--profile] [--shots dir]
 //       [--reenter] [--entry-profile] [--reload] [--idle ms]
 //       [--vsync] [--paths] [--card file.mcr] [--card-block n] [--cpu-throttle n] [--trace]
+//       [--screens [scene]] [--trees n]
 //       [--uncheck id,id] [--no-msaa] [--canvas-scale s] [--auto-quality]
 //
 // Serves `site/` itself, loads the disc named by LEGAIA_DISC_BIN through the page's
@@ -511,6 +512,100 @@ function worstFramesOf(profile, count) {
   return runs.slice(0, count).map((r) => ({ ms: r.us / 1000, tree: tree(r) }));
 }
 
+/* `--screens [scene]`: the long tasks a player hits outside scene and battle entry. One page
+ * walks the pause menu's rows, a talk and a shop, or with `map01` a whole fight to its results,
+ * each driven through the page's own keys, and each step reports its worst frame; then the
+ * profile's longest frames as call trees, longest first. */
+async function screensWalk(page, cdp, scene) {
+  await cdp.send('Profiler.enable');
+  await cdp.send('Profiler.setSamplingInterval', { interval: 500 });
+  const startRow = await page.evaluate(async (scene) => {
+    const B = window.__bench;
+    document.querySelector(`[data-scene="${scene}"]`).click();
+    if (window.__benchEntered) await window.__benchEntered();
+    B.wrapView(window.__playView);
+    return true;
+  }, scene);
+  await cdp.send('Profiler.start');
+  const rows = await page.evaluate(async (fightOnly) => {
+    const B = window.__bench, view = window.__playView, rt = window.__playRuntime;
+    B.frames = [];
+    B.on = true;
+    const send = (type, code) => window.dispatchEvent(new KeyboardEvent(type, { code, key: code, bubbles: true }));
+    const frames = (n) => new Promise((res) => {
+      const at = B.calls;
+      const check = () => (B.calls - at >= n ? res() : setTimeout(check, 10));
+      check();
+    });
+    const tap = async (code) => { send('keydown', code); await frames(2); send('keyup', code); await frames(2); };
+    const rows = [];
+    const step = async (label, fn, settle = 30) => {
+      B.frames = [];
+      await fn();
+      await frames(settle);
+      rows.push({ label, worst: B.frames.reduce((a, x) => Math.max(a, x), 0), n: B.frames.length });
+    };
+    await step('settle', async () => {}, 120);
+    if (fightOnly) {
+      await step('fight: edge', async () => {
+        rt.debug_force_battle(-1);
+        const t = performance.now();
+        while (!window.__playView._battle && performance.now() - t < 30000) await frames(5);
+      }, 30);
+      let n = 0;
+      const t = performance.now();
+      while (window.__playView._battle && performance.now() - t < 200000) {
+        B.frames = [];
+        await tap('KeyZ');
+        await frames(10);
+        rows.push({ label: `fight: beat ${n++}`, worst: B.frames.reduce((a, x) => Math.max(a, x), 0), n: B.frames.length });
+      }
+      rows.push({ label: `fight ended: ${!window.__playView._battle}, beats ${n}`, worst: 0, n: 0 });
+      for (let i = 0; i < 12; i++) await step(`after the fight ${i}`, () => tap('KeyZ'), 20);
+      B.on = false;
+      return rows;
+    }
+    await step('settle', async () => {}, 120);
+    await step('menu: first open', () => tap('Enter'), 60);
+    for (let i = 0; i < 7; i++) {
+      await step(`menu: row ${i} in`, () => tap('KeyZ'), 40);
+      await step(`menu: row ${i} out`, () => tap('KeyX'), 20);
+      await step(`menu: row ${i} down`, () => tap('ArrowDown'), 10);
+    }
+    await step('menu: close', async () => { for (let i = 0; i < 6 && rt.play_menu_is_open(); i++) await tap('KeyX'); await tap('Enter'); }, 40);
+    if (typeof rt.debug_talk_to_placement === 'function') {
+      await step('dialog: first', async () => { for (let s = 0; s < 40 && !rt.debug_talk_to_placement(s); s++); }, 60);
+      await step('dialog: page', () => tap('KeyZ'), 40);
+      for (let i = 0; i < 6; i++) await tap('KeyZ');
+    }
+    const pick = async (name) => {
+      document.querySelector(`[data-scene="${name}"]`).click();
+      if (window.__benchEntered) await window.__benchEntered();
+      B.wrapView(window.__playView);
+      await frames(60);
+    };
+    B.on = false;
+    let shopScene = null;
+    for (const b of document.querySelectorAll('[data-scene]')) {
+      if (shopScene) break;
+      await pick(b.dataset.scene);
+      if (window.__playRuntime.debug_arm_scene_shop(0)) shopScene = b.dataset.scene;
+    }
+    B.on = true;
+    rows.push({ label: `shop scene: ${shopScene}`, worst: 0, n: 0 });
+    await step('shop: first open', async () => {}, 60);
+    await step('shop: pick', () => tap('KeyZ'), 30);
+    await step('shop: close', async () => { for (let i = 0; i < 6 && rt.play_shop_is_open(); i++) await tap('KeyX'); }, 30);
+    B.on = false;
+    return rows;
+  }, scene === 'map01');
+  const { profile } = await cdp.send('Profiler.stop');
+  const sorted = rows.filter((r) => r.n).sort((a, b) => b.worst - a.worst);
+  console.log('screens, worst frame per step, ms:\n  ' + sorted.slice(0, 40).map((r) => `${r.worst.toFixed(1)} ${r.label}`).join('\n  '));
+  for (const r of rows.filter((x) => !x.n)) console.log(`  ${r.label}: ${r.worst}`);
+  for (const f of worstFramesOf(profile, +arg('trees', 8))) console.log(`--- frame ${f.ms.toFixed(1)} ms\n          ${f.tree}`);
+}
+
 /* Run in the page: every export counted, and allocations where the bundle counts them. */
 async function wrapForBench() {
   window.__bench.wrapRuntime(window.__playRuntime);
@@ -810,6 +905,12 @@ async function main() {
       }
     }
   });
+  if (arg('screens')) {
+    await screensWalk(page, cdp, arg('screens') === true ? 'town01' : arg('screens'));
+    await browser.close();
+    await stop();
+    process.exit(0);
+  }
   for (const name of names) {
     const sc = SCENES[name];
     if (profiling()) {

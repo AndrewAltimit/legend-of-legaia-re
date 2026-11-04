@@ -156,6 +156,11 @@ page's own DOM writes are the usual cause: `play.html`'s HUD once replaced six t
 frame with the same strings. `--profile` also prints self time by kind (`js`, `wasm`, `program`,
 `gl call`, `canvas2d call`, `gc`, `bench wrapper`) and an inclusive table.
 
+`--screens [scene]` walks the long tasks a player hits outside scene and battle entry on one
+page, through the page's own keys: the pause menu's rows, a talk and a first shop, or with `map01`
+a whole fight to its results. Each step reports its worst frame, then the profile's longest frames
+print as call trees (`--trees n`). Read it with `--vsync`.
+
 `--cpu-throttle n` slows the renderer's main thread through
 `Emulation.setCPUThrottlingRate`, and the output calls it a proxy. It shows which costs
 scale with the CPU. It says nothing of what a device does: it leaves the GPU process, the

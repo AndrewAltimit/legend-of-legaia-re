@@ -4,7 +4,7 @@
 //   scripts/ci/frame-hash-web.mjs --site site --out new.txt          # hash one site
 //   scripts/ci/frame-hash-web.mjs --compare base.txt new.txt         # line for line
 //   scripts/ci/frame-hash-web.mjs --site new/site --base-site old/site --out dir
-//       [--scene town01,world_map,battle,cast,bio_castle] [--mode retail,enhanced] [--frames n]
+//       [--scene town01,world_map,battle,cast,bio_castle,menu,dialog,shop,results,levelup] [--mode retail,enhanced] [--frames n]
 //       [--gl swiftshader|egl] [--no-msaa] [--shots dir] [--counts out.json]
 //
 // Each scene runs in each mode on a fresh page, stopped off its animation loop and
@@ -64,7 +64,25 @@ const SCENES = {
   cast: { scene: 'map01', frames: 900, force: true, settle: 10, cast: [0, 138, 3] },
   /* By name only: a scene whose morphs run every tick, for a change to them. */
   bio_castle: { scene: 'jouina', frames: 300, pad: walk, optional: true },
+  /* The overlay's own screens, by name only. Each has to show the screen it is named for,
+   * and its overlay has to change, or the run fails: the GL column says nothing here. */
+  menu: { scene: 'town01', frames: 960, optional: true, screen: 'menu', minOverlays: 12, keys: menuKeys() },
+  dialog: { scene: 'town01', frames: 1500, optional: true, screen: 'dialog', minOverlays: 6, talk: 30, tapFrom: 1000, tapEvery: 40 },
+  shop: { scene: 'bylon', frames: 420, optional: true, screen: 'shop', minOverlays: 6, arm: 30, keys: [[90, 'KeyZ'], [150, 'ArrowDown'], [200, 'KeyZ'], [260, 'KeyX'], [320, 'KeyX']] },
+  results: { scene: 'map01', frames: 3600, optional: true, screen: 'results', minOverlays: 40, force: true, settle: 10, tapFrom: 300, tapEvery: 20 },
+  /* Fights back to back until the first level-up (121 XP, 12 a fight here), hashed from the
+   * fight before it on. The party is restored each time, and the frames up to there run bare. */
+  levelup: { scene: 'map01', frames: 24000, optional: true, screen: 'results', minOverlays: 40, force: true, settle: 10, tapFrom: 300, tapEvery: 20, fights: 11, hashFromFight: 9 },
 };
+/* `[frame, key]` taps: open the pause menu, in and out of each row, close it. */
+function menuKeys() {
+  const keys = [[30, 'Enter']];
+  for (let row = 0; row < 7; row++) {
+    const at = 90 + row * 120;
+    keys.push([at, 'KeyZ'], [at + 60, 'KeyX'], [at + 90, 'ArrowDown']);
+  }
+  return keys;
+}
 const MODES = {
   /* The page's defaults: a fresh browser profile, every enhancement at its default. */
   enhanced: [],
@@ -176,6 +194,10 @@ async function stepRun(cfg) {
       if (n === from) send('keydown', key);
       if (n === to + 1) send('keyup', key);
     }
+    for (const [at, key] of sc.keys || []) {
+      if (n === at) send('keydown', key);
+      if (n === at + 1) send('keyup', key);
+    }
     if (sc.tapEvery && n >= sc.tapFrom) {
       const at = (n - sc.tapFrom) % sc.tapEvery;
       if (at === 0) send('keydown', 'KeyZ');
@@ -188,12 +210,20 @@ async function stepRun(cfg) {
   const nextRand = () => { rand = Math.imul(rand ^ 0x5bd1e995, 0x01000193) + 12345 | 0; return (rand >>> 8) & 0xFFFF; };
   const positions = new Set();
   let battleFrame = null;
+  let battleOver = null;
+  let screenFrames = 0;
+  let inFight = false, fightsDone = 0, nextForce = -1;
   for (let n = 0; n < cfg.frames; n++) {
     if (n === 0) B.firstState = rt.state_json();
     if (sc.force && n === sc.settle) {
       if (sc.cast) rt.debug_seed_inflight_cast(...sc.cast);
       rt.debug_force_battle(-1);
     }
+    /* Each placement in turn, until one of them talks. */
+    if (sc.talk !== undefined && !screenFrames && n >= sc.talk && (n - sc.talk) % 20 === 0) {
+      rt.debug_talk_to_placement((n - sc.talk) / 20);
+    }
+    if (sc.arm === n) rt.debug_arm_scene_shop(0);
     padAt(n);
     B.vt += 1000 / 60;
     /* Counts cover the frame alone: the page's timers (the card's write-back, the XA
@@ -203,6 +233,20 @@ async function stepRun(cfg) {
     view._frame();
     B.on = false;
     if (view._battle && battleFrame === null) battleFrame = n;
+    if (battleFrame !== null && !view._battle && battleOver === null) battleOver = n;
+    if (sc.fights) {
+      if (view._battle) inFight = true;
+      else if (inFight) { inFight = false; fightsDone++; nextForce = n + 400; }
+      if (!inFight && n === nextForce && fightsDone < sc.fights) { rt.cheat_apply('restore', 0, ''); rt.debug_force_battle(-1); }
+    }
+    if (sc.fights && fightsDone < sc.hashFromFight) {
+      if (n % 20 === 19) await new Promise((res) => setTimeout(res, 0));
+      continue;
+    }
+    if (sc.screen === 'menu' && rt.play_menu_is_open()) screenFrames++;
+    if (sc.screen === 'shop' && rt.play_shop_is_open()) screenFrames++;
+    if (sc.screen === 'dialog' && JSON.parse(rt.play_dialog_draws_json(960, 720)).open) screenFrames++;
+    if (sc.screen === 'results' && battleOver !== null) screenFrames++;
     const st = rt.state_json();
     try { const p = JSON.parse(st).player; positions.add(p.x + ',' + p.z); } catch (e) { /* no player */ }
     if (!cfg.counts) {
@@ -240,7 +284,10 @@ async function stepRun(cfg) {
         ov = words32(new Uint32Array(d.buffer, d.byteOffset, d.byteLength >> 2), true);
       }
       lines.push(`${cfg.label} ${String(n).padStart(4, '0')} gl=${words32(words, true)} ov=${ov} st=${stringHash(st)} lit=${(lit / seen).toFixed(3)} col=${colours.size}`);
-      if (cfg.shotEvery && n % cfg.shotEvery === 0) await window.__hashShot(view.canvas.toDataURL('image/png'), n);
+      if (cfg.shotEvery && n % cfg.shotEvery === 0) {
+        await window.__hashShot(view.canvas.toDataURL('image/png'), n);
+        if (sc.screen && o) await window.__hashShot(o.toDataURL('image/png'), `${n}-overlay`);
+      }
       if (cfg.raw) raws.push(px);
     }
     /* A step in a task of its own now and then: the audio pump and the disc's reads run
@@ -259,7 +306,7 @@ async function stepRun(cfg) {
     for (let i = 0; i < px.length; i += 0x8000) bin += String.fromCharCode.apply(null, px.subarray(i, i + 0x8000));
     await window.__hashRaw(btoa(bin), n);
   }
-  return { lines, positions: positions.size, battleFrame, frames: cfg.frames,
+  return { lines, positions: positions.size, battleFrame, battleOver, screenFrames, frames: cfg.frames,
     canvas: [view.canvas.width, view.canvas.height], draws: B.draws, glCalls: B.glCalls, exports: B.exports,
     audio: rt.audio_stats_json() };
 }
@@ -328,8 +375,17 @@ async function hashSite(site, opts) {
           + `${sc.force ? `, battle up at frame ${r.battleFrame}` : ''}`;
         console.error(say);
         header.push(`# ${say}`);
-        if (distinct < r.frames / 10) problems.push(`${label}: VACUOUS, only ${distinct} distinct frames of ${r.frames}`);
-        if (blank > r.frames / 2) problems.push(`${label}: VACUOUS, ${blank} blank frames of ${r.frames}`);
+        if (sc.screen) {
+          const overlays = new Set(r.lines.map((l) => /ov=(\w+)/.exec(l)[1])).size;
+          const shown = `${sc.screen} up ${r.screenFrames} frames, ${overlays} distinct overlays${r.battleOver === null ? '' : `, battle over at frame ${r.battleOver}`}`;
+          console.error(`${label}: ${shown}`);
+          header.push(`# ${label}: ${shown}`);
+          if (!r.screenFrames) problems.push(`${label}: VACUOUS, the ${sc.screen} screen never came up`);
+          if (overlays < sc.minOverlays) problems.push(`${label}: VACUOUS, only ${overlays} distinct overlays`);
+        } else {
+          if (distinct < r.frames / 10) problems.push(`${label}: VACUOUS, only ${distinct} distinct frames of ${r.frames}`);
+          if (blank > r.frames / 2) problems.push(`${label}: VACUOUS, ${blank} blank frames of ${r.frames}`);
+        }
         if (sc.pad && r.positions < 10) problems.push(`${label}: VACUOUS, the pad script moved the player through ${r.positions} positions`);
         if (sc.force && r.battleFrame === null) problems.push(`${label}: VACUOUS, the battle scene never came up`);
       } else {

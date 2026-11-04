@@ -78,6 +78,7 @@ scripts/ci/frame-bench-web.mjs --cpu-throttle 6               # a proxy, labelle
     <thead><tr><th>Flag</th><th>Adds</th></tr></thead>
     <tbody>
       <tr><td><code>--profile</code></td><td>A CPU profile: self time by function and by kind (JS, wasm, GL calls, the rest), garbage collector included, an inclusive table, and the call chains of the heaviest.</td></tr>
+      <tr><td><code>--screens [scene]</code></td><td>The long tasks outside scene and battle entry: the pause menu&rsquo;s rows, a talk, a first shop, or with <code>map01</code> a whole fight to its results. Each step&rsquo;s worst frame, then the longest frames as call trees.</td></tr>
       <tr><td><code>--trace</code></td><td>A browser trace over six seconds: main-thread self time per trace event, inside and outside the animation-frame callback. It names what a profile calls <code>(program)</code>: style, layout, paint. <code>--trace-out file</code> writes the events, invalidation tracking included.</td></tr>
       <tr><td><code>--gl egl</code> / <code>swiftshader</code></td><td>The default asks for a real GPU and the output names the renderer it got; a software rasteriser swamps the page&rsquo;s cost with fragment work.</td></tr>
       <tr><td><code>--entry-profile</code></td><td>Samples the disc load, each scene entry and each battle&rsquo;s first frames; time by function, self and inclusive. A battle row adds its three longest frames as call trees; read those with <code>--vsync</code>.</td></tr>
