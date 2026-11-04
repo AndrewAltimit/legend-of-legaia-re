@@ -800,12 +800,12 @@ fn race_fury_pays(w: &legaia_engine_core::world::World, actor: u8) -> bool {
     const MIRACLE_PRESSES: u32 = 30;
     let press = race_press(w, actor);
     let gauge = u32::from(w.actors[usize::from(actor)].battle.spirit_gauge);
-    let miracle = if gauge + RACE_INCOME >= u32::from(miracle_spirit_price(w, actor)) {
-        (MIRACLE_PRESSES - 9) * press
-    } else {
-        0
-    };
-    BOOSTED_ROUNDS * 9 * press + miracle > CAST_ROUNDS * race_spell(w, actor, true).unwrap_or(0)
+    let price = u32::from(miracle_spirit_price(w, actor)).max(1);
+    let miracles = (gauge + RACE_INCOME) / price;
+    // What the MP in hand pays for now: a better summon a drink would have to
+    // buy costs that drink's turn, and the cast the hand then settles for is this.
+    BOOSTED_ROUNDS * 9 * press + miracles * (MIRACLE_PRESSES - 9) * press
+        > CAST_ROUNDS * race_spell(w, actor, false).unwrap_or(0)
 }
 
 /// What a race's best spell of `actor` should deal, where that beats its swings

@@ -1007,6 +1007,11 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                     battle_snapshot(session)
                 );
             }
+            // Beaten: nothing is left to charge for. Zora falls with the escape's
+            // clock already due to run, and the clock is no time to walk for AP.
+            if boss.is_some() {
+                BOSS_LOST.with(|l| l.set(false));
+            }
             return None;
         }
     }
