@@ -125,6 +125,12 @@ pub struct AmbientFxState {
     /// these rects. Empty everywhere but the comparison's `play-window`
     /// child (`LEGAIA_SEAT_VRAM_RECTS`).
     pub vram_rect_seed: Vec<SeededVramRect>,
+    /// Capture alignment for a dance hall frame: the palettes retail's hall
+    /// cyclers captured (`+0xA8` / `+0xAC`), by rect. They are the walked-in
+    /// scene's last paint ([`crate::world::World::carry_walked_in_cells`]), a
+    /// strobe phase a card-load seed does not stand on. Empty everywhere but
+    /// the comparison's `play-window` child (`LEGAIA_SEAT_CELL_SOURCES`).
+    pub cell_source_seed: Vec<SeededVramRect>,
 }
 
 impl AmbientFxState {
@@ -149,6 +155,7 @@ impl AmbientFxState {
             frame_grab: FrameGrab::default(),
             cell_fx_seed: Vec::new(),
             vram_rect_seed: Vec::new(),
+            cell_source_seed: Vec::new(),
         }
     }
 }

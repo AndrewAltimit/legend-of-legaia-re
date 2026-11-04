@@ -22,7 +22,7 @@ use super::*;
 use legaia_engine_mode::minigame_entry::MinigameSubId;
 
 /// The mode-24 door warp's sub-id (`_DAT_8007BA34`, `sh` at `0x801E07B8`).
-const MINIGAME_SUB_ID: u32 = 0x8007_BA34;
+pub(super) const MINIGAME_SUB_ID: u32 = 0x8007_BA34;
 /// The slot machine's reel state word (`DAT_801D3C84`, PROT 0975).
 const SLOT_STATE: u32 = 0x801D_3C84;
 /// The slot machine's balance (`DAT_801D4114`), assigned from the coin bank
@@ -479,7 +479,7 @@ pub(super) fn run_minigame(
             _ => ("O", FRAME_TICKS_PAST_WARP),
         };
         let extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
-        let seats: Vec<(&'static str, String)> = mg
+        let mut seats: Vec<(&'static str, String)> = mg
             .dance_markers
             .iter()
             .any(Option::is_some)
@@ -491,6 +491,19 @@ pub(super) fn run_minigame(
             })
             .into_iter()
             .collect();
+        // The hall's light show is palette work: its cyclers and scrollers are
+        // a clock of game frames, whose lengths the capture measured and the
+        // engine's fixed tick does not.
+        if mg.minigame() == Some(MinigameSubId::Dance) {
+            if !retail.cell_fx.is_empty() {
+                seats.push((
+                    "LEGAIA_SEAT_CLUT_FX",
+                    legaia_engine_capture::field_seeds::cell_fx_env(&retail.cell_fx),
+                ));
+            }
+            seats.extend(retail.vram_rects_env(opts.out_dir, &entry.label));
+            seats.extend(retail.cell_sources_env(opts.out_dir, &entry.label));
+        }
         match crate::retail_compare_image::engine_frame_with(
             exe,
             opts.extracted,

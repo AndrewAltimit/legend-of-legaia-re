@@ -178,6 +178,9 @@ pub struct RetailObs {
     /// ([`retail_scroll_rects`]), handed to the image child as a
     /// `LEGAIA_SEAT_VRAM_RECTS` file.
     pub scroll_rects: Vec<SeededVramRect>,
+    /// The dance hall's captured palettes ([`retail_cell_sources`]), handed to
+    /// the image child as a `LEGAIA_SEAT_CELL_SOURCES` file.
+    pub cell_sources: Vec<SeededVramRect>,
     /// The source column of the effect palette row `(224, 476)` a battle
     /// state holds ([`retail_cue_clut_source`]): the swap an earlier action's
     /// cue group made, handed to the image child as `LEGAIA_SEAT_CUE_CLUT`.
@@ -382,7 +385,7 @@ impl RetailObs {
             scripts: crate::retail_compare_script::RetailScripts::from_ram(ram),
             cell_fx: if matches!(
                 class,
-                StateClass::Field | StateClass::WorldMap | StateClass::Battle
+                StateClass::Field | StateClass::WorldMap | StateClass::Battle | StateClass::Minigame
             ) {
                 retail_cell_fx(ram)
             } else {
@@ -408,6 +411,11 @@ impl RetailObs {
                 Vec::new()
             },
             scroll_rects: Vec::new(),
+            cell_sources: if class == StateClass::Minigame {
+                retail_cell_sources(ram)
+            } else {
+                Vec::new()
+            },
             cue_clut_source: None,
             panel: None,
             scripted_seats: Vec::new(),
@@ -555,7 +563,10 @@ impl RetailObs {
             return;
         }
         if let Some(v) = vram
-            && matches!(self.class, StateClass::Field | StateClass::WorldMap)
+            && matches!(
+                self.class,
+                StateClass::Field | StateClass::WorldMap | StateClass::Minigame
+            )
         {
             self.scroll_rects = retail_scroll_rects(ram, v);
             self.panel = retail_panel(ram);
@@ -706,6 +717,23 @@ impl RetailObs {
         (std::fs::create_dir_all(&dir).is_ok()
             && std::fs::write(&path, vram_rects_file(&self.scroll_rects)).is_ok())
         .then(|| ("LEGAIA_SEAT_VRAM_RECTS", path.display().to_string()))
+    }
+
+    /// The hall cyclers' captured palettes as a `LEGAIA_SEAT_CELL_SOURCES` file
+    /// under the image work directory, and the variable naming it.
+    pub fn cell_sources_env(
+        &self,
+        out_dir: Option<&Path>,
+        label: &str,
+    ) -> Option<(&'static str, String)> {
+        if self.cell_sources.is_empty() {
+            return None;
+        }
+        let dir = crate::retail_compare_image::work_dir(out_dir);
+        let path = dir.join(format!("{label}.csrc.bin"));
+        (std::fs::create_dir_all(&dir).is_ok()
+            && std::fs::write(&path, vram_rects_file(&self.cell_sources)).is_ok())
+        .then(|| ("LEGAIA_SEAT_CELL_SOURCES", path.display().to_string()))
     }
 
     /// The frame step retail was running at the capture instant, in vsyncs a

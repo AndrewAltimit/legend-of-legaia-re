@@ -1075,6 +1075,10 @@ pub(super) fn cell_fx_displayed_phase(
     if std::env::var("LEGAIA_RC_CELL_PHASE").is_ok_and(|v| v == "off") {
         return None;
     }
+    if let Some(follower) = dance_cell_displayed(ram, n, step, fx) {
+        return Some(follower);
+    }
+    let lag = DISPLAY_LAG_FRAMES;
     let k = cell_fx_idle_ticks(ram, n, step)?;
     let vel = [
         game_anchors::i16_at(ram, n + 0x96),
@@ -1082,7 +1086,7 @@ pub(super) fn cell_fx_displayed_phase(
         game_anchors::i16_at(ram, n + 0x9A),
     ];
     let white_rate = game_anchors::i16_at(ram, n + 0x6A);
-    let idle = cell_fx_displayed(fx, vel, white_rate, step, DISPLAY_LAG_FRAMES);
+    let idle = cell_fx_displayed(fx, vel, white_rate, step, lag);
     let buf = game_anchors::u32_at(ram, n + 0x48);
     let words: Vec<i16> = (0..CYCLER_PROGRAM_WORDS)
         .map(|i| game_anchors::i16_at(ram, buf + i * 2))
@@ -1095,7 +1099,7 @@ pub(super) fn cell_fx_displayed_phase(
         [fx.h_add, fx.s_add, fx.v_add],
         vel,
         step,
-        DISPLAY_LAG_FRAMES,
+        lag,
     );
     match walked {
         Some([h, s, v]) => Some(legaia_engine_field::clut_cell_fx::ClutCellFx {
@@ -1104,8 +1108,214 @@ pub(super) fn cell_fx_displayed_phase(
             v_add: v,
             ..idle
         }),
-        None => (k >= DISPLAY_LAG_FRAMES).then_some(idle),
+        None => (k >= lag).then_some(idle),
     }
+}
+
+/// The palettes the live mode-3 cyclers captured with op `0x2C`, by rect: the
+/// inline buffer `+0xAC` under `0x11` texels wide, else the heap buffer `+0xA8`
+/// (`FUN_8005842C`'s caller). The cyclers paint from these.
+pub fn retail_cell_sources(ram: &[u8]) -> Vec<SeededVramRect> {
+    let mut out: Vec<SeededVramRect> = Vec::new();
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
+            || game_anchors::i16_at(ram, n + 0x5A) != 3
+            || game_anchors::i16_at(ram, n + 0x9C) < 1
+        {
+            continue;
+        }
+        let rect = (
+            game_anchors::u16_at(ram, n + 0xA0),
+            game_anchors::u16_at(ram, n + 0xA2),
+            game_anchors::u16_at(ram, n + 0xA4),
+            game_anchors::u16_at(ram, n + 0xA6),
+        );
+        let (_, _, w, h) = rect;
+        if w == 0 || h == 0 || w > 256 || h > 64 || out.iter().any(|(r, _)| *r == rect) {
+            continue;
+        }
+        let at = if w < 0x11 {
+            n + 0xAC
+        } else {
+            game_anchors::u32_at(ram, n + 0xA8)
+        };
+        let texels = (0..u32::from(w) * u32::from(h))
+            .map(|i| game_anchors::u16_at(ram, at + i * 2))
+            .collect();
+        out.push((rect, texels));
+    }
+    out
+}
+
+/// The dance's sub-id in `_DAT_8007BA34`.
+const DANCE_SUB_ID: i16 = 6;
+/// Whether the overlay resident is the dance's.
+fn in_dance_hall(ram: &[u8]) -> bool {
+    game_anchors::i16_at(ram, super::minigame_run::MINIGAME_SUB_ID) == DANCE_SUB_ID
+}
+/// The dance hall's ambient leader (`DAT_801D51A0`, PROT 0980): the part record
+/// `2` of the hall's stager bundle spawns, whose adds its followers copy through
+/// op `0x20 0` (`FUN_801D387C`'s arm `0`).
+const DANCE_AMBIENT_LEADER: u32 = 0x801D_51A0;
+
+/// A dance cycler's adds as the displayed frame uploaded them, when `n` is the
+/// hall's leader or one of its followers.
+///
+/// The leader re-keys its V every pass (`18 3`, then `2D` adds on `09 1` rows),
+/// so the RAM's adds are several runs from the frame on screen. A follower's whole
+/// loop is `20 0 _`, an optional `2D` offset and its `09 0` waits: it paints the
+/// adds of the leader's pass on which it last copied, no later than the pass
+/// the displayed frame painted from. The floor's rows wait twice and so copy
+/// every other pass: they stand a run behind the walls' on half the frames.
+/// Only the leader's strobe loop is walked; its rows sum to zero, so a walk past
+/// the loop's first row lands on the V the outer loop opens with.
+fn dance_cell_displayed(
+    ram: &[u8],
+    n: u32,
+    step: u8,
+    fx: legaia_engine_field::clut_cell_fx::ClutCellFx,
+) -> Option<legaia_engine_field::clut_cell_fx::ClutCellFx> {
+    if !in_dance_hall(ram) {
+        return None;
+    }
+    let leader = game_anchors::u32_at(ram, DANCE_AMBIENT_LEADER);
+    if !crate::retail_compare_script::actor_nodes(ram).contains(&leader)
+        || game_anchors::u32_at(ram, leader + 0x0C) != PART_TICK
+    {
+        return None;
+    }
+    let program = |node: u32| -> Vec<i16> {
+        let buf = game_anchors::u32_at(ram, node + 0x48);
+        (0..CYCLER_PROGRAM_WORDS)
+            .map(|i| game_anchors::i16_at(ram, buf + i * 2))
+            .collect()
+    };
+    // Passes behind the RAM's: a leader run the displayed frame's paint saw.
+    let painted = DISPLAY_LAG_FRAMES + 1;
+    let (offset, passes_back) = if n == leader {
+        ([0; 3], painted)
+    } else {
+        let f = dance_follower(
+            &program(n),
+            usize::try_from(game_anchors::i16_at(ram, n + 0x70)).ok()?,
+        )?;
+        (f.offset, f.copy_at_or_before(painted))
+    };
+    let words = program(leader);
+    let (syn, pc) = dance_leader_strobe(
+        &words,
+        usize::try_from(game_anchors::i16_at(ram, leader + 0x70)).ok()?,
+    )?;
+    let k = cell_fx_idle_ticks(ram, leader, step)?;
+    let adds = [
+        game_anchors::i16_at(ram, leader + 0x90),
+        game_anchors::i16_at(ram, leader + 0x92),
+        game_anchors::i16_at(ram, leader + 0x94),
+    ];
+    // The walk's lag `l` lands on the adds after the run `l + 1` passes back.
+    let [h, s, v] = cycler_displayed_adds(&syn, pc, k, adds, [0; 3], step, passes_back - 1)?;
+    Some(legaia_engine_field::clut_cell_fx::ClutCellFx {
+        h_add: h + offset[0],
+        s_add: s + offset[1],
+        v_add: v + offset[2],
+        ..fx
+    })
+}
+
+/// The word past the setup ops of a cycler's program: the head of its body.
+fn cycler_after_setup(words: &[i16]) -> Option<usize> {
+    let mut i = 2;
+    loop {
+        match *words.get(i)? {
+            0x2B | 0x2D | 0x2E => i += 4,
+            0x2C => i += 5,
+            0x1A => return Some(i + 2),
+            _ => return None,
+        }
+    }
+}
+
+/// A follower of the hall's leader, read off its program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct DanceFollower {
+    /// The `2D` it adds after its copy.
+    pub offset: [i16; 3],
+    /// Passes one round of its loop takes: its `09 0` waits.
+    pub period: i32,
+    /// Passes since its last copy, by which wait its PC stands past.
+    pub since_copy: i32,
+}
+
+impl DanceFollower {
+    /// The pass of its last copy at least `passes_back` behind the RAM's.
+    pub(super) fn copy_at_or_before(&self, passes_back: i32) -> i32 {
+        let mut at = self.since_copy;
+        while at < passes_back {
+            at += self.period;
+        }
+        at
+    }
+}
+
+/// Read a follower: its body is `20 0 _`, an optional `2D h s v`, then `09 0`
+/// waits up to the loop-back. `None` for any other program, or a PC past none of
+/// its waits.
+pub(super) fn dance_follower(words: &[i16], pc: usize) -> Option<DanceFollower> {
+    let at = cycler_after_setup(words)?;
+    if words.get(at..at + 2)? != [0x20, 0] {
+        return None;
+    }
+    let at = at + 3;
+    let (mut i, offset) = if *words.get(at)? == 0x2D {
+        (at + 4, [words[at + 1], words[at + 2], words[at + 3]])
+    } else {
+        (at, [0; 3])
+    };
+    let mut period = 0;
+    let mut since_copy = None;
+    while words.get(i..i + 2)? == [0x09, 0] {
+        i += 2;
+        if i == pc {
+            since_copy = Some(period);
+        }
+        period += 1;
+    }
+    (period > 0).then_some(())?;
+    Some(DanceFollower {
+        offset,
+        period,
+        since_copy: since_copy?,
+    })
+}
+
+/// The leader's strobe loop (the finite `18 n .. 19` inside its body) as an
+/// infinite loop [`cycler_displayed_adds`] reads, and `pc` moved onto it. `None`
+/// when `pc` stands outside that loop.
+pub(super) fn dance_leader_strobe(words: &[i16], pc: usize) -> Option<(Vec<i16>, usize)> {
+    let mut i = cycler_after_setup(words)?;
+    let open = loop {
+        match *words.get(i)? {
+            0x2B | 0x2D | 0x2E => i += 4,
+            0x20 => i += 3,
+            0x18 => break i,
+            _ => return None,
+        }
+    };
+    let body = open + 2;
+    let mut close = body;
+    while *words.get(close)? != 0x19 {
+        close += match words[close] {
+            0x2D => 4,
+            0x09 => 2,
+            _ => return None,
+        };
+    }
+    if !(body..=close).contains(&pc) {
+        return None;
+    }
+    let mut syn = vec![0, 0, 0x18, 0x4000];
+    syn.extend_from_slice(&words[body..=close]);
+    Some((syn, pc - body + 4))
 }
 
 /// How many words of a cycler's record [`cycler_displayed_adds`] reads.

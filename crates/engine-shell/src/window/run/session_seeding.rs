@@ -643,6 +643,16 @@ pub(super) fn apply_capture_palette_seeds(session: &mut NativeSession) {
         session.host.world.ambient.vram_rect_seed =
             legaia_engine_capture::field_seeds::vram_rects_from_file(&bytes);
     }
+
+    // `LEGAIA_SEAT_CELL_SOURCES=<file>` (the retail-compare image channel): the
+    // palettes a dance hall state's cyclers captured
+    // (`AmbientFxState::cell_source_seed`).
+    if let Some(bytes) =
+        std::env::var_os("LEGAIA_SEAT_CELL_SOURCES").and_then(|p| std::fs::read(p).ok())
+    {
+        session.host.world.ambient.cell_source_seed =
+            legaia_engine_capture::field_seeds::vram_rects_from_file(&bytes);
+    }
 }
 
 /// Debug learn path: `--learn-spell 0x81` (repeatable) or the older

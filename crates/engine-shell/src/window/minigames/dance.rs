@@ -210,7 +210,17 @@ impl PlayWindowApp {
             &self.session.host.index,
         );
         match bytes {
-            Some(bytes) => self.session.host.world.stage_dance_ambient(&bytes),
+            Some(bytes) => {
+                if let (Some(field), Some(g)) =
+                    (self.cpu_vram_base.as_ref(), self.dance_venue_gpu.as_mut())
+                {
+                    self.session
+                        .host
+                        .world
+                        .carry_walked_in_cells(field, &mut g.cpu_vram);
+                }
+                self.session.host.world.stage_dance_ambient(&bytes);
+            }
             None => log::warn!("dance venue: no stager bundle, the hall stays unlit"),
         }
     }

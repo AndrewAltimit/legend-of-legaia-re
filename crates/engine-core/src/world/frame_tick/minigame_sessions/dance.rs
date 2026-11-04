@@ -24,6 +24,13 @@ impl World {
             stager_bytes: std::mem::take(&mut self.props.stager_bytes),
             frame_step: self.clock.frame_step,
         };
+        // A capture seat aims at the frame the comparison scores, which the
+        // hall's seat draws.
+        let mut ambient = restore.ambient;
+        self.ambient.cell_fx_seed = std::mem::take(&mut ambient.cell_fx_seed);
+        self.ambient.vram_rect_seed = std::mem::take(&mut ambient.vram_rect_seed);
+        self.ambient.cell_source_seed = std::mem::take(&mut ambient.cell_source_seed);
+        let restore = crate::world::VenueAmbientRestore { ambient, ..restore };
         self.ambient.venue_restore = Some(Box::new(restore));
         // The hall runs at a game tick per three vsyncs: `DAT_1F800393 = 3`
         // in the parked dance states, the step the count-in's banner reads too
@@ -35,6 +42,33 @@ impl World {
         // State `1` itself is a game tick ahead of the first READY run
         // (state `3`): the parts' gate reads `25` at banner counter `72`.
         self.ambient.pending_game_ticks = 1;
+    }
+
+    /// Carry the walked-in scene's painted palette cells into the hall's VRAM,
+    /// ahead of [`Self::stage_dance_ambient`].
+    ///
+    /// The hall's init loads its art pack only with the field-entry word
+    /// `_DAT_8007B8B8` clear (`lw` at `0x801CF190`, `jal 0x8002541C` at
+    /// `0x801CF1A0`), so a door entry stands on the VRAM the field left. The
+    /// hall's cyclers capture their cells from there (op `0x2C`), and on `koin3`
+    /// those cells hold the strobe the field's own cyclers last painted: every
+    /// later hue and V of the hall's light show is a rotation of that paint.
+    /// `minigame_dance_retail_go_in` holds `(4, 4, 13)` as the floor's captured
+    /// entry where the disc's palette has `(20, 15, 6)`.
+    ///
+    /// PORT: FUN_801cef54 (the art pack's door-entry skip)
+    pub fn carry_walked_in_cells(
+        &self,
+        walked_in: &legaia_tim::Vram,
+        hall: &mut legaia_tim::Vram,
+    ) {
+        if self.ambient.venue_restore.is_some() {
+            return;
+        }
+        for &(x, y, w, h) in self.ambient.cell_captures.keys() {
+            let painted = crate::world::ambient::read_rect(walked_in, x, y, w, h);
+            crate::world::ambient::write_rect(hall, x, y, w, &painted);
+        }
     }
 
     /// Put the walked-in scene's ambient seat back when the hall comes down.
@@ -52,9 +86,14 @@ impl World {
         if self.ambient.venue_restore.is_none() {
             return false;
         }
+        // Ahead of the tree's first pass, whose op `0x2C`s capture from here.
+        for ((x, y, w, _), texels) in std::mem::take(&mut self.ambient.cell_source_seed) {
+            crate::world::ambient::write_rect(vram, x, y, w, &texels);
+        }
         let moved = self.apply_script_vram_moves(vram);
         let ambient = self.step_ambient_fx(vram);
-        moved | ambient
+        let seeded = self.apply_vram_rect_seed(vram);
+        moved | ambient | seeded
     }
 
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
