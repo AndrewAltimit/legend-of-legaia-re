@@ -247,10 +247,9 @@ pub struct PointCardDischarge {
 /// An earlier reading of this row held that the engine carried no such field;
 /// it has carried one since the shop's Point Card accrual landed.
 ///
-/// What is genuinely absent is the **data**, not the host: no row of the
-/// static item table resolves to class `14`, so on the retail disc the arm is
-/// reachable code over unreachable data (`docs/formats/item-effect-table.md`).
-/// The catalog seeder sweeps the id space so an edited effect table opens it.
+/// No row of the static item table resolves to class `14`: the Point Card
+/// (`0xFE`) reaches the arm through state `0x3E`'s override by id
+/// (`docs/formats/item-effect-table.md`).
 pub fn selector_point_card(counter: u32, victim: PointCardVictim) -> Option<PointCardDischarge> {
     if counter == 0 {
         return None;

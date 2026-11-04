@@ -211,7 +211,6 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         world.battle.command.is_none(),
         "the last commit begins the round"
     );
-    assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
     // The use arms the action SM's Item band (retail category 1 through
     // `FUN_801E295C`'s item arm) rather than parking at EndOfAction; the
     // live loop cycles when the band completes (battle_item_cast_band.rs).
@@ -225,6 +224,13 @@ fn battle_item_use_heals_ally_consumes_item_and_cycles_turn() {
         legaia_engine_battle_vm::battle_action::ActionCategory::Item.as_byte()
     );
     assert_eq!(world.actors[0].battle.params[0], 0x01);
+    assert_eq!(
+        world.actors[0].battle.hp, 50,
+        "the heal waits for state 0x3F"
+    );
+    // The band's applier call lands it.
+    world.fold_battle_item_action(0);
+    assert_eq!(world.actors[0].battle.hp, 150, "healed 50 -> 150");
     let fx = world.drain_battle_hit_fx();
     assert_eq!(fx.len(), 1);
     assert!(fx[0].is_heal);

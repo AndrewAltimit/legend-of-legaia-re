@@ -109,3 +109,14 @@ story-group walk and the region's battle setup all match. The death arm of
 leaves out row `0xBF`, which holds the neighbouring table's `[9, 0]`: retail would add
 item `0` there and the port refuses it, and a second test holds that no shipped monster
 reaches such a row.
+
+The applier's battle path `FUN_800402F4`, over every item the battle menu offers,
+found Medicine and Antidote reading the typed status list where retail masks the word;
+MP items restoring a fallen member, where the arm gates on HP; the MP readout `+0x178`
+unwritten; a Phoenix restoring a flat quarter where retail restores `40% + rand %
+(max / 8)`, drawing `rand()`, clearing the status word and the gauge boost and
+restoring the live gauge; and Fury Boost landing on a fallen member. The whole arm ran
+at the commit: the action SM calls it at state `0x3F`'s timer (`0x801E4134`), so a heal
+showed on the bar before the user moved, and any `rand()` it drew came ahead of the
+band's. The Point Card was not offered at all, on a catalog note that no item reaches
+its arm: it does, by id, through state `0x3E`. Selectors 9 and 10 match.

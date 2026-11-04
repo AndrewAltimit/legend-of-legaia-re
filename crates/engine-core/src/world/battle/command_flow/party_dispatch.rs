@@ -132,29 +132,33 @@ impl World {
                 item_id,
                 used_slots,
             } => {
-                // Apply to every affected slot (the copy went at the commit).
-                for &target_slot in &used_slots {
-                    let outcome = self.apply_battle_item(item_id, target_slot);
-                    self.push_item_use_fx(target_slot, outcome);
+                // The port's offensive catalog effects have no retail arm and
+                // nothing for the band's seam to run; they fold here.
+                if self.item_folds_at_dispatch(item_id) {
+                    for &target_slot in &used_slots {
+                        let outcome = self.apply_battle_item(item_id, target_slot);
+                        self.push_item_use_fx(target_slot, outcome);
+                    }
+                    if self.battle.escaped {
+                        // Escape item succeeded: leave the encounter (no loot,
+                        // no game-over) through the escape teardown's fade +
+                        // exit hold instead of cycling the turn.
+                        self.battle.end = Some(BattleEndCause::Escaped);
+                        self.begin_battle_end_sequence();
+                        return;
+                    }
                 }
-                if self.battle.escaped {
-                    // Escape item succeeded: leave the encounter (no loot, no
-                    // game-over) through the escape teardown's fade + exit
-                    // hold instead of cycling the turn.
-                    self.battle.end = Some(BattleEndCause::Escaped);
-                    self.begin_battle_end_sequence();
-                    return;
-                }
-                // Using an item is the actor's whole turn - and in retail the
-                // turn *is* the action SM's Item band: the committed
-                // category-1 action seeds through `FUN_801E295C`'s item arm
-                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
-                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
-                // stamp the item's effect-descriptor `(class, tier)` pair, and
-                // expand the item's cue group (`FUN_800402F4`'s eleven
-                // `FUN_801E22C8` sites via `place_cue_group`). The simulation
-                // fold stays above; the band's own `apply_damage` hook is the
-                // presentation seam. The two SummonFlute ids (`0x98`/`0x99`)
+                // The copy went at the commit. Using an item is the actor's
+                // whole turn - and in retail the turn *is* the action SM's Item
+                // band: the committed category-1 action seeds through
+                // `FUN_801E295C`'s item arm (`item_seed_band`) into the
+                // `0x3C..0x40` cast states, which fire the cast-audio cue
+                // (`FUN_801F3990` via `spirit_wait`), stamp the item's
+                // effect-descriptor `(class, tier)` pair, run the applier when
+                // state `0x3F`'s timer runs out (`0x801E4134`,
+                // `World::fold_battle_item_action`) and expand the item's cue
+                // group (`FUN_800402F4`'s eleven `FUN_801E22C8` sites via
+                // `place_cue_group`). The two SummonFlute ids (`0x98`/`0x99`)
                 // reroute inside `action_seed` to the summon band, which the
                 // live loop's settle glue (`live_battle_tick`) walks to
                 // completion.

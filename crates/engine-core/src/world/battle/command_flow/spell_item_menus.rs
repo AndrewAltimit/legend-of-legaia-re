@@ -357,11 +357,16 @@ impl World {
     ///
     /// REF: FUN_800402F4 (the assigning seed; kernel in
     /// `legaia_engine_battle_vm::battle_hp_bar::assign_pending`)
-    pub(in crate::world) fn apply_battle_item(
+    pub fn apply_battle_item(
         &mut self,
         item_id: u8,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
+        // An expansion pack consumable runs its retail item's arm.
+        let retail_id = self.pack_alias_as_item(item_id).unwrap_or(item_id);
+        if let Some(outcome) = self.battle_applier_arm(retail_id, target_slot) {
+            return outcome;
+        }
         let before = self
             .actors
             .get(target_slot as usize)
@@ -397,7 +402,7 @@ impl World {
     /// damage-coloured number; cures push the status letter. The HP / status
     /// side is already applied by [`Self::use_item`]; this is presentation-only
     /// (drained via [`Self::drain_battle_hit_fx`]).
-    pub(super) fn push_item_use_fx(
+    pub(in crate::world) fn push_item_use_fx(
         &mut self,
         target_slot: u8,
         outcome: legaia_engine_menus::items::ItemOutcome,

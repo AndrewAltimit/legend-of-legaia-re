@@ -428,7 +428,7 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3F` - Spirit - wait & fire damage
 
-`FUN_801D5854(target, 6)` on the stacked `+0x1DD` (`lw a0,0x20(sp)` at `0x801E40D8`), so the camera turns from the caster to its patient here, on the same arm `0x40` runs. Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
+`FUN_801D5854(target, 6)` on the stacked `+0x1DD` (`lw a0,0x20(sp)` at `0x801E40D8`), so the camera turns from the caster to its patient here, on the same arm `0x40` runs. Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**, and the moment a committed item takes effect (port `World::fold_battle_item_action`). Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
 
 **Next:** `0x40`.
 

@@ -320,7 +320,7 @@ impl World {
     /// restores `+0x154` - the arts entry's command pool - to
     /// `base * 7 / 5 + 8` (cap `0x120`) while it is up. The `ApGauge` budget
     /// alone reached neither, so a Fury Boost bought a player nothing.
-    fn apply_fury_boost_item(
+    pub(super) fn apply_fury_boost_item(
         &mut self,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
@@ -441,39 +441,41 @@ impl World {
     /// [`legaia_engine_battle_vm::battle_action::selector_point_card`]; this is the
     /// seat that gives it a bank and a victim.
     ///
-    /// **No shipped item reaches it.** Decoding all 256 static item rows
-    /// through the effect descriptors finds no class-`14` row, so on the retail
-    /// disc this is reachable code over unreachable data; an edited effect
-    /// table opens it. The catalog seeder
-    /// ([`legaia_engine_menus::items::ItemCatalog::apply_point_card_items`]) therefore sweeps
-    /// the id space rather than naming ids.
-    fn apply_point_card_strike(
+    /// No row of the item table resolves to class `14`: the Point Card (`0xFE`)
+    /// reaches the arm through the action SM's override by id at state `0x3E`.
+    /// The arm writes no readout word: retail hangs on a living ally here, and
+    /// the port's item window does not offer one.
+    pub(super) fn apply_point_card_strike(
         &mut self,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
         use legaia_engine_battle_vm::battle_action::{PointCardVictim, selector_point_card};
         let counter = self.minigames.point_card.max(0) as u32;
         let idx = target_slot as usize;
+        // The reaction bytes `+0x1EF` / `+0x1F1` / `+0x1F2` are the seat's
+        // clip map, which this port derives from its clip bank.
+        let map = self.battle_reaction_map(idx).unwrap_or([0; 5]);
         let Some(a) = self.actors.get_mut(idx) else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
-        let p = |i: usize| a.battle.params.get(i - 0x1DF).copied().unwrap_or(0);
         let victim = PointCardVictim {
             hp: a.battle.hp,
-            flinch_anim: p(0x1EF),
-            knockdown_anim: p(0x1F1),
-            reaction_gate: p(0x1F2),
+            flinch_anim: map[0],
+            knockdown_anim: map[2],
+            reaction_gate: map[3],
             restage: 0,
         };
         let Some(d) = selector_point_card(counter, victim) else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         a.battle.hp = d.hp;
-        a.battle.queued_anim = d.staged_anim;
         if a.battle.max_hp > 0 && a.battle.hp == 0 {
             a.battle.liveness = 0;
         }
         self.minigames.point_card = d.remaining as i32;
+        if d.staged_anim != 0 {
+            self.commit_battle_reaction_entry(idx, d.staged_anim);
+        }
         legaia_engine_menus::items::ItemOutcome::PointCardSpent {
             spent: d.spent,
             remaining: d.remaining,

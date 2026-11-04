@@ -245,12 +245,7 @@ impl World {
     /// kernel carries the instruction-level cite)
     /// REF: FUN_800421D4 (the bag-add primitive the refund calls; kernel
     /// mirrored in `legaia_save::retail_inventory`)
-    pub(in crate::world) fn apply_enemy_agl_status(
-        &mut self,
-        caster: u8,
-        move_id: u8,
-        targets: &[u8],
-    ) {
+    pub fn apply_enemy_agl_status(&mut self, caster: u8, move_id: u8, targets: &[u8]) {
         use legaia_engine_battle_vm::status_effects::{StatusKind, agl_status_inflict_roll};
         /// Accessory-passive index `0x19` = **Curse Guard** (Magic Amulet).
         const CURSE_GUARD_BIT: u32 = 1 << 0x19;

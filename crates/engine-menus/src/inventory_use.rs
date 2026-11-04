@@ -773,7 +773,9 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.alive && target.is_enemy,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
+            target.alive && target.is_enemy
+        }
         ItemEffect::Heal { .. } | ItemEffect::HealAll => {
             target.alive && !target.is_enemy && (target.hp_max == 0 || target.hp < target.hp_max)
         }
@@ -800,7 +802,9 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
 /// mirror rule.
 pub fn target_on_effect_side(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.is_enemy,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
+            target.is_enemy
+        }
         _ => !target.is_enemy,
     }
 }
@@ -814,7 +818,9 @@ fn target_valid_for_effect(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.alive && target.is_enemy,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
+            target.alive && target.is_enemy
+        }
         ItemEffect::Escape => target.alive,
         _ => target.alive && !target.is_enemy,
     }

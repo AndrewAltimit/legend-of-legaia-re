@@ -584,6 +584,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
     }
     fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
+        self.world.fold_battle_item_action(target_slot);
         self.world
             .pending_battle_events
             .push(BattleEvent::ApplyDamage {
@@ -597,6 +598,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// mirrors as [`World::party_roster_slot`] - 1-based, so `id - 1` is the
     /// roster index the character record sits at. Monster slots report `4`,
     /// the value the cast-cue dispatcher's enemy leg tests for.
+    /// The Point Card goes back in the bag as the action starts
+    /// (`jal 0x800421d4` with `(0xFE, 1)` at `0x801F3A58`).
+    ///
+    /// PORT: FUN_801F3990 (the `+0x1DF == 0xFE` leg's give; the voice stays with
+    /// the cast cue's sound seat)
+    fn cast_item_give(&mut self, _voice_arg: u8) {
+        let _ = self.world.party.inventory.add(0xFE, 1);
+    }
     fn roster_character_id(&self, slot: u8) -> u8 {
         if slot < self.world.party.party_count {
             self.world.party_roster_slot(slot as usize) as u8 + 1

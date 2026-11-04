@@ -3,6 +3,7 @@
 use super::*;
 
 mod arts_rows;
+mod battle_applier;
 mod battle_spoils;
 mod catalog_install;
 mod item_use;

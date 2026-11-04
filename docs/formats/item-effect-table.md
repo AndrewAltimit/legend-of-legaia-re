@@ -171,6 +171,8 @@ tests `actor[+0x1DF] == 0xFE` at `0x801E4080..0x801E4088` and overwrites the
 seeded selector `actor[+0x1E8]` with `0x0E` at `0x801E40C0`, so a Point Card used
 in battle with a non-zero bank runs the strike. See
 [`glitches/items-and-equipment.md`](../reference/glitches/items-and-equipment.md).
+The port seeds the card by id (`ItemCatalog::apply_point_card_items`) and aims it at
+the enemy rows only, so the living-ally hang has no way in.
 
 ## Heal-amount table (`0x8007655C`)
 
