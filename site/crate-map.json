@@ -61,6 +61,7 @@
       "engine-audio",
       "engine-export",
       "parity",
+      "retail-exec",
       "engine-capture",
       "netplay",
       "engine-netplay"
@@ -4126,6 +4127,26 @@
     "web-viewer"
    ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/render-kernels/README.md"
+  },
+  "retail-exec": {
+   "package": "legaia-retail-exec",
+   "deps": [],
+   "dev_deps": [
+    "disc-patch",
+    "engine-battle",
+    "engine-core",
+    "engine-menus",
+    "game-tables",
+    "save"
+   ],
+   "bins": [],
+   "lib": true,
+   "modules": [],
+   "band": "top",
+   "track": "tooling",
+   "scope": "A user-mode R3000 interpreter that runs retail routines off the user's disc, and the disc-gated differential comparing them with their Rust ports.",
+   "dependents": [],
+   "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/retail-exec/README.md"
   },
   "save": {
    "package": "legaia-save",

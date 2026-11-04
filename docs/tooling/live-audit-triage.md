@@ -1731,6 +1731,16 @@ so no host could hold a receiver for the call. The colliding edges:
 | `reset`, `step`, `read_file`, `write_file`, `poll_events_a` | the play window's `window_event`, `RecordLog::flush`, `asset` `disc_map_cmd`, the asset browser | other types' methods of those names; `poll_events_a` hangs off `CardIoState::step` |
 | `CardWriteMachine` `tick` | `asset-viewer` `WorldApp::window_event` | the viewer's own `tick` calls |
 
+## The permissive-graph rows
+
+The audit's "tagged, live on the permissive graph only" section lists tagged
+`REPLACED-BY` symbols with an edge on the permissive graph alone. Each of those
+rows has been read: its type or module is named by nothing outside its own file,
+and the edge is a method name shared with something else (`new`, `free`, `read`,
+`close`, `tick`, `step`, `arm`, `reset`, `read_file`, `write_file`). The
+disclosures stand; none of them is a wiring gap. A new row is worth the same
+check: grep the type's name outside its module before believing either graph.
+
 ## See also
 
 - [`port-catalog.md`](port-catalog.md) - the catalog, the `live` axis and the
@@ -1741,13 +1751,3 @@ so no host could hold a receiver for the call. The colliding edges:
   that no replay ladder enters.
 - [`worklist-classification.md`](worklist-classification.md) - the sibling
   classification for the `--missing-ports` worklist.
-
-## The permissive-graph rows
-
-The audit's "tagged, live on the permissive graph only" section lists tagged
-`REPLACED-BY` symbols with an edge on the permissive graph alone. Each of those
-rows has been read: its type or module is named by nothing outside its own file,
-and the edge is a method name shared with something else (`new`, `free`, `read`,
-`close`, `tick`, `step`, `arm`, `reset`, `read_file`, `write_file`). The
-disclosures stand; none of them is a wiring gap. A new row is worth the same
-check: grep the type's name outside its module before believing either graph.
