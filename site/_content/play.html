@@ -3752,13 +3752,6 @@ div.play-vis-head { cursor: default; }
       if (rt) rt.play_net_say(input.value);
       input.value = '';
     });
-    window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Tab' || e.target !== canvas) return;
-      const rt = rtNet();
-      if (!rt || !JSON.parse(rt.play_net_state_json()).joined) return;
-      e.preventDefault();
-      rt.play_net_toggle_screen();
-    });
   }
 
   /* Cheats - every control is a row of the engine's one cheat list
