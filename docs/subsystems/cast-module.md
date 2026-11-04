@@ -2452,7 +2452,7 @@ living row, `-4 * +0x3E` averaged (`0x801F80C8..0x801F812C`). A retail recording
 
 Slippery's creature comes up out of the floor: arm 2's exit seats it at
 `y = -(scalar << 8)` and stages clip 1 bare, arm 3 lifts it `4 p` a pass and stands
-it on the floor (`0x801F6D18..0x801F6DE0`, `World::apply_slippery_rise`), and arm 7's
+it on the floor (`0x801F6D18..0x801F6DE0`, `World::apply_slippery_writes`), and arm 7's
 exit bumps clip 2.
 Spoon and Mushura raise their creature's `+0x42 = 2` over object-effect row 1, as
 Juggernaut does: Spoon's top starts at `-0x280` and climbs a frame product a pass on arm

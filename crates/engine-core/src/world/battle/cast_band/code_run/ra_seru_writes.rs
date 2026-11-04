@@ -112,13 +112,31 @@ impl World {
     /// PROT 0920 (Slippery)'s creature comes up out of the floor: arm 2's exit
     /// seats it at `y = -(scalar << 8)` (`0x801F6D18..0x801F6D28`), and arm 3
     /// lifts it `4 p` a pass until its word runs out, then stands it on the
-    /// floor (`0x801F6D94..0x801F6DE0`).
-    pub(in crate::world::battle::cast_band) fn apply_slippery_rise(
+    /// floor (`0x801F6D94..0x801F6DE0`). Arm 8's exit hides the creature and
+    /// shows every living seat for the victim's shot (`0x801F7518..0x801F7550`).
+    pub(in crate::world::battle::cast_band) fn apply_slippery_writes(
         &mut self,
         phase: u8,
         passed: bool,
         creature: u8,
     ) {
+        if (phase, passed) == (8, true) {
+            let map = self.cast_seat_map();
+            for seat in 0..7u8 {
+                if let Some(a) = map
+                    .engine(seat)
+                    .and_then(|e| self.actors.get_mut(usize::from(e)))
+                    && a.battle.hp != 0
+                {
+                    a.battle.render_color = WORD_NEUTRAL;
+                    a.battle.render_flag = 0;
+                }
+            }
+            if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                a.battle.render_color = 0;
+                a.battle.render_flag = FLAG_PARKED;
+            }
+        }
         let Some(a) = self.actors.get_mut(usize::from(creature)) else {
             return;
         };
@@ -431,6 +449,21 @@ impl World {
                 self.ra_seru_row_seat(monster_count, |x, z| (x / 4, z / 4 + 0x500), Some(0x800));
             }
             (1, _) => self.ra_seru_row_word(monster_count, 0, FLAG_PARKED),
+            // Arm 2's pass seats the creature hidden (`0x801F6DAC`, `0x801F6DB0`),
+            // so its clip holds until arm 4's pass shows it (`0x801F6FB0`,
+            // `0x801F6FC0`).
+            (2, true) => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+            }
+            (4, true) => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = 0x3FFF_FFFF;
+                    a.battle.render_flag = 0;
+                }
+            }
             (8, true) => self.ra_seru_row_word(monster_count, WORD_NEUTRAL, 0),
             (9, true) => self.casting.module_terra_orbit = (0, 0),
             (0x11, true) => {

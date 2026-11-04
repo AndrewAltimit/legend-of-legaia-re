@@ -1843,7 +1843,7 @@ impl World {
                 );
             }
             if entry == legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY {
-                self.apply_slippery_rise(phase_in, ctx.phase != phase_in, seat_slot);
+                self.apply_slippery_writes(phase_in, ctx.phase != phase_in, seat_slot);
             }
             if entry == 931 && phase_in >= 4 {
                 // The tail every pass runs (`0x801F89A0..0x801F89F0`): arm 4 saved

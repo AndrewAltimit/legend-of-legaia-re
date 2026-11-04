@@ -71,7 +71,7 @@ pub const SLIPPERY_LAST_ARM: u8 = 10;
 /// The creature's clips are staged here: arm 2's exit stores `+0x1DA` bare, so
 /// clip 1 waits for the appear clip's end (`0x801F6D14`), and arm 7's exit
 /// bumps `+0x1DA` and `+0x1DC` together (`0x801F7414`, `0x801F741C`). Its rise
-/// out of the floor in arms 2 and 3 is `World::apply_slippery_rise`.
+/// out of the floor in arms 2 and 3 is `World::apply_slippery_writes`.
 ///
 /// Not carried: the arm 3 / 5 captions, the arm 6 breath parts, the arm 7..9 fades; arm 8's
 /// group-target framing (a target byte of `8` or more frames the group

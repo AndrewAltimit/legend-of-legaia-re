@@ -602,7 +602,8 @@ mod tests {
     #[test]
     fn rogue_strike_arm_one_flushes_past_its_countdown() {
         let gate = gate_va(964, 1).expect("the arm's countdown test");
-        assert!(0x801F_6E34 > gate && 0x801F_6E74 > gate, "flush and white");
+        assert!(0x801F_6E34 > gate, "flush");
+        assert!(0x801F_6E74 > gate, "white");
     }
 
     /// Walk `table` one tick per call, the body advancing one arm per pass
