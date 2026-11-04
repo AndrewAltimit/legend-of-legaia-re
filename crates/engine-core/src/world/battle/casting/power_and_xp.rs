@@ -271,7 +271,7 @@ impl World {
     /// victim's HP before the hit), the spirit gauge and the rumble. Banks with
     /// the cast's fold ([`Self::fold_cast`]'s waiver or the fold itself).
     /// `None` for a monster's cast, which rolls elsewhere.
-    pub(in crate::world) fn summon_module_roll(
+    pub fn summon_module_roll(
         &mut self,
         caster: u8,
         target: u8,

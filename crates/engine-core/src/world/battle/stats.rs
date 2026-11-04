@@ -316,7 +316,12 @@ impl World {
     /// value retail accrues from).
     ///
     /// PORT: FUN_801ddb30 (spirit-gauge stage)
-    pub(in crate::world) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+    pub fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+        let over = if over == legaia_engine_battle_vm::battle_formulas::ROLL_ALIAS_KILLS {
+            0
+        } else {
+            over
+        };
         let defender_is_party = defender_slot < self.party.party_count;
         let resist = self.defender_resist(defender_slot);
         let damage_ap = self.run_scale_ap(self.toggles.damage_ap);

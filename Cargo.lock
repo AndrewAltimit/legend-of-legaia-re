@@ -3174,6 +3174,7 @@ dependencies = [
  "legaia-disc-patch",
  "legaia-engine-battle",
  "legaia-engine-battle-loop",
+ "legaia-engine-battle-vm",
  "legaia-engine-core",
  "legaia-engine-menus",
  "legaia-game-tables",

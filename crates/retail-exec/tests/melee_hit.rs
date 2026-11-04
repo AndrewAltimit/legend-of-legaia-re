@@ -498,11 +498,7 @@ fn a_melee_hit_lands_what_retail_lands() {
         seed_port(&mut w, &h);
         let commits = w.actors[usize::from(h.target)].battle_clip_commits;
         for m in 0..3 {
-            let mut bonus = [0u8; 5];
-            for s in 0..5 {
-                bonus[s] = equip_byte(&mut cpu, h.equip[m][s]);
-            }
-            w.battle.equip_atk[m] = bonus;
+            w.battle.equip_atk[m] = h.equip[m].map(|id| equip_byte(&mut cpu, id));
         }
         let dmg = w.land_melee_hit(
             h.attacker,
