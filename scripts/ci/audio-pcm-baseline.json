@@ -49,6 +49,8 @@
       "track_level": 0.0007
     },
     "rimelm_wall_press_left": {
+      "emitter_corr": 0.9856,
+      "emitter_level": 0.005,
       "track_corr": 0.9248,
       "track_level": 0.494
     },

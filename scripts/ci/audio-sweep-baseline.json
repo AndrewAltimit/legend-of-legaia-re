@@ -103,10 +103,16 @@
     "battle_bylon_theeder_v2_thunderbolt_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_cave01_black_piura_strike": {
+      "battle_track": 1.0
+    },
     "battle_cave01_blue_piura_strike": {
       "battle_track": 1.0
     },
     "battle_cave01_mushroom_strike": {
+      "battle_track": 1.0
+    },
+    "battle_cave01_theeder_thunderbolt_mid_cast": {
       "battle_track": 1.0
     },
     "battle_chitei2_gilium_strike": {
@@ -133,6 +139,9 @@
     "battle_deene_ironman_strike": {
       "battle_track": 1.0
     },
+    "battle_deene_lapis_lapis_wave_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_deene_neo_bison_strike": {
       "battle_track": 1.0
     },
@@ -142,10 +151,25 @@
     "battle_deroa_iota_v2_strike": {
       "battle_track": 1.0
     },
+    "battle_deroa_jette_clone_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deroa_jette_shadow_break_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deroa_jette_strike": {
+      "battle_track": 1.0
+    },
     "battle_deroa_spoon_v2_hyper_heal_mid_cast": {
       "battle_track": 1.0
     },
     "battle_deroa_spoon_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_dohaty_dohati_chaos_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_dohaty_dohati_strike": {
       "battle_track": 1.0
     },
     "battle_dohaty_gola_gola_strike": {
@@ -164,6 +188,12 @@
       "battle_track": 1.0
     },
     "battle_dolk_skeleton_strike": {
+      "battle_track": 1.0
+    },
+    "battle_doman_boogie_pump_strike": {
+      "battle_track": 1.0
+    },
+    "battle_doman_boogie_pump_windcutter_mid_cast": {
       "battle_track": 1.0
     },
     "battle_doman_freed_strike": {
@@ -193,10 +223,19 @@
     "battle_geremi_ogre_strike": {
       "battle_track": 1.0
     },
+    "battle_geremi_spikefish_strike": {
+      "battle_track": 1.0
+    },
     "battle_gimard_tail_fire_a": {
       "battle_track": 1.0
     },
     "battle_gimard_tail_fire_b": {
+      "battle_track": 1.0
+    },
+    "battle_jagaroom_van_saryu_earthquake_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jagaroom_van_saryu_strike": {
       "battle_track": 1.0
     },
     "battle_jou_aluru_v3_aluru_cannon_mid_cast": {
@@ -209,6 +248,9 @@
       "battle_track": 1.0
     },
     "battle_jou_barra_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_cort_181_strike": {
       "battle_track": 1.0
     },
     "battle_jou_freed_v3_strike": {
@@ -337,6 +379,12 @@
     "battle_kor_dead_bone_strike": {
       "battle_track": 1.0
     },
+    "battle_kor_gaza_165_astral_slash_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_kor_gaza_165_strike": {
+      "battle_track": 1.0
+    },
     "battle_kor_ghost_knight_v_windhash_mid_cast": {
       "battle_track": 1.0
     },
@@ -382,7 +430,13 @@
     "battle_korb2_warhalf_strike": {
       "battle_track": 1.0
     },
+    "battle_map01_evil_fly_strike": {
+      "battle_track": 1.0
+    },
     "battle_map01_frog_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map01_gobu_gobu_steal_mid_cast": {
       "battle_track": 1.0
     },
     "battle_map01_gobu_gobu_strike": {
@@ -419,6 +473,9 @@
       "battle_track": 1.0
     },
     "battle_map02_killer_bison_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_lip_kid_kiss_of_death_mid_cast": {
       "battle_track": 1.0
     },
     "battle_map02_mad_ogre_power_charge_mid_cast": {
@@ -547,6 +604,12 @@
     "battle_noaru_slippery_v2_strike": {
       "battle_track": 1.0
     },
+    "battle_noaru_songi_chaos_flare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_results_gimard_retail": {
+      "battle_track": 1.0
+    },
     "battle_retockin_evil_shadow_fatal_decision_mid_cast": {
       "battle_track": 1.0
     },
@@ -571,10 +634,16 @@
     "battle_retona_mushura_strike": {
       "battle_track": 1.0
     },
+    "battle_retona_songi_strike": {
+      "battle_track": 1.0
+    },
     "battle_retona_viguro_lv2_strike": {
       "battle_track": 1.0
     },
     "battle_retona_viguro_lv2_thunder_break_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rikuroa2_golem_jagged_earth_mid_cast": {
       "battle_track": 1.0
     },
     "battle_rikuroa2_pump_bat_strike": {
@@ -616,6 +685,24 @@
     "battle_rugi_barra_windcutter_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_rugi_berserker_2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_berserker_3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_caruban_2_fire_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_caruban_2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_caruban_3_fire_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_caruban_3_strike": {
+      "battle_track": 1.0
+    },
     "battle_rugi_gola_gola_v2_rolling_flare_mid_cast": {
       "battle_track": 1.0
     },
@@ -653,6 +740,9 @@
       "battle_track": 1.0
     },
     "battle_stone_gizam_v2_water_column_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_stone_gold_face_strike": {
       "battle_track": 1.0
     },
     "battle_stone_zenoir_v2_fire_claw_mid_cast": {
@@ -712,6 +802,12 @@
     "battle_tower_swordie_strike": {
       "battle_track": 1.0
     },
+    "battle_town01_killer_bee_strike": {
+      "battle_track": 1.0
+    },
+    "battle_town01_queen_bee_strike": {
+      "battle_track": 1.0
+    },
     "battle_tunnela_mad_bird_power_up_mid_cast": {
       "battle_track": 1.0
     },
@@ -734,6 +830,27 @@
       "battle_track": 1.0
     },
     "battle_tunnelc_freed_water_crystals_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelc_xain_bloody_horns_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelc_xain_bull_charge_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelc_xain_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelc_xain_terio_punch_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_uru2_nurga_glare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_vell_lippian_strike": {
+      "battle_track": 1.0
+    },
+    "battle_vell_nighto_49_strike": {
       "battle_track": 1.0
     },
     "battle_vozz_gizam_strike": {
