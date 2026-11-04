@@ -310,6 +310,10 @@ impl World {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
             self.party.party_count = ret.party_count;
+            // Retail's scene setup reruns the aggregator on the way back
+            // (`jal 0x80042558` at `0x8003B2B8`), which is what carries a
+            // level-up's base gains into the live window under the worn boosts.
+            self.refresh_party_ability_bits();
             self.resync_party_actors_from_roster();
         }
         // Return to the mode the battle was entered from (the field for a
@@ -366,6 +370,10 @@ impl World {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
             self.party.party_count = ret.party_count;
+            // Retail's scene setup reruns the aggregator on the way back
+            // (`jal 0x80042558` at `0x8003B2B8`), which is what carries a
+            // level-up's base gains into the live window under the worn boosts.
+            self.refresh_party_ability_bits();
             self.resync_party_actors_from_roster();
         }
         self.mode = self.battle.return_mode;
@@ -433,6 +441,10 @@ impl World {
             self.actors = ret.actors;
             self.player_actor_slot = ret.player_actor_slot;
             self.party.party_count = ret.party_count;
+            // Retail's scene setup reruns the aggregator on the way back
+            // (`jal 0x80042558` at `0x8003B2B8`), which is what carries a
+            // level-up's base gains into the live window under the worn boosts.
+            self.refresh_party_ability_bits();
             self.resync_party_actors_from_roster();
         }
         for a in self.actors.iter_mut() {

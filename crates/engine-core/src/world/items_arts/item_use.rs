@@ -699,8 +699,8 @@ impl World {
         self.mirror_roster_hp_mp(rslot);
     }
 
-    /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
-    /// window, the way the stat aggregator does, and publish the MP ceiling.
+    /// Rebuild roster record `rslot`'s live window from its base window, the
+    /// way the stat aggregator does, and publish the MP ceiling.
     /// The record only: the battle actor is not touched, so the aggregator
     /// pass can run mid-battle, where the actor and not the record holds the
     /// live HP.
@@ -720,33 +720,14 @@ impl World {
     ///
     /// REF: FUN_80042558
     pub(crate) fn rebuild_record_live_hp_mp(&mut self, rslot: usize) {
-        let Some(rec) = self.party.roster.members.get(rslot) else {
+        let Some(rec) = self.party.roster.members.get_mut(rslot) else {
             return;
         };
-        let base = rec.record_stats();
-        if base.hp_max == 0 {
+        if rec.record_stats().hp_max == 0 {
             return;
         }
-        let bits = self
-            .tables
-            .accessory_passives
-            .bits_for_equipment(&rec.equipment().slots)[0];
-        let boosted = |base: u16, tenth: bool, quarter: bool, cap: u16| {
-            let mut v = base;
-            if tenth {
-                v = v.saturating_add(base / 10);
-            }
-            if quarter {
-                v = v.saturating_add(base >> 2);
-            }
-            v.min(cap)
-        };
-        let mut hms = rec.hp_mp_sp();
-        hms.hp_max = boosted(base.hp_max, bits & 0x1 != 0, bits & 0x2 != 0, 9999);
-        hms.mp_max = boosted(base.mp_max, bits & 0x4 != 0, bits & 0x8 != 0, 999);
-        hms.hp_cur = hms.hp_cur.min(hms.hp_max);
-        hms.mp_cur = hms.mp_cur.min(hms.mp_max);
-        self.party.roster.members[rslot].set_hp_mp_sp(hms);
+        rec.rebuild_live_window();
+        let hms = rec.hp_mp_sp();
         let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             if self.party_roster_slot(member) == rslot {

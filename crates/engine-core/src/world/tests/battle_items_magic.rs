@@ -782,3 +782,77 @@ fn a_capture_roll_never_downs_a_party_member() {
     assert!(world.drain_battle_captures().is_empty());
     assert_ne!(world.rng_state, 6, "the roll is drawn");
 }
+
+/// A Talisman teaches its summon while it is worn and parks it when it comes
+/// off; a final-form Ra-Seru's summon arrives through op `0x3B`'s rebuild and
+/// stays (`FUN_80042558`, `0x80042714..0x80042990`).
+#[test]
+fn worn_gear_teaches_and_parks_its_summon() {
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, 0x05)], []));
+    world.party.roster = legaia_save::Party::zeroed(1);
+    let wear = |world: &mut World, slot: usize, item: u8| {
+        let rec = &mut world.party.roster.members[0];
+        let mut eq = rec.equipment();
+        eq.slots[slot] = item;
+        rec.set_equipment(eq);
+        world.refresh_party_ability_bits();
+    };
+
+    wear(&mut world, 6, 0x72);
+    let list = world.party.roster.members[0].spell_list();
+    assert_eq!((list.count, list.ids[0], list.levels[0]), (1, 0x9A, 1));
+
+    // The spell gained a level; taking the Talisman off parks it.
+    world.party.roster.members[0].raw[0x161] = 4;
+    wear(&mut world, 6, 0);
+    assert_eq!(world.party.roster.members[0].spell_list().count, 0);
+    assert_eq!(world.party.roster.members[0].raw[0x2B0 + 5], 4);
+
+    // Meta comes in from Palma's stash slot, and nothing revokes it.
+    wear(&mut world, 3, 0x09);
+    wear(&mut world, 3, 0);
+    let list = world.party.roster.members[0].spell_list();
+    assert_eq!((list.count, list.ids[0], list.levels[0]), (1, 0x9E, 4));
+}
+
+/// A Power Ring's bit raises the live ATK off the base, and taking it off drops
+/// it again, so the status screen and the turn order read what is worn.
+#[test]
+fn an_accessory_percent_moves_the_live_window_both_ways() {
+    use legaia_engine_battle::accessory_passives::AccessoryPassives;
+
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.set_accessory_passives(AccessoryPassives::from_entries([(0x50, 0x06)], []));
+    let mut party = legaia_save::Party::zeroed(1);
+    let mut base = party.members[0].record_stats();
+    base.hp_max = 100;
+    base.atk = 53;
+    party.members[0].set_record_stats(base);
+    world.party.roster = party;
+
+    let mut eq = world.party.roster.members[0].equipment();
+    eq.slots[5] = 0x50;
+    world.party.roster.members[0].set_equipment(eq);
+    world.refresh_party_ability_bits();
+    assert_eq!(world.party.roster.members[0].live_stats().atk, 53 + 10);
+
+    eq.slots[5] = 0;
+    world.party.roster.members[0].set_equipment(eq);
+    world.refresh_party_ability_bits();
+    assert_eq!(world.party.roster.members[0].live_stats().atk, 53);
+}

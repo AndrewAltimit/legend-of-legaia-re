@@ -3165,6 +3165,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "legaia-retail-exec"
+version = "0.1.0"
+dependencies = [
+ "legaia-disc-patch",
+ "legaia-engine-battle",
+ "legaia-engine-battle-vm",
+ "legaia-engine-menus",
+ "legaia-game-tables",
+ "legaia-iso",
+ "legaia-save",
+]
+
+[[package]]
 name = "legaia-save"
 version = "0.1.0"
 dependencies = [

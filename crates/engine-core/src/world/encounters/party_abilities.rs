@@ -61,6 +61,10 @@ impl World {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
             }
             self.party.roster.members[rslot].set_ability_bits(bytes);
+            // The same pass keeps the spell list in step with the gear: a
+            // Talisman or a final-form Ra-Seru teaches its summon, and a
+            // Talisman taken off parks its summon in the stash.
+            self.party.roster.members[rslot].sync_equipment_summons();
             // The same pass rebuilds the record's live HP / MP maxima from
             // its base window under the bits just derived, so an equipment
             // change - the equip screen, a shop's equip-now, a script's

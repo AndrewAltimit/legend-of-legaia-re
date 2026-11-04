@@ -109,6 +109,12 @@ still in one of the three accessory bytes, and if not removes the summon into it
 The table stops at `0x9D`, so Meta, Terra and Ozma are never removed and never write a stash. Slot
 0 is written only by a Palma removal, and read by a Palma re-equip and by all three Ra-Seru grants.
 
+The port runs the same two scans on the same record bytes
+(`CharacterRecord::sync_equipment_summons`, called by
+`World::refresh_party_ability_bits`), so all of this holds there, the shared
+stash slot included. The retail kernel differential holds the two byte-equal
+([`retail-kernel-differential.md`](../../tooling/retail-kernel-differential.md)).
+
 ### Where the final form is written
 
 A Ra-Seru changes form when a scene script runs field-VM op `0x3B`, `SET_EQUIP_SLOT`

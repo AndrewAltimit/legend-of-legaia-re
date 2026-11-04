@@ -593,6 +593,8 @@ A per-frame SCUS helper over the three active party members. It:
 2. ORs each character's ability block `+0xF4..+0x100` into the global 4 x u32 mask at `0x80074358..0x80074368` - the "currently active accessory effects" register every other system reads.
 3. Calls `FUN_800432BC` / `FUN_80042DBC` to add or remove temporary spells per the summon-stash layout at `+0x2B0`.
 
+Port: `World::refresh_party_ability_bits`, over the record-level `CharacterRecord::sync_equipment_summons` and `rebuild_live_window`. A disc-gated differential runs the routine off the disc and holds the two byte-equal over the whole record ([`retail-kernel-differential.md`](../tooling/retail-kernel-differential.md)).
+
 Related helpers:
 
 | Function | Role |

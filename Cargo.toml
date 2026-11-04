@@ -32,6 +32,7 @@ members = [
     "crates/party-swap",
     "crates/texture-replace",
     "crates/code-hooks",
+    "crates/retail-exec",
     "crates/arts-patch",
     "crates/delilas-party",
     "crates/delilas-challenge",
