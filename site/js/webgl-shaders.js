@@ -437,8 +437,6 @@ vec2 depthAffine(mat4 m) {
 uniform float u_prim_mean_depth;
 float primMeanW(mat4 m) {
   if (u_prim_mean_depth < 0.5 || u_psx.z < 0.5 || a_prim_c0.w < 2.5) return -1.0;
-  /* A ground cell carries its own bucket (fieldSortedCellW, the far bucket). */
-  if (a_ground_ref_xz != vec4(0.0)) return -1.0;
   float w0 = (m * vec4(a_prim_c0.xyz, 1.0)).w;
   float w1 = (m * vec4(a_prim_c1, 1.0)).w;
   float w2 = (m * vec4(a_prim_c2, 1.0)).w;
@@ -662,7 +660,8 @@ void main() {
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
-  if (flatW <= 0.0) flatW = primMeanW(u_mvp * u_model);
+  /* A ground cell carries its own bucket (above, or the far bucket). */
+  if (flatW <= 0.0 && a_ground_ref_xz == vec4(0.0)) flatW = primMeanW(u_mvp * u_model);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);

@@ -267,8 +267,9 @@ the vertex stage). Retail has no depth buffer, and three rules set the link:
   each step over a cell without bit `0x1000` (`FUN_80019278` at
   `0x80019314..0x80019328`).
 
-The hosts pass the last two per draw (`Renderer::set_draw_order`,
-`DRAW_ORDER_FAR_CORNER` / `DRAW_ORDER_NEAR_BUCKETS`). A ground cell keeps the bucket
+The hosts pass the last two per draw (natively `Renderer::set_draw_order`,
+`DRAW_ORDER_FAR_CORNER` / `DRAW_ORDER_NEAR_BUCKETS`; on the play page the placement's
+`meanDepth` word, from `field_terrain_draw_order` and `field_placement_draw_order`). A ground cell keeps the bucket
 its own emitter gives it (the far bucket, or two behind its farthest corner), so
 its vertices never take the primitive's rule.
 

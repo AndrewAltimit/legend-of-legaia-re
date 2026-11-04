@@ -146,6 +146,28 @@ impl LegaiaRuntime {
         self.options_state.retail_view_window
     }
 
+    /// Whether this frame's draws link per primitive
+    /// (`Renderer::set_field_prim_order`): the field frame alone.
+    pub fn play_field_prim_order(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_some_and(|h| h.world.mode == legaia_engine_mode::mode::SceneMode::Field)
+    }
+
+    /// Per-terrain-draw `DRAW_ORDER_*` word (`1` = farthest corner), parallel
+    /// to [`Self::field_terrain_slots`].
+    pub fn field_terrain_draw_order(&self) -> Vec<u8> {
+        self.field
+            .as_ref()
+            .map(|f| {
+                f.terrain
+                    .iter()
+                    .map(|d| u8::from(d.far_corner_order))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn field_terrain_slots(&self) -> Vec<u32> {
         self.field
             .as_ref()

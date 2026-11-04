@@ -764,6 +764,27 @@
      * mesh is read by anything but its draws in this file's frame, and the engine
      * keeps its own copies of what it tests against: nothing on a later frame
      * reads what this frame did not build. */
+    /* Retail's field links each primitive in the ordering table rather than
+     * testing depth (renderer-port.md, "The field sorts by each primitive's
+     * link"). PSX mode only; the engine's words, as the native window's
+     * `set_draw_order` marks. */
+    _stageFieldPrimOrder(rt, draws) {
+      if (!this.psxRender || typeof rt.play_field_prim_order !== 'function'
+          || !rt.play_field_prim_order()) return;
+      const terrain = rt.field_terrain_draw_order();
+      const placed = rt.field_placement_draw_order();
+      const npcs = rt.play_npc_near_slots();
+      const playerNear = rt.play_player_near_buckets() ? 2 : 0;
+      for (const d of draws) {
+        let order = 0;
+        if (d.placeIdx !== undefined) order = placed[d.placeIdx] | 0;
+        else if (d.terrainIdx !== undefined) order = terrain[d.terrainIdx] | 0;
+        else if (d.npcSlot !== undefined) order = npcs.includes(d.npcSlot) ? 2 : 0;
+        else if (d.effectPlayer) order = playerNear;
+        d.meanDepth = 1 + order;
+      }
+    }
+
     _settleDraws(rt, placements, vp) {
       const r = this.renderer;
       let out = placements;
