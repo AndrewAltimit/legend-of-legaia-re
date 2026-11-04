@@ -513,6 +513,7 @@ impl SceneHost {
         {
             return;
         }
+        self.party_form_memo.verify = self.world.toggles.battle_memo_verify;
         let forms = legaia_engine_core::battle_party_form::install_party_battle_forms_memo(
             &self.index,
             &mut self.world,
@@ -531,6 +532,7 @@ impl SceneHost {
     pub fn prewarm_battle_edge(&mut self, step: usize) -> bool {
         use legaia_engine_core::battle_party_form::{ProtFormDisc, party_form_key};
         let party = usize::from(self.world.party.party_count).min(3);
+        self.party_form_memo.verify = self.world.toggles.battle_memo_verify;
         match step {
             0 => {
                 for entry in [

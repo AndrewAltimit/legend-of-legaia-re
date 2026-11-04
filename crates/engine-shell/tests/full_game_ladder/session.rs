@@ -27,6 +27,10 @@ pub(super) fn open_session(extracted: &Path) -> NativeSession {
     if std::env::var_os("LEGAIA_FGL_PIN_RETAIL").is_some_and(|v| v != "0") {
         session.host.world.toggles.pin_retail();
     }
+    // `LEGAIA_BATTLE_MEMO_VERIFY=1`: every hit of the battle edge's memos is
+    // rebuilt behind and compared.
+    session.host.world.toggles.battle_memo_verify =
+        std::env::var_os("LEGAIA_BATTLE_MEMO_VERIFY").is_some_and(|v| v != "0");
     session
 }
 

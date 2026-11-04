@@ -239,10 +239,11 @@ const PARTY_FORM_MEMO_CAP: usize = 6;
 /// hands back the build's form and replays its recorded writes, in the order
 /// the build made them.
 ///
-/// `LEGAIA_BATTLE_MEMO_VERIFY=1` rebuilds behind every hit and panics on a
-/// difference.
+/// [`Self::verify`] rebuilds behind every hit and panics on a difference.
 #[derive(Default)]
 pub struct PartyFormMemo {
+    /// Set by whoever seats the memo, from `WorldToggles::battle_memo_verify`.
+    pub verify: bool,
     sources: Option<Option<Arc<PartyFormSources>>>,
     /// Oldest first.
     forms: Vec<(PartyFormKey, MemoisedForm)>,
@@ -288,7 +289,7 @@ impl PartyFormMemo {
         key: PartyFormKey,
     ) -> MemoisedForm {
         if let Some((_, built)) = self.forms.iter().find(|(k, _)| *k == key) {
-            if std::env::var_os("LEGAIA_BATTLE_MEMO_VERIFY").is_some() {
+            if self.verify {
                 let fresh = build_logged(disc, sources, key);
                 assert_eq!(
                     format!("{:?}", fresh.as_deref()),

@@ -13,7 +13,8 @@
 use std::path::PathBuf;
 
 use legaia_engine_battle::battle_party_form::{
-    PartyFormKey, PartyFormMemo, PartyFormSources, VramWriteLog, build_party_battle_form,
+    PartyFormDisc, PartyFormKey, PartyFormMemo, PartyFormSources, VramWriteLog,
+    build_party_battle_form,
 };
 use legaia_engine_core::battle_party_form::ProtFormDisc;
 use legaia_engine_scene::scene::ProtIndex;
@@ -183,6 +184,93 @@ fn a_memo_hands_out_clips_it_keeps_unchanged() {
         .expect("Vahn builds");
     assert!(second.action_clips.is_some(), "the memo kept its clips");
     assert!(!second.art_bank.is_empty(), "the memo kept its art bank");
+}
+
+/// A disc whose player files move under the memo: Vahn's file reads as Noa's
+/// once `swapped` is up, so a held build no longer matches a fresh one.
+struct MovingDisc<'a> {
+    index: &'a ProtIndex,
+    swapped: std::cell::Cell<bool>,
+}
+
+impl PartyFormDisc for MovingDisc<'_> {
+    fn entry(&self, prot: u32) -> Result<std::sync::Arc<Vec<u8>>, String> {
+        let prot = if self.swapped.get() && prot == 863 {
+            864
+        } else {
+            prot
+        };
+        ProtFormDisc(self.index).entry(prot)
+    }
+}
+
+/// The verify switch fires on a hit that differs from a fresh build, and only
+/// with the switch up: the ladder's run under it would prove nothing otherwise.
+#[test]
+fn the_verify_switch_catches_a_party_form_hit_that_differs() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&dir).expect("open extracted tree");
+    let disc = MovingDisc {
+        index: &index,
+        swapped: std::cell::Cell::new(false),
+    };
+    let sources = PartyFormSources::load(&disc).expect("fallback pack");
+    let key = PartyFormKey {
+        member: 0,
+        cslot: 0,
+        equipped: [0; 5],
+    };
+    let mut memo = PartyFormMemo::default();
+    let mut log = VramWriteLog::default();
+    memo.form(&disc, &sources, &mut log, key).expect("builds");
+    memo.verify = true;
+    // A hit that still matches passes.
+    memo.form(&disc, &sources, &mut log, key).expect("builds");
+    disc.swapped.set(true);
+    // With the switch down the differing hit is served, unexamined.
+    memo.verify = false;
+    memo.form(&disc, &sources, &mut log, key).expect("builds");
+    memo.verify = true;
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        memo.form(&disc, &sources, &mut log, key)
+    }));
+    let message = caught.expect_err("the verify switch fires");
+    let text = message
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(text.contains("differs from a fresh build"), "{text}");
+}
+
+#[test]
+fn the_verify_switch_catches_a_stage_hit_that_differs() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    let mut host = SceneHost::open_extracted(&dir).expect("open extracted tree");
+    host.enter_field_scene("town01", 0).expect("scene enters");
+    host.world.toggles.battle_memo_verify = true;
+    host.battle_stage_resources().expect("town01 has a stage");
+    // A hit that still matches passes.
+    host.battle_stage_resources().expect("town01 has a stage");
+    assert!(host.corrupt_battle_stage_memo(), "a stage is held");
+    // With the switch down the differing hit is served, unexamined.
+    host.world.toggles.battle_memo_verify = false;
+    host.battle_stage_resources().expect("town01 has a stage");
+    host.world.toggles.battle_memo_verify = true;
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        host.battle_stage_resources().map(|_| ())
+    }));
+    let message = caught.expect_err("the verify switch fires");
+    let text = message
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(text.contains("differs from a fresh build"), "{text}");
 }
 
 #[test]

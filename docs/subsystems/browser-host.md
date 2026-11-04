@@ -449,8 +449,9 @@ appends the VRAM writes the build recorded, in its order. `SceneHost::battle_sta
 holds the last stage, keyed on the block, the stage stream and a pack's tint, and does not hold
 a scene over an expansion map's synthetic layer. A key the edge reads differently from the
 prewarm's is a miss and builds as it would have. Both hosts and the headless drivers go through
-the memos; only this page prewarms. `LEGAIA_BATTLE_MEMO_VERIFY=1` rebuilds behind every hit and
-panics on a difference.
+the memos; only this page prewarms. `WorldToggles::battle_memo_verify` rebuilds behind every hit
+and panics on a difference: the native hosts raise it from `LEGAIA_BATTLE_MEMO_VERIFY=1`, this
+page from `set_battle_memo_verify`.
 
 ## Battle effects (`play_battle_fx`)
 

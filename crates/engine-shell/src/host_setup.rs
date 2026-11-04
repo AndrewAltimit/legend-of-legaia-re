@@ -80,7 +80,7 @@ pub fn open_boot_session(
         scene: scene.to_string(),
         enable_audio,
     };
-    match disc {
+    let session = match disc {
         // A disc that does not open gets the launcher's reading of why (not
         // there, not a raw dump, another region) on top of the reader's
         // error, and the way to the picker.
@@ -98,7 +98,17 @@ pub fn open_boot_session(
             extracted_root.display()
         ),
         None => NativeSession::open(extracted_root, &cfg),
-    }
+    };
+    session.map(|mut session| {
+        session.host.world.toggles.battle_memo_verify = battle_memo_verify_env();
+        session
+    })
+}
+
+/// `LEGAIA_BATTLE_MEMO_VERIFY=1`: rebuild behind every hit of the battle
+/// edge's memos and panic on a difference.
+fn battle_memo_verify_env() -> bool {
+    std::env::var_os("LEGAIA_BATTLE_MEMO_VERIFY").is_some_and(|v| v != "0")
 }
 
 /// How a player gets from a failed start to a disc that boots.

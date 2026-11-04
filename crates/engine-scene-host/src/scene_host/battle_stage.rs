@@ -255,12 +255,35 @@ pub fn backdrop_shell_nclip(second: SecondCopy) -> u32 {
 pub const ARENA_STAGE_SCENE: &str = "other6";
 
 impl SceneHost {
+    /// Spoil the held stage's VRAM, so a test can see the verify switch catch
+    /// a hit that differs. `false` with no stage held.
+    #[cfg(test)]
+    pub(crate) fn corrupt_battle_stage_memo(&self) -> bool {
+        let mut memo = self
+            .battle_stage_memo
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let Some((_, res)) = memo.as_mut() else {
+            return false;
+        };
+        let mut vram = res.vram.clone();
+        let word = vram.pixel(0, 0) ^ 1;
+        vram.write_block(0, 0, 1, 1, &word.to_le_bytes());
+        *res = Arc::new(BattleStageResources {
+            stage_entry: res.stage_entry,
+            vram,
+            dome: res.dome.clone(),
+            restored_tims: res.restored_tims,
+        });
+        true
+    }
+
     /// The stage resources for a fight starting now, from the last fight's
     /// when it stood on the same stage. `None` when the scene has no stage
     /// entry for the fight's region.
     ///
-    /// `LEGAIA_BATTLE_MEMO_VERIFY=1` rebuilds behind every hit and panics on
-    /// a difference.
+    /// `WorldToggles::battle_memo_verify` rebuilds behind every hit and panics
+    /// on a difference.
     pub fn battle_stage_resources(&self) -> Option<Arc<BattleStageResources>> {
         // A Muscle Dome leg fights on the arena backdrop, which lives in its
         // own data block rather than the departure scene's
@@ -293,7 +316,7 @@ impl SceneHost {
         if let (Some(key), Some((held, res))) = (&key, memo.as_ref())
             && key == held
         {
-            if std::env::var_os("LEGAIA_BATTLE_MEMO_VERIFY").is_some() {
+            if self.world.toggles.battle_memo_verify {
                 let fresh = build_stage_resources(self, scene, stage_entry, tint)?;
                 assert!(
                     fresh.vram.as_bytes() == res.vram.as_bytes()
