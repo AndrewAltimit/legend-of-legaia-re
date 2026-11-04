@@ -182,6 +182,19 @@ engine. `Renderer::set_psx_texel_rule(PsxTexelRule::PcsxRedux)` samples that
 rule instead; it is an instrument, not a player mode
 ([retail-compare](../tooling/retail-compare.md#the-image-channel)).
 
+The same emulator draws a `POLY_FT4` whole. The console splits every quad into
+two triangles, and so does PCSX-Redux for a Gouraud one (`drawPoly4TGEx8`), but
+its `drawPoly4TEx8` walks the flat-shaded quad's left and right outline chains
+(`setupSectionsFlatTextured4`) and steps `U` and `V` linearly along each row
+between them. Where the four corners lie on no one UV plane the two laws map the
+texture differently, by many texels on a large quad. Under the rule, the upload
+hands the vertex stage the quad's four UVs on the normal lane, and
+`quad_walk_uv` repeats the walk per fragment. Only the TMD builders know a
+primitive's kind (`TSB_FLAT_QUAD_BIT`): a Gouraud quad of four equal colours is
+common, and it splits. `noaru_field_card_walk`'s ice floor shows it largest: a
+raster of the state's own table reads `.921` against its frame by triangles and
+`.996` by the walk, and the port's frame moves from `.913` to `.998`.
+
 Taking the row itself puts a fragment on its triangle's top edge exactly on
 that edge, whose `V` is the corner's own value. The host's interpolation lands
 a hair either side of it, and truncated, the outside value reads the texel row

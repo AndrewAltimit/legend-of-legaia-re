@@ -3385,7 +3385,8 @@ pass at the display's own `320 x 240`, with retail's vertex snap, fill rule,
 texel rounding and dither. Its capture is the native frame, compared pixel
 for pixel with the crop. A state made in PCSX-Redux is the one exception to
 the console's rules: that emulator's software GPU takes the texel without the
-console's half-texel bias, so its child runs with
+console's half-texel bias and [walks a flat-shaded quad along its outline](../subsystems/renderer-port.md#the-native-target)
+instead of splitting it, so its child runs with
 `LEGAIA_PSX_CAPTURE_RASTER=pcsx-redux` (`PsxTexelRule::PcsxRedux`) and the
 score measures the engine, not the capture's rasteriser. A Mednafen capture
 matches the console's rule. Any other render mode is a capture at an integer

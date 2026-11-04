@@ -42,6 +42,10 @@
 /// with `legaia_tmd::mesh::TSB_SEMI_TRANSPARENT_BIT`.
 pub const TSB_SEMI_TRANSPARENT_BIT: u16 = 0x8000;
 
+/// `legaia_tmd::mesh::TSB_FLAT_QUAD_BIT`, kept in lockstep: the primitive is a
+/// `POLY_FT4`, the one kind PCSX-Redux's software GPU walks along its outline.
+pub const TSB_FLAT_QUAD_BIT: u16 = 0x0400;
+
 /// Blend constant bound while drawing ABR mode 0 (`0.5*B + 0.5*F`):
 /// both factors are `BlendFactor::Constant`.
 pub const MODE0_BLEND_CONSTANT: f64 = 0.5;
