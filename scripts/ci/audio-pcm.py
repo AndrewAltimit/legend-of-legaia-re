@@ -61,6 +61,10 @@ STATES = [
     "minigame_slot_machine",
     "minigame_fishing",
     "minigame_baka_fighter",
+    "noa_levelup_field_pre",
+    "zeto_call_wave_mid_cast",
+    "new_game_cutscene_intro_a",
+    "ending_vignette_fullscreen",
 ]
 CORE_STATES = ["mei_house_inside", "keikoku_chest_pre", "title_screen_new_game"]
 # The title screen times out into the attract sequence past this.

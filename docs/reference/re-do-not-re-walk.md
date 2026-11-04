@@ -69,6 +69,7 @@ raw table does not have. Both have produced multiple entries below.
   - [The summon draw runs 35-64 times a frame](#the-summon-draw-runs-35-64-times-a-frame)
 - [Audio / sound driver](#audio--sound-driver)
   - [Op-`0x35` sub-op 9 was never a queue](#op-0x35-sub-op-9-was-never-a-queue)
+  - [The battle track does not start during the spin](#the-battle-track-does-not-start-during-the-spin)
   - [The 256-slot SPU-address run that was really a CLUT](#the-256-slot-spu-address-run-that-was-really-a-clut)
   - [bse.dat: three readings the gp+0x678 trace overturned](#bsedat-three-readings-the-gp0x678-trace-overturned)
   - [`bse.dat` carries a second record family with a resident consumer](#bsedat-carries-a-second-record-family-with-a-resident-consumer)
@@ -973,6 +974,21 @@ larger figure is off by more than an order of magnitude; see
 [`effect-vm.md`](../subsystems/effect-vm.md).
 
 ## Audio / sound driver
+
+### The battle track does not start during the spin
+
+**Reading.** The intro tick's phase 2 is "load and start battle BGM": its
+`FUN_800567A8` call and `battle bgm %d` string name the track, so the port started
+the theme there, two frames into the transition, under a test that said so.
+
+**Why it is wrong.** `FUN_800567A8` is a debug print. Phase 2's real call is
+`FUN_8001FC00(0x36F + set, 5, ..)`, a bundle read. The install and attach
+are the completion arm's (`0x801CF91C..0x801CF930`), beside its mode-`0x14` store, and
+the init keys the field track off (`0x801CEB58..0x801CEB70`). A capture of a walked
+fight reads the battle sequence open and playing on the mode-`0x14` vsync, `139` after
+the mode-`8` store, with only cue voices between
+([timeline](../subsystems/audio.md#the-battle-music-timeline)).
+
 
 | Thread | Verdict | Why |
 |---|---|---|

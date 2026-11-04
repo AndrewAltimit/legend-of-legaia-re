@@ -152,6 +152,9 @@ pub struct AudioState {
     /// can resume it after the encounter. Managed by the swap helpers; not
     /// meant to be set directly.
     pub field_bgm_resume: Option<u16>,
+    /// The battle intro's init keyed off the field track (`FUN_801CE8CC`,
+    /// sound set `0`) and the attach at its completion is still owed.
+    pub(crate) bgm_keyed_off_for_intro: bool,
     /// `true` while the battle track is playing (set by
     /// `World::swap_to_battle_bgm`, cleared by
     /// `World::restore_field_bgm`). Guards against double-swap / spurious
@@ -345,6 +348,7 @@ impl AudioState {
             battle_bgm: None,
             battle_sound_set: 0,
             field_bgm_resume: None,
+            bgm_keyed_off_for_intro: false,
             battle_bgm_active: false,
             minigame_bgm_resume: None,
             minigame_bgm_active: false,

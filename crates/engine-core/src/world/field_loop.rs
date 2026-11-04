@@ -202,7 +202,16 @@ impl World {
         }) else {
             return;
         };
+        let keyed_off = std::mem::take(&mut self.audio.bgm_keyed_off_for_intro);
         if self.audio.battle_bgm_active || self.audio.current_bgm == Some(battle) {
+            // The field track is the battle's own, keyed off by the intro: the
+            // attach plays it from its head (sub-op `4`'s re-attach).
+            if keyed_off && !self.audio.battle_bgm_active {
+                self.pending_field_events.push(FieldEvent::Bgm {
+                    text_id: 0,
+                    sub_op: 4,
+                });
+            }
             return;
         }
         self.audio.field_bgm_resume = self.audio.current_bgm;
@@ -225,6 +234,22 @@ impl World {
         }
         self.audio.battle_bgm_active = false;
         match self.audio.field_bgm_resume.take() {
+            // The word the return loads names nothing: the poller copies it
+            // (`0x80024558`) and no track attaches. The word stands and the
+            // score is gone until a script starts another.
+            Some(crate::world::BGM_PARK_SENTINEL) => {
+                self.audio.current_bgm = Some(crate::world::BGM_PARK_SENTINEL);
+                self.pending_field_events.extend([
+                    FieldEvent::Bgm {
+                        text_id: crate::world::BGM_PARK_SENTINEL,
+                        sub_op: 1,
+                    },
+                    FieldEvent::Bgm {
+                        text_id: 0,
+                        sub_op: crate::world::BGM_SUB_OP_ENGINE_STOP,
+                    },
+                ]);
+            }
             Some(track) => {
                 self.audio.current_bgm = Some(track);
                 self.pending_field_events.push(FieldEvent::Bgm {

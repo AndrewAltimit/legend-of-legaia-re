@@ -77,6 +77,11 @@
 --                    whole emulator state at the action's state 0x0A
 --                    (<key>_pre_...), before the pick, which replays the same
 --                    cast on its own for the cast-sequence oracle
+--   LEGAIA_AUDIO_LOG 1 = write audio.csv, one row per vsync: the game mode, the
+--                    track word, the field-BGM and battle sound sources (open,
+--                    libsnd sequence, its play flags, tick wait, read cursor)
+--                    and the sounding voice records split by owner: what a
+--                    fight does to the music between the step and the return
 --
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
@@ -280,6 +285,32 @@ local rounds = 0
 local scene_seen = {}
 local scene_key, scene_since, scene_pos, scene_moved = nil, 0, nil, false
 
+local audio_log = nil
+local function log_audio(vsync, mode)
+    local function src(base)
+        local seq = probe.read_u16(base + 0xA) or 0
+        local rec = probe.read_u32(0x801CD2C0 + (seq % 32) * 4) or 0
+        local flags, wait, cursor, vol = -1, -1, -1, -1
+        if ok_ptr(rec) then
+            flags = probe.read_u32(rec + 0x98) or -1
+            wait = probe.read_u32(rec + 0x90) or -1
+            cursor = probe.read_u32(rec) or -1
+            vol = probe.read_u16(rec + 0x58) or -1
+        end
+        return string.format("%d,%d,%d,%d,%d,%d", probe.read_u16(base + 8) or 0, seq, flags, wait, cursor, vol)
+    end
+    local music, cue = 0, 0
+    for v = 0, 23 do
+        local r = 0x801CDB50 + v * 0x36
+        if (probe.read_u16(r + 6) or 0) ~= 0 then
+            if (probe.read_u16(r + 0x10) or 0) == 0x21 then cue = cue + 1 else music = music + 1 end
+        end
+    end
+    audio_log:row("%d,%d,%d,%d,%d,%s,%s,%d,%d", vsync, mode, probe.read_u32(0x8007BAC8) or 0,
+        probe.read_u32(0x8007BAB8) or 0, probe.read_u32(0x8007B750) or 0,
+        src(0x8007052C), src(0x8007056C), music, cue)
+end
+
 probe.run({
     sstate         = SSTATE_PATH,
     capture_frames = FRAMES,
@@ -293,6 +324,11 @@ probe.run({
     on_capture = function(ctx, vsync)
         release_if_due(vsync)
         local mode = probe.read_u8(GAME_MODE_VA) or 0
+        if probe.getenv_num("LEGAIA_AUDIO_LOG", 0) == 1 then
+            audio_log = audio_log or probe.csv_open(probe.out_path("audio.csv"),
+                "v,mode,word,req,flags,f_open,f_seq,f_flags,f_wait,f_cursor,f_vol,b_open,b_seq,b_flags,b_wait,b_cursor,b_vol,music,cue")
+            log_audio(vsync, mode)
+        end
         if vsync % 600 == 0 then
             local cp = probe.read_u32(CTX_PTR)
             logf("beat vsync=%d mode=0x%02x round=%d flow=0x%02x st=0x%02x seat=%d", vsync, mode, rounds,

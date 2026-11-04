@@ -4165,6 +4165,7 @@ topics = ["field", "tunnela", "scene coverage", "door hop"]
 
 [[scenarios]]
 label = "station_field_door_hop"
+arrival = { from = "ropeway", door = 27 }
 backup_fingerprint = "a4b9933304506e3179ffb58c2cce59d67f51f405549c31cc789f65fb03887fe8"
 description = "station free field run, player in control. RETAIL disc: ropeway_field_route_walk crossed ropeway:30:38 by autorun_door_hop.lua: player position poked onto each door walk-on tile, door records run as the disc wrote them, saved 529 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the doors wrote."
 phase = "field"

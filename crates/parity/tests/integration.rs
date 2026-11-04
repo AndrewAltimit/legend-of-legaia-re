@@ -24,6 +24,7 @@ mod battle_clip_ladder_disc;
 mod battle_face_stamp_live;
 mod battle_loss_window_disc;
 mod battle_monster_tags_disc;
+mod battle_music_timeline_disc;
 mod battle_party_palette_retail_capture;
 mod battle_party_pose_live;
 mod battle_stage_live;

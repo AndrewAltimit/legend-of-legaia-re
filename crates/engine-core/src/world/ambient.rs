@@ -827,7 +827,10 @@ impl World {
             voice_volume: self.audio.levels.voice_volume,
             mono: self.toggles.retail_options.sound != 0,
             scale: (0x80, 0x80),
-            field_mode: GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode),
+            // Retail's mode word leaves `3` at the encounter's `8` / `9`; the
+            // scene mode here stays Field across the intro.
+            field_mode: GameMode::for_scene_mode(self.mode) == Some(GameMode::MainMode)
+                && self.battle.intro.is_none(),
             stream_settled: self.audio.sound_stream.is_settled(),
             release_all: false,
             frame_step: i32::from(self.clock.frame_step.max(1)),

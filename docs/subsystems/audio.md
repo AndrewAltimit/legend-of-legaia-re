@@ -758,7 +758,7 @@ entry".
 
 **Battle↔Field swap.** The port reuses the same dispatch: `World::set_battle_bgm`
 configures a battle track id, the live gameplay loop queues an ordinary
-`FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`)
+`FieldEvent::Bgm{sub_op: 1}` start for it at the intro's end (`swap_to_battle_bgm`)
 and resumes the stashed field track on battle end (`restore_field_bgm`). Both
 transitions run through the host's `AudioDirector` `start_inner` path - no
 separate battle-audio code path. The battle id resolves like any op-`0x35` id
@@ -798,6 +798,50 @@ it, then the last sound-set selection
 (`man_field_scripts::walk_battle_entry_scores`). The Gaza, first-Nivora and
 evolved-Cort fights then play their event's theme instead of the scene
 entry's track and the default battle theme.
+
+<a id="the-battle-music-timeline"></a>
+#### The battle music timeline
+
+`autorun_battle_harvest.lua` with `LEGAIA_AUDIO_LOG=1` logs both sound sources per
+vsync through a walked fight. `teien_field_run` into a set-`0` fight, from the
+mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
+
+| Vsync | Retail | Cause |
+|---|---|---|
+| `T` | mode `8`, the field sequence plays | `FUN_801DA51C`'s hand-off |
+| `T + 3` | field sequence stopped (flag `0x2`, then `0x20`), its notes releasing | the intro init `FUN_801CE8CC`: `FUN_80026740(0x8007052C)` under `_DAT_8007B880 == 0` (`0x801CEB58..0x801CEB70`) |
+| `T + 7` | three cue voices: the battle-start sound | phase 0's ring store |
+| `T + 80` | the field's last notes have released: silence under the cue | |
+| `T + 139` | mode `0x14`, source 5 attached and playing | the completion arm: `FUN_8001E54C(5, ..)` + `FUN_80026478(0x8007056C)` (`0x801CF91C..0x801CF930`) |
+| `E` | mode `2`, the battle sequence plays on | |
+| `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0x78)`, while the map reads |
+| `E + 251` | the field source plays from its head | the init's poller |
+| `E + 306` | mode `3`, the first field frame | |
+
+The spin is therefore the cue alone, for over two seconds, and the theme arrives with
+the fight. Phase 2 only reads the bundle: its `FUN_800567A8` is the debug print of
+`battle bgm %d`. Port: `World::silence_field_audio_for_intro` keys off the track
+(sub-op `3`, set `0` only) and voices `0x10..0x17` on the transition's first tick, and
+`World::enter_battle_from_formation` attaches, both hosts through
+`route_bgm_events`. A set above `0` leaves the field track alone until the attach, and
+`-1` plays it through.
+
+The session test `parity/tests/battle_music_timeline_disc.rs` reads the same order on a
+forced fight: the key-off on the transition's first tick, the start on the battle's, `132`
+ticks on, where retail's mode `9` runs `133` vsyncs.
+
+The return is the part the port does not reproduce: its load is instant, so the
+`250` vsyncs of battle theme over the loading screen collapse, and the field track
+restarts from its head on the frame the field returns, as retail's does.
+
+**A fight on the park word ends the music.** The return loads what the track word
+names, and the word `0x1000` names nothing. `retockin`'s word is the park, the door
+from `retock` having kept `2014` behind sub-op 6, and a capture from
+`battle_retockin_skull_knight_strike` reads the field source stopped by the intro, the
+battle sequence ramped to volume `1` by the init, and no load: both are silent from the
+fight's end until a scene starts a track. That fight was rolled by the harvester's
+region write, so the capture pins the law and not a route a player walks. Port: `World::restore_field_bgm` restores the
+word and stops the director rather than leaving the battle theme attached.
 
 A row is not owned by its record. `teien`'s row `0` is the Berserker fight its
 `P2[1]` stages, and it is also a row a random roll can land on: the
@@ -3133,15 +3177,13 @@ varies from run to run of one state.
 
 ### The Field↔Battle swap is not on this axis
 
-The Field↔Battle BGM swap plays on both hosts but is not measured by this
-oracle: the scenario captures hold no battle-entry window, so no trace pairs
-the swap against retail. The default battle track is the global-pool id `2026`
+The per-voice oracle above pairs no battle-entry window. What a fight does to the
+music is measured separately, by the [battle music timeline](#the-battle-music-timeline).
+The default battle track is the global-pool id `2026`
 (`music_labels::BATTLE_THEME_1_BGM_ID`), which resolves through the `music_01`
 bank arm of `route_bgm_events` (`music_bank_entry_bytes` → `start_owned_vab`),
-the path the disc-gated `global_bgm_owned_vab_disc` test pins. The transition
-itself is pinned on the mode-trace axis
-(`v0_1_battle_leg_mode_trace_matches_expected`), and the swap *contract*
-(track stash → battle start → field restore) at the `World` level
+the path the disc-gated `global_bgm_owned_vab_disc` test pins. The swap *contract*
+(track stash → battle start → field restore) is pinned at the `World` level
 (`battle_bgm_swaps_on_encounter_and_restores_on_finish`,
 `playable_default_swaps_to_the_standard_battle_theme`). The battle key-on
 census above covers the battle theme's notes once it is playing.
@@ -3290,6 +3332,15 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
 | `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | |
 | `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render: `+1` to `+4.6` dB between `350` Hz and `4` kHz |
+| `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
+| `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
+| `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
+| `zeto_call_wave_mid_cast` | | `0.9994` | `-30` dB | `+5.09` dB | the cast's own cues hold the level; the score's notes fit |
+
+The `rimelm` row's residual is the emitter: at lag `0` it correlates `0.43` to `0.53`
+with a silenced run of the same state, where only the game-keyed voices sound, in every
+five-second window. That silenced emitter is louder than the residual (`1190` against
+`800` RMS), so no plain subtraction recovers the music from the recording.
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not

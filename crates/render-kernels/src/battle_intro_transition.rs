@@ -177,7 +177,8 @@ pub enum TransitionEffect {
     ReapplyBgmLevel { voice_id: i16, level: i16 },
     /// Phase 1: `FUN_80052770()` - the battle-mesh assembly step.
     AssembleBattleMeshes,
-    /// Phase 2: `FUN_800567A8("battle_bgm_%d", battle_id)`.
+    /// Phase 2: `FUN_800567A8("battle_bgm_%d", battle_id)`, a debug print. No
+    /// sound moves here: the bundle read follows and the completion arm attaches.
     LoadBattleBgm { battle_id: i32 },
     /// Phase 2: `FUN_8001FC00(bundle_id, 5, DAT_8007BAAC, 0, flags)`.
     LoadBattleBundle { bundle_id: i32, flags: u32 },
