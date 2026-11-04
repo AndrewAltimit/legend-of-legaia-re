@@ -293,6 +293,14 @@ pub fn dance_clip_bank(index: &ProtIndex) -> Option<PlayerAnmBundle> {
     legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene)
 }
 
+/// The venue block's stager bundle, which the dance's setup state spawns the
+/// hall's ambient tree from (`World::stage_dance_ambient`).
+pub fn venue_stager_bytes(index: &ProtIndex) -> Option<Vec<u8>> {
+    let name = venue_scene_name(index, &dance_scene_entry())?;
+    let scene = Scene::load(index, &name).ok()?;
+    scene.find_event_scripts().map(|s| s.bytes.to_vec())
+}
+
 /// One of the venue's static draws with its cross-draw coplanar lift.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct VenueDraw {

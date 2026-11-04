@@ -62,7 +62,10 @@
 --                    (a synthetic fight: say so in the state's description).
 --   LEGAIA_TOUGH     1 = at each round prompt write every party seat's HP, its
 --                    readout and its pending delta back to full, so a low-level
---                    party outlasts the rounds
+--                    party outlasts the rounds; 2 = also raise each seat's
+--                    maximum to 9999 first, for a party a single hit would
+--                    wipe (the raised HP stays in the saved states and on the
+--                    HUD: say so in the state's description)
 --   LEGAIA_WOUND     round number at whose prompt every monster's HP drops to a
 --                    third of its maximum: the heal arms need a patient below
 --                    half HP (0 = never)
@@ -111,7 +114,8 @@ for f in string.gmatch(probe.getenv("LEGAIA_WANT", ""), "[^;]+") do
     WANT[#WANT + 1] = ids
 end
 local WANT_FORCE = probe.getenv_num("LEGAIA_WANT_FORCE", 0) == 1
-local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) == 1
+local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) >= 1
+local TOUGH_POOL = probe.getenv_num("LEGAIA_TOUGH", 0) == 2
 local WOUND = probe.getenv_num("LEGAIA_WOUND", 0)
 local WOUND_EVERY = probe.getenv_num("LEGAIA_WOUND_EVERY", 0) ~= 0
 local FINISH = probe.getenv_num("LEGAIA_FINISH", 0) == 1
@@ -250,6 +254,7 @@ local function round_pokes(round)
             if a ~= nil and (probe.read_u16(a + 0x14E) or 0) > 0 then
                 -- All three: state 0x51 parks on a readout +0x172 that
                 -- disagrees with the live HP and the pending delta +0x10.
+                if TOUGH_POOL then probe.write_u16(a + 0x14E, 9999) end
                 local hp = probe.read_u16(a + 0x14E)
                 probe.write_u16(a + 0x14C, hp)
                 probe.write_u16(a + 0x172, hp)
@@ -458,6 +463,7 @@ probe.run({
                     local key = string.format("m%03d_c%d_q%02x", mid, cat, q)
                     if band_key ~= key .. b then
                         band_key, band_since = key .. b, vsync
+                        logf("action %s band=%s st=0x%02x seat=%d vsync=%d", key, b, st, seat, vsync)
                     elseif SAVE_PRE and cat == 2 and held_pre ~= nil and not pre_written[key] then
                         pre_written[key] = true
                         local name = string.format("%s_%s_%s_pre_v%d", PREFIX, key, scene_name(), vsync)

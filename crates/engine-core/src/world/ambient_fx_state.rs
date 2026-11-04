@@ -7,8 +7,22 @@
 /// ([`AmbientFxState::vram_rect_seed`]).
 pub type SeededVramRect = ((u16, u16, u16, u16), Vec<u16>);
 
+/// What [`AmbientFxState::venue_restore`] keeps of the walked-in scene.
+pub struct VenueAmbientRestore {
+    pub ambient: AmbientFxState,
+    pub stagers: Vec<legaia_overlay_images::summon_overlay::SummonPart>,
+    pub stager_bytes: Vec<u8>,
+    /// The walked-in scene's frame step (`DAT_1F800393`).
+    pub frame_step: u8,
+}
+
 /// Field ambient animation state: the CLUT-walk / CLUT-cell cyclers, VDF pulse, script VRAM moves and their vsync accumulators.
 pub struct AmbientFxState {
+    /// The field's ambient seat (state, stager table and bundle) while the
+    /// dance hall's own tree runs in this one
+    /// ([`crate::world::World::stage_dance_ambient`]): retail's dance replaces
+    /// the field overlay, the port keeps the walked-in scene underneath.
+    pub venue_restore: Option<Box<VenueAmbientRestore>>,
     /// Live **ambient** move-VM effect parts - the scene-entry effect tree
     /// the MAN partition-1 effect-actor scripts install (jou's pulsating
     /// flesh / lightning director). Unlike [`crate::world::FieldPropState::active_fx`] these
@@ -116,6 +130,7 @@ pub struct AmbientFxState {
 impl AmbientFxState {
     pub fn new() -> Self {
         Self {
+            venue_restore: None,
             fx: Vec::new(),
             pending_game_ticks: 0,
             vsync_accum: 0,

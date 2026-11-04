@@ -3152,20 +3152,30 @@ The strips are not history: the LCG starts on a literal, so the machine the warp
 builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
 (from `.922`) once the machine discards the init's four draws.
 
+- **The fishing venue's idle shore** (state word `DAT_801D926C = 0xC`). The
+  venue loads its own block over the scene word, so the seed lands on the
+  departure scene the mode-24 init backed up (`_DAT_8007BAC4`). State `0xB`, the
+  fade in front of it, still shows what stood before: `minigame_fishing_retail_ready`
+  is parked there on the rod and water of an earlier cast, and stays unseeded.
+- **The dance's READY count-in** (`DAT_801D5334 = 3`), sampled at the capture's
+  own banner counter `DAT_801D5158`.
+- **The contest hub's Welcome strip** (arm byte `DAT_801D1A78` in `0..=2`),
+  sampled at the capture's hold counter `0x801D1A84`.
+
+The seed takes the warp at tick `20`, ahead of the talk `koin1`'s sign-up counter
+opens at tick `31` on a player the save leaves standing there; retail's warp is
+the last op of the record that seated him.
+
 What stays unseeded, and what each needs:
 
 - **A decided spin** (`minigame_slot_machine_retail_spin_decided`, state
   `4`): the reel stops and feature rolls are `rand()` history after entry.
   Seeding it means writing the reel positions `DAT_801D3CC0..` and the
   stopped-reel count over the engine machine's.
-- **Baka Fighter, the dance, fishing, the Muscle Dome hub**: no path yet. Each
-  needs its session's phase word mapped the way `SlotMachine::retail_state`
-  maps the slot's - the round state machine `FUN_801D3468`, the beat clock
-  `FUN_801CF470`, the fishing state machine `FUN_801CF3BC`, the hub's
-  `FUN_801CF870` arm. The entry-reachable phases are the fishing venue's
-  rod-ready, the dance's READY count-in and the hub's Welcome card; the
-  Baka Fighter captures are mid-round, behind pad input and the AI's
-  `rand()` picks.
+- **Baka Fighter**: no path. Its captures are mid-round, behind pad input and
+  the AI's `rand()` picks.
+- **A played phase of the others**: a cast's flight and bite rolls, the chart's
+  presses, the hub past the Welcome strip.
 
 ## Channels
 

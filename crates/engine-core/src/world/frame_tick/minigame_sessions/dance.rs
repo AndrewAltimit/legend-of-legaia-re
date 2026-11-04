@@ -5,6 +5,58 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// The hall's ambient tree: the dance's setup state spawns records `2` and
+    /// `1` of the block's stager bundle at the origin (`FUN_800252EC` at
+    /// `0x801CF9A8` and `0x801CF9C0`, state `1` of `FUN_801CF470`). They are
+    /// the floor and wall palette cyclers and the strip scroller, which repaint
+    /// the hall's VRAM for as long as the dance runs. The walked-in scene's
+    /// own seat is kept aside for [`Self::restore_dance_ambient`]: retail
+    /// replaces it, the port keeps that scene underneath.
+    ///
+    /// PORT: FUN_801cf470 (state `1`'s two stager installs)
+    pub fn stage_dance_ambient(&mut self, stager_bytes: &[u8]) {
+        if self.ambient.venue_restore.is_some() {
+            return;
+        }
+        let restore = crate::world::VenueAmbientRestore {
+            ambient: std::mem::take(&mut self.ambient),
+            stagers: std::mem::take(&mut self.props.stagers),
+            stager_bytes: std::mem::take(&mut self.props.stager_bytes),
+            frame_step: self.clock.frame_step,
+        };
+        self.ambient.venue_restore = Some(Box::new(restore));
+        // The hall runs at a game tick per three vsyncs: `DAT_1F800393 = 3`
+        // in the parked dance states, the step the count-in's banner reads too
+        // ([`legaia_engine_minigames::dance::COUNTIN_ANIM_PERIOD_VSYNCS`]).
+        self.clock.frame_step = legaia_engine_minigames::dance::COUNTIN_ANIM_PERIOD_VSYNCS;
+        self.install_field_stagers(stager_bytes);
+        self.spawn_ambient_record(2, [0, 0, 0]);
+        self.spawn_ambient_record(1, [0, 0, 0]);
+        // State `1` itself is a game tick ahead of the first READY run
+        // (state `3`): the parts' gate reads `25` at banner counter `72`.
+        self.ambient.pending_game_ticks = 1;
+    }
+
+    /// Put the walked-in scene's ambient seat back when the hall comes down.
+    pub fn restore_dance_ambient(&mut self) {
+        if let Some(r) = self.ambient.venue_restore.take() {
+            self.ambient = r.ambient;
+            self.props.stagers = r.stagers;
+            self.props.stager_bytes = r.stager_bytes;
+            self.clock.frame_step = r.frame_step;
+        }
+    }
+
+    /// Step the hall's tree against the hall's own VRAM; `true` when it wrote.
+    pub fn step_dance_ambient(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        if self.ambient.venue_restore.is_none() {
+            return false;
+        }
+        let moved = self.apply_script_vram_moves(vram);
+        let ambient = self.step_ambient_fx(vram);
+        moved | ambient
+    }
+
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
     /// scene mode. The suspended mode is restored by [`World::exit_dance`] (and
     /// automatically once the song ends). Mirrors the pause-menu suspend/restore
@@ -96,6 +148,7 @@ impl World {
     /// installed, or the mode is still the hall" is exactly the set of frames
     /// with something to tear down.
     pub fn exit_dance(&mut self) -> Option<legaia_engine_minigames::dance::DanceGame> {
+        self.restore_dance_ambient();
         if self.mode != SceneMode::Dance && self.minigames.dance.is_none() {
             return None;
         }

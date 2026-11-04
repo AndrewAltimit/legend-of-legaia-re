@@ -169,6 +169,7 @@ impl PlayWindowApp {
             .map(|s| s.generation)
         else {
             self.dance_venue_gpu = None;
+            self.session.host.world.restore_dance_ambient();
             if self.dance_cast_surface.has_assets() {
                 self.dance_cast_surface.set_assets(None);
             }
@@ -180,6 +181,7 @@ impl PlayWindowApp {
             .is_some_and(|g| g.generation == generation)
             || self.dance_venue_failed == Some(generation)
         {
+            self.step_dance_venue_ambient();
             return;
         }
         match self.build_dance_venue_gpu(generation) {
@@ -192,11 +194,40 @@ impl PlayWindowApp {
                 );
                 self.dance_cast_surface.set_assets(g.cast_assets.clone());
                 self.dance_venue_gpu = Some(g);
+                self.stage_dance_venue_ambient();
             }
             None => {
                 log::warn!("dance venue: build failed - the walked-in scene stays on screen");
                 self.dance_venue_failed = Some(generation);
                 self.dance_venue_gpu = None;
+            }
+        }
+    }
+
+    /// Install the hall's ambient tree off the venue block's stager bundle.
+    fn stage_dance_venue_ambient(&mut self) {
+        let bytes = legaia_engine_minigame_scenes::dance_venue::venue_stager_bytes(
+            &self.session.host.index,
+        );
+        match bytes {
+            Some(bytes) => self.session.host.world.stage_dance_ambient(&bytes),
+            None => log::warn!("dance venue: no stager bundle, the hall stays unlit"),
+        }
+    }
+
+    /// Run the hall's ambient tree on the venue's VRAM and put what it wrote
+    /// on the GPU.
+    fn step_dance_venue_ambient(&mut self) {
+        let Some(g) = self.dance_venue_gpu.as_mut() else {
+            return;
+        };
+        if !self.session.host.world.step_dance_ambient(&mut g.cpu_vram) {
+            return;
+        }
+        if let Some(r) = self.win.renderer.as_ref() {
+            match r.upload_vram(&g.cpu_vram) {
+                Ok(v) => g.vram = v,
+                Err(e) => log::warn!("dance venue: vram upload: {e:#}"),
             }
         }
     }
@@ -315,6 +346,7 @@ impl PlayWindowApp {
         Some(DanceVenueGpu {
             generation,
             vram,
+            cpu_vram: venue.resources.vram.clone(),
             hud_staged: venue.hud_staged,
             textured,
             untextured,

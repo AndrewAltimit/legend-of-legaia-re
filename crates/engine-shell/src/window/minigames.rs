@@ -50,6 +50,8 @@ pub(super) struct DanceVenueGpu {
     /// The staging generation this copy was built for.
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,
+    /// The CPU copy the hall's ambient tree repaints; re-uploaded when it wrote.
+    pub(super) cpu_vram: legaia_tim::Vram,
     /// Whether the HUD page reached the venue VRAM.
     pub(super) hud_staged: bool,
     /// The hall's textured draws + the walk-ground heightfield, baked into

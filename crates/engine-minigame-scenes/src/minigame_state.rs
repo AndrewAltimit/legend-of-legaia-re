@@ -306,8 +306,10 @@ impl MinigameState {
     /// on stage row `0x40` and the status pen sits just below it, so the two
     /// overprint - and there is nothing for the readout to say yet: the beat
     /// clock is held, the score is zero, and the "current beat" is beat zero
-    /// of a song that has not started. Retail never shows both, because its
-    /// count-in runs before the dance screen's readout is armed at all.
+    /// of a song that has not started. This predicate is the placeholder text
+    /// rows' only: retail's textured HUD ([`Self::dance_hud_quads`]) draws
+    /// through the count-in too, `FUN_801D231C` being called from the driver's
+    /// tail (`0x801CFFA0`) past the state switch.
     ///
     /// One predicate for every host: the rule belongs to the phase, not to a
     /// draw list.
@@ -317,13 +319,14 @@ impl MinigameState {
 
     /// The dance HUD's retail textured quads for this frame
     /// ([`legaia_engine_minigames::dance::DanceGame::hud_draw_quads`]) when a host can draw
-    /// them: the HUD is up ([`Self::dance_status_visible`]) and the hall's
-    /// HUD page is resident ([`Self::dance_hud_art_staged`]). Empty
-    /// otherwise, which is when a host draws the frame's text rows
+    /// them: the hall's HUD page is resident ([`Self::dance_hud_art_staged`]).
+    /// Empty otherwise, which is when a host draws the frame's text rows
     /// (`DanceGame::hud_frame_rows`) instead - the either/or the count-in
-    /// banner takes, off the same flag, on every host.
+    /// banner takes, off the same flag, on every host. The count-in draws
+    /// over this HUD: the `minigame_dance_retail_ready` capture shows the
+    /// three score boxes, the gauge and the beat track under READY.
     pub fn dance_hud_quads(&self) -> Vec<legaia_engine_minigames::dance::DanceHudQuad> {
-        if !self.dance_hud_art_staged || !self.dance_status_visible() {
+        if !self.dance_hud_art_staged {
             return Vec::new();
         }
         self.dance

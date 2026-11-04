@@ -132,6 +132,11 @@ impl World {
         if self.mode == SceneMode::Battle {
             return false;
         }
+        // The dance hall's tree writes the hall's VRAM, not the walked-in
+        // scene's (`World::step_dance_ambient`).
+        if self.ambient.venue_restore.is_some() {
+            return false;
+        }
         let moved = self.apply_script_vram_moves(vram);
         let copied = self.apply_vram_rect_copies(vram, back_buffer);
         let ambient = self.step_ambient_fx(vram);

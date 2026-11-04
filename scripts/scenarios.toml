@@ -3804,6 +3804,14 @@ expected_game_mode = 0x19
 topics = ["minigame", "fishing", "retail", "route walk", "map02"]
 
 [[scenarios]]
+label = "minigame_fishing_retail_shore"
+backup_fingerprint = "53cf37172c0bb2aa9a529358e4751c9727a5ab5ce7b559037fe074eb147d1af2"
+description = "Fishing at the Vidna venue, the idle shore: state word 0x801D926C = 0xC, the three party members with their backs to the camera, Normal Lure, mode 0x19 (venue block other1). From minigame_fishing_retail_ready (a retail, pad-only state parked on the fade state 0xB), autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d926c:12:60, 72 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "fishing", "retail", "route walk", "map02"]
+
+[[scenarios]]
 label = "kor4_field_route_walk"
 backup_fingerprint = "4b6ba816f8960c90e376dc962d2975c5a65dfac577516ba2040ef08d4a316d2d"
 description = "kor4 (Sol Tower stairs C, the Elevator 7F / Sol Dayschool banner) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk saved it 151 vsyncs into the field once the player had moved."

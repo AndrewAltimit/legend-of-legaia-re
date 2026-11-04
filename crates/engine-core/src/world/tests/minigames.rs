@@ -941,3 +941,59 @@ fn a_hooked_rod_bent_past_its_cap_creaks() {
         );
     }
 }
+
+/// The dance's setup state replaces the walked-in scene's ambient seat with
+/// the hall's tree (`FUN_801CF470`, `0x801CF9A8` / `0x801CF9C0`): the hall's
+/// VRAM steps through the dance's own call, the field's stays untouched, and
+/// leaving puts the field's seat and frame step back.
+#[test]
+fn the_dance_hall_runs_its_ambient_tree_on_its_own_vram() {
+    let mut world = World::default();
+    world.clock.frame_step = 2;
+    world.stage_dance_ambient(&[]);
+    assert!(world.ambient.venue_restore.is_some());
+    assert_eq!(world.clock.frame_step, 3, "the hall's DAT_1F800393");
+    let mut vram = legaia_tim::Vram::new();
+    assert!(!world.step_field_vram_effects(&mut vram, false));
+    world.restore_dance_ambient();
+    assert!(world.ambient.venue_restore.is_none());
+    assert_eq!(world.clock.frame_step, 2);
+}
+
+/// `FUN_801D387C` arms `0` and `1`, the hall cyclers' follow-the-leader hook.
+#[test]
+fn the_hall_hook_copies_the_leader_and_sets_v() {
+    use legaia_engine_vm::move_vm::{ActorState, MoveHost};
+    let mut world = World::default();
+    world.stage_dance_ambient(&[]);
+    let mut leader_state = ActorState::default();
+    leader_state.tween_src_x = 96;
+    leader_state.tween_src_z = -200;
+    world.ambient.fx.push(crate::world::ambient::AmbientPart {
+        record_off: 0,
+        model_sel: 0x4000,
+        reserved: 0,
+        buf: Vec::new(),
+        state: leader_state,
+        finished: false,
+        cell_fx: None,
+        scroll_fx: Vec::new(),
+        prev_morph_weights: Vec::new(),
+    });
+    let mut host = crate::world::vm_hosts::MoveVmHostImpl {
+        world: &mut world,
+        current_slot: None,
+        deferred_writes: std::collections::BTreeMap::new(),
+        field_record_words: None,
+        child_spawns: Vec::new(),
+    };
+    let mut part = ActorState::default();
+    part.tween_scale_z = 64;
+    host.ext_20(&mut part, 0, 0);
+    assert_eq!(
+        (part.tween_src_x, part.tween_src_z, part.tween_scale_z),
+        (96, -200, 0)
+    );
+    host.ext_20(&mut part, 1, -50);
+    assert_eq!(part.tween_src_z, -50);
+}

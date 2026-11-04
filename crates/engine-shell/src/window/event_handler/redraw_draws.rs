@@ -169,10 +169,16 @@ impl<'m> DrawCtx<'_, 'm> {
         };
         // Untextured (F*/G*) field props, drawn on the colour
         // pipeline alongside the textured `draws`.
-        if (app.boot_ui.is_active() && !game_over_hold) || app.menu_runtime.covers_field() {
+        if (app.boot_ui.is_active() && !game_over_hold)
+            || app.menu_runtime.covers_field()
+            || legaia_engine_screens::field_frame::minigame_screen_covers_field(
+                &app.session.host.world,
+            )
+        {
             // A shop is a menu-overlay session: the field overlay is
             // swapped out and the screen behind the windows is black.
-            // Boot UI is fullscreen - suppress 3D draws.
+            // Boot UI is fullscreen - suppress 3D draws. So is the contest
+            // hub's first visit: nothing is loaded behind its screens.
         } else if let Some(g) = store
             .baka_gpu
             .as_ref()

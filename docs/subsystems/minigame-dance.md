@@ -83,7 +83,7 @@ stateDiagram-v2
 | `5` | `GO!` out: ramps `DAT_801d515c` back to 0, then calls the actor-start helper and advances. |
 | `6` | Zeroes the beat counters `DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`, sets the lead-in countdown `DAT_801d513c = 4`, goes to `7`. Its `func_0x80026478` call (`FUN_80026478`) is the actor sound-source attach / re-pan primitive ([`functions.md`](../reference/functions.md)), not the BGM start. |
 | `7` | Decrements `DAT_801d513c`; at 0 jumps to `10`. |
-| `10` (`0xa`) | **Main play loop.** The beat clock advances, `FUN_801d231c` draws the HUD, the song-end test runs. |
+| `10` (`0xa`) | **Main play loop.** The beat clock advances, the song-end test runs. |
 | `11` (`0xb`) | Finish countdown: spawns `3`, `2`, `1` and `FINISH!` as four sprite parts at once and advances. |
 | `12` (`0xc`) | Result wipe: ramps `DAT_801d515c`, raises the pause flag `DAT_801d5130` past a threshold, then jumps to `0x14`. |
 | `0x14` (20) | Results: copies the scores to display RAM, grades the run, clears the win flag on a loss, and tears down through `FUN_801D414C` once the fade reaches `0x100`. |
@@ -573,6 +573,23 @@ Extraction PROT 1230 is a `prot::timpack` of **31 TIMs** - parser [`legaia_minig
 
 The HUD member at `(512, 0)` matches live VRAM exactly: 16384 of 16384 halfwords, plus 256 of 256 CLUT entries at `(0, 500)`. The widget table's `tpage` / `clut` pair therefore resolves to disc data with no runtime edit in between.
 
+## The hall's ambient tree
+
+The hall's light show is palette work, not geometry. State `1` of `FUN_801cf470` spawns records `2` and `1` of the `other7` stager bundle at the origin (`FUN_800252EC` at `0x801CF9A8` and `0x801CF9C0`) and keeps record `2`'s part in `DAT_801D51A0`. The two records tree out into the mode-3 [CLUT-cell cyclers](field-ambient-fx.md#mechanism-2---the-ambient-move-vm-effect-tree) over rows `504..=508` (the floor, the walls and the stage lamps) and the scrollers and `MoveImage` strips of the wall panels.
+
+The cyclers follow one leader through op `0x20`. The overlay installs `FUN_801D387C` in that slot (`sw v0,-0x45d4(v1)` at `0x801CF07C`), and two arms of it serve the tree:
+
+| Arm | Writes |
+|---|---|
+| `0` | Copies `DAT_801D51A0`'s `+0x90/+0x92/+0x94` (the HSV adds) into the caller and zeroes the caller's rates `+0x96/+0x98/+0x9A` |
+| `1` | Caller's V add `+0x94 = arg` |
+
+Arm `1` with `-200` on record `2`'s first frames is why the hall opens dark: `minigame_dance_retail_ready` holds that leader at `H 96, V -200` on gate `25` at banner counter `72`, and every follower reads the same.
+
+The tree runs at the hall's frame step, `DAT_1F800393 = 3` in every parked dance state. State `1` is a game tick ahead of the first READY run, so a part's gate reads one past the banner's run count.
+
+Port: `World::stage_dance_ambient` moves the walked-in scene's ambient seat aside and installs the hall's, `World::step_dance_ambient` repaints the hall's own VRAM (the native window's venue copy, the page's `play_mg_dance_ambient_step`), and `MoveVmHostImpl::ext_20` carries arms `0` and `1` while the seat is the hall's. The walked-in scene's VRAM effects stop for the length of the dance, as they do in retail with that overlay swapped out.
+
 ## HUD
 
 ### HUD widget table (`DAT_801d46cc`) + emitter geometry
@@ -639,7 +656,7 @@ Port: `engine-minigame-scenes::dance_hud_art::stage_dance_hud_vram`, driven from
 
 ### HUD render driver (`FUN_801d231c`)
 
-`FUN_801d231c` is the per-frame driver, called from the main play state. In order it draws:
+`FUN_801d231c` is the per-frame driver, called from the tail of `FUN_801cf470` past the state switch (`jal` at `0x801CFFA0`), so it draws through the count-in as well as the play state: `minigame_dance_retail_ready` shows the score boxes, the gauge and the beat track under READY. In order it draws:
 
 1. the three score readouts (`FUN_801d32f8`), then their box frames;
 2. the human's groove gauge (`FUN_801d3e28`) and beat track (`FUN_801d2524`);

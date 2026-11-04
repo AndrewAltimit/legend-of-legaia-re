@@ -11,9 +11,12 @@
 //!
 //! Only a session whose captured phase the warp itself reaches is seeded: a
 //! phase that needs played input past the entry carries `rand()` history (a
-//! slot machine's reel stops) the seed does not replay. Today that is the
-//! slot machine at rest - reel state word `DAT_801D3C84 = 1`, the attract
-//! state the init (`0`) advances to.
+//! slot machine's reel stops) the seed does not replay. That is the slot
+//! machine at rest (reel state word `DAT_801D3C84 = 1`, the attract state the
+//! init advances to), the dance's READY count-in (state `3` of
+//! `FUN_801CF470`), the contest hub's Welcome strip (arms `0..=2` of
+//! `FUN_801CF870`) and the fishing venue's idle shore (state `0xC` of
+//! `FUN_801CF3BC`).
 
 use super::*;
 use legaia_engine_mode::minigame_entry::MinigameSubId;
@@ -31,8 +34,23 @@ const COIN_BANK: u32 = 0x8008_45A4;
 const BATTLE_RETURN_FLAG: u32 = 0x8007_B8B8;
 /// The slot machine's attract state.
 const SLOT_IDLE: i32 = 1;
-/// The tick the seed takes the warp on, after the scene entry settles.
-const WARP_TICK: u64 = 40;
+/// The dance's game state (`DAT_801D5334`, PROT 0980) and the READY banner
+/// counter its state `3` draws (`DAT_801D5158`, `0x801D015C..0x801D0184`).
+const DANCE_STATE: u32 = 0x801D_5334;
+const DANCE_COUNTER: u32 = 0x801D_5158;
+/// The contest hub's arm byte (`DAT_801D1A78`, PROT 0977) and the intro hold
+/// counter arm `1` runs in `0x801D1A84`.
+const HUB_ARM: u32 = 0x801D_1A78;
+const HUB_HOLD: u32 = 0x801D_1A84;
+/// The departure scene's define, backed up by the mode-24 init.
+const DEPARTURE_DEFINE: u32 = 0x8007_BAC4;
+/// The fishing driver's state word (`DAT_801D926C`, PROT 0972).
+const FISHING_STATE: u32 = 0x801D_926C;
+/// The tick the seed takes the warp on, after the scene entry settles and
+/// ahead of any talk the save's seat would walk into: `koin1`'s sign-up
+/// counter opens its refusal line at tick `31` when the player is left there,
+/// where retail's warp is the last op of the record that seated him.
+const WARP_TICK: u64 = 20;
 /// Ticks the entry may take to reach the captured phase.
 const ENTRY_DEADLINE: u64 = 900;
 /// The image child's frame, past the warp: the captures sample the attract
@@ -52,6 +70,14 @@ pub struct RetailMinigame {
     /// The battle-return flag `_DAT_8007B8B8` is up: the overlay was entered
     /// through the door path, which assigns the balance from the bank.
     pub door_entry: bool,
+    /// The dance's, the hub's or the fishing driver's state word with its
+    /// phase counter (the READY banner counter, the Welcome hold), when that
+    /// overlay is the one resident.
+    pub phase: Option<(u32, u32)>,
+    /// The departure scene's define the mode-24 init backed up
+    /// (`_DAT_8007BAC4`): the venue overlays load their own block over the
+    /// scene word, and the warp starts from this one.
+    pub departure_define: u16,
 }
 
 impl RetailMinigame {
@@ -67,11 +93,28 @@ impl RetailMinigame {
                 game_anchors::u32_at(ram, SLOT_BALANCE) as i32,
             )
         });
+        let minigame = u8::try_from(sub_id)
+            .ok()
+            .and_then(MinigameSubId::from_sub_id);
+        let phase = match minigame {
+            Some(MinigameSubId::Dance) => Some((
+                game_anchors::u32_at(ram, DANCE_STATE),
+                game_anchors::u32_at(ram, DANCE_COUNTER),
+            )),
+            Some(MinigameSubId::MuscleDome) => Some((
+                u32::from(game_anchors::u32_at(ram, HUB_ARM) as u8),
+                game_anchors::u32_at(ram, HUB_HOLD),
+            )),
+            Some(MinigameSubId::Fishing) => Some((game_anchors::u32_at(ram, FISHING_STATE), 0)),
+            _ => None,
+        };
         Self {
             sub_id,
             slot,
             coin_bank: game_anchors::u32_at(ram, COIN_BANK),
             door_entry: game_anchors::u32_at(ram, BATTLE_RETURN_FLAG) != 0,
+            phase,
+            departure_define: game_anchors::u32_at(ram, DEPARTURE_DEFINE) as u16,
         }
     }
 
@@ -109,12 +152,87 @@ impl RetailMinigame {
                 "slot machine in reel state {state:#X}: past the attract state the reel stops \
                  and feature rolls are rand() history the seed does not replay"
             )),
+            // State `0xC`, the idle shore: the entry itself lands there, and
+            // no cast has rolled anything. State `0xB` is the fade in front
+            // of it, whose frame still holds what stood before.
+            (Some(MinigameSubId::Fishing), _) if matches!(self.phase, Some((0xC, _))) => None,
+            (Some(MinigameSubId::Fishing), _) => Some(
+                "fishing past the idle shore: the cast, its drift and the bite rolls are \
+                 rand() history the seed does not replay"
+                    .to_string(),
+            ),
+            // State `3`: the count-in the warp plays out on its own.
+            (Some(MinigameSubId::Dance), _) if matches!(self.phase, Some((3, _))) => None,
+            (Some(MinigameSubId::Dance), _) => Some(
+                "dance past the count-in: the chart's presses and the rivals' rolls are \
+                 history the seed does not replay"
+                    .to_string(),
+            ),
+            // Arms `0..=2`: the Welcome strip of a first visit.
+            (Some(MinigameSubId::MuscleDome), _) if matches!(self.phase, Some((0..=2, _))) => None,
+            (Some(MinigameSubId::MuscleDome), _) => Some(
+                "contest hub past the Welcome strip: the course picker and the legs are \
+                 played input the seed does not replay"
+                    .to_string(),
+            ),
             (Some(m), _) => Some(format!(
                 "no minigame session seeding path for {m:?} (sub-id {})",
                 self.sub_id
             )),
             (None, _) => Some(format!("minigame sub-id {} names no overlay", self.sub_id)),
         }
+    }
+}
+
+/// Whether the engine's session stands at the phase the capture holds.
+fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMinigame) -> bool {
+    use legaia_engine_minigames::muscle_ringside::FirstVisitArm;
+    let m = &world.minigames;
+    match (mg.minigame(), mg.phase) {
+        (Some(MinigameSubId::SlotMachine), _) => {
+            world.mode == SceneMode::SlotMachine
+                && m.slot_machine.as_ref().map(|s| s.retail_state()) == mg.slot.map(|s| s.0)
+        }
+        (Some(MinigameSubId::Fishing), _) => {
+            world.mode == SceneMode::Fishing
+                && m.fishing
+                    .as_ref()
+                    .is_some_and(|f| f.phase() == legaia_engine_fishing::fishing::PondPhase::Idle)
+        }
+        (Some(MinigameSubId::Dance), Some((_, counter))) => {
+            world.mode == SceneMode::Dance
+                && m.dance_countin
+                    .as_ref()
+                    .is_some_and(|c| i64::from(c.frame()) >= i64::from(counter))
+        }
+        (Some(MinigameSubId::MuscleDome), Some((arm, count))) => {
+            world.mode == SceneMode::MuscleDome
+                && m.muscle_hub
+                    .first_visit
+                    .as_ref()
+                    .is_some_and(|h| match arm {
+                        0 => h.arm() == FirstVisitArm::IntroIn,
+                        1 => h.arm() == FirstVisitArm::IntroHold && h.counter() >= count as i32,
+                        _ => h.arm() == FirstVisitArm::IntroOut,
+                    })
+        }
+        _ => false,
+    }
+}
+
+/// The scene the warp departs from: the label, or for a venue overlay that
+/// loaded its own block over the scene word, the mode-24 init's backup.
+fn departure_scene(
+    retail: &RetailObs,
+    mg: &RetailMinigame,
+    cdname: &legaia_prot::cdname::IndexMap,
+) -> String {
+    match mg.minigame() {
+        Some(MinigameSubId::Fishing) => cdname
+            .get(&u32::from(mg.departure_define))
+            .cloned()
+            .unwrap_or_else(|| retail.scene.clone()),
+        _ => retail.scene.clone(),
     }
 }
 
@@ -128,11 +246,15 @@ struct EngineMinigame {
     reached: Option<u64>,
 }
 
-fn run_engine_minigame(extracted: &Path, retail: &RetailObs) -> Result<EngineMinigame> {
+fn run_engine_minigame(
+    extracted: &Path,
+    retail: &RetailObs,
+    departure: &str,
+) -> Result<EngineMinigame> {
     let mg = retail.minigame.context("no minigame observables")?;
     let sub = mg.minigame().context("sub-id names no overlay")?;
     let cfg = BootConfig {
-        scene: retail.scene.clone(),
+        scene: departure.to_string(),
         enable_audio: false,
     };
     let mut session = NativeSession::open(extracted, &cfg).context("open boot session")?;
@@ -140,23 +262,15 @@ fn run_engine_minigame(extracted: &Path, retail: &RetailObs) -> Result<EngineMin
     let save = retail
         .seed_save()
         .context("retail state has no liftable save window")?;
-    let _landing = session.resume_save(save, &retail.scene, &FieldLiveOpts::default());
+    let _landing = session.resume_save(save, departure, &FieldLiveOpts::default());
     for _ in 0..WARP_TICK {
         session.tick()?;
     }
     session.host.world.request_minigame_warp(sub.sub_id());
-    let want = mg.slot.map(|(state, _)| state);
     let mut reached = None;
     for t in 0..ENTRY_DEADLINE {
         session.tick()?;
-        let state = session
-            .host
-            .world
-            .minigames
-            .slot_machine
-            .as_ref()
-            .map(|m| m.retail_state());
-        if session.host.world.mode == SceneMode::SlotMachine && state == want {
+        if at_captured_phase(&session.host.world, &mg) {
             reached = Some(t);
             break;
         }
@@ -186,6 +300,7 @@ pub(super) fn run_minigame(
     opts: &RunOptions<'_>,
     entry: &CorpusEntry,
     retail: &RetailObs,
+    cdname: &legaia_prot::cdname::IndexMap,
     report: &mut StateReport,
 ) {
     let Some(mg) = retail.minigame else {
@@ -196,7 +311,8 @@ pub(super) fn run_minigame(
         report.unseeded = why;
         return;
     }
-    let engine = match run_engine_minigame(opts.extracted, retail) {
+    let departure = departure_scene(retail, &mg, cdname);
+    let engine = match run_engine_minigame(opts.extracted, retail, &departure) {
         Ok(e) => e,
         Err(e) => {
             report.unseeded = format!("seeding failed: {e:#}");
@@ -204,7 +320,10 @@ pub(super) fn run_minigame(
         }
     };
     let mut ch = BTreeMap::new();
-    let mode_ok = engine.mode == SceneMode::SlotMachine;
+    let mode_ok = mg
+        .minigame()
+        .and_then(MinigameSubId::scene_mode)
+        .is_some_and(|m| engine.mode == m);
     ch.insert("mode".to_string(), f64::from(u8::from(mode_ok)));
     report.detail.insert(
         "mode".into(),
@@ -212,10 +331,12 @@ pub(super) fn run_minigame(
     );
     ch.insert(
         "scene".to_string(),
-        f64::from(u8::from(engine.scene == retail.scene)),
+        f64::from(u8::from(engine.scene == departure)),
     );
     let words = [
-        engine.slot.map(|s| s.0) == mg.slot.map(|s| s.0),
+        // The phase reached stands for the session's word when there is no
+        // balance to compare.
+        engine.reached.is_some() && engine.slot.map(|s| s.0) == mg.slot.map(|s| s.0),
         engine.slot.map(|s| s.1) == mg.slot.map(|s| s.1),
         engine.coin_bank == mg.coin_bank,
     ];
@@ -226,24 +347,33 @@ pub(super) fn run_minigame(
     report.detail.insert(
         "minigame".into(),
         format!(
-            "slot state/balance retail {:?} engine {:?}; coin bank retail {} engine {}; phase \
-             reached {:?} ticks past the warp",
-            mg.slot, engine.slot, mg.coin_bank, engine.coin_bank, engine.reached
+            "slot state/balance retail {:?} engine {:?}; coin bank retail {} engine {}; retail \
+             phase {:?}, reached {:?} ticks past the warp",
+            mg.slot, engine.slot, mg.coin_bank, engine.coin_bank, mg.phase, engine.reached
         ),
     );
     if let (Some(exe), Some(rf), Some(save)) =
         (opts.engine_exe, &retail.frame, retail.seed_save().as_ref())
     {
         let warp = WARP_TICK;
-        let extra = vec!["--key-script".to_string(), format!("{warp}:O")];
+        let (key, past_warp) = match mg.minigame() {
+            // The capture's own word names the instant; the slot machine's
+            // attract state holds still, its frame sampled where the capture
+            // stood.
+            Some(MinigameSubId::Dance) => ("K", engine.reached.unwrap_or(0) + 1),
+            Some(MinigameSubId::MuscleDome) => ("M", engine.reached.unwrap_or(0) + 1),
+            Some(MinigameSubId::Fishing) => ("L", FRAME_TICKS_PAST_WARP),
+            _ => ("O", FRAME_TICKS_PAST_WARP),
+        };
+        let extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
         match crate::retail_compare_image::engine_frame_with(
             exe,
             opts.extracted,
-            &retail.scene,
+            &departure,
             None,
             &extra,
             &[],
-            warp + FRAME_TICKS_PAST_WARP,
+            warp + past_warp,
             opts.out_dir,
             &entry.label,
             crate::retail_compare_image::FrameEntry::Resume(save),
@@ -288,6 +418,8 @@ mod tests {
             slot: Some((state, balance)),
             coin_bank: bank,
             door_entry: door,
+            phase: None,
+            departure_define: 0,
         }
     }
 
@@ -302,13 +434,34 @@ mod tests {
         );
         assert!(slot(1, 120, 100, true).unseeded_reason().is_some());
         assert!(slot(1, 70, 0, false).unseeded_reason().is_some());
-        // Another minigame has no path yet.
-        let dance = RetailMinigame {
-            sub_id: 6,
+        // Baka Fighter has no path yet.
+        let baka = RetailMinigame {
+            sub_id: 4,
             slot: None,
             coin_bank: 0,
             door_entry: true,
+            phase: None,
+            departure_define: 0,
         };
-        assert!(dance.unseeded_reason().unwrap().contains("Dance"));
+        assert!(baka.unseeded_reason().unwrap().contains("BakaFighter"));
+    }
+
+    #[test]
+    fn the_entry_phases_are_seeded_and_the_played_ones_are_not() {
+        let mg = |sub_id, state| RetailMinigame {
+            sub_id,
+            slot: None,
+            coin_bank: 0,
+            door_entry: true,
+            phase: Some((state, 0)),
+            departure_define: 0,
+        };
+        assert_eq!(mg(6, 3).unseeded_reason(), None);
+        assert!(mg(6, 0xA).unseeded_reason().is_some());
+        assert_eq!(mg(5, 1).unseeded_reason(), None);
+        assert!(mg(5, 0x15).unseeded_reason().is_some());
+        assert_eq!(mg(0, 0xC).unseeded_reason(), None);
+        assert!(mg(0, 0xB).unseeded_reason().is_some());
+        assert!(mg(0, 0x19).unseeded_reason().is_some());
     }
 }

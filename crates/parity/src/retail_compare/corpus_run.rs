@@ -319,7 +319,7 @@ pub(super) fn run_one(
     report.game_mode = retail.game_mode;
     report.class = retail.class;
     if retail.class == StateClass::Minigame {
-        super::minigame_run::run_minigame(opts, entry, &retail, &mut report);
+        super::minigame_run::run_minigame(opts, entry, &retail, cdname, &mut report);
         return report;
     }
     if retail.class == StateClass::Cutscene {
