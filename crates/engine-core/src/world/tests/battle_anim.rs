@@ -1350,7 +1350,16 @@ fn a_committed_swing_plays_its_animation_cue_track() {
     }
     assert_eq!(
         ops,
-        vec![SfxRingOp::Push(0x243), SfxRingOp::Push(0x19)],
+        vec![
+            SfxRingOp::PushUnlessSustained {
+                id: 0x243,
+                key: 0x243
+            },
+            SfxRingOp::PushUnlessSustained {
+                id: 0x19,
+                key: 0x19
+            }
+        ],
         "each cue once, in track order"
     );
     assert_eq!(world.actors[0].battle_anim_cue_cursor, 2);
@@ -1636,4 +1645,27 @@ fn a_rage_seat_under_a_presentation_arm_is_not_stamped() {
     w.actors[0].battle.render_flag = 0xFF;
     w.tick_battle_animations();
     assert_eq!(w.actors[0].battle.field_flags & 0x380, 0);
+}
+
+/// Both flee sites zero the walk record's cue track for every party slot
+/// (`0x801E7D68`, PROT 0925's `0x801F7600`), so the run off stage is silent while
+/// the walk into a strike keeps its steps.
+#[test]
+fn a_granted_flee_silences_the_party_walk_clip() {
+    let mut world = pose_test_world();
+    world.party.party_count = 1;
+    let mut head = vec![0u8; 0x88];
+    head[0x54..0x58].copy_from_slice(&[5, 0, 0x12, 0]);
+    let mut walk = pose_test_clip(1, 4, 0);
+    walk.effect_script = head.clone();
+    let a = &mut world.actors[0];
+    a.battle_action_clips = Some(std::sync::Arc::new(vec![None, Some(walk)]));
+    a.battle.current_anim = 1;
+    a.battle_effect_script = Some(head);
+    world.stage_party_flee();
+    let a = &world.actors[0];
+    let bank = a.battle_action_clips.as_ref().unwrap()[1].as_ref().unwrap();
+    assert!(bank.effect_script[0x54..0x74].iter().all(|&b| b == 0));
+    let live = a.battle_effect_script.as_ref().unwrap();
+    assert!(live[0x54..0x74].iter().all(|&b| b == 0));
 }

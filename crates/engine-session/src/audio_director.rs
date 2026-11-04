@@ -497,6 +497,33 @@ mod tests {
         assert_eq!(due, vec![0x2E]);
     }
 
+    /// The funnels' ring write checks the sustained cue the drainer latched:
+    /// a walk clip's cue track re-rings its looping cue every cycle, and retail
+    /// drops the repeat while the first is held (`0x8004FF44..0x8004FF50`).
+    #[test]
+    fn a_funnel_cue_is_dropped_while_its_sustained_cue_is_latched() {
+        let mut d = headless();
+        d.sfx_bank.latch_sustained_cue(0x253);
+        d.apply_sfx_ring_ops(
+            &[
+                SfxRingOp::PushUnlessSustained {
+                    id: 0x253,
+                    key: 0x253,
+                },
+                SfxRingOp::PushUnlessSustained {
+                    id: 0x62,
+                    key: 0x62,
+                },
+            ],
+            1,
+        );
+        let mut due = Vec::new();
+        for _ in 0..4 {
+            due.extend(d.tick_sfx_frame().ring_due);
+        }
+        assert_eq!(due, vec![0x62]);
+    }
+
     /// Test stub bank - empty programs / samples. Real banks come from
     /// `legaia_vab::parse`.
     fn empty_bank() -> VabBank {

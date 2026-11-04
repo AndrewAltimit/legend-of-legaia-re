@@ -69,7 +69,16 @@ fn a_sub_voice_cast_cue_rings_the_dispatchers_index() {
     }
     assert_eq!(
         world.take_sfx_ring_ops(),
-        vec![SfxRingOp::Push(0xF8), SfxRingOp::Push(0x20)]
+        vec![
+            SfxRingOp::PushUnlessSustained {
+                id: 0xF8,
+                key: 0xF8 + 0x19C
+            },
+            SfxRingOp::PushUnlessSustained {
+                id: 0x20,
+                key: 0x20
+            }
+        ]
     );
     assert!(world.audio.battle_sfx_cues.is_empty());
     assert!(world.drain_battle_xa_cues().is_empty());

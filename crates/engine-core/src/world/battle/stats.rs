@@ -35,6 +35,33 @@ impl World {
         )
     }
 
+    /// Zero the eight `(frame, cue)` slots of a party actor's walk record, the
+    /// bank's clip `1`, in the bank and in the committed copy if the walk is
+    /// what the actor is playing: retail edits the one record both read.
+    fn clear_walk_cue_track(a: &mut Actor) {
+        use legaia_engine_battle::anim_cue::{ANIM_CUE_TRACK_LEN, ANIM_CUE_TRACK_OFFSET};
+        let span =
+            ANIM_CUE_TRACK_OFFSET..ANIM_CUE_TRACK_OFFSET + usize::from(ANIM_CUE_TRACK_LEN) * 4;
+        let clear = |script: &mut Vec<u8>| {
+            if let Some(track) = script.get_mut(span.clone()) {
+                track.fill(0);
+            }
+        };
+        if let Some(walk) = a
+            .battle_action_clips
+            .as_mut()
+            .and_then(|clips| std::sync::Arc::make_mut(clips).get_mut(1))
+            .and_then(Option::as_mut)
+        {
+            clear(&mut walk.effect_script);
+        }
+        if a.battle.current_anim == 1
+            && let Some(script) = a.battle_effect_script.as_mut()
+        {
+            clear(script);
+        }
+    }
+
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
     /// formula (the routine battle-action state `0x64` calls, the writer of
     /// the `_DAT_8007726C` outcome pointer). Party score = per-slot
@@ -130,10 +157,21 @@ impl World {
     /// Retail stages every party slot; the port stages the members still
     /// standing and leaves a downed one where it fell (the run band floors
     /// its HP at 1 for the field either way), so only the living run.
+    ///
+    /// The walk's own footsteps are silenced for the rest of the battle
+    /// ([`Self::clear_walk_cue_track`]).
+    // PORT: FUN_801F6A00 (arm 8's cue-track clear, `0x801F75EC..0x801F7620`)
     // PORT: FUN_801E791C (`0x801E7B98..0x801E8030`, the flee staging; the
     // record-side HP / MP write-back is the battle teardown's)
     pub(in crate::world) fn stage_party_flee(&mut self) {
         let party_n = (self.party.party_count as usize).min(self.actors.len());
+        // Both flee sites clear the cue track of every party slot's walk record,
+        // bank entry 1 (`*(0x801C9360[slot]) + 4`, eight `sh zero` pairs at
+        // `0x801E7D68..0x801E7D80` and PROT 0925's `0x801F7600..0x801F7618`,
+        // ahead of the slot's `+0x1DA = 1`): the party runs off silently.
+        for a in self.actors.iter_mut().take(party_n) {
+            Self::clear_walk_cue_track(a);
+        }
         let runners: Vec<usize> = (0..party_n)
             .filter(|&i| self.actors[i].battle.hp > 0 && self.actors[i].battle.liveness != 0)
             .collect();

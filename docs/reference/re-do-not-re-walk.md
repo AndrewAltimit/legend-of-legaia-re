@@ -68,6 +68,8 @@ raw table does not have. Both have produced multiple entries below.
   - [The slot-B band: four readings the whole-band dump overturned](#the-slot-b-band-four-readings-the-whole-band-dump-overturned)
   - [The summon draw runs 35-64 times a frame](#the-summon-draw-runs-35-64-times-a-frame)
 - [Audio / sound driver](#audio--sound-driver)
+  - [The cue funnels' de-dup word is not dead](#the-cue-funnels-de-dup-word-is-not-dead)
+  - [A flee's silent steps are not the `0x800478C0` gate](#a-flees-silent-steps-are-not-the-0x800478c0-gate)
   - [Op-`0x35` sub-op 9 was never a queue](#op-0x35-sub-op-9-was-never-a-queue)
   - [The battle track does not start during the spin](#the-battle-track-does-not-start-during-the-spin)
   - [The 256-slot SPU-address run that was really a CLUT](#the-256-slot-spu-address-run-that-was-really-a-clut)
@@ -974,6 +976,24 @@ larger figure is off by more than an order of magnitude; see
 [`effect-vm.md`](../subsystems/effect-vm.md).
 
 ## Audio / sound driver
+
+### The cue funnels' de-dup word is not dead
+
+`0x8007B724` read as `-1` for the whole of a mode, because the search for its writers
+looked for the absolute address: the mode init's `sw v0,-0x48dc(at)` turned up and the
+drainer's `sw s0,0x40c(gp)` did not. The same search read that `s0` as a mixer record
+pointer, which is the one-shot arm's `move s0,v1`; the sustained arm branches past it
+with the ring id still in `s0`. So the word holds the sustained cue the drainer keyed
+([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)). A
+global a gp-relative store can reach needs both forms searched.
+
+### A flee's silent steps are not the `0x800478C0` gate
+
+The cue walk's gate in `FUN_80047430` reads `0x8007BD71`, and a flee is close to the
+battle's end, so the silence read as that byte falling below `0x11`. A breakpoint on
+`FUN_800508DC` through state `0x65` reads the byte at `0xFF` and the walker running on
+clip `1`, against a track of zeros: the flee staging cleared the record
+([settled](re-settled-threads/audio.md)).
 
 ### The battle track does not start during the spin
 

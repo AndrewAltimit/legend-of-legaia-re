@@ -235,6 +235,7 @@ So `ctx[+0x291] == 2` is a per-formation flag that reaches the same forced-tie s
 - Live `x` is halved and `z` quartered. The group is then re-centred on `(0, 0x400)`, and every pair closer than 200 units in `x` is pushed apart by half the shortfall each.
 - Live HP / MP are written back to the character records with downed members **floored at 1 HP** (the record-side half of the state-`0x64` floor).
 - The live camera is snapped to yaw `0xF00`, TR `(0, 0x600, 0x2000)`, focus at the origin. `FUN_801D829C` tweens it over `0x30` frames to the reverse angle: yaw `0x800`, TR `(0, 0x600, 0)`, focus on the regrouped party. Nothing re-frames it before the battle ends.
+- Every party slot's walk record, bank entry `1`, has its eight cue slots zeroed (`0x801E7D68..0x801E7D80`), so the run off stage sounds no steps. PROT 0925's flute flee does the same (`0x801F7600..0x801F7618`). The record stays cleared for the rest of the battle.
 
 Port: `engine-battle-vm::battle_formulas::escape_roll` (+ `escape_party_score` / `escape_enemy_score` / `EscapeFlags`), rolled live by `World::roll_battle_escape` when the command menu resolves Run. The staging is `World::stage_party_flee` and the shot is `BattleCamera::arm_escape_shot`. Two port differences: it stages only the members still standing (a downed one stays where it fell), and it keeps no escape counter.
 

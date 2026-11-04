@@ -183,10 +183,18 @@ impl<S: AudioSink> AudioDirector<S> {
         let fired = &mut report.fired;
         self.audio.with_spu(|spu| {
             for (id, fire) in &ring {
-                let voice = match fire {
-                    RingFire::Static(small, vab) => bank.play_one_shot(*small, spu, vab),
-                    RingFire::Runtime(row, vab) => bank.play_descriptor(row, spu, vab),
+                let (sustained, voice) = match fire {
+                    RingFire::Static(small, vab) => (
+                        bank.get(*small).is_some_and(|e| e.sustained),
+                        bank.play_one_shot(*small, spu, vab),
+                    ),
+                    RingFire::Runtime(row, vab) => {
+                        (row[3] & 0x20 != 0, bank.play_descriptor(row, spu, vab))
+                    }
                 };
+                if sustained {
+                    bank.latch_sustained_cue(i32::from(*id as i16));
+                }
                 if let Some(v) = voice {
                     fired.push((*id, v));
                 }
@@ -237,6 +245,11 @@ impl<S: AudioSink> AudioDirector<S> {
             match *op {
                 SfxRingOp::Push(id) => {
                     self.sfx_sched.push_ring_cue(id);
+                }
+                SfxRingOp::PushUnlessSustained { id, key } => {
+                    if self.sfx_bank.sustained_cue() != key {
+                        self.sfx_sched.push_ring_cue(id);
+                    }
                 }
                 SfxRingOp::SetLastDelay(d) => self.sfx_sched.set_ring_cue_delay(d),
                 SfxRingOp::ReplaceLast(id) => self.sfx_sched.replace_ring_cue(id),

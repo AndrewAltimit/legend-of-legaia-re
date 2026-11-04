@@ -300,7 +300,12 @@ fn a_flagged_swing_on_a_monster_enqueues_the_runtime_row() {
     // monster takes the high leg, `0x10C + 0x19C`, on the SFX ring.
     assert_eq!(
         w.take_sfx_ring_ops(),
-        vec![legaia_engine_system::sound_state::SfxRingOp::Push(0x2A8)]
+        vec![
+            legaia_engine_system::sound_state::SfxRingOp::PushUnlessSustained {
+                id: 0x2A8,
+                key: 0x2A8
+            }
+        ]
     );
     assert!(
         w.drain_battle_xa_cues().is_empty(),

@@ -162,14 +162,20 @@ pub const ONE_SHOT_LIMIT: u8 = 3;
 /// The limit in game modes `3` (field) and `0x17` (menu): voices `23..=22`.
 pub const ONE_SHOT_LIMIT_FIELD: u8 = 1;
 
+/// `gp+0x40C` with no sustained cue latched: the teardown `FUN_80017910` stores
+/// it (`0x80017958..0x80017960`), and no funnel's key compares equal to it.
+pub const NO_SUSTAINED_CUE: i32 = -1;
+
 /// The cue drainer's voice bookkeeping (`FUN_80016B6C`): the rolling one-shot
 /// cursor `gp+0x4BC`, its per-mode limit, and the held sustained count
-/// `gp+0x5D0`.
+/// `gp+0x5D0`, and the id of the sustained cue it last keyed (`gp+0x40C`, the
+/// word the cue funnels drop a repeat against).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DrainerVoices {
     one_shot: u8,
     limit: u8,
     held: u8,
+    sustained_cue: i32,
 }
 
 impl Default for DrainerVoices {
@@ -178,6 +184,7 @@ impl Default for DrainerVoices {
             one_shot: 0,
             limit: ONE_SHOT_LIMIT,
             held: 0,
+            sustained_cue: NO_SUSTAINED_CUE,
         }
     }
 }
@@ -351,9 +358,33 @@ impl SfxBank {
                 spu.record_key_off(v);
             }
         }
+        // `beq v0,zero,0x80017964` at `0x80017920` steps over the store too, so
+        // with nothing held the latch stays as it is.
+        if held != 0 {
+            st.sustained_cue = NO_SUSTAINED_CUE;
+        }
         st.held = 0;
         self.voices.set(st);
         held
+    }
+
+    /// Latch the ring id of a sustained cue the drainer reached (`sw s0,0x40c(gp)`
+    /// at `0x80016DC8`, ahead of the key-on loop, so a row with no voices latches
+    /// too). The word stays until the next sustained cue or the teardown, however
+    /// long the voice sounds.
+    // PORT: FUN_80016B6C (`0x80016DC8`, the sustained arm's latch)
+    pub fn latch_sustained_cue(&self, ring_id: i32) {
+        let mut st = self.voices.get();
+        st.sustained_cue = ring_id;
+        self.voices.set(st);
+    }
+
+    /// The latched sustained cue (`gp+0x40C`), [`NO_SUSTAINED_CUE`] when none is.
+    /// The battle cue funnels `FUN_8004FE5C` and `FUN_8004FCC8` read it to drop
+    /// a repeat, which is what keeps a looping clip's cue track from restarting
+    /// the sample it already holds.
+    pub fn sustained_cue(&self) -> i32 {
+        self.voices.get().sustained_cue
     }
 
     /// How many sustained voices the drainer holds (`gp+0x5D0`).
@@ -420,8 +451,8 @@ impl SfxBank {
 /// How the cue dispatcher `FUN_8004fcc8` routes a raw cue id.
 ///
 /// `FUN_8004fcc8` is the front-end in front of the [`SfxScheduler`]'s cue ring
-/// (`FUN_80035B50`): it classifies the raw id, de-dups UI/SFX cues against the
-/// currently-selected cue, and routes voice ids (`>= 0x100`) to the streamed
+/// (`FUN_80035B50`): it classifies the raw id, de-dups cues against the held
+/// sustained cue (`DAT_8007B724`), and routes voice ids (`>= 0x100`) to the streamed
 /// voice trigger `FUN_8003D53C` instead. This enum is the pure classification;
 /// the actual ring write, the runtime voice gates (`gp[0xA0C]+0x276 == 0`,
 /// `FUN_8003DE7C(1) == 0`), and the SPU note-on stay with the caller.
@@ -450,8 +481,8 @@ pub enum CueDispatch {
 
 impl CueDispatch {
     /// For a [`CueDispatch::Ring`] cue, whether the dispatcher suppresses it
-    /// because `current_selection` (`DAT_8007B724`) already equals its
-    /// `dedup_key` (so a held/repeated selection cue doesn't re-fire). Always
+    /// because `current_selection` (`DAT_8007B724`, [`SfxBank::sustained_cue`])
+    /// already equals its `dedup_key`. Always
     /// `false` for [`CueDispatch::Voice`].
     pub fn ring_suppressed_by(&self, current_selection: i32) -> bool {
         matches!(self, CueDispatch::Ring { dedup_key, .. } if *dedup_key == current_selection)
@@ -1499,6 +1530,22 @@ mod tests {
             Phase::Attack,
             "one-shot untouched"
         );
+    }
+
+    /// `gp+0x40C` holds until the teardown, and the teardown only stores it
+    /// with a run held (`0x80017920`).
+    #[test]
+    fn the_sustained_latch_lasts_until_a_teardown_with_a_run_held() {
+        let vab = one_tone_bank();
+        let mut spu = crate::spu::Spu::new();
+        let bank = SfxBank::from_descriptors([(0x1D, 0, 0, 60, 0x21)]);
+        assert_eq!(bank.sustained_cue(), NO_SUSTAINED_CUE);
+        bank.latch_sustained_cue(0x253);
+        bank.release_sustained(&mut spu);
+        assert_eq!(bank.sustained_cue(), 0x253, "nothing was held");
+        bank.play_one_shot(0x1D, &mut spu, &vab);
+        bank.release_sustained(&mut spu);
+        assert_eq!(bank.sustained_cue(), NO_SUSTAINED_CUE);
     }
 
     /// `FUN_80017910`: the teardown keys off the held sustained run and

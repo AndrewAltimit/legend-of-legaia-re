@@ -314,7 +314,13 @@ mod tests {
     #[test]
     fn a_landed_slot_rings_the_record_cue_once() {
         let mut world = world_with_a_landing_flight(0x49);
-        assert_eq!(ticks(&mut world), vec![SfxRingOp::Push(0x49)]);
+        assert_eq!(
+            ticks(&mut world),
+            vec![SfxRingOp::PushUnlessSustained {
+                id: 0x49,
+                key: 0x49 + 0x19C
+            }]
+        );
     }
 
     #[test]

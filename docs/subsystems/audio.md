@@ -2163,9 +2163,9 @@ cancelled, `2` chosen) at `0x801D17F8`. The press that exhausts the arts gauge
 leaves the entry silently: `bne s0,zero,0x801D3290` at `0x801D20CC` steps over
 the tail's cue.
 
-The dispatcher's de-dup word `0x8007B724` is `-1` from the mode init
-(`0x8001DDA4`) and no other dumped routine stores it, so it never suppresses
-one of these.
+The dispatcher's de-dup word `0x8007B724` is `gp+0x40C`, the sustained cue the
+drainer last keyed ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
+None of the menu's cues is sustained, so it never suppresses one of these.
 
 Every caller's id goes through the same split: `id >= 0x100` takes the
 dispatcher's CD-XA arm whoever calls it. The Cort stage modules' cues `0x20A`
@@ -2200,7 +2200,10 @@ A descriptor with `+3 & 0x20` is a sustained cue: the drainer keys it on voices
 Its sample loops (the VAG repeat flag) under a held ADSR sustain, so nothing in
 the voice ends it. Two things do: the drainer's own release of the old run when
 the next sustained cue keys, and the teardown `FUN_80017910`, which keys off
-voices `7 .. 7 + gp+0x5D0`, clears the count and writes `-1` to `gp+0x40C`.
+voices `7 .. 7 + gp+0x5D0`, clears the count and writes `-1` to `gp+0x40C`, the
+latched cue id the battle funnels
+[drop a repeat against](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat).
+With no run held it stores neither.
 Its callers:
 
 | Caller | Site | When |

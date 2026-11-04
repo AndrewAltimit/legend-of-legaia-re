@@ -29,8 +29,8 @@
 //! the same byte once you subtract the runtime-bank id base `0x200`,
 //! see [`RUNTIME_BANK_ID_BASE`]).
 //!
-//! **Dedupe**: a cue whose resolved ring id the last-played word
-//! `DAT_8007B724` already holds is dropped (`id - 1` for the low leg,
+//! **Dedupe**: a cue whose key the last-sustained word `DAT_8007B724`
+//! already holds is dropped (`id - 1` for the low leg,
 //! `id + 0x19C` for the high leg; the XA leg never dedupes).
 //! **Wrap**: after any append, a counter `> 3` resets to 0 - the ring
 //! really is 4 slots.
@@ -60,6 +60,9 @@ pub struct SfxCueOutcome {
     pub element_write: Option<u8>,
     /// XA voice clip started this call.
     pub xa: Option<XaVoiceClip>,
+    /// What the leg compared against the last-played word (`DAT_8007B724`): the
+    /// host holding the live word re-checks this before the ring write lands.
+    pub dedupe_key: Option<u32>,
 }
 
 /// Host-supplied inputs the router reads.
@@ -90,7 +93,7 @@ pub struct SfxCueRing {
     pub slots: [u16; 4],
     /// Write counter (`ctx+9`); wraps to 0 after exceeding 3.
     pub counter: u8,
-    /// Last-played dedupe word (`DAT_8007B724`, maintained by the drainer).
+    /// Dedupe word (`DAT_8007B724`): the sustained cue the drainer last keyed.
     pub last_played: u32,
 }
 
@@ -138,6 +141,11 @@ pub fn route_sfx_cue(
         }
         return out;
     }
+    out.dedupe_key = Some(if id < 0x48 {
+        id.wrapping_sub(1)
+    } else {
+        id + 0x19C
+    });
     if id < 0x48 {
         // Low static-table leg.
         if ring.last_played == id.wrapping_sub(1) {
