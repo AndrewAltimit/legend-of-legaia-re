@@ -3157,10 +3157,11 @@ builds stands on retail's symbols, and the frame needs no seat. It reads `1.000`
   departure scene the mode-24 init backed up (`_DAT_8007BAC4`). State `0xB`, the
   fade in front of it, still shows what stood before: `minigame_fishing_retail_ready`
   is parked there on the rod and water of an earlier cast, and stays unseeded.
-- **The dance's READY count-in** (`DAT_801D5334 = 3`), sampled at the capture's
-  own banner counter `DAT_801D5158`.
-- **The contest hub's Welcome strip** (arm byte `DAT_801D1A78` in `0..=2`),
-  sampled at the capture's hold counter `0x801D1A84`.
+- **The dance's count-in** (`DAT_801D5334` in `3..=5`), sampled at the capture's
+  own banner counter `DAT_801D5158` or `GO!` accumulator `DAT_801D515C`.
+- **The contest hub's first visit** (arm byte `DAT_801D1A78` in `0..=5` or
+  `0x15`), sampled at the capture's level `0x801D1A84` or hold `0x801D1A70`.
+- **The Baka Fighter's title card** (cabinet state `DAT_801DBF44 = 1`).
 
 The seed takes the warp at tick `20`, ahead of the talk `koin1`'s sign-up counter
 opens at tick `31` on a player the save leaves standing there; retail's warp is
@@ -3172,10 +3173,8 @@ What stays unseeded, and what each needs:
   `4`): the reel stops and feature rolls are `rand()` history after entry.
   Seeding it means writing the reel positions `DAT_801D3CC0..` and the
   stopped-reel count over the engine machine's.
-- **Baka Fighter**: no path. Its captures are mid-round, behind pad input and
-  the AI's `rand()` picks.
-- **A played phase of the others**: a cast's flight and bite rolls, the chart's
-  presses, the hub past the Welcome strip.
+- **A played phase**: a Baka Fighter round (pad input and the AI's `rand()`
+  picks), a cast's flight and bite rolls, the chart's presses, the hub's legs.
 
 ## Channels
 

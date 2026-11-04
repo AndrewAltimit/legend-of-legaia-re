@@ -13,10 +13,10 @@
 //! phase that needs played input past the entry carries `rand()` history (a
 //! slot machine's reel stops) the seed does not replay. That is the slot
 //! machine at rest (reel state word `DAT_801D3C84 = 1`, the attract state the
-//! init advances to), the dance's READY count-in (state `3` of
-//! `FUN_801CF470`), the contest hub's Welcome strip (arms `0..=2` of
-//! `FUN_801CF870`) and the fishing venue's idle shore (state `0xC` of
-//! `FUN_801CF3BC`).
+//! init advances to), the dance's count-in (states `3..=5` of `FUN_801CF470`),
+//! the contest hub's first visit up to the fight (`FUN_801CF870`), the fishing
+//! venue's idle shore (state `0xC` of `FUN_801CF3BC`) and the Baka Fighter's
+//! title card (cabinet state `1` of `FUN_801CF388`).
 
 use super::*;
 use legaia_engine_mode::minigame_entry::MinigameSubId;
@@ -46,6 +46,12 @@ const HUB_HOLD: u32 = 0x801D_1A84;
 const DEPARTURE_DEFINE: u32 = 0x8007_BAC4;
 /// The fishing driver's state word (`DAT_801D926C`, PROT 0972).
 const FISHING_STATE: u32 = 0x801D_926C;
+/// The dance's `GO!` accumulator (`DAT_801D515C`).
+const DANCE_GO: u32 = 0x801D_515C;
+/// The hub's arm-`5` hold (`0x801D1A70`).
+const HUB_CARD_HOLD: u32 = 0x801D_1A70;
+/// The Baka Fighter cabinet's state word (`DAT_801DBF44`, PROT 0976).
+const BAKA_STATE: u32 = 0x801D_BF44;
 /// The tick the seed takes the warp on, after the scene entry settles and
 /// ahead of any talk the save's seat would walk into: `koin1`'s sign-up
 /// counter opens its refusal line at tick `31` when the player is left there,
@@ -74,6 +80,9 @@ pub struct RetailMinigame {
     /// phase counter (the READY banner counter, the Welcome hold), when that
     /// overlay is the one resident.
     pub phase: Option<(u32, u32)>,
+    /// The phase's second counter: the dance's `GO!` accumulator
+    /// `DAT_801D515C`, the hub's arm-`5` hold `0x801D1A70`.
+    pub phase2: u32,
     /// The departure scene's define the mode-24 init backed up
     /// (`_DAT_8007BAC4`): the venue overlays load their own block over the
     /// scene word, and the warp starts from this one.
@@ -106,7 +115,13 @@ impl RetailMinigame {
                 game_anchors::u32_at(ram, HUB_HOLD),
             )),
             Some(MinigameSubId::Fishing) => Some((game_anchors::u32_at(ram, FISHING_STATE), 0)),
+            Some(MinigameSubId::BakaFighter) => Some((game_anchors::u32_at(ram, BAKA_STATE), 0)),
             _ => None,
+        };
+        let phase2 = match minigame {
+            Some(MinigameSubId::Dance) => game_anchors::u32_at(ram, DANCE_GO),
+            Some(MinigameSubId::MuscleDome) => game_anchors::u32_at(ram, HUB_CARD_HOLD),
+            _ => 0,
         };
         Self {
             sub_id,
@@ -114,6 +129,7 @@ impl RetailMinigame {
             coin_bank: game_anchors::u32_at(ram, COIN_BANK),
             door_entry: game_anchors::u32_at(ram, BATTLE_RETURN_FLAG) != 0,
             phase,
+            phase2,
             departure_define: game_anchors::u32_at(ram, DEPARTURE_DEFINE) as u16,
         }
     }
@@ -161,18 +177,29 @@ impl RetailMinigame {
                  rand() history the seed does not replay"
                     .to_string(),
             ),
-            // State `3`: the count-in the warp plays out on its own.
-            (Some(MinigameSubId::Dance), _) if matches!(self.phase, Some((3, _))) => None,
+            // States `3..=5`: the count-in the warp plays out on its own.
+            (Some(MinigameSubId::Dance), _) if matches!(self.phase, Some((3..=5, _))) => None,
             (Some(MinigameSubId::Dance), _) => Some(
                 "dance past the count-in: the chart's presses and the rivals' rolls are \
                  history the seed does not replay"
                     .to_string(),
             ),
-            // Arms `0..=2`: the Welcome strip of a first visit.
-            (Some(MinigameSubId::MuscleDome), _) if matches!(self.phase, Some((0..=2, _))) => None,
+            // The first visit's arms, no pad in them.
+            (Some(MinigameSubId::MuscleDome), _)
+                if matches!(self.phase, Some((0..=5 | 0x15, _))) =>
+            {
+                None
+            }
             (Some(MinigameSubId::MuscleDome), _) => Some(
-                "contest hub past the Welcome strip: the course picker and the legs are \
-                 played input the seed does not replay"
+                "contest hub past the first visit: the legs are played input the seed does \
+                 not replay"
+                    .to_string(),
+            ),
+            // State `1`: the title card, before any press.
+            (Some(MinigameSubId::BakaFighter), _) if matches!(self.phase, Some((1, _))) => None,
+            (Some(MinigameSubId::BakaFighter), _) => Some(
+                "Baka Fighter past the title card: the rounds are pad input and the AI's \
+                 rand() picks"
                     .to_string(),
             ),
             (Some(m), _) => Some(format!(
@@ -199,11 +226,21 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
                     .as_ref()
                     .is_some_and(|f| f.phase() == legaia_engine_fishing::fishing::PondPhase::Idle)
         }
-        (Some(MinigameSubId::Dance), Some((_, counter))) => {
+        (Some(MinigameSubId::Dance), Some((state, counter))) => {
+            use legaia_engine_minigames::dance::CountInStage as S;
+            let go = i64::from(mg.phase2) * 2;
             world.mode == SceneMode::Dance
-                && m.dance_countin
+                && m.dance_countin.as_ref().is_some_and(|c| match state {
+                    3 => i64::from(c.frame()) >= i64::from(counter),
+                    4 => c.stage() == S::GoIn && c.view().go.is_some_and(|b| i64::from(b) >= go),
+                    _ => c.stage() == S::GoOut && c.view().go.is_some_and(|b| i64::from(b) <= go),
+                })
+        }
+        (Some(MinigameSubId::BakaFighter), _) => {
+            world.mode == SceneMode::BakaFighter
+                && m.baka_fighter
                     .as_ref()
-                    .is_some_and(|c| i64::from(c.frame()) >= i64::from(counter))
+                    .is_some_and(|f| f.cabinet().state() == 1)
         }
         (Some(MinigameSubId::MuscleDome), Some((arm, count))) => {
             world.mode == SceneMode::MuscleDome
@@ -213,7 +250,11 @@ fn at_captured_phase(world: &legaia_engine_core::world::World, mg: &RetailMiniga
                     .is_some_and(|h| match arm {
                         0 => h.arm() == FirstVisitArm::IntroIn,
                         1 => h.arm() == FirstVisitArm::IntroHold && h.counter() >= count as i32,
-                        _ => h.arm() == FirstVisitArm::IntroOut,
+                        2 => h.arm() == FirstVisitArm::IntroOut,
+                        3 => h.arm() == FirstVisitArm::TitleZoom,
+                        4 => h.arm() == FirstVisitArm::CardIn && h.counter() >= count as i32,
+                        5 => h.arm() == FirstVisitArm::CardHold && h.hold() <= mg.phase2 as i32,
+                        _ => h.arm() == FirstVisitArm::RoundIn && h.counter() >= count as i32,
                     })
         }
         _ => false,
@@ -363,6 +404,7 @@ pub(super) fn run_minigame(
             Some(MinigameSubId::Dance) => ("K", engine.reached.unwrap_or(0) + 1),
             Some(MinigameSubId::MuscleDome) => ("M", engine.reached.unwrap_or(0) + 1),
             Some(MinigameSubId::Fishing) => ("L", FRAME_TICKS_PAST_WARP),
+            Some(MinigameSubId::BakaFighter) => ("B", engine.reached.unwrap_or(0) + 1 + 60),
             _ => ("O", FRAME_TICKS_PAST_WARP),
         };
         let extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
@@ -419,6 +461,7 @@ mod tests {
             coin_bank: bank,
             door_entry: door,
             phase: None,
+            phase2: 0,
             departure_define: 0,
         }
     }
@@ -440,10 +483,11 @@ mod tests {
             slot: None,
             coin_bank: 0,
             door_entry: true,
-            phase: None,
+            phase: Some((0x64, 0)),
+            phase2: 0,
             departure_define: 0,
         };
-        assert!(baka.unseeded_reason().unwrap().contains("BakaFighter"));
+        assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
 
     #[test]
@@ -454,12 +498,15 @@ mod tests {
             coin_bank: 0,
             door_entry: true,
             phase: Some((state, 0)),
+            phase2: 0,
             departure_define: 0,
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
         assert!(mg(6, 0xA).unseeded_reason().is_some());
         assert_eq!(mg(5, 1).unseeded_reason(), None);
-        assert!(mg(5, 0x15).unseeded_reason().is_some());
+        assert_eq!(mg(5, 0x15).unseeded_reason(), None);
+        assert!(mg(5, 0xA).unseeded_reason().is_some());
+        assert_eq!(mg(4, 1).unseeded_reason(), None);
         assert_eq!(mg(0, 0xC).unseeded_reason(), None);
         assert!(mg(0, 0xB).unseeded_reason().is_some());
         assert!(mg(0, 0x19).unseeded_reason().is_some());

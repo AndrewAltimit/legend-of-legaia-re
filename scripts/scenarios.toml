@@ -3812,6 +3812,54 @@ expected_game_mode = 0x19
 topics = ["minigame", "fishing", "retail", "route walk", "map02"]
 
 [[scenarios]]
+label = "minigame_baka_fighter_retail_attract"
+backup_fingerprint = "0df782c93ffb88d1dbec4122742b23c0812f059356dbb6f27add4ef2a1b43546"
+description = "Baka Fighter, the attract title card: cabinet state word 0x801DBF44 = 1, mode 0x19. RETAIL disc, pad only, no pokes: koin1_field_route_walk played forward by autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav (the P1[52] cabinet, ACT face Z+ until the record seats the player and warps); saved by LEGAIA_WATCH=0x801dbf44:1:60, 392 vsyncs after the game mode left the field."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "baka fighter", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_title"
+backup_fingerprint = "731e37f777d12986b34b9e5cc19ebee23a0980b2abcfc6f956f4ce2e436daaa0"
+description = "Muscle Dome hub, the course-title zoom: arm byte 0x801D1A78 = 3, mode 0x19. From minigame_muscle_dome_retail_welcome, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d1a78:3:30, 127 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "muscle dome", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_course_card"
+backup_fingerprint = "44679e77200e03323dd4396ed61b247c985030aba0e9d03758d97fb9304e33b6"
+description = "Muscle Dome hub, the course card holding over the title art: arm byte 0x801D1A78 = 5, mode 0x19. From minigame_muscle_dome_retail_welcome, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d1a78:5:30, 193 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "muscle dome", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_muscle_dome_retail_round_card"
+backup_fingerprint = "38d7f2188c5b048a00a7648e5e865dec7e6fda998fadb3223ed0d9e608172174"
+description = "Muscle Dome hub, the ROUND card before the first fight: arm byte 0x801D1A78 = 0x15, mode 0x19. From minigame_muscle_dome_retail_welcome, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d1a78:21:30, 411 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "muscle dome", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_go_in"
+backup_fingerprint = "76d6e0f9a5b2ad64ee6fe6499055a674d12ba94404d98d5ef01f5baa7d2f08d5"
+description = "Noa dance contest, GO! fading in: game state 0x801D5334 = 4, mode 0x19. From minigame_dance_retail_ready, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d5334:4:12, 51 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
+label = "minigame_dance_retail_go_out"
+backup_fingerprint = "8d714533297cf87c533f75be37c622dd6833c7ab49a61e3dafe863652aa60523"
+description = "Noa dance contest, GO! fading out: game state 0x801D5334 = 5, mode 0x19. From minigame_dance_retail_ready, autorun_walk_route.lua LEGAIA_PLAY_ONLY=1 with no press; saved by LEGAIA_WATCH=0x801d5334:5:12, 84 vsyncs after the load."
+phase = "minigame"
+expected_game_mode = 0x19
+topics = ["minigame", "dance", "retail", "route walk"]
+
+[[scenarios]]
 label = "kor4_field_route_walk"
 backup_fingerprint = "4b6ba816f8960c90e376dc962d2975c5a65dfac577516ba2040ef08d4a316d2d"
 description = "kor4 (Sol Tower stairs C, the Elevator 7F / Sol Dayschool banner) free field run. RETAIL disc, pad only, no pokes: cold boot + memory-card load of playthrough-ladder-pro00-14.mcr block 10 (kor5_field_card_boot), then autorun_walk_route.lua on a route planned by plan_walk_route.py over asset scene-nav: kor5 -> kor4; from the kor4 arrival state a second walk saved it 151 vsyncs into the field once the player had moved."

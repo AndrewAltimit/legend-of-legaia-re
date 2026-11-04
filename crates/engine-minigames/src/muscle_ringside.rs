@@ -419,6 +419,11 @@ impl FirstVisitHub {
         self.card
     }
 
+    /// `0x801D1A70`: the hold counter of the course card and ROUND card arms.
+    pub fn hold(&self) -> i32 {
+        self.hold
+    }
+
     /// Whether the modelled `_DAT_8007BC20` is up (an announcer line is
     /// still in flight).
     pub fn xa_in_flight(&self) -> bool {

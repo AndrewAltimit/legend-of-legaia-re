@@ -590,6 +590,8 @@ The tree runs at the hall's frame step, `DAT_1F800393 = 3` in every parked dance
 
 Port: `World::stage_dance_ambient` moves the walked-in scene's ambient seat aside and installs the hall's, `World::step_dance_ambient` repaints the hall's own VRAM (the native window's venue copy, the page's `play_mg_dance_ambient_step`), and `MoveVmHostImpl::ext_20` carries arms `0` and `1` while the seat is the hall's. The walked-in scene's VRAM effects stop for the length of the dance, as they do in retail with that overlay swapped out.
 
+Two gaps stay in this tree's reproduction. The leader runs one tick long per `0x18 3` loop against the captures (`H` agrees through `minigame_dance_retail_go_in`, `V` reads `-150` to retail's `-200`). And the hall's wall panels hold the static dancer sheet where retail's show moving art: `minigame_dance_retail_go_out`'s centre panel is Noa at full height, and retail's VRAM carries a white-keyed `64 x 128` block at `(384, 128)` the port's does not.
+
 ## HUD
 
 ### HUD widget table (`DAT_801d46cc`) + emitter geometry
