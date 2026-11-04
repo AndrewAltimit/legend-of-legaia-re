@@ -54,7 +54,7 @@
             const cd = rt.play_menu_chrome_dims();
             const rgba = rt.play_menu_chrome_rgba();
             if (cd && cd.length === 2 && cd[0] > 0 && rgba && rgba.length) {
-              this._menuChrome = new AtlasBlitter(rgba, cd[0], cd[1], AtlasBlitter.tinterFor(rt));
+              this._menuChrome = new AtlasBlitter(rgba, cd[0], cd[1], AtlasBlitter.tinterFor(rt), true);
             } else {
               this._menuChrome = null;
             }
@@ -269,12 +269,21 @@
        * all of what they read, so a frame that hands back the strings the last
        * one painted has nothing to do: the field HUD standing still costs no
        * parse, no blit and no fresh canvas for the compositor. */
-      const paintKey = [shopJson, dlgJson, this._textWashJson(), this._menuFont, this._menuChrome,
-        ov.width, ov.height];
+      const washJson = this._textWashJson();
+      const paintKey = [shopJson, dlgJson, this._menuFont, this._menuChrome, ov.width, ov.height, washJson];
       if (paintedLast && paintKey.every((v, i) => v === paintedLast[i])) {
         this._overlayPainted = paintedLast;
         return;
       }
+      /* A fade: the same quads under another wash. The pixels read back for the
+       * first of its frames stand for them all, and a readback waits on the GPU. */
+      const held = this._washHeld;
+      if (paintedLast && held && held.key.every((v, i) => v === paintKey[i])
+          && this._washFrom(ctx, held, washJson)) {
+        this._overlayPainted = paintKey;
+        return;
+      }
+      this._washHeld = null;
       let shop = null;
       if (shopJson !== null) {
         try { shop = JSON.parse(shopJson); }
@@ -326,14 +335,14 @@
         if (this._menuChrome) this._menuChrome.blit(ctx, dlg.sprites);
         if (this._menuFont) this._menuFont.blit(ctx, dlg.texts);
         this._overlayActive = true;
-        this._applyTextWash(ctx, ov, shopBlack ? null : [dlg.sprites, dlg.texts, overlayDrew && shop.sprites, overlayDrew && shop.texts]);
+        this._applyTextWash(ctx, ov, shopBlack ? null : [dlg.sprites, dlg.texts, overlayDrew && shop.sprites, overlayDrew && shop.texts], paintKey);
         /* Blitters that were still missing at the key's read came up inside
          * this paint, so the next frame's key differs and paints once more. */
         this._overlayPainted = paintKey;
         return;
       }
       if (overlayDrew) {
-        this._applyTextWash(ctx, ov, shopBlack ? null : [shop.sprites, shop.texts]);
+        this._applyTextWash(ctx, ov, shopBlack ? null : [shop.sprites, shop.texts], paintKey);
         this._overlayPainted = paintKey;
         return;
       }
@@ -411,7 +420,7 @@
     }
 
     /* `quads`: the draw lists this paint made, when they are all it made. */
-    _applyTextWash(ctx, ov, quads) {
+    _applyTextWash(ctx, ov, quads, paintKey) {
       const json = this._textWashJson();
       if (json === null) return;
       let washes = null;
@@ -437,8 +446,25 @@
         if (x1 <= x0 || y1 <= y0) return;
       }
       const img = ctx.getImageData(x0, y0, x1 - x0, y1 - y0);
-      const px = img.data;
-      /* One equation per channel, so a table per channel. */
+      if (paintKey) this._washHeld = { key: paintKey.slice(0, 6), x0, y0, w: img.width, h: img.height, px: img.data.slice() };
+      this._washPixels(img.data, washes);
+      ctx.putImageData(img, x0, y0);
+    }
+
+    /* The held pixels under `json`'s washes. False for no wash at all: that frame
+     * paints, since a canvas does not take back an unwashed copy exactly. */
+    _washFrom(ctx, held, json) {
+      let washes = null;
+      try { washes = JSON.parse(json); } catch (e) { return false; }
+      if (!washes || !washes.length) return false;
+      const img = new ImageData(held.px.slice(), held.w, held.h);
+      this._washPixels(img.data, washes);
+      ctx.putImageData(img, held.x0, held.y0);
+      return true;
+    }
+
+    /* One equation per channel, so a table per channel. */
+    _washPixels(px, washes) {
       const lut = this._washLut || (this._washLut = [new Uint8Array(256), new Uint8Array(256), new Uint8Array(256)]);
       for (const [abr, fr, fg, fb] of washes) {
         const f = [fr, fg, fb];
@@ -463,7 +489,6 @@
           px[i + 2] = bl[px[i + 2]];
         }
       }
-      ctx.putImageData(img, x0, y0);
     }
   });
 })();

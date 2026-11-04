@@ -28,7 +28,11 @@
    * shader runs). Without it - an older wasm bundle - the canvas multiply
    * stands in. */
   class AtlasBlitter {
-    constructor(rgba, w, h, tinter) {
+    /* `lazyRects`: this sheet takes many tints over a few of its rects (the window
+     * bands of the menu chrome), so a tinted copy fills only the rects it is asked
+     * for. Same canvas, same coordinates, same pixels where any draw reads them. */
+    constructor(rgba, w, h, tinter, lazyRects) {
+      this.lazyRects = !!lazyRects;
       this.w = w; this.h = h;
       this.rgba = new Uint8Array(rgba);
       this.tinter = typeof tinter === 'function' ? tinter : null;
@@ -80,9 +84,47 @@
         index[n++] = lastAt;
       }
       /* A true-colour sheet past the index's reach goes through whole. */
-      this.texelIndex = palette.length <= 0x10000 ? index : null;
+      this.texelIndex = palette.length < 0xFFFF ? index : null;
       this.texelAt = at;
       this.texelPalette = new Uint8Array(new Uint32Array(palette).buffer);
+      if (this.lazyRects && this.texelIndex) {
+        const dense = new Uint16Array(this.w * this.h).fill(0xFFFF);
+        for (let i = 0; i < n; i++) dense[at[i]] = index[i];
+        this.texelDense = dense;
+      }
+    }
+    /* The copy for tint `col` with rect `s` filled in. */
+    _tintedRect(col, s) {
+      const key = col[0] + ',' + col[1] + ',' + col[2];
+      let e = this.cache.get(key);
+      if (!e) {
+        const tinted = this.tinter(this.texelPalette, col[0], col[1], col[2]);
+        const canvas = document.createElement('canvas');
+        canvas.width = this.w; canvas.height = this.h;
+        e = { canvas, ctx: canvas.getContext('2d'), filled: new Set(),
+          lut: new Uint32Array(tinted.buffer, tinted.byteOffset, tinted.byteLength >> 2) };
+        this.cache.set(key, e);
+      }
+      const rect = s[0] + ',' + s[1] + ',' + s[2] + ',' + s[3];
+      if (!e.filled.has(rect)) {
+        e.filled.add(rect);
+        const x0 = Math.max(0, Math.floor(s[0])), y0 = Math.max(0, Math.floor(s[1]));
+        const x1 = Math.min(this.w, Math.ceil(s[0] + s[2])), y1 = Math.min(this.h, Math.ceil(s[1] + s[3]));
+        if (x1 > x0 && y1 > y0) {
+          const rw = x1 - x0, rh = y1 - y0;
+          const out = new Uint32Array(rw * rh);
+          const dense = this.texelDense, lut = e.lut;
+          for (let y = 0, o = 0; y < rh; y++) {
+            const row = (y0 + y) * this.w + x0;
+            for (let x = 0; x < rw; x++, o++) {
+              const k = dense[row + x];
+              if (k !== 0xFFFF) out[o] = lut[k];
+            }
+          }
+          e.ctx.putImageData(new ImageData(new Uint8ClampedArray(out.buffer), rw, rh), x0, y0);
+        }
+      }
+      return e.canvas;
     }
     _tintThroughPalette(col) {
       if (this.texelIndex === null) {
@@ -137,7 +179,8 @@
         const s = d.src, dst = d.dst, col = d.color;
         if (!s || !dst || s[2] <= 0 || s[3] <= 0 || dst[2] <= 0 || dst[3] <= 0) continue;
         ctx.globalAlpha = col ? col[3] : 1;
-        ctx.drawImage(this._tinted(col || [1, 1, 1, 1]),
+        const c = col || [1, 1, 1, 1];
+        ctx.drawImage(this.tinter && this.texelDense ? this._tintedRect(c, s) : this._tinted(c),
           s[0], s[1], s[2], s[3], dst[0], dst[1], dst[2], dst[3]);
       }
       ctx.globalAlpha = 1;
