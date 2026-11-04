@@ -507,7 +507,7 @@ impl World {
         } else {
             catalog_agl
         };
-        self.battle.monster_strike_budget = if agl > 0 && !costs.is_empty() {
+        self.battle.monster_strike_budget = if (base_seeded || agl > 0) && !costs.is_empty() {
             let stream = legaia_engine_battle_vm::battle_action::enemy_action_budget(
                 agl,
                 &costs,

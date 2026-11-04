@@ -92,3 +92,12 @@ The bag's accessor family, run as a stream of mixed operations, showed normalize
 can pass a hole by, and the slot order after it differed from the port's. The walk
 step's wall probes `FUN_801CFE4C` match, except that a negative coordinate wraps
 through the grid's masks where the port called it a wall.
+
+The monster picker `FUN_801E9FD4` found a walk that matches nothing drawing a physical
+target and a full swing budget the retail seat never gets; a zero-gauge monster with
+no base gauge never arming its swings; the interrupt arm of monsters `0x28..0x2A`,
+`0x7F`, `0x85` casting at members who had already acted or were Stoned, with the wrong
+denominator on `0x29`; monster `0xB6` casting past its five round cases; Tetsu's
+post-amble missing whole; and a pass that failed on its target forgetting the cast it
+had stored. The generator's spell ids stop at the table's end, and a second test holds
+every shipped record to that bound.

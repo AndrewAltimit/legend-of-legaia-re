@@ -11,6 +11,7 @@ mod inventory;
 mod item_apply;
 mod level_up;
 mod melee_hit;
+mod monster_pick;
 mod round_open;
 mod spoils;
 mod stat_aggregator;

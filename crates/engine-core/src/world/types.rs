@@ -820,7 +820,7 @@ impl Actor {
 ///
 /// REF: FUN_801E9FD4
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum MonsterAction {
+pub enum MonsterAction {
     /// Physical strike against party slot `target`.
     Physical { target: u8 },
     /// Cast `spell_id` against the resolved absolute `targets` slots.

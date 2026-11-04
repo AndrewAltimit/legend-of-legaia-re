@@ -55,15 +55,13 @@
 //! - Monster `0x8A` reads its own spirit-art charge gauge (`actor+0x170`,
 //!   modelled as [`MonsterAiCtx::spirit_gauge`]) as a cast gate; the override
 //!   returns an [`AiCast::spirit_gauge_writeback`] the caller applies.
-//! - Two retail tail blocks that run *after* the per-monster `switch` are not
-//!   modelled, both because they touch host state the engine has no consumer for:
-//!   (1) the `'O'` (`0x4F`) boss post-amble (`LAB_801EBDF0`) - when the band-lead
-//!   monster id is `0x4F` it pokes a *second* actor's action queue (revive + disarm
-//!   at battle-mode `1`, a three-cast chain `8/9/0xB` at mode `3`); it is a
-//!   cross-actor write keyed on runtime-pinned actor-identity globals, with no
-//!   `0x4F` encounter in the playable slice. (2) the capture-archive preload
-//!   (`FUN_8003eae4(0,0x21)`) the picker fires when the chosen action is a
-//!   category-2 cast of spell id `0x2E`/`0x2F` - host-side asset streaming.
+//! - A retail tail block that runs *after* the per-monster `switch` is not
+//!   modelled, because it touches host state the engine has no consumer for: the
+//!   capture-archive preload (`FUN_8003eae4(0,0x21)`) the picker fires when the
+//!   chosen action is a category-2 cast of spell id `0x2E`/`0x2F` - host-side asset
+//!   streaming. The other, the `'O'` (`0x4F`) post-amble (`LAB_801EBDF0`), is
+//!   `World::pick_monster_action`'s: it writes seat `3` from any picker in the band,
+//!   and the port applies it when seat `3` itself picks.
 
 // [`decide`] is a line-by-line transcription of the retail per-monster `switch`.
 // Its literal shape - discrete case labels (not ranges), `rand() % k == 0` gates
@@ -145,6 +143,10 @@ impl MonsterAiState {
 /// retail offsets (`actor+0xNN`, `ctx[+0xNN]`).
 #[derive(Debug, Clone, Copy)]
 pub struct MonsterAiCtx {
+    /// Each party seat's initiative key `+0x16C`, zero once it has acted.
+    pub party_keys: [u16; 3],
+    /// Each party seat's status word `+0x16E`.
+    pub party_status: [u16; 3],
     /// `DAT_8007BD0C[slot]` - the per-slot monster id the `switch` keys on.
     pub monster_id: u8,
     /// `param_1` - 0-based index within the monster band.
@@ -332,10 +334,24 @@ pub fn decide(
         }
         // Status-shot vs a status-eligible party member (denominator varies by
         // id; collapses to an MP-gated cast).
+        // An interrupt: only a member still holding a turn this round (`+0x16C`
+        // non-zero) draws the second roll, and a Stoned or `0x400` one is passed
+        // by (`0x801EAE4C..0x801EAEC4`). The denominator falls through the case
+        // labels: `0x28` five, `0x29` four, the rest three.
         0x28 | 0x29 | 0x2a | 0x7f | 0x85 => {
-            let denom = if id == 0x28 { 5 } else { 3 };
+            let denom = match id {
+                0x28 => 5,
+                0x29 => 4,
+                _ => 3,
+            };
             let target = (rng() % pc as u32) as u8;
-            if rng() % denom == 0 && !ai380 && ctx.mp > 0x27 {
+            let seat = usize::from(target).min(2);
+            if ctx.party_keys[seat] != 0
+                && rng() % denom == 0
+                && !ai380
+                && ctx.party_status[seat] & 0x404 == 0
+                && ctx.mp > 0x27
+            {
                 return Some(AiCast::magic(0x70, target));
             }
         }
@@ -530,15 +546,17 @@ pub fn decide(
             }
         }
         0xb6 => {
-            return Some(match mode_flags {
+            return match mode_flags {
                 // `0x801EB568..0x801EB5A0`: id only, no `+0x1DD` store
                 // (mode 3's `0xA5` arm is the one that writes `3`).
-                0 => AiCast::magic_core_target(0xa2),
-                1 => AiCast::magic_core_target(0xa3),
-                2 => AiCast::magic_core_target(0xa4),
-                3 => AiCast::magic(0xa5, 3),
-                _ => cast_all_enemies(0xa1),
-            });
+                0 => Some(AiCast::magic_core_target(0xa2)),
+                1 => Some(AiCast::magic_core_target(0xa3)),
+                2 => Some(AiCast::magic_core_target(0xa4)),
+                3 => Some(AiCast::magic(0xa5, 3)),
+                4 => Some(cast_all_enemies(0xa1)),
+                // The switch has five cases: past them the generic pick stands.
+                _ => None,
+            };
         }
         _ => {}
     }
@@ -617,6 +635,8 @@ mod tests {
 
     fn ctx(id: u8, hp: u16, max_hp: u16, mp: u16) -> MonsterAiCtx {
         MonsterAiCtx {
+            party_keys: [0; 3],
+            party_status: [0; 3],
             monster_id: id,
             monster_index: 0,
             caster_slot: 3,
@@ -635,6 +655,8 @@ mod tests {
     /// As [`ctx`] but with the spirit-art gauge pre-set (for monster `0x8A`).
     fn ctx_gauge(id: u8, gauge: u16) -> MonsterAiCtx {
         MonsterAiCtx {
+            party_keys: [0; 3],
+            party_status: [0; 3],
             spirit_gauge: gauge,
             ..ctx(id, 100, 100, 100)
         }
