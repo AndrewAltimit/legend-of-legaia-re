@@ -58,7 +58,7 @@ scaled = pool - (pool >> 2)                 ; 3/4
 share  = ceil(scaled / living_members)      ; 0 in a no-reward fight
 ```
 
-Dead members receive nothing and leave the divisor. The share `s6` is stored to `gp+0xA04` at `0x8004F684` and is the figure the report window prints, so the window shows **one member's share**, not the battle's EXP: a 48-EXP monster beaten by a party of three reads `12` (`noa_levelup_banner` capture).
+Fallen and Stoned members receive nothing and leave the divisor; a fallen member stands back up at this point (`0x8004F390`). The share `s6` is stored to `gp+0xA04` at `0x8004F684` and is the figure the report window prints, so the window shows **one member's share**, not the battle's EXP: a 48-EXP monster beaten by a party of three reads `12` (`noa_levelup_banner` capture).
 
 Port: `battle_formulas::victory_exp_per_member` (`crates/engine-battle-vm/src/battle_formulas/victory.rs`), carried as `BattleRewards::xp_share`.
 
@@ -338,7 +338,7 @@ The maxima grow on the base window only: growing the live maximum and copying it
 After a battle win with `BattleEndCause::MonsterWipe`:
 
 1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`).
-2. It enumerates the surviving party members (slots whose `BattleActor::hp > 0`), scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). Dead members receive zero XP and leave the divisor.
+2. It enumerates the party members standing and not Stoned, scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). The others receive zero XP and leave the divisor.
 3. It calls `LevelUpTracker::grant_xp(char_id, share)` for each survivor.
 4. `grant_xp` accumulates XP and checks the XP table for threshold crossings. A multi-level jump collapses into a single `LevelUpResult` with summed gains.
 5. For each level-up, `LevelUpTracker::apply_to_record(result, record)` grows the **base** `hp_max` / `mp_max` (`+0x11C` / `+0x11E`, the window the applier's `+0x6E4` / `+0x6E6` name, capped `9999` / `999`), and `apply_battle_xp` then rebuilds the live maxima from it the way the stat aggregator `FUN_80042558` does, equipment boosts included. It leaves `hp_cur` and `mp_cur` where the fight left them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), grows the six battle stats in the record-side window (`+0x11C..+0x12D`) and mirrors them into the live window (`+0x110..+0x11B`), matching the applier's write-then-mirror. It writes `result.new_level` to the `+0x130` level byte via `CharacterRecord::set_level`.

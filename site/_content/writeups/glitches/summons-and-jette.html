@@ -19,7 +19,7 @@
     <dt>Status</dt><dd><span class="tag tag-done">Explained</span> - from the disassembly; the level copy captured on a poked state</dd>
   </dl>
 
-  <p>Summons that come from equipment are not learned for good. Every time the game rebuilds a character's stats it looks at the eight equipment bytes and makes sure the matching summon is in the spell list. When a Talisman comes off, its summon is removed and its level and experience are parked in a small per-character stash, so they return when the Talisman goes back on.</p>
+  <p>Summons that come from equipment are not learned for good. Every time the game rebuilds a character's stats it looks at the eight equipment bytes and makes sure the matching summon is in the spell list. When a Talisman comes off, its summon is removed and its level and experience are parked in a small per-character stash, so they return when the Talisman goes back on. The port runs the same two scans on the same record bytes, the shared stash slot included, and the <a href="../../tooling/retail-kernel-differential.html">kernel differential</a> holds the two byte-equal.</p>
   <p>Each summon has a stash slot number, written as a literal in the code. Palma uses slot 0, Mule 1, Horn 2, Jedo 3 and the Evil Talisman's summon 4. The three arms that add Meta, Terra and Ozma also pass slot 0.</p>
 
   <figure class="diagram">

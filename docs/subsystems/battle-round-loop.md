@@ -475,7 +475,7 @@ Notes on the table:
 - **Kind byte** is the status-kind byte the two retail appliers switch on (below). Kinds `1` and `2` only install a lingering status visual; the art-record names for them (`1` = Toxic, `2` = Numb, `EnemyEffect::Toxic` / `Numb`) are kept in `StatusKind::from_enemy_effect` until a capture pins what they do mechanically. Sleep and Confuse have no on-disc kind byte and are host-driven kinds.
 - **Stone = bit `0x04`** is capture-pinned: a Glare before / after pair shows the word go `0 -> 4` with HP untouched and the queued action category `+0x1DE` cleared.
 - **Bit `0x0040`** sits inside the Rot group mask `0x0078` but no applier sets it.
-- **Durations** are port approximations (no retail per-status duration table is in the dumped corpus): Toxic 4 turns, Numb 3, Venom 6, Sleep 3, Confuse 3, Rot 6, Curse 4, Stone and Faint 255 (whole battle / until cured).
+- **Durations.** Retail has no status timer ([battle-formulas](battle-formulas.md#status-application-the-art--move-record-status-byte)), so Venom, Toxic, Rot, Curse, Stone and Faint stand at the port's `255`, until cured or battle end. Numb, Sleep and Confuse keep the port's own `3` turns.
 - **Poison ticks** are pinned from the per-round ticker `FUN_801E752C` ([battle-formulas](battle-formulas.md), "Per-round status DoT ticker"). The ticker subtracts `current - 1` before applying the per-status cap, so a tick that would reach 0 leaves the actor at 1 HP. It draws no RNG.
 - **Limb gating** for Rot is on [`arts-command-gauge.md`](arts-command-gauge.md#status-limb-gating).
 

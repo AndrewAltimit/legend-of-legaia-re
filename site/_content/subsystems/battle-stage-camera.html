@@ -89,7 +89,20 @@
     </tbody>
   </table>
   </div>
-  <p>The end-of-action gate arms nothing; the far framing takes over there.</p>
+  <h3 id="between-actors">Between two actors the camera stays on the last shot</h3>
+  <p>The end-of-action gate <code>0x5A</code> arms the finished actor&rsquo;s framing once more: case 8 for an Attack, nothing for a Run, case 6 otherwise. The setup states <code>0x00</code>, <code>0x0A</code> and <code>0x0B</code> arm nothing, so the tween walks on and the yaw orbits, and the next actor&rsquo;s seed <code>0x0C</code> tweens from that shot to its own case 6. A round&rsquo;s first actor is the only one that stands on the far framing in those states, the one the prompt&rsquo;s case 9 left. Over the library&rsquo;s states parked in <code>0x0A</code> behind an earlier actor, every tween table holds that actor&rsquo;s endpoints with the walker landed.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>State</th><th>Last actor</th><th>Shot</th></tr></thead>
+    <tbody>
+      <tr><td><code>kor_ghost_knight_pre_v_windhash</code></td><td>Noa, Spirit</td><td>case 6: pitch 128, <code>TR (0, 1024, 3276)</code>, focus her seat</td></tr>
+      <tr><td><code>noaru_barra_v2_pre_multi_cutter</code></td><td>a monster&rsquo;s spell</td><td>case 6: pitch 0, <code>TR (0, 1280, 4915)</code>, focus its seat</td></tr>
+      <tr><td><code>chitei2_kemaro_v2_pre_lava_breath</code></td><td>a monster&rsquo;s strike on Noa</td><td>case 8: pitch 128, <code>TR (0, 768, 2457)</code>, focus her body pair</td></tr>
+      <tr><td><code>taiku_topaz_pre_hyper_heal</code></td><td>none this round</td><td>case 9: pitch 32, <code>TR (0, 1280, 8712)</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="dg-note">Gate arm <code>0x801E6428..0x801E6470</code>; orbit stores <code>0x801E2A3C..0x801E2A6C</code> and <code>0x801E5BE4..0x801E5C04</code>; seed tween <code>0x801E2D50</code>. Port: <code>battle_cam_script::end_of_action_phase</code>, <code>BattleCamera::set_phase_on_state</code>.</p>
   <h3>The tween is an ease-out</h3>
   <p>Every framing is <strong>re-armed each pass</strong>: the target vectors are rebuilt from the live actor record every display frame and the step table re-emitted. The target is never frozen at the state change. Each rebuild divides the remaining gap by the duration again, so a pass covers about a sixth of what remains, and the camera is still closing in long after its nominal twelve frames. Captured step tables match that law exactly.</p>
   <h3>Idle orbit</h3>

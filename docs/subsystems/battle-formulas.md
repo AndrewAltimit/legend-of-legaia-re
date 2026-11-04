@@ -1755,8 +1755,9 @@ n = members with +0x14C != 0, not Stoned, seat byte != 4
 share = ceil(exp / n)                                        // divu, 0x8004F198
 if _DAT_8007BAC0 != 0:  share = 0                            // 0x8004F274
 each member:
-  +0x14C == 0:  +0x14C = 1                                   // stood back up
-  not Stoned:   xp = min(xp + share (twice with +0xF4 bit 0x8000), 9,999,999)
+  +0x14C == 0:  +0x14C = 1, next member                      // stood back up, no EXP (0x8004F390)
+  Stoned:       next member                                  // 0x8004F248
+  otherwise:    xp = min(xp + share (twice with +0xF4 bit 0x8000), 9,999,999)
                 level-up applier FUN_801E9504
 then the drop walk                                           // 0x8004F3D8
 ```

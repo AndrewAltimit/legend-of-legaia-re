@@ -48,6 +48,7 @@ unless noted.
 | [`legaia-mednafen`](../../crates/mednafen/README.md) | Generic, Legaia quirks | `SaveState::from_path`, `main_ram`, `gpu::PsxGpu`, `spu::PsxSpu` | `mednafen-state` |
 | [`legaia-pcsx-redux`](../../crates/pcsx-redux/README.md) | Generic, Legaia quirks | `SaveState::from_path_structural`, `gpu::PcsxGpu::from_path`, `fixture::SyntheticState` | `pcsxr-state --game generic` |
 | [`legaia-ram-image`](../../crates/ram-image/README.md) | Generic, Legaia quirks | `diff::diff_ram`, `bisect::bisect_first_bad`, `prim_pool::decode`, `ram_slice`, `GameProfile` | - |
+| [`legaia-retail-exec`](../../crates/retail-exec/README.md) | Generic PS1 | `Cpu::call`, `Cpu::hook`, `Cpu::calls`; the Legaia comparisons are its tests alone ([method](retail-kernel-differential.md)) | - |
 | [`legaia-engine-audio`](../../crates/engine-audio/README.md) | Generic, Legaia quirks | `spu::Spu`, `Sequencer::new(seq, bank)`, `vab_bind::VabBank::upload` | `note-trace` |
 | [`legaia-render-kernels`](../../crates/render-kernels/README.md) | Generic module in a Legaia crate | `gte::Gte`, `gte::Camera`, `gte::gte_divide`, `vram_capture` | - |
 | [`legaia-tmd`](../../crates/tmd/README.md) | Legaia-only | `parse` (Legaia variant only) | `tmd` |

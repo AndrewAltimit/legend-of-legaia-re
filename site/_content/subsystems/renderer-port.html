@@ -106,6 +106,26 @@
   <p><strong>Order mirrors the ordering table at per-primitive granularity.</strong> Every blended primitive is keyed by its centroid depth and the whole list blends far to near regardless of draw boundaries; equal keys draw later-submitted-first, as a bucket of the retail table does. Untextured primitives have no per-texel gate and blend every pixel.</p>
 </section>
 
+<section class="doc-section" id="field-link-order">
+  <h2>The field sorts by each primitive&rsquo;s link</h2>
+  <p>In PSX mode the field pass draws each primitive at the depth of its ordering-table link rather than per pixel (<code>Renderer::set_field_prim_order</code>). Retail has no depth buffer, and three rules set the link:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three primitives link into an ordering table. An ordinary primitive links at the mean depth of its corners. A primitive whose colour word carries 0x10000000 links at its farthest corner. An actor with a bit of 0x80800000 in its flags draws with the table base ten buckets nearer.">
+      <rect class="dg-node" x="10" y="10" width="270" height="44" rx="4"/><text class="dg-label" x="145" y="30">Any primitive</text><text class="dg-sub" x="145" y="46">links at its corners&rsquo; mean SZ</text>
+      <rect class="dg-node" x="10" y="62" width="270" height="44" rx="4"/><text class="dg-label" x="145" y="82">Colour word bit 0x10000000</text><text class="dg-sub" x="145" y="98">links at its farthest corner</text>
+      <rect class="dg-node" x="10" y="114" width="270" height="44" rx="4"/><text class="dg-label" x="145" y="134">Actor +0x10 &amp; 0x80800000</text><text class="dg-sub" x="145" y="150">table base ten buckets nearer</text>
+      <rect class="dg-node-accent" x="400" y="50" width="460" height="70" rx="4"/><text class="dg-label" x="630" y="78">Ordering table</text><text class="dg-sub" x="630" y="98">painted far to near; no depth buffer</text>
+      <path class="dg-edge" d="M280 32 L398 70" marker-end="url(#rp-ot-arrow)"/>
+      <path class="dg-edge" d="M280 84 L398 85" marker-end="url(#rp-ot-arrow)"/>
+      <path class="dg-edge" d="M280 136 L398 100" marker-end="url(#rp-ot-arrow)"/>
+      <defs><marker id="rp-ot-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    </svg>
+    <figcaption>The colour word comes from an object record&rsquo;s flag <code>0x800</code>, on a decoration cell and on a placed object alike. A prologue&rsquo;s <code>31 1F</code> raises the actor&rsquo;s high bit on a placed object or a seated prop, and the floor sampler raises <code>0x800000</code> on the player each step over a cell without bit <code>0x1000</code>. A ground cell keeps the bucket its own emitter gives it.</figcaption>
+  </figure>
+  <p>The three rules hold against a state&rsquo;s table: on <code>koin1_field_route_walk</code> every quad of the floor sheet sits at the bucket of its farthest corner, and the terrain&rsquo;s wall quads at their mean, ten buckets behind the sheet&rsquo;s rule. The mean alone, with no record flags and no ground exception, hides floors and cabinets. With them <code>concend_field_door_hop</code> reads <code>1.000</code> where per-pixel depth reads <code>.942</code>: the sky&rsquo;s quads link among the far ridge&rsquo;s and cover them. A clean frame keeps per-pixel depth.</p>
+  <p class="dg-note">Not modelled: a walking NPC&rsquo;s <code>0x800000</code>, a posed prop&rsquo;s record flag <code>0x800</code>, and the order inside one bucket. Links <code>FUN_80043B58</code>, <code>FUN_80045194</code>; actor base <code>FUN_8001ADA4</code>, <code>FUN_8001B964</code>; floor sampler <code>FUN_80019278</code>.</p>
+</section>
+
 <section class="doc-section" id="enhancements">
   <h2>Enhancement passes</h2>
   <ul class="bullets">
@@ -134,7 +154,7 @@
 <section class="doc-section" id="frame-persist">
   <h2>A cast's frames build on earlier ones</h2>
   <p>A retail battle frame's farthest bucket holds an opaque black rect, and a cast arm that arms its subtractive wash has that quad take the rect's place, so the frame's additive layers sum over the frames before it. That is why Ozma's fans read white on retail while a frame rasterised from the same packets on black is dark teal with thin red rays.</p>
-  <p>The native target is the one target that outlives its frame, so it reproduces this: while a cast's arms keep the frame, each frame loads an earlier one instead of clearing, and a capture seeds from the same one. Retail's earlier frame is the same display page two game frames back, eight vsyncs at the frame step a heavy arm runs at, so the renderer keeps a ring of eight frames; building on the last frame instead fills the buffer eight times too fast. The window's own target and the browser's canvas still clear, and there the additive arms draw dimmer than retail.</p>
+  <p>The native target is the one target that outlives its frame, so it reproduces this: while a cast's arms keep the frame, each frame loads an earlier one instead of clearing, and a capture seeds from the same one. Retail's earlier frame is the same display page two game frames back, eight vsyncs at the frame step a heavy arm runs at, so the renderer keeps a ring of eight frames; building on the last frame instead fills the buffer eight times too fast. The play page does the same under PSX rasterisation (<code>LegaiaPsxTarget</code> in <code>webgl-psx-target.js</code> holds the same ring), and bloom stands the frames down on both hosts, since it reads the frame it adds to. The window's own target and the browser's canvas still clear, and there the additive arms draw dimmer than retail.</p>
 </section>
 
 <section class="doc-section" id="profiler">

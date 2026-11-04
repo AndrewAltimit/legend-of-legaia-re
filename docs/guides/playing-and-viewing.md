@@ -126,6 +126,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
 | Enhancements | Lamp shadows | `legaia-options.toml` | `Y` | on |
 | Enhancements | Bloom | `legaia-options.toml` | `F10` | off |
+| Enhancements | Ambient occlusion | `legaia-options.toml` | `Home` | on |
 | Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
@@ -276,6 +277,7 @@ enhancement has a retail-faithful off position
 | `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on, remembered | `--no-occlusion-fade` |
 | `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
+| `Home` | Ambient occlusion: soft contact shadows where walls meet floors and at characters' feet | on, remembered | `--no-ssao` |
 | `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
@@ -338,7 +340,7 @@ No window toggle sits on a key the pad table can bind, and that is not
 cosmetic: a window key arm runs **before** the pad lookup, so one parked on a
 bindable key deletes that button from the keyboard entirely. The bindable
 vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
-is either an F-key, which the pad lookup never resolves, or a letter outside
+is an F-key or `Home` / `End`, which the pad lookup never resolves, or a letter outside
 that vocabulary (`I`, `R`, `T`, `Y`, the dev triggers, and the minigame entries below), so no
 rebinding can collide with one.
 

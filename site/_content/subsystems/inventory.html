@@ -107,7 +107,7 @@
       <tr><td>add</td><td>find a matching id, else the first free slot in the window</td></tr>
       <tr><td>consume</td><td>decrement by id; zeroes an emptied id in place, never compacts</td></tr>
       <tr><td>find / consume by slot</td><td>find a stack's slot by item id; decrement a stack addressed by slot index, freeing the slot at zero</td></tr>
-      <tr><td>normalize</td><td>re-installs the window, merges duplicate stacks (cap 99), pulls occupied slots down into holes</td></tr>
+      <tr><td>normalize</td><td>re-installs the window, merges duplicate stacks (cap 99), pulls occupied slots down into holes; one pass of two cursors, so a call can leave a hole behind</td></tr>
       <tr><td>window setup</td><td>the sole writer of the three window halfwords</td></tr>
     </tbody>
   </table>

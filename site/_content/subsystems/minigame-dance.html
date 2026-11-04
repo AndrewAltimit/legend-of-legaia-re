@@ -417,6 +417,13 @@
   <p class="dg-note">Init <code>FUN_801CEF54</code>, exit <code>FUN_801D414C</code>; camera block <code>0x801CF51C..0x801CF7D8</code>; floor passes <code>FUN_801D3A2C</code> / <code>FUN_801D2A10</code>; marker tick <code>FUN_801D0640</code>; floor kernel <code>legaia_engine_field::minigame_floor</code>.</p>
 </section>
 
+<section class="doc-section" id="ambient" data-doc="the-halls-ambient-tree">
+  <h2>The hall&rsquo;s light show</h2>
+  <p>The hall&rsquo;s light show is palette work, not geometry. The session&rsquo;s first state spawns two records of the <code>other7</code> stager bundle at the origin, and they tree out into mode-3 <a href="field-ambient-fx.html">CLUT-cell cyclers</a> over rows <code>504..=508</code> (the floor, the walls and the stage lamps) and the scrollers and <code>MoveImage</code> strips of the wall panels. The cyclers follow one leader: the overlay installs its own handler in move-VM op <code>0x20</code>, whose arm 0 copies the leader&rsquo;s HSV adds into the caller and zeroes the caller&rsquo;s rates, and whose arm 1 sets the caller&rsquo;s V add. Arm 1 with <code>-200</code> on the leader&rsquo;s first frames is why the hall opens dark. The tree runs at the hall&rsquo;s frame step, <code>3</code> in every parked dance state.</p>
+  <p>Port: <code>World::stage_dance_ambient</code> moves the walked-in scene&rsquo;s ambient seat aside and installs the hall&rsquo;s, and <code>World::step_dance_ambient</code> repaints the hall&rsquo;s own VRAM on both hosts. The walked-in scene&rsquo;s VRAM effects stop for the length of the dance, as they do in retail with that overlay swapped out. The hall&rsquo;s wall panels and stage screens are step-marker tiles, drawn in place on the hall&rsquo;s game frames, so their moving art is the tiles&rsquo; flipbook.</p>
+  <p class="dg-note">Spawns <code>FUN_800252EC</code> at <code>0x801CF9A8</code>, <code>0x801CF9C0</code>; op <code>0x20</code> handler <code>FUN_801D387C</code>, installed at <code>0x801CF07C</code>. The leader&rsquo;s rows match retail&rsquo;s program row for row, but its phase is a clock of game frames, and seating it in a replay means seating every cycler&rsquo;s phase; the floor&rsquo;s colour in the two count-in comparison frames is what that leaves.</p>
+</section>
+
 <section class="doc-section" id="port" data-doc="engine-port">
   <h2>Where this is in the port</h2>
   <p>The dance is fully playable in the port on all three surfaces, with the rules, the cast, the HUD, the camera and the sound all running off disc data you supply.</p>
