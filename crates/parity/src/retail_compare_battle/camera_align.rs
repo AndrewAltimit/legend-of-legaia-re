@@ -161,6 +161,18 @@ pub(super) fn tween_passes_back(action_state: u8, yaw_counter: u16, passes: u16)
     }
 }
 
+/// What a turning shot adds to the live yaw per vsync of frame step
+/// (`FUN_801DC0A0` cases `3`, `5`, `0xE`, `0x10`; `0x801DCB18` for `0xE`).
+pub(super) fn turning_shot_rate(case: u8) -> Option<i32> {
+    match case {
+        0x03 => Some(-8),
+        0x05 => Some(16),
+        0x0E => Some(4),
+        0x10 => Some(-16),
+        _ => None,
+    }
+}
+
 /// The Done tail's countdown `ctx[+0x6D8]` and the two values the Done arm
 /// `0x50` seeds it with (`li v0,0x3c` / `sh v0,0x2(s7)` at `0x801E5F24..28`,
 /// `0x96` when `ctx[+0x15]` is set, `0x801E5F38..3C`).

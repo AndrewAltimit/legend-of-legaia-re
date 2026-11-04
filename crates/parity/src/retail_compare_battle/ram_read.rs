@@ -841,7 +841,28 @@ impl RetailBattle {
                     )
                 }
             };
-            let shown = walk(&steps);
+            let mut shown = walk(&steps);
+            // A turning shot re-aims the live yaw a fixed `step * n` on every
+            // pass and lands it inside that pass, so the RAM's yaw reads on
+            // its endpoint and the passes back stood those steps behind it
+            // (`battle_balden_swordie_v2_vacuum_slicer_mid_cast`, case `0xE`
+            // at step `3`: yaw `2594` draws at `2570`).
+            if let Some(active) = active
+                && (0x2A..=0x2E).contains(&action_state)
+                && game_anchors::u8_at(ram, active + 0x1DE) == 2
+            {
+                let shot = game_anchors::u8_at(ram, active + 0x1E1);
+                // The accumulator `ctx[+0x87C]` climbs `8 * step` a pass, so a
+                // shot younger than the walk back displays the framing it
+                // replaced: `RetailBattle::retake_turning_pose`'s case.
+                let vsyncs: i32 = steps.iter().map(|&s| i32::from(s.max(1))).sum();
+                let accum = i32::from(game_anchors::u16_at(ram, ctx + 0x87C));
+                if let Some(rate) = turning_shot_rate(shot)
+                    && accum > 8 * vsyncs
+                {
+                    shown.yaw = (shown.yaw - (vsyncs * rate) as f32).rem_euclid(4096.0);
+                }
+            }
             let mut further_steps = steps.clone();
             further_steps.push(steps.last().copied().unwrap_or(frame_step(ram)));
             let ghost = displayed_ghost_pose(ram, ctx, action_state, shown, walk(&further_steps));
