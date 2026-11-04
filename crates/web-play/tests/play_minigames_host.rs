@@ -241,18 +241,8 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
     let monster = g["muscle"]["monster_id"]
         .as_u64()
         .expect("the PROT 0977 ladder must stage a monster for the opened contest");
-    // The 3D arena is the engine surface the native window draws too
-    // (`MuscleDomeSurface::frame`): it seats the ladder's monster, the lead's
-    // battle form and the PROT 1225 arena.
-    assert!(
-        rt.play_mg_muscle_scene_frame() >= 0,
-        "monster {monster:#x} + the lead's player file must build the dome surface"
-    );
-    let pos = rt.play_mg_muscle_scene_positions();
-    assert!(!pos.is_empty());
-    assert_eq!(rt.play_mg_muscle_scene_flat_rgba().len(), pos.len() / 3 * 4);
-    assert_eq!(rt.play_mg_muscle_scene_vram().len(), 1024 * 512 * 2);
-    assert_eq!(rt.play_mg_muscle_scene_vp(4.0 / 3.0).len(), 16);
+    // The first visit's hub stands on black: no surface until it has run.
+    assert_eq!(rt.play_mg_muscle_scene_frame(), -1);
     let st: serde_json::Value =
         serde_json::from_str(&rt.play_mg_muscle_state_json()).expect("state json");
     assert_eq!(st["live"].as_bool(), Some(true));
@@ -313,6 +303,18 @@ fn arena_door_warp_draws_the_muscle_dome_and_start_leaves() {
         chrome_at.is_some(),
         "the leg's battle chrome never came up past the hub"
     );
+    // The 3D arena is the engine surface the native window draws too
+    // (`MuscleDomeSurface::frame`): it seats the ladder's monster, the lead's
+    // battle form and the PROT 1225 arena.
+    assert!(
+        rt.play_mg_muscle_scene_frame() >= 0,
+        "monster {monster:#x} + the lead's player file must build the dome surface"
+    );
+    let pos = rt.play_mg_muscle_scene_positions();
+    assert!(!pos.is_empty());
+    assert_eq!(rt.play_mg_muscle_scene_flat_rgba().len(), pos.len() / 3 * 4);
+    assert_eq!(rt.play_mg_muscle_scene_vram().len(), 1024 * 512 * 2);
+    assert_eq!(rt.play_mg_muscle_scene_vp(4.0 / 3.0).len(), 16);
     assert_hud_rows(&mut rt, "muscle");
     // The command ring is battle chrome; the dome's status rows only speak
     // between turns and over the Ra-Seru list, so the caption is live here

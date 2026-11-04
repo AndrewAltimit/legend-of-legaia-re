@@ -125,7 +125,7 @@ it through retail's own `FUN_801D9E1C`: the stage id, the world-map return point
 the battle flags stay the scene's. Those region rows are the only RAM it writes
 before the fight, and they stay resident in the saved states. `LEGAIA_TOUGH=1` keeps
 a low-level party alive (live HP, readout and pending delta together: the readout
-alone parks state `0x51`), `LEGAIA_WOUND=<round>` cuts the monsters to a third of
+alone parks state `0x51`; `LEGAIA_TOUGH=2` also raises each seat's maximum to 9999, for a party one hit would wipe, which the state keeps on its HUD and scores `battle_party` for), `LEGAIA_WOUND=<round>` cuts the monsters to a third of
 their HP so a heal arm has a patient (`LEGAIA_WOUND_EVERY=1` repeats the cut each round), and `LEGAIA_FINISH=1` ends the fight after the
 Spirit rounds. The action in each state is the AI's own, and `LEGAIA_SAVE_PRE=1`
 keeps the whole emulator state from that action's `0x0A`, ahead of the pick, which

@@ -966,9 +966,11 @@ fn the_hall_hook_copies_the_leader_and_sets_v() {
     use legaia_engine_vm::move_vm::{ActorState, MoveHost};
     let mut world = World::default();
     world.stage_dance_ambient(&[]);
-    let mut leader_state = ActorState::default();
-    leader_state.tween_src_x = 96;
-    leader_state.tween_src_z = -200;
+    let leader_state = ActorState {
+        tween_src_x: 96,
+        tween_src_z: -200,
+        ..Default::default()
+    };
     world.ambient.fx.push(crate::world::ambient::AmbientPart {
         record_off: 0,
         model_sel: 0x4000,
@@ -987,8 +989,10 @@ fn the_hall_hook_copies_the_leader_and_sets_v() {
         field_record_words: None,
         child_spawns: Vec::new(),
     };
-    let mut part = ActorState::default();
-    part.tween_scale_z = 64;
+    let mut part = ActorState {
+        tween_scale_z: 64,
+        ..Default::default()
+    };
     host.ext_20(&mut part, 0, 0);
     assert_eq!(
         (part.tween_src_x, part.tween_src_z, part.tween_scale_z),

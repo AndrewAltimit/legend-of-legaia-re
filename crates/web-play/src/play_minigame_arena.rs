@@ -1367,6 +1367,13 @@ mod muscle_fighter_tests {
             rt.tick_frame().expect("tick");
         }
         assert_eq!(rt.scene_mode(), "MuscleDome");
+        // The first visit's hub stands on black; the arena comes after it.
+        for _ in 0..2000 {
+            if !rt.world_mut().minigames.muscle_hub.first_visit_up() {
+                break;
+            }
+            rt.tick_frame().expect("tick");
+        }
         let g: serde_json::Value = serde_json::from_str(&rt.play_mg_game_json()).unwrap();
         assert!(
             rt.play_mg_muscle_scene_frame() >= 0,
