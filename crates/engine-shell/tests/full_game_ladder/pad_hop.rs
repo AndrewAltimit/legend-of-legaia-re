@@ -94,6 +94,19 @@ pub(super) fn pad_hop(
     if let Some(s) = pad_rest(session)? {
         return Ok(s);
     }
+    // A party leaving a scene whose rest it can walk to walks to it first, how
+    // far off it stands: the scene after it may have none, as Jette's fortress
+    // has none past `deroa`'s keeper (P1[7]), and the beats leave the party
+    // wherever the last talk stood. A run clock is the exception.
+    if continuous::PLAYS_ON.with(std::cell::Cell::get)
+        && session.host.world.mode == SceneMode::Field
+        && !session.host.world.battle.escape_timer.armed
+        && !TRAINING.with(std::cell::Cell::get)
+        && rest_works_here(session)
+        && let Some(s) = pad_rest_to(session, 800, true)?
+    {
+        return Ok(s);
+    }
     // A door the run has met a boss behind (`jouine`, whose arrival commits
     // Cort): the party goes through it ready, and full - the fight starts
     // the moment the door lands, with no prompt to heal at. Met at half HP

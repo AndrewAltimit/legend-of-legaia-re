@@ -643,6 +643,11 @@ Past Rogue's tower the anchors' party is level 30 and the run's is 48 to 53, so
 a loss there is not a question of levels. What decides those fights is what the
 party still holds when it reaches the door, and what a reload hands back:
 
+- **It walks back to a rest before it leaves.** A hop out of a scene whose rest
+  still works, with the lower of HP and MP under four fifths, walks to the rest
+  first however far off it stands (no scene's clock running): the beats leave
+  the party wherever the last talk stood, and `chitei2` has no rest past
+  `deroa`'s keeper P1[7].
 - **A fight on the lean does not end the talk.** An encounter rolled on the lean
   toward a keeper ended the lean, and the failure to face was read as a rest that
   lifts nobody ([below](#a-rest-that-stops-resting)), which struck `deroa` P1[7]
