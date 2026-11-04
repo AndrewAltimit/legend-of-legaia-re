@@ -245,16 +245,29 @@ fn psx_blend_foreground(rgb: vec3<f32>) -> vec3<f32> {
 // town0c retail capture shows (baked colours leave the GTE's RGB FIFO
 // byte-unchanged).
 //
-// Retail runs DPCS on the PACKET COLOUR before the GPU's texture blend
-// (`texel * colour / 128`), so on a textured prim the far term arrives at the
-// pixel as `texel * far / 128` - callers pass `psx_modulate(texel, far_bytes)`
-// as `far_rgb`. An untextured prim is filled with the packet colour directly,
-// so its far term is the far colour itself.
+// A textured prim does not come through here: retail runs DPCS on the PACKET
+// COLOUR before the GPU's texture blend, which is `psx_cue_colour`. What is
+// left is an untextured prim, filled with the packet colour directly, so its
+// far term is the far colour itself, and the palette-mode pixel.
 fn psx_depth_cue(rgb: vec3<f32>, far_rgb: vec3<f32>, ir0: f32) -> vec3<f32> {
     if (ir0 <= 0.0) {
         return rgb;
     }
     return clamp(mix(rgb, far_rgb, ir0), vec3<f32>(0.0), vec3<f32>(1.0));
+}
+
+// The packet colour DPCS hands the GPU: `prim` and `far_bytes` in colour-byte
+// units, the result clamped by the op's own output limit. `ir0` may run past 1
+// (a bare `mtc2` load never saturates). The caller modulates the texel by this.
+//
+// The order is visible. The GPU's blend saturates, so a bright texel under a
+// bright colour clips: retail clips what the cue has already dimmed, and a
+// pixel-space cue, which blends the clipped near pixel toward the far pixel,
+// clips first and then dims the flat top. `battle_tunnelc_freed_strike`'s ice
+// floor (texels `(169, 190, 204)`, near colour `0xC0`) is the worked case: the
+// wrong order keeps its red, loses half its contrast and greys its blue.
+fn psx_cue_colour(prim: vec3<f32>, far_bytes: vec3<f32>, ir0: f32) -> vec3<f32> {
+    return clamp(mix(prim, far_bytes, ir0), vec3<f32>(0.0), vec3<f32>(255.0));
 }
 
 // View-depth-driven IR0 - the prologue's per-render-node depth-cue pull.

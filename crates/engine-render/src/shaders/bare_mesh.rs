@@ -158,13 +158,12 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // No per-prim colour on this vertex format: draw the raw texel (the GPU's
     // behaviour for the neutral modulation colour 0x80), grade it, then
     // depth-cue it. Retail's DPCS runs on the packet colour BEFORE the texel
-    // multiply, so the far term is the far colour modulated by the texel; the
-    // grade tint models the modulation colour and belongs to the near term
-    // only.
+    // multiply (`psx_cue_colour`); the grade tint models the modulation colour
+    // and belongs to the near term only.
     let texel = textureSample(t_color, s_color, in.uv);
-    let graded = apply_grade(texel.rgb, u.grade);
     let ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
-    let cued = psx_depth_cue(graded, psx_modulate(texel.rgb, u.depth_cue.rgb * 255.0), ir0);
+    let packet = psx_cue_colour(apply_grade(vec3<f32>(128.0), u.grade), u.depth_cue.rgb * 255.0, ir0);
+    let cued = psx_modulate(texel.rgb, packet);
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, texel.a);
 }

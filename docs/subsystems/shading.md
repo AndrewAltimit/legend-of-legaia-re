@@ -221,7 +221,13 @@ unchanged). Scenes that do use it:
   (next section).
 
 Because the cue runs on the colour word and the multiply comes after, a
-textured primitive's far colour is `texel * FC / 128`, not `FC`.
+textured primitive's far colour is `texel * FC / 128`, not `FC`. The order also
+decides what clips. The multiply saturates, so a bright texel under a bright
+colour clips only after the cue has dimmed that colour: an ice floor's texel
+`(169, 190, 204)` under near colour `0xC0`, cued a third of the way to `0x40`,
+keeps its hue. Blending the two modulated pixels instead gives the same result
+until the near pixel clips, then a grey, low-contrast floor with its red intact
+(`psx_cue_colour` in the shader prelude; both hosts cue the colour first).
 
 ## Battle: the ambient ramp and the actor tint
 
@@ -335,7 +341,7 @@ and [`textures-and-fonts.md`](../tooling/translation/textures-and-fonts.md).
 |---|---|
 | Palette resolution for exports | `legaia_ui_formats::tim_palette_context` (`texel_palettes`: which cell draws which texel; `BootClutVram`: what the cells hold), `legaia_tim::decode_rgba8_with_palette` |
 | VRAM + CLUT decode | `engine-render` VRAM pipeline (1024x512 R16Uint, CLUT decode in the fragment shader); `legaia_tim::Vram` |
-| Colour word + depth cue | `psx_modulate` / `psx_depth_cue` in the shader prelude, CPU mirror `legaia_engine_render::psx_light` |
+| Colour word + depth cue | `psx_cue_colour` / `psx_modulate` in the shader prelude, CPU mirror `legaia_engine_render::psx_light` |
 | Battle ambient | `legaia_engine_battle_vm::battle_ground_grid::ambient_base_step`, `World::tick_battle_ambient` |
 | Actor tint | `legaia_engine_battle_vm::battle_actor_tint`, `battle_actor_draw` |
 | Animated palettes | `engine-field::clut_cell_fx`, `World::step_clut_fx`, `legaia_scene_formats::clut_walk` |

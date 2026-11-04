@@ -731,6 +731,27 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
+    // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
+    // the GPU multiplies the texel by the result and saturates. A cued draw
+    // therefore cues `prim` here, ahead of the modulate - see `psx_cue_colour`
+    // for what the other order loses on a bright texture. The grade tint
+    // models the amber modulation colour and belongs to the near term only;
+    // the far colour is staged in absolute display units and is not re-tinted.
+    //
+    // Palette mode replaces the pixel multiply with the texel/packet collapse
+    // above (`apply_grade` would double-grade), carries the global screen
+    // tint in `palette.rgb`, and makes the view-depth cue ramp inert - the
+    // opening capture shows every render node holds `IR0 = 0` across the
+    // prologue, so the far-field crush is entirely the palette law + the
+    // amber packet words, not a depth cue.
+    var ir0 = u.depth_cue.a;
+    if !palette_on {
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
+    let cue_first = !palette_on && ir0 > 0.0;
+    if cue_first {
+        prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
+    }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
@@ -741,33 +762,18 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         ),
         color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
-    // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
-    // the GPU multiplies the texel by the result - so the far term reaches the
-    // pixel as `texel * far / 128` (`psx_modulate` with the far colour in
-    // colour-byte units). The grade tint models the amber modulation colour
-    // and belongs to the near term only; the far colour is staged in absolute
-    // display units and is not re-tinted.
-    //
-    // Palette mode replaces the pixel multiply with the texel/packet collapse
-    // above (`apply_grade` would double-grade), carries the global screen
-    // tint in `palette.rgb`, and makes the view-depth cue ramp inert - the
-    // opening capture shows every render node holds `IR0 = 0` across the
-    // prologue, so the far-field crush is entirely the palette law + the
-    // amber packet words, not a depth cue.
-    var graded: vec3<f32>;
-    var ir0: f32;
+    var cued: vec3<f32>;
     if palette_on {
-        graded = enhanced * u.palette.rgb;
-        ir0 = u.depth_cue.a;
+        cued = psx_depth_cue(
+            enhanced * u.palette.rgb,
+            dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
+            ir0,
+        );
+    } else if cue_first {
+        cued = enhanced;
     } else {
-        graded = apply_grade(enhanced, u.grade);
-        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+        cued = apply_grade(enhanced, u.grade);
     }
-    let cued = psx_depth_cue(
-        graded,
-        dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
-        ir0,
-    );
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
@@ -832,6 +838,15 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
+    // Same cue-then-modulate order as the opaque pass (see fs_main).
+    var ir0 = u.depth_cue.a;
+    if !palette_on {
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
+    let cue_first = !palette_on && ir0 > 0.0;
+    if cue_first {
+        prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
+    }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
@@ -842,22 +857,18 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         ),
         color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
-    // Same grade-then-cue order as the opaque pass (see fs_main): the far
-    // term is the texel-modulated far colour, un-tinted.
-    var graded: vec3<f32>;
-    var ir0: f32;
+    var cued: vec3<f32>;
     if palette_on {
-        graded = enhanced * u.palette.rgb;
-        ir0 = u.depth_cue.a;
+        cued = psx_depth_cue(
+            enhanced * u.palette.rgb,
+            dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
+            ir0,
+        );
+    } else if cue_first {
+        cued = enhanced;
     } else {
-        graded = apply_grade(enhanced, u.grade);
-        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+        cued = apply_grade(enhanced, u.grade);
     }
-    let cued = psx_depth_cue(
-        graded,
-        dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
-        ir0,
-    );
     // The GPU reads the foreground as a saturated 5-bit channel
     // (`psx_blend_foreground`), and the mode-3 quarter applies to that value
     // (`B + 0.25 * F`), as it does on the browser play page where the 0.25 is

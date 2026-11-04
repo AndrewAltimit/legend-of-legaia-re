@@ -1395,33 +1395,30 @@ void main() {
   vec3 prim_color = (palette_on && (tsb & 0x0800u) == 0u)
                         ? palette_collapse_prim(v_flat_rgba.rgb)
                         : v_flat_rgba.rgb;
+  /* Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
+   * the GPU multiplies the texel by the result and saturates (twin of
+   * engine-render's psx_cue_colour, which says what the other order loses on
+   * a bright texture). The grade tints the near term only. Palette mode
+   * replaces the pixel multiply with the texel + packet collapse above
+   * (grade_near would double-grade), carries the global screen tint
+   * whole-pixel, and holds the cue ramp inert. */
+  float ir0 = palette_on ? 0.0 : cue_ir0(v_view_z);
+  if (ir0 > 0.0) {
+    prim_color = clamp(mix(grade_near(prim_color), u_cue_far, ir0), vec3(0.0), vec3(1.0));
+  }
   vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
   /* Opt-in dynamic light over the baked shading (identity when off), at
-   * native's point in the chain: after the modulate, before grade and cue. */
+   * native's point in the chain: after the modulate. */
   lit = dyn_window(dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u),
                    color.rgb, (tsb & 0x1000u) != 0u);
 
   lit = apply_distance_fog_tex(lit, color.rgb);
 
-  /* Prologue grade + depth-cue ramp (identity when unset). Retail order:
-   * the grade tints the NEAR term; the far term is texel * far colour
-   * (texture detail survives the crush - DPCS runs on the packet colour
-   * before the GPU texel multiply).
-   *
-   * Palette mode replaces the pixel multiply with the texel + packet
-   * collapse above (grade_near would double-grade), carries the global
-   * screen tint whole-pixel, and holds the cue ramp inert. */
   if (palette_on) {
     lit = clamp(lit * u_palette.rgb, vec3(0.0), vec3(1.0));
-  } else {
-    float ir0 = cue_ir0(v_view_z);
-    /* The far term is the far colour MODULATED by the texel, on the same
-     * / 128 scale as the near term (native: psx_modulate(texel,
-     * depth_cue.rgb * 255.0)) - u_cue_far is a display 0..1 colour, so it
-     * needs the identical 255/128 that the packet word gets. */
-    vec3 far = dyn_far(clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0)));
-    lit = mix(grade_near(lit), far, ir0);
+  } else if (ir0 <= 0.0) {
+    lit = grade_near(lit);
   }
 
   /* Ghost (after-image) draw: keep the cutout silhouette (the discard above
