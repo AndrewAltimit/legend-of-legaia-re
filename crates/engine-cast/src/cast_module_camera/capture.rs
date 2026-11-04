@@ -227,6 +227,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (940, GLARE_BODY) => Some(glare_camera),
+        (940, crate::cast_arm_ticks::GLARE_DIVIDE_SPLIT_TICK) => Some(slime_divide_camera),
         (953, SINGLE_BODY) => Some(terio_punch_camera),
         (939, SINGLE_BODY) => Some(super::spore_gas_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
@@ -326,6 +327,8 @@ pub fn capture_exit_clears_style(entry: u32) -> bool {
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
+        // PROT 0940's split (`lui 0x8020` / `-0x79B4`).
+        0x50 | 0xAE => Some(0x801F_864C),
         0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
         0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
         0x52 => Some(super::POWER_UP_COUNTDOWN),
@@ -991,6 +994,50 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
 /// PROT 0940's `0x3C` body (Glare), the trampoline's first arm.
 pub const GLARE_BODY: u32 = 0x801F_69F8;
 
+/// PROT 0940's split (`0x801F78B8`, actions `0x50` Slime Divide and `0xAE`):
+/// arm 0's shot on the caster at `0xC` frames (`0x801F7A30`), then arm 1's
+/// lift at `0x100` (`0x801F7B34`) once its gate passes. Arms 2 and 3 frame
+/// nothing; each arm's countdown is `capture_countdown::GLARE_DIVIDE_SPLIT`'s.
+///
+/// | arm | pitch | TR, `0x50` | TR, `0xAE` | frames |
+/// |---|---|---|---|---|
+/// | 0 | `0` | `(0, 0x300, 0x600)` | `(0, 0x400, 0x800)` | `0xC` |
+/// | 1 | `0x100` | `(0, 0x300, 0x1000)` | `(0, 0x400, 0x1000)` | `0x100` |
+///
+/// PORT: overlay_cast_glare_divide_0940_801f78b8 (PROT 0940 `0x50` / `0xAE`; the camera arms)
+pub fn slime_divide_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let Some(gate) = super::arm_countdown(super::capture_countdown::GLARE_DIVIDE_SPLIT, phase) else {
+        return CaptureCamArm::default();
+    };
+    if gate.holds(&mut st.countdown) {
+        return CaptureCamArm {
+            hold: true,
+            ..Default::default()
+        };
+    }
+    gate.pass(&mut st.countdown);
+    let y: i16 = if seats.action == 0x50 { 0x300 } else { 0x400 };
+    let (pitch, z, frames): (i16, i16, u16) = match phase {
+        0 if seats.action == 0x50 => (0, 0x600, 0xC),
+        0 => (0, 0x800, 0xC),
+        1 => (0x100, 0x1000, 0x100),
+        _ => return CaptureCamArm::default(),
+    };
+    CaptureCamArm {
+        shot: Some(ModuleShot {
+            angles: [pitch, yaw_from(0x800, seats.caster.facing), 0],
+            tr: [0, y, z],
+            focus: focus_on(seats.caster),
+            frames,
+        }),
+        ..Default::default()
+    }
+}
+
 /// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
 /// countdown is the module word `0x801F864C` Mystic Shield also uses):
 ///
@@ -1203,5 +1250,40 @@ pub fn terio_punch_camera(
             step(None, None)
         }
         _ => CaptureCamArm::default(),
+    }
+}
+
+#[cfg(test)]
+mod slime_divide_tests {
+    use super::*;
+
+    /// The arm-0 shot `battle_map01_green_slime_divide_mid_cast`'s table reads
+    /// one pass in (pitch `0`, TR `(0, 768, 2457)` once prescaled, on the
+    /// caster), and arm 1 on the gate the same state's word `96` stands on.
+    #[test]
+    fn slime_divide_frames_its_arms_on_the_body_gates() {
+        let seats = ModuleCamSeats {
+            action: 0x50,
+            ..Default::default()
+        };
+        let mut st = ModuleCamState::default();
+        let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
+        assert_eq!(arm0.tr, [0, 0x300, 0x600]);
+        assert_eq!(arm0.frames, 0xC);
+        assert_eq!(st.countdown.0, SPEED_SCALAR * 12);
+        let held = slime_divide_camera(&mut st, 1, seats);
+        assert!(held.hold && held.shot.is_none());
+        st.countdown.0 = 0;
+        let arm1 = slime_divide_camera(&mut st, 1, seats).shot.unwrap();
+        assert_eq!(arm1.angles[0], 0x100);
+        assert_eq!(arm1.tr, [0, 0x300, 0x1000]);
+        // The other action of the same body stands higher and further out.
+        let seats = ModuleCamSeats {
+            action: 0xAE,
+            ..seats
+        };
+        let mut st = ModuleCamState::default();
+        let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
+        assert_eq!(arm0.tr, [0, 0x400, 0x800]);
     }
 }

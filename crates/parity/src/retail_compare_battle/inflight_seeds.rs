@@ -539,6 +539,22 @@ impl RetailBattle {
         // The cast writes the caster's (its own `0x28` recomputes it from
         // the target bearing) and may turn its targets as it lands, so
         // those stay the replay's.
+        // A monster's cast on itself: the cast begin skips the facing store for
+        // a self target (`beq v0,t2` at `0x801E4350`), so the caster's heading
+        // is the one its last turn left, and a module frames from it
+        // (`battle_nilboa_neo_grude_power_up_mid_cast`: heading `0`, Power Up's
+        // yaw `0x800 - facing`).
+        if matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && self.active_actor >= 3
+            && self.queued_category == 2
+            && self.target_code == self.active_actor
+            && let Some(a) = spent.get_mut(usize::from(engine_seat(
+                self.active_actor,
+                self.party_count,
+            )))
+        {
+            *a = true;
+        }
         if self.seed_plan() == SeedPlan::Cast {
             let pc = usize::from(self.party_count);
             let caster = usize::from(engine_seat(self.active_actor, self.party_count));
