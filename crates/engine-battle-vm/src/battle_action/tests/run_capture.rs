@@ -195,10 +195,13 @@ fn capture_phase2_pins_the_camera_variant() {
     ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
     ctx.camera_variant = 3;
     *host.capture_busy_frames.borrow_mut() = 2;
-    for _ in 0..3 {
+    for _ in 0..2 {
         step(&mut host, &mut ctx);
         assert_eq!(ctx.camera_variant, CAPTURE_CAMERA_VARIANT);
     }
+    // The finishing arm's `sb zero,0xd`.
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_variant, 0);
 }
 
 /// The 75% duck is **gated** on `ctx[+0x287]` (`lbu v0,0x287(v0)` /

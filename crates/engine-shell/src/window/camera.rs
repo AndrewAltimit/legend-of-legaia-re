@@ -178,11 +178,16 @@ impl PlayWindowApp {
             let p = c.framing_pose();
             let world = &self.session.host.world;
             eprintln!(
-                "BATCAM f={} phase={:?} st=0x{:02X} act={} pitch={} yaw={} tr={:?} focus={:?} target={:?}",
+                "BATCAM f={} phase={:?} st=0x{:02X} act={} facing={} yawbase={} pitch={} yaw={} tr={:?} focus={:?} target={:?}",
                 world.clock.display_frames,
                 c.phase(),
                 world.battle_ctx.action_state,
                 world.battle_ctx.active_actor,
+                world
+                    .actors
+                    .get(usize::from(world.battle_ctx.active_actor))
+                    .map_or(0, |a| a.battle.facing_angle),
+                c.action_yaw_base(),
                 p.pitch,
                 p.yaw,
                 p.tr,

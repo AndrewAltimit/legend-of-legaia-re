@@ -3298,7 +3298,11 @@ that returns zero (`0x801E50C8..0x801E50E8`). The camera holds the pose
 `0x6F`'s last case-6 pass left and moves only where the module moves it. Port:
 `cast_module_camera::capture_camera_director`, keyed on `(entry, body)`. The
 exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
-(`capture_exit_yaw_base`, which lists the bodies and their store sites).
+(`capture_exit_yaw_base`, which lists the bodies and their store sites). So is the
+style clear beside it: `0x70` stores style `1` each pass and the finishing arm's
+`sb zero,0xd` undoes it, so the Done band's case 6 frames from the default side, not
+half a turn round (`rugi_rogue__rogue_flame`'s `0x71` and `0x51` track retail's yaw to
+three units).
 
 | Body | Shots and drifts | Countdown |
 |---|---|---|

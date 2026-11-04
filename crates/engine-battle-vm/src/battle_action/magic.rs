@@ -544,8 +544,8 @@ pub(super) fn magic_capture_fade<H: BattleActionHost + ?Sized>(
 ///   unconditionally;
 /// * `ctx[+0xD] = 1` (`li v0,0x1` / `sb v0,0xd(v1)` at
 ///   `0x801E50C4..0x801E50CC`, the `jal`'s delay slot): the framing style is
-///   pinned to the half-turn variant for the whole capture, so a capture is
-///   always framed from the mirrored side whatever the action seed rolled;
+///   pinned to the half-turn variant while the module runs, whatever the
+///   action seed rolled, and the module's finishing arm clears it;
 /// * the hold. `jal 0x801f2160` at `0x801E50C8` re-enters the resident
 ///   slot-B cast module every frame and `bne v0,zero,0x801e6814` at
 ///   `0x801E50D0` **stays in `0x70`** while it reports busy. Only a zero
@@ -582,6 +582,11 @@ pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
     if host.capture_stager_tick() {
         return stay(ctx);
     }
+    // Every capture body's finishing arm clears the style beside its other
+    // exit stores (`sb zero,0xd` at `0x801F8BCC` in PROT 0964's Element Change
+    // and at the same site of its siblings), so the Done band's case 6 frames
+    // from the default side.
+    ctx.camera_variant = 0;
     // The re-seed, in the transition's own breath. Retail reads the live
     // `+0x1DD` here exactly as the action seed did, so the port asks the host
     // for the same two inputs rather than reusing the seed's answer.
