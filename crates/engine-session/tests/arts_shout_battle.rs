@@ -84,12 +84,18 @@ fn build_world(with_record: bool) -> World {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
+        // An art is paid for: the builder's walk asks Spirit before it takes one.
+        w.actors[i].battle.spirit_gauge = 100;
         w.actors[i].battle.liveness = 1;
         w.battle.set_battle_attack(i as u8, 90);
     }
     w.set_formation_table(vanilla_formation_table(), vanilla_monster_catalog());
     if with_record {
         stage_somersault(&mut w);
+        // The gauge opens a fight from the record's AP cell.
+        let mut hms = w.party.roster.members[0].hp_mp_sp();
+        hms.sp_cur = 100;
+        w.party.roster.members[0].set_hp_mp_sp(hms);
         // Known on Vahn's learned list (`+0x186..` ids = constant less
         // `0x1B`): the builder stages it behind `0x19`, the starter whose
         // commit asks for the shout. A first use stages `0x1A` instead.

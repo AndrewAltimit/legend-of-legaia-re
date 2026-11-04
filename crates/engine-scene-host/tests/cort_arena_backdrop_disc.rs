@@ -45,7 +45,11 @@ fn extracted() -> Option<PathBuf> {
 fn sampled(tmd: &legaia_tmd::Tmd, raw: &[u8], objects: &[usize]) -> Vec<(u16, u16)> {
     let sub = legaia_scene_formats::battle_backdrop::objects_tmd(tmd, objects);
     let mesh = legaia_tmd::mesh::tmd_to_vram_mesh(&sub, raw);
-    let mut v: Vec<(u16, u16)> = mesh.cba_tsb.iter().map(|c| (c[0], c[1])).collect();
+    let mut v: Vec<(u16, u16)> = mesh
+        .cba_tsb
+        .iter()
+        .map(|c| (c[0], c[1] & !legaia_tmd::mesh::TSB_FLAT_QUAD_BIT))
+        .collect();
     v.sort_unstable();
     v.dedup();
     v

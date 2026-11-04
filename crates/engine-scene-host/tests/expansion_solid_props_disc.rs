@@ -173,6 +173,9 @@ fn every_building_on_the_sample_pack_maps_blocks_the_player() {
             // point at least `INSET` inside every edge (the wall probe leads
             // the player by 47 units, and a sub-cell closes on its centre).
             let core = shrink(m, 0.6);
+            // The walk's endpoint reads a smaller core: a wall skid slides along the
+            // hull's stamped stair-steps, and a rotated hull's corners poke past them.
+            let walk_core = shrink(m, 0.5);
             let (mut n, mut wall) = (0, 0);
             let (x0, x1, z0, z1) = m.hull.iter().fold(
                 (f32::MAX, f32::MIN, f32::MAX, f32::MIN),
@@ -237,7 +240,7 @@ fn every_building_on_the_sample_pack_maps_blocks_the_player() {
                 if d1 + 16.0 < d0 {
                     approached += 1;
                 }
-                if hull_contains(&core, at) {
+                if hull_contains(&walk_core, at) {
                     walked_in.push(format!("{map}:{} from {btn:?} to {at:?}", m.id));
                 }
             }

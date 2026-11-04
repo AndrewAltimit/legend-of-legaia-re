@@ -74,8 +74,11 @@ fn a_monster_cue_keys_a_sample_from_its_monster_snd_bank() {
             continue;
         }
         for op in ops {
-            if let SfxRingOp::Push(id) = op
-                && id >= 0x200
+            let id = match op {
+                SfxRingOp::Push(id) | SfxRingOp::PushUnlessSustained { id, .. } => id,
+                _ => continue,
+            };
+            if id >= 0x200
                 && let Some(row) = w.runtime_sfx_descriptor(id)
                 && (row[4] == 7 || row[4] == 8)
             {
