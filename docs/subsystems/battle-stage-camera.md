@@ -1311,16 +1311,48 @@ lands in `a3 / step` steps (`frames_to_steps`; `steps_of` for the glides
 authored in default-step steps), and the idle orbit turns `2 * step` a step.
 
 Play keeps the default outside a summon band. Inside one, each module arm runs
-on the step a retail recording of the cast reads for it
+on a step read off a retail recording of the cast
 (`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
-a band opens at `1` and its whole-screen arms read `4`, on every summon module. The
-reading is a property of the arm because the arm draws the same screen each time.
+a band opens at `1` and its whole-screen arms read `4`. The table is a measurement
+standing in for the frame's cost, not game data and not a model of the cause, and
+the [next section](#what-the-arm-step-table-is) says how far it holds.
 The capture band is not in the table. A replay that knows retail's step installs it
 while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
 `0x33` / `0x34`, where each pass re-arms case `0x12`'s three-frame tween: at
 step `3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
+
+<a id="what-the-arm-step-table-is"></a>
+
+**What the arm step table is.** One recording per cast (`party_basic_attack_vs_gobu_gobu`),
+the step each arm spends the most vsyncs on. Measured against that and three other fights:
+
+- **It is not the box.** Repeat recordings of Iota, Ozma, Terra and Theeder read the same
+  per-arm histograms within a few vsyncs: the cost is the emulated machine's (CPU and
+  GPU cost model of PCSX-Redux), not the host's. No hardware reading stands behind it.
+- **It holds across fights where the screen is the effect's.** Gimard in `battle_map01`,
+  `battle_tower` and `battle_kor` reads arms 3..11 as the table's fight does, within a few
+  vsyncs, and Ozma's arms 6..20 and 24 read `4` in `battle_kor` too.
+- **It does not where the stage shows.** Gimard's arm 2 reads `1` here and `1` then `2`
+  on two of the other stages; arm 12 spends 244 vsyncs at `2` in `battle_kor` and 10 here;
+  Zenoir's arm 6 and 7 are mixed `3`/`4` on two stages and nearly all `4` on a third.
+- **The step moves inside an arm.** Gimard's arm 6 runs `4` for 64 vsyncs, `3` for 46
+  and `1` for 70, as the sixteen-frame ring empties, and the table holds one value. Over
+  the 29 recordings the table agrees with the recording on 91% of band vsyncs.
+
+The cause is the frame's cost, which a table of arms can only sample. Modelling it would
+take a per-frame cost out of the engine's own draw lists through the sixteen-entry ring;
+the corpus states hold the ring (`zenoir_summon_mid_cast` reads a clamped frame in arm 3,
+where the table says `1`), and those are the data to calibrate one against.
+
+A corpus replay gates on a word and lands on a pass, so a coarser step moves the frame it
+lands on. `vera_summon_mid_cast` gates on fade age `70` and arm 3: without the table it
+stops at tick 544 on step `2`, with it at tick 546 on arm 4's step `4`, the same fade age
+one pass on (`1.0` to `.969`). `gimard_burning_attack`'s gate is the walk yaw in arm 11, and
+at step `4` a pass moves it by 192 (`.863` to `.73`). Retail's own ring reads `4` there, so
+the table's value is right. That the replay's lattice is what moved is the reading of both
+falls, not a measurement of Gimard's; emptying the row restores both.
 
 **The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
 The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at

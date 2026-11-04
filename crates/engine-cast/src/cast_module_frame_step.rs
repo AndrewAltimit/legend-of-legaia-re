@@ -1,16 +1,18 @@
-//! The frame step retail runs each arm of a summon module at.
+//! The frame step a retail recording ran each arm of a summon module at.
 //!
-//! The frame driver `FUN_80016B6C` sets `DAT_1F800393` from the slowest of
-//! the last sixteen frames, capped at `4`
-//! (`docs/subsystems/battle-stage-camera.md`, "The frame step"). Nothing in
-//! the game state says what a frame costs, but a module's arm draws the same
-//! screen each time it runs, so the reading is a property of the arm: every
-//! arm of a whole-screen effect reads `4`, the band's opening arms `1`.
+//! This table is a measurement, not game data, and it does not model the cause.
+//! The frame driver `FUN_80016B6C` sets `DAT_1F800393` from the slowest of the
+//! last sixteen frames, capped at `4`
+//! (`docs/subsystems/battle-stage-camera.md`, "The frame step"), and nothing on
+//! the disc says what a frame costs. Each entry is the step one recording
+//! (`scripts/ci/cast-sequence.py`, `meta.csv`'s `step`, the Gobu Gobu fight, the
+//! value the arm spends the most vsyncs on) on the emulator's cost model. An arm
+//! too short to read takes the arm before it; a `0` is an arm no recording has
+//! reached.
 //!
-//! This table is that reading, per entry and arm, off a retail recording of
-//! the cast (`scripts/ci/cast-sequence.py`, `meta.csv`'s `step`, the value the
-//! arm spends the most vsyncs on). An arm too short to read takes the arm
-//! before it; a `0` is an arm no recording has reached.
+//! What the reading is good for and where it stops is on that page. In short, a
+//! whole-screen arm reads the same in every fight, an arm that shows the stage
+//! does not, and the step moves inside an arm as the ring empties.
 //!
 //! The step matters beyond the camera's rate: a record an arm seats every pass
 //! seats half as many at `4` as at `2`.

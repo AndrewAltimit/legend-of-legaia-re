@@ -700,7 +700,7 @@ frame instead of clearing, and a capture seeds from the same one. Retail's
 earlier frame is the same display page two game frames back, eight vsyncs at the
 frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
 rather than building on the last one, which fills the buffer eight times too
-fast. The frame step itself is the engine's fixed reading of those arms, not a
+fast. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
 measurement of the running frame's cost.
 
 The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
