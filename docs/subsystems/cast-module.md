@@ -1470,6 +1470,8 @@ re-arms literals. Four arms do not fit one word:
 - PROT 0935's arms 1 and 3 hold on the caster's `+0x21B` and on its model's
   `+0x68`, which no table carries; the rows keep only their seeds.
 
+**Slime Divide's camera** (`slime_divide_camera`, PROT 0940 `0x801F78B8`): arm 0 cuts to the caster over `0xC` frames at `TR (0, 0x300, 0x600)` (`0xAE`: `(0, 0x400, 0x800)`), and arm 1, once its gate passes, lifts to pitch `0x100` at TR z `0x1000` over `0x100`. Arms 2 and 3 frame nothing.
+
 **Spore Gas's camera** (`spore_gas_camera`): arm 0 eases in over `0x80` frames (pitch `-0x20`, `TR (0, 0x600, 0x800)`), arm 1 lifts to pitch `0x200` over `0x50`, arm 2 drops to `-0x40` over `0x40`, and arm 3 hides the caster, shows the victim turned on it, and cuts to it at `TR (0, 0x500, 0x400)`. The finishing arm shows the caster again.
 
 **Spore Gas's four hits** are not a fold. Arm 3's pass seeds a beat word at `scalar <<

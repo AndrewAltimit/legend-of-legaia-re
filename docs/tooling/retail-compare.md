@@ -1475,6 +1475,8 @@ A monster strike-clip gate also takes the strike cursor `ctx[+0x15]`: a stream w
 
 Case 7 arms (`0x801E36E8`) before the pass re-faces the attacker (`sh v0,0x46(s3)` at `0x801E371C`), so retail's endpoint subtracts the previous pass's heading while the capture holds this pass's. Within `8` units the snapped probe's yaw endpoint is taken as retail's (`ground_snap::strike_heading_target`): `battle_map01_gobu_gobu_strike` probes `2944` against retail's `2941` on the captured words.
 
+A magic band shot lags the other way. `0x2B` arms it once, so its table holds that pass's counter where the probe reads the RAM's, which has drifted since: within the same `8` units its yaw endpoint is taken as retail's too (`battle_garmel_songi_hyper_wave_mid_cast`, endpoint `3121`, probe `3124`, three passes in).
+
 A capture one pass younger holds no framing of case 7's at all on its screen. The walk's next pass commits the arrival's idle stage at cursor `0`, its walker step still runs on case 6's table, and only then does its SM pass arm case 7. So a capture on the commit's next cursor (clip-record ring `+0x234` slots `0` and `1` alike, slot `2` the walk) has walked one pass on case 7's table, and the frame two passes back predates it.
 Case 7's `0x700` unwrap makes that table's increment large, so walking both passes back along it lands hundreds of units away: `battle_map01_gomboo_strike` stood on yaw `896` where the frame shows about `290`.
 The walk back takes the case-7 pass and then steps away from case 6's aim on that walk's last pass (`walk_arm_prior_end`: `counter - heading` with the style's half turn, on the heading stored the pass before; the focus on the walker's live pair, ring slot `2`).
@@ -2353,7 +2355,7 @@ that holds the phase; a drive the headless side never completed is not imaged.
 | Members ahead of a menu capture's seat that committed Spirit | Spirit (the ring's Down arm), read off each seat's `+0x1DE = 4`: the commit log draws each member's committed command (`delilas_che_hammer_gaps_v3`'s Vahn and Noa) |
 | The capture's seat, menu capture | the arm that leads to the captured surface: Left then `Command` for the arts entry `0x50`, Up for the item window `0x3C`, Right for the magic window `0x46` |
 | The capture's seat, action capture | the same Attack every round; Spirit when its committed category `+0x1DE` is `4` |
-| A monster seat that was casting (`+0x1DE = 2`) | casts the capture's spell id `+0x1DF` on its next turn (`BattleState::forced_monster_cast`, with the capture's already-debited MP credited back) |
+| A monster seat that was casting (`+0x1DE = 2`) | casts the capture's spell id `+0x1DF` on its next turn (`BattleState::forced_monster_cast`, with the capture's already-debited MP credited back), at the seat `+0x1DD` names whatever the record's shape says (Slime Divide's scripted arm stores the caster under an all-allies shape) |
 | The party, on such a monster-cast drive | Spirit instead of Attack, so the caster is still standing when its turn comes (Zeto's two mid-cast captures sit in a party that kills him in two swings) |
 | Any seat, message box on screen | Cross |
 
@@ -3774,6 +3776,10 @@ arm. The `super_queue_replace_*` captures are that pass: yaw `3205` walking to
 table the eye stood at depth `1965`, closer than any pose the seed's ease
 passed through; one pass back it stands at `2457`, and the frames read `.656`
 to `.744`.
+
+#### A caster's heading on a cast on itself
+
+The cast begin skips its facing store for a self target (`beq v0,t2` at `0x801E4350`), so a monster casting on itself keeps the heading its last turn left, and a module frames from it. The seed stands the caster on the capture's (`RetailBattle::seeded_facing`): `battle_nilboa_neo_grude_power_up_mid_cast` holds heading `0` on the Power Up shot's yaw `0x800 - facing`, where the replay stands at `2048` and frames the half-turn.
 
 #### A caster held on its ground through the cast
 
