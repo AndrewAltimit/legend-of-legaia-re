@@ -117,6 +117,9 @@ impl LaunchFidelity {
     }
 }
 
+/// `(script row, [cursor, countdown, mesh])` per dance marker row.
+pub type SeatedDanceMarkers = Vec<(usize, [i16; 3])>;
+
 /// Deterministic screenshot harness for `play-window`: render one frame
 /// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
 /// exit - and/or a periodic sweep ([`Self::sweep`]) that captures every N
@@ -407,6 +410,10 @@ pub struct ScreenshotConfig {
     /// (`World::seat_ambient_part_banks`); taken once.
     pub seat_turning_parts:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::AmbientBankSeed>>>,
+    /// `LEGAIA_SEAT_DANCE_MARKERS`: the dance's marker tiles as a retail
+    /// state's displayed frame drew them, written over the game's on the frame
+    /// the capture is taken (`DanceGame::seat_step_marker`); taken once.
+    pub seat_dance_markers: std::cell::Cell<Option<SeatedDanceMarkers>>,
     /// `LEGAIA_SEAT_BALLOON`: the text balloon a retail state's displayed
     /// frame drew (the place-name banner a door leaves up, which a card
     /// load never raises), or none, written over the field's on the frame
@@ -1086,6 +1093,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_BALLOON")
                     .ok()
                     .and_then(|v| legaia_engine_capture::field_seeds::balloon_from_env(&v)),
+            ),
+            seat_dance_markers: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_DANCE_MARKERS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::dance_markers_from_env(&v)),
             ),
             seat_turning_parts: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_TURNING_PARTS")

@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// Vsyncs a game frame of the hall lasts: its step `DAT_1F800393`.
+const MARKER_PASS_VSYNCS: u32 = 3;
+
 /// The dance floor: the beat clock, the chart, and the three dancers' runs.
 #[derive(Debug, Clone)]
 pub struct DanceGame {
@@ -44,6 +47,8 @@ pub struct DanceGame {
     /// actor per drawn marker **cell**; every cell of a class reads the same
     /// row from the same cursor, so the engine keeps the four cursors rather
     /// than one per cell and a marker draw asks its class.
+    /// Vsyncs since the marker tiles last ticked.
+    pub(super) marker_vsyncs: u32,
     pub(super) markers: [legaia_engine_field::dance_marker::MarkerActor;
         legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS],
     /// The tick's camera keyframe track (`FUN_801CF470` at
@@ -110,6 +115,7 @@ impl DanceGame {
             actors: crate::minigame_actor::MinigameActorPool::new(),
             parts: crate::minigame_actor::MinigameActorPool::new(),
             marker_script: Default::default(),
+            marker_vsyncs: 0,
             markers: Default::default(),
             camera: None,
             demo: None,
@@ -283,23 +289,32 @@ impl DanceGame {
     /// tick reads.
     ///
     /// The clip-selector gate (`+0x5C > 0` or `+0x10 & 0x1000`) is reported
-    /// by the kernel and left alone here: no host draws the floor's marker
-    /// meshes yet, so there is no clip player to hand the actor to.
+    /// by the kernel and left alone here: a marker tile carries no clip, so
+    /// there is no clip player to hand the actor to.
     ///
     /// REF: FUN_801D0640 (kernel `legaia_engine_field::dance_marker::step_marker`),
     /// FUN_801D2A10 (the floor pass that spawns the actors)
-    pub(super) fn advance_step_markers(&mut self, frame_delta: u32) {
-        let delta = frame_delta.min(u32::from(u8::MAX)) as u8;
+    pub fn advance_step_markers(&mut self, vsyncs: u32) {
+        // The tile actors tick on the hall's game frames, whose step
+        // `DAT_1F800393` is `3` in every dance state a capture holds; a row's
+        // `12` lasts five of those (`12, 9, 6, 3, 0`, staged on `-3`), not
+        // thirteen vsyncs.
+        self.marker_vsyncs += vsyncs;
+        let runs = self.marker_vsyncs / MARKER_PASS_VSYNCS;
+        self.marker_vsyncs %= MARKER_PASS_VSYNCS;
+        let delta = MARKER_PASS_VSYNCS as u8;
         let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
-        for m in self.markers.iter_mut() {
-            legaia_engine_field::dance_marker::step_marker(
-                m,
-                &self.marker_script,
-                delta,
-                bias,
-                0,
-                0,
-            );
+        for _ in 0..runs {
+            for m in self.markers.iter_mut() {
+                legaia_engine_field::dance_marker::step_marker(
+                    m,
+                    &self.marker_script,
+                    delta,
+                    bias,
+                    0,
+                    0,
+                );
+            }
         }
     }
 
@@ -311,6 +326,18 @@ impl DanceGame {
     /// mesh pool directly.
     pub fn step_marker_mesh(&self, class: usize) -> Option<i16> {
         self.markers.get(class).and_then(|m| m.mesh)
+    }
+
+    /// Stand marker class `class` on a retail state's own step - capture
+    /// alignment for the retail comparison's frame, never a game path. A
+    /// flipbook is a clock of the hall's game frames, whose lengths a seed does
+    /// not replay.
+    pub fn seat_step_marker(&mut self, class: usize, cursor: u16, timer: i16, mesh: i16) {
+        if let Some(m) = self.markers.get_mut(class) {
+            m.cursor = cursor;
+            m.timer = timer;
+            m.mesh = Some(mesh);
+        }
     }
 
     /// How many flipbook steps marker class `class` carries, `0` for a run

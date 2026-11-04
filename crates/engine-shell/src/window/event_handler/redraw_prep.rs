@@ -67,6 +67,16 @@ impl PlayWindowApp {
             if due && let Some(parts) = sc.seat_turning_parts.take() {
                 self.session.host.world.seat_ambient_part_banks(&parts);
             }
+            // ... and the dance's marker tiles on the steps the displayed frame
+            // drew (`LEGAIA_SEAT_DANCE_MARKERS`).
+            if due
+                && let Some(rows) = sc.seat_dance_markers.take()
+                && let Some(g) = self.session.host.world.minigames.dance.as_mut()
+            {
+                for (class, [cursor, timer, mesh]) in rows {
+                    g.seat_step_marker(class, cursor as u16, timer, mesh);
+                }
+            }
             // ... and the text balloon the displayed frame drew, or none
             // (`LEGAIA_SEAT_BALLOON`).
             if due && let Some(b) = sc.seat_balloon.take() {

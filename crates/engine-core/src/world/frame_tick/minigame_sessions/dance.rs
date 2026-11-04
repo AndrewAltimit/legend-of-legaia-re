@@ -192,9 +192,14 @@ impl World {
             return;
         }
         // Every body's clip runs every frame, count-in included: the clip
-        // driver ticks each actor whatever state the dance is in.
+        // driver ticks each actor whatever state the dance is in. The song's
+        // own advance steps the marker tiles; through the count-in, this does:
+        // they are actors on the same lists.
         if let Some(g) = self.minigames.dance.as_mut() {
             g.advance_body_clips(1);
+            if self.minigames.dance_countin.is_some() {
+                g.advance_step_markers(1);
+            }
         }
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's

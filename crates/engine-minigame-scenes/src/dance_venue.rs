@@ -308,6 +308,22 @@ pub struct VenueDraw {
     pub lift: [f32; 3],
 }
 
+/// A step-marker tile as the venue places it: the actor retail's floor pass
+/// spawns on a cell whose kind-1 `.MAP` record resolves to clip `6..=9`
+/// (`FUN_801D2A10`), whose handler `FUN_801D0640` flips its mesh through its
+/// class's row of the script table.
+///
+/// The hall's wall panels and stage screens are these tiles, so the art they
+/// show changes as the row steps. The record's own mesh, which
+/// [`VenueDraw::draw`] names, is what a tile draws before its first step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VenueMarker {
+    /// The row of the script table (`clip - 6`).
+    pub class: u16,
+    /// The cell's draw: its place, turn and lift.
+    pub venue_draw: VenueDraw,
+}
+
 /// The loaded venue: the scene [`DanceSceneEntry::stream_ids`] names, with
 /// the VRAM the entry leaves resident.
 pub struct DanceVenue {
@@ -320,6 +336,12 @@ pub struct DanceVenue {
     /// Terrain tiles then placed objects - the order the coplanar ranking
     /// needs - each with its lift.
     pub draws: Vec<VenueDraw>,
+    /// The cells of [`Self::draws`] that are step-marker tiles, taken out of
+    /// it; empty without the overlay, whose table runs them.
+    pub markers: Vec<VenueMarker>,
+    /// The overlay's flipbook rows (`0x801D44CC`), which name [`Self::markers`]'
+    /// meshes.
+    pub marker_script: legaia_engine_field::dance_marker::MarkerScript,
     /// The scene's ANM bundle, the rest-pose source for bound props and the
     /// dancers' choreography bank.
     pub anm: Option<PlayerAnmBundle>,
@@ -391,12 +413,21 @@ impl DanceVenue {
                 }
             }
         }
-        let draws = venue_draws(index, &scene, &resources);
+        let mut draws = venue_draws(index, &scene, &resources);
+        let floor = overlay.and_then(|o| marker_floor(index, &scene, o));
+        let mut markers = Vec::new();
+        let mut marker_script = legaia_engine_field::dance_marker::MarkerScript::default();
+        if let Some((floor, script)) = floor {
+            markers = split_marker_draws(&mut draws, &floor);
+            marker_script = script;
+        }
         let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
         Some(Self {
             scene,
             resources,
             draws,
+            markers,
+            marker_script,
             anm,
             face_stamps,
             faces_stamped,
@@ -432,6 +463,79 @@ impl DanceVenue {
                 .collect(),
         )
     }
+}
+
+/// Resolve the venue's step-marker tiles off its `.MAP` and the overlay's
+/// script table, as the floor pass does over the whole grid. `None` when the
+/// overlay's table or the `.MAP` will not resolve.
+pub fn marker_floor(
+    index: &ProtIndex,
+    scene: &Scene,
+    overlay: &[u8],
+) -> Option<(
+    legaia_engine_field::minigame_floor::MarkerFloor,
+    legaia_engine_field::dance_marker::MarkerScript,
+)> {
+    use legaia_engine_field::field_regions::parse_tile_triggers;
+    use legaia_engine_field::minigame_floor as mf;
+    let script = legaia_engine_field::dance_marker::MarkerScript::from_overlay(
+        overlay,
+        legaia_minigame_formats::dance_chart::DANCE_OVERLAY_BASE_VA,
+    )?;
+    let map = index
+        .entry_bytes_extended(scene.field_map_index(index)?)
+        .ok()?;
+    let primary = parse_tile_triggers(map.get(MAP_TRIGGER_BLOCK_OFFSET..)?);
+    let fallback = map
+        .get(MAP_TRIGGER_FALLBACK_OFFSET..)
+        .map(parse_tile_triggers)
+        .unwrap_or_default();
+    let ramp = mf::height_ramp();
+    let floor = mf::MarkerFloor::build(
+        mf::FloorGrid::new(&map),
+        &ramp,
+        0,
+        0,
+        mf::GRID_EXTENT,
+        mf::GRID_EXTENT,
+        false,
+        &primary,
+        &fallback,
+        script.clone(),
+    );
+    Some((floor, script))
+}
+
+/// `.MAP` primary trigger block, and the fallback the same kind-1 scan falls
+/// through to.
+const MAP_TRIGGER_BLOCK_OFFSET: usize = 0x10000;
+const MAP_TRIGGER_FALLBACK_OFFSET: usize = 0x12000;
+
+/// Take the draws standing where a marker tile stands out of `draws`: the tile
+/// is that cell's draw, on the mesh its flipbook names.
+fn split_marker_draws(
+    draws: &mut Vec<VenueDraw>,
+    floor: &legaia_engine_field::minigame_floor::MarkerFloor,
+) -> Vec<VenueMarker> {
+    let mut markers = Vec::new();
+    draws.retain(|vd| {
+        let d = &vd.draw;
+        let tile = floor.tiles().iter().find(|t| {
+            [
+                i32::from(t.pos[0]),
+                i32::from(t.pos[1]),
+                i32::from(t.pos[2]),
+            ] == [d.world_x, d.world_y, d.world_z]
+        });
+        if let Some(t) = tile {
+            markers.push(VenueMarker {
+                class: t.actor.class,
+                venue_draw: *vd,
+            });
+        }
+        tile.is_none()
+    });
+    markers
 }
 
 /// The venue's static draw list: terrain tiles (records without

@@ -87,6 +87,66 @@ pub struct RetailMinigame {
     /// (`_DAT_8007BAC4`): the venue overlays load their own block over the
     /// scene word, and the warp starts from this one.
     pub departure_define: u16,
+    /// The dance's marker tiles as the displayed frame drew them, by script
+    /// row: cursor, countdown and mesh ([`displayed_dance_markers`]).
+    pub dance_markers: [Option<[i16; 3]>; legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS],
+}
+
+/// The marker tile tick (`FUN_801D0640`, PROT 0980).
+const DANCE_MARKER_TICK: u32 = 0x801D_0640;
+/// Vsyncs a dance game frame steps (`DAT_1F800393`), which ages a tile's
+/// countdown; in every dance state the library holds.
+const DANCE_FRAME_STEP: i16 = 3;
+
+/// The dance's marker tiles on the frame the capture displays: the RAM's, taken
+/// back the display lag's passes. A tile's flipbook is a clock of the hall's
+/// game frames, and a game frame's length varies with what it draws: between
+/// `minigame_dance_retail_go_in` and `_go_out` the `GO!` accumulator walks `11`
+/// steps of `3` vsyncs while the ambient leader takes `8` rows of one pass each.
+/// So the count-in's own counter does not name a tile's phase, and the seat reads
+/// it.
+fn displayed_dance_markers(
+    ram: &[u8],
+) -> [Option<[i16; 3]>; legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS] {
+    use legaia_engine_field::dance_marker::{MARKER_SCRIPT_ROW_BYTES, MARKER_SCRIPT_VA};
+    let mut out = [None; legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS];
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != DANCE_MARKER_TICK {
+            continue;
+        }
+        let class = game_anchors::u16_at(ram, n + 0x50);
+        let Some(slot) = out.get_mut(usize::from(class)) else {
+            continue;
+        };
+        let row = MARKER_SCRIPT_VA + u32::from(class) * MARKER_SCRIPT_ROW_BYTES as u32;
+        let pair = |i: i32| {
+            let a = row + (i * 4) as u32;
+            (
+                game_anchors::i16_at(ram, a),
+                game_anchors::i16_at(ram, a + 2),
+            )
+        };
+        // The row's length: the sentinel that wraps the cursor.
+        let len = (0..32).find(|&i| pair(i).0 < 0).unwrap_or(25);
+        let mut cursor = i32::from(game_anchors::u16_at(ram, n + 0x9C));
+        let mut timer = game_anchors::i16_at(ram, n + 0x54);
+        let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let mut mesh = game_anchors::i16_at(ram, n + 0x64);
+        for _ in 0..crate::retail_compare_battle::DISPLAY_LAG_PASSES {
+            let current = (cursor / 2 - 1).rem_euclid(len);
+            if timer + DANCE_FRAME_STEP <= pair(current).1 {
+                timer += DANCE_FRAME_STEP;
+            } else {
+                // The pass that staged this step: before it, the last step
+                // stood at zero with its cursor here.
+                cursor = current * 2;
+                mesh = pair((current - 1).rem_euclid(len)).0 + bias;
+                timer = 0;
+            }
+        }
+        *slot = Some([cursor as i16, timer, mesh]);
+    }
+    out
 }
 
 impl RetailMinigame {
@@ -131,6 +191,11 @@ impl RetailMinigame {
             phase,
             phase2,
             departure_define: game_anchors::u32_at(ram, DEPARTURE_DEFINE) as u16,
+            dance_markers: if minigame == Some(MinigameSubId::Dance) {
+                displayed_dance_markers(ram)
+            } else {
+                Default::default()
+            },
         }
     }
 
@@ -408,13 +473,25 @@ pub(super) fn run_minigame(
             _ => ("O", FRAME_TICKS_PAST_WARP),
         };
         let extra = vec!["--key-script".to_string(), format!("{warp}:{key}")];
+        let seats: Vec<(&'static str, String)> = mg
+            .dance_markers
+            .iter()
+            .any(Option::is_some)
+            .then(|| {
+                (
+                    "LEGAIA_SEAT_DANCE_MARKERS",
+                    legaia_engine_capture::field_seeds::dance_markers_env(&mg.dance_markers),
+                )
+            })
+            .into_iter()
+            .collect();
         match crate::retail_compare_image::engine_frame_with(
             exe,
             opts.extracted,
             &departure,
             None,
             &extra,
-            &[],
+            &seats,
             warp + past_warp,
             opts.out_dir,
             &entry.label,

@@ -241,6 +241,23 @@ impl<'m> DrawCtx<'_, 'm> {
                     cue: None,
                 });
             }
+            // The step-marker tiles: the wall panels and stage screens.
+            for m in &g.markers {
+                if let Some(mesh) = m.textured_gpu.as_ref() {
+                    draws.push(SceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+                if let Some(mesh) = m.untextured_gpu.as_ref() {
+                    color_draws.push(ColorSceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+            }
             // The floor's bodies, posed in raw world coordinates by the
             // engine surface (`refresh_dance_cast_gpu`).
             if let Some(c) = store.dance_cast_gpu.as_ref() {

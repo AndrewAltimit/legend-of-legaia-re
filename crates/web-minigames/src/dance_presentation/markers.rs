@@ -3,13 +3,6 @@
 
 use super::*;
 
-/// Load base of the dance overlay (slot A - `crates/asset/data/static-overlays.toml`).
-const DANCE_OVERLAY_BASE_VA: u32 = 0x801C_E818;
-/// `.MAP` primary trigger block, and the `+0x12000` fallback the same kind-1
-/// scan falls through to.
-const TRIGGER_BLOCK_OFFSET: usize = 0x10000;
-const TRIGGER_FALLBACK_OFFSET: usize = 0x12000;
-
 /// The dance floor's **step-marker tiles**: the per-cell actors retail's floor
 /// pass `FUN_801D2A10` spawns for every cell whose kind-1 `.MAP` record
 /// resolves to clip `6..=9`, each flipping its mesh through the class row of
@@ -89,39 +82,11 @@ pub(super) fn bake_dance_markers(
     overlay: &[u8],
     origin: (f32, f32, f32),
 ) -> DanceMarkers {
-    use legaia_engine_field::minigame_floor as mf;
-
-    let Some(script) = legaia_engine_field::dance_marker::MarkerScript::from_overlay(
-        overlay,
-        DANCE_OVERLAY_BASE_VA,
-    ) else {
+    let Some((floor, script)) =
+        legaia_engine_minigame_scenes::dance_venue::marker_floor(index, scene, overlay)
+    else {
         return DanceMarkers::default();
     };
-    let Some(map_idx) = scene.field_map_index(index) else {
-        return DanceMarkers::default();
-    };
-    let Ok(map) = index.entry_bytes_extended(map_idx) else {
-        return DanceMarkers::default();
-    };
-    let primary =
-        legaia_engine_field::field_regions::parse_tile_triggers(&map[TRIGGER_BLOCK_OFFSET..]);
-    let fallback = map
-        .get(TRIGGER_FALLBACK_OFFSET..)
-        .map(legaia_engine_field::field_regions::parse_tile_triggers)
-        .unwrap_or_default();
-    let ramp = mf::height_ramp();
-    let floor = mf::MarkerFloor::build(
-        mf::FloorGrid::new(&map),
-        &ramp,
-        0,
-        0,
-        mf::GRID_EXTENT,
-        mf::GRID_EXTENT,
-        false,
-        &primary,
-        &fallback,
-        script.clone(),
-    );
     if floor.is_empty() {
         return DanceMarkers::default();
     }
@@ -161,15 +126,12 @@ pub(super) fn bake_dance_markers(
                 continue;
             }
             let start = out.positions.len() / 3;
-            let theta = (tile.rot[1] & 0xFFF) as f32 * (std::f32::consts::TAU / 4096.0);
-            let (sin, cos) = theta.sin_cos();
+            // The tile's whole record rotation: a wall panel leans on `+X`.
             for p in &vm.positions {
-                let (vx, vy, vz) = (p[0], p[1], p[2]);
-                out.positions
-                    .push(vx * cos + vz * sin + tile.pos[0] as f32 - origin.0);
-                out.positions.push(vy + tile.pos[1] as f32 - origin.1);
-                out.positions
-                    .push(-vx * sin + vz * cos + tile.pos[2] as f32 - origin.2);
+                let [x, y, z] = legaia_engine_scene::field_env::rotate_euler(tile.rot, *p);
+                out.positions.push(x + f32::from(tile.pos[0]) - origin.0);
+                out.positions.push(y + f32::from(tile.pos[1]) - origin.1);
+                out.positions.push(z + f32::from(tile.pos[2]) - origin.2);
             }
             for uv in &vm.uvs {
                 out.uvs.push(uv[0] as i32);

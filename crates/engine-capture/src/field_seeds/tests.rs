@@ -105,3 +105,14 @@ fn object_clip_seeds_round_trip_the_env() {
     assert_eq!(object_clips_from_env(&object_clips_env(&clips)), clips);
     assert_eq!(object_clips_from_env("1:2:3;junk;4:5:6:7:8").len(), 1);
 }
+
+#[test]
+fn dance_marker_rows_round_trip_through_the_environment() {
+    let rows = [Some([16, 0, 33]), None, Some([20, 3, 34]), None];
+    let env = dance_markers_env(&rows);
+    assert_eq!(
+        dance_markers_from_env(&env),
+        vec![(0, [16, 0, 33]), (2, [20, 3, 34])]
+    );
+    assert!(dance_markers_from_env("1:2").is_empty());
+}
