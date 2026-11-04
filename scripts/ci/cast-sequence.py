@@ -197,6 +197,28 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
+def retail_opening_pose(out: Path) -> str | None:
+    """The camera pose on retail's cast begin (`0x28`, or a heal's `0x3C`), as
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`: `cam.csv`'s pitch, yaw and eye with
+    `body.csv`'s focus. A harness seat: the child drops the capture's drive and
+    runs no earlier actor, so its camera would open elsewhere and the band's
+    opening passes would score that, not the framing law."""
+    begin = (0x28, 0x3C)
+    try:
+        with open(out / "retail" / "cam.csv") as f:
+            cam = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+        with open(out / "retail" / "body.csv") as f:
+            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+    except OSError:
+        return None
+    if cam is None or body is None:
+        return None
+    pitch = int(cam["pitch"])
+    pitch = pitch - 4096 if pitch >= 2048 else pitch
+    return ",".join(str(v) for v in (
+        pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
+
+
 def retail_rand_seed(out: Path, key: str) -> str | None:
     """`st7:phase:seed` for `LEGAIA_CAST_RAND_SEED`: the BIOS rand() seed
     word (`rand` in the probe's meta.csv) on retail's last vsync under the
@@ -296,6 +318,8 @@ def run_engine(a, out: Path) -> bool:
         target = int(done.get("cast_target", "-1"))
         target = target if 0 <= target < 3 else a.target
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
+    if not a.physical and (pose := retail_opening_pose(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),

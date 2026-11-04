@@ -180,6 +180,14 @@ clip loops, its cursor in sixteenths of a keyframe and the live pair: the
 engine half of the retail `body.csv`, which a clip that ends early or late
 is read off.
 
+The child drops the capture's drive and runs no earlier actor, so nothing in it left
+the camera where retail's stood. On cast begin it takes retail's pose from the
+recording's first row of that state (`LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`, `retail_opening_pose`
+in the driver): `cam.csv`'s pitch, yaw and eye with `body.csv`'s focus. This is a
+seat of the harness and moves no game state. Without it `0x28` and `0x29` score
+wherever the child's camera happened to stand; with it their framing tracks retail's to
+a couple of units, and the opening's error is the frame's own.
+
 Both sides also write `creature.csv`, the summon creature's clip, staged byte,
 cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a
 walk or a clip the engine does not carry reads directly: Jedo's creature stood at

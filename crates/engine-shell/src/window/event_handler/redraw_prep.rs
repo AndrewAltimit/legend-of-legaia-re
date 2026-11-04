@@ -720,6 +720,16 @@ impl PlayWindowApp {
         // glides between). After `sync_battle_render` so battle entry sees
         // `battle_stage_mesh`; before the render borrow reads the pose.
         self.tick_battle_camera();
+        // A cast recording's opening: the pose retail's recording stood on.
+        if let Some(sc) = self.screenshot.as_ref() {
+            let world = &mut self.session.host.world;
+            if matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
+                && let Some(pose) = sc.cast_seq_seat_pose.take()
+                && let Some(cam) = world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(pose);
+            }
+        }
         // Colour the ground grid from this frame's battle ambient (a summon
         // close-up dims it); re-uploads the grid only when it moved.
         self.sync_battle_ground_ambient();
