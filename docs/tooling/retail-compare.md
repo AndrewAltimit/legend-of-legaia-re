@@ -3859,12 +3859,44 @@ engine's default step, accumulator `48` lands a pass later than retail's three
 step-`3` passes, the clip's cursor reads `32` for retail's `36`, and two
 passes back is already on the shot.
 
-What the retake frames depends on the shot. A one-frame shot lands on its
-arming pass and keeps nothing of the framing before it, so the replay's own
-case 6 is the only reading of the displayed frame, and it carries the yaw
-history of the replay's own earlier rounds. A shot still walking (the group
+What the retake frames depends on the shot. A shot still walking (the group
 breaths' six-frame case 9) leaves retail's table in the RAM, so the retake
-stands on the pose walked back along it (`BattleCamera::stand_on_pose`).
+stands on the pose walked back along it (`BattleCamera::stand_on_pose`). A
+one-frame shot lands on its arming pass and keeps nothing of the framing before
+it, so the frame on screen is the case-6 walk, stated below.
+
+**The case-6 walk under a one-frame shot.** On the second `0x2B` pass
+(accumulator `2 * 8 * step`) the display shows the `0x2A` terminator pass. Its
+pose is law from what the RAM still holds
+(`RetailBattle::retake_stale_walk_pose`):
+
+- **The passes** come off the frame history: the seed `0x0C`, `0x28`, then
+  `0x29` draining the `0x14` timer that `0x28` stores (`0x801E43C4`) by each
+  pass's step to the pass that reads negative, then the terminator
+  (`case6_walk_passes`). That is fourteen passes at step `2`, ten at step `3`.
+- **Each armed pass** moves `ceil(gap / 0xC) * step`. The terminator arms nothing
+  and walks on the increment before it (`case6_walk`). Over the recordings
+  `retona_viguro_v2_pre_thunder_break` and
+  `noaru_slippery_v2_pre_poisonous_breath` this lands on the terminator row's
+  pitch, TR y, TR z and focus exactly, and the engine's live walk reads the same
+  row by row, so these frames measured the instrument and not the game.
+- **The ends** are case 6's: pitch `0`, TR y `0x500`, TR z the prescaled
+  `ctx[+0x6D0]`, focus the caster.
+- **The start** is the earlier actor's framing, or the prompt's far framing on a
+  round's first actor (`walk_start`).
+
+Three inputs are not in the RAM. `FUN_801DABA4` picks the highest key among ties
+by `rand()` and zeroes spent keys, so it leaves no battle order behind; the
+earlier action's style byte `ctx[+0xD]` has been overwritten; and the seed arms
+yaw on the caster's old heading, which `0x28` has since replaced. So
+`DISPLAYED_WALK_PINS` carries, per capture, the earlier seat and style chosen by
+scoring the law's discrete candidates against that retail frame, and on a shot
+that does not turn, a yaw read off the frame by a sweep. **These pins are fits to
+one frame each.** They move no game state, and they take the camera out of what
+the `image` score of those captures tests: the score then measures bodies, stage
+and effects. The camera itself is measured by the recordings above. A turning
+shot's yaw stays law (`retake_turning_yaw`). Without a pin the law takes the last
+spent party seat, the plain style and a caster at home.
 
 A turning case `0xE` shot leaves the framing it replaced in its own yaw: the
 case aims the live yaw `step * 4` on every pass (`0x801DCB18`), and the

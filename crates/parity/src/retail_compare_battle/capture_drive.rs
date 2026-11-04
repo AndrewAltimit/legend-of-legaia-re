@@ -491,10 +491,11 @@ impl RetailBattle {
             }
             let b = bbox?;
             let raw = legaia_engine_battle_vm::battle_cam_script::menu_raw_z(Some(b));
+            // The prompt's orbit is a clock the RAM does not date: only a turning
+            // shot takes this start.
+            self.retake_turning_yaw()?;
             return Some(WalkStart {
                 pitch: 32,
-                // The prompt's orbit is a clock the RAM does not date; only a
-                // turning shot takes this start.
                 yaw: 0,
                 tr_y: 1280,
                 tr_z: raw * 8 / 5,
@@ -502,12 +503,11 @@ impl RetailBattle {
                     ((b.min[0] + b.max[0]) * 0.5) as i32,
                     ((b.min[1] + b.max[1]) * 0.5) as i32,
                 ],
-            })
-            .filter(|_| self.retake_turning_yaw().is_some());
+            });
         }
         let seat = match pin {
             Some(p) => usize::from(p.seat),
-            None => party.filter(spent).last()?,
+            None => party.clone().rfind(spent)?,
         };
         // Style `2` raises the pitch `0x80` and drops TR y `0x100`.
         let (pitch, tr_y) = match pin.map(|p| p.style) {
@@ -1349,7 +1349,8 @@ impl RetailBattle {
         matches!(self.seed_plan(), SeedPlan::Action { .. })
             .then_some(())
             .filter(|_| {
-                super::CAPTURE_BAND_STATES.contains(&self.action_state)
+                self.monster_magic_band_age()
+                    || super::CAPTURE_BAND_STATES.contains(&self.action_state)
                     || super::SPIRIT_STAGE_STATES.contains(&self.action_state)
             })
             .and(self.backdrop_cue)
