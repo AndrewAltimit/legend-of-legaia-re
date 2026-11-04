@@ -46,6 +46,18 @@ impl World {
         let loads = std::mem::take(&mut self.battle.vram_loads);
         let loaded = !loads.is_empty();
         loads.replay(vram);
+        if (self.battle.command.is_some() || self.battle_ctx.action_state != 0)
+            && let Some(x) = self.battle.cue_clut_seed.take()
+        {
+            self.battle.vram_moves.insert(
+                0,
+                legaia_engine_field::script_vram_move::ScriptVramMove {
+                    src: (i16::from(x), 476),
+                    size: (16, 1),
+                    dst: (224, 476),
+                },
+            );
+        }
         let moves = std::mem::take(&mut self.battle.vram_moves);
         let moved = apply_vram_moves(moves, vram);
         let mut scrolled = false;

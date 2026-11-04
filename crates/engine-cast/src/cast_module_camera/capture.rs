@@ -810,8 +810,16 @@ pub const WAVE_BIG_STAGE_STORE: u32 = 0x801F_6BF8;
 /// runs for `action`: false only for a store on a choreography branch the
 /// action does not take ([`WAVE_BIG_STAGE_STORE`], Big Wave's alone).
 pub fn stage_store_runs(entry: u32, va: u32, action: Option<u8>) -> bool {
-    !(entry == 946 && va == WAVE_BIG_STAGE_STORE && action != Some(0x56))
+    !(entry == 946
+        && (va == WAVE_STAGE_RESTORE || (va == WAVE_BIG_STAGE_STORE && action != Some(0x56))))
 }
+
+/// PROT 0946's stage restore: `sb zero,0x278(v0)` at `0x801F7638`, behind
+/// `s3`, which only arm 8 raises and only while every party seat has settled
+/// (`0x801F7510..0x801F758C`). It is the arm's exit pass, not a store on the
+/// arm's own entry: the backdrop stays off through the party's get-up.
+/// [`wave_camera`] makes it.
+pub const WAVE_STAGE_RESTORE: u32 = 0x801F_7638;
 
 /// PROT 0946's countdown word (`lui 0x801F` / `+0x7F20`).
 pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
@@ -962,6 +970,7 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             }
             CaptureCamArm {
                 drift: spin,
+                ctx_278: Some(0),
                 ..pass(None, None)
             }
         }

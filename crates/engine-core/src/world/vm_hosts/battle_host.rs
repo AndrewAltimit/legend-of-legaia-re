@@ -671,15 +671,40 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             CueSpawn::Actor { id, yaw } => {
                 self.world.try_spawn_effect(id, at, (yaw as u16) & 0xFFF);
             }
-            // `clut_x` is a VRAM x coordinate, not a cue id: retail's arm
-            // is `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
-            // - a 16-entry palette-row swap. It was pushed into
-            // `World::audio.battle_sfx_cues` while the table was read as an SFX
-            // map, which fed the SFX scheduler the values `0xB0` / `0xC0` /
-            // `0xD0`. The engine has no VRAM CLUT-row swap on this seam, so
-            // the copy is dropped rather than mis-routed.
-            CueSpawn::Effect { effect_index, .. } => {
-                self.world.spawn_action_table_effect(effect_index, at);
+            // `clut_x` is a VRAM x coordinate, not a cue id: the arm is
+            // `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
+            // (`0x801E2400..0x801E2450`), the palette the effect's mesh draws
+            // through, swapped in ahead of its spawn. A heal's pillar is gold
+            // on it and the row's earlier occupant's green without it.
+            CueSpawn::Effect {
+                effect_index,
+                clut_x,
+                tint,
+                ..
+            } => {
+                if let Some(x) = clut_x {
+                    self.world.battle.vram_moves.push(
+                        legaia_engine_field::script_vram_move::ScriptVramMove {
+                            src: (i16::from(x), 476),
+                            size: (16, 1),
+                            dst: (224, 476),
+                        },
+                    );
+                }
+                if self.world.spawn_action_table_effect(effect_index, at)
+                    && let Some(word) = tint
+                    && let Some(root) = self
+                        .world
+                        .casting
+                        .active_action_fx
+                        .last_mut()
+                        .and_then(|scene| scene.parts.first_mut())
+                {
+                    // `sh v0,0x78(a0)` / `sw v0,0x74(a0)` on the spawn's
+                    // returned node (`0x801E2484..0x801E2494`).
+                    root.state.field_78 = 0x800;
+                    root.state.field_74 = word;
+                }
             }
         }
     }

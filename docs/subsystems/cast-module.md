@@ -3292,6 +3292,8 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
   until the Done arm's restore; the port halves it on the same store.
   Arm 7's way out is the party's hit (`0x801F7398..0x801F74A8`): the fold lands
   there, each struck seat's rate halved and its heading `caster[+0x46] + 0x800`.
+  The restore of the stage byte `ctx[+0x278]` (`0x801F7638`) sits behind that same
+  settle test, so the backdrop stays off to the arm's last pass.
   Arm 8's exit waits on every party seat's `+0x1D9` (`0`, a downed one `8`), and
   that wait, not the word, sets the arm's length: a retail recording holds it `238`
   vsyncs on a `160`-vsync word.

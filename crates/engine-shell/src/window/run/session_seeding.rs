@@ -455,6 +455,14 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         world.battle.forced_monster_target = target;
         world.battle.forced_monster_ground = ground;
     }
+    // `LEGAIA_SEAT_CUE_CLUT=<x>`: the parked palette column the retail state's
+    // effect row holds (`BattleState::cue_clut_seed`).
+    if let Some(x) = std::env::var("LEGAIA_SEAT_CUE_CLUT")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+    {
+        world.battle.cue_clut_seed = Some(x);
+    }
     // `LEGAIA_BATTLE_GUARD=seat[,seat..]`: party seats that stand in the
     // Spirit stance (`+0x1DE == 4`) when the fight opens - a capture's
     // guarding member, which the cast-sequence oracle's monster cast lands

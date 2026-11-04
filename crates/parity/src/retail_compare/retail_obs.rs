@@ -174,6 +174,10 @@ pub struct RetailObs {
     /// ([`retail_scroll_rects`]), handed to the image child as a
     /// `LEGAIA_SEAT_VRAM_RECTS` file.
     pub scroll_rects: Vec<SeededVramRect>,
+    /// The source column of the effect palette row `(224, 476)` a battle
+    /// state holds ([`retail_cue_clut_source`]): the swap an earlier action's
+    /// cue group made, handed to the image child as `LEGAIA_SEAT_CUE_CLUT`.
+    pub cue_clut_source: Option<u8>,
     /// Drawn field actors' live model ids ([`retail_object_models`]), handed
     /// to the image child as `LEGAIA_SEAT_OBJECT_MODELS` for the placed
     /// objects a motion stream re-binds.
@@ -399,6 +403,7 @@ impl RetailObs {
                 Vec::new()
             },
             scroll_rects: Vec::new(),
+            cue_clut_source: None,
             panel: None,
             scripted_seats: Vec::new(),
             movie: (class == StateClass::Cutscene)
@@ -541,6 +546,7 @@ impl RetailObs {
             && self.class == StateClass::Battle
         {
             self.scroll_rects = retail_scroll_rects(ram, v);
+            self.cue_clut_source = retail_cue_clut_source(v);
             return;
         }
         if let Some(v) = vram

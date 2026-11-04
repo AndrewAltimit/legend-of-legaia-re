@@ -426,6 +426,8 @@ flowchart LR
     H --> W["HUD widget<br/>FUN_8003541C"]
 ```
 
+**The cue group's palette swap.** Ahead of each effect it spawns, `FUN_801E22C8` copies a parked 16-entry palette onto the effect row, `MoveImage({map[id], 476, 16, 1}, 224, 476)` (`0x801E2400..0x801E2450`, `map` at `0x801F6418`, values `0xB0` / `0xC0` / `0xD0`). Nothing restores it, so the row holds the last swap across actions and across the fight: a heal's pillar is gold on the swap and the row's prior occupant's colour without it. Port: `BattleHostImpl::spawn_cue`, through `BattleState::vram_moves`. The retail comparison reads the source column a state's row holds (`retail_cue_clut_source`, `LEGAIA_SEAT_CUE_CLUT`), the one piece of a fight's history a seeded replay cannot rebuild.
+
 The callers of the pool spawner `FUN_801DFDF0` are the per-actor effect-script walk `FUN_801DEA50`, `FUN_801E09F8`, `FUN_801E22C8` and SCUS `FUN_8004998C` / `FUN_80047430`. The port routes the walk's requests through `World::route_battle_effect_spawns` on both hosts. The effect VM itself is documented in [effect-vm.md](effect-vm.md).
 
 **`FUN_801D8DE8(element, mode)`** is the hottest battle utility, called 30+ times across the state machine. It is a **screen-element spawner**, not an effect spawner:

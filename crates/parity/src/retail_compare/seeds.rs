@@ -177,6 +177,21 @@ pub fn retail_page_mark(ram: &[u8]) -> Option<u8> {
 /// The actor tick that runs a move-VM part (`FUN_80021DF4`).
 pub(super) const PART_TICK: u32 = 0x8002_1DF4;
 
+/// Which of the parked palettes `(x, 476)` the effect row `(224, 476)` holds in
+/// a retail VRAM: the cue-group expansion `FUN_801E22C8` copies one there ahead
+/// of each effect (`MoveImage` at `0x801E244C`) and nothing restores it, so a
+/// state carries the swap of the last action that made one. `None` when the
+/// row matches none of them.
+pub fn retail_cue_clut_source(vram: &[u8]) -> Option<u8> {
+    if vram.len() != 1024 * 512 * 2 {
+        return None;
+    }
+    let row = |x: usize| &vram[(476 * 1024 + x) * 2..(476 * 1024 + x + 16) * 2];
+    [0xB0u8, 0xC0, 0xD0]
+        .into_iter()
+        .find(|&x| row(usize::from(x)) == row(224))
+}
+
 /// Every live mode-4 VRAM scroller on a retail state's actor lists - a
 /// `FUN_80021DF4` part with `+0x5A = 4`, rect `+0xD0..+0xD6`
 /// (`legaia_engine_field::vram_scroll`) - with the
@@ -1621,4 +1636,32 @@ pub(super) fn rd16(ram: &[u8], va: u32) -> i16 {
 
 pub(super) fn rd32(ram: &[u8], va: u32) -> i32 {
     game_anchors::u32_at(ram, va) as i32
+}
+
+#[cfg(test)]
+mod cue_clut_source_tests {
+    use super::retail_cue_clut_source;
+
+    fn vram_with_row(src_x: usize, word: u16) -> Vec<u8> {
+        let mut v = vec![0u8; 1024 * 512 * 2];
+        for x in [src_x, 224] {
+            let o = (476 * 1024 + x) * 2;
+            v[o..o + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        v
+    }
+
+    /// The effect row names the parked palette it was copied from, and a row
+    /// matching none of them names nothing.
+    #[test]
+    fn the_effect_row_names_its_parked_source() {
+        assert_eq!(
+            retail_cue_clut_source(&vram_with_row(0xD0, 0xA33F)),
+            Some(0xD0)
+        );
+        let mut none = vram_with_row(0xD0, 0xA33F);
+        none[(476 * 1024 + 0xD0) * 2] = 1;
+        assert_eq!(retail_cue_clut_source(&none), None);
+        assert_eq!(retail_cue_clut_source(&[]), None);
+    }
 }

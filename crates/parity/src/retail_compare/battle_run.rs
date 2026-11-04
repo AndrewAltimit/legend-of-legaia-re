@@ -686,6 +686,10 @@ pub(super) fn battle_image(
         let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_PASS * back).rem_euclid(4096);
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", yaw.to_string()));
     }
+    // The effect palette an earlier action's cue group left swapped in.
+    if let Some(x) = retail.cue_clut_source {
+        env.push(("LEGAIA_SEAT_CUE_CLUT", x.to_string()));
+    }
     // A round prompt caught with its far framing still walking: the
     // engine's own case-9 arm, stood as far along as retail's displayed
     // frame had come (`RetailBattle::menu_glide_left`).
