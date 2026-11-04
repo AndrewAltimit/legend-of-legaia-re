@@ -59,11 +59,11 @@ pub struct LevelUpTracker {
     /// [`jitter_rng`](Self::jitter_rng)) to apply the per-level jitter spread to
     /// the *unfloored* core in the exact applier order. `None` until installed.
     pub growth_tables: Option<legaia_game_tables::level_up_tables::GrowthTables>,
-    /// Opt-in PSX BIOS-rand stream for the per-level stat-growth jitter. `None`
-    /// (the default) means **no jitter**: the tracker applies only the
-    /// deterministic core and draws zero `rand()`, so every replay/determinism
-    /// oracle stays bit-identical. Enable via
-    /// [`with_level_up_jitter`](Self::with_level_up_jitter).
+    /// The PSX BIOS-rand stream for the per-level stat-growth jitter.
+    /// `World::credit_character_xp` lends the world's stream here for a grant.
+    /// `None` means **no jitter**: the tracker applies only the deterministic
+    /// core and draws zero `rand()`. A standalone tracker can install its own
+    /// with [`with_level_up_jitter`](Self::with_level_up_jitter).
     pub jitter_rng: Option<BiosRand>,
 }
 
@@ -86,6 +86,10 @@ impl Default for LevelUpTracker {
 pub const LEVEL_UP_HP_CAP: u16 = 0x270F;
 /// `FUN_801E9504`'s cap on the base `mp_max` it grows (`0x3E7`).
 pub const LEVEL_UP_MP_CAP: u16 = 0x3E7;
+/// `FUN_801E9504`'s cap on the base AGL it grows (`0x118`).
+pub const LEVEL_UP_AGL_CAP: u16 = 0x118;
+/// `FUN_801E9504`'s cap on the base ATK, UDF, LDF, SPD and INT it grows (`0x3E7`).
+pub const LEVEL_UP_STAT_CAP: u16 = 0x3E7;
 
 impl LevelUpTracker {
     pub fn new() -> Self {
@@ -427,12 +431,12 @@ impl LevelUpTracker {
         // window (+0x110..+0x11B), so the two stay consistent.
         let [d_agl, d_atk, d_udf, d_ldf, d_spd, d_int] = result.battle_gained;
 
-        rs.agl = rs.agl.saturating_add(d_agl);
-        rs.atk = rs.atk.saturating_add(d_atk);
-        rs.udf = rs.udf.saturating_add(d_udf);
-        rs.ldf = rs.ldf.saturating_add(d_ldf);
-        rs.spd = rs.spd.saturating_add(d_spd);
-        rs.int = rs.int.saturating_add(d_int);
+        rs.agl = rs.agl.saturating_add(d_agl).min(LEVEL_UP_AGL_CAP);
+        rs.atk = rs.atk.saturating_add(d_atk).min(LEVEL_UP_STAT_CAP);
+        rs.udf = rs.udf.saturating_add(d_udf).min(LEVEL_UP_STAT_CAP);
+        rs.ldf = rs.ldf.saturating_add(d_ldf).min(LEVEL_UP_STAT_CAP);
+        rs.spd = rs.spd.saturating_add(d_spd).min(LEVEL_UP_STAT_CAP);
+        rs.int = rs.int.saturating_add(d_int).min(LEVEL_UP_STAT_CAP);
         record.set_record_stats(rs);
 
         // Mirror the grown record-side battle stats into the live window the

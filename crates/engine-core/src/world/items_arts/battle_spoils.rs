@@ -31,7 +31,15 @@ impl World {
         char_id: u8,
         xp: u32,
     ) -> Option<LevelUpResult> {
+        // The growth pass draws from retail's one `rand()` stream: eight draws a
+        // level (`jal 0x80056798`, eight sites in `FUN_801E9504`), so the stream
+        // is lent to the tracker for the grant and taken back.
+        self.party.level_up_tracker.jitter_rng =
+            Some(legaia_engine_system::rand::BiosRand::new(self.rng_state));
         let result = self.party.level_up_tracker.grant_xp(char_id, xp);
+        if let Some(rng) = self.party.level_up_tracker.jitter_rng.take() {
+            self.rng_state = rng.state();
+        }
         // Retail (`FUN_801E9504`) maintains the record's cumulative XP
         // (+0x0), next-level threshold (+0x4, slots-1/2 corrected), and
         // displayed-level byte (+0x130) on every grant; the Status menu

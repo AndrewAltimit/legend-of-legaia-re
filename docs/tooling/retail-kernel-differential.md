@@ -44,3 +44,9 @@ ported. Nothing in the engine put a Talisman's summon or a final-form Ra-Seru's
 summon on a spell list ([the mechanism](../reference/glitches/summons-and-jette.md)).
 It also showed the record's live stat window was only rebuilt for HP and MP, so
 an accessory's percent boost never reached the status screen's ATK.
+
+The battle seed `FUN_80053CB8` showed the port clamping after the flat equipment
+bytes where retail clamps before them. The level-up applier `FUN_801E9504` showed
+the stat jitter was never enabled on any host, so every level-up took the curve's
+exact mean and drew none of retail's eight `rand()` calls a level, and that the
+six battle stats had no cap on the way up.

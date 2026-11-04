@@ -57,9 +57,8 @@ fn a_party_actor_opens_a_fight_on_retails_numbers() {
     world.set_accessory_passives(AccessoryPassives::from_disc(
         &AccessoryPassiveTable::from_scus(&scus).expect("passives"),
     ));
-    let table = equip_modifier_table_from_disc(
-        &EquipStatTable::from_scus(&scus).expect("equipment"),
-    );
+    let table =
+        equip_modifier_table_from_disc(&EquipStatTable::from_scus(&scus).expect("equipment"));
     let gear: Vec<u8> = (1..=255u8).filter(|id| table.get(*id).is_some()).collect();
     world.set_equipment_table(table);
     cpu.mem.wr32(ACTORS, ACTOR);

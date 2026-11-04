@@ -28,6 +28,12 @@ impl BiosRand {
         Self { seed }
     }
 
+    /// The generator's state, for a caller that lent a stream in and takes it
+    /// back afterwards.
+    pub fn state(&self) -> u32 {
+        self.seed
+    }
+
     /// Advance and return the next 15-bit value (`0..=0x7FFF`), as BIOS `rand()`.
     pub fn next_u15(&mut self) -> u16 {
         self.seed = world_lcg_step(self.seed);
