@@ -119,8 +119,9 @@ fn prim_near_rejected(
     let s0 = prim_sxy(m, c0.xyz, p.y, p.x);
     let s1 = prim_sxy(m, c1, p.y, p.x);
     let s2 = prim_sxy(m, c2, p.y, p.x);
-    if (c0.w > 3.5 && u.psx_params.z > 2.5) {
-        return pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x));
+    if (c0.w > 3.5 && u.psx_params.z > 2.5
+        && pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x))) {
+        return true;
     }
     if (!span_too_big(s0, s1, s2)) {
         return false;
