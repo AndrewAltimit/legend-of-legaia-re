@@ -18,6 +18,7 @@ const SCALE: f32 = 1.0 / 128.0;
 
 fn tilted_draw() -> EnvDraw {
     EnvDraw {
+        far_corner_order: false,
         env_slot: 0,
         res_tmd: 0,
         world_x: 2744,
