@@ -3610,6 +3610,12 @@ The call sits on one arm of the phase byte `ctx[+0x279]`, after the arm that see
 it arms: PROT 0904's call comes `119` vsyncs into arm 2, PROT 0927's `3`. PROT 0926's
 call is outside its tick, and raises at the arming seam.
 
+A multi-spell module's bodies make their own calls (`body_head_cue`), and some pick the line from who
+is casting (`forked_head_cue`): Glare is Zora's line or everyone's (`0x801F6ACC`), PROT 0947 forks on Neo
+Windhash, PROT 0961 and 0962 on the formation's first monster, Terror Scream on three monster-id bands
+with no line outside them (`0x801F7758..0x801F77B8`), and the Rogue strikes on their element. PROT 0944's
+fork on the victim's HP (`0x801F6B20..0x801F6B38`) is not carried.
+
 The cast-audio dispatcher `FUN_801F3990` emits a different, character-split
 band (`char_kind * 0x10 + 0xF8..0xFC`, plus `0x20C..0x20E` on the enemy leg).
 A cast cannot reach it: its one caller is battle-SM state `0x3D`, entered only

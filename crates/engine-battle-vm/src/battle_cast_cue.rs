@@ -253,7 +253,47 @@ fn rand_span_before(words: &[u32], site: usize) -> u8 {
 ///
 /// REF: FUN_8004FCC8, FUN_8004FE5C (the two dispatchers the sites call)
 pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
-    head_cue_site(image).map(|(cue, _)| cue)
+    head_cue_site(image, None).map(|(cue, _)| cue)
+}
+
+/// [`module_head_cue`] for one body of a multi-spell module: each body is a
+/// whole choreography with its own call (PROT 0946's `0xB9` plays `0x150` where
+/// its Call Wave plays `0x151`), so the scan stays inside the framed function at
+/// `body_va`.
+pub fn body_head_cue(image: &[u8], body_va: u32) -> Option<ModuleHeadCue> {
+    head_cue_site(image, Some(body_va)).map(|(cue, _)| cue)
+}
+
+/// A head cue that forks on who is casting or what is queued, ahead of the call:
+/// a scan reads only the `li a0` nearest the call. `acting` is the acting seat's
+/// monster id `DAT_8007BD0C[seat - 3]`, `head` the formation's first, `DAT_8007BD0C[0]`.
+/// The outer `None` is no fork; `Some(None)` a caster the fork gives no line.
+/// PROT 0944's fork on the victim's HP is not carried: its scan reads `0x1AD`.
+///
+/// - PROT 0940 Glare, `0x801F6ACC..0x801F6AEC`: Zora's line against everyone's.
+/// - PROT 0947, `0x801F6AD8..0x801F6AEC`: Neo Windhash against V Windhash.
+/// - PROT 0955 Terror Scream, `0x801F7758..0x801F77B8`: three monster-id bands.
+/// - PROT 0961 and 0962, `0x801F6AC0..0x801F6AD4` and `0x801F6A7C..0x801F6A90`.
+/// - PROT 0964's Rogue strikes, `0x801F6BCC..0x801F6C1C`: `0x801F8FE4` holds the
+///   strike's element (`capture`, caller log: `0xB0`, `0xB1`, `0xB2`).
+pub fn forked_head_cue(entry: u32, action: u8, acting: u16, head: u16) -> Option<Option<u16>> {
+    let line = match (entry, action) {
+        (940, 0x3C) => Some(if acting == 0xA9 { 0x1B7 } else { 0x192 }),
+        (947, _) => Some(if action == 0xA7 { 0x19E } else { 0x19B }),
+        (955, 0x70) => match acting {
+            0x7D..=0x7F => Some(0x190),
+            0x83..=0x85 => Some(0x191),
+            0x28..=0x2A => Some(0x197),
+            _ => None,
+        },
+        (961, _) => Some(if head == 0xB5 { 0x1C1 } else { 0x18F }),
+        (962, _) => Some(if head == 0xB5 { 0x1C0 } else { 0x18E }),
+        (964, 0xB0) => Some(0x1C5),
+        (964, 0xB1) => Some(0x1C6),
+        (964, 0xB2) => Some(0x1C4),
+        _ => return None,
+    };
+    Some(line)
 }
 
 /// The arm of the module's phase byte `ctx[+0x279]` whose pass makes the head
@@ -270,7 +310,16 @@ pub fn module_head_cue(image: &[u8]) -> Option<ModuleHeadCue> {
 ///
 /// REF: FUN_8004FCC8 (the call this places)
 pub fn module_head_cue_arm(image: &[u8]) -> Option<u8> {
-    let (_, site) = head_cue_site(image)?;
+    head_cue_arm(image, None)
+}
+
+/// [`module_head_cue_arm`] for one body of a multi-spell module.
+pub fn body_head_cue_arm(image: &[u8], body_va: u32) -> Option<u8> {
+    head_cue_arm(image, Some(body_va))
+}
+
+fn head_cue_arm(image: &[u8], body_va: Option<u32>) -> Option<u8> {
+    let (_, site) = head_cue_site(image, body_va)?;
     let func = legaia_overlay_images::slot_b_module::framed_functions(image)
         .into_iter()
         .find(|f| f.start / 4 <= site && site < f.end / 4)?;
@@ -533,7 +582,7 @@ impl TreeWalk<'_> {
 }
 
 /// [`module_head_cue`] with the word index of the call it found.
-fn head_cue_site(image: &[u8]) -> Option<(ModuleHeadCue, usize)> {
+fn head_cue_site(image: &[u8], body_va: Option<u32>) -> Option<(ModuleHeadCue, usize)> {
     // A zero bound is "no layout recognised" (a fixture too small to carry a
     // head table), not "no content": scan the whole image then. Every real
     // band image has a non-zero code end.
@@ -550,8 +599,19 @@ fn head_cue_site(image: &[u8]) -> Option<(ModuleHeadCue, usize)> {
         .iter()
         .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
         .collect();
+    // The body's framed function, when the caller names one.
+    let span = body_va.and_then(|va| {
+        let at = va.wrapping_sub(legaia_overlay_images::slot_b_module::SLOT_B_LINK_BASE) as usize;
+        legaia_overlay_images::slot_b_module::framed_functions(image)
+            .into_iter()
+            .find(|f| f.start == at)
+            .map(|f| f.start / 4..f.end / 4)
+    });
     for (site, &w) in words.iter().enumerate() {
         if w != JAL_CUE_DISPATCH && w != JAL_SFX_FUNNEL {
+            continue;
+        }
+        if span.as_ref().is_some_and(|s| !s.contains(&site)) {
             continue;
         }
         if w == JAL_SFX_FUNNEL
@@ -677,6 +737,20 @@ pub fn admit_voice_cue(id: u16, gates: VoiceCueGates, raw_span: Option<u16>) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The caller logs: Rogue's three strikes, Terror Scream by a Terror Face.
+    /// A monster outside Terror Scream's bands has no line.
+    #[test]
+    fn a_forked_head_cue_follows_the_caster_and_the_action() {
+        assert_eq!(forked_head_cue(964, 0xB0, 1, 1), Some(Some(0x1C5)));
+        assert_eq!(forked_head_cue(964, 0xB2, 1, 1), Some(Some(0x1C4)));
+        assert_eq!(forked_head_cue(964, 0xAF, 1, 1), None);
+        assert_eq!(forked_head_cue(955, 0x70, 0x7E, 1), Some(Some(0x190)));
+        assert_eq!(forked_head_cue(955, 0x70, 0x50, 1), Some(None));
+        assert_eq!(forked_head_cue(947, 0x57, 1, 1), Some(Some(0x19B)));
+        assert_eq!(forked_head_cue(940, 0x3C, 0xA9, 1), Some(Some(0x1B7)));
+        assert_eq!(forked_head_cue(940, 0x3C, 0x10, 1), Some(Some(0x192)));
+    }
 
     #[test]
     fn enemy_leg_band() {

@@ -32,7 +32,14 @@ impl World {
         if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             self.ultimate_rave_verdict();
         }
-        match legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm(&module.bytes) {
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id);
+        let arm = match body {
+            Some(va) => {
+                legaia_engine_battle_vm::battle_cast_cue::body_head_cue_arm(&module.bytes, va)
+            }
+            None => legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm(&module.bytes),
+        };
+        match arm {
             Some(arm) => self.casting.module_voice_due = Some((spell_id, arm)),
             None => self.raise_cast_module_voice(spell_id),
         }
@@ -75,16 +82,37 @@ impl World {
         let Some(module) = pool.module(entry) else {
             return;
         };
-        let Some(head) = legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes)
-        else {
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id);
+        let head = match body {
+            Some(va) => legaia_engine_battle_vm::battle_cast_cue::body_head_cue(&module.bytes, va),
+            None => legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes),
+        };
+        let Some(head) = head else {
             return;
         };
         let id = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
+        } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
+            let Some(cue) = line else {
+                return;
+            };
+            cue
         } else {
             head.resolve(|| self.next_rand())
         };
         self.emit_battle_xa_cue(id);
+    }
+
+    /// The line a forked module picks for this caster
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::forked_head_cue`]).
+    fn forked_head_cue(&self, entry: u32, spell_id: u8) -> Option<Option<u16>> {
+        let acting = self
+            .actors
+            .get(usize::from(self.battle_ctx.active_actor))
+            .and_then(|a| a.battle_monster_id)
+            .unwrap_or(0);
+        let head = self.formation_slot0_monster_id().map_or(0, u16::from);
+        legaia_engine_battle_vm::battle_cast_cue::forked_head_cue(entry, spell_id, acting, head)
     }
 
     /// PROT 0924's arm-0 kill roll (`ultimate_rave_kill_verdict`), drawn
@@ -156,24 +184,29 @@ impl World {
         else {
             return Vec::new();
         };
-        let ids: Vec<u16> =
-            match legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes) {
-                Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => {
-                    vec![id]
-                }
-                Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Random {
-                    base,
-                    span,
-                }) => (0..u16::from(span.max(1)))
-                    .map(|k| base.wrapping_add(k))
-                    .collect(),
-                None => Vec::new(),
-            };
+        let head = match legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id) {
+            Some(va) => legaia_engine_battle_vm::battle_cast_cue::body_head_cue(&module.bytes, va),
+            None => legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes),
+        };
+        let ids: Vec<u16> = match head {
+            Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => {
+                vec![id]
+            }
+            Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Random {
+                base,
+                span,
+            }) => (0..u16::from(span.max(1)))
+                .map(|k| base.wrapping_add(k))
+                .collect(),
+            None => Vec::new(),
+        };
         // PROT 0924's cue follows its kill roll: either path's literal.
         let ids = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             [true, false]
                 .map(legaia_engine_cast::cast_module_ticks::ultimate_rave_cue)
                 .to_vec()
+        } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
+            line.into_iter().collect()
         } else {
             ids
         };

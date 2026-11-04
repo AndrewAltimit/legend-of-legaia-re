@@ -196,6 +196,18 @@ fn the_head_cue_sits_on_the_arm_retail_calls_it_from() {
             "PROT {entry}"
         );
     }
+    // A multi-spell module's bodies each make their own call.
+    use legaia_engine_battle_vm::battle_cast_cue::body_head_cue;
+    use legaia_engine_cast::cast_module_ticks::capture_tick_body;
+    for (entry, action, cue) in [(964, 0xAF, 0x1C7), (955, 0x60, 0x196), (955, 0x6F, 0x143)] {
+        let (_, bytes) = images.iter().find(|(idx, _)| *idx == entry).unwrap();
+        let body = capture_tick_body(entry, action).expect("a trampoline arm");
+        assert_eq!(
+            body_head_cue(bytes, body),
+            Some(ModuleHeadCue::Literal(cue)),
+            "PROT {entry} action {action:#x}"
+        );
+    }
     for (entry, slot) in [(904, 7), (908, 7), (909, 6), (911, 12), (927, 14)] {
         let (_, bytes) = images.iter().find(|(idx, _)| *idx == entry).unwrap();
         assert_eq!(
