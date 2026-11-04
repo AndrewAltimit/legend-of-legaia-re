@@ -144,7 +144,7 @@ impl World {
 
     /// [`Self::capture_module_roll`] at the shape's baked power `site`
     /// (PROT 0959's three wrapper sites).
-    pub(in crate::world::battle::cast_band) fn capture_module_roll_site(
+    pub fn capture_module_roll_site(
         &mut self,
         shape: &legaia_engine_cast::cast_module_ticks::CastDamageShape,
         site: usize,
@@ -152,7 +152,7 @@ impl World {
         target: u8,
     ) -> Option<i32> {
         use legaia_engine_battle_vm::battle_damage_wrappers::{WrapperAttacker, WrapperDefender};
-        use legaia_engine_cast::cast_module_ticks::roll_module_hit;
+        use legaia_engine_cast::cast_module_ticks::{CastWrapper, roll_module_hit};
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
@@ -171,14 +171,15 @@ impl World {
                 .get(attacker as usize)
                 .copied()
                 .unwrap_or(0),
-            status: 0,
+            // `FUN_801DD864`, which both wrappers call, reads both seats' words.
+            status: self.raw_status_word(attacker),
         };
         let d = WrapperDefender {
             hp: defender.hp,
             agl: defender.agl,
             stat_a: defender.stat_a,
             stat_b: defender.stat_b,
-            status: 0,
+            status: defender.status,
             // `+0x1DE == 4` (a Spirit stance) doubles the defender roll in
             // the scale stage `FUN_801DD864`, as the finisher then halves.
             guard: if self
@@ -193,10 +194,16 @@ impl World {
                 0
             },
         };
+        // The bypass wrapper draws one attacker roll where the respecting one
+        // draws two (`FUN_801DD6B4`, `FUN_801DD4B0`).
         let rng = [
             self.next_rand() as u16,
             self.next_rand() as u16,
-            self.next_rand() as u16,
+            if shape.wrapper == CastWrapper::Bypass {
+                0
+            } else {
+                self.next_rand() as u16
+            },
         ];
         let net = roll_module_hit(shape, site, &a, &d, element_affinity_pct, rng, || {
             self.next_rand() as u16
@@ -231,7 +238,7 @@ impl World {
         use legaia_engine_battle_vm::battle_damage_wrappers::{
             ATK_WRAPPER_BYPASSES_PARTY_RESIST, INT_WRAPPER_BYPASSES_PARTY_RESIST,
         };
-        use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+        use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_net};
         use legaia_engine_cast::cast_module_ticks::CastWrapper;
 
         let bypass_party_resist = match shape.wrapper {
@@ -240,7 +247,7 @@ impl World {
             CastWrapper::SharedSummon => {
                 // The shared kernel still ends in the finisher, whose
                 // rumble does not depend on the arguments left unmodelled.
-                self.finisher_rumble(target);
+                self.finisher_struck(target);
                 return net;
             }
         };
@@ -263,10 +270,18 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || self.next_rand() as u16).min(9999);
-        self.accrue_spirit_gauge(target, over as u16);
-        self.finisher_rumble(target);
-        over as i32
+        let net = damage_finish_net(&finish, || self.next_rand() as u16);
+        // The alias arm's roll reads as nothing to the Spirit stage.
+        self.accrue_spirit_gauge(target, net.max(0) as u16);
+        self.finisher_struck(target);
+        // A Stoned victim's hit comes back as nothing (`0x801DE2F0`).
+        if self.raw_status_word(target)
+            & legaia_engine_battle_vm::status_effects::display_flags::STONE
+            != 0
+        {
+            return 0;
+        }
+        net
     }
 
     /// Carry the spirit gauges [`Self::finish_module_hit`] filled into seat

@@ -10,10 +10,7 @@ impl World {
     /// ([`BattleState::apply_battle_buff`]); capture rolls vs the monster's weakened
     /// state ([`Self::resolve_capture`]); escape flags a return to the field
     /// ([`legaia_engine_battle_loop::battle_state::BattleState::escaped`]). `Failed` is a no-op (MP already spent).
-    pub(in crate::world) fn fold_spell_outcome(
-        &mut self,
-        outcome: legaia_engine_battle::spells::SpellOutcome,
-    ) {
+    pub fn fold_spell_outcome(&mut self, outcome: legaia_engine_battle::spells::SpellOutcome) {
         use legaia_engine_battle::spells::SpellOutcome as O;
         match outcome {
             O::Damage { target, amount, .. } => {
@@ -22,7 +19,7 @@ impl World {
                 // pre-nullify amount - retail charges the gauge before the
                 // absorb stage, so a Stone target's absorbed cast still charges.
                 self.accrue_spirit_gauge(target, amount);
-                self.finisher_rumble(target);
+                self.finisher_struck(target);
                 // A petrified target (Stone) absorbs the hit - no HP loss, like
                 // the basic-attack path; Stone is invulnerable at every damage
                 // entry point.

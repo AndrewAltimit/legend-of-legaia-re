@@ -7,6 +7,7 @@ mod arts_queue;
 mod arts_roll;
 mod battle_item;
 mod battle_seed;
+mod cast_damage;
 mod common;
 mod death_spoils;
 mod encounter_roll;

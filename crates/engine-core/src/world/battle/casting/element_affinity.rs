@@ -30,10 +30,12 @@ impl World {
         let Some(enemy_elem) = self.monster_seat_element(attacker as usize) else {
             return 100;
         };
-        let Some(party_elem) = aff.character_element(self.battle_party_char_id(target)) else {
+        // `FUN_801DD864` resolves the defender by its seat too: a monster seat
+        // takes its record's `+0x1D` (`0x801DD914..0x801DD930`).
+        let Some(defender_elem) = self.battle_slot_element(target) else {
             return 100;
         };
-        aff.affinity_pct(enemy_elem, party_elem).unwrap_or(100)
+        aff.affinity_pct(enemy_elem, defender_elem).unwrap_or(100)
     }
 
     /// Element id (`0..=7`) of a battle slot, resolved by slot the way the retail

@@ -143,3 +143,12 @@ The Spirit block of the action state machine's cleanup arm, `0x801E5D60..0x801E5
 its own off the disc against the Done band, holds the port to the arm that pays an art's
 price: the accumulator comes off the gauge ahead of the action's own `+8` or `+0x20`, the two
 AP Boost passives and the cap, with the gauge left alone until then.
+
+The shared cast kernel `FUN_801DD0AC`, its scale and finisher, and the two wrappers
+`FUN_801DD4B0` / `FUN_801DD6B4`, on both branches, found no cast waking a sleeper or
+freeing a Numbed seat, where the finisher strips `0x0F80` as the melee resolver does;
+a monster's hit on a monster taking the defender's element off the party table;
+spell XP and the Seru debuff landing in a special battle, where the tail returns
+first; spell XP banked off a Stoned victim whose hit the finisher had zeroed; and a
+module's own roll ignoring both seats' Venom and Toxic, drawing a third `rand()` on
+the bypass wrapper, which draws two, and handing a Stoned victim the whole hit.

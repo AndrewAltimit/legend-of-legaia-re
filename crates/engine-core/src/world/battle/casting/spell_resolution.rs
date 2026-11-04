@@ -257,14 +257,11 @@ impl World {
                 && !jedo_banish
                 && let legaia_engine_battle::spells::SpellOutcome::Damage { amount, .. } = &outcome
             {
-                summon_xp_gain = summon_xp_gain.saturating_add(
-                    legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(
-                        *amount as u32,
-                        snap.target_hp,
-                        snap.target_hp_max,
-                        group_target,
-                    ),
-                );
+                summon_xp_gain = summon_xp_gain.saturating_add(self.summon_hit_xp(
+                    t,
+                    u32::from(*amount),
+                    group_target,
+                ));
             }
             // A retail-compare seed of a monster cast's landed hit
             // ([`legaia_engine_battle_loop::battle_state::BattleState::forced_melee_hits`]): the cast on
@@ -291,7 +288,12 @@ impl World {
             // The finisher's per-element stat switch runs once per hit, on the
             // hit's own target - a cure class (light) and a party target write
             // nothing, which `apply_hit` already encodes.
-            if damaged && let Some((kind, pct)) = side_effect {
+            // The tail returns ahead of it in a special battle (`0x801DE450`),
+            // whatever the stager staged.
+            if damaged
+                && self.battle.special_word == 0
+                && let Some((kind, pct)) = side_effect
+            {
                 self.apply_seru_side_effect(t, kind, pct);
             }
             if damaged {

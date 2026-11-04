@@ -337,21 +337,25 @@ impl World {
         );
     }
 
-    /// The shared finisher's rumble, right after its Spirit stage: a struck
-    /// party seat jolts the controller hard and slow to fade, a struck
-    /// monster lighter, and a Stoned defender not at all - the stores sit
-    /// behind the finisher's `+0x16E & 0x4` test (`0x801DE2E4..0x801DE2E8`,
-    /// the Stone arm jumps past them) and the Battles vibration row.
+    /// The shared finisher's stage after its Spirit fill, on a defender who is
+    /// not Stoned (the `+0x16E & 0x4` test at `0x801DE2E4..0x801DE2E8`, whose
+    /// Stone arm jumps past all of it and zeroes the hit). A hit strips the
+    /// wakes-when-hit family `0x0F80` from the status word, as the melee
+    /// resolver's does, so any cast wakes a sleeper and frees a Numbed seat;
+    /// and it rumbles: a struck party seat jolts the controller hard and slow
+    /// to fade, a struck monster lighter, under the Battles vibration row.
     ///
-    /// PORT: FUN_801DDB30 (`0x801DE2E4..0x801DE364`, the rumble stores)
-    pub(in crate::world) fn finisher_rumble(&mut self, defender_slot: u8) {
+    /// PORT: FUN_801DDB30 (`0x801DE2E4..0x801DE364`, the strip and the rumble)
+    pub(in crate::world) fn finisher_struck(&mut self, defender_slot: u8) {
+        use legaia_engine_battle_vm::status_effects::display_flags;
         use legaia_engine_system::rumble::battle_writes;
-        if self.raw_status_word(defender_slot)
-            & legaia_engine_battle_vm::status_effects::display_flags::STONE
-            != 0
-        {
+        if self.raw_status_word(defender_slot) & display_flags::STONE != 0 {
             return;
         }
+        if let Some(a) = self.actors.get_mut(usize::from(defender_slot)) {
+            a.battle.field_flags &= !display_flags::DAMAGE_CLEARS;
+        }
+        self.battle.status_effects.on_damaged(defender_slot);
         self.battle_rumble(if defender_slot < self.party.party_count {
             battle_writes::FINISHER_PARTY_STRUCK
         } else {
