@@ -540,6 +540,7 @@ mod tests {
             phase: None,
             phase2: 0,
             departure_define: 0,
+            dance_markers: Default::default(),
         }
     }
 
@@ -563,6 +564,7 @@ mod tests {
             phase: Some((0x64, 0)),
             phase2: 0,
             departure_define: 0,
+            dance_markers: Default::default(),
         };
         assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
@@ -577,6 +579,7 @@ mod tests {
             phase: Some((state, 0)),
             phase2: 0,
             departure_define: 0,
+            dance_markers: Default::default(),
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
         assert!(mg(6, 0xA).unseeded_reason().is_some());
