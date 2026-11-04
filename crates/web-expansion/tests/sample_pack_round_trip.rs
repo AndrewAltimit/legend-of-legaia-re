@@ -87,6 +87,73 @@ fn an_edit_round_trips_and_touches_only_its_file() {
     assert_eq!(reloaded["pack"], serde_json::to_value(&edited).unwrap());
 }
 
+/// The painter's preview answers one map the same however it got there: each
+/// map of a run of tile edits, previewed cold, after its neighbours and again
+/// past the terrain memos' reach, reads byte for byte the same, and the edits
+/// do show. (Without the disc the rest checks measure nothing; the field and
+/// the walls they stand on are the same.)
+#[test]
+fn a_map_preview_is_the_same_after_any_run_of_edits() {
+    let mut core = Core::new();
+    let (_, pack) = load(&mut core);
+    for id in ["genesis_1f", "isles_beach", "isles_grotto"] {
+        let map = &pack["maps"][id];
+        let rows: Vec<String> = map["tiles"]["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap().to_string())
+            .collect();
+        let brush = |c: char| map["tiles"]["legend"].get(c.to_string()).is_some();
+        let chars: Vec<char> = {
+            let mut v: Vec<char> = rows
+                .iter()
+                .flat_map(|r| r.chars())
+                .filter(|c| brush(*c))
+                .collect();
+            v.sort_unstable();
+            v.dedup();
+            v
+        };
+        assert!(chars.len() > 1, "{id}");
+        // Twelve edits, past the memos' eight entries.
+        let edits: Vec<String> = (0..12)
+            .map(|i| {
+                let (r, c) = (
+                    1 + i * 3 % (rows.len() - 2),
+                    1 + i * 5 % (rows[0].chars().count() - 2),
+                );
+                let mut line: Vec<char> = rows[r].chars().collect();
+                let was = line[c];
+                line[c] = *chars.iter().find(|x| **x != was).unwrap();
+                let mut m = map.clone();
+                m["tiles"]["rows"][r] = serde_json::json!(line.into_iter().collect::<String>());
+                m.to_string()
+            })
+            .collect();
+        let first: Vec<String> = edits
+            .iter()
+            .map(|e| core.map_preview(e).to_string())
+            .collect();
+        for (e, p) in edits.iter().zip(&first).rev() {
+            assert_eq!(
+                core.map_preview(e).to_string(),
+                *p,
+                "{id}: back over the run"
+            );
+        }
+        for (e, p) in edits.iter().zip(&first) {
+            assert_eq!(core.map_preview(e).to_string(), *p, "{id}: forward again");
+        }
+        assert!(
+            first[0].contains("\"width\""),
+            "{id}: {}",
+            &first[0][..80.min(first[0].len())]
+        );
+        assert!(first.iter().any(|p| *p != first[0]), "{id}: the edits show");
+    }
+}
+
 #[test]
 fn the_tower_map_previews_with_the_corner_rule() {
     let mut core = Core::new();
