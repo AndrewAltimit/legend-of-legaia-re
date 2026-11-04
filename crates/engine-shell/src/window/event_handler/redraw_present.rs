@@ -589,7 +589,7 @@ impl PlayWindowApp {
                 let h = |o: usize| st.actor_u16(o) as i16;
                 let _ = writeln!(
                     f,
-                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{}",
+                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{},{},{},{},{}",
                     part.model_sel,
                     u8::from(part.finished),
                     st.field_74,
@@ -621,6 +621,10 @@ impl PlayWindowApp {
                     st.render_26,
                     st.render_28,
                     st.field_7a,
+                    st.tween_src_x,
+                    st.tween_src_y,
+                    st.tween_src_z,
+                    st.field_9c,
                 );
             }
         }

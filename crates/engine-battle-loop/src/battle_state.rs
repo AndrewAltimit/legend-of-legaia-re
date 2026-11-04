@@ -719,6 +719,10 @@ pub struct BattleState {
     /// (`World::stretch_battle_frame`): the stretched
     /// frame's id and the step the frame after its pass returns to.
     pub frame_stretch: Option<(u64, u8)>,
+    /// Whether the clock's step is a cast arm's measured one
+    /// (`World::apply_cast_arm_frame_step`), to go back to the default when
+    /// the band ends.
+    pub cast_arm_step_on: bool,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on (`World::tick_battle_pass_draw`) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -1309,6 +1313,7 @@ impl BattleState {
             cell_captures: Default::default(),
             frame_clock: Default::default(),
             frame_stretch: None,
+            cast_arm_step_on: false,
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,

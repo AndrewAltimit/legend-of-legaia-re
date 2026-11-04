@@ -414,7 +414,12 @@ period; in `gimard_burning_attack` the part sits on the effect list with
 engine runs the same integrator over every live part of the battle effect
 scenes (`World::queue_battle_part_scrolls`, after each scene's tick) and
 applies the fired rotations to the battle VRAM with the stage module's
-`MoveImage`s (`World::apply_battle_vram_moves`), which both hosts call.
+`MoveImage`s (`World::apply_battle_vram_moves`), which both hosts call. The arm's
+strip is `+0xCE * step` and a period-`0` scroller fires every pass, so it moves
+`+0xCE` rows a vsync at any frame step: Iota's two pages read `92` and `184` rows
+over `96` vsyncs at step `4` for `+0xCE` of `1` and `2`. The step is the battle
+frame's, the vsyncs its pass spans. The display clock's `frame_step` reads `3` in a
+battle and is not it.
 
 ### The master ambient record 0 - the per-scene SFX descriptor bank
 

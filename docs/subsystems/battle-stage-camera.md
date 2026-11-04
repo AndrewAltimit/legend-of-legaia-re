@@ -1310,8 +1310,13 @@ vsyncs, the walker scales each increment by it, a tween armed over `a3` frames
 lands in `a3 / step` steps (`frames_to_steps`; `steps_of` for the glides
 authored in default-step steps), and the idle orbit turns `2 * step` a step.
 
-Play keeps the default. A replay that knows retail's step installs it while the
-action SM sits in one state (`World::seed_battle_frame_step`). The
+Play keeps the default outside a summon band. Inside one, each module arm runs
+on the step a retail recording of the cast reads for it
+(`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
+a band opens at `1` and its whole-screen arms read `4`, on every summon module. The
+reading is a property of the arm because the arm draws the same screen each time.
+The capture band is not in the table. A replay that knows retail's step installs it
+while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
 `0x33` / `0x34`, where each pass re-arms case `0x12`'s three-frame tween: at
 step `3` the walker lands it every pass, at `2` it trails

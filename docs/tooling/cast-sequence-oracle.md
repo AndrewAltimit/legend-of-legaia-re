@@ -101,7 +101,8 @@ colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA`, the
 position, then the draw kind `+0x56`, scale `+0x72`, `+0x52`, the count
 `+0x9C`, the UV words `+0xA8` / `+0xAC`, tpage `+0xB0`, CLUT `+0xB2`, the
 default-arm mesh's vertex count, the spawn record's address, the flag word
-`+0x10`, the angle trio `+0x24..+0x28` and `+0x7A` - the engine half of a
+`+0x10`, the angle trio `+0x24..+0x28`, `+0x7A`, a mode-3 cycler's H / S / V adds
+`+0x90..+0x94` and its gate `+0x9C` - the engine half of a
 part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
@@ -480,7 +481,11 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   seat against retail's 432 before the ground was carried).
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
-  ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase
+  ally spell. A party caster's group codes are the player picker's
+  (`0x801D1CF8`, `0x801D1D68`): `--target 9` for every enemy (spell byte `0x64`),
+  `--target 8` for the whole party (`0x24` / `0x26`). A group offensive spell
+  injected with `8` frames the band as a party-wide cast and scores low on the
+  framing alone. The probe quits on a park (`LEGAIA_PARK`, state and module phase
   unchanged for `900` vsyncs) and the driver reports it.
 
 `--engine-only` on a state with no retail recording runs the engine half

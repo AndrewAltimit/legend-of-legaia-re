@@ -61,6 +61,12 @@ impl World {
         self.casting.module_saved_poses.clear();
         self.casting.module_creature_clip_kind = 0;
         self.casting.module_shake = 0;
+        // A module with pre-hits keeps the readout flag down from its first
+        // popup, which the HUD reads a frame late: hold from the start, and let
+        // the band's fold release it.
+        self.battle.combo_cluster_held = self
+            .cast_module_for(spell_id)
+            .is_some_and(|e| matches!(e, 908 | 915 | 928 | 932 | 933 | 934));
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,

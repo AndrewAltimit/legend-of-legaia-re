@@ -16,6 +16,7 @@
 pub mod cast_arm_ticks;
 pub mod cast_fatal_decision;
 pub mod cast_module_camera;
+pub mod cast_module_frame_step;
 pub mod cast_module_impact;
 pub mod cast_module_rumble;
 pub mod cast_module_ticks;

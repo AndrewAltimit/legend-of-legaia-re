@@ -179,13 +179,21 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             use legaia_engine_cast::cast_module_camera::ModuleCaption;
             let id = actor.battle.params[0];
             return match world.casting.module_caption? {
+                // The line prints the spell table's raw `+8` string, its `0xCE`
+                // element plate in front of the name (`CE 18 " Mushura"`).
                 ModuleCaption::SpellName => world.expansion_cast_name(id).or_else(|| {
-                    world
-                        .menu
-                        .text
+                    let text = world.menu.text.as_ref()?;
+                    let name = text.spell_name(id)?;
+                    let plate = text
+                        .spell_names
                         .as_ref()
-                        .and_then(|t| t.spell_name(id))
-                        .map(str::to_string)
+                        .and_then(|t| t.icon(id))
+                        .and_then(|op| op.checked_add(0x2D))
+                        .filter(u8::is_ascii_uppercase);
+                    Some(match plate {
+                        Some(letter) => format!("^{} {name}", letter as char),
+                        None => name.to_string(),
+                    })
                 }),
                 ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
                 ModuleCaption::Cleared => None,
