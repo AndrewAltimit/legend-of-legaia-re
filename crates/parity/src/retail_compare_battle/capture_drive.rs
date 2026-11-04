@@ -1178,10 +1178,21 @@ impl RetailBattle {
     /// (`battle_noaru_gilium_lv2_thunder_storm_mid_cast`: retail `0x6C0`, the
     /// engine at the `0x800` indoor ceiling, the cave drawn a fifth darker -
     /// `image` `.414`; on retail's word `.805`).
+    ///
+    /// The Spirit / Item band is the same clock. Its pre-arm raises the latch
+    /// at `0x3C` (`0x801E3B6C`), and `0x3D` then holds until the caster's idle
+    /// ends, a wait as long as the idle's phase left it: Garnet's Heal stands
+    /// retail's `0x500`, 20 units past the latch and 10 vsyncs into `0x3E` on
+    /// its accumulator, where the replay's idle has waited out the `0x800`
+    /// ceiling. The accumulator gates the band's run, so the weight is seated
+    /// the same way (`battle_deene_garnet_heal_mid_cast`, `.77` to `.93`).
     pub fn capture_band_backdrop_cue(&self) -> Option<u16> {
         matches!(self.seed_plan(), SeedPlan::Action { .. })
             .then_some(())
-            .filter(|_| super::CAPTURE_BAND_STATES.contains(&self.action_state))
+            .filter(|_| {
+                super::CAPTURE_BAND_STATES.contains(&self.action_state)
+                    || super::SPIRIT_STAGE_STATES.contains(&self.action_state)
+            })
             .and(self.backdrop_cue)
     }
 

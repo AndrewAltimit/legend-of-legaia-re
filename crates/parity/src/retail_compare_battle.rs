@@ -297,6 +297,11 @@ pub type CapturedActor = ([i16; 2], [i16; 2], u8, u8);
 /// The action SM's capture band `0x6E..=0x71`.
 pub(crate) const CAPTURE_BAND_STATES: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
 
+/// The Spirit / Item band past the pre-arm that raises `ctx[+0x243]`: `0x3D`'s
+/// stage wait to `0x40`'s post-damage. The backdrop weight runs from `0x3C`
+/// ([`RetailBattle::capture_band_backdrop_cue`]).
+pub(crate) const SPIRIT_STAGE_STATES: std::ops::RangeInclusive<u8> = 0x3D..=0x40;
+
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
 pub struct RetailBattle {
