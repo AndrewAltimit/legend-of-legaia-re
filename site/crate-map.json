@@ -1300,7 +1300,8 @@
     "hud_glide",
     "melee_hits",
     "phase_gate",
-    "script_gate"
+    "script_gate",
+    "strike_deal"
    ],
    "band": "top",
    "track": "tooling",
@@ -4148,13 +4149,17 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-fishing",
     "engine-menus",
+    "engine-minigame-scenes",
     "engine-minigames",
+    "engine-scene",
     "engine-system",
     "engine-vm",
     "game-tables",
     "lzs",
     "minigame-formats",
+    "render-kernels",
     "save",
     "scene-formats"
    ],

@@ -333,12 +333,21 @@ fn the_status_confirm_opens_the_reorder_page_and_its_browse_half_exchanges() {
         matches!(s.field_menu_sub, Some(FieldMenuSubsession::Status(_))),
         "Status did not open the status screen"
     );
-    // Retail's confirm arm of sub-screen 0x15's picker: a list with rows
-    // opens the page instead of buzzing.
+    // The pager turns Condition to Skills to Magic; on Magic, retail's confirm
+    // arm of the character picker (`0x801DA3C8..0x801DA448`) opens the list
+    // instead of buzzing.
+    tap(&mut s, PadButton::Right);
+    tap(&mut s, PadButton::Right);
     tap(&mut s, PadButton::Cross);
-    let Some(FieldMenuSubsession::ListOrder(page)) = s.field_menu_sub.as_ref() else {
-        panic!("Cross on the status screen did not open the reorder page");
-    };
+    fn status_list(
+        s: &NativeSession,
+    ) -> Option<&legaia_engine_menus::list_order::ListOrderSession> {
+        match s.field_menu_sub.as_ref() {
+            Some(FieldMenuSubsession::Status(st)) => st.list(),
+            _ => None,
+        }
+    }
+    let page = status_list(&s).expect("Cross on the Magic page did not open its list");
     assert_eq!(
         page.rows().len(),
         2,
@@ -352,9 +361,7 @@ fn the_status_confirm_opens_the_reorder_page_and_its_browse_half_exchanges() {
     tap(&mut s, PadButton::Cross);
     tap(&mut s, PadButton::Down);
     tap(&mut s, PadButton::Cross);
-    let Some(FieldMenuSubsession::ListOrder(page)) = s.field_menu_sub.as_ref() else {
-        panic!("the reorder page closed before the exchange");
-    };
+    let page = status_list(&s).expect("the list closed before the exchange");
     assert_eq!(
         page.swaps(),
         &[(0, 1)],

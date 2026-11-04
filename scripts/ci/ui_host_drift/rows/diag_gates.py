@@ -26,6 +26,11 @@ from ui_host_drift.roots import REPO
 DIAG_GATES: list[dict[str, object]] = [
     # --- additive: draws something retail does not -------------------------
     {
+        "env": "LEGAIA_DIAG_CAST_VRAM_AT",
+        "additive": False,
+        "note": "writes the battle VRAM at one tick beside a cast recording; draws nothing",
+    },
+    {
         "env": "LEGAIA_DIAG_FX",
         "additive": True,
         "web_toggle": "FX_OUTLINE",
