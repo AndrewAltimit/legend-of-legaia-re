@@ -393,8 +393,8 @@ pub fn compare(
 /// Re-deal each id's paired engine ticks in time order. Repeats of one id play
 /// in order on both sides, but the matcher takes the nearest free tick per
 /// retail cue and its two passes run apart, so two cues can pair crossed: `-6`,
-/// `-6` read as `+2`, `-14`. In-order pairing never widens the largest gap, so
-/// no pair leaves the tolerance by this.
+/// `-6` read as `+2`, `-14`. An id whose in-order pairs would match fewer keeps
+/// its picks: a lone step cue on one side is not two late ones.
 fn uncross(
     matched: Vec<CuePair>,
     timing: Vec<CuePair>,
@@ -409,10 +409,21 @@ fn uncross(
         pairs.sort_by_key(|p| p.projected_tick);
         let mut ticks: Vec<u64> = pairs.iter().map(|p| p.engine_tick).collect();
         ticks.sort_unstable();
-        for (pair, tick) in pairs.iter_mut().zip(ticks) {
-            pair.engine_tick = tick;
-            pair.dt = tick as i64 - pair.projected_tick as i64;
-            if pair.dt.unsigned_abs() <= tolerance {
+        let within = |d: i64| d.unsigned_abs() <= tolerance;
+        let picked = pairs.iter().filter(|p| within(p.dt)).count();
+        let ordered = pairs
+            .iter()
+            .zip(&ticks)
+            .filter(|(p, t)| within(**t as i64 - p.projected_tick as i64))
+            .count();
+        if ordered >= picked {
+            for (pair, tick) in pairs.iter_mut().zip(ticks) {
+                pair.engine_tick = tick;
+                pair.dt = tick as i64 - pair.projected_tick as i64;
+            }
+        }
+        for pair in pairs.iter() {
+            if within(pair.dt) {
                 matched.push(pair.clone());
             } else {
                 timing.push(pair.clone());
