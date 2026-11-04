@@ -43,6 +43,36 @@ fn state_builds_without_a_window() {
     );
 }
 
+/// A disc image cut short by a copy says so, whether the cut falls inside the
+/// disc's file list or among its files, and the whole image passes the same
+/// check. The copies are scratch files, removed with the test's folder.
+#[test]
+fn an_image_cut_short_is_named_incomplete() {
+    let Some(bin) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN not set; skipping cut-short test");
+        return;
+    };
+    legaia_explorer::library::validate(&bin).expect("the whole disc passes");
+    let dir = scratch("cut-short");
+    let bytes = std::fs::read(&bin).unwrap();
+    // 8 MiB stops before the file list ends; nine tenths is past it.
+    for (len, expect) in [
+        (8 * 1024 * 1024, "the file ends too early"),
+        (bytes.len() / 10 * 9, "holds only"),
+    ] {
+        let copy = dir.join("cut.bin");
+        std::fs::write(&copy, &bytes[..len]).unwrap();
+        let err = match legaia_explorer::library::validate(&copy) {
+            Ok(_) => panic!("{len} bytes: a cut image is refused"),
+            Err(e) => e.to_string(),
+        };
+        assert!(err.contains(expect), "{len} bytes: {err}");
+        assert!(err.contains("copying or downloading"), "{err}");
+        assert!(!err.contains("failed to fill"), "{err}");
+    }
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// The model tab's texture-source default reads coverage. Two `town01`
 /// scene_tmd_stream entries each carry two TIMs: PROT 6's cover every CLUT
 /// and texel its mesh reads (it opens on the entry), PROT 7's miss a few

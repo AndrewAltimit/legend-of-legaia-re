@@ -791,12 +791,15 @@ impl LauncherApp {
 
     fn open_data_folder(&mut self) {
         let dir = std::env::current_dir().unwrap_or_default();
-        if let Err(e) = open_folder(&dir) {
-            self.status = Some(vec![(
+        // The path either way: a file manager may open behind this window,
+        // or not at all on a desktop with none set.
+        self.status = Some(vec![match open_folder(&dir) {
+            Ok(()) => (format!("Saves and settings are in {}", dir.display()), DIM),
+            Err(e) => (
                 format!("Could not open a file manager on {}: {e}", dir.display()),
                 WARN,
-            )]);
-        }
+            ),
+        }]);
     }
 
     /// Activate the focused control (`dir` steps an option backwards).
@@ -1272,7 +1275,7 @@ impl LauncherApp {
             Item::ChooseDisc => match &self.disc {
                 Some(d) => format!("Pick another disc image. Now: {}", d.path.display()),
                 None => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                         Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
+                         raw dump, or its .cue. It is checked and remembered. Ctrl+O."
                     .into(),
             },
             Item::Online => "Start the game with the Multiplayer screen open: host a room \
@@ -1949,7 +1952,7 @@ fn problem_message(p: &DiscProblem) -> Vec<Message> {
         DiscProblem::Unreadable { reason, fix, .. } => (
             sentence(reason),
             fix.clone().unwrap_or_else(|| {
-                "Choose the .bin of a raw Mode2/2352 dump, or the .cue beside it.".into()
+                "Choose the .bin of a raw dump (2352-byte sectors), or the .cue beside it.".into()
             }),
         ),
         DiscProblem::WrongDisc { reason, .. } => (

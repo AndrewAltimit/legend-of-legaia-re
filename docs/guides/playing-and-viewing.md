@@ -84,8 +84,10 @@ game boots from: a `.cue` resolves to its `.bin`, the image must be raw
 Mode 2/2352, its `SYSTEM.CNF` must boot `SCUS_942.54`, and `PROT.DAT` must be
 present. A PAL or Japanese disc is refused with the executable it boots; a
 randomized or translated USA disc is accepted, since it still boots the USA
-executable. The check reads a few sectors, not the whole image - it is not the
-SHA-256 fingerprint `disc-extract verify` computes. The disc card says what is
+executable. The check reads the file table and a few sectors, not the whole
+image - it is not the SHA-256 fingerprint `disc-extract verify` computes. An
+image shorter than its own file table says is called incomplete, with how much
+of the disc it holds: a copy or a download that stopped early. The disc card says what is
 wrong in one line (the file moved, is not a disc image, is another region's
 disc) and the help box gives the reason and the fix. A file that is not a raw
 dump is named for what it is (`legaia_iso::sniff`): a 2048-byte `.iso` (it

@@ -11,6 +11,9 @@
 //! [`game_exit`] is the wording the launcher and Explorer share for a game
 //! that stopped with an error.
 //!
+//! [`disc_text`] is the wording they share for a disc image that was cut
+//! short.
+//!
 //! [`icons`] carries the two programs' icons (`icons/`, drawn by
 //! `icons/make_icons.py`), and [`win_icon`] embeds one into a Windows
 //! executable from a build script. [`release_layout`] is where the release
@@ -25,6 +28,7 @@
 // `game_exit` speaks in exit statuses and owned strings.
 extern crate std;
 
+pub mod disc_text;
 pub mod game_exit;
 pub mod icons;
 pub mod release_layout;

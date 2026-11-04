@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use legaia_explorer::Explorer;
 use legaia_explorer::app::{App, Automation};
 use legaia_explorer::placement;
-use legaia_explorer::settings::Settings;
+use legaia_explorer::settings::{MIN_WINDOW, Settings};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, StartCause, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
@@ -57,13 +57,13 @@ fn main() -> eframe::Result {
         .settings
         .window_size
         .filter(|[w, h]| w.is_finite() && h.is_finite())
-        .map(|[w, h]| [w.max(720.0), h.max(480.0)])
+        .map(|[w, h]| [w.max(MIN_WINDOW[0]), h.max(MIN_WINDOW[1])])
         .unwrap_or([1280.0, 820.0]);
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Legaia Explorer")
         .with_app_id("legaia-explorer")
         .with_inner_size(size)
-        .with_min_inner_size([720.0, 480.0])
+        .with_min_inner_size(MIN_WINDOW)
         .with_drag_and_drop(true);
     // The title bar / task switcher icon (Windows, X11); macOS shows the app
     // bundle's, Wayland the desktop entry's.

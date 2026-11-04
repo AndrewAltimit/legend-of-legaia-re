@@ -225,6 +225,13 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
         });
     }
     let bin = legaia_iso::raw::resolve_disc_path(path).map_err(|e| unreadable(e.to_string()))?;
+    if let Some(reason) = image_cut_short(&bin) {
+        return Err(DiscProblem::Unreadable {
+            path: path.to_path_buf(),
+            reason,
+            fix: Some(legaia_app_theme::disc_text::INCOMPLETE_FIX.into()),
+        });
+    }
     let vfs =
         legaia_engine_scene::vfs::DiscVfs::open(&bin).map_err(|e| unreadable(format!("{e:#}")))?;
     let cnf = vfs
@@ -254,6 +261,31 @@ pub fn validate_disc(path: &Path) -> std::result::Result<DiscInfo, DiscProblem> 
         bin,
         executable: detected.executable,
     })
+}
+
+/// How `bin` falls short of the disc its own file table describes, when a
+/// copy or a download stopped early. Any other read failure is `None`: the
+/// reader that follows reports it.
+fn image_cut_short(bin: &Path) -> Option<String> {
+    use legaia_app_theme::disc_text;
+    use legaia_iso::iso9660;
+
+    let cut = |e: anyhow::Error| {
+        e.chain()
+            .any(disc_text::is_short_read)
+            .then(|| disc_text::CUT_SHORT.to_string())
+    };
+    let mut disc = legaia_iso::raw::RawDisc::open(bin).ok()?;
+    let vol = match iso9660::read_volume(&mut disc) {
+        Ok(v) => v,
+        Err(e) => return cut(e),
+    };
+    let files = match iso9660::walk_files(&mut disc, &vol.root) {
+        Ok(f) => f,
+        Err(e) => return cut(e),
+    };
+    let needed = disc_text::sectors_needed(files.iter().map(|(_, f)| (f.lba, f.size)));
+    disc_text::incomplete_image(std::fs::metadata(bin).ok()?.len(), needed)
 }
 
 /// What the launcher does on start-up.
@@ -1424,6 +1456,36 @@ pub fn disc_font(bin: &Path) -> Option<legaia_font::Font> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A disc image cut short by a copy is named for that, with what to do,
+    /// wherever the cut falls; the whole image passes. Disc-gated; the copies
+    /// are scratch files.
+    #[test]
+    fn an_image_cut_short_is_named_incomplete() {
+        let Some(bin) = std::env::var_os("LEGAIA_DISC_BIN").filter(|v| !v.is_empty()) else {
+            eprintln!("[skip] LEGAIA_DISC_BIN not set");
+            return;
+        };
+        let bin = PathBuf::from(bin);
+        assert!(validate_disc(&bin).is_ok(), "the whole disc passes");
+        let dir = tempfile::tempdir().unwrap();
+        let bytes = std::fs::read(&bin).unwrap();
+        // 8 MiB stops before the file list ends; nine tenths is past it.
+        for (len, expect) in [
+            (8 * 1024 * 1024, "the file ends too early"),
+            (bytes.len() / 10 * 9, "holds only"),
+        ] {
+            let copy = dir.path().join("cut.bin");
+            std::fs::write(&copy, &bytes[..len]).unwrap();
+            match validate_disc(&copy) {
+                Err(DiscProblem::Unreadable { reason, fix, .. }) => {
+                    assert!(reason.contains(expect), "{len} bytes: {reason}");
+                    assert!(fix.is_some_and(|f| f.contains("copying or downloading")));
+                }
+                other => panic!("{len} bytes: {other:?}"),
+            }
+        }
+    }
 
     /// Stepping the preset to Original and back leaves a mix where it was,
     /// `Delete` restores Enhanced, and the window and sound rows stay out.
