@@ -528,8 +528,9 @@ impl World {
             1
         };
         let mut live = false;
-        for _ in 0..delta {
+        for i in 0..delta {
             let phase = self.casting.module_phase;
+            self.casting.module_pass_repeat = i != 0;
             live = tick(self);
             if !live || self.casting.module_phase != phase {
                 if !cadence && live && self.casting.module_phase != phase {

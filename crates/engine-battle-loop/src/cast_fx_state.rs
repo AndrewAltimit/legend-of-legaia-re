@@ -293,6 +293,10 @@ pub struct CastFxState {
     /// over, and the next arm waits for the tick that opens the next battle
     /// frame (`World::module_pass`).
     pub module_handover_waits: bool,
+    /// The module tick is not the first of its pass: a pass runs a frame
+    /// step of one-vsync ticks (`World::module_pass`), and what an arm does
+    /// once a pass, such as a per-pass spawn call, runs on the first alone.
+    pub module_pass_repeat: bool,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -504,6 +508,7 @@ impl CastFxState {
             module_pass_counter: 0,
             capture_pass_mark: None,
             module_handover_waits: false,
+            module_pass_repeat: false,
             caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

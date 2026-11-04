@@ -2400,8 +2400,8 @@ shot then reads `ctx[+0x6D0]`: 0903, 0906, 0907, 0910, 0913, 0914, 0916, 0917, 0
 and 0920. Without that call the shot reads the band's `0x600` and frames at half
 retail's depth or less.
 Mushura's creature runs: `World::apply_mushura_run` carries its fall and spin
-down the victim's lane (arms 6..8), the soft-red then parked-red word (arms 9, `0xA`)
-and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
+down the victim's lane (arms 6..8), the heading on its target and the soft-red word
+(arm 9's pass), the parked-red word (arm `0xA`) and arm `0xC`'s chase, in which each monster in reach with no clip playing takes a
 quartered roll and the creature closes on a target at eight units a tick, trading it
 for another once in reach. Those hits clamp to live HP and are what kills: the module
 has no other hit, so the band folds nothing for it.

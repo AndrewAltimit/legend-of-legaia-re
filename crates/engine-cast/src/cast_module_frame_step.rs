@@ -12,10 +12,8 @@
 //! frame, the arm's most common step weighted by the time it spends there).
 //! A `0` is an arm the recording passed through in no whole frame.
 //!
-//! The step matters beyond the camera's rate: a scroller that fires on a
-//! countdown moves `step` rows a firing, so its speed in rows a vsync depends
-//! on the step, and a record seated every pass seats half as many at `4` as at
-//! `2`.
+//! The step matters beyond the camera's rate: a record an arm seats every pass
+//! seats half as many at `4` as at `2`.
 
 /// `(PROT entry, step by module phase)`.
 const ARM_STEPS: &[(u32, &[u8])] = &[

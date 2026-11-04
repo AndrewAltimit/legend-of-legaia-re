@@ -95,11 +95,12 @@ impl World {
             // battle frame. Seated per tick, `cort_evolved_ultra_charge_mid_cast`
             // held 127 live rays against retail's 33.
             let every = cmc::capture_arm_spawns_every(run.prot_entry, arm, spell_id);
-            let opens_pass = self
-                .battle
-                .frame_clock
-                .ticks_into_frame(self.clock.display_frames)
-                == 0;
+            let opens_pass = !self.casting.module_pass_repeat
+                && self
+                    .battle
+                    .frame_clock
+                    .ticks_into_frame(self.clock.display_frames)
+                    == 0;
             if !every.is_empty() && opens_pass {
                 let roll = (self.next_rand() % 0x1000) as i16;
                 self.stage_module_arm_spawns(

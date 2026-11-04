@@ -171,7 +171,9 @@ impl World {
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);
             }
-            if !r.every_spawns.is_empty() {
+            // A pass's call: the arm spawns once a battle frame, however many
+            // one-vsync ticks the pass runs.
+            if !r.every_spawns.is_empty() && !self.casting.module_pass_repeat {
                 self.stage_module_arm_spawns(
                     r.prot_entry,
                     r.every_spawns,

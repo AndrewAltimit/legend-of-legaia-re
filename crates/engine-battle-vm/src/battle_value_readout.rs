@@ -707,8 +707,9 @@ pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> Co
 /// the record four below, at the same `x`.
 pub const MULTI_ROW_X: [i32; 4] = [244, 168, 92, 16];
 
-/// The value record's rest row (`0x5C..=0x5F`, `y = 170`).
-pub const MULTI_ROW_VALUE_Y: i32 = 170;
+/// The value widget's row: the records `0x5C..=0x5F` rest at `y = 170`, and a
+/// content box's pen stands two above its record.
+pub const MULTI_ROW_VALUE_Y: i32 = 168;
 
 /// `x` offset of a row's last value cell's right edge (`+0x3D`, inclusive).
 const MULTI_ROW_RIGHT: i32 = 0x3E;

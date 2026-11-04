@@ -28,7 +28,7 @@ impl World {
     /// | 5 | - | the creature on the slanted clip row |
     /// | 6 | `+0x38 += 3 * step` | the spin word zeroed |
     /// | 7, 8 | spin word `+= step >> 3`, facing `= word * -0x14`, `+0x38 += k * step - word / 4` (`k` `3`, `2`) | arm 8: facing `0xB00` |
-    /// | 9 | - | the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
+    /// | 9 | - | the creature's facing on its target; the victim `+0x38 += 0xCA`; the creature's soft-red state `7`; the row shown |
     /// | `0xA` | - | the creature parked on word `0x3FF` |
     /// | `0xB` | - | the creature's target `+0x1DD = 9` |
     /// | `0xC` | [`Self::mushura_chase`] | the creature's fade `+0x21C = 2` |
@@ -90,6 +90,28 @@ impl World {
             }
             (9, true) => {
                 a.battle.render_flag = 7;
+                // The arm's pass turns the creature on its target
+                // (`jal 0x80019B28`, `sh v0,0x46(s4)` at `0x801F7578..0x801F7594`),
+                // off the spin arm 8 left, before it moves the victim: arm
+                // `0xC`'s chase runs along this heading.
+                let here = ModuleSeat {
+                    x: a.move_state.world_x,
+                    y: 0,
+                    z: a.move_state.world_z,
+                    facing: 0,
+                };
+                if let Some(v) = self.actors.get(usize::from(victim)) {
+                    let there = ModuleSeat {
+                        x: v.move_state.world_x,
+                        y: 0,
+                        z: v.move_state.world_z,
+                        facing: 0,
+                    };
+                    let bearing = heading(here, there);
+                    if let Some(a) = self.actors.get_mut(usize::from(seat)) {
+                        a.battle.facing_angle = bearing & 0xFFF;
+                    }
+                }
                 if let Some(v) = self.actors.get_mut(usize::from(victim)) {
                     v.move_state.world_z = v.move_state.world_z.wrapping_add(0xCA);
                 }

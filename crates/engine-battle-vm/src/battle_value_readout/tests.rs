@@ -338,11 +338,11 @@ fn prim_size_matches_a_ten_word_quad() {
 fn the_value_window_seats_its_rows_on_the_records() {
     let c = multi_row_cluster(&[2574], 0);
     assert_eq!(c.labels.len(), 1);
-    assert_eq!((c.labels[0].x, c.labels[0].y), (254, 156));
+    assert_eq!((c.labels[0].x, c.labels[0].y), (254, 154));
     assert_eq!(c.cells.len(), 4);
     assert_eq!(
         c.cells.last().map(|v| (v.x, v.y, v.w)),
-        Some((290, 172, 16))
+        Some((290, 170, 16))
     );
     let two = multi_row_cluster(&[12, 34], 0);
     assert_eq!(two.labels.len(), 1);
