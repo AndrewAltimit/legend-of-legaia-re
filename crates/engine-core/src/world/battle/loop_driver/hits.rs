@@ -14,6 +14,22 @@ pub(in crate::world) const ABILITY_F8_ARTS_POWER: u32 = 0x1000;
 /// fold (`0x801ECFF4`).
 pub(in crate::world) const ABILITY_F8_SAFE_ESCAPE: u32 = 0x0020_0000;
 
+/// What the melee kernel's block gates decided for one hit.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct MeleeBlock {
+    /// The defender's block entry when the hit is blocked (retail's `s7`).
+    pub entry: Option<u8>,
+    /// The roll itself granted a block (`sltu s0,s1` at `0x801EC878`), which
+    /// spends the approach terms even if the verdict is later overturned.
+    pub roll_granted: bool,
+    /// A party attacker's ability bit `0x4000` turned the block into a hit
+    /// (`0x801ECB44..0x801ECB5C`, the stack flag at `0x20(sp)`).
+    pub broken: bool,
+    /// The Mystic Shield's arm fired, which clears the reaction either way
+    /// (`_clear s7` at `0x801EEBD4`) and turns the defender.
+    pub mystic: bool,
+}
+
 impl World {
     /// The engine seat of retail's per-frame damage-kernel call. For every
     /// actor whose committed one-shot clip is in flight, ask the kernel's
@@ -586,7 +602,7 @@ impl World {
     /// `legaia_engine_battle_vm::battle_action::hit_event_admits`)
     /// REF: FUN_800402F4 (selector 9 = the action-interrupt roll, ported as
     /// `battle_formulas::accuracy_roll`)
-    pub(super) fn land_melee_hit(
+    pub fn land_melee_hit(
         &mut self,
         attacker: u8,
         target: u8,
@@ -626,17 +642,24 @@ impl World {
         // not (`0x801ECA20..0x801ECA80`, after the block roll and ahead of
         // the `0x801ECB60` skip). It draws nothing.
         self.battle.juggle = self.next_juggle(target);
-        let blocked = self.roll_block(attacker, target, power_byte);
-        // The damage roll below reads the same two terms (`lh 0x6d2` at
-        // `0x801ECED8`, `lh 0x6d4` at `0x801ED1E0`): the hit path zeroes them
-        // only after it (`0x801EE3C4`), the block path before it skips the
-        // damage body (`0x801EC888`).
+        let block = self.roll_block(attacker, target, power_byte);
+        // A block the roll granted spends the approach terms on the spot
+        // (`0x801EC888`), so a verdict the juggle window or the block breaker
+        // then overturns rolls its damage without them. Otherwise the damage
+        // roll below reads the two terms as they stand (`lh 0x6d2` at
+        // `0x801ECED8`, `lh 0x6d4` at `0x801ED1E0`) and the hit path spends
+        // them after it (`0x801EE3C4`). A block the juggle window forced
+        // (`0x801EC974`) spends nothing.
+        if block.roll_granted {
+            self.battle.attack_ramp = 0;
+            self.battle.guard_ramp = 0;
+        }
         let (attack_ramp, guard_ramp) = (self.battle.attack_ramp, self.battle.guard_ramp);
-        // `0x801EC888` (block) / `0x801EE3C4` (hit): the first hit through
-        // the kernel spends the approach terms.
-        self.battle.attack_ramp = 0;
-        self.battle.guard_ramp = 0;
-        if let Some(block_entry) = blocked {
+        if block.entry.is_none() {
+            self.battle.attack_ramp = 0;
+            self.battle.guard_ramp = 0;
+        }
+        if let Some(block_entry) = block.entry {
             // `0x801EE6D4..0x801EE6F8`: the attacker's anim cue cursor steps
             // over one cue - the impact sound a landed hit would have made.
             if let Some(a) = self.actors.get_mut(attacker_i) {
@@ -646,8 +669,12 @@ impl World {
             // The sound tail is reached through the apply arm only, and the
             // grunt compares the committed pose against `+0x1F3`.
             self.fire_melee_impact_cue(attacker, target, kill_check.then_some(block_entry));
-            // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
-            self.commit_melee_reaction(target_i, attacker_i, block_entry);
+            if block.mystic {
+                self.turn_defender_to_attacker(target_i, attacker_i);
+            } else {
+                // `0x801EEC30..0x801EEC6C`: the defender commits its block entry.
+                self.commit_melee_reaction(target_i, attacker_i, block_entry);
+            }
             return 0;
         }
         if attacker < self.party.party_count {
@@ -683,27 +710,14 @@ impl World {
             attack_ramp,
             guard_ramp,
         };
-        // The uncapped excess: retail's guard ladder runs on it before the
-        // `Defense + 9999` cap (`0x801EDA00`), so the cap is applied after
-        // the finisher's stages below, not inside the roll.
-        let excess =
-            legaia_engine_battle_vm::battle_formulas::physical_excess(&hit_inputs, &mut || {
+        // The roll's two sides: retail's guard ladder runs on their
+        // difference before the `Defense + 9999` cap (`0x801EDA00`).
+        let (rolled_raw, guard) =
+            legaia_engine_battle_vm::battle_formulas::physical_rolls(&hit_inputs, &mut || {
                 self.next_rand() as u16
             });
-        let mut raw =
-            excess.min(legaia_engine_battle_vm::battle_formulas::PHYSICAL_DAMAGE_CAP) as u16;
-        if self.toggles.use_damage_finish {
-            // The finisher's *post* stages only: the defender's equipment
-            // elemental-guard / All-Guard ladder, the 9999 cap and the
-            // rand-based no-damage floor. `defender_guarding` is passed
-            // `false` because the melee kernel above already accounted for
-            // the Spirit stance - taking the finisher's halve as well would
-            // charge the stance twice. The floor draws a rand only when the
-            // hit zeroes out, which the melee kernel's chip floor makes rare.
-            let floor_rand = if raw == 0 { self.next_rand() as u16 } else { 0 };
-            let attacker_is_party = attacker < self.party.party_count;
-            let target_is_party = target < self.party.party_count;
-            let defender_resist = self.defender_resist(target);
+        let excess = rolled_raw.saturating_sub(guard);
+        let mut raw = if self.toggles.use_damage_finish {
             // The melee kernel's inlined ladder (`0x801ED5CC..0x801EDA00`)
             // runs for a party defender struck by a monster seat
             // (`sltiu v0,v1,0x3` / `sltiu v0,a1,0x3` at `0x801ED5CC` /
@@ -712,81 +726,84 @@ impl World {
             // `0x801C9348[attacker - 3]`, e.g. `0x801ED640`, `0x801ED9E0`):
             // an Earth Jewel halves an earth monster's swing, and All Guard
             // takes its `3/4` unless that element is `7`. A party attacker
-            // never reaches the ladder, so its element is moot.
-            let attacker_element = if attacker_is_party {
-                7
-            } else {
-                self.monster_seat_element(attacker_i).unwrap_or(7)
-            };
-            raw = legaia_engine_battle_vm::battle_formulas::damage_finish(
-                &legaia_engine_battle_vm::battle_formulas::DamageFinish {
-                    // The finisher's last stage is the 9999 cap.
-                    predamage: excess,
-                    attacker_slot: if attacker_is_party { 0 } else { 3 },
-                    defender_slot: if target_is_party { 0 } else { 3 },
-                    attacker_element,
-                    defender_resist,
-                    defender_guarding: false,
-                    enemy_defender_halve: self.battle.mystic_shield_up(),
-                    bypass_party_resist: false,
-                    summon_power_pct: 100,
-                    floor_rand,
-                },
-            ) as u16;
-        }
+            // never reaches the ladder. Unlike the shared finisher it has no
+            // no-damage floor, no Mystic Shield halve and no guard halve: the
+            // Spirit stance is the roll's own triple.
+            let ladder = (attacker >= self.party.party_count && target < self.party.party_count)
+                .then(|| {
+                    (
+                        self.monster_seat_element(attacker_i).unwrap_or(7),
+                        self.defender_resist(target),
+                    )
+                });
+            legaia_engine_battle_vm::battle_formulas::melee_guard_ladder(excess, ladder)
+        } else {
+            excess.min(legaia_engine_battle_vm::battle_formulas::PHYSICAL_DAMAGE_CAP)
+        } as u16;
         if attacker < self.party.party_count {
             let clip = self.actors[attacker_i].battle.current_anim;
             raw = self.forced_melee_amount(target, clip, raw, kill_check);
             // An expansion pack art's damage percent and element.
             raw = self.expansion_scale_art_hit(attacker, target, raw);
         }
-        let dmg = raw;
-        // Spirit accrues from the pre-nullify hit: retail's finisher fills the
-        // gauge before the nullify/absorb stage zeroes the HP loss, so a Stone
-        // target's absorbed hit still charges its gauge.
-        self.accrue_spirit_gauge(target, dmg);
-        // A petrified target (Stone) absorbs the hit - no HP loss.
-        let petrified = self.battle.actor_is_petrified(target);
-        let dmg = if petrified { 0 } else { dmg };
-        // The kernel's on-hit strip: a target that is not Stone loses the
-        // wakes-when-hit family `0x0F80` of its status word on every hit
-        // (`lhu a1,0x16e(a2)`, the Stone test `andi 0x4` at `0x801EDA30`,
-        // then `andi v0,a1,0xf07f` / `sh v0,0x16e(a2)` at `0x801EDA5C`).
-        // Numb `0x400` among them: a member marked by a missed Kiss of
-        // Death wakes when struck, and is no longer passed over as inert by
-        // the anim tick (`0x80047640`) when its turn comes up.
-        // PORT: FUN_801EC3E4 (`0x801EDA28..0x801EDA60`, the on-hit strip)
-        if !petrified
-            && self.raw_status_word(target)
-                & legaia_engine_battle_vm::status_effects::display_flags::STONE
-                == 0
-        {
+        // A Stoned defender takes nothing from this routine: `0x801EDA34`
+        // jumps from the status test straight to `0x801EDD5C`, past the
+        // on-hit strip, the combo and bar accumulators, the Spirit accrual
+        // and the rumble.
+        let stoned = self.raw_status_word(target)
+            & legaia_engine_battle_vm::status_effects::display_flags::STONE
+            != 0;
+        // The block breaker's hit lands a quarter of the excess
+        // (`srl v0,v0,0x2` at `0x801EDA54`).
+        // PORT: FUN_801EC3E4 (`0x801EDA44..0x801EDA58`, the broken block's quarter)
+        let mut dmg = if stoned {
+            0
+        } else if block.broken {
+            raw >> 2
+        } else {
+            raw
+        };
+        if !stoned {
+            // The kernel's on-hit strip: a target that is not Stone loses the
+            // wakes-when-hit family `0x0F80` of its status word on every hit
+            // (`andi v0,a1,0xf07f` / `sh v0,0x16e(a2)` at `0x801EDA5C`).
+            // Numb `0x400` among them: a member marked by a missed Kiss of
+            // Death wakes when struck, and is no longer passed over as inert
+            // by the anim tick (`0x80047640`) when its turn comes up.
+            // PORT: FUN_801EC3E4 (`0x801EDA28..0x801EDA60`, the on-hit strip)
             if let Some(t) = self.actors.get_mut(target_i) {
                 t.battle.field_flags &=
                     !legaia_engine_battle_vm::status_effects::display_flags::DAMAGE_CLEARS;
             }
             self.battle.status_effects.on_damaged(target);
+            dmg = self.melee_drain(attacker, guard, dmg);
+            // Spirit runs on the hit after the quarter and the drain.
+            self.accrue_melee_spirit_gauge(target, dmg);
         }
         // Accumulate: the combo total and the bar's owed delta, never live HP
         // (`0x801EDB40` / `0x801EDB58`; the bar ramp is what the player sees
         // falling hit by hit).
         let survives = {
             let t = &mut self.actors[target_i].battle;
-            t.damage_accum = t.damage_accum.saturating_add(u32::from(dmg));
-            t.arm_hp_bar();
-            t.accumulate_hp_bar(i32::from(dmg));
+            if !stoned {
+                t.damage_accum = t.damage_accum.saturating_add(u32::from(dmg));
+                t.arm_hp_bar();
+                t.accumulate_hp_bar(i32::from(dmg));
+            }
             t.damage_accum < u32::from(t.hp)
         };
         // The landed hit's rumble, after the Spirit accrual: a party
         // defender takes the full jolt, a party attacker a lighter one
         // (stored second, so it wins when both seats are party).
         // PORT: FUN_801EC3E4 (`0x801EDCD0..0x801EDD58`, the hit's rumble)
-        self.melee_rumble(
-            attacker,
-            target,
-            legaia_engine_system::rumble::battle_writes::HIT_PARTY_STRUCK,
-            legaia_engine_system::rumble::battle_writes::HIT_PARTY_ATTACKS,
-        );
+        if !stoned {
+            self.melee_rumble(
+                attacker,
+                target,
+                legaia_engine_system::rumble::battle_writes::HIT_PARTY_STRUCK,
+                legaia_engine_system::rumble::battle_writes::HIT_PARTY_ATTACKS,
+            );
+        }
         // The kill check's Seru absorb (`0x801EE1C0..0x801EE2E8`), ahead of
         // the impact tint as in retail - its `rand()` sits between the
         // damage rolls and the tint. Retail reaches the kill compare only on
@@ -820,6 +837,7 @@ impl World {
         if class == 5 && target < self.party.party_count {
             self.battle_rumble(legaia_engine_system::rumble::battle_writes::ROT_PARTY_STRUCK);
         }
+        self.roll_melee_status_arm(class, target);
         // The reaction this strike commits on the defender (retail's `s7`,
         // committed to the defender's `+0x1DA`); the grunt below compares it
         // against the defender's block entry.
@@ -827,6 +845,17 @@ impl World {
             self.melee_reaction_entry(attacker_i, target_i, power_byte, kill_check, absorbed_now)
         } else {
             None
+        };
+        let committed_reaction = committed_reaction.filter(|_| !block.mystic);
+        // A broken block still plays the block pose on a defender left
+        // standing (`0x801EEBF0..0x801EEC30`, after every other pick).
+        // PORT: FUN_801EC3E4 (`0x801EEBF0..0x801EEC30`, the broken block's pose)
+        let committed_reaction = match self.actors.get(target_i) {
+            Some(t) if block.broken && t.battle.damage_accum < u32::from(t.battle.hp) => self
+                .battle_reaction_map(target_i)
+                .map(|m| m[4])
+                .filter(|&e| e != 0),
+            _ => committed_reaction,
         };
         // ... and its sound.
         self.fire_melee_impact_cue(attacker, target, committed_reaction);
@@ -855,10 +884,20 @@ impl World {
     /// PORT: FUN_801EC3E4 (`0x801EEC34..0x801EECBC`, the defender's reaction
     /// commit and turn)
     pub(super) fn commit_melee_reaction(&mut self, target_i: usize, attacker_i: usize, entry: u8) {
-        if entry == 0 || self.battle.actor_is_petrified(target_i as u8) {
+        if entry == 0
+            || self.raw_status_word(target_i as u8)
+                & legaia_engine_battle_vm::status_effects::display_flags::STONE
+                != 0
+        {
             return;
         }
         self.commit_battle_reaction_entry(target_i, entry);
+        self.turn_defender_to_attacker(target_i, attacker_i);
+    }
+
+    /// The bearing half of [`Self::commit_melee_reaction`], which the Mystic
+    /// Shield's tail runs on its own (`0x801EEBC0..0x801EEBEC`).
+    fn turn_defender_to_attacker(&mut self, target_i: usize, attacker_i: usize) {
         let (Some(t), Some(a)) = (self.actors.get(target_i), self.actors.get(attacker_i)) else {
             return;
         };
@@ -1046,23 +1085,20 @@ impl World {
     /// [`legaia_engine_battle_loop::battle_state::BattleState::attack_ramp`] / `guard_ramp`
     /// ([`Self::track_block_approach_terms`]); the damage roll that follows
     /// a hit reads the same pair before the kernel zeroes it.
-    /// The Mystic Shield arm (`0x801ECA84..0x801ECAF8`, `s7 = 1` while
-    /// `_DAT_8007BD84` is up) is not taken here.
     ///
     /// PORT: FUN_801EC3E4 (`0x801EC5A8..0x801ECB60`, the block gates)
-    pub(super) fn roll_block(&mut self, attacker: u8, target: u8, power_byte: u8) -> Option<u8> {
+    pub(super) fn roll_block(&mut self, attacker: u8, target: u8, power_byte: u8) -> MeleeBlock {
         use legaia_engine_battle_vm::battle_formulas::{
             ABILITY_BLOCK_BREAK, BlockRoll, BlockSide, block_roll,
         };
         let ti = usize::from(target);
-        let block_entry = self.battle_reaction_map(ti)?[4];
-        if block_entry == 0 {
-            return None;
-        }
-        let t = self.actors.get(ti)?;
-        if t.battle.damage_accum >= u32::from(t.battle.hp) {
-            return None;
-        }
+        let none = MeleeBlock::default();
+        let Some(block_entry) = self.battle_reaction_map(ti).map(|m| m[4]) else {
+            return none;
+        };
+        let Some(t) = self.actors.get(ti) else {
+            return none;
+        };
         let reacting = t.battle_juggle_window;
         let in_block = t.battle_reaction_entry == Some(block_entry);
         let side = |w: &Self, slot: u8| -> BlockSide {
@@ -1092,7 +1128,12 @@ impl World {
                 .get(usize::from(attacker))
                 .is_some_and(|a| a.battle.current_anim == vm::anim_vm::DYNAMIC_ART_SLOT_B),
         };
-        let mut blocked = block_roll(&roll, &mut || self.next_rand());
+        // The roll's own gate: `lw v0,0x0(a3)` / `sltu` at `0x801EC5D0` skips
+        // it for a defender the total has already reached; the juggle arm
+        // below reads the pose regardless.
+        let can_roll = t.battle.damage_accum < u32::from(t.battle.hp);
+        let granted = block_entry != 0 && can_roll && block_roll(&roll, &mut || self.next_rand());
+        let mut blocked = granted;
         // A block the roll grants jolts the controller (`0x801EC890..
         // 0x801EC91C`), as does the juggle-window arm that forces one
         // (`0x801EC974..0x801ECA00`) - both ahead of the block-break cancel.
@@ -1103,21 +1144,154 @@ impl World {
         if blocked {
             self.melee_rumble(attacker, target, defends, attacks);
         }
-        if in_block && reacting {
-            blocked = true;
-            self.melee_rumble(attacker, target, defends, attacks);
+        if block_entry == 0 {
+            // No block pose to hold; the Mystic arm below is all that is left.
+        } else if in_block && reacting {
+            // `0x801EC960..0x801EC970`: only a defender still standing on the
+            // total keeps the pose; a spent one keeps the roll's verdict.
+            if can_roll {
+                blocked = true;
+                self.melee_rumble(attacker, target, defends, attacks);
+            }
         } else if reacting {
             blocked = false;
         }
-        if blocked
+        // The Mystic Shield (`_DAT_8007BD84`, `0x801ECA84..0x801ECAF8`) stops
+        // every plain swing whoever swings it, block pose or none: an attacker
+        // on a clip below `0x10` is blocked, and a committed art passes.
+        // PORT: FUN_801EC3E4 (`0x801ECA84..0x801ECAF8`, the Mystic Shield)
+        let mystic = self.battle.monster_ai_state.flag_bd84 != 0
+            && self
+                .actors
+                .get(usize::from(attacker))
+                .is_some_and(|a| a.battle.current_anim < 0x10);
+        if mystic {
+            blocked = true;
+            if attacker < self.party.party_count {
+                self.battle_rumble(attacks);
+            }
+        }
+        let broken = blocked
             && roll
                 .attacker
                 .ability
-                .is_some_and(|ab| ab & ABILITY_BLOCK_BREAK != 0)
-        {
+                .is_some_and(|ab| ab & ABILITY_BLOCK_BREAK != 0);
+        if broken {
             blocked = false;
         }
-        blocked.then_some(block_entry)
+        MeleeBlock {
+            entry: blocked.then_some(block_entry),
+            roll_granted: granted,
+            broken,
+            mystic,
+        }
+    }
+
+    /// The Spirit accrual of the melee body (`0x801EDB80..0x801EDCC8`): as
+    /// the shared finisher's, but the percent is masked to a byte
+    /// (`andi v0,a2,0xff`), so a hit of 256% of the victim's max HP or more
+    /// wraps instead of filling the gauge.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EDB80..0x801EDCC8`, the Spirit accrual)
+    fn accrue_melee_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+        let defender_is_party = defender_slot < self.party.party_count;
+        let resist = self.defender_resist(defender_slot);
+        let damage_ap = self.run_scale_ap(self.toggles.damage_ap);
+        let Some(a) = self.actors.get_mut(usize::from(defender_slot)) else {
+            return;
+        };
+        a.battle.spirit_gauge =
+            if damage_ap == legaia_engine_battle_vm::battle_formulas::DAMAGE_AP_RETAIL {
+                legaia_engine_battle_vm::battle_formulas::melee_spirit_gauge_fill(
+                    u32::from(over),
+                    a.battle.max_hp,
+                    a.battle.spirit_gauge,
+                    resist,
+                    defender_is_party,
+                )
+            } else {
+                legaia_engine_battle_vm::battle_formulas::spirit_gauge_fill_scaled(
+                    u32::from(over),
+                    a.battle.max_hp,
+                    a.battle.spirit_gauge,
+                    resist,
+                    defender_is_party,
+                    damage_ap,
+                )
+            };
+    }
+
+    /// The drain clip: a monster attacker whose playing record's `+0x77` is
+    /// `0x3B` lands `raw * 7 / 4` (`raw` being guard plus the hit, not the
+    /// hit alone) and heals itself by what lands, up to its max HP, with the
+    /// bar accumulator running the other way (`0x801EDA64..0x801EDB18`).
+    /// Returns the hit's new damage.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EDA64..0x801EDB18`, the drain clip)
+    fn melee_drain(&mut self, attacker: u8, guard: u32, dmg: u16) -> u16 {
+        const DRAIN_CLIP_KEY: u8 = 0x3B;
+        let Some(a) = self.actors.get_mut(usize::from(attacker)) else {
+            return dmg;
+        };
+        if a.battle_monster_id.is_none()
+            || a.battle_animation.as_ref().map(|p| p.attach_key()) != Some(DRAIN_CLIP_KEY)
+        {
+            return dmg;
+        }
+        let raw = guard.wrapping_add(u32::from(dmg)).wrapping_mul(7) >> 2;
+        let drained = raw.wrapping_sub(guard);
+        let hp = u32::from(a.battle.hp);
+        let max_hp = u32::from(a.battle.max_hp);
+        a.battle.arm_hp_bar();
+        if hp.wrapping_add(drained) > max_hp {
+            // The owed delta is read after the HP store (`lhu a1,0x14c(a0)` at
+            // `0x801EDADC`), so a heal that reaches the cap owes the bar nothing.
+            a.battle.hp = a.battle.max_hp;
+        } else {
+            a.battle.hp = hp.wrapping_add(drained) as u16;
+            a.battle.hp_bar_pending = a.battle.hp_bar_pending.wrapping_sub(drained as i32);
+        }
+        drained as u16
+    }
+
+    /// The status arms of the clip's `+0x7A` selector (`0x801EE448..0x801EE6D0`),
+    /// which run for every connecting hit, Stoned or not, after the tint:
+    /// `3` Venom and `4` Toxic one in eight, `5` a Rot limb on a party target
+    /// whose record carries neither guard bit, `6` Curse one in four.
+    ///
+    /// A Rot roll that sets a limb not yet set clears the first byte of both
+    /// Auto command strings (record `+0x1A7` / `+0x1B7`, `0x801EE660` /
+    /// `0x801EE688`), so a strung-out Auto cannot reach for the lost limb.
+    ///
+    /// PORT: FUN_801EC3E4 (`0x801EE448..0x801EE6D0`, the status arms)
+    fn roll_melee_status_arm(&mut self, class: u8, target: u8) {
+        use legaia_engine_battle_vm::status_effects::StatusKind;
+        let kind = match class {
+            3 => (self.next_rand() & 7 == 0).then_some(StatusKind::Venom),
+            4 => (self.next_rand() & 7 == 0).then_some(StatusKind::Toxic),
+            6 => (self.next_rand() & 3 == 0).then_some(StatusKind::Curse),
+            5 if target < self.party.party_count => {
+                const ROT_GUARDS: u32 = 0x0100_0000 | 0x1000_0000;
+                if self.party_ability_word(usize::from(target)) & ROT_GUARDS != 0 {
+                    return;
+                }
+                let before = self.raw_status_word(target);
+                let limb = (self.next_rand() % 3) as u8;
+                self.battle.status_effects.apply(target, StatusKind::Rot);
+                self.battle.status_effects.set_rot_limb(target, limb);
+                if self.raw_status_word(target) != before {
+                    let roster = self.party_roster_slot(usize::from(target));
+                    if let Some(rec) = self.party.roster.members.get_mut(roster) {
+                        rec.clear_auto_command_heads();
+                    }
+                }
+                return;
+            }
+            _ => None,
+        };
+        if let Some(kind) = kind {
+            self.battle.status_effects.apply(target, kind);
+        }
     }
 
     /// The melee kernel's two-seat rumble shape: `party_struck` when the
@@ -1316,7 +1490,7 @@ impl World {
     /// The bar was seeded hit by hit, so this does not touch it.
     ///
     /// PORT: FUN_801EC3E4 (`0x801EE9F8..0x801EEA78`, the apply arm)
-    pub(in crate::world) fn apply_combo_total(&mut self, target: u8) {
+    pub fn apply_combo_total(&mut self, target: u8) {
         let Some(a) = self.actors.get_mut(target as usize) else {
             return;
         };

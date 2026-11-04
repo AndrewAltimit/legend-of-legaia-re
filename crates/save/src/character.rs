@@ -497,6 +497,16 @@ impl CharacterRecord {
         self.raw[0x196..0x196 + EQUIPMENT_SLOT_COUNT].copy_from_slice(&eq.slots);
     }
 
+    /// Empty both Auto command strings by clearing their first byte, which is
+    /// how Rot retires them (`FUN_801EC3E4`, `0x801EE660` / `0x801EE688`).
+    pub fn clear_auto_command_heads(&mut self) {
+        for band in [AutoCommandBand::Primary, AutoCommandBand::Secondary] {
+            let mut s = self.auto_command_string(band);
+            s[0] = 0;
+            self.set_auto_command_string(band, s);
+        }
+    }
+
     /// One of the two [`AutoCommandBand`] strings (`+0x1A7` / `+0x1B7`,
     /// [`AUTO_COMMAND_STRING_LEN`] bytes each).
     ///

@@ -244,6 +244,35 @@ pub fn spirit_gauge_fill(
     spirit.min(100) as u16
 }
 
+/// The melee body's Spirit accrual (`FUN_801EC3E4`, `0x801EDB80..0x801EDCC8`).
+/// The arithmetic is [`spirit_gauge_fill`]'s except that the percent is masked
+/// to a byte at every use (`andi v0,a2,0xff`, `andi v1,a2,0xff`): a hit of
+/// exactly 256% of max HP adds nothing, and 300% adds 44. The floor of `1` is
+/// taken ahead of the mask.
+pub fn melee_spirit_gauge_fill(
+    over: u32,
+    defender_maxhp: u16,
+    current_spirit: u16,
+    resist: DefenderResist,
+    defender_is_party: bool,
+) -> u16 {
+    if defender_maxhp == 0 {
+        return current_spirit.min(100);
+    }
+    let pct = over.wrapping_mul(100) / u32::from(defender_maxhp);
+    let pct = pct.max(1) & 0xFF;
+    let mut spirit = u32::from(current_spirit);
+    if defender_is_party {
+        if resist.hi & 0x200 != 0 {
+            spirit += pct >> 2;
+        }
+        if resist.hi & 0x100 != 0 {
+            spirit += pct / 10;
+        }
+    }
+    (spirit + pct).min(100) as u16
+}
+
 /// The retail scale of [`spirit_gauge_fill`]: a hit costing 100% of max HP
 /// grants 100 AP (the `x100` shift/add chain at `0x801DE1C8..0x801DE1DC`).
 pub const DAMAGE_AP_RETAIL: i16 = 100;

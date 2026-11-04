@@ -70,7 +70,7 @@ blocking and the limb-height "Miss" are separate gates.
 | [Special / summon roll](#roll---fun_801dd0ac) | `FUN_801DD0AC` | INT-driven attacker roll vs INT + HP + DEF defender roll | `summon_predamage`, `arts_physical_predamage` |
 | [Scale](#scale---fun_801dd864-and-the-element-matrix) | `FUN_801DD864` | `atk * matrix[a][d] / 100`, Venom / Toxic, magic level | `apply_element_affinity`, `apply_status_weaken`, `apply_magic_power` |
 | [Finisher](#finisher---fun_801ddb30) | `FUN_801DDB30` | resist halve, guard halve, `rand%9+8` floor, summon %, cap 9999 | `damage_finish` |
-| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, cap 100 | `spirit_gauge_fill` |
+| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, cap 100; melee masks the percent to a byte | `spirit_gauge_fill`, `melee_spirit_gauge_fill` |
 | [Capture-class wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4) | `FUN_801DD4B0` / `FUN_801DD6B4` | baked power, respect or bypass the resist ladder | `battle_damage_wrappers` |
 | [Recovery summons](#recovery-summons) | PROT 0905 / 0911 | Vera `level*0x20 + 0xE0`; Orb `(level<<6) + 0x1C0` | `heal_summon_amount` |
 | [Spell XP + magic level](#summon-spell-xp--magic-level-up) | `FUN_801DDB30` tail, `FUN_801E70BC` | `gain = dmg*(12 or 4)/maxHP`; level up when `xp > table*mult>>1` | `summon_spell_xp_gain`, `summon_magic_levels_up` |
@@ -85,7 +85,7 @@ blocking and the limb-height "Miss" are separate gates.
 | [Party escape](#run--escape-roll---fun_801e791c) | `FUN_801E791C` | caught iff `rand % party_score < rand % enemy_score` | `escape_roll` |
 | [Monster escape](#monster-escape-roll---fun_801ec0dc) | `FUN_801EC0DC` | HP + ATK side averages, then a 1-in-8 gate | `monster_escape_roll` |
 | [Status DoT](#per-round-status-dot-ticker---fun_801e752c) | `FUN_801E752C` | Toxic `maxHP>>4` cap 256; Venom `maxHP>>5` cap 128; never lethal | `status_effects::toxic_tick_damage` / `venom_tick_damage` |
-| [Status application](#status-application-the-art--move-record-status-byte) | `FUN_801EC3E4`, `FUN_801E09F8` | byte `3..6` -> Venom / Toxic 1/8, Rot, Curse 1/4 | `monster_ai::enemy_impact_status_proc` |
+| [Status application](#status-application-the-art--move-record-status-byte) | `FUN_801EC3E4`, `FUN_801E09F8` | byte `3..6` -> Venom / Toxic 1/8, Rot, Curse 1/4 | `World::roll_melee_status_arm`, `monster_ai::enemy_impact_status_proc` |
 | [Victory gold / EXP](#victory-spoils-rewards) | `FUN_8004E568` | gold `sum(g>>1)` halved again; EXP `sum*3/4` split | `victory_gold_finalize`, `victory_exp_per_member` |
 | [Victory drop](#the-victory-drop-roll) | `FUN_8004E568` `0x8004F3D8` | `rand%100 < chance` per seat, one item, 1-in-4 gate | `victory_drop_roll` |
 | [MP cost](#mp-cost--ability-bit-modifiers) | `FUN_80035394`, `FUN_801E295C` `0x28` | `cost - cost>>1` (bit `0x20`) or `cost - cost>>2` (bit `0x10`) | `mp_cost_after_ability_bits` |
@@ -364,17 +364,42 @@ then the inlined [spirit-gauge fill](#spirit-gauge-fill-on-damage-taken).
 
 **Port (Offense through cap).** `physical_predamage` (`PhysicalHit`,
 `command_power_scalar`, `physical_defense_is_udf`) ports the stages from the
-attack roll down; the party-defender guard ladder is `damage_finish`'s resist
-stage, handed the monster attacker's element (`World::monster_seat_element`,
+attack roll down; `melee_guard_ladder` is the party-defender guard ladder and
+the cap, keyed on the monster attacker's element (`World::monster_seat_element`,
 the live `+0x1D`). `World::land_melee_hit` runs every physical hit - party and monster,
 swing and Art - through the fold and the roll, once per hit event the anim tick
 admits; a committed Art clip (`+0x1D9 > 0x10`) takes the `0x11` all-slots arm.
-RNG draws follow retail call order: attack roll, guard roll, then the rewrite
-draw and the chip-floor draw only when those arms fire. `damage_finish`'s post
-stages (equipment resists, the zeroed-hit floor, the cap) run on top by
-default, on the uncapped excess (`physical_excess`) so the guard halve comes
-before the 9999 cap as at `0x801EDA00`; `--no-damage-finish` keeps the flat path, and the finisher supplies no
-guard halve because the Spirit stance is already the Defense triple. The
+RNG draws follow retail call order: block pair, attack roll, guard roll, then the
+rewrite draw and the chip-floor draw only when those arms fire, then the absorb
+roll and the status arm of the clip's `+0x7A`. The guard ladder has none of the
+shared finisher's other stages: no zeroed-hit floor, no Mystic Shield halve and no
+guard halve, because the Spirit stance is already the Defense triple;
+`--no-damage-finish` skips the ladder. The whole body runs against the retail bytes
+in [the kernel differential](../tooling/retail-kernel-differential.md).
+
+**After the cap.** A Stoned defender (`+0x16E & 4`, `0x801EDA30`) jumps to
+`0x801EDD5C` and takes no accumulate, no strip, no Spirit and no rumble. A hit the
+block breaker turned (attacker ability `0x4000`) lands a quarter of its excess
+(`0x801EDA54`) and plays the block pose on a defender left standing. A monster on a
+clip whose `+0x77` is `0x3B` drains: `raw` becomes `raw*7/4`, the hit is that minus
+Defense, and the attacker heals by it (`0x801EDAA4..0x801EDB14`); a heal reaching
+the attacker's max owes its bar nothing, because the delta is read after the HP
+store. The Spirit percent is masked to a byte at every use here (`0x801EDC04`,
+`0x801EDC9C`), where the finisher's is not, so a hit of 256% of max HP adds nothing.
+
+**The Mystic Shield.** While `_DAT_8007BD84` is up, an attacker on a clip below
+`0x10` is blocked whatever the defender's poses, and an Art passes
+(`0x801ECA84..0x801ECAF8`). The tail clears the reaction, turns the defender and
+raises cue `0x10C` (`0x801EEB60..0x801EEBEC`). This is the one thing the word does
+to a melee hit; the halve is the finisher's alone.
+
+**Approach terms.** `ctx[+0x6D2]` / `+0x6D4` are spent where a block roll grants
+(`0x801EC888`), ahead of the damage roll, so a verdict the juggle window or the
+block breaker overturns rolls without them; a hit that no roll granted spends them
+after the damage roll (`0x801EE3C4`), and a block the juggle window forced spends
+nothing.
+
+The
 `legaia_actor_formats::monster_archive` accessors (`attack()` / `defense_high()` /
 `defense_low()`) and `engine-core`'s `monster_def_from_record` follow the ATK /
 UDF / LDF binding. Regressions: `engine-battle-vm/tests/battle_physical_predamage.rs`,
@@ -1640,7 +1665,7 @@ into the 5-entry table at `0x801F53D4`.
 | `1`, `2` | none - cosmetic lingering visuals only (`+0x21F` marker, tints `0x801F53D4` / `0x801F53D8`); `FUN_801D0748` never reads `+0x21F` | - | - |
 | `3` | `\|= 1` (**Venom**) | `rand & 7 == 0` (1/8) | - |
 | `4` | `\|= 2` (**Toxic**) | `rand & 7 == 0` (1/8) | - |
-| `5` | `\|= 1 << (rand%3 + 3)` (**Rot**: bit `8` grays LEFT, `0x10` RIGHT, `0x20` UP and DOWN; `== 0x38` blocks Attack - [arts-command-gauge.md](arts-command-gauge.md#status-limb-gating)) | always, party target only | record `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
+| `5` | `\|= 1 << (rand%3 + 3)` (**Rot**: bit `8` grays LEFT, `0x10` RIGHT, `0x20` UP and DOWN; `== 0x38` blocks Attack - [arts-command-gauge.md](arts-command-gauge.md#status-limb-gating)). A limb newly set clears the first byte of both Auto command strings (record `+0x1A7` / `+0x1B7`) | always, party target only | record `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
 | `6` | `\|= 0x1000` (**Curse**: grays the Magic command) | `rand & 3 == 0` (1/4) | physical-strike resolver only; writes no `+0x21F` marker |
 
 | Resolver | Byte source | Ladder |

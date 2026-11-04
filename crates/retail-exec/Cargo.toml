@@ -16,8 +16,10 @@ path = "tests/integration.rs"
 [dependencies]
 
 [dev-dependencies]
+legaia-actor-formats.workspace = true
 legaia-disc-patch.workspace = true
 legaia-engine-battle.workspace = true
+legaia-engine-battle-loop.workspace = true
 legaia-engine-core.workspace = true
 legaia-engine-menus.workspace = true
 legaia-game-tables.workspace = true

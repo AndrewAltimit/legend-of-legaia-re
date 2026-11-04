@@ -50,3 +50,13 @@ bytes where retail clamps before them. The level-up applier `FUN_801E9504` showe
 the stat jitter was never enabled on any host, so every level-up took the curve's
 exact mean and drew none of retail's eight `rand()` calls a level, and that the
 six battle stats had no cap on the way up.
+
+The melee resolver `FUN_801EC3E4`, run whole against `World::land_melee_hit`,
+showed that a clip's `+0x7A` selector inflicted nothing on a normal swing (Venom,
+Toxic, Rot and Curse were only rolled on enemy specials) and that a Stoned
+defender still took damage when its Stone was the raw status word a cast writes.
+It also showed the Mystic Shield stopped no plain swing and halved instead, the
+block breaker's quarter damage and the drain clip had no port, the shared
+finisher's no-damage floor had been wired onto a routine that has none, the Spirit
+percent wraps at a byte in this routine alone, and a block the roll grants spends
+the approach terms even when the verdict is then overturned.

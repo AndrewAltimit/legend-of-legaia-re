@@ -3170,8 +3170,10 @@ dependencies = [
 name = "legaia-retail-exec"
 version = "0.1.0"
 dependencies = [
+ "legaia-actor-formats",
  "legaia-disc-patch",
  "legaia-engine-battle",
+ "legaia-engine-battle-loop",
  "legaia-engine-core",
  "legaia-engine-menus",
  "legaia-game-tables",
