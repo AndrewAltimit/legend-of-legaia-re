@@ -611,7 +611,9 @@ impl World {
                 continue;
             }
             let mut seat = None;
-            legaia_engine_system::fade::spawn_fade(&mut seat, &t, 0);
+            // Id `1` (`li a1,0x1` at `0x801F903C`), the bucket under the HUD:
+            // a retail table of arm `0x18` links the fade's quad there.
+            legaia_engine_system::fade::spawn_fade(&mut seat, &t, 1);
             if let Some(state) = seat {
                 self.casting.module_pres.fades.push(HookFade {
                     site: OZMA_LADDER_FADE_SITE,
