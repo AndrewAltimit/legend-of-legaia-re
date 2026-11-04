@@ -28,6 +28,7 @@ mod monster_pick;
 mod queue_head;
 mod round_boundary;
 mod round_open;
+mod seru_debuff;
 mod slot_machine;
 mod spirit_cleanup;
 mod spoils;

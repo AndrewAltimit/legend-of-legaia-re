@@ -193,3 +193,5 @@ The dance floor's handler `FUN_801D1358` with its award routine, run over whole 
 The field VM's state arms close with the host answering what clear RAM answers: `4C 53` holds on the staged mode switch `FUN_801D65D8` where the port stepped past it on one frame, and `4C EA` runs once and advances where the port re-ran it at its own PC. Every other arm the first sweep could not compare agrees on both polarities of its test. Its write-up above is the sweep's stub world; a test seeded with no actor and no item holds the skip paths.
 
 The hooked fish `FUN_801D4004` with the gauge's reel arms matches over whole fights at every species, rod and frame step.
+
+The Seru side-effect stager `FUN_801F3D3C` found the port rolling the scripted bypass on the first enemy the cast targeted, where the bytes read the formation's first record whoever is targeted and whether that seat stands, and comparing a group cast's first target, where the bytes walk to the first seat with HP left and stage with no compare when there is none.

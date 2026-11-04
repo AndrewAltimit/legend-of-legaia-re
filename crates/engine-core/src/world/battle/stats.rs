@@ -466,10 +466,10 @@ impl World {
     ///   **no draw is taken**.
     /// - **summon element**: the summon creature's record `+0x1D`.
     /// - **scripted**: [`legaia_engine_battle_loop::battle_state::BattleState::scripted_fight`].
-    /// - **affinity**: `matrix[summon element][first living enemy element]`,
+    /// - **affinity**: `matrix[summon element][the first record's element]`,
     ///   the scripted roll's bypass.
-    /// - **target**: the cast's first enemy seat's compare pairs, or
-    ///   `Party` for a party-side cast.
+    /// - **target**: the single enemy target's compare pairs, or a group
+    ///   cast's first seat with HP left, or `Party` for a party-side cast.
     ///
     /// Returns `None` with no draw when the side-effect table is not
     /// installed (a disc-free host), so those battles keep a bit-identical
@@ -477,7 +477,7 @@ impl World {
     ///
     /// REF: FUN_801f3d3c (this is the live wiring; the routine itself is
     /// ported at [`legaia_engine_battle_vm::seru_side_effect::stage_side_effect`])
-    pub(in crate::world) fn stage_seru_side_effect(
+    pub fn stage_seru_side_effect(
         &mut self,
         caster: u8,
         spell_id: u8,
@@ -498,30 +498,45 @@ impl World {
             .get(&spell_id)
             .copied()
             .or_else(|| self.summon_attacker_element(spell_id))?;
-        // The stager's compare arm walks the enemy row for a group cast and
-        // takes the first living seat; a single-enemy cast compares that seat.
-        // A party-side target skips the compare entirely.
-        let first_enemy = targets
+        // The stager's compare arm reads a single enemy target itself and, for
+        // a group cast, walks the enemy row for the first seat with HP left
+        // (`0x801F3F48..0x801F3F9C`). A party-side target skips the compare.
+        let enemies = targets
             .iter()
             .copied()
-            .find(|&t| (t as usize) >= self.party.party_count as usize);
-        let target = match first_enemy {
-            None => StagerTarget::Party,
-            Some(t) => match self.enemy_stat_compare(t) {
+            .filter(|&t| (t as usize) >= self.party.party_count as usize);
+        let group = enemies.clone().count() > 1
+            || self
+                .actors
+                .get(usize::from(caster))
+                .is_some_and(|a| a.battle.active_target > 7);
+        let first_enemy = if group {
+            enemies.clone().find(|&t| {
+                self.actors
+                    .get(t as usize)
+                    .is_some_and(|a| a.battle.hp != 0)
+            })
+        } else {
+            enemies.clone().next()
+        };
+        let target = match (first_enemy, enemies.count()) {
+            (None, 0) => StagerTarget::Party,
+            (None, _) => StagerTarget::NoLivingEnemy,
+            (Some(t), _) => match self.enemy_stat_compare(t) {
                 Some(cmp) => StagerTarget::Enemy(cmp),
                 None => StagerTarget::NoLivingEnemy,
             },
         };
-        // `matrix[summon element][target element]` - the same read
-        // `cast_affinity_pct` makes, but seeded from the element resolved
-        // above rather than from the catalog-by-name lookup.
-        let affinity_pct = match (first_enemy, self.tables.element_affinity.as_ref()) {
-            (Some(t), Some(aff)) => self
-                .battle_slot_element(t)
-                .and_then(|def_el| aff.affinity_pct(summon_element, def_el))
-                .unwrap_or(100),
-            _ => 100,
-        };
+        // The suppression roll's bypass reads the formation's first record,
+        // whoever the cast is aimed at and whether that seat still stands
+        // (`lw a1,-0x6cb8(s2)` at `0x801F3E58`).
+        let lead_seat = self.party.party_count;
+        let affinity_pct = self
+            .tables
+            .element_affinity
+            .as_ref()
+            .and_then(|aff| aff.affinity_pct(summon_element, self.battle_slot_element(lead_seat)?))
+            .unwrap_or(100);
         let inp = StagerInputs {
             level,
             summon_element,

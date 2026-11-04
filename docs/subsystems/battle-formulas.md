@@ -1009,7 +1009,7 @@ one); what players report as boss immunities falls out of the gates below.
 // stager FUN_801F3D3C, once per cast, called from inside the spell's module
 if level < 3:                                   return          // 0x801F3D90..0x801F3DA0
 if ctx[+0x287] && summon_el != 5 && rand() % 5 != 0:
-    if affinity[summon_el][first_enemy_el] < 0x65: return       // suppressed
+    if affinity[summon_el][record0_el] < 0x65: return           // suppressed
 switch summon_el:                                                // 0x801F3EB4
   0 2 3 4 6:  if ctx[+0x287] && target is an enemy seat:
                   compare target BASE halfword vs raw record; differ -> return
@@ -1028,7 +1028,8 @@ stat -= stat * (*0x801F6960) / 100
 | `level` | caster magic level for `actor[+0x1DF]` (record `+0x161` array, `0x20`-entry scan of `+0x13D`) |
 | `summon_el` | summon record `+0x1D` through `0x801C9358` - the creature's element, never the caster's |
 | `ctx[+0x287]` | the **scripted-fight flag**: bit `0x80` of `DAT_8007BD60`, raised by a formation row whose header byte is non-zero ([encounter.md](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)), latched by `FUN_800513F0`. `4` in every boss capture, `0` in every random-encounter capture. |
-| first enemy | the single target, or the first living enemy seat of a group cast |
+| `record0_el` | the formation's first record's element (`0x801C9348` `+0x1D`), whoever the cast is aimed at and whether that seat stands |
+| compared seat | the single enemy target, or the first enemy seat of a group cast with HP left |
 | table | `0x801F6870` (PROT 0898 file `0x28058`), `[element][band]`, `0x20` bytes per element, 8-byte records `[u8 amount][3 pad][u32 banner_va]` |
 
 | Summon element | Effect on the target | lv 3-4 | lv 5-6 | lv 7-8 | lv 9 |
@@ -1046,7 +1047,7 @@ fight class:
 
 | Debuff | Random encounter (flag clear) | Scripted fight (flag set) |
 |---|---|---|
-| suppression roll | none | four casts in five suppressed, unless light or the first enemy is weak (`affinity >= 101`: thunder vs the four base elements at 102, each opposed pair at 104) |
+| suppression roll | none | four casts in five suppressed, unless light or the formation's first monster is weak (`affinity >= 101`: thunder vs the four base elements at 102, each opposed pair at 104) |
 | ATK, DEF, INT | every hit, stacking multiplicatively (two 10% hits leave 81%) | **never** - the scripted [boost profile](#actor-stat-block--monster-record-mapping) already moved the base halfword off the record value (exceptions: ATK `< 4`, INT `< 8`, UDF `0`, which the boost cannot move) |
 | SPD | every hit | once per battle |
 | AGL | once per battle (the compare is unconditional and the shave moves the compared halfword) | once per battle |
