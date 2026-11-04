@@ -2405,22 +2405,12 @@ dispatcher loads that floor into `t4` per group (`lhu t4,0x6A(t2)` at
 The scene init writes the floor as `0x10` (`FUN_8001D424` at `0x8001D4E8`,
 `FUN_8001DCF8` at `0x8001DD5C`); the catalogued PCSX-Redux states hold
 `s = 3` on the field and `s = 2` in battle. So a field primitive whose mean
-`SZ` is under 128, or a battle one under 64, is not drawn. Both hosts run
-the field cut on the port's eye depth (`sz_per_w = 1`), and that is a
-calibration rather than the GTE's scale. The field camera folds a 6x world
-scale into its rotation ([the field view matrix](#the-field-view-matrix-where-tr-comes-from)),
+`SZ` is under 128, or a battle one under 64, is not drawn. The field camera folds
+a 6x world scale into its rotation ([the field view matrix](#the-field-view-matrix-where-tr-comes-from)),
 so a field `SZ` is six times the port's `w` ([the register limits](#the-gtes-register-limits)
-measure it), and a cut at `SZ = 6 * w` would drop only what sits within about
-`21` units of the eye. `rikuroa_field_card_walk` is the counter-weight: its
-capture leaves out a near wall quad (corners `(31, 194)`, `(-285, 487)`,
-`(11, 44)`, `(-293, -26)`, mean `w` near `100`) whose packet the display
-list holds, which the `w`-unit cut drops and a `6 * w` cut keeps (`.985`
-against `.959`). The packet's second half spans `513` rows and its first `443`,
-so a size limit that drops the whole quad when one half exceeds it, where the
-port drops it only when both halves do, is the other reading; which rule
-drops it is open. `SZ` saturates at
-`0`, so a corner behind the eye pulls the mean toward zero rather than below
-it. Worked case: the evolved-Cort approach in `jouine` parks the camera
+measure it), and the cut drops what sits within about `21` units of the eye. `SZ`
+saturates at `0`, so a corner behind the eye pulls the mean toward zero rather than
+below it. Worked case: the evolved-Cort approach in `jouine` parks the camera
 against a root-wall body that a per-pixel clip would stretch across the
 frame.
 
@@ -2459,7 +2449,11 @@ Both hosts run the span test in the same vertex stage as the near reject
 `primSxy`), armed in battle and on the field (`camera_frame::prim_gpu_span_h`:
 the battle camera's `H = 256`, the field camera's own `_DAT_8007B6F4`, riding
 the parameters' enable lane). A split quad is dropped only when both halves
-exceed the limit. On the field it keeps `rim_elm_queen_bee_battle`'s frame
+exceed the limit. A PCSX-Redux capture drops more: its software GPU rejects a whole
+quad on any corner pair past the limit (`SoftRenderer::checkCoord4`), where the
+console skips the one triangle. `rikuroa_field_card_walk` leaves out a near wall
+quad whose halves span `513` and `443` rows, and the child of a PCSX-Redux state
+takes that rule beside its texel rule (`PsxTexelRule::PcsxRedux`). On the field it keeps `rim_elm_queen_bee_battle`'s frame
 clear: its camera stands beside a decoration rock whose near face projects
 past the span. The dance hall applies the same rule to its baked hall on the
 CPU ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).

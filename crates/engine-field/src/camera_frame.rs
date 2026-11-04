@@ -353,14 +353,10 @@ pub const BATTLE_GTE_H: f32 = 256.0;
 /// Every TMD prim handler behind `FUN_80043390` drops a primitive whose
 /// `OTZ` (mean corner `SZ >> ot_shift`) is below the scratch floor
 /// `0x1F80037E = 0x10` (`sub s1,s2,t4` / `bltz s1` at `0x80043870` in
-/// `FUN_80043768`); see `legaia_render_kernels::prim_near_reject`. The field and
-/// battle cameras both put the GTE eye depth in clip `w`, so `sz_per_w` is
-/// `1`. That is the cut's calibration, not the field GTE's scale: the field
-/// camera folds a 6x world scale into its rotation, so a field `SZ` is six
-/// times the port's `w` ([`gte_saturation`]), and the cut is left in `w`
-/// units because `rikuroa_field_card_walk`'s capture drops a near quad of
-/// mean `w` near `100` that a cut at `SZ = 6 * w` keeps (the open question
-/// is recorded in `docs/subsystems/renderer.md`).
+/// `FUN_80043768`); see `legaia_render_kernels::prim_near_reject`. The battle
+/// camera puts the GTE eye depth in clip `w`, so its `sz_per_w` is `1`. The
+/// field camera folds a 6x world scale into its rotation, so a field `SZ` is
+/// six times the port's `w` ([`gte_saturation`]).
 ///
 /// The kingdom overworld composes a world scale onto its camera and
 /// draws through the overlay's own replacement handlers, so it stays off, as
@@ -375,7 +371,7 @@ pub fn prim_near_cut(mode: SceneMode, retail_camera: bool) -> Option<(f32, u32)>
         return None;
     }
     match mode {
-        SceneMode::Field => Some((1.0, FIELD_OT_SHIFT)),
+        SceneMode::Field => Some((6.0, FIELD_OT_SHIFT)),
         SceneMode::Battle => Some((1.0, BATTLE_OT_SHIFT)),
         _ => None,
     }

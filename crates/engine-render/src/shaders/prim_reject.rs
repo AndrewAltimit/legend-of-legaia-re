@@ -119,6 +119,9 @@ fn prim_near_rejected(
     let s0 = prim_sxy(m, c0.xyz, p.y, p.x);
     let s1 = prim_sxy(m, c1, p.y, p.x);
     let s2 = prim_sxy(m, c2, p.y, p.x);
+    if (c0.w > 3.5 && u.psx_params.z > 2.5) {
+        return pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x));
+    }
     if (!span_too_big(s0, s1, s2)) {
         return false;
     }
@@ -126,6 +129,43 @@ fn prim_near_rejected(
         return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2);
     }
     return true;
+}
+
+// A PCSX-Redux capture's polygon limit (`PsxTexelRule::PcsxRedux`, an
+// instrument): its software GPU drops a whole quad on any corner pair past the
+// limit (`SoftRenderer::checkCoord4`), where the console skips the one triangle.
+fn pcsx_quad_rejected(a0: vec2<f32>, a1: vec2<f32>, a2: vec2<f32>, a3: vec2<f32>) -> bool {
+    let c = vec2<f32>(160.0, 120.0);
+    let p0 = a0 + c;
+    let p1 = a1 + c;
+    let p2 = a2 + c;
+    let p3 = a3 + c;
+    const X: f32 = 1024.0;
+    const Y: f32 = 512.0;
+    if (p0.x < 0.0 && (p1.x - p0.x > X || p2.x - p0.x > X) && p3.x < 0.0
+        && (p1.x - p3.x > X || p2.x - p3.x > X)) {
+        return true;
+    }
+    if (p1.x < 0.0 && (p0.x - p1.x > X || p2.x - p1.x > X || p3.x - p1.x > X)) {
+        return true;
+    }
+    if (p2.x < 0.0 && (p0.x - p2.x > X || p1.x - p2.x > X || p3.x - p2.x > X)) {
+        return true;
+    }
+    if (p3.x < 0.0 && (p1.x - p3.x > X || p2.x - p3.x > X) && p0.x < 0.0
+        && (p1.x - p0.x > X || p2.x - p0.x > X)) {
+        return true;
+    }
+    if (p0.y < 0.0 && (p1.y - p0.y > Y || p2.y - p0.y > Y)) {
+        return true;
+    }
+    if (p1.y < 0.0 && (p0.y - p1.y > Y || p2.y - p1.y > Y || p3.y - p1.y > Y)) {
+        return true;
+    }
+    if (p2.y < 0.0 && (p0.y - p2.y > Y || p1.y - p2.y > Y || p3.y - p2.y > Y)) {
+        return true;
+    }
+    return p3.y < 0.0 && (p1.y - p3.y > Y || p2.y - p3.y > Y);
 }
 
 fn prim_sxy(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32, h: f32) -> vec2<f32> {
