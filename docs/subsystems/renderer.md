@@ -341,6 +341,16 @@ Structural facts, read from the raw table:
   Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
   word carries the bit; both hosts draw that emitter's mesh.
+  Each `GT3` links on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
+  `andi v0,v0,0xFFFC` at `0x80046020`), so a sheet at one depth links a shade
+  nearer through this leaf than through a quad's `AVSZ4`: `ZSF3 = 0x555` is
+  under a third. On a retail table of PROT 0921's arm 5, two discs on one plane
+  at `SZ 0x2000` hold the opaque quads in bucket `2048` and the additive `GT3`s
+  in `2046`, and the additive disc paints over the opaque one everywhere. The
+  port's depth buffer has no bucket to tie on, and two model matrices round
+  apart, so the sheets would cross along a line. A kernel keeps the links' order
+  instead: `effect_draws` brings a node on this bank `TESSELLATED_LINK_NEARER_SZ`
+  nearer along the view axis, on both hosts.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is the leaves' off-screen reject: a transform-free read of
   the four projected corners (`SXY0..2` plus the first corner saved in

@@ -802,6 +802,10 @@ pub struct RibbonDraw {
     /// faces retail's winding calls front draw. `false` for a draw that
     /// keeps both sides.
     pub single_sided: bool,
+    /// The colour word sends the quads through handler bank 3's tessellating
+    /// leaf (`0x20000000`), which links them a shade nearer
+    /// ([`legaia_render_kernels::gte::TESSELLATED_LINK_NEARER_SZ`]).
+    pub tessellated: bool,
 }
 
 /// A move-VM node's model rotation, radians X / Y / Z: its rotation banks

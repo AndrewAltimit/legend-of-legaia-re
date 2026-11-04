@@ -104,6 +104,32 @@ impl PartCameraPose {
     }
 }
 
+/// How far nearer than the quad leaves' a tessellating prim links, in `SZ`
+/// units. Handler bank 3's quad leaf `FUN_80045BB4` splits a quad into sixteen
+/// `GT3`s and links each on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
+/// `andi v0,v0,0xFFFC` at `0x80046020`), where the opaque quad leaves link on
+/// `AVSZ4`. `ZSF3 = 0x555` is a shade under a third, so a sheet at one depth
+/// links nearer through the leaf: on a retail table of Iota's arm 5, PROT
+/// 0921's two discs on one plane at `SZ 0x2000` hold the opaque quads in bucket
+/// `2048` and the additive `GT3`s in `2046`.
+// REF: FUN_80045BB4
+pub const TESSELLATED_LINK_NEARER_SZ: f32 = 8.0;
+
+impl PartCameraPose {
+    /// The draw-frame offset that brings a node [`TESSELLATED_LINK_NEARER_SZ`]
+    /// nearer the eye: along the view axis, over the base scale. On the port's
+    /// depth buffer that is what keeps two sheets on one plane in the order
+    /// their links give; left equal, the two model matrices round apart and
+    /// the sheets cross along a line.
+    pub fn tessellated_link_offset(&self, frame_flip: bool) -> [f32; 3] {
+        let r = camera_rotation(self.pitch, self.yaw, self.roll);
+        let d = TESSELLATED_LINK_NEARER_SZ / self.base_scale;
+        let sy = if frame_flip { -1.0 } else { 1.0 };
+        // Column-major `r[c * 4 + row]`: eye z is row 2.
+        [-r[2] * d, -r[6] * d * sy, -r[10] * d]
+    }
+}
+
 /// A camera-relative node resolved against a host camera: the world point to
 /// translate to and the basis to put in front of the node's own rotation,
 /// both in the raw retail Y-down frame.
@@ -495,6 +521,22 @@ mod tests {
         let drawn = mul3(&full(&cam), &part.basis);
         let k = CAMERA_RELATIVE_SCALE / BATTLE_BASE_SCALE;
         assert_close(&drawn, &[[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]]);
+    }
+
+    #[test]
+    fn a_tessellated_link_comes_nearer_along_the_view_axis() {
+        let cam = PartCameraPose {
+            pitch: 0.0,
+            yaw: 0.0,
+            roll: 0.0,
+            focus: [0.0; 3],
+            tr_unit: [0.0; 3],
+            base_scale: BATTLE_BASE_SCALE,
+        };
+        // Eye z is world z at rest: nearer is `-z`, by the `SZ` over the base.
+        let o = cam.tessellated_link_offset(true);
+        assert!(o[0].abs() < 1e-6 && o[1].abs() < 1e-6);
+        assert!((o[2] + TESSELLATED_LINK_NEARER_SZ / BATTLE_BASE_SCALE).abs() < 1e-5);
     }
 
     #[test]

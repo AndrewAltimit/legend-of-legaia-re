@@ -435,6 +435,7 @@ impl SummonScene {
                     // The battle overlay's ribbon emitter is not traced to
                     // the prim dispatcher's winding test: both sides.
                     single_sided: false,
+                    tessellated: false,
                 })
             })
             .collect()

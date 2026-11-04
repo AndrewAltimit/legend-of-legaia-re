@@ -995,6 +995,8 @@ pub fn default_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDr
         // The case falls into the model draw (`0x8001B160`) and the prim
         // dispatcher with the node's own colour word.
         single_sided: !ColourWord::of(s).double_sided,
+        tessellated: ColourWord::of(s).split_quads
+            && crate::part_shatter::part_shatter_word(s) == 0,
     })
 }
 

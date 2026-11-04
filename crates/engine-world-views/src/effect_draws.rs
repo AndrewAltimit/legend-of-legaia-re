@@ -294,20 +294,38 @@ pub fn effect_model_draws(
             .active_summon_part_draws()
             .into_iter()
             .chain(world.active_move_fx_part_draws())
-            .map(|draw| FxPartModel {
-                model: node(draw.flags_52, draw.world_pos, draw.rot),
-                single_sided: per_word_cull && !draw.colour.double_sided,
-                draw,
+            .map(|draw| {
+                let model = node(draw.flags_52, draw.world_pos, draw.rot);
+                FxPartModel {
+                    model: match part_cam.filter(|_| draw.colour.split_quads) {
+                        Some(cam) => mat4_mul(
+                            &mat4_translation(cam.tessellated_link_offset(battle)),
+                            &model,
+                        ),
+                        None => model,
+                    },
+                    single_sided: per_word_cull && !draw.colour.double_sided,
+                    draw,
+                }
             })
             .collect();
     }
     out.kind4 = world
         .active_effect_kind4_draws()
         .into_iter()
-        .map(|rb| FxMeshModel {
-            model: node(rb.flags_52, rb.world_pos, rb.rot),
-            single_sided: per_word_cull && rb.single_sided,
-            mesh: rb.mesh,
+        .map(|rb| {
+            let model = node(rb.flags_52, rb.world_pos, rb.rot);
+            FxMeshModel {
+                model: match part_cam.filter(|_| rb.tessellated) {
+                    Some(cam) => mat4_mul(
+                        &mat4_translation(cam.tessellated_link_offset(battle)),
+                        &model,
+                    ),
+                    None => model,
+                },
+                single_sided: per_word_cull && rb.single_sided,
+                mesh: rb.mesh,
+            }
         })
         .collect();
     out.shadows = crate::battle_draws::battle_ground_shadows(world, plan_of)
