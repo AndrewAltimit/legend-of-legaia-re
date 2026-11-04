@@ -63,16 +63,20 @@ fn charge_affordable(session: &NativeSession) -> bool {
     mp * 2 >= max
 }
 
-/// After a boss wipe, walk the scene's encounters until the typists' gauges are
-/// full. The gauge carries between fights (the record's AP cell `+0x10E`,
+/// After a lost race against a timed finisher (Koru), walk the scene's
+/// encounters until the typists' gauges are full. The gauge carries between
+/// fights (the record's AP cell `+0x10E`,
 /// [`arts-command-gauge.md`](../../../../docs/subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)),
-/// so a player who has lost to a boss walks into the next attempt with a Miracle
-/// ready: `+0x20` a Spirit turn. Returns the scene, when the walk left
-/// this one.
+/// so a player who watched the finisher land walks into the next attempt with a
+/// Miracle ready: `+0x20` a Spirit turn. Against any other boss the walk costs
+/// more than it buys: the stance earns the same in the boss's own rounds, and
+/// the first attempt from a `zora_castle` save took Zora to 4204 of 22422 on 22
+/// heals where each charged attempt after it met him with an empty bag and left
+/// him over 19000. Returns the scene, when the walk left this one.
 pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<String>, String> {
     /// Outings before the hand goes in with what it has.
     const CHARGE_OUTINGS: usize = 6;
-    if !BOSS_LOST.with(std::cell::Cell::get)
+    if !RACE_LOST.with(std::cell::Cell::get)
         || !at_lost_door()
         || session.host.world.party.party_count < 3
         || !walking(session)

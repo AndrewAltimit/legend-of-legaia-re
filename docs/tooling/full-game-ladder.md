@@ -266,11 +266,15 @@ one upkeep pass, in this order:
    struck off that visit's list rather than ending the visit: ending it
    there left `rayman2`'s item counter with a purse of 20000 and two
    Healing Flowers bought.
-   A purse that pays for that stock four times over buys up to three
-   stocks, and MP restoratives beside them: past Jette's fortress the run
-   carried 650000 gold through `ropeway` and `station3` with its stock
-   full, met no counter after them, and fought Cort out of an empty bag
-   with Vahn at 22 MP.
+   A purse that pays for that stock twice over buys up to four stocks, and
+   MP restoratives beside them, each out of a part of the purse so the next
+   town's armour keeps the rest: past Jette's fortress the run carried 650000
+   gold through `ropeway` and `station3` with its stock full, met no counter
+   after them, and fought Cort out of an empty bag with Vahn at 22 MP. What a
+   stock costs is counted in the heal on the counter, not at 800 HP a coin:
+   read that way `conc3`'s Healing Berries priced a stock at 135000 gold, and
+   a run left the counter holding 361508 and met Jette on 15% of its HP with
+   no MP.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
@@ -632,6 +636,36 @@ the bag is short of an errand's copies:
 The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
 `kor` P1[13]'s talk then raises `0x40A` and the doorway is clear.
+
+### Arriving at a boss
+
+Past Rogue's tower the anchors' party is level 30 and the run's is 48 to 53, so
+a loss there is not a question of levels. What decides those fights is what the
+party still holds when it reaches the door, and what a reload hands back:
+
+- **It walks back to a rest before it leaves.** A hop out of a scene whose rest
+  still works, with the lower of HP and MP under four fifths, walks to the rest
+  first however far off it stands (no scene's clock running): the beats leave
+  the party wherever the last talk stood, and `chitei2` has no rest past
+  `deroa`'s keeper P1[7].
+- **A fight on the lean does not end the talk.** An encounter rolled on the lean
+  toward a keeper ended the lean, and the failure to face was read as a rest that
+  lifts nobody ([below](#a-rest-that-stops-resting)), which struck `deroa` P1[7]
+  off for the run. The lean now plays the fight and is taken up again. A keeper no
+  walk reaches stays struck off: `bylon` P1[29] listed as a rest stops the
+  bag standing in for one, and a run left `bylon` with Gala at level 8 of 20
+  and 30000 gold poorer.
+- **Only a race walks for AP.** The walk for AP after a boss wipe
+  (`pad_charge_for_race`) spent every heal in the dungeon, and the attempts it
+  prepared left Zora higher than the attempt before it. Spirit turns earn the same
+  in the boss's own rounds, so only Koru's race takes the walk: that race is lost
+  on the rounds spent standing.
+- **A doomed save is not reloaded for ever.** A milestone's save counts as fit
+  when nobody is under two fifths of its HP, the party holds a third of its MP or
+  the bag's MP reserve, and the bag holds its heal reserve. The run keeps the last
+  fit save within three milestones beside the latest one, as a player keeps an
+  older slot. Once the latest save, unfit, has lost twice, the next reload is the
+  fit one, and the stretches between are played again each as itself.
 
 ### A rest that stops resting
 
@@ -1634,7 +1668,8 @@ So the hand:
 - Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
 - Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
 - Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
-- Walks in charged on a reload after any boss wipe (`pad_charge_for_race`, `BOSS_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third. The stance deals nothing, so a charging party flees past half its HP, starts each outing healed, stops once under half its MP, and meets the boss healed. A boss above 15000 HP is a race too for what its typists save (`long_boss`).
+- Walks in charged on a reload after a lost race against a timed finisher (`pad_charge_for_race`, `RACE_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third. The stance deals nothing, so a charging party flees past half its HP, starts each outing healed, stops under half its MP, and meets the boss healed.
+  A boss above 15000 HP is a race too for what its typists save in the fight (`long_boss`), but takes no walk ([arriving at a boss](#arriving-at-a-boss)).
 
 A status that takes a member out of the fight is cured ahead of a heal
 (`wanted_cure_item`). Zora's Glare turns a member to stone: Stone lasts the

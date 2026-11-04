@@ -372,6 +372,27 @@ pub(super) fn pad_talk_to(session: &mut NativeSession, slot: u8) -> Run {
         if let Some(scene) = pad_lean(session, npc, 48, facing) {
             return Run::Entered(scene);
         }
+        // An encounter rolled on the lean ends it where the player stood:
+        // the fight is played and the lean taken up again, as a player walks
+        // back up to the counter. Read as a failure to face, it marked
+        // `deroa` P1[7], the last rest before Jette's fortress, dry for the
+        // run: the party walked in on 15% of its HP and no MP.
+        if continuous::PLAYS_ON.with(std::cell::Cell::get) {
+            for _ in 0..3 {
+                if facing(session) || session.host.world.mode != SceneMode::Battle {
+                    break;
+                }
+                FLEE_ENCOUNTERS.with(|f| f.set(true));
+                let fought = drain_battle(session);
+                FLEE_ENCOUNTERS.with(|f| f.set(false));
+                if let Some(r) = fought {
+                    return r;
+                }
+                if let Some(scene) = pad_lean(session, npc, 48, facing) {
+                    return Run::Entered(scene);
+                }
+            }
+        }
         if !facing(session) {
             if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
                 eprintln!(
