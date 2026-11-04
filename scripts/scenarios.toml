@@ -3859,6 +3859,1009 @@ phase = "minigame"
 expected_game_mode = 0x19
 topics = ["minigame", "dance", "retail", "route walk"]
 
+# ----------------------------------------------------------------------
+# Enemy attacks and casts the corpus held none of: autorun_battle_harvest.lua
+# LEGAIA_WANT runs from retail field states (docs/tooling/capture-coverage.md).
+# ----------------------------------------------------------------------
+[[scenarios]]
+label = "battle_balden_orb_v2_hyper_heal_mid_cast"
+backup_fingerprint = "f65f1e2a927b7441e988023e0211f6ad9fad91ef203ff91a905efd62385718c5"
+description = "balden battle, formation [0x75, 0x54]: Orb $2 (seat 4, monster id 84) mid-cast Hyper Heal (spell 0x2F): category 2, action state 0x3E. RETAIL disc: balden_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 6447 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "balden"
+topics = ["battle", "enemy attack", "Orb $2", "balden", "harvest"]
+
+[[scenarios]]
+label = "battle_bubu2_wailing_bird_power_up_mid_cast"
+backup_fingerprint = "442f2138ca7476f33821ce349834de57c9aadff841f894c2088a55f859b988f0"
+description = "bubu2 battle, formation [0x93, 0x48]: Wailing Bird (seat 4, monster id 72) mid-cast Power Up (spell 0x52): category 2, action state 0x6F. RETAIL disc: bubu2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 2269 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bubu2"
+topics = ["battle", "enemy attack", "Wailing Bird", "bubu2", "harvest"]
+
+[[scenarios]]
+label = "battle_bubu2_sorcerer_strike"
+backup_fingerprint = "6f7f2ecde89a377437bc228e2e133259271cc9f3303d6862db8b51cd3f4753d5"
+description = "bubu2 battle, formation [0x5D, 0x5A]: Sorcerer (seat 4, monster id 90) mid physical attack: category 3, action state 0x1E. RETAIL disc: bubu2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 10080 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bubu2"
+topics = ["battle", "enemy attack", "Sorcerer", "bubu2", "harvest"]
+
+[[scenarios]]
+label = "battle_bubu2_spoon_heal_mid_cast"
+backup_fingerprint = "6f2317d16d57ab2f36d645d47f3d5c303041f034888a280c0ee44662fcd608a3"
+description = "bubu2 battle, formation [0x93, 0x48]: Spoon (seat 3, monster id 147) mid-cast Heal (spell 0x2E): category 2, action state 0x3E. RETAIL disc: bubu2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 2810 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bubu2"
+topics = ["battle", "enemy attack", "Spoon", "bubu2", "harvest"]
+
+[[scenarios]]
+label = "battle_bylon_gimard_v2_tail_fire_mid_cast"
+backup_fingerprint = "46af8b1bc0689ecbb6bffc12fe4a2f6cd09bf17f3423bce930ee367c40d9474e"
+description = "bylon battle, formation [0x0B, 0x1A]: Gimard $2 (seat 3, monster id 11) mid-cast Tail Fire (spell 0x27): category 2, action state 0x2B. RETAIL disc: bylon_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1674 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bylon"
+topics = ["battle", "enemy attack", "Gimard $2", "bylon", "harvest"]
+
+[[scenarios]]
+label = "battle_bylon_gimard_v2_strike"
+backup_fingerprint = "189fb8c06c7e4de1de962883b5e55c4720e8708b174926dda59b3db95cdfdc38"
+description = "bylon battle, formation [0x0B, 0x1A]: Gimard $2 (seat 3, monster id 11) mid physical attack: category 3, action state 0x1E. RETAIL disc: bylon_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3192 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bylon"
+topics = ["battle", "enemy attack", "Gimard $2", "bylon", "harvest"]
+
+[[scenarios]]
+label = "battle_bylon_theeder_v2_thunderbolt_mid_cast"
+backup_fingerprint = "3ce10ed480519f49cf24ded06c456d4f33c6c6de5fee77b94d5cc30a0b5fd417"
+description = "bylon battle, formation [0x0B, 0x1A]: Theeder $2 (seat 4, monster id 26) mid-cast Thunderbolt (spell 0x26): category 2, action state 0x2B. RETAIL disc: bylon_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 5567 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bylon"
+topics = ["battle", "enemy attack", "Theeder $2", "bylon", "harvest"]
+
+[[scenarios]]
+label = "battle_bylon_theeder_v2_strike"
+backup_fingerprint = "c9dc40efd44d0bd8642d051258b4cbe372e3519e5c987615e6d9eb6ccec98181"
+description = "bylon battle, formation [0x0B, 0x1A]: Theeder $2 (seat 4, monster id 26) mid physical attack: category 3, action state 0x1E. RETAIL disc: bylon_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1438 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bylon"
+topics = ["battle", "enemy attack", "Theeder $2", "bylon", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_green_slime_divide_mid_cast"
+backup_fingerprint = "51c7b82613338fb254b9fc1d141047dd783a45f17d4464b935c22fc321968df8"
+description = "map01 battle, formation [0x07, 0x07, 0x04]: Green Slime (seat 4, monster id 7) mid-cast Divide (spell 0x50): category 2, action state 0x70. RETAIL disc: cave01_attached_light played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 9968 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Green Slime", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_cave01_blue_piura_strike"
+backup_fingerprint = "0cb74969f386f6ddd23bcaaf4293aea7207a0f1087b62b56eede2556b89c790d"
+description = "cave01 battle, formation [0x15, 0x16]: Blue Piura (seat 3, monster id 21) mid physical attack: category 3, action state 0x1E. RETAIL disc: cave01_attached_light played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 3896 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "cave01"
+topics = ["battle", "enemy attack", "Blue Piura", "cave01", "harvest"]
+
+[[scenarios]]
+label = "battle_cave01_mushroom_strike"
+backup_fingerprint = "8d24032c2b4e8393a45a9ad8f1babad13bbbb32f971030ed8607ada3938d672a"
+description = "cave01 battle, formation [0x15, 0x16]: Mushroom (seat 4, monster id 22) mid physical attack: category 3, action state 0x1E. RETAIL disc: cave01_attached_light played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 596 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "cave01"
+topics = ["battle", "enemy attack", "Mushroom", "cave01", "harvest"]
+
+[[scenarios]]
+label = "battle_deroa_iota_v2_paralyzing_wave_mid_cast"
+backup_fingerprint = "98c5d88b2832b5386a0673cd6ae09fafce0091a046f9e54fb3a777034386c962"
+description = "deroa battle, formation [0x9A, 0x9A]: Iota $2 (seat 3, monster id 154) mid-cast Paralyzing Wave (spell 0x75): category 2, action state 0x70. RETAIL disc: deroa_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1335 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy attack", "Iota $2", "deroa", "harvest"]
+
+[[scenarios]]
+label = "battle_deroa_iota_v2_strike"
+backup_fingerprint = "e6f9867ef88f61c2b980c077bcf90722573ebffdda555e48aae7f5160a61794e"
+description = "deroa battle, formation [0x9A, 0x9A]: Iota $2 (seat 4, monster id 154) mid physical attack: category 3, action state 0x1E. RETAIL disc: deroa_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 4128 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "deroa"
+topics = ["battle", "enemy attack", "Iota $2", "deroa", "harvest"]
+
+[[scenarios]]
+label = "battle_dolk_skeleton_strike"
+backup_fingerprint = "a1118b05a9ff3224a2453d741b85ddca4c1569426b63c8ed40e1959110692024"
+description = "dolk battle, formation [0x0D, 0x0A]: Skeleton (seat 3, monster id 13) mid physical attack: category 3, action state 0x1E. RETAIL disc: drake_castle_to_worldmap played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 9145 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dolk"
+topics = ["battle", "enemy attack", "Skeleton", "dolk", "harvest"]
+
+[[scenarios]]
+label = "battle_dolk_drake_ghost_windhash_mid_cast"
+backup_fingerprint = "4c5ad91e2c0a1336c0b0026eb78fbe37d79e8eacc6cf4463131f1cf847e5b4f1"
+description = "dolk battle, formation [0x10, 0x0A]: Drake Ghost (seat 3, monster id 16) mid-cast Windhash (spell 0x34): category 2, action state 0x2B. RETAIL disc: drake_castle_to_worldmap played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 581 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dolk"
+topics = ["battle", "enemy attack", "Drake Ghost", "dolk", "harvest"]
+
+[[scenarios]]
+label = "battle_dolk_drake_ghost_strike"
+backup_fingerprint = "a1dd4884cd5f98381091f49d6542b7175cadd7044ccce9badd23f9a6695f2cc5"
+description = "dolk battle, formation [0x10, 0x0A]: Drake Ghost (seat 3, monster id 16) mid physical attack: category 3, action state 0x1E. RETAIL disc: drake_castle_to_worldmap played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3858 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "dolk"
+topics = ["battle", "enemy attack", "Drake Ghost", "dolk", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_songi_hyper_wave_mid_cast"
+backup_fingerprint = "b2b08c97daf71556e851cdd1c98e3ebc309f6a9aa2651b516c125710a259b1f5"
+description = "garmel battle, formation [0x4C]: Songi (seat 3, monster id 76) mid-cast Hyper Wave (spell 0x2A): category 2, action state 0x2B. RETAIL disc: chapter2_garmel_pre_songi played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 21936 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "Songi", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_garmel_songi_strike"
+backup_fingerprint = "f971017ac01d176753abe75a677089b2f8fc9fa9dcdd88ba47ddbb6229ac529d"
+description = "garmel battle, formation [0x4C]: Songi (seat 3, monster id 76) mid physical attack: category 3, action state 0x1E. RETAIL disc: chapter2_garmel_pre_songi played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 20261 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "garmel"
+topics = ["battle", "enemy attack", "Songi", "garmel", "harvest"]
+
+[[scenarios]]
+label = "battle_geremi_kabuki_rat_steal_mid_cast"
+backup_fingerprint = "b09da639b519ed0c6c0c3c85a4de8e0f6f8fdc2546a1dd6165c42ab00eee0bb7"
+description = "geremi battle, formation [0x43, 0x6B]: Kabuki Rat (seat 3, monster id 67) mid-cast Steal (spell 0x51): category 2, action state 0x70. RETAIL disc: geremi_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 19425 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "geremi"
+topics = ["battle", "enemy attack", "Kabuki Rat", "geremi", "harvest"]
+
+[[scenarios]]
+label = "battle_geremi_kabuki_rat_strike"
+backup_fingerprint = "d85d48ea3e69fae67e6f981ac968ee09aa3f619b7efd943a5c29c49bc6f3477f"
+description = "geremi battle, formation [0x43, 0x6B]: Kabuki Rat (seat 3, monster id 67) mid physical attack: category 3, action state 0x1E. RETAIL disc: geremi_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 13703 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "geremi"
+topics = ["battle", "enemy attack", "Kabuki Rat", "geremi", "harvest"]
+
+[[scenarios]]
+label = "battle_geremi_ogre_strike"
+backup_fingerprint = "45d50e20e59a87ed703650ebdcdf61e908ec569e273015afaeaf885fb7276647"
+description = "geremi battle, formation [0x43, 0x6B]: Ogre (seat 4, monster id 107) mid physical attack: category 3, action state 0x1E. RETAIL disc: geremi_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 13995 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "geremi"
+topics = ["battle", "enemy attack", "Ogre", "geremi", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gimard_v3_tail_flare_mid_cast"
+backup_fingerprint = "274e0804950790601a324e0dcd10d2161faf0d8c39b1b6c27b7511b23712d1d6"
+description = "jou battle, formation [0x0C, 0x0C, 0x0C]: Gimard $3 (seat 3, monster id 12) mid-cast Tail Flare (spell 0x61): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 26389 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gimard $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gimard_v3_strike"
+backup_fingerprint = "616bffb8fc47870f5e93805a7f3496a98d81f27fb230fe2b6840eee5c3f8f0c3"
+description = "jou battle, formation [0x0C, 0x0C, 0x0C]: Gimard $3 (seat 3, monster id 12) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 24428 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gimard $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_theeder_v3_thunder_blast_mid_cast"
+backup_fingerprint = "942a710e78fbf214216cd48a86c0477dc58b81b66446717fd81a6ef1c8b3aa19"
+description = "jou battle, formation [0x1B, 0x1B, 0x1B]: Theeder $3 (seat 3, monster id 27) mid-cast Thunder Blast (spell 0x62): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 43496 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Theeder $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_theeder_v3_strike"
+backup_fingerprint = "c51551898cf1fc81e3ee03dfda0ec1a1a8b63e7a93c51f90a63c4775a042bffb"
+description = "jou battle, formation [0x1B, 0x1B, 0x1B]: Theeder $3 (seat 5, monster id 27) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 43133 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Theeder $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_vera_v3_heal_mid_cast"
+backup_fingerprint = "0adcbf0d6d0ba0dd15321b1ff356ba1022bc700be3f02238e87cbd0cecdadc7e"
+description = "jou battle, formation [0x1E, 0x1E, 0x1E]: Vera $3 (seat 4, monster id 30) mid-cast Heal (spell 0x2E): category 2, action state 0x3E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 66456 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Vera $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_vera_v3_strike"
+backup_fingerprint = "3387e5754c9b64be4da7ca213c7301bb3f4d44e473b17d107cc7cda801f5ec6d"
+description = "jou battle, formation [0x1E, 0x1E, 0x1E]: Vera $3 (seat 5, monster id 30) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 64583 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Vera $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_nighto_v3_eye_beam_mid_cast"
+backup_fingerprint = "d2920b976967f302cf96e85dd553712a35c9f2c0d3a662871e6cc690eab14cb3"
+description = "jou battle, formation [0x33, 0x33, 0x33]: Nighto $3 (seat 5, monster id 51) mid-cast Eye Beam (spell 0x68): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 85422 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Nighto $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gizam_v3_water_column_mid_cast"
+backup_fingerprint = "a50abcf670e5e5b5b3bed91d5bfed254ab9412015aa3d8bc246e3dd7e00269e7"
+description = "jou battle, formation [0x39, 0x39, 0x39]: Gizam $3 (seat 3, monster id 57) mid-cast Water Column (spell 0x54): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 105700 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gizam $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gizam_v3_water_hazard_mid_cast"
+backup_fingerprint = "ea15868cb0923f2f736b9f6afe854b1e18d00772d1858dfaaedde23379dc3398"
+description = "jou battle, formation [0x39, 0x39, 0x39]: Gizam $3 (seat 5, monster id 57) mid-cast Water Hazard (spell 0x71): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 103482 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gizam $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gizam_v3_strike"
+backup_fingerprint = "669e78efa18ea6e0d85ca4102d9bd582bcc4d7df2e565389106eaaf9fbafdd84"
+description = "jou battle, formation [0x39, 0x39, 0x39]: Gizam $3 (seat 4, monster id 57) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 102750 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gizam $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_zenoir_v3_grand_claw_mid_cast"
+backup_fingerprint = "a12456f82237d35524d057371a987be6d3d2850b5aebe64c285493f642367795"
+description = "jou battle, formation [0x42, 0x42, 0x42]: Zenoir $3 (seat 5, monster id 66) mid-cast Grand Claw (spell 0x64): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 127169 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Zenoir $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_zenoir_v3_strike"
+backup_fingerprint = "a96f628573a664a65464bb83204cdc6a9c33ef4695fa3a4f3c209be71f01de2f"
+description = "jou battle, formation [0x42, 0x42, 0x42]: Zenoir $3 (seat 3, monster id 66) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 127906 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Zenoir $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_slippery_v3_moldy_breath_mid_cast"
+backup_fingerprint = "48247b92551356165394db242af557532f91ad5e433464f3d3a1e86beb3b81f6"
+description = "jou battle, formation [0x98, 0x98, 0x98]: Slippery $3 (seat 3, monster id 152) mid-cast Moldy Breath (spell 0x33): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 5714 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Slippery $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_slippery_v3_big_wave_mid_cast"
+backup_fingerprint = "dd140b2296b9434540811d524fcf77fe4841b7b19ef081f16c63852ebe2b8cf1"
+description = "jou battle, formation [0x98, 0x98, 0x98]: Slippery $3 (seat 3, monster id 152) mid-cast Big Wave (spell 0x56): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1595 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Slippery $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_slippery_v3_strike"
+backup_fingerprint = "aa8cbc074b5167c20fb13205903f1c1dbecbc6d666fda32537901a754c45f5b1"
+description = "jou battle, formation [0x98, 0x98, 0x98]: Slippery $3 (seat 4, monster id 152) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 6191 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Slippery $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_aluru_v3_aluru_cannon_mid_cast"
+backup_fingerprint = "b20ca89e8a85ea5704fff003a569a33aed860cbd6c4049e74abd8150c2c6839e"
+description = "jou battle, formation [0x52, 0x52, 0x52]: Aluru $3 (seat 3, monster id 82) mid-cast Aluru Cannon (spell 0x3F): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 38750 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Aluru $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_aluru_v3_strike"
+backup_fingerprint = "ab5f476fa0d889199552cd79ef83d81079589de760391f613f6dba0cf39868a7"
+description = "jou battle, formation [0x52, 0x52, 0x52]: Aluru $3 (seat 3, monster id 82) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 42678 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Aluru $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_swordie_v3_vacuum_slicer_mid_cast"
+backup_fingerprint = "dd5c1853e843e3e6e760108ad7697a4ca3f04be986c1aa7daf2399056300260e"
+description = "jou battle, formation [0x58, 0x58, 0x58]: Swordie $3 (seat 4, monster id 88) mid-cast Vacuum Slicer (spell 0x69): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1859 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Swordie $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_swordie_v3_strike"
+backup_fingerprint = "257cf11f0fa90a0213d8ab96442acdd8faa6225b6598769f980427f06b18b9aa"
+description = "jou battle, formation [0x58, 0x58, 0x58]: Swordie $3 (seat 5, monster id 88) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1640 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Swordie $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_freed_v3_water_crystals_mid_cast"
+backup_fingerprint = "0b66320a4025c13a0437f016090197f77f3d5cb3dd2ad4a51a5e9ada94b7924a"
+description = "jou battle, formation [0x5E, 0x5E, 0x5E]: Freed $3 (seat 3, monster id 94) mid-cast Water Crystals (spell 0x59): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 19279 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Freed $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_freed_v3_strike"
+backup_fingerprint = "f207c04b79defe26027d8194a46c763dadc8f481f1baab5e161308035dc080a7"
+description = "jou battle, formation [0x5E, 0x5E, 0x5E]: Freed $3 (seat 5, monster id 94) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 21532 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Freed $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_viguro_v3_thunder_burst_mid_cast"
+backup_fingerprint = "32b56c9931fa944f65883b7a4d5737e7587c0030b2041bfe8f28cb6582aa873d"
+description = "jou battle, formation [0x87, 0x87, 0x87]: Viguro $3 (seat 3, monster id 135) mid-cast Thunder Burst (spell 0x74): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 62891 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Viguro $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_viguro_v3_strike"
+backup_fingerprint = "5d468187de5cb300ab77c37e7711a55f4f8e5c662f9db670005adbc6a50fa299"
+description = "jou battle, formation [0x87, 0x87, 0x87]: Viguro $3 (seat 5, monster id 135) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 63455 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Viguro $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_barra_v3_multi_cutter_mid_cast"
+backup_fingerprint = "7a4f72977027a96f596593d0d3e7f6dc679e40416f0fcf8ae643f92b46fd96ac"
+description = "jou battle, formation [0x8F, 0x8F, 0x8F]: Barra $3 (seat 5, monster id 143) mid-cast Multi Cutter (spell 0x65): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 86041 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Barra $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_barra_v3_strike"
+backup_fingerprint = "42917ba3489121186e42813ffdf799faeee1a966e0e0dcb56109f8474cc5c22f"
+description = "jou battle, formation [0x8F, 0x8F, 0x8F]: Barra $3 (seat 3, monster id 143) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 82297 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Barra $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_kemaro_v3_lava_breath_mid_cast"
+backup_fingerprint = "cf034ecb51dccd3e22c6abf3e1a0d7ffd46508326e1133ec2fc2369ffd177c2d"
+description = "jou battle, formation [0x92, 0x92, 0x92]: Kemaro $3 (seat 5, monster id 146) mid-cast Lava Breath (spell 0x46): category 2, action state 0x2B. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 122118 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Kemaro $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_kemaro_v3_steal_mid_cast"
+backup_fingerprint = "2d36aefbd741729d1500d69ee1d97f28da94795ba09b00ce75c316b72d1218b5"
+description = "jou battle, formation [0x92, 0x92, 0x92]: Kemaro $3 (seat 5, monster id 146) mid-cast Steal (spell 0x51): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 125723 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Kemaro $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_kemaro_v3_strike"
+backup_fingerprint = "38b0b2a09a13852703984bf413a4965a55c3fd6ef7c9549e5fd6215c650a967a"
+description = "jou battle, formation [0x92, 0x92, 0x92]: Kemaro $3 (seat 3, monster id 146) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 121766 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Kemaro $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_spoon_v3_hyper_heal_mid_cast"
+backup_fingerprint = "617cdcf9ef14773a956925e2b2740ca45f56b414bc4108bbc8f0ea2ea9c324f3"
+description = "jou battle, formation [0x95, 0x95, 0x95]: Spoon $3 (seat 4, monster id 149) mid-cast Hyper Heal (spell 0x2F): category 2, action state 0x3E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 102230 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Spoon $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_spoon_v3_white_shield_mid_cast"
+backup_fingerprint = "a335c54af2452ce3ec9e457df89c2259eaa3a029a511b04713f75cfc2b7d0606"
+description = "jou battle, formation [0x95, 0x95, 0x95]: Spoon $3 (seat 4, monster id 149) mid-cast White Shield (spell 0x60): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 114102 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Spoon $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_spoon_v3_strike"
+backup_fingerprint = "c936058271bfd5d494fdcad440629db23047e2885b6ac4ddbfd4ffaca194d157"
+description = "jou battle, formation [0x95, 0x95, 0x95]: Spoon $3 (seat 4, monster id 149) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 100230 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Spoon $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gola_gola_v3_rolling_flare_mid_cast"
+backup_fingerprint = "6d33b535680c39e705826682880acfcd15a90a5f15b07987ea9c635ed6af7c9f"
+description = "jou battle, formation [0x64, 0x64, 0x64]: Gola Gola $3 (seat 5, monster id 100) mid-cast Rolling Flare (spell 0x5A): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 20686 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gola Gola $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_gola_gola_v3_strike"
+backup_fingerprint = "adb9483a24a97a2158ee2891fa7ebf29ff5d6be7a95f16c07fc4042f5ed3b4ff"
+description = "jou battle, formation [0x64, 0x64, 0x64]: Gola Gola $3 (seat 3, monster id 100) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 20130 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Gola Gola $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_mushura_v3_strike"
+backup_fingerprint = "50c3e7da04df144edacd65f7a700e96489dbad2c331a861fc645b866f6925271"
+description = "jou battle, formation [0x67, 0x67, 0x67]: Mushura $3 (seat 3, monster id 103) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 40437 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Mushura $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_iota_v3_paralyzing_wave_mid_cast"
+backup_fingerprint = "c6b6a48c518dbae7521e31a9ceef686721df7a9dd028c096cabba45c5f1d0498"
+description = "jou battle, formation [0x9B, 0x9B, 0x9B]: Iota $3 (seat 4, monster id 155) mid-cast Paralyzing Wave (spell 0x75): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 58442 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Iota $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_iota_v3_strike"
+backup_fingerprint = "5b3e8ed5cee4def05ad96eb3924bd399c7963e82e1079aef3b6f28025e6094ea"
+description = "jou battle, formation [0x9B, 0x9B, 0x9B]: Iota $3 (seat 3, monster id 155) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 59421 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Iota $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_puera_v3_death_game_mid_cast"
+backup_fingerprint = "9ff08367a7856a9bea4cc07be1fcdb32a73b163a277483cfa3e8ff8988b62da5"
+description = "jou battle, formation [0x9E, 0x9E, 0x9E]: Puera $3 (seat 3, monster id 158) mid-cast Death Game (spell 0x76): category 2, action state 0x70. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 79723 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Puera $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_jou_puera_v3_strike"
+backup_fingerprint = "3e9535d2f0ad4090158387223050067bc2aa3e9548dac3eea70df4073d4ef420"
+description = "jou battle, formation [0x9E, 0x9E, 0x9E]: Puera $3 (seat 4, monster id 158) mid physical attack: category 3, action state 0x1E. RETAIL disc: jou_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 82899 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "jou"
+topics = ["battle", "enemy attack", "Puera $3", "jou", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_gomboo_steal_mid_cast"
+backup_fingerprint = "4edf12f602b7b58f6e6c984d903bb891d41e8d50fcc0e3225e416b365df065fb"
+description = "map01 battle, formation [0x3D, 0x05]: Gomboo (seat 4, monster id 5) mid-cast Steal (spell 0x51): category 2, action state 0x6F. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 1641 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Gomboo", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_gomboo_strike"
+backup_fingerprint = "7dad2540f2e6c0d1af4dfe6a780343710cb6a67ba2f3fbf9357cf429c4abbea8"
+description = "map01 battle, formation [0x3D, 0x05]: Gomboo (seat 4, monster id 5) mid physical attack: category 3, action state 0x1E. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 2842 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Gomboo", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_map01_ostrich_strike"
+backup_fingerprint = "8102f448d3577f0f2f6884ecacc4741a1908a62124ec964a47a699c355967acf"
+description = "map01 battle, formation [0x25, 0x25]: Ostrich (seat 3, monster id 37) mid physical attack: category 3, action state 0x1E. RETAIL disc: map01_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 27837 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map01"
+topics = ["battle", "enemy attack", "Ostrich", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_high_gomboo_steal_mid_cast"
+backup_fingerprint = "17b07757c95efe8ca99d9f5659d529c8bcd4f496b2a0214fd02f264389ba8b10"
+description = "map02 battle, formation [0x28, 0x28, 0x06]: High Gomboo (seat 5, monster id 6) mid-cast Steal (spell 0x51): category 2, action state 0x70. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 26008 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "High Gomboo", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_high_gomboo_power_up_mid_cast"
+backup_fingerprint = "4645c24fdf01d7f44ab65e5ed77eb62d32d045da37f4355fc9ef4ddc57d77334"
+description = "map02 battle, formation [0x28, 0x28, 0x06]: High Gomboo (seat 5, monster id 6) mid-cast Power Up (spell 0x52): category 2, action state 0x70. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 27790 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "High Gomboo", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_high_gomboo_strike"
+backup_fingerprint = "8369c992c5d28fbd7edfe67b78c69f67636aa2e7ba50c6874dfa7e6aa163b5d9"
+description = "map02 battle, formation [0x28, 0x28, 0x06]: High Gomboo (seat 5, monster id 6) mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 29936 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "High Gomboo", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_oak_slime_strike"
+backup_fingerprint = "08fc84f5592fdcb80f8529a7d99fc65094e79b59056827b157cc5cc785f6cd87"
+description = "map02 battle, formation [0x08, 0x20]: Oak Slime (seat 3, monster id 8) mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 2019 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Oak Slime", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_poisonous_worm_strike"
+backup_fingerprint = "aa18002c78ab3b9329079c1878e8736d20c5a2664598379450676954efeaa002"
+description = "map02 battle, formation [0x23, 0x3A]: Poisonous Worm (seat 3, monster id 35) mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 14363 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Poisonous Worm", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_hell_s_trigger_strike"
+backup_fingerprint = "9e1475e621ac81495c39d4325a706ae73db8f7f4674c88c67bf883718be8de08"
+description = "map02 battle, formation [0x26, 0x6B]: Hell's Trigger (seat 3, monster id 38) mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 45801 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Hell's Trigger", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_wolf_terror_scream_mid_cast"
+backup_fingerprint = "231a8c061352c099a682e07ead1941691bf46a88bfbcb051ac45378aec1b54c8"
+description = "map02 battle, formation [0x28, 0x28, 0x06]: Wolf (seat 3, monster id 40) mid-cast Terror Scream (spell 0x70): category 2, action state 0x70. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 31527 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Wolf", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_killer_bison_strike"
+backup_fingerprint = "21cbb33d1416d94d32611cf3aee1599bd6f5c647c0dda843a9b3242a0a700223"
+description = "map02 battle, formation [0x23, 0x3A]: Killer Bison (seat 4, monster id 58) mid physical attack: category 3, action state 0x1E. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 13907 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Killer Bison", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map02_ogre_power_charge_mid_cast"
+backup_fingerprint = "46ee3b71d2488ad49271883bd537ab2fa039d1f37b32a9a1a71c8c402ec763c9"
+description = "map02 battle, formation [0x26, 0x6B]: Ogre (seat 4, monster id 107) mid-cast Power Charge (spell 0x72): category 2, action state 0x70. RETAIL disc: map02_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 50518 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map02"
+topics = ["battle", "enemy attack", "Ogre", "map02", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_acid_slime_divide_mid_cast"
+backup_fingerprint = "d46c622fc072fdc3b2f80d4fc63ada43647e4f82238c22d6756914eecde5b8cb"
+description = "map03 battle, formation [0x09, 0x24]: Acid Slime (seat 3, monster id 9) mid-cast Divide (spell 0x50): category 2, action state 0x70. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 6701 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Acid Slime", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_acid_slime_melt_spray_mid_cast"
+backup_fingerprint = "2d02686201e938e63931f84fff5a92a09c9601d54ce3da26603af39ce1ec8b39"
+description = "map03 battle, formation [0x09, 0x24]: Acid Slime (seat 3, monster id 9) mid-cast Melt Spray (spell 0x6F): category 2, action state 0x70. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3144 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Acid Slime", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_acid_slime_strike"
+backup_fingerprint = "63d7a05e43ffe0b9c826a76512a5866b286e3c827b51cbe2291a7ed116a8b005"
+description = "map03 battle, formation [0x09, 0x24]: Acid Slime (seat 3, monster id 9) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 5162 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Acid Slime", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_moldy_worm_strike"
+backup_fingerprint = "20f611bba0d4a3a6ab551ad7a0e9f59678c61d1a325ccb88e3915e4c40307c9e"
+description = "map03 battle, formation [0x09, 0x24]: Moldy Worm (seat 4, monster id 36) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 4829 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Moldy Worm", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_death_trigger_strike"
+backup_fingerprint = "2804b3743637604f1baa2c5bc6f0c458a441943db771bb1613066878af30216a"
+description = "map03 battle, formation [0x27, 0x45]: Death Trigger (seat 3, monster id 39) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 56244 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Death Trigger", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_speed_wolf_terror_scream_mid_cast"
+backup_fingerprint = "7c765eaa25f9a29ecb7015b1201a57ea6cd2690f86380830e8083057203c523a"
+description = "map03 battle, formation [0x36, 0x2A]: Speed Wolf (seat 4, monster id 42) mid-cast Terror Scream (spell 0x70): category 2, action state 0x70. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 49928 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Speed Wolf", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_speed_wolf_strike"
+backup_fingerprint = "bc63ca8edfad3c950af40a4cdfc28c32e219b30cbe71c21d433293346b1bed81"
+description = "map03 battle, formation [0x36, 0x2A]: Speed Wolf (seat 4, monster id 42) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 37851 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Speed Wolf", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_high_mantis_strike"
+backup_fingerprint = "fcb31c0ac8016e7040b4cdf84162117c2ce4daf40bda988f50e0baa0fd81a2cd"
+description = "map03 battle, formation [0x36, 0x2A]: High Mantis (seat 3, monster id 54) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 38488 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "High Mantis", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_gold_bison_strike"
+backup_fingerprint = "9b567c7d4c6528d7a57144641a78a02088809d5a316082afe4a9b668e143bbaf"
+description = "map03 battle, formation [0x6A, 0x3C]: Gold Bison (seat 4, monster id 60) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 74132 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Gold Bison", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_giant_rat_steal_mid_cast"
+backup_fingerprint = "3d7d889be9f9979911f1bc77196d04df0e5c12c4351b944e4f49e74a4800a9ac"
+description = "map03 battle, formation [0x27, 0x45]: Giant Rat (seat 4, monster id 69) mid-cast Steal (spell 0x51): category 2, action state 0x70. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 55932 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Giant Rat", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_giant_rat_strike"
+backup_fingerprint = "41c159136793051091ed5195db97675d3ad5ea0f774bda813e9e92620b6c0742"
+description = "map03 battle, formation [0x27, 0x45]: Giant Rat (seat 4, monster id 69) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 57851 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Giant Rat", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_heavy_grude_power_up_mid_cast"
+backup_fingerprint = "5581ac14e67604b1ad3014146a92a54e1dbf478e4d20a17e6618bfa9ed031f2c"
+description = "map03 battle, formation [0x6A, 0x3C]: Heavy Grude (seat 3, monster id 106) mid-cast Power Up (spell 0x52): category 2, action state 0x70. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 70336 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Heavy Grude", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_dark_ogre_strike"
+backup_fingerprint = "8070e7377bd252507a9b4f1ecd7da83c5399e7d55100f8fba9b834fc2593b050"
+description = "map03 battle, formation [0x7C, 0x6D]: Dark Ogre (seat 4, monster id 109) mid physical attack: category 3, action state 0x1E. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 23880 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Dark Ogre", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_map03_scale_lizard_earthquake_mid_cast"
+backup_fingerprint = "913bade3b552fb3f71fb56eda49c7ba9fc12af92939098074fe3f63d2d390d1a"
+description = "map03 battle, formation [0x7C, 0x6D]: Scale Lizard (seat 3, monster id 124) mid-cast Earthquake (spell 0x4A): category 2, action state 0x70. RETAIL disc: map03_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 26058 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "map03"
+topics = ["battle", "enemy attack", "Scale Lizard", "map03", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_aluru_v2_aluru_cannon_mid_cast"
+backup_fingerprint = "c5bb895582711d0e8acaeadbc83fb1cf3da6b543cc9ba2fe533b4a313804556d"
+description = "nilboa battle, formation [0x51, 0x6E, 0x6E]: Aluru $2 (seat 3, monster id 81) mid-cast Aluru Cannon (spell 0x3F): category 2, action state 0x2B. RETAIL disc: nilboa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 2143 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Aluru $2", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_aluru_v2_strike"
+backup_fingerprint = "162edd5b95928ace2d6bd9f146285c5c5ff39a8815df3188aa4793fb3f2e0e20"
+description = "nilboa battle, formation [0x51, 0x6E, 0x6E]: Aluru $2 (seat 3, monster id 81) mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 7019 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Aluru $2", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_amethyst_heal_mid_cast"
+backup_fingerprint = "29a85f68ddd4569f8972eae7d2751ab2242f956bcd891d5d2ca5e347bce41b4e"
+description = "nilboa battle, formation [0x51, 0x6E, 0x6E]: Amethyst (seat 5, monster id 110) mid-cast Heal (spell 0x2E): category 2, action state 0x3E. RETAIL disc: nilboa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 4250 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Amethyst", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_amethyst_strike"
+backup_fingerprint = "fca1d53df06bbb535a9c72a8e353f169c6b39d6a00bdb18e8d106bcfe46930dc"
+description = "nilboa battle, formation [0x51, 0x6E, 0x6E]: Amethyst (seat 5, monster id 110) mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 927 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Amethyst", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_nilboa_warfish_strike"
+backup_fingerprint = "fdc9c655c8977d54b5731bd3441b72d6496c5499401aee79ac32ce8aef9ee2b9"
+description = "nilboa battle, formation [0x76, 0x73, 0x73]: Warfish (seat 5, monster id 115) mid physical attack: category 3, action state 0x1E. RETAIL disc: nilboa_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 13397 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "nilboa"
+topics = ["battle", "enemy attack", "Warfish", "nilboa", "harvest"]
+
+[[scenarios]]
+label = "battle_retockin_evil_shadow_fatal_decision_mid_cast"
+backup_fingerprint = "a976cf372d02c32877a539f1b6ceefe7aea5ed6859eea33341a1765627ead78e"
+description = "retockin battle, formation [0x77, 0x86]: Evil Shadow (seat 3, monster id 119) mid-cast Fatal Decision (spell 0x5F): category 2, action state 0x70. RETAIL disc: retockin_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3812 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retockin"
+topics = ["battle", "enemy attack", "Evil Shadow", "retockin", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa2_vera_strike"
+backup_fingerprint = "83600cab0029e5fcb010e3a3e6458e2873b33975ab3aeefc623ec2111fc46a16"
+description = "rikuroa2 battle, formation [0x1C, 0x2E]: Vera (seat 3, monster id 28) mid physical attack: category 3, action state 0x1E. RETAIL disc: rikuroa2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 1780 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa2"
+topics = ["battle", "enemy attack", "Vera", "rikuroa2", "harvest"]
+
+[[scenarios]]
+label = "battle_rikuroa2_pump_bat_strike"
+backup_fingerprint = "bad77f057b89757ca4cffdd819856893c2ea24a480b79c6875cc0e2922a29450"
+description = "rikuroa2 battle, formation [0x1C, 0x2E]: Pump Bat (seat 4, monster id 46) mid physical attack: category 3, action state 0x1E. RETAIL disc: rikuroa2_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH=2, which also raises each seat to 9999 HP, shown on the HUD, LEGAIA_WOUND); the action is the AI's own. Saved 2042 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rikuroa2"
+topics = ["battle", "enemy attack", "Pump Bat", "rikuroa2", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_gola_gola_v2_rolling_flare_mid_cast"
+backup_fingerprint = "c79408f7ca3d48311545d82d96a61babe5527efd49cf0da373a9caf4b330d098"
+description = "rugi battle, formation [0x9D, 0x63]: Gola Gola $2 (seat 4, monster id 99) mid-cast Rolling Flare (spell 0x5A): category 2, action state 0x70. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 16467 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Gola Gola $2", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_gola_gola_v2_strike"
+backup_fingerprint = "1cf588b562c28fbd626dfa9a42635224c75c1515bf921248493a92e0616066ce"
+description = "rugi battle, formation [0x9D, 0x63]: Gola Gola $2 (seat 4, monster id 99) mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 13670 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Gola Gola $2", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_iota_strike"
+backup_fingerprint = "b6912d393a1f846ff0773afc53aba08eef571941af8fae351a1387368d5c4272"
+description = "rugi battle, formation [0x99, 0x9D]: Iota (seat 3, monster id 153) mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3032 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Iota", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_puera_v2_death_game_mid_cast"
+backup_fingerprint = "a6bbfee53eb4b736a1937c75cf1d0444940be7a771aeabf145db2f04448f687c"
+description = "rugi battle, formation [0x99, 0x9D]: Puera $2 (seat 4, monster id 157) mid-cast Death Game (spell 0x76): category 2, action state 0x70. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 909 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Puera $2", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_rugi_puera_v2_strike"
+backup_fingerprint = "87c4a8ba6e97f5968daf1f41f3d116f0ac8cb95a11247daa1a6008916a7c184f"
+description = "rugi battle, formation [0x9D, 0x63]: Puera $2 (seat 3, monster id 157) mid physical attack: category 3, action state 0x1E. RETAIL disc: rugi_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 13386 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "rugi"
+topics = ["battle", "enemy attack", "Puera $2", "rugi", "harvest"]
+
+[[scenarios]]
+label = "battle_stone_gizam_v2_water_column_mid_cast"
+backup_fingerprint = "2f285d8f2f681111c283984ec960f9a2462c098aee5fa48abc0d16f7c3a4844d"
+description = "stone battle, formation [0x41, 0x38]: Gizam $2 (seat 4, monster id 56) mid-cast Water Column (spell 0x54): category 2, action state 0x70. RETAIL disc: stone_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3613 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "stone"
+topics = ["battle", "enemy attack", "Gizam $2", "stone", "harvest"]
+
+[[scenarios]]
+label = "battle_stone_gizam_v2_strike"
+backup_fingerprint = "bf865fa4555c297d9d268143ace3c2c4e4588f0eb10fc61f6d08513304c5d937"
+description = "stone battle, formation [0x41, 0x38]: Gizam $2 (seat 4, monster id 56) mid physical attack: category 3, action state 0x1E. RETAIL disc: stone_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 2100 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "stone"
+topics = ["battle", "enemy attack", "Gizam $2", "stone", "harvest"]
+
+[[scenarios]]
+label = "battle_stone_zenoir_v2_fire_claw_mid_cast"
+backup_fingerprint = "050f3ca6f5b7d9b6ddf548b1a9df666200d31e33a2ada4dadf40c8ca47c20333"
+description = "stone battle, formation [0x41, 0x38]: Zenoir $2 (seat 3, monster id 65) mid-cast Fire Claw (spell 0x2B): category 2, action state 0x2B. RETAIL disc: stone_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1728 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "stone"
+topics = ["battle", "enemy attack", "Zenoir $2", "stone", "harvest"]
+
+[[scenarios]]
+label = "battle_stone_zenoir_v2_strike"
+backup_fingerprint = "053fd7bd99c8b9ab9b8a82b334bb4a10364cc15113debcedca9a0e770bd42b9d"
+description = "stone battle, formation [0x41, 0x38]: Zenoir $2 (seat 3, monster id 65) mid physical attack: category 3, action state 0x1E. RETAIL disc: stone_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3412 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "stone"
+topics = ["battle", "enemy attack", "Zenoir $2", "stone", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_mushura_v2_strike"
+backup_fingerprint = "642bfc765583789f36eb541fe2825f8c3b62ab5252a11f0043d74d55209b1d3d"
+description = "taiku battle, formation [0x66, 0x66, 0x8D]: Mushura $2 (seat 3, monster id 102) mid physical attack: category 3, action state 0x1E. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3093 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Mushura $2", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_puera_death_game_mid_cast"
+backup_fingerprint = "d71867b3f88731447c2b1b75f9eb2365689326a1deb04ba224c53638066b1d5c"
+description = "taiku battle, formation [0x9C, 0x9C]: Puera (seat 3, monster id 156) mid-cast Death Game (spell 0x76): category 2, action state 0x70. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 18140 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Puera", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_puera_strike"
+backup_fingerprint = "93260fc099bd71ea8d203d0b721d922d555c605e64786f1a351f61044eafdbeb"
+description = "taiku battle, formation [0x9C, 0x9C]: Puera (seat 4, monster id 156) mid physical attack: category 3, action state 0x1E. RETAIL disc: taiku_field_card_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 22332 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Puera", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnela_mad_bird_power_up_mid_cast"
+backup_fingerprint = "33ee923c36cee04a045c89bf09806db21ec8d521a0eaedcff4c1140e9fe45ddd"
+description = "tunnela battle, formation [0x47, 0x5F]: Mad Bird (seat 3, monster id 71) mid-cast Power Up (spell 0x52): category 2, action state 0x70. RETAIL disc: tunnela_field_door_hop played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3227 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnela"
+topics = ["battle", "enemy attack", "Mad Bird", "tunnela", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelc_freed_water_crystals_mid_cast"
+backup_fingerprint = "18cc5c8ca4cfe85a80adfe3fb1e17efa097d7e540e020dea49cdf99e253c273e"
+description = "tunnelc battle, formation [0x5C, 0x7A]: Freed (seat 3, monster id 92) mid-cast Water Crystals (spell 0x59): category 2, action state 0x70. RETAIL disc: tunnelc_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 3630 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelc"
+topics = ["battle", "enemy attack", "Freed", "tunnelc", "harvest"]
+
+[[scenarios]]
+label = "battle_tunnelc_freed_strike"
+backup_fingerprint = "50ecd6d2b20cfd56a3b068e1047e6397a829c5d84bd3de9297f46f4322495ef6"
+description = "tunnelc battle, formation [0x5C, 0x7A]: Freed (seat 3, monster id 92) mid physical attack: category 3, action state 0x1E. RETAIL disc: tunnelc_field_route_walk played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 2425 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "tunnelc"
+topics = ["battle", "enemy attack", "Freed", "tunnelc", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_mushrin_strike"
+backup_fingerprint = "71012a9c2808621fe8cd6e4cda17551f9db19c9e7894d8741c58244f8b1fbab5"
+description = "vozz battle, formation [0x37, 0x17]: Mushrin (seat 4, monster id 23) mid physical attack: category 3, action state 0x1E. RETAIL disc: vozz_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 1231 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Mushrin", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_viguro_thunder_break_mid_cast"
+backup_fingerprint = "9410cee622256cb78d90579f6465fe946d0d6123fb9309ee8376bc7f58cf7da8"
+description = "vozz battle, formation [0x4A, 0x4A]: Viguro (seat 3, monster id 74) mid-cast Thunder Break (spell 0x30): category 2, action state 0x2B. RETAIL disc: vozz_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 14341 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Viguro", "vozz", "harvest"]
+
+[[scenarios]]
+label = "battle_vozz_viguro_strike"
+backup_fingerprint = "cea4e2d0df927cb8c71fb068c5ae9edb5644339296938a31168e4f85f7fca366"
+description = "vozz battle, formation [0x4A, 0x4A]: Viguro (seat 4, monster id 74) mid physical attack: category 3, action state 0x1E. RETAIL disc: vozz_field_card_boot played forward, formation row picked by autorun_battle_harvest.lua LEGAIA_WANT (the MAN region rows point at it), party HP restored and monster HP cut at round prompts (LEGAIA_TOUGH, LEGAIA_WOUND); the action is the AI's own. Saved 14867 vsyncs in."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "vozz"
+topics = ["battle", "enemy attack", "Viguro", "vozz", "harvest"]
+
 [[scenarios]]
 label = "kor4_field_route_walk"
 backup_fingerprint = "4b6ba816f8960c90e376dc962d2975c5a65dfac577516ba2040ef08d4a316d2d"
