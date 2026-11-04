@@ -39,9 +39,9 @@
       <defs><marker id="en-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text class="dg-edge-label" x="888" y="22" text-anchor="end">hosts</text>
       <rect class="dg-node-accent" x="60" y="30" width="230" height="56" rx="5"/>
-      <text class="dg-label" x="175" y="54">engine-shell</text><text class="dg-sub" x="175" y="72">native window + legaia-engine CLI</text>
+      <text class="dg-label" x="175" y="54">engine-shell</text><text class="dg-sub" x="175" y="72">window + legaia-engine CLI</text>
       <rect class="dg-node-accent" x="335" y="30" width="230" height="56" rx="5"/>
-      <text class="dg-label" x="450" y="54">web-play</text><text class="dg-sub" x="450" y="72">browser hosts, with web-minigames (in web-viewer WASM)</text>
+      <text class="dg-label" x="450" y="54">web-play</text><text class="dg-sub" x="450" y="72">browser hosts, in both bundles</text>
       <rect class="dg-node" x="610" y="30" width="230" height="56" rx="5"/>
       <text class="dg-label" x="725" y="54">asset-viewer</text><text class="dg-sub" x="725" y="72">standalone format viewer</text>
       <rect class="dg-group" x="330" y="112" width="552" height="86" rx="6"/>
@@ -194,7 +194,7 @@
     <svg viewBox="0 0 860 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Per-frame data flow: a host (play-window or the browser) ticks BootSession in engine-session, which drives the ModeSeat (engine-mode) and the SceneHost in engine-scene-host; the SceneHost ticks World, which drives the VMs of engine-vm, engine-motion-vm and engine-battle-vm through host traits. World state is projected into draw lists by engine-ui and engine-screens and drawn by the host's renderer; the BGM director turns sound events into sequencer and SPU work in engine-audio.">
       <defs><marker id="en-rt-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <rect class="dg-node-accent" x="20" y="30" width="170" height="56" rx="5"/>
-      <text class="dg-label" x="105" y="54">host</text><text class="dg-sub" x="105" y="72">pad, camera, draw, audio out</text>
+      <text class="dg-label" x="105" y="54">host</text><text class="dg-sub" x="105" y="72">pad, camera, draw, audio</text>
       <rect class="dg-node" x="230" y="30" width="170" height="56" rx="5"/>
       <text class="dg-label" x="315" y="54">BootSession</text><text class="dg-sub" x="315" y="72">engine-session</text>
       <rect class="dg-node" x="440" y="30" width="170" height="56" rx="5"/>
