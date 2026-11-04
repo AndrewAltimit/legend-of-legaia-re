@@ -21,9 +21,17 @@ use std::path::PathBuf;
 const READEF_GROUPS: u8 = 26;
 
 fn entry_867() -> Option<Vec<u8>> {
+    entry("0867_battle_data.BIN")
+}
+
+fn readef_bytes() -> Option<Vec<u8>> {
+    entry("0894_card_data.BIN")
+}
+
+fn entry(name: &str) -> Option<Vec<u8>> {
     std::env::var_os("LEGAIA_DISC_BIN")?;
     for p in ["extracted/PROT", "../../extracted/PROT"] {
-        let f = PathBuf::from(p).join("0867_battle_data.BIN");
+        let f = PathBuf::from(p).join(name);
         if f.is_file() {
             return std::fs::read(f).ok();
         }
@@ -80,5 +88,22 @@ fn every_record_names_a_real_readef_group_and_none_names_19_to_21() {
 
     for (g, n) in census.iter().enumerate() {
         eprintln!("[readef] group {g:2} base 0x{:02X}  {n:3} record(s)", 3 * g);
+    }
+}
+
+/// Element Change's three groups hold an actor record that parses: the
+/// creature a strike's arm 1 seats, with its mesh and clips.
+#[test]
+fn element_strike_groups_hold_a_creature() {
+    let Some(readef) = readef_bytes() else {
+        return;
+    };
+    for roll in 0..3u8 {
+        let group = legaia_actor_formats::summon_readef::element_strike_group(roll);
+        let c =
+            legaia_actor_formats::summon_readef::parse_readef_creature(&readef, group, 0xB0 + roll)
+                .expect("an actor record");
+        assert!(!c.clips.is_empty(), "group {group} has no clips");
+        legaia_tmd::parse(c.mesh.tmd_bytes()).expect("the record's TMD");
     }
 }

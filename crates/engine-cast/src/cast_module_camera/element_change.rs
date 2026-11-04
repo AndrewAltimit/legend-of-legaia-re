@@ -136,9 +136,9 @@ const OPEN_ELEMENT: [u32; 3] = [0x801F_90BC, 0x801F_9120, 0x801F_9184];
 /// |---|---|---|
 /// | 0 (`0x801F6BCC`) | a cut: pitch `0`, yaw `0x800 - facing`, TR `(0, 0x600, 0x600)`; the opening records | seed `scalar << 8` |
 /// | 1 (`0x801F6D8C`) | TR z `+= k` a pass, every party seat hidden | `+= scalar << 7` |
-/// | `k = 0` | TR z `-= 2k`, TR y `-= k >> 2` (Wind: `-= 4k`, `-= 3k`) | `+= scalar * 0x60` |
+/// | `k = 0` | TR z `-= 2k`, TR y `-= k >> 2` (Wind: TR z `-= 3k`, TR y `-= k >> 1`) | `+= scalar * 0x60` |
 /// | `k = 1` | on its pass a cut: TR `(0, 0x300, 0x300)` (Wind: y `0x280`); records | `+= scalar << 8` |
-/// | `k = 2` | TR y `+= k >> 1` | `+= scalar << 5` |
+/// | `k = 2` | TR y `+= k >> 1` (Wind: `k >> 2`) | `+= scalar << 5` |
 /// | `k = 3` | on its pass a cut: pitch `0x180`, TR `(0, 0x200, 0x600)`; records | `+= scalar * 0x70` |
 /// | `k = 4` | TR z `+= 16k`, TR y `-= 3k`; on its pass the blast's records | `+= scalar * 0xC0` |
 /// | `k = 5` | held, Thunder's spray each pass; on its pass TR `(0, 0x500, 0xA00)` | `+= scalar << 7` |
@@ -178,6 +178,7 @@ pub fn element_strike_camera(
             arm.pass_spawns[0] = Some(seat(OPEN_BODY, at_caster, rot));
             arm.pass_spawns[1] = Some(seat(OPEN_FAR, far, rot));
             arm.pass_spawns[2] = Some(seat(OPEN_ELEMENT[roll], far, rot));
+            arm.element_stream = true;
             return arm;
         }
         1 => {
@@ -191,6 +192,16 @@ pub fn element_strike_camera(
                 arm.hold = true;
             } else {
                 st.countdown.add(1 << 7);
+                // The arm's pass seats the element's creature and hides the
+                // caster: `jal 0x801F19EC` at `0x801F6E90`, `sb s0,0x21c(s7)`
+                // with `s0 = 0xFF` and `sw zero,0x4(s7)` right behind it.
+                arm.seats_creature = true;
+                arm.flushes_pool = true;
+                arm.caster_write = CaptureSeatWrite {
+                    colour: Some(0),
+                    render_flag: Some(0xFF),
+                    ..Default::default()
+                };
             }
             return arm;
         }
@@ -203,8 +214,11 @@ pub fn element_strike_camera(
         _ => return arm,
     };
     arm.drift = match k {
-        0 if wind => drift(-3 * SPEED_SCALAR, -4 * SPEED_SCALAR),
+        // Wind's: `TR y -= frame << 2`, `TR z -= 3k` (`0x801F7804..0x801F7828`).
+        0 if wind => drift(-(SPEED_SCALAR >> 1), -3 * SPEED_SCALAR),
         0 => drift(-(SPEED_SCALAR >> 2), -2 * SPEED_SCALAR),
+        // Wind climbs half as fast: `sra a0,a0,0x2` at `0x801F7960`.
+        2 if wind => drift(SPEED_SCALAR >> 2, 0),
         2 => drift(SPEED_SCALAR >> 1, 0),
         4 => drift(-3 * SPEED_SCALAR, 16 * SPEED_SCALAR),
         6 => drift(0, -SPEED_SCALAR),
@@ -263,6 +277,23 @@ pub fn element_strike_camera(
         5 => {
             arm.shot = Some(cut(0, 0x500, 0xA00));
             st.countdown.add(1 << 7);
+            // The pass flushes the pool, takes the creature off and lights
+            // the caster in the element's colour, which `0xFF` holds: `0xFFC00`
+            // at `0x801F7F6C`, `0x3FF` at `0x801F8784` (`0x3FF00000` for
+            // Thunder, `0x801F77CC`), `+0x0C = 0x1000` beside it.
+            arm.flushes_pool = true;
+            arm.hides_creature = true;
+            arm.caster_write = CaptureSeatWrite {
+                colour: Some(if wind {
+                    0x000F_FC00
+                } else if std::ptr::eq(records, &THUNDER) {
+                    0x3FF0_0000
+                } else {
+                    0x0000_03FF
+                }),
+                blend: Some(0x1000),
+                ..Default::default()
+            };
         }
         _ => {}
     }
@@ -284,6 +315,27 @@ mod tests {
             st.countdown.0 = SPEED_SCALAR;
             let a = element_strike_camera(&mut st, base + 3, ModuleCamSeats::default());
             assert_eq!(a.shot.unwrap().angles[0], 0x180);
+        }
+    }
+
+    /// Arm 1's pass seats the creature and hides the caster; `k = 5`'s takes
+    /// it off and lights the caster in each variant's colour.
+    #[test]
+    fn the_creature_stands_from_arm_one_to_k_five() {
+        let mut st = ModuleCamState::default();
+        st.countdown.0 = SPEED_SCALAR;
+        let held = element_strike_camera(&mut st, 1, ModuleCamSeats::default());
+        assert!(held.hold && !held.seats_creature);
+        st.countdown.0 = 0;
+        let pass = element_strike_camera(&mut st, 1, ModuleCamSeats::default());
+        assert!(pass.seats_creature && pass.flushes_pool);
+        assert_eq!(pass.caster_write.render_flag, Some(0xFF));
+        for (base, word) in [(2u8, 0x3FFu32), (0x32, 0xF_FC00), (0x64, 0x3FF0_0000)] {
+            st.countdown.0 = 0;
+            let a = element_strike_camera(&mut st, base + 5, ModuleCamSeats::default());
+            assert!(a.hides_creature && a.flushes_pool);
+            assert_eq!(a.caster_write.colour, Some(word));
+            assert_eq!(a.caster_write.blend, Some(0x1000));
         }
     }
 

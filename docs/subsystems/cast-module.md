@@ -2894,9 +2894,19 @@ arms last as long as retail's frame step says.
 `0xAF` cuts to the caster, then hides every party seat each pass while TR z creeps.
 `0xB0`..`0xB2` run one body: arm 1 forks on the AI counter `0x801C8FE4`, the roll
 Element Change last accepted, into three six-arm variants that share their shape (the
-camera walks and cuts sit on the same `k`), with only Wind's first walk and first cut
-differing. The body's creature, seated by `FUN_801F19EC` at arm 1's exit, is not
-carried.
+camera walks and cuts sit on the same `k`), with only Wind's first two walks and first cut
+differing.
+
+The Rogue itself is the crystal, and the body stands another creature in for it. Arm 1's
+pass calls `FUN_801F19EC` on the stream of the [group Element Change
+wrote](../formats/summon-readef.md), so a golem takes seat 7 on the caster's seat, flushes
+the pool and hides the crystal (`+0x21C = 0xFF`, `+0x04 = 0`, `0x801F6E90..0x801F6EA0`).
+The group's texture page is what the flame, wind and bolt sheets of arms `k = 1` on
+sample (CLUT row 489, tpage `9`); the engine writes it on the strike's arm 0, standing in
+for the per-turn seed. Arm `k = 5`'s pass flushes again, takes the golem off (node
+`+0x10 |= 8`, HP `0`) and lights the crystal in the element's colour with `+0x0C = 0x1000`
+(`0xFFC00`, `0x3FF00000`, `0x3FF`), the word the hold state `0xFF` keeps until the `0xFF`
+arm clears it.
 
 Arm 1 holds the opening's ray emitter `0x801F8FF0` through its countdown: every
 eleven units its op `0x20` calls `FUN_801F8BF8`'s arm 1, four `0x801F9008` rays on

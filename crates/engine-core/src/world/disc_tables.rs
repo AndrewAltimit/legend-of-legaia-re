@@ -103,6 +103,10 @@ pub struct DiscTables {
     /// ([`crate::battle_sideband_textures::record_cast_sideband_textures`]).
     /// Installed with [`Self::summon_attack_names`]; `None` disc-free.
     pub summon_dat: Option<Arc<[u8]>>,
+    /// `readef.DAT` (PROT 0894), for the group a strike of Element Change's
+    /// element streams ([`crate::battle_sideband_textures::write_readef_group_textures`]).
+    /// Installed with [`Self::summon_dat`]; `None` disc-free.
+    pub readef_dat: Option<Arc<[u8]>>,
     /// The battle **VDF** morph pack `vdf.dat` (PROT 0872, the
     /// `[u32 count][u32 offsets[count]][bodies]` layout of a scene's VDF).
     /// Battle init loads it through the asset dispatcher's VDF case and
@@ -266,6 +270,7 @@ impl DiscTables {
             stage_module_images: std::collections::BTreeMap::new(),
             summon_attack_names: Default::default(),
             summon_dat: None,
+            readef_dat: None,
             battle_vdf: None,
             element_affinity: None,
             battle_camera_heights: None,

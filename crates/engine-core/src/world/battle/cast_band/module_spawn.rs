@@ -44,6 +44,9 @@ impl World {
         });
         self.casting.summon_actor_slot = Some(slot as u8);
         let placed = self.casting.module_cam.creature;
+        // A capture module has no stager: the arm that seats its creature
+        // stood `placed` on the caster.
+        let staged = staged.or_else(|| placed.map(|c| ([c.x, c.y, c.z], c.facing, None::<u8>)));
         let entry = self
             .casting
             .summon_stager

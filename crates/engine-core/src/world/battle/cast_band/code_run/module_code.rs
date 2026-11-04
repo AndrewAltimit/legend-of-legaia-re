@@ -1642,6 +1642,21 @@ impl World {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
         }
+        // PROT 0964's strike `0xFF` arm flushes the pool (`0x801F8854`) and
+        // shows the caster again (`sb zero,0x21c(s7)` at `0x801F88B4`).
+        if entry == 964
+            && phase_entry == legaia_engine_cast::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE
+            && (0xB0..=0xB2).contains(&spell_id)
+        {
+            self.apply_capture_seat_writes(
+                caster_slot,
+                legaia_engine_cast::cast_module_camera::CaptureSeatWrite {
+                    render_flag: Some(0),
+                    ..Default::default()
+                },
+            );
+            self.casting.flush_module_part_pool();
+        }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
         self.battle.cast_ribbons = capture_arm
@@ -1653,6 +1668,36 @@ impl World {
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
+            if arm.element_stream
+                && let Some(readef) = self.tables.readef_dat.clone()
+            {
+                let roll = self.battle.monster_ai_state.counter().clamp(0, 2) as u8;
+                crate::battle_sideband_textures::write_readef_group_textures(
+                    &readef,
+                    legaia_actor_formats::summon_readef::element_strike_group(roll),
+                    &mut self.battle.vram_loads,
+                );
+            }
+            if arm.flushes_pool {
+                self.casting.flush_module_part_pool();
+            }
+            if arm.hides_creature {
+                self.despawn_summon_actor();
+            }
+            if arm.seats_creature
+                && let Some(c) = self.actors.get(usize::from(caster_slot))
+            {
+                let m = &c.move_state;
+                let at = [m.world_x, m.world_y, m.world_z];
+                self.casting.module_cam.creature =
+                    Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                        x: at[0],
+                        y: at[1],
+                        z: at[2],
+                        facing: c.battle.facing_angle & 0xFFF,
+                    });
+                self.casting.pending_summon_spawn = Some((spell_id, at));
+            }
             if !arm.others_write.is_empty() && !capture_held {
                 let monsters = self.party.party_count..self.actors.len() as u8;
                 for slot in 0..self.party.party_count {

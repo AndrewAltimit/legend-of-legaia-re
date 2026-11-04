@@ -749,6 +749,53 @@ pub fn parse_cast(summon_dat: &[u8], spell_id: u8) -> Result<SummonCast> {
     })
 }
 
+/// The `readef.DAT` group PROT 0964's Element Change writes into the first
+/// monster's record: `record[+0x1C] = roll + 0x13` (`addiu v0,v0,0x13` /
+/// `sb v0,0x1c(v1)` at `0x801F8AAC..0x801F8AB4`). Roll `0` / `1` / `2` is Wind /
+/// Thunder / Flame, which is also how the strike body's arm 1 forks.
+pub fn element_strike_group(roll: u8) -> u8 {
+    roll.min(2) + 0x13
+}
+
+/// The creature of a `readef.DAT` group that holds an actor record: slot
+/// `3 * group + 2`, the record `FUN_801F19EC` installs off the stream buffer.
+/// Shaped like a [`parse_cast`], with `spell_id` the action that seats it.
+pub fn parse_readef_creature(readef: &[u8], group: u8, spell_id: u8) -> Result<SummonCast> {
+    let actor_slot = usize::from(group) * 3 + 2;
+    let actor = slot_bytes(readef, actor_slot)?;
+    let rec = actor_record_slot(actor)
+        .ok_or_else(|| anyhow::anyhow!("slot {actor_slot} is not an actor record"))?;
+    let n = texture_pool_extent(actor, rec.texture_pool_offset);
+    let tex_pool = actor
+        .get(rec.texture_pool_offset..rec.texture_pool_offset + n)
+        .unwrap_or_default();
+    let clips = rec
+        .part_offsets
+        .iter()
+        .filter_map(|&off| parse_part_entry(actor, off as usize))
+        .collect();
+    let clip_morphs = cast_clip_morphs(actor, actor, &rec.part_offsets);
+    let mut block = actor.to_vec();
+    let texture_pool_offset = if tex_pool.is_empty() { 0 } else { block.len() };
+    block.extend_from_slice(tex_pool);
+    Ok(SummonCast {
+        spell_id,
+        attack_name: rec.name.clone(),
+        element: actor.get(ACTOR_ELEMENT_OFFSET).copied().unwrap_or(7),
+        bespoke: false,
+        actor_slot,
+        fx_slots: Vec::new(),
+        mesh: MonsterMesh {
+            id: u16::from(spell_id),
+            block,
+            tmd_offset: rec.tmd_offset,
+            texture_pool_offset,
+        },
+        clips,
+        clip_morphs,
+    })
+}
+
 /// The morph table of an actor record: the entries in `part_pool` name lanes
 /// by 1-based index, and the record's offsets past its `+0x4C` table resolve
 /// them, `actor[(index + part_count + 0x12) * 4]` - the monster loader's rule

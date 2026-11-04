@@ -221,17 +221,45 @@ pub fn seat_summon_creature(
             legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
         ))
         .ok();
-    let asset = legaia_engine_effects::summon::summon_spawn_asset(
-        spell_id,
-        archive,
-        summon_dat.as_ref().map(|b| b.as_slice()),
-    )?;
+    // PROT 0964's strikes stand the element's creature off the `readef.DAT`
+    // group Element Change wrote into the record, not a `summon.dat` group.
+    let strike = (0xB0..=0xB2).contains(&spell_id).then(|| {
+        let readef = host
+            .index
+            .entry_bytes(u32::from(
+                legaia_actor_formats::summon_readef::READEF_PROT_INDEX,
+            ))
+            .ok()?;
+        let roll = host.world.battle.monster_ai_state.counter().clamp(0, 2) as u8;
+        legaia_actor_formats::summon_readef::parse_readef_creature(
+            &readef,
+            legaia_actor_formats::summon_readef::element_strike_group(roll),
+            spell_id,
+        )
+        .ok()
+    });
+    let strike = strike.flatten();
+    let asset = match strike.as_ref() {
+        Some(c) => legaia_engine_effects::summon::SummonSpawnAsset {
+            creature_id: None,
+            idle: c.clips.first().cloned(),
+            mesh: c.mesh.clone(),
+            clips: c.clips.clone(),
+        },
+        None => legaia_engine_effects::summon::summon_spawn_asset(
+            spell_id,
+            archive,
+            summon_dat.as_ref().map(|b| b.as_slice()),
+        )?,
+    };
     legaia_tmd::parse(asset.mesh.tmd_bytes()).ok()?;
     // The creature node's size `+0x58`, which the seat installer takes from
     // the cast's own actor record (`+0x1F << 5`, `0x801F1DE4..0x801F1DF0`).
-    let cast = summon_dat
-        .as_ref()
-        .and_then(|b| legaia_actor_formats::summon_readef::parse_cast(b, spell_id).ok());
+    let cast = strike.or_else(|| {
+        summon_dat
+            .as_ref()
+            .and_then(|b| legaia_actor_formats::summon_readef::parse_cast(b, spell_id).ok())
+    });
     let body_radius = cast
         .as_ref()
         .and_then(|c| c.mesh.block.get(SUMMON_RECORD_SIZE_CLASS).copied())

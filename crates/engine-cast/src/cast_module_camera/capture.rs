@@ -33,6 +33,17 @@ pub struct CaptureDrift {
 /// What a capture module's camera does on one pass of one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureCamArm {
+    /// The arm's pass calls the seat installer `FUN_801F19EC`: the stream's
+    /// record stands as seat 7, on the caster.
+    pub seats_creature: bool,
+    /// The arm's pass takes the seat off: node `+0x10 |= 8`, HP `0`, colour `0`.
+    pub hides_creature: bool,
+    /// The arm's pass halts the part pool (`FUN_80050E74`), for a module whose
+    /// arm numbers mean different arms under another action.
+    pub flushes_pool: bool,
+    /// The cast opens on a stream the caster's turn made: its `readef.DAT`
+    /// group's texture pages are in VRAM.
+    pub element_stream: bool,
     /// The `FUN_801D829C` call the arm makes, if any.
     pub shot: Option<ModuleShot>,
     /// The drift the arm adds to the globals, if any.
@@ -201,6 +212,8 @@ pub struct CaptureSeatWrite {
     pub dy: i16,
     pub facing: Option<u16>,
     pub colour: Option<u32>,
+    /// The tint weight `+0x0C` the colour word draws under.
+    pub blend: Option<u32>,
     pub render_flag: Option<u8>,
     pub cursor_reset: bool,
     /// A store into the seat's node cursor `+0x68` (12.4).

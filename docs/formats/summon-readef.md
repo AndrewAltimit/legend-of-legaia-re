@@ -561,11 +561,16 @@ no word / `j` / branch / materialisation), and slot B is loaded for the
 `summon.dat` bands. So on a readef-band cast the `base+1` actor record
 arrives in `*0x8007BD74` and nothing reads it.
 
-**No monster names those three groups.** The census below sweeps every
-LZS-decoded record in the PROT 0867 archive: `+0x1C` never takes the values
-19, 20 or 21, so the per-turn seed cannot reach bases `0x39` / `0x3C` /
-`0x3F` at all, and the duplicated actor records in slots 58 / 61 / 64 are
-unreachable through the enemy path.
+**No record on the disc names those three groups, and Element Change writes them.**
+The census below sweeps every LZS-decoded record in the PROT 0867 archive: `+0x1C` never
+takes the values 19, 20 or 21. PROT 0964's `0xAF` body stores it at runtime:
+`record[+0x1C] = roll + 0x13` on the first monster's record
+(`addiu v0,v0,0x13` / `sb v0,0x1c(v1)` at `0x801F8AAC..0x801F8AB4`), so the Rogue's next
+turn streams base `0x39` / `0x3C` / `0x3F` for Wind / Thunder / Flame. A strike's arm 1
+then calls `FUN_801F19EC` on that buffer: group 21's stone golem is what stands on the
+Rogue's seat through Rogue Flame (`ram` of a `rugi_rogue_pre_rogue_flame` run reads
+`ctx[+0x277] = 63`, enemy record `+0x1C = 21`, and `0x801C9358` equal to the stream
+buffer). Parser: `summon_readef::parse_readef_creature`.
 
 ### Which monsters name which readef group
 

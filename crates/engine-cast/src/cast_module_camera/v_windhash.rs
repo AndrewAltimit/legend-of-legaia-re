@@ -51,6 +51,7 @@ const EMPTY_WRITE: CaptureSeatWrite = CaptureSeatWrite {
     dy: 0,
     facing: None,
     colour: None,
+    blend: None,
     render_flag: None,
     cursor_reset: false,
     seek: None,
