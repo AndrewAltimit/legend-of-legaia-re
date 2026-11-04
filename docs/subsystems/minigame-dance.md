@@ -597,7 +597,13 @@ A follower's loop sets how far it can stand behind the leader. Most run `20 0 _,
 
 The init loads the art pack only with the field-entry word `_DAT_8007B8B8` clear (`lw` at `0x801CF190`, `bne` at `0x801CF198`, `jal 0x8002541C` at `0x801CF1A0`). A door entry has the word up, so the hall stands on the VRAM `koin3` left, and the tree's op `0x2C`s capture their cells from there. `koin3` runs cyclers on the same cells, so what they capture is whatever strobe the field last painted, not the disc's palette. In the three retail count-in states the floor's captured entries read `0xB484, 0xB4A3, 0xB483` where the disc's palette has `0x99F4, 0x95B4, 0x95D4`: the disc's orange floor, turned to blue and darkened. Every later hue the hall shows is a rotation of that paint, so the hall's colours depend on the frame the player left the field on.
 
-Port: `World::carry_walked_in_cells`, called by both hosts just before `stage_dance_ambient`, copies each cell the walked-in scene's cyclers paint into the hall's VRAM. The rest of the hall's VRAM stays the venue build's. Retail's VRAM also carries a white-keyed `64 x 128` block at `(384, 128)` the port's does not, and nothing the count-in draws samples it.
+Port: `World::carry_walked_in_cells`, called by both hosts just before `stage_dance_ambient`, copies each cell the walked-in scene's cyclers paint into the hall's VRAM. The rest of the hall's VRAM stays the venue build's. The same call copies the drop shadow's boot-resident blob and palette, which the venue build does not hold. Retail's VRAM also carries a white-keyed `64 x 128` block at `(384, 128)` the port's does not.
+
+### The stage lamps
+
+The stage's front riser is two coplanar layers of one mesh: an opaque base (`0x7EC0`) and an additive lamp sheet (`0x7E84`, ABR `1`, a `(64, 506)` cycler cell). The sheet comes first in the mesh, and a later prim links ahead of an earlier one in its ordering-table bucket, so the base draws first and the sheet lands on it. `legaia_tmd::mesh::separate_coplanar_prims` follows that order between equal areas.
+
+The floor's three dancers carry the placement class bit (flags `0x8020880`), so retail's table holds their drop shadows too; `World::field_drop_shadows` builds them on retail's corners, and the hall's floor currently hides them ([open threads](../reference/open-rev-eng-threads.md)).
 
 ## HUD
 
