@@ -73,8 +73,17 @@ impl World {
                 spell_id,
                 mut targets,
             } => {
-                // A confused caster's spell lands on the opposite side.
-                self.confuse_retarget_cast(slot, &mut targets);
+                let group = self.monster_cast_def(spell_id).is_some_and(|d| {
+                    matches!(
+                        d.target,
+                        legaia_engine_battle::spells::SpellTarget::AllEnemies
+                            | legaia_engine_battle::spells::SpellTarget::AllAllies
+                    )
+                });
+                if !self.confuse_retarget_cast(slot, group, &mut targets) {
+                    self.arm_party_no_command(slot);
+                    return;
+                }
                 // The seed is spent by the cast it names.
                 if self.battle.forced_monster_cast == Some((slot, spell_id)) {
                     self.battle.forced_monster_cast = None;

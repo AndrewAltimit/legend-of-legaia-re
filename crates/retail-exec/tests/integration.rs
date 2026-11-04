@@ -10,6 +10,7 @@ mod battle_item;
 mod battle_seed;
 mod cast_damage;
 mod common;
+mod confuse;
 mod death_spoils;
 mod encounter_roll;
 mod escape;

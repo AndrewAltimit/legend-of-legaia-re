@@ -174,3 +174,8 @@ mode, where a reach stands until its jackpot lands and hot mode ends on a one-in
 draw; the winning line taken by best payout, where retail keeps the highest symbol id; a
 stop always reaching its landing row, where the budget can leave the reel short of it; and
 the per-frame LCG draw missing, so a stop's landing never depended on when it was pressed.
+
+The seed's retarget `FUN_801E7320` found a confused monster in a party of two misreading
+its own band's first seat as a party seat, the gate reading the typed list where retail
+masks `0x380`, and a confused cast always crossing sides: in retail a group cast crosses
+one time in three and comes to nothing the other two.

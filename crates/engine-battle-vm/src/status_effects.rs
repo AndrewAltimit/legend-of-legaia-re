@@ -734,6 +734,10 @@ pub mod display_flags {
     /// passive, not an ailment, so a full cure does not lift it.
     pub const AILMENT_MASK: u16 = 0x1C7F;
 
+    /// The group the seed sends to the retarget `FUN_801E7320` (`andi 0x380` at
+    /// `0x801E2C94`).
+    pub const CONFUSE_GROUP: u16 = 0x0380;
+
     /// The bits taking damage clears (`FUN_801EC3E4` `0x801EDA5C`:
     /// `andi 0xF07F` on the damaged actor's word). Sleep, Numb and the
     /// whole delegation group - the "wakes when hit" family.

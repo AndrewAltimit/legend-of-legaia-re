@@ -386,11 +386,9 @@ impl World {
     /// dead), matching retail's structure; no-op when `slot` isn't confused.
     ///
     /// Retail triggers the resolver off the actor's `+0x16E` status word
-    /// (`field_flags & 0x380`); the engine bridges directly from
-    /// [`StatusKind::Confuse`] instead, since the bit-set site is the still-open
-    /// capture thread and the engine tracks status by kind. Wired for both the
-    /// monster physical strike ([`Self::take_monster_turn`]); the party-side
-    /// callers (the plain strike, the AI companion) are no-ops here.
+    /// (`& 0x380`, `0x801E2C94`). Wired for the monster physical strike
+    /// ([`Self::take_monster_turn`]); the party-side callers (the plain strike,
+    /// the AI companion) are no-ops here.
     /// Confused monster *casts* flip via [`Self::confuse_retarget_cast`] (the
     /// cast path resolves a targets `Vec` rather than `active_target`).
     ///
@@ -402,54 +400,67 @@ impl World {
         if slot < self.party.party_count {
             return;
         }
-        if self.battle.actor_is_confused(slot) {
+        if self.raw_status_word(slot)
+            & legaia_engine_battle_vm::status_effects::display_flags::CONFUSE_GROUP
+            != 0
+        {
             self.resolve_monster_target(slot);
         }
     }
 
-    /// Confuse retarget for a *cast*: a confused caster's spell lands on the
-    /// opposite side (uncontrollably), mirroring the physical retarget. The
-    /// engine's monster cast resolves targets into a `Vec` (not the single
-    /// `active_target` byte `FUN_801E7320` rewrites), so this flips the whole
-    /// list: a single-target cast picks one random living member of the opposite
-    /// side (one RNG draw); an area cast hits every living member there. A
-    /// self-only cast is left as-is, and the flip is skipped when the opposite
-    /// side has no living member. No-op when `caster` isn't confused.
+    /// The seed's retarget for a *cast*: the same `FUN_801E7320`, over the target
+    /// byte the cast stands on. A single target crosses to a living seat of the
+    /// other side, a self-cast included, and a cast that lands on the caster
+    /// itself comes to nothing. A group cast crosses one time in three and comes
+    /// to nothing the other two. Returns whether the cast stands.
     ///
-    /// Monster-only: a confused party member's committed cast keeps its
-    /// targets.
-    pub(in crate::world) fn confuse_retarget_cast(&mut self, caster: u8, targets: &mut Vec<u8>) {
-        // Monster seats only, as `maybe_confuse_retarget`.
-        if caster < self.party.party_count {
-            return;
-        }
-        if !self.battle.actor_is_confused(caster) || targets.is_empty() {
-            return;
-        }
-        // A self-only cast (e.g. a self-buff) isn't a side-flip target.
-        if targets.len() == 1 && targets[0] == caster {
-            return;
-        }
+    /// Monster seats only, as [`Self::maybe_confuse_retarget`].
+    pub(in crate::world) fn confuse_retarget_cast(
+        &mut self,
+        caster: u8,
+        group: bool,
+        targets: &mut Vec<u8>,
+    ) -> bool {
+        use legaia_engine_battle_vm::status_effects::display_flags::CONFUSE_GROUP;
+        const ALL_PARTY: u8 = 8;
+        const ALL_MONSTERS: u8 = 9;
         let pc = self.party.party_count.max(1);
-        let n = self.actors.len() as u8;
-        let opposite_is_monster = targets[0] < pc;
-        let opp = if opposite_is_monster { pc..n } else { 0..pc };
-        let living: Vec<u8> = opp
-            .filter(|&s| {
-                self.actors
-                    .get(s as usize)
-                    .is_some_and(|a| a.battle.liveness != 0)
-            })
-            .collect();
-        if living.is_empty() {
-            return;
+        if caster < pc || self.raw_status_word(caster) & CONFUSE_GROUP == 0 || targets.is_empty() {
+            return true;
         }
-        if targets.len() == 1 {
-            let pick = living[(self.next_rand() as usize) % living.len()];
-            *targets = vec![pick];
-        } else {
-            *targets = living;
+        let class = match (group, targets[0] < pc) {
+            (false, _) => targets[0],
+            (true, true) => ALL_PARTY,
+            (true, false) => ALL_MONSTERS,
+        };
+        if let Some(a) = self.actors.get_mut(usize::from(caster)) {
+            a.battle.active_target = class;
+            a.battle.action_category = 2;
         }
+        self.resolve_monster_target(caster);
+        let Some(a) = self.actors.get(usize::from(caster)) else {
+            return true;
+        };
+        if a.battle.action_category == 0 {
+            return false;
+        }
+        let picked = a.battle.active_target;
+        let side = match picked {
+            ALL_PARTY => Some(0..pc),
+            ALL_MONSTERS => Some(pc..self.actors.len() as u8),
+            _ => None,
+        };
+        *targets = match side {
+            Some(seats) => seats
+                .filter(|&s| {
+                    self.actors
+                        .get(usize::from(s))
+                        .is_some_and(|a| a.battle.liveness != 0)
+                })
+                .collect(),
+            None => vec![picked],
+        };
+        !targets.is_empty()
     }
 }
 

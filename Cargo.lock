@@ -3172,6 +3172,7 @@ version = "0.1.0"
 dependencies = [
  "legaia-actor-formats",
  "legaia-art",
+ "legaia-container-formats",
  "legaia-disc-patch",
  "legaia-engine-battle",
  "legaia-engine-battle-loop",
@@ -3181,9 +3182,12 @@ dependencies = [
  "legaia-engine-menus",
  "legaia-engine-minigames",
  "legaia-engine-system",
+ "legaia-engine-vm",
  "legaia-game-tables",
+ "legaia-lzs",
  "legaia-minigame-formats",
  "legaia-save",
+ "legaia-scene-formats",
 ]
 
 [[package]]

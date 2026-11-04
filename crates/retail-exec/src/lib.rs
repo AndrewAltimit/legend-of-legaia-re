@@ -60,6 +60,7 @@ pub const SP: usize = 29;
 pub const RA: usize = 31;
 
 /// Flat RAM plus the scratchpad.
+#[derive(Clone)]
 pub struct Memory {
     ram: Vec<u8>,
     scratch: Vec<u8>,
@@ -149,6 +150,10 @@ pub struct Cpu {
     /// The instruction budget of one call, `0` for the default. A test whose
     /// routine can spin for ever lowers it to reach that verdict sooner.
     pub step_budget: u64,
+    /// When set, a call that lands outside this VA range returns at once with
+    /// `v0 = 0`, for a large routine whose calls are all side effects. A hook
+    /// still wins.
+    pub stub_outside: Option<(u32, u32)>,
 }
 
 impl Cpu {
@@ -206,6 +211,14 @@ impl Cpu {
             if let Some(mut h) = self.hooks.remove(&pc) {
                 h(&mut self.regs, &mut self.mem);
                 self.hooks.insert(pc, h);
+                pc = self.regs.r[RA];
+                next = pc.wrapping_add(4);
+                continue;
+            }
+            if let Some((lo, hi)) = self.stub_outside
+                && !(lo..hi).contains(&pc)
+            {
+                self.regs.r[V0] = 0;
                 pc = self.regs.r[RA];
                 next = pc.wrapping_add(4);
                 continue;

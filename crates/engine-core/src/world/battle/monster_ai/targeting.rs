@@ -132,12 +132,11 @@ impl World {
     /// `field_flags & 0x380` set (the confuse-class statuses). The engine doesn't
     /// model that bitfield, so [`Self::maybe_confuse_retarget`] bridges directly
     /// from [`StatusKind::Confuse`] and calls this on the monster physical-strike
-    /// path. (Side detection assumes the retail 3-slot party layout - correct for
-    /// a full party; a reduced party + confused monster is a pre-existing edge.)
+    /// path.
     ///
     /// PORT: FUN_801E7320
     /// REF: FUN_801E295C
-    pub(in crate::world) fn resolve_monster_target(&mut self, slot: u8) {
+    pub fn resolve_monster_target(&mut self, slot: u8) {
         let pc = self.party.party_count.max(1);
         // `ctx[+1]`: the seats battle load filled on the monster side.
         let mc = self
@@ -162,7 +161,8 @@ impl World {
                 a.battle.active_target = slot;
             }
         };
-        if class < 3 {
+        // Retail's `< 3` is the party's seats, wherever a small party ends.
+        if class < pc {
             // Target a living monster (the caster's own band).
             loop {
                 let t = (self.next_rand() % mc as u32) as u8 + pc;
