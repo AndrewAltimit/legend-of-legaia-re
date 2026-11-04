@@ -64,6 +64,9 @@
     "battle_balden_devil_pump_strike": {
       "battle_track": 1.0
     },
+    "battle_balden_orb_v2_hyper_heal_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_balden_orb_v2_jewel_beam_mid_cast": {
       "battle_track": 1.0
     },
@@ -77,6 +80,33 @@
       "battle_track": 1.0
     },
     "battle_balden_verial_cross_beam_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_bubu2_sorcerer_strike": {
+      "battle_track": 1.0
+    },
+    "battle_bubu2_spoon_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_bubu2_wailing_bird_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_bylon_gimard_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_bylon_gimard_v2_tail_fire_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_bylon_theeder_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_bylon_theeder_v2_thunderbolt_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_cave01_blue_piura_strike": {
+      "battle_track": 1.0
+    },
+    "battle_cave01_mushroom_strike": {
       "battle_track": 1.0
     },
     "battle_chitei2_gilium_strike": {
@@ -106,6 +136,12 @@
     "battle_deene_neo_bison_strike": {
       "battle_track": 1.0
     },
+    "battle_deroa_iota_v2_paralyzing_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_deroa_iota_v2_strike": {
+      "battle_track": 1.0
+    },
     "battle_deroa_spoon_v2_hyper_heal_mid_cast": {
       "battle_track": 1.0
     },
@@ -121,6 +157,15 @@
     "battle_dohaty_nova_v2_strike": {
       "battle_track": 1.0
     },
+    "battle_dolk_drake_ghost_strike": {
+      "battle_track": 1.0
+    },
+    "battle_dolk_drake_ghost_windhash_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_dolk_skeleton_strike": {
+      "battle_track": 1.0
+    },
     "battle_doman_freed_strike": {
       "battle_track": 1.0
     },
@@ -133,10 +178,85 @@
     "battle_doman_killer_wolf_terror_scream_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_garmel_songi_hyper_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_garmel_songi_strike": {
+      "battle_track": 1.0
+    },
+    "battle_geremi_kabuki_rat_steal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_geremi_kabuki_rat_strike": {
+      "battle_track": 1.0
+    },
+    "battle_geremi_ogre_strike": {
+      "battle_track": 1.0
+    },
     "battle_gimard_tail_fire_a": {
       "battle_track": 1.0
     },
     "battle_gimard_tail_fire_b": {
+      "battle_track": 1.0
+    },
+    "battle_jou_aluru_v3_aluru_cannon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_aluru_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_barra_v3_multi_cutter_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_barra_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_freed_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_freed_v3_water_crystals_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gimard_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gimard_v3_tail_flare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gizam_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gizam_v3_water_column_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gizam_v3_water_hazard_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gola_gola_v3_rolling_flare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_gola_gola_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_iota_v3_paralyzing_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_iota_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_kemaro_v3_lava_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_kemaro_v3_steal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_kemaro_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_mushura_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_nighto_v3_eye_beam_mid_cast": {
       "battle_track": 1.0
     },
     "battle_jou_nova_v3_scythe_wind_mid_cast": {
@@ -149,6 +269,60 @@
       "battle_track": 1.0
     },
     "battle_jou_orb_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_puera_v3_death_game_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_puera_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_slippery_v3_big_wave_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_slippery_v3_moldy_breath_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_slippery_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_spoon_v3_hyper_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_spoon_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_spoon_v3_white_shield_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_swordie_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_swordie_v3_vacuum_slicer_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_theeder_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_theeder_v3_thunder_blast_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_vera_v3_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_vera_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_viguro_v3_strike": {
+      "battle_track": 1.0
+    },
+    "battle_jou_viguro_v3_thunder_burst_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_zenoir_v3_grand_claw_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_jou_zenoir_v3_strike": {
       "battle_track": 1.0
     },
     "battle_jouind_gilium_lv3_strike": {
@@ -214,10 +388,37 @@
     "battle_map01_gobu_gobu_strike": {
       "battle_track": 1.0
     },
+    "battle_map01_gomboo_steal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map01_gomboo_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map01_green_slime_divide_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_map01_lippian_kiss_of_death_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_map01_ostrich_strike": {
+      "battle_track": 1.0
+    },
     "battle_map02_demon_fly_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_hell_s_trigger_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_high_gomboo_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map02_high_gomboo_steal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map02_high_gomboo_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_killer_bison_strike": {
       "battle_track": 1.0
     },
     "battle_map02_mad_ogre_power_charge_mid_cast": {
@@ -226,16 +427,82 @@
     "battle_map02_mad_ogre_strike": {
       "battle_track": 1.0
     },
+    "battle_map02_oak_slime_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_ogre_power_charge_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map02_poisonous_worm_strike": {
+      "battle_track": 1.0
+    },
     "battle_map02_wolf_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map02_wolf_terror_scream_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map03_acid_slime_divide_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map03_acid_slime_melt_spray_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map03_acid_slime_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_dark_ogre_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_death_trigger_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_giant_rat_steal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map03_giant_rat_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_gold_bison_strike": {
       "battle_track": 1.0
     },
     "battle_map03_grude_strike": {
       "battle_track": 1.0
     },
+    "battle_map03_heavy_grude_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_map03_heavy_grude_strike": {
       "battle_track": 1.0
     },
+    "battle_map03_high_mantis_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_moldy_worm_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_scale_lizard_earthquake_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_map03_speed_wolf_strike": {
+      "battle_track": 1.0
+    },
+    "battle_map03_speed_wolf_terror_scream_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_melee_hit_spark": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_aluru_v2_aluru_cannon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_aluru_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_amethyst_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_amethyst_strike": {
       "battle_track": 1.0
     },
     "battle_nilboa_lava_face_fissure_mid_cast": {
@@ -254,6 +521,9 @@
       "battle_track": 1.0
     },
     "battle_nilboa_rock_lizard_earthquake_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_nilboa_warfish_strike": {
       "battle_track": 1.0
     },
     "battle_noaru_barra_v2_multi_cutter_mid_cast": {
@@ -275,6 +545,9 @@
       "battle_track": 1.0
     },
     "battle_noaru_slippery_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_retockin_evil_shadow_fatal_decision_mid_cast": {
       "battle_track": 1.0
     },
     "battle_retockin_evil_shadow_strike": {
@@ -302,6 +575,12 @@
       "battle_track": 1.0
     },
     "battle_retona_viguro_lv2_thunder_break_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rikuroa2_pump_bat_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rikuroa2_vera_strike": {
       "battle_track": 1.0
     },
     "battle_rikuroa_caruban_fire_breath_mid_cast": {
@@ -337,6 +616,21 @@
     "battle_rugi_barra_windcutter_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_rugi_gola_gola_v2_rolling_flare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_gola_gola_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_iota_strike": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_puera_v2_death_game_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_rugi_puera_v2_strike": {
+      "battle_track": 1.0
+    },
     "battle_rugi_rogue_element_change_mid_cast": {
       "battle_track": 1.0
     },
@@ -353,6 +647,27 @@
       "battle_track": 1.0
     },
     "battle_rugi_slippery_strike": {
+      "battle_track": 1.0
+    },
+    "battle_stone_gizam_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_stone_gizam_v2_water_column_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_stone_zenoir_v2_fire_claw_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_stone_zenoir_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_mushura_v2_strike": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_puera_death_game_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_puera_strike": {
       "battle_track": 1.0
     },
     "battle_taiku_terror_face_fissure_mid_cast": {
@@ -397,6 +712,9 @@
     "battle_tower_swordie_strike": {
       "battle_track": 1.0
     },
+    "battle_tunnela_mad_bird_power_up_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_tunnelb_gel_frog_strike": {
       "battle_track": 1.0
     },
@@ -412,13 +730,28 @@
     "battle_tunnelb_warman_strike": {
       "battle_track": 1.0
     },
+    "battle_tunnelc_freed_strike": {
+      "battle_track": 1.0
+    },
+    "battle_tunnelc_freed_water_crystals_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_vozz_gizam_strike": {
       "battle_track": 1.0
     },
     "battle_vozz_gizam_water_column_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_vozz_mushrin_strike": {
+      "battle_track": 1.0
+    },
     "battle_vozz_twin_tomb_strike": {
+      "battle_track": 1.0
+    },
+    "battle_vozz_viguro_strike": {
+      "battle_track": 1.0
+    },
+    "battle_vozz_viguro_thunder_break_mid_cast": {
       "battle_track": 1.0
     },
     "bubu1_field_door_hop": {
@@ -1232,9 +1565,10 @@
       "track": 1.0
     },
     "station_field_door_hop": {
-      "playing": 0.0,
+      "playing": 1.0,
+      "seq_vol": 1.0,
       "tempo": 1.0,
-      "track": 0.0
+      "track": 1.0
     },
     "stone_field_door_hop": {
       "playing": 1.0,
