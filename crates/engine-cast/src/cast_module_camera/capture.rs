@@ -325,7 +325,8 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
         0x5F => Some(0x801F_9018),
         0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),
-        0x70 => Some(super::KISS_OF_DEATH_COUNTDOWN),
+        // PROT 0955's cell shares the word (`lui 0x801F` / `-0x62D8`).
+        0x70 | 0x73 => Some(super::KISS_OF_DEATH_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),

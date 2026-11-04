@@ -202,3 +202,36 @@ fn magic_cast_begin_half_takes_priority_over_quarter() {
     assert_eq!(host.actors[1].mp, 80);
     assert_eq!(host.actors[1].last_mp_cost, 20);
 }
+
+/// `FUN_801DC0A0`'s arms that read `ctx[+0x6D0]` run the target-size framing
+/// first, on the byte `0x28` has by then rewritten: a group code seeds at the
+/// floor, and the lone survivor's slot gives the caster's own bulk from the
+/// first such pass on. The arms that never read the depth leave it alone.
+#[test]
+fn the_cast_driver_reframes_the_depth_on_the_rewritten_target() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    host.party_count = 1;
+    host.size_classes.insert(1, 0x2E);
+    host.actors[1].active_target = 0;
+    ctx.active_actor = 1;
+    ctx.camera_frame_height = 0xC00;
+    host.actors[1].params[0] = 0x25;
+    host.actors[1].params[1] = 9;
+    host.actors[1].params[2] = 8;
+    host.actors[1].params[3] = 0xFF;
+    host.actors[1].strike_index = 2;
+    ctx.action_state = ActionState::MagicSustain.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_frame_height, 0xC00, "arm 8 reads no depth");
+
+    host.actors[1].params[2] = 0xA;
+    ctx.action_state = ActionState::MagicSustain.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_frame_height, 0x1400);
+
+    // On a group code the same run floors it: the outer gate at `0x801F037C`.
+    host.actors[1].active_target = 8;
+    ctx.action_state = ActionState::MagicSustain.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_frame_height, 0xC00);
+}

@@ -131,6 +131,38 @@ fn retarget_item_codes<H: BattleActionHost + ?Sized>(host: &mut H, ctx: &BattleA
     }
 }
 
+/// One call of the cast-effect driver `FUN_801DC0A0` from the magic band.
+///
+/// Seven of its arms open on the target-size framing `FUN_801F0348` before
+/// they read `ctx[+0x6D0]` ([`spell_cam_refreshes_depth`]). The action seed's
+/// own run reads the byte the picker left, so a group code `8` frames at the
+/// floor; `0x28` has since rewritten that code to the lone survivor's slot,
+/// and this re-run is the one that sees it. A solo Vahn's Caruban casts Fire
+/// Breath at `0x1400` from here on, the depth the Done band still holds.
+///
+/// REF: FUN_801DC0A0 (`jal 0x801f0348` at `0x801DC478`, `0x801DC6F0`,
+/// `0x801DC898`, `0x801DC99C`, `0x801DCB18`, `0x801DCC90`, `0x801DCDA0`)
+fn cast_effect_driver<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    slot: u8,
+    case: u8,
+) {
+    let target = host.actor(slot).map_or(8, |a| a.active_target);
+    if crate::battle_cam_script::spell_cam_refreshes_depth(case, target) {
+        let party_count = host.party_count();
+        let height = crate::battle_formulas::camera_height_for_frame(
+            ctx.active_actor,
+            target,
+            party_count,
+            |s| host.monster_size_class(s),
+        );
+        ctx.camera_frame_height = height;
+        host.camera_frame_height(height);
+    }
+    host.spell_anim_sustain(slot, case);
+}
+
 pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -264,7 +296,7 @@ pub(super) fn magic_pre_cast_wait<H: BattleActionHost + ?Sized>(
             }
             None => 0xFF,
         };
-        host.spell_anim_sustain(slot, effect_byte);
+        cast_effect_driver(host, ctx, slot, effect_byte);
         if let Some(actor) = host.actor_mut(slot) {
             actor.spell_iter = actor.spell_iter.saturating_add(1);
             actor.flag_bits.set(ActorFlags::WINDUP_DONE);
@@ -337,7 +369,7 @@ pub(super) fn magic_anim_chain<H: BattleActionHost + ?Sized>(
     }
     let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
     let shot = queue_byte(host, slot, cursor.wrapping_sub(2));
-    host.spell_anim_sustain(slot, shot);
+    cast_effect_driver(host, ctx, slot, shot);
     stay(ctx)
 }
 
@@ -358,7 +390,7 @@ pub(super) fn magic_sustain<H: BattleActionHost + ?Sized>(
     } else {
         queue_byte(host, slot, cursor.wrapping_sub(2))
     };
-    host.spell_anim_sustain(slot, shot);
+    cast_effect_driver(host, ctx, slot, shot);
     let iter_done = host.actor(slot).map(|a| a.spell_iter == 0).unwrap_or(false);
     if !iter_done {
         return stay(ctx);
@@ -381,7 +413,7 @@ pub(super) fn magic_hit_loop<H: BattleActionHost + ?Sized>(
     let slot = ctx.active_actor;
     let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
     let shot = queue_byte(host, slot, cursor);
-    host.spell_anim_sustain(slot, shot);
+    cast_effect_driver(host, ctx, slot, shot);
     // Exit when current anim is 0 OR hit_counter >= bound (and bound != 0).
     let (current, bound) = host
         .actor(slot)
@@ -404,7 +436,7 @@ pub(super) fn magic_recovery<H: BattleActionHost + ?Sized>(
         // driver keeps filming on the byte under the cursor.
         let cursor = host.actor(slot).map_or(0, |a| usize::from(a.strike_index));
         let shot = queue_byte(host, slot, cursor);
-        host.spell_anim_sustain(slot, shot);
+        cast_effect_driver(host, ctx, slot, shot);
         return stay(ctx);
     }
     if let Some(actor) = host.actor_mut(slot) {

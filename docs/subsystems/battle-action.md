@@ -612,6 +612,17 @@ TR z `3353`), and its screen shows the wider case-6 view of the whole party
 case 7's pose, one accumulator step closer). The port arms the shot on the same pass
 (`BattleCamera::spell_shot_armed_at` records it).
 
+**The depth the driver reads.** Arms `7`, `0xA`, `0xC`, `0xE`, `0x11` and `0x13`,
+and arm `4` on a slot target, open on the target-size framing
+(`jal 0x801F0348` at `0x801DC6F0`, `0x801DC898`, `0x801DC99C`, `0x801DCB18`,
+`0x801DCC90`, `0x801DCDA0`, `0x801DC478`), and what they store is still in
+`ctx[+0x6D0]` when the Done band frames. The seed's run read the picker's byte, so a
+group code `8` framed at the `0xC00` floor; `0x28` has since rewritten that code
+to a lone survivor's slot (`ctx[+0x24A] - 1`), so this run takes the caster's size.
+Caruban's Fire Breath on a solo Vahn holds the seed's `0xC00` through `0x29` and
+`0x1400` from the first `0x2B` pass: the retail recording's TR z reads `10240`
+there and `8192` in the Done band. Port: `battle_action::magic::cast_effect_driver`.
+
 The turning cases `3`, `5`, `0xE` and `0x10` aim the live yaw a fixed step
 on every pass, so their yaw has no endpoint of its own: where it stands is
 how long the shot has turned from the yaw case 6 left
