@@ -587,3 +587,14 @@ fn load_field_collision_grid_pads_short_input() {
         "row-1 wall from the short input"
     );
 }
+
+#[test]
+fn the_player_draws_ten_buckets_nearer_off_a_visible_floor_cell() {
+    // `FUN_80019278`: a cell without bit `0x1000` raises `+0x10 & 0x800000`.
+    let mut world = World::new();
+    world.terrain.object_cells = vec![0x1000; 0x4000];
+    assert!(!world.player_near_buckets(300, 300));
+    world.terrain.object_cells[2 + 2 * 0x80] = 0x0800;
+    assert!(world.player_near_buckets(300, 300));
+    assert!(!world.player_near_buckets(-1, 300));
+}

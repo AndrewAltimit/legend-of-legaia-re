@@ -67,6 +67,10 @@ pub(super) struct DrawLists<'m> {
     pub color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
     /// Per-draw NCLIP words by colour draw index.
     pub color_nclip_marks: Vec<(usize, u32)>,
+    /// `DRAW_ORDER_*` words by textured draw index.
+    pub order_marks: Vec<(usize, u8)>,
+    /// `DRAW_ORDER_*` words by colour draw index.
+    pub color_order_marks: Vec<(usize, u8)>,
 }
 
 /// The per-draw cues every mode's pass shares: the player's op-`4C 81` tint
@@ -142,6 +146,8 @@ impl<'m> DrawCtx<'_, 'm> {
             nclip_marks: Vec::new(),
             color_clip_marks: Vec::new(),
             color_nclip_marks: Vec::new(),
+            order_marks: Vec::new(),
+            color_order_marks: Vec::new(),
         };
         // Object-effect clips (a raised `+0x42`, field-VM `4C C2`): the
         // draw indices that carry one, staged on the renderer below.

@@ -943,18 +943,7 @@ The flagged cells are mostly large slabs: `koin1`'s overhead boards over the
 Sol Tower lobby (meshes `96` and `106`, records `0x813` / `0x817`),
 `taiku2`'s throne dais and steps (`0x812`), cells in `town01` and `teien`.
 
-**Not ported.** The port draws these cells at their own per-pixel depth. A
-whole-mesh emulation (each flagged draw rasterised at the depth of its
-mesh's farthest bounding corner, the model for lights and shadows still
-recovered from the unseated matrix) changes `koin1`, `town01`, `teien` and
-`taiku2` frames, but no retail capture of those views is in hand to say it
-matches retail better than per-pixel depth does. Per-prim keying, which
-retail does, needs every prim's corner depths in the vertex stage. Seating
-the depth by baking it into a draw's `mvp`, as the battle ground grid's
-`pin_to_far_bucket` does, also corrupts the `view_proj^-1 * mvp` model
-recovery the point-light and shadow passes read, which darkens the whole
-frame through bogus shadow casters. Any port of this rule has to carry the
-seated clip matrix beside the draw's own `mvp`.
+The port takes the rule in PSX mode through `DRAW_ORDER_FAR_CORNER`, with the rest of the field's linking ([renderer-port](renderer-port.md#the-field-sorts-by-each-primitives-link)).
 
 ## The billboard projector (`FUN_800195A8`)
 

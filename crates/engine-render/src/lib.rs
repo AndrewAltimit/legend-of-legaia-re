@@ -27,6 +27,14 @@
 /// a battle shell prim by, so a large quad sorts as one piece.
 pub const DRAW_WORD_MEAN_DEPTH: u32 = 0x100;
 
+/// [`Renderer::set_draw_order`]: this draw's primitives sort at their
+/// farthest corner rather than their mean (colour word bit `0x10000000`,
+/// an object record's flag `0x800`).
+pub const DRAW_ORDER_FAR_CORNER: u8 = 1;
+/// [`Renderer::set_draw_order`]: this draw links ten ordering-table buckets
+/// nearer (`actor[+0x10] & 0x80800000`).
+pub const DRAW_ORDER_NEAR_BUCKETS: u8 = 2;
+
 pub mod actor_bind;
 pub mod actor_cull;
 pub mod battle_intro;

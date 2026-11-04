@@ -343,6 +343,8 @@ impl Renderer {
         let (clips_textured, clips_color) = self.draw_clips.borrow().clone();
         let nclip_textured = self.draw_nclip.borrow().clone();
         let nclip_color = self.color_draw_nclip.borrow().clone();
+        let (order_textured, order_color) = self.draw_order.borrow().clone();
+        let field_prim_order = self.field_prim_order.get() && psx_params[2] >= 0.5;
         let grade = self.color_grade.get();
         // flags[2] is set per draw below: 1.0 = environment geometry the
         // occlusion fade may dissolve, 0.0 = actor draws (player / NPCs)
@@ -376,11 +378,15 @@ impl Renderer {
                     cue: Option<crate::DrawCue>,
                     occl_allowed: bool,
                     clip: Option<DrawClip>,
-                    nclip: Option<u32>| {
+                    nclip: Option<u32>,
+                    order: Option<u8>| {
             let [c0, c1, c2] = pack_draw_clip(clip);
             let tex_window = [tex_window_packed, c0, c1, c2];
             let mut flags = flags_base;
             flags[2] = if occl_allowed { 1.0 } else { 0.0 };
+            if let Some(o) = order {
+                flags[3] = -1.0 - f32::from(o);
+            }
             if let Some(mode) = nclip {
                 flags[0] = (mode & !crate::DRAW_WORD_MEAN_DEPTH).min(2) as f32;
                 if mode & crate::DRAW_WORD_MEAN_DEPTH != 0 && psx_params[2] >= 0.5 {
@@ -448,10 +454,20 @@ impl Renderer {
                 i < occl_env_textured,
                 clip,
                 nclip_textured.get(i).copied().flatten(),
+                field_prim_order.then(|| order_textured.get(i).copied().unwrap_or(0)),
             );
         }
         if let Some((_, mvp)) = scene.overlay_lines {
-            push(&mut bytes, scene.draws.len(), mvp, None, false, None, None);
+            push(
+                &mut bytes,
+                scene.draws.len(),
+                mvp,
+                None,
+                false,
+                None,
+                None,
+                None,
+            );
         }
         // Colour-mesh slots follow the draws + the optional overlay-lines slot.
         let color_base = scene.draws.len() + scene.overlay_lines.is_some() as usize;
@@ -464,6 +480,7 @@ impl Renderer {
                 i < occl_env_color,
                 clips_color.get(i).copied().flatten(),
                 nclip_color.get(i).copied().flatten(),
+                field_prim_order.then(|| order_color.get(i).copied().unwrap_or(0)),
             );
         }
         let buf_borrow = self.scene_uniforms_buf.borrow();

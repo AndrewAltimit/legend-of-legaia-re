@@ -87,6 +87,10 @@ pub struct EnvDraw {
     /// The record's `+0x1E` cull radius ([`Placement::cull_radius`]), which
     /// widens that per-cell window test.
     pub cull_radius: u8,
+    /// The record's `+0x12 & 0x800`: its draw's colour word carries
+    /// `0x10000000` (`FUN_801F7088` at `0x801F78B8`, `FUN_8003A55C` at
+    /// `0x8003A754`), so its primitives link at their farthest corner's `SZ`.
+    pub far_corner_order: bool,
     /// The **camera-facing** bits of a terrain / decoration cell's record
     /// flags (`+0x12 & 0x380`; `0` for a placed object). The decoration pass
     /// `FUN_801F7088` tests them at `0x801F770C..0x801F779C`: set, it rebuilds

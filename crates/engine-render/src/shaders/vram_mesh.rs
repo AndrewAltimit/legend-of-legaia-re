@@ -232,7 +232,11 @@ fn vs_main(
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
-    clip = prim_mean_depth(clip, prim_c0, prim_c1, prim_c2, prim_c3);
+    // A ground cell carries its own bucket (the two above); only a mesh
+    // primitive links at its corners.
+    if (all(flat_a == vec4<f32>(0.0))) {
+        clip = prim_mean_depth(clip, prim_c0, prim_c1, prim_c2, prim_c3);
+    }
     // PSX mode: the GTE's register limits (a corner past `IR = 0x7FFF` or
     // `SZ = 0xFFFF` lands where retail's packet put it), then the snap.
     if u.psx_params.z >= 0.5 {

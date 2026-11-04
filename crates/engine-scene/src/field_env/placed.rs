@@ -104,6 +104,7 @@ pub fn resolve_placed_env_draws(
             },
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
+            far_corner_order: p.flags & 0x800 != 0,
             view_skip: if p.floor_corner_nibbles.is_some() {
                 p.flags & DECORATION_VIEW_SKIP_MASK
             } else {

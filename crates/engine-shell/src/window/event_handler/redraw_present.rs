@@ -26,16 +26,31 @@ pub(super) fn present_target<'a>(
     }
 }
 
-/// Stage the per-draw object-effect clips and NCLIP words on the renderer.
+/// The frame's per-draw marks, each by draw index.
+pub(super) struct DrawMarks {
+    pub clip: Vec<(usize, legaia_engine_render::DrawClip)>,
+    pub color_clip: Vec<(usize, legaia_engine_render::DrawClip)>,
+    pub nclip: Vec<(usize, u32)>,
+    pub color_nclip: Vec<(usize, u32)>,
+    pub order: Vec<(usize, u8)>,
+    pub color_order: Vec<(usize, u8)>,
+}
+
+/// Stage the per-draw object-effect clips, NCLIP and order words on the renderer.
 pub(super) fn stage_draw_marks(
     r: &legaia_engine_render::Renderer,
     draws_len: usize,
     color_draws_len: usize,
-    clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
-    color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
-    nclip_marks: Vec<(usize, u32)>,
-    color_nclip_marks: Vec<(usize, u32)>,
+    marks: DrawMarks,
 ) {
+    let DrawMarks {
+        clip: clip_marks,
+        color_clip: color_clip_marks,
+        nclip: nclip_marks,
+        color_nclip: color_nclip_marks,
+        order: order_marks,
+        color_order: color_order_marks,
+    } = marks;
     let mut tex = vec![None; draws_len];
     for (i, c) in clip_marks {
         if let Some(slot) = tex.get_mut(i) {
@@ -63,6 +78,19 @@ pub(super) fn stage_draw_marks(
         }
     }
     r.set_color_draw_nclip(color_nclip);
+    let mut order = vec![0; draws_len];
+    for (i, o) in order_marks {
+        if let Some(slot) = order.get_mut(i) {
+            *slot = o;
+        }
+    }
+    let mut color_order = vec![0; color_draws_len];
+    for (i, o) in color_order_marks {
+        if let Some(slot) = color_order.get_mut(i) {
+            *slot = o;
+        }
+    }
+    r.set_draw_order(order, color_order);
 }
 
 /// The `--screenshot-every` sweep: capture this frame into the sweep dir

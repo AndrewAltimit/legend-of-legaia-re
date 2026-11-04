@@ -29,22 +29,42 @@ fn effect_clipped(p: vec3<f32>) -> bool {
 "#;
 
 pub(crate) const PRIM_NEAR_WGSL: &str = r#"
-// The battle shell's painter order (`flags.w < 0`,
-// `Renderer::DRAW_WORD_MEAN_DEPTH`): retail links each shell prim at the mean
-// `SZ` of its corners, so one quad's whole area sorts as that mean. The depth
-// row is `z = a * w + b` in clip space, read as `depth_affine` reads it.
+// Retail's per-primitive painter order (`flags.w < 0`,
+// `Renderer::DRAW_WORD_MEAN_DEPTH` on the battle shell,
+// `Renderer::set_field_prim_order` on the field): a primitive links at the
+// mean `SZ` of its corners, so its whole area sorts as that mean. `-flags.w - 1`
+// is the draw's `DRAW_ORDER_*` word: bit 0 sorts at the farthest corner
+// instead (colour word bit `0x10000000`, `FUN_80045194` at
+// `0x800452AC..0x800452F8`), bit 1 draws ten ordering-table buckets nearer
+// (`actor[+0x10] & 0x80800000`, `FUN_8001ADA4` at `0x8001B204..0x8001B21C`:
+// the table base less `0x28`, ten slots of `32` `SZ`, `320 / 6` port units on
+// the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
+// as `depth_affine` reads it.
 fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
     if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w <= 0.0) {
         return clip;
     }
     let m = u.mvp;
-    var w = (m * vec4<f32>(c0.xyz, 1.0)).w + (m * vec4<f32>(c1, 1.0)).w + (m * vec4<f32>(c2, 1.0)).w;
+    let w0 = (m * vec4<f32>(c0.xyz, 1.0)).w;
+    let w1 = (m * vec4<f32>(c1, 1.0)).w;
+    let w2 = (m * vec4<f32>(c2, 1.0)).w;
+    var w = w0 + w1 + w2;
+    var far = max(max(w0, w1), w2);
     var n = 3.0;
     if (c0.w > 3.5) {
-        w = w + (m * vec4<f32>(c3, 1.0)).w;
+        let w3 = (m * vec4<f32>(c3, 1.0)).w;
+        w = w + w3;
+        far = max(far, w3);
         n = 4.0;
     }
-    let mean_w = w / n;
+    let order = u32(round(-u.flags.w)) - 1u;
+    var mean_w = w / n;
+    if ((order & 1u) != 0u) {
+        mean_w = far;
+    }
+    if ((order & 2u) != 0u) {
+        mean_w = max(mean_w - 320.0 / 6.0, 1.0);
+    }
     if (mean_w <= 0.0) {
         return clip;
     }

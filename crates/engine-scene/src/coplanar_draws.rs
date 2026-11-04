@@ -1109,6 +1109,7 @@ mod tests {
             floor: Default::default(),
             cell: (0, 0),
             cull_radius: 0,
+            far_corner_order: false,
             view_skip: 0,
         }
     }
@@ -1521,6 +1522,7 @@ mod probe_tests {
             floor: Default::default(),
             cell: (0, 0),
             cull_radius: 0,
+            far_corner_order: false,
             view_skip: 0,
         };
         let draws = vec![mk(45), mk(39)];

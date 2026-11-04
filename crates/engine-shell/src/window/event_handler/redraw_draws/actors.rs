@@ -27,6 +27,8 @@ impl<'m> DrawCtx<'_, 'm> {
             clip_marks,
             color_clip_marks,
             nclip_marks,
+            order_marks,
+            color_order_marks,
             ..
         } = out;
         // The player's untextured mesh half (pants /
@@ -44,6 +46,18 @@ impl<'m> DrawCtx<'_, 'm> {
             ) {
                 color_clip_marks.push((color_draws.len(), c));
             }
+            let m = app.actor_model(slot);
+            if app
+                .session
+                .host
+                .world
+                .player_near_buckets(m.w_axis.x as i32, m.w_axis.z as i32)
+            {
+                color_order_marks.push((
+                    color_draws.len(),
+                    legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS,
+                ));
+            }
             color_draws.push(ColorSceneDraw {
                 mesh,
                 mvp: cam * app.actor_model(slot),
@@ -55,6 +69,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // `field_npc_positions`; everyone else stands at
         // the spawn tile), floor-snapped like the player.
         let w = &app.session.host.world;
+        let near_npcs = w.near_bucket_npcs();
         for d in app.field_npc_draws.iter().filter(|_| layer_on("npc")) {
             // The NPC's whole draw pose is the engine's
             // (`World::field_npc_draw_pose`, which the browser play page
@@ -115,6 +130,11 @@ impl<'m> DrawCtx<'_, 'm> {
             // shards (`PosedFrame::npc_shattered`), both sides: the shatter
             // renderer issues no NCLIP. A clip-less NPC's op-`0x4B` morph
             // re-stages its static mesh (`npc_morph_static`).
+            if near_npcs.contains(&(d.slot as usize)) {
+                let near = legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS;
+                order_marks.push((draws.len(), near));
+                color_order_marks.push((color_draws.len(), near));
+            }
             let shattered = store.posed.npc_shattered.get(&d.slot);
             if shattered.is_some() {
                 nclip_marks.push((draws.len(), legaia_render_kernels::shatter::SHATTER_NCLIP));
@@ -214,6 +234,7 @@ impl<'m> DrawCtx<'_, 'm> {
             nclip_marks,
             color_draws,
             color_nclip_marks,
+            order_marks,
             ..
         } = out;
         // Flat tiled ground grid (retail's func_0x801d02c0 grass)
@@ -501,6 +522,16 @@ impl<'m> DrawCtx<'_, 'm> {
                     )
                 {
                     clip_marks.push((draws.len(), c));
+                }
+                if !in_battle
+                    && app.session.host.world.player_actor_slot == Some(i as u8)
+                    && app
+                        .session
+                        .host
+                        .world
+                        .player_near_buckets(model.w_axis.x as i32, model.w_axis.z as i32)
+                {
+                    order_marks.push((draws.len(), legaia_engine_render::DRAW_ORDER_NEAR_BUCKETS));
                 }
                 // A body the defeat fade is sinking draws clipped at the
                 // stage floor (its node's `+0x42`, object-effect row 0 as

@@ -701,7 +701,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
           const wantOccl = p.noOccl ? 0 : 1;
           if (wantOccl !== occlAllow) { gl.uniform1i(this.locOcclAllow, wantOccl); occlAllow = wantOccl; }
           nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
-          const wantMean = p.meanDepth ? 1 : 0;
+          const wantMean = Number(p.meanDepth) || 0;
           if (this.locPrimMeanDepth && wantMean !== meanDepth) {
             gl.uniform1f(this.locPrimMeanDepth, wantMean);
             meanDepth = wantMean;
@@ -782,7 +782,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
         const wantOccl = p.noOccl ? 0 : 1;
         if (wantOccl !== blendOccl) { gl.uniform1i(this.locOcclAllow, wantOccl); blendOccl = wantOccl; }
         nclipOn = this._setPlacementNclip(p.nclip, nclipOn);
-        const wantMean = p.meanDepth ? 1 : 0;
+        const wantMean = Number(p.meanDepth) || 0;
         if (this.locPrimMeanDepth && wantMean !== blendMean) {
           gl.uniform1f(this.locPrimMeanDepth, wantMean);
           blendMean = wantMean;

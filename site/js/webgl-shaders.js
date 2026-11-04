@@ -437,10 +437,26 @@ vec2 depthAffine(mat4 m) {
 uniform float u_prim_mean_depth;
 float primMeanW(mat4 m) {
   if (u_prim_mean_depth < 0.5 || u_psx.z < 0.5 || a_prim_c0.w < 2.5) return -1.0;
-  float w = (m * vec4(a_prim_c0.xyz, 1.0)).w + (m * vec4(a_prim_c1, 1.0)).w
-    + (m * vec4(a_prim_c2, 1.0)).w;
-  if (a_prim_c0.w > 3.5) return (w + (m * vec4(a_prim_c3, 1.0)).w) / 4.0;
-  return w / 3.0;
+  /* A ground cell carries its own bucket (fieldSortedCellW, the far bucket). */
+  if (a_ground_ref_xz != vec4(0.0)) return -1.0;
+  float w0 = (m * vec4(a_prim_c0.xyz, 1.0)).w;
+  float w1 = (m * vec4(a_prim_c1, 1.0)).w;
+  float w2 = (m * vec4(a_prim_c2, 1.0)).w;
+  float sum = w0 + w1 + w2;
+  float far = max(max(w0, w1), w2);
+  float n = 3.0;
+  if (a_prim_c0.w > 3.5) {
+    float w3 = (m * vec4(a_prim_c3, 1.0)).w;
+    sum += w3;
+    far = max(far, w3);
+    n = 4.0;
+  }
+  /* u_prim_mean_depth - 1 is the draw's DRAW_ORDER_* word (engine-render's
+   * prim_mean_depth): bit 0 the farthest corner, bit 1 ten buckets nearer. */
+  int order = int(u_prim_mean_depth + 0.5) - 1;
+  float w = (order == 1 || order == 3) ? far : sum / n;
+  if (order >= 2) w = max(w - 320.0 / 6.0, 1.0);
+  return w;
 }
 
 /* The flat bucket's representative w for a continent cell (the w whose

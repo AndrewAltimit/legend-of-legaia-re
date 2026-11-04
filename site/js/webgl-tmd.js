@@ -50,8 +50,11 @@
  *              frame's for this draw only - the battle bodies' single-sided
  *              rule (BattleActorDrawPlan::nclip_mode) over the both-sided
  *              battle pass.
- *     meanDepth - in PSX mode the draw's prims take the mean depth of their
- *              corners, the key retail links a battle shell prim by.
+ *     meanDepth - in PSX mode the draw's prims take the depth of their
+ *              ordering-table link: true or 1 the corners' mean, the key
+ *              retail links a battle shell or field prim by; 1 + a
+ *              DRAW_ORDER_* word on the field (2 farthest corner, 3 ten
+ *              buckets nearer, 4 both).
  *     cue    - per-draw GTE depth cue { far: [r,g,b], nearZ, farZ, maxIr0 },
  *              overriding the frame-global `setDepthCue` for this draw only.
  *              The engine's `DrawCue` seam: the battle ground grid's per-stage

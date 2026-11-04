@@ -540,6 +540,8 @@
           || !rt.field_placed_near_culled(m[3] * d.x + m[7] * d.y + m[11] * d.z + m[15]));
       }
 
+      this._stageFieldPrimOrder(rt, draws);
+
       /* Field party-status HUD: retail's decision kernel compares the
        * lead's PROJECTED screen Y against a band (the native window's
        * `field_hud_projected_player_y`). Project the same point the native

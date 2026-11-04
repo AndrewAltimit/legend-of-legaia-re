@@ -144,6 +144,8 @@ impl PlayWindowApp {
             mut nclip_marks,
             color_clip_marks,
             mut color_nclip_marks,
+            order_marks,
+            color_order_marks,
         } = draw_cx.build_scene_draws();
         let OverlayDraws {
             hud,
@@ -244,10 +246,14 @@ impl PlayWindowApp {
             r,
             draws.len(),
             color_draws.len(),
-            clip_marks,
-            color_clip_marks,
-            nclip_marks,
-            color_nclip_marks,
+            redraw_present::DrawMarks {
+                clip: clip_marks,
+                color_clip: color_clip_marks,
+                nclip: nclip_marks,
+                color_nclip: color_nclip_marks,
+                order: order_marks,
+                color_order: color_order_marks,
+            },
         );
         let scene = RenderScene {
             vram,
