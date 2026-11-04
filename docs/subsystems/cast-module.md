@@ -3405,6 +3405,13 @@ calls on the body's behalf (`capture_approach_follows`,
 `capture_approach_yaw_base`) and runs the walk on phase `1`. PROT 0941's Steal
 frames on other arms and keeps its own director.
 
+The arrival is not a stop. The pass that reads the range metric at zero runs
+`FUN_80050BB8(caster, victim)` thirty-two times, which steps the caster back off
+the victim's body while their body pairs overlap, and puts the victim's saved pair
+back at the arm's tail. The walk clip stays staged for that pass, so its root motion
+steps once more before arm 2 stages the wind-up. Scythe Wind's recording reads
+`(376, -502)`, `(-64, +127)` of push, `(+38, -50)` of walk: `(350, -425)`.
+
 <a id="prot-0962-koru-charge-bodies"></a>
 
 **0962's charge bodies** (`blade_breath_camera`, `thunder_needle_camera`,

@@ -1720,10 +1720,14 @@ screen (`.901` to `.918`), so they are in the seat
 (`ULTRA_CHARGE_SHOT_DISCS`); the module's rings, seated the same way,
 measured no better and stay the replay's.
 
+So are Void Accessories' records (`VOID_RECORDS`), whose star turns `+0x84 = -256`
+a step from arm 0: its roll is a clock of the passes since, and the replay's passes
+do not fall on the capture's steps.
+
 So are the parts a capture-cell stager seats with `rand()` rolls stored over
 the seat (`ROLLED_STAGER_RECORDS`): Call Wave's rays (`0x801F7970`, wait,
-lean rate `+0x84`, spread, length and roll each a draw) and Final Crisis's
-shards (`0x801F7E80`). Their lean rate rides the seed beside the usual
+lean rate `+0x84`, spread, length and roll each a draw), Final Crisis's
+shards (`0x801F7E80`) and the Rogue strikes' rays (`0x801F9008`). Their lean rate rides the seed beside the usual
 words. A volley the module has spent reads its length channel `+0xC8` at
 `0` with the rate still set; taken back past zero it would draw backwards,
 so a growing length channel that rewinds below zero is seated at `0` (it was

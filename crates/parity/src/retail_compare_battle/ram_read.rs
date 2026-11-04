@@ -75,6 +75,11 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// the flash, `vera_summon_mid_cast` drew them a pass wider (`.988`); seated
 /// off the RAM a lag back they stand where the screen shows them.
 ///
+/// PROT 0955's Void Accessories records
+/// ([`VOID_RECORDS`](legaia_engine_cast::cast_module_camera::VOID_RECORDS))
+/// too: the star turns `+0x84 = -256` a step from arm 0, so its roll is a clock
+/// of the passes since, whose steps a replay does not re-deal.
+///
 /// The parts a capture-cell stager seats with `rand()` rolls
 /// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
 /// are seated the same way, their lean rate `+0x84` with them: Call Wave's
@@ -82,7 +87,9 @@ const PART_TICK: u32 = 0x8002_1DF4;
 ///
 /// The lag is [`cast_part_lag_vsyncs`]'s.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
-    use legaia_engine_cast::cast_module_camera::{ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS};
+    use legaia_engine_cast::cast_module_camera::{
+        ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS, VOID_RECORDS,
+    };
     use legaia_engine_cast::cast_module_ticks::{
         ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
     };
@@ -99,7 +106,8 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
                 && (per_pass.contains(&rec)
                     || ROLLED_STAGER_RECORDS.contains(&rec)
                     || ULTRA_CHARGE_SHOT_DISCS.contains(&rec)
-                    || VERA_OPEN_GLOWS.contains(&rec))
+                    || VERA_OPEN_GLOWS.contains(&rec)
+                    || VOID_RECORDS.contains(&rec))
                 && !length_restarted_inside_lag(ram, n, lag)
         })
         .map(|n| {

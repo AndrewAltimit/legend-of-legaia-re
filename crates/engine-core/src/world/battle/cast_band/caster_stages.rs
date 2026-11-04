@@ -451,6 +451,50 @@ impl World {
         })
     }
 
+    /// The walk-in's arrival path: thirty-two `FUN_80050BB8(caster, victim)`
+    /// calls (`sltiu v0,s0,0x20`, PROT 0951 `0x5B` at `0x801F7A84..0x801F7A9C`),
+    /// which step the caster back off the victim's body while the two body
+    /// pairs overlap, and the victim's saved pair put back at the arm's tail
+    /// (`0x801F7AB8..0x801F7AD8`). Scythe Wind's retail recording steps
+    /// `(-26, +77)` on this pass, from `(376, -502)` to `(350, -425)`.
+    ///
+    /// `false` for a body that walks without this path.
+    fn settle_capture_approach(&mut self, caster: u8, victim: u8) -> bool {
+        use legaia_engine_battle_vm::battle_separation::{SepActor, push_apart};
+        let Some(spell) = self.casting.capture_spell else {
+            return false;
+        };
+        let Some(entry) = self.cast_module_for(spell) else {
+            return false;
+        };
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell);
+        if !legaia_engine_cast::cast_module_camera::capture_approach_follows(entry, body) {
+            return false;
+        }
+        let sep = |w: &World, slot: u8| {
+            let i = usize::from(slot);
+            let (x, z) = w.battle_seat_of(i);
+            SepActor {
+                radius: w.battle_separation_radius(i),
+                x,
+                z,
+                acc_x: w.actors[i].move_state.world_x as u16,
+                acc_z: w.actors[i].move_state.world_z as u16,
+            }
+        };
+        let (mut a, mut b) = (sep(self, caster), sep(self, victim));
+        let bearing =
+            legaia_engine_battle_vm::battle_action::bearing_12bit_approx(b.z, b.x, a.z, a.x);
+        let (sin, cos) = legaia_engine_system::trig::trig12(bearing.wrapping_add(0x800) & 0xFFF);
+        for _ in 0..0x20 {
+            push_apart(&mut a, &mut b, sin, cos);
+        }
+        let ms = &mut self.actors[usize::from(caster)].move_state;
+        ms.world_x = a.acc_x as i16;
+        ms.world_z = a.acc_z as i16;
+        true
+    }
+
     /// Arm 0's one-time stores on a walk-in the approach leg stands in for,
     /// since the leg holds the module and arm 0 never runs: the victim turned
     /// to face the caster (`0x801F7934..0x801F7940` in PROT 0951 `0x5B`), the
@@ -517,9 +561,15 @@ impl World {
                     // Arrived. A body whose port stages its own strike takes
                     // the band from here; the rest go on to their stages.
                     run.ticks = 0;
-                    let a = &mut self.actors[usize::from(run.slot)];
-                    if a.battle.queued_anim == CAPTURE_WALK_ENTRY {
-                        a.battle.queued_anim = 0;
+                    // A body that walks on case 6 stages its next clip on the
+                    // next pass, so the walk's root motion steps once more
+                    // (`+0x34` reads `350` on Scythe Wind's next pass, one
+                    // `+38` past the arrival's `312`).
+                    if !self.settle_capture_approach(run.slot, victim) {
+                        let a = &mut self.actors[usize::from(run.slot)];
+                        if a.battle.queued_anim == CAPTURE_WALK_ENTRY {
+                            a.battle.queued_anim = 0;
+                        }
                     }
                     if run.clips.is_empty() || !run.at_arms.is_empty() {
                         run.phase = CasterStagePhase::Module;
