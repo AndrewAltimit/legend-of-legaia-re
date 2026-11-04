@@ -227,6 +227,8 @@ fn stage_somersault(w: &mut World) {
 
 fn open_somersault_menu(w: &mut World) {
     w.battle_ctx.active_actor = 0;
+    // The walk takes an art only when Spirit covers its price.
+    w.actors[0].battle.spirit_gauge = 100;
     let rows = w.build_battle_arts_rows(0);
     w.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
         0, 0, rows,

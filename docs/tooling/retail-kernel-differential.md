@@ -131,3 +131,10 @@ The walk step `FUN_801D01B0`, with its helpers, found the port reading the held 
 where everything after the slide resolver reads the resolved one, so a skid along a wall
 neither turned the player nor took the diagonal's quarter off. The cut also has a camera
 mode gate the port lacked, and the terrain slow tile had no port at all.
+
+The queue builder `FUN_801EED1C`, with its learn check and the Super applier, over the real
+art banks, found the Spirit price charged after the walk instead of gating it: an art the
+gauge could not pay still ran, for nothing beyond an empty gauge. A learn verdict of "not
+known" dropped nothing; the Miracle row landed only on a whole-string match, not on the
+walk's run, and left the later groups reading arrows it should have covered; and a limb
+rotted after the entry kept its swings.

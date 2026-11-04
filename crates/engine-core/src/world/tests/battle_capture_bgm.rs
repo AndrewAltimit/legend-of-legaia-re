@@ -473,6 +473,8 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
     assert_eq!(rows[0].enemy_effect, EnemyEffect::Toxic);
 
+    // The walk takes an art only when Spirit covers its price.
+    world.actors[0].battle.spirit_gauge = 100;
     world.battle_ctx.active_actor = 0;
     world.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
         0, 0, rows,

@@ -3,6 +3,7 @@
 //! `LEGAIA_DISC_BIN`, so CI runs without disc data.
 
 mod arts_gauge;
+mod arts_queue;
 mod arts_roll;
 mod battle_item;
 mod battle_seed;

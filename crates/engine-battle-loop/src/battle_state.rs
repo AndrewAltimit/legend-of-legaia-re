@@ -335,6 +335,10 @@ pub struct BattleState {
     pub steal: legaia_engine_battle::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
     pub steal_caption: Option<legaia_engine_battle::battle_steal::StealCaption>,
+    /// The acting member's Spirit owed for this turn's arts: the accumulator
+    /// byte `actor[+0x224]` the queue builder fills and the action SM's cleanup
+    /// arm spends (`0x801E5D74`).
+    pub art_turn_spirit: u8,
     /// The message bar's raise glide (placement record 91, `(16, 234)` ->
     /// `(16, 192)`): `FUN_801D8DE8(0x5B, 0)` spawns the bar at seat A and
     /// `FUN_801D9BBC` glides it to seat B. Started by a cast module's raise
@@ -1251,6 +1255,7 @@ impl BattleState {
             monster_ai_state: legaia_engine_battle::monster_ai::MonsterAiState::new(),
             steal: legaia_engine_battle::battle_steal::StealBand::default(),
             steal_caption: None,
+            art_turn_spirit: 0,
             move_label_closed: false,
             player_driven: false,
             command: None,

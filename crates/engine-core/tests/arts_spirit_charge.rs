@@ -25,11 +25,12 @@ use legaia_engine_core::world::{Actor, World};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_system::input::{InputState, PadButton};
 
-/// Vahn's Somersault: three commands, and the only art staged - so it is
-/// visit ordinal `0`, multiplier `11`, price `11 x 3`.
+/// Vahn's Somersault: three commands, at record `0x27`. The walk counts every
+/// record it passes, staged or blank, so this is past ordinal `3`: multiplier
+/// `6`, price `6 x 3`.
 const SOMERSAULT: u8 = 0x27;
 const SOMERSAULT_COMMANDS: usize = 3;
-const EXPECTED_SPIRIT_CHARGE: u16 = 11 * SOMERSAULT_COMMANDS as u16;
+const EXPECTED_SPIRIT_CHARGE: u16 = 6 * SOMERSAULT_COMMANDS as u16;
 /// Seeded gauge. Above the charge so the drop is visible, below the `100`
 /// ceiling so an accrual cannot mask it by clamping.
 const SPIRIT_SEED: u16 = 90;
@@ -246,7 +247,7 @@ fn a_committed_art_charges_its_body_out_of_spirit() {
     assert_eq!(
         drops,
         vec![-i32::from(EXPECTED_SPIRIT_CHARGE)],
-        "one drop of exactly 11 x {SOMERSAULT_COMMANDS} (visit ordinal 0), and no other"
+        "one drop of exactly 6 x {SOMERSAULT_COMMANDS}, and no other"
     );
 }
 

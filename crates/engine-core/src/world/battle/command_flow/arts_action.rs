@@ -48,9 +48,10 @@ impl World {
     ///    after it, leading arrows stay and arts overlap (`↑↓↑` ->
     ///    `0F 0E 19 27`); a Hyper Art with the Ra-Seru marker up collapses
     ///    to `0x1A` and its constant (Lightning Storm -> `1A 1D`);
-    /// 2. the learn-on-use check per accepted art (`FUN_801EFBFC`, `jal` at
-    ///    `0x801EF44C`): a newly learned art's starter is `0x1A` instead
-    ///    (`addiu v1,t3,0x18` with `t3 = 2`, `0x801EF6F0`);
+    /// 2. the walk's gate on every full match: Spirit against the art's price,
+    ///    then the learn-on-use check (`FUN_801EFBFC`, `jal` at `0x801EF44C`),
+    ///    whose verdict drops the run, or writes the `0x1A` starter of a newly
+    ///    learned art (`addiu v1,t3,0x18` with `t3 = 2`, `0x801EF6F0`);
     /// 3. the finish ([`vm::battle_action::finish_action_queue`]): the
     ///    Miracle replacement, the MSB-clear sweep and the Super
     ///    tail-replace, in that order.
@@ -65,7 +66,7 @@ impl World {
     /// PORT: FUN_801EED1C (the player path: normalise + learn + finish;
     /// the tokenizer body is `legaia_art::tokenize_bank`, the finish passes
     /// `legaia_engine_battle_vm::battle_action::queue_applier`)
-    pub(in crate::world) fn build_arts_action_queue(
+    pub fn build_arts_action_queue(
         &mut self,
         caster: u8,
         commands: &[legaia_art::Command],
@@ -87,7 +88,86 @@ impl World {
         // rewrite.
         let bank = self.art_bank_rows(character);
         let records = legaia_art::bank_view(&bank);
-        let mut built = legaia_art::tokenize_bank(&records, commands, miracle_armed);
+        // A rotted limb's swings leave the string before the walk reads it
+        // (`0x801EEF44..0x801EF0A8`): status may have landed since the entry.
+        let status = self.raw_status_word(caster);
+        let commands: Vec<legaia_art::Command> = commands
+            .iter()
+            .copied()
+            .filter(|&c| !legaia_engine_battle::arts_command_input::rot_blocks(status, c))
+            .collect();
+        let commands = &commands[..];
+        let mut q = [0u8; legaia_art::QUEUE_LEN];
+        for (dst, c) in q.iter_mut().zip(commands) {
+            *dst = c.as_action().as_byte();
+        }
+        // The gate of the walk, in the builder's order. Spirit first: the run's
+        // price against the gauge as earlier runs have left it
+        // (`0x801EF40C..0x801EF41C`); the walk debits as it goes and the tail
+        // restores it (`0x801EF988`), so only the accumulator `+0x224`, a byte,
+        // leaves the builder. Then the learn check (`jal 0x801EFBFC`), whose `0`
+        // drops the run and whose `1` / `2` name the starter
+        // (`addiu v1,t3,0x18` at `0x801EF6F0`).
+        let halved = self.character_ability_bits_word1(roster)
+            & legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT
+            != 0;
+        let gauge = self
+            .actors
+            .get(usize::from(caster))
+            .map_or(0, |a| a.battle.spirit_gauge);
+        let mut spirit = gauge;
+        let mut owed = 0u8;
+        let groups = legaia_art::bank_group_starts(&records);
+        let miracle_row = legaia_engine_battle_vm::battle_action::miracle_row_for(character);
+        let mut built = legaia_art::tokenize_bank_gated(
+            &records,
+            q,
+            [0u32; legaia_art::QUEUE_LEN],
+            miracle_armed,
+            Some(&miracle_row),
+            |ordinal, len| {
+                let cost = legaia_engine_battle::ap_gauge::art_spirit_cost(
+                    usize::from(ordinal),
+                    len.min(0xFF) as u8,
+                    halved,
+                );
+                if (spirit as i16) < cost as i16 {
+                    return legaia_art::ArtRun::Refuse;
+                }
+                let id = 0x1B + groups.get(usize::from(ordinal)).copied().unwrap_or(0);
+                let starter = match self.learn_art_on_record(roster, id) {
+                    Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Known) => {
+                        self.party.tactical_arts.mark_known(roster, id);
+                        ActionConstant::RegularStarter.as_byte()
+                    }
+                    Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned) => {
+                        self.notify_art_used(roster, id);
+                        ActionConstant::SpecialStarter.as_byte()
+                    }
+                    Some(_) => return legaia_art::ArtRun::Drop,
+                    // No character record behind the roster slot: the tracker
+                    // alone decides, as before the record was read.
+                    None => {
+                        let known = self.party.tactical_arts.is_learned(roster, id);
+                        self.notify_art_used(roster, id);
+                        if !known && self.party.tactical_arts.is_learned(roster, id) {
+                            ActionConstant::SpecialStarter.as_byte()
+                        } else {
+                            ActionConstant::RegularStarter.as_byte()
+                        }
+                    }
+                };
+                spirit = spirit.wrapping_sub(cost);
+                owed = owed.wrapping_add(cost as u8);
+                legaia_art::ArtRun::Take { starter }
+            },
+        );
+        // The Miracle arm owes four more under AP Used Down
+        // (`0x801EF4F8..0x801EF52C`), through both words.
+        if built.miracle_matched && halved {
+            owed = owed.wrapping_add(4);
+        }
+        self.battle.art_turn_spirit = owed;
         // An expansion pack's known arts walk second, over the arrows the
         // retail walk left (`legaia_engine_expansion::arts`): their rows sit
         // past retail's 24, every retail row is blank in this pass, so a
@@ -118,61 +198,6 @@ impl World {
         );
         let mut bytes = [0u8; ACTION_QUEUE_CAP];
         bytes[..tokens.len()].copy_from_slice(&tokens);
-        // Learn-on-use per accepted art, in the builder's own **tail-first**
-        // order (`s8` from 15 down, `0x801EF848`, restarting at `s8 + 1`
-        // after each match): when one art appears twice in a queue, the
-        // *last* occurrence is the one `FUN_801EFBFC` sees first and so the
-        // one that gets the `0x1A` newly-learned starter. The marked-starter
-        // reorder in `finish_action_queue` then walks it back to the art's
-        // first occurrence, which is what makes that pass load-bearing rather
-        // than a no-op. Retail's insert gate (`ctx[+0x266 + slot]`) has no
-        // engine analogue and reads open.
-        //
-        // The list the verdict scans is the character record's own -
-        // count `+0x185`, ascending ids `+0x186..` (retail
-        // `0x80084140 + (char - 1) * 0x414 + 0x74D`, `lbu v0,0x74d(v0)` at
-        // `0x801EFC54`) - keyed by the art's queue byte **less `0x1B`**
-        // ([`ART_RECORD_ID_BIAS`]), the id space the auto-fill arm and the
-        // pause menu's arts pager read the same list in. A save
-        // lifted from retail therefore knows every art its record lists, and
-        // a known art takes the plain `0x19` starter.
-        for i in (0..tokens.len().saturating_sub(1)).rev() {
-            if bytes[i] != ActionConstant::RegularStarter.as_byte() {
-                continue;
-            }
-            let Some(art) = ActionConstant::from_byte(bytes[i + 1]).filter(|a| a.is_art()) else {
-                continue;
-            };
-            let id = art.as_byte();
-            let verdict = self.learn_art_on_record(roster, id);
-            match verdict {
-                Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned) => {
-                    bytes[i] = ActionConstant::SpecialStarter.as_byte();
-                    self.notify_art_used(roster, id);
-                }
-                Some(_) => self.party.tactical_arts.mark_known(roster, id),
-                // No character record behind the roster slot: the tracker
-                // alone decides, as before the record was read.
-                None => {
-                    let known = self.party.tactical_arts.is_learned(roster, id);
-                    self.notify_art_used(roster, id);
-                    if !known && self.party.tactical_arts.is_learned(roster, id) {
-                        bytes[i] = ActionConstant::SpecialStarter.as_byte();
-                    }
-                }
-            }
-        }
-        // A Hyper Art takes the same learn check on its own record
-        // (`jal 0x801EFBFC` at `0x801EF44C` runs before the arm splits);
-        // its starter is `0x1A` whatever the verdict.
-        for &id in &built.hyper_matches {
-            match self.learn_art_on_record(roster, id) {
-                Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned) | None => {
-                    self.notify_art_used(roster, id)
-                }
-                Some(_) => self.party.tactical_arts.mark_known(roster, id),
-            }
-        }
         // The build loop's own side array: a normal art's starter carries
         // `1`, a Hyper Art's none.
         let mut marks = [0u32; ACTION_QUEUE_CAP];
@@ -182,13 +207,9 @@ impl World {
         // for the strike loop's drift gate.
         let (marks, trigger) =
             legaia_engine_battle_vm::battle_action::finish_action_queue_with_marks(
-                character,
-                commands,
-                miracle_armed,
-                &mut bytes,
-                marks,
+                character, commands, false, &mut bytes, marks,
             );
-        self.battle_ctx.super_trigger = trigger;
+        self.battle_ctx.super_trigger = trigger || built.miracle_matched;
         // The pack arts' further segments and chains, after the retail finish.
         let mut marks = marks;
         self.expansion.arts.turn_performed =
@@ -299,39 +320,23 @@ impl World {
     /// directions matched, and until it was wired a turn's whole cost was its
     /// swings and an art body was free.
     ///
-    /// The amount is [`legaia_engine_battle::ap_gauge::arts_turn_spirit_cost`] over the
-    /// caster's builder-order catalog ([`legaia_engine_battle::battle_arts::spirit_catalog`])
-    /// and the arts the queue actually performs. Retail accrues it into
-    /// `actor[+0x224]` inside the builder and spends it once in the
-    /// battle-action cleanup arm (`0x801E5D74`); the port charges it here, at
-    /// the commit, which is the same turn and the same total.
+    /// The amount is the accumulator `actor[+0x224]` the builder's walk filled,
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::art_turn_spirit`]. Retail
+    /// spends it once in the battle-action cleanup arm (`0x801E5D74`); the port
+    /// charges it here, at the dispatch, which is the same turn and the same
+    /// total.
     ///
     /// A plain attack charges nothing, because an unmatched arrow string
-    /// performs no art and `actions` is empty.
+    /// fills nothing.
     ///
     /// PORT: FUN_801EED1C (Spirit-cost half) / FUN_801E295C (the `+0x224` spend)
-    pub(super) fn charge_art_spirit(&mut self, caster: u8, actions: &[legaia_art::ActionConstant]) {
+    pub fn charge_art_spirit(&mut self, caster: u8, actions: &[legaia_art::ActionConstant]) {
         let performed = std::mem::take(&mut self.expansion.arts.turn_performed);
         self.expansion_charge_pack_arts(caster, &performed);
-        if actions.is_empty() {
-            return;
-        }
-        let roster = self.party_roster_slot(caster as usize) as u8;
-        let character = self.caster_character(roster);
-        let catalog =
-            legaia_engine_battle::battle_arts::spirit_catalog(&self.tables.art_records, character);
-        // Retail's halving gate (`srl t4,t4,0x1` at `0x801EF378`) reads the
-        // **character record's** `+0xF8` - word 1 of the accessory-passive
-        // ability bitfield - and tests bit `0x800`, i.e. passive `0x2B`
-        // "AP Used Down" (the Mettle Gem). See `ap_gauge::AP_USED_DOWN_BIT`
-        // for the address arithmetic; it is not an actor flag and not a
-        // per-turn condition, so it reads live off the equipped accessory.
-        let halved = self.character_ability_bits_word1(roster)
-            & legaia_engine_battle::ap_gauge::AP_USED_DOWN_BIT
-            != 0;
-        let cost = legaia_engine_battle::ap_gauge::arts_turn_spirit_cost(&catalog, actions, halved);
+        let _ = actions;
+        let owed = std::mem::take(&mut self.battle.art_turn_spirit);
         if let Some(a) = self.actors.get_mut(caster as usize) {
-            a.battle.spirit_gauge = a.battle.spirit_gauge.saturating_sub(cost);
+            a.battle.spirit_gauge = a.battle.spirit_gauge.wrapping_sub(u16::from(owed));
         }
     }
 

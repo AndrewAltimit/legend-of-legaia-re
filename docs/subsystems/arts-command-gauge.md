@@ -392,6 +392,8 @@ Port: `legaia_engine_battle_vm::battle_formulas::arms_command_equip_slots` / `ar
 
 ## What an art costs in AP
 
+The price is a **gate in the walk**, not a bill after it. A full match whose price the gauge cannot cover ends the walk at that start, so the arrows stay plain swings; a run the learn check turns down leaves its arrows for a later group. Each taken run debits the gauge for the rest of the walk and adds to the byte `actor[+0x224]`; the tail undoes the debit and the action SM's cleanup arm spends the byte. Port: `legaia_art::tokenize_bank_gated`, driven by `World::build_arts_action_queue`.
+
 This is a different AP from the command cost. The command byte `+0x74` is spent from the per-turn input pool; a named *art* is paid from the caster's **Spirit** gauge `actor[+0x170]`, the gauge the Spirit command charges (see [`randomizer.md` § spirit AP](../tooling/randomizer.md)).
 
 **The gauge carries between fights** through the character record's AP cell `+0x10E`:

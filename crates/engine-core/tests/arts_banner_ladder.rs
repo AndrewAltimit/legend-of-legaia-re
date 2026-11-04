@@ -138,6 +138,8 @@ fn a_typed_super_raises_the_banner_and_the_host_read_draws_it() {
         }
     }
     assert!(entered, "walking should trigger Field -> Battle");
+    // The walk takes an art only when Spirit covers its price (`0x801EF40C`).
+    w.actors[0].battle.spirit_gauge = 100;
     w.run_out_battle_open();
     assert!(w.battle.command.is_some(), "battle opens a command session");
     let hp_before = monster_hp_total(&w);
