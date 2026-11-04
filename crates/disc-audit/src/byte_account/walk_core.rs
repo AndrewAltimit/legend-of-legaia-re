@@ -1,5 +1,7 @@
 //! Walker plumbing (the claim sink) and the scene-bundle, streaming and slot-fill walkers.
 
+use std::cell::RefCell;
+
 use super::*;
 
 // ---------------------------------------------------------------------------
@@ -68,6 +70,21 @@ impl Sink {
     }
 }
 
+thread_local! {
+    static LZS_OBSERVER: RefCell<Option<LzsObserver>> = const { RefCell::new(None) };
+}
+
+/// Called with the input and expected size of each LZS decode a walker makes.
+pub type LzsObserver = Box<dyn FnMut(&[u8], usize)>;
+
+/// Install (or with `None`, remove) this thread's [`LzsObserver`], returning the
+/// one it replaces. Every walker decodes through one function, so this sees the
+/// accounting's whole census of a buffer's LZS streams, the failed decodes among
+/// them, nested payloads included.
+pub fn set_lzs_observer(observer: Option<LzsObserver>) -> Option<LzsObserver> {
+    LZS_OBSERVER.with(|o| o.replace(observer))
+}
+
 /// LZS-decode at `off`, claiming the compressed span. Returns the payload.
 pub(super) fn take_lzs(
     sink: &mut Sink,
@@ -77,6 +94,11 @@ pub(super) fn take_lzs(
     detail: &str,
 ) -> Option<Vec<u8>> {
     let src = buf.get(off..)?;
+    LZS_OBSERVER.with(|o| {
+        if let Some(observe) = o.borrow_mut().as_mut() {
+            observe(src, dec_size);
+        }
+    });
     match legaia_lzs::decompress_tracked(src, dec_size) {
         Ok((out, consumed)) => {
             sink.claim(off, off + consumed, OWNER_LZS, detail.to_string());

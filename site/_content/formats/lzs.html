@@ -121,6 +121,7 @@ while out.len() &lt; expected_output_size {
 }</code></pre>
   <p>The <code>0xFF00</code> mask is how the control register knows when to refill. Each shift right moves one of the eight set high bits down; after eight shifts bit 8 is clear, and the test at the top of the loop reads the next flag byte.</p>
   <p>A back-reference copies byte by byte and writes each byte to the ring as it goes, so a reference may overlap its own output (the run-length case). The copy stops early if it reaches the expected output size.</p>
+  <p>The port's decoder produces the same bytes without keeping the ring: the output is the ring. With <code>i</code> bytes out, a reference at position <code>p</code> reads one fixed distance behind the cursor for its whole length, <code>d = ((0xFEE + i - p - 1) &amp; 0xFFF) + 1</code>, and a read from before the start of the output is a zero, the ring's initial state. A plain ring decoder stays in the tree as test code, and the two are compared on bytes, consumed length and error text across the disc's streams and synthetic garbage.</p>
 </section>
 
 <section class="doc-section" id="container-format">

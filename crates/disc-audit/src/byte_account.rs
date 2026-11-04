@@ -85,6 +85,7 @@ pub use residue::*;
 use walk_battle::*;
 pub use walk_code::*;
 use walk_core::*;
+pub use walk_core::{LzsObserver, set_lzs_observer};
 pub use walk_formats::*;
 
 // ---------------------------------------------------------------------------

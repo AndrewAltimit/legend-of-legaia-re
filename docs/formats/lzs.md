@@ -89,6 +89,19 @@ The `0xFF00` mask is how the control register knows when to refill. Each shift r
 
 A back-reference copies byte by byte and writes each byte to the ring as it goes, so a reference may overlap its own output (the run-length case). The copy stops early if it reaches the expected output size.
 
+## The port's decoder
+
+`decompress_tracked` produces what the loop above produces, without keeping the ring. The output is the ring: with `i` bytes out, the write cursor is `(0xFEE + i) & 0xFFF`, and ring cell `r` holds the newest output byte whose position has that residue, or zero if no byte has it yet. So a reference at position `p` reads one fixed distance `d` behind the cursor for its whole length:
+
+```
+d = ((0xFEE + i - p - 1) & 0xFFF) + 1        1..=4096
+byte at output position k = k >= d ? output[k - d] : 0
+```
+
+A position equal to the cursor is the `d = 4096` case: the read comes before the write, so it sees the oldest cell. A read from before the start of the output is a zero, which is the ring's initial state, and a reference can straddle that start.
+
+The straightforward ring decoder stays in the tree as test code ([`reference_decoder.rs`](../../crates/lzs/src/reference_decoder.rs)). The two are compared on bytes, `consumed` and error text over synthetic garbage and reference-heavy streams (`crates/lzs/src/tests.rs`), and, disc-gated, over the byte accounting's census of the disc's streams with each one also truncated and stopped short ([`lzs_decoder_reference_real.rs`](../../crates/disc-audit/tests/lzs_decoder_reference_real.rs)).
+
 ## Container format
 
 Some PROT entries hold several independently compressed sections behind a small header. The header is the [asset descriptor](asset-descriptor.md) layout: two `u32` header words, then 8-byte `(size, byte_offset)` pairs, where the size's low 24 bits are the section's decompressed length and its high byte is the asset type.
