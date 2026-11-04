@@ -142,6 +142,10 @@ pub struct Cpu {
     pub steps: u64,
     /// The addresses reached by a `jal` / `jalr` with no hook, in order.
     pub calls: Vec<u32>,
+    /// Run a `div` / `divu` by zero as the R3000 does (`hi` = the dividend, `lo`
+    /// = all ones, or `1` for a negative signed dividend) instead of stopping.
+    /// For a routine with no `break` guard, where that result is what ships.
+    pub hardware_zero_div: bool,
 }
 
 impl Cpu {
@@ -268,14 +272,24 @@ impl Cpu {
                 }
                 0x1A => {
                     if vt == 0 {
-                        return Err(Stop::DivideByZero { pc });
+                        if !self.hardware_zero_div {
+                            return Err(Stop::DivideByZero { pc });
+                        }
+                        r.hi = vs;
+                        r.lo = if (vs as i32) < 0 { 1 } else { u32::MAX };
+                        return Ok(None);
                     }
                     r.lo = (vs as i32).wrapping_div(vt as i32) as u32;
                     r.hi = (vs as i32).wrapping_rem(vt as i32) as u32;
                 }
                 0x1B => {
                     if vt == 0 {
-                        return Err(Stop::DivideByZero { pc });
+                        if !self.hardware_zero_div {
+                            return Err(Stop::DivideByZero { pc });
+                        }
+                        r.hi = vs;
+                        r.lo = u32::MAX;
+                        return Ok(None);
                     }
                     r.lo = vs / vt;
                     r.hi = vs % vt;

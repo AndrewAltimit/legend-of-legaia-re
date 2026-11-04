@@ -20,7 +20,8 @@ cargo test -p legaia-retail-exec --profile dev-fast --test integration
 ## What it can run
 
 Integer instructions, `hi` / `lo`, unaligned loads and stores, RAM and the
-scratchpad. A routine that reaches the GTE or COP0 stops with
+scratchpad. `Cpu::hardware_zero_div` runs a `div` by zero as the chip does, for a
+routine with no `break` guard, where that result is what ships. A routine that reaches the GTE or COP0 stops with
 `Stop::Unsupported`, so a pure kernel is the natural target. A call can be
 replaced with a `Cpu::hook`, which is how `rand()` is scripted so both sides
 draw one stream. `Cpu::calls` records the calls made, which is how a test proves
@@ -72,3 +73,16 @@ earning up to the record's cap.
 
 The monster flee roll `FUN_801EC0DC` read the fleeing monster's INT back off its
 record under the scripted fight's profile even in a random encounter.
+
+The round opening showed four more. A fallen actor draws its initiative roll, and
+the port skipped it, so a fallen member shifted every later roll. The written turn
+order of Tetsu's spar and of Cort's final form had no port. The formation roll's
+spread divide has no guard: level sides divide by zero, the chip leaves the raw
+draw as the spread, and the port neither drew it nor added it, so an evenly matched
+fight had no ambush and no pre-emptive strike. The status tick read the typed status
+list where retail reads the word, so a poison a cast wrote never drained; poison
+wore off on a timer retail does not have; and Life Grail and Magic Grail restored
+nothing in battle.
+
+The action validator's kernel matches over every arm. Its battle host read the raw
+word alone, so a member poisoned by a hit had nothing a cure could target.

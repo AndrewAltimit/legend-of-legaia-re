@@ -94,7 +94,7 @@ pub const INITIATIVE_FAST_BONUS: u16 = 0x1000;
 /// from `func_0x80056798` once per slot, in slot order.
 ///
 /// PORT: FUN_801da780 (per-actor scoring; the slot sweep, the `ctx+0x290`
-/// side lockout - [`apply_side_lockout`] - and the scripted boss orders stay
+/// side lockout - [`apply_side_lockout`] - and the scripted orders stay
 /// with the caller)
 pub fn seed_initiative(actor: &InitiativeActor, roll: u16) -> u16 {
     let mut key = actor.speed.wrapping_add(roll).wrapping_add(1);
@@ -443,19 +443,14 @@ pub fn roll_formation_advantage(
     let p = mean(party_spd);
     let e = mean(enemy_spd);
 
-    // Zero-spread guard. This is a **port-side** decision, not a retail one:
-    // the two spread divides at `80051f04` / `80051f28` are bare `div v0,v1`
-    // with no divisor test and no `break`, unlike the escape roll's divides
-    // (`801e7a90` / `801e7aac`), which the compiler *did* guard with
-    // `bne <divisor>,zero` + `break 0x1c00`. A zero divisor on the R3000 does
-    // not trap - it is architecturally UNPREDICTABLE, and on the hardware
-    // leaves `HI` = the dividend, so retail would fold the raw `rand()` draw
-    // in as the spread. Rust's `%` would panic instead, so the port returns a
-    // deterministic `0`: a zero spread means the two sides are dead level and
-    // contributing the full draw would be noise, not fidelity.
+    // The two spread divides at `0x80051F04` / `0x80051F28` are bare `div v0,v1`
+    // with no divisor test and no `break`, unlike the escape roll's divides. Level
+    // sides divide by zero, which on the R3000 leaves `HI` = the dividend: the raw
+    // `rand()` is the spread, and the draw is taken either way.
     let spread = |lo: u32, hi: u32, rand: &mut dyn FnMut() -> u32| -> u32 {
         let span = lo.abs_diff(hi) * 2;
-        if span == 0 { 0 } else { rand() % span }
+        let r = rand();
+        if span == 0 { r } else { r % span }
     };
 
     let mut a = p + spread(p, e, rand);

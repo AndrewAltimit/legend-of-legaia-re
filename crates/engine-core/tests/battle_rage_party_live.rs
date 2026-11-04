@@ -68,7 +68,16 @@ fn rage_party_world() -> World {
 
 #[test]
 fn a_whole_rage_party_skips_the_ring_and_plays_learned_arts() {
+    // Each seat's fill is rolled, and a fill can come up empty: over a few
+    // streams the arts show, and no stream hands a seat the ring or a swing.
+    let total: usize = (0..8u32).map(rage_fight_art_clips).sum();
+    assert!(total > 0, "a Rage turn stages its learned arts");
+}
+
+/// One fight on one `rand()` stream; returns the art clips it latched.
+fn rage_fight_art_clips(seed: u32) -> usize {
     let mut w = rage_party_world();
+    w.rng_state = seed.wrapping_mul(0x9E37_79B1);
     let up = InputState::mask_of([PadButton::Up]);
     let cross = InputState::mask_of([PadButton::Cross]);
 
@@ -119,9 +128,9 @@ fn a_whole_rage_party_skips_the_ring_and_plays_learned_arts() {
         }
     }
     assert!(!ring_seen, "no Rage seat is handed the command ring");
-    assert!(art_clips > 0, "a Rage turn stages its learned arts");
     assert_eq!(
         swing_clips, 0,
         "no Rage turn falls back to the basic swings"
     );
+    art_clips
 }

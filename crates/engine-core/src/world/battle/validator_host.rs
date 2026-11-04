@@ -66,14 +66,12 @@ impl ActionValidatorHost for WorldActionValidator<'_> {
         })
     }
 
-    /// Battle-actor `+0x16E` - the per-actor flag bank the port keeps as
-    /// `BattleActor::field_flags`.
+    /// Battle-actor `+0x16E`, which the port keeps in two halves: the raw
+    /// `BattleActor::field_flags` a cast writes and the typed status list a
+    /// hit's status arm writes. A cure must see both, or a poisoned member reads
+    /// as having nothing to cure.
     fn status_word(&self, slot: u8) -> u16 {
-        self.world
-            .actors
-            .get(slot as usize)
-            .map(|a| a.battle.field_flags)
-            .unwrap_or(0)
+        self.world.raw_status_word(slot)
     }
 
     /// `DAT_80084594` - the present-party member count.

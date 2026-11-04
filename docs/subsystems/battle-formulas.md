@@ -1235,7 +1235,8 @@ ability +0xF4 & 0x20000            -> key += 0x1000          // always first
       (each arm applies only when the other class is absent)
 formation advantage ctx[+0x290]: the disadvantaged side's keys = 0
 monster id 0xB4 with ctx[+0x28A] == 0: slot 3 key = 30000
-monster id 0x4F: slots 0 and 3 fixed to a hand-written order
+monster id 0xB4, round 0: slot 3 = 30000
+monster id 0x4F, round < 3: slot 0 = 2, slot 3 = 1; round 3: slot 0 = 1, slot 3 = 2
 actor[+0x16C] = key
 ```
 
@@ -1261,6 +1262,9 @@ maximum is entered twice, so the first seat above 0 to reach the top key wins
 roll alone also appears under the phantom name `overlay_0897_801e23ec`: PROT
 0897's extraction over-reads into 0898 and that Ghidra program maps the file at
 `0x801C0000` instead of `0x801CE818`, so do not cite that address.
+The sweep skips an empty seat, not a fallen one: a fallen actor takes its draw, and
+the pick passes it over on its HP.
+
 **Port.** `seed_initiative` / `wounded_bonus` / `initiative_roll_modulus`
 (`InitiativeActor`, `InitiativeAbility`), driven by `World::reseed_initiative`
 (`engine-core::world::battle::initiative`); next actor
@@ -1290,6 +1294,9 @@ pre-emptive  if b < a && rand() % mod_pre  == 0         // mod_pre  16, or  2 wi
 forced back attack: monster ids 0x3D..=0x3F on maps 0x0C / 0x15 (also _DAT_8007BAC0 |= 0x200),
                     and monster id 0xA7 anywhere
 ```
+
+Neither divide carries a `break`: level means divide by zero, and the chip leaves
+the raw draw in `HI`, so `a = p + rand()`. Both draws are taken either way.
 
 The two draws are correlated: `b`'s spread is taken about `|a - e|`. The
 disadvantaged side is turned to face the wrong way (`+0x46 = 0x800` for the
@@ -1704,6 +1711,11 @@ carries the matching guard bit:
 | 26 | `0x4` | Stone Guard |
 | 27 | `0x400` | (the guard-disable status) |
 | 28 | `0x1C7F` | Master Guard (`0x1C`, all bits) |
+
+**No timer.** Nothing in the battle code wears a status off with time. Every store
+to `+0x16E` that clears a bit is a cure, the sweep above, a hit's `0x0F80` strip, the
+tick's scripted-monster arm or the `0x400` waker, so Venom, Toxic, Rot and Curse last
+until cured. The tick has no Stone test either: a Stoned actor with Venom drains.
 
 **Port.** `legaia_engine_battle_vm::status_effects` follows the byte map (`4` = Toxic,
 `5` = Rot with a rolled disabled limb; Sleep and Confuse kinds remain

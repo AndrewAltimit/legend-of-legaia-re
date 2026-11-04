@@ -468,12 +468,12 @@ impl World {
                 continue;
             }
             use legaia_engine_battle_vm::status_effects::StatusKind;
-            let fx = &self.battle.status_effects;
-            let (toxic, venom) = (
-                fx.has(slot, StatusKind::Toxic),
-                fx.has(slot, StatusKind::Venom),
-            );
-            let dmg = self.battle.status_effects.tick_actor(slot, cur, max);
+            let word = self.raw_status_word(slot);
+            let (toxic, venom) = (word & 2 != 0, word & 1 != 0);
+            let dmg = self
+                .battle
+                .status_effects
+                .tick_actor_word(slot, word, cur, max);
             // In a scripted fight a monster's DoT lasts one tick: the arm
             // that ticked clears its own bit (`andi 0xFFFD` at `0x801E762C`
             // for Toxic, `andi 0xFFFE` at `0x801E76C4` for Venom, both behind
@@ -514,6 +514,53 @@ impl World {
                 // forever.
                 // REF: FUN_801E752C
                 actor.battle.resync_hp_bar();
+            }
+            if cur != 0 && slot < self.party.party_count {
+                self.tick_after_passives(slot);
+            }
+        }
+    }
+
+    /// The tail of a party seat's tick: Life Grail (`+0xF8 & 0x20`, passive
+    /// `0x25` HP After) runs the applier's class 0 tier 0 on the seat, and Magic
+    /// Grail (`+0xF8 & 0x40`, passive `0x26` MP After) its class 2 tier 2
+    /// (`0x801E7730..0x801E7768`). The body the call reaches is
+    /// `FUN_800402F4`'s `0x8007655C` restore: 200 HP and 20 MP on the disc.
+    ///
+    /// PORT: FUN_801E752C (`0x801E7730..0x801E7768`, the HP After and MP After calls)
+    fn tick_after_passives(&mut self, slot: u8) {
+        const HP_AFTER_RESTORE: u16 = 200;
+        const MP_AFTER_RESTORE: u16 = 20;
+        let word = self.party_ability_word_f8(usize::from(slot));
+        if word & 0x20 != 0 {
+            let Some(a) = self.actors.get_mut(usize::from(slot)) else {
+                return;
+            };
+            let restore = a
+                .battle
+                .max_hp
+                .saturating_sub(a.battle.hp)
+                .min(HP_AFTER_RESTORE);
+            a.battle.hp += restore;
+            a.battle.assign_hp_bar(restore as i16);
+            if restore != 0 {
+                self.battle.hit_fx.push(BattleHitFx {
+                    target_slot: slot,
+                    amount: restore,
+                    is_heal: true,
+                    is_crit: false,
+                });
+            }
+        }
+        if word & 0x40 != 0 {
+            let max_mp = self
+                .tables
+                .character_max_mp
+                .get(usize::from(slot))
+                .copied()
+                .unwrap_or(0);
+            if let Some(a) = self.actors.get_mut(usize::from(slot)) {
+                a.battle.mp += max_mp.saturating_sub(a.battle.mp).min(MP_AFTER_RESTORE);
             }
         }
     }
