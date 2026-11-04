@@ -210,7 +210,9 @@ fn seed_port(w: &mut World, c: &Cast) {
         w.battle.accuracy[i] = st.int;
         w.battle.attack[i] = st.atk;
         w.battle.defense_split[i] = Some((st.udf, st.ldf));
-        w.battle.guarding.get_mut(i).map(|g| *g = st.guarding);
+        if let Some(g) = w.battle.guarding.get_mut(i) {
+            *g = st.guarding;
+        }
         let a = &mut w.actors[i];
         a.battle.liveness = 1;
         a.battle.hp = st.hp;

@@ -156,6 +156,7 @@ fn seed_retail(cpu: &mut Cpu, r: &Round, banks: &[Vec<u8>]) {
     }
 }
 
+#[allow(clippy::needless_range_loop)]
 fn seed_port(w: &mut World, r: &Round, banks: &[Vec<u8>], guards: [u16; 4]) {
     let mut party = Party::zeroed(3);
     for m in 0..3 {
@@ -312,6 +313,7 @@ fn an_auto_round_builds_the_queue_retail_builds() {
 /// target roll through the dead-target redirect and a blind draw off the learned
 /// list, in seat order, ahead of everything else in the round.
 #[test]
+#[allow(clippy::needless_range_loop)]
 fn a_delegated_member_draws_what_retail_draws() {
     let state = Rc::new(Cell::new(0));
     let Some((mut cpu, banks, guards)) = rig(&state) else {
