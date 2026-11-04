@@ -1477,6 +1477,13 @@ Rot's left, right and low limb on `rand & 1`, `rand % 3 != 0` and `rand & 3 != 0
 the record's two immunity bits (`+0x6BC & 0x11000000`). A victim that dies takes the
 knockdown and ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
 
+**Water Column and Water Crystals** gate on the same countdown shape with no chain
+descriptor (`capture_countdown::WATER_COLUMN`, `WATER_CRYSTALS`). One hit lands as an arm
+passes, arm 5 and arm 3, and the terminal arm then waits for the victim to settle
+(`gated_hit_arm`). Water Column runs its caster at half rate from arm 0 and halves the
+victim's beside the hit, so the knockdown's cues sit twice as far apart, and doubles both
+back in arm 7.
+
 **Settle waits** are carried (`ChainSettle`, held by the band's caller). Each
 tests a seat the same way: live (`+0x14C != 0`) once its playing clip `+0x1D9`
 is back at `0`, dead once it reads the down clip `8`.

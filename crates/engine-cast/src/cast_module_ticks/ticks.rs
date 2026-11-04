@@ -346,16 +346,30 @@ pub fn blazing_slash_tick(
 /// `0x30`, shape-A clamp at `0x801F74C0`. It is the one tick body that writes
 /// the flag word `+0x16E` (one store paired with one load).
 ///
+/// It halves the caster's rate in arm 0 (`0x801F6FCC`) and the victim's beside
+/// the hit in arm 5 (`0x801F7490`), and doubles both back in arm 7
+/// (`0x801F76AC`, `0x801F76BC`), so the knockdown runs at half speed.
+///
 /// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F6EDC (phase machine + damage/staging; packet arms unported)
 pub fn water_column_tick(
     ctx: &mut CastModuleCtx,
+    caster: &mut CastActorState,
     victim: &mut CastActorState,
     hit: Option<i32>,
     flags_set: u16,
 ) -> CastTickStep {
-    run_tick(ctx, 8, |_| {
+    run_tick(ctx, 8, |c| {
+        match c.phase {
+            0 => caster.anim_rate >>= 1,
+            5 => victim.anim_rate >>= 1,
+            7 => {
+                caster.anim_rate = caster.anim_rate.wrapping_shl(1);
+                victim.anim_rate = victim.anim_rate.wrapping_shl(1);
+            }
+            _ => {}
+        }
         if let Some(roll) = hit {
             apply_hit_floor_zero(victim, roll);
             victim.flags |= flags_set;

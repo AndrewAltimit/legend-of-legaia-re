@@ -656,6 +656,18 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
     ],
 };
 
+/// The arm of a countdown-gated body with no chain descriptor that lands the
+/// cast's one hit as it passes, and its terminal arm's settle wait: PROT 0945's
+/// Water Column (`0x801F74A4`, arm 7's `0x801F7654..0x801F769C`) and PROT 0949's
+/// Water Crystals (`0x801F7318`, arm 5's `0x801F7438..0x801F7480`).
+pub fn gated_hit_arm(entry: u32, body: Option<u32>) -> Option<(u8, u8, ChainSettle)> {
+    match (entry, body) {
+        (945, Some(WATER_COLUMN_TICK)) => Some((5, 7, ChainSettle::VictimOrFaded)),
+        (949, None) => Some((3, 5, ChainSettle::VictimOrFaded)),
+        _ => None,
+    }
+}
+
 /// The pace of PROT 0939's four hits. Arm 3's pass zeroes the hit count
 /// `0x801F7AF8` and seeds the word `0x801F7AF4` with `scalar << 5`
 /// (`0x801F6F94..0x801F6FB8`). Every pass of arm 4 under four hits drains it by
@@ -1255,6 +1267,35 @@ mod chain_tests {
                 }
             }
         }
+    }
+
+    /// `vozz_gizam_water_column`'s arm lengths on the game clock read `64`, `128`,
+    /// an ungated pass, `64`, `128`, `96`, then the settle; the tables hold them.
+    #[test]
+    fn the_water_bodies_land_one_hit_and_settle() {
+        use crate::cast_module_camera::{SINGLE_BODY, capture_arm_countdowns};
+        let col = capture_arm_countdowns(945, WATER_COLUMN_TICK).unwrap();
+        assert!(!col.iter().any(|a| a.arm == 3), "arm 3 runs ungated");
+        assert!(capture_arm_countdowns(949, SINGLE_BODY).is_some());
+        assert_eq!(
+            gated_hit_arm(945, Some(WATER_COLUMN_TICK)).map(|g| (g.0, g.1)),
+            Some((5, 7))
+        );
+        assert_eq!(gated_hit_arm(949, None).map(|g| (g.0, g.1)), Some((3, 5)));
+        let (mut c, mut k, mut v) = (
+            CastModuleCtx::default(),
+            CastActorState::default(),
+            CastActorState::default(),
+        );
+        k.anim_rate = 8;
+        v.anim_rate = 8;
+        for _ in 0..6 {
+            water_column_tick(&mut c, &mut k, &mut v, None, 0);
+        }
+        assert_eq!((k.anim_rate, v.anim_rate), (4, 4));
+        c.phase = 7;
+        water_column_tick(&mut c, &mut k, &mut v, None, 0);
+        assert_eq!((k.anim_rate, v.anim_rate), (8, 8));
     }
 
     /// `teien_berserker_pre_spore_gas`: hits 33, 49, 65 and 81 passes into arm 4

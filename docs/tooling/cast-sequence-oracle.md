@@ -596,6 +596,11 @@ A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
   corpus's `*_mid_cast` state then records the cast from its instant, and
   `--spell .. --engine-only` runs the engine side, which pairs by arm.
 
+A `--physical` recording runs on past the cast into the next action, and its `done.txt`
+names that action's caster and target, which the engine half then reads. Patch the
+recording's `caster=` and `cast_target=` to the state's own seat and cut its `sfx.csv` and
+`meta.csv` at the cast's Done band before scoring, or the engine dispatches another cast.
+
 ### The target has to be the engine's
 
 The engine half dispatches the monster's cast with the target class its

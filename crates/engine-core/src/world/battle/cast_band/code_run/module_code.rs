@@ -563,6 +563,23 @@ impl World {
             victim = self.cast_view(victim_slot);
             seat = self.cast_view(seat_slot);
         }
+        if let Some((hit_arm, settle_arm, settle)) =
+            ticks::gated_hit_arm(entry, if has_trampoline { body } else { None })
+            && !capture_held
+        {
+            if phase_in == settle_arm && !self.chain_settled(settle, caster_slot, victim_slot, &ctx)
+            {
+                capture_held = true;
+            }
+            if phase_in == hit_arm && self.casting.module_hit_arm != Some(hit_arm) {
+                self.casting.module_hit_arm = Some(hit_arm);
+                self.fold_pending_cast();
+                caster = self.cast_view(caster_slot);
+                victim = self.cast_view(victim_slot);
+                seat = self.cast_view(seat_slot);
+                (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+            }
+        }
         if entry == 939 {
             if phase_in == 3 {
                 self.casting.spore_gas_beat = ticks::SporeGasBeat::armed();
@@ -708,9 +725,13 @@ impl World {
                         arm0_rand,
                     ))
                 }
-                (945, Some(ticks::WATER_COLUMN_TICK)) => {
-                    Some(ticks::water_column_tick(&mut ctx, &mut victim, None, 0))
-                }
+                (945, Some(ticks::WATER_COLUMN_TICK)) => Some(ticks::water_column_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                    0,
+                )),
                 // PROT 0945's other choreography: the band's widest stat
                 // write, on the caster.
                 (945, Some(ticks::ALL_STATS_SURGE_TICK)) => {

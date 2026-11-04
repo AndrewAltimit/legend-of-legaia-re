@@ -347,6 +347,32 @@ pub const SPORE_GAS: &[ArmCountdown] = &[
     gate(4, P, None),
 ];
 
+/// PROT 0945 `0x54` (Water Column, `0x801F6EDC`, word `0x801F7E5C`): seed
+/// `scalar << 6` (`0x801F7054`); gates at `0x801F70AC`, `7168`, `72C8`, `7440`,
+/// `75D4`, `764C` re-arm `scalar << 7`, `<< 6`, `<< 7`, `* 0x60`, `<< 6`, and arm 3
+/// runs ungated. The last gate is the body's settle wait.
+pub const WATER_COLUMN: &[ArmCountdown] = &[
+    seed(0, S << 6),
+    gate(1, P, add(S << 7)),
+    gate(2, P, add(S << 6)),
+    gate(4, P, add(S << 7)),
+    gate(5, P, add(S * 0x60)),
+    gate(6, P, add(S << 6)),
+    gate(7, P, None),
+];
+
+/// PROT 0949 `0x59` (Water Crystals, `0x801F6A10`, word `0x801F8200`): seed
+/// `scalar << 5` (`0x801F6D14`); gates at `0x801F6E58`, `6F20`, `72EC`, `73C8`,
+/// `7430` re-arm `scalar << 7`, `<< 7`, `<< 6`, `* 12`. The last is the settle wait.
+pub const WATER_CRYSTALS: &[ArmCountdown] = &[
+    seed(0, S << 5),
+    gate(1, P, add(S << 7)),
+    gate(2, P, add(S << 7)),
+    gate(3, P, add(S << 6)),
+    gate(4, P, add(S * 12)),
+    gate(5, P, None),
+];
+
 /// PROT 0942 `0xAA` (Power Up, `0x801F69F4`, word `0x801F88B4`): seed
 /// `scalar * 0x180` (`0x801F6B24`), product gates re-arming `scalar * 0x60`,
 /// `<< 7`, `* 0x180`, `<< 6`, `<< 7` (`0x801F6DD0`, `7150`, `72B8`, `76F4`,
@@ -532,6 +558,8 @@ pub fn capture_arm_countdowns(entry: u32, body: u32) -> Option<&'static [ArmCoun
         (936, super::SINGLE_BODY) => HYPER_CRUSH,
         (937, super::SINGLE_BODY) => HYPER_LIGHTNING,
         (939, super::SINGLE_BODY) => SPORE_GAS,
+        (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => WATER_COLUMN,
+        (949, super::SINGLE_BODY) => WATER_CRYSTALS,
         (947, super::SINGLE_BODY) => V_WINDHASH,
         (942, CHAIN_0942) => POWER_UP_AA,
         (956, CHAIN_0956) => PARALYZING_WAVE,
