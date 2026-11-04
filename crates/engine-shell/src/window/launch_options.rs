@@ -394,6 +394,9 @@ pub struct ScreenshotConfig {
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
     pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_field::fog_particles::FogParticle>>>,
+    /// `LEGAIA_SEAT_FOG_OFFSET`: the camera's eased vertical offset the seated
+    /// sheets stand against (`_DAT_8007BCAC`).
+    pub seat_fog_offset: Option<i32>,
     /// Raised on the capture frame by the seating pass and taken by the
     /// frame's fog draw, which installs `seat_fog` and re-runs the frame's
     /// render step over it (`BootSession::seat_field_fog`) where the draw
@@ -1069,6 +1072,9 @@ impl ScreenshotConfig {
                 let (s, a) = v.split_once(':')?;
                 Some((s.trim().parse().ok()?, a.trim().parse().ok()?))
             }),
+            seat_fog_offset: std::env::var("LEGAIA_SEAT_FOG_OFFSET")
+                .ok()
+                .and_then(|v| v.parse().ok()),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::script_gate::ScriptGate::from_env(&v)),

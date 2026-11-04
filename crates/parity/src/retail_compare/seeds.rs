@@ -768,26 +768,37 @@ pub(super) const FOG_POOL_PTR: u32 = 0x8007_B7E0;
 
 /// Every live record of a retail state's fog pool: 80 `0x18`-byte records
 /// from pool `+0xA4`, alive byte `+0x05`
-/// ([`legaia_engine_field::fog_particles`] has the layout).
+/// ([`legaia_engine_field::fog_particles`] has the layout), taken back to where
+/// the child's step over them draws the displayed table's sheets.
 pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
     let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
     if (pool & 0xFFE0_0000) != 0x8000_0000 {
         return Vec::new();
     }
+    // Vsyncs of age and drift since the pass ahead of the one the displayed
+    // table was built on: the display lag's two passes, plus the one the child
+    // steps the records through to draw them.
+    let back = (i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES) + 1)
+        * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
     (0..legaia_engine_field::fog_particles::FOG_POOL_SLOTS as u32)
         .map(|i| pool + 0xA4 + i * 0x18)
         .filter(|&r| game_anchors::u8_at(ram, r + 5) != 0)
-        .map(|r| legaia_engine_field::fog_particles::FogParticle {
-            age: game_anchors::u16_at(ram, r),
-            rate: game_anchors::u16_at(ram, r + 2),
-            slot: game_anchors::u8_at(ram, r + 4),
-            alive: true,
-            vx: game_anchors::u8_at(ram, r + 6) as i8,
-            vz: game_anchors::u8_at(ram, r + 7) as i8,
-            x: game_anchors::u32_at(ram, r + 8) as i32,
-            z: game_anchors::u32_at(ram, r + 0xC) as i32,
-            y: game_anchors::i16_at(ram, r + 0x10),
-            grey: game_anchors::u8_at(ram, r + 0x14),
+        .map(|r| {
+            let rate = game_anchors::u16_at(ram, r + 2);
+            let vx = game_anchors::u8_at(ram, r + 6) as i8;
+            let vz = game_anchors::u8_at(ram, r + 7) as i8;
+            legaia_engine_field::fog_particles::FogParticle {
+                age: game_anchors::u16_at(ram, r).wrapping_sub((i32::from(rate) * back) as u16),
+                rate,
+                slot: game_anchors::u8_at(ram, r + 4),
+                alive: true,
+                vx,
+                vz,
+                x: game_anchors::u32_at(ram, r + 8) as i32 - i32::from(vx) * back,
+                z: game_anchors::u32_at(ram, r + 0xC) as i32 - i32::from(vz) * back,
+                y: game_anchors::i16_at(ram, r + 0x10),
+                grey: game_anchors::u8_at(ram, r + 0x14),
+            }
         })
         .collect()
 }

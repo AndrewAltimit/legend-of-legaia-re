@@ -158,6 +158,10 @@ pub struct RetailObs {
     /// The live fog-pool records ([`retail_fog`]), handed to the image child
     /// as `LEGAIA_SEAT_FOG` and installed on the frame it captures.
     pub fog: Vec<legaia_engine_field::fog_particles::FogParticle>,
+    /// `_DAT_8007BCAC`, the camera's eased vertical offset, which the sheets
+    /// stand against (`FUN_8003F3FC` at `0x8003F448`): a clock of the steps the
+    /// player walked, handed over as `LEGAIA_SEAT_FOG_OFFSET`.
+    pub fog_offset: i32,
     /// The live draw-kind-4 sprite-arm sheets ([`retail_sprite_arms`]),
     /// handed to the image child as `LEGAIA_SEAT_SPRITE_ARMS` and installed on
     /// the frame it captures.
@@ -389,6 +393,7 @@ impl RetailObs {
             } else {
                 Vec::new()
             },
+            fog_offset: game_anchors::u32_at(ram, 0x8007_BCAC) as i32,
             sprite_arms: if matches!(class, StateClass::Field | StateClass::WorldMap) {
                 retail_sprite_arms(ram)
             } else {
@@ -586,6 +591,7 @@ impl RetailObs {
         }
         if !self.fog.is_empty() {
             env.push(("LEGAIA_SEAT_FOG", fog_env(&self.fog)));
+            env.push(("LEGAIA_SEAT_FOG_OFFSET", self.fog_offset.to_string()));
         }
         if !self.sprite_arms.is_empty() {
             env.push((

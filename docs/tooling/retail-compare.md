@@ -591,6 +591,14 @@ engine verdict:
   was only where the pool had put its sheets. The headless seed keeps its
   own pool: its spawns draw the stream the battle half aligns on.
 
+  Both are taken back to the displayed table: `retail_fog` rewinds each record's
+  age and drift three passes, the display lag's two and the one the child's step
+  puts back. And a sheet stands against the camera's eased vertical offset
+  `_DAT_8007BCAC` (`FUN_8003F3FC` at `0x8003F448`), a clock of the footing the
+  player walked, which the child seats beside them (`LEGAIA_SEAT_FOG_OFFSET`).
+  `concnow_field_door_hop`'s word reads `163` to the engine's `233`: every sheet
+  stood about `70` units high, and seated the frame reads `.996` from `.887`.
+
   The ambient tree's draw-kind-4 sprite-arm sheets are the same case: an
   emitter re-seats itself at a random point and yaw before each spawn
   (`garmel`'s cave mist, [field-ambient-fx](../subsystems/field-ambient-fx.md#a-spawned-sheet-drifts-along-its-spawners-yaw)),

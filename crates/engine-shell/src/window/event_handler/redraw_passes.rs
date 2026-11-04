@@ -863,6 +863,9 @@ impl PlayWindowApp {
             && let Some(fog) = sc.seat_fog.take()
         {
             let centre = self.host_view().centre();
+            if let Some(offset) = sc.seat_fog_offset {
+                self.session.host.world.camera.offset_ease = offset;
+            }
             self.session.seat_field_fog(&fog, centre);
         }
         let view = self.host_view();
