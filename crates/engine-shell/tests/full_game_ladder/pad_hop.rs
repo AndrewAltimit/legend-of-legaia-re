@@ -97,11 +97,15 @@ pub(super) fn pad_hop(
     // A party leaving a scene whose rest it can walk to walks to it first, how
     // far off it stands: the scene after it may have none, as Jette's fortress
     // has none past `deroa`'s keeper (P1[7]), and the beats leave the party
-    // wherever the last talk stood. A run clock is the exception.
+    // wherever the last talk stood. A run clock is the exception, and so is a
+    // lone member past the rest's reach, for whom the walk is the danger:
+    // Vahn alone at level 2 crossing mist-era `dolk` for its bed wiped on
+    // most streams, on a stretch that walking straight out clears.
     if continuous::PLAYS_ON.with(std::cell::Cell::get)
         && session.host.world.mode == SceneMode::Field
         && !session.host.world.battle.escape_timer.armed
         && !TRAINING.with(std::cell::Cell::get)
+        && (session.host.world.present_party_list().len() >= 2 || rest_close_by(session))
         && rest_works_here(session)
         && let Some(s) = pad_rest_to(session, 800, true)?
     {

@@ -647,7 +647,9 @@ party still holds when it reaches the door, and what a reload hands back:
   still works, with the lower of HP and MP under four fifths, walks to the rest
   first however far off it stands (no scene's clock running): the beats leave
   the party wherever the last talk stood, and `chitei2` has no rest past
-  `deroa`'s keeper P1[7].
+  `deroa`'s keeper P1[7]. A lone member keeps to the rest's usual reach, since
+  for it the walk is the danger: Vahn alone at level 2 crossing mist-era `dolk`
+  for its bed wiped on most streams, on a stretch that walking straight out clears.
 - **A fight on the lean does not end the talk.** An encounter rolled on the lean
   toward a keeper ended the lean, and the failure to face was read as a rest that
   lifts nobody ([below](#a-rest-that-stops-resting)), which struck `deroa` P1[7]
