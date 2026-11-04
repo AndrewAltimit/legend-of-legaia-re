@@ -592,7 +592,7 @@ pub fn battle_attack_channels(world: &World, acting_slot: u8) -> Option<script::
         anim_frame: a
             .battle_animation
             .as_ref()
-            .map(|p| p.current_frame().saturating_mul(16))
+            .map(|p| p.cursor_sixteenths() as i16)
             .unwrap_or(0),
     })
 }
@@ -720,7 +720,7 @@ pub fn spell_cam_inputs(world: &World, slot: u8, case: u8) -> script::SpellCamIn
         anim_cursor: a
             .battle_animation
             .as_ref()
-            .map_or(0, |p| p.current_frame().saturating_mul(16)),
+            .map_or(0, |p| p.cursor_sixteenths() as i16),
         hit_bound: a.battle.hit_count_bound,
         current_anim: world.battle_current_anim(usize::from(slot)),
     }

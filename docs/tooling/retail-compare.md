@@ -3799,6 +3799,14 @@ It is not a general rule: over every other battle state the same stand loses
 `battle_rugi_barra_windcutter_mid_cast` `.861` to `.543`), because a shot armed
 once holds a table that does not describe the passes behind it.
 
+#### A shot whose endpoint walks with the clip
+
+The magic band's case `0xA` re-arms on the anim cursor, so its yaw endpoint moved
+on the passes the table no longer holds. `clip_clock_end_shift` reads that move
+off the cursor ring when the RAM's endpoint fits the case's law, and the walk back
+runs against it (`displayed_cam_live_steps`'s `end_shift`). This is a read of the
+capture and changes no game state.
+
 #### A shot armed after the displayed frame
 
 The magic band's shot arms on the first `0x2B` pass

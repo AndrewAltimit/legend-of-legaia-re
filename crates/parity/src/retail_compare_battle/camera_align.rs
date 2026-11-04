@@ -873,6 +873,39 @@ pub(super) fn walker_end_shift(ram: &[u8], ctx: u32) -> Option<[i32; 9]> {
     Some(shift)
 }
 
+/// How far case `0xA`'s yaw endpoint stood, on the pass before the RAM's, from
+/// the RAM's own - [`displayed_cam_live_steps`]'s `end_shift` for the yaw.
+///
+/// `FUN_801DC0A0`'s case `0xA` re-arms every pass with a yaw of
+/// `node[+0x68] * 2 + 0x700 - facing` (`0x801DC8B8..0x801DC8CC`), so its
+/// endpoint climbs with the clip. The RAM's arm read the cursor ring's slot `1`
+/// (the anim tick runs after the arm) and the pass before it slot `2`.
+/// `battle_noaru_slippery_v2_poisonous_breath_mid_cast` holds yaw `3350` under
+/// an endpoint of `3368` on slot `1`'s `60`, and the walk back against the
+/// `24` a pass lands on `3332` then `3320`, the yaw its frame fits best.
+///
+/// `None` off the cast band, or when the RAM's yaw endpoint is not the case's
+/// law over slot `1` (another shot owns the table).
+pub(super) fn clip_clock_end_shift(ram: &[u8], ctx: u32) -> Option<i32> {
+    if !(0x2A..=0x2D).contains(&game_anchors::u8_at(ram, ctx + 7)) {
+        return None;
+    }
+    let seat = u32::from(game_anchors::u8_at(ram, ctx + 0x13));
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + seat.min(7) * 4);
+    if !in_ram(actor) {
+        return None;
+    }
+    let cursor = |k: u32| i32::from(game_anchors::u16_at(ram, actor + CURSOR_RING + k * 2) as i16);
+    let facing = i32::from(game_anchors::u16_at(ram, actor + 0x46));
+    let end = i32::from(game_anchors::u16_at(ram, ctx + TWEEN_TABLE + 4 + 2));
+    if (cursor(1) * 2 + 0x700 - facing - end) & 0xFFF != 0 {
+        return None;
+    }
+    // A clip younger than the walk back: the pass before read another clip.
+    let step = cursor(1) - cursor(2);
+    (step > 0).then_some(-2 * step)
+}
+
 /// The walk's last heading on a monster strike whose displayed frame **is** that
 /// walk pass, read off the attacker's position ring.
 ///

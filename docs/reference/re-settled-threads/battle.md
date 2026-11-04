@@ -2477,3 +2477,8 @@ Owning page: [`battle-formulas.md`](../../subsystems/battle-formulas.md#a-spell-
 
 Grade: capture and disassembly. An arm's per-pass spawn call seated once per one-vsync module tick, and a pass runs a frame step of those ticks (`World::module_pass`), so a cast held a step times the records: PROT 0915's `0x801F8108` trail stood at sixteen live parts against retail's five in one RAM read, and PROT 0957's sparks at twice retail's at step `2`. A call now runs on the pass's first tick (`CastFxState::module_pass_repeat`). Mushura's first rampage hit lands on the frame retail's does since arm 9's pass stores the creature's heading on its target (`jal 0x80019B28`, `sh v0,0x46(s4)` at `0x801F7578..0x801F7594`): the port had left arm 8's spin in `+0x46`, and arm `0xC`'s chase set off along it, sound cue score `.500` to `1.000`.
 
+### The case `0xA` yaw clock
+
+Grade: disassembly and capture. The word `0x801DC8B8` reads is the anim node's `+0x68` cursor, signed, in sixteenths of a keyframe, and each state in the magic band that runs the case holds an endpoint of `ring[1] * 2 + 0x700 - facing`, slot `1` of the cursor ring being the pass's value ahead of its anim tick. The engine handed the case, and `FUN_801D71B8`'s arms, the cursor rounded down to a whole keyframe, which aimed Rugi's Poisonous Breath `17` units short and Devil Pump's Multi Cutter `24`. A moving endpoint also takes the displayed frame's walk back: the capture channel's `clip_clock_end_shift` gives the walk its `24` a pass, and Poisonous Breath's `3350` under `3368` walks to the `3320` an image scan of the frame finds independently.
+
+Owning page: [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#the-cast-drivers-clip-clock).

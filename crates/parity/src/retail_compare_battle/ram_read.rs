@@ -836,7 +836,10 @@ impl RetailBattle {
                         }),
                         {
                             let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
-                            shift[1] = walk_heading(ram, ctx).map_or(0, |h| h.end_shift);
+                            shift[1] = walk_heading(ram, ctx)
+                                .map(|h| h.end_shift)
+                                .or_else(|| clip_clock_end_shift(ram, ctx))
+                                .unwrap_or(0);
                             shift
                         },
                         walk_arm.is_some(),

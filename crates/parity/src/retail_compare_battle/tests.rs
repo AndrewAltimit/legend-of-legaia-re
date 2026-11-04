@@ -433,6 +433,38 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     assert!(camera_align::walk_heading(&ram, ctx).is_none());
 }
 
+/// Case `0xA`'s yaw clock: the endpoint climbs twice the cursor's step a pass,
+/// so the walk back from Poisonous Breath's `3350` under `3368` lands on the
+/// `3320` its frame fits best, where the RAM's endpoint alone gives `3296`.
+#[test]
+fn a_clip_clock_endpoint_walks_back_against_the_cursor() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    let actor = 0x800F_0000;
+    put8(&mut ram, ctx + 7, 0x2B);
+    put8(&mut ram, ctx + 0x13, 4);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, actor);
+    put16(&mut ram, actor + 0x46, 2640);
+    for (k, cursor) in [72u16, 60, 48].into_iter().enumerate() {
+        put16(&mut ram, actor + 0x17A + k as u32 * 2, cursor);
+    }
+    put16(&mut ram, 0x8007_B792, 3350);
+    put16(&mut ram, rec(1), 6);
+    put16(&mut ram, rec(1) + 2, 3368);
+    let shift = camera_align::clip_clock_end_shift(&ram, ctx).expect("the case's law");
+    assert_eq!(shift, -24);
+    let mut end_shift = [0; 9];
+    end_shift[1] = shift;
+    let walked =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], end_shift);
+    assert_eq!(walked.yaw, 3320.0);
+
+    // Another shot's table: the endpoint is off the law.
+    put16(&mut ram, rec(1) + 2, 3369);
+    assert!(camera_align::clip_clock_end_shift(&ram, ctx).is_none());
+}
+
 /// A `0x32` capture on the summon route's first pass: the eye depth walks
 /// back one pass along the close-up table (`2 * 183`) and then one `0x29`
 /// step short of that table's endpoint `prescale(0xC00)`, not on past it.

@@ -1243,8 +1243,21 @@ Port: `battle_attack_camera` runs the thirteen arm bodies and owns the ramp
 quartet; `battle_cam_script`'s Action phase steps the live pose toward whatever
 the arms produce, each frame, on the arm's own duration. Both hosts feed it the
 same three per-actor channels: `actor[+0x1DB]` as `BattleActor::latched_anim`,
-`actor[+0x21B]` as `hit_count_bound`, and `actor[+0x22C][+0x68]` from the
-battle animation player's cursor, `<< 4` into retail's sixteenths.
+`actor[+0x21B]` as `hit_count_bound`, and `actor[+0x22C][+0x68]` as the battle
+animation player's cursor in retail's own sixteenths, sub-keyframe bits included
+(`cursor_sixteenths`). The cast driver's case `0xA` reads the same word
+([below](#the-cast-drivers-clip-clock)).
+
+### The cast driver's clip clock
+
+`FUN_801DC0A0`'s case `0xA` aims its yaw at `node[+0x68] * 2 + 0x700 - facing`
+(`0x801DC8B8..0x801DC8CC`) on every pass of the magic band, so the endpoint climbs
+with the clip: `24` units a pass at the usual cursor step of `12`. The arm reads the
+word before the pass's anim tick, so a table holds the cursor of the ring's slot `1`,
+one step behind the live word. `battle_noaru_slippery_v2_poisonous_breath_mid_cast`
+holds endpoint `3368` under cursor `72`, and `3368` is `60 * 2 + 0x700 - 2640`.
+Rounding the cursor down to a keyframe aims up to `30` units short
+(`battle_rugi_slippery_poisonous_breath_mid_cast`).
 
 ### The Battle Camera option
 
