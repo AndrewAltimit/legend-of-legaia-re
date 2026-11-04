@@ -1010,7 +1010,8 @@ pub fn slime_divide_camera(
     phase: u8,
     seats: ModuleCamSeats,
 ) -> CaptureCamArm {
-    let Some(gate) = super::arm_countdown(super::capture_countdown::GLARE_DIVIDE_SPLIT, phase) else {
+    let Some(gate) = super::arm_countdown(super::capture_countdown::GLARE_DIVIDE_SPLIT, phase)
+    else {
         return CaptureCamArm::default();
     };
     if gate.holds(&mut st.countdown) {

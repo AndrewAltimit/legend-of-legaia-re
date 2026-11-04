@@ -178,8 +178,7 @@ pub fn strike_heading_target(
     });
     let turn = (target.yaw - end.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
     let state = world.battle_ctx.action_state;
-    let armed_once =
-        legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES.contains(&state);
+    let armed_once = legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES.contains(&state);
     if (state == 0x1E && recover || armed_once) && turn.abs() <= STRIKE_HEADING_SLACK {
         BattleCamPose {
             yaw: target.yaw - turn,
