@@ -286,7 +286,7 @@ fn an_inn_stay_restores_what_retail_restores() {
     cpu.mem
         .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
     cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = CTX);
-    let mut rng = crate::common::Rng(0x494E_4E);
+    let mut rng = crate::common::Rng(0x0049_4E4E);
     for round in 0..300u32 {
         let slot = round % 3;
         let rec = 0x8008_4708 + slot * 0x414;
