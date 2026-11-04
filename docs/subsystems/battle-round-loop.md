@@ -370,7 +370,7 @@ Monster ids missing from the catalog contribute zero. The rewards land in `World
 
 ### Post-battle Seru learning
 
-This is the path of the capture *spells* and capture items; the killing-blow absorb is [separate](#the-retail-capture-roll-fun_801ec3e4).
+This is the path of the capture *spells* and capture items of a synthetic catalog: no retail item descriptor carries a capture class, so a game on the disc's data learns Seru magic through the killing-blow absorb ([separate](#the-retail-capture-roll-fun_801ec3e4)) and worn gear ([the summon scans](../reference/glitches/summons-and-jette.md)).
 
 - A capture downs the monster and logs its monster id into `World::seru.battle_captures`.
 - `World::finish_battle` resolves them through `World::resolve_captures`: each id maps to a Seru id via `MonsterDef::seru_id`, and `seru_learning::record_capture` banks capture points against `World::seru.log` for every active party slot eligible by the Seru's `learnable_mask`.
@@ -740,7 +740,7 @@ Each `ItemEntry` has an `ItemEffect` (Heal / Cure / Revive / Stat-up / Spirit-up
 - a combat-stat raise lands in the record's `+0x110` live-stat block that `seed_party_battle_stats` re-derives from, so the gain shows at once and survives a save;
 - combat stats cap at the record's per-stat cap constant, HP / MP max at 9999.
 
-These items are field-only and absent from the captured battle traces, so the exact retail cap / refill rule is not byte-pinned; the port's rules are self-consistent rather than measured.
+The disc's permanent stat-ups take `World::apply_stat_up_item`, whose result the retail kernel differential holds to `FUN_800402F4` ([`retail-kernel-differential.md`](../tooling/retail-kernel-differential.md)). The arm above is for a pack's or a synthetic catalog's `StatRaised` item, which no retail item reaches.
 
 ### Arts command input
 

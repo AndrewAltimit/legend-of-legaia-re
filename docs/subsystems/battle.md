@@ -521,9 +521,9 @@ The persistent party record: stride `0x414` per character at `0x80084708 + n*0x4
 
 | Offset | Meaning |
 |---|---|
-| `+0x00` | u8 that moved `0x4F -> 0x73` across one level-up; unidentified. |
-| `+0x04` | XP word (`365 -> 730` across one level-up). |
-| `+0x08..+0x98` | u32 per-spell counter array (36 entries), parallel to the two byte arrays below. |
+| `+0x00` | Cumulative XP, u32. |
+| `+0x04` | Next-level threshold, u32, rewritten by `FUN_801E9504` (`365 -> 730` across one level-up). |
+| `+0x08..+0x98` | u32 per-spell experience array (36 entries), parallel to the two byte arrays below. |
 | `+0x9C` | Magic-rank mirror. |
 | `+0xF4..+0x100` | "Active abilities" 16-byte block, ORed into the global mask `0x80074358..0x80074368`. |
 | `+0x104..+0x10E` | HP / MP / AP as `(max, cur)` u16 pairs: maxima at `+0x104` / `+0x108` / `+0x10C`, currents at `+0x106` / `+0x10A` / `+0x10E`. AP is the arts gauge; the AGL stat is the adjacent `+0x110` / `+0x122`. |
@@ -549,7 +549,7 @@ The spell list is three arrays at one index. `FUN_800432BC` (learn a spell: inse
 
 The level byte is read from the source slot's `+0x2B5` and floored to 1 (`bne t1,zero` at `0x8004331C`, `addiu t1,t1,0x1` at `0x80043324`). The u32 counter is assembled from the slot's four bytes `+0x2B1..+0x2B4` (`0x800432F8..0x8004331C`). `FUN_80042DBC` moves the data the other way (`lbu 0x161` at `0x80042E64` -> `sb 0x2b5` at `0x80042E6C`) and runs the mirror compaction loop at `0x80042E84..0x80042E9C` on removal.
 
-What the `+0x08` counter counts is **Inferred**: structure, lifetime and stride are pinned by the disassembly and one capture shows `+12` on a rank-up, but no consumer that tests it against a threshold has been traced. Spell experience is the likeliest reading.
+The `+0x08` counter is the spell's experience. The damage finisher's tail accrues into it (`FUN_801DDB30`, `summon_spell_xp_gain`: `12` for a killing single-target hit, which is the capture's `+12`), and `FUN_801E70BC` compares it against the threshold table `0x8007656C` to raise the level byte at `+0x161` (`summon_magic_levels_up`).
 
 ### Why the pair order is `(max, cur)`
 

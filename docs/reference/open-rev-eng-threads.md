@@ -68,6 +68,16 @@ Readings a re-audit against the disassembly or a capture overturned. They are
 listed here as well as in the registers, because a claim that was wrong once is
 the cheapest place to look for a claim that is still wrong.
 
+- **Worn gear teaches a summon, and the port never ran it.** The stat aggregator's
+  grant and revoke scans were documented and tagged, but no code wrote the spell
+  list: a Talisman taught nothing and a final-form Ra-Seru no Meta, Terra or Ozma.
+  Running `FUN_80042558` off the disc against the port showed it, and the same
+  instrument showed level-ups never rolling their stat spread
+  ([method](../tooling/retail-kernel-differential.md)).
+- **The record's `+0x08` array is spell experience, and `+0x00` / `+0x04` are XP
+  words.** `FUN_801E70BC` compares it against `0x8007656C` (`lw 0x5D0(v0)` at
+  `0x801E7208`), so "no consumer has been traced" was stale
+  ([battle.md](../subsystems/battle.md#the-three-parallel-spell-arrays)).
 - **The `0x75EA` CD input volume has a writer.** `FUN_8003D764` state `6`
   sets `a0 = 0x75` at `0x8003D92C` and reaches the shared `jal 0x8003EE7C` at
   `0x8003D9F4`; a scan for `117` loaded just before a call missed it, and the

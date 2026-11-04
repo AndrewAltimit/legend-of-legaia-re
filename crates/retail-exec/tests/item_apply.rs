@@ -27,7 +27,14 @@ fn seed(rng: &mut Rng) -> Vec<u8> {
     w(0x11E, mp);
     w(0x120, 100);
     // Down, hurt or whole, so the zero-HP gates and the restore clamps both run.
-    w(0x106, match rng.below(3) { 0 => 0, 1 => hp, _ => rng.below(hp) });
+    w(
+        0x106,
+        match rng.below(3) {
+            0 => 0,
+            1 => hp,
+            _ => rng.below(hp),
+        },
+    );
     w(0x10A, rng.below(mp + 1));
     w(0x122, 1 + rng.below(280));
     for off in [0x124, 0x126, 0x128, 0x12A, 0x12C] {
@@ -82,10 +89,7 @@ fn every_field_item_writes_the_records_retail_writes() {
             if cpu.regs.r[V0] == 0 {
                 continue;
             }
-            let stop = cpu.call(
-                APPLIER,
-                &[u32::from(e.class), u32::from(e.tier), target, 0],
-            );
+            let stop = cpu.call(APPLIER, &[u32::from(e.class), u32::from(e.tier), target, 0]);
             assert_eq!(stop, Stop::Returned, "item {id:#04x} class {}", e.class);
             assert_eq!(cpu.call(AGGREGATOR, &[]), Stop::Returned);
 
@@ -99,7 +103,11 @@ fn every_field_item_writes_the_records_retail_writes() {
             // An all-party item's session fans out across the living allies.
             if e.flags & 0x20 != 0 {
                 for member in 0..3u8 {
-                    if world.party.roster.members[usize::from(member)].hp_mp_sp().hp_cur != 0 {
+                    if world.party.roster.members[usize::from(member)]
+                        .hp_mp_sp()
+                        .hp_cur
+                        != 0
+                    {
                         world.use_item(id, member);
                     }
                 }
@@ -126,8 +134,7 @@ fn every_field_item_writes_the_records_retail_writes() {
     for class in [0, 1, 2, 6, 11, 12, 13] {
         assert!(per_class[class] > 20, "class {class}: {}", per_class[class]);
     }
-    let by_item: std::collections::BTreeSet<&str> =
-        failures.iter().map(|f| &f[..9]).collect();
+    let by_item: std::collections::BTreeSet<&str> = failures.iter().map(|f| &f[..9]).collect();
     assert!(
         failures.is_empty(),
         "{tried} uses, {} differ over {} items; first per item:\n{}",

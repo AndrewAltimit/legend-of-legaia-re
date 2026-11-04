@@ -1398,9 +1398,10 @@ if (sub_index < 3 && (i16)delta > DAT_8007655C[sub_index])   // party-side cap
 ```
 
 This is an HP **applicator**, not an attack-vs-defence calculation. The cap
-table `DAT_8007655C` is six halfwords. `800402f4.txt` lines 2037-2043.
-**Confidence: Inferred** for the role of `sub_index` and the cap table - the
-read is from the decompiled C. **Port.** `damage_cap_for_party_slot`.
+table `DAT_8007655C` is six halfwords, and `sub_index` is the item's tier. The
+retail kernel differential runs this arm off the disc for every field heal and
+holds the record to the port's ([`retail-kernel-differential.md`](../tooling/retail-kernel-differential.md)).
+**Port.** `damage_cap_for_party_slot`.
 
 ### Selector 9 - opposed INT roll (Stone)
 
