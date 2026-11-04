@@ -119,7 +119,7 @@ scripts/ci/full-gate.py --resume              # rerun what did not pass, on the 
 <section class="doc-section" id="profiling" data-doc="profiling-without-perf">
   <h2>Profiling without perf</h2>
   <p>Where <code>perf</code> is refused, <code>scripts/profile/sampler.c</code> gets the same answer with no privilege and no rebuild: a preload library that takes a stack every 10 ms of CPU time, and <code>scripts/profile/report.py</code> to read it. On a shared machine compare CPU seconds, not wall clock, and compare two binaries by running them side by side.</p>
-  <p>A speedup is proved by the output, not the timing. For part C of the ladder, that is the trace with its wall-clock fields stripped; for a patcher feature, the <code>.ppf</code> from a fixed seed must hash the same.</p>
+  <p>A speedup is proved by the output, not the timing. For part C of the ladder, that is the trace with its wall-clock fields stripped, which repeats on one binary, so a difference is the change's; for a patcher feature, the <code>.ppf</code> from a fixed seed must hash the same.</p>
 </section>
 
 <section class="doc-section" id="see-also" data-doc="-">

@@ -173,4 +173,4 @@ scripts/profile/report.py /tmp/bin /tmp/run.<pid> --under 'plan_search$'
 
 On a shared machine compare CPU seconds, not wall clock, and compare two binaries by running them side by side: a loaded box inflates even CPU time, through cache and memory contention.
 
-A speedup is proved by the output, not the timing. For part C of the ladder, the trace with its wall-clock fields stripped: `LEGAIA_FGL_TRACE=1` before and after must match line for line. For a patcher feature, the `.ppf` from a fixed seed must hash the same.
+A speedup is proved by the output, not the timing. For part C of the ladder, the trace with its wall-clock fields stripped: `LEGAIA_FGL_TRACE=1` before and after must match line for line, on any stream; the wall-clock fields are the `[run N]` and `[seg N]` durations and the test harness's own `finished in`. The trace repeats on one binary, so a difference is the change's ([what keeps it so](full-game-ladder.md#what-the-time-goes-to)). For a patcher feature, the `.ppf` from a fixed seed must hash the same.
