@@ -14,6 +14,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             defeat_lanes: None,
             status: 0,
             init_key: None,
+            heal_latch: false,
         },
         BarSeed {
             slot: 4,
@@ -24,6 +25,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             defeat_lanes: Some(0),
             status: 0,
             init_key: None,
+            heal_latch: false,
         },
         BarSeed {
             slot: 2,
@@ -34,6 +36,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             defeat_lanes: None,
             status: 0x1,
             init_key: Some(0),
+            heal_latch: false,
         },
         BarSeed {
             slot: 3,
@@ -44,6 +47,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             defeat_lanes: Some(0xd0d),
             status: 0x1C10,
             init_key: Some(154),
+            heal_latch: false,
         },
     ];
     assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
@@ -70,6 +74,7 @@ fn an_empty_seat_seed_stands_the_seat() {
         defeat_lanes: None,
         status: 0,
         init_key: None,
+        heal_latch: false,
     };
     let back = bar_seeds_from_env(&bar_seeds_to_env(&[seed]));
     assert_eq!(back, vec![seed]);
@@ -96,6 +101,7 @@ fn a_ground_seed_holds_the_seed_recentre() {
         defeat_lanes: None,
         status: 0,
         init_key: None,
+        heal_latch: false,
     };
     apply_bar_seeds(&mut world, &[bars]);
     assert!(!world.battle.seed_recentre_held);
@@ -107,4 +113,22 @@ fn a_ground_seed_holds_the_seed_recentre() {
         }],
     );
     assert!(world.battle.seed_recentre_held);
+}
+
+#[test]
+fn the_heal_latch_rides_the_bars_entry() {
+    let seed = BarSeed {
+        slot: 2,
+        hp: 832,
+        mp: 50,
+        ground: Some([58, 316]),
+        facing: None,
+        defeat_lanes: None,
+        status: 0,
+        init_key: Some(300),
+        heal_latch: true,
+    };
+    let env = bar_seeds_to_env(&[seed]);
+    assert!(env.ends_with(":k300:v"), "{env}");
+    assert_eq!(bar_seeds_from_env(&env), vec![seed]);
 }

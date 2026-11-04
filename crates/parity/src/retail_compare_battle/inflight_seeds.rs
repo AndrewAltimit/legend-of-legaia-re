@@ -76,6 +76,7 @@ impl RetailBattle {
                     defeat_lanes: None,
                     status: 0,
                     init_key: None,
+                    heal_latch: false,
                 })
             })
             .collect()

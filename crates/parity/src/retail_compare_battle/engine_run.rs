@@ -446,6 +446,9 @@ pub fn run_engine_battle(
                         .flatten()
                         .map_or(0, seedable_status_bits),
                     init_key: keys.get(slot).copied().flatten(),
+                    heal_latch: slot
+                        == usize::from(engine_seat(battle.active_actor, battle.party_count))
+                        && battle.heal_gate_passed(),
                 })
             })
             .collect::<Vec<_>>()

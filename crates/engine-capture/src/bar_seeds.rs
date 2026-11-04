@@ -34,6 +34,9 @@ pub struct BarSeed {
     /// A live key orders the replayed round as the capture's own remainder:
     /// the pick `FUN_801DABA4` takes the highest key first.
     pub init_key: Option<u16>,
+    /// The monster's self-heal latch `DAT_801C8FE0[index + 4]` stands raised
+    /// for the replay's pick (`RetailBattle::heal_gate_passed`).
+    pub heal_latch: bool,
 }
 
 /// The status-word bits a seed carries over: the ailments the engine tracks
@@ -121,6 +124,12 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
         if let Some(k) = s.init_key {
             a.battle.init_key = k;
         }
+        if s.heal_latch {
+            let index = usize::from(s.slot).saturating_sub(usize::from(world.party.party_count));
+            if let Some(l) = world.battle.monster_ai_state.dat.get_mut(index + 4) {
+                *l = 1;
+            }
+        }
         // A party member seeded down kneels, as the capture's does: the
         // seat skips the fall that leads there.
         if s.hp == 0 && s.defeat_lanes.is_none() {
@@ -132,7 +141,7 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
     }
 }
 
-/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]],...` for
+/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]][:v],...` for
 /// `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
@@ -151,10 +160,15 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 0 => head,
                 w => format!("{head}:s{w:x}"),
             };
-            match s.init_key {
+            let head = match s.init_key {
                 Some(0) => format!("{head}:k"),
                 Some(k) => format!("{head}:k{k}"),
                 None => head,
+            };
+            if s.heal_latch {
+                format!("{head}:v")
+            } else {
+                head
             }
         })
         .collect::<Vec<_>>()
@@ -166,6 +180,10 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
     v.split(',')
         .filter_map(|e| {
             let e = e.trim();
+            let (e, heal_latch) = match e.strip_suffix(":v") {
+                Some(head) => (head, true),
+                None => (e, false),
+            };
             let (e, init_key) = match e.rsplit_once(":k") {
                 Some((head, "")) => (head, Some(0)),
                 Some((head, k)) => (head, Some(k.parse().ok()?)),
@@ -200,6 +218,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 defeat_lanes,
                 status,
                 init_key,
+                heal_latch,
             })
         })
         .collect()

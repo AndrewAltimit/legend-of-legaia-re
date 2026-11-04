@@ -112,6 +112,32 @@ impl RetailBattle {
         (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
     }
 
+    /// Whether a monster's captured Attack stands past its self-heal gate.
+    /// Monsters `0x47`, `0x48`, `0x68`, `0x69` and `0x6A` cast `0x52` from the
+    /// picker's switch at HP `<= max / 3` with the latch `DAT_801C8FE0[i + 4]`
+    /// clear (`0x801EAD38`). The round's setup picks ahead of its prompt, so a
+    /// strike on those words was picked on more HP, and a harvest probe cut it
+    /// at the prompt after (`battle_map03_heavy_grude_strike`: `832` of `2498`,
+    /// latch `0`). The live game cannot stand here. The replay picks on the
+    /// seeded HP, and on every stream casts the heal the capture never ran, so
+    /// the seed raises the latch.
+    pub fn heal_gate_passed(&self) -> bool {
+        let Some(m) = usize::from(self.active_actor).checked_sub(3) else {
+            return false;
+        };
+        self.queued_category == 3
+            && self
+                .monster_ids
+                .get(m)
+                .is_some_and(|id| matches!(id, 0x47 | 0x48 | 0x68 | 0x69 | 0x6A))
+            && self
+                .monsters
+                .get(m)
+                .copied()
+                .flatten()
+                .is_some_and(|c| c.hp <= c.hp_max / 3)
+    }
+
     /// Whether the capture is a monster strike gated on a swing clip
     /// (`0x1E` on a clip's accumulator, a swing clip committed), whose
     /// strike stream the drive can stand on the capture's
