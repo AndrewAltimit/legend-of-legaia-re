@@ -903,7 +903,7 @@ mod tests {
         assert!(
             !draws
                 .iter()
-                .any(|d| d.dst.0 > 240 && d.dst.1 < ROW_TEXT_SEAT.1),
+                .any(|d| d.dst.1 > CRUMB_SEAT0.1 && d.dst.1 < ROW_TEXT_SEAT.1),
             "no PAGE header during target select"
         );
         assert!(!has(DESC_SEAT.1), "the description closes with its window");
