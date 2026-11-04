@@ -78,12 +78,11 @@ impl World {
             return;
         }
         let retail_id = self.pack_alias_as_item(item_id).unwrap_or(item_id);
+        // The selector, not the descriptor: the Point Card's row reads class 1
+        // and state `0x3E` overwrites it by id, so the strike takes its one target.
         let whole_party = self
-            .tables
-            .item_effects
-            .as_ref()
-            .and_then(|t| t.effect(retail_id))
-            .is_some_and(|e| e.class == 1)
+            .battle_item_selector(retail_id)
+            .is_some_and(|(class, _)| class == 1)
             || target == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
         if whole_party {
             for slot in 0..self.party.party_count {

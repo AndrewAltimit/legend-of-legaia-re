@@ -138,3 +138,8 @@ gauge could not pay still ran, for nothing beyond an empty gauge. A learn verdic
 known" dropped nothing; the Miracle row landed only on a whole-string match, not on the
 walk's run, and left the later groups reading arrows it should have covered; and a limb
 rotted after the entry kept its swings.
+
+The Spirit block of the action state machine's cleanup arm, `0x801E5D60..0x801E5E8C`, run on
+its own off the disc against the Done band, holds the port to the arm that pays an art's
+price: the accumulator comes off the gauge ahead of the action's own `+8` or `+0x20`, the two
+AP Boost passives and the cap, with the gauge left alone until then.

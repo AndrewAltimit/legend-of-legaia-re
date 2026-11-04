@@ -28,9 +28,15 @@ pub(super) fn done_cleanup<H: BattleActionHost + ?Sized>(
     // `+ acc / 10`, both when both are worn), then every actor takes the
     // accumulator itself, capped at `100`, and the accumulator is zeroed. So
     // every action ends `+8` Spirit and a Spirit turn `+0x20` - the climb the
-    // Spirit band's AP plate shows. (The `+0x170 -= +0x224` that opens the
-    // block is the arts-body spend; the port charges that at the commit,
-    // `World::charge_art_spirit`, so the accumulator enters here empty.)
+    // Spirit band's AP plate shows. The `+0x170 -= +0x224` that opens the block
+    // (`0x801E5D60..0x801E5D78`) is the arts-body spend: the queue builder left
+    // the price in the accumulator (`World::charge_art_spirit`), and the gauge
+    // holds it for the whole of the action.
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.spirit_gauge = actor
+            .spirit_gauge
+            .wrapping_sub(u16::from(actor.action_recoil));
+    }
     let bits = if slot < host.party_count() {
         host.character_ability_bits_high(slot)
     } else {

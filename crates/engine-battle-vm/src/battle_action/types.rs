@@ -452,7 +452,8 @@ pub struct BattleActor {
     /// `FUN_80050120` once the tint has decayed to neutral. `0` = no
     /// impact tint armed.
     pub impact_state: u8,
-    /// `+0x224` - action recoil magnitude - written by `DoneCleanup`.
+    /// `+0x224` - the Spirit accumulator: an art's price from the queue builder,
+    /// spent, refilled and paid back into the gauge by `DoneCleanup`.
     pub action_recoil: u8,
     /// `+0x225` - capture state byte - `2` while captured.
     pub capture_state: u8,

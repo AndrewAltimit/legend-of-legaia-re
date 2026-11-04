@@ -20,6 +20,7 @@ mod melee_hit;
 mod monster_pick;
 mod round_boundary;
 mod round_open;
+mod spirit_cleanup;
 mod spoils;
 mod stat_aggregator;
 mod validator;

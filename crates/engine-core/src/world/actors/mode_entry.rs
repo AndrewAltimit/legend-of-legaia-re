@@ -208,6 +208,8 @@ impl World {
             actor.move_state.world_y = s.y;
             actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
+            // A price a felled member's art never paid does not cross fights.
+            actor.battle.action_recoil = 0;
             // Seated facing: the party faces the monster row (+Z = heading
             // 0 in the FUN_80019B28 convention). Overwritten by the SM's
             // per-action bearing writes once actions run.
@@ -224,6 +226,8 @@ impl World {
             actor.move_state.world_y = s.y;
             actor.move_state.world_z = s.z;
             actor.battle.liveness = 1;
+            // A price a felled member's art never paid does not cross fights.
+            actor.battle.action_recoil = 0;
             // Monsters face the party row (-Z = heading 0x800).
             actor.battle.facing_angle = 0x800;
         }

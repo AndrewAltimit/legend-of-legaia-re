@@ -320,11 +320,11 @@ impl World {
     /// directions matched, and until it was wired a turn's whole cost was its
     /// swings and an art body was free.
     ///
-    /// The amount is the accumulator `actor[+0x224]` the builder's walk filled,
-    /// [`legaia_engine_battle_loop::battle_state::BattleState::art_turn_spirit`]. Retail
-    /// spends it once in the battle-action cleanup arm (`0x801E5D74`); the port
-    /// charges it here, at the dispatch, which is the same turn and the same
-    /// total.
+    /// The amount is what the builder's walk filled,
+    /// [`legaia_engine_battle_loop::battle_state::BattleState::art_turn_spirit`]. It
+    /// goes into the accumulator `actor[+0x224]` here, at the dispatch, and the
+    /// gauge pays it in the battle-action cleanup arm (`0x801E5D74`,
+    /// `battle_action::done`), so the AP plate holds its figure through the art.
     ///
     /// A plain attack charges nothing, because an unmatched arrow string
     /// fills nothing.
@@ -336,7 +336,9 @@ impl World {
         let _ = actions;
         let owed = std::mem::take(&mut self.battle.art_turn_spirit);
         if let Some(a) = self.actors.get_mut(caster as usize) {
-            a.battle.spirit_gauge = a.battle.spirit_gauge.wrapping_sub(u16::from(owed));
+            // The walk adds to the byte (`sb v0,0x224(v1)` at `0x801EF4B4`): a
+            // price an action never paid, its member felled mid-string, stays owed.
+            a.battle.action_recoil = a.battle.action_recoil.wrapping_add(owed);
         }
     }
 

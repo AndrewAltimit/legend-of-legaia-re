@@ -554,6 +554,7 @@ fn part_c_continuous_run() {
         let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
         if attempt == 0 {
             RACE_LOST.with(|l| l.set(false));
+            BOSS_LOST.with(|l| l.set(false));
         }
         let t0 = std::time::Instant::now();
         loop {

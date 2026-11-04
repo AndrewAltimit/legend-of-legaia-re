@@ -172,7 +172,9 @@ seeded selector `actor[+0x1E8]` with `0x0E` at `0x801E40C0`, so a Point Card use
 in battle with a non-zero bank runs the strike. See
 [`glitches/items-and-equipment.md`](../reference/glitches/items-and-equipment.md).
 The port seeds the card by id (`ItemCatalog::apply_point_card_items`) and aims it at
-the enemy rows only, so the living-ally hang has no way in.
+the enemy rows only, so the living-ally hang has no way in. The band reads the overwritten
+selector and not the descriptor: class 1's arm serves the whole party, and the strike
+takes its one target byte.
 
 ## Heal-amount table (`0x8007655C`)
 

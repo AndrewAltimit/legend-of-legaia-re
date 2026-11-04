@@ -197,7 +197,8 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             } else {
                 wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
             };
-        let want = heal_want
+        let want = wanted_point_card(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+            .or(heal_want)
             .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
             .or_else(|| {
                 wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
@@ -229,7 +230,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             InventoryUseState::TargetSelect { cursor, .. } => {
                 let aim = want.map(|(_, t)| t);
                 let on = menu.targets.get(*cursor).map(|t| t.slot);
-                if aim.is_none() || on == aim {
+                if aim.is_none() || on == aim || aim == Some(ANY_TARGET) {
                     if let Some(slot) = on {
                         ITEM_TARGET.with(|t| {
                             if let Some(a) = t.borrow_mut().get_mut(usize::from(actor)) {
@@ -330,6 +331,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
         };
         let heal_spell = || {
             !refused()
+                && (!racing_a_finisher(w) || race_heal(w, cmd.actor))
                 && !NO_HEAL_SPELL.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
                 && spell_heal(w, cmd.actor).is_some()
         };
@@ -369,11 +371,36 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                     && wanted_power_item(w, bag.into_iter(), cmd.actor).is_some()))
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
+        let card = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_point_card(w, bag.into_iter(), cmd.actor).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
         return match &cmd.phase {
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => {
                 PadButton::Up.mask()
             }
+            // The Point Card's strike ahead of everything but the kill itself.
+            CommandPhase::Menu { .. }
+                if lesson.is_none() && !going_for_the_kill(w, cmd.actor) && card() =>
+            {
+                PadButton::Up.mask()
+            }
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
+                PadButton::Down.mask()
+            }
+            // Out charging after a lost boss: the stance, until the gauge is up.
+            CommandPhase::Menu { .. }
+                if lesson.is_none()
+                    && CHARGING.with(std::cell::Cell::get)
+                    && w.actors[usize::from(cmd.actor)].battle.spirit_gauge < 100 =>
+            {
                 PadButton::Down.mask()
             }
             // The finishing blow: damage ahead of every heal, item and
@@ -468,6 +495,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             // rounds running and fell at the last.
             CommandPhase::RoundPrompt { .. }
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
+                    && !CHARGING.with(std::cell::Cell::get)
                     && !w.battle.no_escape
                     && (!heal() || losing_race(w))
                     && !runs_failing(w)
@@ -928,6 +956,10 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             }
             if boss == Some(KORU_MONSTER_ID) {
                 RACE_LOST.with(|l| l.set(true));
+            }
+            if boss.is_some() {
+                BOSS_LOST.with(|l| l.set(true));
+                LOST_BEAT.with(|l| l.set(FIGHT_BEAT.with(std::cell::Cell::get)));
             }
             // A boss that Stoned a member beat the party with the stone, not
             // its element: Zora's Glare petrifies one member a cast, and the

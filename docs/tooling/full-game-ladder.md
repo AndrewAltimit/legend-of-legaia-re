@@ -1625,15 +1625,14 @@ every round. Measured against Koru at level 32: a Miracle about 2600..4500, a Su
 (54 AP) about 1200, nine plain presses of Low about 1000..1750 for no AP at all.
 So the hand:
 
-- Reads the gauge before typing (`spirit_pays`, the builder's own gate over `legaia_art::tokenize_bank_gated`). No fight's plan names an art the gauge cannot pay.
-- Saves its AP in a race: a Miracle typist swings Low, the command with the largest power scalar (`0x801F64EC`: Left 12, Right 18, High 20, Low 22), until 99 is up. Low beats the arm for Vahn by 1750 to 1050 and draws level for Noa.
-- Spends a member's first turn on a Fury Boost when that buys the nine presses (the `+0x1F9` byte makes every later round boundary restore the pool to `base * 7 / 5 + 8`) and its gauge stands within a race's income of the price (`wanted_fury_item`). A member further off casts from the first round instead.
-- Has a member with no Miracle hand Power Elixirs to the typists, from the opening round: the ramp reaches the first Miracle, and it is worth more than the summon the giver gives up. Each use ramps again, so a typist takes another while a fifth of what it still has to deal beats the giver's own turn (`race_ramp_again`).
-- Holds no AP back for a member whose pool can never type the Miracle: Gala's Spirit buys Arts, about 1000 from five presses against 480 from plain swings.
-- Casts when the turn's Miracle is out of reach and the best spell should beat the member's swings (`race_spell_gain`): about ten per point of catalog power against about a hundred a press, and any Arts hit measured this battle. Retail's level-25 party is this case, Aluru at 1500..1700 each. A race keeps no MP back and drinks the largest MP item while a cast is still to come.
-- Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where the undressed run has one.
-
-The first attempt goes in the Goods the run chose and loses by thousands; the dressed reload wins, with the margin of a member's last swing to spare on the run's own party and a round's worth on retail's.
+- Reads the gauge before typing (`spirit_pays`, the builder's own gate over `legaia_art::tokenize_bank_gated`). No fight's plan names an art the gauge cannot pay, and a plain swing goes Low, the command with the largest power scalar (`0x801F64EC`: Left 12, Right 18, High 20, Low 22). Low beats the arm for Vahn by 1750 to 1050 and draws level for Noa.
+- Saves its AP in a race: a member whose pool can type the Miracle swings until 99 is up. A member whose pool never can has nothing to save for, so Gala's Spirit buys Arts, about 1000 from five presses against 480 from plain swings.
+- Takes a Fury Boost on the opening turn when four rounds of nine presses, with a Miracle among them for a member within a race's income of the price, beat five casts (`race_fury_pays`). The boost's `+0x1F9` byte makes every later round boundary restore the pool to `base * 7 / 5 + 8`.
+- Casts when the turn's Miracle is out of reach and the best spell beats the member's swings (`race_spell_gain`): about ten per point of catalog power until a cast is measured, against presses at about seven tenths of ATK and any Arts hit measured this battle. A caster's magic level makes the difference: Gala's Kemaro takes about 2900, retail's level-25 party casts Aluru at 1500..1700 each. A race keeps no MP back and drinks the largest MP item while a cast is still to come.
+- Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
+- Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
+- Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
+- Walks in charged on a reload after any boss wipe (`pad_charge_for_race`, `BOSS_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third.
 
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
@@ -2062,7 +2061,7 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   its own divisor in the level-up applier (`0x18C0` against every other
   stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)). The run's party
   reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
-  beats Koru on its second attempt, dressed for the race. The ledge band P2[20] is
+  beats Koru within its reloads, dressed for the race from the second. The ledge band P2[20] is
   reached from its other tiles ([how the pad tier
   walks](#how-the-pad-tier-walks)), and the stretch then plays the chain
   that opens `deene`'s dock ([overworld and dungeon

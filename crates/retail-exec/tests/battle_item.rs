@@ -521,3 +521,42 @@ fn the_stone_and_curse_arms_roll_what_retail_rolls() {
         "{landed} {missed} {gave_back}"
     );
 }
+
+/// State `0x3F`'s applier call, driven through the band: the card's descriptor
+/// reads class 1, whose arm serves the whole party, but the band runs selector
+/// `0x0E` on the one target byte (`0x801E40C0`, `0x801E4134`).
+#[test]
+fn the_point_card_strikes_its_target_and_not_the_party() {
+    use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
+    let Some(scus) = scus() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut w = World::new();
+    w.set_item_effects(ItemEffectTable::from_scus(&scus).expect("item effects"));
+    w.set_item_catalog(ItemCatalog::vanilla());
+    w.load_party(Party::zeroed(3));
+    w.enter_battle(3, 1);
+    w.party.party_count = 3;
+    for a in w.actors.iter_mut().take(3) {
+        a.battle.hp = 900;
+        a.battle.max_hp = 900;
+    }
+    w.actors[3].battle.hp = 5000;
+    w.actors[3].battle.max_hp = 5000;
+    w.minigames.point_card = 1200;
+    let a = &mut w.actors[0].battle;
+    a.action_category = ActionCategory::Item.as_byte();
+    a.params[0] = 0xFE;
+    a.active_target = 3;
+    a.cast_class = 0x0E;
+    w.battle_ctx.active_actor = 0;
+    w.battle_ctx.action_state = ActionState::SpiritFireDamage.as_byte();
+    w.battle_ctx.frame_timer = 1;
+    w.step_battle();
+    assert_eq!(w.actors[3].battle.hp, 3800);
+    for m in 0..3 {
+        assert_eq!(w.actors[m].battle.hp, 900, "member {m}");
+    }
+    assert_eq!(w.minigames.point_card, 0);
+}

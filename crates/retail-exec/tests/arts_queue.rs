@@ -210,7 +210,10 @@ fn an_arrow_string_builds_the_queue_retail_builds() {
         let (queue, actions, _) = w.build_arts_action_queue(ch as u8, &arrows);
         w.charge_art_spirit(ch as u8, &actions);
         let port_queue = queue[..16].to_vec();
-        let port_spirit = w.actors[ch].battle.spirit_gauge;
+        let port_spirit = w.actors[ch]
+            .battle
+            .spirit_gauge
+            .wrapping_sub(u16::from(w.actors[ch].battle.action_recoil));
         let port_known = {
             let l = w.party.roster.members[ch].displayed_skills();
             let mut v = vec![l.count];
