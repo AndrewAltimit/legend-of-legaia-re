@@ -310,6 +310,11 @@ for the Done hold's close:
 - the item band's `0x3E` arm (`0x801E404C`), reached from a single branch at
   `0x801E3E88` off its non-gauge-extend path, for any caster.
 
+The seed reads the code before the cast begin `0x28` can rewrite it to a lone
+survivor's slot, so a party-wide cast on a solo Vahn keeps the panels up through
+the whole action, as `battle_rikuroa_caruban_fire_breath_mid_cast` shows
+(`+0x1DD = 0`, panel up). Its recording raises no `DAMAGE` readout either.
+
 The close is the Done band's, so the panels hold through every band the action
 runs before it - including the capture band `0x6E..=0x71`, whose state bytes
 sit above `0x51` but which exits into `0x50`. A boss special is such an action:

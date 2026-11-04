@@ -835,6 +835,12 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
+    // `FUN_801E6D84`, the seed's plate routine, reads the target code here,
+    // ahead of any cast begin's rewrite.
+    let seat = ctx.active_actor;
+    if let Some(actor) = host.actor_mut(seat) {
+        actor.seed_party_wide = actor.active_target == crate::battle_cue_group::TARGET_PARTY_WIDE;
+    }
     let actor_slot = ctx.active_actor;
     let Some(actor) = host.actor(actor_slot) else {
         return stay(ctx);

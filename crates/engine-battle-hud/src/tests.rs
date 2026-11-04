@@ -805,4 +805,8 @@ fn a_party_wide_cast_opens_no_combo_cluster() {
     assert_eq!(battle_combo_style(&w), None);
     arm_action(&mut w, 1, ActionCategory::Magic.as_byte(), 0);
     assert_eq!(battle_combo_style(&w), Some(ComboStyle::Damage));
+    // The same cast with its code rewritten to a lone survivor at `0x28`.
+    w.actors[1].battle.seed_party_wide = true;
+    assert_eq!(battle_combo_style(&w), None);
+    assert!(battle_panels_visible(&w));
 }

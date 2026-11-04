@@ -579,6 +579,10 @@ pub struct BattleActor {
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
     /// mid-chain).
     pub active_target: u8,
+    /// The action seed read `+0x1DD` as the party-wide code `8`, which is what
+    /// its plate routine `FUN_801E6D84` raises the roster panels on. The cast
+    /// begin `0x28` may rewrite the byte to a lone survivor's slot afterwards.
+    pub seed_party_wide: bool,
     /// `+0x1DE` - action category. See [`ActionCategory`].
     pub action_category: u8,
     /// `+0x1DF..+0x1F2` - per-action parameter byte stream (item ID / spell
