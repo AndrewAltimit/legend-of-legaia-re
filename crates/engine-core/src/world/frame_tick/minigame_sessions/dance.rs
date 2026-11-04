@@ -61,7 +61,13 @@ impl World {
         if self.ambient.venue_restore.is_some() {
             return;
         }
-        for &(x, y, w, h) in self.ambient.cell_captures.keys() {
+        // The drop shadow's blob and palette are boot-resident
+        // (`FUN_8001C394`'s `(960, 256)` page, CLUT `0x7F86`), which the venue
+        // build does not hold.
+        const SHADOW_BLOB: (u16, u16, u16, u16) = (1016, 256, 4, 16);
+        const SHADOW_CLUT: (u16, u16, u16, u16) = (96, 510, 16, 1);
+        let rects = self.ambient.cell_captures.keys().copied();
+        for (x, y, w, h) in rects.chain([SHADOW_BLOB, SHADOW_CLUT]) {
             let painted = crate::world::ambient::read_rect(walked_in, x, y, w, h);
             crate::world::ambient::write_rect(hall, x, y, w, &painted);
         }
