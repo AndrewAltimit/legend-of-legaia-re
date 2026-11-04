@@ -620,13 +620,25 @@ The canvas keeps its **tile layer** (colours, tiers, walls, slope hatching)
 in a canvas of its own, keyed by everything it reads - the rows, the legend,
 the preview, the cell size and the Heights toggle - so a selection, a drag or
 a hover redraws only the objects and zones over one image of the tiles. A
-drag's edits draw once a frame. The `map_preview` behind the overlays is
-asked a moment after an edit, built in the validation worker, and drawn when
-it lands; a map whose JSON (and the session's files) are what the last
-request was made from is not asked again, so a re-render of the tab costs
-none, and an answer for a map edited since it was asked is dropped. A map
-opened for the first time draws from its legend until its first preview
-lands. The 3D preview draws the
+drag's edits draw once a frame, so a painted tile is on the canvas the next
+frame. The `map_preview` behind the overlays is built in the validation
+worker and drawn when it lands. The first edit after a pause asks at once;
+the rest of a burst (a drag edits every frame) ask when it pauses, and a
+stroke's end asks at once. A map whose JSON (and the session's files) are what
+the last request was made from is not asked again, so a re-render of the tab
+costs none, and an answer for a map edited since it was asked is dropped. A
+map opened for the first time draws from its legend until its first preview
+lands. `__xwValidator.previewDrawnMs` holds the last edits' times to their
+preview on the canvas and `previewMs` the worker's part;
+[`pack-bench-web.mjs`](frame-bench.md#expansion-packs) reads both.
+
+A preview after a tile edit builds the map's heightfield once: the relief, the
+terrain's wall quarters and the rest checks read the one field
+(`MapDef::terrain_field`, kept by content for an equal input), and none of them
+reads the painted surface, which the preview does not build. It is a whole
+build, never a patched one, so what the painter shows is what the entry makes.
+
+The 3D preview draws the
 sculpted ground as the engine builds it, and its volumes stand on the
 terrain's floor.
 

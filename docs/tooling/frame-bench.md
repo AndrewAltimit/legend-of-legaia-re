@@ -190,6 +190,28 @@ frame (`wasm-pack build --target web --release -- --features bench-alloc`). A wa
 profile names its functions by index; `wasm-bindgen --keep-debug` over the cargo
 artifact gives a file whose name section resolves them.
 
+## Expansion packs
+
+```bash
+scripts/ci/pack-bench-web.mjs --maps genesis_1f,isles_beach        # the workbench's painter
+scripts/ci/pack-bench-web.mjs --entry --map isles_beach             # the play page's first map
+scripts/ci/pack-bench-web.mjs --cpu-throttle 4 --profile            # a proxy, labelled one
+```
+
+Native startup on a pack map is `frame-bench.py`'s `pack_map` row. The browser driver
+reads what that row cannot: the painter's edit, and a first pack-map entry by wasm export.
+
+The painter's rows run from a single painted tile: `down_ms` and `up_ms` are what the press
+and its release hold the page (a stroke's end re-renders the tab), `tile_on_frame_ms` the
+frame that shows the tile, `asked_ms` when the `map_preview` left, `preview_drawn_ms` when its
+answer was on the canvas, `worker_ms` the worker's share and `page_ms` the same call on the
+page's thread over an unchanged map. An edit costs more than an unchanged map when the
+terrain must build its heights again. A CPU throttle reaches the page's thread and not the
+worker, so `worker_ms` does not scale with it.
+
+`--entry` reports the library row's Enable up to the scene list, then the click on a map
+up to its second frame, with the top wasm exports of each.
+
 ## Cost ratchet
 
 ```bash
@@ -279,6 +301,7 @@ These are shapes that recur, not measurements:
 ## See also
 
 - [`frame-hash.md`](frame-hash.md) - proving a browser change drew the same picture.
+- [`expansion-workbench.md`](expansion-workbench.md) - the painter's preview path the driver above reads.
 - [`renderer-port.md`](../subsystems/renderer-port.md#frame-profiler) - the stages and the profiler's own switches.
 - [`browser-host.md`](../subsystems/browser-host.md) - what the play page calls per frame.
 - [`shipped-bundle-freshness.md`](shipped-bundle-freshness.md) - which bundle a local site is serving.

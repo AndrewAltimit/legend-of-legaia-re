@@ -112,6 +112,14 @@ scripts/ci/frame-bench-web.mjs --cpu-throttle 6               # a proxy, labelle
   <p>A battle row waits for the page&rsquo;s battle scene, not a frame count: the intro runs on sim ticks, so on a page drawing faster than the sim ticks a frame count ends inside it. The <code>second_fight</code> scene plays a first fight to its end, results included, then forces the fight the row times, which is where a memo would show.</p>
 </section>
 
+<section class="doc-section" id="expansion-packs" data-doc="expansion-packs">
+  <h2>Expansion packs</h2>
+  <div class="cli"><code>scripts/ci/pack-bench-web.mjs --maps genesis_1f,isles_beach        # the workbench's painter
+scripts/ci/pack-bench-web.mjs --entry --map isles_beach             # the play page's first map
+scripts/ci/pack-bench-web.mjs --cpu-throttle 4 --profile            # a proxy, labelled one</code></div>
+  <p>The painter's rows run from a single painted tile: what the press and its release hold the page, the frame that shows the tile, when the <code>map_preview</code> left, when its answer was on the canvas, and the worker's share. A CPU throttle reaches the page's thread and not the worker. <code>--entry</code> reports the library row's Enable up to the scene list, then the click on a map up to its second frame, with the top wasm exports of each. Native startup on a pack map is <code>frame-bench.py</code>'s <code>pack_map</code> row.</p>
+</section>
+
 <section class="doc-section" id="cost-ratchet" data-doc="cost-ratchet">
   <h2>Cost ratchet</h2>
   <div class="cli"><code>scripts/ci/cost-ratchet.py --check                # the gate, against scripts/ci/cost-baseline.json
