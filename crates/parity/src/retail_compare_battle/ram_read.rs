@@ -995,6 +995,14 @@ impl RetailBattle {
                 game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k as u32 * 4)
             }),
             turn_cursor: game_anchors::u8_at(ram, ctx + 0x1A),
+            pass_ring: recent_pass_steps(ram),
+            cam_depth: game_anchors::u16_at(ram, ctx + 0x6D0),
+            seat_category: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| game_anchors::u8_at(ram, p + 0x1DE))
+                })
+                .collect(),
             recent_steps: {
                 let steps = recent_pass_steps(ram);
                 [steps[0], steps[1], steps[2], steps[3]]

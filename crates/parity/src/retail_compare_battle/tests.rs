@@ -2134,3 +2134,34 @@ fn a_walk_clock_strike_counts_its_passes_off_the_table() {
     // The ladder ends: a landed table does not count forever.
     assert!(strike_passes_off_table(0, 2) < 64);
 }
+
+/// Two retail recordings of a monster's cast, pass by pass from the seed
+/// `0x0C` to the `0x2A` terminator: `retona_viguro_v2_pre_thunder_break` ran
+/// fourteen step-`2` passes and `noaru_slippery_v2_pre_poisonous_breath` ten
+/// step-`3` passes, and every component lands on the terminator row's value.
+#[test]
+fn a_case_6_walk_lands_on_the_recorded_terminator_pose() {
+    let retona = [2; 14];
+    assert_eq!(capture_drive::case6_walk(128, 0, &retona), 6);
+    assert_eq!(capture_drive::case6_walk(1024, 1280, &retona), 1264);
+    assert_eq!(capture_drive::case6_walk(3276, 5324, &retona), 5176);
+    assert_eq!(capture_drive::case6_walk(48, 943, &retona), 880);
+    assert_eq!(capture_drive::case6_walk(-296, 187, &retona), 158);
+    let slippery = [3; 10];
+    assert_eq!(capture_drive::case6_walk(3276, 4915, &slippery), 4839);
+    assert_eq!(capture_drive::case6_walk(821, 1024, &slippery), 1019);
+    assert_eq!(capture_drive::case6_walk(-525, 525, &slippery), 480);
+}
+
+/// `0x29` leaves on the pass its `0x14` timer reads negative, so a walk runs
+/// `0x14 / step + 1` wait passes behind the seed and `0x28`, then the
+/// terminator: fourteen passes at step `2`, ten at step `3`.
+#[test]
+fn a_case_6_walk_runs_the_cast_waits_passes() {
+    assert_eq!(capture_drive::case6_walk_passes(&[2; 16]).len(), 14);
+    assert_eq!(capture_drive::case6_walk_passes(&[3; 16]).len(), 10);
+    // The ring's slot `3` is the terminator, the last pass walked.
+    let mut ring = [3; 16];
+    ring[3] = 4;
+    assert_eq!(capture_drive::case6_walk_passes(&ring).last(), Some(&4));
+}

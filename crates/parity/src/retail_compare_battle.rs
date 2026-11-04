@@ -72,6 +72,7 @@ mod summon_fade;
 
 use camera_align::*;
 use camera_pool::*;
+pub use capture_drive::displayed_walk_pin;
 use capture_drive::*;
 pub use display_lag::*;
 use effect_children::*;
@@ -479,6 +480,14 @@ pub struct RetailBattle {
     pub turn_cursor: u8,
     /// The newest passes' frame steps ([`recent_pass_steps`]), newest first.
     pub recent_steps: [u8; 4],
+    /// The step of each of the capture's last sixteen passes
+    /// ([`frame_step::recent_pass_steps`]): slot `k` is the pass `k - 1` back.
+    pub pass_ring: [u8; 16],
+    /// `ctx[+0x6D0]`, the depth case 6 frames at, before the projection
+    /// prescale.
+    pub cam_depth: u16,
+    /// Each pool slot's committed category `+0x1DE`.
+    pub seat_category: Vec<Option<u8>>,
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,

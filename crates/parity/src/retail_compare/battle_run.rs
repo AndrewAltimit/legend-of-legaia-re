@@ -971,7 +971,11 @@ pub(super) fn battle_image(
                     battle.drive_display_lag().to_string(),
                 ));
                 env.push(("LEGAIA_CAPTURE_RETAKE_SHOT", "1".to_string()));
-                if let Some(p) = battle.retake_turning_pose() {
+                if let Some(p) = battle.retake_turning_pose().or_else(|| {
+                    battle.retake_stale_walk_pose(crate::retail_compare_battle::displayed_walk_pin(
+                        &entry.label,
+                    ))
+                }) {
                     env.push((
                         "LEGAIA_CAPTURE_RETAKE_POSE",
                         format!(

@@ -387,6 +387,147 @@ impl RetailBattle {
         Some((fit.1[0].signum(), fit.1[1].signum()))
     }
 
+    /// The pose the displayed frame stands on when a capture holds a one-frame
+    /// shot on its second pass (`0x2B`, accumulator `2 * 8 * step`). The shot's
+    /// arming pass is `N - 1` and it has landed, so the RAM holds nothing of
+    /// the frame before it; the display's `N - 2` is the `0x2A` terminator
+    /// pass, on the case-6 walk. That walk is law from three things the RAM
+    /// keeps: where it ended, the steps of the passes it ran, and the earlier
+    /// actor it set out from.
+    ///
+    /// The passes are the seed `0x0C` (which arms case 6 on the counter's
+    /// `0x800` rung), `0x28`, the wait `0x29` draining its `0x14` timer by each
+    /// pass's step, and the terminator, which re-arms nothing
+    /// ([`case6_walk_passes`]). Each armed pass moves
+    /// `ceil(gap / 0xC) * step`, the depth and focus closing on the caster.
+    ///
+    /// The start is the earlier actor's framing ([`Self::walk_start`]). The yaw
+    /// of a turning shot comes off the shot ([`Self::retake_turning_yaw`]);
+    /// elsewhere it walks from that actor's case-6 yaw with the caster's
+    /// heading taken at home for the seed's arm, an inference.
+    ///
+    /// `pin` is what the RAM cannot say ([`displayed_walk_pin`]).
+    pub fn retake_stale_walk_pose(
+        &self,
+        pin: Option<DisplayedWalkPin>,
+    ) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+        if !self.retake_on_shot_only() || self.action_state != 0x2B || self.cam_style != 0 {
+            return None;
+        }
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (step, _) = self.step_run;
+        if accum != 16 * u16::from(step) {
+            return None;
+        }
+        let (live, end) = self.cam_tween;
+        let turning = self.retake_turning_yaw();
+        let landed =
+            live.tr == end.tr && live.focus[0] == end.focus[0] && live.focus[2] == end.focus[2];
+        if !landed {
+            return None;
+        }
+        let passes = case6_walk_passes(&self.pass_ring);
+        let start = self.walk_start(pin)?;
+        let caster = usize::from(self.active_actor);
+        let [gx, gz] = (*self.ground.get(caster)?)?;
+        let tr_z_end = i32::from(self.cam_depth) * 8 / 5;
+        let walk = |from: i32, to: i32| case6_walk(from, to, &passes);
+        let yaw = match (turning, pin.and_then(|p| p.yaw)) {
+            (Some(y), _) => i32::from(y),
+            (None, Some(y)) => i32::from(y),
+            (None, None) => {
+                let facing = i32::from((*self.facing.get(caster)?)?);
+                case6_yaw_walk(start.yaw, facing, &passes)
+            }
+        };
+        Some(legaia_engine_camera::projection::BattleCamPose {
+            pitch: walk(start.pitch, 0).rem_euclid(4096) as f32,
+            yaw: yaw as f32,
+            tr: [
+                0.0,
+                walk(
+                    start.tr_y,
+                    i32::from(legaia_engine_battle_vm::battle_cam_script::ACTION_TR_Y as i16),
+                ) as f32,
+                walk(start.tr_z, tr_z_end) as f32,
+            ],
+            focus: [
+                walk(start.focus[0], i32::from(gx)) as f32,
+                0.0,
+                walk(start.focus[1], i32::from(gz)) as f32,
+            ],
+        })
+    }
+
+    /// Where the case-6 walk of this capture's actor set out: the framing the
+    /// earlier actor's `0x5A` armed, or the prompt's far framing on a round's
+    /// first actor. The selector `FUN_801DABA4` leaves no battle order behind,
+    /// only spent keys, and the style byte `ctx[+0xD]` of that action is gone,
+    /// so the seat and the style come from a pin, or else the last spent party
+    /// seat on the plain style. A party seat's Spirit frames it at the party's
+    /// depth `0x800`. `None` where the earlier action is one whose framing the
+    /// RAM does not name.
+    fn walk_start(&self, pin: Option<DisplayedWalkPin>) -> Option<WalkStart> {
+        let party = 0..usize::from(self.party_count.clamp(1, 3));
+        let monsters = 3..3 + usize::from(self.monster_count);
+        let spent = |s: &usize| {
+            *s != usize::from(self.active_actor)
+                && self.init_keys.get(*s).copied().flatten() == Some(0)
+        };
+        if self.turn_cursor == 0 {
+            let mut bbox: Option<legaia_engine_battle_vm::battle_cam_script::FormationBox> = None;
+            for s in party.chain(monsters) {
+                let [x, z] = (*self.ground.get(s)?)?;
+                let (x, z) = (f32::from(x), f32::from(z));
+                let b =
+                    bbox.get_or_insert(legaia_engine_battle_vm::battle_cam_script::FormationBox {
+                        min: [x, z],
+                        max: [x, z],
+                    });
+                b.min = [b.min[0].min(x), b.min[1].min(z)];
+                b.max = [b.max[0].max(x), b.max[1].max(z)];
+            }
+            let b = bbox?;
+            let raw = legaia_engine_battle_vm::battle_cam_script::menu_raw_z(Some(b));
+            return Some(WalkStart {
+                pitch: 32,
+                // The prompt's orbit is a clock the RAM does not date; only a
+                // turning shot takes this start.
+                yaw: 0,
+                tr_y: 1280,
+                tr_z: raw * 8 / 5,
+                focus: [
+                    ((b.min[0] + b.max[0]) * 0.5) as i32,
+                    ((b.min[1] + b.max[1]) * 0.5) as i32,
+                ],
+            })
+            .filter(|_| self.retake_turning_yaw().is_some());
+        }
+        let seat = match pin {
+            Some(p) => usize::from(p.seat),
+            None => party.filter(spent).last()?,
+        };
+        // Style `2` raises the pitch `0x80` and drops TR y `0x100`.
+        let (pitch, tr_y) = match pin.map(|p| p.style) {
+            Some(2) => (128, 1024),
+            _ => (0, 1280),
+        };
+        if self.seat_category.get(seat).copied().flatten() != Some(4) {
+            return None;
+        }
+        let [x, z] = (*self.ground.get(seat)?)?;
+        let facing = i32::from((*self.facing.get(seat)?)?);
+        Some(WalkStart {
+            pitch,
+            yaw: (SPIRIT_END_COUNTER - facing).rem_euclid(4096),
+            tr_y,
+            tr_z: 0x800 * 8 / 5,
+            focus: [i32::from(x), i32::from(z)],
+        })
+    }
+
     /// A monster's capture-band gate ([`SpanGate::CaptureFade`]): captured
     /// within the display lag of the band's entry, its displayed frame is a
     /// pass before the band's first arm, whose parts retail had not spawned
@@ -1680,6 +1821,158 @@ pub fn strike_passes_off_table(inc: u16, step: u8) -> u16 {
         }
         passes += 1;
     }
+}
+
+/// What a capture's RAM cannot say about the walk its displayed frame stands on,
+/// read off that retail frame by scoring the law's discrete candidates: the
+/// earlier actor and its style. `yaw` is a measured angle, for a shot that does
+/// not turn and whose caster held a heading the seed's arm read and nothing
+/// kept. It reads the capture and moves no game state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayedWalkPin {
+    pub seat: u8,
+    pub style: u8,
+    pub yaw: Option<u16>,
+}
+
+const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
+    (
+        "battle_stone_zenoir_v2_fire_claw_mid_cast",
+        DisplayedWalkPin {
+            seat: 2,
+            style: 0,
+            yaw: Some(3923),
+        },
+    ),
+    (
+        "battle_vozz_viguro_thunder_break_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 2,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_retona_viguro_lv2_thunder_break_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 2,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_korb2_ghost_knight_windhash_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 2,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_tower_guardian_windhash_mid_cast",
+        DisplayedWalkPin {
+            seat: 0,
+            style: 0,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_bylon_theeder_v2_thunderbolt_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 0,
+            yaw: Some(1215),
+        },
+    ),
+    (
+        "battle_jou_slippery_v3_moldy_breath_mid_cast",
+        DisplayedWalkPin {
+            seat: 2,
+            style: 0,
+            yaw: Some(102),
+        },
+    ),
+];
+
+/// A capture's [`DisplayedWalkPin`].
+pub fn displayed_walk_pin(label: &str) -> Option<DisplayedWalkPin> {
+    DISPLAYED_WALK_PINS
+        .iter()
+        .find(|(l, _)| *l == label)
+        .map(|(_, p)| *p)
+}
+
+/// The start of a case-6 walk ([`RetailBattle::retake_stale_walk_pose`]).
+struct WalkStart {
+    pitch: i32,
+    yaw: i32,
+    tr_y: i32,
+    tr_z: i32,
+    focus: [i32; 2],
+}
+
+/// The yaw counter a party seat's Spirit leaves behind: recordings read `2294`
+/// and `2324` in the last `0x0A` before the next actor's seed. Off by a hundred
+/// units, the displayed yaw moves by about eight.
+const SPIRIT_END_COUNTER: i32 = 2300;
+
+/// `0x28` stores `ctx[+0x6D8] = 0x14`; `0x29` drains it by the pass's step and
+/// leaves on the pass that reads negative.
+const CAST_WAIT_TIMER: i32 = 0x14;
+
+/// The steps of a case-6 walk that ended two passes before the capture's, in
+/// the order retail ran them: the seed `0x0C`, `0x28`, `0x29`'s passes down to
+/// the exit, then the terminator (ring slot `3`). `ring` is
+/// [`super::frame_step::recent_pass_steps`]. Recordings walk `14` passes at
+/// step `2`, `10` at step `3`.
+pub fn case6_walk_passes(ring: &[u8; 16]) -> Vec<i32> {
+    // A step-`2` walk runs past the ring's end; its oldest slot stands in.
+    let step = |slot: usize| i32::from(ring[slot.min(15)]);
+    let mut passes = vec![step(3)];
+    let mut drained = 0;
+    let mut slot = 4;
+    while drained <= CAST_WAIT_TIMER {
+        passes.push(step(slot));
+        drained += step(slot);
+        slot += 1;
+    }
+    passes.extend([step(slot), step(slot + 1)]);
+    passes.reverse();
+    passes
+}
+
+/// One component's case-6 walk: every pass but the last re-arms
+/// `ceil(gap / 0xC)` (`FUN_801D829C`), and each moves that increment times its
+/// step. The last pass is the terminator, which arms nothing.
+pub fn case6_walk(from: i32, to: i32, passes: &[i32]) -> i32 {
+    let mut v = from;
+    let mut inc = 0;
+    for (i, s) in passes.iter().enumerate() {
+        if i + 1 < passes.len() {
+            let gap = to - v;
+            inc = gap.signum() * ((gap.abs() + 11) / 12);
+        }
+        v += inc * s;
+    }
+    v
+}
+
+/// The yaw of a case-6 walk: the seed's arm aims the counter's `0x800` rung
+/// less the caster's home heading (the turn to the target comes after it), and
+/// every later pass the drifting counter less the heading it now holds.
+pub fn case6_yaw_walk(from: i32, facing: i32, passes: &[i32]) -> i32 {
+    let wrap = |g: i32| (g + 2048).rem_euclid(4096) - 2048;
+    let (mut v, mut inc, mut counter) = (from, 0, 0x800);
+    for (i, s) in passes.iter().enumerate() {
+        if i + 1 < passes.len() {
+            let heading = if i == 0 { 0x800 } else { facing };
+            let gap = wrap(counter - heading - v);
+            inc = gap.signum() * ((gap.abs() + 11) / 12);
+        }
+        v = (v + inc * s).rem_euclid(4096);
+        counter += (s * 4 / 3).max(1);
+    }
+    v
 }
 
 /// The gap to case 6's endpoint one pass before `gap`, across the terminator
