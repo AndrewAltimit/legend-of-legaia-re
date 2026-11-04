@@ -212,6 +212,29 @@ worker, so `worker_ms` does not scale with it.
 `--entry` reports the library row's Enable up to the scene list, then the click on a map
 up to its second frame, with the top wasm exports of each.
 
+## Movie start
+
+[`scripts/ci/movie-timeline-web.mjs`](../../scripts/ci/movie-timeline-web.mjs) times a
+movie's start on the play page, hooked from outside so a player's page carries none of it.
+Each run prints a JSON line, from the request: span resident, install, first decode, first
+picture, first sound (the mixer's cursor passing zero, which is ahead of the device by its
+queue), first motion, the worst display-frame gap, long tasks, wasm memory and the box's
+busy share over the window.
+
+```bash
+scripts/ci/movie-timeline-web.mjs --again --append out.jsonl                 # resident span, then a second play
+scripts/ci/movie-timeline-web.mjs --no-fill --evict --again --append out.jsonl  # read on demand from storage
+scripts/ci/movie-timeline-web.mjs --route attract --append out.jsonl         # the title's countdown arms MV1
+scripts/ci/movie-timeline-web.mjs --no-fill --read-delay 9000 --watch 13000  # walk the install timeout
+```
+
+It is one start per run, because the claim it tests is intermittent: the distribution is
+the caller's, over a run count, with each run under the display lock. `--evict` drops the
+disc from the OS page cache (`posix_fadvise`, no privilege). `--ctx-suspend` stands in for
+an output slow to start, since the driver's browser has no autoplay gate. `--read-delay`
+holds only the movie's own span, and `--settle` lands the request among the voice banks'
+staging after the disc load. `--cpu-throttle` and `--gl swiftshader` are proxies.
+
 ## Cost ratchet
 
 ```bash
