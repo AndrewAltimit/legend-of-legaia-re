@@ -14,6 +14,7 @@ mod confuse;
 mod death_spoils;
 mod encounter_roll;
 mod escape;
+mod field_vm;
 mod field_walls;
 mod inventory;
 mod item_apply;

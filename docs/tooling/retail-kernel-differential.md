@@ -179,3 +179,9 @@ The seed's retarget `FUN_801E7320` found a confused monster in a party of two mi
 its own band's first seat as a party seat, the gate reading the typed list where retail
 masks `0x380`, and a confused cast always crossing sides: in retail a group cast crosses
 one time in three and comes to nothing the other two.
+
+The field VM `FUN_801DE840`, one instruction at a time over every distinct instruction in
+the disc's scene scripts with its calls stubbed, finds the operand widths of the port's
+`step` right everywhere it can compare them, and one wrong exit: `4C 80` left the parent's
+PC on the child records, where retail walks past them. A call that lands on an empty
+function pointer is why `Cpu::stub_outside` counts toward the step budget.

@@ -218,6 +218,10 @@ impl Cpu {
             if let Some((lo, hi)) = self.stub_outside
                 && !(lo..hi).contains(&pc)
             {
+                self.steps += 1;
+                if self.steps > budget {
+                    return Stop::StepLimit { pc };
+                }
                 self.regs.r[V0] = 0;
                 pc = self.regs.r[RA];
                 next = pc.wrapping_add(4);

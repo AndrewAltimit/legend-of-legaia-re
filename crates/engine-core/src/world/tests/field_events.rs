@@ -153,12 +153,10 @@ fn field_op_4c_n8_sub0_walks_records_and_queues_spawns() {
     world.load_field_script(bytecode);
     // One *instruction*, not one frame: a frame runs a whole retail slice
     // ([`World::step_field_frame_slice`]) and would carry the PC on into the
-    // record payload, which says nothing about this opcode's own PC delta.
+    // bytes after them, which says nothing about this opcode's own PC delta.
     let _ = world.step_field();
-    // PC should land at byte 3 (the first record's first byte) - the
-    // retail VM advances PC by exactly 3 regardless of how many
-    // records the host consumes.
-    assert_eq!(world.field_pc, 3);
+    // The parent's PC lands past both records (`0x801E1F78..0x801E1FB8`).
+    assert_eq!(world.field_pc, 9);
     // Pending queue should hold both records, in emission order.
     let spawns = world.drain_actor_spawns();
     assert_eq!(spawns.len(), 2);
