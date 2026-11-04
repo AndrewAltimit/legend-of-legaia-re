@@ -128,6 +128,34 @@ impl PartCameraPose {
         // Column-major `r[c * 4 + row]`: eye z is row 2.
         [-r[2] * d, -r[6] * d * sy, -r[10] * d]
     }
+
+    /// The GTE's `(IR1, IR2, SZ)` of a point in the draw frame: the frame
+    /// flip undone ([`part_model_place`]), then `R * (p - focus) + tr_unit`
+    /// over the base scale.
+    pub fn eye_point(&self, p: [f32; 3], frame_flip: bool) -> [f32; 3] {
+        let r = camera_rotation(self.pitch, self.yaw, self.roll);
+        let d = [
+            p[0] - self.focus[0],
+            if frame_flip { -p[1] } else { p[1] } - self.focus[1],
+            p[2] - self.focus[2],
+        ];
+        // Column-major `r[c * 4 + row]`.
+        std::array::from_fn(|row| {
+            let e = r[row] * d[0] + r[4 + row] * d[1] + r[8 + row] * d[2];
+            (e + self.tr_unit[row]) * self.base_scale
+        })
+    }
+}
+
+/// The sign test `NCLIP` runs on three corners' `(IR1, IR2, SZ)`, projected as
+/// `RTPS` does (`H / SZ` capped at `2`, `SZ` saturated at `0`). `H` scales every
+/// corner alike, so only the cap's reach depends on it.
+pub fn nclip_area(eye: [[f32; 3]; 3], h: f32) -> f32 {
+    let s = eye.map(|e| {
+        let k = if e[2] > 0.0 { (h / e[2]).min(2.0) } else { 2.0 };
+        [e[0] * k, e[1] * k]
+    });
+    (s[1][0] - s[0][0]) * (s[2][1] - s[0][1]) - (s[2][0] - s[0][0]) * (s[1][1] - s[0][1])
 }
 
 /// A camera-relative node resolved against a host camera: the world point to

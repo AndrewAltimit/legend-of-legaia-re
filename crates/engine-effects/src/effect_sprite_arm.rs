@@ -93,6 +93,8 @@ pub fn sprite_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDra
         flags_52: s.field_52,
         single_sided: !legaia_render_kernels::sprite_arm::ColourWord::of(s).double_sided,
         tessellated: false,
+        object_effect_kind: s.field_42,
+        object_effect_scale: f32::from(s.field_72) / 4096.0,
     })
 }
 

@@ -145,6 +145,10 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PHYSICAL"] = "1"
     if a.save_inject:
         env["LEGAIA_SAVE_INJECT"] = "1"
+    if a.retail_parts:
+        env["LEGAIA_CAST_PARTS"] = "1"
+    if a.prim_calls:
+        env["LEGAIA_PRIM_CALLS"] = "1"
     if a.sfx_callers:
         env["LEGAIA_SFX_CALLERS"] = "1"
     if a.watch:
@@ -156,7 +160,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not a.formation and not a.monster_pick and not a.sfx_callers and not a.watch:
+    if not a.formation and not a.monster_pick and not a.sfx_callers and not a.watch and not a.prim_calls:
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -480,6 +484,10 @@ def main() -> int:
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")
+    ap.add_argument("--retail-parts", action="store_true",
+                    help="retail: parts.csv, every live move-VM part per vsync (the engine half is LEGAIA_DIAG_CAST_PARTS)")
+    ap.add_argument("--prim-calls", action="store_true",
+                    help="retail: primcall.csv, each prim dispatcher entry and cued leaf (breakpoint core)")
     ap.add_argument("--no-sound", action="store_true",
                     help="engine: keep the child's --no-audio (no audio director, no sfx.csv)")
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")

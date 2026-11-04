@@ -3241,7 +3241,10 @@ The ported stagers run off the parts' own calls
 only for the bodies above; the cells' other bodies (Chaos Breath, Glare, Curse All and
 the rest of their cells) keep the whole-set placement. Big Wave's arm 6 also
 ORs `0x20` into `+0x52` of the first two records it seats
-(`0x801F7204..0x801F723C`), a bit the engine does not model.
+(`0x801F7204..0x801F723C`), which lifts the model draw's origin near reject
+(`0x8001B1A8..0x8001B1DC`); a recording holds those two at view depths from `328`, so
+the reject never fires on them and the engine does not model it. The sheet that
+reads "too few packets" is a [raised `+0x42`](renderer.md#what-a-raised-0x42-draws).
 
 The Call Wave rays grow their length channel `+0xC8` off the rate op `0x1C`
 stores at `+0xCA` ([move-vm.md](move-vm.md#opcode-reference)); with the rate

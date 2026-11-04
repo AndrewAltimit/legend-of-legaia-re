@@ -239,6 +239,23 @@ same pixels as retail's per-edge clip, and since each draw clips in its own
 mesh space - the posed mesh for an animated actor - both brackets agree with
 retail.
 
+**A raised effect part.** Move-VM op `0x10` raises `+0x42` on a part as well,
+and the far arm then replaces more than the clip. `FUN_8002735C` runs `NCLIP`
+on a quad's first three corners and drops it on a negative area
+(`0x80027548..0x8002755C`): there is no double-sided mask, the word's `0x08000000`
+is ignored, and the second triangle is never tested. So a quad whose `v0` and `v2`
+coincide has an area of exactly zero and stays while the planar quads around it go.
+The colour word's `0x20000000` does not reach the sixteen-way leaf either. PROT
+0946's arm 6 raises the sheet `0x801F7A50` (word `0xC9000000`, mode `0x300`) and its
+sibling: of `20 x 4` packets the far arm links the innermost band alone, the fan
+whose corners meet at the centre, and the floor row cuts that to the half above the
+stage. `autorun_cast_sequence.lua`'s `LEGAIA_PRIM_CALLS` shows neither record
+entering the dispatcher, and its `parts.csv` holds `+0x42 = 1` on those two alone.
+
+Port: `engine-effects::object_effect::far_arm_mesh`, a CPU clip of the node's mesh
+through `engine-world-views::effect_draws`, so both hosts read one list. Off retail's
+camera every face stays.
+
 A `4C C2` aimed at the player (`CC F8 C2`, five of the 50 sites, in `uru2`,
 `rugi` and `noaru`) runs on the same player stand-in context the `CC F8 40`
 scale op uses (`field_step_routed`) and lands in

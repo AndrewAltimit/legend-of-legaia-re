@@ -112,6 +112,16 @@
 --                        (the absolute vsync, as in meta.csv), and the whole
 --                        emulator state beside it as state_<vsync>.rawsstate
 --                        (VRAM included: sstate_vram.py); empty = none
+--   LEGAIA_CAST_PARTS    1 = also write parts.csv from the cast begin, one row per
+--                        vsync per live move-VM part (actor-list nodes on the
+--                        part tick FUN_80021DF4): the retail half of the engine
+--                        recorder's LEGAIA_DIAG_CAST_PARTS, colour word, level,
+--                        draw kind, draw mode, packed colours, radius and height
+--                        channels, position, scale, UV / tpage / CLUT and the
+--                        mode-3 H / S / V adds
+--   LEGAIA_PRIM_CALLS    1 = primcall.csv (breakpoint core): each prim dispatcher
+--                        FUN_80043390 entry with its colour word, level, caller
+--                        and first group words, and each cued leaf it reaches
 --   LEGAIA_SAVE_INJECT   1 = write the whole emulator state as
 --                        state_inject.rawsstate on the first vsync after the
 --                        inject: a pre-cast state with the cast already
@@ -206,6 +216,33 @@ local function s32(a)
     local v = u32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
     return v
+end
+-- parts.csv: every live move-VM part, in list order. On the probe table: the
+-- frame body already sits at Lua's limit of 60 upvalues.
+local CAST_PARTS = probe.getenv_num("LEGAIA_CAST_PARTS", 0) ~= 0
+function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
+    if not (cast_seen and CAST_PARTS) then return end
+    if probe.cast_parts == nil then
+        probe.cast_parts = probe.csv_open(probe.out_path("parts.csv"),
+            "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42")
+    end
+    for k = 0, 8 do
+        local n = u32(0x8007C34C + 4 * k)
+        local guard = 0
+        while n >= 0x80000000 and n < 0x80200000 and guard < 512 do
+            guard = guard + 1
+            if u32(n + 0xC) == 0x80021DF4 then
+                probe.cast_parts:row("%d,%d,%d,0x%08X,0x%08X,0x%08X,%d,%d,%d,0x%04X,0x%08X,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,0x%04X,%d,0x%04X,0x%04X,0x%04X,0x%04X,%d,%d,%d,%d,%d,%d,%d",
+                    elapsed, st7, u8(cx + 0x279), n, u32(n + 0x10), u32(n + 0x74), s32(n + 0x78),
+                    s16(n + 0x56), s16(n + 0x5A), u16(n + 0x9E), u32(n + 0xA0), u32(n + 0xA4),
+                    s16(n + 0xB4), s16(n + 0xB6), s16(n + 0xB8), s16(n + 0xBA),
+                    s32(n + 0x14), s32(n + 0x18), s32(n + 0x1C), u16(n + 0x72), u16(n + 0x52),
+                    s16(n + 0x9C), u16(n + 0xA8), u16(n + 0xAC), u16(n + 0xB0), u16(n + 0xB2),
+                    s16(n + 0x90), s16(n + 0x92), s16(n + 0x94), s32(n + 0x34), s16(n + 0x7A), u8(n + 0x6D), s16(n + 0x42))
+            end
+            n = u32(n)
+        end
+    end
 end
 local function ptr_ok(p) return p >= 0x80000000 and p < 0x80200000 end
 local function ctxp()
@@ -367,6 +404,26 @@ probe.run({
                     local c = u32(CTX_PTR)
                     watch_csv:row("%d,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
                         c >= 0x80000000 and u8(c + 7) or -1, addr, w(R.pc), w(n.ra), w(n.v0), w(n.v1), w(n.a1))
+                end)
+            end
+        end
+        if probe.getenv_num("LEGAIA_PRIM_CALLS", 0) ~= 0 then
+            -- Each entry of the prim dispatcher FUN_80043390: mesh a0, colour
+            -- word a1, level a2, the caller, and the mesh's first group words;
+            -- and each cued quad / triangle leaf it reaches (breakpoint core).
+            local calls = probe.csv_open(probe.out_path("primcall.csv"), "vsync,fn,a0,a1,a2,ra,grp0,grp1")
+            probe.arm_breakpoint(0x80043390, "Exec", 4, "primdisp", function()
+                local r = PCSX.getRegisters().GPR.n
+                local g = u32(tou32(r.a0) + 0x10)
+                calls:row("%d,disp,0x%08X,0x%08X,%d,0x%08X,0x%08X,0x%08X", last_elapsed, tou32(r.a0), tou32(r.a1),
+                    tou32(r.a2), tou32(r.ra), ptr_ok(g) and u32(g) or 0, ptr_ok(g) and u32(g + 4) or 0)
+            end)
+            for _, f in ipairs({ { 0x800453BC, "k18b1" }, { 0x80045584, "k19b1" }, { 0x80045BB4, "k19b3" },
+                                  { 0x800457C4, "k18b2" }, { 0x80045988, "k19b2" }, { 0x80044DC8, "k17b1" },
+                                  { 0x80044C14, "k16b1" }, { 0x80045194, "k15b1" }, { 0x80044FDC, "k14b1" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, f[2], function()
+                    local r = PCSX.getRegisters().GPR.n
+                    calls:row("%d,%s,0x%08X,0,0,0x%08X,0,0", last_elapsed, f[2], tou32(r.a1), tou32(r.ra))
                 end)
             end
         end
@@ -588,6 +645,7 @@ probe.run({
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
+        probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
         -- engine recorder's file of the same name.
         if cast_seen then
@@ -658,6 +716,7 @@ probe.run({
         if body then body:close() end
         if cam then cam:close() end
         if probe.cast_sfx.csv then probe.cast_sfx.csv:close() end
+        if probe.cast_parts then probe.cast_parts:close() end
         if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
