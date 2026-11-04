@@ -1405,9 +1405,6 @@ thread_local! {
     /// ([`racing_a_finisher`]): the reload dresses for it
     /// ([`pad_dress_for_race`]). Set by the fight, cleared at a new stretch.
     pub(super) static RACE_LOST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// A boss wiped the party this stretch: the reload walks in with a full
-    /// gauge ([`pad_charge_for_race`]). Set by the fight, cleared at a new stretch.
-    pub(super) static BOSS_LOST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The beat being played, through the fight it stages.
     pub(super) static FIGHT_BEAT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
     /// The beat that boss was met on ([`FIGHT_BEAT`]). The reload prepares at

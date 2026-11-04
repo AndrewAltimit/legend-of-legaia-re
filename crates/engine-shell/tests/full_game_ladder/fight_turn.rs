@@ -1082,7 +1082,6 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                 RACE_LOST.with(|l| l.set(true));
             }
             if boss.is_some() {
-                BOSS_LOST.with(|l| l.set(true));
                 LOST_BEAT.with(|l| l.set(FIGHT_BEAT.with(std::cell::Cell::get)));
             }
             // A boss that Stoned a member beat the party with the stone, not
@@ -1130,11 +1129,6 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                     "    [battle] ended after {t} ticks: {}",
                     battle_snapshot(session)
                 );
-            }
-            // Beaten: nothing is left to charge for. Zora falls with the escape's
-            // clock already due to run, and the clock is no time to walk for AP.
-            if boss.is_some() {
-                BOSS_LOST.with(|l| l.set(false));
             }
             return None;
         }
