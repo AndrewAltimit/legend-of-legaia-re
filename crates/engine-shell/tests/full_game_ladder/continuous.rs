@@ -173,8 +173,14 @@ const FIT_SAVE_REACH: usize = 3;
 /// HP, a third of its MP or the bag's restoratives to refill it, and the bag's
 /// reserve of heals? A save that is not is a doomed save to reload again and
 /// again: a run reached `jette_fortress_late` on 15% HP, no MP and an empty
-/// bag, and six reloads replayed that same party into Jette (50000 HP).
+/// bag, and six reloads replayed that same party into Jette (50000 HP). A scene
+/// whose rest still works makes any party fit, since the save stands beside
+/// what mends it: read otherwise, a run that wiped twice past a `town0c` save
+/// went back through mist-era `dolk` with Vahn at level 2 and stopped there.
 fn fit_to_go_on(session: &NativeSession) -> bool {
+    if session.host.world.mode == SceneMode::Field && rest_works_here(session) {
+        return true;
+    }
     let w = &session.host.world;
     let party = w.present_party_list();
     let members = party.len().max(1) as u32;

@@ -664,7 +664,9 @@ party still holds when it reaches the door, and what a reload hands back:
   on the rounds spent standing.
 - **A doomed save is not reloaded for ever.** A milestone's save counts as fit
   when nobody is under two fifths of its HP, the party holds a third of its MP or
-  the bag's MP reserve, and the bag holds its heal reserve. The run keeps the last
+  the bag's MP reserve, and the bag holds its heal reserve; a scene whose rest
+  still works makes any party fit, since the save stands beside what mends it.
+  The run keeps the last
   fit save within three milestones beside the latest one, as a player keeps an
   older slot. Once the latest save, unfit, has lost twice, the next reload is the
   fit one, and the stretches between are played again each as itself.
