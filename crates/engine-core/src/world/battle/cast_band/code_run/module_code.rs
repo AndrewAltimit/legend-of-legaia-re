@@ -433,7 +433,15 @@ impl World {
                         && !self.battle.actor_is_petrified(s)
                 })
                 .collect();
-            self.fold_pending_cast();
+            self.fold_pending_cast_at_rate(
+                if has_trampoline {
+                    body.and_then(|b| ticks::chain_body_for(entry, b))
+                } else {
+                    ticks::direct_chain_body(entry)
+                }
+                .and_then(|c| c.arm(phase_in))
+                .and_then(|a| a.hit_rate),
+            );
             for s in struck {
                 self.face_seat_away_from_caster(s, caster_slot);
             }
@@ -539,12 +547,28 @@ impl World {
         } else {
             ticks::direct_chain_body(entry)
         };
+        // The arm's party-row rate store sits ahead of its countdown test, so
+        // it runs on every pass the arm holds.
+        if let Some(rate) = legaia_engine_cast::cast_module_ticks::party_rate_sweep(
+            entry,
+            if has_trampoline { body } else { None },
+            phase_in,
+        ) {
+            for s in 0..usize::from(self.party.party_count) {
+                if let Some(a) = self.actors.get_mut(s) {
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(rate);
+                }
+            }
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+        }
         if let Some(arm) = chain.and_then(|c| c.arm(phase_in))
             && !capture_held
         {
             if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
                 self.casting.module_hit_arm = Some(phase_in);
-                self.fold_pending_cast();
+                self.fold_pending_cast_at_rate(arm.hit_rate);
                 // The arm runs on the seats the hit left (a dead victim
                 // takes PROT 0956's reaction branch, not its turn-steal).
                 caster = self.cast_view(caster_slot);
@@ -1931,6 +1955,22 @@ impl World {
 }
 
 impl World {
+    /// [`Self::fold_pending_cast`] for a chain arm that stores a rate on each
+    /// seat it strikes, beside the reaction ([`ticks::ChainArm::hit_rate`]). The
+    /// clip commit that follows decays anything off normal to `4`.
+    fn fold_pending_cast_at_rate(&mut self, rate: Option<u8>) {
+        let struck: Vec<u8> = match (&self.casting.pending_cast, rate) {
+            (Some(pc), Some(_)) => pc.targets.clone(),
+            _ => Vec::new(),
+        };
+        self.fold_pending_cast();
+        for s in struck {
+            if let (Some(a), Some(rate)) = (self.actors.get_mut(usize::from(s)), rate) {
+                a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(rate);
+            }
+        }
+    }
+
     /// PROT 0925's outcome arm (arm 8, `FUN_801F6A00`). With the no-escape
     /// byte `ctx[+0x287]` clear (`0x801F7764`) the arm stages the party's
     /// flee - the same staging, camera cut and HP floor the run band's

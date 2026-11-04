@@ -145,6 +145,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_SAVE_INJECT"] = "1"
     if a.sfx_callers:
         env["LEGAIA_SFX_CALLERS"] = "1"
+    if a.watch:
+        env["LEGAIA_WATCH_W"] = a.watch
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -152,7 +154,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not a.formation and not a.monster_pick and not a.sfx_callers:
+    if not a.formation and not a.monster_pick and not a.sfx_callers and not a.watch:
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -419,6 +421,9 @@ def main() -> int:
     ap.add_argument("--strip", type=int, default=12, help="pairs in strip.png")
     ap.add_argument("--sound-tolerance", type=int,
                     help="sound channel: ticks a cue still matches at (default 6)")
+    ap.add_argument("--watch", default="",
+                    help="retail: log each store into these byte addresses (comma list) with its pc and "
+                         "ra (retail/watch.csv; breakpoint core)")
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")

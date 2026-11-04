@@ -283,6 +283,16 @@ So the strike loop's first swing, staged under bit 1 over the idle `0x19`'s arri
 | `0x1A` SpecialStarter | all slots `0`, acting actor `2` | `0x8004B728..0x8004B750` |
 | `>= 0x1B` art constant | all slots `2` if `ctx[+0x243]` set, else `4` | `0x8004BB78..0x8004BBA8` |
 
+Outside the commit, a cast's arms slow the seats they strike, beside each reaction
+stage, and so pace its knockdown and get-up. Earthquake stores `4` and restores `8` in
+its own `0xFF` arm. The Rogue strikes and Stone Circle store `2` on the hit and again
+on every pass of their next arm, so a commit's decay to `4` lasts one frame
+(`cast_module_ticks::party_rate_sweep`, `ChainArm::hit_rate`). A move-power record
+whose `+0x16` list holds `0xFF` (Thunder Break) stores `0x20` on its victim for as long
+as a landed slot's counter runs (`0x801E1800..0x801E1824`), so the body shivers until
+the hit; the hit's commit decays that to `4`. The Done tail's restore puts every seat
+back.
+
 A Super / Miracle starter is therefore a freeze-frame with only the dashing actor moving, at quarter speed. Each art strike then plays the whole battle at half speed. Direction swings (`0x0C..=0x0F`) never slow anything.
 
 The `0x1A` arm also raises the `ARTS!!` banner byte `ctx[+0x28B]` (from the queue-builder's side-array mark at `0x801F6990` / the Miracle marker; default `2`), zeroes the banner clock `+0x28C`, and queues the per-character arts shout (`FUN_8004FCC8` ids `0x101/0x111/0x121` plus per-follow-up variants). This is the `+0x28B` writer behind the [`flash_ramp` banner](battle-hud.md#arts-announcement-banner-fun_801e2524--fun_801e2650).

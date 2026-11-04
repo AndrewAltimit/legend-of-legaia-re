@@ -1445,9 +1445,12 @@ without applying it. Two runner rules:
    caster clips staged by the band - ahead of its arms, or on the pass of the
    arm the row places them in (PROT 0961's arm 1) - so the runner does not
    stage those literals again.
-2. **Rates.** A `+0x21D` store is carried only when the body itself returns
-   the actor to rate `8`. PROT 0942's `0xAA`, 0960's `0xA6`, 0961 and 0963
-   leave their caster slowed or frozen and rely on a reset outside the module.
+2. **Rates.** A `+0x21D` store on the caster or the views' victim is carried only
+   when the body itself returns the actor to rate `8`. PROT 0942's `0xAA`, 0960's
+   `0xA6`, 0961 and 0963 leave their caster slowed or frozen and rely on a reset
+   outside the module. A rate on the seats a hit strikes (`ChainArm::hit_rate`) and
+   an arm's per-pass party-row store (`party_rate_sweep`) are carried: they pace the
+   reactions, and the Done tail's `FUN_801E93C8` puts them back.
 
 **Arm gates.** Every capture-class chain body opens its arms on the countdown
 shape, and its table sits in `cast_module_camera::capture_countdown`, keyed

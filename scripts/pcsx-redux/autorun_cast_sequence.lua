@@ -45,7 +45,11 @@
 --                (0x8007B6D8..DF): `a0` is the storing pc.
 --   seats.csv    per vsync from the cast, seats 0..7: clip +0x1D9, staged
 --                +0x1DA, cue-track cursor +0x1F6 (the anim cue walk
---                FUN_800508DC's).
+--                FUN_800508DC's), and rates.csv beside it: each seat's animation
+--                rate +0x21D and node cursor +0x68, off which a reaction's
+--                pace reads.
+--   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
+--                these bytes with its pc, ra and registers.
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -248,23 +252,34 @@ local target_at_cast = -1
 -- not walked home) leaves the same stage.
 probe.cast_seats = {
     csv = nil,
+    rates = nil,
     row = function(self, elapsed, actor_of)
+        if self.rates == nil then
+            local h = {}
+            for k = 0, 7 do h[#h + 1] = string.format("s%drate,s%dcur", k, k) end
+            self.rates = probe.csv_open(probe.out_path("rates.csv"), "vsync," .. table.concat(h, ","))
+        end
         if self.csv == nil then
             self.csv = probe.csv_open(probe.out_path("seats.csv"),
                 "vsync,s0clip,s0stg,s0cue,s1clip,s1stg,s1cue,s2clip,s2stg,s2cue,s3clip,s3stg,s3cue," ..
                 "s4clip,s4stg,s4cue,s5clip,s5stg,s5cue,s6clip,s6stg,s6cue,s7clip,s7stg,s7cue")
         end
-        local cols = {}
+        local cols, rate_cols = {}, {}
         for k = 0, 7 do
             local a = actor_of(k)
             if a ~= nil then
                 cols[#cols + 1] = string.format("%d,%d,%d", probe.read_u8(a + 0x1D9) or 0,
                     probe.read_u8(a + 0x1DA) or 0, probe.read_u8(a + 0x1F6) or 0)
+                local node = probe.read_u32(a + 0x22C) or 0
+                rate_cols[#rate_cols + 1] = string.format("%d,%d", probe.read_u8(a + 0x21D) or 0,
+                    node >= 0x80000000 and (probe.read_u16(node + 0x68) or 0) or -1)
             else
                 cols[#cols + 1] = "-1,-1,-1"
+                rate_cols[#rate_cols + 1] = "-1,-1"
             end
         end
         self.csv:row("%d,%s", elapsed, table.concat(cols, ","))
+        self.rates:row("%d,%s", elapsed, table.concat(rate_cols, ","))
     end,
 }
 
@@ -335,6 +350,25 @@ probe.run({
                 "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
                 "s0clip,s0stg,s0rate,s0cur,s0x,s0z,s0tot,s1clip,s1stg,s1rate,s1cur,s1x,s1z,s1tot," ..
                 "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp")
+        end
+        -- LEGAIA_WATCH_W="addr,addr": who stores these bytes (breakpoint core).
+        local watch_w = probe.getenv("LEGAIA_WATCH_W", "")
+        if watch_w ~= "" then
+            local watch_csv = probe.csv_open(probe.out_path("watch.csv"), "vsync,st7,addr,pc,ra,v0,v1,a1")
+            for word in string.gmatch(watch_w, "[^,]+") do
+                local addr = tonumber(word)
+                probe.arm_breakpoint(addr, "Write", 1, "watch", function()
+                    local R = PCSX.getRegisters()
+                    local n = R.GPR.n
+                    local function w(v)
+                        v = tonumber(v) or 0
+                        return v < 0 and v + 0x100000000 or v
+                    end
+                    local c = u32(CTX_PTR)
+                    watch_csv:row("%d,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
+                        c >= 0x80000000 and u8(c + 7) or -1, addr, w(R.pc), w(n.ra), w(n.v0), w(n.v1), w(n.a1))
+                end)
+            end
         end
         if probe.getenv_num("LEGAIA_SFX_CALLERS", 0) ~= 0 then
             -- Who fills the cue ring: the producer FUN_80035B50 / its
@@ -407,6 +441,7 @@ probe.run({
     end,
 
     on_capture = function(c, elapsed)
+        probe.cast_elapsed = elapsed
         last_elapsed = elapsed
         local cx = ctxp()
         local cs = actor(CASTER_SEAT == 255 and 0 or CASTER_SEAT)

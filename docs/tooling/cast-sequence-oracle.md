@@ -80,6 +80,7 @@ Flags worth knowing:
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
+| `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
 | `--learned <level>` | Both sides: the spell sits on the caster's list at this level. Off the list `FUN_801DD864` reads list slot `0x20`, and level `0` wraps into a capped hit ([the summon roll](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)), so a damage measurement wants this |
 | `--monster-hp <hp>` | Both sides: every living monster's HP from the cast begin, so a cast's whole damage shows in the HP columns. HP feeds the defender roll (`hp >> 8`) and a monster's own swing, so keep it modest and it goes in after the monster's turn |
@@ -396,6 +397,9 @@ are **missing** (retail only) or **extra** (engine only). The channel's
 number is `2 * matched / (retail cues + engine cues)`; `id score` is the same
 over the id multisets alone, whatever the time.
 
+`rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
+per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.
+
 A missing cue is traced back with `--sfx-callers`, which also write-watches
 the ring's id half (a `store` row is any store into `0x8007B6D8..DF`, `a0`
 its pc; the ager `FUN_8001698C`'s clears at `0x80016AF4` are among them),
@@ -430,6 +434,19 @@ adds its reaction-channel entry). What the recordings on
   `+0x1D9`, where a hit reaction commits, so the victim's knockdown and get-up
   hold the magic band's exit. The engine counted the action channel and left
   `0x2E` on its second pass, moving the band's closing cues `43` ticks early.
+- **A looping walk's second step.** `0x253` on a Nova's Scythe Wind walk rings once
+  while `+0x1F6` steps twice: it is a sustained row, so the funnel drops the repeat
+  ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
+- **A reaction on the wrong clock.** Earthquake, the three Rogue strikes and Stone
+  Circle part by a factor of two to six on every party reaction cue with the ids all
+  right: each arm slows the seats it strikes
+  ([writers](../subsystems/battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)).
+- **A deal is not a cue defect.** Void Accessories' three engine-only cues are its
+  strip landing where retail's roll said "Nothing happened": `--rand-at 0x70:3` scores
+  it `1.000`.
+- **The flee's silent walk.** Both flee sites zero the walk record's cue track
+  ([the staging](../subsystems/battle-action-helpers.md#the-escape-roll-fun_801e791c)), so a
+  Spikefish flee sounds no steps.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
