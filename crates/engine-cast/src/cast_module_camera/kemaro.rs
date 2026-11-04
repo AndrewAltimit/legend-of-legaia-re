@@ -152,6 +152,11 @@ pub fn kemaro_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
     } else {
         kemaro_pass(phase, seats, st)
     };
+    // Arm 9's exit stages clip 1 bare (`0x801F782C`): it commits at the appear
+    // clip's end, and its cue reaches the screen on arm 17.
+    if phase == 9 && !held {
+        st.creature_stage = Some(1);
+    }
     // Arm 6 puts the name up on the pass its ramp reaches `0x1000`.
     if phase == 6 && !held && ramp_before < 0x1000 {
         base.caption = Some(ModuleCaption::SpellName);

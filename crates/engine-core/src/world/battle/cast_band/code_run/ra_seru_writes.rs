@@ -113,7 +113,7 @@ impl World {
     /// seats it at `y = -(scalar << 8)` (`0x801F6D18..0x801F6D28`), and arm 3
     /// lifts it `4 p` a pass until its word runs out, then stands it on the
     /// floor (`0x801F6D94..0x801F6DE0`). Arm 8's exit hides the creature and
-    /// shows every living seat for the victim's shot (`0x801F7518..0x801F7550`).
+    /// shows every living monster for the victim's shot (`0x801F7518..0x801F7550`).
     pub(in crate::world::battle::cast_band) fn apply_slippery_writes(
         &mut self,
         phase: u8,
@@ -122,7 +122,7 @@ impl World {
     ) {
         if (phase, passed) == (8, true) {
             let map = self.cast_seat_map();
-            for seat in 0..7u8 {
+            for seat in 3..7u8 {
                 if let Some(a) = map
                     .engine(seat)
                     .and_then(|e| self.actors.get_mut(usize::from(e)))
