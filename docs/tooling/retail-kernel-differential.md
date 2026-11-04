@@ -160,3 +160,11 @@ delegated arm's redirect `FUN_801DB124` takes no seat: it reads `ctx[+0x274]`, s
 roll it follows stands dead or not, and its draws and its rewrite land on the turn
 picker's last pick. The spend loop can spin for ever in retail; the test holds the port
 to ending the spend there.
+
+Running the builder after it found the round playing Auto's arrows raw, where the seed
+tokenizes them as it does an entered string, and the learn check `FUN_801EFBFC` teaching
+on every use, where a seat on the Auto flag draws `rand() & 0x1FF` on each art and learns
+only on a zero. The head of the same builder found the AI companion drawing twenty
+`rand()`s a turn, reading the leader's status word off the typed list only, and giving up
+on a row after sixteen target redraws, where retail's redraw has no bound. Her HP and MP
+pinned at 200 and the string the spar's third round forces on the lead had no port.

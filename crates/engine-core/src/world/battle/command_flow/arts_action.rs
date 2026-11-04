@@ -16,8 +16,22 @@ impl World {
     pub(in crate::world) fn learn_art_on_record(
         &mut self,
         roster: u8,
+        seat: u8,
         art_byte: u8,
     ) -> Option<legaia_engine_battle_vm::battle_action::ArtUseCheck> {
+        // Auto rarely teaches: a seat on its flag `ctx[+0x266 + seat]` draws
+        // `rand() & 0x1FF` on every art it plays, known or not, and only a zero
+        // lets it learn one. Tetsu's spar teaches regardless.
+        // PORT: FUN_801EFBFC (the learn gate, `ctx[+0x266 + seat]`, `DAT_8007BD0C`)
+        let auto = self
+            .battle
+            .auto_combo
+            .flags
+            .get(usize::from(seat))
+            .copied()
+            .unwrap_or(false);
+        let learn_gate_open =
+            !auto || self.next_rand() & 0x1FF == 0 || self.battle_first_monster_byte() == 0x4F;
         let cap = self
             .party
             .tactical_arts
@@ -29,7 +43,7 @@ impl World {
             &mut list.count,
             &mut list.ids,
             art_byte.wrapping_sub(ART_RECORD_ID_BIAS),
-            true,
+            learn_gate_open,
             cap,
         );
         if verdict == legaia_engine_battle_vm::battle_action::ArtUseCheck::Learned {
@@ -135,7 +149,7 @@ impl World {
                     return legaia_art::ArtRun::Refuse;
                 }
                 let id = 0x1B + groups.get(usize::from(ordinal)).copied().unwrap_or(0);
-                let starter = match self.learn_art_on_record(roster, id) {
+                let starter = match self.learn_art_on_record(roster, caster, id) {
                     Some(legaia_engine_battle_vm::battle_action::ArtUseCheck::Known) => {
                         self.party.tactical_arts.mark_known(roster, id);
                         ActionConstant::RegularStarter.as_byte()

@@ -160,6 +160,28 @@ impl World {
     /// confused member can't be controlled, so it auto-acts and the retarget
     /// flips its strike to a random living ally). No-op retarget when the member
     /// isn't confused, so the auto-resolve path is RNG-unchanged.
+    /// What the queue builder does for every party seat before it looks at
+    /// the seat: the special-trigger clear (`sw zero,0x696c(v1)` at
+    /// `0x801EED88`), and with the companion on seat 1, her HP and MP back at
+    /// 200 with both readouts (`0x801EEE20..0x801EEE38`). She cannot fall, and
+    /// the bar never shows she was hit past the next party turn.
+    ///
+    /// PORT: FUN_801EED1C (`0x801EED5C..0x801EEE38`, the head)
+    pub fn queue_builder_head(&mut self) {
+        use legaia_engine_battle_vm::battle_action::AI_COMPANION_CHAR_ID;
+        const PIN: u16 = 200;
+        self.battle_ctx.super_trigger = false;
+        if self.party.party_count > 1
+            && self.party_roster_slot(1) as u8 + 1 == AI_COMPANION_CHAR_ID
+            && let Some(a) = self.actors.get_mut(1)
+        {
+            a.battle.hp = PIN;
+            a.battle.mp = PIN;
+            a.battle.hp_display = Some(PIN);
+            a.battle.hp_bar_pending = 0;
+        }
+    }
+
     /// Retail's delegated pick for the AI-controlled party member -
     /// `FUN_801EED1C`'s `DAT_8007BD10[slot] == 4` block, ported as
     /// [`vm::battle_action::ai_companion_pick`].
@@ -186,7 +208,7 @@ impl World {
     ///
     /// The watched seat is retail's own: battle seat `0`, the party leader,
     /// **not** the companion itself.
-    fn arm_ai_companion(&mut self, slot: u8) -> bool {
+    pub fn arm_ai_companion(&mut self, slot: u8) -> bool {
         use legaia_engine_battle_vm::battle_action::ActionState;
         use legaia_engine_battle_vm::battle_action::{
             AI_COMPANION_CHAR_ID, AI_COMPANION_MAGIC_SUB_ROUTE, AI_COMPANION_WATCHED_SEAT,
@@ -201,7 +223,7 @@ impl World {
             .map(|a| AiCompanionWatch {
                 hp: a.battle.hp,
                 hp_max: a.battle.max_hp,
-                status: a.battle.field_flags,
+                status: self.raw_status_word(AI_COMPANION_WATCHED_SEAT),
             })
             .unwrap_or_default();
         let table = self
@@ -221,12 +243,6 @@ impl World {
                     .unwrap_or(0)
             })
             .collect();
-        let mut rolls: Vec<u32> = Vec::new();
-        for _ in 0..(2 + legaia_engine_battle_vm::battle_action::AI_COMPANION_MAX_TARGET_DRAWS + 2)
-        {
-            rolls.push(self.next_rand());
-        }
-        let mut cursor = rolls.into_iter();
         let seats = self.battle_seat_map();
         let engine = |r: u8| seats.engine(r).map(usize::from);
         let pick = ai_companion_pick(
@@ -238,7 +254,7 @@ impl World {
                     .unwrap_or(false)
             },
             |r| engine(r).and_then(|e| guard.get(e).copied()).unwrap_or(0),
-            || cursor.next().unwrap_or(0),
+            || self.next_rand(),
         );
 
         self.battle_ctx.active_actor = slot;

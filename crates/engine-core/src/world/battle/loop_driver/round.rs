@@ -553,8 +553,7 @@ impl World {
             self.take_monster_turn(next);
             return;
         }
-        // The builder's head clear (`sw zero,0x696c(v1)` at `0x801EED88`).
-        self.battle_ctx.super_trigger = false;
+        self.queue_builder_head();
         // A Rage seat: the round's state-`0x00` pass overwrote its category
         // and stream (`0x801F0528` / `0x801F06B8`) after any commit, so the
         // fill is what retail plays; a commit the engine still holds is

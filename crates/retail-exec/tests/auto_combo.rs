@@ -29,7 +29,7 @@ const ACTOR: u32 = 0x8013_0000;
 const ACTOR_STRIDE: u32 = 0x400;
 const MONSTER: u32 = 0x8015_0000;
 const RECORD0: u32 = 0x8016_0000;
-const SWINGS: u32 = 0x801A_0000;
+const SWINGS: u32 = 0x8011_0000;
 
 #[derive(Debug, Clone)]
 struct Round {
@@ -408,4 +408,114 @@ fn a_delegated_member_draws_what_retail_draws() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
     assert!(filled > 1000, "{filled}");
+}
+
+/// The round's seed runs the builder over what the assembler left, so the
+/// arrows the tail spliced in come out as arts.
+#[test]
+fn the_seed_tokenizes_what_the_assembler_built() {
+    use legaia_actor_formats::battle_char_assembly::art_animation_bank;
+    use legaia_art::queue::{ActionConstant, Command};
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, banks, guards)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let mut w = World::new();
+    for (ch, rec0) in banks.iter().enumerate() {
+        let character = legaia_art::Character::all()[ch];
+        for r in &art_animation_bank(rec0).expect("art bank") {
+            let Some(action) = ActionConstant::from_byte(0x10 + r.index as u8) else {
+                continue;
+            };
+            let commands: Vec<Command> = r
+                .combo
+                .iter()
+                .filter_map(|&b| Command::from_byte(b))
+                .collect();
+            let mut extra = vec![r.stream_source];
+            extra.extend_from_slice(&r.chain_sources);
+            w.set_art_record(
+                character,
+                action,
+                legaia_art::ArtRecord {
+                    action,
+                    commands,
+                    anim_index: 0,
+                    anim_extra: extra,
+                    name: None,
+                    power: vec![],
+                    dmg_timing: vec![],
+                    effect_cues: Default::default(),
+                    hit_cues: vec![],
+                    identifier: 0,
+                    anim_speed: 0,
+                    enemy_effect: legaia_art::record::EnemyEffect::Toxic,
+                    repeat_frames: Default::default(),
+                    background: 0,
+                    runtime_address: None,
+                },
+            );
+        }
+    }
+    let mut rng = Rng(0x544F_4B4E);
+    let (mut arts, mut failures) = (0, Vec::new());
+    for round in 0..8000 {
+        let mut r = gen_round(&mut rng);
+        r.flagged = [true; 3];
+        r.category = [3; 3];
+        r.status = [0; 3];
+        r.armed = [true; 3];
+        r.spirit = [100; 3];
+        r.costs = [[0x1E; 4]; 3];
+        r.known = std::array::from_fn(|_| (0..15).collect());
+        seed_retail(&mut cpu, &r, &banks);
+        for c in 0..4 {
+            cpu.mem.wr8(0x801F_686C + c, 0);
+        }
+        state.set(r.seed);
+        cpu.step_budget = 20_000;
+        let stop = cpu.call(ASSEMBLER, &[]);
+        cpu.step_budget = 0;
+        match stop {
+            Stop::Returned => {}
+            Stop::StepLimit { .. } => continue,
+            other => panic!("{other:?}"),
+        }
+        seed_port(&mut w, &r, &banks, guards);
+        w.run_auto_attack_pool_arms();
+        for s in 0..3u32 {
+            assert_eq!(cpu.call(0x801E_ED1C, &[s]), Stop::Returned, "round {round}");
+            let i = s as usize;
+            w.dispatch_pending_party_action(
+                s as u8,
+                PendingPartyAction::Attack {
+                    target: r.target[i],
+                },
+            );
+            let retail: Vec<u8> = cpu
+                .mem
+                .read(actor(s) + 0x1DF, 19)
+                .into_iter()
+                .take_while(|&b| b != 0)
+                .collect();
+            let port: Vec<u8> = w.actors[i]
+                .battle
+                .params
+                .iter()
+                .copied()
+                .take_while(|&b| b != 0)
+                .collect();
+            arts += u32::from(retail.iter().any(|&b| b == 0x19 || b == 0x1A));
+            if (retail != port || state.get() != w.rng_state) && failures.len() < 5 {
+                failures.push(format!(
+                    "round {round} seat {s}:\n retail {retail:02x?} {:#x}\n port   {port:02x?} {:#x}",
+                    state.get(),
+                    w.rng_state
+                ));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(arts > 200, "{arts}");
 }

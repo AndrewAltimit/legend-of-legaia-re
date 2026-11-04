@@ -363,6 +363,8 @@ After the spend loop has written a run of direction swings, the tail walks the c
 
 Port: `battle_arts_auto_combo::insert_arts`, run by the player's Auto attack.
 
+The seed `0x0C` then runs the queue builder over the stream, so what the tail spliced in plays as arts. The learn check inside it, `FUN_801EFBFC`, reads the same flag: a seat on it draws `rand() & 0x1FF` on every art it plays, known or not, and learns one only on a zero, or in Tetsu's spar (`DAT_8007BD0C == 0x4F`). So Auto all but never teaches an art.
+
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
 The monster AI picker queues **more than one action per turn** out of an AGL-scaled budget, the enemy analogue of the party's [Arts command gauge](arts-command-gauge.md).

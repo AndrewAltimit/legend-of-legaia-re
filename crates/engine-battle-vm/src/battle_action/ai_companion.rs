@@ -71,11 +71,6 @@ pub const AI_COMPANION_COMMAND_BASE: u8 = 0x0C;
 /// (`addiu v1, v1, 3` at `0x801EEF74`).
 pub const AI_COMPANION_FIRST_MONSTER_SEAT: u8 = 3;
 
-/// How many target redraws the port allows. Retail's loop
-/// (`beqz v0, 0x801eef2c` at `0x801EEF98`) is unbounded and spins forever if
-/// every monster seat is dead; the port bounds it and stands by instead.
-pub const AI_COMPANION_MAX_TARGET_DRAWS: usize = 16;
-
 /// What the block wrote into the companion's action bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AiCompanionPick {
@@ -150,17 +145,17 @@ pub fn ai_companion_pick(
     if monster_count == 0 {
         return AiCompanionPick::StandBy;
     }
-    let mut target = None;
-    for _ in 0..AI_COMPANION_MAX_TARGET_DRAWS {
+    // Retail's redraw has no bound and spins on a row with nobody standing; the
+    // port stands by there, and only there, so the draws match on any other row.
+    if !(0..monster_count).any(|m| seat_alive(m.wrapping_add(AI_COMPANION_FIRST_MONSTER_SEAT))) {
+        return AiCompanionPick::StandBy;
+    }
+    let target = loop {
         let seat = ((rand() % u32::from(monster_count)) as u8)
             .wrapping_add(AI_COMPANION_FIRST_MONSTER_SEAT);
         if seat_alive(seat) {
-            target = Some(seat);
-            break;
+            break seat;
         }
-    }
-    let Some(target) = target else {
-        return AiCompanionPick::StandBy;
     };
     if guard_byte(target) == AI_COMPANION_GUARDED_RECORD_BYTE {
         return AiCompanionPick::Attack {

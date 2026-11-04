@@ -13,7 +13,22 @@ impl World {
     ///
     /// REF: FUN_801E295C (state `0x0C`, the party-slot `jal 0x801EED1C`)
     /// REF: FUN_801EED1C
-    pub(in crate::world) fn dispatch_pending_party_action(
+    /// The string the queue builder forces on the lead in the third round of
+    /// Tetsu's spar under the Automatic option (`0x801EED9C..0x801EEE04`):
+    /// `0E 0F 0E 0F`, whatever was entered or spent.
+    ///
+    /// PORT: FUN_801EED1C (`0x801EED94..0x801EEE08`, the spar's forced string)
+    pub fn spar_lesson_arrows(&self, actor: u8) -> Option<[legaia_art::Command; 4]> {
+        use legaia_engine_system::option_values::SelectAttackOpt;
+        const LESSON: [u8; 4] = [0x0E, 0x0F, 0x0E, 0x0F];
+        (actor == 0
+            && self.battle_first_monster_byte() == 0x4F
+            && self.battle_mode() == 3
+            && self.toggles.select_attack == SelectAttackOpt::Automatic)
+            .then(|| LESSON.map(|b| swing_byte_command(b).expect("a swing byte")))
+    }
+
+    pub fn dispatch_pending_party_action(
         &mut self,
         actor: u8,
         action: legaia_engine_battle_loop::round_flow::PendingPartyAction,
@@ -47,27 +62,36 @@ impl World {
                 // `FUN_801F0450` rebuilt this seat's queue from the direction
                 // commands and the learned arts (`super::super::auto_combo`), and
                 // that is what the round plays.
-                if let Some(queue) = self.battle.take_auto_attack_queue(actor) {
-                    if let Some(a) = self.actors.get_mut(actor as usize) {
-                        a.battle.params =
-                            [0; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
-                        for (dst, src) in a.battle.params.iter_mut().zip(queue.iter()) {
-                            *dst = *src;
-                        }
-                        a.battle.strike_index = 0;
-                    }
-                } else {
+                //
+                // Either way the seed's builder runs over the stream (`jal
+                // 0x801EED1C` at `0x801E2C7C`, every seat under 3), so the
+                // arrows the tail spliced in become arts here. The spar's third
+                // lesson overwrites the lead's stream ahead of all of it.
+                let auto = self.battle.take_auto_attack_queue(actor);
+                let forced = self.spar_lesson_arrows(actor);
+                {
                     // The preseeded string is raw arrows, which retail's
                     // builder tokenizes at this dispatch like any entered
                     // string - arts, learn-on-use and the Spirit cost
                     // included.
-                    let arrows = self.preseed_arts_entry_string(actor);
-                    let commands: Vec<legaia_art::Command> = arrows
-                        .iter()
-                        .filter_map(|&b| legaia_art::Command::from_byte(b))
-                        .collect();
+                    let commands: Vec<legaia_art::Command> = match (forced, &auto) {
+                        (Some(forced), _) => forced.to_vec(),
+                        (None, Some(queue)) => queue
+                            .iter()
+                            .copied()
+                            .filter_map(swing_byte_command)
+                            .collect(),
+                        (None, None) => self
+                            .preseed_arts_entry_string(actor)
+                            .iter()
+                            .filter_map(|&b| legaia_art::Command::from_byte(b))
+                            .collect(),
+                    };
                     if commands.is_empty() {
-                        self.seed_basic_attack_queue(actor, target);
+                        // An Auto spend that bought nothing plays nothing.
+                        if auto.is_none() {
+                            self.seed_basic_attack_queue(actor, target);
+                        }
                     } else {
                         let (queue, actions, marks) =
                             self.build_arts_action_queue(actor, &commands);

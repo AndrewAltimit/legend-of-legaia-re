@@ -609,8 +609,9 @@ pub enum ArtUseCheck {
 /// - membership scan first; a hit returns [`ArtUseCheck::Known`] and the
 ///   learn leg never runs;
 /// - the learn leg runs only when `learn_gate_open` - retail:
-///   `actor[+0x266] == 0` **or** `rand() & 0x1FF == 0` (a 1/512 roll)
-///   **or** the debug byte `DAT_8007BD0C == 'O'`;
+///   `ctx[+0x266 + seat] == 0` **or** `rand() & 0x1FF == 0` (a 1/512 roll,
+///   drawn even for a known art) **or** Tetsu's spar, `DAT_8007BD0C == 0x4F`.
+///   The caller rolls it: `World::learn_art_on_record`;
 /// - an unknown art is inserted only when `art_id > innate_cap` (the
 ///   per-character byte at `0x801F686C + char_id - 1`) **or**
 ///   `art_id == 0` (a retail edge: the zero id passes the cap gate);
