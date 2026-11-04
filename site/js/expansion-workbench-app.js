@@ -244,6 +244,12 @@ const ctx = {
   // `done(preview)` with the answer to the latest request for map `id` only
   // (an older one still waiting is dropped). Here, at once, without it.
   mapPreviewLater: (id, json, done) => mapPreviewLater(id, json, done),
+  // An edit's preview on the painter's canvas, from the edit (headless
+  // checks: `__xwValidator.previewDrawnMs`).
+  notePreviewDrawn: (ms) => {
+    V.previewDrawnMs.push(Math.round(ms));
+    if (V.previewDrawnMs.length > 20) V.previewDrawnMs.shift();
+  },
   // Bumped by every change to the session's own files (an asset import):
   // a map preview reads the heightmap images among them.
   sessionGen: () => V.gen,
@@ -794,7 +800,7 @@ function placeParseError(issue) {
  * answer for a pack that has changed since is dropped (a newer one is on
  * its way). Without the worker (an older bundle, a worker that failed) it
  * runs here. An export or a hand-off still validates here, at once. */
-const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [], meshAsks: new Map() };
+const V = { worker: null, ready: false, seq: 0, gen: 0, synced: -1, edited: false, ms: [], bundleSeq: 0, bundles: new Map(), bundleMs: [], previewSeq: 0, previews: new Map(), previewMs: [], previewDrawnMs: [], meshAsks: new Map() };
 
 // Count every change to the session's own files (the loaded tree, assets,
 // documents), so the worker is handed them again before its next check.
