@@ -585,14 +585,17 @@ impl ArtsCommandInputSession {
         }
         match std::mem::replace(&mut self.phase, ArtsInputPhase::Aborted) {
             ArtsInputPhase::Entering => {
-                let dir = if ev.up {
-                    Some(Command::Up)
+                // The four tests store over one another in the order Left,
+                // Up, Down, Right (`0x801D1E60..0x801D1F74`), so the last wins
+                // when two edges share a frame.
+                let dir = if ev.right {
+                    Some(Command::Right)
                 } else if ev.down {
                     Some(Command::Down)
+                } else if ev.up {
+                    Some(Command::Up)
                 } else if ev.left {
                     Some(Command::Left)
-                } else if ev.right {
-                    Some(Command::Right)
                 } else {
                     None
                 };
@@ -611,8 +614,11 @@ impl ArtsCommandInputSession {
                         self.pennant_glides.push((self.buffer.len() - 1, 0));
                     }
                     // Auto-end on the exhausting press (retail 0x50 ->
-                    // 0x5A: entry ends by itself, no confirm).
-                    self.phase = if self.any_affordable() {
+                    // 0x5A: entry ends by itself, no confirm). The scan's
+                    // verdict is read behind the committed count
+                    // (`801d2084 beq v0,zero,801d20e4`): a pool that cannot pay
+                    // the first command stays in entry, with cancel the way out.
+                    self.phase = if self.buffer.is_empty() || self.any_affordable() {
                         ArtsInputPhase::Entering
                     } else {
                         ArtsInputPhase::Review
