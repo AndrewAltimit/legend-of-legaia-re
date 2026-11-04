@@ -79,9 +79,11 @@ impl World {
         // Same validator-backed target rows as the command menu.
         let (party, monsters) = self.battle_target_rows();
 
+        // The window kernel's cursor auto-repeat, on the D-pad alone in battle.
+        let repeat = self.input.take_menu_repeat();
         let ev = BattleSpellInput {
-            up: self.input.just_pressed(PadButton::Up),
-            down: self.input.just_pressed(PadButton::Down),
+            up: self.input.just_pressed(PadButton::Up) || repeat & PadButton::Up.mask() != 0,
+            down: self.input.just_pressed(PadButton::Down) || repeat & PadButton::Down.mask() != 0,
             left: self.input.just_pressed(PadButton::Left),
             right: self.input.just_pressed(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
@@ -228,11 +230,14 @@ impl World {
         // ring uses), so during target select Left/Right drive the strip
         // cursor alongside Up/Down.
         let target_select = matches!(menu.state, InventoryUseState::TargetSelect { .. });
+        let repeat = self.input.take_menu_repeat();
         let ev = if self.input.just_pressed(PadButton::Up)
+            || repeat & PadButton::Up.mask() != 0
             || (target_select && self.input.just_pressed(PadButton::Left))
         {
             Some(InventoryUseInput::Up)
         } else if self.input.just_pressed(PadButton::Down)
+            || repeat & PadButton::Down.mask() != 0
             || (target_select && self.input.just_pressed(PadButton::Right))
         {
             Some(InventoryUseInput::Down)

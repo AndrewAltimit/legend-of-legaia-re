@@ -195,3 +195,5 @@ The field VM's state arms close with the host answering what clear RAM answers: 
 The hooked fish `FUN_801D4004` with the gauge's reel arms matches over whole fights at every species, rod and frame step.
 
 The Seru side-effect stager `FUN_801F3D3C` found the port rolling the scripted bypass on the first enemy the cast targeted, where the bytes read the formation's first record whoever is targeted and whether that seat stands, and comparing a group cast's first target, where the bytes walk to the first seat with HP left and stage with no compare when there is none.
+
+Reading the shop's quantity steppers for a differential turned up the word they step on: the window kernel's cursor auto-repeat `FUN_80035C24` had no port, so no list in the game repeated on a held direction, and buying ninety-nine of anything took ninety-eight presses or nine and eight. The steppers' own arithmetic reads the same as the port's. The inn's restore op `4C 82` writes exactly the two HP and MP words the port writes.

@@ -296,6 +296,7 @@ impl World {
                 self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
                 match self.build_battle_spell_session(session.actor) {
                     Some(menu) => {
+                        self.input.reset_menu_repeat();
                         self.battle.spell_menu = Some(menu);
                         self.battle.sync_battle_flow(None);
                     }
@@ -312,6 +313,7 @@ impl World {
                 // (the command menu reopens for the same actor).
                 self.battle_ctx.active_actor = session.actor;
                 self.stamp_commit_clip(session.actor, CAST_COMMIT_CLIP);
+                self.input.reset_menu_repeat();
                 self.battle.item_menu = Some(self.build_battle_item_session());
                 self.battle.sync_battle_flow(None);
             }

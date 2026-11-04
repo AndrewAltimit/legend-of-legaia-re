@@ -147,3 +147,57 @@ fn the_bag_behaves_as_retail_does() {
 fn raw_at(port: &RetailInventory, end: u16) -> u8 {
     port.slots().get(usize::from(end)).map_or(0, |s| s.0)
 }
+
+/// `FUN_80035C24`, the window kernel's cursor auto-repeat.
+#[test]
+fn a_held_direction_repeats_when_retail_repeats() {
+    use legaia_engine_system::retail_pad::{MENU_REPEAT_MASK, MENU_REPEAT_MASK_BATTLE, MenuRepeat};
+    let Some(mut cpu) = scus_cpu() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    const HELD: u32 = 0x8007_B850;
+    const EDGE: u32 = 0x8007_B874;
+    const MODE: u32 = 0x8007_B83C;
+    let gp = cpu.regs.r[legaia_retail_exec::GP];
+    let mut rng = Rng(0x5245_5054);
+    for battle in [false, true] {
+        let mut port = MenuRepeat::default();
+        let mask = if battle {
+            MENU_REPEAT_MASK_BATTLE
+        } else {
+            MENU_REPEAT_MASK
+        };
+        cpu.mem.wr16(MODE, if battle { 0x15 } else { 3 });
+        cpu.mem.wr32(gp + 0x854, 0);
+        cpu.mem.wr32(gp + 0x864, 0);
+        let mut held = 0u16;
+        let mut fired = 0;
+        for frame in 0..40000 {
+            if rng.below(30) == 0 {
+                held = [
+                    0x1000, 0x4000, 0x2000, 0x8000, 0x5000, 0x0004, 0x0040, 0x1040, 0,
+                ][rng.below(9) as usize];
+            }
+            let dt = [1u32, 1, 2, 3][rng.below(4) as usize];
+            let edge = rng.next() & 0xF0;
+            cpu.mem.wr32(HELD, u32::from(held));
+            cpu.mem.wr32(EDGE, edge);
+            cpu.mem.wr8(0x1F80_0393, dt as u8);
+            cpu.regs.r[legaia_retail_exec::GP] = gp;
+            assert_eq!(
+                cpu.call(0x8003_5C24, &[]),
+                legaia_retail_exec::Stop::Returned
+            );
+            let retail = cpu.mem.rd32(gp + 0x86C);
+            let bits = port.step(held, mask, dt);
+            assert_eq!(
+                retail,
+                edge | u32::from(bits),
+                "frame {frame} held {held:#x} dt {dt}"
+            );
+            fired += u32::from(bits != 0);
+        }
+        assert!(fired > 500, "{fired}");
+    }
+}

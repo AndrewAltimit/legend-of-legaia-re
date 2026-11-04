@@ -1727,7 +1727,7 @@ monster special attacks, not to magic or party arts.
 
 - Kernels in `legaia_engine_battle_vm::battle_formulas`: `summon_attacker_roll` / `summon_defender_roll` /
   `summon_predamage` / the `apply_*` helpers / `heal_summon_amount` / `damage_finish` /
-  `spirit_gauge_fill`. The finisher's state-mutating tail (damage-popup accumulator, AI revenge
+  `spirit_gauge_fill`. The finisher's state-mutating tail (damage-popup accumulator, per-seat readout
   table, MP drain, per-element stat-debuff switch) lives in the live battle context.
 - Monster special attacks: the table loads onto `World::tables.move_power`
   (`engine-battle::move_power::MovePowerCatalog`) and `cast_spell_on_slots` overrides a damaging

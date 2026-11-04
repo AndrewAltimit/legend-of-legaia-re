@@ -788,7 +788,7 @@ the rest 70-95 (`asset element-affinity` prints the rows).
 
 The rest of the routine is its **tail**, which reads and writes about twenty
 battle globals: the [spirit-gauge fill](#spirit-gauge-fill-on-damage-taken), the
-damage-popup accumulator (`_DAT_8007bd14`), the `DAT_801f6980` AI revenge table,
+damage-popup accumulator (`_DAT_8007bd14`), its per-seat window `DAT_801f6980` for a group target (the multi-cast readout `FUN_801E805C` draws both),
 the MP drain, the [spell-XP accrual](#summon-spell-xp--magic-level-up) and the
 per-element stat-debuff `switch` keyed on the summon record's element
 (`DAT_801c9358+0x1d`) - the Seru-magic

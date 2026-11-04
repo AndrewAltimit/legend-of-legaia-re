@@ -276,3 +276,35 @@ fn a_missing_actor_or_item_takes_the_skip_retail_takes() {
     }
     assert!(ran > 50, "{ran}");
 }
+
+#[test]
+fn an_inn_stay_restores_what_retail_restores() {
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = CTX);
+    let mut rng = crate::common::Rng(0x494E_4E);
+    for round in 0..300u32 {
+        let slot = round % 3;
+        let rec = 0x8008_4708 + slot * 0x414;
+        let bytes: Vec<u8> = (0..0x414).map(|_| rng.next() as u8).collect();
+        cpu.mem.load(rec, &bytes);
+        cpu.mem.load(SCRIPT, &[0x4C, 0x82, slot as u8]);
+        let stop = cpu.call(VM, &[SCRIPT, 0, CTX]);
+        assert_eq!(stop, Stop::Returned);
+        assert_eq!(cpu.regs.r[2], 3);
+        let after = cpu.mem.read(rec, 0x414);
+
+        let mut member = legaia_save::Party::zeroed(1).members[0].clone();
+        member.raw.copy_from_slice(&bytes);
+        let mut hms = member.hp_mp_sp();
+        hms.hp_cur = hms.hp_max;
+        hms.mp_cur = hms.mp_max;
+        member.set_hp_mp_sp(hms);
+        let diff = crate::common::diff_offsets(&after, &member.raw);
+        assert!(diff.is_empty(), "round {round}: {diff:?}");
+    }
+}

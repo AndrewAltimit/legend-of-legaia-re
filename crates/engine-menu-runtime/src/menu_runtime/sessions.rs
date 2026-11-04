@@ -81,8 +81,12 @@ impl MenuRuntime {
     pub fn step_field_session(&mut self, world: &mut World, edge: u16) -> Option<u8> {
         let mut cue = None;
         if self.is_open() {
+            // The window kernel's cursor auto-repeat (`gp+0x86C`).
+            let edge = edge | world.input.take_menu_repeat();
             self.tick(world, menu_input_from_pad_edges(edge));
             cue = self.take_ui_cue();
+        } else {
+            world.input.reset_menu_repeat();
         }
         // A field-VM-armed shop the player has now closed: the suspended
         // op-`0x49` resumes (Armed -> Done) and the field VM advances past

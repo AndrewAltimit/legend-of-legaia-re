@@ -2261,3 +2261,7 @@ items the party holds and wears; a Cross closes the menu and opens the pack
 item screen (its Gear tab for a worn item) on the first free field tick, where
 consumables are used and gear is worn with a stat compare
 ([`expansion-pack-items.md`](../formats/expansion-pack-items.md#the-item-screen)).
+
+## Cursor auto-repeat
+
+The window kernel reads a cursor word of its own, not the plain edge word: `FUN_80035C24` (inlined at the top of `FUN_80031D00`) folds a chord held unchanged back in after `0x14` vsyncs and then every `3`, the chord being the D-pad and the four shoulder buttons (`0xF00F`), or the D-pad alone in battle (`gp+0x854` the chord, `gp+0x864` the count, `gp+0x86C` the word). A list opening zeroes the chord (`FUN_80030628`), so a direction held across its opening waits the whole delay. The kind-4 list kernel `FUN_80032A44` and the shop's quantity steppers read this word. Port: `retail_pad::MenuRepeat`, folded in where the pause menu, the shop session and the battle spell and item lists take their edges.

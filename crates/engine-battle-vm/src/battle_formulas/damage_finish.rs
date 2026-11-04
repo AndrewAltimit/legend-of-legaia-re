@@ -21,7 +21,7 @@
 //
 // The finisher's remaining tail is genuinely coupled to live battle state and is
 // **not** reproduced here: the damage-popup accumulator (`_DAT_8007bd14`), the
-// `DAT_801f6980` AI revenge / counter-aggro table, the MP-drain + the
+// `DAT_801f6980` per-seat readout window, the MP-drain + the
 // per-element stat-debuff `switch` keyed on the attacker's element
 // (`DAT_801c9358+0x1d`), and the `+0x16e` "nullify" status that zeroes the hit
 // after the spirit accrual. The action SM applies those; see the REF in the

@@ -167,6 +167,17 @@ impl InputState {
         &self.retail
     }
 
+    /// The window kernel's cursor auto-repeat this pump raised, as an engine
+    /// pad word to OR over the edge word, once: a catch-up tick reads none.
+    pub fn take_menu_repeat(&mut self) -> u16 {
+        crate::pad::retail_packed(self.retail.take_menu_repeat())
+    }
+
+    /// Start the cursor auto-repeat over: a list just opened.
+    pub fn reset_menu_repeat(&mut self) {
+        self.retail.reset_menu_repeat();
+    }
+
     /// Replace the pad mask. The previous frame's mask is rotated into
     /// `pad_prev` so edge queries reflect the transition between the last
     /// and current call.

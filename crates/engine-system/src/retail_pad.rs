@@ -198,6 +198,49 @@ pub struct RetailPadState {
     ring: [u32; REPEAT_WINDOW],
     ring_idx: u32,
     countdown: i32,
+    /// The window kernel's cursor auto-repeat.
+    menu: MenuRepeat,
+    /// The repeat bits the last pump raised, until a menu takes them.
+    menu_repeat: u16,
+}
+
+/// The cursor auto-repeat of the window kernel: a D-pad or shoulder chord held
+/// unchanged re-fires after `0x14` vsyncs and then every `3`, folded into the
+/// edge word the kind-4 lists and the shop's quantity steppers read
+/// (`gp+0x86C`). The chord is `gp+0x854`, the count `gp+0x864`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MenuRepeat {
+    /// `gp+0x854`.
+    pub last: u16,
+    /// `gp+0x864`.
+    pub count: i32,
+}
+
+/// The chord outside a battle: the D-pad and the four shoulder buttons.
+pub const MENU_REPEAT_MASK: u16 = 0xF00F;
+/// The chord in battle (`_DAT_8007B83C == 0x15`): the D-pad.
+pub const MENU_REPEAT_MASK_BATTLE: u16 = 0xF000;
+
+impl MenuRepeat {
+    /// One run: the bits this frame re-fires, `0` on most frames. The caller ORs
+    /// them over the edge word.
+    ///
+    /// PORT: FUN_80035C24
+    pub fn step(&mut self, held: u16, mask: u16, vsyncs: u32) -> u16 {
+        let chord = held & mask;
+        let mut fired = 0;
+        if self.last == chord {
+            self.count += vsyncs as i32;
+            if self.count >= 0x14 {
+                self.count = 0x11;
+                fired = self.last;
+            }
+        } else {
+            self.count = 0;
+        }
+        self.last = chord;
+        fired
+    }
 }
 
 impl Default for RetailPadState {
@@ -212,11 +255,27 @@ impl Default for RetailPadState {
             ring: [0; REPEAT_WINDOW],
             ring_idx: 0,
             countdown: 0,
+            menu: MenuRepeat::default(),
+            menu_repeat: 0,
         }
     }
 }
 
 impl RetailPadState {
+    /// The packed repeat bits the last pump raised, once. A list that opens
+    /// starts the count again (`sw zero,0x854(gp)` in `FUN_80030628`), so a
+    /// direction held across its opening walks nothing for `0x14` vsyncs:
+    /// [`Self::reset_menu_repeat`].
+    pub fn take_menu_repeat(&mut self) -> u16 {
+        std::mem::take(&mut self.menu_repeat)
+    }
+
+    /// Start the repeat count over, for a list that just opened.
+    pub fn reset_menu_repeat(&mut self) {
+        self.menu.last = 0;
+        self.menu_repeat = 0;
+    }
+
     /// Run one frame of the retail pad pump.
     ///
     /// `debug_mode` mirrors `_DAT_8007B98C`: when clear (retail) the held
@@ -264,12 +323,30 @@ impl RetailPadState {
             self.countdown += REPEAT_PERIOD;
             self.repeat_pulse = self.held_32;
         }
+        self.menu_repeat = self.menu.step(held as u16, MENU_REPEAT_MASK, vsync_delta);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_held_direction_refires_after_twenty_vsyncs_then_every_three() {
+        let mut p = RetailPadState::default();
+        let mut fired = Vec::new();
+        for f in 0..40 {
+            p.pump_packed(0x4000, 1);
+            if p.take_menu_repeat() != 0 {
+                fired.push(f);
+            }
+        }
+        assert_eq!(fired, [20, 23, 26, 29, 32, 35, 38]);
+        // A list opening starts it over.
+        p.reset_menu_repeat();
+        p.pump_packed(0x4000, 1);
+        assert_eq!(p.take_menu_repeat(), 0);
+    }
 
     #[test]
     fn digital_decode_is_inverted_and_byte_swapped() {
