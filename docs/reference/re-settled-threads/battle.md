@@ -932,15 +932,19 @@ camera step).
 | a party slot whose target's live HP `+0x14C` is zero | `li a1,0x8` |
 | anything else | `li a1,0x6` |
 
-- **The far framing** returns at the end-of-action gate `0x5A`.
+- **The far framing** returns with the next round's prompt. Between two actors the
+  last shot stands: `0x5A` re-arms the category's framing
+  (`0x801E6428..0x801E6470`) and the setup states arm nothing.
 - **Done-band capture.** `zora_glare_petrify_post` (mednafen, `ctx[7] == 0x51`, slot 3 acting after a
   spell, `ctx[+0x6D0] = 0xC00`, `ctx[+0x6DA] = 1966`, Zora at `(649, −47)` facing `3297`) reads pitch
   `0`, yaw `2735`, `TR (0, 1275, 4820)`, focus the negated `(624, 0, −40)`: case 6's in-fight pose
   `(0, 0x500, 4915)` on the caster's seat with the tween one step short, and yaw
   `(1966 − 3297) & 0xFFF = 2765` being chased.
-- **Between-actions capture.** `evil_medallion_rage_battle` (`ctx[7] == 0x0A`, flow byte `0xFF`) reads
-  pitch `32`, `TR (0, 1280, 7920)`, focus at the origin - case 9 over `±825` seats, i.e. the far
-  framing.
+- **A round's first actor.** `evil_medallion_rage_battle` (`ctx[7] == 0x0A`, flow byte `0xFF`) reads
+  pitch `32`, `TR (0, 1280, 7920)`, focus at the origin - case 9 over `±825` seats, the prompt's
+  framing, with no earlier actor in the round.
+- **A later actor.** `kor_ghost_knight_pre_v_windhash` (`ctx[7] == 0x0A`, `ctx[+0x13] = 1` with a spent
+  key) reads pitch `128`, `TR (0, 1024, 3276)`, focus Noa's seat: her Spirit's case 6, landed.
 - **Orbit writers.** `scripts/pcsx-redux/autorun_battle_cam_orbit.lua` on `battle_gaza2_prompt` (240
   vsyncs, `ctx[+6] == 0x1E`, `ctx[7] == 0x00`) with Exec breakpoints on both `sh v0,0x2(a0)` stores:
   the SM's at `0x801E2A6C` never fires; the battle tick's at `0x801D07CC` fires once per tick and the

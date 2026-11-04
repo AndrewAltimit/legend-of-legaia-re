@@ -938,6 +938,7 @@ impl RetailBattle {
                 legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA,
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
+            prior_framing: prior_framing(ram, ctx),
             cam_tween: retail_cam_tween(ram, ctx),
             cam_tween_steps: std::array::from_fn(|k| {
                 game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k as u32 * 4)

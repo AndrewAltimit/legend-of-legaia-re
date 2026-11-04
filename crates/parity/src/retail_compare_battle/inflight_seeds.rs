@@ -564,7 +564,11 @@ impl RetailBattle {
                     .get(s)
                     .and_then(Option::as_ref)
                     .is_some_and(|c| c.hp == 0);
-            if ground[s].is_none() || !(end || spent[s] || downed) {
+            // Ahead of the seed pass nothing writes a heading before the
+            // frame, and the replay's rounds are not the capture's: the
+            // member whose turn the framing shows faces where retail's does.
+            let settled = self.prior_framing.is_some();
+            if ground[s].is_none() || !(end || spent[s] || downed || settled) {
                 continue;
             }
             let pool = if s < pc { s } else { 3 + (s - pc) };

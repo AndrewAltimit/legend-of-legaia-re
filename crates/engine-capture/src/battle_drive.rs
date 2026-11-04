@@ -177,6 +177,34 @@ pub enum BattleDrive {
 /// on it from the seed to the approach's end, so the gate does not hang on
 /// which picks the replay's stream drew.
 ///
+/// What the end-of-action gate `0x5A` armed its last framing from, on a capture
+/// parked in `0x0A` behind an earlier actor of the round (retail seat
+/// `ctx[+0x13]`, its category `+0x1DE`, target `+0x1DD`, style `ctx[+0xD]` and
+/// frame depth `ctx[+0x6D0]`). The replay's Spirit rounds do not run that
+/// actor last, and a spent monster does not run at all, so the drive stands
+/// the camera on [`World::seat_prior_action_framing`] instead: the framing law
+/// over these inputs and the capture's ground.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PriorFraming {
+    pub seat: u8,
+    pub category: u8,
+    pub target: u8,
+    pub style: u8,
+    pub depth: u16,
+}
+
+impl PriorFraming {
+    /// The actor's engine seat and its target's, on a fight seating `pc`.
+    pub fn engine_seats(&self, pc: u8) -> (u8, u8) {
+        let target = if self.target < 8 {
+            engine_seat(self.target, pc)
+        } else {
+            self.target
+        };
+        (engine_seat(self.seat, pc), target)
+    }
+}
+
 /// `cursor` is that queue's strike cursor `ctx[+0x15]` on an
 /// [`SpanGate::Age`] capture inside the strike loop. With the queue
 /// replayed byte for byte, the age alone matches the first clip of the turn
@@ -186,6 +214,9 @@ pub enum BattleDrive {
 /// gate cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
+    /// The actor whose turn the capture's framing still shows, on a capture
+    /// ahead of the seed pass ([`SpanGate::Landed`]).
+    pub prior: Option<PriorFraming>,
     pub target: Option<u8>,
     pub yaw: Option<u16>,
     /// The track coin `ctx[+0x26D]` the capture holds - a `rand() % 2`
@@ -767,6 +798,12 @@ impl BattleDrive {
                 if let Some(style) = style {
                     s.push_str(&format!(",{style}"));
                 }
+                if let Some(e) = steer.prior {
+                    s.push_str(&format!(
+                        ",e{}/{}/{}/{}/{}",
+                        e.seat, e.category, e.target, e.style, e.depth
+                    ));
+                }
                 if let Some(t) = steer.target {
                     s.push_str(&format!(",t{t}"));
                 }
@@ -862,7 +899,16 @@ impl BattleDrive {
         let mut fields: Vec<&str> = s.split(',').collect();
         while fields.len() > 1 {
             let last = fields[fields.len() - 1].trim();
-            if let Some(t) = last.strip_prefix('t') {
+            if let Some(e) = last.strip_prefix('e') {
+                let mut f = e.split('/');
+                steer.prior = Some(PriorFraming {
+                    seat: f.next()?.parse().ok()?,
+                    category: f.next()?.parse().ok()?,
+                    target: f.next()?.parse().ok()?,
+                    style: f.next()?.parse().ok()?,
+                    depth: f.next()?.parse().ok()?,
+                });
+            } else if let Some(t) = last.strip_prefix('t') {
                 steer.target = Some(t.parse().ok()?);
             } else if let Some(y) = last.strip_prefix('y') {
                 steer.yaw = Some(y.parse().ok()?);
@@ -1454,6 +1500,13 @@ impl BattleDrive {
                 && !CAPTURE_BAND.contains(&want)
         });
         if end == SpanGate::Landed {
+            if let Some(e) = steer.prior
+                && ours
+                && state == want
+            {
+                let (seat, target) = e.engine_seats(pc);
+                world.seat_prior_action_framing(seat, e.category, target, e.style, e.depth as i16);
+            }
             let gliding = world.battle.camera.as_ref().is_some_and(|c| c.is_gliding());
             world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);
             return;

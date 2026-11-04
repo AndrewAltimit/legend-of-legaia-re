@@ -244,7 +244,7 @@ Resets ctx counters at `+0x6DA..+0x6DB`; seeds the [turn cursor](#the-turn-curso
 
 #### State `0x0A` - Pre-action wait
 
-Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate).
+Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). Arms no camera framing; while it waits the yaw orbits (`0x801E5BE4..0x801E5C04`).
 
 **Next:** `0x0C` when ready, else stays.
 
@@ -477,6 +477,8 @@ Entered from `0x51` only when the killing blow absorbed a Seru (`ctx[+0x269]` no
 **Next:** `0x5A`.
 
 #### State `0x5A` - End-of-action gate
+
+Arms the finished actor's framing first (`0x801E6428..0x801E6470`): [case 8 for an Attack, nothing for a Run, case 6 otherwise](battle-stage-camera.md#how-a-frames-camera-is-chosen). It stands through the next actor's setup.
 
 Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side ([plus a special-battle rule](battle-formulas.md#the-flow-readers)): if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below).
 

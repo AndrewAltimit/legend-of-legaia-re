@@ -710,10 +710,10 @@ flowchart TD
     M -- "ring 0x28, arts 0x50, item/magic" --> C0["Case 0 member close-up"]
     M -- "target cursor" --> C13["Case 1 enemy / case 3 ally"]
     A -- "yes, ctx 7" --> S{"State band"}
-    S -- "setup 0x00 0x0B" --> OR["Idle orbit, no framing call"]
+    S -- "setup 0x00 0x0A 0x0B" --> OR["Last framing stands, yaw orbits"]
     S -- "seed 0x0C, action 0x14..0x48" --> C6["Case 6 action framing"]
     S -- "strike 0x1E..0x20" --> C78["Case 7 two-shot or case 8"]
-    S -- "done 0x50 0x51" --> DN["Category fork: 6, 8 or orbit"]
+    S -- "done 0x50 0x51, gate 0x5A" --> DN["Category fork: 6, 8 or orbit"]
     S -- "0x52 0xFD" --> C8["Case 8"]
     S -- "run 0x64..0x67" --> C9
     C6 --> T["Shared tail"]
@@ -730,9 +730,31 @@ flowchart TD
     PA --> W
 ```
 
-`0x5A`, the end-of-action gate, arms nothing; the far framing takes over there
-(`evil_medallion_rage_battle`, parked at `ctx[7] == 0x0A` with the flow byte
-`0xFF` between actions, reads case 9's framing over its `±825` seats).
+**Between two actors of a round the camera stays on the last shot.** The
+end-of-action gate `0x5A` arms the finished actor's framing once more
+(`0x801E6428..0x801E6470`): case `8` for an Attack with `ctx[+0x6CE]` still
+zero, nothing for a Run, case `6` otherwise. The setup states `0x00`, `0x0A` and
+`0x0B` arm nothing: the tween walks on and the yaw orbits by `2 * step` a pass,
+through the prologue's store (`0x801E2A3C..0x801E2A6C`) in `0x00` / `0x0B` and
+`0x0A`'s own (`0x801E5BE4..0x801E5C04`). The next actor's seed `0x0C` then
+tweens from that shot to its own case 6 (`0x801E2D50`).
+
+A round's first actor is the only one that stands on the far framing in those
+states, the one the prompt's case `9` left. Over the library's states parked in
+`0x0A` with a spent key on `ctx[+0x13]`, every tween table holds the last
+actor's endpoints with the walker landed:
+
+| State | Last actor | Shot |
+|---|---|---|
+| `kor_ghost_knight_pre_v_windhash` | Noa, Spirit, style `2` | case 6: pitch `128`, `TR (0, 1024, 3276)`, focus her seat |
+| `noaru_barra_v2_pre_multi_cutter` | a monster's spell | case 6: pitch `0`, `TR (0, 1280, 4915)`, focus its seat |
+| `chitei2_kemaro_v2_pre_lava_breath` | a monster's strike on Noa | case 8: pitch `128`, `TR (0, 768, 2457)`, focus her body pair |
+| `taiku_topaz_pre_hyper_heal` | none this round | case 9: pitch `32`, `TR (0, 1280, 8712)` |
+
+Port: `battle_cam_script::end_of_action_phase` and
+`BattleCamera::set_phase_on_state`. The engine's SM rests on `0x5A` through the
+next round's prompt, so `battle_cam_inputs` hands the gate to the framing only
+while the round is executing.
 
 ### Framing cases
 
@@ -1182,8 +1204,8 @@ monster's spell) reads pitch `0`, `TR (0, 1275, 4820)` - one tween step short
 of case 6's `(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the
 caster's own seat and the yaw `ctx[+0x6DA] − actor[+0x46]`.
 
-The other bands, for reference: the setup band (`0x00`, `0x0B`) arms nothing
-and runs the orbit; the Run band (`0x64..=0x67`) arms case `9` plus the orbit.
+The other bands, for reference: the setup band (`0x00`, `0x0A`, `0x0B`) arms
+nothing and runs the orbit over the last framing; the Run band (`0x64..=0x67`) arms case `9` plus the orbit.
 
 Port: `battle_cam_script::done_band_phase` over `DoneBandInputs`, which both
 hosts fill from the acting actor; the Done band films per category and the tail

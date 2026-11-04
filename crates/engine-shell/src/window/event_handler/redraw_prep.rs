@@ -577,6 +577,20 @@ impl PlayWindowApp {
                     }
                 }
             }
+            // The frame on screen is the last actor's Done tail, whose ghost
+            // bits the capture's setup state has since cleared.
+            if let Some(legaia_engine_capture::battle_drive::BattleDrive::Action {
+                steer:
+                    legaia_engine_capture::battle_drive::ActionSteer {
+                        prior: Some(prior), ..
+                    },
+                ..
+            }) = self.screenshot.as_ref().and_then(|sc| sc.battle_drive)
+            {
+                let world = &mut self.session.host.world;
+                let (seat, target) = prior.engine_seats(world.party.party_count.clamp(1, 3));
+                world.refresh_prior_action_ghost(seat, prior.category, target);
+            }
         }
     }
 

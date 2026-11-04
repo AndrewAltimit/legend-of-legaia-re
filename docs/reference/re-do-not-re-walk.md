@@ -753,7 +753,7 @@ arm it stands in for.
 (`0x801E5E90..0x801E5EF4`, `0x801E5FC0..0x801E6018`): Run -> orbit, Attack -> case 8, party slot
 over a dead target -> case 8, else case 6, re-armed every pass. `zora_glare_petrify_post`
 (`ctx[7] == 0x51`) reads case 6's pose on the caster and `evil_medallion_rage_battle`
-(`ctx[7] == 0x0A`, between actions) reads the far framing. See
+(`ctx[7] == 0x0A`, a round's first actor) reads the prompt's far framing. See
 [battle.md](../subsystems/battle.md#battle-camera-exact) and
 [re-settled-threads.md](re-settled-threads/battle.md#the-done-band-framing-and-the-two-orbit-writers).
 
@@ -2068,6 +2068,7 @@ answered from the extracted image at its mapped base.
 
 | Thread | Verdict | Why |
 |---|---|---|
+| The far framing takes over at the end-of-action gate `0x5A`, between two actors of a round | falsified (`0x5A` re-arms the last actor's case 6 / 8, `0x801E6428`) | Plausible: `evil_medallion_rage_battle` reads case 9 in `0x0A`, and the C's `0x5A` arm starts a long way above the wipe scans. That capture is its round's first actor. Every later actor's `0x0A` holds the last shot landed: `kor_ghost_knight_pre_v_windhash`'s Spirit member, `chitei2_kemaro_v2_pre_lava_breath`'s struck Noa. |
 | `FUN_8001CF50` builds the field / cutscene camera rotation | falsified (a per-node camera-relative rotation) | Plausible: it rebuilds a rotation from the camera globals `0x8007B790/92/94`. Its SCUS callers `FUN_8001ADA4` and `FUN_8001B964` enter it only when `node+0x52 & 0x780` (`0x8001B374`, `0x8001BA0C`); bits `0x80` / `0x100` / `0x200` drop an axis and `0x400` locks the node to the camera. Every other node uses the camera matrix `FUN_800172C0` builds through `FUN_80026988`. The roll-factor finding stands; only its routine changes. |
 | `FUN_8001D088`'s counter `_DAT_8007BD28` and journal `0x800891A8` are bookkeeping that does not affect the pose | falsified (they drive a re-blend) | `FUN_8001BE80` zeroes the counter, tests it against `0xC00` at `0x8001C164` and re-blends from the journal (`0x8001C170..0x8001C1CC`); 5098 of 337597 gated half-frame samples on the disc take the retry. |
 | Every field prop clip takes the plain, unscaled step | falsified (119 of 549 posed props carry the gate) | Clip byte `+1` bit 0 is set per clip: 2243 of 3634 records across 78 PROT entries, and not by record index. |

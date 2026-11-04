@@ -104,6 +104,7 @@ impl BattleCamera {
             rand_state: STANDALONE_RAND_SEED,
             module_glide: None,
             escape_shot: false,
+            framing_held: false,
             cursor: None,
             entry_sweep: None,
             entry_hold: false,
@@ -605,7 +606,7 @@ impl BattleCamera {
     /// countdown hold. Nothing in play calls it.
     pub fn align_orbit_yaw(&mut self, yaw: f32) -> bool {
         let yaw_gliding = self.glides.front().is_some_and(|g| g.yaw_glides);
-        if self.phase != BattleCamPhase::Menu || yaw_gliding {
+        if (self.phase != BattleCamPhase::Menu && !self.framing_held) || yaw_gliding {
             return false;
         }
         self.pose.yaw = yaw.rem_euclid(4096.0);
@@ -1061,6 +1062,60 @@ impl BattleCamera {
     }
 
     /// Observe the live battle phase; a change arms the measured glide.
+    /// [`Self::set_phase`] with the action SM's state: between two actors of
+    /// a round the action framing stands ([`FRAMING_HOLD_STATES`]), so the far
+    /// framing a setup state resolves to does not take it over. Case `9` is
+    /// the prompt's: a round's first actor already stands on it, and is left
+    /// as it was.
+    pub fn set_phase_on_state(&mut self, phase: BattleCamPhase, action_state: u8) {
+        let held = phase == BattleCamPhase::Menu
+            && FRAMING_HOLD_STATES.contains(&action_state)
+            && matches!(
+                self.phase,
+                BattleCamPhase::Action | BattleCamPhase::Recover | BattleCamPhase::ActionEnd
+            );
+        if held {
+            self.framing_held = true;
+            return;
+        }
+        if std::mem::take(&mut self.framing_held) && phase == BattleCamPhase::Action {
+            // The next actor's seed: a new case-6 arm from the pose that stood.
+            self.phase = BattleCamPhase::Menu;
+        }
+        self.set_phase(phase);
+    }
+
+    /// Stand on `inputs`' framing, landed and held, with the yaw left where it
+    /// is: the phase's own law over the inputs' actor, target and depth. The
+    /// capture harness's handle for a framing armed by an actor its replay did
+    /// not run last. Nothing in play calls it.
+    pub fn seat_held_framing(&mut self, inputs: &BattleCamInputs) {
+        if let Some(actor) = inputs.acting {
+            self.actor = actor;
+        }
+        self.acting_body = inputs.acting_body;
+        self.target = inputs.target;
+        self.set_action_framing(inputs.action);
+        let pose = match inputs.phase {
+            BattleCamPhase::Action => self.action_pose(),
+            BattleCamPhase::ActionEnd => self.action_end_pose().0,
+            _ => return,
+        };
+        self.pose = BattleCamPose {
+            yaw: self.pose.yaw,
+            ..pose
+        };
+        self.glides.clear();
+        self.phase = inputs.phase;
+        self.framing_held = true;
+    }
+
+    /// Whether the last framing stands through a setup state
+    /// ([`Self::set_phase_on_state`]).
+    pub fn holds_framing(&self) -> bool {
+        self.framing_held
+    }
+
     pub fn set_phase(&mut self, phase: BattleCamPhase) {
         if phase == self.phase {
             return;
@@ -1078,8 +1133,12 @@ impl BattleCamera {
                 // the accumulator restart only on the acting actor's clip
                 // commit (`observe_active_commits` / `observe_active_installs`),
                 // which retail's seed does not make.
-                let coin = legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
-                self.attack.ctx.begin_action(coin);
+                // The end-of-action gate's own case 6 is no new action.
+                if self.last_action_state != END_OF_ACTION_STATE {
+                    let coin =
+                        legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
+                    self.attack.ctx.begin_action(coin);
+                }
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(
@@ -1137,7 +1196,7 @@ impl BattleCamera {
                         | BattleCamPhase::TargetAlly
                 ) =>
             {
-                // End of action: case 9 re-arms the far framing over its own
+                // The next round's prompt: case 9 re-arms the far framing over its own
                 // `a3 = 0xE` (7 steps) and passes yaw straight through, so
                 // the idle orbit owns it again immediately.
                 self.glides.push_back(Glide::linear(
@@ -1548,10 +1607,15 @@ impl BattleCamera {
         // Yaw: the idle orbit owns it in the Menu phase unless the active
         // glide segment glides it (submenu enter / the exit swing).
         let yaw_gliding = self.glides.front().is_some_and(|g| g.yaw_glides);
-        if !yaw_gliding && self.phase == BattleCamPhase::Menu {
+        if !yaw_gliding && (self.phase == BattleCamPhase::Menu || self.framing_held) {
             // `yaw -= step * 2` a pass ([`ORBIT_STEP`] at the default step).
             let orbit = ORBIT_STEP / 2.0 * f32::from(self.frame_step);
             self.pose.yaw = (self.pose.yaw - orbit).rem_euclid(4096.0);
+        }
+        // A setup state arms nothing: the last tween walks on to its endpoint.
+        if self.framing_held {
+            self.step_front_glide();
+            return;
         }
         // The per-art attack camera runs AFTER `FUN_801D5854` has armed its
         // own tween (`0x801D7180`), builds a pose of its own and calls the

@@ -76,6 +76,27 @@ impl World {
         self.camera_ghost_pass_on(pose);
     }
 
+    /// The ghost pass as the Done tail of a finished actor ran it. A capture
+    /// parked in `0x0A` reads every bit clear (`0x5A`'s sweep at `0x801E6478`,
+    /// and no ghost below state `0x0B`), yet its displayed frame is two passes
+    /// older, from that tail, so a body near the camera still draws as the
+    /// ghost. The capture harness's handle. Nothing in play calls it.
+    pub fn refresh_prior_action_ghost(&mut self, seat: u8, category: u8, target: u8) {
+        let Some(a) = self.actors.get_mut(usize::from(seat)) else {
+            return;
+        };
+        let actor_was = (a.battle.action_category, a.battle.active_target);
+        (a.battle.action_category, a.battle.active_target) = (category, target);
+        let ctx_was = (self.battle_ctx.active_actor, self.battle_ctx.action_state);
+        self.battle_ctx.active_actor = seat;
+        self.battle_ctx.action_state = 0x51;
+        let pose = self.battle_cam_pose();
+        self.camera_ghost_pass_on(pose);
+        (self.battle_ctx.active_actor, self.battle_ctx.action_state) = ctx_was;
+        let a = &mut self.actors[usize::from(seat)];
+        (a.battle.action_category, a.battle.active_target) = actor_was;
+    }
+
     /// One frame of the ghost pass. No-op outside battle.
     ///
     /// `FUN_8004DC68` runs inside the controller node `FUN_80046A20`, ahead of

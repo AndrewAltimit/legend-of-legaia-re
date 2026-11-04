@@ -1106,7 +1106,7 @@ mod battle_cam_shared_tests {
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
 
-        // Idle between actions: the far framing, not the action framing.
+        // A round's first setup state: the far framing, not the action framing.
         world.battle_ctx.action_state =
             legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
         assert_eq!(

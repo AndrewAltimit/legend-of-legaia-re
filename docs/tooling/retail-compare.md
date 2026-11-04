@@ -1074,6 +1074,7 @@ for a reason that is not a port defect:
 | [Stand the effect billboards](#the-effect-pools-billboards-are-stream-history) | the live effect-pool children `_DAT_8007BD30 + 0x10` | `World::install_effect_child_snapshot`, `LEGAIA_SEAT_EFFECT_CHILDREN` |
 | [Land each body's clip](#the-keyframe-each-body-stands-on) | anim node cursor `*(+0x22C) + 0x68`, clip `+0x1D9`, rates `+0x21D` / entry `+0x78` | `World::seat_battle_clip_cursor`, `LEGAIA_SEAT_BATTLE_CLIPS` |
 | [Take back landed hits](#hits-already-landed) | this action's damage-number ring pushes `ctx[+0x83C]` / `+0x318`, count `ctx[+0x273]` | `RetailBattle::pre_action_hp` |
+| [Hold the last actor's shot](#the-shot-an-earlier-actor-left) | seat `ctx[+0x13]`, its category, target, style `ctx[+0xD]`, depth `ctx[+0x6D0]` | `RetailBattle::prior_framing`, `World::seat_prior_action_framing` |
 | [Take back rewards](#rewards-already-granted) | EXP share `gp+0xA04`, stat window, banner element `ctx[+0x26]` | `ungrant_results_rewards`, `ungrant_magic_level_up` |
 | [Place the phase](#placing-the-phase) | command-flow byte `ctx[+0x06]`, cursor `ctx[+0x07]`, seat `ctx[+0x13]` | `SeedPlan` |
 
@@ -2089,6 +2090,35 @@ ring's front slot takes the pushed amount (`World::cast_spell_on_slots`).
 `battle_gimard_tail_fire_*` push `16` on Vahn, which the replay rolled as
 `14` per vsync and `17` on retail's cadence, and the `DAMAGE` readout and
 the HP bar in the frame now read retail's.
+
+### The shot an earlier actor left
+
+A pre-cast capture parks in `0x0A` behind whoever acted before the caster, and
+the camera still [frames that actor](../subsystems/battle-stage-camera.md#how-a-frames-camera-is-chosen),
+landed. The drive runs a spent party member's Spirit ahead of the caster in its
+own key order and sits a spent monster out, so its last actor is often not
+retail's and sometimes cannot be. When the seat `ctx[+0x13]` reads a spent key
+(`camera_align::prior_framing`; a live key means the prompt's case 9 has framed
+since), the steer token `e` stands the camera on the framing law over the
+capture's inputs: category, target, style and depth, on the captured ground. The
+score still tests the engine's case 6 and case 8: no pose is read from retail
+but the orbit's yaw clock. Nothing else writes a heading ahead of the seed, so
+every placed combatant takes its captured one (`seeded_facing`).
+
+The child's frame takes one more step. The bits read clear in RAM (the `0x5A`
+sweep, and no ghost below state `0x0B`), yet the displayed frame is two passes
+older, from the last actor's Done tail, so a monster near the camera draws as a
+[near-camera ghost](../subsystems/battle-actor-rendering.md#the-near-camera-ghost-pass-fun_8004dc68)
+(`World::refresh_prior_action_ghost`). `ropeway_curry_devil_pre_cross_beam` read
+`.540` with the Curry Devil solid across the frame and `.883` with it ghosted.
+
+| State | `camera` | `image` |
+|---|---|---|
+| `kor_ghost_knight_pre_v_windhash` | `.593` to `1.0` | `.254` to `.925` |
+| `chitei2_kemaro_v2_pre_lava_breath` | `.638` to `1.0` | `.256` to `.887` |
+| `ropeway_curry_devil_pre_cross_beam` | `.655` to `1.0` | `.266` to `.883` |
+| `deene_garnet_pre_heal` | `.590` to `1.0` | `.363` to `.932` |
+| `rugi_rogue_pre_rogue_wind` | `.564` to `1.0` | `.507` to `.959` |
 
 ### Rewards already granted
 

@@ -47,10 +47,21 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
     // the Dialogue framing - for exactly the span its hold `ctx[+0x6B0]` is up.
     let caption_up = world.battle.stage_id == legaia_engine_battle::battle_sideband::STAGE_SPARRING
         && world.battle.sideband.hold != 0;
+    // The SM rests on `0x5A` through the next round's prompt, which is the
+    // far framing's: the gate's own arm is the executing round's pass only.
+    let phase_state = match world.battle_camera_state() {
+        script::END_OF_ACTION_STATE
+            if world.battle.round_flow.phase
+                != legaia_engine_battle_loop::round_flow::RoundPhase::Execute =>
+        {
+            0xFF
+        }
+        state => state,
+    };
     let phase = script::phase_for_state(
         world.dialog.current.is_some() || world.dialog.inline.is_some() || caption_up,
         member_surface_open(world),
-        world.battle_camera_state(),
+        phase_state,
         battle_done_band(world, acting_slot),
     );
     let actor_at = |slot: u8, party_slot: Option<u8>| {
@@ -489,6 +500,7 @@ pub fn battle_done_band(world: &World, acting_slot: u8) -> script::DoneBandInput
             .is_some_and(|t| world.battle_on_knockdown(t)),
         target_death_clip: battle_target_slot(world, acting_slot)
             .is_some_and(|t| matches!(world.battle_current_anim(t), 7 | 8)),
+        results_begun: world.battle.victory.is_some(),
     }
 }
 
@@ -725,6 +737,62 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
 }
 
 impl World {
+    /// Stand the battle camera on the framing the end-of-action gate `0x5A`
+    /// armed on a finished actor, through the framing law over that actor's
+    /// inputs and the live ground, and hold it there
+    /// (`BattleCamera::seat_held_framing`). The capture harness's handle for a
+    /// capture parked behind an earlier actor whose turn its replay did not
+    /// run last. Nothing in play calls it.
+    pub fn seat_prior_action_framing(
+        &mut self,
+        seat: u8,
+        category: u8,
+        target: u8,
+        style: u8,
+        depth: i16,
+    ) {
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
+        let Some(a) = self.actors.get(usize::from(seat)) else {
+            return;
+        };
+        let actor_was = (a.battle.action_category, a.battle.active_target);
+        let ctx_was = (
+            self.battle_ctx.active_actor,
+            self.battle_ctx.action_state,
+            self.battle_ctx.camera_variant,
+        );
+        let world_was = (
+            self.battle.sm_ran_state,
+            self.battle.camera_frame_height,
+            self.battle.round_flow.phase,
+        );
+        let a = &mut self.actors[usize::from(seat)];
+        a.battle.action_category = category;
+        a.battle.active_target = target;
+        self.battle_ctx.active_actor = seat;
+        self.battle_ctx.action_state = script::END_OF_ACTION_STATE;
+        self.battle_ctx.camera_variant = style;
+        self.battle.sm_ran_state = Some(script::END_OF_ACTION_STATE);
+        self.battle.camera_frame_height = depth;
+        self.battle.round_flow.phase = RoundPhase::Execute;
+        let inputs = battle_cam_inputs(self);
+        if let Some(cam) = self.battle.camera.as_mut() {
+            cam.seat_held_framing(&inputs);
+        }
+        let a = &mut self.actors[usize::from(seat)];
+        (a.battle.action_category, a.battle.active_target) = actor_was;
+        (
+            self.battle_ctx.active_actor,
+            self.battle_ctx.action_state,
+            self.battle_ctx.camera_variant,
+        ) = ctx_was;
+        (
+            self.battle.sm_ran_state,
+            self.battle.camera_frame_height,
+            self.battle.round_flow.phase,
+        ) = world_was;
+    }
+
     /// Step the phase-scripted battle camera one tick through the shared
     /// `battle_cam_script::drive`: created on battle entry (snapped to the
     /// entry phase's framing), dropped outside battle so the next fight
@@ -857,6 +925,23 @@ mod tests {
     /// Every retail capture on a member's command ring (`ctx[+0x06] = 0x28`)
     /// or arts input (`0x50`) reads case 0's close-up; every capture on the
     /// round's Begin / Run prompt (`0x1E`) reads case 9's far framing.
+    /// The SM rests on `0x5A` through the next round's prompt, whose framing
+    /// is case 9; the gate's own case 6 / 8 belongs to the executing round.
+    #[test]
+    fn the_end_of_action_gate_frames_only_while_the_round_executes() {
+        use legaia_engine_battle_loop::round_flow::RoundPhase;
+        let mut world = World {
+            mode: SceneMode::Battle,
+            ..World::default()
+        };
+        world.party.party_count = 3;
+        world.battle_ctx.action_state = script::END_OF_ACTION_STATE;
+        world.battle.round_flow.phase = RoundPhase::Command;
+        assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Menu);
+        world.battle.round_flow.phase = RoundPhase::Execute;
+        assert_eq!(battle_cam_inputs(&world).phase, BattleCamPhase::Action);
+    }
+
     #[test]
     fn the_ring_and_the_arts_input_take_the_close_up_the_round_prompt_does_not() {
         let mut world = World {

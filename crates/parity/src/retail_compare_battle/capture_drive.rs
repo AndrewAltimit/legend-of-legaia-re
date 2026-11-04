@@ -1200,6 +1200,7 @@ impl RetailBattle {
                 end: self.span_gate,
                 style: Some(self.cam_style),
                 steer: ActionSteer {
+                    prior: self.prior_framing,
                     park: seat >= 3 && self.parked_approach(),
                     // A frame-time history that never left one step names the
                     // rate retail's yaw counter drifted at.

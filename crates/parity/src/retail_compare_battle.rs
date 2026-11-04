@@ -452,6 +452,9 @@ pub struct RetailBattle {
     pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// The earlier actor whose framing a capture parked ahead of the seed pass
+    /// still holds ([`camera_align::prior_framing`]).
+    pub prior_framing: Option<legaia_engine_capture::battle_drive::PriorFraming>,
     /// Retail's live camera and the endpoints its tween table
     /// (`ctx[+0x118C]`) steps toward, in the engine's pose space
     /// ([`retail_cam_tween`]): `(live, end)`.

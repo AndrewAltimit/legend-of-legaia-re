@@ -32,6 +32,37 @@ pub(super) fn camera_landed(ram: &[u8], ctx: u32) -> bool {
     })
 }
 
+/// The actor whose framing a capture ahead of the seed pass holds: the seat
+/// `ctx[+0x13]` that ran last, when its initiative key reads spent. The action
+/// seed zeroes the key (`sh zero,0x16c(s3)` at `0x801E2CDC`) and the round's
+/// seeder rolls a new one, so a live key means this actor belongs to the last
+/// round, and the prompt's case `9` has framed since (`taiku_topaz_pre_hyper_heal`).
+/// A spent key means no framing call ran since `0x5A` armed that actor's shot
+/// (`0x801E6428..0x801E6470`).
+pub(super) fn prior_framing(
+    ram: &[u8],
+    ctx: u32,
+) -> Option<legaia_engine_capture::battle_drive::PriorFraming> {
+    if game_anchors::u8_at(ram, ctx + 6) != 0xFF
+        || !PRE_SEED_STATES.contains(&game_anchors::u8_at(ram, ctx + 7))
+        || !camera_landed(ram, ctx)
+    {
+        return None;
+    }
+    let seat = game_anchors::u8_at(ram, ctx + 0x13);
+    let actor = game_anchors::u32_at(ram, ACTOR_TABLE + u32::from(seat.min(7)) * 4);
+    if !in_ram(actor) || game_anchors::u16_at(ram, actor + 0x16C) != 0 {
+        return None;
+    }
+    Some(legaia_engine_capture::battle_drive::PriorFraming {
+        seat,
+        category: game_anchors::u8_at(ram, actor + 0x1DE),
+        target: game_anchors::u8_at(ram, actor + 0x1DD),
+        style: game_anchors::u8_at(ram, ctx + 0xD),
+        depth: game_anchors::u16_at(ram, ctx + 0x6D0),
+    })
+}
+
 /// Retail's live camera pose and its tween endpoints, in the engine's pose
 /// space: the 12-bit angles, the eye translation `0x800840B8/BC/C0`, and the
 /// focus `0x80089118/1C/20` un-negated (retail stores it negated, and so do
