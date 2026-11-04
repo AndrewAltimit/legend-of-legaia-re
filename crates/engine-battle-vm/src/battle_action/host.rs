@@ -364,6 +364,12 @@ pub trait BattleActionHost {
         false
     }
 
+    /// Whether the capture module that just finished cleared the framing style
+    /// `ctx[+0xD]` on its way out. Default: it did, as most do.
+    fn capture_exit_clears_style(&self) -> bool {
+        true
+    }
+
     /// Equivalent of `func_0x800402F4(class, tier, target_slot, party_index)` -
     /// the item / restore **applier**, retail's damage-and-effect primitive.
     ///

@@ -535,8 +535,9 @@ exactly the arms its `sltiu` allows and stops on the terminal arm with no
 - *Most capture bodies end on three stores:* the busy result cleared,
   `sb zero,0xd` (the framing style) and `0x780` into the yaw counter
   `ctx[+0x6DA]` (Zora's Glare at `0x801F7208` in PROT 0940, for one). PROT
-  0935..0937, 0939, 0946..0948, 0953, 0959, 0960 and 0962 clear the style
-  without the yaw store.
+  0946..0948, 0953, 0959 and 0960 clear the style without the yaw store. PROT
+  0935..0937, 0939 and 0962 hold neither, so the Done band after them frames
+  from half a turn round.
 
 **Two store forms write the phase.** Every player-Seru tick materialises a
 pointer to `ctx + 0x279` in its prologue (`addiu s6, s1, 0x279` at
@@ -1468,6 +1469,8 @@ re-arms literals. Four arms do not fit one word:
   drains forward.
 - PROT 0935's arms 1 and 3 hold on the caster's `+0x21B` and on its model's
   `+0x68`, which no table carries; the rows keep only their seeds.
+
+**Spore Gas's camera** (`spore_gas_camera`): arm 0 eases in over `0x80` frames (pitch `-0x20`, `TR (0, 0x600, 0x800)`), arm 1 lifts to pitch `0x200` over `0x50`, arm 2 drops to `-0x40` over `0x40`, and arm 3 hides the caster, shows the victim turned on it, and cuts to it at `TR (0, 0x500, 0x400)`. The finishing arm shows the caster again.
 
 **Spore Gas's four hits** are not a fold. Arm 3's pass seeds a beat word at `scalar <<
 5`; arm 4 counts a hit each time it runs out and re-arms it at `scalar << 4`, so the hits
@@ -3302,7 +3305,8 @@ exit yaw store `ctx[+0x6DA] = 0x780` is applied as the module finishes
 style clear beside it: `0x70` stores style `1` each pass and the finishing arm's
 `sb zero,0xd` undoes it, so the Done band's case 6 frames from the default side, not
 half a turn round (`rugi_rogue__rogue_flame`'s `0x71` and `0x51` track retail's yaw to
-three units).
+three units). The bodies without that store keep the half turn
+(`capture_exit_clears_style`).
 
 | Body | Shots and drifts | Countdown |
 |---|---|---|

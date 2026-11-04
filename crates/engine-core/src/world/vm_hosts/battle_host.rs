@@ -441,6 +441,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn capture_stager_tick(&mut self) -> bool {
         self.world.module_pass(World::capture_stager_tick)
     }
+    fn capture_exit_clears_style(&self) -> bool {
+        self.world
+            .casting
+            .module_running_entry
+            .is_none_or(legaia_engine_cast::cast_module_camera::capture_exit_clears_style)
+    }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
     /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`), both

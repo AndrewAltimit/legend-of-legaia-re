@@ -228,6 +228,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (940, GLARE_BODY) => Some(glare_camera),
         (953, SINGLE_BODY) => Some(terio_punch_camera),
+        (939, SINGLE_BODY) => Some(super::spore_gas_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (961, DEAD_END_CRISIS_BODY) => Some(dead_end_crisis_camera),
@@ -288,8 +289,8 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 /// | 0965 | `0x801F69D8` | `0x801F7AA4` |
 /// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
 ///
-/// The bodies of 0935..0937, 0939, 0946..0948, 0953, 0959, 0960 and 0962
-/// clear `ctx[+0x0D]` without the store.
+/// The bodies of 0946..0948, 0953, 0959 and 0960 clear `ctx[+0x0D]` without the
+/// store ([`capture_exit_clears_style`]).
 pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
     const YAW: i32 = 0x780;
     match (entry, body) {
@@ -308,6 +309,15 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
         | (966, SINGLE_BODY) => Some(YAW),
         _ => None,
     }
+}
+
+/// Whether a capture module's finishing arm clears the framing style
+/// `ctx[+0x0D]` that state `0x70` stores `1` on every pass. PROT 0935, 0936,
+/// 0937, 0939 and 0962 hold no `sb zero,0xd`, so their Done band's case 6 frames
+/// from half a turn round (`teien_berserker__spore_gas`'s `0x51` endpoint reads
+/// `ctx[+0x6DA] - facing + 0x800`).
+pub fn capture_exit_clears_style(entry: u32) -> bool {
+    !matches!(entry, 935 | 936 | 937 | 939 | 962)
 }
 
 /// The module-resident countdown word a directed capture body gates its arms
