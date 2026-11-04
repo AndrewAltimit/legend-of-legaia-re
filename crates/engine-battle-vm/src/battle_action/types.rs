@@ -1052,6 +1052,8 @@ pub struct BattleActionCtx {
     pub menu_open: u8,
     /// `[+0x277]` - summon-frame index written at `SummonInvoke`.
     pub summon_frame_idx: u8,
+    /// Passes `0x32` has held on the drive (`SUMMON_INVOKE_DRIVE_PASSES`).
+    pub summon_invoke_passes: u8,
     /// `[+0x278]` / `[+0x279]` - summon staging counters.
     pub summon_staging_a: u8,
     pub summon_staging_b: u8,

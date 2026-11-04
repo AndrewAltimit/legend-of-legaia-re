@@ -368,6 +368,8 @@ Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the b
 
 `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`.
 
+The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), and the framing call above keeps walking: `14` or `16` vsyncs on every party summon recorded from `party_basic_attack_vs_gobu_gobu`. The port has no read, so `SUMMON_INVOKE_DRIVE_PASSES` holds the arm eight passes, a constant fitted to those recordings; without it `0x33`'s close-up cuts in on a shorter walk.
+
 **Next:** `0x33`.
 
 #### State `0x33` - Summon - fade in
