@@ -696,6 +696,17 @@ pub(super) fn miracle_ready(w: &legaia_engine_core::world::World, actor: u8) -> 
     u32::from(press) * miracle.commands.len() as u32 <= u32::from(w.actors[i].battle.agl)
 }
 
+/// Whether the boss holds more HP than rounds of plain strings would take off it
+/// before its party-wide hits finish the party: every Miracle counts.
+fn long_boss(w: &legaia_engine_core::world::World) -> bool {
+    const LONG_BOSS_HP: u32 = 15_000;
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    boss_monster_id(w).is_some()
+        && w.actors[n..]
+            .iter()
+            .any(|a| u32::from(a.battle.max_hp) >= LONG_BOSS_HP && a.battle.hp > 0)
+}
+
 /// The Spirit `actor`'s Miracle Art asks of the gauge: ordinal 0 of the bank at
 /// its command count (99, halved by AP Used Down before the multiply).
 pub(super) fn miracle_spirit_price(w: &legaia_engine_core::world::World, actor: u8) -> u16 {
@@ -1146,9 +1157,10 @@ pub(super) fn arts_plan(
     // In a race a member with a Miracle Art to save for keeps its Spirit:
     // Koru takes about 2500..3200 from a Miracle (99 AP), about 1000 from nine
     // plain swings (0 AP) and about 1200 from a Super (54 AP), so AP spent
-    // short of the Miracle buys next to nothing.
+    // short of the Miracle buys next to nothing. A boss too long to finish on
+    // swings is the same sum: Taiku's 22422 HP outlasts a party spending as it goes.
     let saving = CHARGING.with(std::cell::Cell::get)
-        || racing_a_finisher(w)
+        || (racing_a_finisher(w) || long_boss(w))
             && armed
             && legaia_art::MIRACLE_ARTS
                 .iter()

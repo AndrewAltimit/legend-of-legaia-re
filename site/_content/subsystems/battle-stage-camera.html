@@ -123,6 +123,11 @@
   <p>Inside a summon band each module arm runs on the step a retail recording of the cast reads for it (<code>legaia_engine_cast::cast_module_frame_step</code>): a band opens at <code>1</code> and its whole-screen arms read <code>4</code>, on every summon module. The reading is a property of the arm because the arm draws the same screen each time.</p>
 </section>
 
+<section class="doc-section" id="clip-clock">
+  <h2>The cast driver's clip clock</h2>
+  <p>The cast driver's case <code>0xA</code> aims its yaw at <code>node[+0x68] * 2 + 0x700 - facing</code> on every pass of the magic band, so the endpoint climbs with the clip: 24 units a pass at the usual cursor step of 12. It reads the animation cursor in retail's own sixteenths, sub-keyframe bits included. Rounding the cursor down to a keyframe aims up to 30 units short. A capture cast's finishing arm also clears the style byte <code>ctx+0xD</code>, so the Done band frames from the default side; the bodies without that store keep the half turn.</p>
+</section>
+
 <section class="doc-section" id="intro">
   <h2>The field-to-battle transition</h2>
   <p>The transition between leaving the field and the battle coming up is its own overlay. It sequences the handoff and drives one of five visual styles over a one-shot capture of the field frame:</p>

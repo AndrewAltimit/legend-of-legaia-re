@@ -48,6 +48,21 @@ fn typists_charged(session: &NativeSession) -> bool {
     })
 }
 
+/// Whether the party still holds half its MP. Charging pays for its fights out of
+/// what would heal it, and a party that spends it all meets the boss hurt.
+fn charge_affordable(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    let (mp, max) = w
+        .present_party_list()
+        .iter()
+        .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+        .map(|r| r.hp_mp_sp())
+        .fold((0u32, 0u32), |(c, x), v| {
+            (c + u32::from(v.mp_cur), x + u32::from(v.mp_max))
+        });
+    mp * 2 >= max
+}
+
 /// After a boss wipe, walk the scene's encounters until the typists' gauges are
 /// full. The gauge carries between fights (the record's AP cell `+0x10E`,
 /// [`arts-command-gauge.md`](../../../../docs/subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)),
@@ -83,7 +98,7 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
     CHARGING.with(|c| c.set(true));
     let mut left = Ok(None);
     for _ in 0..CHARGE_OUTINGS {
-        if typists_charged(session) {
+        if typists_charged(session) || !charge_affordable(session) {
             break;
         }
         // A fled fight comes back hurt, and an outing below its floor walks nowhere.
@@ -94,6 +109,10 @@ pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<
         }
     }
     drop(charging);
+    // The last fight may have been fled: the boss is met healed.
+    if matches!(&left, Ok(None)) && walking(session) {
+        pad_field_heal(session, 900);
+    }
     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
         let w = &session.host.world;
         let cells: Vec<u16> = w
