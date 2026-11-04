@@ -588,7 +588,11 @@ impl World {
                 // ([`Self::summon_seat_waits_for_cycle`]).
                 // So does a byte whose bit-0 cut the loop's `+0x76` lock
                 // refused ([`Self::loop_cut_locked`]).
-                if (self.summon_seat_waits_for_cycle(i) || self.loop_cut_locked(i))
+                // And the Spirit band's stage
+                // ([`Self::spirit_stage_waits_for_cycle`]).
+                if (self.summon_seat_waits_for_cycle(i)
+                    || self.loop_cut_locked(i)
+                    || self.spirit_stage_waits_for_cycle(i))
                     && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
                 {
                     self.commit_staged_battle_anim_at_boundary(i);
@@ -778,7 +782,9 @@ impl World {
                 .as_ref()
                 .and_then(|p| p.hit_source())
                 .is_none_or(|s| s.event_lock == 0);
-        if (self.summon_seat_waits_for_cycle(i) || self.loop_cut_locked(i))
+        if (self.summon_seat_waits_for_cycle(i)
+            || self.loop_cut_locked(i)
+            || self.spirit_stage_waits_for_cycle(i))
             && !cut_now
             && actor
                 .battle_animation

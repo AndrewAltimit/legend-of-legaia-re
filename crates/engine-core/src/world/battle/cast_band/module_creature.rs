@@ -95,6 +95,18 @@ impl World {
                 .is_some_and(|e| CLIP_GATED_MODULES.contains(&e))
     }
 
+    /// Whether the actor's byte is the Spirit band's stage: `0x3C` stores
+    /// `+0x1DA = +0x1E7` with neither `+0x1DC` stage bit
+    /// (`0x801E3B4C..0x801E3B54`), so `0x3D` holds until the idle's natural
+    /// end commits it (`0x80047B54`). An Orb's Heal stands `51` vsyncs in
+    /// `0x3D` on its idle's last `384` cursor units.
+    pub(in crate::world) fn spirit_stage_waits_for_cycle(&self, slot: usize) -> bool {
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        usize::from(self.battle_ctx.active_actor) == slot
+            && (self.battle_ctx.action_state == ActionState::SpiritPreArm.as_byte()
+                || self.battle_ctx.action_state == ActionState::SpiritWait.as_byte())
+    }
+
     /// Feed the creature seat's clip `+0x1D9` and the range answer
     /// `FUN_8004E2F0(7, victim) == 0` into the module camera state, the two
     /// creature gates PROT 0907 / 0908 / 0909's arms poll. A seat with no

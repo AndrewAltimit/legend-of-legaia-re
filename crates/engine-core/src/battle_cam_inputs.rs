@@ -20,6 +20,31 @@ use legaia_engine_battle_vm::battle_cam_script as script;
 use legaia_engine_battle_vm::battle_formulas as vm_formulas;
 use legaia_engine_camera::projection;
 
+/// The seat `FUN_801D5854(actor, 6)` frames this pass: the acting seat, but in
+/// the Spirit / Item band's `0x3F` and `0x40` the argument is the stacked
+/// target byte (`lw a0,0x20(sp)` at `0x801E40D8` and `0x801E4148`, the
+/// `+0x1DD` the prologue read at `0x801E29B0`), so a heal's camera turns to its
+/// patient for the effect. A group code indexes no seat here; those keep the
+/// caster.
+///
+/// REF: FUN_801E295C
+fn spirit_band_framed_slot(world: &World) -> u8 {
+    use legaia_engine_battle_vm::battle_action::ActionState;
+    let acting = world.battle_ctx.active_actor;
+    let state = world.battle_ctx.action_state;
+    if state != ActionState::SpiritFireDamage.as_byte()
+        && state != ActionState::SpiritPostDamage.as_byte()
+    {
+        return acting;
+    }
+    world
+        .actors
+        .get(usize::from(acting))
+        .map(|a| a.battle.active_target)
+        .filter(|&t| t < 8 && world.actors.get(usize::from(t)).is_some())
+        .unwrap_or(acting)
+}
+
 /// Derive the shared battle-camera drive inputs from the live world state -
 /// phase, acting actor, formation box.
 ///
@@ -34,7 +59,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
         .command
         .as_ref()
         .map(|c| c.actor)
-        .unwrap_or(world.battle_ctx.active_actor);
+        .unwrap_or_else(|| spirit_band_framed_slot(world));
     // The per-member surfaces own the close-up: the command ring (`0x28`),
     // the item / magic windows (`0x3C` / `0x46`) and the arts input (`0x50`,
     // `world.battle.arts_input` - the saved-chain list `arts_menu` is a

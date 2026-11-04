@@ -416,7 +416,7 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3D` - Spirit - wait
 
-`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](battle-action-helpers.md#battle-helper-functions)). This is the **only** state that reaches that dispatcher, and an ordinary item use is the door into it - see [the one caller](battle-action-helpers.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
+`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`, and `0x3C` staged that byte with neither `+0x1DC` commit bit, so the idle's natural end commits it: an Orb's Heal stands `51` vsyncs here on the last `384` cursor units of its idle (port `World::spirit_stage_waits_for_cycle`). When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](battle-action-helpers.md#battle-helper-functions)). This is the **only** state that reaches that dispatcher, and an ordinary item use is the door into it - see [the one caller](battle-action-helpers.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
 
 **Next:** `0x3E`.
 
@@ -428,7 +428,7 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3F` - Spirit - wait & fire damage
 
-Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
+`FUN_801D5854(target, 6)` on the stacked `+0x1DD` (`lw a0,0x20(sp)` at `0x801E40D8`), so the camera turns from the caster to its patient here, on the same arm `0x40` runs. Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
 
 **Next:** `0x40`.
 
