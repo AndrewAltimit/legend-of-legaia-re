@@ -2488,3 +2488,13 @@ Owning page: [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#
 Grade: capture. Noa stood `60` px off retail's in `battle_jou_nova_v3_scythe_wind_mid_cast` because the frame was on the replay's camera. PROT 0951's arms `3..=5` re-aim every pass, so the child's alignment agreed on no component and dropped the pose it was given, which is also why a yaw scan of that frame moved nothing. Standing on the walked-back pose reads `.691` to `.942`, and the two other Scythe Wind states rise with it.
 
 Owning page: [`retail-compare.md`](../../tooling/retail-compare.md#a-shot-that-re-aims-every-pass).
+
+### Why a monster's strike gate read a short age
+
+Evidence: `disassembly` for the laws, `capture` for the states. Three separate faults read as one `camera` of about `.87`.
+
+- **The replay rolled a shorter stream.** The strike loop stages a byte and tests the terminator at the new cursor on the same pass (`0x801E3998..0x801E39AC`), so a one-byte queue leaves for `0x1F` on its first pass. `battle_cave01_mushroom_strike` holds `06 06 00`, cursor `1`, the swing staged over the arrival's idle (`+0x1DC` bit 1). The replay drew `05 00`, left `0x1E` at age `0`, and `age_short` re-ran it on the state's first tick, ahead of the first case-7 arm. Such a capture now takes the [stream fallback](../../tooling/retail-compare.md#a-swing-staged-behind-the-capture).
+- **A walk-clip capture's accumulator does not date the arrival.** It counts from the walk's last loop re-commit. `battle_nilboa_warfish_strike` reads `288` at gap `1490`, increment `150`, one pass under case 7. The increments fall on a ladder from `0x700` (`ceil(gap / 0xC)`, then `gap -= inc * step`), so the increment names the pass (`strike_passes_off_table`).
+- **The monster's pull-in never opened.** `FUN_801E93C8` keeps `ctx[+0x243]` while the seat's clip has `+0x87` set (`0x801E9458..0x801E94A4`); the live host had no such read, the gate stood open and the strike loop's tail cleared the latch the commit had stored. Case 7 then tested a stand-in for it, and its glide chased the unpulled depth.
+
+Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#post-strike-shots-cases-7-and-8).

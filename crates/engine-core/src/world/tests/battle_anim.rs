@@ -1669,3 +1669,24 @@ fn a_granted_flee_silences_the_party_walk_clip() {
     let live = a.battle_effect_script.as_ref().unwrap();
     assert!(live[0x54..0x74].iter().all(|&b| b == 0));
 }
+
+/// The rate restore's monster gate reads the `+0x87` of the clip its seat sits
+/// on (`FUN_801E93C8`, `0x801E9458..0x801E94A4`), so a solo clip holds the
+/// latch `ctx[+0x243]` through the strike loop, and the idle after it opens.
+#[test]
+fn a_monster_on_a_solo_clip_keeps_the_restore_gate_shut() {
+    use legaia_engine_battle_vm::battle_action::BattleActionHost;
+    let mut world = pose_test_world();
+    let mut clip = pose_test_clip(1, 4, 0);
+    let mut head = vec![0u8; 0x88];
+    head[0x87] = 1;
+    clip.effect_script = head;
+    world.actors[0].battle_action_clips = Some(std::sync::Arc::new(vec![
+        Some(pose_test_clip(0, 4, 0)),
+        Some(clip),
+    ]));
+    let host = crate::world::vm_hosts::BattleHostImpl { world: &mut world };
+    assert_eq!(host.staged_art_record_flag(0, 1), 1);
+    assert_eq!(host.staged_art_record_flag(0, 0), 0);
+    assert_eq!(host.staged_art_record_flag(0, 2), 0);
+}

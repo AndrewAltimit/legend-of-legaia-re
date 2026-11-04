@@ -225,6 +225,12 @@ tests `andi 0x40` at `0x801D1C50` / `0x801D1C58` (PROT 0898) and then `0x20`,
 the same ladder the item-effect descriptors' `+2` bit `0x40` runs at
 `0x801D18E0`.
 
+The per-monster `switch` after it overrides the shape. Slime Divide `0x50`
+carries `0x24`, and its arms store the caster's own seat
+(`addiu v0,s7,0x3; sb v0,0x1dd(s4)` at `0x801EB9AC`), which PROT 0940's split
+saves and restores around its `9`; the cast-begin's facing store skips a self
+target (`0x801E4350`).
+
 Bit `0x02` is a third, independent flag: **field-castable**. The field Magic
 list's build tests it (`andi v0,v0,0x2` at `0x800311D0`, `FUN_80030628`) and
 greys every row without it ([field menu](../subsystems/field-menu.md)); no

@@ -736,3 +736,22 @@ fn a_monsters_solo_clip_pulls_the_strike_framing_in() {
     cam.option = CAMERA_OPTION_CLOSE + 1;
     assert_eq!(cam.recover_pose().tr[2], plain.tr[2]);
 }
+
+/// The pull-in's depth reaches the glide: TR z chases `3z/5` as TR y chases its
+/// `+0x40`, or a table of `battle_map01_frog_strike`'s (`1344`, `2948`) walks
+/// TR y alone.
+#[test]
+fn the_pull_in_walks_the_depth_too() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Recover, 0);
+    cam.set_actor(BattleCamActor::default());
+    cam.set_action_framing(ActionFraming {
+        party_slot: false,
+        depth_raw: 3072,
+        solo: true,
+        ..Default::default()
+    });
+    cam.advance_to(2);
+    cam.set_phase(BattleCamPhase::ActionEnd);
+    cam.set_phase(BattleCamPhase::Recover);
+    assert_eq!(cam.glide_target().tr[2], prescale_tr_z(3072 * 3 / 5));
+}

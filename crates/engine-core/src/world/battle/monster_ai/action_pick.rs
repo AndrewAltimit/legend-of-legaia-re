@@ -68,8 +68,11 @@ impl World {
         {
             let class = self.monster_cast_target_class(slot, &def);
             let mut targets = self.resolve_class_to_slots(slot, class);
-            if targets.len() == 1
-                && let Some(t) = self.battle.forced_monster_target.take()
+            // The capture's `+0x1DD` names one seat whatever the record's shape
+            // says: the scripted arms store the caster's own seat under an
+            // all-allies shape (Slime Divide `0x50`, shape `0x24`,
+            // `addiu v0,s7,0x3; sb v0,0x1dd(s4)` at `0x801EB9AC`).
+            if let Some(t) = self.battle.forced_monster_target.take()
                 && self.actors.get(t as usize).is_some_and(|a| a.battle.hp > 0)
             {
                 targets = vec![t];

@@ -1465,6 +1465,7 @@ So a monster-melee capture also places the walk's start (`BattleState::capture_a
 Only a walk onto the capture's own target is placed, so the replay's earlier attacks by the same seat walk from where they stood.
 
 Three gates keep the drive on the captured swing once the walk is right. A capture still on the walk clip in `0x1E` (`king_frog`, `twin_tomb`, `warhalf`, `warman`) is placed by the counter, not the accumulator (`ActionSteer::walk_clock`).
+The counter's reading comes off the tween table, since the accumulator counts from the walk's last loop re-commit and says nothing of the arrival. Case 7 aims `0x700` under the approach's case 6 and re-arms `ceil(gap / 0xC)` every pass, so the increments fall on one ladder (`150`, then by the step) and the table's increment names how many passes have run (`strike_passes_off_table`): `battle_nilboa_warfish_strike` sits on the first at accumulator `288`, `battle_map02_poisonous_worm_strike` on the second at `384`.
 The arrival's idle stage rides the `+0x1DC` bit-0 cut, a walk entry carrying the `+0x76` lock refuses it (`0x80047940..0x80047948`), and the walk plays on until its natural end, restarting the accumulator at each loop re-commit (the [commit](../subsystems/battle-action.md#the-locked-walk-at-arrival)); the engine's clip age leaves those re-commits out.
 The image child stands such a walker on the displayed frame's ring pair and seats its walk cursor at the displayed frame, as it does a struck body: the walk carries it `speed * scale / 8` a vsync, two game frames of which separate the screen from the RAM (`battle_korb2_warhalf_strike` `image` `.812` to `.824`, `battle_tunnelb_warman_strike` `.759` to `.801`).
 Its camera is walked back against the endpoint each earlier pass chased: case 7 focuses the midpoint of the two body pairs, and the pass before the RAM's framed the walker's pair one ring slot further back (`walker_end_shift`, the position ring's slot `2` with the pose at the cursor ring's slot `2`, against slot `1`), so its focus endpoint stood half the walk's step from the RAM's. The child, standing the walker on that slot, tests its framing against that endpoint rather than the RAM's (`RetailBattle::displayed_cam_end`), and every focus component takes the walked-back pose (`battle_retona_king_frog_strike` `.928` to `.984`, `battle_tunnelb_warman_strike` `.813` to `.848`, `battle_korb2_warhalf_strike` `.824` to `.846`).
@@ -4975,6 +4976,9 @@ moved the strikes a stream already reached both ways
 which the Guardian's corrected cast clip
 ([above](#monster-casts-the-drive-relies-on)) took away; it reaches on the
 fallback.
+
+<a id="a-swing-staged-behind-the-capture"></a>
+A capture whose first swing is staged but not committed (`RetailBattle::strike_swing_pending`: `+0x1D9 <= 1`, the queue running on past the cursor) takes the same fallback. The strike loop tests the terminator at the new cursor on the pass that stages (`0x801E3998..0x801E39AC`), so a replay that rolled one byte leaves `0x1E` on its first pass where retail's two bytes hold it. The search treats that exit as a miss rather than re-running the state on its last tick, which stood ahead of the first case-7 arm.
 
 Whichever stream reaches it, a first-pass gate keeps the RAM's frame, and
 there the attacker stands on the strike entry at the commit's cursor `0` - a

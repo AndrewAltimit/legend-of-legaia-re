@@ -45,6 +45,13 @@ impl World {
             TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY,
         };
         let caster_is_party = caster < self.party.party_count;
+        // A monster's scripted arm stores its own seat whatever the record's
+        // shape says: Slime Divide `0x50` carries the all-allies `0x24`, and
+        // `FUN_801E9FD4` stores `s7 + 3` (`sb v0,0x1dd(s4)` at `0x801EB9B4`),
+        // so its cast-begin skips the facing store (`beq v0,t2` at `0x801E4350`).
+        if !caster_is_party && targets == [caster] {
+            return caster;
+        }
         match def.target {
             // Codes are in retail's absolute numbering: 8 = party, 9 = the
             // enemy row - whichever side the caster stands on.

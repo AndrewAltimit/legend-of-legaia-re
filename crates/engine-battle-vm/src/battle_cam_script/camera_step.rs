@@ -502,21 +502,38 @@ impl BattleCamera {
     pub(super) fn recover_pose(&self) -> BattleCamPose {
         // `0x801D6738..0x801D6778`: a party seat on the art slot, a monster
         // on a clip whose solo byte is set.
-        let pull_in = self.option == CAMERA_OPTION_CLOSE
+        recover_framing(
+            self.body_actor(),
+            self.target,
+            self.live_action_framing(),
+            self.pose.yaw,
+            self.recover_pull_in(),
+        )
+    }
+
+    /// Case 7's pull-in gate, `0x801D6738..0x801D6778`: a party seat on the
+    /// art slot, a monster on `ctx[+0x243]`.
+    fn recover_pull_in(&self) -> bool {
+        self.option == CAMERA_OPTION_CLOSE
             && if self.action.party_slot {
                 self.attack
                     .actor
                     .is_some_and(|c| c.art_id >= crate::battle_attack_camera::FIRST_ART)
             } else {
                 self.live_action_framing().solo
-            };
-        recover_framing(
-            self.body_actor(),
-            self.target,
-            self.live_action_framing(),
-            self.pose.yaw,
-            pull_in,
-        )
+            }
+    }
+
+    /// The depth case 7 walks in: the glide converges TR z in the raw space
+    /// ([`Self::recover_pose`]'s target carries the same value prescaled), and
+    /// the pull-in takes `3z/5` of it (`0x801D6780..0x801D67B8`).
+    fn recover_raw_z(&self) -> i32 {
+        let raw = self.live_action_framing().depth_raw;
+        if self.recover_pull_in() {
+            raw * 3 / 5
+        } else {
+            raw
+        }
     }
 
     /// Case 8's framing for the live pair, plus the eye-space Z **in world
@@ -1153,7 +1170,7 @@ impl BattleCamera {
                 // Case 7 hands `FUN_801D829C` `a3 = 0xC` (`0x801D67C8`), the
                 // same 6 camera steps case 6 uses.
                 let target = self.recover_pose();
-                let raw_z = self.live_action_framing().depth_raw;
+                let raw_z = self.recover_raw_z();
                 self.glides.push_back(Glide::linear(
                     &mut from,
                     target,
@@ -1709,7 +1726,7 @@ impl BattleCamera {
         match self.phase {
             BattleCamPhase::Recover => {
                 let target = self.recover_pose();
-                let raw_z = self.live_action_framing().depth_raw;
+                let raw_z = self.recover_raw_z();
                 self.retarget_post_action_glide(target, raw_z);
             }
             BattleCamPhase::ActionEnd => {

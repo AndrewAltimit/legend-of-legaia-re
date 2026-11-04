@@ -751,13 +751,9 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
         accum: 0,
         ramp: 0,
         body_radius: script::PARTY_BODY_RADIUS,
-        solo: world
-            .actors
-            .get(usize::from(acting_slot))
-            .and_then(|a| a.battle_animation.as_ref())
-            // The commit stores `ctx[+0x243]` after the pass's arm, so the
-            // pass that commits the clip still frames without it.
-            .is_some_and(|p| p.solo_flag() != 0 && p.cursor_sixteenths() > 0),
+        // Case 7 tests the latch itself (`lbu v0,0x243(v1)` at `0x801D6770`), so
+        // a later swing whose clip has no solo byte stays pulled in.
+        solo: world.battle_ctx.gauge_rearm_latch != 0,
     }
 }
 

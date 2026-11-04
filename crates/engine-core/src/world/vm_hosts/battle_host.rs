@@ -13,6 +13,18 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.spell_table_class(id).unwrap_or(0x14)
     }
 
+    // PORT: FUN_801E93C8 (`0x801E9458..0x801E94A4`, the monster arm's record read)
+    fn staged_art_record_flag(&self, monster_slot: u8, action_id: u8) -> u8 {
+        self.world
+            .actors
+            .get(usize::from(monster_slot))
+            .and_then(|a| a.battle_action_clips.as_ref())
+            .and_then(|clips| clips.get(usize::from(action_id)))
+            .and_then(|c| c.as_ref())
+            .and_then(|c| c.entry_solo_flag())
+            .unwrap_or(0)
+    }
+
     fn display_tick(&self) -> u64 {
         self.world.clock.display_frames
     }

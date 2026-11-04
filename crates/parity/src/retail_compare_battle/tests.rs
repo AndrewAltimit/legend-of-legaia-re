@@ -2117,3 +2117,20 @@ fn a_commit_capture_stands_two_steps_behind_the_tables_depth() {
     b.cam_accum = 8;
     assert_eq!(b.displayed_commit_live().tr[2], 1945.0);
 }
+
+/// Case 7 re-arms `ceil(gap / 0xC)` from `0x700` under the approach's case 6,
+/// so the table's increment names the pass: the first at `150` on any step,
+/// and the ladder below it falls by the step.
+#[test]
+fn a_walk_clock_strike_counts_its_passes_off_the_table() {
+    // `battle_nilboa_warfish_strike`: step 2, gap 1490, increment 150, on
+    // accumulator 288 the walk's loop left.
+    assert_eq!(strike_passes_off_table(150, 2), 1);
+    // `battle_map02_poisonous_worm_strike`: step 3, gap 998, increment 111, on
+    // accumulator 384.
+    assert_eq!(strike_passes_off_table(111, 3), 2);
+    // `battle_rikuroa_worm_strike`: step 2, gap 879, increment 88.
+    assert_eq!(strike_passes_off_table(88, 2), 4);
+    // The ladder ends: a landed table does not count forever.
+    assert!(strike_passes_off_table(0, 2) < 64);
+}

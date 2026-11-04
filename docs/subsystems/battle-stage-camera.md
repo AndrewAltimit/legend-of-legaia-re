@@ -1097,7 +1097,10 @@ the acting actor and its target (`actor[+0x1DD]` through the actor table
   gated on `_DAT_800846C0 == 0` and then per seat: a party member on the art
   slot `+0x1D9 == 0x11`, a monster on `ctx[+0x243]`, the solo byte `+0x87` of
   its committed clip (`0x801D6738..0x801D6778`). The commit stores that byte
-  after its pass's arm, so the pull-in opens one pass later.
+  after its pass's arm, so the pull-in opens one pass later. The latch stands
+  until `FUN_801E93C8` clears it, which the strike band's tail runs on nearly
+  every pass and which a monster's `+0x87` holds shut for as long as its seat
+  sits on that clip (`0x801E9458..0x801E94A4`).
 
 **Case 8** is the same shape aimed at the target alone: an extra `-0x100` on
 the yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a

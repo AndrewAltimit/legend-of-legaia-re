@@ -149,8 +149,23 @@ impl RetailBattle {
         matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
             && self.queued_category == 3
             && self.action_state == 0x1E
-            && self.caster_clip > 1
+            && (self.caster_clip > 1 || self.strike_swing_pending())
             && matches!(self.span_gate, SpanGate::Age { .. })
+    }
+
+    /// Whether the capture's first swing is staged and not yet committed, the
+    /// attacker still on the idle or walk clip it arrived on (`+0x1D9 <= 1`):
+    /// the strike-loop pass staged the byte at `+0x1DF` (`0x801E3734`) and
+    /// found another behind it, or it would have left for `0x1F` on that same
+    /// pass (`0x801E3998`). A stream the replay rolled shorter leaves the loop
+    /// on its first pass and never holds retail's state.
+    pub fn strike_swing_pending(&self) -> bool {
+        self.caster_clip <= 1
+            && self.strike_cursor > 0
+            && self
+                .committed_queue
+                .get(usize::from(self.strike_cursor))
+                .is_some_and(|&b| b != 0)
     }
 
     /// Whether the image child takes the frame the display showed - the
@@ -997,13 +1012,13 @@ impl RetailBattle {
         .max(1);
         let inc = legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step);
         // A capture still on the walk clip in the strike loop
-        // ([`Self::walk_clock_capture`]) arrived after the walk's last loop
-        // re-commit - the first loop pass staged the strike, which that
-        // re-commit would have installed - so inside the accumulator's
-        // window: halfway, and at least a pass in, so the loop's framing
-        // (case 7, `0x801E36E8`) has armed.
+        // ([`Self::walk_clock_capture`]): the accumulator counts from the
+        // walk's last loop re-commit, which says nothing of the arrival. The
+        // loop's framing (case 7, `0x801E36E8`) re-arms every pass, so the
+        // table's yaw increment says how many passes have run
+        // ([`strike_passes_off_table`]).
         let passes = if self.walk_clock_capture() {
-            (accum / (8 * u16::from(step)) / 2).max(1)
+            strike_passes_off_table(self.cam_tween_steps[1], step)
         } else {
             accum / (8 * u16::from(step)) + 2
         };
@@ -1643,6 +1658,28 @@ pub(super) fn run_drive(
 /// A float pose's ground pair as whole units.
 fn live_pair(focus: [f32; 3]) -> [i32; 2] {
     [focus[0] as i32, focus[2] as i32]
+}
+
+/// How many strike-loop passes a capture's yaw increment `inc` stands on.
+///
+/// Case 7 aims `0x700` below the case-6 yaw the approach left
+/// (`0x801D6700`) and every pass re-arms `ceil(gap / 0xC)` and walks
+/// `inc * step` of it, so the increments fall on one ladder from the first
+/// pass's `150`: the pass is the rung nearest `inc`. The approach's own lag
+/// behind its endpoint puts a capture a few units off a rung.
+pub fn strike_passes_off_table(inc: u16, step: u8) -> u16 {
+    let (inc, step) = (i32::from(inc), i32::from(step.max(1)));
+    let mut gap = 0x700;
+    let mut passes = 1;
+    loop {
+        let here = (gap + 0xB) / 0xC;
+        gap -= here * step;
+        let next = (gap + 0xB) / 0xC;
+        if gap <= 0 || (here - inc).abs() <= (next - inc).abs() {
+            return passes;
+        }
+        passes += 1;
+    }
 }
 
 /// The gap to case 6's endpoint one pass before `gap`, across the terminator

@@ -134,6 +134,13 @@ pub(super) fn run_battle(
             // An aged action state the engine left younger than retail's:
             // the same stream again, sampled on that state's last tick.
             if let Ok(e) = &run
+                && e.age_short.is_some()
+                && battle.strike_stream_steerable()
+            {
+                first.get_or_insert(run);
+                continue;
+            }
+            if let Ok(e) = &run
                 && let Some(accum) = e.age_short
             {
                 let mut aged = battle.clone();
