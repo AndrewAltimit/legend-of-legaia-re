@@ -1101,6 +1101,10 @@ impl RetailBattle {
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
             strike_stream_steer: false,
+            approach_terms: (
+                game_anchors::u16_at(ram, ctx + 0x6D2) as i16,
+                game_anchors::u16_at(ram, ctx + 0x6D4) as i16,
+            ),
             committed_queue: std::array::from_fn(|i| {
                 active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
             }),

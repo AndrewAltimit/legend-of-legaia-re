@@ -20,6 +20,7 @@ impl World {
 
         let entry = self.cast_module_for(spell_id)?;
         self.raise_cast_voice_on_arm(arm);
+        self.fold_glare_on_its_arm(entry, spell_id, arm);
         // PROT 0954's body is ported whole - camera, records, wheel and
         // outcomes - and drives the band on its own
         // (`world::battle::fatal_decision`).

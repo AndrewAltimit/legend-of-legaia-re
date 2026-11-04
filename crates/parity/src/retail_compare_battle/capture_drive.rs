@@ -1575,12 +1575,13 @@ impl RetailBattle {
                     // the cursor already on `2`, the pass after its commit
                     // read the next byte; a stream of `07 06 ff` stops the
                     // cursor on `2` under the second swing.
-                    played: (seat >= 3
-                        && state == 0x1E
-                        && self.queued_category == 3
-                        && self.caster_clip > 1
-                        && matches!(self.span_gate, SpanGate::Age { .. }))
-                    .then_some(self.committed_queue),
+                    // Also carried on a capture still on its walk clip, where no
+                    // cursor gate reads it: the cast-sequence oracle's strike deal
+                    // stands the fight's stream on it (`strike_deal`).
+                    played: (seat >= 3 && state == 0x1E && self.queued_category == 3)
+                        .then_some(self.committed_queue),
+                    ramps: (seat >= 3 && state == 0x1E && self.queued_category == 3)
+                        .then_some(self.approach_terms),
                     // On a dynamic art slot the cursor cannot tell a starter
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which

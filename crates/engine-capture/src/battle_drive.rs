@@ -236,6 +236,10 @@ pub struct ActionSteer {
     /// capture's. A stream that rolled a shorter queue stops its cursor on
     /// the capture's value on a later swing of the same clip.
     pub played: Option<[u8; 16]>,
+    /// The capture's approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]`, which its
+    /// first hit's block roll reads: carried beside [`Self::played`] for the
+    /// cast-sequence oracle's strike deal, no gate reads them.
+    pub ramps: Option<(i16, i16)>,
     /// Retail pool seat of a victim the capture shows in its defeat fade, and
     /// the fade lane it reads: an [`SpanGate::Age`] phase is met only once
     /// the engine's victim has faded at least as far.
@@ -861,6 +865,9 @@ impl BattleDrive {
                         s.push_str(&format!("{b:02x}"));
                     }
                 }
+                if let Some((attack, guard)) = steer.ramps {
+                    s.push_str(&format!(",j{attack}/{guard}"));
+                }
                 if let Some(q) = steer.played {
                     s.push_str(",b");
                     for b in q {
@@ -953,6 +960,9 @@ impl BattleDrive {
                     *b = u8::from_str_radix(q.get(i * 2..i * 2 + 2)?, 16).ok()?;
                 }
                 steer.queue = Some(queue);
+            } else if let Some(j) = last.strip_prefix('j') {
+                let (attack, guard) = j.split_once('/')?;
+                steer.ramps = Some((attack.parse().ok()?, guard.parse().ok()?));
             } else if let Some(q) = last.strip_prefix('b') {
                 if q.len() != 32 {
                     return None;
@@ -1141,6 +1151,18 @@ impl BattleDrive {
     }
 
     /// Whether the engine holds the capture's phase.
+    /// What a monster strike's drive holds of the capture's hand.
+    pub fn strike_hand(&self) -> Option<StrikeHand> {
+        match self {
+            Self::Action { seat, steer, .. } => steer.played.map(|queue| StrikeHand {
+                seat: *seat,
+                queue,
+                ramps: steer.ramps,
+            }),
+            _ => None,
+        }
+    }
+
     pub fn reached(&self, world: &legaia_engine_core::world::World) -> bool {
         if world.mode != SceneMode::Battle {
             return false;
@@ -1904,6 +1926,15 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 /// The engine battle ordinal of retail pool slot `seat`: party slots are
 /// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
 /// party size while the engine seats them straight after the party.
+/// The capture's monster strike as its state stood: the retail seat, the queue
+/// `+0x1DF..` and the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StrikeHand {
+    pub seat: u8,
+    pub queue: [u8; 16],
+    pub ramps: Option<(i16, i16)>,
+}
+
 pub fn engine_seat(seat: u8, party_count: u8) -> u8 {
     if seat >= 3 {
         party_count + (seat - 3)

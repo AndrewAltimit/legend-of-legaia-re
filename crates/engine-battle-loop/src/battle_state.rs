@@ -1107,6 +1107,11 @@ pub struct BattleState {
     /// a combatant standing on both sides takes the captured HP and MP back
     /// and every ailment the word does not carry is stripped. Never in play.
     pub capture_reseat_bars: Vec<CaptureReseatBars>,
+    /// The `rand()` word each coming melee hit's block roll draws from, as
+    /// retail's recording of the same strike held it
+    /// (`legaia_engine_capture::strike_deal`). Empty outside that oracle: the
+    /// hit then draws on the world stream as it stands.
+    pub capture_hit_rand: std::collections::VecDeque<u32>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1369,6 +1374,7 @@ impl BattleState {
             arrival_spawn_anchor: None,
             capture_reseat: None,
             capture_reseat_bars: Vec::new(),
+            capture_hit_rand: std::collections::VecDeque::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

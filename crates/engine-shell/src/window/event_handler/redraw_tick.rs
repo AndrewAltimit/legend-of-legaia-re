@@ -617,6 +617,7 @@ impl PlayWindowApp {
                 &seed,
             );
         }
+        self.seat_strike_deal();
         match self.session.tick() {
             // Door transition: the host loaded a new scene under
             // the window (field-VM op 0x3E/0x3F or a walk-touch

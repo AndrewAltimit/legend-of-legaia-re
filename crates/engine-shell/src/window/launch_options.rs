@@ -229,6 +229,10 @@ pub struct ScreenshotConfig {
     /// that key ([`legaia_engine_capture::cast_rand`]). Set by the
     /// cast-sequence oracle's `--rand-at`.
     pub cast_rand_seed: Option<legaia_engine_capture::cast_rand::CastRandSeed>,
+    /// The hand a recorded strike was dealt, stood on the fight when the
+    /// capture's gate opens ([`legaia_engine_capture::strike_deal`]). Set by the
+    /// cast-sequence oracle; `None` in play.
+    pub strike_deal: Option<legaia_engine_capture::strike_deal::StrikeDeal>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -1012,6 +1016,9 @@ impl ScreenshotConfig {
             cast_rand_seed: std::env::var("LEGAIA_CAST_RAND_SEED")
                 .ok()
                 .and_then(|v| legaia_engine_capture::cast_rand::cast_rand_seed_from_env(&v)),
+            strike_deal: std::env::var("LEGAIA_STRIKE_DEAL")
+                .ok()
+                .and_then(|v| legaia_engine_capture::strike_deal::strike_deal_from_env(&v)),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),

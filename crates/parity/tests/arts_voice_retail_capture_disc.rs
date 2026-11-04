@@ -114,10 +114,10 @@ fn hand(session: &NativeSession, typed: &mut usize) -> u16 {
     }
 }
 
-/// The cue router's per-call debug line (`battle_cue_route`), collected so
-/// the SFX side of the turn can be laid against the retail router calls. The
-/// logger is process-global and this binary runs other fights on other test
-/// threads, so a line counts only on the thread that opened the collection.
+// The cue router's per-call debug line (`battle_cue_route`), collected so
+// the SFX side of the turn can be laid against the retail router calls. The
+// logger is process-global and this binary runs other fights on other test
+// threads, so a line counts only on the thread that opened the collection.
 thread_local! {
     static ROUTES: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
 }

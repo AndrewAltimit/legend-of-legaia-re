@@ -279,6 +279,18 @@ impl World {
             if !agl_status_inflict_roll(attacker_agl, target_agl, rand) {
                 continue;
             }
+            // PROT 0940's body sounds a landing ahead of its guard tests
+            // (`FUN_8004FE5C` at `0x801F7018`, `a1 = ctx[+0x13]`): Zora's own
+            // cue for monster `0xA9`, `0xF4` for any other caster.
+            if move_id == GLARE_ID {
+                let zora = self
+                    .actors
+                    .get(usize::from(caster))
+                    .and_then(|a| a.battle_monster_id)
+                    == Some(GLARE_ZORA_MONSTER_ID);
+                let category = self.retail_actor_category(caster);
+                self.route_battle_cue(if zora { 0x15B } else { 0xF4 }, category);
+            }
             let guard_bit = match kind {
                 StatusKind::Stone => STONE_GUARD_BIT,
                 _ => CURSE_GUARD_BIT,
@@ -466,6 +478,8 @@ impl World {
 
 /// Glare's action id.
 const GLARE_ID: u8 = 0x3C;
+/// Zora, whose landing sounds its own cue (`li v0,0xa9` at `0x801F7008`).
+const GLARE_ZORA_MONSTER_ID: u16 = 0xA9;
 /// The module Glare's body lives in (PROT 0940).
 const GLARE_ENTRY: u32 = 940;
 

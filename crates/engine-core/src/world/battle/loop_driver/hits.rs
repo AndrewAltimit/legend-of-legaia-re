@@ -642,6 +642,9 @@ impl World {
         // not (`0x801ECA20..0x801ECA80`, after the block roll and ahead of
         // the `0x801ECB60` skip). It draws nothing.
         self.battle.juggle = self.next_juggle(target);
+        if let Some(word) = self.battle.capture_hit_rand.pop_front() {
+            self.rng_state = word;
+        }
         let block = self.roll_block(attacker, target, power_byte);
         // A block the roll granted spends the approach terms on the spot
         // (`0x801EC888`), so a verdict the juggle window or the block breaker

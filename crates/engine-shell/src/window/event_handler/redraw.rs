@@ -49,6 +49,36 @@ impl PlayWindowApp {
         })
     }
 
+    /// On the tick the capture's gate opens, stand the fight on the hand retail
+    /// was dealt (`LEGAIA_STRIKE_DEAL`), once.
+    pub(super) fn seat_strike_deal(&mut self) {
+        let Some(sc) = self.screenshot.as_ref() else {
+            return;
+        };
+        if sc.strike_deal.is_none() || !self.capture_gate_met() {
+            return;
+        }
+        let Some(hand) = sc.battle_drive.as_ref().and_then(|d| d.strike_hand()) else {
+            return;
+        };
+        let Some(deal) = self
+            .screenshot
+            .as_mut()
+            .and_then(|sc| sc.strike_deal.take())
+        else {
+            return;
+        };
+        eprintln!(
+            "strike deal: {hand:02x?}, {} hit words",
+            deal.hit_words.len()
+        );
+        legaia_engine_capture::strike_deal::apply_strike_deal(
+            &mut self.session.host.world,
+            &hand,
+            &deal,
+        );
+    }
+
     /// One redraw: drain the sim ticks, prepare the frame, render it (or the
     /// windowed movie), and ask for the next redraw.
     pub(super) fn handle_redraw(&mut self) {
