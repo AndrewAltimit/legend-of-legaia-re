@@ -163,6 +163,9 @@ impl FieldHostImpl<'_> {
     /// dialog or when the dismiss button just fired (clears the request
     /// and unblocks the VM in one step).
     pub(super) fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
+        if self.world.dialog.mode_switch.step(0) {
+            return true;
+        }
         // When the inline-script field-VM runner owns the box, it advances /
         // dismisses it (see `World::drive_inline_dialogue`); the simplified
         // dialog-advance must not clear the box out from under it.

@@ -18,7 +18,11 @@ const RESOLVE_ACTOR: u32 = 0x8003_C83C;
 const READ_U16: u32 = 0x8003_CE9C;
 const PACKET_LENGTH: u32 = 0x8003_CA38;
 
-struct Inert;
+/// Answers what stubbed calls and clear RAM answer in the VM: every call returns
+/// zero, the resolver finds a context, the frame step is `1`.
+struct Inert {
+    hit: bool,
+}
 impl FieldFlagsHost for Inert {
     fn global_flags(&self) -> u32 {
         0
@@ -31,14 +35,50 @@ impl FieldFlagsHost for Inert {
 impl FieldSceneHost for Inert {}
 impl FieldTerrainHost for Inert {}
 impl FieldCameraHost for Inert {}
-impl FieldCameraMotionHost for Inert {}
+impl FieldCameraMotionHost for Inert {
+    fn camera_glide_live(&mut self) -> bool {
+        false
+    }
+}
 impl FieldScreenHost for Inert {}
-impl FieldAudioHost for Inert {}
-impl FieldPartyInventoryHost for Inert {}
-impl FieldDialogMenuHost for Inert {}
+impl FieldAudioHost for Inert {
+    fn bgm_ready(&mut self, sub_op: u8) -> bool {
+        // Sub-op `0xA` waits on a load-settled bit that clear RAM leaves down.
+        sub_op != 0xA
+    }
+}
+impl FieldPartyInventoryHost for Inert {
+    fn op4c_nd_subc_item_held(&self, _needle: u8) -> bool {
+        // The bag lookup's stub says slot `0`, or no slot.
+        self.hit
+    }
+}
+impl FieldDialogMenuHost for Inert {
+    fn press_prompt(&mut self, _x: u16, _y: u16) -> bool {
+        false
+    }
+    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) -> bool {
+        // `FUN_801D65D8(1)` runs for real, off its first stage.
+        true
+    }
+}
 impl FieldActorHost for Inert {}
-impl FieldActorSpawnHost for Inert {}
-impl FieldActorFxHost for Inert {}
+impl FieldActorSpawnHost for Inert {
+    fn actor_guard(&mut self, _actor_id: u8) -> Option<()> {
+        self.hit.then_some(())
+    }
+}
+impl FieldActorFxHost for Inert {
+    fn spawn_attached_light(
+        &mut self,
+        _ctx: &FieldCtx,
+        _ext: Option<u8>,
+        _spawn: &legaia_engine_vm::field_actor_billboard::AttachedSpriteSpawn,
+        _script: Option<&[u8]>,
+    ) -> bool {
+        true
+    }
+}
 impl FieldPlayerHost for Inert {}
 impl FieldHaltHost for Inert {}
 
@@ -115,6 +155,7 @@ fn every_instruction_on_the_disc_steps_where_retail_steps() {
         r.r[2] = legaia_scene_formats::field_disasm::packet_length(&bytes) as u32;
     });
     cpu.step_budget = 20_000;
+    cpu.mem.wr8(0x1F80_0393, 1);
     let gp = cpu.regs.r[GP];
     let clean = cpu.mem.clone();
     let corpus = corpus();
@@ -138,7 +179,7 @@ fn every_instruction_on_the_disc_steps_where_retail_steps() {
         // unsigned offset wraps there.
         let retail = cpu.regs.r[2] as usize & 0xFFFF;
         let mut ctx = FieldCtx::default();
-        let port = match step(&mut Inert, &mut ctx, script, *pc) {
+        let port = match step(&mut Inert { hit: true }, &mut ctx, script, *pc) {
             StepResult::Advance { next_pc } => Some(next_pc),
             StepResult::Yield { resume_pc } => Some(resume_pc),
             StepResult::Halt { final_pc } => Some(final_pc),
@@ -150,7 +191,7 @@ fn every_instruction_on_the_disc_steps_where_retail_steps() {
             let waits = if retail == *pc { "retail waits " } else { "" };
             let e = differ.entry(format!("{waits}{label}")).or_default();
             e.0 += 1;
-            if e.1.is_empty() {
+            if e.0 == 1 {
                 e.1 = format!(
                     "pc {pc:#x} retail {retail:#x} port {port:x?} bytes {:02x?}",
                     &script[*pc..(*pc + 12).min(script.len())]
@@ -166,25 +207,72 @@ fn every_instruction_on_the_disc_steps_where_retail_steps() {
             .all(|k| k.starts_with("43 ") || k.starts_with("4C 83")),
         "{stopped:?}"
     );
-    // What is left turns on state the two sides do not share: an inert host's
-    // answers against stubbed calls and clear RAM, not on where the operands end.
-    // `34 1x` spawned or not, `4C CD` / `D0` / `EA` / `53` / `35` / `4A` gates,
-    // `4C DC` a list test, `4C EB` an actor lookup (the resolver hook finds one).
-    const STATE_ARMS: [&str; 9] = [
-        "34 10",
-        "4C CD",
-        "4C DC",
-        "4C EA",
-        "4C EB",
-        "retail waits 35",
-        "retail waits 4A",
-        "retail waits 4C 53",
-        "retail waits 4C D0",
-    ];
     let report: Vec<String> = differ
         .iter()
-        .filter(|(k, _)| !STATE_ARMS.contains(&k.as_str()))
         .map(|(k, (n, ex))| format!("{k}: {n} e.g. {ex}"))
         .collect();
     assert!(report.is_empty(), "{}", report.join("\n"));
+}
+
+#[test]
+fn the_staged_mode_switch_steps_as_retail_steps() {
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    // The sound and CD queue is idle.
+    cpu.stub(0x8003_DE7C, 0);
+    let mut port = dispatch_leaves::FieldModeSwitch::default();
+    for (i, target) in [
+        1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 1, 1,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert_eq!(cpu.call(0x801D_65D8, &[target]), Stop::Returned);
+        let stepping = port.step(target);
+        assert_eq!(cpu.regs.r[2] != 0, stepping, "call {i}");
+        assert_eq!(cpu.mem.rd32(0x8007_BA3C), port.target, "call {i}");
+        assert_eq!(cpu.mem.rd32(0x8007_B9C0), port.stage, "call {i}");
+    }
+}
+
+#[test]
+fn a_missing_actor_or_item_takes_the_skip_retail_takes() {
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    cpu.mem
+        .load(OVERLAY_BASE, &d.read_entry(897).expect("PROT 0897"));
+    cpu.stub_outside = Some((OVERLAY_BASE, 0x8020_0000));
+    cpu.hook(RESOLVE_ACTOR, |r, _| r.r[2] = 0);
+    cpu.hook(READ_U16, |r, m| r.r[2] = u32::from(m.rd16(r.r[4])));
+    cpu.stub(0x8004_2EE0, 0x100);
+    cpu.mem.wr8(0x1F80_0393, 1);
+    let gp = cpu.regs.r[GP];
+    let clean = cpu.mem.clone();
+    let mut ran = 0;
+    for (script, pc, label) in corpus() {
+        if label != "4C DC" && label != "4C EB" {
+            continue;
+        }
+        ran += 1;
+        cpu.mem = clean.clone();
+        cpu.regs.r[GP] = gp;
+        cpu.mem.load(SCRIPT, &script);
+        cpu.mem.wr32(CTX + 0x94, SCRIPT);
+        assert_eq!(cpu.call(VM, &[SCRIPT, pc as u32, CTX]), Stop::Returned);
+        let retail = cpu.regs.r[2] as usize & 0xFFFF;
+        let mut ctx = FieldCtx::default();
+        let StepResult::Advance { next_pc } =
+            step(&mut Inert { hit: false }, &mut ctx, &script, pc)
+        else {
+            panic!("{label} at {pc:#x} does not advance");
+        };
+        assert_eq!(next_pc & 0xFFFF, retail, "{label} at {pc:#x}");
+    }
+    assert!(ran > 50, "{ran}");
 }

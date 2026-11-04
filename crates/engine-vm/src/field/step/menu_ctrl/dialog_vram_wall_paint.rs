@@ -51,17 +51,17 @@ pub(super) fn op_4c_n5<H: FieldHost>(
                 next_pc: pc + header_size + 3,
             }
         }
-        // Sub-3: 2-byte `[4C, 0x53]`. Dialog-wait poll. The
-        // original at lines 6295-6298 of the dispatcher dump
-        // calls `FUN_801D65D8(1)` then `goto
-        // joined_r0x801E28C4`; both branches halt-style return
-        // after `param_2 = param_2 + 2`. We model this as
-        // "halt at pc+2" - the host pumps its dialog state
-        // machine through the side-effect hook.
+        // Sub-3: 2-byte `[4C, 0x53]`. `FUN_801D65D8(1)` steps a staged mode
+        // switch and returns non-zero while it is in flight: the arm joins
+        // `0x801E28C4`, which restores the PC on non-zero and returns the
+        // advanced PC on zero. Scripts open a story beat on it.
         3 => {
-            host.op4c_n5_sub3_dialog_wait(ctx);
-            StepResult::Halt {
-                final_pc: pc + header_size + 1,
+            if host.op4c_n5_sub3_dialog_wait(ctx) {
+                StepResult::Halt { final_pc: pc }
+            } else {
+                StepResult::Advance {
+                    next_pc: pc + header_size + 1,
+                }
             }
         }
         // Sub-4: 2-byte `[4C, 0x54]`. Dialog-advance poll. The

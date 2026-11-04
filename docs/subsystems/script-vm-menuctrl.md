@@ -710,7 +710,7 @@ stride, walking successive `vdf_idx` values.
 | 7 | 7 bytes | Camera animate: 24-bit LE target + 16-bit LE duration; `func_0x8003C5F0` tween, or an instant write when the duration is 0. |
 | 8 | 10 bytes | The crawl roller's control op ([cutscene.md](cutscene.md#narration-playback---the-crawl-roller-fun_80037174)): `w3 = 0` seeds the geometry words `+0x4C/+0x4E/+0x50`, `1` pauses the live roller or writes its release count `+0x52`, `2` resumes it, `3` kills it. Port `FieldHostImpl::configure_crawl_roller`. |
 | 9 | `[4C E9]` | Clear `_DAT_8007B9C4`; PC += 2. |
-| A | `[4C EA]` | Call `func_0x8003C7EC`, then halt. |
+| A | `[4C EA]` | Call `func_0x8003C7EC` and advance past the op. |
 | B | `[4C EB actor lo hi]` | Guard - [below](#4c-eb-actor-guard). |
 | C | `[4C EC]` | [Encounter step-counter reroll](#encounter-step-counter-reroll-fun_801ddf48); no shipped script issues a clean `4C EC`. |
 | D | 3 bytes | Set `_DAT_8007BA66`. |

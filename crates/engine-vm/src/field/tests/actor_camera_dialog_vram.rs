@@ -309,14 +309,19 @@ fn op_4c_n_d_sub_0_truncated_buffer_returns_unknown() {
 }
 
 #[test]
-fn op_4c_n_5_sub_3_dialog_wait_halts_at_pc_plus_2() {
-    // [4C, 0x53] → halt-style return with PC = 0 + 2 = 2.
+fn op_4c_n_5_sub_3_holds_while_the_mode_switch_steps() {
     let bytecode = [0x4Cu8, 0x53];
-    let mut host = TestHost::default();
+    let mut host = TestHost {
+        n_5_sub_3_stepping: true,
+        ..TestHost::default()
+    };
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 2 });
-    assert_eq!(host.n_5_sub_3_dialog_waits, 1);
+    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    host.n_5_sub_3_stepping = false;
+    let r = step(&mut host, &mut ctx, &bytecode, 0);
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
+    assert_eq!(host.n_5_sub_3_dialog_waits, 2);
 }
 
 #[test]

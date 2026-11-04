@@ -30,7 +30,9 @@ fn a_hooked_fish_fights_as_retail_fights() {
         eprintln!("[skip] LEGAIA_DISC_BIN unset");
         return;
     };
-    let overlay = d.read_entry(fs::FISHING_OVERLAY_PROT_INDEX).expect("PROT 0972");
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
     cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
     let species = fs::parse(&overlay).expect("species");
     let state = Rc::new(Cell::new(0u32));
@@ -87,8 +89,12 @@ fn a_hooked_fish_fights_as_retail_fights() {
             cpu.mem.wr32(RECORD, record as u32);
             assert_eq!(cpu.call(TICK, &[]), Stop::Returned, "frame {frame}");
 
-            let FishFrame { pull, load, swim, surge } =
-                ai.tick(sp, bias, &mut depth, record, mask, &mut port_rng, dt as i32);
+            let FishFrame {
+                pull,
+                load,
+                swim,
+                surge,
+            } = ai.tick(sp, bias, &mut depth, record, mask, &mut port_rng, dt as i32);
             gauge.apply_load(mask, load, dt as i32);
             let probe = ai.probe();
 

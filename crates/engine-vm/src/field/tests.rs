@@ -208,6 +208,7 @@ struct TestHost {
     n_d_sub_0_prompts: Vec<(u16, u16)>,
     n_d_sub_0_pressed: bool,
     n_5_sub_3_dialog_waits: u32,
+    n_5_sub_3_stepping: bool,
     n_5_sub_4_dialog_active: bool,
     n_5_sub_4_polls: u32,
     // 0x4C nD sub-4/5 VRAM STP set/clear.
@@ -737,8 +738,9 @@ impl FieldDialogMenuHost for TestHost {
             .push((text_buf.to_vec(), script_id));
     }
 
-    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) {
+    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) -> bool {
         self.n_5_sub_3_dialog_waits += 1;
+        self.n_5_sub_3_stepping
     }
 
     fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {

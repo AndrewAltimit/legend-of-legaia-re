@@ -190,8 +190,8 @@ pub trait FieldSceneHost {
     /// j epilogue` block at `0x801df098`, i.e. PC += 2.
     fn reset_party_pack_load_state(&mut self) {}
 
-    /// Op 0x4C outer-nibble-E sub-A - call `FUN_8003C7EC` then halt at PC:
-    /// the **scripted game-over trigger**.
+    /// Op 0x4C outer-nibble-E sub-A - call `FUN_8003C7EC` and advance past
+    /// the op: the **scripted game-over trigger**.
     ///
     /// 1-byte instruction `[4C, 0xEA]`. `FUN_8003C7EC` (SCUS, not an
     /// actor-list mutator - an earlier decompile-derived label) is the

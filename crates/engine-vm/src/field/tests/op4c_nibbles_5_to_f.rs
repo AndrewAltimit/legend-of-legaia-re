@@ -855,12 +855,12 @@ fn op_4c_n_e_sub_9_clears_global_and_advances_2() {
 }
 
 #[test]
-fn op_4c_n_e_sub_a_calls_overlay_and_halts() {
+fn op_4c_n_e_sub_a_runs_once_and_advances() {
     let bytecode = [0x4Cu8, 0xEA];
     let mut host = TestHost::default();
     let mut ctx = FieldCtx::default();
     let r = step(&mut host, &mut ctx, &bytecode, 0);
-    assert_eq!(r, StepResult::Halt { final_pc: 0 });
+    assert_eq!(r, StepResult::Advance { next_pc: 2 });
     assert_eq!(host.n_e_sub_a_calls, 1);
 }
 
