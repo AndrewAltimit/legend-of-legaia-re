@@ -271,9 +271,9 @@ The restore raises **current** HP only, so a later leg can open hurt. The next l
 - Only when `course != 0` (behind a `bnez` at `0x801D0EE8`), first zeroes the four gear bytes `+0x75E` / `+0x75F` / `+0x760` / `+0x762` - record `+0x196` armour, `+0x197` head, `+0x198` weapon, `+0x19A` leg gear. "No equipment" is an **Expert / Master** rule; Beginner keeps its gear.
 - The Seru-lock byte `+0x199` and the accessory bytes `+0x19B..+0x19D` are untouched, so a stripped fighter keeps accessories and summon access.
 - It is a **one-shot**: its `jal` at `0x801CEBF0` is on the `_DAT_8007BAC0 == 0` side of the `bnez` at `0x801CEB58`; a re-entered arena jumps to `0x801CEC00` instead, so a leg boundary never refills.
-- Settlement (`0x801D0FDC`) restores the whole saved SC block.
+- The arena copies the `0x2000`-byte SC block out on a contest's first entry (`0x801CEB80`), ahead of this strip, and settlement copies it back (`0x801D0FDC`). Gear, HP, MP, items and gold all return to where the contest found them; only the lead record's two words `+0xE8` / `+0xEC` keep what the contest did (`0x801D0FD4` / `0x801D0FE8`).
 
-Port: `muscle_dome::apply_contest_start_restore`, handed to the host by `DomeContest::take_start_restore` and applied in `World::enter_muscle_dome`.
+Port: `muscle_dome::apply_contest_start_restore`, handed to the host by `DomeContest::take_start_restore` and applied in `World::enter_muscle_dome`, which saves the party window; `World::settle_muscle_contest` restores it.
 
 <a id="contest-settlement--the-one-shot-prize"></a>
 
