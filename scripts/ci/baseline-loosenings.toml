@@ -686,3 +686,10 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1274.7, 1274.8],
   ["counts/native/world_map/retail/allocs_per_frame", 1810.8, 1811.8],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The capture child's PCSX-Redux polygon limit now reads packet axes and applies the emulator's triangle rule (checkCoord3: a pair counts only from a negative corner) in place of the console span. The state's table holds the Hyper Arts burst rays as POLY_GT3 pairs whose lower halves span over 511 rows with no negative corner (order 2373: (237,157), (115,733), (281,1023)); the emulator draws them, the console rule had dropped them. The port now draws the bottom ray too, about 6 px right of retail's and wider at the screen edge, so the burst's own placement is the residual. A/B on one binary over every minigame_ state: only this one moves (0.855 -> 0.848)."
+changes = [
+  ["states/minigame_muscle_dome_retail_skeleton_hyper_arts/image", 0.857, 0.848],
+]
