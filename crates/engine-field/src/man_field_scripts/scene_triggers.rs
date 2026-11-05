@@ -493,7 +493,9 @@ pub fn overworld_portal_sites(
 /// decoder in `legaia_scene_formats::field_disasm`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneFmvTrigger {
-    /// Partition-1 record index whose script carries the op.
+    /// Partition-1 start whose walk reached the op. The op itself sits in a
+    /// partition-2 record the walk runs on into
+    /// (`asset field-op-census --only '4C E2' --context` names it).
     pub record: usize,
     /// Bytecode pc of the op within that record's walk.
     pub pc: usize,
@@ -502,7 +504,7 @@ pub struct SceneFmvTrigger {
 }
 
 /// Recover every inline `0x4C 0xE2` FMV trigger from a scene's MAN by walking
-/// its partition-1 scripts - the same record walk (and the same
+/// on from its partition-1 starts - the same record walk (and the same
 /// over-approximation caveats) as [`scene_destinations`].
 ///
 /// Phantom guard: a literal `4C E2` inside message text can desync-decode a

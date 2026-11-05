@@ -154,7 +154,7 @@ The corpus is codified at `legaia_parity::capture_observations::cutscene_trigger
 
 ## Per-scene trigger assignment (disc-sourced)
 
-Which `fmv_id` each scene fires is **inline script data**, not a runtime value: the trigger op carries its id as a literal `i16` operand, so walking every scene MAN's partition-1 scripts with the field-VM disassembler recovers the full assignment straight from the disc (`legaia_engine_field::man_field_scripts::scene_fmv_triggers`, the `0x3F`-destination walk's sibling; pinned by the disc-gated `scene_fmv_triggers_disc` test over all 88 scene MANs):
+Which `fmv_id` each scene fires is **inline script data**, not a runtime value: the trigger op carries its id as a literal `i16` operand, so walking every scene MAN's scripts with the field-VM disassembler recovers the full assignment straight from the disc. `asset field-op-census extracted/PROT --only '4C E2' --context` lists each op in its record, and every one sits in a **partition-2** record, the kind op `0x44` spawns (`town01` `P2[25]`, `uru` `P2[37]`). `legaia_engine_field::man_field_scripts::scene_fmv_triggers`, the `0x3F`-destination walk's sibling, reaches the bundle MANs' ops by walking on from the partition-1 starts, pinned by the disc-gated `scene_fmv_triggers_disc` test over all 88 of them:
 
 | Scene (extraction entry) | `fmv_id` | movie segment | returns to |
 |---|---:|---|---|
@@ -163,15 +163,15 @@ Which `fmv_id` each scene fires is **inline script data**, not a runtime value: 
 | `0606_deroa`   | 3 | `MV3.STR` 0xe2..0x1a4   | `chitei2` |
 | `0706_chitei2` | 3 | `MV3.STR` 0xe2..0x1a4   | `chitei2` |
 | `0218_dohaty`  | 4 | `MV3.STR` 0x1a5..0x27b  | `map02`   |
+| `0373_taiku`   | 5 | `MV3.STR` 0x27c..0x36a  | stays in `taiku` |
 | `0348_town0d`  | 6 | `MV4.STR`               | `jou`     |
 | `0435_uru`     | 7 | `MV5.STR`               | `uru2`    |
 | `0689_jouine`  | 8 | `MV6.STR`               | `town0e`  |
 
 One trigger op per scene; no other scene MAN carries one. `fmv_id 0` (the `MV1.STR` intro) fires from the title/new-game path rather than a scene script.
-`fmv_id 5` (the fourth `MV3.STR` segment, the "stay in mode 2" slot) appears in no scene MAN partition-1 script, but its **scene attribution is live-confirmed**:
-a poll-tier playthrough capture observes `taiku` entering StrInit (game mode `0x1A`) with `_DAT_8007BA78 = 5` and, exactly per the slot-5 hand-off, returning to
-mode 2 with **no** scene-name write - play resumes in `taiku` itself. What remains only a byte match is the *carrier*: the raw `4C E2` candidate inside
-`taiku`'s uncompressed scene structures (outside partition 1) is the matching suspect for where the op lives. The same captures also observe the `garmel` → 2
+
+`0373_taiku` is the one carrier outside a bundle: it is a DATA_FIELD stream whose first chunk is an uncompressed type-3 MAN, which is why a raw byte sweep sees this op and no other. It is ordinary script, `P2[28]` at `+0x20`: set BGM, raise system flag `0x55A`, `4C E2 05 00 00 00`, then park. A poll-tier playthrough capture observes `taiku` entering StrInit (game mode `0x1A`) with `_DAT_8007BA78 = 5` and, exactly per the slot-5 hand-off, returning to
+mode 2 with **no** scene-name write, so play resumes in `taiku` itself. The same captures also observe the `garmel` → 2
 and `dohaty` → 4 firings at mode `0x1A` with their documented `map01` / `map02` returns. The `town0d` / `uru` / `jouine` triggers play `MV4` / `MV5` / `MV6`; they are
 not vestigial pointers at cut movies.
 

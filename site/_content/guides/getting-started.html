@@ -9,7 +9,7 @@
   <ol class="steps">
     <li><b>Download + verify</b><span>One archive per platform, checked against <code>SHA256SUMS</code>.</span></li>
     <li><b>Check your disc image</b><span><code>disc-extract verify</code> confirms the USA build the tools target.</span></li>
-    <li><b>Extract everything</b><span><code>legaia-extract</code>: about five seconds, roughly 1.1&nbsp;GB, one <code>extracted/</code> tree.</span></li>
+    <li><b>Extract everything</b><span><code>legaia-extract</code>: about five seconds, roughly 900&nbsp;MB, one <code>extracted/</code> tree.</span></li>
     <li><b>Pick a tool</b><span>Per-format extractors, the engine, the viewer, the patcher.</span></li>
   </ol>
   <div class="notice">
@@ -58,7 +58,7 @@
 <section class="doc-section" id="one-shot-extract">
   <h2>3 &middot; Extract everything in one shot</h2>
   <div class="cli"><code>./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted</code></div>
-  <p>On a modern machine this takes about five seconds and writes roughly 1.1&nbsp;GB. A disc-fingerprint check runs first, then eight numbered steps, each logged as <code>step N/8</code>:</p>
+  <p>On a modern machine this takes about five seconds and writes roughly 900&nbsp;MB. A disc-fingerprint check runs first, then eight numbered steps, each logged as <code>step N/8</code>:</p>
   <ol>
     <li>ISO9660 walk - the disc's 45 files.</li>
     <li><code>PROT.DAT</code> split - 1233 entries, named via <code>CDNAME.TXT</code>.</li>
@@ -122,7 +122,9 @@
 ├── PROT.DAT                 - the game's main archive, raw copy
 ├── CDNAME.TXT               - entry name map
 ├── SCUS_942.54              - the game executable (data-table source)
+├── DMY.DAT, SYSTEM.CNF       - the disc's remaining root files
 ├── MOV/                     - FMV movies (MV1.STR ...)
+├── XA/                      - streamed audio, raw sectors
 ├── PROT/                    - one file per PROT entry, plus categorize.json
 ├── streaming/               - sub-assets unpacked from streaming containers
 ├── XA_WAV/                  - streamed audio, one WAV per channel

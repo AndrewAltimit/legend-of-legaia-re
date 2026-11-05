@@ -348,9 +348,9 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --ro
 <section class="doc-section" id="scripts">
   <h2>9 &middot; Read the game's scripts</h2>
   <p>Every scene - who says what, which door leads where, what a chest holds - is driven by the field/event VM's bytecode. Its disassembler is a subcommand of the release <code>asset</code> binary:</p>
-  <div class="cli"><code>./asset field-disasm scan-prot --prot extracted/PROT.DAT</code></div>
+  <div class="cli"><code>./asset field-op-census extracted/PROT --only '4C E2' --context</code></div>
   <div class="cli"><code>./asset field-disasm file &lt;extracted-script-body&gt;</code></div>
-  <p><code>scan-prot</code> sweeps the archive for event scripts and FMV triggers; <code>file</code> walks one raw script linearly. For a specific scene's per-scene scripts (LZS-compressed inside the scene's MAN sub-asset), the engine has the direct path:</p>
+  <p><code>field-op-census</code> walks every scene's scripts and counts each opcode, or with <code>--only</code> shows one opcode in place (here the FMV triggers); <code>file</code> walks one raw script linearly. For a specific scene's per-scene scripts (LZS-compressed inside the scene's MAN sub-asset), the engine has the direct path:</p>
   <div class="cli"><code>./legaia-engine man-scripts --scene town01 --disc "/path/to/disc.bin"</code></div>
   <div class="see-also">
     <span class="see-also-label">Reference</span>

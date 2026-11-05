@@ -122,13 +122,13 @@
       <tr><td><code>0095_garmel</code></td><td>2</td><td><code>MV3.STR</code> 1..0xe1</td><td><code>map01</code></td></tr>
       <tr><td><code>0606_deroa</code>, <code>0706_chitei2</code></td><td>3</td><td><code>MV3.STR</code> 0xe2..0x1a4</td><td><code>chitei2</code></td></tr>
       <tr><td><code>0218_dohaty</code></td><td>4</td><td><code>MV3.STR</code> 0x1a5..0x27b</td><td><code>map02</code></td></tr>
-      <tr><td><code>taiku</code> (live-confirmed)</td><td>5</td><td><code>MV3.STR</code> 0x27c..0x36a</td><td>caller scene</td></tr>
+      <tr><td><code>0373_taiku</code></td><td>5</td><td><code>MV3.STR</code> 0x27c..0x36a</td><td>caller scene</td></tr>
       <tr><td><code>0348_town0d</code></td><td>6</td><td><code>MV4.STR</code></td><td><code>jou</code></td></tr>
       <tr><td><code>0435_uru</code></td><td>7</td><td><code>MV5.STR</code></td><td><code>uru2</code></td></tr>
       <tr><td><code>0689_jouine</code></td><td>8</td><td><code>MV6.STR</code></td><td><code>town0e</code></td></tr>
     </tbody>
   </table>
-  <p>One trigger op per scene; no other scene MAN carries one. <code>fmv_id 0</code> (the intro) fires from the title/new-game path rather than a scene script. Slot 5 appears in no scene MAN partition-1 script; a live playthrough capture pins <code>taiku</code> as the scene (it enters the movie mode with id 5 and resumes in <code>taiku</code> itself, exactly per the slot-5 hand-off), while the byte-level carrier of its trigger op sits in <code>taiku</code>'s uncompressed scene structures outside partition 1 - the one open detail.</p>
+  <p>One trigger op per scene; no other scene MAN carries one. <code>fmv_id 0</code> (the intro) fires from the title/new-game path rather than a scene script. Every op sits in a partition-2 record (<code>asset field-op-census --only '4C E2' --context</code> lists them). <code>taiku</code>'s MAN is the one outside a bundle, the uncompressed type-3 chunk of streaming entry 0373, with the op in <code>P2[28]</code>; a live playthrough capture shows it entering the movie mode with id 5 and resuming in <code>taiku</code> itself, exactly per the slot-5 hand-off.</p>
 </section>
 
 <section class="doc-section" id="dir-cache">

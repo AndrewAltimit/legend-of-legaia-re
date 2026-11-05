@@ -3205,7 +3205,7 @@ The library is `legaia_scene_formats::field_disasm::{decode, LinearWalker, find_
 > `0x4C 0xE2` FMV trigger these modes report inside a prescript record is a
 > **false positive** (a stager-record byte that equals `0x4C` followed by one
 > equal to `0xE2`). The genuine FMV triggers are the literal `fmv_id` operands
-> in the scene MAN scripts, recovered statically for all eight trigger scenes
+> in the scene MAN scripts, recovered statically for all nine trigger scenes
 > (`man_field_scripts::scene_fmv_triggers`; see
 > [`cutscene.md`](cutscene.md)), plus the disc-decoded `fmv_dispatch` table.
 
@@ -3221,7 +3221,7 @@ A grep across every Ghidra dump in the corpus for writes to the global game-mode
 
 **`FUN_801E30E4` has zero static callers.** It is a label inside `FUN_801DE840`, not a callable subroutine. Ghidra promotes it to a `FUN_` symbol because the JT entry at `0x801CF008[2]` resolves there; the actual control flow is the dispatch chain above. A direct `grep -rn 'jal 0x801e30e4' ghidra/scripts/funcs/` returns zero matches.
 
-The per-scene trigger assignment is **disc-sourced**: the `0x4C 0xE2` ops live LZS-compressed inside each scene's MAN (which is why a raw bytewise PROT scan misses them - it finds only `PROT[371] taiku, fmv_id=5` in a non-MAN structure). Walking the decompressed partition-1 scripts recovers the literal `fmv_id` operands for all eight trigger scenes (`town01`, `garmel`, `deroa`, `chitei2`, `dohaty`, `town0d`, `uru`, `jouine`).
+The per-scene trigger assignment is **disc-sourced**: the `0x4C 0xE2` ops live LZS-compressed inside each scene's MAN (which is why a raw bytewise PROT scan misses them, and finds only entry 0373 `taiku`, `fmv_id=5`, whose MAN is an uncompressed stream chunk). Walking the decompressed scripts recovers the literal `fmv_id` operands for all nine trigger scenes (`town01`, `garmel`, `deroa`, `chitei2`, `dohaty`, `taiku`, `town0d`, `uru`, `jouine`), each in a partition-2 record.
 The FMV overlay's own seven-label scene list at `0x801CE8AC` (`town0b`, `map01`, `chitei2`, `map02`, `jou`, `uru2`, `town0e`) is the **post-play return-scene** table the master dispatch `FUN_801CEA3C` hands control to after playback, not the trigger-scene set. See [`cutscene.md`](cutscene.md) and [`../formats/str-fmv-table.md`](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced).
 
 ## See also

@@ -25,12 +25,15 @@ use std::path::PathBuf;
         also resolve against the current directory - run from the same directory \
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
-        Playing:      play-window, play-str, config, save, load, packs\n  \
+        Playing:      play-window, launch, play-str, config, save, load, packs\n  \
         Exploring:    list-scenes, info, record, replay, export-glb, mesh-catalog\n  \
         Diagnostics (engine development; not needed to play):\n    \
-        scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
-        parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
-        sim-trace, retail-compare, cast-sequence-score\n    \
+        scene / script analysis:  play, clut-trace, man-scripts, xa-cue, entry-bench\n    \
+        parity:                   gte-replay, scenarios\n    \
+        parity oracles, in a `--features oracles` build only:\n                              \
+        vram-oracle, mode-trace, audio-trace, pcm-trace, sim-trace,\n                              \
+        retail-compare, cast-sequence-score, audio-sweep, pcm-retail,\n                              \
+        seq-differential, cue-differential\n    \
         synthetic state drivers:  inventory, equip, title, save-select, encounter,\n                              \
         target-pick, chain-editor, seru-capture"
 )]

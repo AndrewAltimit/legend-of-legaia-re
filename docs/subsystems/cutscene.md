@@ -897,9 +897,10 @@ the mode byte before any sub-call (see [`boot.md` § Tick function](boot.md#tick
 ### The per-scene trigger assignment is disc-sourced (the "runtime-reconstructed" reading is falsified)
 
 The scene scripts live **LZS-compressed** inside each scene's MAN, so a raw bytewise PROT scan
-cannot see the trigger ops. Decompressing every scene MAN and walking its partition-1 scripts
-with the field-VM disassembler (`man_field_scripts::scene_fmv_triggers`) recovers the full
-assignment statically:
+cannot see the trigger ops. Decompressing every scene MAN and walking its scripts with the
+field-VM disassembler (`asset field-op-census --only '4C E2' --context`,
+`man_field_scripts::scene_fmv_triggers`) recovers the full assignment statically; each op sits
+in a partition-2 record:
 
 | Scene | `fmv_id` |
 |---|---|
@@ -907,6 +908,7 @@ assignment statically:
 | `garmel` | 2 |
 | `deroa`, `chitei2` | 3 |
 | `dohaty` | 4 |
+| `taiku` (entry 0373's streamed MAN) | 5 |
 | `town0d` | 6 |
 | `uru` | 7 |
 | `jouine` | 8 |
@@ -916,11 +918,10 @@ One op per scene; no other scene MAN carries one. Pinned by the disc-gated
 [`str-fmv-table.md` § Per-scene trigger assignment](../formats/str-fmv-table.md#per-scene-trigger-assignment-disc-sourced).
 The trigger bytecode is not reconstructed at scene load - the ops are simply compressed on disc.
 
-Outside the MAN-carried scripts, a raw sweep also finds in-range `4C E2` byte candidates in
-`taiku` (`fmv_id 5` - the fourth `MV3.STR` segment, the one slot with a "stay in the current
-scene" hand-off, which fits a `taiku` trigger) and `opmap01` / `koin1b` (`fmv_id 7`), in
-uncompressed regions of non-MAN scene structures. These are uncontextualized byte matches (the
-same sweep "finds" triggers inside VAB sample data), kept as candidates rather than pins.
+`taiku` is the one trigger a raw sweep does see, because its MAN is the uncompressed type-3 chunk
+of the streaming entry 0373 rather than a bundle's LZS slot. The sweep's other in-range hits
+(`koin1b` `fmv_id 7`, and matches inside `level_up`, `card_data` and VAB sample data) decode as no
+script: the census counts no clean `4C E2` in any of them.
 
 ### Per-STR FMV trigger corpus
 
