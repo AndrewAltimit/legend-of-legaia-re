@@ -826,7 +826,9 @@ def gate_env(p: Plan, g: Gate) -> dict[str, str]:
     if g.cwd == p.clean:
         env.update(p.ci_env)
     env.update(g.env)
-    if g.cwd == p.clean and "CARGO_TARGET_DIR" in p.ci_env:
+    # The selector takes the cache root and names the subdirectory; a resumed
+    # run's saved choice must not be handed back to it as the root.
+    if g.cwd == p.clean and "CARGO_TARGET_DIR" in p.ci_env and "select-ci-target-dir" not in g.cmd:
         env["CARGO_TARGET_DIR"] = p.ci_env["CARGO_TARGET_DIR"]
     return env
 
