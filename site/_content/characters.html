@@ -346,6 +346,8 @@ canvas.char-viewer-canvas:active { cursor: grabbing; }
   </div>
 
   <h3 id="equipment-loadout">Equipment is bone geometry, not a prop</h3>
+  <p>The <strong>field form</strong> wears the Ra-Seru too, on one arm. Each mesh on the disc carries that arm twice beside the live parts: with the Ra-Seru and bare. The loader picks one from the character's Ra-Seru slot, and a script re-picks in the scene that hands the Ra-Seru over, so the arm changes on screen. Vahn's bracer, Noa's green wedge and Gala's blue glove are that one swap.</p>
+
   <p>The <strong>battle form</strong> runs the assembly a real battle runs. Each hero's battle file carries a five-section table - body, head, weapon, Ra-Seru, feet, though <em>not in the same order for every character</em> - and each section lists one entry per equippable item. At battle load the game matches those entries against the equipment in the save record and splices the winning sections' 3D objects into one model. Clicking a piece in the equipment panel does exactly that, on your disc, in the browser.</p>
   <p>The finding worth stating plainly: <strong>there is no item object</strong>. Equipping a Survival Knife does not attach a knife - it swaps in a re-authored right-hand object with a blade built into it (Vahn's hand goes from 40 vertices to 71; a two-hander takes it to 109). Body armour is the same trick and can make an object <em>smaller</em>: it is a re-sculpt, not a layer. A full endgame set re-authors most of the body. So the main <code>.glb</code> download is always the whole character, named for what it is wearing.</p>
 
