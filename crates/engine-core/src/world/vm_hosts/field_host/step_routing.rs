@@ -52,6 +52,19 @@ pub(in crate::world) fn field_step_routed(
     bytecode: &[u8],
     pc: usize,
 ) -> vm::field::StepResult {
+    // A cross-context kill, from a runner standing in for the target: `cave01`
+    // P1[2]'s hand-off talk retires placements `0x04..=0x08` with `B1 <id> 03`.
+    // Stepped on the talker's context it would retire the talker.
+    // REF: FUN_801DE840 (op 0x31, cross-context prefix), FUN_8003C83C
+    if bytecode.get(pc) == Some(&0xB1)
+        && bytecode.get(pc + 2).is_some_and(|b| b & 0x1F == 3)
+        && let Some(&target) = bytecode.get(pc + 1)
+        && target != legaia_engine_scene::field_env::PLAYER_ANCHOR_TARGET
+        && target != 0xFB
+    {
+        host.world.field_vm.pending_retire_ids.push(target);
+        return FieldStepResult::Advance { next_pc: pc + 3 };
+    }
     // `CC F8 C2 <b>`: the player's object-effect gate `+0x42`, on the same
     // stand-in context the scale op uses, seeded from and written back to the
     // world's player word. `CC F8 45 ..` (the player's look rotation) runs on

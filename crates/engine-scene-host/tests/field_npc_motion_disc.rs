@@ -171,7 +171,8 @@ fn no_scene_walks_a_placement_without_an_ambient_stream() {
         entered += 1;
         for (&slot, &(seat, disp)) in &seen {
             let walks = host.world.npcs.ambient.get(&slot).is_some_and(|c| c.walks);
-            if !walks && disp > 0 {
+            // A retired placement parks in the hide box: gone, not walking.
+            if !walks && disp > 0 && !host.world.field_placement_retired(slot) {
                 failures.push(format!("{name} P1[{slot}] left {seat:?} by {disp}"));
             }
         }

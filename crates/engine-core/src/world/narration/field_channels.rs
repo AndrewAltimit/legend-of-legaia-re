@@ -432,6 +432,13 @@ impl World {
         self.resync_ambient_start_headings();
     }
 
+    /// Whether placement `slot`'s context has retired this visit.
+    pub fn field_placement_retired(&self, slot: u8) -> bool {
+        self.field_vm
+            .retired_placements
+            .contains(&usize::from(slot))
+    }
+
     /// Owe the next frame a [`Self::apply_party_mesh_swap`].
     pub fn request_party_mesh_swap(&mut self) {
         self.field_vm.party_mesh_swap_pending = true;
@@ -443,11 +450,25 @@ impl World {
     ///
     /// PORT: FUN_8002519C (the retire arm, placement contexts)
     pub(crate) fn sweep_field_channel_lifetimes(&mut self) {
-        if std::mem::take(&mut self.field_vm.party_mesh_swap_pending) {
-            self.apply_party_mesh_swap();
+        // Mid-scene the hosts have built their rigs: tell them.
+        if std::mem::take(&mut self.field_vm.party_mesh_swap_pending)
+            && self.apply_party_mesh_swap()
+        {
+            self.locomotion.player_rig_dirty = true;
+        }
+        // The re-seat resolves first: a context killed this frame still
+        // answers `FUN_8003C83C`, the node stays linked for the walk after
+        // next, so `4C D2` on it does nothing.
+        self.run_pending_placement_respawns();
+        for target in std::mem::take(&mut self.field_vm.pending_retire_ids) {
+            if let Some(ci) =
+                legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)
+            {
+                self.field_vm.channels[ci].ctx.flags |=
+                    legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
+            }
         }
         self.retire_killed_field_channels();
-        self.run_pending_placement_respawns();
     }
 
     /// Retire every placement context carrying

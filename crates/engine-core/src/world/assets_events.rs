@@ -55,11 +55,11 @@ impl World {
     /// whether its character holds a Ra-Seru. Retail runs it from the party
     /// pack load (`FUN_8001E890`, `jal` at `0x8001EBB4`) and from op `4C 3F`
     /// (`0x801E1128`), the beats that grant or take one away, so a change made
-    /// in a menu shows at the next of those. A rewritten lead raises the rig
-    /// signal both hosts drain.
+    /// in a menu shows at the next of those. Returns whether a mesh changed.
     ///
     /// PORT: FUN_8001EBEC
-    pub fn apply_party_mesh_swap(&mut self) {
+    pub fn apply_party_mesh_swap(&mut self) -> bool {
+        let mut changed = false;
         use legaia_actor_formats::character_pack::equipment_swap;
         for patch in equipment_swap::ACTIVE_PARTY_SLOTS {
             let slot = usize::from(patch.slot);
@@ -79,9 +79,10 @@ impl World {
                     continue;
                 };
                 *g = std::sync::Arc::new(legaia_engine_scene::model_bank::GlobalTmd { tmd, raw });
-                self.locomotion.player_rig_dirty = true;
+                changed = true;
             }
         }
+        changed
     }
 
     /// Resolve a global TMD by pool index. Mirrors the retail field-VM

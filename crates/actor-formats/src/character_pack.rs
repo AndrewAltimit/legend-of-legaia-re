@@ -514,21 +514,21 @@ mod tests {
         assert_eq!(tmd[EQUIP_GROUP_NONZERO_OFFSET], 10);
         assert_eq!(tmd[EQUIP_GROUP_ZERO_OFFSET], 11);
 
-        // Vahn patch with equip_byte=1 should copy group 10's bytes over group 0.
+        // Vahn patch with equip_byte=1 copies group 10 over group 3.
+        let group = |g: usize| FIRST_GROUP_DESCRIPTOR_OFFSET + g * GROUP_DESCRIPTOR_BYTES;
         let v = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[0], 1);
-        assert_eq!(v[FIRST_GROUP_DESCRIPTOR_OFFSET], 10);
-        // Other groups untouched.
-        assert_eq!(v[FIRST_GROUP_DESCRIPTOR_OFFSET + GROUP_DESCRIPTOR_BYTES], 1);
+        assert_eq!(v[group(3)], 10);
+        // Other groups untouched: group 0 is Vahn's head.
+        assert_eq!(v[group(0)], 0);
+        assert_eq!(v[group(1)], 1);
 
-        // Noa patch with equip_byte=0 should copy group 11 over group 3.
+        // Noa patch with equip_byte=0 copies group 11 over group 5.
         let n = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[1], 0);
-        let dst = FIRST_GROUP_DESCRIPTOR_OFFSET + 3 * GROUP_DESCRIPTOR_BYTES;
-        assert_eq!(n[dst], 11);
+        assert_eq!(n[group(5)], 11);
 
-        // Gala patch with equip_byte=0xFF should copy group 10 over group 5.
+        // Gala patch with equip_byte=0xFF copies group 10 over group 3.
         let g = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[2], 0xFF);
-        let dst = FIRST_GROUP_DESCRIPTOR_OFFSET + 5 * GROUP_DESCRIPTOR_BYTES;
-        assert_eq!(g[dst], 10);
+        assert_eq!(g[group(3)], 10);
     }
 
     #[test]
