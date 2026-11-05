@@ -1993,7 +1993,11 @@ pub fn case6_walk_passes(ring: &[u8; 16], shot_passes: usize) -> Vec<i32> {
     // A step-`2` walk runs past the ring's end; its oldest slot stands in.
     let step = |slot: usize| i32::from(ring[slot.min(15)]);
     let terminator = shot_passes + 1;
-    let mut passes = vec![if shot_passes == 1 { 0 } else { step(terminator) }];
+    let mut passes = vec![if shot_passes == 1 {
+        0
+    } else {
+        step(terminator)
+    }];
     let mut drained = 0;
     let mut slot = terminator + 1;
     while drained <= CAST_WAIT_TIMER {

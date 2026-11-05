@@ -250,6 +250,16 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
 
+### A walked-back pose about twenty units of yaw off
+
+`open` Two captures peak on a yaw beside the walk-back's (`displayed_cam_live_steps`): `battle_geremi_ogre_strike` at about `190` against `168` (image `.88` to `.99`), and `battle_map01_gomboo_steal_mid_cast` at `3610` against `3631` (`.82` to `.91`). Neither is pinned, since nothing names the gap.
+
+Recordings confirm the yaw half of the law (`inc = ceil(gap_before / 0xC)`, the endpoint drifting with the counter), which leaves the focus: its endpoint chases walking bodies, and a focus error reads as a pan. The first step is a retail `cam.csv` across a strike's walk, comparing the recorded focus two passes back with what the walk-back gives, using `walker_end_shift`. `battle_map02_poisonous_worm_strike` and `battle_nilboa_aluru_v2_strike` peak on the law's yaw, so their residue is not the camera. Grade `capture`.
+
+### Xain's frame at Bloody Horns' band entry
+
+`open` `battle_tunnelc_xain_bloody_horns_mid_cast` (image `.72`) shows Xain square to the camera with a translucent body behind him. The engine turns him about twenty degrees and holds a different ghost seat (seat 1, where the RAM's bits read seat 0). No yaw over the whole turn exceeds `.76`, and neither of the state's ordering tables is the frame on screen: record 0 is the next pass (clip `1`, cursor `16`) and record 1 is still filling. So the screen's pass has left no packets in the state. A retail film of the walk into `0x70` from a state a round earlier would name its pose. Grade `capture`.
+
 ### A near body the child draws opaque
 
 `open` `battle_uru2_nurga_glare_mid_cast` holds a near body that retail draws faint. The body is the second Nurga

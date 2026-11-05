@@ -2985,7 +2985,11 @@ presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
 
 The charge record's part calls the stager, which seats the column; arm 1 hides the
 party, then cuts up to pitch `0x200` over the origin and seats three records at each of
-eight ring points, a `rand() % 8` slot landing on each one's `+0x54`.
+eight ring points, a `rand() % 8` slot landing on each one's `+0x54`. The hide is two
+stores per seat on every held pass, `+0x04 = 0` and `+0x21C = 0xFF`
+(`0x801F6B94`, `0x801F6BA0`), and the cut writes `0x20080200` and `0` back
+(`0x801F6C70`, `0x801F6C7C`). The draw tick reads the colour word, so the byte alone
+hides nothing.
 
 ### The stagers of the enemy cells
 
