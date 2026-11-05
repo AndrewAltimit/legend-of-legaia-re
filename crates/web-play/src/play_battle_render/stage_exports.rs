@@ -238,6 +238,54 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
+    /// The cells of the ground grid the emitter draws this frame
+    /// (`battle_ground_grid::cell_mask` under the live pose), PSX mode only,
+    /// as the native window's `sync_battle_ground_ambient` takes them.
+    fn battle_ground_mask(&self, psx: bool) -> Vec<bool> {
+        if !psx || !self.play_battle_active() {
+            return Vec::new();
+        }
+        let cells = legaia_scene_formats::battle_backdrop::GRID_CELLS as i16;
+        legaia_engine_battle_vm::battle_ground_grid::cell_mask(
+            &self.battle_cam_pose(),
+            BATTLE_WORLD_SCALE,
+            cells,
+            cells,
+        )
+    }
+
+    /// A change key for [`Self::play_battle_ground_culled_positions`]: `0`
+    /// when every cell draws (clean rendering, no battle), otherwise a hash
+    /// of the drawn-cell mask. The page re-reads the positions when it moves.
+    pub fn play_battle_ground_cull_key(&self, psx: bool) -> u32 {
+        let mask = self.battle_ground_mask(psx);
+        if mask.iter().all(|&k| k) {
+            return 0;
+        }
+        mask.iter().fold(0x811C_9DC5u32, |h, &k| {
+            (h ^ u32::from(k)).wrapping_mul(0x0100_0193)
+        }) | 1
+    }
+
+    /// [`Self::play_battle_ground_positions`] with every cell retail's two
+    /// culls drop collapsed onto its first vertex, so it draws nothing: the
+    /// page's twin of the native window's masked index list.
+    pub fn play_battle_ground_culled_positions(&self, psx: bool) -> Vec<f32> {
+        let mut pos = self.play_battle_ground_positions();
+        let mask = self.battle_ground_mask(psx);
+        // Sixteen vertices a cell (four quads), three floats a vertex.
+        const CELL_FLOATS: usize = 16 * 3;
+        for (cell, keep) in pos.chunks_mut(CELL_FLOATS).zip(mask.iter()) {
+            if !*keep {
+                let first = [cell[0], cell[1], cell[2]];
+                for v in cell.chunks_mut(3) {
+                    v.copy_from_slice(&first);
+                }
+            }
+        }
+        pos
+    }
+
     /// Per-vertex `[r, g, b, 255]` packet colours of the ground grid - the
     /// modulation half of retail's `texel * colour / 128`. The colour is the
     /// **live** battle ambient `0x8007B7B0` (`World::battle_ambient_base`

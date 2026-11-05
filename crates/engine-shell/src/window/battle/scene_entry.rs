@@ -240,6 +240,7 @@ impl PlayWindowApp {
                         self.battle_ground_mesh = Some(self.meshes.len());
                         self.battle_ground_rgbc =
                             legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED;
+                        self.battle_ground_mask = Vec::new();
                         // The grid's GTE depth cue: far colour per stage
                         // class (resolved in `battle_stage::resolve_battle_stage`), ramped
                         // by the emitter's per-vertex `SZ >> 2` law at draw

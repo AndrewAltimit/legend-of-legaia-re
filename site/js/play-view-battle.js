@@ -195,6 +195,20 @@
             b.groundAmbientKey = ambientKey;
           }
         }
+        /* Retail's two cell culls (`battle_ground_grid::cell_mask`, PSX mode
+         * only): the far bracket and the screen reject. The engine hands the
+         * grid with each dropped cell collapsed when the drawn set moves - the
+         * native window's masked index list. Guarded against a cached WASM
+         * without the export. */
+        if (typeof rt.play_battle_ground_cull_key === 'function') {
+          const psx = !!this.psxRender;
+          const cullKey = rt.play_battle_ground_cull_key(psx);
+          if (cullKey !== (b.groundCullKey || 0)) {
+            this.renderer.updateSceneMeshPositions(b.ground,
+              rt.play_battle_ground_culled_positions(psx));
+            b.groundCullKey = cullKey;
+          }
+        }
         /* A cast holding `ctx[+0x278]` bit 0 on the floor ambient takes the
          * grid off the screen (`World::battle_ground_grid_drawn`). Guarded
          * against a cached WASM without the export. */
@@ -560,6 +574,7 @@
           rt.play_battle_backdrop_spun_cba_tsb(), rt.play_battle_backdrop_spun_indices(),
           rt.play_battle_backdrop_spun_flat_rgba());
       }
+      b.groundCullKey = 0;
       b.ground = up(BATTLE_MESH_BASE + 1, rt.play_battle_ground_positions(),
         rt.play_battle_ground_uvs(), rt.play_battle_ground_cba_tsb(),
         rt.play_battle_ground_indices(),

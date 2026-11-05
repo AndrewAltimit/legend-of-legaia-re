@@ -182,24 +182,46 @@ impl PlayWindowApp {
             grid::grid_far_colour(base, self.battle_stage_outdoor).map(|c| f32::from(c) / 255.0),
         );
         let near = grid::battle_ambient_colour(base);
-        if near == self.battle_ground_rgbc {
+        // Retail's two cell culls (`grid::cell_mask`): the far bracket and the
+        // screen reject decide which cells the emitter draws this frame. PSX
+        // mode only; clean rendering draws the whole plane.
+        let mask = if self.psx_render {
+            let cells = legaia_scene_formats::battle_backdrop::GRID_CELLS as i16;
+            grid::cell_mask(
+                &self.session.host.world.battle_cam_pose(),
+                legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                cells,
+                cells,
+            )
+        } else {
+            Vec::new()
+        };
+        if near == self.battle_ground_rgbc && mask == self.battle_ground_mask {
             return;
         }
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
         let g = build_battle_ground_grid(near);
+        let indices = grid::masked_indices(&g.indices, &mask);
+        if indices.is_empty() {
+            // Every cell culled: the grid is off the frame
+            // (the redraw skips its draw), and wgpu takes no empty buffer.
+            self.battle_ground_mask = mask;
+            return;
+        }
         match r.upload_vram_mesh(
             &g.positions,
             &g.uvs,
             &g.cba_tsb,
             &g.normals,
             &g.colors,
-            &g.indices,
+            &indices,
         ) {
             Ok(m) => {
                 self.meshes[gi] = m;
                 self.battle_ground_rgbc = near;
+                self.battle_ground_mask = mask;
             }
             Err(e) => log::warn!("play-window: battle ground grid re-colour: {e:#}"),
         }

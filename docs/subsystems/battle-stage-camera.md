@@ -193,11 +193,26 @@ reproducing retail.
 Only `1` emits: pass 2 skips on both the `bltz` and the `beq zero`
 (`0x801d04b0` / `0x801d04b8`). Pass 1 has no screen-space test.
 
-Both are ported and tested (`battle_backdrop::classify_cell` /
-`cell_offscreen`), and the port's grid builder applies neither. They remove
-only geometry that is off-screen or behind the camera, which a depth-buffered
-projection discards anyway, and the port uploads the grid once while the camera
-orbits over it.
+Under PSX mode both hosts run the two culls every frame under the live
+camera: `battle_ground_grid::cell_mask` projects each cell's probe point and
+outer lattice corners at retail's `320 x 240` framing, through the GTE's
+register limits, and returns the cells pass 2 would emit. The native window
+re-uploads the grid with the dropped cells' indices left out
+(`masked_indices`) when the set moves, and skips the draw when every cell is
+dropped; the play page re-sends the grid's positions with each dropped cell
+collapsed to a point (`play_battle_ground_cull_key` /
+`play_battle_ground_culled_positions`). Clean rendering draws the whole
+plane.
+
+The culls are near enough to neutral at the corpus's framings. Every kept
+cell covers the floor the frame shows; a dropped cell is past the far
+bracket, under the backdrop shell, or off the screen. Across the battle
+captures the image score moves at no state, and the mean error moves on
+three, all under `0.07`. The grid was also not the cause of
+`battle_vell_lippian_strike`'s `.001` drop when the capture child's span
+rule was corrected: that is a ghosted near-lens prim of monster seat 4
+(retail order `1360`, a `POLY_FT4` on tpage `0x76`, ABR `3`), which the
+emulator draws and the port now draws too, a little brighter.
 
 <a id="the-grids-near-colour-and-cue-depth"></a>
 
