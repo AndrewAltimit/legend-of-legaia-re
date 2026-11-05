@@ -145,6 +145,16 @@ impl World {
                     self.casting.module_phase,
                 )
             });
+        let measured = measured.or_else(|| {
+            let spell = self
+                .casting
+                .capture_spell
+                .filter(|_| state == S::MagicCapturePhase2.as_byte())?;
+            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step(
+                spell,
+                self.casting.module_phase,
+            )
+        });
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
             (None, true) => DEFAULT_BATTLE_FRAME_STEP,
