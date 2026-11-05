@@ -336,8 +336,19 @@ impl World {
                 self.open_battle_command(actor);
             }
             _ => {
-                // Still browsing / target-selecting - keep the menu open.
+                // Still browsing / target-selecting - keep the menu open. The
+                // target step is retail's own state `0x64` (`0x801D1958`).
+                use legaia_engine_battle_menus::battle_flow::BattleFlowState as Flow;
+                let flow = match menu.state {
+                    InventoryUseState::TargetSelect { .. } => Flow::TargetConfirm,
+                    _ => Flow::ItemWindow,
+                };
                 self.battle.item_menu = Some(menu);
+                if self.battle.set_battle_flow(flow) {
+                    self.battle.item_menu = None;
+                    let actor = self.battle_ctx.active_actor;
+                    self.open_battle_command(actor);
+                }
             }
         }
     }

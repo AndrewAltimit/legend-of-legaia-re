@@ -160,8 +160,7 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         // A confirmed target commits the action: retail's target cursor (0x5A)
         // goes straight to the commit state (0x6E) once the last member has
         // picked. Its 0x64 "target confirm" is the *item window's* own target
-        // step, which the engine runs inside `legaia_engine_menus::inventory_use` - so
-        // nothing here produces `TargetConfirm` yet.
+        // step, which `World::tick_battle_item_menu` stands the flow on.
         Some(CommandPhase::Confirmed { .. }) => BattleFlowState::CommitBegin,
         // The commit-confirm screen itself, and the two exits it resolves to
         // (both leave the state the same frame).
@@ -171,7 +170,9 @@ pub fn flow_state_for(phase: Option<&CommandPhase>, menu: BattleMenuKind) -> Bat
         Some(CommandPhase::OpenItemMenu) => BattleFlowState::ItemWindow,
         Some(CommandPhase::OpenSpellMenu) => BattleFlowState::MagicWindow,
         Some(CommandPhase::OpenArtsMenu) => BattleFlowState::ArtsCommandEntry,
-        Some(CommandPhase::RunAway) => BattleFlowState::EscapePrompt,
+        Some(CommandPhase::RunAway) | Some(CommandPhase::RunConfirm { .. }) => {
+            BattleFlowState::EscapePrompt
+        }
         Some(CommandPhase::SpiritGuard) | Some(CommandPhase::Aborted) => {
             BattleFlowState::CommitBegin
         }

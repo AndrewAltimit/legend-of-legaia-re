@@ -1827,7 +1827,7 @@ impl RetailMenu {
                 map_display: false,
             });
         }
-        if let Some(path) = shop_path(subscreen) {
+        if let Some(path) = shop_path(ram, subscreen) {
             return Ok(Self {
                 subscreen,
                 row: FieldMenuRow::Items,
@@ -1847,7 +1847,8 @@ impl RetailMenu {
         }
         let (row, equip_depth) = match subscreen {
             MENU_ITEMS_USE | MENU_ITEMS_THROW => (FieldMenuRow::Items, 0),
-            MENU_SPELL_LIST => (FieldMenuRow::Magic, 0),
+            MENU_ITEMS_APPLY_ALL..=MENU_ITEMS_INCENSE => (FieldMenuRow::Items, 0),
+            MENU_SPELL_LIST | MENU_SPELL_GROUP | MENU_SPELL_TARGET => (FieldMenuRow::Magic, 0),
             MENU_EQUIP_PICK => (FieldMenuRow::Equip, 0),
             MENU_EQUIP_SLOTS => (FieldMenuRow::Equip, 1),
             MENU_EQUIP_CANDIDATES => (FieldMenuRow::Equip, 2),
@@ -1882,6 +1883,42 @@ fn pause_path(ram: &[u8], subscreen: u8) -> Vec<legaia_engine_system::input::Pad
         MENU_ITEMS_USE => vec![P::Cross],
         MENU_ITEMS_THROW => vec![P::Down, P::Cross],
         MENU_SPELL_LIST => vec![P::Cross],
+        // Past the Use command: the hand walks the list to the row the state
+        // confirmed. Retail's selected payload `_DAT_8007BB88` is the row's bag
+        // slot, except where a special route has reused the word.
+        MENU_ITEMS_APPLY_ALL | MENU_ITEMS_APPLY_ONE => {
+            let mut path = vec![P::Cross];
+            path.extend(list_walk(game_anchors::u32_at(ram, MENU_SELECTED) as usize, 12));
+            path.push(P::Cross);
+            path
+        }
+        MENU_ITEMS_DOOR_LIGHT | MENU_ITEMS_DOOR_WIND | MENU_ITEMS_INCENSE => {
+            let id = 0x88 + (subscreen - MENU_ITEMS_DOOR_LIGHT);
+            let slot = (0..256u32)
+                .find(|i| game_anchors::u8_at(ram, BAG + i * 2) == id)
+                .unwrap_or(0);
+            let mut path = vec![P::Cross];
+            path.extend(list_walk(slot as usize, 12));
+            path.push(P::Cross);
+            path
+        }
+        // The caster picker's cursor, then the spell's row in that member's
+        // learned list (`record[+0x13C]` count, the ids from `+0x13D`).
+        MENU_SPELL_GROUP | MENU_SPELL_TARGET => {
+            let member = game_anchors::u32_at(ram, MENU_CURSOR_B) & 0xFFF;
+            let spell = game_anchors::u8_at(ram, MENU_SELECTED);
+            let char_id = game_anchors::u8_at(ram, PARTY_LIST + member);
+            let record = CHAR_RECORDS + u32::from(char_id.max(1) - 1) * CHAR_RECORD_STRIDE;
+            let count = u32::from(game_anchors::u8_at(ram, record + 0x13C));
+            let row = (0..count)
+                .find(|i| game_anchors::u8_at(ram, record + 0x13D + i) == spell)
+                .unwrap_or(0);
+            let mut path = vec![P::Down; member as usize];
+            path.push(P::Cross);
+            path.extend(list_walk(row as usize, 12));
+            path.push(P::Cross);
+            path
+        }
         MENU_STATUS => {
             // `FUN_801DA2A0`: the party cursor `DAT_801E46C4`, the page cursor
             // `DAT_801E46C0` in its two columns of four (fold `5..=8` to
@@ -1903,16 +1940,45 @@ fn pause_path(ram: &[u8], subscreen: u8) -> Vec<legaia_engine_system::input::Pad
     }
 }
 
+/// The presses that walk a paged list's hand from its first row to `row`:
+/// `Right` turns a page and keeps the row, `Down` steps the row.
+fn list_walk(row: usize, page: usize) -> Vec<legaia_engine_system::input::PadButton> {
+    use legaia_engine_system::input::PadButton as P;
+    let mut path = vec![P::Right; row / page];
+    path.extend(std::iter::repeat_n(P::Down, row % page));
+    path
+}
+
+/// The buy list's row a quantity state confirmed, off the op `49 00` record
+/// and retail's row builder: `_DAT_8007BB88` holds the row's item id there.
+fn shop_buy_row(ram: &[u8]) -> Option<usize> {
+    let instr = shop_instruction(ram)?;
+    let record = legaia_scene_formats::shop_stock::parse_record(&instr, 0, None)?;
+    let count = usize::from(*instr.get(record.count_off)?);
+    let ids = instr.get(record.count_off + 1..record.count_off + 1 + count)?;
+    let card = legaia_engine_menus::menu_list_rows::SHOP_TAIL_CARD_ID;
+    let tail = (0..256u32).any(|i| game_anchors::u8_at(ram, BAG + i * 2) == card);
+    let inv = legaia_engine_menus::shop::ShopInventory::from_stock_record(0, ids, tail, |_| 1);
+    let id = game_anchors::u8_at(ram, MENU_SELECTED);
+    inv.items.iter().position(|row| row.item_id == id)
+}
+
 /// The presses from a gold shop's root window to `subscreen`; `None` when it
 /// is no shop screen (`0x801E4F40` ids `0x1A..=0x1F`,
 /// [shop](../../../docs/subsystems/shop.md)). The buy lists' hand starts on
 /// the first row, which is the row the probe that made the state confirms.
-fn shop_path(subscreen: u8) -> Option<Vec<legaia_engine_system::input::PadButton>> {
+fn shop_path(ram: &[u8], subscreen: u8) -> Option<Vec<legaia_engine_system::input::PadButton>> {
     use legaia_engine_system::input::PadButton as P;
     Some(match subscreen {
         0x1A => vec![],
         0x1B => vec![P::Cross],
-        0x1C | 0x1D => vec![P::Cross, P::Cross],
+        0x1C => vec![P::Cross, P::Cross],
+        0x1D => {
+            let mut path = vec![P::Cross];
+            path.extend(list_walk(shop_buy_row(ram).unwrap_or(0), SHOP_LIST_PAGE));
+            path.push(P::Cross);
+            path
+        }
         0x1E => vec![P::Down, P::Cross],
         0x1F => vec![P::Down, P::Cross, P::Cross],
         _ => return None,
@@ -1941,8 +2007,34 @@ pub const GAME_MODE_MAP_DISPLAY: u8 = 0x0D;
 pub const MENU_ITEMS_USE: u8 = 0x06;
 /// Items screen's Throw Out list (`FUN_801D8734`).
 pub const MENU_ITEMS_THROW: u8 = 0x07;
+/// The Use flow's all-party apply (`FUN_801D7FF8`).
+pub const MENU_ITEMS_APPLY_ALL: u8 = 0x09;
+/// The Use flow's single-target apply (`FUN_801D8308`).
+pub const MENU_ITEMS_APPLY_ONE: u8 = 0x0A;
+/// Door of Light's Yes / No (`FUN_801D8A58`).
+pub const MENU_ITEMS_DOOR_LIGHT: u8 = 0x0B;
+/// Door of Wind's destination list (`FUN_801D8B90`).
+pub const MENU_ITEMS_DOOR_WIND: u8 = 0x0C;
+/// Incense's Yes / No (`FUN_801D8D94`).
+pub const MENU_ITEMS_INCENSE: u8 = 0x0D;
 /// Magic screen's spell list (`FUN_801D9110`).
 pub const MENU_SPELL_LIST: u8 = 0x0F;
+/// Magic's group cast (`FUN_801D9280`).
+pub const MENU_SPELL_GROUP: u8 = 0x10;
+/// Magic's target cast (`FUN_801D9594`).
+pub const MENU_SPELL_TARGET: u8 = 0x11;
+/// `_DAT_8007BB88`, the menu's selected payload.
+const MENU_SELECTED: u32 = 0x8007_BB88;
+/// The bag, `[id][count]` per slot.
+const BAG: u32 = 0x8008_5958;
+/// The present party's character ids.
+const PARTY_LIST: u32 = 0x8008_4598;
+/// The character records.
+const CHAR_RECORDS: u32 = 0x8008_4708;
+/// One character record.
+const CHAR_RECORD_STRIDE: u32 = 0x414;
+/// Rows on a page of the shop's buy list.
+const SHOP_LIST_PAGE: usize = 7;
 /// The Status row's screen (`FUN_801DA2A0`).
 pub const MENU_STATUS: u8 = 0x15;
 /// The sub-screen's step counter `DAT_801E46AC`.

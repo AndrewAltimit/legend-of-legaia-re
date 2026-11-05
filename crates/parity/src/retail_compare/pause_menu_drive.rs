@@ -111,7 +111,7 @@ pub(super) fn drive_pause_menu(
 ) -> Result<Option<u8>> {
     use legaia_engine_menu_runtime::field_menu_dispatch::FieldMenuSubsession;
     use legaia_engine_menus::equip_session::EquipState;
-    use legaia_engine_menus::pause_screens::PauseItemsFocus;
+    use legaia_engine_menus::pause_screens::{PauseItemsFocus, UseRoute};
     use legaia_engine_menus::spell_menu::SpellMenuPhase;
     let other_row_id = |sub: &FieldMenuSubsession| sub.row().retail_subscreen();
     if let Some(block) = menu.prize_block {
@@ -167,10 +167,18 @@ pub(super) fn drive_pause_menu(
                 PauseItemsFocus::ThrowOutList | PauseItemsFocus::ThrowOutConfirm => {
                     MENU_ITEMS_THROW
                 }
+                PauseItemsFocus::SpecialRoute => match items.special_use().map(|s| s.route) {
+                    Some(UseRoute::DoorOfLight) => MENU_ITEMS_DOOR_LIGHT,
+                    Some(UseRoute::DoorOfWind) => MENU_ITEMS_DOOR_WIND,
+                    _ => MENU_ITEMS_INCENSE,
+                },
+                _ if items.target_select() => MENU_ITEMS_APPLY_ONE,
                 _ => MENU_ITEMS_USE,
             },
             FieldMenuSubsession::Spells(spells) => match spells.phase() {
                 SpellMenuPhase::CharSelect { .. } => other_row_id(sub),
+                SpellMenuPhase::GroupConfirm { .. } => MENU_SPELL_GROUP,
+                SpellMenuPhase::TargetSelect { .. } => MENU_SPELL_TARGET,
                 _ => MENU_SPELL_LIST,
             },
             other => other.row().retail_subscreen(),

@@ -36,6 +36,20 @@ pub fn battle_begin_tab_visible(world: &legaia_engine_core::world::World) -> boo
     ) || battle_begin_tab_alone(world)
 }
 
+/// Is the frame the flee confirm `0x32`, where `Run` (record 4) has taken the
+/// tab seat `(16, 14)` over the `Escape` / `Reselect` chips (step 3:
+/// `10/0 13/0 02/0 04/0 06/1 4E/1 4F/1`)?
+pub fn battle_run_tab_alone(world: &legaia_engine_core::world::World) -> bool {
+    use legaia_engine_battle_menus::battle_input::CommandPhase;
+    world.mode == legaia_engine_mode::mode::SceneMode::Battle
+        && battle_command_surface(world) == Some(CommandSurface::Other)
+        && world
+            .battle
+            .command
+            .as_ref()
+            .is_some_and(|c| matches!(c.phase, CommandPhase::RunConfirm { .. }))
+}
+
 /// Is the frame the commit-confirm screen `0x6E`, where the `Begin` tab
 /// stands at `(16, 14)` with no plaque beside it?
 pub fn battle_begin_tab_alone(world: &legaia_engine_core::world::World) -> bool {
@@ -129,7 +143,13 @@ pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
         BattleHudPhase::RoundPrompt => true,
         // The ring parks the panels on a glide (step 1's `06/1 4E/1 4F/1`):
         // they are still on their way down while it runs.
-        BattleHudPhase::CommandEntry if ring_open_glide(world).is_some() => true,
+        BattleHudPhase::CommandEntry
+            if ring_open_glide(world)
+                .or(crate::plaques::run_confirm_glide(world))
+                .is_some() =>
+        {
+            true
+        }
         BattleHudPhase::CommandEntry => matches!(
             battle_command_surface(world),
             Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)

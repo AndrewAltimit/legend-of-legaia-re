@@ -318,7 +318,9 @@ impl LegaiaMinigames {
                 CommandPhase::RoundPrompt { cursor } => ("prompt", cursor, -1),
                 CommandPhase::Menu { cursor } => ("menu", cursor, -1),
                 CommandPhase::AttackMode { cursor } => ("attackmenu", cursor, -1),
-                CommandPhase::CommitConfirm { cursor } => ("confirm", cursor, -1),
+                CommandPhase::CommitConfirm { cursor } | CommandPhase::RunConfirm { cursor } => {
+                    ("confirm", cursor, -1)
+                }
                 // Auto under the "Select" attack option opens the battle's
                 // target cursor over the one opponent; Cross takes it.
                 CommandPhase::Targeting { .. } => ("target", 0, -1),

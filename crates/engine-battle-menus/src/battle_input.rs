@@ -360,6 +360,11 @@ pub enum CommandPhase {
     /// `FUN_801D388C` seeds the highlight word `ctx[+0x880]` with Left
     /// (`0x8000`) whenever the flow byte reads `0x6E` (`0x801D4C38..0x801D4C74`).
     CommitConfirm { cursor: u8 },
+    /// The flee confirm (retail `ctx[+0x06] == 0x32`), the `Escape` /
+    /// `Reselect` pair `Run` opens. `cursor` is the lit arm, which the prompt's
+    /// `Run` left on `Reselect` (no step-3 store moves the highlight word,
+    /// `0x801D4C38..0x801D4C74`).
+    RunConfirm { cursor: u8 },
     /// `Begin` taken on the commit-confirm screen: play the round out.
     BeginRound,
     /// `Reselect` taken on the commit-confirm screen: step the member cursor
@@ -431,6 +436,7 @@ impl BattleCommandSession {
             CommandPhase::Menu { cursor } => (cursor, 4u8),
             CommandPhase::RoundPrompt { cursor }
             | CommandPhase::AttackMode { cursor }
+            | CommandPhase::RunConfirm { cursor }
             | CommandPhase::CommitConfirm { cursor } => (cursor, 2),
             _ => return false,
         };
@@ -574,6 +580,9 @@ impl BattleCommandSession {
             }
             CommandPhase::CommitConfirm { cursor } => {
                 self.phase = step_commit_confirm(*cursor, ev);
+            }
+            CommandPhase::RunConfirm { cursor } => {
+                self.phase = step_run_confirm(*cursor, ev);
             }
             CommandPhase::AttackMode { cursor } => {
                 self.phase = step_attack_mode(*cursor, ev, self.party_slot, party, monsters);
@@ -768,9 +777,8 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
         }
         None => false,
     };
-    if ev.circle {
-        return CommandPhase::RunAway;
-    }
+    // No cancel arm: the state reads Left, the confirm mask and Right, and a
+    // Circle on `gaza2_card_first_menu` leaves `0x1E` as it found it.
     if pressed || ev.cross {
         match RoundChoice::PROMPT[cursor as usize] {
             RoundChoice::Begin => {
@@ -778,10 +786,28 @@ fn step_round_prompt(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
                     cursor: RING_OPEN_CURSOR,
                 };
             }
-            RoundChoice::Run => return CommandPhase::RunAway,
+            RoundChoice::Run => return CommandPhase::RunConfirm { cursor: 1 },
         }
     }
     CommandPhase::RoundPrompt { cursor }
+}
+
+/// One frame of the **flee confirm** (retail `0x32`). Left takes `Escape`
+/// and commits the party's Run; Right or the cancel button takes `Reselect`
+/// back to the round prompt, on the press itself. The state tests no confirm
+/// mask (`0x801D1100..0x801D1144`), so a Cross reaches an arm only through the
+/// cross-button entry's highlight rewrite ([`BattleCommandSession::walk_highlight`]).
+///
+/// REF: FUN_801D0748 (state `0x32`, `0x801D10F8..0x801D1184`)
+fn step_run_confirm(cursor: u8, ev: BattleCommandInput) -> CommandPhase {
+    if ev.circle {
+        return CommandPhase::RoundPrompt { cursor: 0 };
+    }
+    match pair_seat(ev) {
+        Some(0) => CommandPhase::RunAway,
+        Some(_) => CommandPhase::RoundPrompt { cursor: 0 },
+        None => CommandPhase::RunConfirm { cursor },
+    }
 }
 
 /// One frame of the **commit-confirm screen** (retail `0x6E`). Left or the
@@ -1138,30 +1164,50 @@ mod tests {
     /// Both routes into `Run`: one Right press (the right chip, retail's
     /// packed 0x2000 arm), and Circle outright - retail's own `801d10bc` arm.
     #[test]
-    fn run_resolves_from_the_prompt_by_right_or_circle() {
-        let mut by_right = BattleCommandSession::new_round_open(0, 0, false);
-        by_right.input(press(|e| e.right = true), party3(), one_monster());
-        assert_eq!(by_right.resolved(), Some(Resolution::RunAway));
-
-        let mut by_circle = BattleCommandSession::new_round_open(0, 0, false);
-        by_circle.input(press(|e| e.circle = true), party3(), one_monster());
-        assert_eq!(by_circle.resolved(), Some(Resolution::RunAway));
+    fn run_opens_the_flee_confirm_and_only_left_takes_it() {
+        let mut s = BattleCommandSession::new_round_open(0, 0, false);
+        // Circle has no arm in `0x1E`.
+        s.input(press(|e| e.circle = true), party3(), one_monster());
+        assert!(matches!(s.phase, CommandPhase::RoundPrompt { .. }));
+        s.input(press(|e| e.right = true), party3(), one_monster());
+        assert!(matches!(s.phase, CommandPhase::RunConfirm { cursor: 1 }));
+        assert_eq!(s.resolved(), None);
+        // `0x32` tests no confirm mask.
+        s.input(press(|e| e.cross = true), party3(), one_monster());
+        assert!(matches!(s.phase, CommandPhase::RunConfirm { .. }));
+        s.input(press(|e| e.left = true), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::RunAway));
     }
 
-    /// A scripted no-escape battle still takes Run from either route: the
-    /// flow SM's `0x1E` / `0x32` arms never read `ctx[+0x287]`, so the press
-    /// commits and the escape roll is what fails it.
     #[test]
-    fn a_no_escape_battle_still_takes_run_from_either_route() {
-        for circle in [false, true] {
-            let mut s = BattleCommandSession::new_round_open(0, 0, true);
-            if circle {
-                s.input(press(|e| e.circle = true), party3(), one_monster());
-            } else {
-                s.input(press(|e| e.right = true), party3(), one_monster());
-            }
-            assert_eq!(s.resolved(), Some(Resolution::RunAway), "circle={circle}");
+    fn the_flee_confirm_reselects_back_to_the_prompt() {
+        for cancel in [false, true] {
+            let mut s = BattleCommandSession::new_round_open(0, 0, false);
+            s.input(press(|e| e.right = true), party3(), one_monster());
+            s.input(
+                press(|e| {
+                    if cancel {
+                        e.circle = true
+                    } else {
+                        e.right = true
+                    }
+                }),
+                party3(),
+                one_monster(),
+            );
+            assert!(matches!(s.phase, CommandPhase::RoundPrompt { .. }));
         }
+    }
+
+    /// A scripted no-escape battle still takes Run: the flow SM's `0x1E` /
+    /// `0x32` arms never read `ctx[+0x287]`, so the press commits and the
+    /// escape roll is what fails it.
+    #[test]
+    fn a_no_escape_battle_still_takes_run() {
+        let mut s = BattleCommandSession::new_round_open(0, 0, true);
+        s.input(press(|e| e.right = true), party3(), one_monster());
+        s.input(press(|e| e.left = true), party3(), one_monster());
+        assert_eq!(s.resolved(), Some(Resolution::RunAway));
         // The outcome predicate still says the run cannot succeed.
         assert!(!BattleCommand::Run.available(true));
         assert!(BattleCommand::Run.available(false));

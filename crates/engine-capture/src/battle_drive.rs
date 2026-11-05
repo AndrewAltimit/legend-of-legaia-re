@@ -1703,12 +1703,23 @@ impl BattleDrive {
         {
             return Some(PadButton::Cross);
         }
+        // The item window's target step: `Cross` on the row the window opens
+        // on, the bag's first battle-usable row a state's probe confirmed.
+        if matches!(self, Self::Menu { flow: BattleFlowState::TargetConfirm, .. })
+            && world.battle.item_menu.is_some()
+            && world.battle.flow == BattleFlowState::ItemWindow
+        {
+            return Some(PadButton::Cross);
+        }
         let cmd = world.battle.command.as_ref()?;
         match *self {
             Self::Opening { .. } => None,
             Self::Menu { flow, seat, spirit } => {
                 let ours = cmd.actor == seat && flow != BattleFlowState::CommitBegin;
                 match cmd.phase {
+                    CommandPhase::RoundPrompt { .. } if flow == BattleFlowState::EscapePrompt => {
+                        Some(PadButton::Right)
+                    }
                     CommandPhase::RoundPrompt { .. } => Some(PadButton::Left),
                     CommandPhase::Menu { .. }
                         if !ours && cmd.actor < seat && spirit & (1 << cmd.actor) != 0 =>
@@ -1717,7 +1728,9 @@ impl BattleDrive {
                     }
                     CommandPhase::Menu { .. } if !ours => Some(PadButton::Left),
                     CommandPhase::Menu { .. } => match flow {
-                        BattleFlowState::ItemWindow => Some(PadButton::Up),
+                        BattleFlowState::ItemWindow | BattleFlowState::TargetConfirm => {
+                            Some(PadButton::Up)
+                        }
                         BattleFlowState::MagicWindow => Some(PadButton::Right),
                         BattleFlowState::ArtsCommandEntry
                         | BattleFlowState::AttackModePrompt
@@ -1890,7 +1903,7 @@ pub(crate) fn seed_entered_arrows(
 pub fn menu_seat_matters(flow: BattleFlowState) -> bool {
     !matches!(
         flow,
-        BattleFlowState::TurnPrompt | BattleFlowState::CommitBegin
+        BattleFlowState::TurnPrompt | BattleFlowState::EscapePrompt | BattleFlowState::CommitBegin
     )
 }
 
