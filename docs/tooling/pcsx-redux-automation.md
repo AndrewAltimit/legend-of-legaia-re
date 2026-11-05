@@ -1786,6 +1786,24 @@ Two consequences for `juui1` in particular:
   dispatcher 600 times and sees **zero** op-`0x3F` doors. The player is not
   near that exit, so the donor has to come from a new capture either way.
 
+#### One-question probes
+
+Each answers one question from its own save state; its header says which state and what the output means. Pages that cite a probe explain it in place, and these are the ones no page cites.
+
+| Probe | Question |
+|---|---|
+| `autorun_arts_input_press.lua` | Injects directional presses on an off-class weapon and read-watches the party weapon bytes: where the arm-width consult fires. |
+| `autorun_chest_give_trace.lua` | Does a randomized chest item reach the running game's op `0x39`? |
+| `autorun_delilas_e2e.lua` | End-to-end verdict for a `--delilas-party` disc, from a field state to a natural encounter. |
+| `autorun_gaza2_magic_wedge.lua` | The Gaza rematch's camera-orbit softlock, from a state at the start of the fight. |
+| `autorun_opening_capture.lua` | Retail frames of the whole New Game opening, cold boot to the Rim Elm name entry. |
+| `autorun_pause_vram_upload_trace.lua` | Which upload writes the pause path's changed words of VRAM row 271. |
+| `autorun_tetsu_confirm.lua` | Drives the spar menu cursor to its training-fight row and asserts the battle mode. |
+| `autorun_w1a_view_window_cross.lua` | Does a scripted camera tile window survive into the next scene? |
+| `autorun_w3a_field_walk.lua` | One field anchor, a scripted pad ladder, optional breakpoint banks and a per-vsync poll. |
+
+`dump_flag_bank_from_sstate.py` dumps the story-flag bank from states; `record_interactive.sh` starts the input recorder, retrying through a resume that crashes early.
+
 ### Save-state to Python (offline analysis)
 
 | Script | Input | Output |

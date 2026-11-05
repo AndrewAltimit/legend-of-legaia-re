@@ -369,7 +369,8 @@ bindable key deletes that button from the keyboard entirely. The bindable
 vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
 is an F-key or `Home` / `End`, which the pad lookup never resolves, or a letter outside
 that vocabulary (`I`, `R`, `T`, `Y`, the dev triggers, and the minigame entries below), so no
-rebinding can collide with one.
+rebinding can collide with one. With an expansion pack, `\` opens its card menu and `` ` `` its
+game-mode picker over the field; `Tab` opens the [multiplayer screen](#playing-online).
 
 `--boot-ui` starts at the title screen → save-select flow instead of jumping
 into the scene.
@@ -619,7 +620,8 @@ name, and press Join. A browser cannot host. A page served over
 `https://` can only reach `wss://`, so playing from the published site
 needs the relay behind a TLS proxy; a page served locally over `http://`
 reaches `ws://` directly. A standalone `legaia-relay --bind 0.0.0.0:7462`
-hosts rooms without a game window.
+hosts rooms without a game window (a source build's binary, not in the release
+archive).
 
 **Party night.** The host's Game row lists party nights first
 (**Practice Night** with no pack, **Tower Game Night** with the sample pack): a

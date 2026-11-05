@@ -102,7 +102,8 @@ arboard.workspace = true
 gilrs = { workspace = true, optional = true }
 
 # The parity-oracle subcommands (`vram-oracle`, `mode-trace`, `sim-trace`,
-# `audio-trace`, `pcm-trace`, `retail-compare`, `cast-sequence-score`) and the
+# `audio-trace`, `pcm-trace`, `retail-compare`, `cast-sequence-score`,
+# `audio-sweep`, `pcm-retail`, `seq-differential`, `cue-differential`) and the
 # play window's `LEGAIA_DIAG_CAST_SEQ` frame shots. Off by default: the parity
 # crate is tool code, and leaving it out takes it off the host build's
 # critical path (engine-core -> session -> parity -> shell). The capture

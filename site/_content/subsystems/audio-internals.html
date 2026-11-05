@@ -211,6 +211,8 @@
     <summary>History: &ldquo;the engine is much the quieter side&rdquo;</summary>
     <div class="disclosure-body"><p>The comparison once read as the engine routing no reverb and sounding about half retail's voices. Both were instrument defects: the reverb figure was read from the SPU <em>control</em> register rather than the per-voice reverb-enable mask, and the oracle had built a bare SPU where the shipped host sets retail reverb. The voice-count gap was two different pieces of music - a town save reached from the world map still holds the overworld track.</p></div>
   </details>
+  <h3 id="retail-sound-code">Retail's own sound code beside the port</h3>
+  <p>Two differentials run retail's routines off a library state's RAM in the <a href="../tooling/retail-kernel-differential.html">R3000 interpreter</a> and compare them with the port, so neither needs an emulator's audio output. <code>legaia-engine seq-differential</code> runs retail's sequencer tick <code>FUN_80062F98</code> over a whole score beside the port's <code>Sequencer</code> and compares every sounding voice's registers at every vsync. <code>legaia-engine cue-differential</code> keys every sound-effect cue both ways in one state per scene, retail's side through <code>FUN_80016B6C</code>, and compares what each staged. Both are in a <code>--features oracles</code> build.</p>
 </section>
 
 <section class="doc-section" id="how-we-know">
