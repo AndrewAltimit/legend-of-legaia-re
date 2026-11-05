@@ -817,8 +817,9 @@ pub fn spawn_anchor_point_with(
 
 /// The scale one spawn call seats its record at (`a3`, stored at `+0x72` by
 /// `FUN_80021B04` at `0x80021DAC`): `0x1000` at nearly every call; PROT
-/// 0911 arm 9 passes the healed group's extent (`lh a3,0x2C(sp)`, the TR z
-/// of the shot it armed), and a [`SpawnAnchor::LiteralScaled`] call its own.
+/// 0911 arm 9 and PROT 0919 arm 7 pass the healed group's extent
+/// (`lh a3,0x2C(sp)`, the TR z of the shot they armed, as the builder left it),
+/// and a [`SpawnAnchor::LiteralScaled`] call its own.
 pub fn spawn_anchor_scale(
     anchor: SpawnAnchor,
     shot: Option<ModuleShot>,
@@ -831,10 +832,12 @@ pub fn spawn_anchor_scale(
             let k = i32::from(cos).abs() + 0x800;
             ((k * i32::from(seats.depth)) >> 12) as u16
         }
+        // The tween builder rewrites the shot's stack TR z in place
+        // (`(z << 8) / 0xA0`, `FUN_801D829C`) before the call reads it back.
         SpawnAnchor::ShotPointFacing { .. } => shot
             .map(|s| s.tr[2])
             .filter(|&z| z > 0)
-            .map_or(0x1000, |z| z as u16),
+            .map_or(0x1000, |z| ((i32::from(z) << 8) / 0xA0) as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
         SpawnAnchor::CreatureScaled { scale } => scale,
         SpawnAnchor::VictimBodyGround { scale } => scale,
