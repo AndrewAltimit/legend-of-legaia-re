@@ -395,6 +395,12 @@ impl World {
         if category < 3 {
             return 7;
         }
+        // The summon seat's node: no loader store reaches it, and it reads `0` in
+        // `gimard_summon_visible` and both `battle_rugi_rogue_rogue_*_mid_cast`
+        // states, so a creature's runtime cue keys in the system bank's record.
+        if category == 7 {
+            return 0;
+        }
         let ids: Vec<u16> = self
             .battle_monster_slots()
             .into_iter()

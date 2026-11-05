@@ -321,7 +321,17 @@ fn categories(ram: &[u8], formation: &[u8], label: &str, bad: &mut usize) {
             println!("  category {label}: seat {i} id {cell:#x} retail {byte} port {want}");
         }
     }
-    println!("  categories {label} {formation:02x?}: {seen:02x?}");
+    // The party seats and the summon seat, which the loader reaches through its
+    // own writes: `0x80051548` on each party node, nothing on seat 7's.
+    let others: Vec<(u32, u8)> = [0u32, 1, 2, 7]
+        .into_iter()
+        .filter_map(|seat| {
+            let actor = rd32(ACTOR_TABLE + seat * 4);
+            let node = (actor >= 0x8000_0000).then(|| rd32(actor + 0x22C))?;
+            (node >= 0x8000_0000).then(|| (seat, ram[at(node + 0x80)]))
+        })
+        .collect();
+    println!("  categories {label} {formation:02x?}: {seen:02x?} others {others:?}");
 }
 
 /// The engine's banks for a battle, staged directly: retail's `+4` writes to the
