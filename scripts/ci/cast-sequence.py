@@ -61,6 +61,13 @@ DROP_ENV = {
     "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_SEAT_DISPLAYED_CLIPS",
 }
 
+# What a `--physical` recording keeps of those: it plays the state's own round,
+# so its drive and the re-seat that stands that round on the capture's ground.
+PHYSICAL_KEEP_ENV = {
+    "LEGAIA_BATTLE_DRIVE", "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP",
+    "LEGAIA_BATTLE_APPROACH_YAW", "LEGAIA_BATTLE_DISPLAYED_SEAT",
+}
+
 
 def main_checkout() -> Path:
     try:
@@ -324,7 +331,7 @@ def run_engine(a, out: Path) -> bool:
         if k == "LEGAIA_BATTLE_INFLIGHT":
             child_inflight = v
         # A physical recording walks the state's own pad path to the strike.
-        if k not in DROP_ENV or (a.physical and k == "LEGAIA_BATTLE_DRIVE"):
+        if k not in DROP_ENV or (a.physical and k in PHYSICAL_KEEP_ENV):
             env[k] = v
         i += 1
     args = rest[i + 1:]
