@@ -29,6 +29,7 @@ mod level_up;
 mod magic_level;
 mod melee_hit;
 mod monster_pick;
+mod muscle_contest;
 mod queue_head;
 mod round_boundary;
 mod round_open;
