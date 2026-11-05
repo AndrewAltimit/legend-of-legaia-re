@@ -43,5 +43,6 @@ mod slot_machine;
 mod spirit_cleanup;
 mod spoils;
 mod stat_aggregator;
+mod unequip;
 mod validator;
 mod walk_step;

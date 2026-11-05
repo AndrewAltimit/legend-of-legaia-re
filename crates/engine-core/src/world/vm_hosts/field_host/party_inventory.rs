@@ -26,32 +26,27 @@ impl FieldHostImpl<'_> {
         // `RetailInventory::find_slot` (retail `FUN_80042EE0`) treats 0 as the
         // empty-slot sentinel and never matches it, so a zero operand goes
         // straight to the fallback, which then clears the first *empty*
-        // accessory slot - a no-op the retail kernel reports as success.
+        // accessory slot - a no-op the retail kernel reports as success. The
+        // fallback walks the present-party list (`0x80084598`), so a roster
+        // member who is not in the party keeps what they wear.
         //
         // No `FieldEvent` is emitted. The give side has one because a host
         // renders an acquisition banner off it; nothing consumes a take yet,
         // and the observable this wire exists for is the world state - the bag
         // count and the accessory slot - which is what the tests read.
-        let held = if item_id == 0 {
-            None
-        } else {
-            self.world.party.inventory.get(&item_id).copied()
-        };
-        match held {
-            Some(count) if count > 0 => {
-                let left = count - 1;
-                if left == 0 {
-                    self.world.party.inventory.remove(&item_id);
-                } else {
-                    self.world.party.inventory.insert(item_id, left);
-                }
-            }
-            _ => {
-                legaia_engine_menus::equipment::party_unequip_accessory_by_id(
-                    &mut self.world.party.roster,
-                    item_id,
-                );
-            }
+        if self
+            .world
+            .party
+            .inventory
+            .consume_returning_slot(item_id, 1)
+            == legaia_save::retail_inventory::NOT_IN_WINDOW
+        {
+            let present = self.world.present_party_list();
+            legaia_engine_menus::equipment::party_unequip_accessory_by_id(
+                &mut self.world.party.roster,
+                &present,
+                item_id,
+            );
         }
     }
 

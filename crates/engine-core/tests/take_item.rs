@@ -139,3 +139,18 @@ fn take_item_with_nothing_to_take_still_advances() {
         "nothing carried the id, so nothing is unequipped"
     );
 }
+
+/// The fallback walks the present-party list (`FUN_800430AC` reads the ids at
+/// `0x80084598` for `DAT_80084594` entries), not the roster: a member who is
+/// not in the party keeps the copy they wear, and the walk takes the list's
+/// order.
+#[test]
+fn the_unequip_fallback_skips_a_member_who_is_not_in_the_party() {
+    let mut world = field_world();
+    world.party.roster = party_with_goods(&[[0, 0, 0], [0x99, 0, 0], [0, 0x99, 0]]);
+    world.install_present_party_list(vec![2, 0]);
+    world.load_field_script(take_script(0x99));
+    let _ = world.tick();
+    assert_eq!(world.party.roster.members[1].equipment().slots[5], 0x99);
+    assert_eq!(world.party.roster.members[2].equipment().slots[6], 0);
+}
