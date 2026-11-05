@@ -3148,7 +3148,10 @@ record the state's entry-context pointer `_DAT_8007B450` names
 window follows the sub-screen id: a state saved on a buy list's first row replays.
 
 Past a row's confirm, the path reads the state: `0x06` and `0x07` press through the
-Items command window, `0x0F` past the Magic caster picker, and on `0x15` the party
+Items command window, `0x0F` past the Magic caster picker, the apply screens
+`0x09..=0x0D` and a quantity `0x1D` walk the list to the row the state confirmed
+(`_DAT_8007BB88`: a bag slot, a spell id, a stock item id), `0x10` and `0x11` find the
+spell in the caster's learned list, and on `0x15` the party
 cursor `DAT_801E46C4`, the page cursor `DAT_801E46C0` and the step word
 `DAT_801E46AC` say how far Down, how far Right, and whether the page's list is open.
 

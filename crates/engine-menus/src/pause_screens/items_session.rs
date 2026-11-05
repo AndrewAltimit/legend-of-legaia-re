@@ -280,9 +280,13 @@ impl PauseItemsSession {
     /// host applies it and resumes on a rebuilt session
     /// ([`Self::resume_use`]). The special routes finish on their own terms.
     pub fn use_committed(&self) -> Option<u8> {
-        (matches!(self.inner.state, InventoryUseState::Done(_)) && self.special_use.is_none())
-            .then_some(self.inner.used_slot)
-            .flatten()
+        if !matches!(self.inner.state, InventoryUseState::Done(_)) || self.special_use.is_some() {
+            return None;
+        }
+        self.inner.used_slot.or_else(|| {
+            let id = self.inner.used_item?;
+            self.rows.iter().find(|r| r.id == id).map(|r| r.slot)
+        })
     }
 
     /// Come back from an applied use the way retail does

@@ -26,7 +26,7 @@
 //!   id `5`); cancel parks the list (mode 4) back to `0x0E`; confirm
 //!   routes on the spell-stat flag ([`spell_targets_group`]) to `0x10`
 //!   or `0x11`.
-//! - `0x10` group-cast flow (`FUN_801D9280`): no target rows
+//! - `0x10` group-cast flow (`FUN_801D9280`): the hand on every target row
 //!   (`FUN_801D688C(count = 0)` - confirm/cancel only), SFX `0x25` on
 //!   commit, cancel returns to `0x0F` with the editing bit raised.
 //! - `0x11` single-target pick + apply (`FUN_801D9594`): target rows over
@@ -149,14 +149,14 @@ pub enum SpellMenuPhase {
     },
     /// Retail sub-screen `0x10` (`FUN_801D9280`) - the no-pick **group**
     /// flow a confirmed spell routes to when its stats `+2` byte carries
-    /// bit `0x20` ([`spell_targets_group`]). It draws no target rows
-    /// (`FUN_801D688C` with `count = 0`): Cross commits against the whole
+    /// bit `0x20` ([`spell_targets_group`]). Window 14 is up with the
+    /// hand on every row (`FUN_801D688C` with `count = 0`): Cross commits against the whole
     /// party, Circle returns to the spell list.
     GroupConfirm {
         caster: u8,
         spell_id: u8,
-        /// The spell list's hand position, kept so the screen keeps drawing
-        /// the confirmed row and Circle lands back on it.
+        /// The spell list's hand position, kept so the info window keeps the
+        /// confirmed row and Circle lands back on it.
         cursor: u8,
     },
     Done(SpellMenuOutcome),

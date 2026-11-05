@@ -1178,7 +1178,29 @@ equip mask (`0x80074F68 +6`) misses `DAT_801E43F0[member]` - the shop's
 buy-recipient test.
 
 Port: `engine-ui::target_panel_draws_for` / `target_panel_sprites_for`, fed by
-`pause_screens::target_panel_view_model`.
+`pause_screens::target_panel_view_model` and, on the Magic screen,
+`spell_target_panel_view_model_of`. The panel takes only the list's place: the
+command and info windows stay up behind it on Items, the caster and info windows
+on Magic, and the group flow `0x10` puts the hand on every row
+(`menu_items_target_kor_retail`, `menu_magic_group_kor_retail`).
+
+### An apply screen outlives its use
+
+`FUN_801D7FF8`, `FUN_801D8308`, `FUN_801D9280` and `FUN_801D9594` apply, then step
+back to their own cursor step while the stack lasts (or the caster can pay) and
+`FUN_8003043C` / `FUN_8003053C` still finds someone the item or spell would affect.
+Otherwise the screen returns to the list after a twenty-count hold, or to the
+command window once the bag holds nothing. A pad walk from `kor_field_route_walk`
+shows it: Healing Berry on Vahn stays on `0x0A` while Gala is short of HP, and the
+next use goes back to `0x06`. All-party items have a confirm of their own in both
+contexts, `0x09` in the field and `0x66` in battle.
+
+Port: `field_menu_dispatch::resume_after_use` applies the outcome and rebuilds the
+session on the world it left, `PauseItemsSession::resume_use` and
+`SpellMenuSession::resume_cast` put the hand back, and
+`InventoryUseState::AllPartyConfirm` is the confirm. A spell-level or art notice
+takes the session's finish path instead, so its screen returns to the root; the
+hold before the list is not modelled.
 
 **Door of Light `FUN_801D8A58`** (sub-screen 0xB, class `0x80`). Phase 0
 zeroes the confirm cursor `DAT_801E46D0` (**Yes** default) and opens window 10
@@ -1361,8 +1383,8 @@ discounted cost at `WX+0x74` in the same green.
 ### The two target flows
 
 A confirmed spell's stats `+2` byte picks the flow: bit `0x20` set -> the
-no-pick **group** flow (`0x10`, `FUN_801D9280`; no target rows, confirm or
-cancel only, the list and info windows stay drawn); clear -> the per-member
+no-pick **group** flow (`0x10`, `FUN_801D9280`; window 14 with the hand on every row, confirm
+or cancel only, the caster and info windows stay drawn); clear -> the per-member
 **target picker** (`0x11`, `FUN_801D9594`). Cancel returns to the list.
 
 ### Menu-cast spell leveling + the window-7 notice

@@ -302,6 +302,16 @@ Which `s2` bit routes where, in the three prompt states:
 `0x32`'s confirm arm stamps `+0x1DE = 5` (the Run action category) on all three
 party actors at `0x801D1174..0x801D1184` before storing `0xFE`.
 
+The `0x32` screen is `Escape` / `Reselect` around the D-pad glyph, on the commit
+confirm's seats (records `0x10` and `0x13`, the former's word the pool's
+`Escape`, stamped at `0x801D10D8`), with `Run` walked to the tab seat (record 4)
+and the panels sunk (step 3: `10/0 13/0 02/0 04/0 06/1 4E/1 4F/1`). Step 4 is the
+way back. The state tests no confirm mask, so under the direct entry a Cross does
+nothing there, and `0x1E` has no cancel arm, so a Circle on the round prompt does
+nothing either: `battle_run_confirm_gaza2_retail` and pad walks from
+`gaza2_card_first_menu` show each. Port: `battle_input::CommandPhase::RunConfirm`,
+`World::tick_battle_command` for the glide, `battle_hud::battle_run_tab_alone`.
+
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
 command, or raise the [commit confirm](#the-commit-confirm-screen-0x6e)**:
