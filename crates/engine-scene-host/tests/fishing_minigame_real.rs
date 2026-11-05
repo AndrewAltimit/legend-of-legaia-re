@@ -11,7 +11,7 @@
 //! passes when `LEGAIA_DISC_BIN` is absent.
 
 use legaia_engine_core::world::World;
-use legaia_engine_fishing::fishing::{FLIGHT_FRAMES, PondEvent, PondPhase, WINDUP_FRAMES};
+use legaia_engine_fishing::fishing::{PondEvent, PondPhase, WINDUP_FRAMES};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_system::input::PadButton;
@@ -29,11 +29,11 @@ fn phase(world: &World) -> PondPhase {
 fn cast(world: &mut World) {
     frame(world, 0);
     frame(world, PadButton::Circle.mask());
-    for _ in 0..WINDUP_FRAMES + 28 {
+    for _ in 0..WINDUP_FRAMES + 112 {
         frame(world, 0);
     }
     frame(world, PadButton::Circle.mask());
-    for _ in 0..FLIGHT_FRAMES {
+    while phase(world) == PondPhase::Flight {
         frame(world, 0);
     }
     assert_eq!(phase(world), PondPhase::Waiting);

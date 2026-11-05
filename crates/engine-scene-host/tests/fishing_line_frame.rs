@@ -92,6 +92,7 @@ fn pond() -> PondSession {
         region_block: None,
         anchor_x,
         anchor_z,
+        anchor_y: 0,
         facing: 0,
         rod_mesh: Some(rod_mesh()),
     });
@@ -131,6 +132,7 @@ fn hook(p: &mut PondSession, fish: (i16, i16)) {
             tick(
                 p,
                 PondInput {
+                    reel_edge: 0,
                     reel_mask: if held { REEL_A } else { 0 },
                     cast_edge: false,
                     edge_bonus: i32::from(f % HOLD == 0),
@@ -168,6 +170,7 @@ fn the_line_runs_from_the_projected_fish_to_the_rod_tip_while_a_fish_is_hooked()
         tick(
             &mut p,
             PondInput {
+                reel_edge: 0,
                 reel_mask: REEL_A,
                 ..Default::default()
             },
@@ -214,6 +217,7 @@ fn the_line_goes_and_the_rod_recovers_once_the_fight_resolves() {
         tick(
             &mut p,
             PondInput {
+                reel_edge: 0,
                 reel_mask: if t < 0x800 { REEL_A } else { 0 },
                 ..Default::default()
             },

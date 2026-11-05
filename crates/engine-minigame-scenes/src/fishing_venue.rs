@@ -636,10 +636,7 @@ pub fn tick_venue_actors(
     });
     if let Some(w) = v.wander.as_ref() {
         let lure_drift = match (session.lure_actor(), session.venue_map()) {
-            (Some(l), Some(m)) => legaia_engine_fishing::fishing_actors::LureActor::cast(
-                m.anchor_x, m.anchor_z, m.facing, 1,
-            )
-            .map_or(0, |s| i32::from(l.x()) - i32::from(s.x())),
+            (Some(l), Some(_)) => i32::from(l.x()) - i32::from(l.spawn.0),
             _ => 0,
         };
         let last = legaia_engine_fishing::fishing_actors::CELEBRATION_STAGE_FRAMES.2;

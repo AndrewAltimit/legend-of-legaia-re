@@ -368,7 +368,7 @@ pub struct FishFrame {
     pub load: i32,
     /// The swim offset `FUN_801D7BB8` writes to `DAT_801D9100` / `DAT_801D9104`
     /// this frame - `(sin, cos) * radius * 3 * step >> 12` at the arm's angle,
-    /// 24.8 - in the fish's own frame (its facing taken as `0`).
+    /// 24.8, world space.
     pub swim: (i32, i32),
     /// The surge term `DAT_801D90F4`, `0..=0x3C0`: the lure tick caps the
     /// hooked reel speed at `0x1800 - 2 * surge` (`0x801D2B98..0x801D2BB0`).
@@ -395,6 +395,8 @@ pub struct FishAi {
     pub(super) phase: i32,
     /// The depth ceiling `DAT_801D929C`.
     pub(super) ceiling: i32,
+    /// The angler's `+0x26`: every arm's swim angle starts from it.
+    pub facing: i16,
 }
 
 impl Default for FishAi {
@@ -420,6 +422,7 @@ impl FishAi {
             timer: 0,
             phase: 0,
             ceiling: FIGHT_DEPTH_CEILING,
+            facing: 0,
         }
     }
 
@@ -479,7 +482,7 @@ impl FishAi {
             }
         };
         // `FUN_801D7BB8(facing - ((rand & 0x7f) - K), radius, .., step * 3)`.
-        let angle = (angle_k - (rng.next_u15() & 0x7f) as i32) as u16;
+        let angle = (i32::from(self.facing) + angle_k - (rng.next_u15() & 0x7f) as i32) as u16;
         let scale = fs * 3;
         let polar = |t: i32| (t.wrapping_mul(radius).wrapping_mul(scale)) >> 12;
         let swim = (

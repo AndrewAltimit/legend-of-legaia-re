@@ -298,3 +298,178 @@ fn the_power_meter_sweeps_as_retails_does() {
         }
     }
 }
+
+const ANGLER: u32 = 0x8014_2000;
+const ROD_ACTOR: u32 = 0x8014_3000;
+const ACC_X: u32 = 0x801D_9174;
+const ACC_Y: u32 = 0x801D_9178;
+const ACC_Z: u32 = 0x801D_917C;
+const TRACKED: u32 = 0x801D_9184;
+const SPAWN: u32 = 0x801D_918C;
+const POWER: u32 = 0x801D_9274;
+const PULL: u32 = 0x801D_9148;
+const SWAY: u32 = 0x801D_9140;
+const SWAY_TARGET: u32 = 0x801D_9144;
+const SWIM: u32 = 0x801D_9100;
+const PRESS_WORD: u32 = 0x801D_90D8;
+
+/// The flight arm, its tail, and the in-water head, as `LureActor` runs them.
+#[test]
+fn the_lure_flies_and_comes_in_as_retails_does() {
+    use legaia_engine_fishing::fishing_actors::LureActor;
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+    let scus = crate::common::scus().expect("scus");
+    // The real quadrature tables the boot installs (`FUN_80026BE0`).
+    cpu.mem.wr32(0x8007_B81C, 0x8007_0A2C);
+    cpu.mem.wr32(0x8007_B7F8, 0x8007_122C);
+    drop(scus);
+    let end = |r: &mut legaia_retail_exec::Regs, _: &mut legaia_retail_exec::Memory| {
+        r.r[RA] = legaia_retail_exec::RETURN_SENTINEL
+    };
+    for a in [0x801D_39C4, 0x801D_2F44, 0x801D_3A44, 0x801D_395C] {
+        cpu.hook(a, end);
+    }
+    // The GTE's leading-bit count.
+    cpu.hook(0x8005_BA1C, |r, _| {
+        r.r[V0] = r.r[legaia_retail_exec::A0].leading_zeros()
+    });
+    cpu.stub(0x8002_1B04, FISH);
+    cpu.stub(0x8006_5034, 0);
+    cpu.stub(0x8006_53C8, 0);
+    cpu.stub(0x801D_7030, 0);
+    cpu.stub(0x8001_A068, 0);
+    cpu.stub(0x8005_6798, 0);
+    cpu.mem.wr32(0x801D_9284, ANGLER);
+    cpu.mem.wr32(0x801D_928C, ROD_ACTOR);
+    cpu.mem.wr32(0x1F80_03EC, SCENE);
+    let mut rng = Rng(0x4C55_5245);
+    let mut landed = 0;
+    let mut pulled = 0;
+    for scenario in 0..1500 {
+        let facing = rng.below(0x1000) as i16;
+        let (ax, ay, az) = (
+            rng.below(0x2000) as i16,
+            rng.below(0x100) as i16 - 0x40,
+            rng.below(0x2000) as i16,
+        );
+        let power = 0x20 + rng.below(0xFE0) as i32;
+        let step = 1 + rng.below(3) as i32;
+        let mut port = LureActor::cast(ax, ay, az, facing, power, step).expect("cast");
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        cpu.mem.wr16(ANGLER + 0x26, facing as u16);
+        cpu.mem.wr16(ROD_ACTOR + 0x26, facing as u16);
+        cpu.mem.wr32(ACC_X, port.x_fixed as u32);
+        cpu.mem.wr32(ACC_Y, port.y_fixed as u32);
+        cpu.mem.wr32(ACC_Z, port.z_fixed as u32);
+        cpu.mem.wr16(TRACKED, port.tracked.0 as u16);
+        cpu.mem.wr16(TRACKED + 2, port.tracked.1 as u16);
+        cpu.mem.wr16(TRACKED + 4, port.tracked.2 as u16);
+        cpu.mem.wr16(SPAWN, port.spawn.0 as u16);
+        cpu.mem.wr16(SPAWN + 4, port.spawn.1 as u16);
+        cpu.mem.wr32(POWER, power as u32);
+        cpu.mem.wr16(LURE + 0x3E, 0x40);
+        cpu.mem.wr32(PULL, 0);
+        cpu.mem.wr32(SWAY, 0);
+        cpu.mem.wr32(SWAY_TARGET, 0);
+        cpu.mem.wr32(SWIM, 0);
+        cpu.mem.wr32(SWIM + 4, 0);
+        cpu.mem.wr32(HOOKED, 0);
+        let mut record = port.tail();
+        cpu.mem.wr32(RECORD, record as u32);
+        // Flight.
+        for frame in 0..200 {
+            cpu.regs.r[S5] = LURE;
+            cpu.regs.r[16] = 0x1F80_0314;
+            cpu.mem.wr32(0x801D_9150, 0);
+            assert_eq!(
+                cpu.call(0x801D_2784, &[]),
+                Stop::Returned,
+                "{:x?}",
+                cpu.calls
+            );
+            let down = port.flight_step(facing, step);
+            let at =
+                format!("scenario {scenario} flight {frame} facing {facing:#x} power {power:#x}");
+            assert_eq!(cpu.mem.rd32(ACC_X) as i32, port.x_fixed, "{at}: x");
+            assert_eq!(cpu.mem.rd32(ACC_Y) as i32, port.y_fixed, "{at}: y");
+            assert_eq!(cpu.mem.rd32(ACC_Z) as i32, port.z_fixed, "{at}: z");
+            assert_eq!(cpu.mem.rd32(POWER) as i32, port.power, "{at}: power");
+            assert_eq!(cpu.mem.rd16(LURE + 0x3E) as i16, port.fall, "{at}: fall");
+            cpu.regs.r[S5] = LURE;
+            cpu.regs.r[3] = 0x801E_0000;
+            assert_eq!(
+                cpu.call(0x801D_39C8, &[]),
+                Stop::Returned,
+                "{:x?}",
+                cpu.calls
+            );
+            record = port.tail();
+            assert_eq!(cpu.mem.rd32(RECORD) as i32, record, "{at}: record");
+            if down {
+                landed += 1;
+                break;
+            }
+        }
+        // In the water, with presses, D-pad and a fish's swim.
+        let hooked = rng.below(2) == 0;
+        for frame in 0..120 {
+            let edge = if rng.below(10) == 0 {
+                [0x40u32, 0x80, 0xC0][rng.below(3) as usize]
+            } else {
+                0
+            };
+            let held = [0u32, 0, 0x2000, 0x8000][rng.below(4) as usize];
+            let swim = (
+                rng.below(0x4000) as i32 - 0x2000,
+                rng.below(0x4000) as i32 - 0x2000,
+            );
+            cpu.mem.wr32(PRESS_WORD, edge);
+            cpu.mem.wr32(HELD, held);
+            cpu.mem.wr32(HOOKED, u32::from(hooked));
+            cpu.mem.wr32(SWIM, swim.0 as u32);
+            cpu.mem.wr32(SWIM + 4, swim.1 as u32);
+            cpu.mem.wr32(RECORD, record as u32);
+            cpu.regs.r[S5] = LURE;
+            assert_eq!(
+                cpu.call(0x801D_29E8, &[]),
+                Stop::Returned,
+                "{:x?}",
+                cpu.calls
+            );
+            port.water_step(port.heading(), facing, record, hooked.then_some(swim), step);
+            port.pull_step(edge, step);
+            let at = format!("scenario {scenario} water {frame} hooked {hooked} record {record}");
+            assert_eq!(cpu.mem.rd32(ACC_X) as i32, port.x_fixed, "{at}: x");
+            assert_eq!(cpu.mem.rd32(ACC_Z) as i32, port.z_fixed, "{at}: z");
+            assert_eq!(cpu.mem.rd32(PULL) as i32, port.pull, "{at}: pull");
+            cpu.regs.r[S5] = LURE;
+            assert_eq!(
+                cpu.call(0x801D_382C, &[]),
+                Stop::Returned,
+                "{:x?}",
+                cpu.calls
+            );
+            port.sway_step(held, step);
+            assert_eq!(cpu.mem.rd32(SWAY) as i32, port.sway.0, "{at}: sway");
+            assert_eq!(
+                cpu.mem.rd32(SWAY_TARGET) as i32,
+                port.sway.1,
+                "{at}: target"
+            );
+            cpu.regs.r[S5] = LURE;
+            cpu.regs.r[3] = 0x801E_0000;
+            assert_eq!(cpu.call(0x801D_39C8, &[]), Stop::Returned);
+            record = port.tail();
+            assert_eq!(cpu.mem.rd32(RECORD) as i32, record, "{at}: record");
+            pulled += usize::from(port.pull != 0);
+        }
+    }
+    assert!(landed > 1400 && pulled > 1000, "{landed} {pulled}");
+}

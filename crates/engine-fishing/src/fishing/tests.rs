@@ -718,7 +718,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     );
     assert_eq!(p.phase(), PondPhase::Flight);
     let casts_before = p.casts;
-    for _ in 0..FLIGHT_FRAMES {
+    while p.phase() == PondPhase::Flight {
         p.tick(PondInput::default(), 1, 0x80);
     }
     assert_eq!(p.phase(), PondPhase::Waiting);
@@ -734,6 +734,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     for _ in 0..8000 {
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: 0x40,
                 ..Default::default()
             },
@@ -765,7 +766,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
                 1,
                 0x80,
             );
-            for _ in 0..FLIGHT_FRAMES {
+            while p.phase() == PondPhase::Flight {
                 p.tick(PondInput::default(), 1, 0x80);
             }
         }
@@ -797,6 +798,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
         let reel = if p.tension() < 0x800 { 0x40 } else { 0 };
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: reel,
                 ..Default::default()
             },
@@ -851,6 +853,7 @@ fn pond_session_is_deterministic_for_a_seed() {
         let mut log = Vec::new();
         for i in 0..4000u32 {
             let input = PondInput {
+                reel_edge: 0,
                 reel_mask: if i % 90 < 45 { 0x40 } else { 0 },
                 cast_edge: i % 200 == 0,
                 ..Default::default()
@@ -886,7 +889,7 @@ fn pond_snaps_when_tension_pins() {
         1,
         0x80,
     );
-    for _ in 0..FLIGHT_FRAMES {
+    while p.phase() == PondPhase::Flight {
         p.tick(PondInput::default(), 1, 0x80);
     }
     // Hold reel forever: the session must terminate (a weak fish lands
@@ -896,6 +899,7 @@ fn pond_snaps_when_tension_pins() {
     for _ in 0..30000 {
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: 0x40,
                 ..Default::default()
             },
@@ -932,6 +936,7 @@ fn the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure() {
         p.gauge.tension = TENSION_MAX;
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: 0x40,
                 ..Default::default()
             },
@@ -966,6 +971,7 @@ fn the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure() {
             p.gauge.tension = TENSION_MAX;
             p.tick(
                 PondInput {
+                    reel_edge: 0,
                     reel_mask: 0x40,
                     ..Default::default()
                 },

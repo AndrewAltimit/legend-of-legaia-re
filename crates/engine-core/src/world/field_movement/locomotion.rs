@@ -359,9 +359,17 @@ impl World {
             // of an odd pass speed (run diagonal `18`, forced slow `10`) is
             // odd here, and rounding it up each vsync walks `10` for `9`. The
             // odd unit waits for the next vsync.
-            let speed = speed + self.locomotion.step_carry;
-            self.locomotion.step_carry = speed % FIELD_STEP_UNIT;
-            self.advance_with_collision(slot, dir_bits, speed - self.locomotion.step_carry);
+            // A speed that is a whole pass's (the ramp runs at the frame step)
+            // has no later vsync to carry to: retail's last sub-step takes an
+            // odd one up to even.
+            if self.clock.frame_step > self.move_vm.ramp_ratio {
+                let speed = speed + self.locomotion.step_carry;
+                self.locomotion.step_carry = speed % FIELD_STEP_UNIT;
+                self.advance_with_collision(slot, dir_bits, speed - self.locomotion.step_carry);
+            } else {
+                self.locomotion.step_carry = 0;
+                self.advance_with_collision(slot, dir_bits, speed);
+            }
         }
         // Walk-regen accumulator (retail `_DAT_801F2274`): a frame in which
         // the step actually committed counts as walked.

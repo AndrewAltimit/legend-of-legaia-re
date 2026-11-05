@@ -241,6 +241,7 @@ impl SceneHost {
             region_block,
             anchor_x: lead.x,
             anchor_z: lead.z,
+            anchor_y: 0,
             facing: lead.facing,
             rod_mesh: legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene),
         })
