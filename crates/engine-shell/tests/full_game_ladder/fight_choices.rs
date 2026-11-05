@@ -278,16 +278,20 @@ pub(super) fn wanted_item(
 /// heals landed, sits within one party-wide hit: the heal comes first there, or the
 /// giver is the next one down. Cures the round's earlier members committed count as
 /// landed.
+///
+/// A member every limb of which Rot has taken ([`attack_refused`]) gets the same
+/// cure in any fight: Rot lasts until cured (no status timer), the ring refuses all
+/// three attack arms, and the stance is all the member has left. `jouinc`'s F18
+/// (monster 152) rots all three members this way, and a hand that only stood in the
+/// stance with five Medicine in the bag ran out the battle cap.
 pub(super) fn wanted_cure_item(
     w: &legaia_engine_core::world::World,
     ids: impl Iterator<Item = u8>,
 ) -> Option<(u8, u8)> {
     use legaia_engine_battle_loop::round_flow::PendingPartyAction;
     use legaia_engine_menus::items::ItemEffect;
-    if !w.battle.no_escape {
-        return None;
-    }
     let n = w.party.party_count.clamp(1, 3) as usize;
+    let out_of_it = |i: usize| (w.battle.no_escape && stoned(w, i)) || attack_refused(w, i as u8);
     let cures = |id: u8| {
         w.tables
             .item_catalog
@@ -306,10 +310,10 @@ pub(super) fn wanted_cure_item(
         )
         .filter_map(|(actor, _)| ITEM_TARGET.with(|t| t.borrow()[actor]).map(usize::from))
         .collect();
-    let target = (0..n).find(|&i| stoned(w, i) && !coming.contains(&i))?;
+    let target = (0..n).find(|&i| out_of_it(i) && !coming.contains(&i))?;
     let aoe = AOE_HIT.with(std::cell::Cell::get);
     let hp = projected_hp(w);
-    if (0..n).any(|i| !stoned(w, i) && hp[i] > 0 && hp[i] <= aoe + aoe / 8) {
+    if (0..n).any(|i| !out_of_it(i) && hp[i] > 0 && hp[i] <= aoe + aoe / 8) {
         return None;
     }
     let mut ids = ids;
@@ -1446,4 +1450,41 @@ fn rot_status(w: &legaia_engine_core::world::World, actor: u8) -> u16 {
         | legaia_engine_battle_vm::status_effects::pack_display_flags(
             w.battle.status_effects.statuses(actor),
         )
+}
+
+/// `jouinc`'s F18 under seed 7: every limb of every member rotted, Medicine in
+/// the bag, an escapable fight. The hand cures the first rotted member rather
+/// than standing in the stance for the rest of the battle cap; a member that
+/// can still swing takes no cure.
+#[test]
+fn a_fully_rotted_member_gets_the_cure_in_any_fight() {
+    use legaia_engine_core::world::{Actor, World};
+    use legaia_engine_menus::items::{ItemEffect, ItemEntry};
+    let mut w = World::new();
+    while w.actors.len() < 8 {
+        w.actors.push(Actor::default());
+    }
+    w.mode = legaia_engine_mode::mode::SceneMode::Battle;
+    w.party.party_count = 3;
+    for i in 0..3 {
+        w.actors[i].battle.hp = 1000;
+        w.actors[i].battle.max_hp = 2000;
+        w.actors[i].battle.liveness = 1;
+    }
+    w.tables.item_catalog.insert(ItemEntry {
+        id: 0x7F,
+        name: "Medicine",
+        effect: ItemEffect::CureAll,
+        usable_in_battle: true,
+        usable_in_field: true,
+    });
+    assert!(!w.battle.no_escape);
+    assert_eq!(wanted_cure_item(&w, [0x7F].into_iter()), None);
+    // The three limb bits the Rot applier rolls (`1 << (rand % 3 + 3)`).
+    w.actors[1].battle.field_flags = 0x38;
+    assert!(attack_refused(&w, 1));
+    assert_eq!(wanted_cure_item(&w, [0x7F].into_iter()), Some((0x7F, 1)));
+    // One limb left: the member still swings.
+    w.actors[1].battle.field_flags = 0x18;
+    assert_eq!(wanted_cure_item(&w, [0x7F].into_iter()), None);
 }
