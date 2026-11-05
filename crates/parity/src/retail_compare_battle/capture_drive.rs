@@ -492,8 +492,10 @@ impl RetailBattle {
             let b = bbox?;
             let raw = legaia_engine_battle_vm::battle_cam_script::menu_raw_z(Some(b));
             // The prompt's orbit is a clock the RAM does not date: only a turning
-            // shot takes this start.
-            self.retake_turning_yaw()?;
+            // shot, or a capture whose yaw is pinned, takes this start.
+            if pin.and_then(|p| p.yaw).is_none() {
+                self.retake_turning_yaw()?;
+            }
             return Some(WalkStart {
                 pitch: 32,
                 yaw: 0,
@@ -1857,6 +1859,27 @@ pub struct DisplayedWalkPin {
 }
 
 const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
+    (
+        // The round's first actor, walking off the prompt's far framing; the
+        // seat does not enter on that start.
+        "battle_rugi_barra_windcutter_mid_cast",
+        DisplayedWalkPin {
+            seat: 0,
+            style: 0,
+            yaw: Some(3260),
+        },
+    ),
+    (
+        // Seats 1 and 2 both spent a Spirit; the walk set out from seat 1's.
+        // Off seat 2's, the focus stands 94 units nearer Gala on the shot's
+        // axis and she clears the near gate, filling the frame.
+        "battle_doman_boogie_pump_windcutter_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 0,
+            yaw: None,
+        },
+    ),
     (
         "battle_stone_zenoir_v2_fire_claw_mid_cast",
         DisplayedWalkPin {
