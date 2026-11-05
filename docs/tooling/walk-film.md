@@ -31,6 +31,12 @@ engine row on the same spot, and the summary counts the camera fields that diffe
 A low pairing count means the two walked different paths, which is the finding
 to read first.
 
+Both sides also write the player's clip: retail's bound record `+0x5E`, cursor
+`+0x68` and rate `+0x6A`, the engine's bound clip, cursor and
+`locomotion.player_clip_rate`. A still seats the pose; these columns say how the
+pose moves. Retail's cursor steps once a pass, the engine's once a vsync at half
+the step, so the two meet on every second row.
+
 The first pass differs by construction: a state saved mid-walk has one more
 pass of the old pad queued, as `kor3_field_route_walk`'s first row does.
 
@@ -44,5 +50,6 @@ not a finding by itself; a placement off retail from the first row is.
 - A carried player reads as still, and its focus trails a pass (same page).
 - The d-pad remap reads the [authored octant](../subsystems/field-locomotion.md#gp0x2d8-is-authored-not-computed).
 - `kor3`'s placements, flats 15 and 20 among them, hold retail's headings for a whole film, with no spin.
+- A held walk's clip runs at retail's rate: `kor_field_route_walk` steps `16` a pass through the same ten frames on both sides.
 
 See also [`retail-compare.md`](retail-compare.md), [`cast-sequence-oracle.md`](cast-sequence-oracle.md).
