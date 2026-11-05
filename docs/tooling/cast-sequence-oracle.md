@@ -110,6 +110,13 @@ part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
+Set against a retail recording made with `--retail-parts`, the file reads a mechanism
+off directly: Spoon's fans stood at scale `0x400` beside retail's `0x666`, Barra's cone
+at `z = 0` beside `456`. Each retail part appears once per list walk of its vsync, so
+compare by value, not by count. The same goes for `cam.csv` against the pairs of
+`report.json` (`shown_vsync`, `engine_tick`): a constant difference through an arm names
+a store or a drift, one that grows names a rate.
+
 `LEGAIA_DIAG_CAST_VRAM_AT=<tick>` writes the battle VRAM at that tick as
 `engine/vram_<tick>.bin`, to hold against a retail recording's
 `LEGAIA_RAM_AT` state through `sstate_vram.py`. A byte comparison of the side-band pages

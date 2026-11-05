@@ -3180,6 +3180,12 @@ camera steps the shot (`BattleCamera::arm_module_shot` /
 `arm_module_follow`) on both hosts. A module with no director arms no shot and
 keeps the held pose.
 
+The walker's translation and focus lanes add the signed increment and land once at or
+past the endpoint, whichever side of it the value reads: a drift that starts as a shot
+lands (PROT 0913's arm 11 over arm 9's `0x80`-frame shot) comes back to the endpoint
+once and then runs free, where a step toward the endpoint would chase it for the rest
+of the arm with the task alive and the angle lanes pinned.
+
 ### Summon-band camera
 
 <a id="summon-band-camera"></a>
