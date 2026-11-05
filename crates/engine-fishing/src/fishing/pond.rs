@@ -269,8 +269,8 @@ impl PondSession {
     }
 
     /// Advance one frame. `frame_step` is the retail `DAT_1f800393` (1 at
-    /// 60 fps); `cast_step` is the casting-power meter step per frame (the
-    /// native driver uses `0x80`).
+    /// 60 fps); `cast_step` is the casting-power meter step per frame-step
+    /// ([`CAST_POWER_STEP`]).
     pub fn tick(&mut self, input: PondInput, frame_step: i32, cast_step: i32) {
         // The hub menu owns the frame while it is up: retail's states
         // `0x64..=0x78` run instead of the pond's (`crate::fishing_hub`).

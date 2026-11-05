@@ -178,7 +178,7 @@ fn rod_gate_wraps_past_the_last_kind() {
 #[test]
 fn cast_power_oscillates_within_bounds_and_locks() {
     let mut c = CastPower::new();
-    assert_eq!(c.value(), CAST_POWER_SEED);
+    assert_eq!(c.value(), 0);
     // Sweep up to the ceiling and confirm it bounces back down.
     for _ in 0..200 {
         c.advance(0x40);
@@ -196,7 +196,7 @@ fn cast_power_oscillates_within_bounds_and_locks() {
 fn cast_power_bounces_at_ceiling() {
     let mut c = CastPower::new();
     // Big step jumps straight to the ceiling and flips direction.
-    c.advance(CAST_POWER_MAX);
+    c.advance(CAST_POWER_MAX + 1);
     assert_eq!(c.value(), CAST_POWER_MAX);
     c.advance(0x40);
     assert!(

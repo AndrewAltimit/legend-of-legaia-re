@@ -240,3 +240,34 @@ fn the_waiting_lines_band_and_strike_go_as_retails_do() {
     }
     assert!(hooked > 200, "hooked {hooked}: {bands:?}");
 }
+
+#[test]
+fn the_power_meter_sweeps_as_retails_does() {
+    use legaia_engine_fishing::fishing::{CAST_POWER_STEP, CastPower};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d
+        .read_entry(fs::FISHING_OVERLAY_PROT_INDEX)
+        .expect("PROT 0972");
+    cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
+    const METER: u32 = 0x801D_9274;
+    const DIR: u32 = 0x801D_9278;
+    cpu.hook(0x801C_FB98, |r, _| r.r[RA] = legaia_retail_exec::RETURN_SENTINEL);
+    for step in [1i32, 2, 3] {
+        cpu.mem.wr32(METER, 0);
+        cpu.mem.wr32(DIR, 1);
+        cpu.mem.wr8(FRAME_STEP, step as u8);
+        let mut port = CastPower::new();
+        for frame in 0..1000 {
+            assert_eq!(cpu.call(0x801C_FB30, &[]), Stop::Returned);
+            port.advance(CAST_POWER_STEP * step);
+            assert_eq!(
+                cpu.mem.rd32(METER) as i32,
+                port.value(),
+                "step {step} frame {frame}"
+            );
+        }
+    }
+}

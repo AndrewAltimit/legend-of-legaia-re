@@ -543,7 +543,7 @@ impl LegaiaMinigames {
                 edge_bonus,
             },
             1,
-            0x80,
+            fishing::CAST_POWER_STEP,
         );
         let events = p.take_events();
         // The overlay's direct ring stores, as `World::tick_fishing` raises

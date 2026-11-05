@@ -86,8 +86,8 @@ pub const TENSION_MIN: i32 = 0;
 pub const CAST_POWER_MIN: i32 = 0x20;
 /// Casting-power oscillator high bound (`FUN_801cf3bc` state `0x14`).
 pub const CAST_POWER_MAX: i32 = 0x1000;
-/// Casting-power seed at run-loop init (`FUN_801cf3bc` state `0xa`).
-pub const CAST_POWER_SEED: i32 = 0x40;
+/// The meter's step per frame-step (`sll v0,v0,5` at `0x801CFB44`).
+pub const CAST_POWER_STEP: i32 = 0x20;
 
 /// Persistent fishing-point cap (`FUN_801d5298`: `_DAT_8008444c` clamped to
 /// `999999`). The HUD row clamps to the same literal, one copy per crate -
