@@ -68,6 +68,9 @@ impl SceneHost {
             // The seat stamps the tile as the last one compared; clear it so
             // the next dispatch reads the seat as a crossing.
             self.last_trigger_tile = None;
+            // On the overworld the door is an entity auto-engage, and the
+            // seat holds its tile's portals the same way: release it.
+            self.world.world_map.seat_hold_tile = None;
             return Ok(DoorTaken::WalkOn { record, tile });
         }
         let man_file = legaia_scene_formats::man_section::parse(&man)?;
