@@ -383,20 +383,12 @@ impl World {
     /// sector table with that bank number directly.
     // REF: FUN_800520F0, FUN_8003E104
     pub fn battle_monster_sound_banks(&self) -> Vec<(u8, u16)> {
-        let ids: Vec<u16> = self
-            .battle_monster_slots()
-            .into_iter()
-            .map(|(_, id, _)| id)
-            .filter(|&id| id != 0)
-            .collect();
-        let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
-            return Vec::new();
-        };
-        let mut out = vec![(7u8, min - 1)];
-        if min != max {
-            out.push((8, max - 1));
-        }
-        out
+        crate::world::monster_sound_banks(
+            self.battle_monster_slots()
+                .into_iter()
+                .map(|(_, id, _)| id)
+                .filter(|&id| id != 0),
+        )
     }
 
     pub(in crate::world) fn battle_sound_category(&self, category: u8) -> u8 {

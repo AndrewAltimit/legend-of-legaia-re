@@ -162,6 +162,10 @@ pub struct CueDifferentialArgs {
     /// Every matching state, not one per scene.
     #[arg(long)]
     pub all_states: bool,
+    /// Battle states, one per formation: the class-2 bank, the formation's two
+    /// `monster.snd` banks and `bse.dat` with the categories the state's RAM holds.
+    #[arg(long)]
+    pub battle: bool,
 }
 
 pub fn run(args: CueDifferentialArgs) -> Result<()> {
@@ -188,10 +192,10 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
             continue;
         };
         obs.settle_on_loaded_scene(&cdname);
-        if !matches!(obs.class, StateClass::Field | StateClass::WorldMap) {
-            continue;
-        }
-        if !args.all_states && !scenes.insert(obs.scene.clone()) {
+        let battle = obs.class == StateClass::Battle;
+        if args.battle != battle
+            || !(battle || matches!(obs.class, StateClass::Field | StateClass::WorldMap))
+        {
             continue;
         }
         let ram = if entry.emulator == "mednafen" {
@@ -202,6 +206,15 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
             let (st, _) = legaia_pcsx_redux::gpu::load_with_scus(&entry.path, &scus)?;
             st.main_ram().to_vec()
         };
+        let formation: Vec<u8> = ram[0x7B_D0C..0x7B_D10].to_vec();
+        let scene_key = if battle {
+            format!("{formation:02x?}")
+        } else {
+            obs.scene.clone()
+        };
+        if !args.all_states && !scenes.insert(scene_key) {
+            continue;
+        }
         let mut retail = RetailDrainer::new(&ram);
         let mut ids: Vec<u16> = (0..STATIC_CUES).collect();
         if retail.has_runtime_bank() {
@@ -212,8 +225,14 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
             ..Default::default()
         };
         // The listening run hands the probe back filled.
-        let keyed = match run_engine_listening_with(&extracted, &obs, Some(probe)) {
-            Ok((_, heard)) => heard.cue_probe.map(|p| p.keyed).unwrap_or_default(),
+        let heard = if battle {
+            battle_probe(&extracted, &ram, &formation, probe)
+        } else {
+            run_engine_listening_with(&extracted, &obs, Some(probe))
+                .map(|(_, heard)| heard.cue_probe.map(|p| p.keyed).unwrap_or_default())
+        };
+        let keyed = match heard {
+            Ok(k) => k,
             Err(err) => {
                 println!("{} ({}): [seed failed] {err:#}", entry.label, obs.scene);
                 continue;
@@ -244,8 +263,13 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
         total += row_total;
         same += row_same;
         println!(
-            "{} ({}): {row_same}/{row_total} cues alike",
-            entry.label, obs.scene
+            "{} ({}): {row_same}/{row_total} cues alike{}",
+            entry.label,
+            obs.scene,
+            match ram[0x7B_A88] {
+                0 => String::new(),
+                _ => " [forced channel latch up]".to_string(),
+            }
         );
         for l in lines.iter().take(args.keep) {
             println!("{l}");
@@ -253,4 +277,48 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
     }
     println!("cue-differential: {same}/{total}");
     Ok(())
+}
+
+/// The engine's banks for a battle, staged directly: retail's `+4` writes to the
+/// `bse.dat` rows come with the state's RAM.
+fn battle_probe(
+    extracted: &std::path::Path,
+    ram: &[u8],
+    formation: &[u8],
+    mut probe: CueProbe,
+) -> Result<BTreeMap<u16, Vec<CueVoice>>> {
+    use legaia_engine_mode::sfx_residency::SharedRegionBank;
+    let cfg = legaia_engine_session::session::BootConfig {
+        scene: "town01".into(),
+        enable_audio: true,
+    };
+    let mut session = legaia_engine_session::native::NativeSession::open_extracted_detached_audio(
+        extracted, &cfg,
+    )
+    .context("open boot session")?;
+    let index = session.host.index.clone();
+    let at = |va: u32| (va & 0x1F_FFFF) as usize;
+    let rd32 = |va: u32| u32::from_le_bytes(ram[at(va)..at(va) + 4].try_into().unwrap_or([0; 4]));
+    let bundle = rd32(GP_VALUE + GP_RUNTIME_BANK);
+    let rows = ram
+        .get(at(bundle)..at(bundle) + 0x1000)
+        .context("no runtime bank")?;
+    let want = legaia_engine_core::world::monster_sound_banks(
+        formation.iter().map(|&b| u16::from(b)).filter(|&b| b != 0),
+    );
+    let d = session.bgm.as_mut().context("no director")?;
+    d.sync_shared_region(Some(SharedRegionBank::CLASS2), |e| {
+        index.entry_bytes_extended(e).ok()
+    });
+    d.sync_field_sfx(rows, false, None, |_| None);
+    d.sync_battle_monster_banks(&want, || {
+        index
+            .entry_bytes(legaia_container_formats::vab_multi_bank::MONSTER_SND_PROT_INDEX as u32)
+            .ok()
+    });
+    let mut audio = EngineAudio::default();
+    probe.keyed.clear();
+    audio.cue_probe = Some(probe);
+    self::probe(&mut session, &mut audio);
+    Ok(audio.cue_probe.map(|p| p.keyed).unwrap_or_default())
 }

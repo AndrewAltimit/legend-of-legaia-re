@@ -646,6 +646,19 @@ impl World {
     }
 }
 
+/// The formation's `monster.snd` banks ([`World::battle_monster_sound_banks`]).
+pub fn monster_sound_banks(ids: impl Iterator<Item = u16>) -> Vec<(u8, u16)> {
+    let ids: Vec<u16> = ids.collect();
+    let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
+        return Vec::new();
+    };
+    let mut out = vec![(7u8, min - 1)];
+    if min != max {
+        out.push((8, max - 1));
+    }
+    out
+}
+
 /// [`World::runtime_sfx_descriptor`] over an explicit bundle.
 pub fn runtime_sfx_descriptor_in(bundle: &[u8], id: i16) -> Option<[u8; 8]> {
     if id < 0x200 {

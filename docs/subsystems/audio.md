@@ -3368,6 +3368,13 @@ level: `FUN_80067550`'s head has no cap, so a bank master above `127` carries a 
 - The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
   ending theme overwrote hold stale tone data in retail's RAM.
 
+`--battle` takes one battle state per formation, with the class-2 bank, the formation's two
+`monster.snd` banks and the state's own `bse.dat` rows, whose `+4` categories retail has already
+written. These read alike but for a state in the battle loader (slot `2` not open yet, as
+`v0_1_battle_loading_tetsu` shows beside `v0_1_battle_start_tetsu`), the reward cue `0x50`,
+whose bank the port stages on demand, and the `map01` arts states captured under the Monaural option. It does
+not cover the port's own `+4` writes: the engine side takes the rows as retail's RAM holds them.
+
 ## Real retail PCM
 
 Everything above compares registers and notes. This compares sound: mednafen's

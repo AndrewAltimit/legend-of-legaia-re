@@ -35,6 +35,7 @@ legaia-engine-menu-runtime.workspace = true
 legaia-engine-scene.workspace = true
 legaia-engine-audio.workspace = true
 legaia-retail-exec.workspace = true
+legaia-container-formats.workspace = true
 legaia-xa.workspace = true
 legaia-engine-session.workspace = true
 legaia-mednafen.workspace = true
