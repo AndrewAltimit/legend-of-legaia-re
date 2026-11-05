@@ -2158,10 +2158,15 @@ fn a_case_6_walk_lands_on_the_recorded_terminator_pose() {
 /// terminator: fourteen passes at step `2`, ten at step `3`.
 #[test]
 fn a_case_6_walk_runs_the_cast_waits_passes() {
-    assert_eq!(capture_drive::case6_walk_passes(&[2; 16]).len(), 14);
-    assert_eq!(capture_drive::case6_walk_passes(&[3; 16]).len(), 10);
+    assert_eq!(capture_drive::case6_walk_passes(&[2; 16], 2).len(), 14);
+    assert_eq!(capture_drive::case6_walk_passes(&[3; 16], 2).len(), 10);
     // The ring's slot `3` is the terminator, the last pass walked.
     let mut ring = [3; 16];
     ring[3] = 4;
-    assert_eq!(capture_drive::case6_walk_passes(&ring).last(), Some(&4));
+    assert_eq!(capture_drive::case6_walk_passes(&ring, 2).last(), Some(&4));
+    // One `0x2B` pass in, the display is `0x29`'s exit: the terminator takes
+    // no step, so the exit is an armed pass like the rest.
+    let one_in = capture_drive::case6_walk_passes(&[3; 16], 1);
+    assert_eq!(one_in.len(), 10);
+    assert_eq!(one_in.last(), Some(&0));
 }

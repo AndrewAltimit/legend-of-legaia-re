@@ -418,9 +418,13 @@ impl RetailBattle {
             return None;
         };
         let (step, _) = self.step_run;
-        if accum != 16 * u16::from(step) {
+        let shot_passes = if accum == 16 * u16::from(step) {
+            2
+        } else if accum == 8 * u16::from(step) {
+            1
+        } else {
             return None;
-        }
+        };
         let (live, end) = self.cam_tween;
         let turning = self.retake_turning_yaw();
         let landed =
@@ -428,7 +432,7 @@ impl RetailBattle {
         if !landed {
             return None;
         }
-        let passes = case6_walk_passes(&self.ring_steps);
+        let passes = case6_walk_passes(&self.ring_steps, shot_passes);
         let start = self.walk_start(pin)?;
         let caster = usize::from(self.active_actor);
         let [gx, gz] = (*self.ground.get(caster)?)?;
@@ -1860,6 +1864,17 @@ pub struct DisplayedWalkPin {
 
 const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
+        // One `0x2B` pass in on a step that has just gone to `4`. The seed's
+        // arm read the caster's old heading, which took the yaw down from the
+        // Spirit's framing rather than up across the wrap.
+        "battle_kor_gaza_166_astral_wave_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 0,
+            yaw: Some(440),
+        },
+    ),
+    (
         // The round's first actor, walking off the prompt's far framing; the
         // seat does not enter on that start.
         "battle_rugi_barra_windcutter_mid_cast",
@@ -1969,12 +1984,18 @@ const CAST_WAIT_TIMER: i32 = 0x14;
 /// the exit, then the terminator (ring slot `3`). `ring` is
 /// [`super::frame_step::recent_pass_steps`]. Recordings walk `14` passes at
 /// step `2`, `10` at step `3`.
-pub fn case6_walk_passes(ring: &[u8; 16]) -> Vec<i32> {
+///
+/// `shot_passes` counts the `0x2B` passes in the RAM, and the display stands
+/// two passes behind them. On two the display is the terminator. On one it is
+/// the pass before, `0x29`'s exit, which armed and walked, so the terminator
+/// takes no step and [`case6_walk`] arms the exit like the rest.
+pub fn case6_walk_passes(ring: &[u8; 16], shot_passes: usize) -> Vec<i32> {
     // A step-`2` walk runs past the ring's end; its oldest slot stands in.
     let step = |slot: usize| i32::from(ring[slot.min(15)]);
-    let mut passes = vec![step(3)];
+    let terminator = shot_passes + 1;
+    let mut passes = vec![if shot_passes == 1 { 0 } else { step(terminator) }];
     let mut drained = 0;
-    let mut slot = 4;
+    let mut slot = terminator + 1;
     while drained <= CAST_WAIT_TIMER {
         passes.push(step(slot));
         drained += step(slot);
