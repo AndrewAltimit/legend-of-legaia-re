@@ -374,6 +374,34 @@ not all read: see the oracle's list of what the deal leaves out. The frame drive
 hit, so a block roll's words sit one step past the frame's first word. See
 [the oracle](../../tooling/cast-sequence-oracle.md#a-monsters-physical-attack).
 
+### Why an impact cue rang on a block
+
+`FUN_80047430` runs its three walks in the order hit kernel, effect script, cue track
+(`jal` at `0x800478A0`, `0x800478B8`, `0x800478E4`), and a blocked hit steps its attacker's cue
+cursor over the impact cue (`0x801EE6EC..0x801EE6F8`). Nova's clips `7` and `8` both carry cue
+`0x04` (ring `0x03`) after the swing. On clip `8` it stands on the hit's own keyframe, so a port
+that walked the cues first sounded it two ticks ahead of every block voice. A `--sfx-callers`
+recording of `battle_dohaty_nova_v2_strike` has the router called with `4` on the one swing that
+lands a flinch and never on the three blocks. *Grade: disassembly + capture.*
+
+### Which bank Terra's battle keys
+
+`FUN_800520F0` loads raw `0x36D` (PROT 0875) over slot `2` when `DAT_8007BD11`, party seat 1's
+roster id, is `4` (`0x80052378..0x800523AC`). With 0869 in its place her attack cues `0x40` / `0x41`
+are silent and eleven art cues sound where 0875 holds nothing. `legaia-engine cue-differential
+--battle` reads `terra_party_battle` alike on every row once the bank is the loader's.
+*Grade: disassembly + capture.*
+
+### Where a monster's `+4` category comes from
+
+`FUN_800520F0` stores `7` at node `+0x80` of every seated monster (`0x8005225C`) and then `8` on the
+seats holding the formation's largest id when the formation mixes ids (`0x8005234C`); `FUN_800513F0`
+stores `7` on each party node (`0x80051548`). The summon seat's node has no such store and reads `0`
+(`gimard_summon_visible`, `battle_rugi_rogue_rogue_thunder_mid_cast`,
+`battle_rugi_rogue_rogue_wind_mid_cast`). `cue-differential --battle` prints the bytes of every
+battle state against `monster_sound_category`: the only disagreement is
+`v0_1_battle_loading_tetsu`, whose loader has not reached the store. *Grade: disassembly + capture.*
+
 ### Where Glare's landing cue sits
 
 *Status:* resolved - grade `disassembly` (the id and the arm), `capture` (one landed roll)

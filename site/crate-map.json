@@ -2771,7 +2771,7 @@
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "Top-level native driver: <code>play</code> / <code>play-window</code>, <code>save</code> / <code>load</code>, <code>play-str</code>, <code>record</code> / <code>replay</code>, <code>config</code>, and the parity-oracle subcommands; <code>--help</code> groups every one.",
+   "scope": "Top-level native driver: <code>play</code> / <code>play-window</code>, <code>launch --disc</code> (what the launcher's Play starts, no screen), <code>save</code> / <code>load</code>, <code>play-str</code>, <code>record</code> / <code>replay</code>, <code>config</code>, and the parity-oracle subcommands behind <code>--features oracles</code>; <code>--help</code> groups every one.",
    "dependents": [],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/README.md"
   },

@@ -403,7 +403,10 @@ on `0x801F793C` and one inside PROT 0949 on `0x801F7CD8`, neither of which can
 leave its own image, and PROT 0958's head table carries `0x801F7D30` as one of
 its own arms.
 
-**PROT 0949's stager is a frameless table dispatch.** `0x801F75BC` has no
+**PROT 0949's stager is a frameless table dispatch, and its caller is a part.** The
+part programs call it through move-VM op `0x20`: in `battle_jou_freed_v3_water_crystals_mid_cast`
+the victim's rate reads `7` from vsync `541` and then steps to `0` over vsyncs `622..651`, and the
+hit's commit leaves it on `4` through the knockdown until the clip ends. `0x801F75BC` has no
 prologue. It bounds its operand with `sltiu v1, a1, 8`, forms the table base
 with `lui v0, 0x801F; addiu v0, v0, 0x69F0` and `jr`s through it. The table is
 eight words, `0x801F69F0..0x801F6A0C` inclusive (`0x801F6A10` is the next
@@ -1490,10 +1493,10 @@ Rot's left, right and low limb on `rand & 1`, `rand % 3 != 0` and `rand & 3 != 0
 the record's two immunity bits (`+0x6BC & 0x11000000`). A victim that dies takes the
 knockdown and ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
 
-**Water Column and Water Crystals** gate on the same countdown shape with no chain
-descriptor (`capture_countdown::WATER_COLUMN`, `WATER_CRYSTALS`). One hit lands as an arm
-passes, arm 5 and arm 3, and the terminal arm then waits for the victim to settle
-(`gated_hit_arm`). Water Column runs its caster at half rate from arm 0 and halves the
+**Water Column, Water Crystals and Rolling Flare's `0x5A`** gate on the same countdown shape
+with no chain descriptor (`capture_countdown::WATER_COLUMN`, `WATER_CRYSTALS`, `ROLLING_FLARE`).
+One hit lands as an arm passes, arm 5, arm 3 and arm 3, and the terminal arm then waits for the
+victim to settle (`gated_hit_arm`). Water Column runs its caster at half rate from arm 0 and halves the
 victim's beside the hit, so the knockdown's cues sit twice as far apart, and doubles both
 back in arm 7.
 

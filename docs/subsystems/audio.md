@@ -3372,8 +3372,12 @@ level: `FUN_80067550`'s head has no cap, so a bank master above `127` carries a 
 `monster.snd` banks and the state's own `bse.dat` rows, whose `+4` categories retail has already
 written. These read alike but for a state in the battle loader (slot `2` not open yet, as
 `v0_1_battle_loading_tetsu` shows beside `v0_1_battle_start_tetsu`), the reward cue `0x50`,
-whose bank the port stages on demand, and the `map01` arts states captured under the Monaural option. It does
-not cover the port's own `+4` writes: the engine side takes the rows as retail's RAM holds them.
+whose bank the port stages on demand, and the `map01` arts states captured under the Monaural option.
+
+The engine side takes the rows as retail's RAM holds them, so the run checks the port's `+4` writes
+apart: it prints each seat's category byte at node `+0x80` against `monster_sound_category`, the rule
+behind `World::battle_sound_category`
+([settled](../reference/re-settled-threads/audio.md#where-a-monsters-4-category-comes-from)).
 
 ## Real retail PCM
 
@@ -3426,7 +3430,7 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
-| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | the cast's own cues hold the level: `+4` to `+14` dB over the recording's first six seconds, then within `0.11` dB in every two-second window |
+| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | a cast's cues this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window; the cue differential reads every row of this state alike, levels included |
 
 The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
 stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
