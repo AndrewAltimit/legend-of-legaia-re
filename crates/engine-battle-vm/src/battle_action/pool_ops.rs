@@ -692,6 +692,12 @@ pub fn bearing_12bit_approx(p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
 /// one integer form the motion VM and the field facings share.
 ///
 /// PORT: FUN_80019B28
+///
+/// REPLACED-BY: `legaia_engine_system::trig::bearing12`, which carries the
+/// same PORT tag and is the live path every caller reaches through
+/// [`bearing_12bit_approx`]. This table-parameterised form stays as the
+/// reference its unit tests drive with a caller-supplied table; no host is
+/// owed a call to it.
 pub fn bearing_12bit(atan_lut: &[i16], p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
     let mut dz = p2z as i32 - p1z as i32;
     let mut dx = p2x as i32 - p1x as i32;
