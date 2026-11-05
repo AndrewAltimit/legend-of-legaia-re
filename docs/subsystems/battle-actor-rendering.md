@@ -321,6 +321,8 @@ The per-actor draw tick `FUN_800480D8` runs `FUN_80049348`, which draws **two gh
 
 **Spacing.** `step = 8 / actor[+0x21D]` (monster seats double it), at ring depths `step` and `2*step`. The trail stretches exactly when slow-motion drops the rate (quarter speed → depths 4 and 8).
 
+**A hidden body has none.** The tick reaches the walk only past its word-zero test (`bne v0,zero,0x80048244` at `0x800481CC`), so a cast module's hide (`+0x04 = 0`, `+0x21C = 0xFF`) takes the ghosts off with the body. PROT 0947 hides its caster on arm 2 and then flies the camera past where it stands.
+
 **Gate.** Ring id `> 0x10` (`sltiu 0x11` at `0x80049460`). The anim tick stamps the ring id from the committed record's own bytes, never from staging state:
 
 - A party seat copies the committed dynamic slot `+0x1D9` (`0x80047FCC`). A party art materialises at dynamic slot `0x10`, except the `0x1A` / re-staged-`0x10` commits, which land at `0x11`. Party mesh ghosts therefore belong to the **SpecialStarter dash** and to **chained** arts (a re-staged `0x10`); an ordinary art swing leaves the 2D weapon trail instead. Capture `battle_melee_hit_spark` holds Vahn at `+0x1D9 = +0x1FB = 0x11` mid-Somersault with his ghosts drawn, and Gimard at ring id `0x10` with none.

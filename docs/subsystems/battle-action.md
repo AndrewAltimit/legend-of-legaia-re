@@ -625,6 +625,12 @@ Caruban's Fire Breath on a solo Vahn holds the seed's `0xC00` through `0x29` and
 `0x1400` from the first `0x2B` pass: the retail recording's TR z reads `10240`
 there and `8192` in the Done band. Port: `battle_action::magic::cast_effect_driver`.
 
+Arm `0x13` also carries the caster's own look. Once the clip passes cursor `0xC0` it
+stores `+0x21C = 4` and `+0x21F = 2` on every pass (`0x801DCE54..0x801DCE60`), the blue
+arm of the [presentation tick](battle.md) and the impact selector whose sparks crawl
+over the body, and it clears both when `ctx[+0x24D]` hands on to `0xF`
+(`0x801DCE80..0x801DCE88`). Astral Wave's charge is this.
+
 The turning cases `3`, `5`, `0xE` and `0x10` aim the live yaw a fixed step
 on every pass, so their yaw has no endpoint of its own: where it stands is
 how long the shot has turned from the yaw case 6 left

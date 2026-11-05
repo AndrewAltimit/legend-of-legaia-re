@@ -1707,3 +1707,37 @@ fn a_monster_on_a_solo_clip_keeps_the_restore_gate_shut() {
     assert_eq!(host.staged_art_record_flag(0, 0), 0);
     assert_eq!(host.staged_art_record_flag(0, 2), 0);
 }
+
+/// Case `0x13` of `FUN_801DC0A0` raises the caster's blue arm and impact
+/// selector once the clip passes cursor `0xC0` (`0x801DCE54..0x801DCE60`), and
+/// clears both when `ctx[+0x24D]` goes up (`0x801DCE80..0x801DCE88`): Astral
+/// Wave's charge.
+#[test]
+fn spell_cam_case_0x13_raises_the_casters_render_arm() {
+    use crate::world::vm_hosts::BattleHostImpl;
+    use legaia_engine_battle_vm::battle_action::BattleActionHost;
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[0x0C] = Some(pose_test_clip(0x0C, 60, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.commit_staged_battle_anim(0);
+    BattleHostImpl { world: &mut world }.spell_anim_sustain(0, 0x13);
+    assert_eq!(world.actors[0].battle.render_flag, 0, "below cursor 0xC0");
+    while world.actors[0]
+        .battle_animation
+        .as_ref()
+        .is_some_and(|p| p.cursor_sixteenths() < 0xC0)
+    {
+        world.tick_battle_animations();
+    }
+    BattleHostImpl { world: &mut world }.spell_anim_sustain(0, 0x13);
+    assert_eq!(world.actors[0].battle.render_flag, 4);
+    assert_eq!(world.actors[0].battle.impact_state, 2);
+    world.battle_ctx.magic_recovery_gate = 1;
+    BattleHostImpl { world: &mut world }.spell_anim_sustain(0, 0x13);
+    assert_eq!(world.actors[0].battle.render_flag, 0);
+    assert_eq!(world.actors[0].battle.impact_state, 0);
+}

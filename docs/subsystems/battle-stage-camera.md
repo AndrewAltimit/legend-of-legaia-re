@@ -1332,7 +1332,13 @@ on a step read off a retail recording of the cast
 a band opens at `1` and its whole-screen arms read `4`. The table is a measurement
 standing in for the frame's cost, not game data and not a model of the cause, and
 the [next section](#what-the-arm-step-table-is) says how far it holds.
-The capture band is not in the table. A replay that knows retail's step installs it
+The capture band reads a second table of the same measurement
+(`capture_arm_frame_step`), keyed on the action id because one module's bodies differ,
+off harvest-state casts: its arms read `3` or `4` on the emulator's cost model where the
+default is `2`, and an arm that seats a record every pass seats half as many at `4`
+(V-Windhash's blade trail; [cast-module](cast-module.md#prot-0947-v-windhash-and-neo-windhash)).
+An action no recording reached keeps the default.
+A replay that knows retail's step installs it
 while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
 `0x33` / `0x34`, where each pass re-arms case `0x12`'s three-frame tween: at
