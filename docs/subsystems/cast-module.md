@@ -2713,7 +2713,8 @@ caller, and run off the same calls
   `z = 0x200` and seats a ring part there, kept in the handle table
   `0x801F809C`; arm 7's pass halts every one of them. The arm writes into
   its caller, so the engine runs it inside the caller's op-`0x20` step and
-  seats what it returns on the module's next tick.
+  seats what it returns right after that part tick, as every part-called
+  stager's seats are ([below](#part-called-stager-arms)).
 - **PROT 0934 (Ozma)**: arm 0 seats three records on the caller's `+0x3C`
   trio. Arms 1..3 scatter sparks `0x801F9E28` and bolts `0x801F9F2C` off
   `rand()`, each with a random wait `+0x54`; arms 1 and 2 grow their volley
@@ -2981,7 +2982,12 @@ arm clears it.
 
 Arm 1 holds the opening's ray emitter `0x801F8FF0` through its countdown: every
 eleven units its op `0x20` calls `FUN_801F8BF8`'s arm 1, four `0x801F9008` rays on
-six `rand()` draws each. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
+six `rand()` draws each. Arm 0 seats the emitter on the caster's display trio
+(`FUN_80050ED4(caster + 0x3C, caster + 0x44, ..)` at `0x801F6C70..0x801F6C94`),
+not its live pair: `+0x3E` is the height the pose decoder raises by the pose
+centroid (`0x8004A430..0x8004A458`), so the rays fan out of the crystal's middle,
+`(28, -388, 1007)` in a `rugi` capture, where a seat on the floor put their
+origin under the HUD. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
 past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
 arm. The arm's phase store sits behind the fork on the last roll, which the
 presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
@@ -4713,12 +4719,24 @@ PROT 0907 reports its arms' calls too (`nighto_direct`, the table under
 from several seats and the band depth, so each pass hands the host the point
 it built (`ArmDirection::arm_point`, `SpawnAnchor::ArmPoint`).
 
+<a id="part-called-stager-arms"></a>
+
 **Part-called stager arms.** A record's op `0x20` calls its module's stager
 row, and the stager seats more records off the calling part
 (`a0 = part + 0x14`, `a1 = part + 0x24`). The band queues each call with what
 the stager reads off the part - position, rotation, `+0xB4` and op `0x20`'s
-second operand (`cast_module_ticks::StagerCaller`) - and runs it on the
-module's next tick. PROT 0907's and 0908's stagers only seat records
+second operand (`cast_module_ticks::StagerCaller`) - and runs it as soon as the
+frame's part tick ends (`World::tick_summon`), so the records it seats are born
+on their caller's frame, as retail's are: the call runs inside the caller's
+move-VM step and seats through `FUN_80050ED4` -> `FUN_80021B04`, whose own VM
+run (`jal 0x80023070` at `0x80021DC0`) is the only step a new part takes that
+frame. PROT 0964's opening shows it: the emitter `0x801F8FF0` opens on
+`WAIT_SET 0`, so its seat run breaks and the same frame's part tick makes the
+first call, and a capture logs the emitter, the two glows and the first four
+rays on one vsync, the rays at level `0x1000` with their first fade step a
+frame later. Queued for the module's next tick instead, every fan was born a
+battle frame late. PROT 0909's calls step the phase and stay on the module's
+tick. PROT 0907's and 0908's stagers only seat records
 (`nighto_stager_spawns`, `zenoir_stager_spawns`, returning
 `StagerSpawn`s); PROT 0909's also steps the phase
 (`run_viguro_stager_calls`). An arm that writes into the part it seated

@@ -191,6 +191,19 @@ impl SummonScene {
         seated
     }
 
+    /// [`Self::seat_run`] without the part tick: the seater's own VM run for
+    /// every part no tick has run yet, for parts seated **after** the frame's
+    /// part tick. Retail's op-`0x20` call seats a stager's records from
+    /// inside its caller's step (`FUN_80050ED4` -> `FUN_80021B04`), and the
+    /// list walk does not reach a part seated during it until the next frame:
+    /// PROT 0964's rays are born at level `0x1000` on the emitter's frame and
+    /// take their first fade step a frame later. Returns which parts ran.
+    pub fn seat_unrun<H: MoveHost + ?Sized>(&mut self, host: &mut H) -> Vec<usize> {
+        (0..self.parts.len())
+            .filter(|&i| self.seat_part(i, host))
+            .collect()
+    }
+
     /// The seater's own VM run for part `i` if no tick has run it yet;
     /// `true` when it ran.
     fn seat_part<H: MoveHost + ?Sized>(&mut self, i: usize, host: &mut H) -> bool {

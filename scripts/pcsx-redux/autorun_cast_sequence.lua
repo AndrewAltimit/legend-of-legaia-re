@@ -229,7 +229,7 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
     if not (cast_seen and CAST_PARTS) then return end
     if probe.cast_parts == nil then
         probe.cast_parts = probe.csv_open(probe.out_path("parts.csv"),
-            "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42")
+            "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42,r24,r26,r28")
     end
     -- fxpool.csv: every live child of the effect pool `_DAT_8007BD30`
     -- (128 x 32-byte slots at `+0x10`): frame count, cursor, position >> 8.
@@ -254,13 +254,14 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         while n >= 0x80000000 and n < 0x80200000 and guard < 512 do
             guard = guard + 1
             if u32(n + 0xC) == 0x80021DF4 then
-                probe.cast_parts:row("%d,%d,%d,0x%08X,0x%08X,0x%08X,%d,%d,%d,0x%04X,0x%08X,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,0x%04X,%d,0x%04X,0x%04X,0x%04X,0x%04X,%d,%d,%d,%d,%d,%d,%d",
+                probe.cast_parts:row("%d,%d,%d,0x%08X,0x%08X,0x%08X,%d,%d,%d,0x%04X,0x%08X,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,0x%04X,%d,0x%04X,0x%04X,0x%04X,0x%04X,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                     elapsed, st7, u8(cx + 0x279), n, u32(n + 0x10), u32(n + 0x74), s32(n + 0x78),
                     s16(n + 0x56), s16(n + 0x5A), u16(n + 0x9E), u32(n + 0xA0), u32(n + 0xA4),
                     s16(n + 0xB4), s16(n + 0xB6), s16(n + 0xB8), s16(n + 0xBA),
-                    s32(n + 0x14), s32(n + 0x18), s32(n + 0x1C), u16(n + 0x72), u16(n + 0x52),
+                    s16(n + 0x14), s16(n + 0x16), s16(n + 0x18), u16(n + 0x72), u16(n + 0x52),
                     s16(n + 0x9C), u16(n + 0xA8), u16(n + 0xAC), u16(n + 0xB0), u16(n + 0xB2),
-                    s16(n + 0x90), s16(n + 0x92), s16(n + 0x94), s32(n + 0x34), s16(n + 0x7A), u8(n + 0x6D), s16(n + 0x42))
+                    s16(n + 0x90), s16(n + 0x92), s16(n + 0x94), s32(n + 0x34), s16(n + 0x7A), u8(n + 0x6D), s16(n + 0x42),
+                    s16(n + 0x24), s16(n + 0x26), s16(n + 0x28))
             end
             n = u32(n)
         end

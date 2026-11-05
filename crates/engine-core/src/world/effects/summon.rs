@@ -85,6 +85,41 @@ impl World {
         if !scene.finished() {
             self.casting.active_summon = Some(scene);
         }
+        self.run_summon_part_stager_calls();
+    }
+
+    /// The op-`0x20` stager calls this frame's part tick queued, run on the
+    /// caller's frame: retail makes the call inside the caller's move-VM step
+    /// and seats what the stager seats there (`FUN_80050ED4` ->
+    /// `FUN_80021B04`, whose own VM run, `jal 0x80023070` at `0x80021DC0`,
+    /// is the only step a new part takes that frame). Queued until the
+    /// module's next tick instead, PROT 0964's first rays were born a battle
+    /// frame after its emitter's opening call, and every later fan with them.
+    fn run_summon_part_stager_calls(&mut self) {
+        let Some(entry) = self.casting.module_running_entry else {
+            return;
+        };
+        if !Self::runs_part_stager_calls(entry)
+            || (self.casting.module_stager_calls.is_empty()
+                && self.casting.module_stager_seats.is_empty())
+        {
+            return;
+        }
+        self.run_part_stager_calls(entry);
+        let Some(mut scene) = self.casting.active_summon.take() else {
+            return;
+        };
+        {
+            let mut host = MoveVmHostImpl {
+                world: self,
+                current_slot: None,
+                deferred_writes: std::collections::BTreeMap::new(),
+                field_record_words: None,
+                child_spawns: Vec::new(),
+            };
+            scene.seat_unrun(&mut host);
+        }
+        self.casting.active_summon = Some(scene);
     }
 
     /// The part tick's channel scale, `DAT_1F800393 * DAT_1F80037D`: the live
