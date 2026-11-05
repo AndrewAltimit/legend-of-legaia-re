@@ -80,7 +80,7 @@ flowchart LR
 ## Contents
 
 - **Movies:** [Game modes](#game-modes) · [STR sector format](#str-sector-format) · [Retail playback engine](#retail-playback-engine-str-overlay--scus-st-streaming-library) · [XA channel selection](#xa-channel-selection) · [MDEC decoder](#mdec-decoder-iki-bitstream) · [XA audio + A/V sync](#xa-audio) · [`play-str`](#playback-loop-play-str) · [overlay residency](#strmdec-fmv-overlay-residency) · [FMV-trigger op](#field-vm-fmv-trigger-op)
-- **Scripted scenes:** [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) · [narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [pacing](#record-pacing---the-60-hz-sub-clock) · [engine port](#timeline-execution-engine-port) · [actor channels](#per-actor-channels---the-vignette-actors) · [tint + effect colour](#the-op-0x4c-0x12-tint-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look) · [script helpers](#script-cutscene-helpers-overlay_cutscene_dialogue)
+- **Scripted scenes:** [In-engine 3D opening](#in-engine-3d-opening-the-five-scene-new-game-chain) · [narration](#inline-narration-format) · [crawl roller](#narration-playback---the-crawl-roller-fun_80037174) · [timeline execution](#timeline-execution-model-ghidra-traced) · [pacing](#record-pacing---the-60-hz-sub-clock) · [engine port](#timeline-execution-engine-port) · [actor channels](#per-actor-channels---the-vignette-actors) · [tint + effect colour](#the-op-0x4c-0x12-tint-op-0x4c-0x12--the-effect-colour-op-0x34-sub-0) · [sepia grade](#full-scene-sepia-grade-the-gold-prologue-look) · [script helpers](#script-cutscene-helpers-overlay_cutscene_dialogue) · [Rim Elm's day](#rim-elms-day-before-the-hunt)
 - **Battle intro:** [Field-to-battle transition](#field-to-battle-transition-the-battle-intro-overlay)
 - [Open items](#open-items) · [Provenance](#provenance)
 
@@ -2234,6 +2234,46 @@ un-darkened **neutral** packets in the sampled region:
 Both play hosts shade light-source rows through `engine-field::field_lit_mesh` (over
 `render-kernels::field_light`), replacing the builder's neutral `0x80`; the engine figures above are
 those prims at the neutral packet.
+
+## Rim Elm's day before the hunt
+
+After the naming, `town01`'s story beats run in a fixed order, each one a partition-2 record
+gated on the system flags the one before it raised. The order is the script's, so a port that
+plays them out of turn has a bug in the gate, not a choice:
+
+| Beat | Record | Starts on | Raises |
+|---|---|---|---|
+| The Elder at the Genesis Tree | `P2[3]` | the opening chain's walk-on trigger | `0x225` |
+| Mei finds Vahn below the garden gate | `P2[4]` | the walk-on band at `(18..22, 26)` / `(18, 24..25)` | `0x226` |
+| The measuring at Vahn's house | `P2[5]` | Vahn's front door, `P0[29]` (`44 5E` while `0x226` is up and `0x227` is not) | `0x227` |
+| The hunters' return | `P2[6]` | Tetsu's talk, `P1[10]` (`44 5F` on "Nothing in particular" once `0x20C` is up) | `0x22E` |
+
+Stepping out of the house after the measuring starts nothing. `P2[6]` opens on two gates of its
+own, `0x227` and `0x20B` (Tetsu's spar, set as his third answer starts it), and its only spawner
+is Tetsu's talk, gated on `0x20C`. The spar's return raises `0x20C` only when `0x227` is already
+up (`72 27 05 00` / `26 04 00` / `52 0C` at `P1[10]` `+0x7FB`), so the beat waits for a spar
+fought after the measuring. Retail agrees: the `v0_1_pre_battle_tetsu` state stands outside the
+house with `0x227` set and `0x22E` clear.
+
+A spar fought before the measuring leaves `0x20B` up and `0x20C` down, and Tetsu's third answer
+then only says there is nothing more to learn: nothing in `town01` raises `0x20C` again. That is
+read from the script alone; [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#field--locomotion)
+carries the retail check.
+
+Two of the beats lean on ops the port had to get exactly right:
+
+- `P2[4]` opens Mei's front door (`P0[1]`) as she walks out and closes it behind her with
+  `CC 01 A0 00 05 00` (skip the `JmpRel` while the door's `+0x10` bit 0 is up),
+  `CC 01 8C 18 00` (close only once its clip cursor `+0x68` is off zero) and the reverse swing.
+  See [`script-vm-menuctrl.md`](script-vm-menuctrl.md#0x4c-nibble-a---skip-on-a-flag-bit).
+- `P2[5]` seats Mei inside with `CC 46 51 62 8E 01 3E`, whose floor re-sample stands her on the
+  house floor rather than at the height she had at her own door.
+
+The garden's blackboard (`P1[51]`, the panoramic map) is a talk that leaves the field view: it
+raises the screen tint, waits on the staged mode switch (`4C 53`), seats the player and the
+villagers off the map for the overview, and on "Forget it" switches back (`4C 54`) and re-seats
+everyone. The talk parks on both polls; see
+[`script-vm-menuctrl.md`](script-vm-menuctrl.md#0x4c-nibble-0x500x5f---the-five-sub-op-table).
 
 ## Field-to-battle transition (the battle-intro overlay)
 

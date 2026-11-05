@@ -206,7 +206,7 @@ Sub-table at `0x801CEF48`, indexed by `op0 & 0xF` under a `sltiu` bound of
 | 7 | `[4C 87]` | Retires every reflection controller. |
 | 9 | `[4C 89 lo hi]` | `_DAT_80073F00 = i16`, the dialog pager's **automatic press** - [below](#4c-89-the-dialog-auto-press). |
 | B | `[4C 8B spell skip:i16]` | "Does a present member know `spell`?": for each present member below character 3, the learned-spell list at record `+0x13C` (count) / `+0x13D` (ids) (`0x801E2320..0x801E23E4`). A hit takes the [relative skip](#the-relative-skip-exit), else PC += 5. |
-| C | `[4C 8C skip:i16]` | `ctx[+0x68]` zero takes the [relative skip](#the-relative-skip-exit) (`pc + 4 + skip - 2`), non-zero advances 4 (`0x801E23EC`). |
+| C | `[4C 8C skip:i16]` | `ctx[+0x68]` zero takes the [relative skip](#the-relative-skip-exit) (`pc + 4 + skip - 2`), non-zero advances 4 (`0x801E23EC`). `+0x68` is the actor's clip cursor (`FUN_800204F8`), so the test reads "has its clip moved off frame 0"; the port reads it off the actor's clip state, the prop's or the placement's. |
 | D | `[4C 8D char skill skip:i16]` | "Has character `char` learned art `skill`?": the displayed-skill list at record `+0x185` (count) / `+0x186` (ids) (`0x801E2404..0x801E2474`). A match takes the [relative skip](#the-relative-skip-exit) (`pc + 6 + skip - 2`); an empty list or no match advances 6 - there is no halt. `town0c`'s Tetsu (P1[4]) asks it before teaching an art. |
 
 The slot in sub-2 is a literal operand, not "every active member". It is the
@@ -964,6 +964,13 @@ predicate.
 | 3 | `0x801E1AF8` | `[4C, 53]` | Dialog-wait poll, `FUN_801D65D8(1)`. |
 | 4 | `0x801E1B0C` | `[4C, 54]` | Dialog-advance poll, `FUN_801D65D8(0)`. |
 
+Both polls re-run their own PC while the switch is in flight (three or four
+calls). A talk the inline runner steps parks on them like any timed wait
+rather than ending: `town01` `P1[51]`, the Genesis Tree garden's panoramic
+map, raises the screen tint and waits on `4C 53` before it seats the overview,
+and switches back on `4C 54` before it lifts the tint. Under the runner `4C 54`
+is the bare poll; the box it pages is the runner's.
+
 #### Sub-0: the model set re-stages the actor
 
 The arm resolves the operand against the scene bank (`_DAT_8007B6F8 + value`
@@ -1015,7 +1022,10 @@ beside its tree with `4C 51 AA 30 00 2A` on its pre-fight arm (system flag
 its header clip `39`; and `korout` `P2[3]` seats Noa and Gala with walk
 clips `10` and `15` before the `C1` compass legs walk them up the bridge.
 Port: `FieldHostImpl::run_to_tile` writes the bit, the mask and `+0x5C` on
-every NPC arm and raises the clip cue on the cross-context arm; the
+every NPC arm and raises the clip cue on the cross-context arm, and the seat's
+floor re-sample drops any height the placement held (`World::seat_npc_floor_resample`:
+`town01` `P2[5]` seats Mei in Vahn's house after `P2[4]` left her gliding at her
+own door, and she stands on the house floor); the
 pre-run's `+0x5C` is what `bind_scene_actors` binds at scene entry. The
 port's cue skips a re-request of the clip already playing
 (`World::carry_npc_run_anim`), where retail's `+0x5E = -2` restarts it.
@@ -1256,6 +1266,13 @@ the bank check and the skip. The shipped uses pair it with the op it steps
 over: `town01` P0[35]'s `CC 00 A0 00 05 00` skips the 3-byte `JmpRel` after
 it, and `jouinc`'s camera bands (`CC <ch> A1 0A 1D 00`) skip 27 bytes of
 animation set-up.
+
+Aimed across contexts the op reads the target's words and its skip stays
+relative, as every other arm's does: it is not a wait. `town01` `P2[4]`
+closes Mei's door that way - `CC 01 A0 00 05 00` lands on the close sequence
+past the `26 1D 00` while the door's bit 0 is up, and `CC 01 8C 18 00` runs
+the close only once the door's swing has moved its cursor. A cutscene runner
+that forced the fall-through left the door open behind her.
 
 ### The system-flag waits
 
