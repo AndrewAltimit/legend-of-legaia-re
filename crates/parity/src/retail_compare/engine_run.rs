@@ -136,6 +136,18 @@ pub fn run_engine_listening(
     Ok((obs, audio))
 }
 
+/// [`run_engine_listening`] with cues to key once the seed has settled.
+pub fn run_engine_listening_with(
+    extracted: &Path,
+    retail: &RetailObs,
+    probe: Option<crate::cue_differential::CueProbe>,
+) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
+    let mut audio = crate::audio_sweep::EngineAudio::default();
+    audio.cue_probe = probe;
+    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, None, Some(&mut audio))?;
+    Ok((obs, audio))
+}
+
 /// [`run_engine_listening`] for a state reached through a door
 /// ([`legaia_ram_image::scenarios::ScenarioArrival`]): the card load lands
 /// in the door's scene instead, the door is taken
@@ -450,11 +462,13 @@ fn seed_and_settle(
         obs.script = script;
         if let (Some(audio), Some(a)) = (listen, audio_at_settle) {
             *audio = a;
+            crate::cue_differential::probe(&mut session, audio);
         }
         return Ok(obs);
     }
     if let Some(audio) = listen {
         crate::audio_sweep::finish_listen(&session, audio);
+        crate::cue_differential::probe(&mut session, audio);
     }
     let menu_subscreen = match &retail.menu {
         Some(Ok(menu)) => {

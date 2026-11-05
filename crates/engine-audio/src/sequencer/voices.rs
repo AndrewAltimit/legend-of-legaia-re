@@ -369,6 +369,16 @@ impl Sequencer {
     ///
     /// PORT: FUN_80065BAC (the envelope read and the silent history)
     pub(super) fn read_envelopes(&mut self, spu: &Spu) {
+        // A new sequencer inherits a voice file another one keyed: the tails
+        // still ringing there count by their envelopes and hold no mark, which
+        // their key-off lowered.
+        if !self.voices_seen {
+            self.voices_seen = true;
+            for (v, voice) in spu.voices.iter().enumerate() {
+                self.voice_keys_seen[v] = voice.key_on_count();
+                self.voice_env_next[v] = if voice.is_off() { 0 } else { voice.adsr.level };
+            }
+        }
         for (v, voice) in spu.voices.iter().enumerate() {
             let keys = voice.key_on_count();
             if keys != self.voice_keys_seen[v] {

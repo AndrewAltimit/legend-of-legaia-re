@@ -55,6 +55,7 @@ const ORACLE_SUBCOMMANDS: &[&str] = &[
     "audio-sweep",
     "pcm-retail",
     "seq-differential",
+    "cue-differential",
 ];
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
@@ -131,6 +132,8 @@ fn main() -> Result<()> {
         Cmd::PcmRetail(args) => legaia_parity::pcm_retail::run(args),
         #[cfg(feature = "oracles")]
         Cmd::SeqDifferential(args) => legaia_parity::seq_differential::run(args),
+        #[cfg(feature = "oracles")]
+        Cmd::CueDifferential(args) => legaia_parity::cue_differential::run(args),
         Cmd::Info {
             scene,
             extracted_root,

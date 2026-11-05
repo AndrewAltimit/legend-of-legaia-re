@@ -162,6 +162,10 @@ pub struct EngineAudio {
     /// `(sfx, bgm)` sounding-voice counts of the last [`LISTEN_SPAN`] ticks.
     #[serde(skip)]
     recent: Vec<(u32, u32)>,
+    /// Ring ids to key once the seed has settled, and what each keyed
+    /// ([`crate::cue_differential`]).
+    #[serde(skip)]
+    pub cue_probe: Option<crate::cue_differential::CueProbe>,
 }
 
 /// One state of the sweep.

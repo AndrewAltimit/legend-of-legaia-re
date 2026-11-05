@@ -398,14 +398,15 @@ impl VabBank {
         //   step = vel * bank_mvol * 0x3FFF / 0x3F01
         //   vol  = step * prog_mvol * tone_vol / 0x3F01
         //
-        // Four 0..=127 factors (velocity, bank master, program master, tone)
-        // against 127^2 twice widen the product into the SPU's 14-bit
-        // register domain; a full-scale product lands exactly on 0x3FFF.
-        // All intermediates fit i32 (max 0x3FFF * 127 * 127 < 2^31).
+        // Four factors (velocity, bank master, program master, tone) against
+        // 127^2 twice widen the product into the SPU's register domain. A bank
+        // master above 127 passes 0x3FFF, and nothing caps it: the register holds
+        // it and the voice is that much louder XX
+        // rows, measured by `cue-differential`).
         let vel = velocity as i32;
         let bank_master = self.master_vol as i32;
         let step = (vel * bank_master * 0x3FFF) / 0x3F01;
-        let combined = ((step * prog.mvol as i32 * tone.vol as i32) / 0x3F01).min(0x3FFF) as i16;
+        let combined = ((step * prog.mvol as i32 * tone.vol as i32) / 0x3F01) as i16;
         // Retail attenuates once per pan source, in order: tone pan, then
         // program pan. The channel pan is the sequencer's own source,
         // applied on top by `channel_mix`.

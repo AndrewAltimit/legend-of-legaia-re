@@ -50,6 +50,7 @@ impl Sequencer {
             silent_ring: [0; SILENT_RING_LEN],
             silent_at: 0,
             voice_keys_seen: [0; crate::spu::NUM_VOICES],
+            voices_seen: false,
             flush_pos: 0,
             pending: Vec::new(),
             next_pending_id: 0,

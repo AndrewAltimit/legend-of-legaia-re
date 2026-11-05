@@ -3349,6 +3349,25 @@ What it leaves open:
   are mostly zero and the port reads zero, so the voice keys and does not move
   (`vab_bind::pitch_at_index`).
 
+## The cue differential
+
+`legaia-engine cue-differential` ([`legaia_parity::cue_differential`](../../crates/parity/src/cue_differential.rs))
+keys every static cue and every runtime row both ways in one library state, one state per scene.
+Retail's side runs `FUN_80016B6C` off the state's RAM with one ring slot armed, up to its first call past the
+ring walk, and reads what it staged from libsnd's shadow registers. The engine is seeded into the
+same state through the corpus's seed and keys the ring id through its audio director. A row that
+differs is a cue that sounds different: another bank open, another tone, another level.
+
+Every static cue of every ordinary scene reads alike, the bank residency included. What it found is one
+level: `FUN_80067550`'s head has no cap, so a bank master above `127` carries a cue past `0x3FFF`
+(`0x4B63` on the rows that reach it), where the port clamped. What remains is not a defect:
+
+- A row past the end of a scene's runtime bank. Retail reads whatever follows the table, and the port
+  stops at its own bound, so the last row of a scene's run disagrees.
+- `doman_arrival_from_korb2`, whose runtime bank is still `korb2`'s on the frame the state stands on.
+- The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
+  ending theme overwrote hold stale tone data in retail's RAM.
+
 ## Real retail PCM
 
 Everything above compares registers and notes. This compares sound: mednafen's

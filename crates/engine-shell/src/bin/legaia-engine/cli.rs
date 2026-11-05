@@ -1742,6 +1742,11 @@ pub(crate) enum Cmd {
     #[command(display_order = 33)]
     #[cfg(feature = "oracles")]
     SeqDifferential(legaia_parity::seq_differential::SeqDifferentialArgs),
+    /// Key every cue both ways in a library state: retail's drainer off the state's
+    /// RAM in the retail-exec interpreter, the port's director seeded into the state.
+    #[command(display_order = 34)]
+    #[cfg(feature = "oracles")]
+    CueDifferential(legaia_parity::cue_differential::CueDifferentialArgs),
 }
 
 #[derive(Subcommand, Debug)]

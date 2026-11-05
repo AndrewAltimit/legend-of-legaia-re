@@ -286,6 +286,8 @@ pub struct Sequencer {
     /// Each voice's key-on count as last seen: a change nobody here made is a
     /// cue taking the voice.
     voice_keys_seen: [u32; crate::spu::NUM_VOICES],
+    /// [`Self::voice_keys_seen`] holds this SPU's counts.
+    voices_seen: bool,
     /// Samples advanced since the last key-on flush, `0..FLUSH_SAMPLES`.
     flush_pos: u64,
     /// Note layers allocated since the last flush, keyed at the next one.

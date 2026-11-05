@@ -3778,6 +3778,7 @@
     "capture_observations",
     "cast_sequence",
     "cast_sequence_sound",
+    "cue_differential",
     "mode_trace_oracle",
     "parallel",
     "pcm_oracle",

@@ -176,6 +176,22 @@ fn the_silent_history_lets_a_held_voice_go() {
     assert!(flushes >= SILENT_RING_LEN - 1);
 }
 
+/// A sequencer started over tails another one left: they count by their envelope
+/// and hold no mark.
+#[test]
+fn a_new_sequencer_counts_inherited_tails_by_their_envelopes() {
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let mut spu = Spu::new();
+    let ram = spu.ram.clone();
+    spu.voices[0].key_on(&ram);
+    spu.voices[0].adsr.level = 0x2000;
+    spu.voices[0].key_off();
+    seq.read_envelopes(&spu);
+    assert_eq!(seq.voice_held, 0);
+    assert_eq!(seq.voice_env[0], 0x2000);
+    assert_eq!(seq.alloc_voice(&mut spu, 0), Some(1));
+}
+
 /// A cue keying a voice marks it held for the scan, with its age zeroed.
 #[test]
 fn a_cue_key_on_holds_the_voice_for_the_scan() {
@@ -183,6 +199,7 @@ fn a_cue_key_on_holds_the_voice_for_the_scan() {
     let mut spu = Spu::new();
     let ram = spu.ram.clone();
     seq.voice_age[23] = 9;
+    seq.read_envelopes(&spu);
     spu.voices[23].key_on(&ram);
     seq.read_envelopes(&spu);
     assert_ne!(seq.voice_held & (1 << 23), 0);

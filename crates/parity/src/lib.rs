@@ -29,6 +29,7 @@ pub mod audio_trace_oracle;
 pub mod capture_observations;
 pub mod cast_sequence;
 pub mod cast_sequence_sound;
+pub mod cue_differential;
 pub mod mode_trace_oracle;
 pub mod parallel;
 pub mod pcm_oracle;
