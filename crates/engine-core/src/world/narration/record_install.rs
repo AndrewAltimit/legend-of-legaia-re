@@ -283,6 +283,8 @@ impl World {
             .as_deref()
             .is_some_and(|m| m.as_slice() == man);
         if !same_man || self.field_vm.channels.is_empty() {
+            self.field_vm.retired_placements.clear();
+            self.field_vm.pending_placement_respawns.clear();
             self.field_vm.channels =
                 legaia_engine_field::field_channels::spawn_channels(man_file, man);
             let binds = std::mem::take(&mut self.field_vm.object_channel_binds);

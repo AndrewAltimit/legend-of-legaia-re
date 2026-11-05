@@ -1144,6 +1144,9 @@ impl World {
             // The interaction's `0x21` disengages the context
             // (`0x80039E68..0x80039EE4` clears `+0x10 & 0x100`).
             c.ctx.flags &= !0x100;
+            // The timeline ran the context's own record: its `31 03` is the
+            // context's.
+            c.ctx.flags |= tl.ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
         }
     }
 
@@ -1321,6 +1324,12 @@ impl World {
             .iter()
             .filter(|&(_, &(x, z))| x == hide && z == hide)
             .map(|(&slot, _)| slot)
+            .filter(|&slot| {
+                !self
+                    .field_vm
+                    .retired_placements
+                    .contains(&usize::from(slot))
+            })
             .collect();
         for slot in restored {
             // A slot the spawn-prologue pre-run ALREADY parked at scene entry

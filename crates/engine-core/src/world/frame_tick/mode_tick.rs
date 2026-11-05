@@ -691,6 +691,7 @@ impl World {
                 // `FUN_8003774C` once per game tick and multiplies each leg by
                 // `DAT_1F800393` (`0x80037868 lbu s2,0x393(s2)`).
                 // REF: FUN_8003774C
+                self.sweep_field_channel_lifetimes();
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
@@ -853,6 +854,7 @@ impl World {
                 // a placement and then waits on its halt bit (`B3 <id> 0A` -
                 // urudre2's hand-off onto `map01`) parks for good.
                 // REF: FUN_8003774C
+                self.sweep_field_channel_lifetimes();
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }

@@ -109,6 +109,14 @@ pub struct FieldVmState {
     /// engine plays that interaction as the touch-resumed timeline
     /// ([`crate::world::World::drain_placement_engagements`]).
     pub(crate) pending_engagements: Vec<usize>,
+    /// Placement indices whose context retired this scene visit (a `31 03` /
+    /// `B1 <id> 03` kill, swept by `World::sweep_field_channel_lifetimes`).
+    /// Their channels are gone; the set is what tells `4C D2` to re-seat them
+    /// and keeps the rest of the placement surfaces from reviving them.
+    pub(crate) retired_placements: std::collections::BTreeSet<usize>,
+    /// `4C D2` channel ids waiting for the sweep: the VM runs a slice with
+    /// the channel set moved out, so the seat happens at the sweep.
+    pub(crate) pending_placement_respawns: Vec<u8>,
     /// `true` while [`crate::world::World::run_spawned_record_slice`] is stepping a spawned
     /// partition-2 record context (the modal cutscene timeline or a
     /// concurrent helper context). Host hooks use it to distinguish a
@@ -230,6 +238,8 @@ impl FieldVmState {
             executing_channel: None,
             executing_object: None,
             pending_engagements: Vec::new(),
+            retired_placements: Default::default(),
+            pending_placement_respawns: Vec::new(),
             in_spawned_record_slice: false,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,

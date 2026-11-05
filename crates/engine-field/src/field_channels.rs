@@ -54,7 +54,7 @@
 //! `80029888.txt`, `8003c5f0.txt`.
 
 use legaia_engine_vm::field::FieldCtx;
-use legaia_scene_formats::man_section::ManFile;
+use legaia_scene_formats::man_section::{ActorPlacement, ManFile};
 
 /// One spawned per-actor script context (retail `FUN_8003A1E4` output).
 #[derive(Debug, Clone)]
@@ -110,63 +110,88 @@ impl FieldChannel {
 /// The placement class bit `FUN_8003A1E4` ORs into every actor it seats.
 pub const PLACEMENT_CLASS_BIT: u32 = 0x0002_0000;
 
+/// The retire bit of a context's `+0x10`, raised by `31 03` on itself or
+/// `B1 <id> 03` on another context. `FUN_8002519C`'s actor-list walk tests it
+/// before dispatching a tick (`0x800251E8`) and frees the node a walk later, so
+/// the actor stops ticking, drawing and answering `FUN_8003C83C`. A placement
+/// comes back only through `4C D2` or the next scene entry.
+pub const CONTEXT_RETIRE_BIT: u32 = 0x8;
+
 // PORT: FUN_8003A1E4
 // REF: FUN_8003AEB0 (the per-record spawn loop + script-id base)
 pub fn spawn_channels(man_file: &ManFile, man: &[u8]) -> Vec<FieldChannel> {
     let p0_count = man_file.header.partition_counts[0].max(0) as usize;
     man_file
         .actor_placements(man)
-        .into_iter()
-        .map(|p| {
-            let ctx = FieldCtx {
-                // The class word `FUN_8003A1E4` seats every placement with
-                // (`0x8003A3A4..0x8003A3B4`): the placement class bit
-                // `0x20000`, plus the party-bank bit `0x01000000` for a
-                // `>= 0xF0` party model (`sltiu v0,v0,0xf0` at `0x8003A2DC`
-                // selecting `lui s3,0x100`). That bit routes the actor's clip
-                // ids into the party locomotion bank (`FUN_800204F8`), and the
-                // story scripts drop and raise it around every scene-bank
-                // gesture (`B2 <id> 18` .. `B1 <id> 18`).
-                flags: PLACEMENT_CLASS_BIT
-                    | if p.model_index >= 0xF0 {
-                        crate::field_player_clip::PARTY_BANK_FLAG
-                    } else {
-                        0
-                    },
-                script_id: (p0_count + p.index) as u16,
-                world_x: p.world_x as u16,
-                world_z: p.world_z as u16,
-                // Placement anim id lands in `+0x5C` in retail
-                // (`FUN_8003A1E4`); mirror it so scripts that read/replace
-                // the clip see the seeded value.
-                move_id: u16::from(p.anim_id),
-                // Retail inits the `+0x94` payload slot to `-1`
-                // (`FUN_8003A1E4`); the halt-acquire predicate reads it as
-                // "acquireable" (non-zero).
-                saved_pc: 0xFFFF_FFFF,
-                // Retail's actor allocator (`actor_free`,
-                // ghidra/scripts/funcs/80020de0.txt) births every actor
-                // with `+0x72 = 0x1000` - the fixed-point unit RENDER
-                // SCALE the per-actor render dispatcher (`FUN_8001ADA4`)
-                // composes into the model matrix. The invisible
-                // interaction-trigger records rely on it: their spawn
-                // prologue writes `+0x72 = 0` (op `4C 40 00 00`), which
-                // collapses their dev-gizmo marker mesh (orange diamond +
-                // blue cone) to a point. Seeding 0 here made that write
-                // meaningless and the markers drew at full size.
-                field_72: 0x1000,
-                ..FieldCtx::default()
-            };
-            FieldChannel {
-                placement_index: p.index,
-                ctx,
-                record_offset: p.record_offset,
-                pc: p.script_pc0,
-                done: false,
-                object_bind: false,
-            }
-        })
+        .iter()
+        .map(|p| placement_channel(p0_count, p))
         .collect()
+}
+
+/// One placement's freshly seated context: what `4C D2` spawns for a channel
+/// nothing answers (`FUN_8003A1E4` at `0x801E2BC8`, `index = channel - N0`).
+// REF: FUN_801DE840 (0x801E2B7C..0x801E2BD8)
+pub fn spawn_placement_channel(
+    man_file: &ManFile,
+    man: &[u8],
+    index: usize,
+) -> Option<FieldChannel> {
+    let p0_count = man_file.header.partition_counts[0].max(0) as usize;
+    man_file
+        .actor_placements(man)
+        .iter()
+        .find(|p| p.index == index)
+        .map(|p| placement_channel(p0_count, p))
+}
+
+fn placement_channel(p0_count: usize, p: &ActorPlacement) -> FieldChannel {
+    let ctx = FieldCtx {
+        // The class word `FUN_8003A1E4` seats every placement with
+        // (`0x8003A3A4..0x8003A3B4`): the placement class bit
+        // `0x20000`, plus the party-bank bit `0x01000000` for a
+        // `>= 0xF0` party model (`sltiu v0,v0,0xf0` at `0x8003A2DC`
+        // selecting `lui s3,0x100`). That bit routes the actor's clip
+        // ids into the party locomotion bank (`FUN_800204F8`), and the
+        // story scripts drop and raise it around every scene-bank
+        // gesture (`B2 <id> 18` .. `B1 <id> 18`).
+        flags: PLACEMENT_CLASS_BIT
+            | if p.model_index >= 0xF0 {
+                crate::field_player_clip::PARTY_BANK_FLAG
+            } else {
+                0
+            },
+        script_id: (p0_count + p.index) as u16,
+        world_x: p.world_x as u16,
+        world_z: p.world_z as u16,
+        // Placement anim id lands in `+0x5C` in retail
+        // (`FUN_8003A1E4`); mirror it so scripts that read/replace
+        // the clip see the seeded value.
+        move_id: u16::from(p.anim_id),
+        // Retail inits the `+0x94` payload slot to `-1`
+        // (`FUN_8003A1E4`); the halt-acquire predicate reads it as
+        // "acquireable" (non-zero).
+        saved_pc: 0xFFFF_FFFF,
+        // Retail's actor allocator (`actor_free`,
+        // ghidra/scripts/funcs/80020de0.txt) births every actor
+        // with `+0x72 = 0x1000` - the fixed-point unit RENDER
+        // SCALE the per-actor render dispatcher (`FUN_8001ADA4`)
+        // composes into the model matrix. The invisible
+        // interaction-trigger records rely on it: their spawn
+        // prologue writes `+0x72 = 0` (op `4C 40 00 00`), which
+        // collapses their dev-gizmo marker mesh (orange diamond +
+        // blue cone) to a point. Seeding 0 here made that write
+        // meaningless and the markers drew at full size.
+        field_72: 0x1000,
+        ..FieldCtx::default()
+    };
+    FieldChannel {
+        placement_index: p.index,
+        ctx,
+        record_offset: p.record_offset,
+        pc: p.script_pc0,
+        done: false,
+        object_bind: false,
+    }
 }
 
 /// Spawn a [`FieldChannel`] per `.MAP` **object bind**, mirroring the retail

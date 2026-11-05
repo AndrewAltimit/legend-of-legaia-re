@@ -595,6 +595,29 @@ pub(super) fn sample_engine(
             }
         }
     }
+    if std::env::var_os("LEGAIA_RC_NPC_EXTRA").is_some()
+        && let Some(n0) = n0
+    {
+        // A placement the engine stands on the map with no retail node for
+        // its flat index: the `npcs` channel walks retail's nodes, so an
+        // extra is scored nowhere.
+        for (&slot, &(x, z)) in &world.npcs.positions {
+            let flat = n0 + u16::from(slot);
+            if npc_parked(x, z) || retail.actor_facings.iter().any(|a| a.flat == flat) {
+                continue;
+            }
+            let flags = world
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                .map_or(0, |c| c.ctx.flags);
+            eprintln!(
+                "[npc-extra] {} slot {slot} flat {flat} at ({x}, {z}) engine +0x10={flags:08X}",
+                retail.scene
+            );
+        }
+    }
     let npc_facings = n0
         .map(|n0| {
             world

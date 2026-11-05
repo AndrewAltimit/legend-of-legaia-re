@@ -30,6 +30,12 @@ impl<'a> FieldActorSpawnHost for FieldHostImpl<'a> {
         }
     }
 
+    // Op `4C D2`: a slice runs with the channel set moved out, so the resolve
+    // and the seat happen at the frame's sweep.
+    fn spawn_placement_if_absent(&mut self, channel: u8) {
+        self.world.field_vm.pending_placement_respawns.push(channel);
+    }
+
     // Op `43 0E`: retire the first live screen frame.
     fn op43_sube_mark_actor_flag_8(&mut self, _ctx: &mut FieldCtx) {
         if !self.world.presentation.screen_frames.is_empty() {

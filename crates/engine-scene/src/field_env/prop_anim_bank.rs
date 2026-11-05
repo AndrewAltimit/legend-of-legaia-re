@@ -41,7 +41,9 @@ impl PropAnimState {
     /// longer enters the collision candidate list nor the touch probes. Set
     /// by the door's touch pass (`31 00` as the swing starts).
     pub fn collision_exempt(&self) -> bool {
-        self.cflags & 3 != 0
+        // Bit 3 is the retire bit: `FUN_8002519C` frees the node, so it leaves
+        // both lists with the actor.
+        self.cflags & (3 | 8) != 0
     }
 
     /// `FUN_801CFC40`'s `flags & 0x40020000` class - contact result bit `1`:

@@ -65,7 +65,11 @@ impl World {
             .channels
             .iter()
             .filter(|c| c.object_bind)
-            .filter(|c| (c.ctx.world_x == hide && c.ctx.world_z == hide) || c.ctx.field_72 == 0)
+            .filter(|c| {
+                (c.ctx.world_x == hide && c.ctx.world_z == hide)
+                    || c.ctx.field_72 == 0
+                    || c.ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT != 0
+            })
             .map(|c| c.placement_index)
             .chain(self.pack_mode_hidden_prop_records())
             .collect()
@@ -413,8 +417,11 @@ impl World {
             }
         }
         self.field_vm.entry_prerun = true;
-        self.step_field_channel_prologues();
+        self.step_field_channel_prologues(None);
         self.field_vm.entry_prerun = false;
+        // A spawn section's story gate retires its actor before the first
+        // frame draws (`cave01` P1[3]: `71 5D ..`, `31 03`).
+        self.retire_killed_field_channels();
         self.npcs.entry_positions = self.npcs.positions.clone();
         // The ambient motion channels installed with the carriers still hold
         // the raw MAN header tiles; re-seat them on the story-true positions
@@ -425,7 +432,132 @@ impl World {
         self.resync_ambient_start_headings();
     }
 
-    pub(super) fn step_field_channel_prologues(&mut self) {
+    /// The per-frame half of `FUN_8002519C` over the placement contexts: a
+    /// context whose retire bit is up stops existing, and a queued `4C D2`
+    /// seats a retired placement again.
+    ///
+    /// PORT: FUN_8002519C (the retire arm, placement contexts)
+    pub(crate) fn sweep_field_channel_lifetimes(&mut self) {
+        self.retire_killed_field_channels();
+        self.run_pending_placement_respawns();
+    }
+
+    /// Retire every placement context carrying
+    /// [`CONTEXT_RETIRE_BIT`](legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT).
+    ///
+    /// The channel leaves the set, so `FUN_8003C83C` lookups miss it, and the
+    /// slot parks in the hide box, which every placement surface (draw, shadow,
+    /// talk probe, collision, lights) already reads as "not here". Object-bind
+    /// contexts stay in the set for [`Self::hidden_object_records`]: nothing
+    /// re-seats one.
+    fn retire_killed_field_channels(&mut self) {
+        use legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
+        // A killed object drops out of the collision and touch lists with its
+        // draw; a cross-context `B1 <obj> 03` reached only the channel.
+        for c in &self.field_vm.channels {
+            if c.object_bind && c.ctx.flags & CONTEXT_RETIRE_BIT != 0 {
+                for prop in self.props.bank.props.values_mut() {
+                    if prop.record == c.placement_index {
+                        prop.cflags |= CONTEXT_RETIRE_BIT;
+                    }
+                }
+            }
+        }
+        let killed: Vec<usize> = self
+            .field_vm
+            .channels
+            .iter()
+            .filter(|c| !c.object_bind && c.ctx.flags & CONTEXT_RETIRE_BIT != 0)
+            .map(|c| c.placement_index)
+            .collect();
+        if killed.is_empty() {
+            return;
+        }
+        self.field_vm
+            .channels
+            .retain(|c| c.object_bind || c.ctx.flags & CONTEXT_RETIRE_BIT == 0);
+        let hide = legaia_engine_field::man_field_scripts::FIELD_OFFMAP_HIDE_XZ;
+        for index in killed {
+            self.field_vm.retired_placements.insert(index);
+            self.field_vm.pending_engagements.retain(|&p| p != index);
+            let Ok(slot) = u8::try_from(index) else {
+                continue;
+            };
+            self.npcs.positions.insert(slot, (hide, hide));
+            self.npcs.glide_speeds.remove(&slot);
+            self.npcs.motions.remove(&slot);
+            self.npcs.glide_legs.remove(&slot);
+            self.npcs.face_legs.remove(&slot);
+            self.npcs.rotate_legs.remove(&slot);
+        }
+    }
+
+    /// `4C D2 <channel>`: when `FUN_8003C83C` answers nothing, seat the
+    /// placement afresh through `FUN_8003A1E4`, spawn section included
+    /// (`0x801E2BC8`). An answered channel is left alone.
+    // REF: FUN_801DE840 (0x801E2B7C..0x801E2BD8), FUN_8003A1E4
+    fn run_pending_placement_respawns(&mut self) {
+        if self.field_vm.pending_placement_respawns.is_empty() {
+            return;
+        }
+        let queue = std::mem::take(&mut self.field_vm.pending_placement_respawns);
+        let Some(man) = self.field_vm.channels_man.clone() else {
+            return;
+        };
+        let Ok(man_file) = legaia_scene_formats::man_section::parse(&man) else {
+            return;
+        };
+        let n0 = man_file.header.partition_counts[0].max(0) as usize;
+        for channel in queue {
+            let Some(index) = usize::from(channel).checked_sub(n0) else {
+                continue;
+            };
+            if !self.field_vm.retired_placements.remove(&index) {
+                continue;
+            }
+            let Some(fresh) = legaia_engine_field::field_channels::spawn_placement_channel(
+                &man_file, &man, index,
+            ) else {
+                continue;
+            };
+            let Ok(slot) = u8::try_from(index) else {
+                continue;
+            };
+            // Placements stay ahead of the object binds: a flat index at or
+            // past `N0` aliases a placement's script id, and the first-match
+            // walk has to keep the placement.
+            let at = self
+                .field_vm
+                .channels
+                .iter()
+                .position(|c| c.object_bind)
+                .unwrap_or(self.field_vm.channels.len());
+            self.field_vm.channels.insert(at, fresh);
+            self.npcs.positions.remove(&slot);
+            self.npcs.headings.remove(&slot);
+            self.field_vm.entry_prerun = true;
+            self.step_field_channel_prologues(Some(index));
+            self.field_vm.entry_prerun = false;
+            match self.npcs.positions.get(&slot) {
+                Some(&seat) => {
+                    self.npcs.entry_positions.insert(slot, seat);
+                }
+                None => {
+                    self.npcs.entry_positions.remove(&slot);
+                }
+            }
+            if let Some(chan) = self.npcs.ambient.get_mut(&slot) {
+                chan.live = None;
+                chan.vm.pc = 0;
+                chan.vm.cursor = 0;
+            }
+            self.resync_ambient_start_positions();
+        }
+        // The spawn section runs the same story gates a scene entry does.
+        self.retire_killed_field_channels();
+    }
+
+    pub(super) fn step_field_channel_prologues(&mut self, only: Option<usize>) {
         if self.field_vm.channels.is_empty() {
             return;
         }
@@ -443,6 +575,9 @@ impl World {
             .collect();
         for i in 0..channels.len() {
             if channels[i].done {
+                continue;
+            }
+            if only.is_some_and(|o| channels[i].object_bind || channels[i].placement_index != o) {
                 continue;
             }
             // Object-bind channels are cross-context poke targets only: the
@@ -710,6 +845,8 @@ impl World {
         man: &[u8],
     ) {
         self.field_vm.pending_engagements.clear();
+        self.field_vm.retired_placements.clear();
+        self.field_vm.pending_placement_respawns.clear();
         self.field_vm.channels = legaia_engine_field::field_channels::spawn_channels(man_file, man);
         self.field_vm.channels_man = if man.is_empty() {
             None

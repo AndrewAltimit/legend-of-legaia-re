@@ -878,6 +878,18 @@ impl World {
         // ([`Self::prop_collider_exempt`]): an opened door stops blocking, and
         // a door its record closes again (`32 00`) blocks again.
         prop.cflags = ctx.flags;
+        let record = prop.record;
+        // A record's own `31 03` retires the object: its draw leaves with the
+        // hidden-record set, which reads the channel.
+        if ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT != 0
+            && let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| c.object_bind && c.placement_index == record)
+        {
+            ch.ctx.flags |= legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
+        }
     }
 
     /// The flat MAN record of the placed object a cross-context target byte

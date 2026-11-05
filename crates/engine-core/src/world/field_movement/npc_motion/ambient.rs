@@ -343,6 +343,16 @@ impl World {
                 });
         let talker = self.dialog.inline.as_ref().and_then(|id| id.npc_slot);
         for slot in slots {
+            // A retired actor is off the list `FUN_8002519C` walks: no driver
+            // tick, no stream. Its tail-section-1 record restarts if `4C D2`
+            // seats it again.
+            if self
+                .field_vm
+                .retired_placements
+                .contains(&usize::from(slot))
+            {
+                continue;
+            }
             // Re-select against the live system-flag bank before stepping.
             let pick = self
                 .npcs
