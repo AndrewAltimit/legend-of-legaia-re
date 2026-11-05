@@ -26,7 +26,7 @@ impl World {
     pub fn ordinary_battle_frame_step(&self) -> u8 {
         if self.toggles.battle_party_cost_step {
             legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(
-                self.party.party_count.clamp(0, 3) as u8,
+                self.party.party_count,
             )
         } else {
             DEFAULT_BATTLE_FRAME_STEP

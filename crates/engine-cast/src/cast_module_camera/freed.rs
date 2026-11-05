@@ -46,6 +46,11 @@ const FREED_RISE_FROM: i32 = 0x600;
 ///
 /// PORT: FUN_801F69D8 (PROT 0912; every camera arm, the drifts of arms 4..8 and 13..19, and the arm 8/10 captions)
 pub fn freed_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
+    // The terminal arm zeroes the yaw ladder (`*(ctx + 0x6DA) = 0`), so the
+    // Done band's case 6 frames from `0` plus its own drift.
+    if phase == 0xFF {
+        st.yaw_base = 0;
+    }
     let caster = seats.caster;
     let p = MODULE_DRAIN_PER_TICK;
     run_body_paced(
