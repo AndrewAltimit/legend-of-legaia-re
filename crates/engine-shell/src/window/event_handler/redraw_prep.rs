@@ -145,7 +145,14 @@ impl PlayWindowApp {
             // A capture no pose reaches stands the camera on this frame's
             // seats, and the tick's ghost bits read the pose before them: the
             // pass walks a table, and a seat's jump is none of retail's.
-            if due && sc.battle_ghost_pose.is_none() {
+            //
+            // Not on a sweep: a sweep films the play path on a pad script and
+            // seats nothing, and re-running the pass after the tick there
+            // ran it after the anim pass too - a defeat fade's first frame
+            // drew additive one frame before the play path (and the page)
+            // draws it, retail's order being ghost pass, presentation tick,
+            // then the walker that raises the fade.
+            if due && sc.sweep.is_none() && sc.battle_ghost_pose.is_none() {
                 self.session.host.world.refresh_battle_camera_ghost();
             }
             if due && !sc.seat_battle_clips.is_empty() {
