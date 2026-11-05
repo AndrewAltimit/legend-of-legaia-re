@@ -1758,7 +1758,7 @@ fn the_capture_band_polls_hold_for_the_read() {
     world.battle_ctx.action_state = S::MagicCaptureFade.as_byte();
     world.arm_capture_read_wait(S::MagicCaptureFade.as_byte());
     assert!(!BattleHostImpl { world: &mut world }.previous_action_cleared(1));
-    world.clock.display_frames = start + 21;
+    world.clock.display_frames = start + 19;
     assert!(BattleHostImpl { world: &mut world }.previous_action_cleared(1));
     // Other states ignore a stale word.
     world.battle.capture_read_until = u64::MAX;

@@ -1030,6 +1030,7 @@ mod ultimate_rave;
 mod v_windhash;
 mod viguro;
 mod void_accessories;
+mod water_crystals;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
@@ -1096,6 +1097,7 @@ pub use ultimate_rave::*;
 pub use v_windhash::{V_WINDHASH_COUNTDOWN, v_windhash_camera};
 pub use viguro::*;
 pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
+pub use water_crystals::{WATER_CRYSTALS_COUNTDOWN, water_crystals_camera};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {

@@ -820,6 +820,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         964 => true,
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
+        949 => true,
         951 => body == Some(super::SCYTHE_WIND_BODY),
         952 => body == Some(super::BLOODY_HORNS_BODY),
         955 => matches!(
@@ -891,6 +892,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
     matches!(
         (prot_entry, phase),
         (938, 2 | 3)
+            | (949, 2)
             | (940, 7)
             | (944, 2 | 4)
             | (946, 6)
@@ -964,6 +966,8 @@ pub fn capture_arm_spawns_in(
 /// alone makes is listed ([`capture_arm_spawns_for`] filters it).
 pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
+        (949, 0) => &super::water_crystals::ARM0_SPAWNS,
+        (949, 2) => &super::water_crystals::ARM2_SPAWNS,
         (940, 1) => &E940_1,
         (940, 3) => &E940_3,
         (944, 1) => &E944_1,
