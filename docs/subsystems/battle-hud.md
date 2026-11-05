@@ -1753,9 +1753,13 @@ window, so retail's park row would still be visible.
 `BattleActor::hp_display`, retail actor `+0x172`, walked by the quarter-step
 ramp `FUN_80047430` so damage drains over frames:
 
-- **Numerals** take the readout-tint law (`hp_bar_color_index` /
-  `mp_bar_color_index`, ports of `FUN_800349EC` / `FUN_80035EA8`). A dead
-  member's numerals dim.
+- **Numerals** take the whole-gauge law below: `FUN_80046A20` stores the tier
+  into the digit widgets `0x801C8FA0` names (`0x80046C10..0x80046CB0`), so a
+  status (`+0x16E != 0`) turns both a member's HP and MP to tier `3`, CLUT
+  `(144, 510)`, at any fill (`battle_teien_berserker_strike`'s Rotted Noa).
+  The readout pair `FUN_800349EC` / `FUN_80035EA8` (`hp_bar_color_index` /
+  `mp_bar_color_index`) has no battle caller; it tints the menus and the field
+  party HUD, where a status folds into the caution tier instead.
 - **The `/` separator takes no tier.** Retail draws it off the system-UI
   sheet through its fixed sub-palette 5 (CLUT `(80, 511)`, colour word
   `0x808080`) whatever the numerals either side read; the numerals' tier is

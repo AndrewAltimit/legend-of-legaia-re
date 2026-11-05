@@ -16,8 +16,8 @@ use crate::battle_hud_chrome::{
 ///   (system-UI atlas chrome via [`BattleHudFrame::chrome`]), and per
 ///   member the name, the gold `HP` label sprite with right-aligned
 ///   `cur / max` numerals, and the green `MP` label sprite with numerals.
-///   Numerals take the retail readout-tint law ([`hp_bar_color_index`] /
-///   [`mp_bar_color_index`]); a dead member's name + numerals dim. Retail
+///   Numerals take the whole-gauge law (`HudSlotView::hp_fill` / `mp_fill`,
+///   `FUN_80046A20`); a dead member's numerals dim. Retail
 ///   draws **no HP/MP bars and no AP pips in the strip** - the captured
 ///   strip is numerals-only - so the engine draws none by default.
 /// * **The plaque** - the acting actor's name as clean text at the
@@ -354,22 +354,22 @@ pub fn battle_hud_draws_for(
     // * a downed member's HP **and** MP readouts both take the dead tier,
     //   which is retail's brightest red, not a grey-out. The MP field takes it
     //   even when its own ratio would say "normal", so the death override sits
-    //   above `mp_bar_color_index`.
+    //   above the per-bar bands.
     let tints = |slot: &HudSlotView<'_>| -> ([f32; 4], [f32; 4], [f32; 4]) {
         const DEAD: u8 = 2;
         let base = READOUT_NORMAL;
+        // The battle numerals' widgets take their palette from the whole-gauge
+        // law (`FUN_80046A20` stores into the widgets `0x801C8FA0` names,
+        // `0x80046C10..0x80046CB0`), which a status overrides to tier `3`.
         let hp = if !slot.alive {
             gauge_fill_color(DEAD)
         } else {
-            tint(
-                hp_bar_color_index(slot.hp, slot.hp_max, slot.status_sprite != 0),
-                READOUT_NORMAL,
-            )
+            tint(slot.hp_fill, READOUT_NORMAL)
         };
         let mp = if !slot.alive {
             gauge_fill_color(DEAD)
         } else {
-            tint(mp_bar_color_index(slot.mp, slot.mp_max), READOUT_NORMAL)
+            tint(slot.mp_fill, READOUT_NORMAL)
         };
         (base, hp, mp)
     };

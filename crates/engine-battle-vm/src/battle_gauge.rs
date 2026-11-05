@@ -59,13 +59,12 @@
 //! precedence retail applies to the four `DAT_801C8FA0` slots.
 //!
 //! Distinct from the **readout-tint** pair `FUN_800349EC` / `FUN_80035EA8`
-//! (`hp_bar_color_index` / `mp_bar_color_index` in `engine-ui`), which tint
-//! the numerals: those share the code space (`2` empty, `6` caution, `7`
+//! (`hp_bar_color_index` / `mp_bar_color_index` in `engine-ui`): those share the code space (`2` empty, `6` caution, `7`
 //! normal, `9` danger) and the floored `max >> 1` / `max >> 2` thresholds,
 //! but `FUN_800349EC` folds an active status into the caution tier and has
-//! no `3`, where `FUN_80046A20` overrides the whole gauge to `3`. The engine
-//! draws both laws: numerals through the readout pair, fills through this
-//! one. The status flag retail reads at actor `+0x16E` is approximated on
+//! no `3`, where `FUN_80046A20` overrides the whole gauge to `3`. The battle
+//! numerals and fills both take this law; the readout pair tints the menus
+//! and the field party HUD. The status flag retail reads at actor `+0x16E` is approximated on
 //! the engine side by "any active status icon".
 
 /// Gauge fill-colour index: actor is dead (`cur_hp == 0`).
