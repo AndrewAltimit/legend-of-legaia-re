@@ -46,7 +46,7 @@ pub(super) const ARM4_SPAWNS: [ModuleSpawn; 9] = [
 /// | 4 (`0x801F72A0`) | on the gate: pitch `0x180`, TR `(0, 0, 0x1800)`, `0x80` frames | `+= scalar << 7` |
 /// | 5 (`0x801F7418`) | on the gate: the hit, the victim turned on the caster | `+= scalar * 0x60` |
 /// | 6 (`0x801F75AC`) | on the gate | `+= scalar << 6` |
-/// | 7 (`0x801F7604`) | the settle; on it the caster shown | - |
+/// | 7 (`0x801F7604`) | case 8 on the caster each pass; on the settle the caster shown | - |
 ///
 /// PORT: overlay_cast_water_column_0945_801f6edc (PROT 0945 `0x54`; the camera arms and the seat swap)
 pub fn water_column_camera(
@@ -123,6 +123,8 @@ pub fn water_column_camera(
             st.countdown.0 += SPEED_SCALAR * 0x60;
         }
         6 => st.countdown.add(1 << 6),
+        // Case 8 ahead of the settle's drain, held or not (`0x801F7614`).
+        7 => arm.end_frame = true,
         _ => {}
     }
     arm
