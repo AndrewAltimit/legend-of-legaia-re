@@ -217,3 +217,4 @@ The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, r
 
 Baka Fighter's round score `FUN_801D2A28` matches, and tracing what feeds it found the channel unwired: no host installed the two bonus tables, the match bonus row was never seeded, and the running total never reached the cabinet, so neither secret opponent could ever appear. Retail also scores only the player's round win, off the player's HP.
 
+The same search for setters with no live caller found the bag's window selector `FUN_8004313C` unwired: the live game never left the full window, so a lone character saw the whole array.

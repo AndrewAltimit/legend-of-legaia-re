@@ -4,6 +4,22 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// The bag's active window off the party: retail's selector `FUN_8004313C`
+    /// runs ahead of every bag helper, and a lone character before story flag
+    /// `20` gets one half of the array, the low half for Vahn and the high for
+    /// anyone else. Ticked here, since no bag helper changes the party.
+    ///
+    /// PORT: FUN_8004313C (the call sites)
+    fn refresh_bag_window(&mut self) {
+        const FULL_WINDOW_FLAG: u16 = 20;
+        let members = self.party.party_count;
+        let full = self.system_flag_test(FULL_WINDOW_FLAG);
+        let solo = self.party_roster_slot(0) as u8;
+        self.party
+            .inventory
+            .install_window_for_party(members, full, solo);
+    }
+
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
     /// Returns the battle-step outcome when in [`SceneMode::Battle`], else
     /// `None`.
@@ -49,6 +65,7 @@ impl World {
         // The move-VM strip set on screen is one tick's
         // (`MoveVmGlobals::strip_frame`).
         self.move_vm.begin_strip_tick();
+        self.refresh_bag_window();
         let outcome = self.tick_modes();
         // An active expansion pack's per-tick step (pack-line resolve, quest
         // state re-test); the identity with none.

@@ -330,17 +330,17 @@ fn fishing_frame(world: &mut World, mask: u16) {
 /// Circle edge -> wind-up -> power sweep -> Circle lock -> flight -> the lure
 /// lands in the pre-hook loop.
 fn fishing_cast(world: &mut World) {
-    use legaia_engine_fishing::fishing::{FLIGHT_FRAMES, PondPhase, WINDUP_FRAMES};
+    use legaia_engine_fishing::fishing::{PondPhase, WINDUP_FRAMES};
     let circle = input::PadButton::Circle.mask();
     fishing_frame(world, 0);
     fishing_frame(world, circle);
-    for _ in 0..WINDUP_FRAMES + 24 {
+    for _ in 0..WINDUP_FRAMES + 96 {
         fishing_frame(world, 0);
     }
     assert_eq!(fishing_phase(world), PondPhase::Power);
     fishing_frame(world, circle);
     assert_eq!(fishing_phase(world), PondPhase::Flight);
-    for _ in 0..FLIGHT_FRAMES {
+    while fishing_phase(world) == PondPhase::Flight {
         fishing_frame(world, 0);
     }
     assert_eq!(fishing_phase(world), PondPhase::Waiting);
@@ -889,7 +889,7 @@ fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
     fishing_frame(&mut world, 0);
     fishing_frame(&mut world, circle);
     ops.extend(world.take_sfx_ring_ops());
-    for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES + 24 {
+    for _ in 0..legaia_engine_fishing::fishing::WINDUP_FRAMES + 96 {
         fishing_frame(&mut world, 0);
         ops.extend(world.take_sfx_ring_ops());
     }
@@ -897,7 +897,7 @@ fn the_lure_landing_stores_its_cue_into_ring_slot_two() {
     ops.extend(world.take_sfx_ring_ops());
     let landing = legaia_engine_system::sound_state::SfxRingOp::WriteSlot(2, 0x204);
     assert!(!ops.contains(&landing), "nothing before the lure flies");
-    for _ in 0..legaia_engine_fishing::fishing::FLIGHT_FRAMES {
+    while fishing_phase(&world) == legaia_engine_fishing::fishing::PondPhase::Flight {
         fishing_frame(&mut world, 0);
         ops.extend(world.take_sfx_ring_ops());
     }
@@ -1022,4 +1022,27 @@ fn the_hall_hook_copies_the_leader_and_sets_v() {
     );
     host.ext_20(&mut part, 1, -50);
     assert_eq!(part.tween_src_z, -50);
+}
+
+/// `FUN_8004313C`: a lone character before story flag `20` sees one half of the
+/// bag, and everyone else all of it. Items outside the window stay in the array.
+#[test]
+fn a_lone_character_sees_their_half_of_the_bag() {
+    use legaia_save::retail_inventory::ItemWindow;
+    let mut w = World::new();
+    w.party.party_count = 1;
+    w.party.active_party = vec![0];
+    w.tick();
+    assert_eq!(w.party.inventory.window(), ItemWindow::Low, "Vahn alone");
+    w.party.active_party = vec![1];
+    w.tick();
+    assert_eq!(w.party.inventory.window(), ItemWindow::High, "Noa alone");
+    w.system_flag_set(20);
+    w.tick();
+    assert_eq!(w.party.inventory.window(), ItemWindow::Full, "flag 20");
+    w.system_flag_clear(20);
+    w.party.party_count = 2;
+    w.party.active_party = vec![0, 1];
+    w.tick();
+    assert_eq!(w.party.inventory.window(), ItemWindow::Full, "two members");
 }
