@@ -231,11 +231,13 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
         show_counts: true,
         page: s.page(),
         pages: s.pages(),
-        // The hand sits inside the list for the Use list and both Throw
-        // Out phases (rows drop to the grey staging-0 ink in all three).
+        // The hand sits inside the list for the Use list, the Yes / No its
+        // special items open (`menu_door_light_kor_retail`) and both Throw
+        // Out phases (rows drop to the grey staging-0 ink in all of them).
         focus_list: matches!(
             s.focus,
             PauseItemsFocus::List
+                | PauseItemsFocus::SpecialRoute
                 | PauseItemsFocus::ThrowOutList
                 | PauseItemsFocus::ThrowOutConfirm
         ),
