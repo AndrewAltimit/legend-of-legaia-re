@@ -32,13 +32,13 @@ use super::*;
 /// That clip gate is a simulation read, not presentation: it is why the arm
 /// can sit on phase `4` for an unbounded number of frames.
 ///
-/// Not ported: the unaligned pose copies out of `0x801F86C0`, the framing and
-/// the countdown at `0x801F86B0`.
+/// The pose copies, the framing and the countdown at `0x801F86B0` are
+/// [`crate::cast_module_camera::rolling_flare_camera`]'s.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
 /// PORT: FUN_801F79F8 (PROT 0950 action 0x5A; phase machine + the 0x100 hit +
-/// the clip gate; pose / camera arms unported)
+/// the clip gate; the camera arms are the director's)
 pub fn rolling_flare_tick(
     ctx: &mut CastModuleCtx,
     caster: &mut CastActorState,

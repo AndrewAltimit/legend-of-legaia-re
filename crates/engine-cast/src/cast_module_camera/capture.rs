@@ -33,6 +33,10 @@ pub struct CaptureDrift {
 /// What a capture module's camera does on one pass of one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureCamArm {
+    /// The arm's pass stores the caster's size class (record `+0x1F`) and body
+    /// radius (`+0x58` behind `+0x22C`), the words the range poll and the
+    /// separation pass read.
+    pub caster_reach: Option<(u8, i16)>,
     /// The arm's pass calls the seat installer `FUN_801F19EC`: the stream's
     /// record stands as seat 7, on the caster.
     pub seats_creature: bool,
@@ -266,6 +270,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
         (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
+        (950, super::ROLLING_FLARE_BODY) => Some(super::rolling_flare_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
         (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),

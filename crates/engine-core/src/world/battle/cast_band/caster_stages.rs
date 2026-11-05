@@ -571,6 +571,11 @@ impl World {
     ///
     /// [`capture_approach_yaw_base`]: legaia_engine_cast::cast_module_camera::capture_approach_yaw_base
     fn open_capture_approach(&mut self, caster: u8, victim: u8, entry: u32, body: Option<u32>) {
+        if let Some(reach) =
+            legaia_engine_cast::cast_module_camera::capture_approach_reach(entry, body)
+        {
+            self.store_caster_reach(caster, reach);
+        }
         let facing = self.actors[usize::from(caster)].battle.facing_angle;
         if let Some(v) = self.actors.get_mut(usize::from(victim)) {
             v.battle.facing_angle = facing.wrapping_add(0x800) & 0xFFF;

@@ -402,6 +402,9 @@ impl World {
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
         }
+        if let Some(reach) = capture_arm.as_ref().and_then(|a| a.caster_reach) {
+            self.store_caster_reach(caster_slot, reach);
+        }
         // A director arm that names the body's damage-wrapper call folds the
         // owed cast on the pass it makes it (PROT 0962 `0xA2` arm 3), so the
         // victim's reaction - which the body's next arm waits out - starts

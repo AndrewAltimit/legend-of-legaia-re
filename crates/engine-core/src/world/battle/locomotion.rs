@@ -198,6 +198,11 @@ impl World {
     /// party slot / empty slot / unresolved catalog (the same resolution the
     /// battle host's `monster_size_class` performs).
     pub(in crate::world) fn battle_size_class_of(&self, slot: u8) -> u8 {
+        if let Some((seat, size)) = self.casting.caster_size_store
+            && seat == slot
+        {
+            return size;
+        }
         let Some(id) = self
             .actors
             .get(slot as usize)

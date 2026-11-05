@@ -367,6 +367,14 @@ pub fn capture_approach_follows(entry: u32, body: Option<u32>) -> bool {
     }
 }
 
+/// The caster's size class and body radius a walking body's arm 0 stores for
+/// the walk, where it stores any: the range poll reads the class, so the walk
+/// stops further out than the record's own.
+pub fn capture_approach_reach(entry: u32, body: Option<u32>) -> Option<(u8, i16)> {
+    (entry == 950 && body == Some(super::ROLLING_FLARE_BODY))
+        .then_some(super::ROLLING_FLARE_WALK_REACH)
+}
+
 /// The yaw counter `ctx[+0x6DA]` a walking body's arm 0 stores before its
 /// first case 6 (`li v0,0x200; sh v0,0x6DA(v1)`: PROT 0951 at `0x801F6B14` and
 /// `0x801F78D4`, PROT 0952 at `0x801F6AF8` and `0x801F7204`).

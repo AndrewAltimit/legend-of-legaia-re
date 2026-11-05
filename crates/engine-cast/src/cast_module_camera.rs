@@ -1017,6 +1017,7 @@ mod orb;
 mod plasma_strike;
 mod power_up;
 mod puera;
+mod rolling_flare;
 mod scythe_wind;
 mod seru;
 mod spoon;
@@ -1041,7 +1042,7 @@ pub use blade_breath::{
     GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
     THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
     THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
-    capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
+    capture_approach_reach, capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
 pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_camera};
@@ -1084,6 +1085,7 @@ pub use plasma_strike::{
 };
 pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
+pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
 pub use spoon::*;
