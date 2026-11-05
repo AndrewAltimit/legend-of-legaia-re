@@ -366,3 +366,32 @@ fn battle_item_rows_name_unusable_items_and_print_stack_counts() {
         ]
     );
 }
+
+/// Issue #556: Noa's first solo stretch listed Vahn's items. Retail's window
+/// selector gives a lone non-Vahn member the bag's upper half until story flag
+/// `20` - the `terra_party_battle` capture reads members `1`, roster `[1]`,
+/// flag 20 clear, window `(128, 256)`, with Vahn's leaves in the lower half -
+/// so her battle Item window lists her half alone.
+#[test]
+fn a_lone_noa_lists_only_her_half_of_the_bag_in_battle() {
+    use legaia_save::retail_inventory::ItemWindow;
+    let mut world = World::new();
+    world.set_item_catalog(full_test_catalog());
+    world.party.party_count = 1;
+    world.party.active_party = vec![0];
+    world.tick();
+    assert_eq!(world.party.inventory.window(), ItemWindow::Low);
+    world.party.inventory.insert(0x01, 5); // Vahn's stack, lower half
+    world.party.active_party = vec![1];
+    world.tick();
+    assert_eq!(world.party.inventory.window(), ItemWindow::High);
+    world.party.inventory.insert(0x02, 2); // Noa's, upper half
+    world.mode = SceneMode::Battle;
+    world.battle.player_driven = true;
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    let view = world.build_battle_item_session().menu_view();
+    let ids: Vec<u8> = view.rows.iter().map(|r| r.id).collect();
+    assert_eq!(ids, vec![0x02], "Vahn's half stays out of reach");
+}
