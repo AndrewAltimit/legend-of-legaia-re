@@ -41,16 +41,21 @@ impl World {
     /// the locomotion controller. The WorldMap arm therefore calls it as
     /// well ([`Self::tick_world_map`]).
     ///
-    /// Member order is the present party (retail walks the member-id table
-    /// at `0x80084598`), resolved through [`Self::party_roster_slot`].
+    /// Member order is the present party: retail walks the member-id table
+    /// at `0x80084598` for `DAT_80084594` entries ([`Self::present_party_list`]).
     pub(crate) fn tick_field_walk_regen(&mut self) {
         use legaia_engine_field::walk_regen::{WalkGauge, WalkRegenMember};
         if self.locomotion.walk_regen_steps <= legaia_engine_field::walk_regen::WALK_REGEN_STEP_COST
         {
             return;
         }
-        let count = (self.party.party_count.min(3) as usize).min(self.party.roster.members.len());
-        let slots: Vec<usize> = (0..count).map(|i| self.party_roster_slot(i)).collect();
+        // `lbu 0x454` / `lbu 0x458+i` off `0x80084140` (`0x801D0BB4..0x801D0BCC`):
+        // the count `DAT_80084594` and the record ids `0x80084598`.
+        let slots: Vec<usize> = self
+            .present_party_list()
+            .into_iter()
+            .map(usize::from)
+            .collect();
         let mut members: Vec<WalkRegenMember> = Vec::with_capacity(slots.len());
         for &rslot in &slots {
             let Some(rec) = self.party.roster.members.get(rslot) else {
