@@ -7109,3 +7109,21 @@ phase = "field"
 expected_game_mode = 0x03
 expected_active_scene = "son"
 topics = ["field", "son", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "battle_retona_songi_hyper_crush_mid_cast"
+backup_fingerprint = "7d8a2aa87d17c7f17407df63ed34fe2502a5f33e8203a989fd67b0a402c18f31"
+description = "retona battle: Songi mid-cast spell 0x4B: category 2, action state 0x70. RETAIL disc: retona_field_card_boot played forward by autorun_battle_harvest.lua --turbo, saved at vsync 1231. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Songi", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_songi_hyper_lightning_mid_cast"
+backup_fingerprint = "b780d9d8c3b4ccc14fd50fa7c333e73b393dab0e56ac6a285874eb88657dccf0"
+description = "retona battle: Songi mid-cast spell 0x4C: category 2, action state 0x70. RETAIL disc: retona_field_card_boot played forward by autorun_battle_harvest.lua --turbo, saved at vsync 11661. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Songi", "retona", "harvest"]
