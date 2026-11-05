@@ -405,6 +405,8 @@ pub struct RetailBattle {
     pub summon_fade: Option<RetailFade>,
     /// `ctx[+0x279]` - the resident summon module's phase byte.
     pub module_phase: u8,
+    /// The acting seat's latch word `0x801C8FE0 + (ctx[+0x13] + 1) * 4`.
+    pub caster_latch: u32,
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,

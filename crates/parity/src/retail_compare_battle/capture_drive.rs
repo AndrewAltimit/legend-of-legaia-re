@@ -6,6 +6,7 @@ use super::*;
 /// The rung the Attack arm stands the yaw counter `ctx[+0x6DA]` on as the
 /// seed enters `0x14` (`0x801E2F20`).
 const ATTACK_YAW_RUNG: u16 = 0x200;
+
 /// The rung the seed pass stands the counter on (`0x801E2CF8`), which a Spirit
 /// band action climbs from with no store of its own.
 const SEED_YAW_RUNG: u16 = 0x800;
@@ -139,6 +140,16 @@ impl RetailBattle {
                 .copied()
                 .flatten()
                 .is_some_and(|c| c.hp <= c.hp_max / 3)
+    }
+
+    /// Whether a monster's captured cast stands with its latch
+    /// `DAT_801C8FE0[i + 4]` raised. The body reads the word at its arm 0, and
+    /// the replay re-enters the cast there: PROT 0953 forks on it
+    /// (`0x801F6B04`), so a clear word takes the charge, which holds another
+    /// stage and has no strike (`battle_tunnelc_xain_terio_punch_mid_cast`
+    /// holds `1` with its phase still `0`).
+    pub fn caster_latch_raised(&self) -> bool {
+        self.active_actor >= 3 && self.queued_category == 2 && self.caster_latch != 0
     }
 
     /// Whether the capture is a monster strike gated on a swing clip

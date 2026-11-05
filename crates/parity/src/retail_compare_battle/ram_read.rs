@@ -1141,6 +1141,10 @@ impl RetailBattle {
                 .then(|| active.map(|p| game_anchors::u8_at(ram, p + 0x1DB)))
                 .flatten(),
             module_phase: game_anchors::u8_at(ram, ctx + 0x279),
+            caster_latch: game_anchors::u32_at(
+                ram,
+                0x801C_8FE0 + (u32::from(active_actor) + 1) * 4,
+            ),
             action_hits: action_hits(ram, ctx),
             action_hit_sequence: action_hit_sequence(ram, ctx),
             clip_pushes: clip_own_pushes(ram, ctx),

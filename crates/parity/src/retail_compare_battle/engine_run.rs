@@ -452,7 +452,7 @@ pub fn run_engine_battle(
                     init_key: keys.get(slot).copied().flatten(),
                     heal_latch: slot
                         == usize::from(engine_seat(battle.active_actor, battle.party_count))
-                        && battle.heal_gate_passed(),
+                        && (battle.heal_gate_passed() || battle.caster_latch_raised()),
                     gauge: battle.dohati_gauge.filter(|_| slot == pc),
                 })
             })
