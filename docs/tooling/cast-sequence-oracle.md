@@ -230,7 +230,13 @@ counter for as long as the state lasts and leaves the camera short by what the s
 would have drifted; and the score keeps the recording's first action only
 (`Side::first_action_only`), because a recording's tail can hold the next actors'
 whole turns, and the alignment prefers a later actor's complete run of states to a
-capture that starts inside the strike loop.
+capture that starts inside the strike loop. Its second clip and every melee roll are
+a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
+strike lands clip `7` twice on the engine's stream where retail's second is `8`.
+
+An injected cast seats the caster's clip and cursor on its begin
+(`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) beside the pose: a heal's `0x3D` waits out the idle
+the caster stands on.
 
 ## The pairing rule
 
