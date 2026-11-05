@@ -104,6 +104,8 @@ fn sell_transition_runs_disc_slide_away_script() {
         return;
     };
     let mut world = world_with_overlay(&overlay);
+    // Sell opens only over a bag holding something (`FUN_801DAFD4` row 1).
+    world.party.inventory.insert(0x77, 1);
     let mut runtime = shop_runtime();
     runtime.tick(&mut world, IDLE);
     assert_eq!(world.menu.widgets.open_ids().len(), 5);
