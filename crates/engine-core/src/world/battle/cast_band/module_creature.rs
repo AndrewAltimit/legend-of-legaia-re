@@ -339,6 +339,21 @@ impl World {
                     z: VIGURO_SEAT_Z,
                     facing: 0x800,
                 });
+                // This is where retail's installer runs (`FUN_801F19EC` in the
+                // stager, `0x801F7B2C`): the node is new, its clip at the top, the
+                // rate `2`. The port's early seat has been idling hidden since the
+                // stager armed, and a wrap there has already decayed its rate.
+                if let Some(a) = self
+                    .casting
+                    .summon_actor_slot
+                    .and_then(|c| self.actors.get_mut(usize::from(c)))
+                {
+                    a.battle.anim_rate =
+                        legaia_engine_battle_vm::battle_anim_rate::AnimRate(SUMMON_SEAT_ANIM_RATE);
+                    if let Some(p) = a.battle_animation.as_mut() {
+                        p.rewind();
+                    }
+                }
             }
             let record = match arm {
                 2 => 0x801F_81F4,
