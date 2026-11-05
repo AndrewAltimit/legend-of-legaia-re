@@ -352,7 +352,13 @@ fn battle_probe(
         formation.iter().map(|&b| u16::from(b)).filter(|&b| b != 0),
     );
     let d = session.bgm.as_mut().context("no director")?;
-    d.sync_shared_region(Some(SharedRegionBank::CLASS2), |e| {
+    // The loader's own pick (`0x80052378..0x800523AC`): Terra on party seat 1.
+    let class2 = if ram[at(0x8007_BD11)] == 4 {
+        SharedRegionBank::CLASS2_ALT
+    } else {
+        SharedRegionBank::CLASS2
+    };
+    d.sync_shared_region(Some(class2), |e| {
         index.entry_bytes_extended(e).ok()
     });
     d.sync_field_sfx(rows, false, None, |_| None);

@@ -41,7 +41,9 @@
 //! REF: FUN_801D6704, FUN_8001DCF8, FUN_800520F0, FUN_80025980, FUN_8001FF58,
 //! FUN_800243F0, FUN_80016B6C, FUN_801D8450
 
-use legaia_game_tables::sfx_table::{SLOT2_CLASS2_BANK_PROT_INDEX, SLOT6_FIELD_BANK_PROT_INDEX};
+use legaia_game_tables::sfx_table::{
+    SLOT2_CLASS2_BANK_ALT_PROT_INDEX, SLOT2_CLASS2_BANK_PROT_INDEX, SLOT6_FIELD_BANK_PROT_INDEX,
+};
 
 use crate::mode::SceneMode;
 
@@ -76,6 +78,14 @@ impl SharedRegionBank {
         slot: 2,
         prot_entry: SLOT2_CLASS2_BANK_PROT_INDEX,
     };
+    /// The class-2 battle bank with Terra on party seat 1
+    /// (`DAT_8007BD11 == 4`): PROT 0875 in slot 2, the loader's raw `0x36D`
+    /// (`0x80052378..0x800523AC`). Her attack cues `0x40` / `0x41` name a
+    /// program only this bank holds, and it leaves the party's art cues empty.
+    pub const CLASS2_ALT: Self = Self {
+        slot: 2,
+        prot_entry: SLOT2_CLASS2_BANK_ALT_PROT_INDEX,
+    };
 }
 
 /// Retail's slot-2 / slot-6 residency: the field-bank latch `0x8007BAFC` and
@@ -105,7 +115,8 @@ impl SfxBankResidency {
     /// Advance the residency to `mode` and the field scene `scene_label`,
     /// and return the bank the shared region should hold. `slot6_side_band`
     /// is the live side-band request when it resolves to slot `6`, as
-    /// `(request, prot_entry)`.
+    /// `(request, prot_entry)`. `class2` is the bank a battle's init loads:
+    /// [`SharedRegionBank::CLASS2_ALT`] with Terra on party seat 1.
     ///
     /// Mode edges stand in for retail's mode initialisers: entering the field
     /// or the world map (or changing field scene) runs the field init's arm,
@@ -116,6 +127,7 @@ impl SfxBankResidency {
         mode: SceneMode,
         scene_label: &str,
         slot6_side_band: Option<(i32, u32)>,
+        class2: SharedRegionBank,
     ) -> Option<SharedRegionBank> {
         let entered = self.last_mode != Some(mode);
         self.last_mode = Some(mode);
@@ -130,7 +142,7 @@ impl SfxBankResidency {
                     None => self.last_slot6_request = None,
                 }
             }
-            SceneMode::Battle | SceneMode::MuscleDome if entered => self.battle_init(),
+            SceneMode::Battle | SceneMode::MuscleDome if entered => self.battle_init(class2),
             m if entered => {
                 if let Some(bank) = minigame_slot2_bank(m) {
                     self.minigame_warp(bank);
@@ -198,10 +210,10 @@ impl SfxBankResidency {
     /// `FUN_8001DCF8`'s mode-word-`0x14` arm (close 6 and 3, clear the latch,
     /// `0x8001DF74..0x8001DFC0`) followed by `FUN_800520F0` loading the
     /// class-2 bank into slot 2.
-    pub fn battle_init(&mut self) {
+    pub fn battle_init(&mut self, class2: SharedRegionBank) {
         self.close(6);
         self.field_bank_latch = false;
-        self.load(SharedRegionBank::CLASS2);
+        self.load(class2);
     }
 
     /// `FUN_80025980` (clear the latch, close nothing) followed by the
