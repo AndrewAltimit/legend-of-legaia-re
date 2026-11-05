@@ -53,7 +53,6 @@ Known gaps:
 
 - **Bug reports help.** If you hit a visual glitch, a mistimed animation or a stuck script, an [issue](https://github.com/AndrewAltimit/legend-of-legaia-re/issues) naming the scene and what you did is the fastest way to a fix.
 - **Frame-for-frame parity is still closing.** The [retail comparison corpus](docs/tooling/retail-compare.md) scores the port against retail save states - RAM, camera, and the frame on screen - and ranks where it still differs.
-- **Some sounds are the port's pick.** Where retail's sound-effect id for an event is untraced, the port plays the closest cue and labels it as its own choice ([details](docs/guides/playing-and-viewing.md#5-what-you-hear)).
 - **USA disc only for the port.** Other regions' discs extract, and an official PAL translation can be lifted into a USA language pack, but the engine and the patcher target `SCUS-94254`.
 - **Open questions remain** in the reverse engineering itself: [open threads](docs/reference/open-rev-eng-threads.md).
 

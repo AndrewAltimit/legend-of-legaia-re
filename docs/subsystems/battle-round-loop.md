@@ -813,7 +813,7 @@ The remaining `ed*` scenes (`edbylon`, `edbalden`, `edlast`, `edretoin`, `edkoro
 
 ### End-to-end gameplay loop test
 
-`crates/engine-core/tests/end_to_end_gameplay_loop.rs` stitches the gameplay subsystems into one cycle:
+`crates/engine-save-state/tests/end_to_end_gameplay_loop.rs` stitches the gameplay subsystems into one cycle:
 
 1. **Boot** - load an `LGSF` `SaveFile` (party, story flags, money, inventory) into a fresh `World` via `load_full`, which hydrates the `LevelUpTracker` per-slot level from each record's `+0x130` level byte.
 2. **Field walk** - `SceneMode::Field`, an `EncounterSession` keyed to `vanilla_formation_table` at saturated trigger rate, step until `EncounterPhase::Triggered`.

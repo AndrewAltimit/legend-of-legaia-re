@@ -21,9 +21,8 @@
 //!
 //! # Cue provenance is reported, not assumed
 //!
-//! Retail fires cues by writing an id into the ring at `_DAT_8007B6D8`, and
-//! only a handful of those writes have been traced. This module therefore
-//! carries the same `disc` / `site` split
+//! Retail fires cues by writing an id into the ring at `_DAT_8007B6D8`. This
+//! module carries the same `disc` / `site` split
 //! `legaia-web-viewer`'s `sfx_view` already uses, and [`LegaiaRuntime::play_sfx_events_json`]
 //! reports it per event, so the page can say which sounds are the game's and
 //! which are the port's pick. Nothing here silently invents a retail cue.

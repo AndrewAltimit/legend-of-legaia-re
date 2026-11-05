@@ -578,11 +578,9 @@ The site's separate **Minigames** page runs the slot machine, the dance, Baka
 Fighter, fishing and the Muscle Dome on their own, without a field scene
 underneath - the same engine sessions, read off the same disc.
 
-One HUD caveat that looks like a bug and is not: the fishing sprite page is the
-one asset in that chain nobody has decoded, so both hosts draw the HUD's digit
-and caption rows from the dialog font and skip its glyphs. The captions are
-engine-side English placeholders at the retail pen positions, so a long
-placeholder can overlap the count beside it.
+The fishing HUD is the overlay's own sprite table, read off the disc: the HI SCORE
+and POINT plates, the gauges, banners and score digits. Its captions are the disc's
+too, and those and the lure count draw through the dialog font.
 
 ### Playing online
 
@@ -651,13 +649,11 @@ table plus the resident program bank, and both hosts key them into the **same**
 SPU the music uses, so a cue shares the voice pool exactly as it does on
 hardware.
 
-Cue *provenance* is worth knowing before you judge a sound. Retail fires an
-effect by writing an id into a ring, and only a handful of those writes have
-been traced, so a cue is either `disc` (the id is retail's, at the place retail
-writes it) or `site` (retail's id there is unpinned and the port reuses the
-closest one). The browser page reports the split per event rather than presenting
-a guess as the game's sound. Walking is silent, because retail's is: the game
-plays no footstep sound at all.
+A cue id is retail's own, at the place retail writes it into its sound ring, and
+the browser page reports that per event. The port adds two sounds of its own, both
+on the standalone Minigames page's Baka Fighter, where retail plays nothing: the
+round start and the match loss; the page marks them `site`. Walking is silent,
+because retail's is: the game plays no footstep sound at all.
 
 ## 6. Saves and config live next to you
 

@@ -53,7 +53,7 @@ cargo test --workspace --profile release-test
 
 While iterating, `--profile dev-fast` recompiles a mid-graph edit in a fraction of the time and gives the same results; run `release-test` before you commit. See [`docs/tooling/build-and-test-speed.md`](docs/tooling/build-and-test-speed.md).
 
-**Run them yourself.** The full CI job triggers on push-to-main and manual dispatch, not on pull-request events, so opening a PR does not automatically prove your branch is green.
+**Run them yourself.** A pull request runs the lint half only (format, clippy, the wasm32 type-check); the full job with the tests triggers on push-to-main and manual dispatch, so a green PR does not prove your branch's tests pass.
 
 CI also builds the workspace and the WASM target, which is easy to break from native-only code:
 
