@@ -39,16 +39,16 @@ const START: u16 = 0x0008;
 /// Save.
 const SAVE_ROW: u8 = 6;
 
-fn mask(b: PadButton) -> u16 {
+pub(crate) fn mask(b: PadButton) -> u16 {
     b.mask()
 }
 
 /// The pads a leg pressed, one word per display frame (one sim tick each).
 #[derive(Default)]
-struct PadLog(Vec<u16>);
+pub(crate) struct PadLog(pub(crate) Vec<u16>);
 
 impl PadLog {
-    fn frame(&mut self, w: &mut HeadlessPlayWindow, pad: u16) {
+    pub(crate) fn frame(&mut self, w: &mut HeadlessPlayWindow, pad: u16) {
         self.0.push(pad);
         w.display_frame(pad, 1);
     }
@@ -125,7 +125,7 @@ const SEEDED_PLAY_SECONDS: u32 = 3_725;
 /// The interact probe's eight compass points
 /// (`legaia_engine_core::world::config::FIELD_FACING_PROBES`): sector ->
 /// `(dx, dz)`, probe point `(x + dx, z - dz)`.
-const FACING_PROBES: [(i16, i16); 8] = [
+pub(crate) const FACING_PROBES: [(i16, i16); 8] = [
     (0, 64),
     (-64, 64),
     (-64, 0),
@@ -173,7 +173,7 @@ fn seat_at_save_point(w: &mut HeadlessPlayWindow) -> Option<u8> {
 }
 
 /// What a free-roam frame in the opening town looks like.
-fn free_roam(w: &HeadlessPlayWindow) -> bool {
+pub(crate) fn free_roam(w: &HeadlessPlayWindow) -> bool {
     let world = &w.session().host.world;
     world.active_scene_label == legaia_game_tables::new_game::OPENING_SCENE
         && world.mode == SceneMode::Field
@@ -186,7 +186,7 @@ fn free_roam(w: &HeadlessPlayWindow) -> bool {
 }
 
 /// Cold boot to free roam in `town01` through a New Game, by pad alone.
-fn new_game_to_free_roam(w: &mut HeadlessPlayWindow, log: &mut PadLog) {
+pub(crate) fn new_game_to_free_roam(w: &mut HeadlessPlayWindow, log: &mut PadLog) {
     let mut frame = 0u32;
     while w.boot_ui_active() {
         assert!(frame < 6000, "the title never resolved");

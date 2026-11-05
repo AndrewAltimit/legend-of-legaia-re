@@ -38,6 +38,7 @@ mod native_new_game_save_continue;
 mod ocean_anim_real;
 mod pause_learned_content_ladder;
 mod retail_compare_corpus;
+mod rim_elm_opening_issues;
 mod ropeway_gondola_walk_off_disc;
 mod scenarios;
 mod soak_harness;
