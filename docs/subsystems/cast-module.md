@@ -1149,7 +1149,7 @@ image, its spawn count is the one below, and it calls no damage wrapper.
 |---|---|---|---|
 | `801F6A14` | 957 (`summon_effect_table`) | cast tick body via the trampoline; damage roll (resist); writes HP `+0x14C`, staged `+0x1DA`, restage `+0x1DC`, `ctx+0x278`, phase `ctx+0x279` | PORT |
 | `801F74E4` | 960 (`cast_plasma_strike`) | cast tick body via the trampoline; damage roll (bypass); writes `+0x0C`, HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x278`, `ctx+0x279` | PORT |
-| `801F798C` | 957 (`summon_effect_table`) | cast tick body via the trampoline; writes `+0x0C`, HP `+0x14C`, `+0x1DA`, `+0x1DC`, `ctx+0x279` | PORT |
+| `801F798C` | 957 (`summon_effect_table`) | cast tick body via the trampoline; writes HP `+0x14C`, `+0x10`, `+0x1DA`, `+0x1DC`, `+0x225`, `ctx+0x279` | PORT |
 | `801F81DC` | 951 (`cast_chaos_flare`) | spawn stager, 4 spawn calls | DATA |
 | `801F81DC` | 910 (`summon_swordie`) | per-slash damage applier, three `jal`s from the tick; rolls `FUN_801DD0AC(0x12, 7)`, run-time cap, writes HP `+0x14C`, `+0x1DA`, `+0x1DC` | PORT |
 | `801F8EAC` | 904 (`summon_theeder`) | spawn stager, 1 spawn call (residue in 908, 910) | DATA |
@@ -3117,26 +3117,73 @@ to a seat and seat the same four ring records on it, the caster and then the vic
 
 <a id="prot-0957-death-game"></a>
 
-Body B (`0x801F798C`, the `0x76` arm) runs a roulette the player steers. Its
-four packets are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
-`0x808080`), tag `9`, linked at entry `1`:
+Body B (`0x801F798C`, the `0x76` arm) is `cast_module_camera::death_game_camera`:
+four cards dealt face up, shuffled, one picked, and the card's result on the caster
+and its victim. Only monsters cast it, but the player steers it: arm 5 reads the pad
+on a monster's turn. Its word `0x801FA278` drains `8 * delta`, and the arm lengths
+below match a retail recording (`battle_jou_puera_v3_death_game_mid_cast`).
+
+| Arm | What it does | Word |
+|---|---|---|
+| 0 (`0x801F7ADC`) | cue `0x153`; the caster turned on its victim, every live seat hidden, the caster shown at rate `2`; the deal; a cut behind the caster | `= 0x700` |
+| 1 (`0x801F7D14`) | rate `2`, TR z `+8`, TR y `-1`; on the pass four records `0x801F9C20` | `= 0x200` |
+| 2 (`0x801F7E04`) | rate `0`, the same drift; on the pass the four faces, by each card's value | `= 0x600` |
+| 3 (`0x801F7F50`) | the labels beneath the cards while the word is in `0x180..=0x580` | - |
+| 4 (`0x801F8130`) | thirteen swaps of sixteen frames | `= 0x960` |
+| 5 (`0x801F87F0`) | the sprites and the pad, until confirm or a spent word | `= 0x200` |
+| 6 (`0x801F8BEC`) | the sprites with the digit frozen; then the pick | - |
+| 7 (`0x801F8F0C`) | thirty-two frames: the pick to the centre, the others away and off | `= 0x100` |
+| 8 (`0x801F9054`) | cue `0x154`, `+0x74 \|= 0x81000000` on the pick | `+= 0x200` |
+| 9 (`0x801F90C4`) | TR z `-8`, the pick's `+0x78 += 32`, `+0x72 -= 32` a vsync, off at `0x1000`; then the result | below |
+| `0xFF` (`0x801F9964`) | every live seat shown at rate `8`; done | - |
+
+**The deal** (`0x801F7BB8..0x801F7C30`) draws `rand() % 4` until each of `1..=4` has
+found a free card, so it makes a variable number of draws. The caster's monster byte
+`0x8007BD09 + ctx[+0x13]` then stacks it: `0x9D` turns the first `3` or `4` into a
+`1`, and `0x9E` turns all of them, which leaves three `1`s and one `2`
+(`battle_jou_puera_v3_death_game_mid_cast`). Each swap opens on
+`FUN_8004FE5C(0x44, caster)` (ring id `0x2C5`) and two `rand() % 4`, both redrawn
+until they differ, then one `rand()` whose low bit picks the crossing: the depth axis
+alone, or depth and height together.
+
+**The cards change record as they run.** A card's own script calls the module's
+stager `0x801F99F4` through op `0x20`. Arm 0 turns a face to its back
+(`0x801F9E54`), arm 1 turns a pick up by the table's value
+(`0x801F9EB0..0x801F9FC4`), both storing the new part into the caller's handle at
+`0x801FA2B8`, and arm 4 seats `0x801FA088` with no handle. Arm 5's pick spawns
+`0x801FA020` on each handle's live point, so the body reads each card's point rather
+than holding its own: the script is what walks a card in.
+
+**The pad.** Bits `0x2000` / `0x8000` of `0x8007B874` move the target `0x801FA2AE` by
+`+0x4C` / `-0x4C` with cue `0x22`. A step past `0x158` lands on `0x10C` and one below
+`-0x23` on `0x28`, so it stops at both ends. The cursor `0x801FA2AC` eases a third of
+the way a pass. A confirm press (`0x800846D0`) or the spent word plays cue `0x21`.
+Arm 6's pick is the handle whose `+0x14` equals `(target - 0x28) * 192 / 76 - 0x120`.
+
+**The two sprites** are screen-space `0x2C` `POLY_FT4` (textured, opaque, colour
+`0x808080`), tag `9`, linked at entry `1`, drawn through `battle_fx_prims` on both
+hosts:
 
 | Sprite | Arms | Geometry and texture |
 |---|---|---|
-| Countdown digit | `5` (`0x801F8818..0x801F88DC`), `6` (`0x801F8BEC..0x801F8CBC`) | `(0x94, 8)..(0xAB, 0x1F)`; texture page `0x29`, CLUT `0x7A40`; `u = 24 q .. 24 q + 0x17`, `v = 0 .. 0x17`, with `q = (t + 0x1DF) / 480` the seconds left on the timer `0x801FA278` (arm 6 freezes it at the value it had on the pick, `0x801FA27C`) |
-| Pointer | `5` (`0x801F89FC..0x801F8B1C`), `6` (`0x801F8D40..0x801F8E4C`) | `(x - 10, 0x8A)..(x + 0x19, 0xB1)` with `x` the cursor `0x801FA2AC`; texture page `0x28`, CLUT `0x7A08`; two frames `0x24` texels apart (`u = 0xB0` or `0xD4`) flipping every 16 vsyncs of the counter `0x801FA280`, `v = 0x88 .. 0xAF` |
+| Countdown digit | `5` (`0x801F8818..0x801F88DC`), `6` (`0x801F8BEC..0x801F8CBC`) | `(0x94, 8)..(0xAB, 0x1F)`; texture page `0x29`, CLUT `0x7A40`; `u = 24 q .. 24 q + 0x17`, `v = 0 .. 0x17`, with `q = (t + 0x1DF) / 480` the seconds left on the word (arm 6 freezes it at the pick's value, `0x801FA27C`) |
+| Pointer | `5` (`0x801F89FC..0x801F8B1C`), `6` (`0x801F8D40..0x801F8E4C`) | `(x - 10, 0x8A)..(x + 0x19, 0xB1)` with `x` the cursor; texture page `0x28`, CLUT `0x7A08`; two frames `0x24` texels apart (`u = 0xB0` or `0xD4`) flipping every 16 vsyncs of the counter `0x801FA280`, `v = 0x88 .. 0xAF` |
 
-Arm `0` arms the timer at `0x700`; arm `5` drains it by `8 * rate` a pass
-and reads the pad word `0x8007B874`: bits `0x2000` / `0x8000` move the
-target `0x801FA2AE` by `+0x4C` / `-0x4C` with sound `0x22` (a step past
-`0x158` lands on `0x10C`, one below `-0x23` on `0x28`), and the cursor eases a
-third of the way to it each pass. A confirm press (`0x800846D0`) or the timer
-running out spawns four parts, re-arms the timer at `0x200` and advances;
-arm `6` keeps both sprites up while that drains, then picks the slot whose
-spawned part's `+0x14` matches the target. The port's body B
-(`summon_effect_tick_b`) walks the phase without these arms, so neither the
-input, the timer nor the pick exists in the engine yet, and the two sprites
-are not drawn; the arms are what a port of them needs first.
+**The results** (`0x801F91EC`), which owe the band's fold nothing:
+
+| Card | Stores | Next arm |
+|---|---|---|
+| `1` (`0x801F922C`) | The victim brought before the caster, a twelfth of the unit circle out, turned to it; its whole bar gone, `+0x10` taking it; its `+0x1F1` staged. The caster on rate `8`, clip `0` | 10: TR z `-8` until the victim's `+0x1D9` is `8` |
+| `2` (`0x801F935C`) | The caster's HP `0` with no damage word, `+0x21C` and capture state `+0x225` at `2`, its `+0x1F1` staged | 11: TR z `-8` until its colour word is `0` |
+| `3` (`0x801F9390`) | Each loses `(hp + 3) >> 2` with a number pop (`FUN_801F44A0`) and staged `+0x1F1`; the victim brought before the caster on rate `4` | 12: the focus between them, TR z `+8`, until both settle |
+| `4` (`0x801F95D0`) | Each gains `(max + 3) >> 2`, capped at what it is missing, with `FUN_801E22C8(0x808080, 0xFFFFF, seat, 2)` and cue `0x20F`; the victim brought before the caster | 13: TR z `+8`, word `+= 0x800` |
+
+`0x801FA2B8`'s four handles, the deal and the swap words are
+`cast_module_camera::DeathGame`; `World::feed_death_game` makes the draws and reads
+the pad ahead of a pass, and `carry_death_game_pass` plays the cues and writes through
+the handles after it. The labels of arm 3 (`FUN_80036888`, the victim's name `+0x1BC`
+and four strings at `0x801F69D8..0x801F69F8`) and result `4`'s `FUN_801E22C8` are not
+drawn yet.
 
 ### PROT 0966 (Evil Seru Magic)
 
