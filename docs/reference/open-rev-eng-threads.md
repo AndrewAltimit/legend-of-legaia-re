@@ -419,22 +419,28 @@ one record sit on flag branches (a `JmpRel` or a `SysFlag.Test` between them), m
 prescripts, whose walk the field init finishes before the first frame. A script timeline that
 holds two across a wait under `66` vsyncs would still reach it.
 
-### What keys seven of `rimelm_wall_press_left`'s flushes a vsync early?
+### Why does track `2016` score worse under `rimelm_wall_press_left`'s river?
 
 *Status:* open (measured)
 
-With the river emitter subtracted (the `emitter` channel's render less the `track`
-channel's), the note fit of [real retail PCM](../subsystems/audio.md#real-retail-pcm)
-reads `0.978` as rendered and `0.9956` with each note at its own offset, so the track's
-residual is timing. Seven of `198` flushes key a vsync (about `737` samples) earlier in
-the recording than in the render, each a two-voice flush of the slow-attack tones at
-VAG `0x20840` / `0x12220` (programs 8 and 5 of track `2016`, ADSR1 `A0FF` / `9FD3`);
-the other tones sit on the grid within a sample. Seating the emitter's voices 16..18 in
-the score's allocation scan, held at their records' priorities, changes no key-on, so
-voice contention is not it. A retail key-on census of the scene
-(`scripts/pcsx-redux/autorun_keyon_census.lua`) beside the render's `.notes` would say
-whether those note-ons fire a vsync early on hardware's own clock or only in this
-recording.
+The state's `track` channel reads `0.925` because the river emitter is in the recording; the
+`emitter` channel (`0.986`) still sits below the `0.998` the same track `2016` reads in
+`mei_house_inside` and `menu_status_town`. The river is not the rest: the state's silenced
+recording reads `1.0000` at `-44.8` dB against the resumed SPU, and a per-quarter-second,
+per-side gain on the river in the full recording fits `1.00 +- 0.05` and lowers the residual by
+nothing. Voice contention is not it either: the score keys no voice above 17 here, and retail
+leaves 21 free beside the river's 16..18. The excess is the score's own, `7` to `9` dB above
+`mei_house_inside`'s from `250` Hz to `2` kHz. The note fit's "a vsync off" flushes on the
+slow-attack tone at VAG `0x20840` (ADSR1 `A0FF`) are not it alone: the clean states show
+them too (`3` and `2`), where moving those notes gains nothing. Track `2016` carries no bend
+and no volume or expression event past its set-up (a disassembly census of its SEQ), and its
+key-ons are on the score's grid on hardware's clock: a key-on census of
+`town01_field_card_boot` (`autorun_keyon_census.lua`, 900 vsyncs, 317 note-ons) puts every
+note-on inside one band one vsync wide of `tick * 10 / 115`, the budget of its 86 BPM. Nor is
+it the reverb setting, which the three states share (mode, depth `0x3264`, work area). What
+is left is a note's sound, not its time: the next step is the pad tones' stems (VAG
+`0x20840`, `0x12220`, `0x14950`) fitted against the river-subtracted recording band by band,
+beside the same tones in `mei_house_inside`.
 
 ### What renders a cast's cues for the real-PCM channels?
 

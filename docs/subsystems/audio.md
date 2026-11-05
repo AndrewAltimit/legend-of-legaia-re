@@ -3459,11 +3459,10 @@ stopping the sequences leaves their held notes ringing beside the emitter. The f
 level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
 window, so the river is right to the sample. What remains reads `-25` to `-27` dB in the clean
 windows and near `-11` dB in others, and the split is the score's, not the river's: in each
-second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after the first second while `a` drops to
-`0.85..0.94` in the poor windows. With the emitter subtracted from the recording the note fit
-reads `0.978` as rendered and `0.9956` with each note at its own offset; seven flushes of the
-slow-attack tones key a vsync earlier in the recording
-([open](../reference/open-rev-eng-threads.md#what-keys-seven-of-rimelm_wall_press_lefts-flushes-a-vsync-early)).
+second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after the first second
+while `a` drops to `0.85..0.94` in the poor windows, and the silenced recording reads `1.0000`
+against the resumed SPU, river included
+([open](../reference/open-rev-eng-threads.md#why-does-track-2016-score-worse-under-rimelm_wall_press_lefts-river)).
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
