@@ -1213,6 +1213,18 @@ where they parted. A child that differs on purpose (a menu capture driven
 to the displayed surface, `displayed_menu_flow`, rather than the RAM's)
 parts where that choice takes effect and nowhere earlier.
 
+A monster strike's child can miss its gate outright. The replay reaches the
+striker's turns on its own `rand()` count, so one unit of an earlier walk or
+separation nudge can aim each of them at another member than the capture's
+`+0x1DD`. A child that exits with "phase gate not met" is run again as a rescue
+with `LEGAIA_BATTLE_STRIKE_AIM=1`: from the seed pass to the Attack arm, the
+striker's physical turns aim at the capture's target while that member stands
+(`BattleDrive::steer`, harness only). Only a missed gate takes it. Aiming every
+turn from the start lets an earlier turn than the one retail stands on meet the
+gate, which cost `battle_jou_gola_gola_v3_strike`'s camera `1.000` to `.873`. If
+the rescue misses too, the child drops to the default step, unaimed and then
+aimed.
+
 A prompt capture's child runs past the seed's sample on purpose. The seed
 samples sixty ticks after the first prompt (`BATTLE_SETTLE_TICKS`), while
 the intro's enemy-name banner is still up; retail's prompt frame is a

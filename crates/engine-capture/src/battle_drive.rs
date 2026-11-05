@@ -1486,6 +1486,31 @@ impl BattleDrive {
             let n = a.battle.params.len().min(queue.len());
             a.battle.params[..n].copy_from_slice(&queue[..n]);
         }
+        // A monster strike's aim, on a rescue run only (harness only,
+        // `LEGAIA_BATTLE_STRIKE_AIM`): the replay reaches the striker's turns
+        // on another `rand()` count than retail's, so one unit of an earlier
+        // walk or nudge can aim every one of them at another member and leave
+        // the gate unmet. From the seed pass to the Attack arm, a physical
+        // turn of the striker then aims at the capture's `+0x1DD` while that
+        // member stands (a cast keeps its own aim). Off by default: aiming
+        // every turn lets an earlier turn than the one retail stands on meet
+        // the gate (`battle_jou_gola_gola_v3_strike`'s yaw), so the image
+        // child takes it only once a run has missed the gate.
+        if seat >= 3
+            && ours
+            && category == 3
+            && strike_aim_rescue()
+            && (0x0C..0x14).contains(&state)
+            && let Some(t) = steer.target.map(|t| engine_seat(t, pc)).filter(|&t| t < pc)
+            && world
+                .actors
+                .get(usize::from(t))
+                .is_some_and(|a| a.battle.hp > 0)
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+            && a.battle.action_category == 3
+        {
+            a.battle.active_target = t;
+        }
         // The parked approach ([`ActionSteer::park`]): from the seat's Attack
         // arm `0x14` to the poll, its walk is held where it stands.
         world.battle.approach_hold =
@@ -2025,3 +2050,10 @@ pub(crate) fn unlearn_spell(record: &mut legaia_save::CharacterRecord, spell_id:
 
 #[cfg(test)]
 mod tests;
+
+/// Whether this run is a strike-aim rescue (`LEGAIA_BATTLE_STRIKE_AIM=1`,
+/// set by the retail-compare image child's retry once a run missed its gate).
+fn strike_aim_rescue() -> bool {
+    static AIM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AIM.get_or_init(|| std::env::var("LEGAIA_BATTLE_STRIKE_AIM").is_ok_and(|v| v.trim() == "1"))
+}
