@@ -128,10 +128,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.input.retail_pad().pressed as u16
     }
     fn previous_action_cleared(&self, _: u8) -> bool {
-        self.world.battle.prev_action_cleared
+        self.world.battle.prev_action_cleared && !self.world.capture_read_pending()
     }
     fn sound_bank_ready(&self, _: u8) -> bool {
-        self.world.audio.sound_bank_ready
+        self.world.audio.sound_bank_ready && !self.world.capture_read_pending()
     }
     /// The disc spell table's class byte, read off the same
     /// [`legaia_engine_menus::pause_screens::MenuTextTables`] copy the live cast path

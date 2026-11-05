@@ -724,6 +724,11 @@ pub struct BattleState {
     /// (`World::apply_cast_arm_frame_step`), to go back to the default when
     /// the band ends.
     pub cast_arm_step_on: bool,
+    /// The display tick the capture band's CD read answers on. Retail's `0x6E`
+    /// polls `FUN_8003DE7C(1)` and `0x6F` polls `FUN_8003F2B8(1)`, and the camera
+    /// walk and the framing's pull-in run on through both
+    /// (`World::arm_capture_read_wait`). `0` holds nothing.
+    pub capture_read_until: u64,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on (`World::tick_battle_pass_draw`) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -1322,6 +1327,7 @@ impl BattleState {
             frame_clock: Default::default(),
             frame_stretch: None,
             cast_arm_step_on: false,
+            capture_read_until: 0,
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,

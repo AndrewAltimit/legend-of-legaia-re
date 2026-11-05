@@ -155,6 +155,11 @@ impl World {
                 self.casting.module_phase,
             )
         });
+        // The band's two polls read step `3` in the same recordings.
+        let measured = measured.or_else(|| {
+            (state == S::MagicCaptureBranch.as_byte() || state == S::MagicCaptureFade.as_byte())
+                .then_some(3)
+        });
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
             (None, true) => DEFAULT_BATTLE_FRAME_STEP,
@@ -169,6 +174,40 @@ impl World {
                 cam.set_frame_step(want);
             }
         }
+    }
+
+    /// Start the capture band's CD wait on the state the SM just entered.
+    ///
+    /// `0x6E` polls the read `0x28` queued (`jal 0x8003DE7C` at `0x801E4F08`)
+    /// and `0x6F` the module's own (`jal 0x8003F2B8`), both on the disc in
+    /// retail and answered at once by the engine's resident image. The polls
+    /// are not idle: each `0x6E` pass walks the framing `FUN_801D5854(seat, 6)`
+    /// (`0x801E4F00`), and each `0x6F` pass pulls `ctx[+0x6D0]` in by
+    /// `step * 16`, so arm 0's long shot opens from another pose and every
+    /// shot reading `ctx[+0x6D0]` lands at another depth without them.
+    pub(in crate::world) fn arm_capture_read_wait(&mut self, to: u8) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        /// Vsyncs each poll held over the harvest-state casts: `14..=17` and
+        /// `4..=6`, a read that does not move with the module or the fight.
+        const BRANCH_READ_VSYNCS: u64 = 15;
+        const FADE_READ_VSYNCS: u64 = 6;
+        let vsyncs = if to == S::MagicCaptureBranch.as_byte() {
+            BRANCH_READ_VSYNCS
+        } else if to == S::MagicCaptureFade.as_byte() {
+            FADE_READ_VSYNCS
+        } else {
+            return;
+        };
+        self.battle.capture_read_until = self.clock.display_frames + vsyncs;
+    }
+
+    /// Whether the capture band's read has not answered yet
+    /// ([`Self::arm_capture_read_wait`]).
+    pub(in crate::world) fn capture_read_pending(&self) -> bool {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        (state == S::MagicCaptureBranch.as_byte() || state == S::MagicCaptureFade.as_byte())
+            && self.clock.display_frames < self.battle.capture_read_until
     }
 
     /// The battle frame driver's discarded `rand()` draw: `FUN_80046A20`

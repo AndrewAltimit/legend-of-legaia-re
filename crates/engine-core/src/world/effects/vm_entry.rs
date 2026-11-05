@@ -339,6 +339,9 @@ impl World {
         // the party's - so each attacking action gets one steal roll.
         self.apply_battle_frame_step_seed();
         self.apply_cast_arm_frame_step();
+        if let StepOutcome::Transition { to, .. } = out {
+            self.arm_capture_read_wait(to);
+        }
         if let StepOutcome::Transition { from, to } = out {
             self.battle.steal.on_action_transition(from, to);
             // A new action's seed ends whatever flight held the last one's

@@ -1741,3 +1741,27 @@ fn spell_cam_case_0x13_raises_the_casters_render_arm() {
     assert_eq!(world.actors[0].battle.render_flag, 0);
     assert_eq!(world.actors[0].battle.impact_state, 0);
 }
+
+/// The capture band's two CD polls hold their states: `0x6E` walks the framing
+/// and `0x6F` pulls `ctx[+0x6D0]` in on every pass of the wait.
+#[test]
+fn the_capture_band_polls_hold_for_the_read() {
+    use crate::world::vm_hosts::BattleHostImpl;
+    use legaia_engine_battle_vm::battle_action::{ActionState as S, BattleActionHost};
+    let mut world = World::new();
+    let start = world.clock.display_frames;
+    world.battle_ctx.action_state = S::MagicCaptureBranch.as_byte();
+    world.arm_capture_read_wait(S::MagicCaptureBranch.as_byte());
+    assert!(world.capture_read_pending());
+    world.clock.display_frames = start + 15;
+    assert!(!world.capture_read_pending());
+    world.battle_ctx.action_state = S::MagicCaptureFade.as_byte();
+    world.arm_capture_read_wait(S::MagicCaptureFade.as_byte());
+    assert!(!BattleHostImpl { world: &mut world }.previous_action_cleared(1));
+    world.clock.display_frames = start + 21;
+    assert!(BattleHostImpl { world: &mut world }.previous_action_cleared(1));
+    // Other states ignore a stale word.
+    world.battle.capture_read_until = u64::MAX;
+    world.battle_ctx.action_state = S::MagicCapturePhase2.as_byte();
+    assert!(!world.capture_read_pending());
+}

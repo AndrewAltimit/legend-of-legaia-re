@@ -690,7 +690,8 @@ monster's own pick would write.
 
 ## Waits the engine does not run
 
-Three waits in a summon band are CD reads, which the engine's resident
+The capture band's two CD polls are the exception: the engine holds them
+([below](#the-capture-bands-reads)). Three waits in a summon band are CD reads, which the engine's resident
 streams answer at once, so their segments part on length without any engine
 error. The pairing keys each segment on its own, so they do not shift the
 rest of the cast's pairs; they do move the band's flash against the module's
@@ -713,6 +714,18 @@ in retail that arm holds while the applier runs on past the band head.
 Horn's arm 2 ends on the pass the byte drops. Jedo's band flash-out reads
 about `25` vsyncs younger in the engine at the same arm, which is most of
 that cast's low score in arms 2 to 4.
+
+### The capture band's reads
+
+State `0x6E` polls `FUN_8003DE7C(1)` (`0x801E4F08`) for the read `0x28` queued, then
+`0x8003EAE4` starts the module's own read, which `0x6F` polls through `FUN_8003F2B8(1)`.
+The recordings of the harvest-state casts hold them `14..=17` and `4..=6` vsyncs, whichever
+module or fight. Neither poll idles: each `0x6E` pass walks the case-6 framing and each
+`0x6F` pass pulls `ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in
+stands on another pose for its whole length (Spore Gas read yaw `1991` where retail held
+`1121`) and every shot built on `ctx[+0x6D0]` lands at another depth. The engine holds the
+two states `15` and `6` ticks at step `3` (`World::arm_capture_read_wait`), and the walk then
+matches retail to the unit through `0x6E`.
 
 ## See also
 
