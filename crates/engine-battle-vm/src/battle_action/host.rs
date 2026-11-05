@@ -152,6 +152,13 @@ pub trait BattleActionHost {
     /// `0x801E3444..0x801E3490` stores all four halfwords). Default no-op.
     fn set_actor_anchor(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
+    /// Entry of the action seed `0x0C` for `actor`, ahead of its setup
+    /// hooks and of the depth `FUN_801F0348` reads. Nothing in retail runs
+    /// here; a capture harness re-seats what retail's seed found (the
+    /// combatants' Spirit gauges, which a growing body's size byte follows).
+    /// Default no-op.
+    fn seed_entry(&mut self, _actor: u8) {}
+
     /// `FUN_801EFE44`, the action seed's **formation recentre** on the acting
     /// slot `actor`: squash an axis whose span exceeds `0x800`, then move
     /// every combatant so the box the action frames - the target alone for

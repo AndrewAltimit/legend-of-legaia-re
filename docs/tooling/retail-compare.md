@@ -1505,6 +1505,12 @@ reads yaw `2175`, against the `2288` of an unturned member.
   ([battle](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c)), so
   the bar seed and the re-seat carry the capture's `+0x170` (`:g<gauge>`,
   `RetailBattle::dohati_gauge`) and re-derive them before the action seeds.
+  The re-seat lands the gauges at the seed's entry (`BattleActionHost::seed_entry`,
+  `World::seed_capture_gauges`), ahead of the framing depth `FUN_801F0348`
+  reads off the size byte, not with the bars at the formation recentre that
+  follows it: the replay's round raised the gauge to `16`, so
+  `battle_dohaty_dohati_strike`'s seed framed on size `26` (TR z `5324`)
+  where retail's gauge `8` gave `25` (`5120`; camera `.977` to `1.000`).
 - **A reacting monster stands on its body pair.** A body on a reaction clip
   (`2`..`5`, `0x0B`) the replay strikes at another keyframe than retail's
   puts its centroid elsewhere for the same live pair (`rim_elm_gimard_seru_capture_before`'s

@@ -334,6 +334,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn begin_counterattack(&mut self, counterer: u8, attacker: u8) -> bool {
         self.world.begin_counterattack(counterer, attacker)
     }
+    fn seed_entry(&mut self, actor: u8) {
+        self.world.seed_capture_gauges(actor);
+    }
     fn seed_formation_recentre(&mut self, actor: u8) {
         self.world.seed_battle_formation_recentre(actor);
         self.world

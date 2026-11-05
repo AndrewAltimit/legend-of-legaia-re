@@ -1759,9 +1759,15 @@ pub(super) fn run_drive(
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
             if let Some(c) = world.battle.camera.as_ref() {
                 eprintln!(
-                    "[rc-cam] t={t} pose={:?} target={:?}",
+                    "[rc-cam] t={t} pose={:?} target={:?} gauges={:?}",
                     c.pose(),
-                    c.glide_target()
+                    c.glide_target(),
+                    world
+                        .actors
+                        .iter()
+                        .take(8)
+                        .map(|a| a.battle.spirit_gauge)
+                        .collect::<Vec<_>>()
                 );
             }
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();

@@ -886,6 +886,7 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     let category = ActionCategory::from_byte(actor.action_category);
     let field_flags = actor.field_flags;
     let party_count = host.party_count();
+    host.seed_entry(actor_slot);
 
     // Setup hooks.
     if actor_slot < party_count {

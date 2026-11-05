@@ -155,6 +155,32 @@ impl World {
         }
     }
 
+    /// Capture alignment at the entry of `actor`'s seed
+    /// ([`BattleState::capture_reseat`], never in play): every combatant's
+    /// Spirit gauge goes back to the capture's, and Dohati's body follows it
+    /// ([`Self::tick_dohati_growth`]), before the seed's framing reads the
+    /// record's size byte (`FUN_801F0348`, `ctx[+0x6D0] = size << 7`).
+    /// `battle_dohaty_dohati_strike`'s replay raised the gauge to `16` over
+    /// the round it played, so the seed framed on size `26` where retail's
+    /// gauge `8` gave `25` (TR z `5324` against `5120`). The bars and ground
+    /// stay with the recentre below.
+    pub(in crate::world) fn seed_capture_gauges(&mut self, actor: u8) {
+        if !self
+            .battle
+            .capture_reseat
+            .as_ref()
+            .is_some_and(|(seat, _)| *seat == actor)
+        {
+            return;
+        }
+        for bars in self.battle.capture_reseat_bars.clone() {
+            if let (Some(g), Some(a)) = (bars.gauge, self.actors.get_mut(usize::from(bars.slot))) {
+                a.battle.spirit_gauge = g;
+            }
+        }
+        self.tick_dohati_growth();
+    }
+
     /// Run the action seed's formation recentre `FUN_801EFE44` for the
     /// acting engine slot `actor`: the round-start squash, then the formation
     /// moved so the action's box - the target alone for an Attack - sits on
