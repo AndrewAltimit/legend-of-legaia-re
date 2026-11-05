@@ -303,6 +303,7 @@ local last_flow = -1
 local park_st7, park_since = -1, 0
 local parked = false
 local ground_at_cast = ""
+local guard_at_cast = ""
 local caster_at_cast = -1
 local target_at_cast = -1
 
@@ -354,6 +355,20 @@ local function ground_pairs()
             t[#t + 1] = string.format("%d:%d", x, z)
         else
             t[#t + 1] = "-"
+        end
+    end
+    return table.concat(t, ",")
+end
+
+-- The party seats standing in the Spirit stance (`+0x1DE == 4`), as a comma
+-- list: both per-move wrappers double the defender roll on it and the
+-- finisher halves the hit, so the engine side must stand the same seats.
+local function guard_seats()
+    local t = {}
+    for s = 0, 2 do
+        local a = actor(s)
+        if a ~= nil and u16(a + 0x14E) > 0 and u8(a + 0x1DE) == 4 then
+            t[#t + 1] = tostring(s)
         end
     end
     return table.concat(t, ",")
@@ -640,6 +655,7 @@ probe.run({
             cast_seen = true
             cast_vsync = elapsed
             ground_at_cast = ground_pairs()
+            guard_at_cast = guard_seats()
             caster_at_cast = acting
             target_at_cast = u8(actor(acting) + 0x1DD)
             PCSX.log(string.format("[cast t%d] caster=%d ground=%s", elapsed, acting, ground_at_cast))
@@ -765,8 +781,9 @@ probe.run({
         if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
-            fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\ncast_target=%d\nground=%s\nparked=%d\n",
+            fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\ncast_target=%d\nground=%s\nguard=%s\nparked=%d\n",
                 inject_vsync, cast_vsync, done_vsync, shots, caster_at_cast, SPELL, TARGET_SEAT, target_at_cast, ground_at_cast,
+                guard_at_cast,
                 parked and math.floor(park_st7 / 256) or -1))
             fh:close()
         end

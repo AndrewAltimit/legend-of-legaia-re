@@ -87,7 +87,7 @@ Flags worth knowing:
 | `--prim-calls` | Retail: `primcall.csv` (breakpoint core), each prim dispatcher entry with its word, level, caller and first group words, and each cued leaf: whether a part reached the dispatcher at all, and by which leaf |
 | `--learned <level>` | Both sides: the spell sits on the caster's list at this level. Off the list `FUN_801DD864` reads list slot `0x20`, and level `0` wraps into a capped hit ([the summon roll](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)), so a damage measurement wants this |
 | `--monster-hp <hp>` | Both sides: every living monster's HP from the cast begin, so a cast's whole damage shows in the HP columns. HP feeds the defender roll (`hp >> 8`) and a monster's own swing, so keep it modest and it goes in after the monster's turn |
-| `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
+| `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`; `-` = none). Defaults to the probe's `guard=` (the seats at `+0x1DE == 4` on cast begin), and for a recording without that field to the state's own stance unless the run is `--monster-pick` |
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
@@ -695,9 +695,13 @@ A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
   `.813`; a `--target 8` on Astral Wave (`0x44`) records retail sweeping the party
   against the engine's single hit.
 - The harvester plays Spirit, so a state saved in those rounds holds every party seat
-  at `+0x1DE == 4`. Pass `--guard 0,1,2` or the engine's victims take three to four
-  times retail's damage. A `--monster-pick` run several rounds on from a `*_strike`
-  state has tapped Attack since, and takes no `--guard`.
+  at `+0x1DE == 4`. Both per-move wrappers double the defender roll on it and the
+  finisher halves the hit, so an engine child standing the party out of the stance
+  takes about twice retail's damage: the Rogue casts read `1591` against `751` on Vahn.
+  The driver stands the probe's `guard=` seats (the state's stance for an older
+  recording); `--guard` overrides it. A `--monster-pick` run several rounds on from a
+  `*_strike` state has tapped Attack since: its `guard=` reads the stance at the cast,
+  and a recording without the field stands no seat.
 - A monster-pick run from a `*_strike` state wants `LEGAIA_PRESS_UNTIL=7000` and
   `--frames 12000`: the default window ends at the next round's command input. Some
   still inject nothing in that span (`inject=-1`). `--physical --retail-only` from the
