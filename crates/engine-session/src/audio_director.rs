@@ -35,7 +35,7 @@ use legaia_game_tables::sfx_table::FALLBACK_VAB_SLOT;
 use legaia_seq::Seq;
 
 mod bgm_playback;
-mod command_log;
+pub(crate) mod command_log;
 mod pack_audio;
 mod sfx_banks;
 mod sfx_fire;

@@ -167,6 +167,12 @@ pub struct ScreenshotConfig {
     /// merchant's or innkeeper's conversation without walking to it. The
     /// browser twin is `LegaiaRuntime::debug_talk_to_placement`.
     pub talk_at: Option<(u64, u8)>,
+    /// `LEGAIA_CAPTURE_BATTLE=<tick>[,caster,spell,target]`: at that world
+    /// tick, force the scene's first rollable formation, a fight opening out
+    /// of a live field frame, with that cast seeded for its first prompt. The
+    /// browser twins are `LegaiaRuntime::debug_force_battle(-1)` and
+    /// `debug_seed_inflight_cast`.
+    pub battle_at: Option<(u64, Option<[u8; 3]>)>,
     /// `LEGAIA_CAPTURE_SHOP=<idx>@<tick>`: stage scene shop `idx` at `tick`
     /// (`World::debug_arm_scene_shop`), the browser page's
     /// `debug_arm_scene_shop` twin.
@@ -983,6 +989,13 @@ impl ScreenshotConfig {
             talk_at: std::env::var("LEGAIA_CAPTURE_TALK").ok().and_then(|v| {
                 let (slot, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
+            }),
+            battle_at: std::env::var("LEGAIA_CAPTURE_BATTLE").ok().and_then(|v| {
+                let mut f = v.split(',').map(|x| x.trim().parse::<u64>().ok());
+                let tick = f.next()??;
+                let mut byte = || f.next().flatten().map(|b| b as u8);
+                let cast = byte().zip(byte()).zip(byte()).map(|((c, s), t)| [c, s, t]);
+                Some((tick, cast))
             }),
             prize_at: std::env::var("LEGAIA_SEAT_PRIZE").ok().and_then(|v| {
                 let (t, b) = v.split_once(':')?;

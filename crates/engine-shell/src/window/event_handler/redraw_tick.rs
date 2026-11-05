@@ -397,6 +397,27 @@ impl PlayWindowApp {
         {
             self.session.host.world.trigger_field_interact(0xFF, slot);
         }
+        if let Some((_, cast)) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_at)
+            .filter(|(t, _)| *t == self.tick_no)
+        {
+            let world = &mut self.session.host.world;
+            if let Some([caster, spell_id, target]) = cast {
+                world.battle.inflight_seed =
+                    Some(legaia_engine_battle_loop::battle_state::InflightCastSeed {
+                        caster,
+                        spell_id,
+                        target,
+                        ground: Default::default(),
+                        idle: Default::default(),
+                    });
+            }
+            if let Some(id) = world.first_rollable_formation_id() {
+                world.force_encounter(id);
+            }
+        }
         if let Some((t, idx)) = self.screenshot.as_ref().and_then(|sc| sc.shop_at)
             && t == self.tick_no
         {

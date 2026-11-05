@@ -93,6 +93,30 @@ pub(super) fn stage_draw_marks(
     r.set_draw_order(order, color_order);
 }
 
+/// `LEGAIA_SWEEP_TRACE=1`: beside each `--screenshot-every` PNG, the world's
+/// [`host_trace`](legaia_engine_session::host_trace) sample as text, which
+/// `scripts/ci/host-pair.mjs` compares with the page's
+/// `debug_host_trace_text` at the same tick.
+pub(super) fn write_sweep_trace(
+    screenshot: Option<&ScreenshotConfig>,
+    tick_no: u64,
+    sweep_next_tick: u64,
+    session: &legaia_engine_session::native::NativeSession,
+    menu: &legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
+) {
+    let Some(sw) = screenshot.and_then(|sc| sc.sweep.as_ref()) else {
+        return;
+    };
+    if tick_no < sweep_next_tick || std::env::var_os("LEGAIA_SWEEP_TRACE").is_none() {
+        return;
+    }
+    let path = sw.dir.join(format!("tick_{tick_no:05}.trace"));
+    let text = legaia_engine_session::host_trace::sample_text(session, menu);
+    if let Err(e) = std::fs::write(&path, text) {
+        eprintln!("sweep trace {}: {e}", path.display());
+    }
+}
+
 /// The `--screenshot-every` sweep: capture this frame into the sweep dir
 /// when its tick is due, and exit after the last one.
 pub(super) fn capture_sweep_frame<'a>(

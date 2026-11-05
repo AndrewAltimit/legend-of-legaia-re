@@ -1,11 +1,27 @@
 //! Read-only probes over the play page's live `World`, for the host-parity
 //! tests that pair this host against the native window.
 //!
-//! None of these is a wasm export: they exist so a headless test driving
+//! The `impl` below is not a wasm export: it exists so a headless test driving
 //! [`LegaiaRuntime`] can assert that a state the native boot installs is
-//! installed here too, without reaching into `pub(crate)` fields.
+//! installed here too, without reaching into `pub(crate)` fields. The one
+//! export is the trace the browser half of `scripts/ci/host-pair.mjs` reads.
+
+use wasm_bindgen::prelude::*;
 
 use crate::runtime::LegaiaRuntime;
+
+#[wasm_bindgen]
+impl LegaiaRuntime {
+    /// This frame's [`host_trace`](legaia_engine_session::host_trace) sample as
+    /// text, in the form the native window's `LEGAIA_SWEEP_TRACE` writes. Empty
+    /// before a disc is loaded. Test support; the page never calls it.
+    pub fn debug_host_trace_text(&self) -> String {
+        self.scene_host
+            .session()
+            .map(|s| legaia_engine_session::host_trace::sample_text(s, &self.menu))
+            .unwrap_or_default()
+    }
+}
 
 impl LegaiaRuntime {
     /// Which static-SCUS progression tables the page's world holds - the

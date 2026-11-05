@@ -100,6 +100,14 @@
        * declaration follow what the page would otherwise show. */
       const presenting = !skipDraw;
       if (this._movieCovers()) skipDraw = true;
+      /* Ahead of the tick, not after the draw: the engine leaves the transition
+       * layer off the arming frame only for a host that will read it back (a VR
+       * session, which skips the read, keeps the transition from its first frame),
+       * and a fight armed on the runtime's very first frame had no declaration
+       * yet, so its readback took the transition's own strips over stale VRAM. */
+      if (typeof rt.play_set_intro_readback === 'function') {
+        rt.play_set_intro_readback(presenting);
+      }
       /* Gamepad buttons enter the same held / pulse sets the keyboard
        * fills, so every reader below (menu, name entry, field tick) sees
        * one pad word whichever device pressed it. */
@@ -708,13 +716,7 @@
        * the next frame's strips sample the capture, not stale texels.
        * One-shot per transition; the curtain's per-frame intermediate
        * afterwards rides the ordinary field_vram_take_dirty re-upload.
-       * The page declares the readback every frame it draws: the engine
-       * leaves the transition layer off the arming frame only for a host
-       * that will read it back (a VR session, which skips this, keeps the
-       * transition from its first frame). */
-      if (typeof rt.play_set_intro_readback === 'function') {
-        rt.play_set_intro_readback(presenting);
-      }
+       * The page declares the readback at the top of every frame. */
       if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
           rt.play_intro_wants_capture()) {
         try {

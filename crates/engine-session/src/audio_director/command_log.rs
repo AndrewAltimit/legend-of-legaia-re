@@ -62,10 +62,34 @@ pub struct AudioCommandLog {
     recent: VecDeque<AudioCommand>,
 }
 
+/// A hasher whose `usize` is 64 bits on every target: a slice's length prefix
+/// and an enum's discriminant digest alike on `wasm32` and on a native host,
+/// so the two hosts' traces compare across a process boundary
+/// (`scripts/ci/host-pair.mjs`).
+pub(crate) struct TargetFreeHasher(DefaultHasher);
+
+impl TargetFreeHasher {
+    pub(crate) fn new() -> Self {
+        Self(DefaultHasher::new())
+    }
+}
+
+impl Hasher for TargetFreeHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.write(bytes);
+    }
+    fn write_usize(&mut self, n: usize) {
+        self.0.write_u64(n as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0.finish()
+    }
+}
+
 impl AudioCommandLog {
     /// Fold one command in.
     pub fn push(&mut self, cmd: AudioCommand) {
-        let mut h = DefaultHasher::new();
+        let mut h = TargetFreeHasher::new();
         self.digest.hash(&mut h);
         cmd.hash(&mut h);
         self.digest = h.finish();

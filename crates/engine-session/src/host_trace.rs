@@ -23,12 +23,12 @@
 //! Not sampled, on purpose: the play clock (each host advances it off its
 //! own wall clock) and anything a renderer owns.
 
-use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use legaia_engine_audio::AudioSink;
 
 use crate::BootSession;
+use crate::audio_director::command_log::TargetFreeHasher;
 
 /// One active actor slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,7 +151,7 @@ pub fn sample_with_overlay<S: AudioSink>(
 }
 
 fn digest<T: Hash + ?Sized>(v: &T) -> u64 {
-    let mut h = DefaultHasher::new();
+    let mut h = TargetFreeHasher::new();
     v.hash(&mut h);
     h.finish()
 }
@@ -283,6 +283,10 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
 }
 
 fn bindings_digest(world: &legaia_engine_core::world::World) -> u64 {
+    debug_digest(&bindings_parts(world))
+}
+
+fn bindings_parts(world: &legaia_engine_core::world::World) -> impl std::fmt::Debug + use<'_> {
     let slots: Vec<String> = world
         .actors
         .iter()
@@ -308,7 +312,26 @@ fn bindings_digest(world: &legaia_engine_core::world::World) -> u64 {
             p.walk.cursor(),
         )
     });
-    debug_digest(&(slots, lead, &world.npcs.clip_cursors))
+    (slots, lead, &world.npcs.clip_cursors)
+}
+
+/// What [`sample_text`] prints: the sample, and in the clear what its digests of
+/// the bindings and the audio record fold, so a difference between two hosts'
+/// traces names the slot or the command.
+pub fn sample_text<S: AudioSink>(
+    session: &BootSession<S>,
+    menu: &legaia_engine_menu_runtime::menu_runtime::MenuRuntime,
+) -> String {
+    let log = session
+        .bgm
+        .as_ref()
+        .map(|d| d.commands().recent().collect::<Vec<_>>());
+    format!(
+        "{:#?}\nbindings_parts: {:?}\naudio_recent: {:?}\n",
+        sample_with_overlay(session, menu),
+        bindings_parts(&session.host.world),
+        log,
+    )
 }
 
 /// The channel names [`first_divergences`] reports, in field order.

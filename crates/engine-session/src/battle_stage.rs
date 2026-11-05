@@ -131,7 +131,22 @@ pub fn stage_battle_world(
                 .install_monster_battle_form(actor_idx, slot, idle.as_ref());
         }
     }
+    unbind_field_meshes(&mut host.world);
     stage
+}
+
+/// Take every slot but the combatants out of the battle's bindings: a fight's
+/// display list is its party and its monsters, and the field's NPC slots hold
+/// no mesh under it. The battle's exit restores them with the rest of the field
+/// actor table. A world step, so both hosts leave the same bindings whichever
+/// way each builds its meshes.
+fn unbind_field_meshes(world: &mut legaia_engine_core::world::World) {
+    let party = usize::from(world.party.party_count);
+    for (i, a) in world.actors.iter_mut().enumerate() {
+        if i >= party && a.battle_monster_id.is_none() {
+            a.tmd_binding = None;
+        }
+    }
 }
 
 /// One monster an expansion wave seated mid-battle, for a host's draw half.
@@ -282,6 +297,9 @@ pub fn seat_summon_creature(
     let slot = seat.unwrap_or(8 + world.party.party_count as usize);
     if let Some(a) = world.actors.get_mut(slot) {
         a.active = true;
+        // Bound whichever way the host holds the mesh; a window re-points it
+        // at its own handle.
+        a.tmd_binding = Some(slot);
         a.battle_tex_slot = Some(tex_slot);
         a.move_state.world_x = 0;
         a.move_state.world_y = 0;
