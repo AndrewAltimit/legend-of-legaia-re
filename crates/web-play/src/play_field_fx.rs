@@ -139,7 +139,9 @@ impl LegaiaRuntime {
     pub(crate) fn field_drop_shadow_prims(&self) -> Vec<ScreenPrim> {
         let cutscene = self.drawn_cutscene_view();
         self.host_view_at(self.field_pass_box())
-            .map(|v| v.drop_shadow_prims(cutscene))
+            .map(|v| {
+                v.drop_shadow_prims(cutscene, self.play_field_prim_order() && self.psx_render())
+            })
             .unwrap_or_default()
     }
 

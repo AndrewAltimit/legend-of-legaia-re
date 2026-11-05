@@ -287,6 +287,12 @@ The hosts pass the last two per draw (natively `Renderer::set_draw_order`,
 its own emitter gives it (the far bucket, or two behind its farthest corner), so
 its vertices never take the primitive's rule.
 
+A drop-shadow cell takes the one depth of its own link in that frame, its mean `SZ`
+plus the `0xA0 / 4` bias and less the ten buckets of a near actor (`FUN_8001C394`),
+not the per-corner scene depth a clean frame tests it with: against a floor's flat
+primitive a per-corner depth loses to whichever row the primitive's mean stands in
+front of, and on `bubu2_field_door_hop` the player's blob did not show at all.
+
 The three rules hold against a state's table: on `koin1_field_route_walk` every
 `0x7F84` quad of the floor sheet sits at the bucket of its farthest corner, and the
 terrain's `0x7DC3` wall quads at their mean, ten buckets behind the sheet's rule.

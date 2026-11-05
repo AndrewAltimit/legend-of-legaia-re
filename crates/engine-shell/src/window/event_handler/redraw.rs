@@ -235,6 +235,17 @@ impl PlayWindowApp {
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
         eprintln!("capture object moves {:?}", w.object_draw_displacements());
+        if let Some(view) = self.last_frame_field_view {
+            for q in w.field_drop_shadows(
+                &view,
+                self.win.renderer.as_ref().is_some_and(|r| r.psx_mode()),
+            ) {
+                eprintln!(
+                    "capture shadow cell {:?} slot {} depth {:?}",
+                    q.xy, q.ot_index, q.depth
+                );
+            }
+        }
         for c in w.field_vm.channels.iter().filter(|c| c.object_bind) {
             eprintln!(
                 "capture object channel {}: at ({}, {}, {}) scale {} flags {:#x}",

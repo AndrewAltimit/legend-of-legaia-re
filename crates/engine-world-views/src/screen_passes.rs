@@ -177,7 +177,11 @@ impl<'a> HostView<'a> {
     /// camera the frame loaded), so the blob and the body share one camera;
     /// projecting through the follow frame instead shifted every blob off its
     /// body by the same screen offset during a scripted event.
-    pub fn drop_shadow_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
+    pub fn drop_shadow_prims(
+        &self,
+        cutscene: Option<FieldCameraView>,
+        link_order: bool,
+    ) -> Vec<ScreenPrim> {
         if !World::fog_mode(self.world.mode)
             && self.world.pack_mode_stage().is_none()
             && self.world.mode != SceneMode::Dance
@@ -188,7 +192,7 @@ impl<'a> HostView<'a> {
             return Vec::new();
         };
         self.world
-            .field_drop_shadows(&view)
+            .field_drop_shadows(&view, link_order)
             .iter()
             .map(|q| drop_shadow_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
             .collect()
