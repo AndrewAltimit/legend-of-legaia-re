@@ -1402,6 +1402,18 @@ About a third of the field maps carry such cells: `rugi`'s candle glows
 (`0x80`, a vertical quad that stays square to the lens), the `vell` / `vozz`
 forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
 
+**A cell's own tilt is authored, and it rests on the floor.** The record
+rotations are applied whatever the flags (`0x801F779C..0x801F77E4`:
+`RotMatrixX(+0x08)`, `RotMatrixY(+0x0A)`, `RotMatrixZ(+0x0C)`, each skipped
+when zero), after the cell's world Y is set to the corner-average floor plus
+`+0x02`. `dolk`'s toppled jars are such cells: pack mesh 24, a jar 128 units
+long and 32 in radius, placed at `y_off = -32` with a roll of `0x400` (cells
+`(91, 74)` and `(91, 79)` of the chest room) or a near-quarter roll and a
+yaw. The roll lays the jar on its side, so its radius is the lift, and the
+lowest vertex sits on the floor. A high camera with no contact shadow makes a
+jar lying against the wall read as hanging in the air. The port places them
+from the same record, through the same `Rx * Ry * Rz` composition.
+
 **Port.** Both hosts honour both forms.
 
 - *Move-VM parts.* Every part draw record carries the node's `+0x52` word as
