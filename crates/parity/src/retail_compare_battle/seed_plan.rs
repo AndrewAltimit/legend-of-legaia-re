@@ -291,6 +291,33 @@ pub(super) const END_PHASE_WORD: u32 = 0x8007_BD2C;
 /// The results hold `gp+0xA54`.
 pub(super) const END_RESULTS_HOLD: u32 = 0x8007_BD6C;
 
+/// The acting seat's queued action id `actor[+0x1DF]`, `0` when the seat's
+/// record is not in RAM.
+fn capture_action(ram: &[u8], ctx: u32) -> u8 {
+    let actor = game_anchors::u32_at(
+        ram,
+        ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13).min(7)) * 4,
+    );
+    if in_ram(actor) {
+        game_anchors::u8_at(ram, actor + 0x1DF)
+    } else {
+        0
+    }
+}
+
+/// Whether the capture-class action `action` reaches a walk-in body whose
+/// arm 0 stores its own yaw counter rung (`li v0,0x200; sh v0,0x6DA(v1)`,
+/// PROT 0952 at `0x801F7204` for Bloody Horns): a capture past that arm holds
+/// the walk's counter, not the one the action seed started.
+pub(super) fn yaw_counter_reseeded_by(action: u8) -> bool {
+    legaia_engine_cast::cast_module_ticks::capture_body_for_action(action).is_some_and(
+        |(entry, body)| {
+            legaia_engine_cast::cast_module_camera::capture_approach_yaw_base(entry, Some(body))
+                .is_some()
+        },
+    )
+}
+
 /// Read the [`SpanGate`] off a capture.
 pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
     if game_anchors::u8_at(ram, END_SIGNAL) != 0xFE {
@@ -338,8 +365,14 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                 })
                 .flatten();
             // The yaw counter is a clock only while the action SM drifts it
-            // (any Battle Camera option but Far, `0x801E29D4`).
-            let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2)
+            // (any Battle Camera option but Far, `0x801E29D4`), and only
+            // from the seed: a walk-in body's arm 0 stores its own rung over
+            // it (`capture_approach_yaw_base`), so past that arm it counts the
+            // walk, not the band.
+            let reseeded = game_anchors::u8_at(ram, ctx + 7) == 0x70
+                && game_anchors::u8_at(ram, ctx + 0x279) >= 1
+                && yaw_counter_reseeded_by(capture_action(ram, ctx));
+            let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2 && !reseeded)
                 .then(|| game_anchors::u16_at(ram, ctx + 0x6DA));
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),

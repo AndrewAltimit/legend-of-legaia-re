@@ -1508,7 +1508,13 @@ impl RetailBattle {
                         // heading the caster keeps.
                         || (seat >= 3 && self.queued_category == 2 && self.target_code == seat))
                         .then_some(self.target_code),
-                    yaw: Some(self.walk_yaw_base),
+                    // Past a walk-in body's arm 0 the counter is the arm's
+                    // own rung, not the seed's clock
+                    // ([`super::seed_plan::yaw_counter_reseeded_by`]).
+                    yaw: (!(self.action_state == 0x70
+                        && self.module_phase >= 1
+                        && super::seed_plan::yaw_counter_reseeded_by(self.queued_action)))
+                    .then_some(self.walk_yaw_base),
                     // An Attack's counter climbs from the arm's `0x200`
                     // unless a swing re-seed could have moved it.
                     // A Spirit band action's climbs from the seed's, and how

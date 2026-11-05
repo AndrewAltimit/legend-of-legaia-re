@@ -2260,3 +2260,22 @@ fn a_capture_fade_walks_back_on_the_rearm_with_the_ramped_endpoint() {
         fixed.tr[2]
     );
 }
+
+/// The walk-in bodies whose arm 0 stores the yaw counter's `0x200` rung (PROT
+/// 0951 / 0952) leave no seed clock behind; the others keep theirs.
+#[test]
+fn only_the_counter_storing_walk_ins_drop_the_yaw_clock() {
+    use super::seed_plan::yaw_counter_reseeded_by;
+    assert!(yaw_counter_reseeded_by(0x5C), "Bloody Horns");
+    assert!(yaw_counter_reseeded_by(0x5B), "Scythe Wind");
+    assert!(yaw_counter_reseeded_by(0xB8), "Astral Slash");
+    assert!(
+        !yaw_counter_reseeded_by(0x6F),
+        "Melt Spray walks on the seed's counter"
+    );
+    assert!(!yaw_counter_reseeded_by(0x60), "White Shield does not walk");
+    assert!(
+        !yaw_counter_reseeded_by(0x81),
+        "a summon is no capture body"
+    );
+}

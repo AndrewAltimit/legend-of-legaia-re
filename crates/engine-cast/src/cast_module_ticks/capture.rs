@@ -303,6 +303,19 @@ pub fn capture_tick_body(prot_entry: u32, action_id: u8) -> Option<u32> {
     })
 }
 
+/// The `(prot_entry, tick body)` a trampolined capture-class action id
+/// reaches, read off every trampoline's arms ([`CAPTURE_TRAMPOLINES`]): no
+/// action id sits in two of them. `None` for an id that reaches a
+/// single-body module (or none).
+pub fn capture_body_for_action(action_id: u8) -> Option<(u32, u32)> {
+    CAPTURE_TRAMPOLINES.iter().find_map(|t| {
+        t.arms
+            .iter()
+            .find(|(id, _)| *id == action_id)
+            .map(|&(_, body)| (t.prot_entry, body))
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Six more tick bodies (`0x801CF4EC` / `0x801CF56C` arm, per-module)
 // ---------------------------------------------------------------------------

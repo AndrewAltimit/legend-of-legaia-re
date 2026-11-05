@@ -2714,6 +2714,14 @@ vsyncs. The counter gains `4 * step / 3` a pass, more per vsync at steps `3`
 and `4` than at `2`, and the band ran part of that span at a higher step
 than the replay's `2`.
 
+A walk-in body that stores its own counter rung on arm 0 (PROT 0951 and 0952,
+`capture_approach_yaw_base`) leaves no seed clock behind it: past that arm the
+word counts the walk from `0x200`. Such a capture gates on neither the counter
+nor its half-turn coin (`seed_plan::yaw_counter_reseeded_by`). Read as the seed's
+clock, `battle_tunnelc_xain_bloody_horns_mid_cast`'s `514` held the replay's
+`0x6E` for some `500` ticks and flipped the coin to `4`, so its band framed
+`0x200 - 3000` where retail's framed about `0x800 - 3000`, half a turn round.
+
 The engine's side of the accumulator test is its clip age
 (`BattleCamera::clip_age`): the accumulator with a looping clip's natural-end
 re-commits left out ([above](#placing-the-phase) for the action

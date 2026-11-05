@@ -521,3 +521,23 @@ fn ultimate_rave_kills_on_its_roll_alone_and_on_arm_10() {
     assert_eq!(ultimate_rave_cue(true), 0x189);
     assert_eq!(ultimate_rave_cue(false), 0x18A);
 }
+
+/// No action id sits in two trampolines, so an id names its body alone.
+#[test]
+fn capture_body_for_action_is_unique_per_id() {
+    let mut seen = std::collections::HashSet::new();
+    for t in CAPTURE_TRAMPOLINES.iter() {
+        for (id, _) in t.arms {
+            assert!(seen.insert(*id), "action {id:#04X} in two trampolines");
+        }
+    }
+    assert_eq!(
+        capture_body_for_action(0x5C),
+        Some((952, BLOODY_HORNS_TICK))
+    );
+    assert_eq!(
+        capture_body_for_action(0x60),
+        Some((955, WHITE_SHIELD_TICK))
+    );
+    assert_eq!(capture_body_for_action(0x5B), Some((951, SCYTHE_WIND_TICK)));
+}
