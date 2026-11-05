@@ -131,6 +131,10 @@ impl World {
         if !self.toggles.battle_sm_frame_cadence || self.clock.battle_frame_step_seed.is_some() {
             return;
         }
+        if self.battle.retail_step_track.is_some() {
+            self.apply_retail_step_track();
+            return;
+        }
         let state = self.battle_ctx.action_state;
         let band = state == S::SummonSustain.as_byte() || state == S::SummonReturn.as_byte();
         let measured = self
@@ -164,6 +168,30 @@ impl World {
         if self.battle.frame_clock.step != want {
             // The pass this tick ran opened the frame the new step spans.
             let tick = self.clock.display_frames;
+            self.battle.frame_clock.retime_frame(tick, want);
+            if let Some(cam) = self.battle.camera.as_mut() {
+                cam.set_frame_step(want);
+            }
+        }
+    }
+
+    /// A film's retail step for the frame this pass opens
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]).
+    fn apply_retail_step_track(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let tick = self.clock.display_frames;
+        let Some(track) = self.battle.retail_step_track.as_mut() else {
+            return;
+        };
+        let state = self.battle_ctx.action_state;
+        let band = state == S::SummonSustain.as_byte()
+            || state == S::SummonReturn.as_byte()
+            || state == S::MagicCapturePhase2.as_byte();
+        let phase = if band { self.casting.module_phase } else { 0 };
+        let Some(want) = track.next_step(state, phase) else {
+            return;
+        };
+        if self.battle.frame_clock.step != want {
             self.battle.frame_clock.retime_frame(tick, want);
             if let Some(cam) = self.battle.camera.as_mut() {
                 cam.set_frame_step(want);

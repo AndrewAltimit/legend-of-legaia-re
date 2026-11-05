@@ -100,6 +100,45 @@ impl BattleFrameClock {
     }
 }
 
+/// A retail recording's frame steps, per action-SM key, for a film that wants
+/// the frame's cost taken out of what it scores (`--retail-steps` in
+/// `scripts/ci/cast-sequence.py`). Retail's step is the emulated machine's
+/// measure of each frame ([`crate::frame_clock`]), which the engine does not
+/// model, so a recording's camera and timers walk on steps the engine's table
+/// only samples. A harness seat: no play path installs one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RetailStepTrack {
+    /// `(action state, module phase)` to the step of each retail frame under it.
+    frames: std::collections::BTreeMap<(u8, u8), Vec<u8>>,
+    /// Passes the engine has run under each key.
+    passes: std::collections::BTreeMap<(u8, u8), usize>,
+}
+
+impl RetailStepTrack {
+    /// Parse `state phase step` lines, one retail frame each, in film order.
+    pub fn parse(text: &str) -> Self {
+        let mut track = Self::default();
+        for line in text.lines() {
+            let f: Vec<u8> = line.split_whitespace().filter_map(|w| w.parse().ok()).collect();
+            if let [state, phase, step] = f[..] {
+                track.frames.entry((state, phase)).or_default().push(step.max(1));
+            }
+        }
+        track
+    }
+
+    /// The step of the pass just run under this key: retail's frame of the
+    /// same ordinal under the key, its last one past that, `None` for a key
+    /// the film never saw.
+    pub fn next_step(&mut self, state: u8, phase: u8) -> Option<u8> {
+        let frames = self.frames.get(&(state, phase))?;
+        let n = self.passes.entry((state, phase)).or_default();
+        let step = frames.get(*n).or(frames.last()).copied();
+        *n += 1;
+        step
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -724,6 +724,9 @@ pub struct BattleState {
     /// (`World::apply_cast_arm_frame_step`), to go back to the default when
     /// the band ends.
     pub cast_arm_step_on: bool,
+    /// A film's retail frame steps (`RetailStepTrack`): a harness seat that
+    /// outranks the arm table and the default.
+    pub retail_step_track: Option<crate::frame_clock::RetailStepTrack>,
     /// The display tick the capture band's CD read answers on. Retail's `0x6E`
     /// polls `FUN_8003DE7C(1)` and `0x6F` polls `FUN_8003F2B8(1)`, and the camera
     /// walk and the framing's pull-in run on through both
@@ -1327,6 +1330,7 @@ impl BattleState {
             frame_clock: Default::default(),
             frame_stretch: None,
             cast_arm_step_on: false,
+            retail_step_track: None,
             capture_read_until: 0,
             pass_draw_frame: None,
             sm_pass_frame: None,

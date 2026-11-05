@@ -262,6 +262,27 @@ def record_key(exe: str, env: dict, args: list[str]) -> str:
     return h.hexdigest()
 
 
+def retail_step_track(out: Path) -> str:
+    """`state phase step` per retail frame, in film order, for
+    `LEGAIA_CAST_STEP_TRACK`: a frame's row is its last, and the phase counts
+    only inside the module bands, as the pairing's key does."""
+    lines, last = [], None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if last is not None and r["frame"] != last["frame"]:
+                lines.append(_step_row(last))
+            last = r
+    if last is not None:
+        lines.append(_step_row(last))
+    return "".join(lines)
+
+
+def _step_row(r: dict) -> str:
+    st7 = int(r["st7"])
+    phase = int(r["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
+    return f"{st7} {phase} {r['step']}\n"
+
+
 def retail_hit_words(out: Path) -> list[int]:
     """The seed word retail held going into each melee hit of a `--physical`
     recording's first action. A hit's spark burst makes its frame draw tens of
@@ -380,6 +401,10 @@ def run_engine(a, out: Path) -> bool:
             print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
             return False
         env["LEGAIA_CAST_RAND_SEED"] = seed
+    if a.retail_steps:
+        track = out / "retail-steps.txt"
+        track.write_text(retail_step_track(out))
+        env["LEGAIA_CAST_STEP_TRACK"] = str(track)
     if a.strike_deal:
         env["LEGAIA_STRIKE_DEAL"] = ",".join(str(w) for w in retail_hit_words(out))
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
@@ -496,6 +521,9 @@ def main() -> int:
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
+    ap.add_argument("--retail-steps", action="store_true",
+                    help="engine: run on the recording's own frame steps (a harness seat: it takes the "
+                         "frame's cost out of what the film scores, so a law residual reads alone)")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")
