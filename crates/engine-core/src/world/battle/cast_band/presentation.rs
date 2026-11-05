@@ -103,6 +103,9 @@ const STAGE_BYTES_PORTED_BY_HAND: [u32; 22] = [
     961, 963, 965,
 ];
 
+/// PROT 0916's test ahead of the wash's end (`beq v1,zero` at `0x801F86B0`).
+const ALURU_WASH_END_GATE: u32 = 0x801F_86B0;
+
 impl World {
     /// Fire the presentation calls of module `entry`'s arm `phase_in` for
     /// the tick that just ran. `body` is the trampoline-selected tick body
@@ -211,12 +214,22 @@ impl World {
             {
                 continue;
             }
+            // PROT 0916's arms `0x12` and `0x13` share their tail, and the kill
+            // of the parked wash with the white fall that replaces it sits
+            // behind `word > 3 * scalar << 6` (`slt` at `0x801F86AC`), which only
+            // arm `0x13`'s last pass reaches.
+            if entry == 916 && phase_in == 0x12 && s.va > ALURU_WASH_END_GATE {
+                continue;
+            }
             // Past a ported countdown gate a site runs on the pass alone
             // (`summon_holds::gate_va`), whatever timing the decoder read.
             let timing = match legaia_engine_cast::cast_module_camera::summon_holds::gate_va(
                 entry, phase_in,
             ) {
                 Some(gate) if s.va > gate => SiteTiming::Pass,
+                _ if entry == 916 && phase_in == 0x13 && s.va > ALURU_WASH_END_GATE => {
+                    SiteTiming::Pass
+                }
                 _ => s.timing,
             };
             let once = match timing {

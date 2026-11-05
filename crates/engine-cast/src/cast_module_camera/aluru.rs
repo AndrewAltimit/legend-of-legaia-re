@@ -26,6 +26,18 @@ use super::*;
 /// The PROT entry of Aluru's module (`summon_aluru`).
 pub const ALURU_ENTRY: u32 = 916;
 
+/// PROT 0916's closing arm.
+pub const ALURU_DONE_ARM: u8 = crate::seru_magic_ticks::SERU_B_DONE_PHASE;
+
+/// PROT 0916's arm whose pass ends the arm-14 records and hides the creature
+/// (`0x801F7B24..0x801F7B7C`).
+pub const ALURU_RECORD_KILL_ARM: u8 = 15;
+
+/// The arm-14 records arm 15's pass kills through the handles kept at
+/// `0x801F9004..0x801F900C` (`ori 0x8` into each `+0x10`). Left running, their
+/// programs reach the stager's white fall (arm 2) and take the wash away.
+pub const ALURU_ARM14_RECORDS: [u32; 3] = [0x801F_8E58, 0x801F_8EA8, 0x801F_8F0C];
+
 /// The arm that draws the bands once at rest and, on the kill path, zeroes
 /// the victim's HP (`0x801F7CB0`; the kill writes `0x801F7DCC..0x801F7E70`).
 pub const ALURU_BLAST_ARM: u8 = 0x11;

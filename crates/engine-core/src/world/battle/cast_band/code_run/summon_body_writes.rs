@@ -44,6 +44,81 @@ impl World {
         self.casting.module_cam.kill = Some(cam::aluru_kill_verdict(roll, level));
     }
 
+    /// PROT 0916's part kills and tint stores.
+    ///
+    /// | Arm | Edge | Store |
+    /// |---|---|---|
+    /// | 15 (`0x801F7B24..0x801F7B7C`) | pass | the arm-14 records ended; creature `+0x04 = 0`, `+0x21C = 0xFF` |
+    /// | `0x11` (`0x801F7E8C`, `0x801F7E94`, `0x801F7CF4..0x801F7D08`) | pass | victim rate `1`, `+0x21C = 0xC8`, facing the creature's `+ 0x800` |
+    /// | `0x12`, `0x13` (`0x801F81C0..0x801F81DC`) | every, while the victim's clip is `0` | the same rate and tint |
+    /// | `0x12` on the damage path (`0x801F8680..0x801F868C`) | pass | victim rate `2`, impact `2`, `+0x21C = 0` |
+    /// | `0xFF` (`0x801F88BC`) | every | a dead victim hidden |
+    ///
+    /// The word the `0xC8` state reads is the neutral `0x20080200` an earlier arm
+    /// stored (`0x801F74C0..0x801F74D0`).
+    ///
+    /// PORT: overlay_summon_aluru_0916_801f69f8 (PROT 0916; the part kills of arm 15 and the seat tints of arms 15, 0x11..0x13)
+    fn apply_aluru_seat_writes(&mut self, phase_in: u8, passed: bool, victim: u8, seat_slot: u8) {
+        use legaia_engine_cast::cast_module_camera as cam;
+        const TINT_FLAT: u8 = 0xC8;
+        const NEUTRAL_WORD: u32 = 0x2008_0200;
+        const HIDDEN: u8 = 0xFF;
+        if phase_in == cam::ALURU_RECORD_KILL_ARM && passed {
+            if let Some(scene) = self.casting.active_summon.as_mut() {
+                for part in &mut scene.parts {
+                    if part
+                        .tag
+                        .is_some_and(|t| cam::ALURU_ARM14_RECORDS.contains(&t))
+                    {
+                        part.finished = true;
+                    }
+                }
+            }
+            if let Some(a) = self.actors.get_mut(usize::from(seat_slot)) {
+                a.battle.render_color = 0;
+                a.battle.render_flag = HIDDEN;
+            }
+        }
+        // Arm `0xFF` hides the victim (`sb s0,0x21C(s3)`, `sw zero,0x4(s3)` at
+        // `0x801F88BC`, `s0` the phase byte). A live victim's way back is not read
+        // yet, so the port hides only the seat the kill path emptied.
+        if phase_in == cam::ALURU_DONE_ARM
+            && let Some(a) = self.actors.get_mut(usize::from(victim))
+            && a.battle.hp == 0
+        {
+            a.battle.render_flag = HIDDEN;
+            a.battle.render_color = 0;
+        }
+        let creature_facing = self
+            .actors
+            .get(usize::from(seat_slot))
+            .map(|a| a.battle.facing_angle);
+        // The damage path's way out of arm `0x12`, beside its roll
+        // (`0x801F8680..0x801F868C`): rate `2`, impact `2`, the tint state off.
+        if phase_in == cam::ALURU_HIT_ARM
+            && passed
+            && self.casting.module_cam.kill != Some(true)
+            && let Some(a) = self.actors.get_mut(usize::from(victim))
+        {
+            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+            a.battle.impact_state = 2;
+            a.battle.render_flag = 0;
+            return;
+        }
+        let blast = phase_in == cam::ALURU_BLAST_ARM && passed;
+        let spread = matches!(phase_in, cam::ALURU_HIT_ARM | cam::ALURU_SPREAD_ARM);
+        if let Some(a) = self.actors.get_mut(usize::from(victim))
+            && (blast || (spread && a.battle.current_anim == 0))
+        {
+            a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(1);
+            a.battle.render_flag = TINT_FLAT;
+            a.battle.render_color = NEUTRAL_WORD;
+            if blast && let Some(f) = creature_facing {
+                a.battle.facing_angle = f.wrapping_add(0x800) & 0xFFF;
+            }
+        }
+    }
+
     /// The colour-word and HP stores of the summon-creature directors' arms
     /// on the pass the director just made for `phase_in` of module `entry`
     /// (`passed`: it left the arm).
@@ -85,6 +160,9 @@ impl World {
             v.hp = 0;
             self.write_cast_view(victim, &v);
             self.casting.module_skips_fold = true;
+        }
+        if entry == cam::ALURU_ENTRY {
+            self.apply_aluru_seat_writes(phase_in, passed, victim, seat_slot);
         }
         if st.victim_shatter_step != 0
             && let Some(a) = self.actors.get_mut(usize::from(victim))
