@@ -660,3 +660,29 @@ changes = [
   ["states/cort_evolved_approach_cutscene/image", 1.0, 0.999],
   ["states/shiny_refactor_gimard_levelup/image", 0.832, 0.831],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The bundles grow about 1% with what the wave ports (Death Game, the frame cost ring, the lure flight, new directors and stagers), and every per-frame count moves under 0.3% with the ring, the retire bit and the wired kernels; none is a new per-frame allocation path."
+changes = [
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 148.19, 148.25],
+  ["counts/browser/cast/enhanced/wasm_bytes_per_frame", 113970, 114061],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 125.79, 125.85],
+  ["counts/browser/cast/retail/wasm_bytes_per_frame", 113361, 113441],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 58220, 58339],
+  ["counts/browser/town01/retail/gl_draws_per_frame", 43.58, 43.59],
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48467, 48575],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 161704, 161875],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157419, 157659],
+  ["counts/bundle/gzip_bytes", 6957160, 7004124],
+  ["counts/bundle/play_gzip_bytes", 4827541, 4873935],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1370.0, 1371.6],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4509.0, 4509.1],
+  ["counts/native/battle/retail/allocs_per_frame", 1312.9, 1314.4],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1402.5, 1402.8],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1411.6, 1412.6],
+  ["counts/native/town01/retail/allocs_per_frame", 1223.9, 1226.8],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1926.3, 1927.3],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1274.7, 1274.8],
+  ["counts/native/world_map/retail/allocs_per_frame", 1810.8, 1811.8],
+]

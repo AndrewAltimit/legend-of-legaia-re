@@ -17,8 +17,9 @@ use super::*;
 use legaia_engine_save_state::WorldSaveState;
 
 /// Reloads a continuous run gets at one milestone's stretch after a party
-/// wipe, the guard retry included - the pad pass's allowance.
-const CONTINUOUS_WIPE_ATTEMPTS: u32 = PAD_WIPE_ATTEMPTS;
+/// wipe, the guard retry included: twice the pad pass's allowance. A player
+/// keeps retrying, and one stream in fourteen takes twelve goes at Cort.
+const CONTINUOUS_WIPE_ATTEMPTS: u32 = 2 * PAD_WIPE_ATTEMPTS;
 
 thread_local! {
     /// Set for the continuous run: the hand plays to keep a party it will
