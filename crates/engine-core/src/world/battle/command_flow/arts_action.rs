@@ -32,11 +32,7 @@ impl World {
             .unwrap_or(false);
         let learn_gate_open =
             !auto || self.next_rand() & 0x1FF == 0 || self.battle_first_monster_byte() == 0x4F;
-        let cap = self
-            .party
-            .tactical_arts
-            .innate_cap(roster)
-            .saturating_sub(ART_RECORD_ID_BIAS);
+        let cap = self.art_innate_cap(roster);
         let rec = self.party.roster.members.get_mut(usize::from(roster))?;
         let mut list = rec.displayed_skills();
         let verdict = legaia_engine_battle_vm::battle_action::check_and_learn_art(
@@ -50,6 +46,23 @@ impl World {
             rec.set_displayed_skills(list);
         }
         Some(verdict)
+    }
+
+    /// The innate cap `FUN_801EFBFC` compares an art's record id against
+    /// (`0x801F686C + char_id - 1`): the overlay's table once
+    /// [`crate::world::DiscTables::art_innate_caps`] is installed, else
+    /// whatever a caller gave the tracker.
+    ///
+    /// REF: FUN_801EFBFC (`0x801EFD0C..0x801EFD18`)
+    pub(in crate::world) fn art_innate_cap(&self, roster: u8) -> u8 {
+        match self.tables.art_innate_caps {
+            Some(caps) => caps.get(usize::from(roster)).copied().unwrap_or(0),
+            None => self
+                .party
+                .tactical_arts
+                .innate_cap(roster)
+                .saturating_sub(ART_RECORD_ID_BIAS),
+        }
     }
 
     /// Build the action queue retail's queue-builder `FUN_801EED1C` writes
@@ -182,6 +195,16 @@ impl World {
             owed = owed.wrapping_add(4);
         }
         self.battle.art_turn_spirit = owed;
+        // The per-seat Miracle mark the starter commit's banner and voice read:
+        // cleared at the builder's head (`0x801EED90`), raised by the Miracle
+        // arm (`0x801EF5A8`).
+        if let Some(flag) = self
+            .battle_ctx
+            .arts_banner_seat_flags
+            .get_mut(usize::from(caster))
+        {
+            *flag = u8::from(built.miracle_matched);
+        }
         // An expansion pack's known arts walk second, over the arrows the
         // retail walk left (`legaia_engine_expansion::arts`): their rows sit
         // past retail's 24, every retail row is blank in this pass, so a

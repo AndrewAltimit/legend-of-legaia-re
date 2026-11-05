@@ -147,6 +147,10 @@ pub struct DiscTables {
     /// ([`crate::world::World::stage_seru_side_effect`]) from running at
     /// all - so a synthetic battle stages nothing and draws no `rand()`.
     pub seru_side_effects: Option<legaia_game_tables::seru_side_effect::SeruSideEffectTable>,
+    /// Per-character innate art cap (PROT 0898, `0x801F686C`), in art record
+    /// ids: an art at or below it is never self-taught, so it reaches a
+    /// character only through its book. `None` on a disc-free build.
+    pub art_innate_caps: Option<[u8; 3]>,
     /// The Seru-absorb banner's caption pieces (PROT 0898 `0x801F4DFC` /
     /// `0x801F4C28`), installed with the move-power table. `None` on a
     /// disc-free host, where the banner shows the Seru's name alone.
@@ -275,6 +279,7 @@ impl DiscTables {
             element_affinity: None,
             battle_camera_heights: None,
             seru_side_effects: None,
+            art_innate_caps: None,
             absorb_caption: None,
             defeat_text: None,
             victory_text: None,

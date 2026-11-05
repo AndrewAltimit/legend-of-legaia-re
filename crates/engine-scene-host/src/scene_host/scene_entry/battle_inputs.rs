@@ -211,6 +211,9 @@ impl SceneHost {
                 // beside them.
                 self.world.tables.victory_text =
                     legaia_engine_battle_vm::battle_party_panel::VictoryText::parse(&bytes);
+                // The innate art caps (0x801F686C) gate the learn-on-use insert.
+                self.world.tables.art_innate_caps =
+                    legaia_game_tables::move_power::innate_art_caps(&bytes);
                 // The Seru side-effect table (0x801F6870) is sibling static
                 // data in the same overlay. A failure leaves the stager off,
                 // so levelled Seru casts carry no secondary debuff.

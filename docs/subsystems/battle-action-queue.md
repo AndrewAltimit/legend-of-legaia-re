@@ -341,10 +341,10 @@ re-invokes it for the next queued actor of a multi-actor turn). The full retail 
    `0x801EF6F0`). The order is load-bearing for one queue shape: with the same art entered twice
    the *last* occurrence is the one the check sees unknown, so it is the one that gets the `0x1A`
    - and step 4's reorder is what walks that verdict back to the art's first performance. So an art is learned on
-   its first performance, and the learn banner fires once. Two retail inputs are
-   supplied rather than read: the gate `ctx[+0x266 + slot]` has no engine analogue and reads as
-   clear (gate open), and the innate cap at `0x801F686C` is un-parsed battle-overlay disc data
-   that defaults to `0` until a host sets it.
+   its first performance, and the learn banner fires once. The innate caps are `[3, 5, 3]`
+   on the USA disc, each character's Hyper block, so a Hyper Art's string is dropped until its book
+   has taught it (`legaia_game_tables::move_power::innate_art_caps`, installed with the rest of
+   PROT 0898 on scene entry).
 3. **Miracle replacement (inline).** When the slot's Miracle marker `ctx[+0x25F + slot]` is set
    (`lbu v0,0x25f(v0)` at `0x801EF4C8`), the builder overwrites the whole 16-byte queue from the
    character's Miracle replacement string - the loop at `0x801EF4E8..0x801EF524` copies from

@@ -57,3 +57,16 @@ fn scene_entry_installs_the_battle_camera_height_table() {
         }
     }
 }
+
+/// The same overlay's innate art caps (`0x801F686C`): each character's Hyper
+/// block, the arts only a book teaches.
+#[test]
+fn scene_entry_installs_the_innate_art_caps() {
+    let Some(disc) = disc_path() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or not a file");
+        return;
+    };
+    let mut host = SceneHost::open_disc(&disc).expect("open disc host");
+    host.enter_field_scene("town01", 0).expect("enter town01");
+    assert_eq!(host.world.tables.art_innate_caps, Some([3, 5, 3]));
+}

@@ -193,6 +193,19 @@ pub const BATTLE_ACTION_OVERLAY_PROT_INDEX: usize =
 /// PROT 0897's over-read at a wrong load base.
 pub const MOVE_POWER_TABLE_VA: u32 = 0x801F_4F5C;
 
+/// VA of the per-character innate art cap the learn-on-use gate reads
+/// (`FUN_801EFBFC`, `0x801EFD0C..0x801EFD18`): an art record id is self-taught
+/// only when `cap < id`. The ids at or below it are each character's Hyper
+/// Arts, which only the Fire / Wind / Thunder books teach (`FUN_800402F4` arm
+/// `0x80041FB4`).
+pub const INNATE_ART_CAP_VA: u32 = 0x801F_686C;
+
+/// The three innate art caps off a raw PROT 0898 image, indexed by roster slot.
+pub fn innate_art_caps(overlay: &[u8]) -> Option<[u8; 3]> {
+    let off = (INNATE_ART_CAP_VA - BATTLE_OVERLAY_BASE) as usize;
+    overlay.get(off..off + 3)?.try_into().ok()
+}
+
 /// Raw-entry file offset of the table within PROT 0898. Empirically pinned by
 /// byte-matching the entry against the in-RAM table at [`MOVE_POWER_TABLE_VA`].
 pub const MOVE_POWER_TABLE_FILE_OFFSET: usize = 0x26744;

@@ -418,3 +418,68 @@ fn a_hyper_art_collapses_only_with_the_ra_seru() {
     assert_eq!(&queue[..5], &[0x0D, 0x0D, 0x0E, 0x0C, 0x00]);
     assert!(actions.is_empty());
 }
+
+/// The Miracle arm's other store: `ctx[+0x28D + slot] = 1` (`0x801EF5A8`),
+/// which the starter commit reads as the `MIRACLE` banner and the generic
+/// voice line, instead of falling through to `HYPER` and its fanfare's draw.
+#[test]
+fn a_built_miracle_raises_the_seat_banner_and_a_later_build_clears_it() {
+    use legaia_engine_battle_vm::battle_action::BANNER_SEAT_FLAG;
+    let mut equip = [0u8; 8];
+    equip[3] = 0x40;
+    let mut w = arts_world(equip);
+    let rec = walk_record(0x1B, &vahn_miracle());
+    w.set_art_record(legaia_art::Character::Vahn, rec.action, rec);
+
+    let _ = w.build_arts_action_queue(0, &vahn_miracle());
+    assert_eq!(w.battle_ctx.arts_banner_seat_flags[0], 1);
+
+    w.actors[0].battle.current_anim = 0;
+    w.actors[0].battle.queued_anim = 0x1A;
+    w.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(w.battle_ctx.arts_banner_stage, BANNER_SEAT_FLAG);
+
+    let _ = w.build_arts_action_queue(0, &[legaia_art::Command::Up]);
+    assert_eq!(
+        w.battle_ctx.arts_banner_seat_flags[0], 0,
+        "the builder's head clears it (`0x801EED90`)"
+    );
+}
+
+/// `FUN_801EFBFC`'s innate gate with the disc's cap installed: a Hyper Art's
+/// record id sits at or below it, so entering its string teaches nothing and
+/// the run is dropped (`beq v0,zero,0x801EF7A4`) until its book is read.
+#[test]
+fn a_hyper_art_is_dropped_until_its_book_has_taught_it() {
+    use legaia_art::Command::{Down, Up};
+    let mut equip = [0u8; 8];
+    equip[3] = 0x40;
+    let mut w = arts_world(equip);
+    w.tables.art_innate_caps = Some([3, 5, 3]);
+    let cmds = [Up, Down, Up];
+    let rec = walk_record(0x1C, &cmds);
+    w.set_art_record(legaia_art::Character::Vahn, rec.action, rec);
+
+    let (queue, _, _) = w.build_arts_action_queue(0, &cmds);
+    assert!(!queue.contains(&0x1C), "dropped: {queue:02x?}");
+    assert_eq!(w.party.roster.members[0].displayed_skills().count, 0);
+
+    let mut list = w.party.roster.members[0].displayed_skills();
+    list.count = 1;
+    list.ids[0] = 1;
+    w.party.roster.members[0].set_displayed_skills(list);
+    let (queue, _, _) = w.build_arts_action_queue(0, &cmds);
+    assert!(queue.contains(&0x1C), "taught: {queue:02x?}");
+}
+
+/// The tracker a save load rebuilds still answers to the table.
+#[test]
+fn the_innate_cap_outlives_the_tracker() {
+    let mut w = arts_world([0u8; 8]);
+    w.tables.art_innate_caps = Some([3, 5, 3]);
+    w.party.tactical_arts = legaia_engine_battle::tactical_arts::TacticalArtsTracker::new();
+    w.notify_art_used(0, 0x1C);
+    assert!(!w.party.tactical_arts.is_learned(0, 0x1C));
+    w.notify_art_used(0, 0x1F);
+    assert!(w.party.tactical_arts.is_learned(0, 0x1F));
+}

@@ -17,9 +17,10 @@
 //!   own behaviour for a clear marker, and the reason an art is learned the
 //!   first time it is successfully performed.
 //! * the **innate cap** `0x801F686C + char_id - 1`: art ids at or below it are
-//!   innate and never enter the list. That table is battle-overlay disc data
-//!   (PROT 0898) with no parser yet, so it defaults to `0` and hosts that have
-//!   it call [`TacticalArtsTracker::set_innate_cap`].
+//!   innate and never enter the list. The table is battle-overlay disc data
+//!   (PROT 0898, `legaia_game_tables::move_power::innate_art_caps`);
+//!   `World::notify_art_used` seats it here through
+//!   [`TacticalArtsTracker::set_innate_cap`], in this tracker's art-byte space.
 //!
 //! Art names come from the game's MES dialog containers - the tracker stores
 //! them as a caller-supplied `HashMap<u8, String>`. Without disc data the

@@ -160,7 +160,13 @@ fn cast_effect_driver<H: BattleActionHost + ?Sized>(
         ctx.camera_frame_height = height;
         host.camera_frame_height(height);
     }
+    // Case `1`'s context store, ahead of the epilogue (`0x801DC2F4..0x801DC31C`):
+    // it is what ends the hit loop for a bound below `0xFE`.
+    let settles = case == 1 && host.actor(slot).is_some_and(|a| a.hit_count_bound < 0xFE);
     host.spell_anim_sustain(slot, case);
+    if settles {
+        ctx.hit_counter = 0xFD;
+    }
 }
 
 pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
@@ -172,8 +178,10 @@ pub(super) fn magic_cast_begin<H: BattleActionHost + ?Sized>(
     // Turn to face the target (or the group's centroid). Retail runs this on
     // the retargeted byte, before it picks the next state.
     face_cast_target(host, ctx);
-    // Stage frame timer for pre-cast wait.
+    // Stage frame timer for pre-cast wait; the hit-loop word starts clear
+    // (`0x801E43CC`).
     ctx.frame_timer = 0x14;
+    ctx.hit_counter = 0;
 
     // The spell-name HUD label (`FUN_801D8DE8(0x4C, 0)`) is **monster-only**:
     // `lbu v0,0x2(s5); sltiu v0,v0,0x3; bne v0,zero,0x801e4460` at

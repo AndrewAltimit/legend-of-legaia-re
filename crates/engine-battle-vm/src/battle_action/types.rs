@@ -1222,7 +1222,8 @@ pub struct BattleActionCtx {
     /// `[+0x24B]` - item-target byte B (read at `MagicCastBegin` for
     /// `ItemRetargetB`).
     pub item_target_b: u8,
-    /// `[+0x24C]` - hit counter incremented by the spell hit-loop. The loop
+    /// `[+0x24C]` - not a count: state `0x28` clears it (`0x801E43CC`) and case
+    /// `1` of the cast-effect driver stores `0xFD` (`0x801DC31C`). The loop
     /// exits when `>= actor.hit_count_bound`.
     pub hit_counter: u8,
     /// `[+0x24D]` - recovery gate read at `MagicRecovery`.

@@ -580,8 +580,8 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// Case `0x13`'s render stores land on the caster: `+0x21C = 4`, `+0x21F = 2`
     /// (`0x801DCE54..0x801DCE60`), which is what turns Astral Wave's caster blue.
     ///
-    /// Not modelled: case `1`'s `ctx[+0x24C] = 0xFD` (a host cannot write
-    /// the context the step writes back).
+    /// Case `1`'s `ctx[+0x24C] = 0xFD` is the kernel's: a host cannot write the
+    /// context the step writes back.
     ///
     /// REF: FUN_801DC0A0
     fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
