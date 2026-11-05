@@ -63,6 +63,7 @@ fn a_stay_restores_and_charges_as_retail_does() {
     }
     // The debit, across the clamps `add_money` spells in the field host.
     const GOLD: u32 = 0x8008_459C;
+    cpu.stub_outside = None;
     for (gold, delta) in [
         (500i32, -200i32),
         (100, -200),
