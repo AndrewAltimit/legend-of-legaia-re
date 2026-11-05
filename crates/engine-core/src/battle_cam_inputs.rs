@@ -217,9 +217,9 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
 /// prompt itself frames nothing: it is the member's close-up
 /// ([`member_surface_open`]).
 ///
-/// The ring's attack cursor and the spell picker's cursor are the two the
-/// engine raises; the item window's party picker draws its own pointer
-/// inside the window and is left on the close-up.
+/// The ring's attack cursor, the spell picker's cursor and the item window's
+/// target step (`0x64` on the member its row names, steps `0x16` / `0x18`;
+/// `battle_item_target_gaza2_retail`) are the three the engine raises.
 fn battle_cursor_framing(
     world: &World,
     actor_at: &dyn Fn(u8, Option<u8>) -> Option<script::BattleCamActor>,
@@ -245,6 +245,23 @@ fn battle_cursor_framing(
         PickerState::Done(_) => None,
     };
     let b = &world.battle;
+    if let Some(menu) = b.item_menu.as_ref() {
+        let view = menu.menu_view();
+        if !view.target_select {
+            return None;
+        }
+        let row = menu.targets.get(view.target_cursor)?;
+        return match menu.state {
+            legaia_engine_menus::inventory_use::InventoryUseState::TargetSelect { .. } => {
+                if row.is_enemy {
+                    enemy_at(row.slot)
+                } else {
+                    actor_at(row.slot, Some(row.slot)).map(script::CursorFraming::Ally)
+                }
+            }
+            _ => None,
+        };
+    }
     if let Some(c) = b.command.as_ref() {
         return match &c.phase {
             CommandPhase::Targeting { picker, .. } => from_picker(picker.state()),
