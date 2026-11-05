@@ -173,3 +173,61 @@ fn kor4s_own_door_keeps_its_music_in_koin6() {
     );
     assert_eq!(host.bgm_track_word, Some(2041));
 }
+
+/// Enter the overworld scene `scene` and route its first `frames` ticks.
+fn enter_overworld(host: &mut SceneHost, scene: &str, frames: usize) -> Calls {
+    host.enter_world_map_scene(scene).expect("enter overworld");
+    let mut calls = Calls::default();
+    for _ in 0..frames {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+    }
+    calls
+}
+
+/// Take `map03`'s partition-2 entrance `record` into `dest` and route until
+/// the session holds `dest`, then `after` ticks more.
+fn take_overworld_door(host: &mut SceneHost, dest: &str, record: usize, after: usize) -> Calls {
+    let taken = host
+        .take_door_to(dest, Some(record))
+        .expect("map03 has the door");
+    eprintln!("taken {taken:?}");
+    let mut calls = Calls::default();
+    for _ in 0..600 {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+        if host.scene.as_ref().is_some_and(|s| s.name == dest) {
+            break;
+        }
+    }
+    assert_eq!(host.scene.as_ref().map(|s| s.name.as_str()), Some(dest));
+    for _ in 0..after {
+        let _ = host.tick();
+        host.route_bgm_events(&mut calls).expect("route");
+    }
+    calls
+}
+
+/// An overworld entrance is a door record too. The engine's entity SM keeps
+/// only its `0x3F`, so the crossing replays the record's sub-op 6: `map03`'s
+/// `P2[13]` raises it before its scene change into `son`, whose entry starts
+/// `2058` and parks (`0x1000`). The overworld theme plays on under the park
+/// word, as `son_field_door_hop` holds `2000`.
+#[test]
+fn map03s_son_entrance_keeps_the_overworld_theme() {
+    let Some(mut host) = host() else { return };
+    let calls = enter_overworld(&mut host, "map03", 30);
+    eprintln!("map03: {:?}", calls.0);
+    assert!(calls.0.contains(&Call::Start(2000)), "map03 starts 2000");
+    let calls = take_overworld_door(&mut host, "son", 13, 30);
+    eprintln!("son behind P2[13]: {:?}", calls.0);
+    assert!(
+        !calls
+            .0
+            .iter()
+            .any(|c| matches!(c, Call::Stop | Call::Start(_))),
+        "the entrance kept 2000: {:?}",
+        calls.0
+    );
+    assert_eq!(host.bgm_track_word, Some(0x1000), "son's entry parks");
+}

@@ -292,12 +292,43 @@ impl SceneHost {
                             |idx| self.world.system_flag_test(idx),
                         )
                     };
+                    // The record's path to its `0x3F` also carries the
+                    // door's sound-flag word: an entrance that raises sub-op
+                    // 6 there (`map03` P2[13] into `son`) has the
+                    // destination's field init keep the overworld's track,
+                    // as `son_field_door_hop` holds `2000` under the park
+                    // word.
+                    // REF: FUN_801DE840 (op 0x35 sub-op 6 arm 0x801E01D8)
+                    let trace = if object {
+                        legaia_engine_field::man_field_scripts::flat_record_path_trace(
+                            &mf,
+                            &man,
+                            usize::from(record),
+                            &|idx| self.world.system_flag_test(idx),
+                        )
+                    } else {
+                        legaia_engine_field::man_field_scripts::partition2_record_path_trace(
+                            &mf,
+                            &man,
+                            usize::from(record),
+                            &|idx| self.world.system_flag_test(idx),
+                        )
+                    };
+                    let keeps_music = trace.as_ref().is_some_and(|t| {
+                        matches!(
+                            t.end,
+                            legaia_engine_field::man_field_scripts::RecordPathEnd::SceneChange(_)
+                        ) && t.keeps_music()
+                    });
                     for (set, idx) in writes {
                         if set {
                             self.world.system_flag_set(idx);
                         } else {
                             self.world.system_flag_clear(idx);
                         }
+                    }
+                    if keeps_music {
+                        self.world.raise_keep_audio_across_field_init();
                     }
                 }
                 self.world.arm_arrival_facing(dir);

@@ -579,6 +579,18 @@ every start issued while bit 2 or that latch is up into
 ghidra/scripts/funcs/overlay_0897_801d6704.txt`, `800243f0.txt`,
 `8003aeb0.txt`.
 
+An overworld entrance is one of those door records. `map03`'s `P2[13]`
+runs `35 00 00 06` and then its `0x3F` into `son`, whose entry starts
+`2058` and parks on `0x1000` under a story test (`P1[0]` `+0x0C`, `+0x23`):
+the retail state `son_field_door_hop`, crossed on that record, holds `2000`
+sounding under the park word. The engine's overworld entity SM keeps only an
+entrance's `0x3F`, so the crossing walks the record's path
+(`man_field_scripts::record_path_trace`, the same flag-test walk that
+replays the record's flag writes) and raises bit 2 when a sub-op 6 lies on
+it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
+Without it the init closed the overworld theme and `son` played `2058`.
+Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
+
 ### The control words: stop, pause, replay
 
 The op's arm table is `0x801CEE00` in the field overlay, indexed `sub - 1`
@@ -3272,7 +3284,8 @@ installs a door record no tile spawns), and the session ticks until it holds
 the captured scene. Whatever track sounds there is the engine's own door
 logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
 `kor4`, `P2[13]` / `P2[9]`) and `retockin_field_route_walk` (from `retock`,
-`P2[18]`) and `station_field_door_hop` (from `ropeway`, `P2[27]`) are seeded this way and match retail; with the sub-op 6 latch
+`P2[18]`), `station_field_door_hop` (from `ropeway`, `P2[27]`) and `son_field_door_hop` (from the overworld
+`map03`, `P2[13]`) are seeded this way and match retail; with the sub-op 6 latch
 disabled the first three fail again (the head start replaces the kept
 track), while `retockin` passes either way because its entry parks.
 
