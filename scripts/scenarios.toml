@@ -7055,3 +7055,48 @@ phase = "menu"
 expected_game_mode = 0x17
 expected_active_scene = "retock"
 topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "battle_bubu2_spoon_white_shield_mid_cast"
+backup_fingerprint = "015d7a44741d80cf71e075b6babaa099facde3d87496b8c4b67eb36629ab1218"
+description = "bubu2 battle: Spoon mid-cast spell 0x60: category 2, action state 0x70. RETAIL disc: bubu2_field_door_hop played forward by autorun_battle_harvest.lua --turbo, saved at vsync 12629. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bubu2"
+topics = ["battle", "enemy attack", "Spoon", "bubu2", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_zora_dark_typhoon_mid_cast"
+backup_fingerprint = "27c2623e0dfcd56059d7d4c9d1b2ad9cb60c38fc4659c80d0328abd8041abcd4"
+description = "taiku battle: Zora mid-cast spell 0xAA: category 2, action state 0x70. RETAIL disc: taiku_field_card_walk played forward by autorun_battle_harvest.lua --turbo, saved at vsync 5405. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Zora", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_zora_strike"
+backup_fingerprint = "b2ae8128d372647512f8be4a5141fd0c429bc203d81ae092633619799fc3ff56"
+description = "taiku battle: Zora mid physical attack: category 3, action state 0x1e. RETAIL disc: taiku_field_card_walk played forward by autorun_battle_harvest.lua --turbo, saved at vsync 780. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Zora", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_uru2_nurga_heal_mid_cast"
+backup_fingerprint = "9e05e9de12eb439822b23174c010e232194eee72818d44c24564aefb828c2b74"
+description = "uru2 battle: Nurga mid-cast spell 0x2E: category 2, action state 0x3e. RETAIL disc: uru2_field_door_hop played forward by autorun_battle_harvest.lua --turbo, saved at vsync 1824. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "uru2"
+topics = ["battle", "enemy attack", "Nurga", "uru2", "harvest"]
+
+[[scenarios]]
+label = "battle_uru2_nurga_strike"
+backup_fingerprint = "d1c71efef4ecfe6db844a46a7ed34aecb8217f2e893f48ef997eeb8e5cf01b0a"
+description = "uru2 battle: Nurga mid physical attack: category 3, action state 0x1e. RETAIL disc: uru2_field_door_hop played forward by autorun_battle_harvest.lua --turbo, saved at vsync 918. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "uru2"
+topics = ["battle", "enemy attack", "Nurga", "uru2", "harvest"]
