@@ -42,8 +42,8 @@
 //!
 //! Three consequences the rungs below depend on. **Arts is not a ring arm** -
 //! it is `Attack` -> `AttackMode::Command`, the directional entry. **Run is
-//! not a ring arm** - it is on the round prompt, taken by Circle outright and
-//! refused when `battle_no_escape`. **There is no Summon arm** - a summon is
+//! not a ring arm** - it is on the round prompt: Right opens its confirm, Left there takes it,
+//! and the escape roll fails it under `battle_no_escape`. **There is no Summon arm** - a summon is
 //! a *spell* with id `0x81..=0x95` cast from the Magic submenu, detected in
 //! `world/battle/casting.rs` and drained by the host through
 //! `take_pending_summon_spawn`.
@@ -70,7 +70,7 @@
 //! | 7 | Item | the Item arm's menu consumes a carried item |
 //! | 8 | Spirit | the Spirit arm resolves and charges the gauge |
 //! | 9 | Run refused | `battle_no_escape` denies the round prompt's Run |
-//! | 10 | Run | Circle on the round prompt escapes the battle |
+//! | 10 | Run | Right, Left on the round prompt escapes the battle |
 //!
 //! ## What the order is carrying
 //!
@@ -936,7 +936,8 @@ fn battle_depth_ladder() {
         // Retail takes the press (the prompt never reads `ctx[+0x287]`) and
         // the escape roll fails it: the run band plays out, the turn is
         // spent, and the fight goes on.
-        tap(&mut session, PadButton::Circle);
+        tap(&mut session, PadButton::Right);
+        tap(&mut session, PadButton::Left);
         if settle_until(&mut session, SETTLE_TICKS, |s| {
             s.host.world.mode != SceneMode::Battle
         }) {
@@ -968,7 +969,8 @@ fn battle_depth_ladder() {
                 surface_report(&session)
             ));
         }
-        tap(&mut session, PadButton::Circle);
+        tap(&mut session, PadButton::Right);
+        tap(&mut session, PadButton::Left);
         if !settle_until(&mut session, SETTLE_TICKS, |s| {
             s.host.world.mode != SceneMode::Battle
         }) {

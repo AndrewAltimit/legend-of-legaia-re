@@ -174,7 +174,8 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                 InventoryUseState::Browsing { .. } if !menu.filtered_items.is_empty() => {
                     PadButton::Cross.mask()
                 }
-                InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+                InventoryUseState::TargetSelect { .. }
+                | InventoryUseState::AllPartyConfirm { .. } => PadButton::Cross.mask(),
                 _ => PadButton::Circle.mask(),
             };
         }
@@ -244,6 +245,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                     PadButton::Down.mask()
                 }
             }
+            InventoryUseState::AllPartyConfirm { .. } => PadButton::Cross.mask(),
             _ => PadButton::Circle.mask(),
         };
     }
@@ -547,6 +549,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }
             | CommandPhase::AttackMode { .. }
+            | CommandPhase::RunConfirm { .. }
             | CommandPhase::CommitConfirm { .. } => PadButton::Left.mask(),
             CommandPhase::Targeting { picker, .. } => {
                 aim_press(picker, aimed_foe(w, None), Some(cmd.actor))

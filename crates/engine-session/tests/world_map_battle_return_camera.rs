@@ -230,8 +230,17 @@ fn escaping_an_overworld_fight_reseats_the_camera_on_the_player() {
         }
         idle(&mut session);
     }
-    // Round prompt: Circle takes Run without a confirm (retail state 0x1E).
-    session.host.world.set_pad(PadButton::Circle.mask());
+    // Round prompt: Right opens the flee confirm (`0x1E` -> `0x32`), Left takes it.
+    session.host.world.set_pad(PadButton::Right.mask());
+    let _ = session.tick();
+    session.host.world.set_pad(0);
+    for _ in 0..64 {
+        let _ = session.tick();
+        if !session.host.world.battle.battle_command_pad_held() {
+            break;
+        }
+    }
+    session.host.world.set_pad(PadButton::Left.mask());
     let _ = session.tick();
     assert_return_reseats(&mut session, "escape", |s, _| idle(s));
 }
@@ -242,7 +251,7 @@ fn winning_an_overworld_fight_reseats_the_camera_on_the_player() {
         return;
     };
     into_battle(&mut session);
-    // Hold every monster at zero HP and mash Circle through the round prompt
+    // Hold every monster at zero HP and mash Left through the round prompt
     // until the wipe scan ends the fight.
     assert_return_reseats(&mut session, "victory", |s, f| {
         let w = &mut s.host.world;
@@ -254,7 +263,7 @@ fn winning_an_overworld_fight_reseats_the_camera_on_the_player() {
             }
         }
         let pad = if f % 2 == 0 {
-            PadButton::Circle.mask()
+            PadButton::Left.mask()
         } else {
             0
         };

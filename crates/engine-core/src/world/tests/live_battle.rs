@@ -417,10 +417,25 @@ fn run_in_a_no_escape_fight_rolls_and_fails() {
                 SlotState::default(),
             ],
         );
+        let left = BattleCommandInput {
+            left: true,
+            ..Default::default()
+        };
+        s.input(
+            left,
+            [alive; 3],
+            [
+                alive,
+                alive,
+                SlotState::default(),
+                SlotState::default(),
+                SlotState::default(),
+            ],
+        );
         assert_eq!(
             s.resolved(),
             Some(Resolution::RunAway),
-            "the prompt takes Run"
+            "the flee confirm takes Run"
         );
         world.battle.command = Some(s);
         world.tick_battle_command();

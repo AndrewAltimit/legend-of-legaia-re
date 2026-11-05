@@ -503,7 +503,9 @@ pub(super) fn fight_pad(s: &NativeSession, rng: &mut Rng) -> u16 {
                 }
             }
             InventoryUseState::Browsing { .. } => b(PadButton::Circle),
-            InventoryUseState::TargetSelect { .. } => b(PadButton::Cross),
+            InventoryUseState::TargetSelect { .. } | InventoryUseState::AllPartyConfirm { .. } => {
+                b(PadButton::Cross)
+            }
             _ => 0,
         };
     }
@@ -566,7 +568,7 @@ pub(super) fn fight_pad(s: &NativeSession, rng: &mut Rng) -> u16 {
             CommandPhase::Menu { .. } => LEFT,
             CommandPhase::AttackMode { .. } => LEFT,
             CommandPhase::Targeting { .. } => b(PadButton::Cross),
-            CommandPhase::CommitConfirm { .. } => LEFT,
+            CommandPhase::RunConfirm { .. } | CommandPhase::CommitConfirm { .. } => LEFT,
             _ => 0,
         };
     }

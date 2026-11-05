@@ -527,7 +527,9 @@ fn all_party_item_heals_every_living_party_actor_in_battle() {
         targets,
         InventoryContext::Battle,
     );
-    // One Confirm fans the item out across the living party (no target select).
+    // The confirm screen (`0x66`), then one Confirm fans the item out across
+    // the living party.
+    s.input(InventoryUseInput::Confirm);
     s.input(InventoryUseInput::Confirm);
     assert!(matches!(
         s.state,
