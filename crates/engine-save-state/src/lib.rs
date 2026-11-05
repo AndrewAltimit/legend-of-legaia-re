@@ -209,6 +209,11 @@ impl WorldSaveState for World {
                 // The run rules; `None` under retail rules, so such a save is
                 // byte-identical to a pre-block file.
                 run_rules: self.run_rules_save_block(),
+                // The records screen's battle / escape tallies; `None` while
+                // both are zero, so such a save is byte-identical to a
+                // pre-block file.
+                record_tally: (!self.party.record_tally.is_zero())
+                    .then_some(self.party.record_tally),
             },
         }
     }
@@ -310,6 +315,18 @@ impl LoadFullTail for World {
         // that never was a retail block, which composes from zero.
         self.party.retail_window = sf.ext_v2.retail_window.clone();
         self.party.previous_scene = sf.ext_v2.previous_scene.clone();
+        // The records tallies: the save's own, else the words its window
+        // carries (an `LGSF` written before the `LGXG` block), else zero.
+        self.party.record_tally = sf
+            .ext_v2
+            .record_tally
+            .or_else(|| {
+                sf.ext_v2
+                    .retail_window
+                    .as_deref()
+                    .and_then(legaia_save::card::read_retail_record_tally_from_window)
+            })
+            .unwrap_or_default();
         // The expansion pack's progress, or a dormant block for a pack that
         // is not active; a save without one resets the pack's progress.
         self.expansion_load_block(sf.ext_v2.expansion.as_deref());

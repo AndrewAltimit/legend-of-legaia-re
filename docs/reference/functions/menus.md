@@ -42,10 +42,17 @@ list readers are three views of the same two fields.
 
 Ports: the layout + the record reader are `engine-ui::menu::screens::records_screen`
 (`record_counters`, `records_screen_draws_for`); the clamps and the H:MM:SS
-split are `engine-dev-menu::dev_menu_leaves::records_screen`. The three block-level
-values (battles, escapes, the 1/60 s play clock) and the treasure census
-(`DAT_801C6460` / `DAT_801C6462`, a world-map overlay global rather than save
-data) have no engine-side counter yet.
+split are `engine-dev-menu::dev_menu_leaves::records_screen`. The battle and
+escape tallies are the save window's `0x800846A4` / `0x800846A8`, counted by
+the battle-scene setup `FUN_80055B6C` (`0x80055BAC..0x80055BDC`) and the Run
+roll's success arm in `FUN_801E791C` (`0x801E7B54..0x801E7B68`, skipped when
+bit `0x100` of the special-battle word forced the flee); the port keeps them on
+`PartyState::record_tally` and saves them with the window
+([save-screen](../../subsystems/save-screen.md#the-records-tallies)). The
+treasure line's found / total pair is no census: it is slots 0 and 1 of the
+field VM's script-counter table (`lh 0x6460` / `lh 0x2(0x801C6460)` at
+`0x801EDD88` / `0x801EDDB4`), the halfwords `4C CA/CB/CC` and the dance results
+write, drawn as read and hidden while slot 1 is not positive.
 
 ## Field-overlay status / equip panels (overlay 0897)
 

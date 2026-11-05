@@ -375,6 +375,76 @@ pub fn write_retail_audio_levels(sc_block: &mut [u8], levels: RetailAudioLevels)
     Ok(())
 }
 
+/// Byte offset of the lifetime **battle counter** (u32 LE), live RAM
+/// `0x800846A4` (`0x80084140 + 0x564`). The battle-scene setup
+/// `FUN_80055B6C` adds one per battle (`lw` / `addiu 1` / `sw` off the
+/// `0x80084140` base at `0x80055BAC..0x80055BDC`); the records screen
+/// `FUN_801ED710` prints it as "No. of Battles".
+pub const RETAIL_BATTLE_COUNT_OFFSET: usize = 0x564;
+/// Byte offset of the lifetime **escape counter** (u32 LE), live RAM
+/// `0x800846A8`. The Run roll `FUN_801E791C` adds one on a successful flee
+/// unless bit `0x100` of the special-battle word forced it
+/// (`0x801E7B40..0x801E7B68`); the records screen prints it as "No. of
+/// Escapes".
+pub const RETAIL_ESCAPE_COUNT_OFFSET: usize = 0x568;
+
+/// The two lifetime tallies the records screen prints off the save block.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RetailRecordTally {
+    /// `_DAT_800846A4` - battles fought.
+    pub battles: u32,
+    /// `_DAT_800846A8` - battles fled.
+    pub escapes: u32,
+}
+
+impl RetailRecordTally {
+    /// `true` when both counters are zero - a New Game, or a free block.
+    pub fn is_zero(self) -> bool {
+        self.battles == 0 && self.escapes == 0
+    }
+}
+
+/// Read the two record tallies. `None` when the block is too small or both
+/// are zero.
+pub fn read_retail_record_tally(sc_block: &[u8]) -> Option<RetailRecordTally> {
+    let word = |o: usize| -> Option<u32> {
+        Some(u32::from_le_bytes(sc_block.get(o..o + 4)?.try_into().ok()?))
+    };
+    let tally = RetailRecordTally {
+        battles: word(RETAIL_BATTLE_COUNT_OFFSET)?,
+        escapes: word(RETAIL_ESCAPE_COUNT_OFFSET)?,
+    };
+    (!tally.is_zero()).then_some(tally)
+}
+
+/// [`read_retail_record_tally`] over a bare live-state window
+/// ([`crate::SaveExtV2::retail_window`]), which starts at SC
+/// [`RETAIL_LIVE_WINDOW_OFFSET`].
+pub fn read_retail_record_tally_from_window(window: &[u8]) -> Option<RetailRecordTally> {
+    let word = |sc: usize| -> Option<u32> {
+        let o = sc.checked_sub(RETAIL_LIVE_WINDOW_OFFSET)?;
+        Some(u32::from_le_bytes(window.get(o..o + 4)?.try_into().ok()?))
+    };
+    let tally = RetailRecordTally {
+        battles: word(RETAIL_BATTLE_COUNT_OFFSET)?,
+        escapes: word(RETAIL_ESCAPE_COUNT_OFFSET)?,
+    };
+    (!tally.is_zero()).then_some(tally)
+}
+
+/// Write the two record tallies, restamping the block checksum.
+pub fn write_retail_record_tally(sc_block: &mut [u8], tally: RetailRecordTally) -> Result<()> {
+    let end = RETAIL_ESCAPE_COUNT_OFFSET + 4;
+    if sc_block.len() < end {
+        bail!("sc_block too small for the record tallies (need >= {end})");
+    }
+    sc_block[RETAIL_BATTLE_COUNT_OFFSET..RETAIL_BATTLE_COUNT_OFFSET + 4]
+        .copy_from_slice(&tally.battles.to_le_bytes());
+    sc_block[RETAIL_ESCAPE_COUNT_OFFSET..end].copy_from_slice(&tally.escapes.to_le_bytes());
+    restamp_sc_block_checksum(sc_block);
+    Ok(())
+}
+
 /// The options screen's config words a retail save block carries, as each
 /// row's value index (the word retail's picker writes, `FUN_801DA9F8`).
 ///

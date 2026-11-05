@@ -225,6 +225,15 @@ impl SaveFile {
             out.extend_from_slice(body);
         }
 
+        // Optional LGXG block: the records screen's battle and escape
+        // tallies. Emitted only when one is non-zero.
+        if let Some(tally) = self.ext_v2.record_tally.filter(|t| !t.is_zero()) {
+            out.extend_from_slice(&SAVE_FILE_EXTG_MAGIC);
+            out.extend_from_slice(&8u32.to_le_bytes());
+            out.extend_from_slice(&tally.battles.to_le_bytes());
+            out.extend_from_slice(&tally.escapes.to_le_bytes());
+        }
+
         out
     }
 }

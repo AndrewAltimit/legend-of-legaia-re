@@ -91,6 +91,8 @@ impl SaveFile {
         // this save starts from, so the words no field above names survive.
         ext_v2.retail_window = crate::card::read_retail_live_window(sc_block).map(<[u8]>::to_vec);
         ext_v2.previous_scene = crate::card::read_retail_previous_scene(sc_block);
+        // The records screen's lifetime battle / escape tallies.
+        ext_v2.record_tally = crate::card::read_retail_record_tally(sc_block);
         Ok(Self {
             party,
             ext: SaveExt {
@@ -275,6 +277,19 @@ impl SaveFile {
         }
         if let Some(options) = self.ext_v2.options {
             crate::card::write_retail_options(sc_block, options)?;
+        }
+        // The record tallies. A save that names none and carries a window
+        // keeps the window's words (laid down above); one with neither is a
+        // New Game's, whose window retail zeroes (`FUN_8001DCF8`), so it
+        // writes zero rather than inherit a previous occupant's counts.
+        let tally = self.ext_v2.record_tally.or_else(|| {
+            self.ext_v2
+                .retail_window
+                .is_none()
+                .then_some(Default::default())
+        });
+        if let Some(tally) = tally {
+            crate::card::write_retail_record_tally(sc_block, tally)?;
         }
         // The play clock, so retail's save screen prints the time this save
         // was played for and retail's own clock carries on from it.

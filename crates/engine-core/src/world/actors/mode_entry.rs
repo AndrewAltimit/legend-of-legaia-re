@@ -190,6 +190,11 @@ impl World {
         // (`0x80055DDC..0x80055DF8`).
         // REF: FUN_80055B6C
         self.object_effect.reseed_for_battle();
+        // ... and counts the fight: `lw` / `addiu 1` / `sw` on the save
+        // window's battle tally `0x80084140 + 0x564` (`0x80055BAC..
+        // 0x80055BDC`), the records screen's "No. of Battles".
+        // PORT: FUN_80055B6C (`0x80055BAC..0x80055BDC`, the battle tally)
+        self.party.record_tally.battles = self.party.record_tally.battles.wrapping_add(1);
         // The magic-level-up queue is a per-battle oracle record, not a host
         // hand-off: the banner the level-up raises is the battle message
         // banner (`raise_magic_level_banner`, screen element `0x65`), which

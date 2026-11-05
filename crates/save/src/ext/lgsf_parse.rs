@@ -304,6 +304,24 @@ impl SaveFile {
             cursor = end;
         }
 
+        // Optional LGXG record-tally block.
+        if cursor + 8 <= buf.len() && buf[cursor..cursor + 4] == SAVE_FILE_EXTG_MAGIC {
+            cursor += 4;
+            let size = u32::from_le_bytes(buf[cursor..cursor + 4].try_into().unwrap()) as usize;
+            cursor += 4;
+            let end = cursor
+                .checked_add(size)
+                .filter(|&e| e <= buf.len() && size >= 8)
+                .ok_or_else(|| anyhow::anyhow!("LGSF: LGXG record-tally block truncated"))?;
+            let b = &buf[cursor..end];
+            let tally = crate::card::RetailRecordTally {
+                battles: u32::from_le_bytes(b[0..4].try_into().unwrap()),
+                escapes: u32::from_le_bytes(b[4..8].try_into().unwrap()),
+            };
+            ext_v2.record_tally = (!tally.is_zero()).then_some(tally);
+            cursor = end;
+        }
+
         // Optional LGX5 resume trailer: present only when the writer had a
         // scene / location to record. Absent = empty, never an error, so a
         // pre-trailer v4 file and a trailer-less v4 file read the same.
@@ -538,5 +556,6 @@ pub(super) fn parse_ext_v2(buf: &[u8]) -> Result<SaveExtV2> {
         previous_scene: None,
         expansion: None,
         run_rules: None,
+        record_tally: None,
     })
 }

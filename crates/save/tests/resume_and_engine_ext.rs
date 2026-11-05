@@ -58,6 +58,7 @@ fn a_save() -> SaveFile {
             options: None,
             expansion: None,
             run_rules: None,
+            record_tally: None,
             active_party: vec![1, 0],
             per_char: vec![
                 (

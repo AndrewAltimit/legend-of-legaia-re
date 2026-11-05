@@ -983,6 +983,26 @@ seconds (`SaveExtV2::play_time_seconds`): the lift takes `counter / 60` and the
 composer writes `seconds * 60`. An engine-authored block's `LGXE` tail carries
 the same seconds and wins on the lift.
 
+### The records tallies
+
+`0x800846A4` (SC `0x564`) counts battles and `0x800846A8` (SC `0x568`) counts
+escapes; the records screen `FUN_801ED710` prints them as "No. of Battles" /
+"No. of Escapes". The battle-scene setup `FUN_80055B6C` adds one to the first
+per battle (`lw` / `addiu 1` / `sw` off the `0x80084140` base at
+`0x80055BAC..0x80055BDC`). The Run roll `FUN_801E791C` adds one to the second
+on a successful flee, after testing bit `0x100` of the special-battle word
+`_DAT_8007BAC0` and branching past the store when it is up
+(`0x801E7B40..0x801E7B68`), so a forced flee is no escape on the records. The
+New Game slate zeroes both with the rest of the window. The library cards carry
+both words growing with the play clock.
+
+The port counts them on `PartyState::record_tally`: `World::enter_battle` is
+the setup's half, `World::count_battle_escape` the roll's. A lift reads them
+off the block, an `LGSF` file carries them in the optional `LGXG` block, and an
+`LGSF` written before that block takes them from the window it carries. The
+composer writes them when the save names them, and writes zero for a save with
+neither a tally nor a window, which is a New Game's.
+
 ### The engine-ext blob in the unread tail
 
 Compose copies `0x1A18` bytes and memsets the rest (`_li a2,0x1a18` at
@@ -1009,7 +1029,8 @@ Pinned by `crates/save/tests/resume_and_engine_ext.rs`.
 
 `SaveFile::write_into_retail_sc_block` stamps the SC magic and its regions -
 the four-slot record array, the story-flag window, the inventory, the gold
-slot, the nine minigame words and the play clock - and restamps the checksum.
+slot, the nine minigame words, the records tallies and the play clock - and
+restamps the checksum.
 Every byte outside those regions survives, which is right for editing an
 existing save and is the sharp edge for a new one. Write order is records,
 then flags, then inventory, which is what reclaims slot 3's aliased tail.
@@ -1038,8 +1059,10 @@ reads on retail's load screen and in the BIOS card browser:
 
 What such a block still leaves zero are the banner name's bytes after its NUL,
 the play clock's sub-second ticks (the engine keeps whole seconds; a window
-still in the same second keeps its ticks), and unnamed words at `0x300..0x308`,
-`0x324`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC`, `0x564..0x568` and
+still in the same second keeps its ticks), the dance hall's best score at `0x324`
+(`_DAT_80084464`, which the dance overlay `FUN_801cf470` raises to the human's
+score and draws on the free-play panel; the port keeps no dance best yet), and
+unnamed words at `0x300..0x308`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC` and
 `0x590..0x59C`. Which of those a resumed retail game reads is open.
 
 Retail loads both kinds. A cold-booted retail disc in PCSX-Redux

@@ -121,7 +121,11 @@ fn idle_ticks(w: &mut World, n: usize, trace: &mut Vec<u8>) {
 #[test]
 fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
     let mut w = build_world();
+    assert_eq!(w.party.record_tally.battles, 0);
     enter_battle(&mut w);
+    // The battle setup counts the fight (`FUN_80055B6C`, `0x80055BAC..
+    // 0x80055BDC`): the records screen's "No. of Battles".
+    assert_eq!(w.party.record_tally.battles, 1, "the encounter is counted");
     wait_for_prompt(&mut w);
 
     // The latched pre-emptive advantage (`ctx+0x291 == 2`): retail's
@@ -187,6 +191,12 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
         w.battle.status_effects.statuses(1).is_empty(),
         "the Escaped teardown cures Stone (cure_stone_on_escape)"
     );
+    // The roll's success arm counts the flee (`0x801E7B54..0x801E7B68`):
+    // the records screen's "No. of Escapes". The fight stays counted once.
+    assert_eq!(
+        (w.party.record_tally.battles, w.party.record_tally.escapes),
+        (1, 1)
+    );
 }
 
 #[test]
@@ -231,5 +241,9 @@ fn failed_escape_consumes_the_turn_and_the_battle_goes_on() {
         w.mode,
         SceneMode::Battle,
         "a failed escape leaves the party in the battle"
+    );
+    assert_eq!(
+        w.party.record_tally.escapes, 0,
+        "a failed roll is no escape on the records"
     );
 }

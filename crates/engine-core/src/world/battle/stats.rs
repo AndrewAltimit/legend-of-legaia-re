@@ -85,8 +85,8 @@ impl World {
     /// once per living party member (`0x801E7978` / `andi 0x100` / the
     /// `s1 = 2` store at `0x801E7A14`), and it wins the roll past even the
     /// no-escape flag. The success path's `0x801E7B40` test of the same bit
-    /// gates the lifetime escape counter `_DAT_800846A8`, which the engine
-    /// does not keep.
+    /// gates the lifetime escape counter `_DAT_800846A8`
+    /// ([`Self::count_battle_escape`]).
     ///
     /// PORT: FUN_801E791C (roll + compare via
     /// `battle_formulas::escape_roll`; the success-side flee staging stays
@@ -137,6 +137,19 @@ impl World {
             flags,
             rand,
         )
+    }
+
+    /// The success arm's tally: one more escape on the save window's counter
+    /// `0x80084140 + 0x568` (`0x801E7B54..0x801E7B68`), the records screen's
+    /// "No. of Escapes" - unless bit `0x100` of the special-battle word
+    /// forced the flee, which retail tests first (`0x801E7B40..0x801E7B4C`)
+    /// and branches past the store.
+    ///
+    /// PORT: FUN_801E791C (`0x801E7B3C..0x801E7B68`, the escape tally)
+    pub(in crate::world) fn count_battle_escape(&mut self) {
+        if self.special_battle_word() & 0x100 == 0 {
+            self.party.record_tally.escapes = self.party.record_tally.escapes.wrapping_add(1);
+        }
     }
 
     /// The success arm of the escape roll: the party turns its back on the
