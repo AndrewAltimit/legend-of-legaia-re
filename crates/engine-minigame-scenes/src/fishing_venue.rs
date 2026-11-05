@@ -187,6 +187,22 @@ pub fn lead_spawn(venue: usize) -> (i16, i16, i16) {
     (lead.x, 0, lead.z)
 }
 
+/// The cast lure's anchor for `venue`: the lead's seat with his footing
+/// `+0x16`, which the cast arm reads less `0x80` as the lure's height
+/// (`sh` at `0x801CFCEC`). The footing is the float solver's
+/// (`FUN_801D6028` through `FUN_801D70EC`) over the venue `.MAP` at the
+/// seat - `-128` on the first shore, the step layer `minigame_fishing` holds
+/// the three actors on, and `-64` on the second - and `0` without a map.
+pub fn lead_anchor(venue: usize, map: Option<&[u8]>) -> (i16, i16, i16) {
+    let (x, _, z) = lead_spawn(venue);
+    let y = map.map_or(0, |buf| {
+        let ramp = legaia_engine_field::minigame_floor::height_ramp();
+        let grid = legaia_engine_field::minigame_floor::FloorGrid::new(buf);
+        legaia_engine_fishing::fishing_chrome::float_actor_tick(grid, x, z, 0, &ramp).y
+    });
+    (x, y, z)
+}
+
 /// The venue actors' state across frames. Lives on
 /// [`MinigameState::fishing_venue`] so every host reads the same actors.
 #[derive(Debug, Clone)]
