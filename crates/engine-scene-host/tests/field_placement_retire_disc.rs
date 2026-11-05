@@ -92,21 +92,21 @@ fn balden_lamp_records_retire_and_respawn_their_placements() {
     );
     assert_eq!(live, None, "a retired context answers no lookup");
 
-    // The re-seat runs each spawn section afresh from the MAN header tile, so
-    // a placement the entry's system script had parked comes back too: that
-    // park was a poke at the old context, not the record's own.
+    // The re-seat runs each spawn section afresh, so a record's own story arm
+    // may park it again. Everything the entry stood on the map stands, and
+    // every context answers.
     run_record(&mut host, &man, 19);
-    for &s in &slots {
-        assert!(drawn(&host, s), "P2[19] re-seated slot {s}");
+    for ((&s, &was), &channel) in slots.iter().zip(&at_entry).zip(&BALDEN_CHANNELS) {
+        assert!(!was || drawn(&host, s), "P2[19] re-seated slot {s}");
+        assert!(
+            legaia_engine_field::field_channels::resolve_target(
+                &host.world.field_vm.channels,
+                channel,
+            )
+            .is_some(),
+            "the re-seated context {channel:#x} answers again"
+        );
     }
-    assert!(
-        legaia_engine_field::field_channels::resolve_target(
-            &host.world.field_vm.channels,
-            BALDEN_CHANNELS[0],
-        )
-        .is_some(),
-        "the re-seated context answers again"
-    );
     eprintln!(
         "[retire] balden: {} placements out and back, {} of them drawn at entry",
         slots.len(),
