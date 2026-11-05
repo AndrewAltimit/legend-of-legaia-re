@@ -162,7 +162,7 @@ impl World {
     /// The display trio `+0x3C / +0x3E / +0x40` of battle seat `slot`: the
     /// body pair ([`Self::refresh_battle_body_pairs`]) plus the display
     /// height, the live `+0x36` raised by the pose centroid's Y
-    /// ([`pose_centroid_y`]). Falls back to the live position for a seat with
+    /// ([`pose_centroid_y`]) at the render scale `+0x72`. Falls back to the live position for a seat with
     /// no body pair or no decoded pose.
     pub fn battle_display_trio(&self, slot: usize) -> Option<[f32; 3]> {
         let a = self.actors.get(slot)?;
@@ -170,8 +170,11 @@ impl World {
             .battle
             .seat
             .unwrap_or((a.move_state.world_x, a.move_state.world_z));
-        let cy = stream_pose(a).map_or(0, pose_centroid_y);
-        let y = a.move_state.world_y.wrapping_add(cy);
+        // `+0x3E = +0x36 + (cy * +0x72) >> 12`: a body at half scale (PROT 0933's
+        // row) stands its middle half as far off the floor.
+        let cy = i32::from(stream_pose(a).map_or(0, pose_centroid_y));
+        let scale = a.battle.render_scale.map_or(0x1000, i32::from);
+        let y = a.move_state.world_y.wrapping_add(((cy * scale) >> 12) as i16);
         Some([f32::from(x), f32::from(y), f32::from(z)])
     }
 

@@ -586,6 +586,14 @@ impl World {
             // PORT: FUN_80047430 (`0x80047B54`, the natural-end commit of a
             // looping clip)
             if looped_recommit {
+                // The commit's rate decay runs on this path too
+                // (`0x8004B080..0x8004B090`): a seat at any rate but `8` loops
+                // at `4`, so a summon creature seated at `2` plays its idle at
+                // twice the pace from its first wrap (capture: Aluru's arm 9).
+                self.actors[i].battle.anim_rate =
+                    legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(
+                        self.actors[i].battle.anim_rate,
+                    );
                 self.actors[i].battle.input_cursor = 0;
                 // The commit's cue-track cursor seed (`sb zero,0x1f6` at
                 // `0x8004AFD0`, then the juggled re-hit's `1`): a walk's
@@ -977,6 +985,10 @@ impl World {
         let mirrors_loop = self.mirrors_loop_counter(i);
         let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
+            // A re-commit passes the rate decay as well (`0x8004B080`, ahead of
+            // the install arms).
+            actor.battle.anim_rate =
+                legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(actor.battle.anim_rate);
             if let Some(p) = actor.battle_animation.as_mut() {
                 p.rewind();
                 // The seed (`0x8004BDEC..0x8004BE0C`) runs on a re-commit too.

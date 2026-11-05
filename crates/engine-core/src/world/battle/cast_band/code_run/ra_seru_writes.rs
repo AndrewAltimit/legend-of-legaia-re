@@ -198,6 +198,19 @@ impl World {
         self.stage_module_arm_spawns(920, &spawn, None, None);
     }
 
+    /// Keep `ModuleCamState::row_tr_y` on the row's middle: `-4 * +0x3E` over
+    /// the living monsters, the TR y a cut on the row stands on.
+    fn keep_row_tr_y(&mut self, monster_count: u8) {
+        let row = self.ra_seru_row(monster_count);
+        if !row.is_empty() {
+            let sum: i32 = row
+                .iter()
+                .map(|&(e, _)| -4 * self.battle_display_trio(e).map_or(0, |d| d[1] as i32))
+                .sum();
+            self.casting.module_cam.row_tr_y = (sum / row.len() as i32) as i16;
+        }
+    }
+
     /// PROT 0931 (Jedo)'s stores on the row and the creature, outside its
     /// director.
     ///
@@ -210,14 +223,7 @@ impl World {
         creature: u8,
     ) {
         // What arm 26's cut reads off the row, its middle.
-        let row = self.ra_seru_row(monster_count);
-        if !row.is_empty() {
-            let sum: i32 = row
-                .iter()
-                .map(|&(e, _)| -4 * self.battle_display_trio(e).map_or(0, |d| d[1] as i32))
-                .sum();
-            self.casting.module_cam.jedo_row_tr_y = (sum / row.len() as i32) as i16;
-        }
+        self.keep_row_tr_y(monster_count);
         match (phase, passed) {
             // Arm 0's re-seat onto the alternate family at half its reach,
             // facing `0x800` (`0x801F6B74..0x801F6C5C`); arm 1 hides the row.
@@ -554,6 +560,10 @@ impl World {
             }
             (0x15, true) => self.ra_seru_row_restore(monster_count, true),
             _ => {}
+        }
+        // Arm `0xC`'s cut stands on the row's middle (`0x801F7C70..0x801F7DA4`).
+        if phase == 0xC {
+            self.keep_row_tr_y(monster_count);
         }
         if matches!(phase, 0xA | 0xC) {
             let (speed, angle) = self.casting.module_terra_orbit;

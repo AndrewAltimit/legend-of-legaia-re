@@ -352,7 +352,14 @@ pub fn terra_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) 
             st,
             0x120,
             d(0, 0, 0, D, D),
-            cut([0, 0], [0, 0, 0x800], [0, 0, -0x613], 1),
+            // TR y is the row's middle: `-4 * +0x3E` over the living monsters
+            // (`subu s3,s3,v0` at `0x801F7CD0`, `div` at `0x801F7D54`).
+            cut(
+                [0, 0],
+                [0, i32::from(st.row_tr_y), 0x800],
+                [0, 0, -0x613],
+                1,
+            ),
         ),
         0xD => ArmDirection::PASS,
         0xE => {
