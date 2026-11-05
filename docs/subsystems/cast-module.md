@@ -601,7 +601,7 @@ frame step of `4` (see [measured arm timing](#measured-arm-timing)).
 | 8 | gate; spawns the breath | 15 |
 | 9 | gate; sets the creature's render flag and tint word (`+0x21C = 3`, red) | 8 |
 | 10 | gate; stores depth `ctx[+0x6D0] = 0x800` and yaw base `ctx[+0x6DA] = 0x200`; its exit queues the walk clip | 24 |
-| 11 | walk-in: `FUN_801D5854(7, 6)` every pass, holds on the range poll `FUN_8004E2F0(7, victim)`; lands the hit, re-runs the target-size framing `FUN_801F0348` and scales `ctx[+0x6D0]` by `3/2` while the victim stands (`0x801F75A0..0x801F75DC`); adds `scalar * 192` to the countdown | 16 |
+| 11 | walk-in: `FUN_801D5854(7, 6)` every pass, holds on the range poll `FUN_8004E2F0(7, victim)`; lands the hit, turns the victim onto the creature (`0x801F756C`), re-runs the target-size framing `FUN_801F0348` and scales `ctx[+0x6D0]` by `3/2` while the victim stands (`0x801F75A0..0x801F75DC`); adds `scalar * 192` to the countdown | 16 |
 | 12 | drains that countdown, then waits for the victim to settle; case 8 on the caster every pass, at that depth | 87 |
 | `0xFF` | Done | - |
 
@@ -2117,11 +2117,23 @@ draws the verdict once per cast on the world's `rand()` stream (the Nighto
 skip rule), `World::apply_summon_body_writes` makes the kill path's HP and
 colour-word stores and waives the fold, and `World::aluru_band_draw` hands
 the spread to `legaia_render_kernels::cast_aluru` in both hosts' screen
-layers. Not carried: the battle lighting block writes of arms 4 and `0x11`,
-the creature's and victim's `+0x21C` / `+0x04` stores, the kill of the arm-14
-records in arm 15, arm `0x11`'s turn of the victim, the kill tallies in the
-character record and banner `0x5B`; the arm `0x14` framing focuses the
-victim's seat rather than its `+0x3C` / `+0x40` pair.
+layers.
+
+The wash over the blast is a held fade arm 15 parks at `ctx[+0x102C]`
+(`0x801F7BC4..0x801F7C24`). Arms `0x12` and `0x13` share their tail, and its end sits
+behind `word > 3 * scalar << 6` (`slt` at `0x801F86AC`): the kill of the parked fade
+and the `0x1E`-frame white fall that replaces it run only on arm `0x13`'s last pass.
+Arm 15's pass also ends the three arm-14 records through their handles
+(`0x801F7B24..0x801F7B64`) and hides the creature. Arm `0x11`'s pass puts the victim on
+rate `1` and the flat `0xC8` tint (the grey silhouette), turned to the creature's facing
+plus `0x800`, and arms `0x12` / `0x13` hold that while its clip is `0`; the damage path
+leaves it on rate `2`, impact `2`, `+0x21C = 0` beside its roll, and arm `0xFF` hides
+the victim (`World::apply_aluru_seat_writes`).
+
+Not carried: the battle lighting block writes of arms 4 and `0x11`, the kill
+tallies in the character record and banner `0x5B`; the arm `0x14` framing focuses the
+victim's seat rather than its `+0x3C` / `+0x40` pair; arm `0xFF`'s hide on a living
+victim, whose way back is not read.
 
 ### PROT 0920 (Slippery)
 
@@ -2334,6 +2346,12 @@ Beside the directors an engine-side pass applies each arm's seat writes
 | 0922 | the monsters re-formed at half their alternate-family seats and restored on arm 24; the creature's sink, its ring pose `(0, -0x1100, -0x1100)` and rise; the part halts each arm makes by handle; arm 18's ring re-seated as the crystals on arm 19's pass and dropped by arm 20 ([below](#puera-crystals)); `ctx[+0x278]` `0` / `2` / `0` on arms 0 / 11 / 12, `3` from the stager, which only its parts' op-`0x20` calls reach, and `0` with `ctx[+0x27A]` on arm 23's pass, which puts the stage back under arm 24 |
 | 0927 | `ctx[+0x278] = 3` and the backdrop pair dropped on arm 0; the monster row re-formed off `0x80077628` and restored; party and monsters hidden and re-shown; the creature's clips and rates; its emergence clipped by object-effect row 1 (`+0x42 = 2`); the pool flushes of arms 26 / 27; its stager run off the parts' calls (spawn arms, the salmon fades, the shake word `0x801F9C90` the epilogue runs down on TR y, and arm 4's sweep, which lands the outcome) |
 
+0927's epilogue copies the first of arm 23's fourteen kept handles over the other
+thirteen on every pass, held or not (`+0x14..+0x1B`, `0x801F832C..0x801F8570`): the
+first record's program carries the point, and the rings and the ray fan of arms 24..26
+stand on it (`World::juggernaut_ride_lead`, records `JUGGERNAUT_ARM23_LEAD` and
+`JUGGERNAUT_ARM23_RIDERS`). PROT 0966 keeps the same copy at `0x801F8B14..`.
+
 0927's clip stores of arms 19 and 24 are bare (`sb v0,0x1da(s3)` at
 `0x801F7524` and `0x801F7AD4`, no `+0x1DC` bump), so they commit at the
 playing clip's natural end, as on the other
@@ -2455,13 +2473,18 @@ Spoon's director (`spoon_direct`) carries the camera, captions and the spawns of
 sits on that cursor. The twenty parts of arm 4 ride the creature's decoded pose
 objects `ctx+0x6F4`, which no director can read, so the band seats them on arms 5..7
 (`seat_spoon_eye_parts`) from the same pool the creature's own draw reads.
-Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`).
+Its arm 7 pass raises the roster panels as Orb's arm 9 does (`0x801F83E4..0x801F8450`). Both arms pass the healed
+group's extent as their records' scale with `lh a3,0x2C(sp)`, which reads the stack TR z
+after the tween builder `FUN_801D829C` rewrote it in place (`(z << 8) / 0xA0`), so an
+extent of `0x400` seats Spoon's column and fans at `0x666`.
 Jedo's creature advances `+0x38 += step << 2` on every pass of arms 5 and 6
 (`0x801F70A0`, `0x801F7214`), from `-0x800` to `-0x400`, which is where arm 10's
 framing expects it. Arm 23's pass stands it at `y = 0x400`, facing `0x200`, and shows the row
 frozen under the neutral word (`0x801F7DC4..0x801F7E28`), which arm 0 parked at
 half its reach (`World::apply_jedo_writes`). Arm 26's cut takes its TR y off the
-living row, `-4 * +0x3E` averaged (`0x801F80C8..0x801F812C`). A retail recording's
+living row, `-4 * +0x3E` averaged (`0x801F80C8..0x801F812C`). Terra's arm `0xC` cut takes the same
+middle (`0x801F7C70..0x801F7DA4`), which is what keeps the orbiting row in the
+whirl's centre through arm `0xE`. A retail recording's
 `creature.csv` reads these directly.
 
 Kemaro's arm 16 is a dark tint on the victim, not a hide (`+0x04 = 0x401004`, `+0x21C = 0xC8`, `0x801F81E0..0x801F825C`): the reaction arm 15 staged has to tick, and its cue reaches the screen on arm 17.
@@ -3993,7 +4016,10 @@ the seat at the origin), one arm short of its seat in arm 4. The arms are
 (`FUN_801F7AF4`), which no `jal` in its image reaches: its part calls it
 through op `0x20` ([PROT 0909](#prot-0909-viguro)), so it has no seat arm. The engine's
 stream is resident at once, so a module with a seat arm has its creature
-requested as its phase reaches the arm.
+requested as its phase reaches the arm, or as it leaves it where the arm drains its
+countdown ahead of the `jal` (`module_seat_arm::SEATS_ON_PASS`): each cast's
+`creature.csv` reads the seat's node first on the arm after. Seated on entry, those
+creatures stood up to a whole arm early with their clip already running.
 The engine seats the creature in a high slot, and
 `World::battle_actor_draw_plan` hands that slot seat 7 so the tint pass
 reaches it on both hosts.

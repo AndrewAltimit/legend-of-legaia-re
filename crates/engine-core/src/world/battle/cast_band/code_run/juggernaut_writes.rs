@@ -32,9 +32,11 @@ impl World {
             return;
         };
         let (x, y, z) = (lead.state.world_x, lead.state.world_y, lead.state.world_z);
-        for part in scene.parts.iter_mut().filter(|p| {
-            !p.finished && p.tag.is_some_and(|t| JUGGERNAUT_ARM23_RIDERS.contains(&t))
-        }) {
+        for part in scene
+            .parts
+            .iter_mut()
+            .filter(|p| !p.finished && p.tag.is_some_and(|t| JUGGERNAUT_ARM23_RIDERS.contains(&t)))
+        {
             part.state.world_x = x;
             part.state.world_y = y;
             part.state.world_z = z;
@@ -382,5 +384,43 @@ impl World {
         let tail = module.bytes.get(off..)?;
         let end = tail.iter().position(|&b| b == 0)?;
         std::str::from_utf8(&tail[..end]).ok().map(str::to_string)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_cast::cast_module_camera::{JUGGERNAUT_ARM23_LEAD, JUGGERNAUT_ARM23_RIDERS};
+
+    /// The epilogue stands arm 23's other kept parts on the first one's point,
+    /// and a part outside the handle table keeps its own.
+    #[test]
+    fn the_kept_parts_ride_the_first() {
+        let mut w = World::new();
+        let part = |tag: u32, x: i16| {
+            let mut p = legaia_engine_effects::summon::SummonPartRuntime {
+                model_sel: -1,
+                reserved: 0,
+                buf: vec![0x08],
+                state: Default::default(),
+                finished: false,
+                origin: Some([0; 3]),
+                tag: Some(tag),
+                seat_pokes: Vec::new(),
+                seat_halve_speed: false,
+            };
+            p.state.world_x = x;
+            p
+        };
+        let mut scene =
+            legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &[], 0, [0; 3]);
+        scene.parts.push(part(JUGGERNAUT_ARM23_LEAD, 77));
+        scene.parts.push(part(JUGGERNAUT_ARM23_RIDERS[12], 0));
+        scene.parts.push(part(0x801F_91D0, 5));
+        w.casting.active_summon = Some(scene);
+        w.juggernaut_ride_lead();
+        let parts = &w.casting.active_summon.as_ref().unwrap().parts;
+        assert_eq!(parts[1].state.world_x, 77);
+        assert_eq!(parts[2].state.world_x, 5);
     }
 }

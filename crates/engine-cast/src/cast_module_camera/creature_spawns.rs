@@ -9,10 +9,9 @@
 //! Generated from the dumps: each site is a straight-line walk of its arm
 //! from the arm's entry (the stack trios the prologue zeroes, the halfword
 //! stores into them, the `lui` / `addiu` of the record), with the loops and
-//! the seat-relative points read by hand. Three kinds of point are not
+//! the seat-relative points read by hand. Two kinds of point are not
 //! carried: a `rand()` spread (PROT 0931 arms 5..7, PROT 0934 arms 20..24 -
-//! the part is seated at the spread's centre), a height off the victim's
-//! `+0x3E` (PROT 0917 arm `0xB`, seated at `z = 0`), and PROT 0929 arm 17's
+//! the part is seated at the spread's centre), and PROT 0929 arm 17's
 //! world-anchor point and TR z scale (seated on the origin at unit scale).
 //! A loop that seats the same record many times over a per-part velocity
 //! write (PROT 0930 arm 6's sixteen passes) is seated once per pass, its
@@ -135,50 +134,15 @@ const S917_11: [ModuleSpawn; 6] = [
         },
     ),
     // 0x801F79B4
-    spawn(
-        0x801F8F50,
-        LiteralScaled {
-            pos: [0, -2048, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
+    spawn(0x801F8F50, CreatureDepth { x: 0, y: -2048 }),
     // 0x801F79D8
-    spawn(
-        0x801F8FA0,
-        LiteralScaled {
-            pos: [0, -2048, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
+    spawn(0x801F8FA0, CreatureDepth { x: 0, y: -2048 }),
     // 0x801F79F4
-    spawn(
-        0x801F8FF0,
-        LiteralScaled {
-            pos: [0, -2048, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
+    spawn(0x801F8FF0, CreatureDepth { x: 0, y: -2048 }),
     // 0x801F7A10
-    spawn(
-        0x801F9040,
-        LiteralScaled {
-            pos: [0, -2048, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
+    spawn(0x801F9040, CreatureDepth { x: 0, y: -2048 }),
     // 0x801F7A2C
-    spawn(
-        0x801F9090,
-        LiteralScaled {
-            pos: [0, -2048, 0],
-            rot: [0, 0, 0],
-            scale: 0x1000,
-        },
-    ),
+    spawn(0x801F9090, CreatureDepth { x: 0, y: -2048 }),
 ];
 const S917_13: [ModuleSpawn; 5] = [
     // 0x801F7EB8

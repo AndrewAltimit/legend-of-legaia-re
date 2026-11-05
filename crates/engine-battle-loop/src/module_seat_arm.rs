@@ -243,3 +243,18 @@ pub fn seat_due(prot_entry: Option<u32>, arm: u8, phase: u8) -> bool {
         phase >= arm
     }
 }
+
+#[cfg(test)]
+mod seat_due_tests {
+    use super::*;
+
+    /// A gate ahead of the installer holds the seat to the arm's pass; an arm
+    /// with none seats as it is entered.
+    #[test]
+    fn a_gated_seat_arm_seats_on_its_way_out() {
+        assert!(!seat_due(Some(934), 5, 5));
+        assert!(seat_due(Some(934), 5, 6));
+        assert!(seat_due(Some(903), 3, 3));
+        assert!(seat_due(None, 3, 3));
+    }
+}

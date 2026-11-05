@@ -519,6 +519,11 @@ pub enum SpawnAnchor {
     /// 0x801F7980`) and stores `creature[+0x46] + 0x800` as the yaw
     /// (`0x801F7984..0x801F7998`).
     ShotPointFacing { y: i16, yaw: i16 },
+    /// A point at a literal `x` and `y` on the creature's live `z`: PROT 0917's
+    /// arm `0xB` stands its records on `z = -2 * word` (`0x801F7998..0x801F79B8`),
+    /// the word arm 5 took off the victim's height and arm 6 walked the creature
+    /// back by.
+    CreatureDepth { x: i16, y: i16 },
     /// A literal point, rotation and scale (`FUN_80050ED4`'s `a3`): a stager
     /// call that forwards its caller's `+0x72` (PROT 0911's arm `1`,
     /// `lh a3,0x72(v1)` at `0x801F8028`).
@@ -739,6 +744,7 @@ pub fn spawn_anchor_point_with(
                 [0, nova_column_yaw(index), 0],
             )
         }
+        SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
         SpawnAnchor::Creature => seat_at(creature?),
         SpawnAnchor::Victim => seat_at(victim?),
         SpawnAnchor::ShotFocus => {

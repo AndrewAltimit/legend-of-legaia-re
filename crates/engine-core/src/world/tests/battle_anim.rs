@@ -1533,6 +1533,23 @@ fn a_reaction_commit_decays_a_slowed_rate_to_half() {
     assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_NORMAL);
 }
 
+/// A re-commit of the clip already playing passes the same decay
+/// (`0x8004B080` sits ahead of the install arms): a seat the installer left at
+/// `2` plays on at `4`.
+#[test]
+fn a_re_commit_decays_a_slowed_rate_to_half() {
+    use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, RATE_HALF};
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle.anim_rate = AnimRate(2);
+    world.actors[0].battle.queued_anim = world.actors[0].battle.current_anim;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_HALF);
+}
+
 /// A struck body's reaction - a one-shot on the reaction channel - takes the
 /// capture's cursor when the capture names that entry.
 #[test]

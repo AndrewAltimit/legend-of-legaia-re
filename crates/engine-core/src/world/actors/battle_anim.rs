@@ -987,8 +987,9 @@ impl World {
         if q == actor.battle.current_anim {
             // A re-commit passes the rate decay as well (`0x8004B080`, ahead of
             // the install arms).
-            actor.battle.anim_rate =
-                legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(actor.battle.anim_rate);
+            actor.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(
+                actor.battle.anim_rate,
+            );
             if let Some(p) = actor.battle_animation.as_mut() {
                 p.rewind();
                 // The seed (`0x8004BDEC..0x8004BE0C`) runs on a re-commit too.

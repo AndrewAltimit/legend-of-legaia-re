@@ -174,7 +174,10 @@ impl World {
         // row) stands its middle half as far off the floor.
         let cy = i32::from(stream_pose(a).map_or(0, pose_centroid_y));
         let scale = a.battle.render_scale.map_or(0x1000, i32::from);
-        let y = a.move_state.world_y.wrapping_add(((cy * scale) >> 12) as i16);
+        let y = a
+            .move_state
+            .world_y
+            .wrapping_add(((cy * scale) >> 12) as i16);
         Some([f32::from(x), f32::from(y), f32::from(z)])
     }
 

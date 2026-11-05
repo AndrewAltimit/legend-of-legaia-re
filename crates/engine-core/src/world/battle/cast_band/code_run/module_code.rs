@@ -1616,12 +1616,13 @@ impl World {
                     .map(|c| (c.move_state.world_z, c.move_state.world_x))
                 && let Some(v) = self.actors.get_mut(usize::from(victim_slot))
             {
-                v.battle.facing_angle = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
-                    v.move_state.world_z,
-                    v.move_state.world_x,
-                    cz,
-                    cx,
-                );
+                v.battle.facing_angle =
+                    legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                        v.move_state.world_z,
+                        v.move_state.world_x,
+                        cz,
+                        cx,
+                    );
             }
         }
         // PROT 0903's `3/2` above reads the victim's HP after the hit
