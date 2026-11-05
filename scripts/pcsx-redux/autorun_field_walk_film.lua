@@ -53,7 +53,7 @@ end
 local held = {}
 local fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
 fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
-    "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease\n")
+    "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease,cursor,rate,record\n")
 
 local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
 afh:write("vsync,flat,x,y,z,heading,flags,model\n")
@@ -103,7 +103,7 @@ probe.run({
         local p = probe.read_u32(PLAYER_PTR)
         if p == nil or not probe.in_ram(p) then return end
         fh:write(string.format(
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
             el, s16(p + 0x14), s16(p + 0x16), s16(p + 0x18),
             s16(p + 0x1C), s16(p + 0x20), s16(p + 0x26), s16(p + 0x5C),
             s16(PITCH), s16(YAW), s16(H),
@@ -111,7 +111,7 @@ probe.run({
             s32(FOCUS_X), s32(FOCUS_Z),
             s16(STAGING + 0x02), s16(STAGING + 0x06), s16(STAGING + 0x26),
             s16(STAGING + 0x0E), s16(STAGING + 0x12), s16(STAGING + 0x16),
-            s16(OFFSET_EASE)))
+            s16(OFFSET_EASE), s16(p + 0x68), s16(p + 0x6A), s16(p + 0x5E)))
         fh:flush()
         log_actors(el, p)
     end,

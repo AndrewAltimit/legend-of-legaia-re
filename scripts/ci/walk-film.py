@@ -82,7 +82,7 @@ def main():
     retail = passes(read(out / "walk_film.csv"))
     engine = passes(read(out / "engine.csv"))
     print(f"{a.label}: retail {len(retail)} passes, engine {len(engine)} passes")
-    fields = ["x", "y", "z", "heading", *CAMERA, "offset_ease"]
+    fields = ["x", "y", "z", "heading", *CAMERA, "offset_ease", "cursor", "rate"]
     # Pair each retail pass with the engine's last row standing on the same spot:
     # the engine walks a vsync at a time and eases on the pass grid.
     by_spot = {}

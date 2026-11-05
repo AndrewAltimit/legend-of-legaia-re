@@ -50,6 +50,8 @@ impl WalkFilm {
 
     pub(super) fn run(&self, session: &mut NativeSession, retail: &RetailObs) -> Result<()> {
         crate::retail_compare::seat_host_camera(&mut session.camera);
+        // The lead's clip players, as a play host binds them.
+        legaia_engine_session::scene_actors::bind_scene_actors(&mut session.host);
         // What both play hosts raise.
         session.host.world.locomotion.leading_edge_wall_probes = true;
         session.host.world.locomotion.follow_terrain_height = true;
@@ -67,7 +69,7 @@ impl WalkFilm {
         let mut f = std::io::BufWriter::new(std::fs::File::create(&self.out)?);
         writeln!(
             f,
-            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease"
+            "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease,cursor,rate,record"
         )?;
         let n0 = session
             .host
@@ -102,9 +104,10 @@ impl WalkFilm {
                 writeln!(a, "{t},{},{x},{z},{h}", n0 + u16::from(slot))?;
             }
             let g = &session.camera.globals.0;
+            let anim = world.locomotion.player_anim.as_ref();
             writeln!(
                 f,
-                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                "{t},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
                 ms.world_x,
                 ms.world_y,
                 ms.world_z,
@@ -119,6 +122,9 @@ impl WalkFilm {
                 g[6],
                 g[8],
                 world.camera.offset_ease,
+                anim.map_or(-1, |a| a.playing_clip().2 as i32),
+                world.locomotion.player_clip_rate,
+                anim.map_or(-1, |a| a.playing_clip().1 as i32),
             )?;
         }
         session.host.world.input.set_pad(0);
