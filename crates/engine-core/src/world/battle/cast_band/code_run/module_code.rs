@@ -117,7 +117,16 @@ impl World {
                     }
                 }
             }
-            949 => ticks::water_crystals_stager(&mut victim, arm),
+            // PROT 0949's stager is reached through its parts' op-`0x20` calls,
+            // never off the phase: a retail cast walks the rate `7..=0` while
+            // the crystals close, and the hit's commit leaves the victim's
+            // knockdown on its own rate. Run off the phase, phases 4 and 5
+            // wrote `3` and `2` over it.
+            949 => {
+                for (call_arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
+                    ticks::water_crystals_stager(&mut victim, call_arm);
+                }
+            }
             _ => {}
         }
         // Only these modules' stager calls are run; any other module's are
@@ -1591,7 +1600,8 @@ impl World {
                 _ => None,
             };
             if let Some(cue) = cue {
-                self.route_battle_cue(cue, caster_slot);
+                let category = self.retail_actor_category(caster_slot);
+                self.route_battle_cue(cue, category);
             }
         }
         if matches!(entry, 903 | 913) && ctx.phase != phase_entry {

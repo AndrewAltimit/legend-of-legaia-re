@@ -659,6 +659,18 @@ pub fn monster_sound_banks(ids: impl Iterator<Item = u16>) -> Vec<(u8, u16)> {
     out
 }
 
+/// The mixer record a monster's runtime cues key in, the byte the battle loader
+/// leaves at render node `+0x80`: `7` on every seated monster
+/// (`0x8005225C`, `FUN_800520F0`), then `8` on the seats holding the largest id
+/// when the formation mixes ids (`0x8005234C`). Written once at load, so `ids` is
+/// the formation as it was seated, the dead included.
+// REF: FUN_800520F0
+pub fn monster_sound_category(ids: &[u16], id: u16) -> u8 {
+    let max = ids.iter().copied().max().unwrap_or(id);
+    let mixed = ids.iter().any(|&x| x != ids[0]);
+    if mixed && id == max { 8 } else { 7 }
+}
+
 /// [`World::runtime_sfx_descriptor`] over an explicit bundle.
 pub fn runtime_sfx_descriptor_in(bundle: &[u8], id: i16) -> Option<[u8; 8]> {
     if id < 0x200 {

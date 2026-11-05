@@ -73,7 +73,8 @@ impl World {
         // `FUN_8004FE5C(0xFD, ctx[+0x13])` when the remainder rose.
         let rem = st.wheel_tick_rem(fd::WHEEL_TICK_SPAN);
         if st.tick_rem < rem {
-            self.route_battle_cue(fd::WHEEL_TICK_CUE, caster);
+            let category = self.retail_actor_category(caster);
+            self.route_battle_cue(fd::WHEEL_TICK_CUE, category);
         }
         st.tick_rem = rem;
         self.casting.module_cam.countdown.0 = st.countdown;

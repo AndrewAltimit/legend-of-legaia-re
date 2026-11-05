@@ -404,9 +404,7 @@ impl World {
         let Some(id) = self.actors.get(slot).and_then(|a| a.battle_monster_id) else {
             return 7;
         };
-        let max = ids.iter().copied().max().unwrap_or(id);
-        let mixed = ids.iter().any(|&x| x != ids[0]);
-        if mixed && id == max { 8 } else { 7 }
+        crate::world::monster_sound_category(&ids, id)
     }
 
     /// The move-FX streak block the effect script's terminator installs -

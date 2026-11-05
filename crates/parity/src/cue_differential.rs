@@ -23,6 +23,7 @@ use crate::retail_compare::{StateClass, enumerate_corpus, read_retail, run_engin
 const DRAINER: u32 = 0x8001_6B6C;
 /// The drainer's first call past the ring walk: here the run stops.
 const PAST_THE_RING: u32 = 0x8001_822C;
+const ACTOR_TABLE: u32 = 0x801C_9370;
 const RING_IDS: u32 = 0x8007_B6D8;
 const RING_TIMERS: u32 = 0x8007_C338;
 /// The stream gate the walk sits behind: `0x80016BC0..0x80016BD4`.
@@ -177,6 +178,7 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
     let cdname = legaia_prot::cdname::parse(&extracted.join("CDNAME.TXT"))?;
     let mut scenes = BTreeSet::new();
     let (mut total, mut same) = (0usize, 0usize);
+    let mut bad_categories = 0usize;
     let mut entries = enumerate_corpus(&manifest, &library);
     entries.sort_by(|a, b| a.label.cmp(&b.label));
     for entry in entries {
@@ -214,6 +216,9 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
         };
         if !args.all_states && !scenes.insert(scene_key) {
             continue;
+        }
+        if battle {
+            categories(&ram, &formation, &entry.label, &mut bad_categories);
         }
         let mut retail = RetailDrainer::new(&ram);
         let mut ids: Vec<u16> = (0..STATIC_CUES).collect();
@@ -276,7 +281,47 @@ pub fn run(args: CueDifferentialArgs) -> Result<()> {
         }
     }
     println!("cue-differential: {same}/{total}");
+    if args.battle {
+        println!("loader category disagreements: {bad_categories}");
+    }
     Ok(())
+}
+
+/// Each seated monster's category byte at render node `+0x80` against the port's
+/// rule over the formation cells, and each dispatcher write it could have left in
+/// the `bse.dat` rows: retail's `+4` column holds an authored default or a value the
+/// router wrote, so anything else names a writer the port does not have.
+fn categories(ram: &[u8], formation: &[u8], label: &str, bad: &mut usize) {
+    let at = |va: u32| (va & 0x1F_FFFF) as usize;
+    let rd32 = |va: u32| {
+        ram.get(at(va)..at(va) + 4)
+            .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let ids: Vec<u16> = formation
+        .iter()
+        .filter(|&&b| b != 0)
+        .map(|&b| u16::from(b))
+        .collect();
+    let mut seen = Vec::new();
+    for (i, &cell) in formation.iter().enumerate() {
+        let actor = rd32(ACTOR_TABLE + (3 + i as u32) * 4);
+        let node = if actor >= 0x8000_0000 {
+            rd32(actor + 0x22C)
+        } else {
+            0
+        };
+        if cell == 0 || node < 0x8000_0000 {
+            continue;
+        }
+        let byte = ram[at(node + 0x80)];
+        let want = legaia_engine_core::world::monster_sound_category(&ids, u16::from(cell));
+        seen.push((cell, byte));
+        if byte != want {
+            *bad += 1;
+            println!("  category {label}: seat {i} id {cell:#x} retail {byte} port {want}");
+        }
+    }
+    println!("  categories {label} {formation:02x?}: {seen:02x?}");
 }
 
 /// The engine's banks for a battle, staged directly: retail's `+4` writes to the
