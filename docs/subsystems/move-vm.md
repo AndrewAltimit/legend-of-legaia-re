@@ -401,7 +401,7 @@ Port: the hook is `MoveHost::move_image`
 (`crates/engine-vm/src/move_vm/host.rs`). `MoveVmHostImpl` in `engine-core`
 queues it for the VRAM pass both hosts run: the field VM's `4C 60` queue, or the
 battle queue while a battle's parts tick. `concnow_field_door_hop_settled` is
-the state that reads it: its strip rects match retail only with the op live.
+the state whose frame shows it most.
 
 ### Keyframe-pose ops (`0x3C` / `0x3D`)
 
