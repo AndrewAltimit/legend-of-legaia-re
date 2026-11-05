@@ -430,7 +430,7 @@ Port: `move_vm::color` (`rgb_to_hsv` / `hsv_to_rgb`).
 
 ### Angle, party lookup and fade (`0x3A` / `0x3B` / `0x3C`)
 
-- `0x3A` writes the angle from the actor to the player (`atan2(dz, dx)` quantised to PSX 12-bit angle units, 4096 = full circle) into `bytecode[pc + op[2] + 3]`. Port: `MoveHost::ext_compute_angle`, reading `world.player_actor_slot`.
+- `0x3A` writes the bearing from the actor to the player into `bytecode[pc + op[2] + 3]`: `FUN_80019B28(actor.z, actor.x, player.z, player.x)` (`0x801D484C..0x801D486C`), PSX 12-bit units with `0` toward `+Z` and `0x400` toward `+X`, the player read through `0x8007C364`. Port: `MoveHost::ext_compute_angle`, reading `world.player_actor_slot`.
 - `0x3B` looks up the position of party member `op[2]` and writes the world-XYZ triple into `bytecode[pc + op[3] + 4..+6]`, pre-clearing the destination slots. Port: `MoveHost::ext_party_member_lookup` over `world.party.party_actor_slots: Vec<Option<u8>>`.
 - `0x3C` writes the immediate fade colour to scratchpad globals (`ticks == 0`) or schedules a per-frame ramp (`ticks > 0`). Port: the request lands in `world.presentation.pending_fade: Option<FadeRequest>`, drained each frame to drive the screen overlay.
 

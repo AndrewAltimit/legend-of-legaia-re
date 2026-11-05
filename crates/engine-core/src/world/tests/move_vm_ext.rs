@@ -35,26 +35,30 @@ fn move_vm_ext_set_8007b9d8_writes_world_field() {
 
 #[test]
 fn ext_compute_angle_matches_quadrant_when_player_set() {
-    // Place actor at origin, player due-east; angle should be ~0 mod 4096
-    // (positive X direction = angle 0 in the dz.atan2(dx) convention).
-    let mut world = World::new();
-    world.actors[0].active = true;
-    world.actors[0].move_state.world_x = 0;
-    world.actors[0].move_state.world_z = 0;
-    world.actors[1].active = true;
-    world.actors[1].move_state.world_x = 100;
-    world.actors[1].move_state.world_z = 0;
-    world.player_actor_slot = Some(1);
-    // Drive ext sub-op 0x3A: VM writes the angle into bytecode at
-    // `state.pc + op_w(2) + 3`. With pc=0 and op_w(2)=0, dst = u16[3].
-    let bc = vec![0x002F, 0x003A, 0, 0xFFFF, 0xFFFF];
-    world.set_move_bytecode(0, Some(bc.clone()));
-    let _ = world.step_move_vm(0, &bc);
-    // angle 0 (player due-east) should produce ~0 in the dst slot.
-    assert_eq!(
-        world.move_vm.bytecode[0][3], 0,
-        "angle to due-east player should be 0"
-    );
+    // Sub-op 0x3A is `FUN_80019B28(actor.z, actor.x, player.z, player.x)`
+    // (`0x801D484C..0x801D486C`): `0` toward `+Z`, `0x400` toward `+X`.
+    for ((px, pz), want) in [
+        ((100, 0), 0x400u16),
+        ((0, 100), 0),
+        ((-100, 0), 0xC00),
+        ((0, -100), 0x800),
+        ((100, 100), 0x200),
+    ] {
+        let mut world = World::new();
+        world.actors[0].active = true;
+        world.actors[0].move_state.world_x = 0;
+        world.actors[0].move_state.world_z = 0;
+        world.actors[1].active = true;
+        world.actors[1].move_state.world_x = px;
+        world.actors[1].move_state.world_z = pz;
+        world.player_actor_slot = Some(1);
+        // Drive ext sub-op 0x3A: VM writes the angle into bytecode at
+        // `state.pc + op_w(2) + 3`. With pc=0 and op_w(2)=0, dst = u16[3].
+        let bc = vec![0x002F, 0x003A, 0, 0xFFFF, 0xFFFF];
+        world.set_move_bytecode(0, Some(bc.clone()));
+        let _ = world.step_move_vm(0, &bc);
+        assert_eq!(world.move_vm.bytecode[0][3], want, "player at ({px}, {pz})");
+    }
 }
 
 #[test]
