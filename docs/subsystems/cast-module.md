@@ -4646,7 +4646,25 @@ records. Further 0903 facts:
   (`jal 0x801D5854` with `a1 = 8` at `0x801F761C`), whose dead-target arm
   zeroes the yaw ladder `ctx[+0x6DA]`, and halves the victim's animation rate
   (`+0x21D = scalar >> 1` at `0x801F76D8`), slowing the knock-back clip and
-  the fade the arm waits on.
+  the fade the arm waits on. The dead-target yaw is
+  `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100)`, the track coin's turn, so the
+  arm's whole close-up stands `0x200` round from retail's on a replay that
+  drew the other coin: forcing the coin onto retail's lifts the recording's
+  arm 12 from `.831` to `.887`. Retail's only writer of the coin is
+  `FUN_8004E13C` (`sb v0,0x26d(a0)` at `0x8004E2DC`, `rand() % 2`), called
+  by the clip commit `FUN_8004AD80` for an entry whose `+0x87` byte is set.
+- Arm 11's last pass points the creature at seat `0` (`sb zero,0x1dd(s3)` at
+  `0x801F75F0`), and from then on it stands. The anim tick steps a
+  positive root speed only while `FUN_8004E2F0(slot, +0x1DD)` reads out of
+  range (`0x80047D4C..0x80047D5C`), and the arm-11 poll stopped the creature
+  inside the caster's reach as well as the victim's, so through arm 12 its
+  walk clip loops in place (`z = -531` from arm 12's first pass to the band's
+  end in the `party_basic_attack_vs_gobu_gobu` recording). The engine seats the
+  creature past its eight-slot table, so that poll goes through the creature
+  metric (`World::root_motion_range`); through the table's own metric it read
+  out of range and the creature walked on out of the frame. Its walk starts on
+  the pass the walk clip commits, on the clip's root motion alone: the arm-11
+  creature stands at `z = -2196` after that pass on both sides.
 - Arm 11 stamps the victim's burn presentation (`+0x04 = 0x3FF`,
   `+0x0C = 0x1000`, `+0x21C = 0`, `+0x21F = 1`) inside its targetable branch.
 - `gimard_burning_attack` (arm 11) holds the two tunnel parts mid-program and
