@@ -180,8 +180,23 @@ fn run_from_a_battle_leg_gives_the_contest_up() {
     };
     let mut left = false;
     for _ in 0..800 {
-        // Circle takes Run outright on the round prompt.
-        tap(&mut host, PadButton::Circle);
+        // Right takes Run on the round prompt, which opens the flee confirm
+        // (retail's `0x32`); Left takes its Escape arm. Left on the prompt
+        // would pick Begin instead, so the press follows the phase.
+        let on_confirm = host.world.battle.command.as_ref().is_some_and(|s| {
+            matches!(
+                s.phase,
+                legaia_engine_battle_menus::battle_input::CommandPhase::RunConfirm { .. }
+            )
+        });
+        tap(
+            &mut host,
+            if on_confirm {
+                PadButton::Left
+            } else {
+                PadButton::Right
+            },
+        );
         if host.world.mode != SceneMode::Battle {
             left = true;
             break;
