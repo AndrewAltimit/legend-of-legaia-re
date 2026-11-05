@@ -48,10 +48,10 @@ SETTER = re.compile(
 )
 ASSIGN_OP = r"(?:=(?![=>])|\+=|-=|\*=|/=|\|=|&=|\^=|<<=|>>=)"
 CHAIN_WRITE = re.compile(
-    r"((?:\.\s*[A-Za-z_]\w*(?:\[[^\]\n]*\])?)+)\s*" + ASSIGN_OP
+    r"((?:\.\s*[A-Za-z_]\w*(?:\[[^\]\n]*\])*)+)\s*" + ASSIGN_OP
 )
-BORROW_WRITE = re.compile(r"&\s*mut\s+(?:[A-Za-z_]\w*)?((?:\.\s*[A-Za-z_]\w*(?:\[[^\]\n]*\])?)+)")
-CHAIN_METHOD = re.compile(r"((?:\.\s*[A-Za-z_]\w*(?:\[[^\]\n]*\])?)+?)\s*\.\s*([A-Za-z_]\w*)\s*\(")
+BORROW_WRITE = re.compile(r"&\s*mut\s+(?:[A-Za-z_]\w*)?((?:\.\s*[A-Za-z_]\w*(?:\[[^\]\n]*\])*)+)")
+CHAIN_METHOD = re.compile(r"((?:\.\s*[A-Za-z_]\w*(?:\[[^\]\n]*\])*)+?)\s*\.\s*([A-Za-z_]\w*)\s*\(")
 FIELD_NAME = re.compile(r"\.\s*([A-Za-z_]\w*)")
 FIELD_READ = re.compile(r"\.\s*([A-Za-z_]\w*)\b(?!\s*\()(?!\s*::)")
 STRUCT_DEF = re.compile(r"\bstruct\s+([A-Z]\w*)\s*(?:<[^{;(]*>)?\s*(?:where[^{;]*)?\{")
@@ -191,6 +191,11 @@ def main():
         action="store_true",
         help="judge writers on the receiver-gated graph too: more rows, some false",
     )
+    ap.add_argument(
+        "--loose-readers",
+        action="store_true",
+        help="judge readers on the permissive graph: more rows, many on parked kernels",
+    )
     ap.add_argument("--shared", action="store_true", help="keep fields other structs also name")
     args = ap.parse_args()
 
@@ -232,8 +237,12 @@ def main():
         owner = f"{f.impl_type}::" if f.impl_type else ""
         return f"{owner}{f.name}"
 
+    # A reader is "live" on the gated graph unless asked: on the permissive one
+    # a `.tick()` anywhere makes every parked kernel's input read live.
+    read_gate = reach if args.loose_readers else strict_reach
+
     def live_readers(name):
-        return [f for f in readers[name] if f.uid in reach]
+        return [f for f in readers[name] if f.uid in read_gate]
 
     gate = strict_reach if args.soft else reach
 

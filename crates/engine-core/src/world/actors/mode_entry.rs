@@ -341,6 +341,14 @@ impl World {
         let armed_by_disc = self.take_battle_tutorial_arm();
         if self.battle.tutorial_pending || armed_by_disc {
             self.battle.arm_battle_tutorial();
+            // The two option words the lesson hooks read.
+            if let Some(tut) = self.battle.tutorial.as_mut() {
+                use legaia_engine_system::option_values::{BattleCommandOpt, SelectAttackOpt};
+                tut.inputs.battle_command_cross =
+                    self.toggles.battle_command == BattleCommandOpt::CrossButton;
+                tut.inputs.select_attack_automatic =
+                    self.toggles.select_attack == SelectAttackOpt::Automatic;
+            }
         }
         self.apply_battle_entry_flag_tail();
     }

@@ -762,7 +762,7 @@ the current lesson is not teaching.
 
 | Flow state | Handler | What it prompts |
 |---|---|---|
-| `30` | `0x801F6C00` | Turn start - the per-lesson intro, plus a first-visit vs repeat-visit input explainer selected by `_DAT_801D46C8`. |
+| `30` | `0x801F6C00` | Turn start - the per-lesson intro, plus the input explainer for the Battle Command option `_DAT_800846C8` (directional or cross-button). |
 | `40` | `0x801F6CB8` | `[Begin]` chosen - name the category to pick. Lesson 3 has no prompt here. |
 | `50` | `0x801F6CAC` | Run selected - always rejected, always rewinds. |
 | `60` | `0x801F6DCC` | Item window opened - the item lesson explains the two windows; every other lesson rewinds. |
@@ -775,7 +775,7 @@ the current lesson is not teaching.
 The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 (`0x0F, 0x0E, 0x0F`) and accepts it at three alignments of the command buffer
 `actor[+0x1DF..=+0x1E3]`, each a differently-masked load at `0x801F6FD8`. When
-`_DAT_801D46C4 == 1` the buffer is auto-filled for the player at `0x801F6FB0`.
+`_DAT_800846C4 == 1` (Battle Select Attack on Automatic) the buffer is auto-filled for the player at `0x801F6FB0`, ahead of the Auto rewind, so that option cannot strand the drill.
 `[High] [Low] [High]` is the swing bytes `0F 0E 0F` - Vahn's Somersault,
 `Up Down Up` - so a Somersault preceded by up to two other arrows passes too.
 

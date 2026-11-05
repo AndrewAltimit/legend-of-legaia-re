@@ -257,6 +257,10 @@ fn case_one_settles_a_bounded_hit_loop() {
         host.actors[1].hit_count_bound = bound;
         step(&mut host, &mut ctx);
         assert_eq!(ctx.hit_counter, word, "case {case} bound {bound}");
-        assert_eq!(ctx.action_state, state.as_byte(), "case {case} bound {bound}");
+        assert_eq!(
+            ctx.action_state,
+            state.as_byte(),
+            "case {case} bound {bound}"
+        );
     }
 }
