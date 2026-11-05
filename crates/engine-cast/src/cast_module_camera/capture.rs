@@ -1199,6 +1199,12 @@ pub fn terio_punch_camera(
             st.countdown.0 = 0;
             CaptureCamArm {
                 latch: Some(0),
+                // `li 3; sb 0x278` and `li 1; sb 0x21d(s4)` at `0x801F6C98`.
+                ctx_278: Some(3),
+                caster_write: CaptureSeatWrite {
+                    rate: Some(1),
+                    ..Default::default()
+                },
                 ..step(
                     shot([0x20, yaw_from(0x400, h), 0], [0, 0x600, depth], 1),
                     Some(4),
@@ -1266,13 +1272,39 @@ pub fn terio_punch_camera(
                 return held;
             }
             st.countdown.add(160);
-            step(None, Some(8))
+            // The way out of the gate is the party's hits
+            // (`0x801F73CC..0x801F74DC`): `FUN_801DD6B4(0x274, ctx[+0x13], seat)`
+            // for each seat with HP and without Stone, whose rate halves and
+            // whose heading turns to `caster[+0x46] + 0x800`. The caster's
+            // clip park is released on the way (`0x801F73AC..0x801F73B8`).
+            CaptureCamArm {
+                folds_hit: true,
+                party_write: CaptureSeatWrite {
+                    rate: Some(WAVE_HIT_RATE),
+                    facing: Some(c.facing.wrapping_add(0x800) & 0xFFF),
+                    ..Default::default()
+                },
+                party_live_only: true,
+                party_skip_stoned: true,
+                caster_write: CaptureSeatWrite {
+                    stage: Some(0),
+                    loop_release: true,
+                    ..Default::default()
+                },
+                ..step(None, Some(8))
+            }
         }
         8 => {
-            if st.countdown.0 > 0 && st.countdown.drain_above(0) {
+            // The body returns `0` once the word is spent and every party
+            // seat has settled (`0x801F7518..0x801F75EC`: `+0x1D9 == 0`, a
+            // downed one `8`).
+            if (st.countdown.0 > 0 && st.countdown.drain_above(0)) || !st.party_settled {
                 return held;
             }
-            step(None, None)
+            CaptureCamArm {
+                ctx_278: Some(0),
+                ..step(None, None)
+            }
         }
         _ => CaptureCamArm::default(),
     }
