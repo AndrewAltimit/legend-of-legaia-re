@@ -90,7 +90,8 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
             .frame(
                 &host.index,
                 &host.world.minigames,
-                host.world.mode == SceneMode::Fishing
+                host.world.mode == SceneMode::Fishing,
+                [0; 3],
             )
             .is_none()
     );
