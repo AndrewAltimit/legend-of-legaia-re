@@ -2015,7 +2015,11 @@ too (`super_queue_replace_*` `image` `.926` to `.938`). So does a monster
 melee's target from the approach `0x14` through the strike loop `0x1E` while
 it idles: the hit that stages its reaction has not landed, and nothing else
 in the action touches its loop (`battle_korb2_warhalf_strike`'s Vahn, walked
-onto at idle cursor `0` on the displayed frame). So does the acting monster
+onto at idle cursor `0` on the displayed frame). So does a monster cast's
+party target idling through the cast band `0x28..=0x2F`, which stages nothing
+on the victim before the hit (`battle_nilboa_aluru_v2_aluru_cannon_mid_cast`'s
+Vahn, a close-up, `.874` to `.964`; `battle_deene_ironman_jagged_earth_mid_cast`
+`.871` to `.961`, `battle_tower_guardian_windhash_mid_cast` `.930` to `.997`). So does the acting monster
 idling in the strike loop `0x1E` with its first swing staged: the idle runs
 from the end of its walk or close-in.
 

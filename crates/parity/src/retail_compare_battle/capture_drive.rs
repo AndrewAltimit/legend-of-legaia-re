@@ -1045,6 +1045,16 @@ impl RetailBattle {
                     && self.active_actor >= 3
                     && self.queued_category == 3
                     && (0x14..=0x1E).contains(&self.action_state);
+                // ... and a monster cast's party target still idling ahead of
+                // the hit, the same clock: the cast band stages nothing on the
+                // victim before its hit (`battle_nilboa_aluru_v2_aluru_cannon_mid_cast`'s
+                // Vahn, a close-up whose sway the replay's own cursor missed).
+                let cast_target_idle = clip == 0
+                    && slot == self.target_code
+                    && slot < 3
+                    && self.active_actor >= 3
+                    && self.queued_category == 2
+                    && (0x28..=0x2F).contains(&self.action_state);
                 // ... and a monster on its idle in the strike loop, with the
                 // first swing staged behind it: the idle runs from the end of
                 // the walk or close-in, whose passes the replay's clock does
@@ -1059,6 +1069,7 @@ impl RetailBattle {
                     || parked_idle
                     || walking
                     || melee_target_idle
+                    || cast_target_idle
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
