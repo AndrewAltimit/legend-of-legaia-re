@@ -724,6 +724,10 @@ pub struct BattleState {
     /// (`World::apply_cast_arm_frame_step`), to go back to the default when
     /// the band ends.
     pub cast_arm_step_on: bool,
+    /// The frame driver's cost history (`FrameCostRing`), one push a pass.
+    pub frame_cost_ring: crate::frame_clock::FrameCostRing,
+    /// The step the ring read on the last pass.
+    pub frame_cost_step: u8,
     /// A film's retail frame steps (`RetailStepTrack`): a harness seat that
     /// outranks the arm table and the default.
     pub retail_step_track: Option<crate::frame_clock::RetailStepTrack>,
@@ -1330,6 +1334,8 @@ impl BattleState {
             frame_clock: Default::default(),
             frame_stretch: None,
             cast_arm_step_on: false,
+            frame_cost_ring: Default::default(),
+            frame_cost_step: crate::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
             retail_step_track: None,
             capture_read_until: 0,
             pass_draw_frame: None,

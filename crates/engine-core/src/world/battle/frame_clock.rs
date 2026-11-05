@@ -21,16 +21,26 @@ impl World {
         }
     }
 
-    /// The step of a battle frame nothing else names
-    /// ([`legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step`]).
+    /// The step of a battle frame nothing else names: the frame driver's law
+    /// over a measured cost, read on the last pass
+    /// ([`legaia_engine_battle_loop::frame_clock::FrameCostRing`]).
     pub fn ordinary_battle_frame_step(&self) -> u8 {
         if self.toggles.battle_party_cost_step {
-            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(
-                self.party.party_count,
-            )
+            self.battle.frame_cost_step
         } else {
             DEFAULT_BATTLE_FRAME_STEP
         }
+    }
+
+    /// One pass's push into the cost ring: the frame's measured cost, or what an
+    /// arm table's step leaves there, then the step that reads.
+    fn push_frame_cost(&mut self, arm_step: Option<u8>) {
+        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost};
+        let cost = arm_step.map_or_else(
+            || measured_frame_cost(self.party.party_count, self.battle_ctx.action_state),
+            cost_of_step,
+        );
+        self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
     }
 
     /// Seed a replay's battle frame step: `step` vsyncs a frame on every tick
@@ -171,6 +181,7 @@ impl World {
                 self.casting.module_phase,
             )
         });
+        self.push_frame_cost(measured);
         let ordinary = self.ordinary_battle_frame_step();
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
@@ -911,10 +922,9 @@ mod tests {
     fn a_full_partys_ordinary_frame_runs_step_three() {
         let mut w = World::new();
         w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.push_frame_cost(None);
         assert_eq!(w.ordinary_battle_frame_step(), 3);
-        w.party.party_count = 1;
-        assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
-        w.party.party_count = 3;
         w.toggles.battle_party_cost_step = false;
         assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
     }

@@ -154,7 +154,7 @@ impl RetailBattle {
         if self.replay_keeps_default_step() {
             legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP
         } else {
-            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(self.party_count)
+            legaia_engine_battle_loop::frame_clock::steady_battle_frame_step(self.party_count)
         }
     }
 
