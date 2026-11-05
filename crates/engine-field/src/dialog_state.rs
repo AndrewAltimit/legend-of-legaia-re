@@ -37,6 +37,12 @@ pub struct DialogState {
     /// `0x4C 0x51` NPC-run host hook can route the walk to the right actor
     /// (the engine's stand-in for retail's per-actor script context pointer).
     pub stepping_inline_npc: Option<u8>,
+    /// `true` while `World::step_inline_dialogue` steps the field VM over a
+    /// talk's record (the runner holds the talk out of `World::dialog.inline`
+    /// meanwhile, so that slot reads empty). The `4C 54` host reads it: under
+    /// the runner the op is retail's bare mode-switch poll, and the runner
+    /// pages and dismisses the box itself.
+    pub stepping_inline: bool,
     /// The placement slot `World::trigger_field_interact` most recently
     /// opened a dialogue for; consumed by `World::drive_inline_dialogue` so
     /// the inline runner knows which NPC its record belongs to.
@@ -86,6 +92,7 @@ impl DialogState {
             last_field_interact: None,
             active_inline_prologue: None,
             stepping_inline_npc: None,
+            stepping_inline: false,
             active_inline_slot: None,
             input_consumed: false,
             inline: None,
