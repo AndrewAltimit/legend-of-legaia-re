@@ -560,7 +560,14 @@ impl PlayWindowApp {
         if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate) {
             gate.steer(&mut self.session.host.world);
         }
+        if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+            && self.capture_gate_met()
+            && let Some(sc) = self.screenshot.as_ref()
+        {
+            sc.battle_drive_released.set(true);
+        }
         match self.screenshot.as_ref() {
+            Some(sc) if sc.battle_drive_released.get() => field_pad,
             Some(sc) if let Some(drive) = sc.battle_drive => {
                 // The drive's own start and press clock, in the headless
                 // seed's step order (`DriveClock::pad`): an odd window tick

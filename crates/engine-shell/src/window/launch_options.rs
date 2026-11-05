@@ -458,6 +458,10 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_capture::drive_clock::DriveClock`]), whatever the
     /// window's own tick count was.
     pub battle_drive_clock: std::cell::Cell<legaia_engine_capture::drive_clock::DriveClock>,
+    /// A `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate` film lets go of the drive once its
+    /// gate has opened: the drive's steer holds the yaw counter on the capture's
+    /// word for as long as the state lasts, and a film scores the frames after it.
+    pub battle_drive_released: std::cell::Cell<bool>,
     /// Ticks the drive's phase has held so far; the capture waits for
     /// [`legaia_engine_capture::battle_drive::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
@@ -1212,6 +1216,7 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
             battle_drive_clock: std::cell::Cell::new(Default::default()),
+            battle_drive_released: std::cell::Cell::new(false),
             battle_drive_held: std::cell::Cell::new(0),
             display_lag: std::env::var("LEGAIA_CAPTURE_DISPLAY_LAG")
                 .ok()
