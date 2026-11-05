@@ -158,7 +158,7 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             }
             legaia_art::ActionConstant::from_byte(b)
                 .filter(|c| c.is_art())
-                .and_then(|c| legaia_art::tables::art_name(character, c))
+                .and_then(|c| legaia_art::tables::art_display_name(character, c))
                 .map(str::to_string)
         })
     } else if cat == ActionCategory::Magic.as_byte() {
