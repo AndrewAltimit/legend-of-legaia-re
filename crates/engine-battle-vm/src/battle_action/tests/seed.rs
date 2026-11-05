@@ -209,6 +209,30 @@ fn action_seed_attack_routes_to_attack_face_and_emits_ui() {
     assert!(events.contains(&Event::Ui(7, 0)));
 }
 
+/// The seed's bar open tests the **target** (`sltiu v0,t2,0x3` at
+/// `0x801E2F2C`): a monster's strike on a member raises that member's bar and
+/// stamps `ctx[+0x18] = 7` / `ctx[+0x20] = member` for the Done band's close;
+/// a member's strike on a monster raises none and leaves `ctx[+0x18]` clear.
+#[test]
+fn action_seed_raises_the_bar_for_a_party_target_whoever_strikes() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.actors[4].active_target = 2;
+    ctx.action_ui_element = 6;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    assert!(host.take().contains(&Event::Ui(7, 0)));
+    assert_eq!(ctx.action_ui_element, 7);
+    assert_eq!(ctx.readout_bar_member, 2);
+
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 0);
+    host.actors[0].active_target = 4;
+    ctx.action_ui_element = 7;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    assert!(!host.take().contains(&Event::Ui(7, 0)));
+    assert_eq!(ctx.action_ui_element, 0, "cleared at 0x801E2D08");
+}
+
 /// The action-dispatch liveness gate: a DEAD acting actor never enters an
 /// action band. Retail holds the invariant upstream (`FUN_801DABA4`'s dead
 /// sweep zeroes the key, bumps `ctx[+0x25]` and can never pick the slot into

@@ -135,10 +135,18 @@ impl World {
         let state = self.battle_ctx.action_state;
         let up = (S::SpiritArtsEntry.as_byte()..=S::DoneCleanup.as_byte()).contains(&state)
             || (state == S::DoneFadeDown.as_byte() && self.battle_ctx.done_ui_torn_down == 0);
-        if !up {
+        // Past the teardown the pair rides its closing glide
+        // (`FUN_801D8DE8(0x0F, 1)` / `(0x52, 1)` at `0x801E61DC..0x801E61E8`)
+        // until the next seed's handle-list reset.
+        let closing = self
+            .battle
+            .closing_spirit_gauge()
+            .and_then(|c| c.spirit)
+            .filter(|_| !up && self.battle.command.is_none());
+        if !up && closing.is_none() {
             return None;
         }
-        let slot = self.battle_ctx.active_actor;
+        let slot = closing.unwrap_or(self.battle_ctx.active_actor);
         if usize::from(slot) >= usize::from(self.party.party_count.max(1)) {
             return None;
         }

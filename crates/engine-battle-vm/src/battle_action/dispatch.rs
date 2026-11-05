@@ -648,10 +648,11 @@ pub(super) fn queued_from_menu(ctx: &mut BattleActionCtx) -> StepOutcome {
 /// REF: FUN_801E6D84
 fn raise_target_banner<H: BattleActionHost + ?Sized>(
     host: &mut H,
+    ctx: &mut BattleActionCtx,
     actor_slot: u8,
     party_count: u8,
-    sole_monster: u8,
 ) {
+    let sole_monster = ctx.item_target_b;
     use crate::battle_cue_group::{BannerInputs, plan_target_banner};
     let Some(actor) = host.actor(actor_slot) else {
         return;
@@ -689,9 +690,11 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
     for id in plan.hud_elements {
         host.ui_element(id, 0);
     }
-    // `plan.ctx_18` is dropped: `ctx[+0x18]` has no `BattleActionCtx` field
-    // (the port's `+0x18` is the battle actor's `ui_element_id`, a different
-    // byte), and nothing in the engine reads a context HUD-state byte.
+    // The party-wide arm's `ctx[+0x18] = 6`: the Done band's teardown closes
+    // the roster panels it raised.
+    if let Some(v) = plan.ctx_18 {
+        ctx.action_ui_element = v;
+    }
 }
 
 /// Retail's class-byte discriminator inside the action-seed's **Magic** arm
@@ -786,10 +789,43 @@ fn item_seed_band<H: BattleActionHost + ?Sized>(
     ActionState::MagicCastBegin
 }
 
-/// The HUD element a **party** attack raises at the action seed
-/// (`li a0,0x7` / `jal 0x801d8de8` with `a1 = 0` at
+/// The readout bar (placement record 7) the action seed raises for a party
+/// target (`li a0,0x7` / `jal 0x801d8de8` with `a1 = 0` at
 /// `0x801E2F34..0x801E2F40`) and the Done band tears down again.
 pub const ATTACK_UI_ELEMENT: u8 = 7;
+
+/// The seed's readout-bar open, shared by the Attack arm and the Magic arm's
+/// keep-`0x28` route (`0x801E2F24..0x801E2F50`):
+///
+/// ```text
+/// 801e2f24  lw    t2,0x20(sp)      ; the action's target +0x1DD
+/// 801e2f2c  sltiu v0,t2,0x3        ; a party seat?
+/// 801e2f30  beq   v0,zero,0x801e3028
+/// 801e2f40  jal   0x801d8de8       ; FUN_801D8DE8(7, 0)
+/// 801e2f44  _sb   t2,0xf(s5)       ;   ctx[+0x20] = target
+/// 801e2f50  _sb   v0,0x7(s5)       ; ctx[+0x18] = 7
+/// ```
+///
+/// The test is on the **target**, not the actor: a monster's strike on a
+/// member raises that member's bar, a party member's strike on a monster
+/// raises none.
+pub(super) fn raise_target_readout_bar<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    actor_slot: u8,
+    party_count: u8,
+) {
+    let target = host.actor(actor_slot).map_or(8, |a| a.active_target);
+    if target >= party_count {
+        return;
+    }
+    if let Some(actor) = host.actor_mut(actor_slot) {
+        actor.ui_element_id = ATTACK_UI_ELEMENT;
+    }
+    host.ui_element(ATTACK_UI_ELEMENT, 0);
+    ctx.readout_bar_member = target;
+    ctx.action_ui_element = ATTACK_UI_ELEMENT;
+}
 
 /// The **Spirit** arm's twin of [`item_seed_band`] / [`magic_seed_band`]
 /// (`0x801E2F54..0x801E3028`).
@@ -904,6 +940,12 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // starts with the level-up banner element cleared, so the extended Done
     // tail belongs to the action that actually raised a banner.
     ctx.levelup_banner_element = 0;
+    // `sb zero,0x8(s5)` / `sb zero,0x7(s5)` at `0x801E2D00` / `0x801E2D08`:
+    // the Spirit latch `ctx[+0x19]` and the action's own HUD element
+    // `ctx[+0x18]` start every action at `0`, so the Done band's teardown
+    // closes only what this action opened.
+    ctx.spirit_action_count = 0;
+    ctx.action_ui_element = 0;
     // `jal 0x80056798` / `sb v0,0xd(a0)` at `0x801E2D04..0x801E2D30` - the
     // per-action camera-angle variant, rolled `rand() % 4` before the
     // category dispatch. Each category arm below may narrow it further.
@@ -939,7 +981,7 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // the same `jal 0x801e6d84` (`overlay_battle_action_801e295c.txt`
     // `0x801E3028`) before jumping to the epilogue, so the plan is raised here
     // rather than per-band.
-    raise_target_banner(host, actor_slot, party_count, ctx.item_target_b);
+    raise_target_banner(host, ctx, actor_slot, party_count);
 
     // Dispatch into the appropriate band.
     let next = match category {
@@ -951,20 +993,18 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
             ActionState::DoneCleanup
         }
         ActionCategory::Item => item_seed_band(host, ctx, actor_slot),
-        ActionCategory::Magic => magic_seed_band(host, ctx, actor_slot),
-        ActionCategory::Attack => {
-            // Set ctx combo timer and emit weapon-slash UI for party.
-            ctx.combo_timer = 2;
-            if actor_slot < party_count {
-                if let Some(actor) = host.actor_mut(actor_slot) {
-                    actor.ui_element_id = ATTACK_UI_ELEMENT;
-                }
-                host.ui_element(ATTACK_UI_ELEMENT, 0);
-                // `li v0,0x7` / `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`:
-                // the id is stamped on the **context**, which is where the
-                // Done band's teardown reads it back from.
-                ctx.action_ui_element = ATTACK_UI_ELEMENT;
+        ActionCategory::Magic => {
+            let next = magic_seed_band(host, ctx, actor_slot);
+            // The keep-`0x28` route falls into the Attack arm's bar open at
+            // `0x801E2F24`; the `0x3C` route jumps past it (`0x801E2F04`).
+            if next == ActionState::MagicCastBegin {
+                raise_target_readout_bar(host, ctx, actor_slot, party_count);
             }
+            next
+        }
+        ActionCategory::Attack => {
+            ctx.combo_timer = 2;
+            raise_target_readout_bar(host, ctx, actor_slot, party_count);
             ActionState::AttackFace
         }
         ActionCategory::Spirit => spirit_seed_band(host, ctx),

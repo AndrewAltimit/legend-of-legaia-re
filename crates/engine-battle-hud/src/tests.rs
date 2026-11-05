@@ -603,6 +603,57 @@ fn the_done_teardown_slides_the_target_plaque_out_and_drops_it() {
     assert!(battle_target_plaque(&w).is_some());
 }
 
+/// The teardown's other closes (`0x801E6178..0x801E6204`): a monster's strike
+/// on a member sends that member's bar and its own plaque out on one closing
+/// glide, and both keep sliding through the next actor's `0x0A` until they
+/// land off screen (`chitei2_kemaro_v2_pre_lava_breath` holds the pair at
+/// fifteen of sixteen there). The next seed's handle-list reset drops them.
+#[test]
+fn the_done_teardown_slides_the_plaque_and_bar_out_into_the_next_hold() {
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    use legaia_engine_battle_vm::battle_cue_group::HUD_CASTER_BANNER;
+    let mut w = battle_world(1);
+    arm_action(&mut w, 1, ActionCategory::Attack.as_byte(), 0);
+    w.battle_ctx.readout_bar_member = 0;
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    w.battle.land_battle_hud_glides();
+    assert_eq!(battle_readout_bar_slot(&w), Some(0));
+
+    // `FUN_801D8DE8(7, 1)` then `(0x44, 1)`, both on the teardown's pass.
+    w.battle_ctx.action_state = 0x51;
+    w.note_action_plate_raise(7, 1);
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 1);
+    assert_eq!(battle_readout_bar_slot(&w), Some(0));
+    assert_eq!(battle_active_actor(&w).map(|(s, _)| s), Some(1));
+    assert_eq!(
+        (battle_readout_bar_dy(&w), battle_action_plaque_dy(&w)),
+        (0, 0)
+    );
+
+    // The next actor's `0x0A`: the HUD is idle, the glides fly on.
+    w.battle_ctx.action_state = 0x0A;
+    w.battle_ctx.active_actor = 0;
+    for _ in 0..8 {
+        w.battle.step_action_plate_glides();
+    }
+    assert_eq!(battle_readout_bar_slot(&w), Some(0));
+    assert_eq!(battle_active_actor(&w).map(|(s, _)| s), Some(1));
+    // Record 7: `y = 192` back to `234`; record `0x44`: `14` back to `-24`.
+    assert_eq!(battle_readout_bar_dy(&w), 21);
+    assert_eq!(battle_action_plaque_dy(&w), -19);
+    for _ in 0..8 {
+        w.battle.step_action_plate_glides();
+    }
+    assert_eq!(battle_readout_bar_slot(&w), None, "landed off screen");
+    assert_eq!(battle_active_actor(&w), None);
+
+    // A seed mid-glide wipes them.
+    w.battle.action_hud_close.as_mut().unwrap().glide.elapsed = 3;
+    w.battle_ctx.action_state = 0x0C;
+    w.note_action_plate_raise(HUD_CASTER_BANNER, 0);
+    assert!(w.battle.action_hud_close.is_none());
+}
+
 #[test]
 fn an_art_names_itself_once_the_strike_cursor_passes_its_constant() {
     use legaia_engine_battle_vm::battle_action::ActionCategory;

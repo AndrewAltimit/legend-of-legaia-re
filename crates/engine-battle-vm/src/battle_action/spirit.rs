@@ -70,6 +70,8 @@ pub(super) fn spirit_pre_arm<H: BattleActionHost + ?Sized>(
         }
         if slot < host.party_count() {
             host.ui_element(7, 0);
+            // `sb v1,0xf(s5)` at `0x801E3DB8`: the bar's member is the actor.
+            ctx.readout_bar_member = slot;
         }
     }
     host.ui_element(0x4C, 0);
@@ -130,6 +132,8 @@ pub(super) fn spirit_fire<H: BattleActionHost + ?Sized>(
     let class = host.actor(slot).map(|a| a.cast_class).unwrap_or(0);
     if class == GAUGE_EXTEND_CLASS {
         gauge_extend_fire(host, ctx, slot);
+    } else {
+        spirit_fire_target_plates(host, ctx, slot);
     }
     // The Point Card's selector comes from its id, not its descriptor
     // (`0x801E4080..0x801E40C0`).
@@ -144,6 +148,40 @@ pub(super) fn spirit_fire<H: BattleActionHost + ?Sized>(
     }
     ctx.frame_timer = 0x20;
     transition(ctx, ActionState::SpiritFireDamage)
+}
+
+/// The `0x3E` arm's plates for its target, every class but the gauge
+/// extension (`0x801E401C..0x801E407C`):
+///
+/// ```text
+/// 801e401c  lw    t2,0x20(sp)      ; the action's target +0x1DD
+/// 801e4024  sltiu v0,t2,0x3        ; a party seat:
+/// 801e4038  jal   0x801d8de8       ;   FUN_801D8DE8(7, 0)
+/// 801e403c  _sb   t2,0xf(s5)       ;   ctx[+0x20] = target
+/// 801e4044  sb    v0,0x7(s5)       ;   ctx[+0x18] = 7
+/// 801e404c  li    v0,0x8           ; the party-wide code:
+/// 801e4058  jal   0x801d8de8       ;   FUN_801D8DE8(6 / 0x4E / 0x4F, 0)
+/// 801e407c  sb    v0,0x7(s5)       ;   ctx[+0x18] = 6
+/// ```
+///
+/// What `ctx[+0x18]` ends on is what the Done band's teardown sends out.
+fn spirit_fire_target_plates<H: BattleActionHost + ?Sized>(
+    host: &mut H,
+    ctx: &mut BattleActionCtx,
+    slot: u8,
+) {
+    let target = host.actor(slot).map_or(0, |a| a.active_target);
+    if target < host.party_count() {
+        host.ui_element(super::dispatch::ATTACK_UI_ELEMENT, 0);
+        ctx.readout_bar_member = target;
+        ctx.action_ui_element = super::dispatch::ATTACK_UI_ELEMENT;
+    }
+    if target == crate::battle_cue_group::TARGET_PARTY_WIDE {
+        host.ui_element(super::done::DONE_PAIRED_ELEMENT, 0);
+        host.ui_element(super::done::DONE_PAIRED_ELEMENT_A, 0);
+        host.ui_element(super::done::DONE_PAIRED_ELEMENT_B, 0);
+        ctx.action_ui_element = super::done::DONE_PAIRED_ELEMENT;
+    }
 }
 
 /// The committed effect class whose `0x3E` arm this is: `5`, the item-effect

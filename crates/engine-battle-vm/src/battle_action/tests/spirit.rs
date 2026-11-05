@@ -183,16 +183,22 @@ fn the_done_band_pays_the_accumulator_into_the_spirit_gauge() {
     assert_eq!(host.actors[0].spirit_gauge, 100);
 }
 
-/// Nothing in the dispatcher clears `ctx[+0x19]`, so it is a per-battle latch
-/// and a second Spirit action counts on top of the first.
+/// The seed clears `ctx[+0x19]` (`sb zero,0x8(s5)` at `0x801E2D00`) before
+/// the Spirit arm bumps it, so each Spirit action counts once and a later
+/// action's teardown sends no AP pair out.
 #[test]
-fn spirit_latch_accumulates_across_actions() {
+fn spirit_latch_counts_this_action_alone() {
     let (mut ctx, mut host) = fresh(ActionCategory::Spirit, 1);
-    for n in 1..=3u8 {
+    for _ in 0..3 {
         ctx.action_state = ActionState::ActionSeed.as_byte();
         step(&mut host, &mut ctx);
-        assert_eq!(ctx.spirit_action_count, n);
+        assert_eq!(ctx.spirit_action_count, 1);
     }
+    host.actors[1].action_category = ActionCategory::Attack as u8;
+    ctx.active_actor = 1;
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.spirit_action_count, 0);
 }
 
 /// State `0x3E`'s class-5 arm (`0x801E3E80..0x801E4018`): the gauge-extension

@@ -536,7 +536,8 @@ element:
 | `v0_1_battle_command_menu` (`0x1E`) | `Begin`, `Run`, one panel at `(114, 168)` |
 | `v0_1_battle_command_submenu` (`0x28`) | four ring chips, `Begin` at `(16, 12)`, plaque at `(68, 12)`, bar at `(16, 192)`, parked panel at `y = 234`, parked `Run` at `x = 328`, AP plate at `(208, 172)` |
 | `party_battle_gobu_gobu` / `terra_party_battle` | three / two panels |
-| `evil_medallion_rage_battle` (action `0x0A`) | nothing |
+| `evil_medallion_rage_battle` (action `0x0A`, a round's first actor) | nothing |
+| `chitei2_kemaro_v2_pre_lava_breath` (action `0x0A`, after a monster's strike on Noa) | bar, actor plaque and combo cluster, each on its closing glide at elapsed `15` of `16` |
 
 #### The round prompt opens on a glide
 
@@ -783,6 +784,31 @@ it out to seat A. A `0x51` capture taken before the teardown still shows the
 cluster at rest (`noa_levelup_fight_pre`); the continuation band `0x52` shows
 none (`rim_elm_gimard_seru_capture_after`). Port:
 `BattleHud::close_combo_on_fade_down`, keyed on the action SM's teardown latch.
+
+**Every element the teardown re-spawns leaves on a glide.** Mode `1` places a
+record at seat B and glides it to seat A, so each `FUN_801D8DE8(id, 1)` of the
+`0x51` teardown (`0x801E6178..0x801E6204`) is a slide out, not an unload: the
+action's own element `ctx[+0x18]` (record 7, the readout bar, for the member in
+`ctx[+0x20]`; or record 6 with `0x4E` / `0x4F`, the roster panels), the
+level-up banner `ctx[+0x26]`, the Spirit pair `0x0F` / `0x52` under the
+`ctx[+0x19]` latch, and the actor plaque `0x44` for every category but Run.
+All of them start on the one pass and run the same sixteen vsyncs, which
+outlast the band: the next actor's `0x0A` still shows them low on the screen.
+The `*_pre_*` monster-cast states record the closes of what came before
+them - Kemaro's strike on Noa (bar, plaque, cluster), a party-wide item (the
+three panels and the plaque), a Spirit turn (the AP bar and plate and the
+plaque). The next action's seed wipes the list first (`FUN_801D99BC` at
+`0x801E2CF4`) and clears `ctx[+0x18]` and `ctx[+0x19]` (`0x801E2D00` /
+`0x801E2D08`), so the closes are per action. `ctx[+0x18]` is written where
+a bar or the panels open: `7` by the seed's Attack arm and the Magic arm's
+keep-`0x28` route for a party **target** (`sltiu v0,t2,0x3` at `0x801E2F2C`,
+whoever the actor is) and by the `0x3E` band (`0x801E4044`), `6` by the `0x3E`
+band for the party-wide code (`0x801E407C`) and by `FUN_801E6D84`'s
+party-wide arm for a monster caster. Port:
+`BattleState::action_hud_close`, read by the plaque, bar, panel and Spirit
+predicates through `battle_hud::action_hud_closing`. The port's glide stepper
+leaves the closes out of its return value, so a round prompt opening under
+the last action's closes is not held for them as retail's menu SM is.
 
 **The target plaque leaves the same way.** The wipe takes record 81 with the
 rest of the list, and the sweep re-spawns it with mode `1` only for a monster

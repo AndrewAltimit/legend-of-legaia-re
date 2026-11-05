@@ -136,6 +136,9 @@ impl BattleState {
         {
             g.elapsed = g.total;
         }
+        if let Some(c) = self.action_hud_close.as_mut() {
+            c.glide.elapsed = c.glide.total;
+        }
         self.widget_glide_return = 0;
         self.widget_glide_latch = 0;
     }
@@ -201,6 +204,15 @@ impl BattleState {
             if !g.settled() {
                 ret = g.total - g.elapsed + 1;
             }
+        }
+        // The teardown's closing launches walk on the same pass. Retail's
+        // stepper counts them in its return as well; the port leaves them
+        // out of it, so a round prompt that opens under the last action's
+        // closing glides is not held back for them.
+        if let Some(c) = self.action_hud_close.as_mut()
+            && !c.glide.settled()
+        {
+            c.glide.step(step);
         }
         self.widget_glide_return = ret;
     }
@@ -344,10 +356,23 @@ impl BattleState {
     /// `FUN_801D9BBC`).
     pub fn spirit_gauge_glide_offsets(&self) -> (i32, i32) {
         use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        // The teardown's closing launch sends both back the way they came
+        // (`FUN_801D8DE8(0x0F, 1)` / `(0x52, 1)` at `0x801E61DC..0x801E61E8`).
+        if let Some(c) = self.closing_spirit_gauge() {
+            return (c.offset(234, 192), c.offset(328, 208));
+        }
         let g = self.spirit_gauge_glide.as_ref();
         (
             LogLaunch::seat_dy(g, 234, 192),
             LogLaunch::seat_dy(g, 328, 208),
         )
+    }
+
+    /// The teardown's closing launch while it carries a Spirit actor's AP
+    /// bar and plate out ([`crate::battle_state::ActionHudClose::spirit`]).
+    pub fn closing_spirit_gauge(&self) -> Option<&crate::battle_state::ActionHudClose> {
+        self.action_hud_close
+            .as_ref()
+            .filter(|c| c.spirit.is_some() && c.in_flight().is_some())
     }
 }
