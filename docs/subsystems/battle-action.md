@@ -542,7 +542,9 @@ If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, cla
 
 #### State `0x70` - Magic-capture - phase 2
 
-Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] = 1` in the call's delay slot. Runs `func_0x801F2160` (the [magic effect-class dispatcher](battle-action-helpers.md#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](battle-action-helpers.md#battle-helper-functions)). Ported as `magic::magic_capture_phase2` over `BattleActionHost::capture_stager_tick`.
+Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] = 1` in the call's delay slot. Runs `func_0x801F2160` (the [magic effect-class dispatcher](battle-action-helpers.md#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](battle-action-helpers.md#battle-helper-functions)).
+
+Ported as `magic::magic_capture_phase2` over `BattleActionHost::capture_stager_tick`; the pin reaches the host first (`BattleActionHost::camera_variant_pinned`), since a walk-in module frames case 6 inside the same tick ([cast-module.md](cast-module.md#capture-walk-in-bodies)).
 
 **Next:** `0x71`.
 

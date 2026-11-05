@@ -21,6 +21,8 @@ mod target_cursor;
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Event {
     Pose(u8, Pose),
+    /// `camera_variant_pinned(style)`, with the stager ticks entered so far.
+    VariantPinned(u8, u32),
     Ui(u8, u8),
     PartySetup(u8),
     MonsterSetup(u8),
@@ -191,6 +193,10 @@ impl BattleActionHost for RecHost {
     }
     fn load_capture_archive(&mut self, idx: u8) {
         self.record(Event::LoadCapture(idx));
+    }
+    fn camera_variant_pinned(&mut self, style: u8) {
+        let ticks = *self.capture_ticks.borrow();
+        self.record(Event::VariantPinned(style, ticks));
     }
     fn capture_stager_tick(&mut self) -> bool {
         *self.capture_ticks.borrow_mut() += 1;

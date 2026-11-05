@@ -204,6 +204,23 @@ fn capture_phase2_pins_the_camera_variant() {
     assert_eq!(ctx.camera_variant, 0);
 }
 
+/// The pin reaches the host ahead of the module tick it precedes: a walk-in
+/// body's case 6 on that tick (PROT 0952's arm 0, `jal 0x801D5854` at
+/// `0x801F72E8`) frames on style `1` already.
+#[test]
+fn capture_phase2_hands_the_pin_to_the_host_before_the_module_tick() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::MagicCapturePhase2.as_byte();
+    ctx.camera_variant = 0;
+    *host.capture_busy_frames.borrow_mut() = 1;
+    step(&mut host, &mut ctx);
+    assert!(
+        host.take()
+            .contains(&Event::VariantPinned(CAPTURE_CAMERA_VARIANT, 0)),
+        "pinned before the first stager tick"
+    );
+}
+
 /// The 75% duck is **gated** on `ctx[+0x287]` (`lbu v0,0x287(v0)` /
 /// `beq v0,zero,0x801E50BC` at `0x801E5058`), the same gate state `0x6F`
 /// runs. The port used to duck unconditionally.

@@ -74,11 +74,24 @@ impl BattleCamera {
     /// re-arms it every pass, so the tween chases the walking creature over
     /// case 6's own `0xC` frames.
     ///
+    /// `style` is `ctx[+0xD]` as the call reads it. The capture band's `0x70`
+    /// pins it to `1` in the delay slot of its module call (`0x801E50CC`), so
+    /// the walk-in's first case 6 (PROT 0952's arm 0 at `0x801F72E8`) is
+    /// already half a turn round. The camera's own copy of the byte is the
+    /// one its last step read, a pass behind that pin.
+    ///
     /// REF: FUN_801D5854 (case 6)
-    pub fn arm_module_follow(&mut self, actor: BattleCamActor, yaw_base: i32, depth_raw: i32) {
+    pub fn arm_module_follow(
+        &mut self,
+        actor: BattleCamActor,
+        yaw_base: i32,
+        depth_raw: i32,
+        style: u8,
+    ) {
         let f = ActionFraming {
             yaw_base,
             depth_raw,
+            style,
             ..self.live_action_framing()
         };
         let target = action_framing(actor, f);

@@ -3611,7 +3611,17 @@ both seats (`+ 0x800` onto the caster, the victim back onto it) and stores phase
 0951 and 0952 also store the yaw counter `ctx[+0x6DA] = 0x200` on arm 0. The port's
 approach leg holds the module while the caster walks, so it makes these
 calls on the body's behalf (`capture_approach_follows`,
-`capture_approach_yaw_base`) and runs the walk on phase `1`. PROT 0941's Steal
+`capture_approach_yaw_base`) and runs the walk on phase `1`.
+
+The walk's case 6 frames half a turn round from its first pass. `0x70` stores
+style `1` into `ctx[+0xD]` in the delay slot of its module call (`0x801E50CC`),
+so arm 0's `FUN_801D5854` reads it the same pass:
+`battle_tunnelc_xain_bloody_horns_mid_cast` holds the tween endpoint yaw `3658`,
+`0x200 + 2 - 3000 + 0x800`. The port's camera keeps its own copy of the byte from
+its last step, a pass behind the pin, so the step hands the pin to the host
+(`BattleActionHost::camera_variant_pinned`) and the leg passes the live byte to
+`BattleCamera::arm_module_follow`; read from the camera, the first pass framed
+the unturned side. PROT 0941's Steal
 frames on other arms and keeps its own director.
 
 The arrival is not a stop. The pass that reads the range metric at zero runs

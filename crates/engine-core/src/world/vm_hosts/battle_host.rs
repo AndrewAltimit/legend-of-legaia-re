@@ -390,6 +390,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             .pending_battle_events
             .push(BattleEvent::CameraFrameHeight { height });
     }
+    fn camera_variant_pinned(&mut self, style: u8) {
+        // The step's write-back stores the same byte; the module tick inside
+        // this pass reads it first.
+        self.world.battle_ctx.camera_variant = style;
+    }
     fn party_setup(&mut self, actor_slot: u8) {
         self.world
             .pending_battle_events

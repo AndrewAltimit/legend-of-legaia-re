@@ -364,6 +364,7 @@ impl World {
             }
         }
         // `0x70` frames nothing of its own: the camera is the module's.
+        let style = self.battle_ctx.camera_variant;
         if let Some(cam) = self.battle.camera.as_mut() {
             if run.capture_drift_first || run.capture_pose_set.is_some() || run.capture_focus_z != 0
             {
@@ -415,7 +416,7 @@ impl World {
                     ],
                     height: None,
                 };
-                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
+                cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, style);
             }
             if run.camera_end_frame {
                 cam.arm_module_end_frame();
@@ -686,6 +687,7 @@ impl World {
                         // phase `1`.
                         self.casting.module_phase = 1;
                         let seats = self.module_cam_seats(run.slot, victim);
+                        let style = self.battle_ctx.camera_variant;
                         if let Some(cam) = self.battle.camera.as_mut() {
                             let yaw_base = cam.action_yaw_base();
                             let actor =
@@ -698,7 +700,7 @@ impl World {
                                     ],
                                     height: None,
                                 };
-                            cam.arm_module_follow(actor, yaw_base, seats.depth_raw);
+                            cam.arm_module_follow(actor, yaw_base, seats.depth_raw, style);
                         }
                     }
                 }

@@ -235,6 +235,7 @@ impl World {
                 cam.nudge_module_tr_x(n.tr_x);
             }
         }
+        let style = self.battle_ctx.camera_variant;
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
             && let Some(cam) = self.battle.camera.as_mut()
         {
@@ -247,7 +248,7 @@ impl World {
                 ],
                 height: None,
             };
-            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
+            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, style);
         }
         if run.as_ref().is_some_and(|r| r.camera_end_frame)
             && let Some(cam) = self.battle.camera.as_mut()
