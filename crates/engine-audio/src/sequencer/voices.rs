@@ -382,11 +382,7 @@ impl Sequencer {
         self.silent_at = (self.silent_at + 1) % SILENT_RING_LEN;
         let mut silent = 0;
         for (v, voice) in spu.voices.iter().enumerate() {
-            self.voice_env_next[v] = if voice.is_off() {
-                0
-            } else {
-                voice.adsr.level as u16
-            };
+            self.voice_env_next[v] = if voice.is_off() { 0 } else { voice.adsr.level };
             if self.voice_env[v] == 0 {
                 silent |= 1 << v;
             }

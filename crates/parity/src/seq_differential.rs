@@ -85,7 +85,7 @@ fn view_of(spu: &Spu, before: &[(u32, Phase); NUM_VOICES]) -> VsyncView {
             pitch: v.pitch,
             vol: (v.vol_left, v.vol_right),
             adsr: v.adsr_cfg.raw,
-            level: v.adsr.level as u16,
+            level: v.adsr.level,
             releasing: v.adsr.phase == Phase::Release,
             reverb: v.reverb_send,
         };
@@ -249,7 +249,7 @@ impl RetailSide {
         let mem = &mut self.cpu.mem;
         for (i, voice) in self.spu.voices.iter().enumerate() {
             let level = if voice.is_off() { 0 } else { voice.adsr.level };
-            mem.wr16(MIRROR + i as u32 * 16 + 0xC, level as u16);
+            mem.wr16(MIRROR + i as u32 * 16 + 0xC, level);
         }
         let mut view = view_of(&self.spu, &before);
         view.released = released;
