@@ -428,10 +428,11 @@ impl BattleCamera {
                 }
                 // Every component on its endpoint: the walker task ends, and
                 // a drift after it survives.
-                if angles_landed && lanes_landed {
-                    if let Some(m) = self.module_glide.as_mut() {
-                        m.steps_left = Some(0);
-                    }
+                if angles_landed
+                    && lanes_landed
+                    && let Some(m) = self.module_glide.as_mut()
+                {
+                    m.steps_left = Some(0);
                 }
             }
             None => self.step_components(&g),
