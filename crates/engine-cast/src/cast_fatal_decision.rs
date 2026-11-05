@@ -393,6 +393,9 @@ pub struct SeatRender {
 /// What one pass of the body did.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct FatalDecisionPass {
+    /// The pass framed through `FUN_801D5854(caster, 8)`: arm 11's pass
+    /// (`0x801F8438`) and every pass of arm 12 (`0x801F844C`).
+    pub end_frame: bool,
     /// The body returned `0`.
     pub done: bool,
     /// The `FUN_801D829C` shot the arm armed.
@@ -718,8 +721,10 @@ pub fn fatal_decision_tick(
                 p.victim_facing = Some(heading(view.caster, v).wrapping_add(0x800) & 0xFFF);
             }
             advance(ctx);
+            p.end_frame = true;
         }
         12 => {
+            p.end_frame = true;
             if st.countdown > 0 && gated(st) {
                 return p;
             }

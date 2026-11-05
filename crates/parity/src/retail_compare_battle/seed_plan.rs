@@ -144,8 +144,8 @@ impl RetailBattle {
             .map(|from| (step, self.action_state, Some(from)))
     }
 
-    /// The step a replay's ordinary frames run on. A replayed cast and a monster's
-    /// capture-band walk-in gate on a word of the action, standing on a camera that
+    /// The step a replay's ordinary frames run on. A replayed cast, a monster's
+    /// capture-band walk-in and a Done-band hold gate on a word of the action, standing on a camera that
     /// starts from the replay's own prompt rather than the earlier actor's shot, so
     /// they read the framing by how long the walk has had, and the capture holds no
     /// word for the passes before its history. They keep the default step
@@ -160,8 +160,10 @@ impl RetailBattle {
 
     /// See [`Self::child_ordinary_step`].
     pub fn replay_keeps_default_step(&self) -> bool {
-        matches!(self.span_gate, SpanGate::CaptureFade { .. })
-            || matches!(self.seed_plan(), SeedPlan::Cast)
+        matches!(
+            self.span_gate,
+            SpanGate::CaptureFade { .. } | SpanGate::DoneHold { .. }
+        ) || matches!(self.seed_plan(), SeedPlan::Cast)
     }
 
     /// The slot-1 backdrop angle the **displayed** frame was drawn at. The

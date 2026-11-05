@@ -89,6 +89,7 @@ impl World {
             busy: !pass.done,
             tick_ported: true,
             camera_shot: pass.shot,
+            camera_end_frame: pass.end_frame,
             ..Default::default()
         }
     }

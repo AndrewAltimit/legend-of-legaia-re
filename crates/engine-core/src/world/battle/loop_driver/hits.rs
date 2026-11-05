@@ -645,7 +645,22 @@ impl World {
         if let Some(word) = self.battle.capture_hit_rand.pop_front() {
             self.rng_state = word;
         }
-        let block = self.roll_block(attacker, target, power_byte);
+        // A capture's seed names this hit as one retail's string landed, and the
+        // block roll's word is the replay's, not retail's.
+        let seeded_landing = self
+            .battle
+            .forced_melee_total
+            .is_some_and(|(s, _)| s == target)
+            && self
+                .battle
+                .forced_melee_hits
+                .front()
+                .is_some_and(|&(s, _)| s == target);
+        let block = if seeded_landing {
+            MeleeBlock::default()
+        } else {
+            self.roll_block(attacker, target, power_byte)
+        };
         // A block the roll granted spends the approach terms on the spot
         // (`0x801EC888`), so a verdict the juggle window or the block breaker
         // then overturns rolls its damage without them. Otherwise the damage

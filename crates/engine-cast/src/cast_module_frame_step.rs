@@ -166,6 +166,23 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (0x58, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
     // rolling_flare
     (0x5A, &[(3, 4), (4, 4)]),
+    // fatal_decision: the wheel's arms draw next to nothing, and a frame costs
+    // under a field
+    (
+        0x5F,
+        &[
+            (1, 3),
+            (2, 2),
+            (4, 3),
+            (5, 3),
+            (6, 1),
+            (7, 1),
+            (8, 3),
+            (9, 3),
+            (10, 3),
+            (12, 2),
+        ],
+    ),
     // scythe_wind
     (0x5B, &[(0, 3), (1, 3), (2, 3), (3, 4), (4, 4), (5, 3)]),
     // terror_scream
