@@ -1207,7 +1207,7 @@ Small self-contained routines the SM and its round driver call over the 8-slot b
 | `FUN_801D8D00` | `cycle_attack_target` / `TargetCycle` |
 | `FUN_801DB8B4` | `first_live_monster_slot` |
 | `FUN_801DBA04` / `FUN_801DB81C` | `first_selectable_target` / `next_selectable_actor` |
-| `FUN_80019B28` | `bearing_12bit` |
+| `FUN_80019B28` | `engine-system::trig::bearing12` (live; `bearing_12bit` is the table-parameterised reference) |
 | `FUN_801DB124` | `redirect_dead_target` / `RedirectQuery` |
 
 **`FUN_801DB9C4` - pool `+0x8` flag-word scrub.** AND-masks the `+0x8` flag word of pool slots `0..=6` with `0x7CFFFFFF` (clears bit 31 and bits 25 / 24). Its only static caller in the battle overlay is the pose driver's out-of-range guard (`jal` at `0x801D58E8`). State `0x5A`'s per-actor anim-flag clear is a separate inline mask (`lui a1,0x7cff` at `0x801E6478`, paired with `+0x21F = 0`); `FUN_801E295C` contains no call to `FUN_801DB9C4`.
@@ -1231,7 +1231,9 @@ These two are the **engine's** enemy target cursor. `engine-battle`'s `TargetPic
 
 The `!= 4` term excludes the AI companion seat, the same `== 4` test the auto-fight block in `FUN_801EED1C` uses. `DAT_8007BD10` is the per-slot roster id (`01 02 03` = Vahn / Noa / Gala) that the arts preseed indexes to reach a character record (`byte - 1` is the record slot, `0x801DA37C`). It is not an action-state byte: the scans exclude a seat the player does not command, not one that has finished commanding.
 
-**`FUN_80019B28` - 12-bit bearing (atan2).** Folds the displacement `(p2 - p1)` into a quadrant by sign, divides the shorter leg into the longer (`(min << 11) / max`), indexes the retail arctan LUT at `0x8006F4C8`, and adds the per-octant `0x000/0x400/0x800/0xC00` base to reassemble a clockwise 12-bit heading (`0x000` = `-Z`, `0x400` = `+X`). The port's LUT is caller-supplied Sony data; no table bytes are embedded. The motion VM keeps a separate `f32` approximation for its face-target ramp.
+**`FUN_80019B28` - 12-bit bearing (atan2).** Folds the displacement `(p2 - p1)` into a quadrant by sign, divides the shorter leg into the longer (`(min << 11) / max`), indexes the retail arctan LUT at `0x8006F4C8`, and adds the per-octant `0x000/0x400/0x800/0xC00` base to reassemble a 12-bit heading (`0x000` = `+Z`, `0x400` = `+X`, `0x800` = `-Z`, `0xC00` = `-X`, as `trig::bearing12` documents and [motion-vm](motion-vm.md) reads it; the actor heading space has `0` = `-Z`, a half-turn away).
+
+The table is `trunc(atan(i / 2048) * 4096 / 2pi)`, and the port builds it by that formula (`engine-system::trig::atan_lut`), so no table bytes are embedded; rounding instead of truncating moves 1037 of the 2049 entries up by one. Every engine caller - the battle facings and approach, the separation pair, the motion VM's face-target ramp and the field NPC facings - goes through the one integer form `trig::bearing12`, which the retail-exec differential holds against `FUN_80019B28` run off the disc ([retail-kernel-differential](../tooling/retail-kernel-differential.md)).
 
 **`FUN_801DB124` - dead-target redirect roll.** When a queued action's chosen target (`actor[+0x1DD]`) is dead and the category qualifies, it re-rolls a **living** slot on the same side (`rand % party_count`, or `rand % monster_count + 3`), retrying until alive.
 
