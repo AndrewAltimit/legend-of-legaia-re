@@ -821,6 +821,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
         951 => body == Some(super::SCYTHE_WIND_BODY),
+        952 => body == Some(super::BLOODY_HORNS_BODY),
         955 => matches!(
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)

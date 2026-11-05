@@ -179,12 +179,12 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: true,
         arms: Some(&[2]),
     },
-    // PROT 0952 `0x5C` (`0x801F7118`): walk, then `9` at `0x801F7494` and
-    // `0x0A` at `0x801F7538`.
+    // PROT 0952 `0x5C` (`0x801F7118`): the walk; `9` and `0x0A` are its
+    // director's, on arms 2 and 3 (`0x801F7494`, `0x801F7538`).
     CasterStageRow {
         prot_entry: 952,
         action_ids: &[0x5C],
-        rule: CasterClipRule::Fixed(&[0x09, 0x0A]),
+        rule: CasterClipRule::Fixed(&[]),
         approach: true,
         arms: None,
     },

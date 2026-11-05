@@ -93,6 +93,9 @@ pub struct ModuleCamSeats {
     /// The caster's queued action id `+0x1DF` - which choreography a
     /// two-spell module runs (PROT 0946's Call Wave / Big Wave).
     pub action: u8,
+    /// The victim's light flinch slot `+0x1EF`, which an arm can stage on it
+    /// (PROT 0952 `0x5C`'s arm 3).
+    pub victim_flinch: u8,
     /// `ctx[+0x6D0]`, the framing depth a capture shot can scale.
     pub depth_raw: i32,
     /// The caster's battle-scoped latch word `0x801C8FE0 + (ctx[+0x13] + 1)
@@ -111,6 +114,11 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
+    /// PROT 0952 `0x5C`'s saved seats `[caster x, caster z, victim x, victim z]`
+    /// (`0x801F7BB8`, `0x801F7BB0`).
+    pub horns_pin: [i16; 4],
+    /// PROT 0952 `0x5C`'s victim height (`0x801F7BB2`).
+    pub horns_lift: i16,
     /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
     pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.
@@ -978,6 +986,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 
 mod aluru;
 mod blade_breath;
+mod bloody_horns;
 mod body_kit;
 mod body_paced;
 pub mod capture;
@@ -1030,6 +1039,7 @@ pub use blade_breath::{
     capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
+pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_camera};
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;

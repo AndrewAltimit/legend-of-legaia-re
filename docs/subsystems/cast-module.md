@@ -2909,6 +2909,18 @@ rays are seated, so the trail's density follows the frame step, and retail's
 recording runs these arms at step `4` ([the capture table](battle-stage-camera.md#what-the-arm-step-table-is)). Arm 3's shot closes on the
 victim as the countdown falls.
 
+### PROT 0952 (Bloody Horns)
+
+`cast_module_camera::bloody_horns_camera` carries arms 2 to 6 of the `0x5C` body
+(`0x801F7118`); arms 0 and 1 are the walk into reach. Arm 2 slows both seats to rate `1` and
+cuts to the caster on clip `9`; arm 3's shot re-aims every pass and stages clip `0xA` for when
+`9` ends. On its gate the caster runs at full rate again and the victim flinches, and arm 4
+turns the shot onto the victim, who rises three drains a pass for `0x40` passes. Arm 5 sets
+the height to `-0x1400` and drops it at eight drains a pass, so the victim falls out of the
+sky over the same `0x50` passes, and on its gate the hit lands with the victim turned off the
+caster. Arm 6 follows the victim's body through the knockdown. Arms 3 to 5 write both saved
+seat pairs back every pass, holding off the clips' root motion.
+
 ### PROT 0935 (Earthquake)
 
 The caster turns on its target and holds the shot pitch `0`, yaw `0x800 - facing`,
