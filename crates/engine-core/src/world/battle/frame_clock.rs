@@ -184,7 +184,7 @@ impl World {
         use legaia_engine_battle_vm::battle_action::ActionState as S;
         /// Vsyncs each poll held over the harvest-state casts: `14..=17` and
         /// `4..=6`, a read that does not move with the module or the fight.
-        const BRANCH_READ_VSYNCS: u64 = 15;
+        const BRANCH_READ_VSYNCS: u64 = 14;
         const FADE_READ_VSYNCS: u64 = 4;
         let vsyncs = if to == S::MagicCaptureBranch.as_byte() {
             BRANCH_READ_VSYNCS

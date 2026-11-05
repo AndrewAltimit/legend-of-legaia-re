@@ -1753,12 +1753,12 @@ fn the_capture_band_polls_hold_for_the_read() {
     world.battle_ctx.action_state = S::MagicCaptureBranch.as_byte();
     world.arm_capture_read_wait(S::MagicCaptureBranch.as_byte());
     assert!(world.capture_read_pending());
-    world.clock.display_frames = start + 15;
+    world.clock.display_frames = start + 14;
     assert!(!world.capture_read_pending());
     world.battle_ctx.action_state = S::MagicCaptureFade.as_byte();
     world.arm_capture_read_wait(S::MagicCaptureFade.as_byte());
     assert!(!BattleHostImpl { world: &mut world }.previous_action_cleared(1));
-    world.clock.display_frames = start + 19;
+    world.clock.display_frames = start + 18;
     assert!(BattleHostImpl { world: &mut world }.previous_action_cleared(1));
     // Other states ignore a stale word.
     world.battle.capture_read_until = u64::MAX;

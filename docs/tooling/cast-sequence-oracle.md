@@ -724,7 +724,7 @@ module or fight. Neither poll idles: each `0x6E` pass walks the case-6 framing a
 `0x6F` pass pulls `ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in
 stands on another pose for its whole length (Spore Gas read yaw `1991` where retail held
 `1121`) and every shot built on `ctx[+0x6D0]` lands at another depth. The engine holds the
-two states `15` and `4` ticks (`World::arm_capture_read_wait`), and the walk then matches
+two states `14` and `4` ticks (`World::arm_capture_read_wait`), and the walk then matches
 retail to the unit through `0x6E`.
 
 ## See also
