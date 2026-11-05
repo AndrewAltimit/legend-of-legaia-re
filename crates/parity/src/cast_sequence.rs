@@ -100,6 +100,8 @@ pub struct Row {
     /// the probe recorded it: the vsyncs between two values are what one
     /// game frame really took.
     pub frame: Option<u32>,
+    /// The acting seat in retail's numbering.
+    pub acting: u8,
     /// The frame recorded on this row, if any.
     pub shot: Option<String>,
     /// Pixel geometry of a retail shot (`width`, `height`, `bpp`).
@@ -173,6 +175,7 @@ impl Side {
                 phase: field(r, "phase").unwrap_or(0),
                 step: field(r, "step").unwrap_or(0),
                 frame: field(r, "frame"),
+                acting: field(r, "acting").unwrap_or(0),
                 shot,
                 geom: (
                     field(r, "w").unwrap_or(FRAME_W),
@@ -188,6 +191,28 @@ impl Side {
             dir: dir.to_path_buf(),
             rows,
         })
+    }
+
+    /// Keep the recording's first action: cut where the next actor takes over
+    /// past the Done band. A recording runs its tail on from the Done band and
+    /// can hold the next actors' whole turns; left in, the alignment's longest
+    /// common subsequence prefers a later actor's complete run of states to the
+    /// first actor's partial one (a capture that starts inside the strike loop).
+    pub fn first_action_only(mut self) -> Self {
+        let mut done: Option<u8> = None;
+        let cut = self.rows.iter().position(|r| match done {
+            Some(seat) => r.acting != seat || matches!(r.st7, 0x0A | 0x0C),
+            None => {
+                if matches!(r.st7, 0x50 | 0x51 | 0x5A | 0x65) {
+                    done = Some(r.acting);
+                }
+                false
+            }
+        });
+        if let Some(cut) = cut {
+            self.rows.truncate(cut);
+        }
+        self
     }
 
     /// The rows folded into runs of one key.
@@ -945,7 +970,7 @@ pub struct CastSequenceArgs {
 }
 
 pub fn run(a: CastSequenceArgs) -> Result<()> {
-    let retail = Side::read(&a.retail)?;
+    let retail = Side::read(&a.retail)?.first_action_only();
     let engine = Side::read(&a.engine)?;
     let mut report = compare(&a.label, &retail, &engine, a.retail_lag)?;
     report.sound = crate::cast_sequence_sound::compare_dirs(&retail, &engine, a.sound_tolerance)?;
@@ -1003,6 +1028,31 @@ mod tests {
     }
 
     #[test]
+    fn a_recording_is_cut_where_the_next_actor_takes_over() {
+        let row = |t: u64, st7: u8, acting: u8| Row {
+            t,
+            st7,
+            phase: 0,
+            step: 2,
+            frame: None,
+            acting,
+            shot: None,
+            geom: (FRAME_W, FRAME_H, 16),
+        };
+        let side = Side {
+            dir: PathBuf::new(),
+            rows: vec![
+                row(1, 0x1F, 4),
+                row(2, 0x51, 4),
+                row(3, 0x5A, 4),
+                row(4, 0x0C, 1),
+                row(5, 0x1E, 1),
+            ],
+        };
+        assert_eq!(side.first_action_only().rows.len(), 3);
+    }
+
+    #[test]
     fn module_states_key_on_the_phase() {
         assert_eq!(Key::of(0x35, 4), Key::of(0x36, 4));
         assert_eq!(Key::of(0x33, 9), Key::State(0x33));
@@ -1037,6 +1087,7 @@ mod tests {
                     phase: 5,
                     step,
                     frame: Some(f),
+                    acting: 0,
                     shot: None,
                     geom: (FRAME_W, FRAME_H, 16),
                 });
