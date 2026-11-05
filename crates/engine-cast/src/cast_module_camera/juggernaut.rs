@@ -52,9 +52,9 @@ pub const JUGGERNAUT_ARM2_SPAWNS: [ModuleSpawn; 15] = [
 
 /// PROT 0927 arm 23's eighteen pool calls on its pass
 /// (`0x801F7874..0x801F7A4C`), on the zeroed stack trios. The first
-/// thirteen handles are kept at `0x801F9C8C + 0x28..` and the epilogue
-/// copies the first part's `+0x14..+0x1B` onto parts 2..13 every pass
-/// (`0x801F832C..`).
+/// fourteen handles are kept at `0x801F9CCC..` and the epilogue copies the
+/// first part's `+0x14..+0x1B` onto the other thirteen on every pass
+/// (`0x801F832C..`), [`JUGGERNAUT_ARM23_RIDERS`].
 pub const JUGGERNAUT_ARM23_SPAWNS: [ModuleSpawn; 18] = [
     lit(0x801F_913C, [0; 3]),
     lit(0x801F_92F8, [0; 3]),
@@ -74,6 +74,28 @@ pub const JUGGERNAUT_ARM23_SPAWNS: [ModuleSpawn; 18] = [
     lit(0x801F_9264, [0; 3]),
     lit(0x801F_9654, [0; 3]),
     lit(0x801F_96E8, [0; 3]),
+];
+
+/// The record of arm 23's first handle, the part whose position the epilogue
+/// copies (`lw v1,-0x6334(a1)` at `0x801F8330`).
+pub const JUGGERNAUT_ARM23_LEAD: u32 = 0x801F_913C;
+
+/// The records of arm 23's other thirteen kept handles (`0x801F9CD0..`), the
+/// parts the epilogue stands on the lead's position.
+pub const JUGGERNAUT_ARM23_RIDERS: [u32; 13] = [
+    0x801F_92F8,
+    0x801F_9370,
+    0x801F_93EC,
+    0x801F_9468,
+    0x801F_94E0,
+    0x801F_955C,
+    0x801F_95D8,
+    0x801F_977C,
+    0x801F_97DC,
+    0x801F_9840,
+    0x801F_98A4,
+    0x801F_9908,
+    0x801F_996C,
 ];
 
 /// PROT 0927 arm 26's eight calls on its pass, after the pool flush

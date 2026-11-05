@@ -11,6 +11,36 @@ const SHOWN_TINT: u32 = 0x2008_0200;
 const HIDDEN: u8 = 0xFF;
 
 impl World {
+    /// The epilogue's copy on every pass, held or not (`0x801F832C..`): arm
+    /// 23's first kept part carries the position its program moves, and the
+    /// other thirteen handles take its `+0x14..+0x1B`, so the rings and the
+    /// ray fan stand on one moving point.
+    ///
+    /// PORT: overlay_summon_juggernaut_0927_801f6a84 (PROT 0927; the position copy at `0x801F832C..0x801F8570`)
+    fn juggernaut_ride_lead(&mut self) {
+        use legaia_engine_cast::cast_module_camera::{
+            JUGGERNAUT_ARM23_LEAD, JUGGERNAUT_ARM23_RIDERS,
+        };
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            return;
+        };
+        let Some(lead) = scene
+            .parts
+            .iter()
+            .find(|p| p.tag == Some(JUGGERNAUT_ARM23_LEAD))
+        else {
+            return;
+        };
+        let (x, y, z) = (lead.state.world_x, lead.state.world_y, lead.state.world_z);
+        for part in scene.parts.iter_mut().filter(|p| {
+            !p.finished && p.tag.is_some_and(|t| JUGGERNAUT_ARM23_RIDERS.contains(&t))
+        }) {
+            part.state.world_x = x;
+            part.state.world_y = y;
+            part.state.world_z = z;
+        }
+    }
+
     /// Apply PROT 0927's arm `phase` writes for one pass of its director;
     /// `passed` is whether the arm's countdown let it through.
     ///
@@ -51,6 +81,7 @@ impl World {
             self.casting.module_shake = 0;
         }
         self.juggernaut_shake();
+        self.juggernaut_ride_lead();
         // Arm 19 walks the creature every pass, ahead of its gate.
         if phase == 19
             && let Some(a) = creature.and_then(|c| self.actors.get_mut(c))
