@@ -548,6 +548,11 @@ impl BakaFight {
     ///
     /// REF: FUN_801d2a28
     fn accumulate_round_score(&mut self, winner: usize) {
+        // Only the player's round win reaches the routine (result word `3`,
+        // `0x801D0670`, set at `0x801D39F0`), and it reads the player's HP.
+        if winner != 0 {
+            return;
+        }
         let Some(tables) = self.score_tables.clone() else {
             return;
         };
