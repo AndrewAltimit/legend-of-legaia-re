@@ -69,6 +69,17 @@ impl WalkFilm {
             f,
             "tick,x,y,z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z,offset_ease"
         )?;
+        let n0 = session
+            .host
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&session.host.index).ok().flatten())
+            .and_then(|man| legaia_scene_formats::man_section::parse(&man).ok())
+            .map_or(0, |mf| mf.header.partition_counts[0].max(0) as u16);
+        let mut actors = self.out.clone();
+        actors.set_extension("actors.csv");
+        let mut a = std::io::BufWriter::new(std::fs::File::create(&actors)?);
+        writeln!(a, "tick,flat,x,z,heading")?;
         for t in 0..self.ticks {
             let pad = self
                 .spans
@@ -86,6 +97,10 @@ impl WalkFilm {
             else {
                 continue;
             };
+            for (&slot, &(x, z)) in &world.npcs.positions {
+                let h = world.npcs.heading(slot).wrapping_sub(0x800);
+                writeln!(a, "{t},{},{x},{z},{h}", n0 + u16::from(slot))?;
+            }
             let g = &session.camera.globals.0;
             writeln!(
                 f,
@@ -108,6 +123,7 @@ impl WalkFilm {
         }
         session.host.world.input.set_pad(0);
         f.flush()?;
+        a.flush()?;
         Ok(())
     }
 }

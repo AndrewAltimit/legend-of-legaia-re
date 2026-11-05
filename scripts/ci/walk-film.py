@@ -98,7 +98,39 @@ def main():
         for side, rows in (("R", retail), ("E", engine)):
             if i < len(rows):
                 print(f"{i:4}  {side}   " + " ".join(f"{rows[i][f]:>9}" for f in fields))
+    report_actors(out, a.frames)
     return 0
+
+
+def report_actors(out, frames):
+    """Per placement: heading and position against retail's at the same vsync."""
+    rp, ep = out / "walk_film_actors.csv", out / "engine.actors.csv"
+    if not (rp.exists() and ep.exists()):
+        return
+    with open(rp) as f:
+        retail = list(csv.DictReader(f))
+    engine = {}
+    with open(ep) as f:
+        for r in csv.DictReader(f):
+            engine[(int(r["tick"]), int(r["flat"]))] = r
+    stats = {}
+    for r in retail:
+        v, flat = int(r["vsync"]), int(r["flat"])
+        e = engine.get((v, flat))
+        if e is None:
+            continue
+        h = (int(r["heading"]) - int(e["heading"]) + 2048) % 4096 - 2048
+        d = abs(int(r["x"]) - int(e["x"])) + abs(int(r["z"]) - int(e["z"]))
+        s = stats.setdefault(flat, dict(n=0, hoff=0, poff=0, first=None))
+        s["n"] += 1
+        if abs(h) > 16 or d > 8:
+            s["hoff"] += abs(h) > 16
+            s["poff"] += d > 8
+            s["first"] = s["first"] or (v, r["x"], r["z"], r["heading"], e["x"], e["z"], e["heading"])
+    off = {f: s for f, s in stats.items() if s["first"]}
+    print(f"placements {len(stats)}, off retail {len(off)}")
+    for f, s in sorted(off.items()):
+        print(f"  flat {f}: {s['n']} rows, heading off {s['hoff']}, pos off {s['poff']}, first (vsync, R x z h, E x z h) {s['first']}")
 
 
 if __name__ == "__main__":

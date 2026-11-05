@@ -511,3 +511,40 @@ impl World {
         best.map(|(_, s)| s)
     }
 }
+
+#[cfg(test)]
+mod octant_tests {
+    use super::*;
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    use legaia_engine_vm::field::FieldCtx;
+
+    /// Op `4C 2x` stores the octant (arm `0x801E0EB8`), and under the retail
+    /// follow view the remap reads it however the camera has swept; a turned
+    /// camera falls back to the azimuth.
+    #[test]
+    fn the_remap_reads_the_authored_octant_under_the_follow_view() {
+        let mut w = World::default();
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0x26], 0);
+        assert_eq!(w.locomotion.pad_octant, 6);
+        w.locomotion.camera_azimuth = 3585; // yaw `511`: nearest step `7`.
+        assert_eq!(w.field_pad_ring_rotation(), 7, "a turned camera derives");
+        w.locomotion.pad_octant_live = true;
+        assert_eq!(w.field_pad_ring_rotation(), 6, "retail's view reads it");
+    }
+
+    /// On a landing tick (`_DAT_8007B6B0 == -1000`) the store turns the
+    /// player by the octants it moved (`0x801E0EE4..0x801E0EFC`).
+    #[test]
+    fn a_landing_turns_the_player_with_the_octant() {
+        let mut w = World::default();
+        w.spawn_actor(0);
+        w.player_actor_slot = Some(0);
+        w.locomotion.warp.timer = legaia_engine_field::field_warp_tile::WARP_LANDED_SENTINEL;
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        field_step_routed(&mut host, &mut ctx, &[0x4C, 0x22], 0);
+        assert_eq!(w.actors[0].move_state.render_26, 2 * 0x200);
+    }
+}

@@ -11,7 +11,8 @@ impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
         let old = self.world.locomotion.pad_octant;
         let new = u32::from(new_index & 7);
         self.world.locomotion.pad_octant = new;
-        if self.world.locomotion.warp.timer == legaia_engine_field::field_warp_tile::WARP_LANDED_SENTINEL
+        if self.world.locomotion.warp.timer
+            == legaia_engine_field::field_warp_tile::WARP_LANDED_SENTINEL
             && let Some(actor) = self
                 .world
                 .player_actor_slot

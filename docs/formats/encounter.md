@@ -537,7 +537,13 @@ flowchart LR
 | `_DAT_800840C0` eye Z | `+0x16` | 4 |
 | `_DAT_8007B6F4` GTE `H` | `+0x26` | 2 |
 
-Roll has no entry; the follow camera never rolls. Each value steps by `delta >> s` plus `sign(delta)`, where `s` comes from the 16-byte table at `0x801F2804` indexed by `B60B >> 4`: `[0, 5, 4, 3, 2, 6, 7, 8, 0, 0x45, 0x44, 0x43, 0, 0, 0, 0]`. A code `>= 0x40` selects the two-shift form `delta >> (s − 0x40)` + `delta >> (s − 0x40 + 1)`; code `0` is a one-frame snap. A mode-5 block also eases the focus X / Z (`_DAT_80089118/20`) toward `−(anchor_tile << 7) − 0x40`. Because the walk is gated on movement, a player who stops mid-glide leaves the camera wherever the ease had reached.
+Roll has no entry; the follow camera never rolls.
+
+The walk runs once a game pass, with no frame-step term in its shift (`0x801DB5AC..0x801DB724`), so the camera closes at retail's pass rate whatever the vsync count: `kor_field_route_walk`'s [walk film](../tooling/walk-film.md) holds eye Y `681, 703, 720, 733` two vsyncs apart, and `kor3_field_route_walk` three. The port's world ticks once a vsync and banks them (`ZoneFollow::ease_credit`).
+
+The stationary test reads the pair the actor iterator copied at the top of the pass from inside the player's tick (`FUN_801D1344`), so only what that tick moved counts: the walk controller and the footing conform (`FUN_801D1BA0`). A locked player the `0x10000` bit lets through never runs the controller, so a script carrying it reads as still, its focus is the tick's own pin ahead of the ease (`0x801D1724..0x801D1740`, the spot the pass began on), and `tower_field_walk` holds eye Y `609` for a scripted walk, stepping only on the passes the floor rises.
+
+Each value steps by `delta >> s` plus `sign(delta)`, where `s` comes from the 16-byte table at `0x801F2804` indexed by `B60B >> 4`: `[0, 5, 4, 3, 2, 6, 7, 8, 0, 0x45, 0x44, 0x43, 0, 0, 0, 0]`. A code `>= 0x40` selects the two-shift form `delta >> (s − 0x40)` + `delta >> (s − 0x40 + 1)`; code `0` is a one-frame snap. A mode-5 block also eases the focus X / Z (`_DAT_80089118/20`) toward `−(anchor_tile << 7) − 0x40`. Because the walk is gated on movement, a player who stops mid-glide leaves the camera wherever the ease had reached.
 
 **Snap - `FUN_801DB8EC(player)`.** The same compose and list walk with a plain copy (a halfword target sign-extends into the word eye globals), then `FUN_8003D254(H)`. Mode 5 sets the focus to the anchor tile outright; every other mode to the negated player position. Called by the arrival actor's retail leg, by `[4C 39]` / `[4C 3E]`, and by the leader-swap flow.
 

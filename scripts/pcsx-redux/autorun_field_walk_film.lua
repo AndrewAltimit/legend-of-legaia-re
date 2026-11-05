@@ -55,6 +55,32 @@ local fh = assert(io.open(probe.out_path("walk_film.csv"), "w"))
 fh:write("vsync,x,y,z,prev_x,prev_z,heading,clip,pitch,yaw,h,eye_x,eye_y,eye_z,focus_x,focus_z," ..
     "st_pitch,st_yaw,st_h,st_eye_x,st_eye_y,st_eye_z,offset_ease\n")
 
+local afh = assert(io.open(probe.out_path("walk_film_actors.csv"), "w"))
+afh:write("vsync,flat,x,y,z,heading,flags,model\n")
+
+-- Every placement the field actor tick runs (retail_actor_facings' walk).
+local function log_actors(el, player)
+    local seen, seen_flat = {}, {}
+    for k = 0, 8 do
+        local n, count = probe.read_u32(0x8007C34C + 4 * k), 0
+        while probe.in_ram(n) and count < 512 and not seen[n] do
+            seen[n] = true
+            count = count + 1
+            if n ~= player and probe.read_u32(n + 0x0C) == 0x8003BC08 then
+                local flat = probe.read_u16(n + 0x50)
+                if not seen_flat[flat] then
+                    seen_flat[flat] = true
+                    afh:write(string.format("%d,%d,%d,%d,%d,%d,%08X,%d\n", el, flat,
+                        s16(n + 0x14), s16(n + 0x16), s16(n + 0x18), s16(n + 0x26),
+                        probe.read_u32(n + 0x10), s16(n + 0x64)))
+                end
+            end
+            n = probe.read_u32(n)
+        end
+    end
+    afh:flush()
+end
+
 probe.run({
     sstate = SSTATE,
     capture_frames = FRAMES,
@@ -87,5 +113,6 @@ probe.run({
             s16(STAGING + 0x0E), s16(STAGING + 0x12), s16(STAGING + 0x16),
             s16(OFFSET_EASE)))
         fh:flush()
+        log_actors(el, p)
     end,
 })
