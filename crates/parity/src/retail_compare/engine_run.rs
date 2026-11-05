@@ -495,6 +495,9 @@ fn seed_and_settle(
         }
         _ => None,
     };
+    if let Some(film) = super::walk_film::WalkFilm::from_env() {
+        film.run(&mut session, retail)?;
+    }
     let mut obs = sample_engine(&mut session, retail, &director, menu_subscreen);
     obs.script = script;
     Ok(obs)

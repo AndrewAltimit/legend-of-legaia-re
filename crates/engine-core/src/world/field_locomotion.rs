@@ -68,6 +68,9 @@ pub struct FieldLocomotion {
     /// The Incense wear-off notice while it is up (`FUN_801F1E48` via the
     /// kind-`0x0B` entry context; see [`crate::incense_notice`]).
     pub incense_notice: Option<crate::incense_notice::IncenseNotice>,
+    /// The odd unit of a vsync's walk speed, carried to the next vsync
+    /// ([`crate::world::World::step_field_locomotion`]).
+    pub(crate) step_carry: i32,
     /// The pad-rotation octant `gp+0x2D8` (`_DAT_8007B5F0`): how many
     /// eighth-turns the pad remapper `FUN_800467E8` rotates the held
     /// direction by. Retail's writers are field-VM op `4C 2x` and the tile
@@ -371,6 +374,7 @@ impl FieldLocomotion {
             walk_regen_window: 0,
             incense_notice: None,
             pad_octant: 0,
+            step_carry: 0,
             camera_azimuth: 0,
             precise_movement: false,
             run_default: false,

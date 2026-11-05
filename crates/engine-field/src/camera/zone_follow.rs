@@ -218,9 +218,21 @@ impl Camera {
                 g[8] = -z;
             }
             zone.snap_pending = false;
-        } else if moved || forced || !zone.active {
+        } else if moved || forced || !zone.active || zone.ease_moved {
+            // Retail eases once a game pass, with no frame-step term in the
+            // shift (`0x801DB5AC..0x801DB724`; the player tick `FUN_801D1344`
+            // calls it), and the world ticks once a vsync: the steps land on
+            // the pass grid, or the camera closes `frame_step` times too fast
+            // (`kor_field_route_walk`'s film holds eye Y `681, 703, 720, 733`
+            // two vsyncs apart). The pin below stays on the vsync the player
+            // moved, so the focus keeps the fine-grained half.
+            zone.ease_moved = moved || forced || !zone.active;
+            zone.ease_credit += dt.clamp(1, 8);
+            let step = i32::from(world.camera_frame_step().max(1));
             let code = zone.config.ease_shift();
-            for _ in 0..dt.clamp(1, 8) {
+            while zone.ease_credit >= step {
+                zone.ease_credit -= step;
+                zone.ease_moved = false;
                 g[0] = i32::from(ease_step_i16(g[0] as i16, t.pitch, code));
                 g[1] = i32::from(ease_step_i16(g[1] as i16, t.yaw, code));
                 g[9] = i32::from(ease_step_i16(g[9] as i16, t.h, code));

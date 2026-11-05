@@ -13,6 +13,10 @@ use crate::world::World;
 use legaia_engine_field::field_events::FieldEvent;
 
 impl CameraWorld for World {
+    fn camera_frame_step(&self) -> u8 {
+        self.clock.frame_step
+    }
+
     fn scene_mode(&self) -> legaia_engine_mode::mode::SceneMode {
         self.mode
     }

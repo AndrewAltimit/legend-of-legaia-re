@@ -94,6 +94,11 @@ pub trait CameraWorld {
     fn scene_save_allowed(&self) -> bool;
     /// Displayed frames so far.
     fn display_frames(&self) -> u64;
+    /// Vsyncs a game pass takes (`DAT_1F800393`), the cadence the follow ease
+    /// steps at.
+    fn camera_frame_step(&self) -> u8 {
+        1
+    }
     /// Whether a cutscene timeline owns the frame.
     fn cutscene_timeline_active(&self) -> bool;
     /// Whether a scripted arc drives the follow camera.

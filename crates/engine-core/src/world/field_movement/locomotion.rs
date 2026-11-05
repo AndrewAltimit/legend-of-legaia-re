@@ -354,7 +354,14 @@ impl World {
         if let Some(((wx, wz), _, _)) = precise {
             self.advance_with_collision_vector(slot, wx, wz, speed);
         } else {
-            self.advance_with_collision(slot, dir_bits, speed);
+            // Retail computes the speed per game pass (`base * step`), even
+            // at step `2`, and walks it in 2-unit sub-steps; a vsync's half
+            // of an odd pass speed (run diagonal `18`, forced slow `10`) is
+            // odd here, and rounding it up each vsync walks `10` for `9`. The
+            // odd unit waits for the next vsync.
+            let speed = speed + self.locomotion.step_carry;
+            self.locomotion.step_carry = speed % FIELD_STEP_UNIT;
+            self.advance_with_collision(slot, dir_bits, speed - self.locomotion.step_carry);
         }
         // Walk-regen accumulator (retail `_DAT_801F2274`): a frame in which
         // the step actually committed counts as walked.
