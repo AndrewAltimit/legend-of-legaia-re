@@ -1369,7 +1369,7 @@ the table stands in for the frame's work. It measures one emulated machine: Medn
 reads a full party's action near `490` hblanks, under the `511` that makes step `3`,
 where PCSX-Redux reads `594`, and no real hardware has been measured.
 
-| Whole fight (PCSX-Redux) | Vsyncs | Passes | Vsyncs a pass | Retail mean step | Engine mean step | Fixed at `2` |
+| Whole fight (PCSX-Redux) | Vsyncs | Passes | Vsyncs a pass | Retail mean step | Ring over the table | Fixed at `2` |
 |---|---:|---:|---:|---:|---:|---:|
 | Vahn alone, `rikuroa2` | 3836 | 1821 | 2.11 | 2.04 | 2.00 | 2.00 |
 | Vahn and Noa, `rikuroa2` | 4874 | 1892 | 2.58 | 2.43 | 2.32 | 2.00 |
@@ -1378,8 +1378,11 @@ where PCSX-Redux reads `594`, and no real hardware has been measured.
 The gap between the vsyncs a pass and the mean step is frames that ran past their
 step, a fifth of a full party's fight: its timers still drain one step, so retail's
 fight runs that much longer on the wall than its game clock, and the engine, which
-does not overrun, plays it that much shorter. The ring reads each frame's step right
-on `.97`, `.63` and `.80` of those passes.
+does not overrun, plays it that much shorter. Run over retail's own sequence of states,
+the ring reads each frame's step right on `.97`, `.63` and `.80` of those passes. The
+table was read off these same fights, so that is a fit, and no held-out score. The
+Vahn and Noa fight stands on a state reached by a door-tile poke from
+`rikuroa_post_genesis_tree`, since the library holds no fight of two.
 
 A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its curve
 per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`
