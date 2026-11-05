@@ -9,12 +9,13 @@
 //! against the thresholds `0xF1` / `0x1FF` / `0x2D1` (`1` / `2` / `3`, else
 //! `4`; `0x80017098..0x8001715C`), raised to the per-mode floor
 //! `0x8007B9D8`. The battle's floor is `1` in every catalogued battle state,
-//! so its step is the load alone: `2` on an ordinary frame (one field plus
-//! the miss), `3` while a summon's creature and effects fill the frame
+//! so its step is the load alone: `2` on a lone member's frame (one field plus
+//! the miss), `3` on a full party's or while a summon's creature and effects fill the frame
 //! (`theeder_summon_mid_cast`'s ring peaks at `625`, `gimard_burning_attack`'s
 //! sits at the `700` clamp). It is not a property of the game state, so the
-//! engine runs the default step ([`DEFAULT_BATTLE_FRAME_STEP`]) and only a
-//! replay that knows retail's step installs another.
+//! engine runs the step that cost reads for the party on stage
+//! ([`ordinary_battle_frame_step`]), the cast arm tables inside a module band,
+//! and only a replay that knows retail's step installs another.
 //!
 //! The engine ticks once a vsync and keeps every per-vsync rate; what the
 //! step changes is where the frame boundaries fall - the root-motion carry's
@@ -26,6 +27,23 @@
 /// The engine's battle frame step: retail's step on an ordinary battle frame,
 /// the one the camera and the root-motion carry assume by default.
 pub const DEFAULT_BATTLE_FRAME_STEP: u8 = 2;
+
+/// The step of a battle frame nothing else names, for a party of this size.
+///
+/// Retail's step is the frame's measured cost (`FUN_80016B6C`, the ring's
+/// maximum against `0xF1` / `0x1FF` / `0x2D1`), and across the library's battle
+/// states outside the module bands the party on stage is what sets the cost's
+/// rung: a full party's frames read `0x210..0x2BC` (step `3`), a lone member's
+/// `0x10E..0x190` (step `2`). It is a measurement of the emulated machine's cost,
+/// like the cast arm tables, and no model of it. The library holds no two-member
+/// fight, so that party keeps the default.
+pub const fn ordinary_battle_frame_step(party_count: u8) -> u8 {
+    if party_count >= 3 {
+        3
+    } else {
+        DEFAULT_BATTLE_FRAME_STEP
+    }
+}
 
 /// Groups display ticks into battle frames of [`Self::step`] vsyncs.
 ///
@@ -119,9 +137,16 @@ impl RetailStepTrack {
     pub fn parse(text: &str) -> Self {
         let mut track = Self::default();
         for line in text.lines() {
-            let f: Vec<u8> = line.split_whitespace().filter_map(|w| w.parse().ok()).collect();
+            let f: Vec<u8> = line
+                .split_whitespace()
+                .filter_map(|w| w.parse().ok())
+                .collect();
             if let [state, phase, step] = f[..] {
-                track.frames.entry((state, phase)).or_default().push(step.max(1));
+                track
+                    .frames
+                    .entry((state, phase))
+                    .or_default()
+                    .push(step.max(1));
             }
         }
         track

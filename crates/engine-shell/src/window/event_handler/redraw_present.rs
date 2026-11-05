@@ -430,7 +430,7 @@ impl PlayWindowApp {
                 "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
-            let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
+            let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz,c6da,step");
             let mut body = std::io::BufWriter::new(std::fs::File::create(dir.join("body.csv")).ok()?);
             let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
             let mut sfx = std::io::BufWriter::new(std::fs::File::create(dir.join("sfx.csv")).ok()?);
@@ -690,7 +690,7 @@ impl PlayWindowApp {
             let p = w.battle_cam_pose();
             let _ = writeln!(
                 rec.cam,
-                "{tick},{st},{},{},{},{},{},{},{},{},{}",
+                "{tick},{st},{},{},{},{},{},{},{},{},{},{},{}",
                 w.casting.module_phase,
                 (p.pitch as i32).rem_euclid(4096),
                 (p.yaw as i32).rem_euclid(4096),
@@ -700,6 +700,8 @@ impl PlayWindowApp {
                 p.focus[0] as i32,
                 p.focus[1] as i32,
                 p.focus[2] as i32,
+                w.battle.camera.as_ref().map_or(-1, |c| c.action_yaw_base()),
+                w.battle.frame_clock.step,
             );
         }
         // The acting seat's clip each tick (`body.csv`), the engine half of

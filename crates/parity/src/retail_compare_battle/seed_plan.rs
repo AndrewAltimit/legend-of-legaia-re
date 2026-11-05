@@ -92,7 +92,8 @@ impl RetailBattle {
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
-        let default = legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
+        let default =
+            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(self.party_count);
         // A capture on the capture band's module tick whose whole history ran the
         // default step stands on it: the arm step table
         // (`capture_arm_frame_step`) is one fight's reading, and

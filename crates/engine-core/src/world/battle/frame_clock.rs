@@ -21,6 +21,18 @@ impl World {
         }
     }
 
+    /// The step of a battle frame nothing else names
+    /// ([`legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step`]).
+    pub fn ordinary_battle_frame_step(&self) -> u8 {
+        if self.toggles.battle_party_cost_step {
+            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(
+                self.party.party_count.clamp(0, 3) as u8,
+            )
+        } else {
+            DEFAULT_BATTLE_FRAME_STEP
+        }
+    }
+
     /// Seed a replay's battle frame step: `step` vsyncs a frame on every tick
     /// the action SM sits in `state`, the default everywhere else
     /// ([`legaia_engine_vm::frame_clock::FrameClock::battle_frame_step_seed`]).
@@ -102,7 +114,7 @@ impl World {
         let want = if in_state && reached {
             step
         } else {
-            DEFAULT_BATTLE_FRAME_STEP
+            self.ordinary_battle_frame_step()
         };
         if self.battle.frame_clock.step != want {
             if self.toggles.battle_sm_frame_cadence {
@@ -159,9 +171,15 @@ impl World {
                 self.casting.module_phase,
             )
         });
+        let ordinary = self.ordinary_battle_frame_step();
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
-            (None, true) => DEFAULT_BATTLE_FRAME_STEP,
+            (None, true) => ordinary,
+            (None, false)
+                if ordinary != DEFAULT_BATTLE_FRAME_STEP && self.battle.frame_stretch.is_none() =>
+            {
+                ordinary
+            }
             (None, false) => return,
         };
         self.battle.cast_arm_step_on = measured.is_some();

@@ -142,6 +142,11 @@ pub struct WorldToggles {
     /// corpus run's child processes inherit) and the browser play page from
     /// its `set_battle_frame_cadence` switch.
     pub battle_sm_frame_cadence: bool,
+    /// Run an ordinary battle frame on the step retail's frame cost gives this
+    /// party's size (`World::ordinary_battle_frame_step`), not the two-vsync
+    /// default. Off in a bare `World`, which unit tests pin on the default; the
+    /// play hosts raise it through [`Self::retail_cost_step`].
+    pub battle_party_cost_step: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -394,6 +399,7 @@ impl WorldToggles {
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
+            battle_party_cost_step: true,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,
