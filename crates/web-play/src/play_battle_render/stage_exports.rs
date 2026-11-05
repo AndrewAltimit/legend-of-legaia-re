@@ -254,7 +254,7 @@ impl LegaiaRuntime {
         )
     }
 
-    /// A change key for [`Self::play_battle_ground_culled_positions`]: `0`
+    /// A change key for [`Self::play_battle_ground_cull_mask`]: `0`
     /// when every cell draws (clean rendering, no battle), otherwise a hash
     /// of the drawn-cell mask. The page re-reads the positions when it moves.
     pub fn play_battle_ground_cull_key(&self, psx: bool) -> u32 {
@@ -267,23 +267,18 @@ impl LegaiaRuntime {
         }) | 1
     }
 
-    /// [`Self::play_battle_ground_positions`] with every cell retail's two
-    /// culls drop collapsed onto its first vertex, so it draws nothing: the
-    /// page's twin of the native window's masked index list.
-    pub fn play_battle_ground_culled_positions(&self, psx: bool) -> Vec<f32> {
-        let mut pos = self.play_battle_ground_positions();
+    /// One byte a ground-grid cell, `1` where retail's two culls keep it this
+    /// frame and `0` where they drop it, in [`Self::play_battle_ground_positions`]'
+    /// cell order (sixteen vertices a cell). Empty when every cell draws. The
+    /// page collapses the dropped cells of the positions it already holds - the
+    /// native window's masked index list - so a moving camera sends a cell's
+    /// byte across the boundary, not its vertices.
+    pub fn play_battle_ground_cull_mask(&self, psx: bool) -> Vec<u8> {
         let mask = self.battle_ground_mask(psx);
-        // Sixteen vertices a cell (four quads), three floats a vertex.
-        const CELL_FLOATS: usize = 16 * 3;
-        for (cell, keep) in pos.chunks_mut(CELL_FLOATS).zip(mask.iter()) {
-            if !*keep {
-                let first = [cell[0], cell[1], cell[2]];
-                for v in cell.chunks_mut(3) {
-                    v.copy_from_slice(&first);
-                }
-            }
+        if mask.iter().all(|&k| k) {
+            return Vec::new();
         }
-        pos
+        mask.iter().map(|&k| u8::from(k)).collect()
     }
 
     /// Per-vertex `[r, g, b, 255]` packet colours of the ground grid - the

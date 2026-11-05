@@ -203,9 +203,22 @@
         if (typeof rt.play_battle_ground_cull_key === 'function') {
           const psx = !!this.psxRender;
           const cullKey = rt.play_battle_ground_cull_key(psx);
-          if (cullKey !== (b.groundCullKey || 0)) {
-            this.renderer.updateSceneMeshPositions(b.ground,
-              rt.play_battle_ground_culled_positions(psx));
+          if (cullKey !== (b.groundCullKey || 0) && b.groundPositions) {
+            /* Collapse each dropped cell (sixteen vertices) onto its first
+             * vertex, from the positions held since the grid's upload. */
+            const mask = rt.play_battle_ground_cull_mask(psx);
+            const src = b.groundPositions;
+            const pos = b.groundCulled || (b.groundCulled = new Float32Array(src.length));
+            pos.set(src);
+            const cellFloats = 16 * 3;
+            for (let c = 0; c < mask.length; c++) {
+              if (mask[c]) continue;
+              const o = c * cellFloats;
+              for (let v = o + 3; v < o + cellFloats && v < pos.length; v += 3) {
+                pos[v] = pos[o]; pos[v + 1] = pos[o + 1]; pos[v + 2] = pos[o + 2];
+              }
+            }
+            this.renderer.updateSceneMeshPositions(b.ground, pos);
             b.groundCullKey = cullKey;
           }
         }
@@ -575,7 +588,9 @@
           rt.play_battle_backdrop_spun_flat_rgba());
       }
       b.groundCullKey = 0;
-      b.ground = up(BATTLE_MESH_BASE + 1, rt.play_battle_ground_positions(),
+      b.groundCulled = null;
+      b.groundPositions = Float32Array.from(rt.play_battle_ground_positions());
+      b.ground = up(BATTLE_MESH_BASE + 1, b.groundPositions,
         rt.play_battle_ground_uvs(), rt.play_battle_ground_cba_tsb(),
         rt.play_battle_ground_indices(),
         (typeof rt.play_battle_ground_flat_rgba === 'function')

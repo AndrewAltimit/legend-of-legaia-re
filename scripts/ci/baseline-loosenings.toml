@@ -731,3 +731,10 @@ changes = [
   ["states/cort_evolved_pre_battle/image", 0.977, 0.976],
   ["states/delilas_gi_spirit_streaks_v2/image", 0.987, 0.986],
 ]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play bundle grows 0.25% with what the wave ports (the ground grid's cell culls and its mask export, the HUD teardown slide-outs, the dance and fishing wiring, the Tetsu spar fix tweak). No per-frame count rises: the grid cull re-indexes its uploaded vertices natively and sends one byte a cell to the page."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 4873935, 4886163],
+]

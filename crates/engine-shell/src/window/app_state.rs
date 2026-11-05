@@ -802,6 +802,10 @@ pub(super) struct PlayWindowApp {
     /// The cells the uploaded ground grid draws (`battle_ground_grid::cell_mask`
     /// under PSX mode; empty = every cell), re-derived each frame.
     pub(super) battle_ground_mask: Vec<bool>,
+    /// The ground grid last uploaded (`build_battle_ground_grid` at
+    /// `battle_ground_rgbc`), whose full index list a cell-mask change
+    /// re-indexes (`Renderer::reindex_vram_mesh`) instead of rebuilding.
+    pub(super) battle_ground_built: Option<legaia_tmd::mesh::VramMesh>,
     /// Whether the current battle stage is on the `DAT_80078C1C` outdoor
     /// table - the tint pass's `DAT_8007BDA8` input
     /// (`World::battle_actor_draw_plan`). Resolved per battle in

@@ -202,7 +202,38 @@ impl PlayWindowApp {
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
-        let g = build_battle_ground_grid(near);
+        // The vertex streams change only with the colour, so a colour change
+        // rebuilds and re-uploads the mesh; a mask change (most frames while
+        // the camera moves) re-indexes the uploaded vertices. Each sub-quad
+        // owns its four vertices, which is what `reindex_vram_mesh` needs.
+        if near != self.battle_ground_rgbc || self.battle_ground_built.is_none() {
+            let g = build_battle_ground_grid(near);
+            match r.upload_vram_mesh(
+                &g.positions,
+                &g.uvs,
+                &g.cba_tsb,
+                &g.normals,
+                &g.colors,
+                &g.indices,
+            ) {
+                Ok(m) => {
+                    self.meshes[gi] = m;
+                    self.battle_ground_rgbc = near;
+                    self.battle_ground_mask = Vec::new();
+                    self.battle_ground_built = Some(g);
+                }
+                Err(e) => {
+                    log::warn!("play-window: battle ground grid re-colour: {e:#}");
+                    return;
+                }
+            }
+        }
+        if mask == self.battle_ground_mask {
+            return;
+        }
+        let Some(g) = self.battle_ground_built.as_ref() else {
+            return;
+        };
         let indices = grid::masked_indices(&g.indices, &mask);
         if indices.is_empty() {
             // Every cell culled: the grid is off the frame
@@ -210,20 +241,9 @@ impl PlayWindowApp {
             self.battle_ground_mask = mask;
             return;
         }
-        match r.upload_vram_mesh(
-            &g.positions,
-            &g.uvs,
-            &g.cba_tsb,
-            &g.normals,
-            &g.colors,
-            &indices,
-        ) {
-            Ok(m) => {
-                self.meshes[gi] = m;
-                self.battle_ground_rgbc = near;
-                self.battle_ground_mask = mask;
-            }
-            Err(e) => log::warn!("play-window: battle ground grid re-colour: {e:#}"),
+        match r.reindex_vram_mesh(&mut self.meshes[gi], &g.positions, &g.cba_tsb, &indices) {
+            Ok(()) => self.battle_ground_mask = mask,
+            Err(e) => log::warn!("play-window: battle ground grid cell cull: {e:#}"),
         }
     }
 

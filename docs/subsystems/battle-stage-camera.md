@@ -199,10 +199,9 @@ outer lattice corners at retail's `320 x 240` framing, through the GTE's
 register limits, and returns the cells pass 2 would emit. The native window
 re-uploads the grid with the dropped cells' indices left out
 (`masked_indices`) when the set moves, and skips the draw when every cell is
-dropped; the play page re-sends the grid's positions with each dropped cell
-collapsed to a point (`play_battle_ground_cull_key` /
-`play_battle_ground_culled_positions`). Clean rendering draws the whole
-plane.
+dropped; the play page reads one byte a cell (`play_battle_ground_cull_key` /
+`play_battle_ground_cull_mask`) and collapses each dropped cell of the
+positions it holds to a point. Clean rendering draws the whole plane.
 
 The culls are near enough to neutral at the corpus's framings. Every kept
 cell covers the floor the frame shows; a dropped cell is past the far
