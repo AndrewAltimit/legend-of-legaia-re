@@ -704,10 +704,20 @@ pub fn atan_q11(i: i32) -> i32 {
     ((i / 2048.0).atan() * 4096.0 / std::f64::consts::TAU).trunc() as i32
 }
 
-/// The bearing from `(ax, az)` to `(bx, bz)` in PSX 12-bit units, `0` =
-/// `+X`, `0x400` = `+Z`, `0x800` = `-X`, `0xC00` = `-Z` - the port of
-/// `FUN_80019B28`. Octant folding over the absolute deltas, one table
-/// lookup on the smaller-over-larger ratio in q11.
+/// The bearing from `(ax, az)` to `(bx, bz)` in PSX 12-bit units - the port
+/// of `FUN_80019B28(a0, a1, a2, a3)` with the arguments in retail's register
+/// order. Octant folding over the absolute deltas, one table lookup on the
+/// smaller-over-larger ratio in q11.
+///
+/// `FUN_80019B28` is axis-agnostic: `0` points along the first pair's delta
+/// (`a2 - a0`) and `0x400` along the second's (`a3 - a1`). The composer
+/// passes X first (`a0/a2` = box centre X / `player+0x14`, `a1/a3` = box
+/// centre Z / `player+0x18`, `0x801DAD18` and `0x801DAE10`), so here `0` =
+/// `+X`, `0x400` = `+Z`, `0x800` = `-X`, `0xC00` = `-Z`. The same routine
+/// reads `0 = +Z` in [`legaia_engine_system::trig::bearing12`] because its
+/// callers pass Z first; `bearing(ax, az, bx, bz) == bearing12(bx - ax,
+/// bz - az)` for every input. The mode-3 pitch call passes `(height, Z)`
+/// pairs through the same slots.
 // PORT: FUN_80019B28
 pub fn bearing(ax: i32, az: i32, bx: i32, bz: i32) -> u16 {
     let mut dx = bx.wrapping_sub(ax);
@@ -1094,6 +1104,39 @@ mod tests {
             let want = want.rem_euclid(4096.0);
             let got = f64::from(bearing(0, 0, dx, dz));
             assert!((got - want).abs() < 1.5, "({dx},{dz}): {got} vs {want}");
+        }
+    }
+
+    #[test]
+    fn bearing_is_bearing12_on_the_first_pair_delta() {
+        // One routine, two argument names: the first pair's delta is the
+        // `0` axis in both ports.
+        use legaia_engine_system::trig::bearing12;
+        for ax in [-300, 0, 64, 1000] {
+            for az in [-7, 0, 512] {
+                for (dx, dz) in [
+                    (0, 0),
+                    (10, 0),
+                    (0, 10),
+                    (-10, 0),
+                    (0, -10),
+                    (5, 5),
+                    (-5, 5),
+                    (5, -5),
+                    (-5, -5),
+                    (100, 37),
+                    (-53, 91),
+                    (-77, -12),
+                    (9, -400),
+                    (2048, 1),
+                ] {
+                    assert_eq!(
+                        bearing(ax, az, ax + dx, az + dz),
+                        bearing12(dx, dz),
+                        "({ax},{az}) + ({dx},{dz})"
+                    );
+                }
+            }
         }
     }
 
