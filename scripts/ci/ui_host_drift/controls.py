@@ -554,6 +554,15 @@ SELFTEST_ENV_READS: list[tuple[str, str, list[tuple[str, object]]]] = [
     ("temp_dir is not a read", "let d = std::env::temp_dir();", []),
 ]
 
+# Detector controls for tier 17: `(label, source, rule, should_flag)`.
+SELFTEST_PAGE_STATE: list[tuple[str, str, dict, bool]] = [
+    ("a line that is there", "a(); gl.b(); c();", {"kind": "contains", "source": "gl.b();"}, False),
+    ("a line that is gone", "a(); c();", {"kind": "contains", "source": "gl.b();"}, True),
+    ("declared ahead of the tick", "d(); t();", {"kind": "before", "source": "d()", "then": "t()"}, False),
+    ("declared after the tick", "t(); d();", {"kind": "before", "source": "d()", "then": "t()"}, True),
+    ("the order's anchor is gone", "d();", {"kind": "before", "source": "d()", "then": "t()"}, True),
+]
+
 # Detector controls for tier 16: `(label, source, bgm_host, should_flag)`.
 SELFTEST_PAGE_CUES: list[tuple[str, str, bool, bool]] = [
     ("a cue decoded through the wasm export", "const pcm = api.slot_sfx_pcm(id);", False, True),

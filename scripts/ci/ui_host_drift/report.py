@@ -13,6 +13,7 @@ from ui_host_drift.controls import (
     SELFTEST_DIAG,
     SELFTEST_ENV_READS,
     SELFTEST_PAGE_CUES,
+    SELFTEST_PAGE_STATE,
     SELFTEST_OWNERSHIP,
     SELFTEST_PAGE_KEYS,
     SELFTEST_PATH_STRINGS,
@@ -46,6 +47,7 @@ from ui_host_drift.tiers.constant_pairs import check_constant_pairs, normalise_v
 from ui_host_drift.tiers.diag_gates import check_diag_gates, initialiser_is_off
 from ui_host_drift.tiers.env_reads import check_env_reads, env_read_violations
 from ui_host_drift.tiers.page_cues import check_page_cues, page_cue_violations
+from ui_host_drift.tiers.page_state import check_page_state, page_state_violation
 from ui_host_drift.tiers.entry_symmetry import check_entry_symmetry
 from ui_host_drift.tiers.enum_coverage import check_enum_coverage
 from ui_host_drift.tiers.frame_content import check_frame_content
@@ -213,6 +215,13 @@ def main() -> int:
         if bool(page_cue_violations(src, bgm_host)) != want:
             print(
                 "ERROR: built-in page-cue control failed; run --selftest.",
+                file=sys.stderr,
+            )
+            return 2
+    for _label, src, rule, want in SELFTEST_PAGE_STATE:
+        if page_state_violation(src, rule) != want:
+            print(
+                "ERROR: built-in page-state control failed; run --selftest.",
                 file=sys.stderr,
             )
             return 2
@@ -414,6 +423,10 @@ def main() -> int:
     # has no ADSR, retail volume or reverb.
     cue_problems, _cue_files = check_page_cues()
     problems.extend(cue_problems)
+
+    # The play page's GL state and frame order: what no Rust tier can read.
+    page_state_problems, _page_state_rules = check_page_state()
+    problems.extend(page_state_problems)
 
     if not args.quiet:
         print(

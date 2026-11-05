@@ -368,6 +368,16 @@ legaia-engine play-window --disc "$LEGAIA_DISC_BIN" --join 192.168.1.4:7462 --ro
   <p>Rebuild after changing anything the page compiles - which is most of the workspace, not just the <code>crates/web-*</code> crates (the play page&rsquo;s bundle is <code>web-play-bundle</code> over <code>web-play</code> and <code>web-minigames</code>, the tool pages&rsquo; is <code>web-viewer</code>). To check whether the bundles you built still match your sources:</p>
   <div class="cli"><code>python3 scripts/ci/check-wasm-freshness.py</code></div>
   <p class="hint">Worth running before concluding a change did or didn't work in the browser: a stale bundle looks exactly like a fix that had no effect. Background: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/shipped-bundle-freshness.md" target="_blank" rel="noopener"><code>tooling/shipped-bundle-freshness.md</code></a>.</p>
+  <h3 id="what-a-browser-cannot-do">What a browser cannot do</h3>
+  <p>The page runs the window's engine, and the two are compared frame by frame. These are the differences a browser imposes, not ones that are waiting on work:</p>
+  <ul>
+    <li><strong>The disc is a <code>.bin</code> you pick</strong>, kept in browser storage between visits. The window also reads an extracted folder.</li>
+    <li><strong>Sound waits for a click or a key.</strong> A browser opens no audio before a gesture.</li>
+    <li><strong>Voices are read on request.</strong> The page holds the disc on its JavaScript side, so a CD-XA clip the engine has not heard yet is read and decoded when asked for and can start a few frames late the first time it plays.</li>
+    <li><strong>Everything runs on one thread.</strong> The engine, the drawing and the audio pump share the page's main thread, so a slow machine steps its quality down to hold the frame rate and a long stall can be heard. The window's audio has its own thread.</li>
+    <li><strong>Saves live in this browser.</strong> The card rack is browser storage; export a save to keep it or to carry it to the window, which loads the same file.</li>
+    <li><strong>It cannot host a room or watch a folder.</strong> It joins rooms a window or a relay hosts, and reloads a pack from its library rather than from a folder as it changes.</li>
+  </ul>
 </section>
 
 <section class="doc-section" id="expansion-packs">

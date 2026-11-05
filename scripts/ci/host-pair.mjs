@@ -77,6 +77,26 @@ const cardScenes = (key, card, block) => ({
 });
 Object.assign(SCENES, cardScenes('late', CARD.late, 1), cardScenes('late4', CARD.late, 4), cardScenes('ladder', CARD.ladder, 3));
 
+/* A seeded rhythm of presses over the whole pad: both hosts reach whichever screens it reaches,
+ * and agreeing is the point, not where it goes. */
+const monkey = (seed, from, to, step) => {
+  const pad = ['Up', 'Down', 'Left', 'Right', 'Cross', 'Circle', 'Triangle', 'Cross', 'Square', 'Start', 'Cross', 'L1', 'R1'];
+  const t = [];
+  let s = seed >>> 0;
+  for (let n = from; n < to; n += step) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    t.push([n, pad[(s >>> 16) % pad.length]]);
+  }
+  return t;
+};
+SCENES.monkey_town = { scene: 'town01', ticks: 1800, every: 30, taps: monkey(1, 30, 1790, 11) };
+SCENES.monkey_map = { scene: 'map01', ticks: 1800, every: 30, taps: monkey(2, 30, 1790, 13) };
+SCENES.monkey_shop = { scene: 'bylon', ticks: 1200, every: 30, shop: { tick: 30, idx: 0 }, taps: monkey(3, 60, 1190, 17) };
+SCENES.monkey_fight = { card: CARD.late, block: 1, ticks: 1800, every: 30, battle: 30, taps: monkey(4, 240, 1790, 19) };
+SCENES.monkey_menu = { card: CARD.late, block: 4, ticks: 1800, every: 30, taps: [[30, 'Start'], ...monkey(5, 60, 1790, 23)] };
+/* A save the window wrote, resumed on both. */
+SCENES.slot_save = { lgsfPath: path.join(REPO, 'saves/slot_00.bin'), card: 'native', ticks: 300, every: 30, hold: walk };
+
 const MODES = {
   retail: { native: ['--retail', '--psx-render'], boxes: ['play-retail-mode', 'play-psx-render'] },
   enhanced: { native: [], boxes: [] },
@@ -172,7 +192,8 @@ async function pageRun(cfg) {
       pc.drawImage(view.canvas, 0, 0, page.width, page.height);
       /* Every layer stacked over it, in stacking order: the menu overlay and a minigame's hub layer. */
       for (const c of view.canvas.parentNode.querySelectorAll('canvas')) {
-        if (c !== view.canvas && !c.hidden) pc.drawImage(c, 0, 0, page.width, page.height);
+        /* A frame that composites its layers into GL hides their canvases by visibility. */
+        if (c !== view.canvas && !c.hidden && c.style.visibility !== 'hidden') pc.drawImage(c, 0, 0, page.width, page.height);
       }
       const trace = rt.debug_host_trace_text();
       const nativeB64 = await window.__pairNative(n + 1);
@@ -273,6 +294,9 @@ async function main() {
     if (!sc) throw new Error('unknown scene ' + name);
     const dir = path.join(out, `${name}-${mode}`);
     fs.mkdirSync(dir, { recursive: true });
+    if (sc.card === 'native') {
+      sc.landed = 'town01';
+    }
     if (sc.card && !sc.lgsfPath) {
       /* Beside the run, not under native/, which each run clears. */
       sc.lgsfPath = path.join(dir, 'landed.lgsf');

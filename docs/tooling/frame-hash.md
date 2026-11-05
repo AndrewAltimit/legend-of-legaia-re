@@ -62,8 +62,8 @@ town01 retail 0042 gl=<hash> ov=<hash> st=<hash> lit=1.000 col=704
 `gl` is the default framebuffer read back, `ov` the 2D overlay canvas the menus, dialogue and
 HUD text draw on, `st` the engine's `state_json`. A difference in `st` is the simulation; one
 in `gl` alone is the renderer. `lit` and `col` are the share of non-black pixels and the count
-of colours, off a sample of the frame, for the check below. DOM text on the page and a movie's
-own canvas are not in it.
+of colours, off a sample of the frame, for the check below. DOM text on the page, a movie's
+own canvas and a minigame's hub layer are not in it; [`host-pair.mjs`](host-drift.md#the-host-pair-run) composites the last.
 
 ## What makes agreeing mean something
 

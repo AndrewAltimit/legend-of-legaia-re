@@ -787,6 +787,26 @@ Worth running before concluding a change did or didn't work in the browser: a
 stale bundle looks exactly like a fix that had no effect. See
 [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md).
 
+### What a browser cannot do
+
+The page runs the window's engine, and the two are compared frame by frame. These
+are the differences a browser imposes, not ones that are waiting on work:
+
+- **The disc is a `.bin` you pick**, kept in browser storage between visits. The
+  window also reads an extracted folder.
+- **Sound waits for a click or a key.** A browser opens no audio before a gesture.
+- **Voices are read on request.** The page holds the disc on its JavaScript side,
+  so a CD-XA clip the engine has not heard yet is read and decoded when asked for
+  and can start a few frames late the first time it plays.
+- **Everything runs on one thread.** The engine, the drawing and the audio pump
+  share the page's main thread, so a slow machine steps its quality down to
+  hold the frame rate and a long stall can be heard. The window's audio has its
+  own thread.
+- **Saves live in this browser.** The card rack is browser storage; export a save
+  to keep it or to carry it to the window, which loads the same file.
+- **It cannot host a room or watch a folder.** It joins rooms a window or a relay
+  hosts, and reloads a pack from its library rather than from a folder as it changes.
+
 ## 11. Playing an expansion pack
 
 An expansion pack adds content made for the port - maps, quests, fights,

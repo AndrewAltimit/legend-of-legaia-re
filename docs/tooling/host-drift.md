@@ -20,14 +20,16 @@ flowchart TD
     F["A feature lands"] --> Q1{"Does each host reach it?"}
     Q1 -->|"tiers 1, 8, 9, 10, 13"| Q2{"Do both feed it the same thing?"}
     Q2 -->|"tiers 2, 3, 4, 5, 12"| Q3{"Does each host run and draw it every frame?"}
-    Q3 -->|"tiers 6, 7, 11, 14"| Q4{"Do the two frames match?"}
-    Q4 -->|"world state: frame-body trace; pixels: screenshot pair"| OK["Parity"]
+    Q3 -->|"tiers 6, 7, 11, 14, 17"| Q4{"Do the two frames match?"}
+    Q4 -->|"world state: frame-body trace; pixels and state on the built page: host pair"| OK["Parity"]
     Q1 -.->|"absent on BOTH hosts"| R["no drift gate fails: reach export"]
 ```
 
 Every tier is a source scan. Each answers exactly one question and is silent
-about the rest, so a green suite is a floor, not host parity. The one check
-that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trace).
+about the rest, so a green suite is a floor, not host parity. Two checks run
+both hosts: the [frame-body trace](#output-level-the-frame-body-trace), in one
+process and without a renderer, and the [host pair](#the-host-pair-run), which
+runs the window and the built page and compares what each put on the screen.
 
 | Tier | Question | Declared in | Blind to |
 |---|---|---|---|
@@ -47,8 +49,9 @@ that runs both hosts is the [frame-body trace](#output-level-the-frame-body-trac
 | 14 save routing | does every save / load go through the retail screen's applier? | `SAVE_IO_ROUTES` | the page's save-bar import |
 | 15 engine environment | does an engine crate read a switch from the process environment? | `ENV_KERNEL_ROOTS`, `ENV_ALLOWED_*` | an env read in a crate no browser host links |
 | 16 page cues | does the minigames page play a cue as decoded PCM instead of keying the live SPU? | `MINIGAME_PAGE_SOURCES`, `BGM_BUFFER_HOST` | whether the id it keys is the right one |
+| 17 page state | does the play page keep the GL state and frame order a measured defect left wrong? | `PAGE_STATE_RULES` | any state no row names; the pixels |
 
-Tiers 1-3 and 5-16 live in
+Tiers 1-3 and 5-17 live in
 [`scripts/ci/check-ui-host-drift.py`](../../scripts/ci/check-ui-host-drift.py)
 (`--list` prints the full surface table, `--selftest` the detector controls,
 `--quiet` findings only); tier 4 is
@@ -88,6 +91,7 @@ docstring is the text `--help` prints. The package keeps three things apart: the
 | [`rows/save_io.py`](../../scripts/ci/ui_host_drift/rows/save_io.py) | `SAVE_IO_ROUTES`, `PAGE_CARD_RACK`, `PAGE_CARD_RACK_RULES` |
 | [`rows/env_reads.py`](../../scripts/ci/ui_host_drift/rows/env_reads.py) | `ENV_KERNEL_ROOTS`, `ENV_NATIVE_HOST_PATHS`, `ENV_ALLOWED_PREFIXES`, `ENV_ALLOWED_NAMES` |
 | [`rows/page_cues.py`](../../scripts/ci/ui_host_drift/rows/page_cues.py) | `MINIGAME_PAGE_SOURCES`, `BGM_BUFFER_HOST` |
+| [`rows/page_state.py`](../../scripts/ci/ui_host_drift/rows/page_state.py) | `PAGE_STATE_RULES` |
 | [`tiers/`](../../scripts/ci/ui_host_drift/tiers/__init__.py) | the analysis, one module per tier, named as its rows module is (`tiers/screens.py` is tier 1, which has no table) |
 | [`rust_text.py`](../../scripts/ci/ui_host_drift/rust_text.py) | comment stripping, signature and body extraction, whole-word sets |
 | [`controls.py`](../../scripts/ci/ui_host_drift/controls.py), [`selftest.py`](../../scripts/ci/ui_host_drift/selftest.py) | the detector controls and `--selftest` |
@@ -1108,6 +1112,19 @@ Web Audio buffer anywhere except the BGM render in `site/js/minigame-bgm.js`. Th
 `crates/web-minigames/tests/live_spu_cues_disc.rs`, which compares each cue's mix with the
 director's sample for sample.
 
+## Tier 17 - page state: the GL state and frame order the page owes
+
+The Rust tiers cannot read the page's GL state, and the page's frame is one
+function over one context, so a piece of state one branch leaves behind or a
+step run a line too late is invisible until a frame shows it. Each row of
+`PAGE_STATE_RULES` names one such thing a [host pair](#the-host-pair-run) run
+found wrong, the file that has to hold it, and what it looks like when it does
+not: the winding handed back with the cull, the intro readback declared ahead
+of the ticks, the screen primitives' tie nudge, the hall's ambient tree taken
+off the world on leaving a dance, the screen layers composed on a pause-menu
+tick. A row is `contains` (the line is there) or `before` (the line is there,
+ahead of another). It is a pin on a known defect and does not generalise.
+
 ## Two JavaScript-side gates
 
 No Rust tier reads `site/js/`. Two scripts do, in the pre-commit hook when
@@ -1339,6 +1356,69 @@ row to its page control through an exhaustive match, so a new row cannot land
 without an answer for the page, and fails a launch-switch row that leaves the
 shared set untouched.
 
+## The host pair run
+
+[`scripts/ci/host-pair.mjs`](../../scripts/ci/host-pair.mjs) runs the same scene
+on the same pad script in `play-window` and in the built play page, pairs the two
+by world frame, and compares both what they hold and what they drew. It is the one
+check that sees the page's JavaScript and its GL state against the window.
+
+```bash
+scripts/ci/host-pair.mjs --site <site> --engine target/release-test/legaia-engine --out <scratch> \
+    [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n] [--gl egl --no-msaa]
+```
+
+| Side | How it runs |
+|---|---|
+| native | `play-window`'s capture sweep (`--screenshot-every`, `--pad-script`), with `LEGAIA_SWEEP_TRACE` writing the world's `host_trace` sample beside each PNG and `LEGAIA_AUDIO_DETACHED` a director over no device |
+| page | the page's own step (`view.step()`, `_frame()`, as [`frame-hash-web.mjs`](frame-hash.md) does), keys through its listeners; at each tick the native run captured, the GL canvas with every canvas stacked on it, and `debug_host_trace_text` |
+
+The pad script names the world frame a tick ends on, and the page's step `n` ends on
+frame `n + 1`, so the page presses a tick ahead of the number and pairs its step `n`
+with the native `tick_{n+1}`. The trace digests are target-free
+(`TargetFreeHasher`): a `usize` or an enum's discriminant would otherwise hash
+differently on `wasm32` and tell two equal worlds apart.
+
+A pair scores the share of pixels off by more than the threshold in any channel, both
+reduced to 320x240, and diffs the two trace texts. The trace carries
+`bindings_parts` and `audio_recent` in the clear beside their digests, so a difference
+names the actor slot or the command. Pairs over `--report` land in the output as
+`<tick>-page.png` and `<tick>-diff.png` beside the native PNG. All of it is Sony-derived:
+a scratch directory only.
+
+| Scenes | Reach |
+|---|---|
+| `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, a fight to its results and back, a seeded summon |
+| `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
+| `late_*`, `late4_*`, `ladder_*` | a retail card save: the page lands it and writes an LGSF, the window resumes that file, so each also carries a save from one host to the other |
+| `slot_save` | a save the window wrote, resumed on both |
+| `monkey_*` | a seeded rhythm of presses over the whole pad. Where it goes does not matter, only that both go there |
+
+A card landing enters from the page's running scene first, so its audio record starts a
+command apart and the actor table is longer; `monkey_fight`, `late_*` and the rest filter
+that one record, and a `bindings` line on such a run says so rather than a difference.
+
+What a healthy pair reads: the trace agrees on every sampled frame, and the pixels differ
+by a few tenths of a percent, hairline rows on flat 3D edges where a tie lands on the
+other row. That residual is there on a real GPU and on SwiftShader alike. The run prints;
+it asserts nothing and is not a CI gate, since it needs a disc, a built bundle and a
+display.
+
+### What it has found
+
+Each of these had every drift tier green and the frame-body trace agreeing, because
+the world was right and the picture was not:
+
+| Shape | What it looked like |
+|---|---|
+| Sticky GL state | `TmdRenderer.render` left `gl.frontFace(CW)` behind the dance hall's cull. The scene pass reads `gl_FrontFacing` for retail's NCLIP and states no winding, so leaving a dance drew the field with its ground gone for the rest of the session |
+| A fill rule on a bottom-up window | A screen primitive's corner on the PSX canvas sits exactly on a row's centre, and the canvas's rule handed the tie to the row under the GPU's. Every sprite drew a row low, its last texel row past the art, and the slot machine's dot matrix lost its top rows. The 3D pass draws into a framebuffer object and agrees already (`PSX_TIE_NDC_Y`) |
+| A page clock over an engine clock | The dance hall's wall panels and stage screens flipped on the art's own step, once a page frame, where the window draws the running dance's `step_marker_mesh`, a clock of the hall's game frames |
+| A step the last frame of a mode never asks | The hall's ambient tree came off the world only from inside `danceFrame`, so past the last dance frame the field kept it |
+| A composition older than its frame | A pause-menu tick runs no world tick, so its screen layers stayed the last field tick's, and the frame the menu closed lost its wipe: one lit frame the window shows dark |
+| A declaration a frame late | The intro readback was declared after the draw, so a fight armed on the runtime's first frame landed the transition's own strips over stale VRAM as the field capture |
+| World state written by one draw half | The window's battle mesh build dropped the field's NPC bindings and a summon seat bound only there. Both are session steps now (`battle_stage`) |
+
 ## Pairing frames: what a screenshot adds
 
 A row closed by a tier is a claim about code, not pixels. Two hosts can be
@@ -1456,8 +1536,10 @@ return, the overworld leader, and the title card.
 | battle command phase | `v0_1_battle_command_menu` | bare gravel under the ring | - |
 | dialogue box | `v0_1_tetsu_dialogue_accept` (border rows 9 and 63, columns 31..287, ink `(206, 206, 206)`) | no port frame: a talk needs a positioned walk-to-NPC input no harness provides | not paired |
 
-Not frame-paired: shops, the inn, FMV, the Koru strip (no formation-`0xB6`
-entry short of the dome) and scripted battles (op `0x3E`).
+Not frame-paired: the inn, FMV, the boot title and New Game, the Koru strip (no
+formation-`0xB6` entry short of the dome) and scripted battles (op `0x3E`). The
+[host pair](#the-host-pair-run) carries shops, dialogue, the minigames and retail
+card saves.
 
 <a id="gaps-the-tiers-were-blind-to-closed-by-reading-the-two-hosts-side-by-side"></a>
 
@@ -1570,6 +1652,9 @@ reverse-engineering questions, so they are not on
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
+| dome hub shade | The Muscle Dome's first-visit backdrop is on the page's 2D layer, whose subtraction is on 8 bits; the window's is at the framebuffer's 5. The wall reads a 5-bit step brighter on the page and the title's drop shadow is a little lighter, for that one screen. |
+| pause wipe, first frames | Two the [host pair](#the-host-pair-run) reads and neither host is yet shown right on: the window draws no party HUD under the opening wipe where the page dims it, and on the frame the menu spawns the window shows the lit field for one frame where the page shows the menu. The windmill's semi-transparent blades also read darker under the window's wipe than under the page's. No retail state sits in a wipe. |
+| browser limits | Real ones, said to the player in the [guide](../guides/playing-and-viewing.md#what-a-browser-cannot-do): the disc is a `.bin` held in the tab, XA spans are read on request so a voice's first playing can start a few frames late, sound waits for a gesture, everything runs on the page's one thread. |
 | not retail | A dialogue text blip, a door cue and a footstep cue: the pager cues only its picker, a scene change cues nothing, and walking is silent ([`sfx-table.md`](../formats/sfx-table.md#the-dialog-box-cues-its-picker-not-its-text)). |
 
 ### The minigames page has no `World`
