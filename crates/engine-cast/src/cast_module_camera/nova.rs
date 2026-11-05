@@ -242,15 +242,18 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     )
                 }
                 0x10 => {
-                    // The body's countdown climbs `P / 2` a tick from the
-                    // `0` arm 0x0F left.
-                    let n = (p / 2) * (ticks + 1);
-                    let (sin, _) = trig12(((n / 2) & 0xFFF) as u16);
-                    // `yaw += sin / 2` once a pass (`0x801F8098..0x801F80A4`), and
-                    // a pass spans the frame step's ticks.
+                    // The body's countdown climbs `P / 2` a tick from the `0`
+                    // arm 0x0F left, and `yaw += sin(n / 2) / 2` lands once a pass
+                    // (`0x801F8068..0x801F80A4`): on the first tick of each,
+                    // at the word as the pass leaves it.
                     let step = crate::cast_module_frame_step::cast_arm_frame_step(913, arm)
                         .map_or(2, i32::from);
-                    drift(0, i32::from(sin) / (2 * step), 0, 0)
+                    if ticks % step != 0 {
+                        return ArmDirection::PASS;
+                    }
+                    let n = (p / 2) * (ticks + step);
+                    let (sin, _) = trig12(((n / 2) & 0xFFF) as u16);
+                    drift(0, i32::from(sin) / 2, 0, 0)
                 }
                 0x14 => ArmDirection {
                     end_frame: true,

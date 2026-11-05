@@ -127,7 +127,13 @@ impl Glide {
         let angle_left = [gap(0).unsigned_abs() as f32, gap(1).unsigned_abs() as f32];
         let dir = |k: usize| if gap(k) < 0 { -1.0 } else { 1.0 };
         let angle_dir = [dir(0), dir(1)];
-        let sign = |from: i16, to: i16| if i32::from(to) < i32::from(from) { -1.0 } else { 1.0 };
+        let sign = |from: i16, to: i16| {
+            if i32::from(to) < i32::from(from) {
+                -1.0
+            } else {
+                1.0
+            }
+        };
         let lane_dir = [
             sign(cur.shake[0], tgt.shake[0]),
             sign(cur.shake[1], tgt.shake[1]),
