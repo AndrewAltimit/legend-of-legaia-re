@@ -135,6 +135,7 @@ mod move_ext_strip_census_disc;
 mod move_op03_census_disc;
 mod muscle_contest_real;
 mod muscle_dome_battle_leg_disc;
+mod party_mesh_swap_disc;
 // --- lane D2 ---
 mod muscle_dome_choreo_real;
 // --- end lane D2 ---

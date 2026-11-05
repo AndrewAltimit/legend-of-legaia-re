@@ -68,15 +68,10 @@ pub fn export_party_field_glbs(
             notes.push(format!("{character}: pack has no slot {slot}"));
             continue;
         };
-        // The disc-form mesh, live groups capped at 10 the way FUN_8001E890
-        // does so the two equipment templates (groups 10/11) are never drawn
-        // as geometry. The equipment swap itself is NOT applied: for Noa and
-        // Gala the raw group already equals the template-zero variant (the
-        // cold new-game look), and for Vahn the port's patch index (0) names
-        // his HEAD - applying it exported him headless. Which group retail
-        // really patches for Vahn is an open RE question
-        // (docs/formats/character-mesh.md); the raw mesh is right either way.
-        let mut tmd_bytes = cslot.tmd_bytes.clone();
+        // Live groups capped at 10 the way FUN_8001E890 does so the two
+        // equipment templates (groups 10/11) are never drawn as geometry, and
+        // the swap taken with no Ra-Seru held: the cold new-game look.
+        let mut tmd_bytes = cp::equipment_swap::apply(&cslot.tmd_bytes, patch, 0);
         if tmd_bytes.len() >= 0x0C {
             tmd_bytes[0x08..0x0C].copy_from_slice(&10u32.to_le_bytes());
         }

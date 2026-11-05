@@ -117,6 +117,9 @@ pub struct FieldVmState {
     /// `4C D2` channel ids waiting for the sweep: the VM runs a slice with
     /// the channel set moved out, so the seat happens at the sweep.
     pub(crate) pending_placement_respawns: Vec<u8>,
+    /// `FUN_8001EBEC` is owed: a scene entry or a `4C 3F` asked for it, and the
+    /// next frame runs it over the roster as it then stands.
+    pub(crate) party_mesh_swap_pending: bool,
     /// `true` while [`crate::world::World::run_spawned_record_slice`] is stepping a spawned
     /// partition-2 record context (the modal cutscene timeline or a
     /// concurrent helper context). Host hooks use it to distinguish a
@@ -240,6 +243,7 @@ impl FieldVmState {
             pending_engagements: Vec::new(),
             retired_placements: Default::default(),
             pending_placement_respawns: Vec::new(),
+            party_mesh_swap_pending: false,
             in_spawned_record_slice: false,
             halted_elsewhere: Vec::new(),
             dialog_claims: 0,

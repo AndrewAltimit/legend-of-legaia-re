@@ -50,6 +50,40 @@ impl World {
         self.global_tmd_pool[idx] = Some(tmd);
     }
 
+    /// The Ra-Seru mesh swap over the player bank: each of the three party
+    /// meshes takes one of its two template groups over a visible group, by
+    /// whether its character holds a Ra-Seru. Retail runs it from the party
+    /// pack load (`FUN_8001E890`, `jal` at `0x8001EBB4`) and from op `4C 3F`
+    /// (`0x801E1128`), the beats that grant or take one away, so a change made
+    /// in a menu shows at the next of those. A rewritten lead raises the rig
+    /// signal both hosts drain.
+    ///
+    /// PORT: FUN_8001EBEC
+    pub fn apply_party_mesh_swap(&mut self) {
+        use legaia_actor_formats::character_pack::equipment_swap;
+        for patch in equipment_swap::ACTIVE_PARTY_SLOTS {
+            let slot = usize::from(patch.slot);
+            // A member who has not joined holds retail's zeroed record.
+            let byte = self.party.roster.members.get(slot).map_or(0, |m| {
+                m.equipment().slots[usize::from(patch.equip_byte_record_offset - 0x196)]
+            });
+            for pool in [&mut self.global_tmd_pool, &mut self.field_head_pool] {
+                let Some(Some(g)) = pool.get_mut(slot) else {
+                    continue;
+                };
+                let raw = equipment_swap::apply(&g.raw, patch, byte);
+                if raw == g.raw {
+                    continue;
+                }
+                let Ok(tmd) = legaia_tmd::parse(&raw) else {
+                    continue;
+                };
+                *g = std::sync::Arc::new(legaia_engine_scene::model_bank::GlobalTmd { tmd, raw });
+                self.locomotion.player_rig_dirty = true;
+            }
+        }
+    }
+
     /// Resolve a global TMD by pool index. Mirrors the retail field-VM
     /// allocator's `iVar13 = DAT_8007C018[(int16_t)tmd_idx]` read - the
     /// caller is responsible for clamping negative indices (the retail

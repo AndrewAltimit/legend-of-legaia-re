@@ -3,6 +3,11 @@
 use super::*;
 
 impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
+    // Op `4C 3F`: the Ra-Seru mesh swap, at the frame's sweep.
+    fn copy_party_tmd_poses(&mut self) {
+        self.world.request_party_mesh_swap();
+    }
+
     fn set_camera_octant(&mut self, new_index: u8) {
         // Op `4C 2x` (arm `0x801E0EB8`): store the pad octant `gp+0x2D8`; on
         // a landing tick (`_DAT_8007B6B0 == -1000`) the player's heading turns

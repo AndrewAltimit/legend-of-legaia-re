@@ -432,12 +432,20 @@ impl World {
         self.resync_ambient_start_headings();
     }
 
+    /// Owe the next frame a [`Self::apply_party_mesh_swap`].
+    pub fn request_party_mesh_swap(&mut self) {
+        self.field_vm.party_mesh_swap_pending = true;
+    }
+
     /// The per-frame half of `FUN_8002519C` over the placement contexts: a
     /// context whose retire bit is up stops existing, and a queued `4C D2`
     /// seats a retired placement again.
     ///
     /// PORT: FUN_8002519C (the retire arm, placement contexts)
     pub(crate) fn sweep_field_channel_lifetimes(&mut self) {
+        if std::mem::take(&mut self.field_vm.party_mesh_swap_pending) {
+            self.apply_party_mesh_swap();
+        }
         self.retire_killed_field_channels();
         self.run_pending_placement_respawns();
     }
