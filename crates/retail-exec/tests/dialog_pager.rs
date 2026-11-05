@@ -161,7 +161,6 @@ fn the_pager_pages_as_retail_pages() {
         let mut port = OwnedDialogPanel::at_segment(Arc::new(text.clone()), 0);
         port.frame_step = dt;
         port.set_window_format(capacity as usize, false);
-        let mut trace = 0;
         let mut retail_prev: Option<Rec> = None;
         'run: for call in 0..6000 {
             let tap = tap_odds != 0 && rng.below(tap_odds) == 0;
@@ -223,13 +222,12 @@ fn the_pager_pages_as_retail_pages() {
             let ours = ours.expect("a window");
             assert_eq!(
                 retail, ours,
-                "scenario {scenario} call {call} trace {trace} dt {dt} cap {capacity} press {press} (state before {state:#x})"
+                "scenario {scenario} call {call} dt {dt} cap {capacity} press {press} (state before {state:#x})"
             );
             assert_eq!(
                 retail_calls, port_calls,
-                "scenario {scenario} trace {trace} dt {dt}: calls"
+                "scenario {scenario} dt {dt}: calls"
             );
-            trace += 1;
             waits += usize::from(retail.0 == 0x19);
             taps += usize::from(tap);
             retail_prev = Some(retail);

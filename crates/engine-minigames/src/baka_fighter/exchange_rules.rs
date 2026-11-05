@@ -528,8 +528,7 @@ impl BakaFight {
                 // (`0x801D0844..0x801D085C`), a score-channel row like the
                 // other two. The total runs on across a visit's matches.
                 if self.score_tables.is_some() {
-                    self.score_rows[0] =
-                        crate::baka_cabinet::match_bonus(self.f[1].round_wins as u32);
+                    self.score_rows[0] = crate::baka_cabinet::match_bonus(self.f[1].round_wins);
                 }
                 self.tally = Some(
                     BakaTally::new([

@@ -155,12 +155,18 @@ fn pond_session_hooks_a_lure_row_species_and_lands_it() {
     for _ in 0..12 {
         tick(&mut mg, 0, false);
     }
-    for _ in 0..24 {
+    for _ in 0..96 {
         tick(&mut mg, 0, false);
     }
     tick(&mut mg, 0, true);
-    for _ in 0..0x14 {
+    // The flight runs until the power is spent.
+    for _ in 0..200 {
         tick(&mut mg, 0, false);
+        let st: serde_json::Value =
+            serde_json::from_str(&mg.fishing_pond_state_json()).expect("state json");
+        if st["phase"].as_str() == Some("waiting") {
+            break;
+        }
     }
     let st: serde_json::Value =
         serde_json::from_str(&mg.fishing_pond_state_json()).expect("state json");

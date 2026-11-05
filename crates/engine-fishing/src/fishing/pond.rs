@@ -503,7 +503,7 @@ impl PondSession {
                 // fish tick (`0x801D2D08..0x801D2DC8`, `jal 0x801D4004` at
                 // `0x801D3968`).
                 self.last_swim = frame.swim;
-                self.lateral = (self.lateral + (frame.swim.0 / 2 >> 8)).clamp(-0x400, 0x400);
+                self.lateral = (self.lateral + ((frame.swim.0 / 2) >> 8)).clamp(-0x400, 0x400);
                 self.end_lure_frame(input, fs);
                 // The lure tick's tail measures the record, then a fish run
                 // far out strains the line (`record >= 0x899`:
