@@ -86,6 +86,13 @@ pub struct LauncherSettings {
     /// as it shipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expansion: Option<PathBuf>,
+    /// An emulator memory card (`.mcr` / `.mcd` / `.gme` / `.mcs`) mounted
+    /// in the save screen's second card port, passed to the game as
+    /// `--card`: the player's saves from another emulator, loaded and saved
+    /// in place. The browser play page imports the same containers through
+    /// the same reader (`legaia_save::emu::MountedCard`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<PathBuf>,
     /// Disc images that validated here before, newest first, at most
     /// [`RECENT_DISCS_MAX`] ([`Self::remember_disc`]). [`Self::disc`] is the
     /// head of the list once one has been chosen; the rest are what *Choose
@@ -403,6 +410,12 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
         args.push("--expansion".into());
         args.push(pack.clone().into_os_string());
     }
+    // The memory card is the player's own saves: it rides with `--retail`
+    // too.
+    if let Some(card) = &settings.card {
+        args.push("--card".into());
+        args.push(card.clone().into_os_string());
+    }
     if settings.switches.psx_render {
         args.push("--psx-render".into());
     }
@@ -487,6 +500,61 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
         args.push("--action-movement".into());
     }
     args
+}
+
+/// The file extensions of the memory-card containers the game mounts
+/// (`legaia_save::emu::detect`): raw `.mcr` / `.mcd` / `.srm`, DexDrive
+/// `.gme`, single-save `.mcs`.
+pub const CARD_EXTENSIONS: [&str; 5] = ["mcr", "mcd", "srm", "gme", "mcs"];
+
+/// Whether `path` names a memory-card container by its extension (a dropped
+/// file is routed by this before it is read).
+pub fn is_card_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| CARD_EXTENSIONS.iter().any(|c| c.eq_ignore_ascii_case(e)))
+}
+
+/// A memory card the launcher checked ([`inspect_card`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardInfo {
+    /// The card file, absolute (the game runs in the data directory).
+    pub path: PathBuf,
+    /// The container format's label (`mcr`, `gme`, `mcs`).
+    pub format: &'static str,
+    /// How many Legend of Legaia saves the game would list on it: the
+    /// blocks `MountedCard::save_at` resumes.
+    pub saves: usize,
+}
+
+/// Mount `path` the way the game will (`MountedCard::open`) and count the
+/// saves its load screen would list. The error is a sentence for the help
+/// box.
+pub fn inspect_card(path: &Path) -> std::result::Result<CardInfo, String> {
+    if !path.exists() {
+        return Err(format!("There is no file at {}.", path.display()));
+    }
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // The reader's first clause, as a sentence: its advice ("expected a raw
+    // .mcr ...") is the launcher's own line under it.
+    let card = legaia_save::emu::MountedCard::open(&path).map_err(|e| {
+        let root = e.root_cause().to_string();
+        let head = root
+            .split(" - ")
+            .next()
+            .and_then(|h| h.split(". ").next())
+            .unwrap_or(&root)
+            .trim_end_matches('.');
+        let mut s = head.chars();
+        let first = s.next().map(|c| c.to_uppercase().collect::<String>());
+        format!("{}{}.", first.unwrap_or_default(), s.as_str())
+    })?;
+    let saves = (0..15u8).filter(|&c| card.save_at(c).is_some()).count();
+    Ok(CardInfo {
+        path,
+        format: card.view.format.label(),
+        saves,
+    })
 }
 
 /// An expansion pack the launcher checked ([`inspect_expansion`]).
@@ -1956,6 +2024,53 @@ mod tests {
         // No pack writes no key.
         let none = toml::to_string(&LauncherSettings::default()).unwrap();
         assert!(!none.contains("expansion"));
+    }
+
+    #[test]
+    fn the_memory_card_rides_the_play_args_with_retail_too() {
+        let info = ok_info(Path::new("/g/l.bin"));
+        let s = LauncherSettings {
+            card: Some("/cards/epsxe000.mcr".into()),
+            switches: PersistedSwitches {
+                retail: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let a = play_args_with(&info, &s);
+        let at = a.iter().position(|x| x == "--card").expect("--card");
+        assert_eq!(a[at + 1], "/cards/epsxe000.mcr");
+        let text = toml::to_string(&s).unwrap();
+        assert_eq!(toml::from_str::<LauncherSettings>(&text).unwrap(), s);
+        assert!(
+            !toml::to_string(&LauncherSettings::default())
+                .unwrap()
+                .contains("card")
+        );
+        // The `play-window` parser takes what the launcher hands it.
+        assert!(a.iter().any(|x| x == "--retail"));
+    }
+
+    #[test]
+    fn card_files_are_recognised_and_inspected_through_the_game_reader() {
+        assert!(is_card_file(Path::new("/c/Legaia.MCR")));
+        assert!(is_card_file(Path::new("/c/slot.gme")));
+        assert!(!is_card_file(Path::new("/c/legaia.bin")));
+        let dir = tempfile::tempdir().unwrap();
+        // A freshly formatted raw card: mounts, holds no saves.
+        let blank = dir.path().join("blank.mcr");
+        let mut bytes = vec![0u8; 128 * 1024];
+        bytes[..2].copy_from_slice(b"MC");
+        std::fs::write(&blank, &bytes).unwrap();
+        let info = inspect_card(&blank).expect("a formatted card mounts");
+        assert_eq!((info.format, info.saves), ("mcr", 0));
+        assert!(info.path.is_absolute());
+        // Not a card: refused with the reader's reason, as a sentence.
+        let junk = dir.path().join("junk.mcr");
+        std::fs::write(&junk, vec![7u8; 4096]).unwrap();
+        let why = inspect_card(&junk).unwrap_err();
+        assert_eq!(why, "Unrecognised save container (4096 bytes).");
+        assert!(inspect_card(&dir.path().join("gone.mcr")).is_err());
     }
 
     /// A chosen file names a pack as a bundle, a folder or its manifest; the

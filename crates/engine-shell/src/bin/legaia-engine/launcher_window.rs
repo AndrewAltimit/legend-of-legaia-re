@@ -26,6 +26,9 @@
 //!   green, the original's own dim (`OptionRow::original_value`).
 //! - **Controls.** The current key bindings (`legaia-input.toml`), so a
 //!   player sees them before the game starts.
+//! - **Saves folder** opens the data directory; its second action (or a
+//!   dropped `.mcr` / `.mcd` / `.gme` / `.mcs`) mounts an emulator memory
+//!   card as the save screen's card 2 (`--card`, `LauncherSettings::card`).
 //! - **Play** starts the game in a child process (winit allows one event
 //!   loop per process, and the launcher holds it) and closes the window.
 //!   A clean exit ends the launcher; a failure brings the window back with
@@ -434,6 +437,9 @@ struct LauncherApp {
     /// ([`launcher::discover_packs`]), read once when the window opens: the
     /// Expansion button steps through them before it opens a file dialog.
     packs: Vec<ExpansionInfo>,
+    /// The remembered memory card, checked ([`launcher::inspect_card`]), or
+    /// why it cannot be mounted.
+    card: Option<Result<launcher::CardInfo, String>>,
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
@@ -505,6 +511,7 @@ impl LauncherApp {
                 .flatten()
                 .filter(ExpansionInfo::playable)
                 .collect(),
+            card: settings.card.as_deref().map(launcher::inspect_card),
             settings,
             settings_file,
             options,
@@ -857,6 +864,15 @@ impl LauncherApp {
             self.focus = Item::Expansion;
             return;
         }
+        if let Some(Err(why)) = &self.card {
+            self.status = Some(vec![
+                ("Card 2 cannot be used:".into(), WARN),
+                (why.clone(), WARN),
+                (CARD_FIX.into(), DIM),
+            ]);
+            self.focus = Item::DataFolder;
+            return;
+        }
         // The disc played becomes the newest of the remembered ones.
         if self.settings.recent_discs.first() != Some(&info.path) {
             self.settings.remember_disc(&info.path);
@@ -1061,6 +1077,64 @@ impl LauncherApp {
         }]);
     }
 
+    /// Mount `path` as the game's second memory card when it reads as one.
+    fn try_card(&mut self, path: &Path) {
+        match launcher::inspect_card(path) {
+            Ok(info) => {
+                log::info!("launcher: memory card {}", info.path.display());
+                self.settings.card = Some(info.path.clone());
+                self.save_settings();
+                self.status = Some(vec![(card_summary(&info), GOOD)]);
+                self.card = Some(Ok(info));
+            }
+            Err(why) => {
+                log::warn!("launcher: memory card {}: {why}", path.display());
+                self.status = Some(vec![
+                    ("Not a memory card the game can use:".into(), WARN),
+                    (why, WARN),
+                    (CARD_FIX.into(), DIM),
+                ]);
+            }
+        }
+        self.focus = Item::DataFolder;
+        self.win.request_redraw();
+    }
+
+    /// Stop mounting the remembered memory card.
+    fn clear_card(&mut self) {
+        if self.settings.card.take().is_some() {
+            self.card = None;
+            self.save_settings();
+            self.status = Some(vec![(
+                "No memory card: the game uses only its own save card.".into(),
+                DIM,
+            )]);
+        }
+        self.win.request_redraw();
+    }
+
+    fn browse_card(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Choose a memory card from your emulator")
+            .add_filter("PlayStation memory card", &launcher::CARD_EXTENSIONS)
+            .add_filter("Any file", &["*"]);
+        if let Some(dir) = self
+            .settings
+            .card
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|d| d.is_dir())
+        {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(w) = self.win.window.as_deref() {
+            dialog = dialog.set_parent(w);
+        }
+        if let Some(p) = dialog.pick_file() {
+            self.try_card(&p);
+        }
+    }
+
     /// Activate the focused control (`dir` steps an option backwards).
     fn activate(&mut self, item: Item, dir: i8, evl: &ActiveEventLoop) {
         self.focus = item;
@@ -1090,6 +1164,7 @@ impl LauncherApp {
                 self.rebind = KeyRebindSession::new(Mapping::default());
                 self.save_bindings("Every key is back on its default.".into());
             }
+            Item::DataFolder if dir < 0 => self.browse_card(),
             Item::DataFolder => self.open_data_folder(),
             Item::Quit => evl.exit(),
             Item::Opt(row) => {
@@ -1167,6 +1242,10 @@ impl LauncherApp {
     fn reset_focused(&mut self) {
         if self.focus == Item::Expansion {
             self.clear_expansion();
+            return;
+        }
+        if self.focus == Item::DataFolder {
+            self.clear_card();
             return;
         }
         if let Item::Opt(row) = self.focus
@@ -1666,10 +1745,7 @@ impl LauncherApp {
                 ),
             },
             Item::BindReset => "Put every button back on the key it starts on.".into(),
-            Item::DataFolder => {
-                let dir = std::env::current_dir().unwrap_or_default();
-                format!("Saves, options and key bindings live in {}", dir.display())
-            }
+            Item::DataFolder => data_folder_help(self.card.as_ref()),
             Item::Quit => "Close the launcher. Esc.".into(),
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
@@ -1797,6 +1873,8 @@ impl ApplicationHandler for LauncherApp {
             WindowEvent::DroppedFile(p) => {
                 if launcher::expansion_pack_path(&p).is_some() {
                     self.try_expansion(&p);
+                } else if launcher::is_card_file(&p) {
+                    self.try_card(&p);
                 } else {
                     self.try_disc(&p);
                 }
@@ -1866,7 +1944,10 @@ impl ApplicationHandler for LauncherApp {
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
                 if let Some(item) = self.hit()
                     && (dir > 0
-                        || matches!(item, Item::Opt(_) | Item::Expansion | Item::ChooseDisc))
+                        || matches!(
+                            item,
+                            Item::Opt(_) | Item::Expansion | Item::ChooseDisc | Item::DataFolder
+                        ))
                 {
                     self.activate(item, dir, evl);
                 }
@@ -2327,6 +2408,34 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 
 /// The disc card's one-line summary of `p`; the full reason goes in the
 /// help box ([`problem_message`]).
+/// One line naming a mounted memory card and what the game will find on it.
+fn card_summary(info: &launcher::CardInfo) -> String {
+    let name = file_name_of(&info.path);
+    match info.saves {
+        0 => format!("Card 2 is {name}, no Legaia saves yet."),
+        1 => format!("Card 2 is {name}, 1 save."),
+        n => format!("Card 2 is {name}, {n} saves."),
+    }
+}
+
+/// The advice under a memory card that would not mount.
+const CARD_FIX: &str = "Choose a .mcr, .mcd, .gme or .mcs card (Shift+Enter), or Delete.";
+
+/// *Saves folder*'s help: the game's own card is in that folder; an
+/// emulator card can ride beside it as card 2 (`--card`).
+fn data_folder_help(card: Option<&Result<launcher::CardInfo, String>>) -> String {
+    let mut s = String::from("Open the folder your saves and settings live in. ");
+    match card {
+        None => s.push_str("Shift+Enter: use an emulator memory card as card 2."),
+        Some(Ok(info)) => {
+            s.push_str(&card_summary(info));
+            s.push_str(" Delete removes it.");
+        }
+        Some(Err(_)) => s.push_str("Card 2 cannot be read. Delete removes it."),
+    }
+    s
+}
+
 /// What a controller button does on the launcher screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PadNav {
@@ -3060,6 +3169,38 @@ mod tests {
             "choose disc + recent offer".into(),
             one(&choose_disc_help(&offer)),
         ));
+        // The memory card's lines: the Saves folder help with each card
+        // state, and the refusals.
+        let card = |saves| launcher::CardInfo {
+            path: "/home/player/Emulators/DuckStation/memcards/SCUS-94254_1.mcd".into(),
+            format: "mcr",
+            saves,
+        };
+        out.push(("saves, no card".into(), one(&data_folder_help(None))));
+        for n in [0, 1, 15] {
+            out.push((
+                format!("saves, card with {n}"),
+                one(&data_folder_help(Some(&Ok(card(n))))),
+            ));
+        }
+        out.push((
+            "saves, bad card".into(),
+            one(&data_folder_help(Some(&Err(String::new())))),
+        ));
+        let why = "Unrecognised save container (4096 bytes).".to_string();
+        for head in [
+            "Not a memory card the game can use:",
+            "Card 2 cannot be used:",
+        ] {
+            out.push((
+                format!("card refused: {head}"),
+                vec![
+                    (head.into(), WARN),
+                    (why.clone(), WARN),
+                    (CARD_FIX.into(), DIM),
+                ],
+            ));
+        }
         // Every reason the disc sniffer gives.
         let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];
         iso[16 * 2048 + 1..16 * 2048 + 6].copy_from_slice(b"CD001");

@@ -257,7 +257,14 @@ A launcher start runs the game from the per-user data directory
 (`~/.local/share/legaia-engine` on Linux; the same folder as the settings on
 Windows and macOS), so key bindings (`legaia-input.toml`), options
 (`legaia-options.toml`) and `saves/` stay in one place however the binary was
-started; *Open saves folder* opens it. `LEGAIA_ENGINE_CONFIG_DIR` and
+started; *Open saves folder* opens it. Right-click or `Shift+Enter` on that
+button (Triangle on a controller), or dropping the file on the window, picks
+a memory card from another emulator (`.mcr`, `.mcd`, `.srm`, DexDrive `.gme`,
+single-save `.mcs`) as the save screen's **card 2**: the launcher mounts it
+through the game's own reader, says how many Legend of Legaia saves it holds,
+remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
+those saves load and save in place - what the browser play page's card import
+does. `Delete` on the button removes it. `LEGAIA_ENGINE_CONFIG_DIR` and
 `LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
 behaves exactly as before; the launcher only answers the no-argument case.
 
