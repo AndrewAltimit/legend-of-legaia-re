@@ -249,7 +249,7 @@ pub fn battle_ghost_draws(world: &World) -> Vec<BattleGhostDraw> {
     let mut out = Vec::new();
     let per_frame = world.ghost_ring_slots_per_frame();
     for (i, actor) in world.actors.iter().enumerate() {
-        if actor.battle_pose_history.is_empty() {
+        if actor.battle_pose_history.is_empty() || battle_body_word_zero(actor) {
             continue;
         }
         let monster = actor.battle_monster_id.is_some();
@@ -287,6 +287,17 @@ pub fn battle_ghost_draws(world: &World) -> Vec<BattleGhostDraw> {
         }
     }
     out
+}
+
+/// Whether a body's tint pass leaves its colour word's low 24 bits zero: the
+/// hide (`+0x04 = 0`, `+0x21C = 0xFF`) or a fade run down to black. The draw
+/// tick `FUN_800480D8` then skips the after-image walk with the rest of the
+/// body (`bne v0,zero,0x80048244` at `0x800481CC`), so a cast module that
+/// hides its caster takes the caster's ghosts off the stage too. The engine's
+/// resting word is `0` under flag `0` where retail's is the neutral
+/// `0x20080200`, and that body draws.
+fn battle_body_word_zero(actor: &legaia_engine_core::world::Actor) -> bool {
+    actor.battle.render_color == 0 && actor.battle.render_flag != 0
 }
 
 /// The objects actor `i`'s live body draws this frame, indexed by TMD
