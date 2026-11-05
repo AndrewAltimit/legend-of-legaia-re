@@ -2499,3 +2499,13 @@ Evidence: `disassembly` for the laws, `capture` for the states. Three separate f
 - **The monster's pull-in never opened.** `FUN_801E93C8` keeps `ctx[+0x243]` while the seat's clip has `+0x87` set (`0x801E9458..0x801E94A4`); the live host had no such read, the gate stood open and the strike loop's tail cleared the latch the commit had stored. Case 7 then tested a stand-in for it, and its glide chased the unpulled depth.
 
 Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#post-strike-shots-cases-7-and-8).
+
+### How long `0x6E` and `0x6F` hold, and what the hold moves
+
+Grade `capture` for the lengths, `disassembly` for what runs through them. The two states poll CD reads (`jal 0x8003DE7C` at `0x801E4F08`, `FUN_8003F2B8(1)` in `0x6F`), and over the harvest-state casts they hold `14..=17` and `4..=6` vsyncs whichever module or fight. The polls are not idle, so a load the engine answers at once still costs retail's look: `0x6E` walks the framing each pass (`0x801E4F00`) and `0x6F` pulls `ctx[+0x6D0]` in. Held in the engine, the walk matches retail to the unit through `0x6E`, and the shots built on `ctx[+0x6D0]` land where retail's do.
+
+### What a hidden seat draws
+
+Grade `disassembly`. The draw tick `FUN_800480D8` reaches the after-image walk only past its word-zero test (`0x800481CC`), so a hide takes the ghosts too. A body hidden with its ghosts left walking reads as a pink double of the caster on V-Windhash's far shot and, as the camera passes it, an olive wash over the frame.
+
+Owning pages: [`cast-sequence-oracle.md`](../../tooling/cast-sequence-oracle.md#the-capture-bands-reads), [`battle-actor-rendering.md`](../../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348).
