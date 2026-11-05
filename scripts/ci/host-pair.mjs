@@ -75,7 +75,7 @@ const cardScenes = (key, card, block) => ({
   [`${key}_menu`]: { card, block, ticks: 960, every: 30, taps: menuTaps() },
   [`${key}_fight`]: { card, block, ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3], taps: every(300, 890, 40, 'Cross') },
 });
-Object.assign(SCENES, cardScenes('late', CARD.late, 0), cardScenes('late3', CARD.late, 3), cardScenes('ladder', CARD.ladder, 2));
+Object.assign(SCENES, cardScenes('late', CARD.late, 1), cardScenes('late4', CARD.late, 4), cardScenes('ladder', CARD.ladder, 3));
 
 const MODES = {
   retail: { native: ['--retail', '--psx-render'], boxes: ['play-retail-mode', 'play-psx-render'] },
@@ -219,7 +219,7 @@ function traceDiff(a, b) {
   const la = (a || '').split('\n'), lb = (b || '').split('\n');
   const diffs = [];
   for (let i = 0; i < Math.max(la.length, lb.length); i++) {
-    if (la[i] !== lb[i]) diffs.push(`${(la[i] || '').trim()}  |  ${(lb[i] || '').trim()}`);
+    if (la[i] !== lb[i]) diffs.push(`${(la[i] || '').trim().slice(0, 300)}  |  ${(lb[i] || '').trim().slice(0, 300)}`);
   }
   return diffs;
 }
@@ -313,7 +313,9 @@ async function main() {
     const rows = [];
     for (const f of r.out) {
       const nt = fs.readFileSync(path.join(dir, 'native', `tick_${String(f.tick).padStart(5, '0')}.trace`), 'utf8');
-      const d = traceDiff(nt, f.trace);
+      /* A card landing enters a scene from the page's running one first, so the audio
+       * record starts a command apart; both fields say only that. */
+      const d = traceDiff(nt, f.trace).filter((l) => !sc.card || !/^audio_recent|^\d+,\s+\|\s+\d+,$|^\d{10,},\s+\|\s+\d{10,},$/.test(l));
       fs.writeFileSync(path.join(dir, `${String(f.tick).padStart(5, '0')}-page.trace`), f.trace);
       if (d.length) { traceOff++; if (!firstTrace) firstTrace = { tick: f.tick, d }; }
       sum += f.score;

@@ -46,11 +46,28 @@ impl DanceMarkers {
 
     /// This frame's positions, with the non-current spans collapsed.
     fn live_positions(&mut self) -> &[f32] {
+        self.live_positions_for(|_| None)
+    }
+
+    /// [`Self::live_positions`] with each class's mesh named by `mesh_of`: a
+    /// running dance's own flipbook clock (`step_marker_mesh`), the one the
+    /// native window draws. A class it does not name, or a mesh the tile has
+    /// no span for, shows the tile's own.
+    fn live_positions_for(&mut self, mesh_of: impl Fn(usize) -> Option<i16>) -> &[f32] {
         self.live.clear();
         self.live.extend_from_slice(&self.positions);
         let tiles = self.floor.tiles();
         for &(tile, mesh, start, len) in &self.spans {
-            let current = tiles.get(tile).and_then(|t| t.actor.mesh);
+            let tile_state = tiles.get(tile);
+            let own = tile_state.and_then(|t| t.actor.mesh);
+            let named = tile_state
+                .and_then(|t| mesh_of(t.actor.class as usize))
+                .filter(|m| {
+                    self.spans
+                        .iter()
+                        .any(|&(t, candidate, ..)| t == tile && candidate == *m)
+                });
+            let current = named.or(own);
             if current == Some(mesh) || len == 0 {
                 continue;
             }
@@ -159,6 +176,24 @@ pub(super) fn bake_dance_markers(
         }
     }
     out
+}
+
+impl LegaiaMinigames {
+    /// This frame's marker positions, each class on the mesh `mesh_of` names:
+    /// the play page's form of [`Self::dance_marker_step`], whose game is the
+    /// world's. The minigames page holds no such game and steps its own.
+    pub fn dance_marker_positions_for(
+        &mut self,
+        mesh_of: impl Fn(usize) -> Option<i16>,
+    ) -> Vec<f32> {
+        let Some(b) = self.dance_bodies.as_mut() else {
+            return Vec::new();
+        };
+        if b.markers.is_empty() {
+            return Vec::new();
+        }
+        b.markers.live_positions_for(mesh_of).to_vec()
+    }
 }
 
 #[wasm_bindgen]

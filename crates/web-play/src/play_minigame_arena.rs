@@ -1226,6 +1226,11 @@ impl LegaiaRuntime {
                 }
                 h.world.stage_dance_ambient(&bytes);
             }
+            // The tree's first pass is the next frame's, as on the native
+            // window (`sync_dance_venue`, whose staging frame steps nothing):
+            // a pass here ran the hall's flip-books a frame ahead for the whole
+            // dance.
+            return Vec::new();
         }
         let Some(vram) = self.minigame_ui.dance_ambient_vram.as_mut() else {
             return Vec::new();
@@ -1336,14 +1341,30 @@ impl LegaiaRuntime {
             .unwrap_or_default()
     }
 
-    /// Advance the marker flipbook `frame_delta` retail frames and return
-    /// the block's positions.
+    /// The block's positions for this frame, each tile on the mesh the running
+    /// dance's flipbook names (`step_marker_mesh`, a clock of the hall's game
+    /// frames) - what the native window draws, and the wall panels and stage
+    /// screens are these tiles. A page clock of its own ran them out of phase.
+    /// With no game up (`frame_delta` retail frames on the art's own clock) the
+    /// tiles step as the minigames page's do.
     pub fn play_mg_dance_marker_step(&mut self, frame_delta: u8) -> Vec<f32> {
-        self.minigame_ui
-            .art
-            .as_mut()
-            .map(|a| a.dance_marker_step(frame_delta))
-            .unwrap_or_default()
+        let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+        let meshes: Option<Vec<Option<i16>>> = self
+            .scene_host
+            .host()
+            .and_then(|h| h.world.minigames.dance.as_ref())
+            .map(|d| {
+                (0..legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS)
+                    .map(|class| d.step_marker_mesh(class).map(|mesh| mesh - bias))
+                    .collect()
+            });
+        let Some(art) = self.minigame_ui.art.as_mut() else {
+            return Vec::new();
+        };
+        match meshes {
+            Some(m) => art.dance_marker_positions_for(|c| m.get(c).copied().flatten()),
+            None => art.dance_marker_step(frame_delta),
+        }
     }
 }
 
