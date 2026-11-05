@@ -549,10 +549,9 @@ impl RetailBattle {
     /// six ticks back from the gate is the child's `0x29` exit pass, a pass
     /// before the frame retail's display held.
     pub fn drive_display_lag(&self) -> u16 {
-        let step = self.frame_step_seed().map_or(
-            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(self.party_count),
-            |s| s.0,
-        );
+        let step = self
+            .frame_step_seed()
+            .map_or(self.child_ordinary_step(), |s| s.0);
         DISPLAY_LAG_PASSES * u16::from(step.max(1))
     }
 

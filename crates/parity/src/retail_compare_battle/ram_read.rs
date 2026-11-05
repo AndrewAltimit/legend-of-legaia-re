@@ -995,6 +995,7 @@ impl RetailBattle {
                     })
             },
             ring_steps: recent_pass_steps(ram),
+            ring_cheap: history_entries_under_step_three(ram),
             party_combo_vsyncs: None,
             backdrop_cue: {
                 let rec = game_anchors::u32_at(ram, ctx + 0x106C);

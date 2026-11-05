@@ -92,8 +92,7 @@ impl RetailBattle {
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
-        let default =
-            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(self.party_count);
+        let default = self.child_ordinary_step();
         // A capture on the capture band's module tick whose whole history ran the
         // default step stands on it: the arm step table
         // (`capture_arm_frame_step`) is one fight's reading, and
@@ -143,6 +142,25 @@ impl RetailBattle {
         self.step_run_start
             .filter(|&(clip, _)| clip >= DYNAMIC_SLOT_ART)
             .map(|from| (step, self.action_state, Some(from)))
+    }
+
+    /// The step the image child's ordinary frames run on. A monster's capture-band
+    /// walk-in gates on the yaw counter, which climbs `2` a pass at step `2` and `4`
+    /// at step `3`, so the vsyncs the shot has walked by the gate follow the step
+    /// the action ran. A capture whose history still holds cheap frames ran the
+    /// walk on the step they read, whatever the party's rung says
+    /// (`LEGAIA_BATTLE_PARTY_STEP=0`).
+    pub fn child_ordinary_step(&self) -> u8 {
+        if self.capture_walk_ran_cheap() {
+            legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP
+        } else {
+            legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(self.party_count)
+        }
+    }
+
+    /// See [`Self::child_ordinary_step`].
+    pub fn capture_walk_ran_cheap(&self) -> bool {
+        matches!(self.span_gate, SpanGate::CaptureFade { .. }) && self.ring_cheap >= 5
     }
 
     /// The slot-1 backdrop angle the **displayed** frame was drawn at. The

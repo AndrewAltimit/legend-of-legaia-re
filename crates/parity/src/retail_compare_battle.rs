@@ -448,6 +448,8 @@ pub struct RetailBattle {
     /// `ctx[+0x6DA]` climbed at near the capture, `max(1, 4 * step / 3)` an
     /// SM pass of `step` vsyncs (`0x801E29E4..0x801E2A24`).
     pub ring_steps: [u8; 16],
+    /// How many frames of the capture's history cost under step `3`'s rung.
+    pub ring_cheap: u8,
     /// A party attack capture's strike string as the replay ran it: vsyncs
     /// from the acting seat's first strike-loop pass `0x1E` to the capture's
     /// phase, measured on a first run ([`Self::with_party_combo`]). `None`
