@@ -33,7 +33,10 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -234,6 +237,31 @@ def run_selftest() -> int:
     return 0
 
 
+def node_syntax_errors(paths: list[Path]) -> list[str] | None:
+    """Parse each file with `node --check`; `None` when no node is installed.
+
+    A syntax error in a classic script kills the file at load just as module
+    syntax does, on every page that loads it. Control: a known-bad snippet has
+    to fail, or the sweep's "clean" means nothing.
+    """
+    node = shutil.which("node")
+    if node is None:
+        return None
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete_on_close=False) as bad:
+        bad.write("class A {\n  f() {},\n}\n")
+        bad.close()
+        if subprocess.run([node, "--check", bad.name], capture_output=True).returncode == 0:
+            return ["node --check control: a stray comma in a class body parsed clean"]
+    errors = []
+    for p in paths:
+        r = subprocess.run([node, "--check", str(p)], capture_output=True, text=True)
+        if r.returncode != 0:
+            lines = r.stderr.strip().splitlines()
+            detail = next((ln for ln in lines if "Error" in ln), "syntax error")
+            errors.append(f"{p.relative_to(REPO_ROOT).as_posix()}: {detail}")
+    return errors
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -270,6 +298,16 @@ def main() -> int:
         rel = p.relative_to(REPO_ROOT).as_posix()
         findings.extend(scan_js(rel, p.read_text(encoding="utf-8", errors="replace")))
 
+    syntax = node_syntax_errors(
+        [p for p in sorted((site / "js").glob("*.js")) if p.name in classic]
+    )
+    if syntax is None:
+        print("[js-classic-module-syntax] [skip] no node: syntax not parsed")
+    elif syntax:
+        for e in syntax:
+            print(e)
+        print(f"\n{len(syntax)} file(s) do not parse: the whole file dies at load.")
+        return 1
     if not args.quiet:
         print(f"[js-classic-module-syntax] {len(classic)} classic-loaded file(s) scanned")
     for f in findings:

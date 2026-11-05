@@ -492,8 +492,9 @@ comments and strings (`IMPORT_META_IN_CLASSIC` / `STATIC_IMPORT_IN_CLASSIC` /
 `EXPORT_IN_CLASSIC`). A file referenced by no scanned source is skipped - a
 dynamically-`import()`ed module is entitled to module syntax. Waive in place
 with `// classic-script-ok: <reason>`; a reason-less waiver is itself a
-finding. Controls ship inside the file and the positive ones run on every
-invocation. Wired into CI and into the pre-commit hook when staged changes
+finding. It also parses each classic file with `node --check` when node is
+installed, since a plain syntax error kills the file the same way. Controls ship
+inside the file and the positive ones run on every invocation. Wired into CI and into the pre-commit hook when staged changes
 touch `site/`.
 
 ## A `_content` mirror of a `docs/` page rots silently
