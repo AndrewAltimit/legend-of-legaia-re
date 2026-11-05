@@ -203,7 +203,21 @@ impl Side {
     /// from an inject ahead of the cast can hold an earlier actor's whole turn
     /// before it (`party_basic_attack_vs_gobu_gobu`: Gobu Gobu acts between the
     /// inject and Vahn's cast), and that turn's Done band is not the cut.
+    ///
+    /// A recording that opens in the Done band is still on the actor before
+    /// the cast: a `--monster-pick` run injects at the AI's pick, which can
+    /// fall while the previous actor's `0x51` plays out. Those leading rows
+    /// are dropped first, or that actor's Done band would end the cast's
+    /// recording before it began.
     pub fn first_action_only(mut self) -> Self {
+        let lead = self
+            .rows
+            .iter()
+            .take_while(|r| matches!(r.st7, 0x50 | 0x51 | 0x5A | 0x65))
+            .count();
+        if lead < self.rows.len() {
+            self.rows.drain(..lead);
+        }
         let first_shot = self
             .rows
             .iter()
@@ -1077,6 +1091,22 @@ mod tests {
             ],
         };
         assert_eq!(side.first_action_only().rows.len(), 5);
+        // Opened in the previous actor's Done band: that band is not the
+        // cast's, and the cast's own run is kept whole.
+        let side = Side {
+            dir: PathBuf::new(),
+            rows: vec![
+                row(1, 0x51, 2),
+                row(2, 0x5A, 2),
+                row(3, 0x0A, 3),
+                row(4, 0x0C, 3),
+                row(5, 0x28, 3),
+                row(6, 0x51, 3),
+                row(7, 0x0A, 0),
+            ],
+        };
+        let kept = side.first_action_only().rows;
+        assert_eq!(kept.iter().map(|r| r.t).collect::<Vec<_>>(), [3, 4, 5, 6]);
     }
 
     #[test]
