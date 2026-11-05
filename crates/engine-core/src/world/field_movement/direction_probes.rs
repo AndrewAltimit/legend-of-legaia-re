@@ -94,24 +94,17 @@ impl World {
     }
 
     /// The eighth-turn index [`Self::decode_field_direction`] rotates the held
-    /// d-pad mask by: the camera azimuth
+    /// d-pad mask by. Under the retail follow view it is `gp+0x2D8`, which a
+    /// scene's field-VM arm authors (op `4C 2x`) and the camera never writes
+    /// (see [`Self::remap_pad_direction`]). A camera the player or a host has
+    /// turned has no authored index that fits it, so there the azimuth
     /// ([`crate::world::FieldLocomotion::camera_azimuth`], 12-bit, `0` = the
-    /// follow default) rounded to the nearest of eight compass steps.
-    ///
-    /// This stands in for retail's `gp+0x2D8`, which is authored per scene by
-    /// a field-VM arm rather than computed (see
-    /// [`Self::remap_pad_direction`]). The port's camera free-orbits, so the
-    /// authored index would be stale the moment the player drags the view;
-    /// deriving it from the live azimuth keeps "screen up walks away from the
-    /// camera" true at every orbit, which is the law the hosts' compass
-    /// oracles measure.
-    ///
-    /// It is a strict refinement of the 90-degree quantisation it replaced:
-    /// `rot` is even exactly where the old `quadrant` was defined, and
-    /// `rot == 2 * quadrant` there, so every axis-aligned camera - which is
-    /// every camera a retail field scene installs - decodes bit-identically.
-    /// The odd steps are the ones that used to snap up to 45 degrees away.
+    /// follow default) rounds to the nearest of eight compass steps, which
+    /// keeps "screen up walks away from the camera" true at every orbit.
     pub(crate) fn field_pad_ring_rotation(&self) -> u32 {
+        if self.locomotion.pad_octant_live {
+            return self.locomotion.pad_octant & 7;
+        }
         ((self.locomotion.camera_azimuth as u32).wrapping_add(0x100) >> 9) & 7
     }
 

@@ -142,6 +142,10 @@ impl legaia_engine_field::frame_step::FrameStepWorld for World {
         self.locomotion.camera_azimuth = azimuth;
     }
 
+    fn set_pad_octant_live(&mut self, live: bool) {
+        self.locomotion.pad_octant_live = live;
+    }
+
     fn set_camera_focus_stored(&mut self, focus_stored_x: i32, focus_stored_z: i32) {
         World::set_camera_focus_stored(self, focus_stored_x, focus_stored_z);
     }
@@ -621,9 +625,6 @@ mod tests {
             mode: SceneMode::Field,
             ..World::default()
         };
-        // One vsync a pass, so a single tick is a whole ease step.
-        w.clock.frame_step_floor = 1;
-        w.clock.frame_step = 1;
         w.spawn_actor(0);
         w.player_actor_slot = Some(0);
         w.actors[0].move_state.world_x = 0x1040;
@@ -675,6 +676,9 @@ mod tests {
             mode: SceneMode::Field,
             ..World::default()
         };
+        // One vsync a pass, so a single tick is a whole ease step.
+        w.clock.frame_step_floor = 1;
+        w.clock.frame_step = 1;
         w.spawn_actor(0);
         w.player_actor_slot = Some(0);
         w.actors[0].move_state.world_x = 0x1040;
@@ -802,8 +806,10 @@ mod tests {
         c.tick(&w);
         assert_eq!(c.globals.angles()[0], 450, "locked: no ease");
         assert_eq!([c.globals.0[6], c.globals.0[8]], focus, "locked: no pin");
+        // Let through, the ease reads a carried player as still; its footing
+        // conform runs inside the player's tick and does count.
         w.flags.story_flags |= CAMERA_LOCKED_EASE_FLAG;
-        w.actors[0].move_state.world_x += 64;
+        w.actors[0].move_state.world_y -= 16;
         w.tick();
         c.tick(&w);
         let p = c.globals.angles()[0];

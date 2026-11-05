@@ -50,7 +50,11 @@ impl WalkFilm {
 
     pub(super) fn run(&self, session: &mut NativeSession, retail: &RetailObs) -> Result<()> {
         crate::retail_compare::seat_host_camera(&mut session.camera);
+        // What both play hosts raise.
         session.host.world.locomotion.leading_edge_wall_probes = true;
+        session.host.world.locomotion.follow_terrain_height = true;
+        session.host.world.npcs.solid = true;
+        session.host.world.npcs.animate = true;
         session.host.world.locomotion.run_default =
             std::env::var_os("LEGAIA_RC_WALK_RUN").is_some();
         let g = &mut session.camera.globals.0;
