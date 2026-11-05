@@ -980,6 +980,18 @@ larger figure is off by more than an order of magnitude; see
 
 ## Audio / sound driver
 
+### `zeto_call_wave_mid_cast`'s `+5` dB is not a volume path
+
+The real-PCM `track` channel reads the state `+5.09` dB louder in retail with
+correlation `0.9995`, which reads as a level fault in the score's volume chain
+(sequence volume, VAB program and tone volume, `SsSetMVol`, the CD input). It is not.
+In one-second windows retail is `+2` to `+16` dB louder over the recording's first six
+seconds only, where the cast's own cues sound, and within `0.03` dB of the engine in
+every window after; the channel renders the score and nothing the cast keys, and the
+state has no cue voice sounding at its first sample (no voice record owned `0x21`), so
+`--cue-voices` changes nothing. The level is the cast's cues in a whole-window energy
+ratio ([real retail PCM](../subsystems/audio.md#real-retail-pcm)).
+
 ### The cue funnels' de-dup word is not dead
 
 `0x8007B724` read as `-1` for the whole of a mode, because the search for its writers

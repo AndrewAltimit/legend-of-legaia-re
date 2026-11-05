@@ -414,6 +414,49 @@ one record sit on flag branches (a `JmpRel` or a `SysFlag.Test` between them), m
 prescripts, whose walk the field init finishes before the first frame. A script timeline that
 holds two across a wait under `66` vsyncs would still reach it.
 
+### What keys seven of `rimelm_wall_press_left`'s flushes a vsync early?
+
+*Status:* open (measured)
+
+With the river emitter subtracted (the `emitter` channel's render less the `track`
+channel's), the note fit of [real retail PCM](../subsystems/audio.md#real-retail-pcm)
+reads `0.978` as rendered and `0.9956` with each note at its own offset, so the track's
+residual is timing. Seven of `198` flushes key a vsync (about `737` samples) earlier in
+the recording than in the render, each a two-voice flush of the slow-attack tones at
+VAG `0x20840` / `0x12220` (programs 8 and 5 of track `2016`, ADSR1 `A0FF` / `9FD3`);
+the other tones sit on the grid within a sample. Seating the emitter's voices 16..18 in
+the score's allocation scan, held at their records' priorities, changes no key-on, so
+voice contention is not it. A retail key-on census of the scene
+(`scripts/pcsx-redux/autorun_keyon_census.lua`) beside the render's `.notes` would say
+whether those note-ons fire a vsync early on hardware's own clock or only in this
+recording.
+
+### Why does `son_field_door_hop` hold two `0x201` cue voices where the engine sounds one?
+
+*Status:* open (measured)
+
+The audio sweep's `ambient` channel: the state's voice records hold voices 22 and 23
+owned by the cue slot, side-band slot 3, both reading `ENVX` `7FFF`. The engine's ambient
+effect script stores cue `0x201` into ring slot 3 (move-VM op `0x1D`) every `63` vsyncs, as
+`kor5`'s does, keying voices 22 and 23 by turns, and each voice ends at its sample's end
+`38` vsyncs in, so the two never overlap. The cue keys alike in the
+[cue differential](../subsystems/audio.md#the-cue-differential). The state is a
+PCSX-Redux one, whose records' `+0x06` is the last flush's `ENVX`; a watch of voices 22 / 23's
+`ENVX` over a few periods on that state says whether the sample ends there too (and the
+records hold a stale level) or keeps sounding.
+
+### What renders a cast's cues for the real-PCM channels?
+
+*Status:* open
+
+`zeto_call_wave_mid_cast` reads `+5.09` dB in the `track` channel because the recording's
+first six seconds carry the cast's cues and the channel renders the score alone
+([not a volume path](re-do-not-re-walk.md#zeto_call_wave_mid_casts-5-db-is-not-a-volume-path)).
+A channel for it needs the battle seed of the retail comparison corpus
+(`retail_compare_battle`, the cast's phase gate) run with the audio director attached,
+its SFX bus recorded from the seed's first vsync and mixed beside the track render on the
+track's lag.
+
 ## Title / boot / overlays
 
 No open threads. Answered questions: [settled title / boot / overlays](re-settled-threads/title-boot-overlays.md); falsified readings: [title / boot / overlays](re-do-not-re-walk.md#title--boot--overlays), [no overlay function lives below `0x801CE818`](re-do-not-re-walk.md#no-overlay-function-lives-below-0x801ce818).
