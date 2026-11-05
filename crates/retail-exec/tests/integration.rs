@@ -5,6 +5,7 @@
 mod arts_gauge;
 mod arts_queue;
 mod arts_roll;
+mod arts_voice;
 mod auto_combo;
 mod baka_fight;
 mod battle_item;
