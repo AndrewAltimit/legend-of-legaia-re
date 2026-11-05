@@ -590,6 +590,9 @@ impl World {
                 && let Some(hit) = self.casting.spore_gas_beat.tick()
             {
                 self.spore_gas_hit(hit, caster_slot, victim_slot);
+                self.casting
+                    .module_debris
+                    .push(legaia_engine_cast::cast_module_camera::spore_gas_hit_spawn());
             }
             caster = self.cast_view(caster_slot);
             victim = self.cast_view(victim_slot);

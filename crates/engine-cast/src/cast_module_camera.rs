@@ -1070,7 +1070,7 @@ pub use puera::*;
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
 pub use spoon::*;
-pub use spore_gas::spore_gas_camera;
+pub use spore_gas::{spore_gas_camera, spore_gas_hit_spawn};
 pub use steal::{STEAL_BODY, steal_camera};
 pub use stone_circle::{
     RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,

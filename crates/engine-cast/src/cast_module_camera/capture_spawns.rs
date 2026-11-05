@@ -816,7 +816,7 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 /// shell no retail frame of the cast holds).
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 => true,
+        935 | 939 => true,
         964 => true,
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
@@ -839,7 +839,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
 /// Breath and PROT 0962's other bodies.
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 => true,
+        935 | 939 => true,
         964 => true,
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
