@@ -1075,7 +1075,7 @@ for a reason that is not a port defect:
 | [Pin the stream](#the-stream-at-the-entry) | nothing - the capture holds the stream at the capture, not at the entry | `LEGAIA_BATTLE_RNG_SEED`, `BATTLE_RNG_SEEDS`, `EncounterState::rng_hold` |
 | [Match the image child](#the-image-child-plays-the-same-fight) | - | `LEGAIA_BATTLE_SETTLE`, `LEGAIA_BATTLE_BARS`, `BootSession::fog_render_tick` |
 | [Stand the combatants](#where-the-combatants-stand) | live ground `+0x34` / `+0x38`, heading `+0x46`, tint lanes `+0x04` | `RetailBattle::seeded_ground`, the `:x:z[:facing][:d<hex>]` tail of `LEGAIA_BATTLE_BARS` |
-| [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES` |
+| [Land the HUD](#hud-glides-the-capture-had-landed) | glide records at `ctx[+0x11B4]` | `LEGAIA_SEAT_HUD_GLIDES_LANDED`, `LEGAIA_SEAT_HUD_GLIDES`, `LEGAIA_SEAT_HUD_CLOSE` |
 | [Take back double pushes](#a-push-the-capture-already-holds) | - (measured from the engine's own replay) | `RetailBattle::undrift`, `ground_residual` |
 | [Sit out spent turns](#combatants-that-had-already-acted) | initiative keys `+0x16C` | `RetailBattle::engine_init_keys`, the `:k[<key>]` tail of `LEGAIA_BATTLE_BARS` |
 | [Raise the Mystic Shield](#the-mystic-shield-a-capture-already-holds) | the shield word `_DAT_8007BD84` | `World::raise_mystic_shield`, `LEGAIA_BATTLE_MYSTIC_SHIELD=1` |
@@ -1357,6 +1357,18 @@ engine's plates still mid-rise while retail's had long since landed
   bar's row the target plaque, `x = 168` the combo cluster's anchor. Its
   `elapsed` byte, less the display lag, is how far the displayed frame shows it
   (`FUN_801D9BBC` adds the frame step a pass, so the byte counts vsyncs).
+- **Closing.** The Done band's closing glides land off screen: `(16, -26)` the
+  actor plaque, `(16, 234)` the bar (or the AP bar beside an AP plate on
+  `(328, 172)`), another `x` on row `234` the roster panels
+  ([battle-hud](../subsystems/battle-hud.md#action-phase-records)). They
+  belong to the action before the capture's, which the replay reached on its
+  own history, so the child also names what they carry
+  (`LEGAIA_SEAT_HUD_CLOSE`, `World::seat_battle_hud_close`): the finished actor
+  `ctx[+0x13]`, still set through the next actor's `0x0A`, and the bar's member
+  `ctx[+0x20]`. This is a harness seat. The three `*_pre_*` monster-cast states
+  it moves read their bottom rows off it (`noaru_barra_v2_pre_multi_cutter`
+  `.884` to `1.0`); the two Slippery states, whose replay ends on the same
+  Spirit turn retail's did, gain theirs from the game-side close alone.
 
 **Landed on the frozen pass.** A table that reads every record landed is not
 proof the frame on screen shows them landed: the displayed frame is two frame

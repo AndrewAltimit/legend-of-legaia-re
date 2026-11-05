@@ -867,6 +867,19 @@ pub(super) fn battle_image(
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
     }
+    // Who the Done band's closing glides name: the finished actor and the
+    // bar's member, on engine seats.
+    if let Some((actor, member)) = battle.hud_close_seats.filter(|_| !displayed_menu) {
+        let pc = battle.party_count.clamp(1, 3);
+        env.push((
+            "LEGAIA_SEAT_HUD_CLOSE",
+            format!(
+                "{},{}",
+                legaia_engine_capture::battle_drive::engine_seat(actor, pc),
+                legaia_engine_capture::battle_drive::engine_seat(member, pc)
+            ),
+        ));
+    }
     // The numerals the displayed frame drew, off retail's own packets
     // (`displayed_popup_cells`); where they cannot be read, the newest
     // numeral's rise (`popup_age_seat`) on the engine seat of its struck

@@ -1111,6 +1111,24 @@ impl RetailBattle {
             popup_age: popup_age_seat(ram, ctx, display_lag_vsyncs(ram), frame_step(ram)),
             spirit_gauge: retail_spirit_gauge(ram, ctx, active, display_lag_vsyncs(ram)),
             arts_list: retail_arts_list(ram, ctx),
+            hud_close_seats: (0..HUD_GLIDE_SLOTS)
+                .any(|s| {
+                    let r = ctx + HUD_GLIDE_TABLE + s * HUD_GLIDE_STRIDE;
+                    game_anchors::u8_at(ram, r) != 0
+                        && matches!(
+                            [
+                                game_anchors::i16_at(ram, r + 4),
+                                game_anchors::i16_at(ram, r + 6)
+                            ],
+                            [16, -26] | [_, 234] | [328, 172]
+                        )
+                })
+                .then(|| {
+                    (
+                        game_anchors::u8_at(ram, ctx + 0x13),
+                        game_anchors::u8_at(ram, ctx + 0x20),
+                    )
+                }),
             hud_glides_unseen: {
                 let lag = display_lag_vsyncs(ram);
                 let live: Vec<u8> = (0..HUD_GLIDE_SLOTS)

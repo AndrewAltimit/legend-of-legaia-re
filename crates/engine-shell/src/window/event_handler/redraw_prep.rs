@@ -200,6 +200,13 @@ impl PlayWindowApp {
             if due && sc.seat_move_label_unseen {
                 self.session.host.world.battle.move_label_closed = true;
             }
+            if due && let Some((actor, member)) = sc.seat_hud_close {
+                let targets: Vec<[i16; 2]> = sc.seat_hud_glides.iter().map(|g| g.target).collect();
+                self.session
+                    .host
+                    .world
+                    .seat_battle_hud_close(actor, member, &targets);
+            }
             if due {
                 for g in &sc.seat_hud_glides {
                     // The combo cluster's anchor (placement record 80) glides

@@ -544,6 +544,12 @@ pub struct RetailBattle {
     /// surface on a pass the display has not shown yet
     /// ([`Self::displayed_menu_flow`]).
     pub hud_glides_unseen: bool,
+    /// The pool seats the Done band's closing glides name, when the glide
+    /// table holds one: the actor whose plaque (or Spirit pair) leaves,
+    /// `ctx[+0x13]` - still the finished actor through the next actor's
+    /// `0x0A` - and the readout bar's member `ctx[+0x20]`
+    /// ([`legaia_engine_battle_loop::battle_state::ActionHudClose`]).
+    pub hud_close_seats: Option<(u8, u8)>,
     /// The newest damage numeral as the displayed frame drew it: its struck
     /// pool slot and the engine popup age whose rise matches retail's
     /// (`hud_glide::popup_age_seat`); `None` with no live numeral.
