@@ -368,9 +368,7 @@ fn battle_probe(
     } else {
         SharedRegionBank::CLASS2
     };
-    d.sync_shared_region(Some(class2), |e| {
-        index.entry_bytes_extended(e).ok()
-    });
+    d.sync_shared_region(Some(class2), |e| index.entry_bytes_extended(e).ok());
     d.sync_field_sfx(rows, false, None, |_| None);
     d.sync_battle_monster_banks(&want, || {
         index

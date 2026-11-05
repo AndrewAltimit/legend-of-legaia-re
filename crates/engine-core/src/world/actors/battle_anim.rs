@@ -657,9 +657,8 @@ impl World {
             // hit goes first where the slice has no commit to make ahead of it:
             // an impact cue on the hit's own keyframe would otherwise sound on a
             // block (Nova's clip 8).
-            let hit_first = hits
-                && frame.is_some()
-                && !(commit_after && self.battle_commit_may_land(i));
+            let hit_first =
+                hits && frame.is_some() && !(commit_after && self.battle_commit_may_land(i));
             let commits = self.actors[i].battle_clip_commits;
             if hit_first {
                 self.walk_battle_node_hits(i, &mut foreign);

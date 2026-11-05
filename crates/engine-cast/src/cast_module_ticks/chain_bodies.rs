@@ -665,9 +665,7 @@ pub fn gated_hit_arm(entry: u32, body: Option<u32>) -> Option<(u8, u8, ChainSett
     match (entry, body) {
         (945, Some(WATER_COLUMN_TICK)) => Some((5, 7, ChainSettle::VictimOrFaded)),
         (949, None) => Some((3, 5, ChainSettle::VictimOrFaded)),
-        (950, Some(crate::cast_arm_ticks::ROLLING_FLARE_TICK)) => {
-            Some((3, 4, ChainSettle::Victim))
-        }
+        (950, Some(crate::cast_arm_ticks::ROLLING_FLARE_TICK)) => Some((3, 4, ChainSettle::Victim)),
         _ => None,
     }
 }
@@ -1284,6 +1282,10 @@ mod chain_tests {
         assert_eq!(
             gated_hit_arm(945, Some(WATER_COLUMN_TICK)).map(|g| (g.0, g.1)),
             Some((5, 7))
+        );
+        assert_eq!(
+            gated_hit_arm(950, Some(crate::cast_arm_ticks::ROLLING_FLARE_TICK)),
+            Some((3, 4, ChainSettle::Victim))
         );
         assert_eq!(gated_hit_arm(949, None).map(|g| (g.0, g.1)), Some((3, 5)));
         let (mut c, mut k, mut v) = (

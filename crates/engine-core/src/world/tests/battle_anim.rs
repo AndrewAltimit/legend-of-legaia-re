@@ -1765,3 +1765,13 @@ fn the_capture_band_polls_hold_for_the_read() {
     world.battle_ctx.action_state = S::MagicCapturePhase2.as_byte();
     assert!(!world.capture_read_pending());
 }
+
+/// `FUN_800520F0` stores no category on the summon seat's node, so its runtime
+/// cues key record `0`; the party's keep the `7` of `0x80051548`.
+#[test]
+fn a_summon_creatures_runtime_cue_keys_record_zero() {
+    let mut world = World::new();
+    world.enter_battle(2, 1);
+    assert_eq!(world.battle_sound_category(7), 0);
+    assert_eq!(world.battle_sound_category(0), 7);
+}
