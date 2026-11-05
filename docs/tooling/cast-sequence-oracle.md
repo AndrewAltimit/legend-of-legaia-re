@@ -230,7 +230,11 @@ counter for as long as the state lasts and leaves the camera short by what the s
 would have drifted; and the score keeps the recording's first action only
 (`Side::first_action_only`), because a recording's tail can hold the next actors'
 whole turns, and the alignment prefers a later actor's complete run of states to a
-capture that starts inside the strike loop. Its second clip and every melee roll are
+capture that starts inside the strike loop. The first action is the one the first
+frame shows: an inject ahead of an earlier actor's turn
+(`party_basic_attack_vs_gobu_gobu`, where Gobu Gobu acts before Vahn's cast) logs
+that turn's Done band before any frame, and the cut does not count it. A strike's
+second clip and every melee roll are
 a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
 strike lands clip `7` twice on the engine's stream where retail's second is `8`.
 

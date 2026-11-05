@@ -198,12 +198,22 @@ impl Side {
     /// can hold the next actors' whole turns; left in, the alignment's longest
     /// common subsequence prefers a later actor's complete run of states to the
     /// first actor's partial one (a capture that starts inside the strike loop).
+    ///
+    /// The first action is the one the first frame shows: a probe that logs
+    /// from an inject ahead of the cast can hold an earlier actor's whole turn
+    /// before it (`party_basic_attack_vs_gobu_gobu`: Gobu Gobu acts between the
+    /// inject and Vahn's cast), and that turn's Done band is not the cut.
     pub fn first_action_only(mut self) -> Self {
+        let first_shot = self
+            .rows
+            .iter()
+            .find(|r| r.shot.is_some())
+            .map_or(0, |r| r.t);
         let mut done: Option<u8> = None;
         let cut = self.rows.iter().position(|r| match done {
             Some(seat) => r.acting != seat || matches!(r.st7, 0x0A | 0x0C),
             None => {
-                if matches!(r.st7, 0x50 | 0x51 | 0x5A | 0x65) {
+                if r.t >= first_shot && matches!(r.st7, 0x50 | 0x51 | 0x5A | 0x65) {
                     done = Some(r.acting);
                 }
                 false
@@ -1050,6 +1060,23 @@ mod tests {
             ],
         };
         assert_eq!(side.first_action_only().rows.len(), 3);
+        // An earlier actor's turn ahead of the first frame is not the cut.
+        let shot = |mut r: Row| {
+            r.shot = Some(String::new());
+            r
+        };
+        let side = Side {
+            dir: PathBuf::new(),
+            rows: vec![
+                row(1, 0x1E, 3),
+                row(2, 0x5A, 3),
+                row(3, 0x0A, 0),
+                shot(row(4, 0x28, 0)),
+                row(5, 0x51, 0),
+                row(6, 0x0A, 3),
+            ],
+        };
+        assert_eq!(side.first_action_only().rows.len(), 5);
     }
 
     #[test]
