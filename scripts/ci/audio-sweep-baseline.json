@@ -88,6 +88,9 @@
     "battle_bubu2_spoon_heal_mid_cast": {
       "battle_track": 1.0
     },
+    "battle_bubu2_spoon_white_shield_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_bubu2_wailing_bird_power_up_mid_cast": {
       "battle_track": 1.0
     },
@@ -634,6 +637,12 @@
     "battle_retona_mushura_strike": {
       "battle_track": 1.0
     },
+    "battle_retona_songi_hyper_crush_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_retona_songi_hyper_lightning_mid_cast": {
+      "battle_track": 1.0
+    },
     "battle_retona_songi_strike": {
       "battle_track": 1.0
     },
@@ -781,6 +790,12 @@
     "battle_taiku_topaz_strike": {
       "battle_track": 1.0
     },
+    "battle_taiku_zora_dark_typhoon_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_taiku_zora_strike": {
+      "battle_track": 1.0
+    },
     "battle_teien_berserker_spore_gas_mid_cast": {
       "battle_track": 1.0
     },
@@ -845,6 +860,12 @@
       "battle_track": 1.0
     },
     "battle_uru2_nurga_glare_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_uru2_nurga_heal_mid_cast": {
+      "battle_track": 1.0
+    },
+    "battle_uru2_nurga_strike": {
       "battle_track": 1.0
     },
     "battle_vell_lippian_strike": {
@@ -1674,6 +1695,12 @@
       "seq_vol": 1.0,
       "tempo": 1.0,
       "track": 1.0
+    },
+    "son_field_door_hop": {
+      "ambient": 0.0,
+      "playing": 1.0,
+      "tempo": 1.0,
+      "track": 0.0
     },
     "station3_field_door_hop": {
       "playing": 1.0,
