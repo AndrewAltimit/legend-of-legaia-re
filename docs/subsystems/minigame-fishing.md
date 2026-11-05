@@ -214,7 +214,7 @@ band    = DAT_801d90e8                        cast band, 0..4
 
 ### Band roll
 
-While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs every frame: the countdown `DAT_801d90ec` clamps to `0` on underflow, so the steady state re-enters each tick. Each entry first consults the cadence recogniser.
+While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs on a frame whose step takes the countdown `DAT_801d90ec` below zero, and zeroes it. A held band therefore skips the body, and the recogniser is called only from inside it: its ring stands still through the hold and at a short line, where the countdown keeps falling unclamped. Each entry first consults the cadence recogniser. The strike draw `rand() % interval` is taken every frame, held or not (`0x801D3300`).
 
 - **Match:** the template id is stored as the band, the countdown is armed to `0x40` (the body is skipped for the next 64 frame-steps, so the band holds), and the strike-splash timer `DAT_801d90f0` is seeded. The splash fires for any matched template, including the ones that select common bands.
 - **No match:** the band is re-rolled from `r = rand & 0xfff`, so an unmatched band is only ever the current frame's roll.

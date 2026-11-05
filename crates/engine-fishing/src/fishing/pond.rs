@@ -340,7 +340,11 @@ impl PondSession {
                     ReelInput::ReelB => 2,
                     ReelInput::Idle => 0,
                 };
-                let matched = self.cadence.feed(button, fs);
+                let matched = self
+                    .band
+                    .band_due(self.line_record, fs)
+                    .then(|| self.cadence.feed(button, fs))
+                    .flatten();
                 if matched.is_some() {
                     self.events.push(PondEvent::Splash);
                 }

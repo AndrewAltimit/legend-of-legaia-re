@@ -237,8 +237,7 @@ impl BandCheck {
     /// `0x801D3434` for the water class, then one `addiu s1,s1,1` per newly-pressed
     /// pad mask from `0x801D3450` - and not two readings of one quantity.
     ///
-    /// Pinned: the every-frame re-entry (countdown clamped at 0), the
-    /// cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
+    /// Pinned: the cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
     /// `credit = countdown + 2 (+ edges)` strike credit and its `0x40`
     /// cadence-match override, the modulus ladder
     /// ([`crate::fishing_actors::bite_interval`]) and the far band's credit
@@ -264,11 +263,12 @@ impl BandCheck {
     ) -> bool {
         self.splash = false;
         let mut credit_base = self.countdown + STRIKE_CREDIT_BASE;
-        if self.countdown > 0 {
-            // Matched band holds for the countdown; clamped to 0 on underflow
-            // so the steady state re-enters every tick.
-            self.countdown = (self.countdown - frame_step.max(1)).max(0);
-        } else if record > BAND_CHECK_MIN_RECORD {
+        let due = self.band_due(record, frame_step);
+        // No clamp: at a short line the word keeps falling below zero, and the
+        // next body entry is what zeroes it (`0x801D31E4`).
+        self.countdown -= frame_step;
+        if due {
+            self.countdown = 0;
             match cadence {
                 Some(t) => {
                     self.band = t as u32;
@@ -284,14 +284,15 @@ impl BandCheck {
                 }
             }
         }
-
+        // The readout picks both halves of the roll: the modulus off the
+        // interval ladder, and - in the far band - a credit base that replaces
+        // the countdown term outright. The draw is every frame's, held or not
+        // (`0x801D3300`).
+        let interval = crate::fishing_actors::bite_interval(readout, false);
+        let roll = rng.next_u15() as i32 % interval.max(1);
         if !reel_held {
             return false;
         }
-        // The readout picks both halves of the roll: the modulus off the
-        // interval ladder, and - in the far band - a credit base that replaces
-        // the countdown term outright.
-        let interval = crate::fishing_actors::bite_interval(readout, false);
         let mut credit = crate::fishing_actors::bite_credit_override(readout)
             .unwrap_or(credit_base)
             + water_bonus.max(0)
@@ -299,7 +300,16 @@ impl BandCheck {
         if readout < STRIKE_CREDIT_ZERO_READOUT {
             credit = 0;
         }
-        (rng.next_u15() as i32 % interval.max(1)) < credit
+        roll < credit
+    }
+
+    /// Whether this frame runs the band body: the countdown has run out under
+    /// this frame's step and the line is out past the minimum
+    /// (`0x801D31C0..0x801D31D8`). The cadence recogniser is called only from
+    /// inside the body (`0x801D31E0`), so its ring stands still through a held
+    /// band and at a short line.
+    pub fn band_due(&self, record: i32, frame_step: i32) -> bool {
+        self.countdown - frame_step < 0 && record > BAND_CHECK_MIN_RECORD
     }
 }
 
