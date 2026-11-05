@@ -57,7 +57,7 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
     }
 }
 
-/// The stagers of PROT 0935, 0941, 0942, 0951 and 0964 (`gp[+0x714]` off the
+/// The stagers of PROT 0935, 0941, 0942, 0943, 0945, 0951, 0956 and 0964 (`gp[+0x714]` off the
 /// 64-word table at `0x801F6734`), reached from their parts' op `0x20`:
 ///
 /// | PROT | stager | arm: seats, on the caller |
@@ -65,13 +65,19 @@ pub fn chaos_breath_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
 /// | 0935 | `FUN_801F7FF0` | 0: `0x801F81EC` |
 /// | 0941 | `FUN_801F7DB0` | 1: `0x801F7F98`, 2: `0x801F8184`, 3: `0x801F81C8`, 4: `0x801F8238` |
 /// | 0942 | `FUN_801F8118` | 0: `0x801F81D0`, 1: `0x801F8480`, 2: `0x801F84F8`, each at the caller's scale |
+/// | 0943 | `FUN_801F769C` | 0: `0x801F7788`; 1: `0x801F784C`, `0x801F78A8`; 2: `0x801F791C`, each at the caller's scale |
+/// | 0945 | `FUN_801F776C` | 0, 1: `0x801F7878` at the caller's scale; 2: `0x801F7CF0`; 3: `0x801F7DF0` |
 /// | 0951 | `FUN_801F81DC` | 0: `0x801F82EC`; 1: that and `0x801F83B0`; 2: `0x801F84EC`; 3: `0x801F87DC`, `0x801F8908` (2 and 3 at the caller's scale) |
+/// | 0956 | `FUN_801F7EC4` | 0: `0x801F80B4`; 1: `0x801F8290`, `0x801F82DC`, `0x801F8330`, `0x801F84C4`, at the caller's scale; 2: `0x801F850C`, the same |
 /// | 0964 | `FUN_801F8BF8` | 0: `0x801F8EDC` / `8F38` / `8F94` by the last roll; 1: four `0x801F9008`, each on six draws; 2: `0x801F9568` (all at the caller's scale) |
 ///
 /// Not ported: PROT 0941's arm 0 (`sh zero,0x42` on the caller) and arm 1's 2D
 /// puff `FUN_801DFDF0(3, ..)`.
 ///
 /// PORT: overlay_cast_earthquake_0935_801f7ff0, overlay_cast_steal_0941_801f7db0, overlay_cast_power_up_0942_801f8118, overlay_cast_chaos_flare_0951_801f81dc, overlay_cast_element_change_0964_801f8bf8
+/// PORT: FUN_801F769C (PROT 0943's stager)
+/// PORT: FUN_801F776C (PROT 0945's stager)
+/// PORT: FUN_801F7EC4 (PROT 0956's stager)
 pub fn enemy_cast_stager_spawns(
     entry: u32,
     arm: u8,
@@ -90,6 +96,20 @@ pub fn enemy_cast_stager_spawns(
         (942, 0) => vec![at(0x801F_81D0, own)],
         (942, 1) => vec![at(0x801F_8480, own)],
         (942, 2) => vec![at(0x801F_84F8, own)],
+        (943, 0) => vec![at(0x801F_7788, own)],
+        (943, 1) => vec![at(0x801F_784C, own), at(0x801F_78A8, own)],
+        (943, 2) => vec![at(0x801F_791C, own)],
+        (945, 0 | 1) => vec![at(0x801F_7878, own)],
+        (945, 2) => vec![at(0x801F_7CF0, 0x1000)],
+        (945, 3) => vec![at(0x801F_7DF0, 0x1000)],
+        (956, 0) => vec![at(0x801F_80B4, 0x1000)],
+        (956, 1) => vec![
+            at(0x801F_8290, own),
+            at(0x801F_82DC, own),
+            at(0x801F_8330, own),
+            at(0x801F_84C4, own),
+        ],
+        (956, 2) => vec![at(0x801F_850C, own)],
         (951, 0) => vec![at(0x801F_82EC, 0x1000)],
         (951, 1) => vec![at(0x801F_82EC, 0x1000), at(0x801F_83B0, 0x1000)],
         (951, 2) => vec![at(0x801F_84EC, own)],

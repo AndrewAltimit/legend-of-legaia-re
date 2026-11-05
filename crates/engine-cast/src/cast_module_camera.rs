@@ -1007,6 +1007,7 @@ mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
 mod kiss_of_death;
+mod lapis_wave;
 mod megaton_press;
 mod meta_terra_ozma;
 mod nighto;
@@ -1032,6 +1033,7 @@ mod viguro;
 mod void_accessories;
 mod water_column;
 mod water_crystals;
+mod water_hazard;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
@@ -1066,6 +1068,7 @@ pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
 pub use kiss_of_death::{KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN, kiss_of_death_camera};
+pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{
     MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
 };
@@ -1100,6 +1103,7 @@ pub use viguro::*;
 pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
 pub use water_column::{WATER_COLUMN_COUNTDOWN, water_column_camera};
 pub use water_crystals::{WATER_CRYSTALS_COUNTDOWN, water_crystals_camera};
+pub use water_hazard::{water_hazard_camera, water_hazard_ring};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {

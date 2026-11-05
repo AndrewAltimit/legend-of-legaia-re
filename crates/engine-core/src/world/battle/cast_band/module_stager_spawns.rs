@@ -41,6 +41,9 @@ impl World {
         matches!(
             entry,
             935 | 941
+                | 943
+                | 945
+                | 956
                 | 942
                 | 951
                 | 964
@@ -106,12 +109,14 @@ impl World {
         // A capture cell's stager runs only for the body whose arms seat
         // per arm; its other bodies keep the pager's whole-set placement,
         // which already holds the records the stager would seat.
-        if matches!(entry, 938 | 940 | 941 | 942 | 944 | 951 | 959 | 960 | 962)
-            && self
-                .casting
-                .capture_spell
-                .and_then(|s| self.capture_per_arm_entry(s))
-                != Some(entry)
+        if matches!(
+            entry,
+            938 | 940 | 941 | 942 | 944 | 945 | 951 | 959 | 960 | 962
+        ) && self
+            .casting
+            .capture_spell
+            .and_then(|s| self.capture_per_arm_entry(s))
+            != Some(entry)
         {
             return;
         }
@@ -212,7 +217,7 @@ impl World {
                 961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),
                 962 => blade_breath_cell_stager_spawns(arm, caller),
                 965 => doomsday_stager_spawns(arm, caller),
-                935 | 941 | 942 | 951 | 964 => {
+                935 | 941 | 942 | 943 | 945 | 951 | 956 | 964 => {
                     let roll = self.battle.monster_ai_state.counter() as u8;
                     enemy_cast_stager_spawns(entry, arm, caller, roll, &mut || self.next_rand())
                 }

@@ -301,6 +301,18 @@ impl World {
                 if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
                     self.casting.module_pass_counter = 0;
                 }
+                // Water Hazard's ring goes in ahead of the arm's last call.
+                if run.prot_entry == 956
+                    && arm == 2
+                    && spell_id == 0x71
+                    && let Some(c) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let ring = cmc::water_hazard_ring(
+                        (c.move_state.world_x, c.move_state.world_z),
+                        (c.battle.facing_angle & 0xFFF) as i16,
+                    );
+                    self.stage_module_arm_spawns(run.prot_entry, &ring, run.camera_shot, None);
+                }
                 let spawns = cmc::capture_arm_spawns_in(
                     run.prot_entry,
                     arm,
@@ -309,6 +321,29 @@ impl World {
                 );
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
+                }
+                let on_party = cmc::capture_arm_party_records(run.prot_entry, arm, spell_id);
+                if !on_party.is_empty() {
+                    let spawns: Vec<_> = (0..usize::from(self.party.party_count))
+                        .filter_map(|i| self.actors.get(i))
+                        .flat_map(|a| {
+                            let pos = [
+                                a.move_state.world_x,
+                                a.move_state.world_y,
+                                a.move_state.world_z,
+                            ];
+                            let rot = [0, (a.battle.facing_angle & 0xFFF) as i16, 0];
+                            on_party.iter().map(move |&record| cmc::ModuleSpawn {
+                                record: cmc::SpawnRecord::Module(record),
+                                anchor: cmc::SpawnAnchor::LiteralScaled {
+                                    pos,
+                                    rot,
+                                    scale: 0x1000,
+                                },
+                            })
+                        })
+                        .collect();
+                    self.stage_module_arm_spawns(run.prot_entry, &spawns, run.camera_shot, None);
                 }
                 // Gigaton Press's debris ring follows its five caster records
                 // on the same pass (drawn ahead of the arm's hit).
