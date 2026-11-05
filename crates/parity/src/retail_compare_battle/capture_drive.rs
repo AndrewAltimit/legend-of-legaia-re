@@ -871,12 +871,6 @@ impl RetailBattle {
         displayed_struck: bool,
         displayed_walker: bool,
     ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        // Past the end signal the sequencer poses the winners and the results
-        // framing reads poses the replay's clips do not share; the ground
-        // stays the replay's.
-        if self.span_gate.is_end() {
-            return Vec::new();
-        }
         let pc = usize::from(self.party_count.clamp(1, 3));
         self.captured
             .iter()

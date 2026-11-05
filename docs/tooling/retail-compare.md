@@ -1529,8 +1529,11 @@ reads yaw `2175`, against the `2288` of an unturned member.
   (`image` `.843` to `.932`); `rim_elm_gimard_victory` `.840` to `.891`,
   `battle_noa_miracle_art_combo` `.861` to `.892`. A partly aligned camera
   keeps the body-pair ground, which its own framing still reads.
-- **Past the end signal** nothing is moved: the winners' poses and the
-  results framing read clips the replay does not share.
+- **Past the end signal** the same holds. The seed stands the bars on the
+  capture's closing ground and the replay then runs its one action from there,
+  so `battle_results_gimard_retail`'s Vahn walks `875` units past his captured
+  `(-33, 126)`. The results framing is `0x800 - actor[+0x46]` on his body pair,
+  so the replayed heading and ground were the whole of its camera residual.
 
 ### Combatants that had already acted
 

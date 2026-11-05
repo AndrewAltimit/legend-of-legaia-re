@@ -1192,6 +1192,8 @@ pub struct CaptureReseatBars {
     pub hp: u16,
     pub mp: u16,
     pub status: u16,
+    /// The Spirit gauge of a body whose size follows it, if any.
+    pub gauge: Option<u16>,
 }
 
 /// [`BattleState::capture_reseat`]: the engine slot whose action seeds the

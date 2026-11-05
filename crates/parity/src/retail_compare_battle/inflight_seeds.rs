@@ -78,6 +78,7 @@ impl RetailBattle {
                     status: 0,
                     init_key: None,
                     heal_latch: false,
+                    gauge: None,
                 })
             })
             .collect()

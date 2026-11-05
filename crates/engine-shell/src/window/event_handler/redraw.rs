@@ -211,9 +211,7 @@ impl PlayWindowApp {
         );
         eprintln!(
             "capture stage: drawn objects {:?} rebound {} stage id {}",
-            self.battle_stage_shell,
-            w.battle.backdrop_rebound,
-            w.battle.stage_id,
+            self.battle_stage_shell, w.battle.backdrop_rebound, w.battle.stage_id,
         );
         if let (Some(path), Some(v)) = (
             std::env::var_os("LEGAIA_DIAG_CAPTURE_VRAM"),

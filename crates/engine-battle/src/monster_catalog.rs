@@ -298,6 +298,12 @@ impl MonsterCatalog {
         self.by_id.get(&id)
     }
 
+    /// The record a battle-time write lands on (Dohati's size class, which
+    /// `FUN_8004CE2C` stores into the loaded record).
+    pub fn get_mut(&mut self, id: u16) -> Option<&mut MonsterDef> {
+        self.by_id.get_mut(&id)
+    }
+
     pub fn len(&self) -> usize {
         self.by_id.len()
     }

@@ -127,6 +127,9 @@ impl World {
         use legaia_engine_battle_vm::status_effects::StatusKind;
         let slot = bars.slot;
         let word = bars.status;
+        if let (Some(g), Some(a)) = (bars.gauge, self.actors.get_mut(usize::from(slot))) {
+            a.battle.spirit_gauge = g;
+        }
         if let Some(a) = self.actors.get_mut(usize::from(slot))
             && a.battle.hp != 0
             && bars.hp != 0
@@ -188,6 +191,7 @@ impl World {
             for bars in self.battle.capture_reseat_bars.clone() {
                 self.reseat_capture_bars(bars);
             }
+            self.tick_dohati_growth();
             self.refresh_battle_body_pairs_now();
             self.battle.capture_approach_due = self.battle.capture_approach_yaw.is_some();
             self.stand_capture_attacker_off_reach(actor);

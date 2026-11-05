@@ -18,6 +18,7 @@ impl World {
     pub fn settle_seated_clips(&mut self) {
         self.refresh_battle_body_pairs();
         if self.mode == SceneMode::Battle {
+            self.tick_dohati_growth();
             self.tick_mystic_shield();
         }
     }
@@ -244,6 +245,7 @@ impl World {
         // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
         // seats the sphere and tests the break.
         if self.mode == SceneMode::Battle {
+            self.tick_dohati_growth();
             self.tick_mystic_shield();
         }
         let mut fresh = vec![false; self.actors.len()];

@@ -450,6 +450,7 @@ pub fn run_engine_battle(
                     heal_latch: slot
                         == usize::from(engine_seat(battle.active_actor, battle.party_count))
                         && battle.heal_gate_passed(),
+                    gauge: battle.dohati_gauge.filter(|_| slot == pc),
                 })
             })
             .collect::<Vec<_>>()

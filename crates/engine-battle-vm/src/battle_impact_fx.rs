@@ -250,6 +250,42 @@ pub fn clip_impact_acting_selector(character_id: u8, attach_key: u8) -> Option<u
 /// The formation id the Jette hook keys on (`li v0,0xaa` against the first
 /// formation cell `gp[0x9F4] = 0x8007BD0C`, `0x8004D334`): Jette, id 170.
 pub const JETTE_MONSTER_ID: u8 = 0xAA;
+
+/// The formation lead whose body follows its Spirit gauge (`li v0,0x8a` at
+/// `0x8004D440`), Dohati.
+pub const DOHATI_MONSTER_ID: u8 = 0x8A;
+
+/// What [`dohati_growth`] writes on the first monster seat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DohatiGrowth {
+    /// The render node's scale `+0x72`.
+    pub render_scale: u16,
+    /// The record's size class `+0x1F`, which the framings, the range law and
+    /// the make-way read.
+    pub size_class: u8,
+    /// The render node's radius `+0x58`.
+    pub radius: i16,
+}
+
+/// Dohati's arm of the actor pass `FUN_8004CE2C` (`0x8004D43C..0x8004D530`):
+/// the body grows with its Spirit gauge, from half size at `0` to whole at the
+/// clamp `0x32`. Each term divides by 50 (the `0x51EB851F` reciprocal, `>> 4`).
+/// The gauge has been clamped already; the arm writes nothing during the
+/// summon band `0x32..=0x3B` (`0x8004D484..0x8004D48C`).
+pub fn dohati_growth(gauge: u16, action_state: u8) -> Option<DohatiGrowth> {
+    if (0x32..=0x3B).contains(&action_state) {
+        return None;
+    }
+    let g = i32::from(gauge);
+    Some(DohatiGrowth {
+        render_scale: (0x800 + (g << 11) / 50) as u16,
+        size_class: (0x18 + (g << 3) / 50) as u8,
+        radius: (0x300 + (g << 8) / 50) as i16,
+    })
+}
+
+/// The gauge clamp ahead of [`dohati_growth`] (`0x8004D464..0x8004D470`).
+pub const DOHATI_GAUGE_CLAMP: u16 = 0x32;
 /// The deformation-table row the Jette hook stages (`sb v1,0x6d(v0)` with
 /// `v1 = 2` at `0x8004D390`).
 pub const JETTE_SHATTER_ROW: u8 = 2;
@@ -559,5 +595,27 @@ mod tests {
         assert_eq!(jette_shatter_hook(0xAA, true, 0x10, 2, 0x10), Keep);
         assert_eq!(jette_shatter_hook(0xAA, true, 0x10, 0, 0x10), Clear);
         assert_eq!(jette_shatter_hook(0xAA, true, 0x35, 0, 0x10), Keep);
+    }
+
+    /// `battle_dohaty_dohati_strike` holds gauge `8`, node scale `0x947`,
+    /// record size `25` and node radius `0x328` in its RAM.
+    #[test]
+    fn dohati_grows_with_its_gauge_as_the_capture_reads() {
+        assert_eq!(
+            dohati_growth(8, 0x1E),
+            Some(DohatiGrowth {
+                render_scale: 0x947,
+                size_class: 25,
+                radius: 0x328,
+            })
+        );
+        let empty = dohati_growth(0, 0x1E).unwrap();
+        assert_eq!((empty.render_scale, empty.size_class), (0x800, 0x18));
+        let full = dohati_growth(DOHATI_GAUGE_CLAMP, 0x1E).unwrap();
+        assert_eq!((full.render_scale, full.size_class), (0x1000, 0x20));
+        assert_eq!(full.radius, 0x400);
+        assert_eq!(dohati_growth(8, 0x32), None);
+        assert_eq!(dohati_growth(8, 0x3B), None);
+        assert!(dohati_growth(8, 0x3C).is_some());
     }
 }

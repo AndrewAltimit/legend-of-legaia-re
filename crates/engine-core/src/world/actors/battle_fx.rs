@@ -1342,6 +1342,9 @@ impl World {
         {
             return r;
         }
+        if let Some(r) = self.actors.get(i).and_then(|a| a.battle.render_radius) {
+            return r;
+        }
         match self.actors.get(i).and_then(|a| a.battle_monster_id) {
             Some(id) => self
                 .tables

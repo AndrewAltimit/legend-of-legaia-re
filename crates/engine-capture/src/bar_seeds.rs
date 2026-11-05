@@ -42,6 +42,9 @@ pub struct BarSeed {
     /// The monster's self-heal latch `DAT_801C8FE0[index + 4]` stands raised
     /// for the replay's pick (`RetailBattle::heal_gate_passed`).
     pub heal_latch: bool,
+    /// The Spirit gauge `+0x170` of a body whose size follows it (Dohati's,
+    /// `World::tick_dohati_growth`); `None` keeps the engine's.
+    pub gauge: Option<u16>,
 }
 
 /// The status-word bits a seed carries over: the ailments the engine tracks
@@ -132,6 +135,9 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
         if let Some(k) = s.init_key {
             a.battle.init_key = k;
         }
+        if let Some(g) = s.gauge {
+            a.battle.spirit_gauge = g;
+        }
         if s.heal_latch {
             let index = usize::from(s.slot).saturating_sub(usize::from(world.party.party_count));
             if let Some(l) = world.battle.monster_ai_state.dat.get_mut(index + 4) {
@@ -149,7 +155,7 @@ pub fn apply_bar_seeds(world: &mut legaia_engine_core::world::World, seeds: &[Ba
     }
 }
 
-/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]][:m<max>][:v],...` for
+/// `slot:hp:mp[:x:z[:facing]][:d<lanes>][:s<status>][:k[<key>]][:m<max>][:g<gauge>][:v],...` for
 /// `LEGAIA_BATTLE_BARS`.
 pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
     seeds
@@ -177,6 +183,10 @@ pub fn bar_seeds_to_env(seeds: &[BarSeed]) -> String {
                 Some(m) => format!("{head}:m{m}"),
                 None => head,
             };
+            let head = match s.gauge {
+                Some(g) => format!("{head}:g{g}"),
+                None => head,
+            };
             if s.heal_latch {
                 format!("{head}:v")
             } else {
@@ -195,6 +205,10 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
             let (e, heal_latch) = match e.strip_suffix(":v") {
                 Some(head) => (head, true),
                 None => (e, false),
+            };
+            let (e, gauge) = match e.rsplit_once(":g") {
+                Some((head, g)) => (head, Some(g.parse().ok()?)),
+                None => (e, None),
             };
             let (e, hp_max) = match e.rsplit_once(":m") {
                 Some((head, m)) => (head, Some(m.parse().ok()?)),
@@ -236,6 +250,7 @@ pub fn bar_seeds_from_env(v: &str) -> Vec<BarSeed> {
                 status,
                 init_key,
                 heal_latch,
+                gauge,
             })
         })
         .collect()
@@ -276,6 +291,7 @@ pub fn arm_capture_reseat(
                     hp: s.hp,
                     mp: s.mp,
                     status: seedable_status_bits(s.status),
+                    gauge: s.gauge,
                 },
             )
             .collect();

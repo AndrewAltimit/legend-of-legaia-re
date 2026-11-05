@@ -275,12 +275,6 @@ window; `BattleDrive::Menu`'s steer only reaches the cursor through the Attack a
 so neither drive lands. Both states are held on disk under `captures/` and not in
 the catalog until the drive can take a window's row first.
 
-### The results frame's camera
-
-`partial` `battle_results_gimard_retail` matches the win pose and the window and
-scores `0.81` on a framing some pixels off (`camera` `0.86`). The camera's phase on
-the results drift is not placed by the seed. Grade `capture`.
-
 ### Zenoir's walk over a small window
 
 **Status: open.** Retail's arithmetic lets Zenoir's creature step over a victim's range window (510 units a pass against a window 448 across, `+0x1F = 14`) and hold arm 8 for good ([cast-module.md](../subsystems/cast-module.md#prot-0908-zenoir)). The port hit this in about one Zenoir cast in two hundred and guards it. Not settled: whether a retail fight does it, since the frame step `4` is a measurement of one recording, and a step of `3` (382 units) cannot miss. Evidence that closes it: a PCSX-Redux recording of Zenoir against monster 27, 36 or 63 reading the creature's `+0x34` through arm 8.

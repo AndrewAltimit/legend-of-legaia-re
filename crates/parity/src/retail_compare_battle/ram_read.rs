@@ -929,6 +929,7 @@ impl RetailBattle {
             display_lag: display_lag_vsyncs(ram),
             display_phase_lag: displayed_lag_vsyncs(ram),
             arrival_cue: arrival_columns(ram),
+            dohati_gauge: dohati_gauge(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
             display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
@@ -1383,6 +1384,15 @@ const ARRIVAL_FORMATION_HEAD: u8 = 0xB5;
 /// level dates the frame against the hand-back. `Some(Some(level))` with
 /// the display lag's ramp taken back, `Some(None)` once no column is live,
 /// `None` for any other fight or under the arrival itself.
+pub(super) fn dohati_gauge(ram: &[u8]) -> Option<u16> {
+    (game_anchors::u8_at(ram, FORMATION_CELL)
+        == legaia_engine_battle_vm::battle_impact_fx::DOHATI_MONSTER_ID)
+        .then(|| {
+            let seat = game_anchors::u32_at(ram, 0x801C_9370 + 3 * 4);
+            game_anchors::u16_at(ram, seat + 0x170)
+        })
+}
+
 pub(super) fn arrival_columns(ram: &[u8]) -> Option<Option<u16>> {
     if game_anchors::u8_at(ram, FORMATION_CELL) != ARRIVAL_FORMATION_HEAD
         || game_anchors::u8_at(ram, STAGE_ID) != 0

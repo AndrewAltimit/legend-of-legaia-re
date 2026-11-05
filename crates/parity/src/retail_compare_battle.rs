@@ -417,6 +417,10 @@ pub struct RetailBattle {
     /// `0x801F72D0` is still up, its depth-cue level `+0x78` on the displayed
     /// frame; `Some(None)` once it has gone; `None` outside that fight.
     pub arrival_cue: Option<Option<u16>>,
+    /// Dohati's Spirit gauge `+0x170`, which sizes his body and his framing
+    /// (`legaia_engine_battle_vm::battle_impact_fx::dohati_growth`); `None`
+    /// in any other formation.
+    pub dohati_gauge: Option<u16>,
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,

@@ -490,9 +490,13 @@ pub struct BattleActor {
     /// `ScaleMatrix` `0x8005B4E8`), so `0` draws nothing and a growing word
     /// grows the body about its origin. The actor allocator seats `0x1000`
     /// (`FUN_80020DE0`); `None` is that unity. Its writers are cast
-    /// modules: PROT 0923 (Gilium) zeroes its creature's on arm 3 and grows
-    /// it through arm 4 ([`Self::render_scale_q12`]).
+    /// modules (PROT 0923, Gilium, zeroes its creature's on arm 3 and grows
+    /// it through arm 4, [`Self::render_scale_q12`]) and Dohati's growth in
+    /// the actor pass `FUN_8004CE2C`.
     pub render_scale: Option<u16>,
+    /// The render node's `+0x58` where a battle-time write parts it from the
+    /// seat stager's `size << 5` (Dohati's growth, `0x8004D530`).
+    pub render_radius: Option<i16>,
     /// `+0x48` - the body's **roll** (12-bit angle). The draw builds the
     /// body's matrix from the trio `(0, +0x46, +0x48)` in retail's
     /// `Rx * Ry * Rz` order, so a non-zero word turns the body about its
