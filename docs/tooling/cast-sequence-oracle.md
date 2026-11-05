@@ -362,7 +362,7 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   may replay rounds until its target and clip match, and a recording started on
   an earlier one reads as a strike that "lands nothing".
 
-On the retail side the same switch starts on a state held on `0x2B`, with
+On the retail side the same switch starts on a state held on `0x2B` or `0x70`, with
 `--retail-only`: `LEGAIA_RAM_AT` then films a monster cast from the state on the
 fast core, where the `--monster-pick` run is an interpreter's.
 
