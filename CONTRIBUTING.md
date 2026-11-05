@@ -32,6 +32,7 @@ If a change would put Sony bytes in git history, it doesn't land, however useful
 ## Getting set up
 
 ```bash
+apt install libasound2-dev libudev-dev pkg-config   # Linux: what audio and gamepad input link (Debian / Ubuntu names)
 cargo build --release
 scripts/ci/install-hooks.sh   # once per clone
 ```
@@ -58,7 +59,8 @@ CI also builds the workspace and the WASM target, which is easy to break from na
 
 ```bash
 cargo build --release --workspace
-cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer
+rustup target add wasm32-unknown-unknown   # once
+cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer -p legaia-web-play-bundle
 ```
 
 The port ships three hosts on one engine - the native `play-window`, the browser play page, and the minigames page - so a feature wired into one host is invisible in a diff of the others. [`docs/tooling/host-drift.md`](docs/tooling/host-drift.md) covers the gates that catch that.

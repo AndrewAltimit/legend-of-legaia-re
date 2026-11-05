@@ -89,11 +89,13 @@ Every archive also carries **Legaia Explorer**, a desktop app for the asset side
 
 ### Build from source
 
-Needs a Rust toolchain (edition 2024).
+Needs a current stable Rust toolchain; on Linux also ALSA and udev headers and `pkg-config` (Debian / Ubuntu: `apt install libasound2-dev libudev-dev pkg-config`).
 
 ```bash
 cargo build --release          # every binary lands in target/release/
 ```
+
+`legaia-relay` and `pcsxr-state` are built here but not shipped in the release archives. The browser pages need their own build: [run the browser version locally](docs/guides/playing-and-viewing.md#10-run-the-browser-version-locally).
 
 ### The commands worth knowing
 

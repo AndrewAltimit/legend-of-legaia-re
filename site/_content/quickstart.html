@@ -49,11 +49,11 @@ cd legaia-tools-&lt;version&gt;-x86_64-unknown-linux-gnu
   <p>Every binary answers <code>--version</code> and <code>--help</code>. How the archives are produced: <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/releases.md"><code>tooling/releases.md</code></a>.</p>
 
   <h3>Build from source</h3>
-  <p>The repo is a Cargo workspace: a library per crate, and a command-line binary on the crates that have a tool to run.</p>
+  <p>The repo is a Cargo workspace: a library per crate, and a command-line binary on the crates that have a tool to run. It needs a current stable Rust toolchain; on Linux also ALSA and udev headers and <code>pkg-config</code> (Debian / Ubuntu: <code>apt install libasound2-dev libudev-dev pkg-config</code>).</p>
 <pre><code>git clone https://github.com/AndrewAltimit/legend-of-legaia-re
 cd legend-of-legaia-re
 cargo build --release
-cargo test --workspace --release</code></pre>
+cargo test --workspace --profile release-test</code></pre>
   <p class="hint">Commands on this page use the release-archive form (<code>./tool</code>). From a source build the same binaries live under <code>target/release/</code>. Tests that need a real disc skip when <code>LEGAIA_DISC_BIN</code> is unset; CI runs the same way.</p>
 </section>
 
