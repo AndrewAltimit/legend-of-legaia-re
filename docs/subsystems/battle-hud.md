@@ -1324,6 +1324,15 @@ list (`0`) enables a field-usable row only when the relevance check
 (`0x800309C8..0x800309E4`). A Healing Leaf with the whole party at full HP is
 therefore pickable in a fight and greyed in the pause menu.
 
+**Row names.** Every held id gets a row, unusable ones included, and its name
+is the static [item-name table](../formats/item-table.md)'s, which names all
+256 ids. The port's item catalog carries only the usable items, so the battle
+builder (`World::build_battle_item_session`) installs the table's names on the
+session (`InventoryUseSession::item_names`, through `World::item_display_name`)
+ahead of the catalog's; a weapon or key item otherwise falls through to its raw
+id. The field VM's dialog escapes `0xC2` / `0xC4` and the spoils window's drop
+line resolve through the same lookup.
+
 ### Target confirm (`0x64`)
 
 State `0x64` is packet-pinned the same way (`battle_item_target` /

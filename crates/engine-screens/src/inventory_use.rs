@@ -27,11 +27,7 @@ pub fn inventory_use_session_draws(
         if !seen.insert(*id) {
             continue;
         }
-        let name = s
-            .catalog
-            .get(*id)
-            .map(|e| e.name.to_string())
-            .unwrap_or_else(|| format!("Item {id:02X}"));
+        let name = s.item_label(*id);
         let count = counts.get(id).copied().unwrap_or(1);
         row_data.push((name, count, filter_set.contains(&i)));
     }

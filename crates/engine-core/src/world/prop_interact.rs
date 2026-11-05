@@ -1130,10 +1130,21 @@ impl World {
                             .or_insert_with(|| name.clone().into_bytes());
                     }
                 }
+                // `0xC2` / `0xC4` - an item name off the static item-name
+                // table `0x8007436C + id*0xC`, which names every id. The
+                // item catalog names only the usable items, so resolving
+                // through it alone left a weapon or key item blank ("There
+                // is a  in the treasure chest!", issue #556); it stays the
+                // fallback for a disc-free host.
                 0xC2 | 0xC4 => {
-                    if let Some(entry) = self.tables.item_catalog.get(arg) {
-                        map.entry((2, arg))
-                            .or_insert_with(|| entry.name.as_bytes().to_vec());
+                    let name = self.item_display_name(arg).or_else(|| {
+                        self.tables
+                            .item_catalog
+                            .get(arg)
+                            .map(|e| e.name.to_string())
+                    });
+                    if let Some(name) = name {
+                        map.entry((2, arg)).or_insert_with(|| name.into_bytes());
                     }
                 }
                 // `0xC7 xx` - an inline 8-byte SCUS name (the Ra-Seru
@@ -1490,6 +1501,26 @@ mod tests {
             None,
             "a sprite escape is not a number"
         );
+    }
+
+    /// Issue #556: the item-name escapes resolve off the static item-name
+    /// table, which names every id - a key item or a weapon from a chest
+    /// included, which the usable-item catalog has no row for.
+    #[test]
+    fn item_name_escapes_name_items_the_catalog_does_not_hold() {
+        let mut w = World::new();
+        let mut names = vec![None; 256];
+        names[0xA6] = Some("Key".to_string());
+        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+            item_names: Some(legaia_game_tables::item_names::ItemNameTable::from_names(
+                names,
+            )),
+            ..Default::default()
+        });
+        assert!(w.tables.item_catalog.get(0xA6).is_none());
+        let record = [0x1F, 0xC2, 0xA6, b' ', 0xC4, 0xA6, 0x00];
+        let subs = w.dialog_substitutions(&record).expect("item escapes");
+        assert_eq!(subs.get(&(2, 0xA6)), Some(&b"Key".to_vec()));
     }
 
     #[test]

@@ -315,3 +315,54 @@ fn opening_the_item_window_moves_the_flow_byte_onto_it() {
     }
     assert!(world.battle.item_menu.is_some(), "the item window is open");
 }
+
+/// Issue #556: the battle Item window lists every held id, unusable ones
+/// dimmed, but named its rows off the item catalog - which holds only the
+/// usable items - so a weapon or key item read `Item 22` / `Item A6`. Rows
+/// name through the disc's item-name table, and each prints its stack's count.
+#[test]
+fn battle_item_rows_name_unusable_items_and_print_stack_counts() {
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.battle.player_driven = true;
+    world.mode = SceneMode::Battle;
+    world.set_item_catalog(full_test_catalog());
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    // Synthetic names: no catalog row for the two non-consumables.
+    let mut names = vec![None; 256];
+    names[0x01] = Some("Leaf".to_string());
+    names[0x22] = Some("Knife".to_string());
+    names[0xA6] = Some("Key".to_string());
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        item_names: Some(legaia_game_tables::item_names::ItemNameTable::from_names(
+            names,
+        )),
+        ..Default::default()
+    });
+    assert!(world.tables.item_catalog.get(0x22).is_none());
+    assert!(world.tables.item_catalog.get(0xA6).is_none());
+    world.party.inventory.insert(0x01, 4);
+    world.party.inventory.insert(0x22, 1);
+    world.party.inventory.insert(0xA6, 1);
+    let view = world.build_battle_item_session().menu_view();
+    let rows: Vec<(String, u8)> = view
+        .rows
+        .iter()
+        .map(|r| (r.name.clone(), r.count))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            ("Leaf".to_string(), 4),
+            ("Knife".to_string(), 1),
+            ("Key".to_string(), 1),
+        ]
+    );
+}

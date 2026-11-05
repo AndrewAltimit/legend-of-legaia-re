@@ -85,12 +85,18 @@ pub fn battle_spoils_banner(world: &World) -> Option<BattleSpoilsBanner> {
         .drops
         .iter()
         .map(|&id| {
+            // The static name table names every id (a dropped weapon or
+            // armour included); the usable-item catalog only consumables.
             let name = world
-                .tables
-                .item_catalog
-                .get(id)
-                .map(|it| it.name.to_string())
-                .unwrap_or_else(|| format!("Item {id}"));
+                .item_display_name(id)
+                .or_else(|| {
+                    world
+                        .tables
+                        .item_catalog
+                        .get(id)
+                        .map(|it| it.name.to_string())
+                })
+                .unwrap_or_else(|| format!("Item {id:02X}"));
             drop_line(world, &name).unwrap_or_else(|| format!("Got {name}"))
         })
         .collect();

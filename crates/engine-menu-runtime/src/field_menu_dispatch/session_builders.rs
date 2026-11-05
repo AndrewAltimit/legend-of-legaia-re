@@ -142,12 +142,17 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
             row
         })
         .collect();
+    let names = items
+        .iter()
+        .filter_map(|&id| Some((id, world.item_display_name(id)?)))
+        .collect();
     InventoryUseSession::new(
         world.tables.item_catalog.clone(),
         items,
         targets,
         InventoryContext::Field,
     )
+    .with_item_names(names)
     // The row payloads: retail's list entries carry a bag slot, and Use /
     // Throw Out remove from the slot the row named.
     .with_bag_slots(bag_slots)
@@ -166,23 +171,8 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
 pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
     let text = world.menu.text.as_ref();
     ItemDisplayText {
-        name: text
-            .and_then(|t| t.item_name(id))
-            .map(|name| {
-                // Three weapon names substitute a hero's record name.
-                let hero = legaia_game_tables::item_names::PARTY_NAMED_ITEMS
-                    .iter()
-                    .find(|(item, _)| *item == id)
-                    .map(|&(_, record)| record);
-                match hero.and_then(|r| Some((r, world.party.roster_names().get(r).cloned()?))) {
-                    Some((r, renamed)) => name.replacen(
-                        legaia_game_tables::item_names::DEFAULT_PARTY_NAMES[r],
-                        &renamed,
-                        1,
-                    ),
-                    None => name.to_string(),
-                }
-            })
+        name: world
+            .item_display_name(id)
             .or_else(|| {
                 world
                     .tables
