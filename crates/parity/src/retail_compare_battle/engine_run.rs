@@ -347,7 +347,7 @@ pub fn run_engine_battle(
     // Held through the intro transition, so the field's own draws there do
     // not re-deal the fight (`EncounterState::rng_hold`).
     session.host.world.encounters.rng_hold = Some(rng_seed);
-    if battle.capture_walk_ran_cheap() {
+    if battle.replay_keeps_default_step() {
         session.host.world.toggles.battle_party_cost_step = false;
     }
     if let Some((step, state, from)) = battle.frame_step_seed() {

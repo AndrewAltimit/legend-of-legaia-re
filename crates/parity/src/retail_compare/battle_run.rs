@@ -883,7 +883,7 @@ pub(super) fn battle_image(
     // (the gate), with the fixed tick as the deadline.
     // The capture's own frame step over its last stretch, as the headless
     // seed ran it (`RetailBattle::frame_step_seed`).
-    if battle.capture_walk_ran_cheap() {
+    if battle.replay_keeps_default_step() {
         env.push(("LEGAIA_BATTLE_PARTY_STEP", "0".to_string()));
     }
     if let Some((step, state, from)) = battle.frame_step_seed() {

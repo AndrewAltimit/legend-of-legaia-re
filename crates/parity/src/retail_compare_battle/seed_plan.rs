@@ -144,14 +144,14 @@ impl RetailBattle {
             .map(|from| (step, self.action_state, Some(from)))
     }
 
-    /// The step the image child's ordinary frames run on. A monster's capture-band
-    /// walk-in gates on the yaw counter, which climbs `2` a pass at step `2` and `4`
-    /// at step `3`, so the vsyncs the shot has walked by the gate follow the step
-    /// the action ran. A capture whose history still holds cheap frames ran the
-    /// walk on the step they read, whatever the party's rung says
-    /// (`LEGAIA_BATTLE_PARTY_STEP=0`).
+    /// The step a replay's ordinary frames run on. A replayed cast and a monster's
+    /// capture-band walk-in gate on a word of the action, standing on a camera that
+    /// starts from the replay's own prompt rather than the earlier actor's shot, so
+    /// they read the framing by how long the walk has had, and the capture holds no
+    /// word for the passes before its history. They keep the default step
+    /// (`LEGAIA_BATTLE_PARTY_STEP=0`); a played round takes the party's.
     pub fn child_ordinary_step(&self) -> u8 {
-        if self.capture_walk_ran_cheap() {
+        if self.replay_keeps_default_step() {
             legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP
         } else {
             legaia_engine_battle_loop::frame_clock::ordinary_battle_frame_step(self.party_count)
@@ -159,8 +159,9 @@ impl RetailBattle {
     }
 
     /// See [`Self::child_ordinary_step`].
-    pub fn capture_walk_ran_cheap(&self) -> bool {
-        matches!(self.span_gate, SpanGate::CaptureFade { .. }) && self.ring_cheap >= 5
+    pub fn replay_keeps_default_step(&self) -> bool {
+        matches!(self.span_gate, SpanGate::CaptureFade { .. })
+            || matches!(self.seed_plan(), SeedPlan::Cast)
     }
 
     /// The slot-1 backdrop angle the **displayed** frame was drawn at. The

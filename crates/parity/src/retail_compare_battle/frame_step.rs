@@ -53,13 +53,6 @@ pub(super) const FRAME_HISTORY_CURSOR: u32 = 0x8007_B758;
 /// `0x800170A8`, for a duration of `0x2D0` or more).
 const FRAME_HISTORY_CLAMP: i16 = 0x2BC;
 
-/// How many of the sixteen history entries read under step `3`'s rung `0x1FF`.
-pub fn history_entries_under_step_three(ram: &[u8]) -> u8 {
-    (0..16)
-        .filter(|&i| game_anchors::i16_at(ram, FRAME_HISTORY + i * 2) < 0x1FF)
-        .count() as u8
-}
-
 /// The frame steps of the capture's last two passes: `[0]` the pass the RAM
 /// holds (the table being built), `[1]` the one before it (the older table).
 ///
