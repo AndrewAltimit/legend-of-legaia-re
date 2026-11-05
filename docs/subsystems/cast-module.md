@@ -4648,11 +4648,28 @@ records. Further 0903 facts:
   (`+0x21D = scalar >> 1` at `0x801F76D8`), slowing the knock-back clip and
   the fade the arm waits on. The dead-target yaw is
   `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100)`, the track coin's turn, so the
-  arm's whole close-up stands `0x200` round from retail's on a replay that
-  drew the other coin: forcing the coin onto retail's lifts the recording's
-  arm 12 from `.831` to `.887`. Retail's only writer of the coin is
-  `FUN_8004E13C` (`sb v0,0x26d(a0)` at `0x8004E2DC`, `rand() % 2`), called
-  by the clip commit `FUN_8004AD80` for an entry whose `+0x87` byte is set.
+  arm's whole close-up stands `0x200` round from retail's when the coin falls
+  the other way. The coin's only writer is `FUN_8004E13C` (`sb v0,0x26d(a0)`
+  at `0x8004E2DC`, `rand() % 2`), which the clip commit `FUN_8004AD80` calls
+  for an entry whose `+0x87` byte is set; the port draws it there, on the
+  world stream (`BattleActionCtx::track_coin`).
+- Arm 10 shows the victim again: `sw a0,0x4(s2)` at `0x801F7388` stores the
+  neutral word `0x20080200` over the band's hide, and a non-zero word draws
+  the body whatever its `+0x21C` (`0xFF` still). So the victim stands in the
+  frame for the creature's walk-in while the caster stays hidden
+  (`gimard_burning_attack`, arm 11: the victim's `+0x04 = 0x20080200`, the
+  caster's `0`).
+- The walk's puffs follow the emitter's law on both sides. Each new effect-pool
+  child sits on an object of the pose the creature held one pass earlier, plus
+  its jitter (`--pose-objects` beside `fxpool.csv`: mean residual within `5`
+  units on every axis on both sides), and the decoded object table matches the
+  port's `stream_pose` to the unit at every walk cursor. Which objects the
+  `rand()` picks is what parts the two clouds.
+- Late in arm 12 retail's creature holds its walk cursor (`180` in the
+  recording) while the engine's loops on. The creature fades under
+  `+0x21C = 2`, and the anim tick skips a body whose node colour word reads zero
+  (`0x800474D4..0x800474E0`); the port's skip tests only the hide. The body is
+  gone from the frame by then, so nothing on screen differs.
 - Arm 11's last pass points the creature at seat `0` (`sb zero,0x1dd(s3)` at
   `0x801F75F0`), and from then on it stands. The anim tick steps a
   positive root speed only while `FUN_8004E2F0(slot, +0x1DD)` reads out of

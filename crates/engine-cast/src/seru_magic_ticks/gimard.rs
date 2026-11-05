@@ -17,6 +17,15 @@ pub const GIMARD_POSE_ARM: u8 = 9;
 /// (`0x801F7360..0x801F7374`).
 pub const GIMARD_STAGE_ARM: u8 = 10;
 
+/// The word PROT 0903's arm 10 stores into the victim's `+0x04`
+/// (`lui a0,0x2008; ori a0,a0,0x200` at `0x801F7358`, `sw a0,0x4(s2)` at
+/// `0x801F7388`): the neutral tint word. The band hid every live seat
+/// (`+0x04 = 0`, `+0x21C = 0xFF`); a non-zero word draws the body again, so
+/// the victim stands in the frame for the creature's walk-in.
+/// `gimard_burning_attack` (arm 11) holds it on the victim, the caster still
+/// at `0`.
+pub const GIMARD_VICTIM_SHOWN_WORD: u32 = 0x2008_0200;
+
 /// The phase arm PROT 0903's single damage site fires in.
 pub const GIMARD_HIT_ARM: u8 = 11;
 
@@ -85,7 +94,8 @@ pub const GIMARD_SETTLE_ANIM_RATE: u8 = ANIM_RATE_NORMAL >> 1;
 /// * arm `9` - the summon seat's render flag `= 3` (`0x801F7310`), its tint
 ///   word `+0x04 = 0x3FF` and `+0x21F = 1`;
 /// * arm `10` - the summon seat's `+0x1DA` and `+0x1DC` each `+= 1`
-///   (`0x801F7360..0x801F7374`);
+///   (`0x801F7360..0x801F7374`), and the victim's `+0x04 =`
+///   [`GIMARD_VICTIM_SHOWN_WORD`] (`0x801F7388`);
 /// * arm `11` - advances **first** (`0x801F7478`), then, unless the victim
 ///   carries [`FLAG_NON_TARGETABLE`], `FUN_801DD0AC(0x12, 7, victim_seat)` at
 ///   `0x801F74AC`, the unsigned clamp at `0x801F74D8`, `+0x10 +=`,
@@ -141,6 +151,11 @@ pub fn gimard_tick(
             if let Some(s) = seats.get_mut(who.summon as usize) {
                 s.staged_anim = s.staged_anim.wrapping_add(1);
                 s.restage = s.restage.wrapping_add(1);
+            }
+            // The victim back on the neutral word, which shows it for the
+            // creature's walk while its `+0x21C` stays on the band's hide.
+            if let Some(v) = seats.get_mut(who.victim as usize) {
+                v.present_04 = GIMARD_VICTIM_SHOWN_WORD;
             }
             CastArmStep::Advance
         }

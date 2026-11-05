@@ -121,6 +121,9 @@
 --                        mode-3 H / S / V adds
 --                        and fxpool.csv beside it: every live effect-pool child
 --                        (_DAT_8007BD30) with its frame count, cursor and position
+--   LEGAIA_POSE_OBJECTS  1 = pose.csv (breakpoint core): at each burning-body emit
+--                        on the summon creature, its cursor, pair, facing and
+--                        decoded object table
 --   LEGAIA_PRIM_CALLS    1 = primcall.csv (breakpoint core): each prim dispatcher
 --                        FUN_80043390 entry with its colour word, level, caller
 --                        and first group words, and each cued leaf it reaches
@@ -445,6 +448,28 @@ probe.run({
                     calls:row("%d,%s,0x%08X,0,0,0x%08X,0,0", last_elapsed, f[2], tou32(r.a1), tou32(r.ra))
                 end)
             end
+        end
+        if probe.getenv_num("LEGAIA_POSE_OBJECTS", 0) ~= 0 then
+            -- The burning-body emitter's loop head (FUN_8004998C,
+            -- 0x8004A61C): s3 the decoded actor, s2 its object table (the
+            -- pose the draw just decoded, 12 bytes an object), s4 the
+            -- stream's part count. One row per emit on the creature (pool
+            -- slot 7): its node cursor +0x68, its live pair and every
+            -- object's translation.
+            local pose = probe.csv_open(probe.out_path("pose.csv"), "vsync,cursor,x,y,z,facing,count,objects")
+            probe.arm_breakpoint(0x8004A61C, "Exec", 4, "poseobj", function()
+                local r = PCSX.getRegisters().GPR.n
+                local a = tou32(r.s3)
+                if a ~= actor(7) then return end
+                local tbl, n = tou32(r.s2), u8(tou32(r.s4))
+                local node = u32(a + 0x22C)
+                local objs = {}
+                for k = 0, n - 1 do
+                    objs[#objs + 1] = string.format("%d:%d:%d", s16(tbl + 12 * k), s16(tbl + 12 * k + 2), s16(tbl + 12 * k + 4))
+                end
+                pose:row("%d,%d,%d,%d,%d,%d,%d,%s", last_elapsed, ptr_ok(node) and u16(node + 0x68) or -1,
+                    s16(a + 0x34), s16(a + 0x36), s16(a + 0x38), s16(a + 0x46), n, table.concat(objs, " "))
+            end)
         end
         if probe.getenv_num("LEGAIA_SFX_CALLERS", 0) ~= 0 then
             -- Who fills the cue ring: the producer FUN_80035B50 / its

@@ -159,6 +159,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PRIM_CALLS"] = "1"
     if a.sfx_callers:
         env["LEGAIA_SFX_CALLERS"] = "1"
+    if a.pose_objects:
+        env["LEGAIA_POSE_OBJECTS"] = "1"
     if a.watch:
         env["LEGAIA_WATCH_W"] = a.watch
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
@@ -168,7 +170,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not a.formation and not a.monster_pick and not a.sfx_callers and not a.watch and not a.prim_calls:
+    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -531,6 +533,9 @@ def main() -> int:
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")
+    ap.add_argument("--pose-objects", action="store_true",
+                    help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
+                         "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
     ap.add_argument("--retail-parts", action="store_true",
                     help="retail: parts.csv, every live move-VM part per vsync (the engine half is LEGAIA_DIAG_CAST_PARTS)")
     ap.add_argument("--prim-calls", action="store_true",

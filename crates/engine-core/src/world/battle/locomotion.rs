@@ -545,6 +545,15 @@ impl World {
         self.refresh_battle_body_pairs();
     }
 
+    /// The translations of `slot`'s playing pose, one per stream part - the
+    /// object table `ctx+0x6F4` the decode `FUN_8004998C` leaves and the
+    /// burning-body emitter draws from. A diagnostic read for the cast
+    /// recorder.
+    pub fn battle_stream_pose_translations(&self, slot: usize) -> Option<Vec<[i16; 3]>> {
+        let a = self.actors.get(slot)?;
+        Some(stream_pose(a)?.iter().map(|(t, _)| *t).collect())
+    }
+
     /// The body pair `+0x3C` / `+0x40` `FUN_8004998C` would store for `slot`
     /// off its current pose, whether or not the seat carries a pair of its own
     /// (a summoned creature has no [`BattleActor::seat`]).
