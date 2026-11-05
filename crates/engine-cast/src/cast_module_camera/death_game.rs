@@ -14,8 +14,22 @@ pub const DEATH_GAME_BODY: u32 = crate::cast_module_ticks::SUMMON_EFFECT_TICK_B;
 const BACKDROP_RECORD: u32 = 0x801F_9C20;
 /// Arm 2's card faces by the table's value `1..=4` (`0x801F7EC4..0x801F7F04`).
 pub const CARD_RECORDS: [u32; 4] = [0x801F_9C64, 0x801F_9CE0, 0x801F_9D5C, 0x801F_9DD8];
-/// The back each card turns into on the pick (`0x801F8B78`).
+/// The back each face turns into through the stager's arm 0 (`0x801F9A6C`), the
+/// back arm 4 shuffles and arm 5's pad reads over.
+pub const CARD_BACK_RECORD: u32 = 0x801F_9E54;
+/// What each back becomes on the pick (`0x801F8B78`).
 pub const PICK_RECORD: u32 = 0x801F_A020;
+/// The face a pick turns up through the stager's arm 1, by the table's value
+/// (`0x801F9B10..0x801F9B4C`).
+pub const CARD_REVEAL_RECORDS: [u32; 4] = [0x801F_9EB0, 0x801F_9F0C, 0x801F_9F68, 0x801F_9FC4];
+
+/// Whether a part's record is one a card handle `0x801FA2B8` can hold.
+pub fn is_card_record(tag: u32) -> bool {
+    CARD_RECORDS.contains(&tag)
+        || CARD_REVEAL_RECORDS.contains(&tag)
+        || tag == CARD_BACK_RECORD
+        || tag == PICK_RECORD
+}
 /// The cursor's left stop and its step (`0x801F87D8`, `0x801F8910`).
 const CURSOR_HOME: i16 = 0x28;
 const CURSOR_STEP: i16 = 0x4C;
@@ -82,9 +96,9 @@ pub struct DeathGame {
     /// `0x801FA2AC` / `0x801FA2AE`.
     pub cursor: i16,
     pub target: i16,
-    /// The picked card's `+0x78` and `+0x72` climb and fall from arm 9 on.
+    /// The picked card's `+0x78` as arm 9 climbs it, which starts from `0` on
+    /// every card record.
     pub pick_level: u16,
-    pub pick_fade: i16,
     /// Host feeds for this pass.
     pub pad: DeathGamePad,
     pub caster_faded: bool,
@@ -461,7 +475,6 @@ pub fn death_game_camera(
             } else {
                 g.cue(0x154);
                 g.turns_pick = true;
-                g.pick_fade = 0;
                 g.pick_level = 0;
                 word.0 += 0x200;
                 arm.next = Some(9);
@@ -470,7 +483,6 @@ pub fn death_game_camera(
         9 => {
             arm.drift = drift(-8, 0);
             g.pick_level = g.pick_level.wrapping_add(32);
-            g.pick_fade = g.pick_fade.wrapping_sub(32);
             word.drain();
             if g.pick_level >= 0x1000 && g.live[g.pair[0]] {
                 g.kills[g.pair[0]] = true;

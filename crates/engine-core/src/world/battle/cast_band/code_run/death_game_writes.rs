@@ -3,19 +3,9 @@
 
 use super::*;
 use legaia_engine_cast::cast_module_camera::{
-    CARD_RECORDS, DeathGame, DeathGameOutcome, ModuleCamState, PICK_RECORD,
+    DeathGame, DeathGameOutcome, ModuleCamState, is_card_record,
 };
 use legaia_engine_system::input::PadButton;
-
-/// Whether a part's record is a card handle on `phase`: the faces stand from
-/// arm 2 until arm 5 turns them, the backs after.
-fn card_record(phase: u8, tag: u32) -> bool {
-    if phase <= 5 {
-        CARD_RECORDS.contains(&tag)
-    } else {
-        tag == PICK_RECORD
-    }
-}
 
 impl World {
     /// Arm 0's deal and arm 4's swap draws off the world `rand()` stream
@@ -42,14 +32,15 @@ impl World {
         // The arms read each card's live point: its own script walks it in
         // (`lhu v0,0x16(a0)` at `0x801F823C`, the `lwl` / `lwr` copy at
         // `0x801F8B7C`).
+        let g = &mut st.death_game;
         if let Some(scene) = self.casting.active_summon.as_ref() {
-            let mut cards = scene
+            let mut parts = scene
                 .parts
                 .iter()
-                .filter(|p| !p.finished && p.tag.is_some_and(|t| card_record(phase, t)));
-            for card in st.death_game.cards.iter_mut() {
-                let Some(part) = cards.next() else { break };
-                *card = [part.state.world_x, part.state.world_y, part.state.world_z];
+                .filter(|p| !p.finished && p.tag.is_some_and(is_card_record));
+            for i in (0..4).filter(|&i| g.live[i]) {
+                let Some(part) = parts.next() else { break };
+                g.cards[i] = [part.state.world_x, part.state.world_y, part.state.world_z];
             }
         }
         let caster = self.actors.get(usize::from(caster_slot));
@@ -80,20 +71,23 @@ impl World {
         if phase < 3 {
             return;
         }
-        let mut cards = scene
+        let mut parts = scene
             .parts
             .iter_mut()
-            .filter(|p| !p.finished && p.tag.is_some_and(|t| card_record(phase, t)));
-        for i in 0..4 {
-            let Some(part) = cards.next() else { break };
+            .filter(|p| !p.finished && p.tag.is_some_and(is_card_record));
+        // A handle this pass killed still holds its part.
+        for i in (0..4).filter(|&i| g.live[i] || g.kills[i]) {
+            let Some(part) = parts.next() else { break };
             let st = &mut part.state;
             [st.world_x, st.world_y, st.world_z] = g.cards[i];
             st.world_y_mirror = g.cards[i][1];
-            if phase >= 8 && i == g.pair[0] {
-                st.field_78 = g.pick_level;
-                st.field_72 = g.pick_fade as u16;
+            if i == g.pair[0] {
                 if g.turns_pick {
                     st.field_74 |= 0x8100_0000;
+                }
+                if phase == 9 {
+                    st.field_78 = st.field_78.wrapping_add(32);
+                    st.field_72 = st.field_72.wrapping_sub(32);
                 }
             }
             if g.kills[i] {

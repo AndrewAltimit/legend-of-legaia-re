@@ -11,10 +11,10 @@ use legaia_engine_cast::cast_module_ticks::{
     ALURU_STAGER_FADE_IN, ALURU_STAGER_FADE_OUT, CALL_WAVE_WAVE_RECORD, FREED_STAGER_FADE,
     MULE_STAGER_FADE_ARM, MULE_STAGER_FADES, aluru_stager_spawns, blade_breath_cell_stager_spawns,
     call_wave_stager_spawns, chaos_breath_cell_stager_spawns, dead_end_crisis_stager_spawns,
-    doomsday_stager_spawns, enemy_cast_stager_spawns, freed_stager_spawns, gizam_stager_spawns,
-    guilty_cross_cell_stager_spawns, horn_stager_spawns, nighto_stager_spawns, nova_stager_spawns,
-    orb_stager_spawns, spoon_stager_spawns, swordie_stager_spawns, vera_stager_spawns,
-    zenoir_stager_spawns,
+    death_game_stager_spawns, doomsday_stager_spawns, enemy_cast_stager_spawns,
+    freed_stager_spawns, gizam_stager_spawns, guilty_cross_cell_stager_spawns, horn_stager_spawns,
+    nighto_stager_spawns, nova_stager_spawns, orb_stager_spawns, spoon_stager_spawns,
+    swordie_stager_spawns, vera_stager_spawns, zenoir_stager_spawns,
 };
 use legaia_engine_cast::cast_module_ticks::{
     MEGATON_PRESS_HELD_WHITE, MEGATON_PRESS_WHITE_OUT, megaton_press_stager_spawns,
@@ -41,6 +41,7 @@ impl World {
         matches!(
             entry,
             935 | 941
+                | 957
                 | 943
                 | 945
                 | 956
@@ -217,6 +218,12 @@ impl World {
                 961 => dead_end_crisis_stager_spawns(arm, caller, &mut rand),
                 962 => blade_breath_cell_stager_spawns(arm, caller),
                 965 => doomsday_stager_spawns(arm, caller),
+                957 => death_game_stager_spawns(
+                    arm,
+                    caller,
+                    self.casting.module_cam.death_game.table,
+                    self.casting.module_cam.death_game.cards,
+                ),
                 935 | 941 | 942 | 943 | 945 | 951 | 956 | 964 => {
                     let roll = self.battle.monster_ai_state.counter() as u8;
                     enemy_cast_stager_spawns(entry, arm, caller, roll, &mut || self.next_rand())

@@ -93,6 +93,37 @@ pub fn swordie_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<StagerSpawn> 
     vec![on_caller(record, caller)]
 }
 
+/// PROT 0957's stager `0x801F99F4` as Death Game's cards reach it. Arm 0 turns a
+/// face to its back on the caller's point, into the caller's handle
+/// (`0x801F9E54`, `0x801F9A30..0x801F9A84`); arm 1 turns the caller's back up by
+/// the table's value at the caller's handle (`0x801F9EB0`, `0x801F9F0C`,
+/// `0x801F9F68`, `0x801F9FC4`, `0x801F9A88..0x801F9B60`); arm 4 seats
+/// `0x801FA088` with no handle. Arms 2 and 3 store the caller's height alone.
+///
+/// A handle is found by its pointer in retail; here by the card standing on the
+/// caller's `x`, each of the four columns being its own.
+///
+/// PORT: FUN_801F99F4 (PROT 0957's stager, arms 0, 1 and 4)
+pub fn death_game_stager_spawns(
+    arm: u8,
+    caller: StagerCaller,
+    table: [u8; 4],
+    cards: [[i16; 3]; 4],
+) -> Vec<StagerSpawn> {
+    let record = match arm {
+        0 => crate::cast_module_camera::CARD_BACK_RECORD,
+        1 => {
+            let Some(i) = cards.iter().position(|c| c[0] == caller.pos[0]) else {
+                return Vec::new();
+            };
+            crate::cast_module_camera::CARD_REVEAL_RECORDS[usize::from(table[i].clamp(1, 4)) - 1]
+        }
+        4 => 0x801F_A088,
+        _ => return Vec::new(),
+    };
+    vec![on_caller(record, caller)]
+}
+
 /// PROT 0911's stager arm `0`'s record (`addiu a2,a2,-0x7CD4` at
 /// `0x801F8018`).
 pub const ORB_STAGER_ARM0_RECORD: u32 = 0x801F_832C;
