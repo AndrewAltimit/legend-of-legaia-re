@@ -205,6 +205,8 @@ pub struct ZoneFollow {
     /// The player moved on a vsync since the last ease step, so the next pass
     /// eases though the pass's own vsync stood still.
     pub(super) ease_moved: bool,
+    /// The player's `(X, Z)` when the current game pass began.
+    pub(super) pass_player: Option<[i32; 2]>,
     /// The follow switch `_DAT_8007B606` (byte): off, `FUN_801DB510` only
     /// pins the focus onto the player and neither composes nor eases
     /// (`0x801DB550`). New-game init stores `1` (SCUS `0x80034B60`, the
@@ -269,6 +271,7 @@ impl Default for ZoneFollow {
             focus_held: None,
             ease_credit: 0,
             ease_moved: false,
+            pass_player: None,
             follow_enabled: true,
             seat_focus: None,
             seat_eye: None,

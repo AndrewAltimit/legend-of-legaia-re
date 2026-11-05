@@ -621,6 +621,9 @@ mod tests {
             mode: SceneMode::Field,
             ..World::default()
         };
+        // One vsync a pass, so a single tick is a whole ease step.
+        w.clock.frame_step_floor = 1;
+        w.clock.frame_step = 1;
         w.spawn_actor(0);
         w.player_actor_slot = Some(0);
         w.actors[0].move_state.world_x = 0x1040;
@@ -743,6 +746,45 @@ mod tests {
         c.tick(&w);
         let p = c.globals.angles()[0];
         assert!(p > 450 && p <= 600, "forced: eases toward 600, got {p}");
+    }
+
+    /// `FUN_801DB510` steps once a game pass, with no frame-step term in its
+    /// shift: at step `2` the camera closes on the pose every second vsync.
+    #[test]
+    fn the_ease_steps_on_the_pass_grid() {
+        let (mut w, mut c) = gated_zone_world();
+        c.zone.config.pitch = 600;
+        w.set_frame_step_floor(2);
+        let mut seen = vec![];
+        for _ in 0..4 {
+            w.actors[0].move_state.world_x += 4;
+            w.tick();
+            c.tick(&w);
+            seen.push(c.globals.angles()[0]);
+        }
+        assert_eq!(seen[0], 450, "a vsync inside the pass: no step");
+        assert!(seen[1] > 450, "the pass: one step, got {seen:?}");
+        assert_eq!(seen[2], seen[1], "the next pass's first vsync: no step");
+        assert!(seen[3] > seen[2], "the next pass: one step, got {seen:?}");
+    }
+
+    /// A locked player the `0x10000` bit lets through (`0x801D1704..`): the
+    /// stationary test reads the pair the iterator copied, so a script's walk
+    /// never eases, and the focus takes the spot the pass began on.
+    #[test]
+    fn a_carried_player_pins_the_focus_and_does_not_ease() {
+        let (mut w, mut c) = gated_zone_world();
+        c.zone.config.pitch = 600;
+        w.actors[0].move_state.flags |= 0x0008_0000;
+        w.flags.story_flags |= CAMERA_LOCKED_EASE_FLAG;
+        let x0 = w.actors[0].move_state.world_x;
+        w.tick();
+        c.tick(&w);
+        w.actors[0].move_state.world_x += 8;
+        w.tick();
+        c.tick(&w);
+        assert_eq!(c.globals.angles()[0], 450, "carried: no ease");
+        assert_eq!(c.globals.0[6], -i32::from(x0), "a pass behind the script");
     }
 
     /// `FUN_801D1344`'s gate in front of the ease (branch at `0x801D17DC`):
