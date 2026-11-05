@@ -120,7 +120,7 @@ impl RetailBattle {
             && self.step_run.0 != default
             && self.step_run.1 < 16
         {
-            return Some((self.step_run.0, 0x6E, None));
+            return Some((self.step_run.0, 0x6E, None, None));
         }
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
