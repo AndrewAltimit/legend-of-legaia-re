@@ -34,6 +34,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| What does PROT 0944's voice follow? | resolved | `disassembly` | The roll arm `0` latches: `FUN_801DD6B4(0x38E, ..)` at `0x801F6AD8`, then `0x1AD` when the victim's HP is below it and `0x1AB` otherwise (`sltu` at `0x801F6B2C`), so Cort announces a kill. The hit lands on arm `3`. No retail recording of the cast has been scored. |
+| Does a note-off look at the channel? | resolved | `disassembly` + [differential](../../subsystems/audio.md#the-keying-differential) | No. `FUN_8006688C` tests owner, VAB, program and key, the program being the channel's as it stands, so a program change strands a held note and a sibling channel's note-off releases it. |
 | When is a cast's voice heard? | resolved | `disassembly` + `capture` | On the arm of `ctx[+0x279]` that holds the head cue's `FUN_8004FCC8` call, past the module's seek and stream wait: the caller log has PROT 0904's call on arm `3`, `120` vsyncs into the phase byte's walk, where the port had raised it at the arming seam. Port: `module_head_cue_arm`, `World::raise_cast_voice_on_arm`. |
 | How long does a CD-XA clip take to start after its trigger? | resolved (on mednafen) | `capture` | `62` or `88` ms with the head in the clip's file and `371` ms from another file, plus one sector per channel: [a clip's start](../../subsystems/audio.md#a-clips-start). No console has been timed. |
 | Is the `zeto_call_wave_mid_cast` track level a mix-law gap? | resolved (no) | `capture` | The `+5.09` dB is the cast's own cues: per two-second window `+4` to `+14` dB over the recording's first six seconds, then within `0.11` dB to its end. |

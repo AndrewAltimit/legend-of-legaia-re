@@ -87,6 +87,13 @@ nothing in battle.
 The action validator's kernel matches over every arm. Its battle host read the raw
 word alone, so a member poisoned by a hit had nothing a cure could target.
 
+The sound driver runs through [its own harness](../subsystems/audio.md#the-keying-differential),
+because a track takes minutes of vsyncs and the SPU has to feed `ENVX` back: libsnd's `FUN_80062F98`
+over a state's RAM, its registers applied to the port's `Spu`. It found the note-off keyed on channel
+where `FUN_8006688C` keys on program, a pan or volume event missing voices already released, the
+sequence volume re-reading a moved pan, a pause leaving tails sounding, and the allocation scan reading
+live voices where retail reads the flush's own record, which had voice numbers apart in every score.
+
 The bag's accessor family, run as a stream of mixed operations, showed normalize
 `FUN_800423E0` to be one pass of two cursors rather than a whole compaction: one call
 can pass a hole by, and the slot order after it differed from the port's. The walk

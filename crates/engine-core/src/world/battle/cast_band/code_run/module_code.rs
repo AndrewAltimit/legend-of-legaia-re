@@ -1012,12 +1012,24 @@ impl World {
                     self.write_cast_arm_ext_row(&exts);
                     Some(step)
                 }
-                (944, Some(arms::GUILTY_CROSS_TICK)) => Some(arms::guilty_cross_tick(
-                    &mut ctx,
-                    &mut caster,
-                    &mut victim,
-                    None,
-                )),
+                (944, Some(arms::GUILTY_CROSS_TICK)) => {
+                    // Arm 0 rolled with its line; once it lands, the band's
+                    // generic fold owes nothing.
+                    let hit = if ctx.phase == 3 {
+                        self.casting.module_cam.latched_hit.take()
+                    } else {
+                        None
+                    };
+                    if hit.is_some() {
+                        self.casting.module_skips_fold = true;
+                    }
+                    Some(arms::guilty_cross_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        hit,
+                    ))
+                }
                 (944, Some(arms::GUILTY_CROSS_CURSE_TICK)) => {
                     let code = caster.target_code;
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();

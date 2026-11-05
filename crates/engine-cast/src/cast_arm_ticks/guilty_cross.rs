@@ -6,6 +6,26 @@ use super::*;
 // PROT 0944 - cast_guilty_cross
 // ---------------------------------------------------------------------------
 
+/// The damage arm `0` rolls: the bypass wrapper on the one baked power.
+pub const GUILTY_CROSS_SHAPE: crate::cast_module_ticks::CastDamageShape =
+    crate::cast_module_ticks::CastDamageShape {
+        prot_entry: 944,
+        routine: 0x801F_6A04,
+        wrapper: crate::cast_module_ticks::CastWrapper::Bypass,
+        never_kills: false,
+        powers: &[0x38E],
+    };
+
+/// The line arm `0` calls on the roll it just latched: `0x1AD` when the victim's
+/// HP is below it, as unsigned words (`sltu` at `0x801F6B2C`), `0x1AB` otherwise.
+pub fn guilty_cross_cue(roll: i32, victim_hp: u16) -> u16 {
+    if u32::from(victim_hp) < roll as u32 {
+        0x1AD
+    } else {
+        0x1AB
+    }
+}
+
 /// PROT 0944 (Guilty Cross) tick body for action `0x37`.
 ///
 /// Six phase arms behind `sltiu v0, v1, 6` (`0x801F6A9C`) through the head
@@ -19,8 +39,8 @@ use super::*;
 ///   (`li a0, 0x38e` at `0x801F6AD0`, the `jal` at `0x801F6AD8`; the **bypass**
 ///   wrapper, so a party defender's resist block is skipped). The latched roll
 ///   then picks the sound cue - `0x1AD` when the victim's HP is below it,
-///   `0x1AB` otherwise (`sltu` at `0x801F6B2C`) - so the module announces a kill
-///   before it lands. The port's voice speaks `0x1AD` either way.
+///   `0x1AB` otherwise (`sltu` at `0x801F6B2C`, [`guilty_cross_cue`]) - so the
+///   module announces a kill before it lands.
 ///   Also `caster[+0x1DA] = 8` with `+0x1DC += 1`, `caster[+0x21D] = 2`, and
 ///   the hide sweep;
 /// * arm `1` - `caster[+0x21D] = 4`, `caster[+0x1DA] = 0`;
@@ -35,8 +55,9 @@ use super::*;
 /// Not ported: the screen-prim washes, the `FUN_80050ED4` spawns, the framing
 /// calls and the countdown at `0x801F8360`.
 ///
-/// `hit` is the latched roll; `None` leaves the HP outcome to the band seam's
-/// own fold, which is seeded with this same baked power.
+/// `hit` is the roll arm `0` latched, landing on arm `3`; `None` leaves the HP
+/// outcome to the band seam's own fold, which is seeded with this same baked
+/// power.
 ///
 /// Wired: `World::run_cast_module_code`.
 ///
@@ -155,4 +176,18 @@ pub fn guilty_cross_curse_tick(
         }
     });
     (step, marked)
+}
+
+#[cfg(test)]
+mod cue_tests {
+    use super::*;
+
+    #[test]
+    fn the_line_follows_the_roll_against_the_victims_hp() {
+        assert_eq!(guilty_cross_cue(100, 99), 0x1AD);
+        assert_eq!(guilty_cross_cue(100, 100), 0x1AB);
+        assert_eq!(guilty_cross_cue(100, 101), 0x1AB);
+        // `sltu`: a negative return reads as a huge word.
+        assert_eq!(guilty_cross_cue(-1, 0xFFFF), 0x1AD);
+    }
 }

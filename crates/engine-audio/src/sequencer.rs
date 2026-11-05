@@ -43,8 +43,8 @@ mod transport;
 mod voices;
 
 use channel_math::*;
-pub use voices::flush_key_on_lag;
 use voices::SILENT_RING_LEN;
+pub use voices::flush_key_on_lag;
 
 /// Number of MIDI channels (the SsAPI dispatcher iterates 0..=15).
 pub const CHANNELS: usize = 16;

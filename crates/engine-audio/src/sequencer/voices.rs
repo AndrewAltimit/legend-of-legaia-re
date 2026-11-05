@@ -301,7 +301,11 @@ impl Sequencer {
             n.staged_mix = Some(mix);
             return true;
         };
-        let Some(v) = spu.voices.get_mut(voice).filter(|v| v.key_on_count() == stamp) else {
+        let Some(v) = spu
+            .voices
+            .get_mut(voice)
+            .filter(|v| v.key_on_count() == stamp)
+        else {
             return false;
         };
         v.vol_left = mix.0;

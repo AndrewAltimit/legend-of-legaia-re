@@ -3,18 +3,19 @@
 //! `crates/retail-exec` runs `FUN_80062F98` (`SsSeqCalc`) off the RAM of a library
 //! state, with libspu's register base `0x8007AF40` pointed at a block of RAM, so
 //! every register write lands where the harness can read it. The port's `Spu` is
-//! the hardware model on both sides: retail's writes are applied to one, and that
-//! one's envelopes are handed back as `ENVX`, which is what the allocation scan
-//! reads. Both sides start the score from the top on an idle voice file, and every
-//! sounding voice's registers are compared at every vsync. See
+//! the hardware model on both sides, holding the samples where the port's bank put
+//! them: retail's writes are applied to one, and that one's envelopes are handed
+//! back as `ENVX`, which is what the allocation scan reads. Both sides start the
+//! score from the top on an idle voice file, and every sounding voice's registers
+//! are compared at every vsync. See
 //! `docs/subsystems/audio.md`, "The keying differential".
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
-use legaia_engine_audio::spu::adsr::{AdsrConfig, Phase};
 use legaia_engine_audio::sequencer::flush_key_on_lag;
+use legaia_engine_audio::spu::adsr::{AdsrConfig, Phase};
 use legaia_engine_audio::spu::voice::PITCH_UNITY;
 use legaia_engine_audio::{Spu, spu::NUM_VOICES};
 use legaia_engine_scene_host::scene_host::{BgmDirector, SceneHost};
@@ -23,7 +24,7 @@ use legaia_retail_exec::{Cpu, GP, Stop};
 
 use crate::audio_sweep::{RetailAudio, TrackBank};
 use crate::audio_trace_oracle::TraceBgmDirector;
-use crate::pcm_retail::{RETAIL_VSYNC_SAMPLES, spu_resumed_from_retail};
+use crate::pcm_retail::RETAIL_VSYNC_SAMPLES;
 use crate::retail_compare::enumerate_corpus;
 
 /// libspu's register base word (`DAT_8007AF40`).
@@ -50,10 +51,13 @@ const VOICE_FLAGS: u32 = 0x801C_E060;
 /// libsnd's mono fold (`_DAT_801CE330`): the option a state was captured under.
 const MONO_FOLD: u32 = 0x801C_E330;
 const SHADOW_REGS: u32 = 0x801C_E080;
+/// Per open bank, the program table (`0x801CE268 + vab * 4`, read by `FUN_80068B98`).
+const VAB_PROGRAM_TABLES: u32 = 0x801C_E268;
 
 /// One sounding voice as the SPU holds it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Sounding {
+    pub start: u32,
     pub pitch: u16,
     pub vol: (i16, i16),
     pub adsr: (u16, u16),
@@ -77,6 +81,7 @@ fn view_of(spu: &Spu, before: &[(u32, Phase); NUM_VOICES]) -> VsyncView {
     let mut out = VsyncView::default();
     for (i, v) in spu.voices.iter().enumerate() {
         let s = Sounding {
+            start: v.start_addr,
             pitch: v.pitch,
             vol: (v.vol_left, v.vol_right),
             adsr: v.adsr_cfg.raw,
@@ -115,12 +120,16 @@ pub struct RetailSide {
     cpu: Cpu,
     pub spu: Spu,
     carry: f64,
+    slot: u32,
+    /// A VAG's SPU word address as the open bank holds it -> where the port's
+    /// bank put that sample, in this SPU's RAM.
+    vag_addr: BTreeMap<u16, u32>,
 }
 
 impl RetailSide {
     /// Stand the state's sequence on `slot` at the top of its score, on an idle
     /// voice file, with `seq_vol` for the sequence volume.
-    pub fn new(ram: &[u8], mut spu: Spu, slot: u8, seq_vol: u8) -> Result<Self> {
+    pub fn new(ram: &[u8], port: &PortSide, slot: u8, seq_vol: u8) -> Result<Self> {
         let mut cpu = Cpu::new();
         cpu.mem.load(0x8000_0000, ram);
         cpu.regs.r[GP] = 0x8007_B318;
@@ -147,10 +156,9 @@ impl RetailSide {
         for i in 0..16 {
             cpu.mem.wr32(SILENT_RING + i * 4, 0);
         }
-        for v in &mut spu.voices {
-            v.adsr.level = 0;
-            v.adsr.phase = Phase::Off;
-        }
+        let mut spu = Spu::new();
+        spu.set_retail_reverb();
+        spu.ram = port.d.spu().ram.clone();
         let rec = cpu.mem.rd32(SEQ_TABLE + u32::from(slot) * 4);
         let start = cpu.mem.rd32(rec + 4);
         // `+0x04` stands past the header and the score's first delta.
@@ -165,10 +173,25 @@ impl RetailSide {
         cpu.mem.wr16(rec + 0x58, u16::from(seq_vol));
         cpu.mem.wr16(rec + 0x5A, u16::from(seq_vol));
         expect_return(cpu.call(SEQ_PLAY, &[u32::from(slot), 0, 1, plays]))?;
+        // `FUN_80065978` reads a VAG's address from the bank's program table:
+        // two to a sixteen-byte row, at `+0xC` for an odd index, `+0xE` for even.
+        let table = cpu.mem.rd32(VAB_PROGRAM_TABLES + vab * 4);
+        let vag_addr = port
+            .bank_samples()
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| {
+                let vag = i as u32 + 1;
+                let row = table + (vag - 1) / 2 * 16 + if vag & 1 == 0 { 0xE } else { 0xC };
+                Some((cpu.mem.rd16(row), (*s)?))
+            })
+            .collect();
         Ok(Self {
             cpu,
             spu,
             carry: 0.0,
+            slot: u32::from(slot),
+            vag_addr,
         })
     }
 
@@ -184,9 +207,6 @@ impl RetailSide {
         let kon = mem.rd32(REG_KON);
         let koff = mem.rd32(REG_KOFF);
         let eon = mem.rd32(REG_EON);
-        if std::env::var_os("SEQDIFF_TRACE").is_some() {
-            eprintln!("kon {kon:06x} koff {koff:06x} accum {:08x} sounding {:08x} steps {} calls {:x?}", mem.rd32(MASK_WORDS[0]), mem.rd32(MASK_WORDS[2]), self.cpu.steps, &self.cpu.calls[..self.cpu.calls.len().min(8)]);
-        }
         mem.wr32(REG_KON, 0);
         mem.wr32(REG_KOFF, 0);
         let mut regs = [[0u16; 8]; NUM_VOICES];
@@ -209,7 +229,11 @@ impl RetailSide {
         for (i, voice) in self.spu.voices.iter_mut().enumerate() {
             let r = &regs[i];
             if kon & (1 << i) != 0 {
-                voice.start_addr = u32::from(r[3]) * 8;
+                voice.start_addr = self
+                    .vag_addr
+                    .get(&r[3])
+                    .copied()
+                    .unwrap_or(u32::from(r[3]) * 8);
                 voice.adsr_cfg = AdsrConfig::from_words(r[4], r[5]);
                 voice.loop_addr = None;
                 voice.key_on(&ram);
@@ -233,6 +257,75 @@ impl RetailSide {
     }
 }
 
+/// A cue as both sides key it.
+#[derive(Debug, Clone, Copy)]
+pub struct CueKey {
+    pub voice: u8,
+    pub program: u8,
+    pub tone: u8,
+    pub note: u8,
+    pub vol: i16,
+    /// Stop these voices from `7` up first: a new sustained run.
+    pub release_from_7: u8,
+}
+
+impl RetailSide {
+    /// The two calls `FUN_80016B6C` makes per voice: `FUN_800653C8` and then
+    /// `FUN_80065034`, whose last four arguments are on the stack.
+    pub fn key_cue(&mut self, c: &CueKey) -> Result<()> {
+        const STOP_VOICE: u32 = 0x8006_53C8;
+        const CUE_KEY: u32 = 0x8006_5034;
+        const STACK: u32 = 0x801F_FF00;
+        for v in 0..c.release_from_7 {
+            expect_return(self.cpu.call(STOP_VOICE, &[7 + u32::from(v)]))?;
+        }
+        if c.release_from_7 == 0 {
+            expect_return(self.cpu.call(STOP_VOICE, &[u32::from(c.voice)]))?;
+        }
+        let mem = &mut self.cpu.mem;
+        mem.wr32(STACK + 0x10, u32::from(c.note));
+        mem.wr32(STACK + 0x14, 0x40);
+        mem.wr32(STACK + 0x18, c.vol as u32);
+        mem.wr32(STACK + 0x1C, c.vol as u32);
+        let rec = mem.rd32(SEQ_TABLE + self.slot * 4);
+        let vab = u32::from(mem.rd8(rec + 0x26));
+        expect_return(self.cpu.call(
+            CUE_KEY,
+            &[
+                u32::from(c.voice),
+                vab,
+                u32::from(c.program),
+                u32::from(c.tone),
+            ],
+        ))
+    }
+}
+
+/// A tone the port's bank can sound, on the drainer's voices.
+fn pick_cue(port: &PortSide, r: u32, sustained: &mut bool) -> Option<CueKey> {
+    let bank = port.d.bank()?;
+    let keyed: Vec<(usize, usize)> = bank
+        .programs
+        .iter()
+        .enumerate()
+        .flat_map(|(p, pr)| (0..pr.tones.len()).map(move |t| (p, t)))
+        .filter(|&(p, t)| bank.can_play_tone(p, t))
+        .collect();
+    let &(program, tone) = keyed.get((r >> 8) as usize % keyed.len().max(1))?;
+    let long = r & 0x70 == 0;
+    let voice = if long { 7 } else { 20 + (r & 3) as u8 };
+    let release_from_7 = u8::from(long && *sustained);
+    *sustained |= long;
+    Some(CueKey {
+        voice,
+        program: program as u8,
+        tone: tone as u8,
+        note: 48 + ((r >> 16) & 0x1F) as u8,
+        vol: 0x7F,
+        release_from_7,
+    })
+}
+
 fn expect_return(s: Stop) -> Result<()> {
     match s {
         Stop::Returned => Ok(()),
@@ -254,12 +347,38 @@ impl PortSide {
         Self { d, carry: 0.0 }
     }
 
-    pub fn step(&mut self, samples: f64) -> VsyncView {
+    fn bank_samples(&self) -> Vec<Option<u32>> {
+        self.d
+            .bank_samples()
+            .iter()
+            .map(|s| s.as_ref().map(|u| u.addr))
+            .collect()
+    }
+
+    /// One vsync. A cue keys after the flush and ahead of the samples: retail's
+    /// main loop runs it between two calcs, and its KON goes out with the flush
+    /// the port has just run.
+    pub fn step_with_cue(&mut self, samples: f64, cue: Option<CueKey>) -> VsyncView {
         let before = stamps(self.d.spu());
         let spu: *mut Spu = self.d.spu_mut();
         if let Some(s) = self.d.sequencer_mut() {
             // SAFETY: the director's SPU and sequencer are disjoint fields.
             s.step_vsync(unsafe { &mut *spu });
+        }
+        if let (Some(c), Some(bank)) = (cue, self.d.bank().cloned()) {
+            let spu = self.d.spu_mut();
+            for v in 0..c.release_from_7 {
+                spu.voices[7 + usize::from(v)].key_off();
+            }
+            bank.play_tone_pair(
+                spu,
+                usize::from(c.voice),
+                usize::from(c.program),
+                usize::from(c.tone),
+                c.note,
+                c.vol,
+                c.vol,
+            );
         }
         let released = released_since(self.d.spu(), &before);
         self.carry += samples;
@@ -293,8 +412,8 @@ pub struct Differential {
     pub first: Vec<String>,
 }
 
-fn note(s: &Sounding) -> (u16, (i16, i16), (u16, u16), bool) {
-    (s.pitch, s.vol, s.adsr, s.reverb)
+fn note(s: &Sounding) -> (u32, u16, (i16, i16), (u16, u16), bool) {
+    (s.start, s.pitch, s.vol, s.adsr, s.reverb)
 }
 
 /// Compare two runs, the port's shifted by the lag of the first key-on.
@@ -309,12 +428,21 @@ pub fn compare(retail: &[VsyncView], port: &[VsyncView], keep: usize) -> Differe
     };
     let note_it = |out: &mut Differential, s: String| {
         let kind = s.split_whitespace().nth(1).unwrap_or("").to_string();
-        if out.first.iter().filter(|f| f.split_whitespace().nth(1) == Some(&kind)).count() < keep {
+        if out
+            .first
+            .iter()
+            .filter(|f| f.split_whitespace().nth(1) == Some(&kind))
+            .count()
+            < keep
+        {
             out.first.push(s);
         }
     };
     for (i, r) in retail.iter().enumerate() {
-        let Some(p) = usize::try_from(i as i64 - lag).ok().and_then(|j| port.get(j)) else {
+        let Some(p) = usize::try_from(i as i64 - lag)
+            .ok()
+            .and_then(|j| port.get(j))
+        else {
             continue;
         };
         out.vsyncs += 1;
@@ -337,14 +465,21 @@ pub fn compare(retail: &[VsyncView], port: &[VsyncView], keep: usize) -> Differe
             let ids = |v: &[(u8, Sounding)]| v.iter().map(|k| k.0).collect::<Vec<_>>();
             note_it(
                 &mut out,
-                format!("v{i} voice: retail {:?} port {:?}", ids(&r.keyed), ids(&p.keyed)),
+                format!(
+                    "v{i} voice: retail {:?} port {:?}",
+                    ids(&r.keyed),
+                    ids(&p.keyed)
+                ),
             );
         }
         if r.released.len() != p.released.len() {
             out.release_diffs += 1;
             note_it(
                 &mut out,
-                format!("v{i} release: retail {:?} port {:?}", r.released, p.released),
+                format!(
+                    "v{i} release: retail {:?} port {:?}",
+                    r.released, p.released
+                ),
             );
         }
         // A voice's release tail stops on its own envelope, which the flush lag
@@ -368,7 +503,10 @@ pub fn compare(retail: &[VsyncView], port: &[VsyncView], keep: usize) -> Differe
             );
         } else {
             let levels = |v: &[(u8, Sounding)]| {
-                let mut n: Vec<_> = v.iter().map(|(_, s)| (note(s), s.level, s.releasing)).collect();
+                let mut n: Vec<_> = v
+                    .iter()
+                    .map(|(_, s)| (note(s), s.level, s.releasing))
+                    .collect();
                 n.sort();
                 n
             };
@@ -395,6 +533,50 @@ pub struct SeqDifferentialArgs {
     /// Every matching state, not one per track.
     #[arg(long)]
     pub all_states: bool,
+    /// Key cues beside the score on both sides, a seeded run of them: one-shots on
+    /// the drainer's voices `20..=23`, sustained ones from voice `7`.
+    #[arg(long)]
+    pub cues: bool,
+    /// Print retail's voice records and both sides' voices at this vsync.
+    #[arg(long)]
+    pub dump_at: Option<usize>,
+}
+
+/// The differential of the mednafen or PCSX-Redux state `label`, `None` when the
+/// library does not hold it or it has no sequence open.
+pub fn run_label(label: &str, vsyncs: usize, cues: bool) -> Result<Option<Differential>> {
+    let (Some(m), Some(l), Some(e)) = crate::retail_compare::resolve_dirs() else {
+        return Ok(None);
+    };
+    let manifest = ScenarioManifest::from_path(&m)?;
+    let host = SceneHost::open_extracted(&e)?;
+    let bank = TrackBank::load(&host);
+    let Some(c) = enumerate_corpus(&manifest, &l)
+        .into_iter()
+        .find(|c| c.label == label)
+    else {
+        return Ok(None);
+    };
+    let ram = state_ram(c.emulator, &c.path)?;
+    let audio = RetailAudio::from_ram(&ram, &bank, None);
+    let Some(music) = audio.music_slot() else {
+        return Ok(None);
+    };
+    let Some(track) = music.track else {
+        return Ok(None);
+    };
+    let Some(entry) = host.music_bank_entry_bytes(track)? else {
+        return Ok(None);
+    };
+    let args = SeqDifferentialArgs {
+        filter: None,
+        vsyncs,
+        keep: 4,
+        all_states: false,
+        cues,
+        dump_at: None,
+    };
+    run_one(&ram, music.slot, track, music.vol.0 as u8, &entry, &args).map(Some)
 }
 
 pub fn run(args: SeqDifferentialArgs) -> Result<()> {
@@ -405,13 +587,13 @@ pub fn run(args: SeqDifferentialArgs) -> Result<()> {
     let host = SceneHost::open_extracted(&extracted)?;
     let bank = TrackBank::load(&host);
     let mut seen: BTreeMap<u16, String> = BTreeMap::new();
-    let mut corpus: Vec<(String, PathBuf)> = enumerate_corpus(&manifest, &library)
+    let mut corpus: Vec<(String, &'static str, PathBuf)> = enumerate_corpus(&manifest, &library)
         .into_iter()
-        .filter(|c| c.emulator == "mednafen")
-        .map(|c| (c.label, c.path))
+        .filter(|c| c.resident_patch.is_none() && !excluded(&c.label))
+        .map(|c| (c.label, c.emulator, c.path))
         .collect();
     corpus.sort();
-    for (label, path) in corpus {
+    for (label, emulator, path) in corpus {
         if args
             .filter
             .as_deref()
@@ -419,27 +601,33 @@ pub fn run(args: SeqDifferentialArgs) -> Result<()> {
         {
             continue;
         }
-        let Ok(st) = legaia_mednafen::SaveState::from_path(&path) else {
-            continue;
-        };
-        let Ok(ram) = st.main_ram().map(<[u8]>::to_vec) else {
+        let Ok(ram) = state_ram(emulator, &path) else {
             continue;
         };
         let audio = RetailAudio::from_ram(&ram, &bank, None);
-        let Some((slot, track, vol)) = audio
-            .music_slot()
-            .and_then(|s| Some((s.slot, s.track?, s.vol.0 as u8)))
+        let Some(music) = audio.music_slot() else {
+            continue;
+        };
+        let (slot, vol) = (music.slot, music.vol.0 as u8);
+        // Two ids can carry one score's opening and one bank: the track is the
+        // one the state's RAM holds the most of.
+        let Some((_, track, entry)) = music
+            .bank_tracks
+            .iter()
+            .chain(&music.score_tracks)
+            .filter_map(|&id| {
+                let entry = host.music_bank_entry_bytes(id).ok()??;
+                Some((score_in_ram(&ram, slot, &entry), id, entry))
+            })
+            .max_by_key(|c| c.0)
         else {
             continue;
         };
         if !args.all_states && seen.contains_key(&track) {
             continue;
         }
-        let Ok(Some(entry)) = host.music_bank_entry_bytes(track) else {
-            continue;
-        };
         seen.insert(track, label.clone());
-        match run_one(&st, &ram, slot, track, vol, &entry, args.vsyncs, args.keep) {
+        match run_one(&ram, slot, track, vol, &entry, &args) {
             Ok(d) => {
                 println!(
                     "{track} {label}: {} vsyncs lag {} keyons {}/{} key {} voice {} release {} sound {} level {}",
@@ -463,37 +651,103 @@ pub fn run(args: SeqDifferentialArgs) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+/// How many bytes of `entry`'s score the sequence on `slot` holds from its header.
+fn score_in_ram(ram: &[u8], slot: u8, entry: &[u8]) -> usize {
+    let at = |va: u32| (va & 0x1F_FFFF) as usize;
+    let rd32 = |va: u32| {
+        ram.get(at(va)..at(va) + 4)
+            .map_or(0, |b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    };
+    let Some(split) = legaia_engine_system::chunk_install::owned_bank_offsets(entry) else {
+        return 0;
+    };
+    let score = &entry[split.seq..];
+    let start = at(rd32(rd32(SEQ_TABLE + u32::from(slot) * 4) + 4));
+    let Some(head) = (1..64usize).find(|b| ram.get(start - b..start - b + 4) == Some(b"pQES"))
+    else {
+        return 0;
+    };
+    let Some(there) = score.windows(4).position(|w| w == b"pQES") else {
+        return 0;
+    };
+    ram[start - head..]
+        .iter()
+        .zip(&score[there..])
+        .take_while(|(a, b)| a == b)
+        .count()
+}
+
+/// A state made on a patched disc replays that disc's code.
+fn excluded(label: &str) -> bool {
+    ["delilas_", "shiny_refactor_", "minigame_dance_pcsx"]
+        .iter()
+        .any(|p| label.contains(p))
+}
+
+fn state_ram(emulator: &str, path: &std::path::Path) -> Result<Vec<u8>> {
+    Ok(if emulator == "mednafen" {
+        legaia_mednafen::SaveState::from_path(path)?
+            .main_ram()?
+            .to_vec()
+    } else {
+        legaia_pcsx_redux::SaveState::from_path(path)?
+            .main_ram()
+            .to_vec()
+    })
+}
+
 fn run_one(
-    st: &legaia_mednafen::SaveState,
     ram: &[u8],
     slot: u8,
     track: u16,
     vol: u8,
     entry: &[u8],
-    vsyncs: usize,
-    keep: usize,
+    args: &SeqDifferentialArgs,
 ) -> Result<Differential> {
-    let spu = spu_resumed_from_retail(st)?;
-    let mut retail = RetailSide::new(ram, spu, slot, vol)?;
+    let (vsyncs, keep) = (args.vsyncs, args.keep);
     let mut port = PortSide::new(track, entry, vol);
+    let mut retail = RetailSide::new(ram, &port, slot, vol)?;
     let mut rv = Vec::with_capacity(vsyncs);
     let mut pv = Vec::with_capacity(vsyncs);
-    let dump = std::env::var("SEQDIFF_DUMP").ok().and_then(|v| v.parse::<usize>().ok());
+    let mut rng = 0x5EED_u32 ^ u32::from(track);
+    let mut next_cue = 30usize;
+    let mut sustained = false;
+    // A cue keyed ahead of retail's calc `i` goes out in that calc's flush, which
+    // is the port's flush of step `i - 1`.
+    let mut retail_cue = None;
     for i in 0..vsyncs {
+        if let Some(c) = retail_cue.take() {
+            retail.key_cue(&c)?;
+        }
         rv.push(retail.step(RETAIL_VSYNC_SAMPLES)?);
-        pv.push(port.step(RETAIL_VSYNC_SAMPLES));
-        if dump == Some(i) {
+        let cue = if args.cues && i + 1 == next_cue {
+            rng = rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            next_cue += 8 + (rng >> 26) as usize;
+            pick_cue(&port, rng, &mut sustained)
+        } else {
+            None
+        };
+        retail_cue = cue;
+        pv.push(port.step_with_cue(RETAIL_VSYNC_SAMPLES, cue));
+        if args.dump_at == Some(i) {
             let m = &mut retail.cpu.mem;
             let rec = m.rd32(SEQ_TABLE + u32::from(slot) * 4);
-            println!("rec {rec:08x} pans {:02x?} progs {:02x?} vols {:04x?}", m.read(rec + 0x27, 16), m.read(rec + 0x37, 16), (0..16).map(|k| m.rd16(rec + 0x60 + k * 2)).collect::<Vec<_>>());
-            for v in 0..24u32 {
-                let r = VOICE_RECORDS + v * VOICE_STRIDE;
-                let b = m.read(r, VOICE_STRIDE as usize);
-                println!("v{v} {b:02x?}");
+            println!(
+                "pans {:02x?}\nprogs {:02x?}\nvols {:x?}",
+                m.read(rec + 0x27, 16),
+                m.read(rec + 0x37, 16),
+                (0..16)
+                    .map(|k| m.rd16(rec + 0x60 + k * 2))
+                    .collect::<Vec<_>>()
+            );
+            for v in 0..NUM_VOICES as u32 {
+                let b = m.read(VOICE_RECORDS + v * VOICE_STRIDE, 0x20);
+                println!("record {v} {b:02x?}");
             }
             println!("retail {:x?}", rv[i].sounding);
-            println!("port {:x?}", pv[i].sounding);
+            if i > 0 {
+                println!("port {:x?}", pv[i - 1].sounding);
+            }
         }
     }
     Ok(compare(&rv, &pv, keep))

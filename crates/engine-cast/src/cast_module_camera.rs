@@ -224,6 +224,8 @@ pub struct ModuleCamState {
     /// (`0` kills) picks between arm `0x11`'s instant kill and arm `0x12`'s
     /// damage. `None` until the host has drawn it.
     pub kill: Option<bool>,
+    /// PROT 0944's arm-0 roll, drawn with its line and landing on arm 3.
+    pub latched_hit: Option<i32>,
     /// The spread the module's inline light bands draw at on this pass
     /// (PROT 0916's arms `0x11..=0x13`), `None` on a pass that draws none.
     /// The director rewrites it every pass.

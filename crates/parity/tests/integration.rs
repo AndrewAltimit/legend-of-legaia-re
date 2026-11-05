@@ -68,6 +68,7 @@ mod s4_warp_endstate_oracle;
 mod scene_entry_bgm;
 mod scene_prescript_consumer_census_disc;
 mod screen_widgets_live;
+mod seq_differential_disc;
 mod seru_trade_randomizer_runtime_e2e;
 mod sfx_table_live;
 mod sfx_vab_bank;
