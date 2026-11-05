@@ -905,6 +905,10 @@ pub(super) fn battle_image(
             env.push(("LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM", hold.to_string()));
         }
     }
+    // Diagnostic: the image child's whole seat, as handed over.
+    if std::env::var_os("LEGAIA_RC_CHILD_ENV").is_some() {
+        eprintln!("[rc-env] {:?}", env);
+    }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));
     // The arrival gate's deadline: the columns live about a hundred ticks

@@ -106,6 +106,22 @@ impl RetailBattle {
         {
             return Some((default, self.action_state, None, None));
         }
+        // A capture in the capture band's CD holds whose newest passes ran
+        // another step: the branch `0x6E` re-arms case 6 every pass
+        // (`FUN_801D5854(actor, 6)`) and the walker steps once a pass, so
+        // how far the framing has closed counts passes, not vsyncs, and the
+        // hold is placed on vsync clocks (the yaw counter, the depth ramp).
+        // `battle_map01_gomboo_steal_mid_cast`'s newest seven passes ran at
+        // step `3` (ring entries `575..585`), and at the default `2` the
+        // replay's eye stood `89` closer than retail's (camera `.991` to
+        // `.998`).
+        if matches!(self.span_gate, SpanGate::CaptureFade { .. })
+            && matches!(self.action_state, 0x6E | 0x6F)
+            && self.step_run.0 != default
+            && self.step_run.1 < 16
+        {
+            return Some((self.step_run.0, 0x6E, None));
+        }
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)

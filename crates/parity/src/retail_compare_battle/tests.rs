@@ -2213,3 +2213,50 @@ fn a_magic_band_step_run_waits_for_the_passes_before_it() {
     b.recent_steps[..3].copy_from_slice(&[3, 3, 2]);
     assert_eq!(b.step_run_accum_hold(), None);
 }
+
+/// A `0x6F` capture walks back on the re-arm's widening share, with the TR z
+/// endpoint the depth ramp moved: `battle_map01_gomboo_steal_mid_cast`'s
+/// words (depth `3024` after one step-`3` ramp, so the pass before chased
+/// `prescale(3072) = 4915`, `77` past the RAM's `4838`). Its yaw stands
+/// `63 + 84` back - one pass on the table's `21`, one on the re-arm's
+/// `ceil(246 / 9) = 28` - where the table's own increment put it `126` back,
+/// a yaw increment short of the frame on screen.
+#[test]
+fn a_capture_fade_walks_back_on_the_rearm_with_the_ramped_endpoint() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put8(&mut ram, ctx + 7, 0x6F);
+    put16(&mut ram, ctx + 0x6D0, 3024);
+    put16(&mut ram, 0x8007_B790, 10);
+    put16(&mut ram, 0x8007_B792, 3757);
+    put32(&mut ram, 0x8008_40BC, 1257);
+    put32(&mut ram, 0x8008_40C0, 4717);
+    put32(&mut ram, 0x8008_9118, (-364i32) as u32);
+    put32(&mut ram, 0x8008_9120, (-754i32) as u32);
+    for (k, inc, end) in [
+        (0u32, 2u16, 0i16),
+        (1, 21, 3940),
+        (4, 3, 1280),
+        (5, 14, 4838),
+        (6, 6, -417),
+        (8, 22, -941),
+    ] {
+        put16(&mut ram, rec(k), inc);
+        put16(&mut ram, rec(k) + 2, end as u16);
+    }
+    let shift = camera_align::capture_fade_end_shift(&ram, ctx, &[3, 3]);
+    assert_eq!(shift[5], 77);
+    assert_eq!(shift.iter().filter(|&&s| s != 0).count(), 1);
+    let p =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], shift, false);
+    assert_eq!(p.yaw, 3610.0);
+    let fixed =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], [0; 9], false);
+    assert!(
+        p.tr[2] < fixed.tr[2],
+        "the ramped endpoint widens the gap: {} vs {}",
+        p.tr[2],
+        fixed.tr[2]
+    );
+}

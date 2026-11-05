@@ -3156,6 +3156,18 @@ spell in the caster's learned list, and on `0x15` the party
 cursor `DAT_801E46C4`, the page cursor `DAT_801E46C0` and the step word
 `DAT_801E46AC` say how far Down, how far Right, and whether the page's list is open.
 
+A pause-menu capture keeps the field's camera words (`0x8007B790`, `0x800840B8..`,
+the focus pair) where the field left them, but not the follow ease's staging
+descriptor `0x801F3580`: the menu overlay loads over the field overlay's window
+(`0x801CE000` up to `0x801F3xxx` differ between a walk state and a menu opened
+from it, and the descriptor reads zero), so a menu state has only the live pose to
+score against. The six `menu_*_kor_retail` captures open the menu over
+`kor_field_route_walk`'s frozen ease: retail's live yaw `1702` and eye Y `681`,
+the engine's compose yaw `1605` and eye Y `768` - the walk state's own
+descriptor to the unit ([below](#the-staging-descriptor)). They read `camera`
+`.949` on that history, which no seat replays; the walk state itself reads
+`1.000` on its descriptor.
+
 The map display (game mode `0x0D`) classes as a menu: a settled overworld field,
 then `L1`. It scores no `camera`: the survey camera is staged on the frame, not on
 the follow camera's globals that channel reads.
@@ -5232,12 +5244,22 @@ every pass, so it moves with the phase of both clips):
   `BattleCamera::align_summon_focus`) wherever the tween lands inside a
   pass: `gizam_summon_mid_cast` `image` `.965` to `1.000`, two or three
   units of focus that drew Noa two pixels right.
-- **A table no state re-arms walks at its own increment.** The magic-capture
-  fade `0x6F` calls no framing, so the table the `0x6E` branch armed
-  (`FUN_801D5854(actor, 6)` every pass) walks on unchanged: the displayed
-  frame stood `increment * step` a pass further out, not the widening
-  share the re-arm walk-back takes (`zora_glare_petrify_pre`: TR z `4910` on
-  the re-arm's walk, `.971`; `4883` on the table's, `.996`).
+- **A re-armed table whose endpoint the pass moved.** The magic-capture fade
+  `0x6F` re-arms case 6 on every pass, as the `0x6E` branch does
+  (`jal 0x801d5854` with `a1 = 6` at `0x801E501C`), so its displayed frame
+  walks back on the re-arm's widening share. The pass first ramps the
+  framing depth `ctx[+0x6D0]` down by `16 * step`
+  (`0x801E4FFC..0x801E5014`), so the pass before the RAM's chased a TR z
+  endpoint `prescale(16 * step)` further out, and the walk-back widens that
+  component's gap by it (`capture_fade_end_shift`). Walked back on the
+  re-arm's share with a fixed endpoint, `zora_glare_petrify_pre` stood TR z
+  at `4910` (`.971`); on the table's own increment, `4883` (`.996`), which
+  read as "`0x6F` arms no framing". That walk lands one increment short on
+  a capture still closing on its yaw: `battle_map01_gomboo_steal_mid_cast`'s
+  yaw (`21` a unit, `183` to go at step `3`) drew `147` units back, where
+  the table's walk put it at `126`, the backdrop eight pixels across
+  (`image` `.824` to `.916`; `battle_bubu2_wailing_bird_power_up_mid_cast`
+  `.927` to `.940`; `zora_glare_petrify_pre` holds `.999`).
 - **A park lasts as long as retail sat in it.**
   `battle_gaza2_park_0x19_summon_melee` is a live-caught park: Gaza's
   fallback Move clip dies short of its target and the action holds in `0x19`
@@ -5409,6 +5431,17 @@ every pass, so it moves with the phase of both clips):
   `0xFFC` on the displayed frame, the clock that leaves the capture's RAM
   at wait `0x30`, level `0x900` and a clamped lane two passes later, and
   the state reads `.908`.
+- **A capture-band hold on a step the replay does not run.** The `0x6E`
+  branch re-arms case 6 every pass and the walker steps once a pass, so how
+  far its glide has closed counts passes, while the hold is placed on vsync
+  clocks (the yaw counter, the depth ramp). A `0x6E` / `0x6F` capture whose
+  newest passes left the default step has the seed install that step on
+  `0x6E` (`RetailBattle::frame_step_seed`).
+  `battle_map01_gomboo_steal_mid_cast`'s newest seven passes ran step `3`
+  (ring entries `575..585` hsyncs against the lone member's `~490`), and at
+  the default `2` the replay's eye stood TR z `4806` against retail's `4717`
+  (camera `.991` to `.998`). The seed applies to the replay's own frames; the
+  image child stands on the displayed pose either way.
 - **A spell's damage is a draw.** `battle_gimard_tail_fire_a` / `_b` show
   Tail Fire's `16` on retail's Vahn and the engine's `7`: the
   summon-magic roll and the finisher's no-damage floor are `rand()` draws,

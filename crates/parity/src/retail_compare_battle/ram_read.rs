@@ -812,19 +812,20 @@ impl RetailBattle {
             let steps: Vec<u8> = (0..usize::from(passes))
                 .map(|n| steps.get(n).copied().unwrap_or(frame_step(ram)))
                 .collect();
-            // The magic-capture fade `0x6F` arms no framing: the table the
-            // branch `0x6E` left (`FUN_801D5854(actor, 6)` every pass)
-            // walks on at its own increment, so the passes back stood
-            // that increment further out each, not the re-arm's widening
-            // share (`zora_glare_petrify_pre`: TR z `4910` on the re-arm's
-            // walk, `.971`; `4883` on the table's, `.996`).
-            // `0x70` arms none either (`0x801E50C8..0x801E50E8`: the
+            // The magic-capture fade `0x6F` re-arms case 6 on every pass, as
+            // the branch `0x6E` does (`jal 0x801d5854` with `a1 = 6` at
+            // `0x801E501C`), so it walks back on the re-arm's widening share.
+            // Its endpoint moves, though: the pass ramps `ctx[+0x6D0]` down by
+            // `16 * step` before it arms (`0x801E4FFC..0x801E5014`), so the
+            // pass before the RAM's chased a TR z endpoint that much further
+            // out ([`capture_fade_end_shift`]).
+            // `0x70` arms no framing (`0x801E50C8..0x801E50E8`: the
             // module tick, then `0x71`), so once the module's arm 0 has
             // built its own shot (`ctx[+0x279]` past `0`) and that shot
             // is still walking, the table the RAM holds is the one the
             // arm built once (Lippian's Kiss of Death, PROT 0955 arm 0:
             // `image` `.849` on the re-arm's walk, `.886` on the
-            // table's). Before arm 0 the table is `0x6F`'s.
+            // table's). Before arm 0 the table is the last one `0x6F` armed.
             let module_shot = action_state == CAPTURE_MODULE_STATE
                 && game_anchors::u8_at(ram, ctx + 0x279) > 0
                 && module_shot_walking(ram, ctx);
@@ -836,7 +837,17 @@ impl RetailBattle {
             let unarmed_setup = game_anchors::u8_at(ram, ctx + 6) == 0xFF
                 && PRE_SEED_STATES.contains(&action_state);
             let walk = |steps: &[u8]| {
-                if action_state == CAPTURE_FADE_STATE || module_shot || unarmed_setup {
+                if action_state == CAPTURE_FADE_STATE {
+                    displayed_cam_live_steps(
+                        ram,
+                        ctx,
+                        steps,
+                        confirmed,
+                        [None; 9],
+                        capture_fade_end_shift(ram, ctx, steps),
+                        false,
+                    )
+                } else if module_shot || unarmed_setup {
                     displayed_module_cam_live(ram, ctx, steps)
                 } else {
                     let walk_arm = walk_arm_prior_end(ram, ctx);

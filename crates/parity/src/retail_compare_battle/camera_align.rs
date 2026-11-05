@@ -989,3 +989,24 @@ pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
         end_shift: turn - (4 * step / 3).max(1),
     })
 }
+
+/// How far the TR z endpoint stood, on the pass before a `0x6F` capture's,
+/// from the RAM's own - [`displayed_cam_live_steps`]'s `end_shift`, in the
+/// walker's raw space.
+///
+/// The magic-capture fade ramps the framing depth `ctx[+0x6D0]` down by
+/// `16 * step` (`lbu v1,0x393` / `sll v1,v1,0x4` / `subu` at
+/// `0x801E5000..0x801E5014`) and then re-arms case 6 on the new depth
+/// (`jal 0x801d5854`, `a1 = 6` at `0x801E501C`), whose TR z endpoint is the
+/// depth prescaled. The pass before stood on the depth before that ramp,
+/// whether it was a `0x6F` pass (which ramped from there) or the `0x6E`
+/// branch the fade left (which holds the depth the ramp starts from). The
+/// other components' endpoints do not move with the depth.
+pub(super) fn capture_fade_end_shift(ram: &[u8], ctx: u32, steps: &[u8]) -> [i32; 9] {
+    use legaia_engine_battle_vm::battle_cam_script::prescale_tr_z;
+    let depth = i32::from(game_anchors::u16_at(ram, ctx + 0x6D0) as i16);
+    let ramp = 16 * i32::from(steps.first().copied().unwrap_or(1).max(1));
+    let mut shift = [0; 9];
+    shift[5] = (prescale_tr_z(depth + ramp) - prescale_tr_z(depth)) as i32;
+    shift
+}
