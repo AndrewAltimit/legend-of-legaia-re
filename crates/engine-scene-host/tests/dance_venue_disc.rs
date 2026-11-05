@@ -96,6 +96,30 @@ fn the_entry_record_loads_and_stamps_the_venue() {
         .count();
     eprintln!("[ran] venue draws: {} ({tilted} tilted)", venue.draws.len());
     assert!(tilted > 0, "the venue's video walls are tilted placements");
+    // The plain floor actors with a clip (the spotlight beams and their
+    // fixtures) leave the static list and pose on the run's clock:
+    // `minigame_dance_retail_go_out` holds clips `1`, `2` and `4`, thirty
+    // frames each, on one cursor.
+    assert!(
+        !venue.props.is_empty(),
+        "the hall's beams are animated props"
+    );
+    assert!(venue.draws.iter().all(|d| d.draw.anim_id == 0));
+    let mut clips: Vec<u8> = venue.props.iter().map(|p| p.draw.anim_id).collect();
+    clips.sort_unstable();
+    clips.dedup();
+    assert_eq!(clips, [1, 2, 4]);
+    let bank = legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(&index).expect("bank");
+    let mut clock = legaia_engine_minigames::dance::HallProps::from_bank(&bank);
+    let beam = venue.props.iter().find(|p| p.draw.anim_id == 2).unwrap();
+    let rest = venue.prop_offsets(&beam.draw, Some(&clock));
+    for _ in 0..13 {
+        clock.tick(3);
+    }
+    assert_eq!(clock.clip(2).map(|c| (c.frames, c.cursor)), Some((30, 312)));
+    let posed = venue.prop_offsets(&beam.draw, Some(&clock));
+    assert!(rest.is_some() && posed.is_some());
+    assert_ne!(rest, posed, "the beam turns over its clip");
     assert!(venue.hud_staged, "the HUD page reaches the venue VRAM");
     assert_eq!(venue.faces_stamped, 5, "all five entry blits land");
     assert_eq!(venue.camera, venue_camera(&e));
@@ -340,10 +364,12 @@ fn the_far_camera_poses_leave_the_curtain_to_the_gpu_limit() {
     let e = dance_scene_entry();
 
     // Bake every draw into world space, remembering the curtain's triangles.
+    // The curtain binds clip `4`, so it stands among the animated props, at
+    // its rest pose here.
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
     let mut curtain: Vec<[u32; 3]> = Vec::new();
-    for vd in &venue.draws {
+    for vd in venue.draws.iter().chain(&venue.props) {
         let d = vd.draw;
         let rtmd = &venue.resources.tmds[d.res_tmd];
         let offsets = (d.anim_id != 0)

@@ -300,6 +300,17 @@ impl PlayWindowApp {
             textured.indices.extend(v.indices.iter().map(|i| i + base));
         }
         let markers = bake_venue_markers(&venue, &mut built);
+        let props = venue
+            .props
+            .iter()
+            .map(|vd| super::VenuePropGpu {
+                venue_draw: *vd,
+                baked: std::collections::HashMap::new(),
+                shown: None,
+                textured_gpu: None,
+                untextured_gpu: None,
+            })
+            .collect();
         Some(DanceVenueGpu {
             generation,
             vram,
@@ -312,6 +323,8 @@ impl PlayWindowApp {
             untextured_gpu: None,
             untextured_kept: None,
             markers,
+            props,
+            venue: Some(venue),
             cast_assets,
         })
     }
@@ -411,6 +424,53 @@ impl PlayWindowApp {
                 .flatten();
             m.shown = Some((slot, kept_t, kept_c));
         }
+        // The animated props, on the run's clip clock (frame `0` without a
+        // run).
+        let hall_props = game.map(|d| d.hall_props());
+        let Some(venue) = g.venue.as_ref() else {
+            return;
+        };
+        for p in &mut g.props {
+            let key = legaia_engine_minigame_scenes::dance_venue::prop_pose_key(
+                p.venue_draw.draw.anim_id,
+                hall_props,
+            );
+            let (t, c) = p.baked.entry(key).or_insert_with(|| {
+                let (mut t, mut c) = Default::default();
+                append_venue_prop(venue, &p.venue_draw, key, &mut t, &mut c);
+                (t, c)
+            });
+            let kept_t = psx_gpu_visible_indices(&camera, &t.positions, [0.0; 3], &t.indices);
+            let kept_c = psx_gpu_visible_indices(&camera, &c.positions, [0.0; 3], &c.indices);
+            if p.shown
+                .as_ref()
+                .is_some_and(|(s, kt, kc)| *s == key && *kt == kept_t && *kc == kept_c)
+            {
+                continue;
+            }
+            p.textured_gpu = (!kept_t.is_empty())
+                .then(|| {
+                    r.upload_vram_mesh(
+                        &t.positions,
+                        &t.uvs,
+                        &t.cba_tsb,
+                        &t.normals,
+                        &t.colors,
+                        &kept_t,
+                    )
+                    .map_err(|e| log::warn!("dance prop: textured upload failed: {e:#}"))
+                    .ok()
+                })
+                .flatten();
+            p.untextured_gpu = (!kept_c.is_empty())
+                .then(|| {
+                    r.upload_color_mesh_blended(&c.positions, &c.colors, &kept_c, &c.blend)
+                        .map_err(|e| log::warn!("dance prop: untextured upload failed: {e:#}"))
+                        .ok()
+                })
+                .flatten();
+            p.shown = Some((key, kept_t, kept_c));
+        }
     }
 
     /// Pose the dance floor's bodies for this frame and put them on the GPU.
@@ -502,19 +562,58 @@ fn append_venue_draw(
         let offsets = (d.anim_id != 0)
             .then(|| venue.frame0_bone_offsets(d.anim_id, rtmd.tmd.objects.len()))
             .flatten();
-        let (mut vmesh, mut cmesh) = match &offsets {
-            Some(o) => (
-                legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
-                legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
-            ),
-            None => (
-                rtmd.build_filtered_vram_mesh_lit(&res.vram).0,
-                legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw),
-            ),
-        };
-        legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
-        (vmesh, cmesh)
+        venue_draw_meshes(res, rtmd, offsets.as_deref())
     });
+    place_venue_meshes(vmesh, cmesh, vd, textured, untextured);
+}
+
+/// One draw's two halves, posed by `offsets` when it has them.
+fn venue_draw_meshes(
+    res: &legaia_engine_scene::scene_resources::SceneResources,
+    rtmd: &legaia_engine_scene::scene_resources::ResolvedTmd,
+    offsets: Option<&[([i16; 3], [i16; 3])]>,
+) -> (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh) {
+    let (mut vmesh, mut cmesh) = match offsets {
+        Some(o) => (
+            legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
+            legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
+        ),
+        None => (
+            rtmd.build_filtered_vram_mesh_lit(&res.vram).0,
+            legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw),
+        ),
+    };
+    legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+    (vmesh, cmesh)
+}
+
+/// Bake one animated hall prop at its place, posed at `key`
+/// (`DanceVenue::prop_offsets_at`).
+fn append_venue_prop(
+    venue: &legaia_engine_minigame_scenes::dance_venue::DanceVenue,
+    vd: &legaia_engine_minigame_scenes::dance_venue::VenueDraw,
+    key: legaia_engine_scene::field_env::PropPoseKey,
+    textured: &mut VenueTexturedBake,
+    untextured: &mut VenueColorBake,
+) {
+    let res = &venue.resources;
+    let Some(rtmd) = res.tmds.get(vd.draw.res_tmd) else {
+        return;
+    };
+    let offsets = venue.prop_offsets_at(&vd.draw, key);
+    let (vmesh, cmesh) = venue_draw_meshes(res, rtmd, offsets.as_deref());
+    place_venue_meshes(&vmesh, &cmesh, vd, textured, untextured);
+}
+
+/// Append one draw's posed halves at its place.
+fn place_venue_meshes(
+    vmesh: &legaia_tmd::mesh::VramMesh,
+    cmesh: &legaia_tmd::mesh::ColorMesh,
+    vd: &legaia_engine_minigame_scenes::dance_venue::VenueDraw,
+    textured: &mut VenueTexturedBake,
+    untextured: &mut VenueColorBake,
+) {
+    let d = vd.draw;
     let base = textured.positions.len() as u32;
     textured
         .positions

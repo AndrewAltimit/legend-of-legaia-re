@@ -77,6 +77,16 @@ impl PlayWindowApp {
                     g.seat_step_marker(class, cursor as u16, timer, mesh);
                 }
             }
+            // ... and the hall's animated props on the clip cursors the
+            // displayed frame drew (`LEGAIA_SEAT_DANCE_PROPS`).
+            if due
+                && let Some(clips) = sc.seat_dance_props.take()
+                && let Some(g) = self.session.host.world.minigames.dance.as_mut()
+            {
+                for (clip, cursor, passes) in clips {
+                    g.seat_hall_prop_displayed(clip, cursor, passes);
+                }
+            }
             // ... and the text balloon the displayed frame drew, or none
             // (`LEGAIA_SEAT_BALLOON`).
             if due && let Some(b) = sc.seat_balloon.take() {

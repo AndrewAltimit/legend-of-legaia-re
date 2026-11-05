@@ -431,6 +431,11 @@ pub struct ScreenshotConfig {
     /// state's displayed frame drew them, written over the game's on the frame
     /// the capture is taken (`DanceGame::seat_step_marker`); taken once.
     pub seat_dance_markers: std::cell::Cell<Option<SeatedDanceMarkers>>,
+    /// `LEGAIA_SEAT_DANCE_PROPS`: the hall's animated props' clip cursors as
+    /// a retail state's RAM holds them, with the passes the displayed frame
+    /// stands behind, written over the game's on the frame the capture is
+    /// taken (`DanceGame::seat_hall_prop_displayed`); taken once.
+    pub seat_dance_props: std::cell::Cell<Option<Vec<(u8, i16, u16)>>>,
     /// `LEGAIA_SEAT_BALLOON`: the text balloon a retail state's displayed
     /// frame drew (the place-name banner a door leaves up, which a card
     /// load never raises), or none, written over the field's on the frame
@@ -1158,6 +1163,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_DANCE_MARKERS")
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::dance_markers_from_env(&v)),
+            ),
+            seat_dance_props: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_DANCE_PROPS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::dance_props_from_env(&v)),
             ),
             seat_turning_parts: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_TURNING_PARTS")

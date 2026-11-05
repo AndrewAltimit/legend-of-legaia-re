@@ -116,3 +116,11 @@ fn dance_marker_rows_round_trip_through_the_environment() {
     );
     assert!(dance_markers_from_env("1:2").is_empty());
 }
+
+#[test]
+fn dance_prop_clips_round_trip_through_the_environment() {
+    let env = dance_props_env(&[(1, 312), (4, 0)], 2);
+    assert_eq!(env, "1:312:2;4:0:2");
+    assert_eq!(dance_props_from_env(&env), vec![(1, 312, 2), (4, 0, 2)]);
+    assert!(dance_props_from_env("1:2").is_empty());
+}

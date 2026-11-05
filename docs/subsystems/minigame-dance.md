@@ -426,7 +426,7 @@ The clip index is the record's `record` byte plus one:
 |---|---|
 | `0` | cell skipped |
 | `6 ..= 9` | marker template, with `clip - 6` (the class) stamped into the actor's `+0x50` |
-| any other | plain floor template (static hall geometry) |
+| any other | plain floor template: static hall geometry, or an [animated prop](#the-halls-animated-props) when the record names a clip |
 
 **Pool.** `FUN_80024C88(&pos, template, list)` is called with `list` read from `0x8007C348 + 0xC` (`lw a2,0xc(t0)` at `0x801D2C1C` / `0x801D2C3C`), i.e. `_DAT_8007C354` - the field-actor list whose per-node tick is `FUN_8003BC08`. A marker tile is an ordinary field actor.
 
@@ -441,6 +441,14 @@ The clip index is the record's `record` byte plus one:
 - `DanceVenue::markers` takes the cells a tile stands on out of the hall's static draws: the tile is that cell's draw, on the mesh its flipbook names. The hall's wall panels and stage screens are these tiles, so their moving art is this flipbook: at `(6144, 256, 13712)`, `(5760, 192, 13808)` and `(6496, 192, 13808)` in `minigame_dance_retail_go_out`, the actor's `+0x64` names the sheet of Noa or the emblem on screen.
 - The native play window bakes each tile's row at its place and uploads the mesh `DanceGame::step_marker_mesh` names (`bake_venue_markers`, `refresh_dance_venue_view`). The browser pages bake every candidate mesh into the page's static-topology buffer (`bake_dance_markers` in `web-minigames::dance_presentation`); each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
 - The flipbook runs on the hall's game frames, count-in included: a step of `12` lasts five frames of step `3` (`12, 9, 6, 3, 0`, staged on `-3`). A game frame's length varies with what it draws, so the count-in's counter does not name a tile's phase: between `minigame_dance_retail_go_in` and `_go_out` the `GO!` accumulator walks `11` steps while the ambient leader takes `8` rows of one frame each. The retail comparison seats the tiles' steps off the state (`LEGAIA_SEAT_DANCE_MARKERS`, taken back the display lag).
+
+### The hall's animated props
+
+A cell whose clip is not a marker's spawns from the plain template `0x801D42FC`, and it is not all static geometry. The pass stamps the object record's class byte into the actor's clip `+0x5C` (`FUN_8003C8F0(record, 0)` then `FUN_8003D0BC` past the record's name, `0x801D2D14..0x801D2D40`) and halves the template rate into `+0x6A` (`0x801D2D0C`). The template's tick `FUN_801D4098` hands an actor whose `+0x5C` is above zero to the clip driver `FUN_800204F8` every pass, under the template's looping word `0x15`.
+
+`other7` binds clips `1`, `2` and `4` that way, thirty frames each: the spotlight beams that sweep above the stage, their fixtures and the stage curtain (clip `4` at `(0x1800, 0, 0x2F60)`). The floor pass runs once, from the init (`jal` at `0x801CF1B8`), so every such actor spawns on one pass at rate `8` and all of a clip stand on one cursor: `minigame_dance_retail_go_out` holds all fourteen on `312`, the thirteenth pass at step `3` (a frame and a half a pass, wrapping to `0` past `479` with the overshoot dropped).
+
+Port: `DanceVenue::props` takes these draws out of the hall's static list; `legaia_engine_minigames::dance::HallProps` is the clock, one cursor per clip of the hall's ANM bank, built by `DanceGame::attach_clip_bank` and ticked on the markers' pass. `DanceVenue::prop_offsets` poses a prop through the field prop pose key and sampler. The native window re-poses each prop when its key changes; the browser pages carry the props in the marker block, each a span whose positions are its clip frame's (`DanceMarkers` in `web-minigames`), on the running dance's clock on the play page and on the block's own on the minigames page. The retail comparison seats each clip's cursor off the state, walked back the display lag (`LEGAIA_SEAT_DANCE_PROPS`), as it seats the tiles' steps.
 
 The marker lookup is the read side of the step data in *floor space* ("is there a marker at cell (x, z)"); the chart read in [Input judging](#input-judging--timing-windows) is the *beat-space* side.
 

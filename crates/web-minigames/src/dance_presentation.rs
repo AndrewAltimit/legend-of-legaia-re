@@ -510,7 +510,7 @@ impl LegaiaMinigames {
 
         // The step-marker tiles that stand on that floor. Same origin, so
         // they land in the frame the bodies and the hall already share.
-        let markers = bake_dance_markers(&index, &venue.scene, res, &overlay, origin);
+        let markers = bake_dance_markers(&index, &venue, &overlay, origin);
 
         Some(DanceBodies {
             dancers,

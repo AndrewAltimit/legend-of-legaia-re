@@ -78,6 +78,9 @@ pub struct DanceGame {
     /// holds it: seeded from the save by the host ([`Self::set_best_score`]),
     /// raised by [`Self::raise_best_score`].
     pub(super) best_score: u32,
+    /// The hall's animated plain floor actors, one cursor per clip
+    /// ([`super::HallProps`]); empty until the bank is attached.
+    pub(super) hall_props: super::HallProps,
 }
 
 impl DanceGame {
@@ -130,6 +133,7 @@ impl DanceGame {
             finish_cues: Vec::new(),
             award_sounds: Vec::new(),
             best_score: 0,
+            hall_props: super::HallProps::default(),
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -252,6 +256,25 @@ impl DanceGame {
             }
         }
         self.clip_ticks = Some(map);
+        self.hall_props = super::HallProps::from_bank(bank);
+    }
+
+    /// The hall's animated props' clip cursors ([`super::HallProps`]).
+    pub fn hall_props(&self) -> &super::HallProps {
+        &self.hall_props
+    }
+
+    /// Stand the hall's clip `anim_id` on a retail state's cursor - capture
+    /// alignment, never a game path ([`super::HallProps::seat`]).
+    pub fn seat_hall_prop(&mut self, anim_id: u8, cursor: i16) {
+        self.hall_props.seat(anim_id, cursor);
+    }
+
+    /// [`Self::seat_hall_prop`] on a retail RAM cursor walked back `passes`
+    /// of the hall's game frames ([`super::HallProps::seat_passes_back`]).
+    pub fn seat_hall_prop_displayed(&mut self, anim_id: u8, cursor: i16, passes: u16) {
+        self.hall_props
+            .seat_passes_back(anim_id, cursor, passes, MARKER_PASS_VSYNCS as u16);
     }
 
     /// Ticks `clip` plays before its end flag, when the bank is attached.
@@ -310,6 +333,8 @@ impl DanceGame {
         let delta = MARKER_PASS_VSYNCS as u8;
         let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         for _ in 0..runs {
+            // The plain floor actors share the markers' list and pass.
+            self.hall_props.tick(MARKER_PASS_VSYNCS as u16);
             for m in self.markers.iter_mut() {
                 legaia_engine_field::dance_marker::step_marker(
                     m,

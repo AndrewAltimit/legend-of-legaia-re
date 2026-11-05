@@ -1354,20 +1354,22 @@ impl LegaiaRuntime {
     /// tiles step as the minigames page's do.
     pub fn play_mg_dance_marker_step(&mut self, frame_delta: u8) -> Vec<f32> {
         let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
-        let meshes: Option<Vec<Option<i16>>> = self
+        let game = self
             .scene_host
             .host()
-            .and_then(|h| h.world.minigames.dance.as_ref())
-            .map(|d| {
-                (0..legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS)
-                    .map(|class| d.step_marker_mesh(class).map(|mesh| mesh - bias))
-                    .collect()
-            });
+            .and_then(|h| h.world.minigames.dance.as_ref());
+        let meshes: Option<Vec<Option<i16>>> = game.map(|d| {
+            (0..legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS)
+                .map(|class| d.step_marker_mesh(class).map(|mesh| mesh - bias))
+                .collect()
+        });
+        // The hall's animated props on the run's clip clock.
+        let props = game.map(|d| d.hall_props());
         let Some(art) = self.minigame_ui.art.as_mut() else {
             return Vec::new();
         };
         match meshes {
-            Some(m) => art.dance_marker_positions_for(|c| m.get(c).copied().flatten()),
+            Some(m) => art.dance_marker_positions_for(|c| m.get(c).copied().flatten(), props),
             None => art.dance_marker_step(frame_delta),
         }
     }

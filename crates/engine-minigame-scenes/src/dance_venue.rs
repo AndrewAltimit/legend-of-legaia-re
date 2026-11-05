@@ -342,6 +342,11 @@ pub struct DanceVenue {
     /// The overlay's flipbook rows (`0x801D44CC`), which name [`Self::markers`]'
     /// meshes.
     pub marker_script: legaia_engine_field::dance_marker::MarkerScript,
+    /// The draws of [`Self::draws`] that bind a clip, taken out of it: the
+    /// plain floor actors whose clip runs every pass (the spotlight beams and
+    /// their fixtures), posed on the run's clock
+    /// ([`legaia_engine_minigames::dance::HallProps`], [`Self::prop_offsets`]).
+    pub props: Vec<VenueDraw>,
     /// The scene's ANM bundle, the rest-pose source for bound props and the
     /// dancers' choreography bank.
     pub anm: Option<PlayerAnmBundle>,
@@ -422,12 +427,14 @@ impl DanceVenue {
             marker_script = script;
         }
         let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
+        let props = split_prop_draws(&mut draws, anm.as_ref(), &resources);
         Some(Self {
             scene,
             resources,
             draws,
             markers,
             marker_script,
+            props,
             anm,
             face_stamps,
             faces_stamped,
@@ -463,6 +470,87 @@ impl DanceVenue {
                 .collect(),
         )
     }
+}
+
+impl DanceVenue {
+    /// The rigid transforms prop draw `draw` poses with on `props`' clock:
+    /// its clip's cursor through the field prop pose key and sampler
+    /// ([`legaia_engine_scene::field_env::posed_prop_offsets`]), frame `0`
+    /// without a clock or a cursor for its clip. `None` (draw unposed) under
+    /// the draw walker's count-equality contract.
+    pub fn prop_offsets(
+        &self,
+        draw: &EnvDraw,
+        props: Option<&legaia_engine_minigames::dance::HallProps>,
+    ) -> Option<Vec<([i16; 3], [i16; 3])>> {
+        self.prop_offsets_at(draw, prop_pose_key(draw.anim_id, props))
+    }
+
+    /// [`Self::prop_offsets`] at an explicit pose key.
+    pub fn prop_offsets_at(
+        &self,
+        draw: &EnvDraw,
+        key: legaia_engine_scene::field_env::PropPoseKey,
+    ) -> Option<Vec<([i16; 3], [i16; 3])>> {
+        let anm = self.anm.as_ref()?;
+        let objects = self.resources.tmds.get(draw.res_tmd)?.tmd.objects.len();
+        legaia_engine_scene::field_env::posed_prop_offsets(anm, draw.anim_id, key, objects)
+    }
+}
+
+/// The pose key a hall prop on clip `anim_id` draws with on `props`' clock
+/// ([`legaia_engine_scene::field_env::PropAnim::pose_key`]); the rest pose
+/// without one.
+pub fn prop_pose_key(
+    anim_id: u8,
+    props: Option<&legaia_engine_minigames::dance::HallProps>,
+) -> legaia_engine_scene::field_env::PropPoseKey {
+    use legaia_engine_scene::field_env::{PropAnim, PropPoseKey};
+    let Some(c) = props.and_then(|p| p.clip(anim_id)) else {
+        return PropPoseKey::REST;
+    };
+    PropAnim {
+        anim_id,
+        frames: c.frames,
+        scaled_step: c.blends,
+        step_div: c.step_div,
+        cursor: c.cursor,
+        flags: c.flags,
+        rate: legaia_engine_minigames::dance::HALL_PROP_RATE as i16,
+    }
+    .pose_key()
+}
+
+/// Take the draws that bind a clip the scene's ANM bank can pose out of
+/// `draws`: the hall's plain floor actors whose clip the template's tick runs
+/// (`FUN_801D4098`).
+fn split_prop_draws(
+    draws: &mut Vec<VenueDraw>,
+    anm: Option<&PlayerAnmBundle>,
+    res: &SceneResources,
+) -> Vec<VenueDraw> {
+    let Some(anm) = anm else {
+        return Vec::new();
+    };
+    let mut props = Vec::new();
+    draws.retain(|vd| {
+        let d = &vd.draw;
+        let posable = d.anim_id != 0
+            && res.tmds.get(d.res_tmd).is_some_and(|t| {
+                legaia_engine_scene::field_env::posed_prop_offsets(
+                    anm,
+                    d.anim_id,
+                    legaia_engine_scene::field_env::PropPoseKey::REST,
+                    t.tmd.objects.len(),
+                )
+                .is_some()
+            });
+        if posable {
+            props.push(*vd);
+        }
+        !posable
+    });
+    props
 }
 
 /// Resolve the venue's step-marker tiles off its `.MAP` and the overlay's

@@ -3283,6 +3283,8 @@ The hall's light show is palette work on a clock of game frames, whose lengths t
 - `LEGAIA_SEAT_CLUT_FX`: each cycler's adds as the displayed frame painted them. The leader is walked back through its strobe loop and each follower stands on the leader's adds at the pass of its last copy (`dance_cell_displayed`), so the floor's every-other-pass rows land a run behind the walls' on some frames.
 - `LEGAIA_SEAT_VRAM_RECTS`: the strip scroller's texels.
 
+The hall's animated props (its beams, fixtures and curtain) are clip actors on the same clock of game frames, so the child also takes `LEGAIA_SEAT_DANCE_PROPS`: each clip's `+0x68` cursor off the state, walked back the display lag's passes (`HallProps::seat_passes_back`). The engine animates them whatever the seat; the seat only stands them on the capture's phase, as the marker seat does the tiles'.
+
 The seed takes the warp at tick `20`, ahead of the talk `koin1`'s sign-up counter
 opens at tick `31` on a player the save leaves standing there; retail's warp is
 the last op of the record that seated him.

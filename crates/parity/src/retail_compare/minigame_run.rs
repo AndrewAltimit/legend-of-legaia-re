@@ -92,7 +92,38 @@ pub struct RetailMinigame {
     /// The dance's marker tiles as the displayed frame drew them, by script
     /// row: cursor, countdown and mesh ([`displayed_dance_markers`]).
     pub dance_markers: [Option<[i16; 3]>; legaia_engine_field::dance_marker::MARKER_SCRIPT_ROWS],
+    /// The hall's animated props' clip cursors as the RAM holds them, one per
+    /// clip ([`dance_prop_clips`]).
+    pub dance_props: [Option<(u8, i16)>; DANCE_PROP_CLIPS],
 }
+
+/// The hall's animated plain floor actors (tick `FUN_801D4098`) by clip: each
+/// clip's `+0x68` cursor. The floor pass spawns them all on one pass at one
+/// rate, so the actors of a clip agree; the first found stands for them.
+fn dance_prop_clips(ram: &[u8]) -> [Option<(u8, i16)>; DANCE_PROP_CLIPS] {
+    let mut out: Vec<(u8, i16)> = Vec::new();
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != legaia_engine_minigames::dance::HALL_PROP_TICK {
+            continue;
+        }
+        let Ok(clip) = u8::try_from(game_anchors::i16_at(ram, n + 0x5C)) else {
+            continue;
+        };
+        if clip == 0 || out.iter().any(|&(c, _)| c == clip) {
+            continue;
+        }
+        out.push((clip, game_anchors::i16_at(ram, n + 0x68)));
+    }
+    out.sort_unstable();
+    let mut clips = [None; DANCE_PROP_CLIPS];
+    for (slot, c) in clips.iter_mut().zip(out) {
+        *slot = Some(c);
+    }
+    clips
+}
+
+/// How many distinct prop clips the seat carries; the hall runs three.
+const DANCE_PROP_CLIPS: usize = 8;
 
 /// The marker tile tick (`FUN_801D0640`, PROT 0980).
 const DANCE_MARKER_TICK: u32 = 0x801D_0640;
@@ -200,6 +231,11 @@ impl RetailMinigame {
                 displayed_dance_markers(ram)
             } else {
                 Default::default()
+            },
+            dance_props: if minigame == Some(MinigameSubId::Dance) {
+                dance_prop_clips(ram)
+            } else {
+                [None; DANCE_PROP_CLIPS]
             },
         }
     }
@@ -502,6 +538,18 @@ pub(super) fn run_minigame(
             })
             .into_iter()
             .collect();
+        // The hall's animated props: their clip cursors are a clock of the
+        // hall's game frames too.
+        let props: Vec<(u8, i16)> = mg.dance_props.iter().flatten().copied().collect();
+        if !props.is_empty() {
+            seats.push((
+                "LEGAIA_SEAT_DANCE_PROPS",
+                legaia_engine_capture::field_seeds::dance_props_env(
+                    &props,
+                    crate::retail_compare_battle::DISPLAY_LAG_PASSES,
+                ),
+            ));
+        }
         // The hall's light show is palette work: its cyclers and scrollers are
         // a clock of game frames, whose lengths the capture measured and the
         // engine's fixed tick does not.
@@ -571,6 +619,7 @@ mod tests {
             phase2: 0,
             departure_define: 0,
             dance_markers: Default::default(),
+            dance_props: [None; DANCE_PROP_CLIPS],
         }
     }
 
@@ -595,6 +644,7 @@ mod tests {
             phase2: 0,
             departure_define: 0,
             dance_markers: Default::default(),
+            dance_props: [None; DANCE_PROP_CLIPS],
         };
         assert!(baka.unseeded_reason().unwrap().contains("Baka Fighter"));
     }
@@ -610,6 +660,7 @@ mod tests {
             phase2: 0,
             departure_define: 0,
             dance_markers: Default::default(),
+            dance_props: [None; DANCE_PROP_CLIPS],
         };
         assert_eq!(mg(6, 3).unseeded_reason(), None);
         assert!(mg(6, 0xA).unseeded_reason().is_some());
