@@ -573,8 +573,21 @@ impl World {
     /// to face the caster (`0x801F7934..0x801F7940` in PROT 0951 `0x5B`), the
     /// yaw counter ([`capture_approach_yaw_base`]) and the arm's VRAM move.
     ///
+    /// The bodies that store the counter draw the framing style beside it,
+    /// `ctx[+0xD] = rand() % 4` (`jal 0x80056798` / `sb v0,0xd(a0)` at
+    /// `0x801F71D0..0x801F71F8` in PROT 0952 `0x5C`, the same at `0x801F6AC4`,
+    /// and in PROT 0951 at `0x801F6AE0` and `0x801F78A0`), ahead of the arm's
+    /// case 6. That draw is returned: it frames this pass, where every later
+    /// pass reads the `1` state `0x70` pins ahead of the module tick.
+    ///
     /// [`capture_approach_yaw_base`]: legaia_engine_cast::cast_module_camera::capture_approach_yaw_base
-    fn open_capture_approach(&mut self, caster: u8, victim: u8, entry: u32, body: Option<u32>) {
+    fn open_capture_approach(
+        &mut self,
+        caster: u8,
+        victim: u8,
+        entry: u32,
+        body: Option<u32>,
+    ) -> Option<u8> {
         if let Some(reach) =
             legaia_engine_cast::cast_module_camera::capture_approach_reach(entry, body)
         {
@@ -584,16 +597,24 @@ impl World {
         if let Some(v) = self.actors.get_mut(usize::from(victim)) {
             v.battle.facing_angle = facing.wrapping_add(0x800) & 0xFFF;
         }
+        let mut style = None;
         if let Some(yaw) =
             legaia_engine_cast::cast_module_camera::capture_approach_yaw_base(entry, body)
-            && let Some(cam) = self.battle.camera.as_mut()
         {
-            cam.set_action_yaw_base(yaw);
+            let roll = (self.next_rand() % 4) as u8;
+            // Capture harness: the roll a retail capture holds lands over the
+            // engine's own, the draw itself made (`camera_variant_pin`).
+            let draw = self.battle_ctx.camera_variant_pin.unwrap_or(roll);
+            self.battle_ctx.camera_variant = draw;
+            style = Some(draw);
+            if let Some(cam) = self.battle.camera.as_mut() {
+                cam.set_action_yaw_base(yaw);
+            }
         }
         let Some(director) = body.and_then(|b| {
             legaia_engine_cast::cast_module_camera::capture_camera_director(entry, b)
         }) else {
-            return;
+            return style;
         };
         let seats = self.module_cam_seats(caster, victim);
         let mut scratch = legaia_engine_cast::cast_module_camera::ModuleCamState::default();
@@ -605,6 +626,64 @@ impl World {
                     size: (m.size.0 as i16, m.size.1 as i16),
                     dst: (m.dst.0 as i16, m.dst.1 as i16),
                 });
+        }
+        style
+    }
+
+    /// `FUN_80019B28(victim, caster) + 0x800` onto the caster's facing: the
+    /// turn a walk-in arm makes every pass.
+    fn turn_caster_onto(&mut self, caster: u8, victim: u8) {
+        let (vx, vz) = self.battle_seat_of(usize::from(victim));
+        let a = &mut self.actors[usize::from(caster)];
+        let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+            vz,
+            vx,
+            a.move_state.world_z,
+            a.move_state.world_x,
+        );
+        a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
+    }
+
+    /// A walk-in arm's pass ahead of its range poll, for a body whose arms
+    /// frame the caster through case 6 (`capture_approach_follows`): the
+    /// caster turned onto the victim and, on arm 0, the arm's own stores
+    /// ([`Self::open_capture_approach`]) and phase `1`. Returns the style the
+    /// pass's case 6 frames on, `None` for any other body.
+    fn open_capture_walk_pass(&mut self, caster: u8, victim: u8) -> Option<u8> {
+        let spell = self.casting.capture_spell?;
+        let e = self.cast_module_for(spell)?;
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(e, spell);
+        if !legaia_engine_cast::cast_module_camera::capture_approach_follows(e, body) {
+            return None;
+        }
+        self.turn_caster_onto(caster, victim);
+        let drawn = if self.casting.module_phase == 0 {
+            self.open_capture_approach(caster, victim, e, body)
+        } else {
+            None
+        };
+        // Arm 0 stores phase `1` on its first pass and arm 1 polls the walk
+        // from there, so the walk runs on phase `1`.
+        self.casting.module_phase = 1;
+        Some(drawn.unwrap_or(self.battle_ctx.camera_variant))
+    }
+
+    /// The walk-in arm's `FUN_801D5854(ctx[+0x13], 6)` on the caster, on the
+    /// style `style` (`ctx[+0xD]` as the arm reads it).
+    fn follow_capture_walk(&mut self, caster: u8, victim: u8, style: u8) {
+        let seats = self.module_cam_seats(caster, victim);
+        if let Some(cam) = self.battle.camera.as_mut() {
+            let yaw_base = cam.action_yaw_base();
+            let actor = legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
+                facing: i32::from(seats.caster.facing),
+                world: [
+                    f32::from(seats.caster.x),
+                    f32::from(seats.caster.y),
+                    f32::from(seats.caster.z),
+                ],
+                height: None,
+            };
+            cam.arm_module_follow(actor, yaw_base, seats.depth_raw, style);
         }
     }
 
@@ -635,6 +714,14 @@ impl World {
         let gate = match run.phase {
             CasterStagePhase::Approach => {
                 let victim = run.approach.unwrap_or(run.slot);
+                // A body whose walk arms frame the caster through the action
+                // SM's case 6 (`capture_approach_follows`) turns it and, on
+                // arm 0, makes the arm's stores ahead of the range poll, so
+                // a caster already in reach takes them too: PROT 0952's arm 0
+                // turns both seats at `0x801F7250..0x801F7270`, polls at
+                // `0x801F7278`, and reaches the case 6 at `0x801F72E4` from
+                // either side of the poll.
+                let walk_in = self.open_capture_walk_pass(run.slot, victim);
                 if self.battle_range_metric(run.slot, victim) == 0 {
                     // Arrived. A body whose port stages its own strike takes
                     // the band from here; the rest go on to their stages.
@@ -649,6 +736,10 @@ impl World {
                             a.battle.queued_anim = 0;
                         }
                     }
+                    // The arrival pass frames the pushed-off seat.
+                    if let Some(style) = walk_in {
+                        self.follow_capture_walk(run.slot, victim, style);
+                    }
                     if run.clips.is_empty() || !run.at_arms.is_empty() {
                         run.phase = CasterStagePhase::Module;
                         self.casting.caster_stages = Some(run);
@@ -658,51 +749,14 @@ impl World {
                     self.casting.caster_stages = Some(run);
                     return CasterStageGate::Hold;
                 }
-                // `FUN_80019B28(victim, caster) + 0x800` onto the caster's
-                // facing each tick, then the walk stage (`li v1,0x1;
-                // sb v1,0x1da(<caster>)`, e.g. `0x801F72C8` in PROT 0952).
-                let (vx, vz) = self.battle_seat_of(usize::from(victim));
-                let a = &mut self.actors[usize::from(run.slot)];
-                let bearing = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
-                    vz,
-                    vx,
-                    a.move_state.world_z,
-                    a.move_state.world_x,
-                );
-                a.battle.facing_angle = bearing.wrapping_add(0x800) & 0xFFF;
-                a.battle.queued_anim = CAPTURE_WALK_ENTRY;
-                // A body whose walk arms frame the caster through the action
-                // SM's case 6 every pass (`jal 0x801D5854` with `a1 = 6`,
-                // `capture_approach_follows`).
-                if let Some(spell) = self.casting.capture_spell
-                    && let Some(e) = self.cast_module_for(spell)
-                {
-                    let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(e, spell);
-                    if legaia_engine_cast::cast_module_camera::capture_approach_follows(e, body) {
-                        if self.casting.module_phase == 0 {
-                            self.open_capture_approach(run.slot, victim, e, body);
-                        }
-                        // Arm 0 stores phase `1` on its first pass and arm 1
-                        // polls the walk from there, so the walk runs on
-                        // phase `1`.
-                        self.casting.module_phase = 1;
-                        let seats = self.module_cam_seats(run.slot, victim);
-                        let style = self.battle_ctx.camera_variant;
-                        if let Some(cam) = self.battle.camera.as_mut() {
-                            let yaw_base = cam.action_yaw_base();
-                            let actor =
-                                legaia_engine_battle_vm::battle_cam_script::BattleCamActor {
-                                    facing: i32::from(seats.caster.facing),
-                                    world: [
-                                        f32::from(seats.caster.x),
-                                        f32::from(seats.caster.y),
-                                        f32::from(seats.caster.z),
-                                    ],
-                                    height: None,
-                                };
-                            cam.arm_module_follow(actor, yaw_base, seats.depth_raw, style);
-                        }
-                    }
+                if walk_in.is_none() {
+                    self.turn_caster_onto(run.slot, victim);
+                }
+                // The walk stage (`li v1,0x1; sb v1,0x1da(<caster>)`, e.g.
+                // `0x801F72C8` in PROT 0952).
+                self.actors[usize::from(run.slot)].battle.queued_anim = CAPTURE_WALK_ENTRY;
+                if let Some(style) = walk_in {
+                    self.follow_capture_walk(run.slot, victim, style);
                 }
                 CasterStageGate::Hold
             }

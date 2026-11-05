@@ -3614,15 +3614,26 @@ approach leg holds the module while the caster walks, so it makes these
 calls on the body's behalf (`capture_approach_follows`,
 `capture_approach_yaw_base`) and runs the walk on phase `1`.
 
-The walk's case 6 frames half a turn round from its first pass. `0x70` stores
-style `1` into `ctx[+0xD]` in the delay slot of its module call (`0x801E50CC`),
-so arm 0's `FUN_801D5854` reads it the same pass:
-`battle_tunnelc_xain_bloody_horns_mid_cast` holds the tween endpoint yaw `3658`,
-`0x200 + 2 - 3000 + 0x800`. The port's camera keeps its own copy of the byte from
-its last step, a pass behind the pin, so the step hands the pin to the host
-(`BattleActionHost::camera_variant_pinned`) and the leg passes the live byte to
-`BattleCamera::arm_module_follow`; read from the camera, the first pass framed
-the unturned side. PROT 0941's Steal
+The walk's framing style is two stores. Arm 0 rolls it,
+`ctx[+0xD] = rand() % 4` (`0x801F71D0..0x801F71F8` in PROT 0952 `0x5C`; the same
+at `0x801F6AC4`, and in PROT 0951 at `0x801F6AE0` and `0x801F78A0`), next to the
+counter's `0x200`, and its case 6 frames on the roll. Every later pass of `0x70`
+stores `1` in the delay slot of its module call (`0x801E50CC`), so arm 1's
+case 6 frames half a turn round. `battle_tunnelc_xain_bloody_horns_mid_cast`,
+taken on the arm-0 pass, holds endpoint yaw `3658` (`0x202 - 3000 + 0x800`, roll
+`1`); a PCSX-Redux film of the same cast from `battle_tunnelc_xain_strike` holds
+`1917` on its arm-0 pass (roll `0`, heading about `2690`).
+
+Arm 0 makes its stores and its case 6 on both sides of its range poll: it turns
+both seats (`0x801F7250..0x801F7270`), polls (`0x801F7278`), and from the
+in-reach side (the thirty-two pushes below, phase `2` at once) or the walking
+side reaches the case 6 at `0x801F72E4`. The port's approach leg makes the
+arm's turn, stores and case 6 ahead of its own poll, so a caster already in
+reach takes them too (`World::open_capture_walk_pass`); the film's counter then
+reads `516` on arm 2 as retail's does, where the leg left it on the seed's
+`2092`. The camera's own copy of `ctx[+0xD]` is a pass behind either store, so
+the step hands the `0x70` pin to the host (`BattleActionHost::camera_variant_pinned`)
+and the leg passes the live byte to `BattleCamera::arm_module_follow`. PROT 0941's Steal
 frames on other arms and keeps its own director.
 
 The arrival is not a stop. The pass that reads the range metric at zero runs

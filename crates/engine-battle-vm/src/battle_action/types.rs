@@ -1298,7 +1298,9 @@ pub struct BattleActionCtx {
     /// retail's; the retail comparison drive pins the variant the capture
     /// reads (`ctx[+0xD]`) for the seat it drives. The seed is the only
     /// place the pin can land in time: the state after it arms its framing
-    /// on the same tick. Nothing in play sets it.
+    /// on the same tick. A walk-in capture body's arm 0, which rolls the
+    /// style again, takes it the same way (`World`'s approach leg). Nothing
+    /// in play sets it.
     pub camera_variant_pin: Option<u8>,
 
     /// `[+0x6D0]` - the battle camera's framing height / distance.
