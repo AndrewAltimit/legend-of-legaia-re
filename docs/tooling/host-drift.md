@@ -1365,7 +1365,7 @@ check that sees the page's JavaScript and its GL state against the window.
 
 ```bash
 scripts/ci/host-pair.mjs --site <site> --engine target/release-test/legaia-engine --out <scratch> \
-    [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n] [--gl egl --no-msaa]
+    [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n] [--from n] [--gl egl --no-msaa]
 ```
 
 | Side | How it runs |
@@ -1379,6 +1379,9 @@ with the native `tick_{n+1}`. The trace digests are target-free
 (`TargetFreeHasher`): a `usize` or an enum's discriminant would otherwise hash
 differently on `wasm32` and tell two equal worlds apart.
 
+`--from n` pairs only the native frames from tick `n` on, so `--every 1` over a short span
+finds the frame two hosts part on without pairing the whole run.
+
 A pair scores the share of pixels off by more than the threshold in any channel, both
 reduced to 320x240, and diffs the two trace texts. The trace carries
 `bindings_parts` and `audio_recent` in the clear beside their digests, so a difference
@@ -1389,6 +1392,7 @@ a scratch directory only.
 | Scenes | Reach |
 |---|---|
 | `town_walk`, `map_walk`, `menu`, `dialog`, `shop`, `battle`, `results`, `cast` | a door entry: field, each pause row, a talk, a shop, a fight to its results and back, a seeded summon |
+| `arts`, `save` | a fight on a cycle of command-ring and direction presses (Arts entry, a kill and its defeat fade); the pause menu's Save on the world map, through its confirm |
 | `slots`, `baka`, `dance`, `muscle`, `fishing` | each minigame from its picker entry (native: its key), and out on Start |
 | `late_*`, `late4_*`, `ladder_*` | a retail card save: the page lands it and writes an LGSF, the window resumes that file, so each also carries a save from one host to the other |
 | `slot_save` | a save the window wrote, resumed on both |
@@ -1418,6 +1422,7 @@ the world was right and the picture was not:
 | A composition older than its frame | A pause-menu tick runs no world tick, so its screen layers stayed the last field tick's, and the frame the menu closed lost its wipe: one lit frame the window shows dark |
 | A declaration a frame late | The intro readback was declared after the draw, so a fight armed on the runtime's first frame landed the transition's own strips over stale VRAM as the field capture |
 | World state written by one draw half | The window's battle mesh build dropped the field's NPC bindings and a summon seat bound only there. Both are session steps now (`battle_stage`) |
+| A capture seat on a plain sweep | The window's capture seating re-ran the near-camera ghost pass after every tick of a sweep, so it ran after the anim pass too, and a killed monster's defeat fade drew additive and tinted one frame before the page. The play path never seats; a sweep seats nothing now either. The trace's `battle_bodies` channel (each body's `+0x21C` arm, colour lanes, blend and mode word, in the clear) is what named it |
 
 ## Pairing frames: what a screenshot adds
 
@@ -1644,6 +1649,7 @@ reverse-engineering questions, so they are not on
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
 | default key layout | Two named layouts in the engine, on purpose: `Mapping::default` natively (`X` Square, `A` Triangle, `S` Circle, `W` R1) and `Mapping::web_default` on the page (`WASD` walks, `X` Circle, `C` Triangle, `V` Square, `E` R1). A map holds one button per key, so the desktop layout and `WASD` walking cannot share a table; Key Config edits either. |
 | output level | The window's master volume defaults to `25%` of the full mix (`DESKTOP_MASTER_VOLUME_DEFAULT`); the page's `1x` slider is `0.125` of it (`WEB_MASTER_TRIM` times `PLAY_PAGE_GAIN_SCALE`), half the window's default, and reaches `10x`. The site's pages share a level the desktop has no reason to take. |
+| look-and-feel preset | The launcher's Look and feel row sets every row at once: Original is retail-faithful **and** the PlayStation pixel look. The page has the two as separate boxes (Retail-faithful, PSX rasterisation) and a Reset to defaults for Enhanced, so its Retail-faithful alone matches the launcher's Original game only row, not its Original preset. Every row the preset moves has a page box (`every_launcher_row_has_a_play_page_twin`). |
 | settings panel | Native only by choice: `F12` or `Select` + `Start` is a settings page inside the frame because a window has nowhere else; the page's panel sits beside the canvas. |
 | debug spawn and entry keys | Native only: `F5`, `F`, `G`, `H`, `J` hand-spawn effects, `N` opens the naming prompt, and `K`, `U`, `L`, `O`, `M`, `B` enter a minigame. The page's minigame picker (`play_mg_debug_warp`) and its debug exports are its entries; no retail flow needs a key. |
 | offline Multiplayer screen | Native only: `Tab` out of a room opens a host-or-join screen in the frame, where `play-window` has no other form. The page's Online panel is the same step, and out of a room `Tab` stays the browser's focus key. |
