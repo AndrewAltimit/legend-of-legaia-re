@@ -78,6 +78,19 @@ impl RetailBattle {
     ///   walker lands in one step at step `3` and trails at `2`. The module
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
+    /// Whether the capture stands inside the ambush round the entry rolled: a
+    /// monster on its action with the advantage latched and every party key
+    /// still the zero the round's seeder gave the disadvantaged side. The
+    /// action is then the fight's first, and no prompt comes ahead of it
+    /// (`battle_deene_lapis_lapis_wave_mid_cast`: monster `0xA7` always ambushes,
+    /// so the party's bars read before Lapis Wave has zeroed them).
+    pub fn in_formation_round(&self) -> bool {
+        self.formation_latch == 1
+            && matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            && (0..usize::from(self.party_count.clamp(1, 3)))
+                .all(|s| self.init_keys.get(s).copied().flatten() == Some(0))
+    }
+
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
         let default = legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
         // A capture on the capture band's module tick whose whole history ran the

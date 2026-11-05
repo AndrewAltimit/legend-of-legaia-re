@@ -514,7 +514,10 @@ pub fn run_engine_battle(
             let reached = seeded
                 && match seed {
                     Some(_) => w.battle.inflight_seed.is_none(),
-                    None => w.battle.flow != BattleFlowState::Idle,
+                    // A capture inside the ambush round the entry rolled
+                    // (`RetailBattle::in_formation_round`) has no prompt ahead
+                    // of it: the seat's action is the fight's first.
+                    None => w.battle.flow != BattleFlowState::Idle || battle.in_formation_round(),
                 };
             if reached {
                 prompt_tick = Some(t);

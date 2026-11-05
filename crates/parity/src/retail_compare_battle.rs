@@ -712,6 +712,9 @@ pub struct RetailBattle {
     /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), so a living combatant reading
     /// `0` has already acted in the capture's round.
     pub init_keys: Vec<Option<u16>>,
+    /// `ctx[+0x291]`: the formation advantage state `0x00` latched off `+0x290`
+    /// for the round it rolled on.
+    pub formation_latch: u8,
     /// `ctx[+0x274]` as read: the actor the initiative pick `FUN_801DABA4`
     /// handed the turn to. Inside a party member's attack band it names that
     /// member, except on a counterattack, where it still names the monster

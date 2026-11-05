@@ -1285,6 +1285,7 @@ impl RetailBattle {
                 })
                 .collect(),
             turn_owner: game_anchors::u8_at(ram, ctx + NEXT_ACTOR),
+            formation_latch: game_anchors::u8_at(ram, ctx + 0x291),
             init_keys: (0..8u32)
                 .map(|slot| {
                     let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
