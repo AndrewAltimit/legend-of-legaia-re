@@ -37,7 +37,7 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
     let mut surface = FishingSurface::default();
     assert!(
         surface
-            .frame(&host.index, &host.world.minigames, true)
+            .frame(&host.index, &host.world.minigames, true, [0; 3])
             .is_some(),
         "the pond decodes"
     );
@@ -90,7 +90,8 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
             .frame(
                 &host.index,
                 &host.world.minigames,
-                host.world.mode == SceneMode::Fishing
+                host.world.mode == SceneMode::Fishing,
+                [0; 3],
             )
             .is_none()
     );
@@ -177,7 +178,7 @@ fn the_pond_water_heaves_on_the_swell() {
         let (want, _) = water_swell(swell_sine_table(), (tick - 1) * 0x10, 1);
         assert_eq!(&ladder[..4], &want.rungs, "tick {tick}");
         let scene = surface
-            .frame(&host.index, &host.world.minigames, true)
+            .frame(&host.index, &host.world.minigames, true, [0; 3])
             .expect("the pond decodes");
         let (base, n) = scene.ground_span;
         assert!(n > 0, "the pond has a walk ground");

@@ -816,16 +816,24 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 /// shell no retail frame of the cast holds).
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 => true,
+        935 | 939 => true,
         964 => true,
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
+        949 => true,
+        945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
+        943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
+        956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
         951 => body == Some(super::SCYTHE_WIND_BODY),
+        952 => body == Some(super::BLOODY_HORNS_BODY),
         955 => matches!(
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
         ),
-        957 => body == Some(super::THUNDER_STORM_BODY),
+        957 => matches!(
+            body,
+            Some(super::THUNDER_STORM_BODY | super::DEATH_GAME_BODY)
+        ),
         941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
         944 => body == Some(super::CURSE_ALL_BODY),
         _ => false,
@@ -839,17 +847,23 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
 /// Breath and PROT 0962's other bodies.
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 => true,
+        935 | 939 => true,
         964 => true,
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
-        946..=948 => true,
+        946..=949 => true,
+        945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
+        943 => body == Some(crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK),
+        956 => body == Some(crate::cast_arm_ticks::WATER_HAZARD_TICK),
         955 => matches!(
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
         ),
-        957 => body == Some(super::THUNDER_STORM_BODY),
+        957 => matches!(
+            body,
+            Some(super::THUNDER_STORM_BODY | super::DEATH_GAME_BODY)
+        ),
         941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         942 => body == Some(super::POWER_UP_BODY),
@@ -871,6 +885,37 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         ),
         966 => true,
         _ => false,
+    }
+}
+
+/// The records a capture-class arm halts by handle (`ori 0x8` into each one's
+/// flag word), leaving the rest of the pool running: PROT 0949's arm 2 walks
+/// the handles at `0x801F8214..=0x801F8240` (`0x801F7024..0x801F713C`). The
+/// first record (`0x801F76BC`, the backdrop) has no handle there, and
+/// `0x801F7720`'s handle at `0x801F8210` is skipped.
+pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
+    match (prot_entry, phase) {
+        (949, 2) => &super::water_crystals::ARM2_HALTS,
+        _ => &[],
+    }
+}
+
+/// The records a capture-class arm seats on every party seat's `+0x34` / `+0x44`
+/// on its pass: PROT 0943's arm 2 (`0x801F6C9C..0x801F6D30`).
+pub fn capture_arm_party_records(prot_entry: u32, phase: u8, action: u8) -> &'static [u32] {
+    match (prot_entry, phase) {
+        (943, 2) if action == 0xB5 => &super::LAPIS_WAVE_SEAT_RECORDS,
+        _ => &[],
+    }
+}
+
+/// The record a capture-class arm carries onto the victim's ground point
+/// (`+0x14` / `+0x18` from its `+0x34` / `+0x38`): PROT 0949's arm 2 moves
+/// `0x801F7720` through the handle at `0x801F8210` (`0x801F6F48..0x801F6F64`).
+pub fn capture_arm_moves_to_victim(prot_entry: u32, phase: u8) -> Option<u32> {
+    match (prot_entry, phase) {
+        (949, 2) => Some(super::water_crystals::ORB_RECORD),
+        _ => None,
     }
 }
 
@@ -899,6 +944,8 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (965, 3 | 8 | 9 | 0x0B)
             | (961, 1 | 3 | 5)
             | (957, 3 | 6)
+            | (943, 2)
+            | (966, 10 | 26 | 27)
     )
 }
 
@@ -923,6 +970,12 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0943's per-arm tables are Lapis Wave's.
+        (943, _) if action != 0xB5 => &[],
+        // PROT 0956's per-arm tables are Water Hazard's.
+        (956, _) if action != 0x71 => &[],
+        // PROT 0945's per-arm tables are Water Column's.
+        (945, _) if action != 0x54 => &[],
         // PROT 0944's per-arm tables are Guilty Cross's; Curse All (`0x53`)
         // seats its two records through its director.
         (944, _) if action == 0x53 => &[],
@@ -963,6 +1016,14 @@ pub fn capture_arm_spawns_in(
 /// alone makes is listed ([`capture_arm_spawns_for`] filters it).
 pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
+        (943, 0) => &super::lapis_wave::ARM0_SPAWNS,
+        (943, 2) => &super::lapis_wave::ARM2_SPAWNS,
+        (956, 0) => &super::water_hazard::ARM0_SPAWNS,
+        (956, 2) => &super::water_hazard::ARM2_SPAWNS,
+        (945, 1) => &super::water_column::ARM1_SPAWNS,
+        (945, 4) => &super::water_column::ARM4_SPAWNS,
+        (949, 0) => &super::water_crystals::ARM0_SPAWNS,
+        (949, 2) => &super::water_crystals::ARM2_SPAWNS,
         (940, 1) => &E940_1,
         (940, 3) => &E940_3,
         (944, 1) => &E944_1,

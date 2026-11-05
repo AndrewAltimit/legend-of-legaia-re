@@ -501,20 +501,24 @@ impl World {
             // and the HUD handle list is derived per frame, so its hard reset
             // has nothing to clear - see `legaia_engine_battle::battle_stage_module`.
             StageEffect::Spawn { record } => self.seat_stage_module_spawn(record, seat_idx),
-            StageEffect::KillSpawns => {
-                if let Some(scene) = self.casting.stage_fx.as_mut() {
-                    for p in scene
-                        .parts
-                        .iter_mut()
-                        .filter(|p| p.tag.is_some_and(is_arrival_spawn))
-                    {
-                        p.finished = true;
-                    }
-                }
-            }
+            StageEffect::KillSpawns => self.retire_arrival_spawns(),
             StageEffect::HudReset => {}
             // Consumed by the arrival's own loop above.
             StageEffect::HandBack => {}
+        }
+    }
+
+    /// Retire the PROT 0968 arrival's in-image spawns: the arrival's own kill
+    /// arm, and the capture seed of a frame whose RAM holds none of them.
+    pub fn retire_arrival_spawns(&mut self) {
+        if let Some(scene) = self.casting.stage_fx.as_mut() {
+            for p in scene
+                .parts
+                .iter_mut()
+                .filter(|p| p.tag.is_some_and(is_arrival_spawn))
+            {
+                p.finished = true;
+            }
         }
     }
 

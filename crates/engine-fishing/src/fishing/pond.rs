@@ -47,6 +47,10 @@ impl PondSession {
             events: Vec::new(),
             venue_map: None,
             lure_actor: None,
+            lure_facing: 0,
+            reel_held_for: [0; 2],
+            reel_repeat_in: 8,
+            last_swim: (0, 0),
             lure_probe: Default::default(),
             hub: None,
             rod_actor: None,
@@ -181,6 +185,46 @@ impl PondSession {
         crate::fishing_actors::rod_faces(mesh, self.rod.clamp(0, 2) as usize, pose)
     }
 
+    /// This frame's reel word for the pull: the press edge, plus the repeat
+    /// pulse on a button held 32 vsyncs.
+    fn reel_edge(&mut self, input: PondInput, fs: i32) -> u32 {
+        let mut pulse = 0;
+        self.reel_repeat_in -= fs;
+        let fire = self.reel_repeat_in < 0;
+        if fire {
+            self.reel_repeat_in += 8;
+        }
+        for (i, bit) in [REEL_A_PAD_BIT, REEL_B_PAD_BIT].into_iter().enumerate() {
+            self.reel_held_for[i] = if input.reel_mask & bit != 0 {
+                self.reel_held_for[i] + fs
+            } else {
+                0
+            };
+            if fire && self.reel_held_for[i] >= 32 {
+                pulse |= bit;
+            }
+        }
+        input.reel_edge | pulse
+    }
+
+    /// The in-water head of the lure tick: the move off last frame's tracked
+    /// point.
+    fn step_lure(&mut self, swim: Option<(i32, i32)>, fs: i32) {
+        let (facing, record) = (self.lure_facing, self.line_record);
+        if let Some(lure) = self.lure_actor.as_mut() {
+            lure.water_step(lure.heading(), facing, record, swim, fs);
+        }
+    }
+
+    /// The in-water tail of the lure tick: the sway off the held pad and the
+    /// record off the new position.
+    fn end_lure_frame(&mut self, input: PondInput, fs: i32) {
+        if let Some(lure) = self.lure_actor.as_mut() {
+            lure.sway_step(input.reel_mask, fs);
+            self.line_record = lure.tail();
+        }
+    }
+
     /// The lure tick's rod writes for one in-water frame, off the held pad.
     pub(super) fn drive_rod(&mut self, input: PondInput, hooked: bool, fs: i32) {
         let Some(rod) = self.rod_actor.as_mut() else {
@@ -260,17 +304,9 @@ impl PondSession {
         self.line
     }
 
-    /// Line-record seed for a locked cast power: the deep-cast readout is
-    /// ~1000 (`denom` context in the doc), so full power maps to
-    /// `300 + 1000` and the floor stays above the `500` band-check gate.
-    /// (Approximation - the retail line-projection vector math is unpinned.)
-    pub(super) fn record_for_power(power: i32) -> i32 {
-        RECORD_STRIKE_BASE + 260 + power * 1000 / CAST_POWER_MAX
-    }
-
     /// Advance one frame. `frame_step` is the retail `DAT_1f800393` (1 at
-    /// 60 fps); `cast_step` is the casting-power meter step per frame (the
-    /// native driver uses `0x80`).
+    /// 60 fps); `cast_step` is the casting-power meter step per frame-step
+    /// ([`CAST_POWER_STEP`]).
     pub fn tick(&mut self, input: PondInput, frame_step: i32, cast_step: i32) {
         // The hub menu owns the frame while it is up: retail's states
         // `0x64..=0x78` run instead of the pond's (`crate::fishing_hub`).
@@ -278,6 +314,7 @@ impl PondSession {
             return;
         }
         let fs = frame_step.max(1);
+        let reel_edge = self.reel_edge(input, fs);
         // The rod actor runs ahead of the lure tick in the actor pool, so it
         // poses off the rod globals the lure tick wrote last frame.
         self.line = None;
@@ -307,7 +344,14 @@ impl PondSession {
                 self.cast.advance(cast_step * fs);
                 if input.cast_edge {
                     let power = self.cast.lock();
-                    self.line_record = Self::record_for_power(power);
+                    // The release spawns the lure (`0x801CFC88..0x801CFD14`).
+                    let (x, y, z, facing) = self.venue_map.as_ref().map_or((0, 0, 0, 0), |v| {
+                        (v.anchor_x, v.anchor_y, v.anchor_z, v.facing)
+                    });
+                    self.lure_actor =
+                        crate::fishing_actors::LureActor::cast(x, y, z, facing, power, fs);
+                    self.lure_facing = facing;
+                    self.line_record = self.lure_actor.as_mut().map_or(0, |l| l.tail());
                     // The cast lock spawns the rod actor (`jal FUN_80020DE0`
                     // at `0x801CFC48`) and seeds its bend.
                     self.rod_actor = Some(crate::fishing_actors::RodActor::cast());
@@ -318,29 +362,35 @@ impl PondSession {
                 }
             }
             PondPhase::Flight => {
-                self.timer += fs;
-                if self.timer >= FLIGHT_FRAMES {
+                let landed = self
+                    .lure_actor
+                    .as_mut()
+                    .is_none_or(|l| l.flight_step(self.lure_facing, fs));
+                self.line_record = self.lure_actor.as_mut().map_or(0, |l| l.tail());
+                if landed {
                     // The lure lands: the persistent cast counter increments
                     // here (the same event that advances the retail SM to
                     // state 0x19).
                     self.casts += 1;
                     self.band = BandCheck::default();
                     self.cadence.reset();
-                    self.lure_actor = self.venue_map.as_ref().and_then(|v| {
-                        crate::fishing_actors::LureActor::cast(v.anchor_x, v.anchor_z, v.facing, fs)
-                    });
                     self.lure_probe = Default::default();
                     self.phase = PondPhase::Waiting;
                 }
             }
             PondPhase::Waiting => {
                 self.drive_rod(input, false, fs);
+                self.step_lure(None, fs);
                 let button = match ReelInput::from_pad_mask(input.reel_mask) {
                     ReelInput::ReelA => 1,
                     ReelInput::ReelB => 2,
                     ReelInput::Idle => 0,
                 };
-                let matched = self.cadence.feed(button, fs);
+                let matched = self
+                    .band
+                    .band_due(self.line_record, fs)
+                    .then(|| self.cadence.feed(button, fs))
+                    .flatten();
                 if matched.is_some() {
                     self.events.push(PondEvent::Splash);
                 }
@@ -359,6 +409,9 @@ impl PondSession {
                     }
                     _ => Default::default(),
                 };
+                if let Some(lure) = self.lure_actor.as_mut() {
+                    lure.pull_step(reel_edge, fs);
+                }
                 let struck = self.band.tick(
                     &mut self.rng,
                     matched,
@@ -384,6 +437,8 @@ impl PondSession {
                     if let Some(id) = spawn_species(&self.spawn, self.lure, band) {
                         self.fight_species = Some(id);
                         self.fish = FishAi::hooked();
+                        self.fish.facing = self.lure_facing;
+                        self.last_swim = (0, 0);
                         self.gauge = TensionGauge::new(self.rod);
                         // The hook arm seeds the fight's depth
                         // (`0x801D37A0..0x801D37B0`).
@@ -407,18 +462,14 @@ impl PondSession {
                         self.phase = PondPhase::Hooked;
                     }
                 }
-                // Reeling the empty line back in shortens it; fully reeled in
-                // returns to the idle shore (an engine convenience - retail
-                // parks in the cast loop until the leave confirm).
-                if reel_held {
-                    self.line_record -= 4 * fs;
-                    if self.line_record <= RECORD_STRIKE_BASE {
-                        self.line_record = 0;
-                        self.lure_actor = None;
-                        self.rod_actor = None;
-                        self.events.push(PondEvent::Recast);
-                        self.phase = PondPhase::Idle;
-                    }
+                self.end_lure_frame(input, fs);
+                // An empty line reeled in (`record < 0x136`, `0x801D3C68`).
+                if self.phase == PondPhase::Waiting && self.line_record < LAND_RECORD {
+                    self.line_record = 0;
+                    self.lure_actor = None;
+                    self.rod_actor = None;
+                    self.events.push(PondEvent::Recast);
+                    self.phase = PondPhase::Idle;
                 }
             }
             PondPhase::Hooked => {
@@ -431,7 +482,10 @@ impl PondSession {
                     return;
                 };
                 self.drive_rod(input, true, fs);
-                let reel = ReelInput::from_pad_mask(input.reel_mask);
+                self.step_lure(Some(self.last_swim), fs);
+                if let Some(lure) = self.lure_actor.as_mut() {
+                    lure.pull_step(reel_edge, fs);
+                }
                 // `FUN_801D4004`: the pull off the hook's bias, the
                 // behaviour arm, the line depth and the reel load.
                 let frame = self.fish.tick(
@@ -445,21 +499,12 @@ impl PondSession {
                 );
                 // Tension: the reel arms over that load.
                 self.gauge.apply_load(input.reel_mask, frame.load, fs);
-                // The fish's swim offset (24.8, its facing taken as pointing
-                // at the rod) moves the presentation layer's lateral and, on
-                // a slack reel, pays line back out. Retail integrates it
-                // into the fish's position and measures the record off that
-                // (`FUN_801D26CC`, `FUN_801D765C` at `0x801D3A20`); the
-                // projection and the reel-in rates are engine-side glue (the
-                // doc's Open list). The lure tick halves the offset ahead of
-                // the position (`0x801D2D08..0x801D2D18`).
-                let (side, along) = (frame.swim.0 / 2, frame.swim.1 / 2);
-                self.lateral = (self.lateral + (side >> 8)).clamp(-0x400, 0x400);
-                match reel {
-                    ReelInput::ReelA => self.line_record -= 3 * fs,
-                    ReelInput::ReelB => self.line_record -= 2 * fs,
-                    ReelInput::Idle => self.line_record += (-along).max(0) >> 8,
-                }
+                // The lure moved on last frame's swim, ahead of this frame's
+                // fish tick (`0x801D2D08..0x801D2DC8`, `jal 0x801D4004` at
+                // `0x801D3968`).
+                self.last_swim = frame.swim;
+                self.lateral = (self.lateral + ((frame.swim.0 / 2) >> 8)).clamp(-0x400, 0x400);
+                self.end_lure_frame(input, fs);
                 // The lure tick's tail measures the record, then a fish run
                 // far out strains the line (`record >= 0x899`:
                 // `tension += step * 300`, `0x801D3B34..0x801D3B8C`) before

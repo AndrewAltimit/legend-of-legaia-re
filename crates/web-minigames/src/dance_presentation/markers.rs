@@ -46,11 +46,28 @@ impl DanceMarkers {
 
     /// This frame's positions, with the non-current spans collapsed.
     fn live_positions(&mut self) -> &[f32] {
+        self.live_positions_for(|_| None)
+    }
+
+    /// [`Self::live_positions`] with each class's mesh named by `mesh_of`: a
+    /// running dance's own flipbook clock (`step_marker_mesh`), the one the
+    /// native window draws. A class it does not name, or a mesh the tile has
+    /// no span for, shows the tile's own.
+    fn live_positions_for(&mut self, mesh_of: impl Fn(usize) -> Option<i16>) -> &[f32] {
         self.live.clear();
         self.live.extend_from_slice(&self.positions);
         let tiles = self.floor.tiles();
         for &(tile, mesh, start, len) in &self.spans {
-            let current = tiles.get(tile).and_then(|t| t.actor.mesh);
+            let tile_state = tiles.get(tile);
+            let own = tile_state.and_then(|t| t.actor.mesh);
+            let named = tile_state
+                .and_then(|t| mesh_of(t.actor.class as usize))
+                .filter(|m| {
+                    self.spans
+                        .iter()
+                        .any(|&(t, candidate, ..)| t == tile && candidate == *m)
+                });
+            let current = named.or(own);
             if current == Some(mesh) || len == 0 {
                 continue;
             }
@@ -161,6 +178,24 @@ pub(super) fn bake_dance_markers(
     out
 }
 
+impl LegaiaMinigames {
+    /// This frame's marker positions, each class on the mesh `mesh_of` names:
+    /// the play page's form of [`Self::dance_marker_step`], whose game is the
+    /// world's. The minigames page holds no such game and steps its own.
+    pub fn dance_marker_positions_for(
+        &mut self,
+        mesh_of: impl Fn(usize) -> Option<i16>,
+    ) -> Vec<f32> {
+        let Some(b) = self.dance_bodies.as_mut() else {
+            return Vec::new();
+        };
+        if b.markers.is_empty() {
+            return Vec::new();
+        }
+        b.markers.live_positions_for(mesh_of).to_vec()
+    }
+}
+
 #[wasm_bindgen]
 impl LegaiaMinigames {
     /// Per-vertex `[r, g, b, textured_flag]` for the baked hall's hybrid
@@ -245,5 +280,48 @@ impl LegaiaMinigames {
             return Vec::new();
         }
         b.markers.live_positions().to_vec()
+    }
+}
+
+#[cfg(test)]
+mod marker_mesh_tests {
+    use super::*;
+    use legaia_engine_field::dance_marker::{MarkerActor, MarkerScript};
+    use legaia_engine_field::minigame_floor::{MarkerFloor, MarkerTile};
+
+    /// One tile of class `0` with a span per mesh `3` and `5`, one vertex each.
+    fn one_tile() -> DanceMarkers {
+        let tile = MarkerTile {
+            cell: (0, 0),
+            pos: [0; 3],
+            rot: [0; 3],
+            actor: MarkerActor::default(),
+        };
+        DanceMarkers {
+            floor: MarkerFloor::from_tiles(vec![tile], MarkerScript::default()),
+            positions: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0],
+            spans: vec![(0, 3, 0, 2), (0, 5, 2, 1)],
+            ..Default::default()
+        }
+    }
+
+    /// The running dance's clock names the mesh; a span off it collapses onto
+    /// its own first point, and the span it names keeps its real corners.
+    #[test]
+    fn the_named_mesh_is_the_one_span_left_standing() {
+        let mut m = one_tile();
+        let live = m.live_positions_for(|_| Some(3)).to_vec();
+        assert_eq!(live, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let live = m.live_positions_for(|_| Some(5)).to_vec();
+        assert_eq!(live, [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 7.0, 8.0, 9.0]);
+    }
+
+    /// A mesh the tile has no span for names nothing: the tile falls back on
+    /// its own staged mesh, here none, rather than drawing a stale one.
+    #[test]
+    fn a_mesh_with_no_span_falls_back_on_the_tile() {
+        let mut m = one_tile();
+        let live = m.live_positions_for(|_| Some(9)).to_vec();
+        assert_eq!(live, [1.0, 2.0, 3.0, 1.0, 2.0, 3.0, 7.0, 8.0, 9.0]);
     }
 }

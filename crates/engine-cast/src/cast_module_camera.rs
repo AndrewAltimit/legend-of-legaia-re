@@ -93,6 +93,9 @@ pub struct ModuleCamSeats {
     /// The caster's queued action id `+0x1DF` - which choreography a
     /// two-spell module runs (PROT 0946's Call Wave / Big Wave).
     pub action: u8,
+    /// The victim's light flinch slot `+0x1EF`, which an arm can stage on it
+    /// (PROT 0952 `0x5C`'s arm 3).
+    pub victim_flinch: u8,
     /// `ctx[+0x6D0]`, the framing depth a capture shot can scale.
     pub depth_raw: i32,
     /// The caster's battle-scoped latch word `0x801C8FE0 + (ctx[+0x13] + 1)
@@ -111,13 +114,19 @@ pub struct ModuleCamSeats {
 pub struct ModuleCamState {
     /// The module's countdown word.
     pub countdown: ModuleCountdown,
+    /// PROT 0952 `0x5C`'s saved seats `[caster x, caster z, victim x, victim z]`
+    /// (`0x801F7BB8`, `0x801F7BB0`).
+    pub horns_pin: [i16; 4],
+    /// PROT 0952 `0x5C`'s victim height (`0x801F7BB2`).
+    pub horns_lift: i16,
     /// A module's own moving point `(x, z)` (PROT 0947's blade, `0x801F7B48`).
     pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
-    /// PROT 0931's arm 26 TR y: `-4 * +0x3E` averaged over the living monsters
-    /// (`0x801F80C8..0x801F812C`), the row's middle. The host keeps it current.
-    pub jedo_row_tr_y: i16,
+    /// The TR y of a cut on the row's middle: `-4 * +0x3E` averaged over the
+    /// living monsters (PROT 0931's arm 26, `0x801F80C8..0x801F812C`; PROT 0933's
+    /// arm `0xC`, `0x801F7C70..0x801F7DA4`). The host keeps it current.
+    pub row_tr_y: i16,
     /// The creature's live seat, as the host last moved it (its walk-in).
     /// Fed in by the host each tick; `None` before it is seated.
     pub creature_live: Option<ModuleSeat>,
@@ -224,6 +233,8 @@ pub struct ModuleCamState {
     /// (`0` kills) picks between arm `0x11`'s instant kill and arm `0x12`'s
     /// damage. `None` until the host has drawn it.
     pub kill: Option<bool>,
+    /// PROT 0944's arm-0 roll, drawn with its line and landing on arm 3.
+    pub latched_hit: Option<i32>,
     /// The spread the module's inline light bands draw at on this pass
     /// (PROT 0916's arms `0x11..=0x13`), `None` on a pass that draws none.
     /// The director rewrites it every pass.
@@ -239,6 +250,11 @@ pub struct ModuleCamState {
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
     pub victim_settled: bool,
+    /// The host's answer for the caster's own clip (`+0x1D9 == 0`, PROT 0957's
+    /// arm 12).
+    pub caster_settled: bool,
+    /// PROT 0957 `0x76`'s module words ([`DeathGame`]).
+    pub death_game: DeathGame,
     /// Every party seat's `+0x1D9` back on idle (a downed one on clip `8`),
     /// fed by the host for a capture director's row settle (PROT 0965's arm
     /// `0x0C`).
@@ -516,6 +532,11 @@ pub enum SpawnAnchor {
     /// 0x801F7980`) and stores `creature[+0x46] + 0x800` as the yaw
     /// (`0x801F7984..0x801F7998`).
     ShotPointFacing { y: i16, yaw: i16 },
+    /// A point at a literal `x` and `y` on the creature's live `z`: PROT 0917's
+    /// arm `0xB` stands its records on `z = -2 * word` (`0x801F7998..0x801F79B8`),
+    /// the word arm 5 took off the victim's height and arm 6 walked the creature
+    /// back by.
+    CreatureDepth { x: i16, y: i16 },
     /// A literal point, rotation and scale (`FUN_80050ED4`'s `a3`): a stager
     /// call that forwards its caller's `+0x72` (PROT 0911's arm `1`,
     /// `lh a3,0x72(v1)` at `0x801F8028`).
@@ -736,6 +757,7 @@ pub fn spawn_anchor_point_with(
                 [0, nova_column_yaw(index), 0],
             )
         }
+        SpawnAnchor::CreatureDepth { x, y } => ([x, y, seats.creature_body?.z], [0; 3]),
         SpawnAnchor::Creature => seat_at(creature?),
         SpawnAnchor::Victim => seat_at(victim?),
         SpawnAnchor::ShotFocus => {
@@ -814,8 +836,9 @@ pub fn spawn_anchor_point_with(
 
 /// The scale one spawn call seats its record at (`a3`, stored at `+0x72` by
 /// `FUN_80021B04` at `0x80021DAC`): `0x1000` at nearly every call; PROT
-/// 0911 arm 9 passes the healed group's extent (`lh a3,0x2C(sp)`, the TR z
-/// of the shot it armed), and a [`SpawnAnchor::LiteralScaled`] call its own.
+/// 0911 arm 9 and PROT 0919 arm 7 pass the healed group's extent
+/// (`lh a3,0x2C(sp)`, the TR z of the shot they armed, as the builder left it),
+/// and a [`SpawnAnchor::LiteralScaled`] call its own.
 pub fn spawn_anchor_scale(
     anchor: SpawnAnchor,
     shot: Option<ModuleShot>,
@@ -828,10 +851,12 @@ pub fn spawn_anchor_scale(
             let k = i32::from(cos).abs() + 0x800;
             ((k * i32::from(seats.depth)) >> 12) as u16
         }
+        // The tween builder rewrites the shot's stack TR z in place
+        // (`(z << 8) / 0xA0`, `FUN_801D829C`) before the call reads it back.
         SpawnAnchor::ShotPointFacing { .. } => shot
             .map(|s| s.tr[2])
             .filter(|&z| z > 0)
-            .map_or(0x1000, |z| z as u16),
+            .map_or(0x1000, |z| ((i32::from(z) << 8) / 0xA0) as u16),
         SpawnAnchor::LiteralScaled { scale, .. } => scale,
         SpawnAnchor::CreatureScaled { scale } => scale,
         SpawnAnchor::VictimBodyGround { scale } => scale,
@@ -966,6 +991,7 @@ pub(super) fn focus_on(seat: ModuleSeat) -> [i16; 3] {
 
 mod aluru;
 mod blade_breath;
+mod bloody_horns;
 mod body_kit;
 mod body_paced;
 pub mod capture;
@@ -975,6 +1001,7 @@ pub mod creature;
 mod creature_spawns;
 mod cross_beam;
 mod curse_all;
+mod death_game;
 mod doomsday;
 mod earthquake;
 mod element_change;
@@ -986,7 +1013,9 @@ mod jedo_iota_mule;
 mod juggernaut;
 mod kemaro;
 mod kiss_of_death;
+mod lapis_wave;
 mod megaton_press;
+mod melt_spray;
 mod meta_terra_ozma;
 mod nighto;
 mod nova;
@@ -994,6 +1023,7 @@ mod orb;
 mod plasma_strike;
 mod power_up;
 mod puera;
+mod rolling_flare;
 mod scythe_wind;
 mod seru;
 mod spoon;
@@ -1009,15 +1039,19 @@ mod ultimate_rave;
 mod v_windhash;
 mod viguro;
 mod void_accessories;
+mod water_column;
+mod water_crystals;
+mod water_hazard;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
     GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
     THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
     THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
-    capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
+    capture_approach_reach, capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
     gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
+pub use bloody_horns::{BLOODY_HORNS_BODY, BLOODY_HORNS_COUNTDOWN, bloody_horns_camera};
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
 pub use capture_spawns::*;
@@ -1025,6 +1059,11 @@ pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
+pub use death_game::{
+    CARD_BACK_RECORD, CARD_RECORDS, CARD_REVEAL_RECORDS, DEATH_GAME_BODY, DeathGame,
+    DeathGameOutcome, DeathGamePad, DeathGameSprite, PICK_RECORD, death_game_camera,
+    is_card_record,
+};
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,
@@ -1042,9 +1081,11 @@ pub use jedo_iota_mule::*;
 pub use juggernaut::*;
 pub use kemaro::*;
 pub use kiss_of_death::{KISS_OF_DEATH_BODY, KISS_OF_DEATH_COUNTDOWN, kiss_of_death_camera};
+pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{
     MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
 };
+pub use melt_spray::{MELT_SPRAY_BODY, melt_spray_camera};
 pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;
@@ -1055,10 +1096,11 @@ pub use plasma_strike::{
 };
 pub use power_up::{POWER_UP_BODY, POWER_UP_COUNTDOWN, power_up_camera};
 pub use puera::*;
+pub use rolling_flare::{ROLLING_FLARE_BODY, ROLLING_FLARE_WALK_REACH, rolling_flare_camera};
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
 pub use spoon::*;
-pub use spore_gas::spore_gas_camera;
+pub use spore_gas::{spore_gas_camera, spore_gas_hit_spawn};
 pub use steal::{STEAL_BODY, steal_camera};
 pub use stone_circle::{
     RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,
@@ -1074,6 +1116,9 @@ pub use ultimate_rave::*;
 pub use v_windhash::{V_WINDHASH_COUNTDOWN, v_windhash_camera};
 pub use viguro::*;
 pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories_camera};
+pub use water_column::{WATER_COLUMN_COUNTDOWN, water_column_camera};
+pub use water_crystals::{WATER_CRYSTALS_COUNTDOWN, water_crystals_camera};
+pub use water_hazard::{water_hazard_camera, water_hazard_ring};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {

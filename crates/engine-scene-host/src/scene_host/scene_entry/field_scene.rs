@@ -1081,6 +1081,11 @@ impl SceneHost {
         {
             eprintln!("[scene] global TMD-pool seed skipped: {err:#}");
         }
+        // The party pack load's epilogue (`FUN_8001E890`, `jal` at
+        // `0x8001EBB4`). A host that seats the roster after this call is met
+        // by the frame's own pass.
+        self.world.apply_party_mesh_swap();
+        self.world.request_party_mesh_swap();
         // Load the battle effect-model library from PROT 0871 (`etmd.dat`)
         // into `DAT_8007C018[3..=32]`. Retail pulls this at battle init; the
         // engine keeps it resident across the battle scene-mode overlay (like

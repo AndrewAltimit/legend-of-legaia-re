@@ -397,6 +397,27 @@ impl PlayWindowApp {
         {
             self.session.host.world.trigger_field_interact(0xFF, slot);
         }
+        if let Some((_, cast)) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_at)
+            .filter(|(t, _)| *t == self.tick_no)
+        {
+            let world = &mut self.session.host.world;
+            if let Some([caster, spell_id, target]) = cast {
+                world.battle.inflight_seed =
+                    Some(legaia_engine_battle_loop::battle_state::InflightCastSeed {
+                        caster,
+                        spell_id,
+                        target,
+                        ground: Default::default(),
+                        idle: Default::default(),
+                    });
+            }
+            if let Some(id) = world.first_rollable_formation_id() {
+                world.force_encounter(id);
+            }
+        }
         if let Some((t, idx)) = self.screenshot.as_ref().and_then(|sc| sc.shop_at)
             && t == self.tick_no
         {
@@ -539,7 +560,14 @@ impl PlayWindowApp {
         if let Some(gate) = self.screenshot.as_ref().and_then(|sc| sc.phase_gate) {
             gate.steer(&mut self.session.host.world);
         }
+        if std::env::var("LEGAIA_DIAG_CAST_SEQ_BEGIN").as_deref() == Ok("gate")
+            && self.capture_gate_met()
+            && let Some(sc) = self.screenshot.as_ref()
+        {
+            sc.battle_drive_released.set(true);
+        }
         match self.screenshot.as_ref() {
+            Some(sc) if sc.battle_drive_released.get() => field_pad,
             Some(sc) if let Some(drive) = sc.battle_drive => {
                 // The drive's own start and press clock, in the headless
                 // seed's step order (`DriveClock::pad`): an odd window tick

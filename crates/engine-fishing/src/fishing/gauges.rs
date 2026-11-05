@@ -43,9 +43,8 @@ impl ReelInput {
 
 /// The casting-power oscillator (`FUN_801cf3bc` state `0x14`): a value that
 /// bounces between [`CAST_POWER_MIN`] and [`CAST_POWER_MAX`] until the player
-/// locks it, setting the cast distance. The per-frame `step` magnitude is not
-/// byte-pinned in the dumps, so it is a caller parameter (the retail meter
-/// visibly sweeps the full range in well under a second).
+/// locks it, setting the cast distance. The step is [`CAST_POWER_STEP`] per
+/// frame-step (`dir << 5` times `DAT_1F800393`, `0x801CFB3C..0x801CFB5C`).
 #[derive(Debug, Clone, Copy)]
 pub struct CastPower {
     pub(super) power: i32,
@@ -61,10 +60,13 @@ impl Default for CastPower {
 }
 
 impl CastPower {
-    /// A fresh oscillator seeded at [`CAST_POWER_SEED`], sweeping upward.
+    /// A fresh oscillator on the wind-up's exit: state `0x13` zeroes the meter
+    /// as it enters state `0x14` (`0x801CFA60`). The direction word stands
+    /// across casts in retail and cannot matter here, since the first step from
+    /// zero lands on the floor either way.
     pub fn new() -> Self {
         Self {
-            power: CAST_POWER_SEED,
+            power: 0,
             dir: 1,
             locked: false,
         }
@@ -89,10 +91,10 @@ impl CastPower {
         }
         let step = step.max(1);
         let mut p = self.power + self.dir * step;
-        if p >= CAST_POWER_MAX {
+        if p > CAST_POWER_MAX {
             p = CAST_POWER_MAX;
             self.dir = -1;
-        } else if p <= CAST_POWER_MIN {
+        } else if p < CAST_POWER_MIN {
             p = CAST_POWER_MIN;
             self.dir = 1;
         }

@@ -183,6 +183,35 @@ pub(crate) fn side_panel_max(ctx: &egui::Context, min: f32) -> f32 {
     (ctx.content_rect().width() * 0.45).max(min)
 }
 
+/// The list row an arrow, Page, Home or End key moves to from `cur`, when the
+/// frame has such a key and it moves. A nothing-selected list starts at its
+/// top. Rows beyond `last` do not exist.
+pub(crate) fn list_step(ui: &egui::Ui, cur: Option<usize>, last: usize) -> Option<usize> {
+    let to = ui.input(|i| {
+        if i.key_pressed(egui::Key::ArrowDown) {
+            Some(cur.map_or(0, |c| (c + 1).min(last)))
+        } else if i.key_pressed(egui::Key::ArrowUp) {
+            Some(cur.map_or(0, |c| c.saturating_sub(1)))
+        } else if i.key_pressed(egui::Key::PageDown) {
+            Some(cur.map_or(0, |c| (c + 20).min(last)))
+        } else if i.key_pressed(egui::Key::PageUp) {
+            Some(cur.map_or(0, |c| c.saturating_sub(20)))
+        } else if i.key_pressed(egui::Key::Home) {
+            Some(0)
+        } else if i.key_pressed(egui::Key::End) {
+            Some(last)
+        } else {
+            None
+        }
+    });
+    to.filter(|k| Some(*k) != cur)
+}
+
+/// `n` of something, with the plural: *1 texture*, *2 textures*.
+fn count_noun(n: usize, noun: &str) -> String {
+    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
+}
+
 /// An export that takes long enough to freeze the window if it ran in the
 /// frame: it runs on its own thread, with a line up saying so.
 struct ExportJob {
@@ -281,6 +310,10 @@ pub struct App {
     game: Option<crate::launch::Game>,
     /// The banner a failed game put up and the report its button copies.
     error_report: Option<(String, String)>,
+    /// The failed game's log the error banner's *Show log* button opens.
+    error_log: Option<PathBuf>,
+    /// Each view's left panel width this run, by view key, for the next start.
+    side_widths: std::collections::BTreeMap<&'static str, f32>,
     /// The folder the last export or extraction wrote into, for the
     /// status line's *Show folder* button.
     last_written: Option<PathBuf>,
@@ -391,6 +424,8 @@ impl App {
                 .and_then(|exe| crate::launch::find_engine(&exe)),
             game: None,
             error_report: None,
+            error_log: None,
+            side_widths: Default::default(),
             last_written: None,
             status_seen: None,
             appearance_applied: false,
@@ -416,6 +451,12 @@ impl App {
         if app.auto.actor.is_some() {
             app.mode = Mode::Actors;
         }
+        app.actors.pick = app
+            .explorer
+            .settings
+            .actor
+            .as_deref()
+            .and_then(actors_ui::Pick::parse);
         if app.auto.media.is_some() {
             app.mode = Mode::Media;
         }
@@ -427,6 +468,18 @@ impl App {
             app.mode = Mode::Extract;
         }
         app
+    }
+
+    /// A view's left panel width: what it was when the app last closed, else
+    /// `default`. Only read when the panel first shows; egui holds it after.
+    fn side_width(&self, view: &str, default: f32) -> f32 {
+        self.explorer
+            .settings
+            .side_widths
+            .get(view)
+            .copied()
+            .filter(|w| w.is_finite() && *w > 0.0)
+            .unwrap_or(default)
     }
 
     fn open_path(&mut self, p: &Path) {
@@ -943,13 +996,23 @@ impl App {
                             .as_ref()
                             .filter(|(banner, _)| banner == e)
                             .map(|(_, report)| report.clone());
-                        let (label, hint) = if report.is_some() {
+                        let report_is_game = report.is_some();
+                        let (label, hint) = if report_is_game {
                             ("Copy report", "Copy a report of this failure, with the end of the log, for a bug report")
                         } else {
                             ("Copy", "Copy this message to the clipboard")
                         };
                         if ui.small_button(label).on_hover_text(hint).clicked() {
                             ui.ctx().copy_text(report.unwrap_or_else(|| e.clone()));
+                        }
+                        if report_is_game
+                            && let Some(log) = &self.error_log
+                            && ui
+                                .small_button("Show log")
+                                .on_hover_text(log.display().to_string())
+                                .clicked()
+                        {
+                            show = log.parent().map(Path::to_path_buf);
                         }
                         dismiss = ui.small_button("Dismiss").clicked();
                         // In a vertical child the wrapped lines count
@@ -1202,15 +1265,9 @@ impl App {
         }
         if let (Some(engine), Ok(bin)) = (self.engine.clone(), disc) {
             self.player.stop();
-            // The launch switches the game's own launcher keeps
-            // (`--psx-render`, `--retail`), so both starts look the same.
-            let extra = crate::launch::engine_launcher_settings()
-                .map(|f| crate::launch::launch_switches(&f))
-                .unwrap_or_default();
             match crate::launch::Game::start(
                 &engine,
                 &bin,
-                &extra,
                 crate::launch::engine_data_dir().as_deref(),
             ) {
                 Ok(g) => {
@@ -1263,6 +1320,7 @@ impl App {
                 if let Some(log) = &log {
                     msg.push_str(&format!("\nFull log: {}", log.display()));
                 }
+                self.error_log = log.clone();
                 self.error_report = Some((
                     msg.clone(),
                     game_exit::report_text(
@@ -1500,26 +1558,7 @@ impl App {
                 .selected
                 .and_then(|s| visible.iter().position(|&p| p == s));
             let last = visible.len() - 1;
-            let step = ui.input(|i| {
-                if i.key_pressed(egui::Key::ArrowDown) {
-                    Some(cur.map_or(0, |c| (c + 1).min(last)))
-                } else if i.key_pressed(egui::Key::ArrowUp) {
-                    Some(cur.map_or(0, |c| c.saturating_sub(1)))
-                } else if i.key_pressed(egui::Key::PageDown) {
-                    Some(cur.map_or(0, |c| (c + 20).min(last)))
-                } else if i.key_pressed(egui::Key::PageUp) {
-                    Some(cur.map_or(0, |c| c.saturating_sub(20)))
-                } else if i.key_pressed(egui::Key::Home) {
-                    Some(0)
-                } else if i.key_pressed(egui::Key::End) {
-                    Some(last)
-                } else {
-                    None
-                }
-            });
-            if let Some(k) = step
-                && Some(k) != cur
-            {
+            if let Some(k) = list_step(ui, cur, last) {
                 let pos = visible[k];
                 self.select(pos);
                 self.reveal = Some(pos);
@@ -1586,7 +1625,12 @@ impl App {
                     ui.heading(stem);
                 }
             }
-            ui.label(format!("{} - {}", a.class.name(), human_size(e.size_bytes)));
+            ui.label(format!(
+                "{} - {}",
+                crate::kind_of_class(a.class.name()),
+                human_size(e.size_bytes)
+            ))
+            .on_hover_text(format!("Category: {}", a.class.name()));
         });
         let count = |t: Tab| match t {
             Tab::Textures => Some(a.tims.len()),
@@ -1959,7 +2003,7 @@ impl App {
         // count and the orbit hint are drawn inside the view.
         ui.horizontal_wrapped(|ui| {
             egui::ComboBox::from_id_salt("tmd")
-                .selected_text(format!("TMD #{}", self.tmd_sel))
+                .selected_text(format!("Model #{}", self.tmd_sel))
                 .show_ui(ui, |ui| {
                     for (i, t) in a.tmds.iter().enumerate() {
                         ui.selectable_value(
@@ -1982,7 +2026,7 @@ impl App {
                     }
                 })
                 .response
-                .on_hover_text(format!("{} meshes in this entry", a.tmds.len()));
+                .on_hover_text(format!("{} models (TMD) in this entry", a.tmds.len()));
             if let Some(mv) = &mut self.model {
                 mv.view.controls(
                     ui,
@@ -2081,7 +2125,7 @@ impl App {
             ui.selectable_value(
                 &mut mv.source,
                 TexSource::Entry,
-                format!("this entry ({} TIM)", a.tims.len()),
+                format!("this entry ({})", count_noun(a.tims.len(), "texture")),
             )
             .on_hover_text("Only the TIMs stored inside the selected entry");
             ui.selectable_value(
@@ -2101,17 +2145,21 @@ impl App {
                     ui.add(
                         egui::Label::new(
                             RichText::new(format!(
-                                "{:?} load: {} TIMs ({} shared) + {} host layers",
-                                v.kind,
-                                v.tims,
-                                v.shared_tims,
-                                v.layers.len()
+                                "{} as the game loads them",
+                                count_noun(v.tims, "texture")
                             ))
                             .weak(),
                         )
                         .truncate(),
                     )
-                    .on_hover_text(v.layers.join("\n"));
+                    .on_hover_text(format!(
+                        "{:?} load: {} TIMs ({} shared) + {} host layers\n{}",
+                        v.kind,
+                        v.tims,
+                        v.shared_tims,
+                        v.layers.len(),
+                        v.layers.join("\n")
+                    ));
                 }
                 (None, Some(e)) if mv.source == TexSource::Scene => {
                     ui.spinner();
@@ -2637,9 +2685,12 @@ impl App {
                 s.iso_files,
             ),
             Some(Outcome::Cancelled) => "Cancelled".into(),
-            Some(Outcome::Failed(e)) => format!("Failed: {e}"),
+            // The reason is on the banner and in the log; a long path in the
+            // bar ran off its end.
+            Some(Outcome::Failed(_)) => "Failed: the reason is on the line above".into(),
         };
-        let frac = if matches!(outcome, Some(Outcome::Done(_))) {
+        let frac = if matches!(outcome, Some(Outcome::Done(_) | Outcome::Failed(_))) {
+            // A failed bar at its first percent is a red dot under the text.
             1.0
         } else {
             p.fraction(steps)
@@ -2842,12 +2893,15 @@ impl eframe::App for App {
             }
             Mode::Browse => {
                 let side_max = side_panel_max(ui, 300.0);
-                egui::Panel::left("browser")
+                let side = self.side_width("browse", 430.0).min(side_max);
+                let panel = egui::Panel::left("browser")
                     .resizable(true)
-                    .default_size(430.0f32.min(side_max))
+                    .default_size(side)
                     .min_size(300.0)
                     .max_size(side_max)
                     .show(ui, |ui| self.browser(ui));
+                self.side_widths
+                    .insert("browse", panel.response.rect.width());
                 egui::CentralPanel::default().show(ui, |ui| self.preview(ui));
             }
             Mode::Actors => self.actors_mode(ui),
@@ -2861,6 +2915,15 @@ impl eframe::App for App {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.player.stop();
         let s = &mut self.explorer.settings;
+        for (view, width) in &self.side_widths {
+            s.side_widths.insert((*view).to_string(), *width);
+        }
+        if let Some(pick) = self.actors.pick {
+            s.actor = Some(pick.key());
+        }
+        if let Some(sel) = self.media.selected() {
+            s.media = Some(sel.to_string());
+        }
         s.mode = Some(self.mode.key().to_string());
         s.tab = Some(self.tab.key().to_string());
         if let (Some(lib), Some(pos)) = (&self.explorer.library, self.explorer.selected) {
@@ -3166,7 +3229,7 @@ impl App {
                             RichText::new(
                                 "No game data ships with this program: it reads only the \
                                  disc image you choose, and writes only into folders you \
-                                 pick. F1 lists the keyboard shortcuts.",
+                                 pick. Press ? for the keyboard shortcuts.",
                             )
                             .weak(),
                         );

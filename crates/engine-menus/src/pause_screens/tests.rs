@@ -638,7 +638,11 @@ fn door_of_wind_opens_the_destination_list_not_a_confirm() {
         m.special_confirm.is_none(),
         "no Yes/No prompt on this route"
     );
-    assert!(m.info.is_none(), "the info window stays closed");
+    assert_eq!(
+        m.info.map(|i| i.name).as_deref(),
+        s.rows.get(s.list_cursor()).map(|r| r.name.as_str()),
+        "the info window keeps the staged item"
+    );
     assert_eq!(
         m.page_rows
             .iter()
@@ -1170,4 +1174,27 @@ fn use_route_prompts_read_the_overlay_pool_and_splice_the_item_name() {
     );
     assert!(p.lines(UseRoute::DoorOfWind, name).is_empty());
     assert!(!UseRoutePrompts::default().is_installed());
+}
+
+/// Past a use the apply screen stays up on the same row while the rebuilt row
+/// is still lit; a dimmed row, or a stack that has gone, hands back to the list.
+#[test]
+fn resume_use_keeps_the_target_screen_while_the_item_still_applies() {
+    let mut s = items_session(&[(0x77, 3), (0x78, 2)]);
+    s.resume_use(1, 0);
+    assert_eq!(s.focus, PauseItemsFocus::List);
+    assert_eq!(s.list_cursor(), 1);
+    assert!(s.target_select());
+
+    let mut dim = items_session(&[(0x77, 3), (0x78, 2)]);
+    dim.rows[1].use_bits = crate::menu_list_rows::ROW_DISABLED;
+    dim.resume_use(1, 0);
+    assert_eq!(dim.focus, PauseItemsFocus::List);
+    assert_eq!(dim.list_cursor(), 1);
+    assert!(!dim.target_select());
+
+    let mut gone = items_session(&[(0x77, 3)]);
+    gone.resume_use(5, 0);
+    assert_eq!(gone.focus, PauseItemsFocus::List);
+    assert!(!gone.target_select());
 }

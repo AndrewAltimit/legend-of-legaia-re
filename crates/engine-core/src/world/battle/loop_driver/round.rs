@@ -406,6 +406,21 @@ impl World {
         }
     }
 
+    /// Stand each listed battle slot on the forced cast's ground. A fight that
+    /// opens on an ambush reaches the forced cast in that round's own order,
+    /// with no prompt ahead of it, so the turn arming calls this as well.
+    pub(in crate::world) fn stand_on_forced_ground(&mut self) {
+        for (slot, at) in self.battle.forced_monster_ground.iter().enumerate() {
+            if let (Some([x, z]), Some(a)) = (*at, self.actors.get_mut(slot)) {
+                a.move_state.world_x = x;
+                a.move_state.world_z = z;
+                if a.battle.seat.is_some() {
+                    a.battle.seat = Some((x, z));
+                }
+            }
+        }
+    }
+
     /// Hand monster seat `seat` the round's first turn from the command
     /// prompt, closing the pad-owned surfaces as
     /// [`Self::dispatch_inflight_seed`] does; its pick is the
@@ -422,15 +437,7 @@ impl World {
         self.battle.round_flow.phase = RoundPhase::Execute;
         self.battle
             .set_battle_flow(legaia_engine_battle_menus::battle_flow::BattleFlowState::Idle);
-        for (slot, at) in self.battle.forced_monster_ground.iter().enumerate() {
-            if let (Some([x, z]), Some(a)) = (*at, self.actors.get_mut(slot)) {
-                a.move_state.world_x = x;
-                a.move_state.world_z = z;
-                if a.battle.seat.is_some() {
-                    a.battle.seat = Some((x, z));
-                }
-            }
-        }
+        self.stand_on_forced_ground();
         for (g, forced) in self
             .battle
             .guarding

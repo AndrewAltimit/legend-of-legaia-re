@@ -252,6 +252,15 @@ function glslFloat(x) {
  * representative w and a screen corner the w its depth was projected from,
  * so the bucket rule compares exact values. */
 const LOG_DEPTH_RANGE = 24.0;
+/* The screen primitives' nudge on the PSX native canvas (play-view-frame.js): a
+ * corner at the GPU's sample point sits exactly on a row's centre, and which row
+ * takes that tie is the window's fill rule. The canvas's drawing buffer runs
+ * bottom-up, so its rule hands a flat edge's tie to the row under the GPU's and
+ * every sprite draws a row low, its last texel row past the art. A 64th of a stage
+ * row up, coarser than the rasteriser's sub-pixel grid, gives the tie back. The 3D
+ * pass draws into a framebuffer object, which agrees with the window already. */
+const PSX_TIE_NDC_Y = 2 / 240 / 64;
+
 const LOG_DEPTH_GLSL = `
 float logDepthOfW(float w) {
   return clamp(log2(max(w, 1.0)) / ${glslFloat(LOG_DEPTH_RANGE)}, 0.0, 1.0);

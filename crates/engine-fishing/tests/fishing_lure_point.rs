@@ -120,7 +120,8 @@ fn the_cast_puts_the_lure_one_radius_from_the_anchor() {
     let (ax, az) = VENUE_ANCHOR;
     // Facing 0 is `+Z` in the quadrature pair's phase, so the whole offset
     // lands on one axis and the distance is exact rather than rounded twice.
-    let lure = LureActor::cast(ax, az, 0, 1).expect("the materialised tables cover every angle");
+    let lure =
+        LureActor::cast(ax, 0, az, 0, 0, 1).expect("the materialised tables cover every angle");
     let dx = (lure.x() as i32 - ax as i32).abs();
     let dz = (lure.z as i32 - az as i32).abs();
     let d2 = dx * dx + dz * dz;
@@ -149,7 +150,7 @@ fn a_water_tile_class_adds_its_credit_and_weight() {
         }
     }
     let (ax, az) = VENUE_ANCHOR;
-    let mut lure = LureActor::cast(ax, az, 0, 1).unwrap();
+    let mut lure = LureActor::cast(ax, 0, az, 0, 0, 1).unwrap();
     let block = map[0x10000..].to_vec();
     let table = RegionTable::parse(&block).expect("the synthetic block parses");
     let probe = lure.probe(&map, Some(&table), 0, 1);
@@ -162,7 +163,7 @@ fn a_water_tile_class_adds_its_credit_and_weight() {
 fn a_dry_tile_leaves_the_credit_and_weight_at_their_defaults() {
     let map = map_buffer();
     let (ax, az) = VENUE_ANCHOR;
-    let mut lure = LureActor::cast(ax, az, 0, 1).unwrap();
+    let mut lure = LureActor::cast(ax, 0, az, 0, 0, 1).unwrap();
     let probe = lure.probe(&map, None, 0, 1);
     assert!(!probe.water);
     assert_eq!(probe.countdown_bonus, 0);
@@ -174,7 +175,7 @@ fn a_dry_tile_leaves_the_credit_and_weight_at_their_defaults() {
 fn the_walk_grid_drift_takes_its_sign_from_the_cast_counter() {
     let mut map = map_buffer();
     let (ax, az) = VENUE_ANCHOR;
-    let seed = LureActor::cast(ax, az, 0, 1).unwrap();
+    let seed = LureActor::cast(ax, 0, az, 0, 0, 1).unwrap();
     // Fill the whole `+0x4000` grid's high nibble so the probe hits wherever
     // the cast put the lure.
     for b in map[0x4000..0x8000].iter_mut() {
@@ -198,10 +199,10 @@ fn the_walk_grid_drift_takes_its_sign_from_the_cast_counter() {
 }
 
 #[test]
-fn a_session_with_no_venue_still_casts_and_reports_no_lure() {
+fn a_session_with_no_venue_still_casts_and_probes_nothing() {
     let mut p = pond(None);
     cast(&mut p);
-    assert!(p.lure_actor().is_none());
+    assert!(p.lure_actor().is_some(), "the record measures its flight");
     assert_eq!(p.lure_probe().countdown_bonus, 0);
 }
 
@@ -221,7 +222,9 @@ fn a_session_with_a_venue_carries_a_probed_lure_while_the_line_is_out() {
         region_block,
         anchor_x,
         anchor_z,
-        facing: 0,
+        anchor_y: 0,
+        // Out over the map, as the venue's own lead faces.
+        facing: 0x800,
         rod_mesh: None,
     }));
     cast(&mut p);
@@ -233,6 +236,7 @@ fn a_session_with_a_venue_carries_a_probed_lure_while_the_line_is_out() {
     // probe that feeds it) runs.
     p.tick(
         PondInput {
+            reel_edge: 0,
             reel_mask: 0x40,
             ..Default::default()
         },

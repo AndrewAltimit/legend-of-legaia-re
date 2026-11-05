@@ -267,6 +267,7 @@ impl PlayWindowApp {
                     &venue,
                     &cast,
                     pack.as_deref().map(|p| p.as_slice()),
+                    self.session.host.world.party_field_equip(),
                 )
             })
             .map(std::sync::Arc::new);

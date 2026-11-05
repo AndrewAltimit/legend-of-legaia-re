@@ -1326,18 +1326,68 @@ vsyncs, the walker scales each increment by it, a tween armed over `a3` frames
 lands in `a3 / step` steps (`frames_to_steps`; `steps_of` for the glides
 authored in default-step steps), and the idle orbit turns `2 * step` a step.
 
-Play keeps the default outside a summon band. Inside one, each module arm runs
+Outside a summon band a frame runs the frame driver's own law over a measured cost
+([what the ring holds](#what-the-ring-holds)). Inside a band, each module arm runs
 on a step read off a retail recording of the cast
 (`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
 a band opens at `1` and its whole-screen arms read `4`. The table is a measurement
 standing in for the frame's cost, not game data and not a model of the cause, and
 the [next section](#what-the-arm-step-table-is) says how far it holds.
-The capture band is not in the table. A replay that knows retail's step installs it
+The capture band reads a second table of the same measurement
+(`capture_arm_frame_step`), keyed on the action id because one module's bodies differ,
+off harvest-state casts: its arms read `3` or `4` on the emulator's cost model where the
+default is `2`, and an arm that seats a record every pass seats half as many at `4`
+(V-Windhash's blade trail; [cast-module](cast-module.md#prot-0947-v-windhash-and-neo-windhash)).
+An action no recording reached keeps the default.
+A replay that knows retail's step installs it
 while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
 `0x33` / `0x34`, where each pass re-arms case `0x12`'s three-frame tween: at
 step `3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
+
+<a id="what-the-ring-holds"></a>
+
+**What the ring holds.** `FUN_800173BC` reads the hblanks since the last vsync
+(`VSync(1)`, stored at `gp+0x3A8`), waits on `DrawSync(0)`, and reads them again
+(`gp+0x3AC`, the value it returns): an entry is `max(cpu, gpu of the last table)`.
+Across the library's PCSX-Redux battle states the two words agree on `.997` of them,
+so on that machine the entry is the CPU's time alone and the GPU has no cost. Mednafen
+states do show a gap, up to `127` hblanks.
+
+The engine ports the law whole and feeds it a table
+(`frame_clock::FrameCostRing`, `measured_frame_cost`, `World::push_frame_cost`, raised
+by `WorldToggles::battle_party_cost_step`): the median entry per party size and action
+state, over the library's states and three whole fights recorded with
+[`autorun_fight_pace.lua`](../../scripts/pcsx-redux/autorun_fight_pace.lua). A pass under
+an arm table pushes the mid-rung of that arm's step, so what a whole-screen arm cost
+holds for the sixteen frames after it, as retail's does. The packet bytes the frame
+built (`_DAT_1F8003A0` less the buffer's base) explain no more of the cost than the
+party's size does (`R^2` `.46` against `.49`, the step read right on `.84` of the
+states either way; both together `.69`), and only the hosts hold the draw lists, so
+the table stands in for the frame's work. It measures one emulated machine: Mednafen
+reads a full party's action near `490` hblanks, under the `511` that makes step `3`,
+where PCSX-Redux reads `594`, and no real hardware has been measured.
+
+| Whole fight (PCSX-Redux) | Vsyncs | Passes | Vsyncs a pass | Retail mean step | Ring over the table | Fixed at `2` |
+|---|---:|---:|---:|---:|---:|---:|
+| Vahn alone, `rikuroa2` | 3836 | 1821 | 2.11 | 2.04 | 2.00 | 2.00 |
+| Vahn and Noa, `rikuroa2` | 4874 | 1892 | 2.58 | 2.43 | 2.32 | 2.00 |
+| Full party, `map02` | 3893 | 1084 | 3.59 | 2.89 | 2.83 | 2.00 |
+
+The gap between the vsyncs a pass and the mean step is frames that ran past their
+step, a fifth of a full party's fight: its timers still drain one step, so retail's
+fight runs that much longer on the wall than its game clock, and the engine, which
+does not overrun, plays it that much shorter. Run over retail's own sequence of states,
+the ring reads each frame's step right on `.97`, `.63` and `.80` of those passes. The
+table was read off these same fights, so that is a fit, and no held-out score. The
+Vahn and Noa fight stands on a state reached by a door-tile poke from
+`rikuroa_post_genesis_tree`, since the library holds no fight of two.
+
+A step is not cosmetic. Every tween closes `step / 12` of its gap a pass, so its curve
+per vsync differs, and the yaw counter gains `4` a pass at step `3` where step `2`
+gains `2`. A full party's films run at `2` stood `4` px of camera from retail, and on
+the ring they stand under `.5`.
 
 <a id="what-the-arm-step-table-is"></a>
 

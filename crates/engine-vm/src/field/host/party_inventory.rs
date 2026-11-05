@@ -116,13 +116,12 @@ pub trait FieldPartyInventoryHost {
     /// (An earlier note here guessed an inventory / menu re-raster.) PC += 2.
     fn rebuild_party_roster(&mut self) {}
 
-    /// Op 0x4C sub-3 sub-2 (clear the 512-byte party/inventory state region).
+    /// Op 0x4C sub-3 sub-2 - clear every story flag.
     ///
-    /// 2-byte instruction `[4C, 0x32]`. The original zeroes the 512 bytes at
-    /// `[0x80085718 .. 0x80085918)` - a region holding party / inventory state
-    /// adjacent to the fourth-flag-bank bitfield (`DAT_80085758`). Hosts model
-    /// their own party-state representation and call this hook to reset it.
-    /// PC += 2.
+    /// 2-byte instruction `[4C, 0x32]`. The arm zeroes the 512 bytes at
+    /// `[0x80085758 .. 0x80085958)` (`0x801E0F48..0x801E0F64`: base
+    /// `0x80084140 + 0x1618`, index `0x1FF` down to `0`), the whole flag bank
+    /// and nothing of the bag above it. PC += 2.
     fn clear_party_state_region(&mut self) {}
 
     /// Op 0x4C sub-2 - the camera-octant / pad-rotation setter.
@@ -138,18 +137,12 @@ pub trait FieldPartyInventoryHost {
         let _ = new_index;
     }
 
-    /// Op 0x4C sub-3 sub-F (per-character TMD-pose copy).
+    /// Op 0x4C sub-3 sub-F - the party's Ra-Seru mesh swap.
     ///
-    /// 2-byte instruction `[4C, 0x3F]`. Calls `FUN_8001ebec()`, which is a
-    /// 3-iteration per-party-slot copier (slots 0..2, character-record stride
-    /// `0x414`): for each slot, indexes the global TMD pool `DAT_8007C018`
-    /// through the slot-byte at `_DAT_8007B824 + i` (the slot-4 freeze flag
-    /// area), then writes 7 u32s of pose data (28 bytes) at TMD offset
-    /// `+0xC + bytes[i]*0x1C` from either `+0x124..0x140` or `+0x140..0x158`,
-    /// gated on a per-record flag byte at `record+0x75E`. (Earlier comments
-    /// labelled `FUN_8001ebec` the "retail dialog-box renderer" - that's
-    /// wrong; the disassembly shows the TMD-pose copier described above.
-    /// The real dialog SM is `FUN_80039b7c`, pager `FUN_801D84D0`.) PC += 2.
+    /// 2-byte instruction `[4C, 0x3F]`. Calls `FUN_8001EBEC`: for each of the
+    /// three party meshes, one 28-byte group descriptor takes the group-10 or
+    /// group-11 template by the character's Ra-Seru byte
+    /// (`docs/formats/character-mesh.md`). PC += 2.
     fn copy_party_tmd_poses(&mut self) {}
 
     /// Op 0x4C outer-nibble-8 sub-2 - full HP/MP restore of one party slot.

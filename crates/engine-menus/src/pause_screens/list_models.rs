@@ -104,9 +104,9 @@ pub struct ItemsInfoModel {
 /// so the page maths is the shared one. The rows are class `0x8000`, which
 /// the kernel draws as a bare name with no count column
 /// ([`ItemsScreenModel::show_counts`] is `false`) and no ink arm of its own,
-/// so they keep the white the command flow staged. The info window stays
-/// closed (`info: None`), which is retail - the staged-id gate
-/// `DAT_801E46B0` is not restaged by this submenu.
+/// so they keep the white the command flow staged. The info window keeps the
+/// staged item: `DAT_801E46B0` still names the row that opened this submenu
+/// (`menu_door_wind_map03_retail`).
 fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> ItemsScreenModel {
     let n = sp.landmarks.len();
     let cursor = sp.cursor.min(n.saturating_sub(1));
@@ -128,7 +128,13 @@ fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> Item
         command_cursor: s.command_cursor,
         list_cursor_on_page: (cursor - start) as u8,
         bag_empty: false,
-        info: None,
+        info: s.rows.get(s.list_cursor()).map(|r| ItemsInfoModel {
+            name: r.name.clone(),
+            count: r.count as u16,
+            desc: r.desc.clone(),
+            passive: r.passive.clone(),
+            is_point_card: false,
+        }),
         target_select: false,
         throw_confirm: None,
         special_confirm: None,
@@ -225,11 +231,13 @@ pub fn items_screen_model(s: &PauseItemsSession) -> ItemsScreenModel {
         show_counts: true,
         page: s.page(),
         pages: s.pages(),
-        // The hand sits inside the list for the Use list and both Throw
-        // Out phases (rows drop to the grey staging-0 ink in all three).
+        // The hand sits inside the list for the Use list, the Yes / No its
+        // special items open (`menu_door_light_kor_retail`) and both Throw
+        // Out phases (rows drop to the grey staging-0 ink in all of them).
         focus_list: matches!(
             s.focus,
             PauseItemsFocus::List
+                | PauseItemsFocus::SpecialRoute
                 | PauseItemsFocus::ThrowOutList
                 | PauseItemsFocus::ThrowOutConfirm
         ),
@@ -297,9 +305,10 @@ pub fn spell_icon(text: Option<&MenuTextTables>, id: u8) -> Option<u8> {
 ///
 /// Phase map: `CharSelect` = caster focus (the hovered caster's list
 /// shows white), `SpellSelect` = list focus (rows grey, hovered spell
-/// staged into the info window), `TargetSelect` = the host overlays the
-/// target picker, `GroupConfirm` = the no-pick group flow, which draws the
-/// list exactly as `SpellSelect` does and no picker at all. `text` fills
+/// staged into the info window), `TargetSelect` = the party target panel takes
+/// the list's place, `GroupConfirm` = the same panel with the hand on every row
+/// (`magic_group_kor`'s frame: window 14 up, `FUN_801D688C` over zero rows).
+/// `text` fills
 /// descriptions; names fall back
 /// catalog -> spell-name table -> `Spell XX`.
 pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -> MagicScreenModel {
@@ -314,13 +323,20 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         SpellMenuPhase::SpellSelect { caster, cursor } => {
             (*caster as usize, true, *cursor as usize, false)
         }
-        SpellMenuPhase::TargetSelect { caster, cursor, .. } => {
-            (*caster as usize, true, *cursor as usize, true)
+        // Both target flows swap the list for the party panel; the info window
+        // keeps the staged spell, so the model's list row is that spell's.
+        SpellMenuPhase::TargetSelect {
+            caster, spell_id, ..
+        } => {
+            let row = s
+                .party()
+                .get(*caster as usize)
+                .and_then(|c| c.spells.iter().position(|id| id == spell_id))
+                .unwrap_or(0);
+            (*caster as usize, true, row, true)
         }
-        // Retail's group sub-screen `0x10` draws no target rows: the spell
-        // list keeps the hand and the info window keeps the staged spell.
         SpellMenuPhase::GroupConfirm { caster, cursor, .. } => {
-            (*caster as usize, true, *cursor as usize, false)
+            (*caster as usize, true, *cursor as usize, true)
         }
         SpellMenuPhase::Done(_) => (0, false, 0, false),
     };

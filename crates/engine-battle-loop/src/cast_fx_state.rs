@@ -9,6 +9,10 @@ use crate::cast_band::{PendingCast, SummonStager};
 
 /// Summon / cast-module / move-FX scene-graph state: the active summon scene, the cast stager and phase bytes, and the move-effect spawns and trails.
 pub struct CastFxState {
+    /// A capture body's store into a monster caster's size class (record
+    /// `+0x1F`, `World::store_caster_reach`), the seat and the class. It lasts
+    /// the fight, as the record's byte does.
+    pub caster_size_store: Option<(u8, u8)>,
     /// Active Seru-magic summon scene-graph, while one is playing. Spawned off
     /// the battle-action cast band (or `World::spawn_summon` for the debug
     /// path); ticked each frame through the move VM by `World::tick_summon`
@@ -524,6 +528,7 @@ impl CastFxState {
             module_handover_waits: false,
             module_pass_repeat: false,
             caster_stages: None,
+            caster_size_store: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,
             active_action_fx: Vec::new(),

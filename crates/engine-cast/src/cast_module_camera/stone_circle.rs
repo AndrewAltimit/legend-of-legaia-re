@@ -73,6 +73,7 @@ pub fn stone_circle_camera(
             });
             if st.countdown.drain_above(0) {
                 arm.party_write = CaptureSeatWrite {
+                    colour: Some(0),
                     render_flag: Some(0xFF),
                     ..Default::default()
                 };
@@ -80,6 +81,7 @@ pub fn stone_circle_camera(
                 return arm;
             }
             arm.party_write = CaptureSeatWrite {
+                colour: Some(0x2008_0200),
                 render_flag: Some(0),
                 ..Default::default()
             };
@@ -126,9 +128,11 @@ mod tests {
         stone_circle_camera(&mut st, 0, ModuleCamSeats::default());
         let held = stone_circle_camera(&mut st, 1, ModuleCamSeats::default());
         assert_eq!(held.party_write.render_flag, Some(0xFF));
+        assert_eq!(held.party_write.colour, Some(0));
         st.countdown.0 = SPEED_SCALAR;
         let pass = stone_circle_camera(&mut st, 1, ModuleCamSeats::default());
         assert_eq!(pass.party_write.render_flag, Some(0));
+        assert_eq!(pass.party_write.colour, Some(0x2008_0200));
         assert_eq!(pass.shot.unwrap().tr, [0, 0, 0x2000]);
         assert!(pass.ring.is_some());
     }

@@ -101,6 +101,7 @@ fn command_cursor(phase: &CommandPhase) -> Option<u8> {
         CommandPhase::RoundPrompt { cursor }
         | CommandPhase::Menu { cursor }
         | CommandPhase::AttackMode { cursor }
+        | CommandPhase::RunConfirm { cursor }
         | CommandPhase::CommitConfirm { cursor } => Some(*cursor),
         _ => None,
     }
@@ -646,6 +647,11 @@ impl MuscleDomeSession {
             }),
             CommandPhase::CommitConfirm { cursor } => Some(BattleCommandChips {
                 chips: confirm_labels.iter().map(|l| chip(l, true)).collect(),
+                cursor: usize::from(cursor),
+                phase: CommandChipPhase::CommitConfirm,
+            }),
+            CommandPhase::RunConfirm { cursor } => Some(BattleCommandChips {
+                chips: vec![chip("Escape", true), chip(confirm_labels[1], true)],
                 cursor: usize::from(cursor),
                 phase: CommandChipPhase::CommitConfirm,
             }),

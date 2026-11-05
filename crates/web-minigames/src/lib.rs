@@ -82,6 +82,10 @@ use legaia_tim::Tim;
 /// The three side-games playable in the browser, plus the disc they read.
 #[wasm_bindgen]
 pub struct LegaiaMinigames {
+    /// The party's arm-swap bytes the dance's resident mesh is dressed with
+    /// (`World::party_field_equip`): zero on the standalone page, which has no
+    /// party, and the play page's own over a world.
+    party_equip: [u8; 3],
     /// Extracted `PROT.DAT` bytes (the games only ever need PROT entries).
     prot: Vec<u8>,
     /// PROT TOC.
@@ -346,6 +350,12 @@ fn jstr(s: &str) -> String {
 }
 
 impl LegaiaMinigames {
+    /// Dress the dance's resident mesh with the play page's party
+    /// (`World::party_field_equip`). Call before the dance decodes.
+    pub fn set_party_equip(&mut self, party_equip: [u8; 3]) {
+        self.party_equip = party_equip;
+    }
+
     /// The slot cabinet's decoded art, once a slot session has loaded it.
     /// The play page's slot overlay draws the cabinet chrome from it.
     pub fn slot_cabinet(&self) -> Option<&legaia_engine_ui::slot_cabinet::SlotCabinetAssets> {
@@ -407,6 +417,7 @@ impl LegaiaMinigames {
         #[cfg(target_arch = "wasm32")]
         console_error_panic_hook::set_once();
         Self {
+            party_equip: [0; 3],
             prot: Vec::new(),
             entries: Vec::new(),
             sim_stepper: legaia_engine_field::frame_step::SimStepper::new(),

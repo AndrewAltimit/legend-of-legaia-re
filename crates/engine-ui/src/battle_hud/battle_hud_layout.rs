@@ -69,6 +69,9 @@ pub(super) const BEGIN_TAB_INTERIOR_W: i32 = 36;
 /// The tab's word - the round prompt's own `Begin` chip label (record 1
 /// keeps the chip's string pointer).
 pub(super) const BEGIN_TAB_LABEL: &str = "Begin";
+/// The flee confirm's tab word (record 4, the same `0x8007B684` word the prompt's
+/// `Run` chip draws).
+pub(super) const RUN_TAB_LABEL: &str = "Run";
 /// Interior width of the third breadcrumb tab - records `0x0D` / `0x0E`
 /// carry `w = 0x30`. A wider engine-font label widens its own tab.
 pub(super) const THIRD_TAB_INTERIOR_W: i32 = 0x30;

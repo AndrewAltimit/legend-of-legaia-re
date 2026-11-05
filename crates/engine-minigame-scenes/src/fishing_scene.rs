@@ -59,6 +59,8 @@ struct Body {
 
 /// The decoded pond: the static map, the three bodies and the VRAM.
 pub struct FishingSceneAssets {
+    /// The venue whose placed box this bake holds.
+    venue: usize,
     env: VramMesh,
     env_flat: Vec<u8>,
     /// The walk ground baked into `env` and its first vertex there, kept for
@@ -144,7 +146,7 @@ fn frame0_offsets(
 impl FishingSceneAssets {
     /// Decode the pond off `index`. `None` when the venue scene does not
     /// resolve on this image.
-    pub fn load(index: &ProtIndex) -> Option<Self> {
+    pub fn load(index: &ProtIndex, venue: usize, party_equip: [u8; 3]) -> Option<Self> {
         let scene = Scene::load(index, FISHING_VENUE_SCENE).ok()?;
         let (res, _) = SceneResources::build_targeted_with_options(
             &scene,
@@ -157,7 +159,7 @@ impl FishingSceneAssets {
         )
         .ok()?;
         let anm = legaia_engine_scene::npc_catalog::scene_anm_bundle(&scene);
-        let (env, env_flat, ground) = bake_env(index, &scene, &res, anm.as_ref());
+        let (env, env_flat, ground) = bake_env(index, &scene, &res, anm.as_ref(), venue);
         if env.indices.is_empty() {
             return None;
         }
@@ -184,6 +186,18 @@ impl FishingSceneAssets {
                 character_pack::LOCOMOTION_IDLE_SLOT,
             );
             let mut tmd_bytes = cslot.tmd_bytes.clone();
+            // The loader's arm swap (`FUN_8001EBEC`): retail stages the pool
+            // through the same `FUN_8001E890` here as on a field entry.
+            if let Some(patch) = character_pack::equipment_swap::ACTIVE_PARTY_SLOTS
+                .iter()
+                .find(|p| p.slot == seat.model)
+            {
+                tmd_bytes = character_pack::equipment_swap::apply(
+                    &tmd_bytes,
+                    *patch,
+                    party_equip[usize::from(patch.slot)],
+                );
+            }
             if let Some(cap) = locomotion
                 .as_ref()
                 .and_then(|l| l.record_lenient(idle_rec).ok())
@@ -221,6 +235,7 @@ impl FishingSceneAssets {
             });
         }
         Some(Self {
+            venue,
             env,
             env_flat,
             ground,
@@ -245,6 +260,7 @@ fn bake_env(
     scene: &Scene,
     res: &SceneResources,
     anm: Option<&PlayerAnmBundle>,
+    venue: usize,
 ) -> (
     VramMesh,
     Vec<u8>,
@@ -254,11 +270,31 @@ fn bake_env(
     let env_tmds = field_env::env_pack_tmd_indices(scene, res);
     let floor_lut = scene.field_floor_height_lut(index).ok().flatten();
     let binds = scene.field_object_binds(index).ok().flatten();
-    let placement_records = scene
+    // The floor pass `FUN_801D6BBC` spawns a placed record only inside the box
+    // the setup state latches at the venue's anchor tile (`jal 0x800180EC` at
+    // `0x801CF65C`, the loops at `0x801D6C74..0x801D6ED8` read
+    // `0x1F800384..87`), so each venue sees its own half of the one map: the
+    // other's mountain backdrop stands past this box.
+    let (tile_x, tile_z) = crate::fishing_venue::PARTY_ANCHOR_TILE[venue.min(1)];
+    let block = scene.field_map_region_block(index).ok().flatten();
+    let table = block
+        .as_deref()
+        .and_then(legaia_engine_field::field_regions::RegionTable::parse);
+    let (_, attrs) = legaia_engine_field::field_regions::refresh_region_attributes(
+        table.as_ref(),
+        i32::from(tile_x),
+        i32::from(tile_z),
+        false,
+    );
+    let [x0, z0, x1, z1] = attrs.box_bytes;
+    let placement_records: Vec<_> = scene
         .field_object_placements(index)
         .ok()
         .flatten()
-        .unwrap_or_default();
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|p| (x0..x1).contains(&p.col) && (z0..z1).contains(&p.row))
+        .collect();
     let terrain_records: Vec<_> = scene
         .field_terrain_tiles(index)
         .ok()
@@ -645,6 +681,7 @@ impl FishingSurface {
         index: &ProtIndex,
         mg: &MinigameState,
         in_fishing: bool,
+        party_equip: [u8; 3],
     ) -> Option<&FishingScene> {
         let Some(session) = mg.fishing.as_ref().filter(|_| in_fishing) else {
             if self.scene.take().is_some() {
@@ -653,11 +690,17 @@ impl FishingSurface {
             self.cursors.clear();
             return None;
         };
+        let venue = session.venue;
+        if self.assets.as_ref().is_some_and(|a| a.venue != venue) {
+            self.assets = None;
+            self.scene = None;
+            self.cursors.clear();
+        }
         if self.assets.is_none() {
             if self.failed {
                 return None;
             }
-            match FishingSceneAssets::load(index) {
+            match FishingSceneAssets::load(index, venue, party_equip) {
                 Some(a) => {
                     self.assets = Some(Arc::new(a));
                     self.generation = self.generation.wrapping_add(1);
@@ -669,7 +712,6 @@ impl FishingSurface {
             }
         }
         let assets = self.assets.clone()?;
-        let venue = session.venue;
         let seats = party_placements(venue);
         // The lead's live pose: the venue's lead actor (its D-pad aim and its
         // floor solve), else his seat.

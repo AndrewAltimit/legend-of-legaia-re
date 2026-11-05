@@ -18,6 +18,25 @@ pub(crate) enum Pick {
     Monster(u16),
 }
 
+impl Pick {
+    /// The form the settings file and `LEGAIA_EXPLORER_ACTOR` use.
+    pub(crate) fn key(self) -> String {
+        match self {
+            Pick::Character(c) => format!("char:{c}"),
+            Pick::Monster(id) => format!("monster:{id}"),
+        }
+    }
+
+    /// The inverse of [`Self::key`].
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        match s.split_once(':')? {
+            ("monster", id) => id.trim().parse().ok().map(Pick::Monster),
+            ("char", slot) => slot.trim().parse().ok().map(Pick::Character),
+            _ => None,
+        }
+    }
+}
+
 pub(crate) struct ActorView {
     pick: Pick,
     equipped: [u8; 5],
@@ -36,7 +55,7 @@ pub(crate) struct ActorsState {
     filter: String,
     /// Chosen equipment per party member.
     equipment: [[u8; 5]; 4],
-    pick: Option<Pick>,
+    pub(crate) pick: Option<Pick>,
     view: Option<ActorView>,
     /// Scripted `@clip:frame` to apply once (automation).
     pending_pose: Option<(usize, usize)>,
@@ -57,11 +76,7 @@ impl App {
             Some((w, p)) => (w, Some(p)),
             None => (spec.as_str(), None),
         };
-        self.actors.pick = match who.split_once(':') {
-            Some(("monster", id)) => id.trim().parse().ok().map(Pick::Monster),
-            Some(("char", slot)) => slot.trim().parse().ok().map(Pick::Character),
-            _ => None,
-        };
+        self.actors.pick = Pick::parse(who);
         self.actors.pending_pose = pose.and_then(|p| {
             let (c, f) = p.split_once(':')?;
             Some((c.trim().parse().ok()?, f.trim().parse().ok()?))
@@ -76,6 +91,7 @@ impl App {
             return;
         };
         self.actors_auto();
+        let side = self.side_width("actors", 330.0);
         let st = &mut self.actors;
         if st.catalogs.is_none() {
             st.catalogs = Some(actors::character_catalogs(&lib).map_err(|e| format!("{e:#}")));
@@ -84,10 +100,34 @@ impl App {
             st.monsters = Some(actors::monster_rows(&lib).map_err(|e| format!("{e:#}")));
         }
 
+        // Up / Down walk the party, then the monsters the filter shows.
+        let f = st.filter.to_ascii_lowercase();
+        let shown = |r: &&actors::MonsterRow| {
+            f.is_empty()
+                || r.name.to_ascii_lowercase().contains(&f)
+                || r.badge.is_some_and(|b| b.eq_ignore_ascii_case(&f))
+                || r.id.to_string() == f
+        };
+        let order: Vec<Pick> = match (&st.catalogs, &st.monsters) {
+            (Some(Ok(cats)), Some(Ok(rows))) => cats
+                .iter()
+                .map(|c| Pick::Character(c.cslot))
+                .chain(rows.iter().filter(shown).map(|r| Pick::Monster(r.id)))
+                .collect(),
+            _ => Vec::new(),
+        };
+        let cur = order.iter().position(|p| st.pick == Some(*p));
+        let walked = (!ui.egui_wants_keyboard_input() && !order.is_empty())
+            .then(|| super::list_step(ui, cur, order.len() - 1))
+            .flatten()
+            .map(|i| order[i]);
+        if let Some(p) = walked {
+            st.pick = Some(p);
+        }
         let side_max = super::side_panel_max(ui, 260.0);
-        egui::Panel::left("actors")
+        let panel = egui::Panel::left("actors")
             .resizable(true)
-            .default_size(330.0f32.min(side_max))
+            .default_size(side.min(side_max))
             .min_size(260.0)
             .max_size(side_max)
             .show(ui, |ui| {
@@ -105,19 +145,13 @@ impl App {
                 ui.separator();
                 ui.heading("Monsters");
                 ui.add(egui::TextEdit::singleline(&mut st.filter).hint_text("name or id"));
-                let f = st.filter.to_ascii_lowercase();
                 match &st.monsters {
                     Some(Ok(rows)) => {
                         egui::ScrollArea::vertical()
                             .auto_shrink([false, false])
                             .show(ui, |ui| {
                                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-                                for r in rows.iter().filter(|r| {
-                                    f.is_empty()
-                                        || r.name.to_ascii_lowercase().contains(&f)
-                                        || r.badge.is_some_and(|b| b.eq_ignore_ascii_case(&f))
-                                        || r.id.to_string() == f
-                                }) {
+                                for r in rows.iter().filter(shown) {
                                     let sel = st.pick == Some(Pick::Monster(r.id));
                                     let text = format!(
                                         "{:3}  {:<16} {:<7} HP {}",
@@ -126,11 +160,13 @@ impl App {
                                         r.badge.unwrap_or(""),
                                         r.hp
                                     );
-                                    if ui
-                                        .selectable_label(sel, RichText::new(text).monospace())
-                                        .clicked()
-                                    {
+                                    let row =
+                                        ui.selectable_label(sel, RichText::new(text).monospace());
+                                    if row.clicked() {
                                         st.pick = Some(Pick::Monster(r.id));
+                                    }
+                                    if walked == Some(Pick::Monster(r.id)) {
+                                        row.scroll_to_me(None);
                                     }
                                 }
                             });
@@ -141,6 +177,9 @@ impl App {
                     None => {}
                 }
             });
+        self.side_widths
+            .insert("actors", panel.response.rect.width());
+        let st = &mut self.actors;
 
         // (Re)build the actor when the pick or the loadout changed.
         if let Some(pick) = st.pick {
@@ -429,7 +468,19 @@ fn short_section(label: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::flow_rows;
+    use super::{Pick, flow_rows};
+
+    /// The pick the settings file reopens reads back as written, and a hand
+    /// edit that means nothing opens on no one.
+    #[test]
+    fn a_pick_round_trips_its_settings_form() {
+        for p in [Pick::Character(2), Pick::Monster(10)] {
+            assert_eq!(Pick::parse(&p.key()), Some(p));
+        }
+        for bad in ["", "monster", "monster:x", "npc:1"] {
+            assert_eq!(Pick::parse(bad), None, "{bad}");
+        }
+    }
 
     #[test]
     fn pickers_flow_into_rows_that_fit() {

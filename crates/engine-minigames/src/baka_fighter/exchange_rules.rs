@@ -524,12 +524,21 @@ impl BakaFight {
             if winner == 0 {
                 // The retail end-of-match tally screen comes up on a player
                 // win and drains the prize into gold.
-                self.tally = Some(BakaTally::new([
-                    self.score_rows[0],
-                    self.score_rows[1],
-                    self.score_rows[2],
-                    self.cfg[1].gold_reward as i32,
-                ]));
+                // The first row is the match bonus the cabinet's win arm seeds
+                // (`0x801D0844..0x801D085C`), a score-channel row like the
+                // other two. The total runs on across a visit's matches.
+                if self.score_tables.is_some() {
+                    self.score_rows[0] = crate::baka_cabinet::match_bonus(self.f[1].round_wins);
+                }
+                self.tally = Some(
+                    BakaTally::new([
+                        self.score_rows[0],
+                        self.score_rows[1],
+                        self.score_rows[2],
+                        self.cfg[1].gold_reward as i32,
+                    ])
+                    .with_total(self.cabinet.high_score()),
+                );
             }
         } else {
             self.phase = MatchPhase::RoundOver(winner);
@@ -548,6 +557,11 @@ impl BakaFight {
     ///
     /// REF: FUN_801d2a28
     fn accumulate_round_score(&mut self, winner: usize) {
+        // Only the player's round win reaches the routine (result word `3`,
+        // `0x801D0670`, set at `0x801D39F0`), and it reads the player's HP.
+        if winner != 0 {
+            return;
+        }
         let Some(tables) = self.score_tables.clone() else {
             return;
         };

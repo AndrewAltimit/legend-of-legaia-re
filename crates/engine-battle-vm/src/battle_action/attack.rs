@@ -193,7 +193,9 @@ pub(super) fn attack_close_range<H: BattleActionHost + ?Sized>(
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
     host.pose(slot, Pose::Idle);
+    update_attack_facing(host, slot, target);
     let matched = host
         .actor(slot)
         .map(|a| a.queued_anim == a.current_anim)
@@ -201,14 +203,25 @@ pub(super) fn attack_close_range<H: BattleActionHost + ?Sized>(
     if !matched {
         return stay(ctx);
     }
+    // The close-in has committed: stage idle behind it (`sb zero,0x1da(s3)`
+    // at `0x801E3508`), which `0x18` then waits on. The close-in plays out to
+    // its natural end, so the strike loop opens on idle.
+    if let Some(actor) = host.actor_mut(slot) {
+        actor.queued_anim = 0;
+    }
     transition(ctx, ActionState::AttackStrike)
 }
 
+/// State `0x18` (`0x801E350C..0x801E3558`): re-pose, re-face, and hold until
+/// the idle `0x17` staged has committed, the close-in's natural end.
 pub(super) fn attack_strike<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
 ) -> StepOutcome {
     let slot = ctx.active_actor;
+    let target = host.actor(slot).map(|a| a.active_target).unwrap_or(0);
+    host.pose(slot, Pose::Idle);
+    update_attack_facing(host, slot, target);
     let matched = host
         .actor(slot)
         .map(|a| a.queued_anim == a.current_anim)

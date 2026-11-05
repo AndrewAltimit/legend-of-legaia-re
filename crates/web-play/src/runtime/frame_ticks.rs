@@ -116,6 +116,11 @@ impl LegaiaRuntime {
                     if self.play_menu_owns_frame() {
                         self.play_menu_input(edge);
                         r.menu_ticked = true;
+                        // No world tick composes this frame's screen layers.
+                        // Stale ones lose the wipe the frame the menu closes:
+                        // the window, which composes at the draw, shows the
+                        // field dark for that frame and the page showed it lit.
+                        self.rebuild_screen_geom();
                         edge = 0;
                         self.play_tick_overlay_sfx();
                         self.tick_field_party_hud();

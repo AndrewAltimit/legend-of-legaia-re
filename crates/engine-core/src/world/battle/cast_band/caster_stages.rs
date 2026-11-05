@@ -13,6 +13,38 @@ impl World {
         legaia_engine_cast::cast_module_camera::capture_spawns_per_arm(e, body).then_some(e)
     }
 
+    /// An arm's writes through the handles of parts it seated earlier: the
+    /// records it halts, and the one it carries onto the victim's ground point.
+    fn apply_capture_arm_part_writes(&mut self, entry: u32, arm: u8) {
+        use legaia_engine_cast::cast_module_camera as cmc;
+        let halted = cmc::capture_arm_halts_records(entry, arm);
+        let moved = cmc::capture_arm_moves_to_victim(entry, arm);
+        if halted.is_empty() && moved.is_none() {
+            return;
+        }
+        let victim = self
+            .casting
+            .module_cam
+            .victim_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .map(|v| (v.move_state.world_x, v.move_state.world_z));
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            return;
+        };
+        for part in &mut scene.parts {
+            let Some(tag) = part.tag else { continue };
+            if halted.contains(&tag) {
+                part.finished = true;
+            }
+            if moved == Some(tag)
+                && let Some((x, z)) = victim
+            {
+                part.state.world_x = x;
+                part.state.world_z = z;
+            }
+        }
+    }
+
     /// One tick of the **capture band's** resident module - the engine body
     /// behind `BattleActionHost::capture_stager_tick`, and the twin of
     /// [`Self::summon_stager_tick`] on the other dispatcher.
@@ -262,11 +294,27 @@ impl World {
                 }
             }
             if run.phase != arm || !run.busy {
-                if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
+                // PROT 0957's table is Thunder Storm's arms: Death Game's stand
+                // under the same numbers and flush nothing.
+                let death_game = run.prot_entry == 957 && self.casting.capture_spell == Some(0x76);
+                if cmc::capture_arm_flushes_pool(run.prot_entry, arm) && !death_game {
                     self.casting.flush_module_part_pool();
                 }
+                self.apply_capture_arm_part_writes(run.prot_entry, arm);
                 if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
                     self.casting.module_pass_counter = 0;
+                }
+                // Water Hazard's ring goes in ahead of the arm's last call.
+                if run.prot_entry == 956
+                    && arm == 2
+                    && spell_id == 0x71
+                    && let Some(c) = self.actors.get(usize::from(self.battle_ctx.active_actor))
+                {
+                    let ring = cmc::water_hazard_ring(
+                        (c.move_state.world_x, c.move_state.world_z),
+                        (c.battle.facing_angle & 0xFFF) as i16,
+                    );
+                    self.stage_module_arm_spawns(run.prot_entry, &ring, run.camera_shot, None);
                 }
                 let spawns = cmc::capture_arm_spawns_in(
                     run.prot_entry,
@@ -276,6 +324,29 @@ impl World {
                 );
                 if !spawns.is_empty() {
                     self.stage_module_arm_spawns(run.prot_entry, spawns, run.camera_shot, None);
+                }
+                let on_party = cmc::capture_arm_party_records(run.prot_entry, arm, spell_id);
+                if !on_party.is_empty() {
+                    let spawns: Vec<_> = (0..usize::from(self.party.party_count))
+                        .filter_map(|i| self.actors.get(i))
+                        .flat_map(|a| {
+                            let pos = [
+                                a.move_state.world_x,
+                                a.move_state.world_y,
+                                a.move_state.world_z,
+                            ];
+                            let rot = [0, (a.battle.facing_angle & 0xFFF) as i16, 0];
+                            on_party.iter().map(move |&record| cmc::ModuleSpawn {
+                                record: cmc::SpawnRecord::Module(record),
+                                anchor: cmc::SpawnAnchor::LiteralScaled {
+                                    pos,
+                                    rot,
+                                    scale: 0x1000,
+                                },
+                            })
+                        })
+                        .collect();
+                    self.stage_module_arm_spawns(run.prot_entry, &spawns, run.camera_shot, None);
                 }
                 // Gigaton Press's debris ring follows its five caster records
                 // on the same pass (drawn ahead of the arm's hit).
@@ -503,6 +574,11 @@ impl World {
     ///
     /// [`capture_approach_yaw_base`]: legaia_engine_cast::cast_module_camera::capture_approach_yaw_base
     fn open_capture_approach(&mut self, caster: u8, victim: u8, entry: u32, body: Option<u32>) {
+        if let Some(reach) =
+            legaia_engine_cast::cast_module_camera::capture_approach_reach(entry, body)
+        {
+            self.store_caster_reach(caster, reach);
+        }
         let facing = self.actors[usize::from(caster)].battle.facing_angle;
         if let Some(v) = self.actors.get_mut(usize::from(victim)) {
             v.battle.facing_angle = facing.wrapping_add(0x800) & 0xFFF;

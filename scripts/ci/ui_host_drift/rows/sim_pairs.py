@@ -187,6 +187,17 @@ SIM_PAIRS: list[dict[str, object]] = [
         "symbols": ["step_dance_tail"],
     },
     {
+        "what": "dance hall step markers, native vs play page - the wall panels "
+        "and stage screens are these tiles, and each shows the mesh the running "
+        "dance's flipbook names. A page clock of its own showed another picture",
+        "sites": {
+            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "refresh_dance_venue_view"),
+            "web": (WEB_PLAY_ARENA, "play_mg_dance_marker_step"),
+        },
+        "mode": "symbols_all",
+        "symbols": ["step_marker_mesh"],
+    },
+    {
         "what": "battle presentation step, native vs play page - the battle "
         "audio routing (duck, strike / cast cues, cast-voice prestage, CD-XA "
         "clips, arts shouts), the strike popups, the per-hit drain, the "

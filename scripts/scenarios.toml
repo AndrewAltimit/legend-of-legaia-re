@@ -6956,3 +6956,174 @@ phase = "battle"
 expected_game_mode = 0x15
 expected_active_scene = "map01"
 topics = ["battle", "enemy attack", "map01", "harvest"]
+
+[[scenarios]]
+label = "battle_run_confirm_gaza2_retail"
+backup_fingerprint = "0c512b0c9af1f315599732601f53ceb86466f1705e984775d2dcfa1b5c84b59a"
+description = "Gaza boss fight's run confirm, ctx[+0x06] 0x32. RIGHT 30, saved 50 on. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_target_cursor_gaza2_retail"
+backup_fingerprint = "dffd382d136e42503b4c262b1275ce5a730e8a57e2d99958d2e2f048531d46aa"
+description = "Gaza boss fight's target cursor, ctx[+0x06] 0x5A. CROSS into the ring, LEFT to the Auto / Command prompt, LEFT to the cursor. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "battle_item_target_gaza2_retail"
+backup_fingerprint = "538a66c6ddd19dc56202791f9dabc9c3767ac1a99a8564c3bd230607b5a1ae34"
+description = "Gaza boss fight's item target, ctx[+0x06] 0x64, on the bag's first row. CROSS, UP, CROSS. RETAIL disc, pad only, no pokes: gaza2_card_first_menu (autorun_screen_walk.lua --turbo)."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "korb3"
+topics = ["battle", "command flow", "retail-compare"]
+
+[[scenarios]]
+label = "menu_items_all_apply_kor_retail"
+backup_fingerprint = "149a682286c538b4774dc354ed0c16541d5e0b28635ee46f39cef4010953dd3a"
+description = "Items all-party apply over kor, sub-screen 0x09, Healing Fruit. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "kor"
+topics = ["menu", "items", "retail-compare"]
+
+[[scenarios]]
+label = "menu_items_target_kor_retail"
+backup_fingerprint = "09bc6c54077d0b6e704d1845d3f498d13bc44779f214bcded79c069a505441f9"
+description = "Items single-target apply over kor, sub-screen 0x0A, Healing Berry. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "kor"
+topics = ["menu", "items", "retail-compare"]
+
+[[scenarios]]
+label = "menu_door_light_kor_retail"
+backup_fingerprint = "cf9abbb776d87343cb97d8807bbb81b7cd00d663df2c6c974338cdd3373db0d8"
+description = "Door of Light Yes / No over kor, sub-screen 0x0B. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "kor"
+topics = ["menu", "items", "retail-compare"]
+
+[[scenarios]]
+label = "menu_incense_kor_retail"
+backup_fingerprint = "56bafbb002d782f162410c5a91ecc0127c84c5a30c66741fc39db6015333c674"
+description = "Incense Yes / No over kor, sub-screen 0x0D. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "kor"
+topics = ["menu", "items", "retail-compare"]
+
+[[scenarios]]
+label = "menu_door_wind_map03_retail"
+backup_fingerprint = "dfc686f835c2ec533bac8fbfdc54b0a2800ac1ddd64847b99c9e1a0cea6069c7"
+description = "Door of Wind destination list over map03, sub-screen 0x0C. RETAIL disc, pad only past the source: map03_field_door_hop (autorun_screen_walk.lua --turbo); inherits the door hop's tile pokes."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "map03"
+topics = ["menu", "items", "retail-compare"]
+
+[[scenarios]]
+label = "menu_magic_group_kor_retail"
+backup_fingerprint = "462bca7d34b9245390012276d518c3607749cb5ad4b2bc68a5b8c41e37a35d03"
+description = "Magic group cast over kor, sub-screen 0x10, Vahn's Spoon. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "kor"
+topics = ["menu", "magic", "retail-compare"]
+
+[[scenarios]]
+label = "menu_magic_target_kor_retail"
+backup_fingerprint = "f8e6f99b72695293d88de7d3e8fc424b333f159bdffb94b63795593bdd0e9ac9"
+description = "Magic target cast over kor, sub-screen 0x11, Vahn's Vera. RETAIL disc, pad only past the source: kor_field_route_walk (autorun_screen_walk.lua --turbo), Vahn wounded by the route's own fights; inherits the route walk's pokes, if any."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "kor"
+topics = ["menu", "magic", "retail-compare"]
+
+[[scenarios]]
+label = "shop_buy_quantity_retock_retail"
+backup_fingerprint = "851385bc015b72c92d6dc36c0ddca257803554b99726823379974cad51f0f5ff"
+description = "retock Items Shop, buy quantity sub-screen 0x1D, Healing Flower: one sold first so the stack has room. RETAIL disc, pad only past the source: shop_items_buy_retock_retail (autorun_screen_walk.lua --turbo); inherits its door and merchant position pokes."
+phase = "menu"
+expected_game_mode = 0x17
+expected_active_scene = "retock"
+topics = ["shop", "menu", "retock", "retail-compare"]
+
+[[scenarios]]
+label = "battle_bubu2_spoon_white_shield_mid_cast"
+backup_fingerprint = "015d7a44741d80cf71e075b6babaa099facde3d87496b8c4b67eb36629ab1218"
+description = "bubu2 battle: Spoon mid-cast spell 0x60: category 2, action state 0x70. RETAIL disc: bubu2_field_door_hop played forward by autorun_battle_harvest.lua --turbo, saved at vsync 12629. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "bubu2"
+topics = ["battle", "enemy attack", "Spoon", "bubu2", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_zora_dark_typhoon_mid_cast"
+backup_fingerprint = "27c2623e0dfcd56059d7d4c9d1b2ad9cb60c38fc4659c80d0328abd8041abcd4"
+description = "taiku battle: Zora mid-cast spell 0xAA: category 2, action state 0x70. RETAIL disc: taiku_field_card_walk played forward by autorun_battle_harvest.lua --turbo, saved at vsync 5405. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Zora", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_taiku_zora_strike"
+backup_fingerprint = "b2ae8128d372647512f8be4a5141fd0c429bc203d81ae092633619799fc3ff56"
+description = "taiku battle: Zora mid physical attack: category 3, action state 0x1e. RETAIL disc: taiku_field_card_walk played forward by autorun_battle_harvest.lua --turbo, saved at vsync 780. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "taiku"
+topics = ["battle", "enemy attack", "Zora", "taiku", "harvest"]
+
+[[scenarios]]
+label = "battle_uru2_nurga_heal_mid_cast"
+backup_fingerprint = "9e05e9de12eb439822b23174c010e232194eee72818d44c24564aefb828c2b74"
+description = "uru2 battle: Nurga mid-cast spell 0x2E: category 2, action state 0x3e. RETAIL disc: uru2_field_door_hop played forward by autorun_battle_harvest.lua --turbo, saved at vsync 1824. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "uru2"
+topics = ["battle", "enemy attack", "Nurga", "uru2", "harvest"]
+
+[[scenarios]]
+label = "battle_uru2_nurga_strike"
+backup_fingerprint = "d1c71efef4ecfe6db844a46a7ed34aecb8217f2e893f48ef997eeb8e5cf01b0a"
+description = "uru2 battle: Nurga mid physical attack: category 3, action state 0x1e. RETAIL disc: uru2_field_door_hop played forward by autorun_battle_harvest.lua --turbo, saved at vsync 918. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "uru2"
+topics = ["battle", "enemy attack", "Nurga", "uru2", "harvest"]
+
+[[scenarios]]
+label = "son_field_door_hop"
+backup_fingerprint = "6f1f22770d047956493bed7c4d576080a04fbb533471f642fd6d906ed81672cb"
+description = "son free field run. RETAIL disc: map03_field_door_hop crossed map03:45:84 by autorun_door_hop.lua: player position held on the door walk-on tile, door record run as the disc wrote it, saved 1558 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the door wrote."
+phase = "field"
+expected_game_mode = 0x03
+expected_active_scene = "son"
+topics = ["field", "son", "scene coverage", "door hop"]
+
+[[scenarios]]
+label = "battle_retona_songi_hyper_crush_mid_cast"
+backup_fingerprint = "7d8a2aa87d17c7f17407df63ed34fe2502a5f33e8203a989fd67b0a402c18f31"
+description = "retona battle: Songi mid-cast spell 0x4B: category 2, action state 0x70. RETAIL disc: retona_field_card_boot played forward by autorun_battle_harvest.lua --turbo, saved at vsync 1231. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Songi", "retona", "harvest"]
+
+[[scenarios]]
+label = "battle_retona_songi_hyper_lightning_mid_cast"
+backup_fingerprint = "b780d9d8c3b4ccc14fd50fa7c333e73b393dab0e56ac6a285874eb88657dccf0"
+description = "retona battle: Songi mid-cast spell 0x4C: category 2, action state 0x70. RETAIL disc: retona_field_card_boot played forward by autorun_battle_harvest.lua --turbo, saved at vsync 11661. LEGAIA_WANT points the live MAN's region rows at the formation; LEGAIA_TOUGH=2 raises the party's maxima to 9999 and holds their HP (on the HUD), LEGAIA_WOUND cuts the monsters' HP each round: those are the RAM writes it inherits. The action is the AI's own."
+phase = "battle"
+expected_game_mode = 0x15
+expected_active_scene = "retona"
+topics = ["battle", "enemy attack", "Songi", "retona", "harvest"]

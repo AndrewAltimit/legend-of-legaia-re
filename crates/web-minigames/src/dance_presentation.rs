@@ -431,7 +431,11 @@ impl LegaiaMinigames {
     /// never drawn - FUN_8001E890).
     fn build_noa_body(&self, spawn: (i16, i16)) -> Option<DanceBodyMesh> {
         let raw = entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX)?;
-        let tmd_bytes = legaia_engine_minigame_scenes::dance_cast_scene::resident_body_tmd(raw, 1)?;
+        let tmd_bytes = legaia_engine_minigame_scenes::dance_cast_scene::resident_body_tmd(
+            raw,
+            1,
+            self.party_equip,
+        )?;
         hybrid_body(&tmd_bytes, 0, spawn)
     }
 
@@ -469,6 +473,7 @@ impl LegaiaMinigames {
                 &venue,
                 &cast,
                 entry_bytes(&self.prot, &self.entries, character_pack::PROT_ENTRY_INDEX),
+                self.party_equip,
             )
             .map(std::sync::Arc::new);
         let res = &venue.resources;

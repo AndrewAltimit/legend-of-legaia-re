@@ -32,6 +32,8 @@ mode) compares against a snapshot lifted from a mednafen `.mc{slot}` save:
   VRAM dump (per-tile overlap + texpage-region byte-exactness).
 - [`mode_trace_oracle`](src/mode_trace_oracle.rs) - `(scene_mode,
   active_scene)` per frame.
+- [`seq_differential`](src/seq_differential.rs) - retail's libsnd run off a state's RAM in `retail-exec` beside the port's sequencer, every voice register at every vsync. CLI `seq-differential`.
+- [`cue_differential`](src/cue_differential.rs) - every cue keyed both ways in a state: retail's drainer in `retail-exec`, the port's director seeded into the state. CLI `cue-differential`.
 - [`pcm_retail`](src/pcm_retail.rs) - the engine's mix against mednafen's own recorded output from a library state: the SPU resumed sample for sample, and the track from the state's libsnd read cursor on, scored by correlation and level. Driver `scripts/ci/audio-pcm.py`; `--stems` feeds the per-note fit `scripts/ci/audio-note-fit.py`.
 - [`audio_trace_oracle`](src/audio_trace_oracle.rs) - `(voice_mask,
   voices[24], master_volume)` per frame, vs. the SPU section.

@@ -330,7 +330,8 @@ impl World {
                     .monster_catalog
                     .get(id)
                     .map_or(0, |def| def.size_class);
-                (3 + slot as i16, i16::from(size) << 5, id as u8)
+                let radius = actor.battle.render_radius.unwrap_or(i16::from(size) << 5);
+                (3 + slot as i16, radius, id as u8)
             }
             None if actor_idx < party_count => (actor_idx as i16, PARTY_BODY_RADIUS, 0),
             // The summon creature: retail seats it in pool slot 7, one of the

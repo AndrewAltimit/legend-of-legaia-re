@@ -404,6 +404,7 @@ impl MuscleDomeSurface {
                     // The round prompt and the Begin / Reselect confirm: the
                     // far framing with its idle orbit (case 9).
                     CommandPhase::RoundPrompt { .. }
+                    | CommandPhase::RunConfirm { .. }
                     | CommandPhase::CommitConfirm { .. }
                     | CommandPhase::BeginRound => (cam::BattleCamPhase::Menu, 0, None),
                     // The Attack chip's Auto | Command prompt and its cursor

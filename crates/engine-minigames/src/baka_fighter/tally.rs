@@ -152,6 +152,13 @@ impl BakaTally {
         }
     }
 
+    /// Carry the running total on from the visit's earlier matches: the store
+    /// `DAT_801DBEE4` only clears at the fighter select (`0x801CF8F0`).
+    pub fn with_total(mut self, total: i32) -> Self {
+        self.total = total;
+        self
+    }
+
     /// `true` once every counter has emptied.
     pub fn done(&self) -> bool {
         self.counters.iter().all(|&c| c == 0)

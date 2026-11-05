@@ -241,6 +241,7 @@ impl SceneHost {
             region_block,
             anchor_x: lead.x,
             anchor_z: lead.z,
+            anchor_y: 0,
             facing: lead.facing,
             rod_mesh: legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene),
         })
@@ -309,6 +310,11 @@ impl SceneHost {
             return false;
         };
         let index = &self.index;
+        let fight =
+            match legaia_engine_minigames::baka_fighter::BakaScoreTables::from_overlay(loaded) {
+                Some(tables) => fight.with_score_tables(tables),
+                None => fight,
+            };
         let fight = fight
             .with_roster_clip_headers(legaia_engine_minigames::baka_fighter::roster_clip_headers(
                 |i| index.entry_bytes(i as u32).ok().map(|b| b.to_vec()),

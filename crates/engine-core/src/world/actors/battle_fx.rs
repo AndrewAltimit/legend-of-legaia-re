@@ -383,25 +383,23 @@ impl World {
     /// sector table with that bank number directly.
     // REF: FUN_800520F0, FUN_8003E104
     pub fn battle_monster_sound_banks(&self) -> Vec<(u8, u16)> {
-        let ids: Vec<u16> = self
-            .battle_monster_slots()
-            .into_iter()
-            .map(|(_, id, _)| id)
-            .filter(|&id| id != 0)
-            .collect();
-        let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
-            return Vec::new();
-        };
-        let mut out = vec![(7u8, min - 1)];
-        if min != max {
-            out.push((8, max - 1));
-        }
-        out
+        crate::world::monster_sound_banks(
+            self.battle_monster_slots()
+                .into_iter()
+                .map(|(_, id, _)| id)
+                .filter(|&id| id != 0),
+        )
     }
 
     pub(in crate::world) fn battle_sound_category(&self, category: u8) -> u8 {
         if category < 3 {
             return 7;
+        }
+        // The summon seat's node: no loader store reaches it, and it reads `0` in
+        // `gimard_summon_visible` and both `battle_rugi_rogue_rogue_*_mid_cast`
+        // states, so a creature's runtime cue keys in the system bank's record.
+        if category == 7 {
+            return 0;
         }
         let ids: Vec<u16> = self
             .battle_monster_slots()
@@ -412,9 +410,7 @@ impl World {
         let Some(id) = self.actors.get(slot).and_then(|a| a.battle_monster_id) else {
             return 7;
         };
-        let max = ids.iter().copied().max().unwrap_or(id);
-        let mixed = ids.iter().any(|&x| x != ids[0]);
-        if mixed && id == max { 8 } else { 7 }
+        crate::world::monster_sound_category(&ids, id)
     }
 
     /// The move-FX streak block the effect script's terminator installs -
@@ -1340,6 +1336,9 @@ impl World {
         if self.casting.summon_actor_slot == Some(i as u8)
             && let Some(r) = self.casting.summon_body_radius
         {
+            return r;
+        }
+        if let Some(r) = self.actors.get(i).and_then(|a| a.battle.render_radius) {
             return r;
         }
         match self.actors.get(i).and_then(|a| a.battle_monster_id) {

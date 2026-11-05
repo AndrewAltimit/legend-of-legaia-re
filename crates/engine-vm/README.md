@@ -19,10 +19,11 @@ menu state machines in `legaia-engine-menus`, draw-prep kernels in
 The side-effect-free field-VM disassembler
 (`legaia_scene_formats::field_disasm`) has its CLI on the `asset` binary:
 `asset field-disasm file` walks a raw script body,
-`scene-event-scripts` walks every record of a prescript container, and
-`scan-prot` sweeps a whole extracted `PROT.DAT` for FMV triggers. For a
+and `scene-event-scripts` and `scan-prot` walk prescript containers, which are
+move-VM stager records, so a hit there is a coincidence of bytes. For a
 scene's genuine per-scene scripts - which live LZS-compressed inside the
-scene's MAN - use `legaia-engine man-scripts` instead.
+scene's MAN - use `legaia-engine man-scripts`, or `asset field-op-census` for
+every scene at once.
 
 ## Contents
 

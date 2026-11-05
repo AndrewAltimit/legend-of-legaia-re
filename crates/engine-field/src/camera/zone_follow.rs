@@ -170,8 +170,35 @@ impl Camera {
 
         // 5. Snap on arrival (`FUN_801DB8EC`), else ease on a frame the
         //    player moved (`FUN_801DB510`'s settle test).
-        let moved = zone.prev_player != Some([x, y, z]);
+        //
+        //    The test reads the player against the pair the actor iterator
+        //    copied at the top of the pass, from inside the player's own
+        //    tick. So a locked player the `0x10000` bit lets through
+        //    (`0x801D1704..0x801D1740`) reads still however a script carries
+        //    it, and only its footing conform (`FUN_801D1BA0`, inside the
+        //    tick) counts: `tower_field_walk` holds eye Y `609` for a whole
+        //    scripted walk and steps it on the two passes the floor rises.
+        let carried = locked && !gated;
+        let moved = match zone.prev_player {
+            Some([_, py, _]) if carried => py != y,
+            prev => prev != Some([x, y, z]),
+        };
         zone.prev_player = Some([x, y, z]);
+        // Retail eases once a game pass, with no frame-step term in the shift
+        // (`0x801DB5AC..0x801DB724`; the player tick `FUN_801D1344` calls
+        // it), and the world ticks once a vsync: the steps land on the pass
+        // grid, or the camera closes `frame_step` times too fast
+        // (`kor_field_route_walk`'s film holds eye Y `681, 703, 720, 733`
+        // two vsyncs apart).
+        zone.ease_credit += dt.clamp(1, 8);
+        let step = i32::from(world.camera_frame_step().max(1));
+        let passes = zone.ease_credit / step;
+        zone.ease_credit %= step;
+        zone.ease_moved |= moved;
+        let pass_start = zone.pass_player;
+        if passes > 0 {
+            zone.pass_player = Some([x, z]);
+        }
         let mode5 = zone.config.mode_nibble() == 5;
         let focus_anchor = [
             -(zone.config.anchor_x << 7) - 0x40,
@@ -203,8 +230,10 @@ impl Camera {
         let mut snapped = false;
         if gated || hold {
             // Shake only / pin leg: nothing more until the shake tail.
+            zone.ease_moved = false;
         } else if zone.snap_pending {
             snapped = true;
+            zone.ease_moved = false;
             let (p, yw, eye, h) = snap(&t);
             g[0] = p;
             g[1] = yw;
@@ -218,9 +247,9 @@ impl Camera {
                 g[8] = -z;
             }
             zone.snap_pending = false;
-        } else if moved || forced || !zone.active {
+        } else if (zone.ease_moved || forced) && passes > 0 || !zone.active {
             let code = zone.config.ease_shift();
-            for _ in 0..dt.clamp(1, 8) {
+            for _ in 0..passes.max(1) {
                 g[0] = i32::from(ease_step_i16(g[0] as i16, t.pitch, code));
                 g[1] = i32::from(ease_step_i16(g[1] as i16, t.yaw, code));
                 g[9] = i32::from(ease_step_i16(g[9] as i16, t.h, code));
@@ -232,10 +261,23 @@ impl Camera {
                     g[8] = ease_step(g[8], focus_anchor[1], code);
                 }
             }
-            // Any shot but a mode-5 fixed one falls into the pin leg
-            // `0x801DB820` after the ease (`bne` at `0x801DB734`): the focus
-            // goes onto the player on exactly the frames the ease ran.
-            if !mode5 {
+            zone.ease_moved = false;
+        }
+        // Any shot but a mode-5 fixed one falls into the pin leg `0x801DB820`
+        // after the ease (`bne` at `0x801DB734`): the focus goes onto the
+        // player on the frames the ease ran, which the walk's vsyncs refine.
+        // A carried player's focus is the player tick's own pin ahead of the
+        // ease (`0x801D1724..0x801D1740`), so it reads where the player stood
+        // when this pass began and the script's step shows a pass later.
+        if !gated && !hold && !snapped && !mode5 {
+            if carried {
+                if passes > 0
+                    && let Some([px, pz]) = pass_start
+                {
+                    g[6] = -px;
+                    g[8] = -pz;
+                }
+            } else if moved || forced || !zone.active {
                 g[6] = -x;
                 g[8] = -z;
             }

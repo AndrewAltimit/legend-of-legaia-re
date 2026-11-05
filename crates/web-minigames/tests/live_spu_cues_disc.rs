@@ -64,7 +64,12 @@ fn native(mode: SceneMode, bundle_prot: Option<u32>) -> AudioDirector<TestAudioS
     let bundle = bundle_prot.and_then(read).unwrap_or_default();
     let side = (mode == SceneMode::MuscleDome).then_some(SideBandBank::ARENA);
     d.sync_field_sfx(&bundle, false, side, read);
-    let want = SfxBankResidency::default().sync(mode, "", None);
+    let want = SfxBankResidency::default().sync(
+        mode,
+        "",
+        None,
+        legaia_engine_mode::sfx_residency::SharedRegionBank::CLASS2,
+    );
     assert!(d.sync_shared_region(want, read), "{mode:?}'s region staged");
     d
 }

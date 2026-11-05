@@ -278,6 +278,7 @@ Threads: [`re-settled-threads/rendering-camera.md`](re-settled-threads/rendering
 
 | Detailed write-up |
 |---|
+| <a id="what-does-field-op-4c-ed-do-to-a-psx-mode-frame"></a>[What does field op `4C ED` do to a PSX-mode frame?](re-settled-threads/rendering-camera.md#what-does-field-op-4c-ed-do-to-a-psx-mode-frame) |
 | <a id="does-retail-stack-coincident-curved-shells"></a>[Does retail stack coincident curved shells?](re-settled-threads/rendering-camera.md#does-retail-stack-coincident-curved-shells) |
 | <a id="does-any-retail-shot-author-a-non-zero-camera-roll"></a>[Does any retail shot author a non-zero camera roll?](re-settled-threads/rendering-camera.md#does-any-retail-shot-author-a-non-zero-camera-roll) |
 

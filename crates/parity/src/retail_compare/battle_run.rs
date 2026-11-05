@@ -664,6 +664,13 @@ pub(super) fn battle_image(
             cue.map_or_else(|| "gone".to_string(), |c| format!("cue:{c}")),
         ));
     }
+    // A later capture of that fight holds no column, while a replay reaches
+    // its strike inside the columns' life: they are retired on the frame.
+    if battle.seed_plan() != crate::retail_compare_battle::SeedPlan::Prompt
+        && battle.arrival_cue == Some(None)
+    {
+        env.push(("LEGAIA_SEAT_ARRIVAL_GONE", "1".to_string()));
+    }
     // ... and the live mode-3 CLUT cyclers at the displayed frame's phase:
     // the evolved-Cort arena's flesh palette (record `0x80078760` on CLUT
     // `(32, 479)`) swings its hue add through `0x100` about every 130
@@ -876,6 +883,9 @@ pub(super) fn battle_image(
     // (the gate), with the fixed tick as the deadline.
     // The capture's own frame step over its last stretch, as the headless
     // seed ran it (`RetailBattle::frame_step_seed`).
+    if battle.replay_keeps_default_step() {
+        env.push(("LEGAIA_BATTLE_PARTY_STEP", "0".to_string()));
+    }
     if let Some((step, state, from)) = battle.frame_step_seed() {
         let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
         env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));

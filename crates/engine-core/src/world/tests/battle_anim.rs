@@ -1533,6 +1533,23 @@ fn a_reaction_commit_decays_a_slowed_rate_to_half() {
     assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_NORMAL);
 }
 
+/// A re-commit of the clip already playing passes the same decay
+/// (`0x8004B080` sits ahead of the install arms): a seat the installer left at
+/// `2` plays on at `4`.
+#[test]
+fn a_re_commit_decays_a_slowed_rate_to_half() {
+    use legaia_engine_battle_vm::battle_anim_rate::{AnimRate, RATE_HALF};
+    let mut world = pose_test_world();
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 22];
+    clips[0] = Some(pose_test_clip(0, 12, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.hp = 50;
+    world.actors[0].battle.anim_rate = AnimRate(2);
+    world.actors[0].battle.queued_anim = world.actors[0].battle.current_anim;
+    world.commit_staged_battle_anim_at_boundary(0);
+    assert_eq!(world.actors[0].battle.anim_rate.get(), RATE_HALF);
+}
+
 /// A struck body's reaction - a one-shot on the reaction channel - takes the
 /// capture's cursor when the capture names that entry.
 #[test]
@@ -1689,4 +1706,72 @@ fn a_monster_on_a_solo_clip_keeps_the_restore_gate_shut() {
     assert_eq!(host.staged_art_record_flag(0, 1), 1);
     assert_eq!(host.staged_art_record_flag(0, 0), 0);
     assert_eq!(host.staged_art_record_flag(0, 2), 0);
+}
+
+/// Case `0x13` of `FUN_801DC0A0` raises the caster's blue arm and impact
+/// selector once the clip passes cursor `0xC0` (`0x801DCE54..0x801DCE60`), and
+/// clears both when `ctx[+0x24D]` goes up (`0x801DCE80..0x801DCE88`): Astral
+/// Wave's charge.
+#[test]
+fn spell_cam_case_0x13_raises_the_casters_render_arm() {
+    use crate::world::vm_hosts::BattleHostImpl;
+    use legaia_engine_battle_vm::battle_action::BattleActionHost;
+    let mut world = World::new();
+    world.actors[0].active = true;
+    let mut clips: Vec<Option<MonsterAnimation>> = vec![None; 16];
+    clips[0] = Some(pose_test_clip(0, 2, 0));
+    clips[0x0C] = Some(pose_test_clip(0x0C, 60, 0));
+    world.set_actor_battle_action_clips(0, std::sync::Arc::new(clips));
+    world.actors[0].battle.queued_anim = 0x0C;
+    world.commit_staged_battle_anim(0);
+    BattleHostImpl { world: &mut world }.spell_anim_sustain(0, 0x13);
+    assert_eq!(world.actors[0].battle.render_flag, 0, "below cursor 0xC0");
+    while world.actors[0]
+        .battle_animation
+        .as_ref()
+        .is_some_and(|p| p.cursor_sixteenths() < 0xC0)
+    {
+        world.tick_battle_animations();
+    }
+    BattleHostImpl { world: &mut world }.spell_anim_sustain(0, 0x13);
+    assert_eq!(world.actors[0].battle.render_flag, 4);
+    assert_eq!(world.actors[0].battle.impact_state, 2);
+    world.battle_ctx.magic_recovery_gate = 1;
+    BattleHostImpl { world: &mut world }.spell_anim_sustain(0, 0x13);
+    assert_eq!(world.actors[0].battle.render_flag, 0);
+    assert_eq!(world.actors[0].battle.impact_state, 0);
+}
+
+/// The capture band's two CD polls hold their states: `0x6E` walks the framing
+/// and `0x6F` pulls `ctx[+0x6D0]` in on every pass of the wait.
+#[test]
+fn the_capture_band_polls_hold_for_the_read() {
+    use crate::world::vm_hosts::BattleHostImpl;
+    use legaia_engine_battle_vm::battle_action::{ActionState as S, BattleActionHost};
+    let mut world = World::new();
+    let start = world.clock.display_frames;
+    world.battle_ctx.action_state = S::MagicCaptureBranch.as_byte();
+    world.arm_capture_read_wait(S::MagicCaptureBranch.as_byte());
+    assert!(world.capture_read_pending());
+    world.clock.display_frames = start + 14;
+    assert!(!world.capture_read_pending());
+    world.battle_ctx.action_state = S::MagicCaptureFade.as_byte();
+    world.arm_capture_read_wait(S::MagicCaptureFade.as_byte());
+    assert!(!BattleHostImpl { world: &mut world }.previous_action_cleared(1));
+    world.clock.display_frames = start + 18;
+    assert!(BattleHostImpl { world: &mut world }.previous_action_cleared(1));
+    // Other states ignore a stale word.
+    world.battle.capture_read_until = u64::MAX;
+    world.battle_ctx.action_state = S::MagicCapturePhase2.as_byte();
+    assert!(!world.capture_read_pending());
+}
+
+/// `FUN_800520F0` stores no category on the summon seat's node, so its runtime
+/// cues key record `0`; the party's keep the `7` of `0x80051548`.
+#[test]
+fn a_summon_creatures_runtime_cue_keys_record_zero() {
+    let mut world = World::new();
+    world.enter_battle(2, 1);
+    assert_eq!(world.battle_sound_category(7), 0);
+    assert_eq!(world.battle_sound_category(0), 7);
 }

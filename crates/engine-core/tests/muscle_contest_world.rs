@@ -184,8 +184,8 @@ fn the_master_prize_lands_in_the_bag_once() {
         "the War God Icon is in the bag"
     );
     assert!(
-        w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG),
-        "and the one-shot flag latched"
+        !w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG),
+        "the arena reads the latch; the lobby's winner's scene sets it"
     );
 }
 
@@ -518,4 +518,79 @@ fn a_course_ending_leg_and_a_between_legs_escape_hand_the_field_back() {
     assert_eq!(w.mode, SceneMode::Field);
     assert!(w.minigames.muscle_contest.is_none());
     assert!(w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_GAVE_UP_FLAG));
+}
+
+/// Settlement copies the SC block the arena saved back over the live one: a
+/// stripped fighter's gear returns, and so do the spent HP, the used items and
+/// the gold. Only the lead's `+0xE8` / `+0xEC` keep what the contest did
+/// (`FUN_801D0F60`, `0x801D0FBC..0x801D0FF4`).
+#[test]
+fn settlement_hands_back_the_party_the_contest_found() {
+    use legaia_engine_minigames::muscle_dome::{ContestFlags, DomeContest};
+    let mut w = World::default();
+    w.load_party(legaia_save::Party::zeroed(1));
+    {
+        let rec = &mut w.party.roster.members[0];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_max = 500;
+        hms.hp_cur = 123;
+        rec.set_hp_mp_sp(hms);
+        let mut eq = rec.equipment();
+        eq.slots[0] = 0x21;
+        eq.slots[2] = 0x42;
+        rec.set_equipment(eq);
+        rec.raw[0xE8] = 1;
+    }
+    w.party.money = 900;
+    w.party.inventory.add(0x90, 3);
+    // The Expert course strips the fighter.
+    let flags = ContestFlags {
+        course_unlock: [false, true, false],
+        ..ContestFlags::default()
+    };
+    w.minigames.muscle_contest = Some(DomeContest::enter(&flags, [3, 3, 3], score()));
+    let card = legaia_engine_battle_menus::muscle_dome_session::MuscleCard {
+        command_id: 0x0C,
+        cost: 0x1E,
+    };
+    w.enter_muscle_dome(
+        legaia_engine_battle_menus::muscle_dome_session::MuscleDomeSession::new(
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+            [card; legaia_engine_minigames::muscle_dome::HAND_SLOTS],
+            [120, 120],
+            [100, 400],
+            1,
+        ),
+    );
+    assert_eq!(
+        w.party.roster.members[0].equipment().slots[0],
+        0,
+        "stripped"
+    );
+    assert_eq!(w.party.roster.members[0].hp_mp_sp().hp_cur, 500, "refilled");
+
+    // The legs spend HP and items, and earn on the kept words.
+    w.party.roster.members[0].raw[0xE8] = 7;
+    w.party.money = 10;
+    w.party.inventory.insert(0x90, 1);
+    {
+        let rec = &mut w.party.roster.members[0];
+        let mut hms = rec.hp_mp_sp();
+        hms.hp_cur = 1;
+        rec.set_hp_mp_sp(hms);
+    }
+    w.report_muscle_leg(legaia_engine_minigames::muscle_dome::LegReport {
+        survived: false,
+        outcome: 0,
+        turns_taken: 1,
+    });
+    w.settle_muscle_contest().expect("settles");
+
+    let rec = &w.party.roster.members[0];
+    assert_eq!(rec.equipment().slots[0], 0x21, "the weapon is back");
+    assert_eq!(rec.equipment().slots[2], 0x42);
+    assert_eq!(rec.hp_mp_sp().hp_cur, 123, "the HP the arena found");
+    assert_eq!(rec.raw[0xE8], 7, "the contest keeps the two words");
+    assert_eq!(w.party.money, 900);
+    assert_eq!(w.party.inventory.get(&0x90), Some(&3));
 }

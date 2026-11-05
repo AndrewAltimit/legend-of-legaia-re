@@ -70,6 +70,9 @@ pub fn command_phase_cue(before: &CommandPhase, after: &CommandPhase) -> Option<
     use CommandPhase as P;
     match (before, after) {
         (_, P::StepBack | P::Reselect) => Some(BattleUiCue::Back),
+        // `0x32`'s cancel arm (`FUN_8004FCC8(0x23)`, `0x801D1130`); its Left
+        // arm is the generic commit below (`0x21`, `0x801D1158`).
+        (P::RunConfirm { .. }, P::RoundPrompt { .. }) => Some(BattleUiCue::Back),
         (P::AttackMode { .. }, P::Menu { .. }) => Some(BattleUiCue::Back),
         (P::Targeting { .. }, P::Menu { .. }) => Some(BattleUiCue::Back),
         (P::Targeting { picker: a, .. }, P::Targeting { picker: b, .. }) => {
@@ -80,9 +83,14 @@ pub fn command_phase_cue(before: &CommandPhase, after: &CommandPhase) -> Option<
         (P::RoundPrompt { .. }, P::RoundPrompt { .. })
         | (P::Menu { .. }, P::Menu { .. })
         | (P::AttackMode { .. }, P::AttackMode { .. })
+        | (P::RunConfirm { .. }, P::RunConfirm { .. })
         | (P::CommitConfirm { .. }, P::CommitConfirm { .. }) => None,
         (
-            P::RoundPrompt { .. } | P::Menu { .. } | P::AttackMode { .. } | P::CommitConfirm { .. },
+            P::RoundPrompt { .. }
+            | P::Menu { .. }
+            | P::AttackMode { .. }
+            | P::RunConfirm { .. }
+            | P::CommitConfirm { .. },
             _,
         ) => Some(BattleUiCue::Confirm),
         _ => None,

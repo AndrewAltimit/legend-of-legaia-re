@@ -4,6 +4,7 @@ mod actor_state;
 mod band_word;
 mod barra_writes;
 mod capture_seat_writes;
+mod death_game_writes;
 mod juggernaut_writes;
 mod kemaro_writes;
 mod module_code;

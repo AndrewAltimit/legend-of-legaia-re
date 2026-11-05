@@ -99,6 +99,16 @@ impl TraceBgmDirector {
         Ok(())
     }
 
+    /// The active bank.
+    pub fn bank(&self) -> Option<&VabBank> {
+        self.bank.as_ref()
+    }
+
+    /// The active bank's samples as uploaded.
+    pub fn bank_samples(&self) -> &[Option<legaia_engine_audio::vab_bind::UploadedVag>] {
+        self.bank.as_ref().map_or(&[], |b| &b.samples)
+    }
+
     /// Borrow the active sequencer - the trace loop ticks it each frame.
     pub fn sequencer(&self) -> Option<&Sequencer> {
         self.sequencer.as_ref()

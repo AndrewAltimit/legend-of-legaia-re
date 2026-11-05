@@ -93,8 +93,9 @@ fn a_turn_opens_on_the_round_prompt_and_run_flees() {
     // Cancel on the ring: back to the prompt.
     s.select_input(pad(|p| p.cancel = true));
     assert!(!is_ring(&s));
-    // Right on the prompt is Run.
-    assert_eq!(s.select_input(pad(|p| p.right = true)), DomeMenuEvent::Run);
+    // Right on the prompt opens the flee confirm; Left there is Run.
+    assert_ne!(s.select_input(pad(|p| p.right = true)), DomeMenuEvent::Run);
+    assert_eq!(s.select_input(pad(|p| p.left = true)), DomeMenuEvent::Run);
     assert_eq!(s.phase(), MusclePhase::Select, "the host ends the leg");
 }
 

@@ -60,9 +60,17 @@ lettered in the game's own dialog font, read from that disc.
 | Enter, Space, click | press the focused button, or step an option forward |
 | Right-click an option | step it back |
 | Delete (Backspace with nothing typed), middle-click an option | put it back on its default |
+| Enter, click on a *Controls* row | wait for the key that button goes on (Esc or a click calls it off) |
 | Ctrl+O | open the file dialog |
 | typing | enter a disc path (Enter uses it, Esc clears it) |
 | Esc | leave the controls page, or quit |
+
+If the launcher's window cannot open at all (usually a graphics driver with
+nothing the game can draw through, or a remote desktop session), a message box
+says so and names the fix, and the program exits with a failure rather than
+ending with nothing on screen. On Linux the box is the desktop's own dialog
+(`zenity`, through the file-chooser library); without one the text goes to the
+terminal.
 
 ### Choosing the disc
 
@@ -175,8 +183,20 @@ either place is the one the other shows. The `launcher.toml` rows are launch
 switches with no option behind them; the browser play page has a box for each.
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
-it overrides read *Original* while it is on. *Controls* swaps the option list
-for the current key bindings (`legaia-input.toml`).
+it overrides read *Original* while it is on.
+
+### Changing the keys
+
+*Controls* swaps the option list for the key table, so a key can be changed
+before the game has started. `Right` or `Tab` moves into it; `Enter` or a click
+on a row waits for the key that button goes on. A key another button was on
+swaps with it, so no button is left without one. The keys are written straight
+to `legaia-input.toml`, the same file the in-game *Key Config* screen and
+`config set --binding` edit. Keys the game window keeps for its own shortcuts
+(the function keys, `R`, `T`, `I`, ...) are refused with the list of those that
+work: an arrow key, `Z` `X` `C` `V` `A` `S` `D` `Q` `W` `E`, `1`, `2`, `Enter`,
+`Space` and right `Shift`. *All keys back to default* at the bottom of the table
+restores the first-start layout. A gamepad's layout is fixed.
 
 The *Gameplay tweaks* and *Battle tuning* rows are disc-patcher features the engine runs itself,
 so they need no patched disc: each matches one `legaia-patcher` flag, except
@@ -203,6 +223,11 @@ folder cut out of it. A panic on any of the game's threads (the
 audio mixer inside the sound callback, the controller reader) ends the
 process, so it is reported instead of the game playing on silent or deaf to
 the pad. Run from a terminal, the game's output still prints there too.
+
+`legaia-engine launch --disc <bin>` starts what *Play* starts on that disc,
+with the launcher's remembered switches and expansion pack and no screen. Legaia
+Explorer's *Play* runs it, so a game started from Explorer plays with everything
+set here.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
@@ -258,8 +283,8 @@ Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and
 both the d-pad and the left stick drive the d-pad. The browser takes any
 controller it reports with the `standard` mapping; the native window takes any
 controller its platform's gamepad backend sees, and works with the keyboard
-alone when none is connected. Key Config (Select on the Options screen) rebinds
-keys only; a controller's layout is fixed.
+alone when none is connected. The launcher's *Controls* page and Key Config
+(Select on the Options screen) rebind keys only; a controller's layout is fixed.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a
@@ -344,7 +369,8 @@ bindable key deletes that button from the keyboard entirely. The bindable
 vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
 is an F-key or `Home` / `End`, which the pad lookup never resolves, or a letter outside
 that vocabulary (`I`, `R`, `T`, `Y`, the dev triggers, and the minigame entries below), so no
-rebinding can collide with one.
+rebinding can collide with one. With an expansion pack, `\` opens its card menu and `` ` `` its
+game-mode picker over the field; `Tab` opens the [multiplayer screen](#playing-online).
 
 `--boot-ui` starts at the title screen → save-select flow instead of jumping
 into the scene.
@@ -552,11 +578,9 @@ The site's separate **Minigames** page runs the slot machine, the dance, Baka
 Fighter, fishing and the Muscle Dome on their own, without a field scene
 underneath - the same engine sessions, read off the same disc.
 
-One HUD caveat that looks like a bug and is not: the fishing sprite page is the
-one asset in that chain nobody has decoded, so both hosts draw the HUD's digit
-and caption rows from the dialog font and skip its glyphs. The captions are
-engine-side English placeholders at the retail pen positions, so a long
-placeholder can overlap the count beside it.
+The fishing HUD is the overlay's own sprite table, read off the disc: the HI SCORE
+and POINT plates, the gauges, banners and score digits. Its captions are the disc's
+too, and those and the lure count draw through the dialog font.
 
 ### Playing online
 
@@ -594,7 +618,8 @@ name, and press Join. A browser cannot host. A page served over
 `https://` can only reach `wss://`, so playing from the published site
 needs the relay behind a TLS proxy; a page served locally over `http://`
 reaches `ws://` directly. A standalone `legaia-relay --bind 0.0.0.0:7462`
-hosts rooms without a game window.
+hosts rooms without a game window (a source build's binary, not in the release
+archive).
 
 **Party night.** The host's Game row lists party nights first
 (**Practice Night** with no pack, **Tower Game Night** with the sample pack): a
@@ -624,13 +649,11 @@ table plus the resident program bank, and both hosts key them into the **same**
 SPU the music uses, so a cue shares the voice pool exactly as it does on
 hardware.
 
-Cue *provenance* is worth knowing before you judge a sound. Retail fires an
-effect by writing an id into a ring, and only a handful of those writes have
-been traced, so a cue is either `disc` (the id is retail's, at the place retail
-writes it) or `site` (retail's id there is unpinned and the port reuses the
-closest one). The browser page reports the split per event rather than presenting
-a guess as the game's sound. Walking is silent, because retail's is: the game
-plays no footstep sound at all.
+A cue id is retail's own, at the place retail writes it into its sound ring, and
+the browser page reports that per event. The port adds two sounds of its own, both
+on the standalone Minigames page's Baka Fighter, where retail plays nothing: the
+round start and the match loss; the page marks them `site`. Walking is silent,
+because retail's is: the game plays no footstep sound at all.
 
 ## 6. Saves and config live next to you
 
@@ -726,8 +749,9 @@ The field/event VM ([script-vm.md](../subsystems/script-vm.md)) drives every
 scene. Its disassembler is a release binary too:
 
 ```bash
-./asset field-disasm scan-prot --prot extracted/PROT.DAT  # sweep for event scripts + FMV triggers
-./asset field-disasm file <extracted-script-body>         # walk one raw script linearly
+./asset field-op-census extracted/PROT --cdname extracted/CDNAME.TXT     # every opcode, per scene
+./asset field-op-census extracted/PROT --only '4C E2' --context          # one op (here: FMV triggers), in place
+./asset field-disasm file <extracted-script-body>                        # walk one raw script linearly
 ```
 
 For a specific scene's per-scene scripts (LZS-compressed inside the scene's
@@ -761,6 +785,26 @@ python3 scripts/ci/check-wasm-freshness.py
 Worth running before concluding a change did or didn't work in the browser: a
 stale bundle looks exactly like a fix that had no effect. See
 [shipped-bundle-freshness.md](../tooling/shipped-bundle-freshness.md).
+
+### What a browser cannot do
+
+The page runs the window's engine, and the two are compared frame by frame. These
+are the differences a browser imposes, not ones that are waiting on work:
+
+- **The disc is a `.bin` you pick**, kept in browser storage between visits. The
+  window also reads an extracted folder.
+- **Sound waits for a click or a key.** A browser opens no audio before a gesture.
+- **Voices are read on request.** The page holds the disc on its JavaScript side,
+  so a CD-XA clip the engine has not heard yet is read and decoded when asked for
+  and can start a few frames late the first time it plays.
+- **Everything runs on one thread.** The engine, the drawing and the audio pump
+  share the page's main thread, so a slow machine steps its quality down to
+  hold the frame rate and a long stall can be heard. The window's audio has its
+  own thread.
+- **Saves live in this browser.** The card rack is browser storage; export a save
+  to keep it or to carry it to the window, which loads the same file.
+- **It cannot host a room or watch a folder.** It joins rooms a window or a relay
+  hosts, and reloads a pack from its library rather than from a folder as it changes.
 
 ## 11. Playing an expansion pack
 

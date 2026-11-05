@@ -253,3 +253,40 @@ fn whole_rounds_play_out_as_retail_plays_them() {
         "rounds {rounds} finishers {finishers} chains {chains} crits {crits} double KO frames {ko_draws}"
     );
 }
+
+/// The round score `FUN_801D2A28` over the disc's two bonus tables, against
+/// `baka_round_score`, at every combo and health the HUD can show.
+#[test]
+fn a_round_win_scores_as_retail_scores() {
+    use legaia_engine_minigames::baka_fighter::{BakaScoreTables, baka_round_score};
+    let (Some(mut cpu), Some(d)) = (scus_cpu(), disc()) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let overlay = d.read_entry(976).expect("PROT 0976");
+    cpu.mem.load(OVERLAY_BASE, &overlay);
+    cpu.stub(0x8005_67A8, 0);
+    let t = BakaScoreTables::from_overlay(&overlay).expect("tables");
+    const COMBO: u32 = 0x801D_BEC8;
+    const ROW_COMBO: u32 = 0x801D_BED8;
+    const ROW_BONUS: u32 = 0x801D_BEDC;
+    const HP: u32 = 0x801D_BFC4;
+    for combo in 0..40 {
+        for hp in (0..=0xC80).step_by(7).chain([0xC80]) {
+            cpu.mem.wr32(COMBO, combo as u32);
+            cpu.mem.wr32(HP, hp as u32);
+            cpu.mem.wr32(ROW_COMBO, 0);
+            cpu.mem.wr32(ROW_BONUS, 0);
+            assert_eq!(cpu.call(0x801D_2A28, &[]), Stop::Returned);
+            let g = baka_round_score(combo, &t.combo_bonus, hp, &t.health_bonus);
+            assert_eq!(
+                (
+                    cpu.mem.rd32(ROW_COMBO) as i32,
+                    cpu.mem.rd32(ROW_BONUS) as i32
+                ),
+                (g.combo_gain, g.bonus_gain),
+                "combo {combo} hp {hp}"
+            );
+        }
+    }
+}

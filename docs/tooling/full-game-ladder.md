@@ -725,7 +725,10 @@ joined yet, into the bag ahead of the present members' armour: retail's Noa
 fights row 16 with the Nail Glove `dolk` sells, and she joins in `cave01`
 unarmed with no counter on her stretch. The same counters stock heals for
 that member too (`joining_members`: a character the anchors ahead show grown
-past level 1), since her training and her fight draw on the shared bag.
+past level 1), for the stretches she shares with the party. Alone she sees only
+her half of the bag ([`inventory.md`](../subsystems/inventory.md#the-active-window)),
+so none of those heals reach her `cave01` training, and past half her HP with
+nothing to heal with she runs.
 
 ### A counter the story has closed
 
@@ -1037,7 +1040,7 @@ Songi) in place of the Power Elixir, each win on some streams and lose
 others. So a wipe after the guard retry, or a wipe with no boss element to
 guard, is reloaded again with a fresh hand - the rand stream advanced by an
 amount keyed on the attempt, standing in for the time a player spends on the
-game-over and card screens - up to `PAD_WIPE_ATTEMPTS` (six) attempts in all. The
+game-over and card screens - up to `PAD_WIPE_ATTEMPTS` (six) attempts in all, twice that in the continuous run. The
 anchor itself points the same way: the playthrough's play-time counter
 advances about five hours between `PRO-04` (`noaru`) and `PRO-10`
 (`jouind`), over which the party's HP nearly doubles.

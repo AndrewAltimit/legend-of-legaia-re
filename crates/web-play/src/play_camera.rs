@@ -188,6 +188,14 @@ impl LegaiaRuntime {
         }
     }
 
+    /// The game's dither word (`World::toggles.draw_dither`, field op `4C ED`),
+    /// which the page's PSX rasterisation gates its dither on.
+    pub fn play_draw_dither(&self) -> bool {
+        self.scene_host
+            .host()
+            .is_none_or(|h| h.world.toggles.draw_dither)
+    }
+
     /// This frame's retail GTE **NCLIP** winding-rejection mode for the
     /// scene pass - the word the page hands `TmdRenderer.setNclipCull`, from
     /// the shared [`camera_frame::nclip_cull_mode`] the native window's

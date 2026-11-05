@@ -61,6 +61,13 @@ DROP_ENV = {
     "LEGAIA_BATTLE_DISPLAYED_SEAT", "LEGAIA_SEAT_DISPLAYED_CLIPS",
 }
 
+# What a `--physical` recording keeps of those: it plays the state's own round,
+# so its drive and the re-seat that stands that round on the capture's ground.
+PHYSICAL_KEEP_ENV = {
+    "LEGAIA_BATTLE_DRIVE", "LEGAIA_BATTLE_RESEAT", "LEGAIA_BATTLE_GROUND_SNAP",
+    "LEGAIA_BATTLE_APPROACH_YAW", "LEGAIA_BATTLE_DISPLAYED_SEAT",
+}
+
 
 def main_checkout() -> Path:
     try:
@@ -225,6 +232,18 @@ def retail_opening_pose(out: Path) -> str | None:
         pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
 
 
+def retail_opening_cursor(out: Path) -> str | None:
+    """`clip,cursor` of the caster on retail's cast begin, for
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose."""
+    begin = (0x28, 0x3C)
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+    except OSError:
+        return None
+    return None if body is None else f"{body['clip']},{body['cursor']}"
+
+
 def retail_rand_seed(out: Path, key: str) -> str | None:
     """`st7:phase:seed` for `LEGAIA_CAST_RAND_SEED`: the BIOS rand() seed
     word (`rand` in the probe's meta.csv) on retail's last vsync under the
@@ -260,6 +279,27 @@ def record_key(exe: str, env: dict, args: list[str]) -> str:
             st = (p / "PROT.DAT").stat()
             h.update(f"{st.st_size} {st.st_mtime_ns}\0".encode())
     return h.hexdigest()
+
+
+def retail_step_track(out: Path) -> str:
+    """`state phase step` per retail frame, in film order, for
+    `LEGAIA_CAST_STEP_TRACK`: a frame's row is its last, and the phase counts
+    only inside the module bands, as the pairing's key does."""
+    lines, last = [], None
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            if last is not None and r["frame"] != last["frame"]:
+                lines.append(_step_row(last))
+            last = r
+    if last is not None:
+        lines.append(_step_row(last))
+    return "".join(lines)
+
+
+def _step_row(r: dict) -> str:
+    st7 = int(r["st7"])
+    phase = int(r["phase"]) if st7 in (0x35, 0x36, 0x70) else 0
+    return f"{st7} {phase} {r['step']}\n"
 
 
 def retail_hit_words(out: Path) -> list[int]:
@@ -303,7 +343,7 @@ def run_engine(a, out: Path) -> bool:
         if k == "LEGAIA_BATTLE_INFLIGHT":
             child_inflight = v
         # A physical recording walks the state's own pad path to the strike.
-        if k not in DROP_ENV or (a.physical and k == "LEGAIA_BATTLE_DRIVE"):
+        if k not in DROP_ENV or (a.physical and k in PHYSICAL_KEEP_ENV):
             env[k] = v
         i += 1
     args = rest[i + 1:]
@@ -351,6 +391,8 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if not a.physical and (pose := retail_opening_pose(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
+    if not a.physical and (cursor := retail_opening_cursor(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
@@ -380,6 +422,10 @@ def run_engine(a, out: Path) -> bool:
             print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
             return False
         env["LEGAIA_CAST_RAND_SEED"] = seed
+    if a.retail_steps:
+        track = out / "retail-steps.txt"
+        track.write_text(retail_step_track(out))
+        env["LEGAIA_CAST_STEP_TRACK"] = str(track)
     if a.strike_deal:
         env["LEGAIA_STRIKE_DEAL"] = ",".join(str(w) for w in retail_hit_words(out))
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
@@ -496,6 +542,9 @@ def main() -> int:
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
+    ap.add_argument("--retail-steps", action="store_true",
+                    help="engine: run on the recording's own frame steps (a harness seat: it takes the "
+                         "frame's cost out of what the film scores, so a law residual reads alone)")
     ap.add_argument("--strike-deal", action="store_true",
                     help="--physical: stand the engine's strike on the capture's queue, approach terms, "
                          "ATK and retail's word at each hit, so what differs is rules")

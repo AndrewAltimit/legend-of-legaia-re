@@ -428,6 +428,28 @@ impl FieldHostImpl<'_> {
                 | legaia_engine_scene::field_env::ANIM_REVERSE);
             ctx.move_id = u16::from(move_id);
         }
+        // Aimed at a `.MAP` placed object's actor: the same arm, tile into
+        // `+0x14` / `+0x18` (`0x801E1880`, `0x801E1898`), LUT heading into
+        // `+0x26` (`0x801E1900`), a floor re-sample under `0x20200` and never
+        // under `0x20000000` (`0x801E1904..0x801E1940`), and the clip bind.
+        // Retail's draw reads the actor, so a record a prologue parks stands
+        // where this seats it: `son`'s sky, `P0[5]`, opens `23 7F 7F` and the
+        // cutscene seats it with `CC 05 51 08 10 05 00`.
+        // REF: FUN_801D5630 (the object's bind), FUN_800204F8
+        if let Some(record) = self.world.field_vm.executing_object {
+            ctx.world_x = world_x;
+            ctx.world_z = world_z;
+            self.face_compass(ctx, depth_byte & 0xF, false);
+            if ctx.flags & 0x2000_0000 == 0 && ctx.flags & 0x0002_0200 != 0 {
+                ctx.world_y = self
+                    .world
+                    .sample_field_floor_height(i32::from(world_x as i16), i32::from(world_z as i16))
+                    as u16;
+            }
+            self.world
+                .play_object_prop_clip(record, move_id, ctx.local_flags, ctx.field_6a);
+            return;
+        }
         // Scene-entry spawn-prologue pre-run
         // ([`World::pre_run_field_channel_prologues`]): the record's own
         // `4C 51` is the actor's initial SEAT - retail's install pre-run

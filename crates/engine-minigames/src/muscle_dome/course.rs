@@ -4,8 +4,8 @@
 /// War God Icon; `FUN_800421D4(0xCD, 1)`).
 pub const CONTEST_PRIZE_ITEM_ID: u8 = 0xCD;
 
-/// Story-flag id of the one-shot prize latch (`FUN_8003CE64(0x6CB)` - once
-/// set, the prize never re-awards).
+/// Story-flag id of the prize latch: the arena only reads it
+/// (`FUN_8003CE64(0x6CB)`), and the lobby's winner's scene sets it.
 pub const CONTEST_PRIZE_FLAG: u16 = 0x6CB;
 
 /// The Master-course fight index the prize gates on (`round >= 0xD`, i.e.

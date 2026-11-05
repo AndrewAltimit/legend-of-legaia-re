@@ -578,6 +578,18 @@ pub fn engine_frame_with(
         out = crate::window_child::output_retrying_startup_race(&mut cmd, label)
             .context("spawn play-window")?;
     }
+    // A strike whose walk the ring's pace never brings to the capture's gate
+    // parks in `0x19` to the deadline (`battle_map03_death_trigger_strike`). The
+    // frame still measures the state at the default step, and the note says so.
+    if !out.status.success()
+        && String::from_utf8_lossy(&out.stderr).contains("phase gate not met")
+        && std::env::var_os("LEGAIA_BATTLE_PARTY_STEP").is_none()
+    {
+        eprintln!("retail-compare: {label}: gate not met at the party's step; default step");
+        cmd.env("LEGAIA_BATTLE_PARTY_STEP", "0");
+        out = crate::window_child::output_retrying_startup_race(&mut cmd, label)
+            .context("spawn play-window")?;
+    }
     let retries = String::from_utf8_lossy(&out.stderr)
         .lines()
         .filter(|l| l.contains("screenshot readback"))

@@ -48,6 +48,9 @@ pub trait FrameStepWorld: CameraWorld {
     /// Publish the compass azimuth (`0..4096`) the field locomotion's d-pad
     /// remap reads this tick.
     fn set_camera_azimuth(&mut self, azimuth: u16);
+    /// Whether the d-pad remap reads the scene's authored octant
+    /// (`gp+0x2D8`): the retail follow view with nothing turning it.
+    fn set_pad_octant_live(&mut self, _live: bool) {}
     /// Install the camera focus the positional sound emitters listen from,
     /// as retail stores it (`_DAT_80089118` / `_DAT_80089120`, negated).
     fn set_camera_focus_stored(&mut self, focus_stored_x: i32, focus_stored_z: i32);
@@ -134,6 +137,13 @@ pub fn camera_before_world_tick<W: FrameStepWorld + ?Sized>(
     camera.reset_for_free_roam(world);
     let az = azimuth_override.unwrap_or_else(|| camera.compass_azimuth_units_for(world));
     world.set_camera_azimuth(az % 4096);
+    // Retail's remap rotates by the scene's authored octant, not by the view:
+    // the two part on the follow cameras that sweep (`town01_field_card_boot`
+    // yaw `-260`, octant `0`; `kor3_field_route_walk` yaw `511`, octant `6`).
+    // A view the player or a host has turned has no authored octant to read.
+    world.set_pad_octant_live(
+        azimuth_override.is_none() && camera.manual_orbit == 0.0 && camera.render_yaw_bias != 0.0,
+    );
     // The focus the camera last stored (`_DAT_80089118` / `_DAT_80089120`):
     // the positional sound emitters measure their box against it, and move-VM
     // ext `0x24` parts seat on it.

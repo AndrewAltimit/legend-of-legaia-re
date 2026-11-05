@@ -235,3 +235,32 @@ fn the_cast_driver_reframes_the_depth_on_the_rewritten_target() {
     step(&mut host, &mut ctx);
     assert_eq!(ctx.camera_frame_height, 0xC00);
 }
+
+/// Case `1` of the cast-effect driver stores `ctx[+0x24C] = 0xFD`
+/// (`0x801DC2F4..0x801DC31C`) for a bound below `0xFE`, and that word against a
+/// non-zero bound ends the hit loop (`0x801E4898..0x801E48B0`) with the clip
+/// still playing. State `0x28` clears the word (`0x801E43CC`).
+#[test]
+fn case_one_settles_a_bounded_hit_loop() {
+    for (case, bound, word, state) in [
+        (1u8, 8u8, 0xFDu8, ActionState::MagicRecovery),
+        // A park holds: the same case leaves the word and the loop alone.
+        (1, 0xFF, 0, ActionState::MagicHitLoop),
+        // Another case holds a bounded loop too.
+        (2, 8, 0, ActionState::MagicHitLoop),
+    ] {
+        let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+        ctx.action_state = ActionState::MagicHitLoop.as_byte();
+        host.actors[1].strike_index = 2;
+        host.actors[1].params[2] = case;
+        host.actors[1].current_anim = 0x21;
+        host.actors[1].hit_count_bound = bound;
+        step(&mut host, &mut ctx);
+        assert_eq!(ctx.hit_counter, word, "case {case} bound {bound}");
+        assert_eq!(
+            ctx.action_state,
+            state.as_byte(),
+            "case {case} bound {bound}"
+        );
+    }
+}

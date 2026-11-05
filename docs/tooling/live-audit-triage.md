@@ -99,6 +99,107 @@ missing, not by the crate the port lives in. The exception is a port whose
 natural home is a rooted crate: the SC block checksum lives in `legaia-save`,
 which `save-tool` roots, so it is live as soon as it exists.
 
+## A hook left on its trait default
+
+The audit's `live` stops at the call. A VM arm that calls a host method whose
+default does nothing reads live, on both graphs, and the game skips it. The
+instrument is `scripts/ci/host-default-noops.py`, which lists every trivially
+bodied default no real impl overrides; cross it with
+[`field-op-census.md`](field-op-census.md) for whether the disc drives the arm.
+Settled rows:
+
+| Hook | Disc | Verdict |
+|---|---|---|
+| `spawn_placement_if_absent`, `4C D2` | 77 sites | Wired, with the retire bit it answers: [`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#4c-d2--4c-d6--4c-d7-advance-in-retail). |
+| `copy_party_tmd_poses`, `4C 3F` | 8 sites | Wired: [`character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap). |
+| `move_image`, move op `0x40` | `conc*`, `deroa`, `bubu1`, ending scenes | Wired: [`move-vm.md`](../subsystems/move-vm.md#0x40---move_image). |
+| `clear_party_state_region`, `4C 32` | 5 sites, dev pickers | Wired: clears the flag bank. |
+| `set_dither`, `4C ED` | 27 sites | Wired: [`shading.md`](../subsystems/shading.md#step-7-dither-and-the-15-bit-framebuffer). |
+| `face_rotation_setup`, move op `0x21` | Not censused here | Gap: needs the render path `field_channels.rs` names. |
+| `snapshot_play_clock`, `4C EE` | `edlast` only | Left: the end of the game, with no save after it. |
+| `refresh_collision_y`, `4C DA` | 9 sites | Replaced: the VM drops the height bit and the next tick's floor sample lands the same `+0x16`. |
+| `reset_party_pack_load_state`, `4C E9` | `opurud` only | Replaced: the port has no load gate; every scene entry runs the swap. |
+| `set_door_of_light_destination`, `4C 88`; `bgm_swap_pending`, `4C C9`; `op4c_ne_sub7_ramp_73ee4`, `4C E7` | None | No carrier. |
+| `hsv_grade_resident_meshes`, `4C E6` | 6 sites | Replaced: the prologue palette mode (`primitive_colour_grade.rs`). |
+| `equip_attack_bonuses` | Battle | Replaced: the hit resolver folds `BattleState::equip_atk` itself (`loop_driver/hits.rs`). |
+| `first_monster_id`, `victory_stage` | Battle | Off the live path: the sequencer poses `ctx[+0x13]`, the leader ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)). |
+
+## State no host sets up
+
+The audit asks whether a port is reached. A kernel whose reader is live passes
+even when the input it reads was never installed: it runs correctly on an empty
+table or a zero word, and the game silently misbehaves. Nothing panics, so only
+a player on that exact path notices. `scripts/ci/unset-state.py` is the
+instrument. It walks the audit's two call graphs from the play hosts alone
+(`play-window` and the wasm play exports, with no parity, CLI or viewer root)
+and prints three tiers: **A**, a setter (`install_*`, `set_*`, `seed_*`, `load_*`,
+`with_*` and kin) no play host reaches, writing a field live code reads; **B**, a
+field live code reads whose every writer is unreached; **C**, a field live code
+reads that nothing writes beyond its zero value.
+
+It prints and asserts nothing, because it cannot be precise. Fields match by name
+and receivers are untyped, so a field name two structs share is skipped unless
+`--shared` asks for it, and a kernel input struct filled by a literal `0` reads as
+tier C by design. `--soft` judges writers on the receiver-gated graph, which
+finds more and invents some; `--loose-readers` counts readers on parked kernels.
+
+A row settles the way any audit row does, from the disassembly:
+
+1. Find retail's writer of the word the field mirrors. An unnamed writer is a
+   thread, not a verdict. Read the addressing too: a doc naming a word off the
+   wrong `lui` makes a wrong row look finished.
+2. If retail writes it on a path a player reaches, name the chain to a host root
+   and install it. An engine entry both hosts run is the only acceptable seat, so
+   [`host-drift.md`](host-drift.md) has nothing to catch.
+3. If the port does the job elsewhere, or retail's word never changes, say so here.
+   Delete the field when nothing but a test would miss it. Never write a fake wire.
+
+### Settled rows: wired
+
+| Field | Retail word | What a player saw |
+|---|---|---|
+| `art_innate_caps` | `0x801F686C`, set in the overlay image | a Hyper Art's arrows taught it without its book |
+| `arts_banner_seat_flags` | `ctx[+0x28D + seat]`, `0x801EF5A8` | a Miracle Art read `HYPER` and drew the fanfare's `rand()` |
+| `hit_counter` | `ctx[+0x24C]`, `0x801DC31C` | a bounded hit loop waited out its clip |
+| `battle_command_cross` | option `0x800846C8` | the first spar explained the wrong entry style |
+| `select_attack_automatic` | option `0x800846C4` | on Automatic, the Hyper Arts lesson could not be passed |
+| `BannerInputs::ctx_override_slot` | `ctx[+0x24B]`, `0x801E6E30` | a group cast on one monster raised the group banner |
+
+The two options were misnamed: `0x801F6C60` is `lw v0,0x46c8` off `lui v0,0x8008`,
+which is `0x800846C8`, not a `0x801D46C8` overlay word that "clears on the first
+prompt". The hit-loop word is not a counter: `0x801E43CC` clears it and case `1`
+of `FUN_801DC0A0` stores `0xFD`, and nothing increments it.
+
+### Settled rows: no wire owed
+
+| Row | Why |
+|---|---|
+| `install_man_formation` | a test driver; a live carrier arms through `install_field_carriers` |
+| `install_world_map_entities`, `_with_configs` | test drivers; scene entry uses `install_world_map_entities_at` |
+| `set_art_name_table` | names only the `Learned <art>!` string no host draws |
+| `AudioState::dual_mode_gate` | retail boots it `0` and nothing sets it |
+| `FieldLocomotion::forced_slow` | a test driver; `scene_save_allowed` is the retail word |
+| `FieldActorInputs::ambient_gate` | moot: every caller's flags carry `MOVING_CLASS` |
+| `DamageFinish::floor_rand` | the live path is `damage_finish_lazy`, which draws on demand |
+| `SpellSnapshot::target_weakness` | the faithful predamage kernels replace that magnitude |
+| `RecordsScreenView::treasure_*` | the dev menu's records page only |
+| `WorldMapController::scene_base` | the kingdom falls back to the scene label, so a real base changes nothing |
+| `TitleCardStatus` | the card flow is `engine-menus`' memory-card session; the title tick sees no card |
+
+### Open rows
+
+- `HudInput::short_idle` is `_DAT_8007B5F4`, raised at `0x801DA704` on battle entry
+  and cleared by the HUD at `0x801D0DBC` / `0x801D0EAC`. Retail's HUD returns from a
+  fight at once under Immediate; the port's kernel lacks the scene-entry arm's
+  four terms (`0x801D0DC0..0x801D0E0C`), so seating the word alone would be a
+  partial wire.
+- `set_move2_buffer_root`, `set_move_buffer_alt_root` and `MoveBufferState::cursor_requested`
+  are the physics tick's own clip cursor. Which field clips run through it rather
+  than the host's actor layer is unsettled.
+- `World::set_hub_equip_mode` mirrors `_DAT_8007BB9C`, the highlighted row's class
+  nibble; the hub's equipment panel stays on its no-candidate arm until the list
+  machinery publishes it.
+
 ## Analysis defects this triage found
 
 Five shapes of audit false result. The first four are fixed in

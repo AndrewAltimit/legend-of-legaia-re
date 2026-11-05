@@ -18,6 +18,7 @@ impl World {
     pub fn settle_seated_clips(&mut self) {
         self.refresh_battle_body_pairs();
         if self.mode == SceneMode::Battle {
+            self.tick_dohati_growth();
             self.tick_mystic_shield();
         }
     }
@@ -244,6 +245,7 @@ impl World {
         // (`0x8004D534..0x8004D674`): once a pass - it counts nothing, it
         // seats the sphere and tests the break.
         if self.mode == SceneMode::Battle {
+            self.tick_dohati_growth();
             self.tick_mystic_shield();
         }
         let mut fresh = vec![false; self.actors.len()];
@@ -584,6 +586,14 @@ impl World {
             // PORT: FUN_80047430 (`0x80047B54`, the natural-end commit of a
             // looping clip)
             if looped_recommit {
+                // The commit's rate decay runs on this path too
+                // (`0x8004B080..0x8004B090`): a seat at any rate but `8` loops
+                // at `4`, so a summon creature seated at `2` plays its idle at
+                // twice the pace from its first wrap (capture: Aluru's arm 9).
+                self.actors[i].battle.anim_rate =
+                    legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(
+                        self.actors[i].battle.anim_rate,
+                    );
                 self.actors[i].battle.input_cursor = 0;
                 // The commit's cue-track cursor seed (`sb zero,0x1f6` at
                 // `0x8004AFD0`, then the juggled re-hit's `1`): a walk's
@@ -641,13 +651,28 @@ impl World {
             // engine seat of retail's `FUN_80047430` -> `FUN_801DEA50` call
             // pair (frame argument = the node's 12.4 anim cursor in whole
             // keyframes, which is `MonsterAnimPlayer::current_frame`).
-            if let Some(frame) = frame {
+            // Retail's walks run in the order hit, effect script, cue track
+            // (`0x800478A0`, `0x800478B8`, `0x800478E4`). A blocked hit steps its
+            // attacker's cue cursor over the impact cue (`0x801EE6EC`), so the
+            // hit goes first where the slice has no commit to make ahead of it:
+            // an impact cue on the hit's own keyframe would otherwise sound on a
+            // block (Nova's clip 8).
+            let hit_first =
+                hits && frame.is_some() && !(commit_after && self.battle_commit_may_land(i));
+            let commits = self.actors[i].battle_clip_commits;
+            if hit_first {
+                self.walk_battle_node_hits(i, &mut foreign);
+            }
+            // A hit that committed its own attacker's next clip leaves the walk
+            // to the post-commit re-walk.
+            let cut = self.actors[i].battle_clip_commits != commits;
+            if let Some(frame) = frame.filter(|_| !cut) {
                 self.step_actor_effect_script(i, frame);
                 // ... and its third call, the animation cue track
                 // (`FUN_800508DC`, same arguments).
                 self.step_actor_anim_cues(i, frame);
             }
-            self.finish_battle_node_slice(i, commit_after, hits, &mut foreign);
+            self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
         }
         // The cast tick's effect-child drive. On retail's cadence the cast tick's drive runs with the frame
         // driver's pass instead (`World::tick_battle_cast_drive`).
@@ -691,7 +716,33 @@ impl World {
         if commit_after {
             self.commit_staged_battle_anim(i);
         }
-        if hits && let Some(before) = self.tick_battle_hit_events_seat(i) {
+        if hits {
+            self.walk_battle_node_hits(i, foreign);
+        }
+        if let (Some(a), Some(c)) = (
+            self.actors.get(i),
+            self.battle.anim_slice_commits.get_mut(i),
+        ) {
+            *c = a.battle_clip_commits;
+        }
+    }
+
+    /// [`Self::commit_staged_battle_anim`] could install a clip on this seat now:
+    /// a staged clip differs from the playing one and no one-shot holds it off.
+    fn battle_commit_may_land(&self, i: usize) -> bool {
+        self.actors.get(i).is_some_and(|a| {
+            a.battle.queued_anim != a.battle.current_anim
+                && !(a.battle_staged_anim.is_some()
+                    && a.battle_animation
+                        .as_ref()
+                        .is_some_and(|p| !p.finished() && !p.is_looping()))
+        })
+    }
+
+    /// One seat's hit walk inside its slice; a commit it made on another seat
+    /// is that seat's foreign commit, not its own slice's.
+    fn walk_battle_node_hits(&mut self, i: usize, foreign: &mut [u32]) {
+        if let Some(before) = self.tick_battle_hit_events_seat(i) {
             for (k, b) in before.into_iter().enumerate() {
                 if k != i
                     && let (Some(a), Some(f)) = (self.actors.get(k), foreign.get_mut(k))
@@ -699,12 +750,6 @@ impl World {
                     *f += a.battle_clip_commits.wrapping_sub(b);
                 }
             }
-        }
-        if let (Some(a), Some(c)) = (
-            self.actors.get(i),
-            self.battle.anim_slice_commits.get_mut(i),
-        ) {
-            *c = a.battle_clip_commits;
         }
     }
 
@@ -975,6 +1020,11 @@ impl World {
         let mirrors_loop = self.mirrors_loop_counter(i);
         let actor = &mut self.actors[i];
         if q == actor.battle.current_anim {
+            // A re-commit passes the rate decay as well (`0x8004B080`, ahead of
+            // the install arms).
+            actor.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::commit_rate_decay(
+                actor.battle.anim_rate,
+            );
             if let Some(p) = actor.battle_animation.as_mut() {
                 p.rewind();
                 // The seed (`0x8004BDEC..0x8004BE0C`) runs on a re-commit too.

@@ -11,7 +11,7 @@ use super::*;
 use legaia_engine_camera::psx_camera::FieldCameraView;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::drop_shadow::{
-    DropShadowQuad, SHADOW_NEAR_BIT, ShadowVertex, casts_shadow, drop_shadow,
+    DropShadowQuad, SHADOW_NEAR_BIT, SHADOW_NEAR_SLOTS, ShadowVertex, casts_shadow, drop_shadow,
 };
 
 /// The OT-resolution byte `DAT_1F8003A4` the port sorts the blobs with.
@@ -69,7 +69,15 @@ impl World {
     /// depth-tested against the scene they already drew.
     ///
     /// REF: FUN_8001B964 (the gate at `0x8001BE20..0x8001BE48`)
-    pub fn field_drop_shadows(&self, view: &FieldCameraView) -> Vec<DropShadowQuad> {
+    ///
+    /// `link_order` is a frame that draws each primitive at its table link
+    /// (PSX mode): a cell then takes the one depth of its own link, the slot
+    /// `FUN_8001C394` stores, against the field's flat primitives.
+    pub fn field_drop_shadows(
+        &self,
+        view: &FieldCameraView,
+        link_order: bool,
+    ) -> Vec<DropShadowQuad> {
         // An in-world golf round or race keeps the field under it, and the
         // leader on that field keeps its blob.
         if !Self::fog_mode(self.mode)
@@ -86,17 +94,23 @@ impl World {
             Some(ShadowVertex { sx, sy, sz, depth })
         };
         let mut out = Vec::new();
-        let mut cast = |flags: u32, pos: [i32; 3]| {
+        let mut cast = |flags: u32, pos: [i32; 3], near: bool| {
             if casts_shadow(flags)
-                && let Some(q) = drop_shadow(
-                    pos,
-                    curve_bias,
-                    DROP_SHADOW_OT_SHIFT,
-                    flags & SHADOW_NEAR_BIT != 0,
-                    project,
-                )
+                && let Some(q) = drop_shadow(pos, curve_bias, DROP_SHADOW_OT_SHIFT, near, project)
             {
-                out.extend(q);
+                out.extend(q.map(|mut cell| {
+                    if link_order {
+                        // The cell's link in the `SZ` the field's flat primitives
+                        // compare in: the slot is `SZ / 4`, and a near actor's
+                        // ten slots of the table base are `320` `SZ`, as in
+                        // `prim_mean_depth`.
+                        let near_undo = if near { SHADOW_NEAR_SLOTS } else { 0 };
+                        let sz = (cell.ot_index + near_undo) * 4;
+                        let sz = sz.saturating_sub(if near { 320 } else { 0 });
+                        cell.depth = proj.ndc_at_sz(sz as f32).map(|d| [d; 4]);
+                    }
+                    cell
+                }));
             }
         };
         // The dance's floor slots: `FUN_801D0190` seats each with the placement
@@ -105,7 +119,7 @@ impl World {
         if self.mode == SceneMode::Dance {
             if let Some(g) = self.minigames.dance.as_ref() {
                 for a in g.dancer_actors() {
-                    cast(PLACEMENT_CLASS_BIT, a.pos.map(i32::from));
+                    cast(PLACEMENT_CLASS_BIT, a.pos.map(i32::from), false);
                 }
             }
             return out;
@@ -122,6 +136,8 @@ impl World {
                     i32::from(m.world_y),
                     i32::from(m.world_z),
                 ],
+                m.flags & SHADOW_NEAR_BIT != 0
+                    || self.player_near_buckets(i32::from(m.world_x), i32::from(m.world_z)),
             );
         }
         if self.mode == SceneMode::Field {
@@ -146,6 +162,7 @@ impl World {
                 cast(
                     c.ctx.flags | PLACEMENT_CLASS_BIT,
                     [i32::from(x), y, i32::from(z)],
+                    c.ctx.flags & SHADOW_NEAR_BIT != 0,
                 );
             }
         }

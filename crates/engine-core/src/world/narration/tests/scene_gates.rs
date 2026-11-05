@@ -91,3 +91,61 @@ fn man_load_raises_flag_7_and_shuts_its_c1_records() {
     // A record that does not name it is untouched.
     assert!(w.p2_record_gates_pass(&[0x225], &[]));
 }
+
+#[test]
+fn a_raised_retire_bit_parks_the_placement_and_drops_its_channel() {
+    use legaia_engine_field::field_channels::{CONTEXT_RETIRE_BIT, FieldChannel, resolve_target};
+    use legaia_engine_vm::field::FieldCtx;
+
+    let mut w = World::new();
+    w.npcs.positions.insert(5, (640, 640));
+    w.field_vm.channels = vec![FieldChannel {
+        placement_index: 5,
+        ctx: FieldCtx {
+            script_id: 28,
+            flags: CONTEXT_RETIRE_BIT,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: false,
+    }];
+    w.sweep_field_channel_lifetimes();
+    assert_eq!(
+        w.npcs.positions.get(&5),
+        Some(&(FIELD_OFFMAP_HIDE_XZ, FIELD_OFFMAP_HIDE_XZ))
+    );
+    assert_eq!(resolve_target(&w.field_vm.channels, 28), None);
+    assert!(w.field_npc_live_anchor(5, (0, 0)).is_none());
+
+    // A finished cutscene's restore is not a respawn.
+    w.npcs.entry_positions.insert(5, (640, 640));
+    w.restore_hidden_field_npcs();
+    assert_eq!(
+        w.npcs.positions.get(&5),
+        Some(&(FIELD_OFFMAP_HIDE_XZ, FIELD_OFFMAP_HIDE_XZ))
+    );
+}
+
+#[test]
+fn a_retired_object_leaves_the_draw_set_with_its_channel_kept() {
+    use legaia_engine_field::field_channels::{CONTEXT_RETIRE_BIT, FieldChannel};
+    use legaia_engine_vm::field::FieldCtx;
+
+    let mut w = World::new();
+    w.field_vm.channels = vec![FieldChannel {
+        placement_index: 11,
+        ctx: FieldCtx {
+            script_id: 11,
+            field_72: 0x1000,
+            flags: CONTEXT_RETIRE_BIT,
+            ..FieldCtx::default()
+        },
+        record_offset: 0,
+        pc: 0,
+        done: false,
+        object_bind: true,
+    }];
+    assert!(w.hidden_object_records().contains(&11));
+}

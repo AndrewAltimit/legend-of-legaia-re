@@ -699,7 +699,16 @@ pub fn magic_draws(
     world: Option<&World>,
 ) -> PauseMenuDraws {
     let model = ps::magic_screen_model(s, world.and_then(|w| w.menu.text.as_ref()));
-    if !model.target_select {
+    let panel = model
+        .target_select
+        .then(|| {
+            world.map(|w| {
+                legaia_engine_world_views::pause_screens::spell_target_panel_view_model(s, w)
+            })
+        })
+        .flatten()
+        .filter(|m| !m.members.is_empty());
+    if !model.target_select || panel.is_some() {
         let casters: Vec<ui::PauseMagicCaster<'_>> = model
             .casters
             .iter()
@@ -732,9 +741,10 @@ pub fn magic_draws(
         let view = ui::PauseMagicView {
             arrows_blink: list_arrows_blink(world),
             casters: &casters,
-            rows: &rows,
-            page: model.page,
-            pages: model.pages,
+            // Window 14 takes the list's place under a target flow.
+            rows: if panel.is_some() { &[] } else { &rows },
+            page: if panel.is_some() { 0 } else { model.page },
+            pages: if panel.is_some() { 0 } else { model.pages },
             phase: if model.focus_list {
                 ui::PauseMagicPhase::List
             } else {
@@ -748,6 +758,27 @@ pub fn magic_draws(
             label_icons: ctx.chrome_present(),
             text_cursor: !ctx.chrome_present(),
         };
+        if let Some(panel) = panel.as_ref() {
+            // Both target flows draw window 14 in the list's place, with the
+            // caster and info windows behind (`menu_magic_target_kor_retail`,
+            // `menu_magic_group_kor_retail`).
+            let members = target_panel_members(panel);
+            let panel_view = ui::TargetPanelView {
+                members: &members,
+                mode: ui::TargetPanelMode::from_preview_word(panel.mode),
+                cursor: target_panel_cursor(panel),
+                label_icons: ctx.chrome_present(),
+                text_cursor: !ctx.chrome_present(),
+            };
+            return pause_screen_draws(
+                ctx,
+                PauseScreen::MagicTarget {
+                    panel: &panel_view,
+                    magic: &view,
+                    casters: model.casters.len(),
+                },
+            );
+        }
         return pause_screen_draws(
             ctx,
             PauseScreen::Magic(MagicScreenView {
@@ -756,8 +787,7 @@ pub fn magic_draws(
             }),
         );
     }
-    // Generic spell-menu overlay - the target-select fallback while the
-    // retail target-pick window layout stays unpinned.
+    // Generic spell-menu overlay - no roster to fill the panel with.
     let names: Vec<&str> = s.party().iter().map(|c| c.name.as_str()).collect();
     let hp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.hp, c.hp)).collect();
     let mp: Vec<(u16, u16)> = s.party().iter().map(|c| (c.mp, c.mp)).collect();
@@ -874,7 +904,34 @@ pub fn items_draws(
                 label_icons: ctx.chrome_present(),
                 text_cursor: !ctx.chrome_present(),
             };
-            return pause_screen_draws(ctx, PauseScreen::ItemsTarget(&view));
+            // The command window and the info window stay up behind it; only
+            // the list leaves (`menu_items_target_kor_retail`).
+            let info = model.info.as_ref().map(|i| ui::PauseItemInfo {
+                name: &i.name,
+                count: i.count,
+                desc: &i.desc,
+                passive: i.passive.as_ref().map(|(a, b)| (a.as_str(), b.as_str())),
+                detail: None,
+            });
+            let items = ui::PauseItemsView {
+                arrows_blink: false,
+                rows: &[],
+                page: 0,
+                pages: 0,
+                phase: ui::PauseItemsPhase::Command,
+                command_cursor: model.command_cursor,
+                list_cursor: 0,
+                bag_empty: false,
+                info,
+                text_cursor: !ctx.chrome_present(),
+            };
+            return pause_screen_draws(
+                ctx,
+                PauseScreen::ItemsTarget {
+                    panel: &view,
+                    items: &items,
+                },
+            );
         }
         return pause_screen_draws(
             ctx,
@@ -971,6 +1028,11 @@ pub fn items_draws(
                 .filter(|i| i.is_point_card)
                 .map(|_| world.map_or(0, |w| w.minigames.point_card.max(0) as u32)),
             throw_confirm: throw.as_ref(),
+            // The destination list's open script `0x801E4CC4` closes the tab
+            // (`menu_door_wind_map03_retail`).
+            hide_tab: s
+                .special_use()
+                .is_some_and(|sp| sp.phase == ps::SpecialUsePhase::PickDestination),
             special_confirm: model.special_confirm.as_ref().map(|sc| SpecialConfirmView {
                 lines: &special_lines,
                 cursor: sc.cursor,

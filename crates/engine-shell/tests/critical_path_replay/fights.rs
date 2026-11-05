@@ -118,7 +118,8 @@ impl FightPolicy {
                 }
                 // The target strip opens on the party leader, which is who
                 // the heal is for in a solo party.
-                InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+                InventoryUseState::TargetSelect { .. }
+                | InventoryUseState::AllPartyConfirm { .. } => PadButton::Cross.mask(),
                 _ => 0,
             };
         }

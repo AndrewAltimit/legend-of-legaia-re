@@ -31,13 +31,22 @@ impl World {
             .muscle_contest
             .as_mut()
             .and_then(|c| c.take_start_restore())
-            && let Some(rec) = self
+        {
+            // `0x801CEB80`: the whole SC block is copied out ahead of the strip,
+            // and settlement copies it back.
+            self.muscle_saved_party = Some(Box::new((
+                self.party.roster.clone(),
+                self.party.inventory.clone(),
+                self.party.money,
+            )));
+            if let Some(rec) = self
                 .party
                 .roster
                 .members
                 .get_mut(self.minigames.fighter_index())
-        {
-            legaia_engine_minigames::muscle_dome::apply_contest_start_restore(rec, restore);
+            {
+                legaia_engine_minigames::muscle_dome::apply_contest_start_restore(rec, restore);
+            }
         }
         let mut session = session;
         session.arm_intro();
@@ -324,6 +333,7 @@ impl World {
         }
         let out = contest.settle(&flags);
         self.minigames.muscle_contest = None;
+        self.restore_muscle_saved_party();
         self.minigames.muscle_settlement = Some(out);
         self.minigames.casino_coins = legaia_engine_minigames::muscle_dome::credit_casino_coins(
             self.minigames.casino_coins,
@@ -343,7 +353,9 @@ impl World {
             self.system_flag_set(id);
         }
         if out.award_prize {
-            self.system_flag_set(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG);
+            // The arena only reads the latch `0x6CB`: the lobby's winner's scene
+            // sets it after its own test of it (`koin1` P2[9] `+0x03E1`), so a
+            // set here would send that scene down its ordinary ending.
             let slot = self
                 .party
                 .inventory
@@ -352,6 +364,33 @@ impl World {
             *slot = slot.saturating_add(1).min(legaia_save::STACK_CAP);
         }
         Some(out)
+    }
+
+    /// Settlement's copy back of the SC block the arena saved (`0x801D0FC8..
+    /// 0x801D0FF4`): the gear a harder course stripped, the HP and MP the legs
+    /// spent, the items they used and the gold all return to where the contest
+    /// found them. Only the lead record's two words `+0xE8` / `+0xEC`
+    /// (`0x800847F0` / `0x800847F4`, read at `0x801D0FD4` and rewritten at
+    /// `0x801D0FE8`) keep what the contest made of them. The stat rebuild that
+    /// follows (`jal 0x80042558`) has nothing to redo here: the saved record
+    /// carries its own stat window.
+    ///
+    /// PORT: FUN_801d0f60 (`0x801D0FBC..0x801D0FF4`)
+    fn restore_muscle_saved_party(&mut self) {
+        let Some(saved) = self.muscle_saved_party.take() else {
+            return;
+        };
+        let (mut roster, inventory, gold) = *saved;
+        let fighter = self.minigames.fighter_index();
+        if let (Some(live), Some(old)) = (
+            self.party.roster.members.get(fighter),
+            roster.members.get_mut(fighter),
+        ) {
+            old.raw[0xE8..0xF0].copy_from_slice(&live.raw[0xE8..0xF0]);
+        }
+        self.party.roster = roster;
+        self.party.inventory = inventory;
+        self.party.money = gold;
     }
 
     /// Advance the Muscle Dome one frame, reading this frame's pad:

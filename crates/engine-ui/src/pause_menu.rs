@@ -85,7 +85,21 @@ pub const MENU_SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
 
 /// Windows framed while the Items screen's Use flow picks a target: the
 /// screen tab plus descriptor 14, the party target panel (`FUN_801D0520`).
-pub const TARGET_SELECT_WINDOWS: [usize; 2] = [window_ids::TAB_ITEMS, 14];
+pub const TARGET_SELECT_WINDOWS: [usize; 4] = [
+    window_ids::TAB_ITEMS,
+    window_ids::ITEMS_COMMAND,
+    window_ids::ITEMS_INFO,
+    14,
+];
+
+/// Windows framed while the Magic screen picks a target: the caster and info
+/// windows stay up and descriptor 14 takes the spell list's place.
+pub const MAGIC_TARGET_WINDOWS: [usize; 4] = [
+    window_ids::TAB_MAGIC,
+    window_ids::MAGIC_CASTER,
+    window_ids::MAGIC_INFO,
+    14,
+];
 
 /// Pinned content rects mirroring the disc descriptor table:
 /// `(descriptor id, (x, y, w, h))`.
@@ -364,6 +378,49 @@ impl<'a> PauseMenuCtx<'a> {
     }
 }
 
+/// Cut the text already emitted down to what a modal window leaves showing.
+///
+/// Retail links a window's strings into the ordering table with its window, so
+/// a modal opened over the list covers the list's rows and the info panel's
+/// lines. The hosts draw every text quad after every sprite, so the covered
+/// part goes here, before the modal's own strings join the list: a quad keeps
+/// the bands of it outside the window's frame. `content` is the window's
+/// content rect, stage pixels, as [`PauseMenuCtx::frame_around`] takes it.
+fn clip_text_under_window(texts: &mut Vec<TextDraw>, content: (i32, i32, i32, i32)) {
+    let (x0, y0) = (content.0 - 8, content.1 - 8);
+    let (x1, y1) = (content.0 + content.2 + 8, content.1 + content.3 + 8);
+    let mut out = Vec::with_capacity(texts.len());
+    for t in texts.drain(..) {
+        let (dx, dy) = (t.dst.0, t.dst.1);
+        let (ex, ey) = (dx + t.dst.2 as i32, dy + t.dst.3 as i32);
+        if ex <= x0 || dx >= x1 || ey <= y0 || dy >= y1 {
+            out.push(t);
+            continue;
+        }
+        let mut band = |bx0: i32, by0: i32, bx1: i32, by1: i32| {
+            if bx1 <= bx0 || by1 <= by0 {
+                return;
+            }
+            out.push(TextDraw {
+                dst: (bx0, by0, (bx1 - bx0) as u32, (by1 - by0) as u32),
+                src: (
+                    t.src.0 + (bx0 - dx) as u32,
+                    t.src.1 + (by0 - dy) as u32,
+                    (bx1 - bx0) as u32,
+                    (by1 - by0) as u32,
+                ),
+                color: t.color,
+            });
+        };
+        band(dx, dy, ex, y0.min(ey));
+        band(dx, y1.max(dy), ex, ey);
+        let (my0, my1) = (dy.max(y0), ey.min(y1));
+        band(dx, my0, x0.min(ex), my1);
+        band(x1.max(dx), my0, ex, my1);
+    }
+    *texts = out;
+}
+
 /// The Items screen's Use-route confirm (submenu `0xB` Door of Light ->
 /// window 10 / `FUN_801D1DAC`, submenu `0xD` Incense -> window 12 /
 /// `FUN_801D1F10`). A different window and renderer from the Throw Out
@@ -478,6 +535,8 @@ pub struct ItemsScreenView<'a> {
     pub point_card: Option<u32>,
     pub throw_confirm: Option<&'a PauseThrowConfirmView<'a>>,
     pub special_confirm: Option<SpecialConfirmView<'a>>,
+    /// The title tab has gone: the Door of Wind destination list.
+    pub hide_tab: bool,
 }
 
 /// Magic sub-screen in its browsing form.
@@ -517,9 +576,18 @@ pub enum PauseScreen<'a> {
     Options(OptionsScreenView<'a>),
     Items(ItemsScreenView<'a>),
     /// Window 14, the party target panel that replaces the item list while
-    /// the Use flow picks a target.
-    ItemsTarget(&'a TargetPanelView<'a>),
+    /// the Use flow picks a target; the rest of the Items screen stays up.
+    ItemsTarget {
+        panel: &'a TargetPanelView<'a>,
+        items: &'a crate::PauseItemsView<'a>,
+    },
     Magic(MagicScreenView<'a>),
+    /// Window 14 in the spell list's place, over the caster and info windows.
+    MagicTarget {
+        panel: &'a TargetPanelView<'a>,
+        magic: &'a crate::PauseMagicView<'a>,
+        casters: usize,
+    },
     Equip(EquipComposeView<'a>),
     /// A screen framed by the single near-fullscreen window.
     Generic(GenericContent<'a>),
@@ -718,9 +786,13 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     points,
                 ));
             }
-            texts
-                .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
+            if !v.hide_tab {
+                texts.extend(
+                    ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")),
+                );
+            }
             if let Some(confirm) = v.throw_confirm {
+                clip_text_under_window(&mut texts, ctx.rects.rect(9));
                 texts.extend(crate::items_throw_confirm_draws_for(
                     ctx.font,
                     confirm,
@@ -731,11 +803,14 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 let (win_id, _) = crate::use_confirm_window(sc.lines.len());
                 (win_id, ctx.rects.pen(win_id))
             });
-            if let (Some(sc), Some((_, pen))) = (v.special_confirm.as_ref(), special_pen) {
+            if let (Some(sc), Some((win_id, pen))) = (v.special_confirm.as_ref(), special_pen) {
+                clip_text_under_window(&mut texts, ctx.rects.rect(win_id));
                 texts.extend(crate::confirm_prompt_draws(
                     ctx.font,
                     sc.lines,
-                    &["Yes", "No"],
+                    // The pool's strings (`0x801CEA84`, `0x801CEA8C`), `@` lead
+                    // and its one pixel included.
+                    &["@Yes", "@No"],
                     pen,
                 ));
                 if !ctx.chrome_present() {
@@ -748,13 +823,22 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // the two hosts disagreed about (the browser emitted the Use
             // confirm's frame *before* the window set, so the item list's
             // frame painted over it).
-            sprites
-                .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS));
+            // The list's page arrows blink while the list has the pad; a confirm
+            // over the list holds them down.
+            let list_arrows_up = v.view.arrows_blink
+                && v.view.phase == crate::PauseItemsPhase::List
+                && v.special_confirm.is_none();
+            let windows = &legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS;
+            sprites.extend(ctx.window_chrome(if v.hide_tab {
+                &windows[1..]
+            } else {
+                &windows[..]
+            }));
             sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
             texts.extend(crate::list_page_arrow_draws(
                 ctx.font,
                 (v.view.page, v.view.pages),
-                v.view.arrows_blink && v.view.phase == crate::PauseItemsPhase::List,
+                list_arrows_up,
                 ctx.rects.pen(window_ids::ITEMS_LIST),
             ));
             if let Some(rects) = ctx.chrome {
@@ -764,9 +848,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     v.view.command_cursor,
                     v.view.list_cursor,
                     (v.view.page, v.view.pages),
-                    v.view.arrows_blink
-                        && v.view.phase == crate::PauseItemsPhase::List
-                        && !ctx.font.has_page_arrow_cells(),
+                    list_arrows_up && !ctx.font.has_page_arrow_cells(),
                     ctx.rects.pen(window_ids::ITEMS_COMMAND),
                     ctx.rects.pen(window_ids::ITEMS_LIST),
                     ctx.origin,
@@ -796,15 +878,73 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 }
             }
         }
-        PauseScreen::ItemsTarget(view) => {
+        PauseScreen::ItemsTarget { panel, items } => {
             let pen = ctx.rects.pen(14);
-            texts.extend(crate::target_panel_draws_for(ctx.font, view, pen));
+            texts.extend(crate::items_screen_draws_for_with(
+                ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
+                items,
+                ctx.rects.pen(window_ids::ITEMS_COMMAND),
+                ctx.rects.pen(window_ids::ITEMS_LIST),
+                ctx.rects.pen(window_ids::ITEMS_INFO),
+            ));
+            texts.extend(crate::target_panel_draws_for(ctx.font, panel, pen));
             texts
                 .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
             sprites.extend(ctx.window_chrome(&TARGET_SELECT_WINDOWS));
+            sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
             if let Some(rects) = ctx.chrome {
+                sprites.extend(crate::items_screen_sprites_for(
+                    rects,
+                    crate::PauseItemsPhase::Command,
+                    items.command_cursor,
+                    0,
+                    (0, 0),
+                    false,
+                    ctx.rects.pen(window_ids::ITEMS_COMMAND),
+                    ctx.rects.pen(window_ids::ITEMS_LIST),
+                    ctx.origin,
+                    ctx.scale,
+                ));
                 sprites.extend(crate::target_panel_sprites_for(
-                    rects, view, pen, ctx.origin, ctx.scale,
+                    rects, panel, pen, ctx.origin, ctx.scale,
+                ));
+            }
+        }
+        PauseScreen::MagicTarget {
+            panel,
+            magic,
+            casters,
+        } => {
+            let pen = ctx.rects.pen(14);
+            texts.extend(crate::magic_screen_draws_for_with(
+                ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
+                magic,
+                ctx.rects.pen(window_ids::MAGIC_CASTER),
+                ctx.rects.pen(window_ids::MAGIC_LIST),
+                ctx.rects.pen(window_ids::MAGIC_INFO),
+            ));
+            texts.extend(crate::target_panel_draws_for(ctx.font, panel, pen));
+            texts
+                .extend(ctx.tab_title(window_ids::TAB_MAGIC, ctx.label(MenuLabel::Magic, "Magic")));
+            sprites.extend(ctx.window_chrome(&MAGIC_TARGET_WINDOWS));
+            if let Some(rects) = ctx.chrome {
+                sprites.extend(crate::magic_screen_sprites_for(
+                    rects,
+                    casters,
+                    crate::PauseMagicPhase::Caster,
+                    magic.caster_cursor,
+                    0,
+                    (0, 0),
+                    false,
+                    ctx.rects.pen(window_ids::MAGIC_CASTER),
+                    ctx.rects.pen(window_ids::MAGIC_LIST),
+                    ctx.origin,
+                    ctx.scale,
+                ));
+                sprites.extend(crate::target_panel_sprites_for(
+                    rects, panel, pen, ctx.origin, ctx.scale,
                 ));
             }
         }
@@ -1257,5 +1397,43 @@ mod money_box_tests {
         let without =
             crate::field_menu_draws_for(&font, &[], 0, 5, 3671, None, (24, 24), (24, 180));
         assert_eq!(rows_of(&without), [180, 194]);
+    }
+}
+
+#[cfg(test)]
+mod clip_under_window_tests {
+    use super::*;
+
+    fn quad(x: i32, y: i32, w: u32, h: u32) -> TextDraw {
+        TextDraw {
+            dst: (x, y, w, h),
+            src: (100, 200, w, h),
+            color: [1.0; 4],
+        }
+    }
+
+    /// Frame `(92..108, 92..108)` round the content rect `(100, 100, 0, 0)`.
+    #[test]
+    fn a_modal_covers_the_part_of_a_glyph_inside_its_frame() {
+        // Outside: untouched.
+        let mut t = vec![quad(0, 0, 8, 8)];
+        clip_text_under_window(&mut t, (100, 100, 0, 0));
+        assert_eq!(t[0].dst, (0, 0, 8, 8));
+        // Inside: gone.
+        let mut t = vec![quad(95, 95, 8, 8)];
+        clip_text_under_window(&mut t, (100, 100, 0, 0));
+        assert!(t.is_empty());
+        // Across the left edge: the part left of it, with its own texels.
+        let mut t = vec![quad(88, 95, 8, 8)];
+        clip_text_under_window(&mut t, (100, 100, 0, 0));
+        assert_eq!(t.len(), 1);
+        assert_eq!((t[0].dst, t[0].src), ((88, 95, 4, 8), (100, 200, 4, 8)));
+        // Across a corner: the band above and the band beside, the band keeping
+        // its texels; a quad only brushing the frame's corner keeps the rest.
+        let mut t = vec![quad(104, 104, 8, 8)];
+        clip_text_under_window(&mut t, (100, 100, 0, 0));
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0].dst, t[0].src), ((104, 108, 8, 4), (100, 204, 8, 4)));
+        assert_eq!((t[1].dst, t[1].src), ((108, 104, 4, 4), (104, 200, 4, 4)));
     }
 }

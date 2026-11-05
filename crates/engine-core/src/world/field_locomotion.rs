@@ -68,15 +68,21 @@ pub struct FieldLocomotion {
     /// The Incense wear-off notice while it is up (`FUN_801F1E48` via the
     /// kind-`0x0B` entry context; see [`crate::incense_notice`]).
     pub incense_notice: Option<crate::incense_notice::IncenseNotice>,
+    /// The odd unit of a vsync's walk speed, carried to the next vsync
+    /// ([`crate::world::World::step_field_locomotion`]).
+    pub(crate) step_carry: i32,
     /// The pad-rotation octant `gp+0x2D8` (`_DAT_8007B5F0`): how many
     /// eighth-turns the pad remapper `FUN_800467E8` rotates the held
     /// direction by. Retail's writers are field-VM op `4C 2x` and the tile
     /// board's walker, which also saves the incoming value on entry and
-    /// restores it at teardown. The port's free-roaming field walk derives
-    /// its rotation from the camera instead
-    /// ([`crate::world::World::field_pad_ring_rotation`]); this word is what
-    /// the tile board reads and restores.
+    /// restores it at teardown. The free-roaming field walk reads it under
+    /// the retail follow view ([`Self::pad_octant_live`]) and derives its
+    /// rotation from a turned camera instead
+    /// ([`crate::world::World::field_pad_ring_rotation`]).
     pub(crate) pad_octant: u32,
+    /// The host's retail follow view is up with nothing turning it, so the
+    /// remap reads [`Self::pad_octant`] rather than the azimuth.
+    pub(crate) pad_octant_live: bool,
     /// Camera azimuth (PSX 12-bit angle, `4096` = full turn) used to make
     /// d-pad locomotion camera-relative. Retail equivalent: the view
     /// direction `func_0x800467e8` remaps the held pad against. `0` maps
@@ -371,6 +377,8 @@ impl FieldLocomotion {
             walk_regen_window: 0,
             incense_notice: None,
             pad_octant: 0,
+            pad_octant_live: false,
+            step_carry: 0,
             camera_azimuth: 0,
             precise_movement: false,
             run_default: false,

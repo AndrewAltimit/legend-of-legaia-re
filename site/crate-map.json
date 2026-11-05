@@ -666,6 +666,7 @@
     "explorer",
     "extract",
     "minigame-formats",
+    "parity",
     "party-swap",
     "patcher",
     "scene-formats",
@@ -2770,7 +2771,7 @@
    ],
    "band": "hosts",
    "track": "engine",
-   "scope": "Top-level native driver: <code>play</code> / <code>play-window</code>, <code>save</code> / <code>load</code>, <code>play-str</code>, <code>record</code> / <code>replay</code>, <code>config</code>, and the parity-oracle subcommands; <code>--help</code> groups every one.",
+   "scope": "Top-level native driver: <code>play</code> / <code>play-window</code>, <code>launch --disc</code> (what the launcher's Play starts, no screen), <code>save</code> / <code>load</code>, <code>play-str</code>, <code>record</code> / <code>replay</code>, <code>config</code>, and the parity-oracle subcommands behind <code>--features oracles</code>; <code>--help</code> groups every one.",
    "dependents": [],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/engine-shell/README.md"
   },
@@ -3717,6 +3718,7 @@
     "actor-formats",
     "art",
     "bytes",
+    "container-formats",
     "engine-audio",
     "engine-battle",
     "engine-battle-hud",
@@ -3750,6 +3752,7 @@
     "pcsx-redux",
     "prot",
     "ram-image",
+    "retail-exec",
     "save",
     "scene-formats",
     "seq",
@@ -3777,6 +3780,7 @@
     "capture_observations",
     "cast_sequence",
     "cast_sequence_sound",
+    "cue_differential",
     "mode_trace_oracle",
     "parallel",
     "pcm_oracle",
@@ -3788,6 +3792,7 @@
     "retail_compare_image",
     "retail_compare_script",
     "retail_coverage",
+    "seq_differential",
     "sim_trace",
     "vram_oracle",
     "window_child"
@@ -4149,6 +4154,7 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-dialog",
     "engine-fishing",
     "engine-menus",
     "engine-minigame-scenes",
@@ -4169,7 +4175,9 @@
    "band": "top",
    "track": "tooling",
    "scope": "A user-mode R3000 interpreter that runs retail routines off the user's disc, and the disc-gated differential comparing them with their Rust ports.",
-   "dependents": [],
+   "dependents": [
+    "parity"
+   ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/retail-exec/README.md"
   },
   "save": {

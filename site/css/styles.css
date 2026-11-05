@@ -179,6 +179,9 @@
    ground; in the light theme they keep one rather than being re-picked. */
 :root[data-theme="light"] [class*="enemy-elem-"],
 :root[data-theme="light"] [class*="tile-cat-"] { background: #1a1e26; }
+/* That badge stays dark in the light theme, so its text keeps the dark theme's value. */
+:root[data-theme="light"] .tile-cat-town { color: #6ba3ff; }
+:root[data-theme="light"] .tile-cat-field { color: #c19a4d; }
 
 /* ---------- Reset ---------- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }

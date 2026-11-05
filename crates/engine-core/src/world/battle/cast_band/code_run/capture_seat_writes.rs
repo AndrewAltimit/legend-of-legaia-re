@@ -55,6 +55,22 @@ impl World {
         }
     }
 
+    /// A module's store into a monster caster's size class and body radius
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::caster_reach`]).
+    pub(in crate::world::battle::cast_band) fn store_caster_reach(
+        &mut self,
+        caster: u8,
+        (size, radius): (u8, i16),
+    ) {
+        if caster < self.party.party_count {
+            return;
+        }
+        self.casting.caster_size_store = Some((caster, size));
+        if let Some(a) = self.actors.get_mut(usize::from(caster)) {
+            a.battle.render_radius = Some(radius);
+        }
+    }
+
     /// Apply one capture arm's stores into battle seat `slot`
     /// ([`legaia_engine_cast::cast_module_camera::CaptureSeatWrite`]): the
     /// live pair (and the body pair beside it, which the next anim pass

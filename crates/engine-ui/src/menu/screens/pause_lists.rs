@@ -653,6 +653,18 @@ pub fn items_screen_sprites_for(
             );
         }
         PauseItemsPhase::List => {
+            // The command window keeps its hand on the row that opened the
+            // list (`menu_use_list_conc_retail`, `menu_throw_list_conc_retail`).
+            push_stage_sprite(
+                &mut out,
+                rects.cursor,
+                (
+                    cmd_pen.0,
+                    cmd_pen.1 + command_cursor as i32 * PAUSE_LIST_ROW_PITCH,
+                ),
+                stage_origin,
+                stage_scale,
+            );
             push_stage_sprite(
                 &mut out,
                 rects.cursor,
@@ -1059,6 +1071,14 @@ pub fn magic_screen_sprites_for(
             );
         }
         PauseMagicPhase::List => {
+            // The caster window keeps its hand (`menu_spell_list_conc_retail`).
+            push_stage_sprite(
+                &mut out,
+                rects.cursor,
+                (cx, cy + 1 + caster_cursor as i32 * MAGIC_CASTER_BLOCK_PITCH),
+                stage_origin,
+                stage_scale,
+            );
             push_stage_sprite(
                 &mut out,
                 rects.cursor,
@@ -1082,7 +1102,10 @@ pub fn magic_screen_sprites_for(
 /// List-window hand-cursor stage position: `(X-0xC, Y+0xC + row*0xE)`.
 pub(crate) fn list_hand_pos(list_pen: (i32, i32), row: u8) -> (i32, i32) {
     (
-        list_pen.0 - 0x0c,
+        // The list kernel's `FUN_8002B994(0, mode, X - 6, rowY)` (`0x80032FB4`),
+        // on the `+2` its bob table `0x80073D78` holds for most of a period
+        // (`menu_spell_list_conc_retail`, `menu_use_list_conc_retail`).
+        list_pen.0 - 4,
         list_pen.1 + PAUSE_LIST_ROWS_TOP + row as i32 * PAUSE_LIST_ROW_PITCH,
     )
 }
@@ -1781,7 +1804,7 @@ mod pause_list_tests {
         assert!(
             items_list
                 .iter()
-                .any(|d| d.dst.0 == 174 - 0x0c && d.dst.1 == 22 + 0x0c + 2 * 0x0e)
+                .any(|d| d.dst.0 == 174 - 4 && d.dst.1 == 22 + 0x0c + 2 * 0x0e)
         );
         // Page 1 of 6 -> right arrow at the pinned spot, no left arrow.
         let arrow_y = 22 + 0x58 - 4;

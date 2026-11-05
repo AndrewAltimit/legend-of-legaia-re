@@ -349,6 +349,13 @@ impl PlayWindowApp {
             }
         }
         let target = |scene| present_target(scene, &screen_prims, &light_prims);
+        redraw_present::write_sweep_trace(
+            self.screenshot.as_ref(),
+            self.tick_no,
+            self.sweep_next_tick,
+            &self.session,
+            &self.menu_runtime,
+        );
         redraw_present::capture_sweep_frame(
             r,
             &|| target(&scene),

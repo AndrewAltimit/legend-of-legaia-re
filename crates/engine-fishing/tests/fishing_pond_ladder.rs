@@ -156,6 +156,11 @@ fn work_the_lure(p: &mut PondSession, frames: usize) -> Vec<PondEvent> {
         p.tick(
             PondInput {
                 reel_mask: if held { REEL_A } else { 0 },
+                reel_edge: if f as i32 % (2 * HOLD) == 0 {
+                    REEL_A
+                } else {
+                    0
+                },
                 cast_edge: false,
                 // One fresh edge on each hold/release transition - the pad
                 // nudge the retail check counts, at the realistic magnitude.
@@ -173,13 +178,14 @@ fn work_the_lure(p: &mut PondSession, frames: usize) -> Vec<PondEvent> {
 /// Reel a hooked fish in, straight-lining reel A until the fight resolves.
 fn fight(p: &mut PondSession, frames: usize) -> Vec<PondEvent> {
     let mut events = Vec::new();
-    for _ in 0..frames {
+    for f in 0..frames {
         if p.phase() != PondPhase::Hooked {
             break;
         }
         p.tick(
             PondInput {
                 reel_mask: REEL_A,
+                reel_edge: if f % 8 == 0 { REEL_A } else { 0 },
                 cast_edge: false,
                 edge_bonus: 0,
             },

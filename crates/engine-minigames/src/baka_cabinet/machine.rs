@@ -362,7 +362,7 @@ impl BakaCabinet {
         self.state == ST_EXIT && self.exit_timer >= 0x3D
     }
 
-    /// Publish the running high score the secret-opponent gate reads.
+    /// Publish the running score (`DAT_801DBEE4`) the secret-opponent gate reads.
     pub fn set_high_score(&mut self, score: i32) {
         self.high_score = score;
     }

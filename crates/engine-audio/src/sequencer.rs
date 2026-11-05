@@ -43,6 +43,8 @@ mod transport;
 mod voices;
 
 use channel_math::*;
+use voices::SILENT_RING_LEN;
+pub use voices::flush_key_on_lag;
 
 /// Number of MIDI channels (the SsAPI dispatcher iterates 0..=15).
 pub const CHANNELS: usize = 16;
@@ -110,12 +112,20 @@ struct VoiceNote {
     program: usize,
     tone: usize,
     key: u8,
+    /// The record's channel (`+0x0C`), raw velocity (`+0x08`) and the channel
+    /// pan the note keyed with (`+0x0A`): what a sequence-volume walk rebuilds
+    /// the voice from.
+    channel: u8,
+    velocity: u8,
+    pan: u8,
     /// The voice's key-on count right after this note keyed it; `None` until
     /// the flush does. A different count means a cue took the voice.
     stamp: Option<u32>,
     /// A bend that reached the note before its flush: retail's writes the
     /// shadow pitch register the flush hands over.
     staged_wheel: Option<u8>,
+    /// The same for a volume walk: the shadow volume registers.
+    staged_mix: Option<(i16, i16)>,
 }
 
 /// Active note tracker: `(channel, key, voice)` so a NoteOff can find the
@@ -123,7 +133,6 @@ struct VoiceNote {
 #[derive(Debug, Clone, Copy)]
 struct ActiveNote {
     channel: u8,
-    key: u8,
     voice: u8,
     /// The note's raw velocity, program and layer tone: a CC7 or CC10
     /// re-derives the voice volume from these through the whole retail chain
@@ -259,6 +268,26 @@ pub struct Sequencer {
     /// allocated voice. Used as the final steal tie-break. u16 with wrapping
     /// add, matching the retail halfword.
     voice_age: [u16; crate::spu::NUM_VOICES],
+    /// The voices the allocation scan counts as held (retail's record `+0x1D`):
+    /// raised by a key-on, a cue's included, lowered by the note-off or by the
+    /// silent history.
+    voice_held: u32,
+    /// The envelope the allocation scan reads (record `+0x06`), which is `ENVX`
+    /// as the flush last read it, ahead of that flush's own KON and KOFF.
+    voice_env: [u16; crate::spu::NUM_VOICES],
+    /// This flush's reading, for the next one: the port writes its KON at the
+    /// end of the vsync the note-on fired in, retail at the top of the next.
+    voice_env_next: [u16; crate::spu::NUM_VOICES],
+    /// The flush's silent history (`0x801CE208`): one mask per flush, a bit up
+    /// for a voice whose envelope read zero.
+    silent_ring: [u32; SILENT_RING_LEN],
+    /// The ring's write index (`_DAT_801CE204`).
+    silent_at: usize,
+    /// Each voice's key-on count as last seen: a change nobody here made is a
+    /// cue taking the voice.
+    voice_keys_seen: [u32; crate::spu::NUM_VOICES],
+    /// [`Self::voice_keys_seen`] holds this SPU's counts.
+    voices_seen: bool,
     /// Samples advanced since the last key-on flush, `0..FLUSH_SAMPLES`.
     flush_pos: u64,
     /// Note layers allocated since the last flush, keyed at the next one.

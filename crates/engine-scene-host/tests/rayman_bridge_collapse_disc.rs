@@ -199,7 +199,10 @@ fn the_collapsed_set_pieces_stay_sunk_dark_and_walled_or_skip() {
     let Some(root) = extracted_root() else { return };
     for scene in ["rayman", "rayman2"] {
         let mut host = SceneHost::open_extracted(&root).expect("open SceneHost");
-        for flag in [0x1EB, 0x1FC, 0x200] {
+        // `0x34E` is the one-shot latch `P1[0]` tests before it spawns `P2[20]`,
+        // the second collapse beat, which retires the planks while it plays
+        // and re-seats them at its end.
+        for flag in [0x1EB, 0x1FC, 0x200, 0x34E] {
             host.world.system_flag_set(flag);
         }
         host.world.npcs.solid = true;

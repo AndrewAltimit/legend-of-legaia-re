@@ -137,6 +137,7 @@ fn a_held_pad_walks_where_retail_walks() {
                 ms.field_72 = rate;
             }
             w.move_vm.ramp_ratio = frame_step;
+            w.clock.frame_step = frame_step;
             w.locomotion.camera_azimuth = (octant * 0x200) as i32 as _;
             w.locomotion.run_default = run_default;
             w.party.scene_save_allowed = slow;

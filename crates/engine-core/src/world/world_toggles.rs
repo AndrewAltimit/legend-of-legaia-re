@@ -22,6 +22,11 @@ pub struct WorldToggles {
     /// through untouched. The move-VM state itself always advances
     /// retail-exact - this only shapes the VRAM presentation.
     pub(crate) reduce_flashing: bool,
+    /// The dither word `_DAT_8007BA66`, which `FUN_80016B6C` copies into the
+    /// DRAWENV `dtd` bit each frame. Boots on (`FUN_8001D424`, `0x8001D520`);
+    /// op `4C ED` writes it, and the ending scenes clear it across each
+    /// vignette's closing wipe. Only a PSX-mode frame shows it.
+    pub draw_dither: bool,
     /// Retail's **visible-tile crop** on the field ground + decoration layers
     /// (`legaia_engine_world_views::field_view_window::field_view_cells`), from
     /// [`legaia_engine_menus::options::OptionsState::retail_view_window`]. Default on; it
@@ -137,6 +142,11 @@ pub struct WorldToggles {
     /// corpus run's child processes inherit) and the browser play page from
     /// its `set_battle_frame_cadence` switch.
     pub battle_sm_frame_cadence: bool,
+    /// Run an ordinary battle frame on the step retail's frame cost gives this
+    /// party's size (`World::ordinary_battle_frame_step`), not the two-vsync
+    /// default. Off in a bare `World`, which unit tests pin on the default; the
+    /// play hosts raise it through [`Self::retail_cost_step`].
+    pub battle_party_cost_step: bool,
     /// Open the legacy **saved-chain list**
     /// ([`legaia_engine_battle::battle_arts::BattleArtsSession`] over
     /// `World::party.saved_chains`) from the command ring's Arts arm instead
@@ -375,6 +385,7 @@ impl WorldToggles {
         Self {
             entry_pulse_enabled: true,
             reduce_flashing: true,
+            draw_dither: true,
             view_window_crop: true,
             volumetric_fog: false,
             live_gameplay_loop: false,
@@ -388,6 +399,7 @@ impl WorldToggles {
             overworld_marker_overlay: false,
             battle_pass_rand_draw: true,
             battle_sm_frame_cadence: DEFAULT_BATTLE_SM_FRAME_CADENCE,
+            battle_party_cost_step: true,
             arts_saved_list: false,
             hop_landing_guard: true,
             shiny_seru: true,

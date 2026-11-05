@@ -17,11 +17,9 @@ impl EquipSession {
         for (i, &slot) in ARMAMENT_ENGINE_SLOTS.iter().enumerate() {
             equipped[i] = self.record.equip.get(slot).copied().unwrap_or(0);
         }
-        let bag: Vec<(u8, u8)> = {
-            let mut v: Vec<(u8, u8)> = self.inventory.iter().map(|(&id, &n)| (id, n)).collect();
-            v.sort_unstable();
-            v
-        };
+        // Slot order: the scan walks the window, and a tie keeps whichever
+        // piece the walk reached first.
+        let bag: Vec<(u8, u8)> = self.inventory.iter().map(|(&id, &n)| (id, n)).collect();
         let char_mask = if self.active_party_slot < 3 {
             1u8 << self.active_party_slot
         } else {
@@ -297,13 +295,14 @@ pub fn apply_best_equipment(
         // Bag must actually hold the candidate (retail's 0x100 sentinel
         // check); the Remove direction never happens here - a zero
         // candidate is never in the bag.
-        let Some(qty) = inventory.get_mut(&candidate) else {
-            continue;
-        };
-        if *qty == 0 {
+        // The take is `FUN_80043048`: the last of a stack zeroes the id byte
+        // and leaves a hole, where a bare count decrement left a live id with
+        // no copies on the row list.
+        if inventory.consume_returning_slot(candidate, 1)
+            == legaia_save::retail_inventory::NOT_IN_WINDOW
+        {
             continue;
         }
-        *qty -= 1;
         if equipped != 0 {
             let _ = inventory.add(equipped, 1);
         }

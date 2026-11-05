@@ -108,6 +108,9 @@ fn world() -> World {
         .formation_table
         .insert(FormationDef::new(1, vec![FormationSlot::new(9)]));
     world.rng_state = 0x0BAD_5EED;
+    // The script's beats are what this file tests. A seeded fight's order of turns
+    // is a function of the stream, and the frame step moves where each pass draws.
+    world.toggles.battle_party_cost_step = false;
     world
 }
 

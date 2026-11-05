@@ -45,6 +45,7 @@ pub fn tick_open_subsession(
     if !try_open_arts_editor(active, edge, world) {
         active.tick_pad_edge_with_key(edge, key_pressed);
     }
+    resume_after_use(active, world);
     if let FieldMenuSubsession::Equip {
         session, char_slot, ..
     } = active
@@ -59,6 +60,71 @@ pub fn tick_open_subsession(
         let _ = apply_list_order_outcome(&list, world);
     }
     active.take_rebound_mapping()
+}
+
+/// A use or cast that just committed applies here and leaves the screen up:
+/// retail's apply sub-screens run the handler and step back to their own
+/// cursor (`FUN_801D7FF8`, `FUN_801D8308`, `FUN_801D9280`, `FUN_801D9594`), so
+/// the Items and Magic screens outlive it. The session is rebuilt on the world
+/// the use left, which is what re-derives the rows' counts, dim bits and
+/// panel rows. A notice the use raised takes the session's finish path, whose
+/// return latches it for the host; retail draws window 7 over the screen.
+///
+/// REF: FUN_801D7FF8, FUN_801D8308, FUN_801D9280, FUN_801D9594
+fn resume_after_use(active: &mut FieldMenuSubsession, world: &mut World) {
+    match active {
+        FieldMenuSubsession::Items(s) => {
+            let Some(slot) = s.use_committed() else {
+                return;
+            };
+            let target_row = s
+                .inner
+                .used_slots
+                .first()
+                .and_then(|used| s.inner.targets.iter().position(|t| t.slot == *used))
+                .unwrap_or(0);
+            let _ = apply_pause_items_outcome(s, world);
+            let mut next = build_pause_items_session(world);
+            next.focus = s.focus;
+            next.command_cursor = s.command_cursor;
+            if world.menu.pending_art_notice.is_some() {
+                next.close();
+            } else {
+                next.resume_use(slot, target_row);
+            }
+            *s = next;
+        }
+        FieldMenuSubsession::Spells(s) => {
+            use legaia_engine_menus::spell_menu::SpellMenuOutcome;
+            let Some(SpellMenuOutcome::Cast {
+                caster_slot,
+                spell_id,
+                target_slot,
+                ..
+            }) = s.outcome().cloned()
+            else {
+                return;
+            };
+            let caster_row = s.party().iter().position(|c| c.slot == caster_slot);
+            let target_row = s.targets().iter().position(|t| t.slot == target_slot);
+            let catalog = s.catalog().clone();
+            let notice = apply_spell_outcome(s, world);
+            let mut next = build_spell_session(world, &catalog);
+            match notice {
+                Some(notice) => {
+                    world.menu.pending_spell_notice = Some(notice);
+                    next.close();
+                }
+                None => next.resume_cast(
+                    caster_row.unwrap_or(0) as u8,
+                    spell_id,
+                    target_row.unwrap_or(0) as u8,
+                ),
+            }
+            *s = next;
+        }
+        _ => {}
+    }
 }
 
 /// The Equip character picker's Up / Down: walk the present party
@@ -185,7 +251,8 @@ pub fn finish_subsession(finished: FieldMenuSubsession, world: &mut World) -> Fi
             apply_equip_swaps(&mut session, char_slot, world);
         }
         FieldMenuSubsession::Spells(s) => {
-            out.spell_level_notice = apply_spell_outcome(&s, world);
+            out.spell_level_notice =
+                apply_spell_outcome(&s, world).or(world.menu.pending_spell_notice.take());
         }
         FieldMenuSubsession::Arts(editor) => {
             // Lift the live library, apply the edit, store it back

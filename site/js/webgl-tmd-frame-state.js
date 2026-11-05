@@ -177,6 +177,12 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
     }
   }
 
+  /* The game's dither word (`Renderer::set_draw_dither`): gates PSX mode's
+   * dither alone. Absent means retail's boot value, on. */
+  setDrawDither(on) {
+    this.drawDither = !!on;
+  }
+
   /* PSX rasterisation (the native renderer's `set_psx_mode`, which the
    * native window turns on with LEGAIA_PSX_RENDER): vertex positions snap to
    * the framebuffer's integer pixel grid and every shaded fragment takes the
@@ -222,7 +228,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
        * geometry takes the GPU's pixel centre and texel bias, the native
        * renderer's `psx_snap_params`. */
       const snap = on && w === 320 && h === 240 ? 2 : on;
-      gl.uniform4f(this.locPsx, w, h, snap, on);
+      gl.uniform4f(this.locPsx, w, h, snap, on && this.drawDither !== false ? 1 : 0);
     }
     if (this.locDynDir) {
       /* The mood comes from the engine with this frame's lighting packet;

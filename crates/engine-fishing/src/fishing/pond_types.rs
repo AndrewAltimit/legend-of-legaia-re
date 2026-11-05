@@ -40,6 +40,10 @@ pub struct PondInput {
     /// [`crate::fishing_actors::bite_pad_nudge`] counts off the newly-pressed
     /// word (D-pad left, D-pad right, the reel pair as one mask).
     pub edge_bonus: i32,
+    /// The reel pair newly pressed this frame (`_DAT_8007B874`), `0x40` /
+    /// `0x80`. The session folds the auto-repeat pulse in (`_DAT_8007B93C`,
+    /// `0x801CF43C`).
+    pub reel_edge: u32,
 }
 
 impl PondInput {
@@ -72,7 +76,15 @@ impl PondInput {
             }
         }
         let pressed = pad & !pad_prev;
+        let mut reel_edge = 0;
+        if pressed & B::Cross.mask() != 0 {
+            reel_edge |= REEL_A_PAD_BIT;
+        }
+        if pressed & B::Square.mask() != 0 {
+            reel_edge |= REEL_B_PAD_BIT;
+        }
         PondInput {
+            reel_edge,
             reel_mask,
             cast_edge: pressed & B::Circle.mask() != 0,
             edge_bonus: crate::fishing_actors::bite_pad_nudge(u32::from(pressed.rotate_right(8))),
@@ -157,6 +169,15 @@ pub struct PondSession {
     /// The live cast lure (`0x801D9174` / `0x801D918C`), from the cast lock
     /// until the line is reeled back in.
     pub(super) lure_actor: Option<crate::fishing_actors::LureActor>,
+    /// The angler's `+0x26` the lure flies and sways off.
+    pub(super) lure_facing: i16,
+    /// How long each reel button has been held, in vsyncs, and the countdown to
+    /// the next auto-repeat pulse (`0x8007B93C`, `0x8007B940`): a pulse carries
+    /// what stayed held through the last 32 vsyncs, every 8.
+    pub(super) reel_held_for: [i32; 2],
+    pub(super) reel_repeat_in: i32,
+    /// `DAT_801D9100` / `DAT_801D9104`: the fish's swim from last frame's tick.
+    pub(super) last_swim: (i32, i32),
     /// Last frame's lure probe - the water class the strike credit and the
     /// hooked fish's weight come off.
     pub(super) lure_probe: crate::fishing_actors::LureProbe,
@@ -199,6 +220,8 @@ pub struct PondVenue {
     pub anchor_x: i16,
     /// The angler's world `z`.
     pub anchor_z: i16,
+    /// The lead actor's footing `+0x16`.
+    pub anchor_y: i16,
     /// The angler's facing (`actor[+0x26]`), the polar offset's angle.
     pub facing: i16,
     /// The venue scene's three rods and their bend - the geometry the
@@ -210,7 +233,3 @@ pub struct PondVenue {
 /// step to `DAT_801D9054` and leaves once it exceeds `0xC` (`slti v0,v0,0xd`
 /// at `0x801CFA40`), so thirteen frames at step `1`.
 pub const WINDUP_FRAMES: i32 = 13;
-
-/// Flight frames before the lure settles (state `0x1e` waits for the line
-/// animation counter to reach `0x14`).
-pub const FLIGHT_FRAMES: i32 = 0x14;

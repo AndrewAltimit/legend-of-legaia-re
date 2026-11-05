@@ -120,7 +120,7 @@ One line per handled state; the full per-state behaviour is under [State detail]
 | `0x15` | Attack - windup | Waits for the pre-approach clip to commit, stages the walk | `0x16` |
 | `0x16` | Attack - advance | Holds until in range (root motion walks), stages the close-in, shoves the target to the range boundary | `0x17` |
 | `0x17` | Attack - close-range | Waits for the staged clip to commit | `0x18` |
-| `0x18` | Attack - strike | Final clip match | `0x1E` |
+| `0x18` | Attack - strike | Holds for the close-in's natural end (idle committed) | `0x1E` |
 | `0x19` | Attack - short step | Holds until range is 0; no movement code, no timeout | `0x1E` |
 | `0x1E` | Strike loop | Stages one queue byte per swing, handles the counter-attack swap, re-faces the attacker | `0x1F` on the `0x00` terminator |
 | `0x1F` | Attack - recovery wait | Recovery framing, waits for the stage latch to clear | `0x20` |
@@ -282,13 +282,13 @@ Pose + facing recompute; range recheck. Out of range → stalls (`0x801E35D0`) -
 
 #### State `0x17` - Attack - close-range
 
-Anim/facing update; matches `actor[+0x1DA]` against `actor[+0x1D9]`.
+Pose + facing recompute; holds until `actor[+0x1DA] == actor[+0x1D9]` (the close-in has committed), then stages idle behind it (`sb zero,0x1da(s3)` at `0x801E3508`).
 
 **Next:** `0x18`.
 
 #### State `0x18` - Attack - strike
 
-Final anim match → falls into the swing apex frame.
+Pose + facing recompute; holds until the idle `0x17` staged has committed (`0x801E3534..0x801E3540`), which is the close-in's natural end. A walking monster therefore opens the strike loop on idle, with the first strike byte staged over it: `battle_rikuroa_caruban_strike` reads `+0x1D9 = 0`, `+0x1DA = 8`, `+0x1DC = 2` on `0x1E`.
 
 **Next:** `0x1E`.
 
@@ -624,6 +624,12 @@ to a lone survivor's slot (`ctx[+0x24A] - 1`), so this run takes the caster's si
 Caruban's Fire Breath on a solo Vahn holds the seed's `0xC00` through `0x29` and
 `0x1400` from the first `0x2B` pass: the retail recording's TR z reads `10240`
 there and `8192` in the Done band. Port: `battle_action::magic::cast_effect_driver`.
+
+Arm `0x13` also carries the caster's own look. Once the clip passes cursor `0xC0` it
+stores `+0x21C = 4` and `+0x21F = 2` on every pass (`0x801DCE54..0x801DCE60`), the blue
+arm of the [presentation tick](battle.md) and the impact selector whose sparks crawl
+over the body, and it clears both when `ctx[+0x24D]` hands on to `0xF`
+(`0x801DCE80..0x801DCE88`). Astral Wave's charge is this.
 
 The turning cases `3`, `5`, `0xE` and `0x10` aim the live yaw a fixed step
 on every pass, so their yaw has no endpoint of its own: where it stands is

@@ -882,3 +882,29 @@ fn only_a_967_prompt_stands() {
     assert!(world.battle.tutorial_standing.is_none());
     assert_eq!(world.battle.battle_tutorial_boxes_on_screen().count(), 0);
 }
+
+/// The lesson hooks' two option words (`0x800846C8`, `0x800846C4`) reach the
+/// machine when it arms, and Automatic carries the Hyper Arts drill past the
+/// Auto rewind (`0x801F6F88`) instead of stranding the player on it.
+#[test]
+fn the_tutorial_reads_the_two_option_words() {
+    use legaia_engine_battle::battle_tutorial::{TutorialInputs, TutorialLesson, dispatch, msg};
+    use legaia_engine_system::option_values::{BattleCommandOpt, SelectAttackOpt};
+    let mut world = tutorial_battle_world();
+    world.toggles.battle_command = BattleCommandOpt::CrossButton;
+    world.toggles.select_attack = SelectAttackOpt::Automatic;
+    world.battle.prime_battle_tutorial(synthetic_script());
+    world.enter_battle(1, 4);
+    let inputs: TutorialInputs = world.battle.tutorial.as_ref().unwrap().inputs;
+    assert!(inputs.battle_command_cross);
+    assert!(inputs.select_attack_automatic);
+    assert_eq!(
+        dispatch(30, TutorialLesson::Attacks, &inputs).boxes[1].message,
+        msg::HOWTO_HIGHLIGHT
+    );
+    let auto = TutorialInputs {
+        auto_attack: true,
+        ..inputs
+    };
+    assert!(!dispatch(90, TutorialLesson::HyperArts, &auto).rewind);
+}

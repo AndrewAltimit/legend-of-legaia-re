@@ -16,6 +16,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             status: 0,
             init_key: None,
             heal_latch: false,
+            gauge: None,
         },
         BarSeed {
             slot: 4,
@@ -28,6 +29,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             status: 0,
             init_key: None,
             heal_latch: false,
+            gauge: None,
         },
         BarSeed {
             slot: 2,
@@ -40,6 +42,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             status: 0x1,
             init_key: Some(0),
             heal_latch: false,
+            gauge: None,
         },
         BarSeed {
             slot: 3,
@@ -52,6 +55,7 @@ fn bar_seeds_round_trip_through_the_child_env() {
             status: 0x1C10,
             init_key: Some(154),
             heal_latch: false,
+            gauge: None,
         },
     ];
     assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
@@ -80,6 +84,7 @@ fn an_empty_seat_seed_stands_the_seat() {
         status: 0,
         init_key: None,
         heal_latch: false,
+        gauge: None,
     };
     let back = bar_seeds_from_env(&bar_seeds_to_env(&[seed]));
     assert_eq!(back, vec![seed]);
@@ -108,6 +113,7 @@ fn a_ground_seed_holds_the_seed_recentre() {
         status: 0,
         init_key: None,
         heal_latch: false,
+        gauge: None,
     };
     apply_bar_seeds(&mut world, &[bars]);
     assert!(!world.battle.seed_recentre_held);
@@ -134,6 +140,7 @@ fn the_heal_latch_rides_the_bars_entry() {
         status: 0,
         init_key: Some(300),
         heal_latch: true,
+        gauge: None,
     };
     let env = bar_seeds_to_env(&[seed]);
     assert!(env.ends_with(":k300:v"), "{env}");
@@ -153,6 +160,7 @@ fn a_raised_pool_seats_and_round_trips() {
         status: 0,
         init_key: Some(0),
         heal_latch: false,
+        gauge: None,
     };
     let env = bar_seeds_to_env(&[seed]);
     assert_eq!(env, "0:9973:79:k:m9999");

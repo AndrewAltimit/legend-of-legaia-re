@@ -306,6 +306,17 @@ impl<S: AudioSink> AudioDirector<S> {
             channel,
             duration_sectors,
         ));
+        self.start_xa_clip(clip_slot, channel, duration_sectors)
+    }
+
+    /// [`Self::play_xa_clip`] past its command record: a deferred request that
+    /// plays when its span lands is one request, not two.
+    fn start_xa_clip(
+        &mut self,
+        clip_slot: u32,
+        channel: u32,
+        duration_sectors: u32,
+    ) -> Option<u32> {
         let (Ok(slot), Ok(ch)) = (u8::try_from(clip_slot), u8::try_from(channel)) else {
             self.xa_stats.clips_unstaged += 1;
             return None;
@@ -402,7 +413,7 @@ impl<S: AudioSink> AudioDirector<S> {
             .insert_lazy(slot, channel, clip, width);
         self.xa_stats.lazy_installed += 1;
         if req.replay {
-            let _ = self.play_xa_clip(u32::from(slot), u32::from(channel), req.duration_sectors);
+            let _ = self.start_xa_clip(u32::from(slot), u32::from(channel), req.duration_sectors);
         }
         true
     }

@@ -2,6 +2,7 @@ use super::*;
 
 fn seats() -> ModuleCamSeats {
     ModuleCamSeats {
+        victim_flinch: 0,
         caster: ModuleSeat {
             x: 82,
             y: 0,
@@ -682,7 +683,10 @@ fn glare_frames_caster_then_victim_and_finishes_on_arm_3() {
 /// Walk a phase-owning capture director to its finish, returning the phase
 /// sequence it passed through and every arm's output.
 fn walk_capture(direct: CaptureCamDirector, s: ModuleCamSeats) -> (Vec<u8>, Vec<CaptureCamArm>) {
-    let mut st = ModuleCamState::default();
+    let mut st = ModuleCamState {
+        party_settled: true,
+        ..Default::default()
+    };
     let mut phase = 0u8;
     let mut seq = vec![0u8];
     let mut arms = Vec::new();
@@ -724,6 +728,10 @@ fn terio_punch_charges_then_punches_on_its_latch() {
     assert_eq!(shots[1].tr, [0x200, 0xA00, 0x200]);
     assert_eq!(shots.last().unwrap().tr, [0, 0x550, 0x2800]);
     assert!(capture_camera_director(953, SINGLE_BODY).is_some());
+    // The strike is arm 7's way out of its gate, the party turned and halved.
+    let strike = arms.iter().find(|a| a.folds_hit).expect("the punch's hit");
+    assert_eq!(strike.next, Some(8));
+    assert_eq!(strike.party_write.rate, Some(4));
 }
 
 /// Final Crisis in formation `0xB5`: arm 0 cuts behind Cort at `TR.y 0x800`,
@@ -962,7 +970,8 @@ fn orb_anchors_resolve_like_the_arms_build_them() {
         spawn_anchor_point_with(anchor, Some(creature), None, Some(shot), seats),
         Some(([63, 0, -591], [0, 0x810, 0]))
     );
-    assert_eq!(spawn_anchor_scale(anchor, Some(shot), seats), 0x666);
+    // `(z << 8) / 0xA0`, as the tween builder leaves the stack word.
+    assert_eq!(spawn_anchor_scale(anchor, Some(shot), seats), 0xA3C);
     assert_eq!(
         spawn_anchor_scale(SpawnAnchor::Caster { y: 0 }, Some(shot), seats),
         0x1000

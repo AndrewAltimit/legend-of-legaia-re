@@ -520,6 +520,7 @@ mod tests {
                     phase,
                     step: 1,
                     frame: frame.then_some(f),
+                    acting: 0,
                     shot: Some(String::new()),
                     geom: (FRAME_W, FRAME_H, 16),
                 });

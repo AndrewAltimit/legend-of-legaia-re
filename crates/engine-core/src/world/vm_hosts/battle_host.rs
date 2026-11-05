@@ -128,10 +128,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world.input.retail_pad().pressed as u16
     }
     fn previous_action_cleared(&self, _: u8) -> bool {
-        self.world.battle.prev_action_cleared
+        self.world.battle.prev_action_cleared && !self.world.capture_read_pending()
     }
     fn sound_bank_ready(&self, _: u8) -> bool {
-        self.world.audio.sound_bank_ready
+        self.world.audio.sound_bank_ready && !self.world.capture_read_pending()
     }
     /// The disc spell table's class byte, read off the same
     /// [`legaia_engine_menus::pause_screens::MenuTextTables`] copy the live cast path
@@ -577,9 +577,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// and its hand-off is written back over the queue byte under the cursor
     /// (`s3 = actor + 0x1DF + ctx[+0x15]`), which the next pass reads.
     ///
-    /// Not modelled: case `1`'s `ctx[+0x24C] = 0xFD` (a host cannot write
-    /// the context the step writes back) and case `0x13`'s `+0x21C` /
-    /// `+0x21F` render stores.
+    /// Case `0x13`'s render stores land on the caster: `+0x21C = 4`, `+0x21F = 2`
+    /// (`0x801DCE54..0x801DCE60`), which is what turns Astral Wave's caster blue.
+    ///
+    /// Case `1`'s `ctx[+0x24C] = 0xFD` is the kernel's: a host cannot write the
+    /// context the step writes back.
     ///
     /// REF: FUN_801DC0A0
     fn spell_anim_sustain(&mut self, actor_id: u8, anim_id: u8) {
@@ -597,6 +599,10 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             }
             if step.clear_hit_bound {
                 a.battle.hit_count_bound = 0;
+            }
+            if let Some((flag, selector)) = step.render {
+                a.battle.render_flag = flag;
+                a.battle.impact_state = selector;
             }
         }
         if legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES

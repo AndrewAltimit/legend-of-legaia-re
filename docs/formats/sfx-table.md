@@ -298,7 +298,9 @@ Evidence for the pins:
   **10**, the program cue `0x50` names, with 2 voices against 2 tones. Its
   loader `FUN_8004E568` is also the function that fires `0x50`.
 - **PROT 0875** as the slot-2 alternate: descriptors `0x40` / `0x41` name
-  program 10, which 0869 does not populate and 0875 does.
+  program 10, which 0869 does not populate and 0875 does. Terra on party seat 1
+  is what selects it. Port: `SharedRegionBank::CLASS2_ALT`, picked by
+  `World::sync_sfx_residency`.
 - Slots 6 and 1 are byte-pinned: in a catalogued field state the live header
   buffers match extraction 0876 and (for that state's track) 0998 exactly over
   all 218 disc VABs, once the runtime-written `ProgAtr +8..0xF` words are

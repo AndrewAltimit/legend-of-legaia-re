@@ -90,7 +90,7 @@ rejected up front with `not a Mode2/2352 disc image: <path>`.
 ./legaia-extract "/path/to/Legend of Legaia (USA).bin" --out extracted
 ```
 
-On a modern machine this takes about five seconds and writes roughly 1.1 GB.
+On a modern machine this takes about five seconds and writes roughly 900 MB.
 A disc-fingerprint check runs first, then eight numbered steps, each logged
 as `step N/8`:
 
@@ -113,7 +113,9 @@ extracted/
 ├── PROT.DAT                 - the game's main archive, raw copy
 ├── CDNAME.TXT               - entry name map
 ├── SCUS_942.54              - the game executable (data-table source)
+├── DMY.DAT, SYSTEM.CNF       - the disc's remaining root files
 ├── MOV/                     - FMV movies (MV1.STR ...)
+├── XA/                      - streamed audio, raw sectors
 ├── PROT/                    - one file per PROT entry, plus categorize.json
 ├── streaming/               - sub-assets unpacked from streaming containers
 ├── XA_WAV/                  - streamed audio, one WAV per channel

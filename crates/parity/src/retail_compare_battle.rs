@@ -405,6 +405,8 @@ pub struct RetailBattle {
     pub summon_fade: Option<RetailFade>,
     /// `ctx[+0x279]` - the resident summon module's phase byte.
     pub module_phase: u8,
+    /// The acting seat's latch word `0x801C8FE0 + (ctx[+0x13] + 1) * 4`.
+    pub caster_latch: u32,
     /// Vsyncs the capture's displayed frame lags its RAM
     /// ([`display_lag_vsyncs`]).
     pub display_lag: u16,
@@ -417,6 +419,10 @@ pub struct RetailBattle {
     /// `0x801F72D0` is still up, its depth-cue level `+0x78` on the displayed
     /// frame; `Some(None)` once it has gone; `None` outside that fight.
     pub arrival_cue: Option<Option<u16>>,
+    /// Dohati's Spirit gauge `+0x170`, which sizes his body and his framing
+    /// (`legaia_engine_battle_vm::battle_impact_fx::dohati_growth`); `None`
+    /// in any other formation.
+    pub dohati_gauge: Option<u16>,
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
@@ -708,6 +714,9 @@ pub struct RetailBattle {
     /// (`sh zero,0x16c(s3)` at `0x801E2CDC`), so a living combatant reading
     /// `0` has already acted in the capture's round.
     pub init_keys: Vec<Option<u16>>,
+    /// `ctx[+0x291]`: the formation advantage state `0x00` latched off `+0x290`
+    /// for the round it rolled on.
+    pub formation_latch: u8,
     /// `ctx[+0x274]` as read: the actor the initiative pick `FUN_801DABA4`
     /// handed the turn to. Inside a party member's attack band it names that
     /// member, except on a counterattack, where it still names the monster

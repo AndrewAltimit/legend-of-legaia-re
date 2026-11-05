@@ -177,7 +177,11 @@ impl<'a> HostView<'a> {
     /// camera the frame loaded), so the blob and the body share one camera;
     /// projecting through the follow frame instead shifted every blob off its
     /// body by the same screen offset during a scripted event.
-    pub fn drop_shadow_prims(&self, cutscene: Option<FieldCameraView>) -> Vec<ScreenPrim> {
+    pub fn drop_shadow_prims(
+        &self,
+        cutscene: Option<FieldCameraView>,
+        link_order: bool,
+    ) -> Vec<ScreenPrim> {
         if !World::fog_mode(self.world.mode)
             && self.world.pack_mode_stage().is_none()
             && self.world.mode != SceneMode::Dance
@@ -188,7 +192,7 @@ impl<'a> HostView<'a> {
             return Vec::new();
         };
         self.world
-            .field_drop_shadows(&view)
+            .field_drop_shadows(&view, link_order)
             .iter()
             .map(|q| drop_shadow_prim(q.xy, q.uv, q.clut, q.tpage, q.rgb, q.ot_index, q.depth))
             .collect()
@@ -368,18 +372,44 @@ pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQu
             frame,
         ));
     }
-    // A cast arm's ribbon ring (PROT 0962 `0xA3` arm 4): one ribbon call
-    // per point, each drawing its own run of BIOS `rand` - so each point
-    // takes its own seed off the frame.
-    if let Some(ring) = world.battle.cast_ribbons {
-        for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
-            out.extend(clip_ribbon_quads(
-                p.map(f32::from),
-                ring.trail_id,
-                mvp,
-                frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
-            ));
-        }
+    out
+}
+
+/// A cast arm's ribbon ring as screen primitives (PROT 0962 `0xA3` arm 4, PROT
+/// 0934's arms 5..9): one ribbon call per point, each drawing its own run of
+/// BIOS `rand` - so each point takes its own seed off the frame. Retail links
+/// each packet at its anchor's own depth bucket (`FUN_801E1D98`'s `AddPrim`,
+/// `0x801E20D8`), so a body nearer the camera hides it: every corner carries the
+/// anchor's scene depth.
+pub fn cast_ribbon_prims(
+    world: &World,
+    mvp: &glam::Mat4,
+    ot_index: u32,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
+    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
+    let Some(ring) = world.battle.cast_ribbons else {
+        return Vec::new();
+    };
+    let frame = world.clock.display_frames as u32;
+    let mut out = Vec::new();
+    for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
+        let at = p.map(f32::from);
+        let clip = *mvp * glam::Vec4::new(at[0], at[1], at[2], 1.0);
+        let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
+        let quads = clip_ribbon_quads(
+            at,
+            ring.trail_id,
+            mvp,
+            frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
+        );
+        out.extend(quads.iter().map(|q| {
+            let mut prim = q.to_screen_prim(ot_index);
+            if let ScreenPrim::Textured(t) = &mut prim {
+                t.depth = depth;
+            }
+            prim
+        }));
     }
     out
 }
@@ -401,7 +431,7 @@ mod tests {
         let cam = Camera::default();
         let v = HostView::new(&world, &cam, AABB);
         assert!(v.fog_prims(true).is_empty());
-        assert!(v.drop_shadow_prims(None).is_empty());
+        assert!(v.drop_shadow_prims(None, false).is_empty());
         assert!(v.move_strip_prims(None).is_empty());
         assert!(v.light_prims(None).is_empty());
         assert!(v.world_map_marker_prims(true).is_empty());
@@ -466,13 +496,13 @@ mod tests {
             let (sx, sy, _) = world.field_fx_view(view).project_gte(p).expect("in front");
             (sx, sy)
         };
-        let prims = v.drop_shadow_prims(Some(shot));
+        let prims = v.drop_shadow_prims(Some(shot), false);
         assert_eq!(prims.len(), 8, "four cells per caster");
         let drawn = v.frame(Some(shot)).field_view().expect("shot");
         assert_eq!(prims[0].corners()[3], centre(&drawn, player));
         assert_eq!(prims[4].corners()[3], centre(&drawn, npc));
         // The follow frame is a different camera: its blobs sit elsewhere.
-        let stale = v.drop_shadow_prims(None);
+        let stale = v.drop_shadow_prims(None, false);
         assert_eq!(stale[0].corners()[3], centre(&follow, player));
         assert_ne!(stale[0].corners()[3], prims[0].corners()[3]);
     }

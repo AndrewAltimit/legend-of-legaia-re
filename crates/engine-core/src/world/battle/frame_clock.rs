@@ -21,6 +21,28 @@ impl World {
         }
     }
 
+    /// The step of a battle frame nothing else names: the frame driver's law
+    /// over a measured cost, read on the last pass
+    /// ([`legaia_engine_battle_loop::frame_clock::FrameCostRing`]).
+    pub fn ordinary_battle_frame_step(&self) -> u8 {
+        if self.toggles.battle_party_cost_step {
+            self.battle.frame_cost_step
+        } else {
+            DEFAULT_BATTLE_FRAME_STEP
+        }
+    }
+
+    /// One pass's push into the cost ring: the frame's measured cost, or what an
+    /// arm table's step leaves there, then the step that reads.
+    fn push_frame_cost(&mut self, arm_step: Option<u8>) {
+        use legaia_engine_battle_loop::frame_clock::{cost_of_step, measured_frame_cost};
+        let cost = arm_step.map_or_else(
+            || measured_frame_cost(self.party.party_count, self.battle_ctx.action_state),
+            cost_of_step,
+        );
+        self.battle.frame_cost_step = self.battle.frame_cost_ring.push(cost);
+    }
+
     /// Seed a replay's battle frame step: `step` vsyncs a frame on every tick
     /// the action SM sits in `state`, the default everywhere else
     /// ([`legaia_engine_vm::frame_clock::FrameClock::battle_frame_step_seed`]).
@@ -102,7 +124,7 @@ impl World {
         let want = if in_state && reached {
             step
         } else {
-            DEFAULT_BATTLE_FRAME_STEP
+            self.ordinary_battle_frame_step()
         };
         if self.battle.frame_clock.step != want {
             if self.toggles.battle_sm_frame_cadence {
@@ -131,6 +153,10 @@ impl World {
         if !self.toggles.battle_sm_frame_cadence || self.clock.battle_frame_step_seed.is_some() {
             return;
         }
+        if self.battle.retail_step_track.is_some() {
+            self.apply_retail_step_track();
+            return;
+        }
         let state = self.battle_ctx.action_state;
         let band = state == S::SummonSustain.as_byte() || state == S::SummonReturn.as_byte();
         let measured = self
@@ -145,9 +171,26 @@ impl World {
                     self.casting.module_phase,
                 )
             });
+        let measured = measured.or_else(|| {
+            let spell = self
+                .casting
+                .capture_spell
+                .filter(|_| state == S::MagicCapturePhase2.as_byte())?;
+            legaia_engine_cast::cast_module_frame_step::capture_arm_frame_step(
+                spell,
+                self.casting.module_phase,
+            )
+        });
+        self.push_frame_cost(measured);
+        let ordinary = self.ordinary_battle_frame_step();
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
-            (None, true) => DEFAULT_BATTLE_FRAME_STEP,
+            (None, true) => ordinary,
+            (None, false)
+                if ordinary != DEFAULT_BATTLE_FRAME_STEP && self.battle.frame_stretch.is_none() =>
+            {
+                ordinary
+            }
             (None, false) => return,
         };
         self.battle.cast_arm_step_on = measured.is_some();
@@ -159,6 +202,64 @@ impl World {
                 cam.set_frame_step(want);
             }
         }
+    }
+
+    /// A film's retail step for the frame this pass opens
+    /// ([`legaia_engine_battle_loop::frame_clock::RetailStepTrack`]).
+    fn apply_retail_step_track(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let tick = self.clock.display_frames;
+        let Some(track) = self.battle.retail_step_track.as_mut() else {
+            return;
+        };
+        let state = self.battle_ctx.action_state;
+        let band = state == S::SummonSustain.as_byte()
+            || state == S::SummonReturn.as_byte()
+            || state == S::MagicCapturePhase2.as_byte();
+        let phase = if band { self.casting.module_phase } else { 0 };
+        let Some(want) = track.next_step(state, phase) else {
+            return;
+        };
+        if self.battle.frame_clock.step != want {
+            self.battle.frame_clock.retime_frame(tick, want);
+            if let Some(cam) = self.battle.camera.as_mut() {
+                cam.set_frame_step(want);
+            }
+        }
+    }
+
+    /// Start the capture band's CD wait on the state the SM just entered.
+    ///
+    /// `0x6E` polls the read `0x28` queued (`jal 0x8003DE7C` at `0x801E4F08`)
+    /// and `0x6F` the module's own (`jal 0x8003F2B8`), both on the disc in
+    /// retail and answered at once by the engine's resident image. The polls
+    /// are not idle: each `0x6E` pass walks the framing `FUN_801D5854(seat, 6)`
+    /// (`0x801E4F00`), and each `0x6F` pass pulls `ctx[+0x6D0]` in by
+    /// `step * 16`, so arm 0's long shot opens from another pose and every
+    /// shot reading `ctx[+0x6D0]` lands at another depth without them.
+    pub(in crate::world) fn arm_capture_read_wait(&mut self, to: u8) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        /// Vsyncs each poll held over the harvest-state casts: `14..=17` and
+        /// `4..=6`, a read that does not move with the module or the fight.
+        const BRANCH_READ_VSYNCS: u64 = 14;
+        const FADE_READ_VSYNCS: u64 = 4;
+        let vsyncs = if to == S::MagicCaptureBranch.as_byte() {
+            BRANCH_READ_VSYNCS
+        } else if to == S::MagicCaptureFade.as_byte() {
+            FADE_READ_VSYNCS
+        } else {
+            return;
+        };
+        self.battle.capture_read_until = self.clock.display_frames + vsyncs;
+    }
+
+    /// Whether the capture band's read has not answered yet
+    /// ([`Self::arm_capture_read_wait`]).
+    pub(in crate::world) fn capture_read_pending(&self) -> bool {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        let state = self.battle_ctx.action_state;
+        (state == S::MagicCaptureBranch.as_byte() || state == S::MagicCaptureFade.as_byte())
+            && self.clock.display_frames < self.battle.capture_read_until
     }
 
     /// The battle frame driver's discarded `rand()` draw: `FUN_80046A20`
@@ -818,8 +919,20 @@ mod tests {
     }
 
     #[test]
+    fn a_full_partys_ordinary_frame_runs_step_three() {
+        let mut w = World::new();
+        w.party.party_count = 3;
+        w.battle_ctx.action_state = 0x1E;
+        w.push_frame_cost(None);
+        assert_eq!(w.ordinary_battle_frame_step(), 3);
+        w.toggles.battle_party_cost_step = false;
+        assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+    }
+
+    #[test]
     fn a_seeded_step_holds_only_inside_its_state() {
         let mut w = World::new();
+        w.toggles.battle_party_cost_step = false;
         w.seed_battle_frame_step(3, 0x33);
         w.battle_ctx.action_state = 0x32;
         w.apply_battle_frame_step_seed();

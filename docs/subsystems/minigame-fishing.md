@@ -51,6 +51,8 @@ The mode-24 entry `FUN_80025980` backs the departure scene's id word `_DAT_80084
 | `0x187` | `map03` (Karisto) | `0` | Buma | `(0x25, 0x54)` | fenced wooden deck on a grassy pond, mountain backdrop (high-Z half) |
 | `0xF4` | `map02` (Sebucus) | `1` | Vidna | `(0x2E, 0x23)` | rocky-shore blue pool with two rock islets (low-Z half) |
 
+The same state latches the region box at the anchor tile (`jal 0x800180EC` at `0x801CF65C`), and the floor pass `FUN_801d6bbc` spawns a placed record only inside it (`0x1F800384..87`, the loops at `0x801D6C74..0x801D6ED8`), so a venue never draws the other's half: Vidna's box is `[11, 28, 93, 66]` in `minigame_fishing_retail_shore`, which leaves out Buma's mountains and bank at rows `102..110`.
+
 Any other value leaves the variant alone. The immediates are the raw CDNAME `#define`s of the two scenes whose scripts carry a fishing door. The variant then selects the [prize page](#point-exchange-prize-shop) (`PTR_DAT_801d90b8`) and the [spawn page](#venue-spawn-tables) (`PTR_DAT_801d9114`). Both pond areas are in the bundle's one map; the area column follows from the anchor tile's Z.
 
 Port: `fishing::venue_for_departure_scene`, applied by `SceneHost::enter_fishing_from_overlay` to the still-loaded departure scene.
@@ -117,7 +119,7 @@ stateDiagram-v2
 | `0xb` | Fade-in: ramps the fade level `DAT_801d905c` down to 0, then advances - or jumps to `0x96` when `FUN_801d712c` reports no lure owned. |
 | `0xc` | Idle shore. The packed pad edge `_DAT_8007B874 & 0xC0` (Cross / Square, `0x801CF99C`) starts the cast. `& 0x110` (Triangle / Select, `0x801CF9EC`) raises SFX `0x21`, zeroes the menu cursor `0x801D912C` and opens the [hub menu](#the-hub-menu) at `0x64`. |
 | `0xd` | Cast wind-up: dollies the camera in over the water ([The fishing camera](#the-fishing-camera)) and adds the frame step to `DAT_801d9054`; once it passes `0xC` (thirteen frames at step `1`) it jumps to `0x14` and falls through into that state's first frame. |
-| `0x14` | Power meter: bounces `DAT_801d9274` between `0x20` and `0x1000`. On the `& 0xC0` edge (`0x801CFBA4`) it locks the power, clears the line-break latch `DAT_801d91a4`, spawns the rod, lure and line actors, computes the lure spawn point from the locked power and advances to `0x15`. |
+| `0x14` | Power meter: bounces `DAT_801d9274` between `0x20` and `0x1000`, `0x20` per frame-step. On the `& 0xC0` edge (`0x801CFBA4`) it locks the power, clears the line-break latch `DAT_801d91a4`, spawns the rod, lure and line actors, computes the lure spawn point from the locked power and advances to `0x15`. |
 | `0x15` | No case of its own: the lure is in flight. The lure tick moves the state to `0x19` when the flown lure's power countdown reaches zero, raising cue `0x204` and bumping the cast counter. |
 | `0x19` | Lure in water (sets the allow-leave flag only). The lure tick ends it - see [Fight exits](#fight-exits). |
 | `0x1e` | The catch. Clears `DAT_801d90bc`, waits for the rod swing word `DAT_801d91ac` to reach `0x14` and the line actor's close-up flag `DAT_801d91b0` to clear, then jumps to `0x20`. |
@@ -188,7 +190,13 @@ The pad-mask packer `FUN_8001822C` builds the held mask `_DAT_8007b850` (and the
 
 **Decoder.** `FUN_801d7450` reduces the held mask to a reel state: `if (m & 0x40) return 1; else return (m >> 6) & 2;` - Cross wins and returns reel A (`1`), Square alone returns reel B (`2`), neither returns idle (`0`). Holding both resolves to reel A.
 
-**Cadence recogniser.** `FUN_801d3db4` decodes the reel button each frame and compares it to the previous decode `DAT_801d9064`. While unchanged it adds the frame step `DAT_1f800393` to the current slot of a 16-entry `{button, held-frames}` ring buffer `DAT_801d91e4` (write index `DAT_801d91dc`, mod 16); on a change it advances the index and opens a fresh slot. It then walks a window of that history backwards against the [cadence templates](#cadence-templates) with a +/-10 frame-step tolerance. On a full match it resets the ring through `FUN_801d746c` and returns the template id, which the caller stores as the cast band.
+**Cadence recogniser.** `FUN_801d3db4` decodes the reel button each frame and compares it to the previous decode `DAT_801d9064`. While unchanged it adds the frame step `DAT_1f800393` to the current slot of a 16-entry `{button, held-frames}` ring buffer `DAT_801d91e4` (write index `DAT_801d91dc`, mod 16); on a change it advances the index and opens a fresh slot at zero, adding no step that frame. It then walks the history newest first against each of the [cadence templates](#cadence-templates) in turn, last step first:
+
+- A slot matches a step when the button is equal and the held time is within 9 frame-steps of the duration (strict `slt` against `dur +- 10`, `0x801D3F28` / `0x801D3F34`).
+- One slot that does not match is passed over, and the same step tries the next older slot. Two misses in a row fail the template (`0x801D3F78..0x801D3F90`), so a stray tap between steps does not spoil a gesture.
+- The template's `history_window` is a budget: every visited slot's held time comes off it, and the walk stops at zero or below. Steps left over fail the template.
+
+On a full match it resets the ring through `FUN_801d746c` and returns the template id, which the caller stores as the cast band. The latch `DAT_801d9064` is written only on a frame with no match (the matched exit jumps past the store at `0x801D3FC8`).
 
 `FUN_801d746c` zeroes `DAT_801d91dc` and both words of all sixteen 8-byte records of `DAT_801d91e4`. Retail unrolls the loop two words at a time, so the table is `16 * 8` bytes.
 
@@ -208,7 +216,7 @@ band    = DAT_801d90e8                        cast band, 0..4
 
 ### Band roll
 
-While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs every frame: the countdown `DAT_801d90ec` clamps to `0` on underflow, so the steady state re-enters each tick. Each entry first consults the cadence recogniser.
+While no fish is hooked (`DAT_801d91b4 == 0`) and the line record `DAT_801d927c` exceeds `500`, the check body runs on a frame whose step takes the countdown `DAT_801d90ec` below zero, and zeroes it. A held band therefore skips the body, and the recogniser is called only from inside it: its ring stands still through the hold and at a short line, where the countdown keeps falling unclamped. Each entry first consults the cadence recogniser. The strike draw `rand() % interval` is taken every frame, held or not (`0x801D3300`).
 
 - **Match:** the template id is stored as the band, the countdown is armed to `0x40` (the body is skipped for the next 64 frame-steps, so the band holds), and the strike-splash timer `DAT_801d90f0` is seeded. The splash fires for any matched template, including the ones that select common bands.
 - **No match:** the band is re-rolled from `r = rand & 0xfff`, so an unmatched band is only ever the current frame's roll.
@@ -404,7 +412,7 @@ The lure tick `FUN_801d26cc` ends the in-water state from its tail (`0x801D3AFC.
 
 `FishAi::tick` ports `FUN_801d4004` whole, in its `rand` order: the depth rise, the pull off the hook's `fish_scale` (`DAT_801D9108`), the four arms with their sink, ceiling, run exit, swim offset and surge, the load, both reel nudges, the clamps and the re-roll. `TensionGauge::apply_load` is the reel arms' tension half over that load; it draws no `rand` and feeds no re-roll, so the split keeps the stream in retail's order. `PondSession` seeds the depth `0x1000` at the hook. Tests: `fishing::tests::the_reel_load_scales_by_state_and_by_depth`, `each_held_reel_bit_runs_its_arm`, `the_run_tires_and_ends_when_reeled_shallow`, `the_reroll_reloads_per_state`.
 
-What stays engine-side is the fish's position: retail integrates the swim offset into it (`FUN_801d26cc`, the lure tick halving the offset at `0x801D2D08`) and measures the line record off that position each frame (`FUN_801D765C` at `0x801D3A20`). `PondSession` takes the fish's facing as pointing at the rod: the offset's side half drives the presentation lateral, and on a slack reel the away half pays line out (`>> 8` of the 24.8 offset). Reeling shortens the record at fixed rates.
+The swim offset moves the lure (`LureActor::water_step`): the lure tick adds half of it, faded close in by `(record - 300) * 16` from `0x1000` (`0x801D2D08..0x801D2DC8`), and measures the line record off the new position each frame (`FUN_801D765C` at `0x801D3A20`). The swim from a frame's fish tick moves the lure on the next, since the tick runs after the move (`jal 0x801D4004` at `0x801D3968`).
 
 A fish whose line record is at or past `0x899` strains the gauge by `step * 300` a frame after the reel arms (`TensionGauge::far_record_strain`, from `PondSession::tick` ahead of the ceiling test), so a slack reel that bleeds the gauge near the rod climbs it out there. The gate retail adds, `DAT_801d91b0 == 0`, is open for the whole fight: its one non-zero store is the line actor's landed-lift arm (`FUN_801d4948` state `4`, `0x801D4AEC`), which runs after the reel-in ends it. Pinned by `fishing::tests::a_fish_run_far_out_strains_the_line`.
 
@@ -988,13 +996,19 @@ Retail textures it from a resident system page (`tpage 0x1F`, CLUT `0x7F84`) the
 The catch HUD depends on it: `FUN_801d1580` also draws the lone `m` glyph (record `0x10`) at `(0x114, 0x30)`, straddling the units digit and the LINE plate's baked-in point. Retail's ordering walk draws it first and the plate's opaque band over it, so it never shows.
 A renderer that blends every texel of a semi prim puts a stray `m` through the readout (`22m4 m` for `22.4 m`). The screen-prim passes split a semi prim per texel for that reason ([renderer-port](renderer-port.md)).
 
+## The cast and the line
+
+The cast releases at the power meter's lock (`FUN_801CF3BC` state `0x14`): the lure spawns `200` units behind the angler's facing, and the spawn point stays as `0x801D918C` / `0x801D9190`. The line record is the distance of the lure from that point, taken every frame in the lure tick's tail (`FUN_801D765C`, through the SCUS root `FUN_8005AF0C`), so it starts near `200` and grows with the flight.
+
+**Flight** (`FUN_801D26CC`, `0x801D279C..0x801D2944`). Each frame the lure's 24.8 accumulators take `26 * polar(facing, -(power * 640 / 4096), step)` on X and Z, and the height takes `fall / 10 * step << 8`, with `fall` starting at `0x40` and rising `3 * step`. Once the tracked height is above zero the power falls an extra `120 * step`, and a height past `0xC8` spends it all; it always falls `50 * step`. The frame it goes below zero is the landing: the cue `0x204` and the cast counter. A short cast lands inside the `500` the band check needs, so it cannot bite until cast again.
+
+**In the water** (`0x801D2C3C..0x801D2DC8`). The lure moves by `polar(heading, -0x900, step) * pull / 4096`, where `heading` is the bearing from the spawn point to the lure, plus the rod's sway across the facing while a pull runs. The pull comes from presses: a press on an idle reel sets `0xA00` (Cross) or `0xC00` (Square), it falls `0x80` a frame-step and drops to nothing under `0x600` (`0x801D2E60..0x801D2F40`). The press word carries the auto-repeat pulse, so a held button pulses every 8 vsyncs after 32. An empty line under `0x136` ends the cast (`0x801D3C68`); a hooked one lands the fish.
+
 ## Open
 
 The retail tables, kernels and screens above are pinned. What remains is the glue `PondSession` reconstructs, each marked at its call site:
 
 - **Line break.** The ceiling roll and the lure it spends are ported ([Port fight model](#port-fight-model)); the break seeds what retail's break arm seeds - the converging `LINE BREAK!` pair, cancelling the hook banner (`FishingBanners::on_snapped`). So is the far-record strain. The off-screen latch (`3`) is not ported - it tests the line packet's screen `x` - and neither is the no-lure screen a spent last lure leads to.
-- **Fish position.** `FUN_801d4004` is ported; the fish's position it feeds is not. Retail moves the fish by the swim offset and the reel (the reel speed ramp `DAT_801D9150`, capped by the surge), and the line record is the distance `FUN_801D765C` measures. The port's record moves by the offset's away half on a slack reel and by fixed reel-in rates otherwise.
-- **Cast.** The power meter's per-frame step (hosts use `0x80`), the flight timing, and the mapping from locked power to the line record are approximations; retail's line-projection vector math is not decoded.
 - **Result plate.** The landed fish's lift is modelled only as far as the camera reads it ([The fishing camera](#the-fishing-camera)); the fish model's own rise and the `DAT_801d90bc` recast gate are not.
 - **State `0x2d` has no writer on the disc.** The driver's state word `0x801D926C` is referenced only from the fishing overlay, and every one of its stores resolves: literal `0`, `1`, `0xA`, `0x14`, `0x19`, `0x1E`, `0x20`, `0x28`, `0x32`, `0x64`, `0x66`, `0x78..0x7A`, `0x96`, `0xC8`, and `state + 1` in cases `0xA`, `0xB`, `0xC`, `0x14`, `0x21`, `0x22`. None yields `0x2D`. Its timer `0x801D9268` is stored only inside case `0x2D` itself (the advance at `0x801CFF70` and the zero at `0x801CFF78`), so the miss / retry banner `FUN_801d6f10` is unreachable in retail. The port matches: `FishingBanners::miss` has no starter.
 - **Mode states `0`, `0xb`, `0x96`, `200`.** The tackle grant, the fade ramps, the no-lure screen and the exit fade are not session phases; the hosts' leave affordance replaces the exit.

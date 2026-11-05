@@ -7,3 +7,4 @@
 
 mod escape_icons_real;
 mod extracted_smoke;
+mod font_extract_disc_real;

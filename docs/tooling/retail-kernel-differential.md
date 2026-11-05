@@ -87,6 +87,13 @@ nothing in battle.
 The action validator's kernel matches over every arm. Its battle host read the raw
 word alone, so a member poisoned by a hit had nothing a cure could target.
 
+The sound driver runs through [its own harness](../subsystems/audio.md#the-keying-differential),
+because a track takes minutes of vsyncs and the SPU has to feed `ENVX` back: libsnd's `FUN_80062F98`
+over a state's RAM, its registers applied to the port's `Spu`. It found the note-off keyed on channel
+where `FUN_8006688C` keys on program, a pan or volume event missing voices already released, the
+sequence volume re-reading a moved pan, a pause leaving tails sounding, and the allocation scan reading
+live voices where retail reads the flush's own record, which had voice numbers apart in every score.
+
 The bag's accessor family, run as a stream of mixed operations, showed normalize
 `FUN_800423E0` to be one pass of two cursors rather than a whole compaction: one call
 can pass a hole by, and the slot order after it differed from the port's. The walk
@@ -197,3 +204,17 @@ The hooked fish `FUN_801D4004` with the gauge's reel arms matches over whole fig
 The Seru side-effect stager `FUN_801F3D3C` found the port rolling the scripted bypass on the first enemy the cast targeted, where the bytes read the formation's first record whoever is targeted and whether that seat stands, and comparing a group cast's first target, where the bytes walk to the first seat with HP left and stage with no compare when there is none.
 
 Reading the shop's quantity steppers for a differential turned up the word they step on: the window kernel's cursor auto-repeat `FUN_80035C24` had no port, so no list in the game repeated on a held direction, and buying ninety-nine of anything took ninety-eight presses or nine and eight. The steppers' own arithmetic reads the same as the port's. The inn's restore op `4C 82` writes exactly the two HP and MP words the port writes.
+
+The Best Equipment row `FUN_801CF88C` / `FUN_801CF760` found the port taking the last copy of a piece by zeroing its count, where the take helper zeroes the id and leaves a hole, and walking the bag in id order, where a tie goes to the first slot the walk reaches. The impact arm of `FUN_801E09F8` found an enemy special's Rot leaving the Auto strings alone, where a limb newly rotted empties both, as the melee arm does. The action overlay's pool scans and recentres match.
+
+The fishing cadence recogniser `FUN_801D3DB4` found a different walk from the port's: retail passes over one slot that does not match between two steps, spends the template's window as a budget over visited slots, matches within nine frames rather than ten, and on a match leaves the last-button latch unwritten. The waiting arm of `FUN_801D26CC` (`0x801D3198..0x801D382C`) found the recogniser running every frame in the port, where it is called only from inside the band body, so its ring stands still through a held band; the strike draw is taken every frame, held or not; and the countdown runs on below zero at a short line. The power meter of `FUN_801CF3BC` state `0x14` steps `0x20` per frame-step from zero, and the hosts ran it at four times that on a figure the code called unpinned.
+
+The Muscle Dome's arena re-entry `FUN_801CEA6C`, the leg's rows `FUN_801D1184` and the settlement `FUN_801D0F60` match the port's `DomeContest` over whole contests. Reading them for the differential found what the contest does around that arithmetic: the arena copies the `0x2000`-byte SC block out on first entry and settlement copies it back, keeping only the lead's `+0xE8` / `+0xEC`. The port kept the legs' HP, items and gold, and an Expert or Master fighter's stripped gear never came back. It also set the prize latch `0x6CB` itself, which the arena only reads and the lobby's winner's scene sets after testing it.
+
+The dialog pager `FUN_801D84D0`, call by call over generated pages at every frame step and window size, confirms the row window's pacing, scrolls and taps, and found a page turn on `0x48` typing the next box on the second call. Retail's state `9` puts the row count back to three, state `0xA` collapses the box over `0x1000`, and `0x801F273C` keeps it gone for `0x18` frame-steps, about two thirds of a second at the field's step. A press on a box's opening call does nothing there, where the port took it as a skip.
+
+The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, replaced what the port had reconstructed: the record is the lure's distance from its spawn point, and line comes in by the press, not by holding. An inn's `4C 82` and `3A` match.
+
+Baka Fighter's round score `FUN_801D2A28` matches, and tracing what feeds it found the channel unwired: no host installed the two bonus tables, the match bonus row was never seeded, and the running total never reached the cabinet, so neither secret opponent could ever appear. Retail also scores only the player's round win, off the player's HP.
+
+The same search for setters with no live caller found the bag's window selector `FUN_8004313C` unwired: the live game never left the full window, so a lone character saw the whole array.

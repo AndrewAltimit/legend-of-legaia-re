@@ -202,6 +202,8 @@
     </svg>
     <figcaption>The separation pass is the action machine&rsquo;s neighbour: it nudges any two living actors whose bodies overlap apart, once a pass. The tween, tint and separation cluster is presentation only - it touches no HP, MP or stat field.</figcaption>
   </figure>
+  <p>That sweep also carries a few per-boss arms keyed on the formation's lead. Dohati's ties his body to his Spirit gauge: he opens at half size and reaches his authored size at a full gauge, and his framing depth, reach and the party's make-way grow with him (<code>0x8004D43C..0x8004D530</code>).</p>
+
   <ul class="bullets">
     <li><strong>Clip-tag arms</strong> key on the acting actor&rsquo;s committed clip tag and its keyframe cursor and write to its target: an impact tint, a pose freeze, a ribbon at the target, or (one Noa art) the AI-delegation bits, re-rolled on every frame the cursor sits in its window.</li>
     <li><strong>Boss hooks</strong> apply hand-written camera, pose and scale overrides to the first monster for four boss formations. The ramp they write to actor <code>+0x1BA</code> is the <strong>shatter amount</strong>: non-zero draws the body as flying triangles (Jette&rsquo;s arm adds spin and shrink); the cast modules write it too.</li>

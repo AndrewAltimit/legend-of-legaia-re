@@ -92,6 +92,8 @@ impl World {
         };
         let id = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
+        } else if (entry, spell_id) == (944, 0x37) {
+            self.guilty_cross_line()
         } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
             let Some(cue) = line else {
                 return;
@@ -101,6 +103,28 @@ impl World {
             head.resolve(|| self.next_rand())
         };
         self.emit_battle_xa_cue(id);
+    }
+
+    /// PROT 0944's `0x37` arm 0: the roll, latched for arm 3, and the line that
+    /// follows it (`0x801F6AD8..0x801F6B38`).
+    ///
+    /// PORT: FUN_801F6A04 (arm 0's roll and line)
+    fn guilty_cross_line(&mut self) -> u16 {
+        use legaia_engine_cast::cast_arm_ticks as arms;
+        let caster = self.battle_ctx.active_actor;
+        let victim = self
+            .actors
+            .get(usize::from(caster))
+            .map_or(0, |a| a.battle.active_target);
+        let roll = self
+            .capture_module_roll(&arms::GUILTY_CROSS_SHAPE, caster, victim)
+            .unwrap_or(0);
+        self.casting.module_cam.latched_hit = Some(roll);
+        let hp = self
+            .actors
+            .get(usize::from(victim))
+            .map_or(0, |a| a.battle.hp);
+        arms::guilty_cross_cue(roll, hp)
     }
 
     /// The line a forked module picks for this caster
@@ -205,6 +229,8 @@ impl World {
             [true, false]
                 .map(legaia_engine_cast::cast_module_ticks::ultimate_rave_cue)
                 .to_vec()
+        } else if (entry, spell_id) == (944, 0x37) {
+            vec![0x1AD, 0x1AB]
         } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
             line.into_iter().collect()
         } else {

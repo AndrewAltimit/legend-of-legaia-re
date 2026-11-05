@@ -231,9 +231,9 @@ pub mod msg {
     /// Lesson 3 turn-start.
     pub const LESSON3_INTRO: MessageId = 0x801F_7718;
 
-    /// First-time directional-button explainer.
+    /// The directional-button explainer.
     pub const HOWTO_DIRECTIONAL: MessageId = 0x801F_774C;
-    /// Repeat-visit variant of the explainer.
+    /// The cross-button (highlight) explainer.
     pub const HOWTO_HIGHLIGHT: MessageId = 0x801F_7780;
 
     /// Run rejected during the tutorial.
@@ -538,13 +538,14 @@ pub struct TutorialInputs {
     /// hyper-arts lesson an Auto attack is the wrong-lesson rewind - the
     /// drill is only ever checked on a `Command` entry.
     pub auto_attack: bool,
-    /// `_DAT_801D46C8` - clears on the very first command prompt, so the
-    /// lesson-0 turn-start shows the directional explainer once and the
-    /// highlight explainer thereafter.
-    pub command_prompt_seen: bool,
-    /// `_DAT_801D46C4 == 1` - the hyper-arts drill auto-fills the command
-    /// buffer for the player.
-    pub autofill_drill: bool,
+    /// `_DAT_800846C8 != 0` (`lw v0,0x46c8` off `lui 0x8008` at `0x801F6C60`) -
+    /// the Battle Command option on its cross-button value: the lesson-0
+    /// turn-start explains the highlight entry instead of the directional one.
+    pub battle_command_cross: bool,
+    /// `_DAT_800846C4 == 1` (`0x801F6F88` / `0x801F6FA0`) - the Battle Select
+    /// Attack option on Automatic: the hyper-arts drill fills the command
+    /// buffer for the player, who has no arrow screen to enter it on.
+    pub select_attack_automatic: bool,
     /// `actor[+0x1DE]` - the action category the player committed. Read by
     /// the flow-state `110` validator.
     pub action_category: u8,
@@ -609,7 +610,7 @@ pub fn dispatch(
     match (flow_state, lesson) {
         // --- 30: turn start / top command menu opened (0x801F6C00) ---
         (30, Attacks) => {
-            let explainer = if inputs.command_prompt_seen {
+            let explainer = if inputs.battle_command_cross {
                 msg::HOWTO_HIGHLIGHT
             } else {
                 msg::HOWTO_DIRECTIONAL
@@ -648,7 +649,7 @@ pub fn dispatch(
         (90, HyperArts) => {
             // The drill either auto-fills the buffer or checks what the
             // player entered.
-            let buf = if inputs.autofill_drill {
+            let buf = if inputs.select_attack_automatic {
                 DRILL_AUTOFILL
             } else if inputs.auto_attack {
                 // Not auto-filled and the attack was taken on `Auto`: retail
@@ -1011,8 +1012,8 @@ mod tests {
         assert_eq!(e.boxes[0].message, msg::LESSON0_INTRO);
         assert_eq!(e.boxes[1].message, msg::HOWTO_DIRECTIONAL);
 
-        // Second visit swaps the explainer variant.
-        inputs.command_prompt_seen = true;
+        // The Battle Command option swaps the explainer variant.
+        inputs.battle_command_cross = true;
         let e = dispatch(30, TutorialLesson::Attacks, &inputs);
         assert_eq!(e.boxes[1].message, msg::HOWTO_HIGHLIGHT);
     }

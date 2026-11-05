@@ -100,6 +100,14 @@
        * declaration follow what the page would otherwise show. */
       const presenting = !skipDraw;
       if (this._movieCovers()) skipDraw = true;
+      /* Ahead of the tick, not after the draw: the engine leaves the transition
+       * layer off the arming frame only for a host that will read it back (a VR
+       * session, which skips the read, keeps the transition from its first frame),
+       * and a fight armed on the runtime's very first frame had no declaration
+       * yet, so its readback took the transition's own strips over stale VRAM. */
+      if (typeof rt.play_set_intro_readback === 'function') {
+        rt.play_set_intro_readback(presenting);
+      }
       /* Gamepad buttons enter the same held / pulse sets the keyboard
        * fills, so every reader below (menu, name entry, field tick) sees
        * one pad word whichever device pressed it. */
@@ -708,13 +716,7 @@
        * the next frame's strips sample the capture, not stale texels.
        * One-shot per transition; the curtain's per-frame intermediate
        * afterwards rides the ordinary field_vram_take_dirty re-upload.
-       * The page declares the readback every frame it draws: the engine
-       * leaves the transition layer off the arming frame only for a host
-       * that will read it back (a VR session, which skips this, keeps the
-       * transition from its first frame). */
-      if (typeof rt.play_set_intro_readback === 'function') {
-        rt.play_set_intro_readback(presenting);
-      }
+       * The page declares the readback at the top of every frame. */
       if (!skipDraw && typeof rt.play_intro_wants_capture === 'function' &&
           rt.play_intro_wants_capture()) {
         try {
@@ -917,13 +919,14 @@
       /* PSX rasterisation on the native 320 x 240 canvas: the corners take
        * the GPU's pixel centre and the textured corners its half-texel bias,
        * the native renderer's `stage_screen_overlay_split`. ScreenVertex:
-       * pos at byte 0, uv at 8, flags at 40, 48-byte stride. */
+       * pos at byte 0, uv at 8, flags at 40, 48-byte stride. PSX_TIE_NDC_Y is why
+       * a sprite's first row lands where the window's does (webgl-shaders.js). */
       if (this.psxRender && this.canvas && this.canvas.width === 320 && this.canvas.height === 240) {
         vbytes = new Uint8Array(vbytes);
         const f = new Float32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         const u = new Uint32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         for (let o = 0; o + 12 <= f.length; o += 12) {
-          f[o] += 1 / 320; f[o + 1] -= 1 / 240;
+          f[o] += 1 / 320; f[o + 1] -= 1 / 240 - PSX_TIE_NDC_Y;
           if (u[o + 10] & 1) { f[o + 2] += 0.5; f[o + 3] += 0.5; }
         }
       }
@@ -1063,6 +1066,10 @@
        * page-wide presentation choices, so every branch draws under the
        * checkbox state. Both off unless the player ticked them. */
       if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
+      /* The game's own dither word (field op `4C ED`), under the PSX box. */
+      if (this.renderer.setDrawDither && typeof rt.play_draw_dither === 'function') {
+        this.renderer.setDrawDither(rt.play_draw_dither());
+      }
       if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
       if (this.renderer.setDynShadows) this.renderer.setDynShadows(this.dynShadows !== false);
       /* Log-of-w depth on every branch's perspective frames (webgl-shaders.js

@@ -106,6 +106,7 @@ kind = "driver"
 reason = "Debug entries a headless driver or disc-gated oracle arms to reach a state no page control is owed (docs/tooling/site-shell.md); the native window's twins are launch flags or dev keys."
 names = [
     "debug_arm_scene_shop",
+    "debug_host_trace_text",
     "debug_formation_rows",
     "debug_seed_inflight_cast",
     "debug_seed_monster_cast",

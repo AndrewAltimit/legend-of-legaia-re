@@ -14,6 +14,8 @@
 //! whole-screen arm reads the same in every fight, an arm that shows the stage
 //! does not, and the step moves inside an arm as the ring empties.
 //!
+//! The capture band has its own table, [`CAPTURE_ARM_STEPS`].
+//!
 //! The step matters beyond the camera's rate: a record an arm seats every pass
 //! seats half as many at `4` as at `2`.
 
@@ -143,6 +145,104 @@ pub fn cast_arm_frame_step(entry: u32, phase: u8) -> Option<u8> {
     steps.get(usize::from(phase)).copied().filter(|&s| s != 0)
 }
 
+/// `(action id, (module phase, step))`, the capture band's reading of the same
+/// measurement: a harvest state's cast (`*_pre_*`, `scripts/ci/cast-sequence.py`)
+/// with the step each arm spends the most vsyncs on in state `0x70`, merged over
+/// the fights a spell was recorded in, an arm under eight vsyncs left out as too short to
+/// read. Keyed on the action, since one module's
+/// bodies differ (PROT 0941, 0955). A phase no recording reached takes the default.
+const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
+    // earthquake
+    (0x4A, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 3)]),
+    // spore_gas
+    (0x4F, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
+    // power_up
+    (0x52, &[(1, 4), (2, 4), (3, 3)]),
+    // big_wave
+    (0x56, &[(5, 4), (6, 4), (7, 3), (8, 4)]),
+    // v_windhash
+    (0x57, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
+    // cross_beam
+    (0x58, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
+    // rolling_flare
+    (0x5A, &[(3, 4), (4, 4)]),
+    // fatal_decision: the wheel's arms draw next to nothing, and a frame costs
+    // under a field
+    (
+        0x5F,
+        &[
+            (1, 3),
+            (2, 2),
+            (4, 3),
+            (5, 3),
+            (6, 1),
+            (7, 1),
+            (8, 3),
+            (9, 3),
+            (10, 3),
+            (12, 2),
+        ],
+    ),
+    // scythe_wind
+    (0x5B, &[(0, 3), (1, 3), (2, 3), (3, 4), (4, 4), (5, 3)]),
+    // terror_scream
+    (0x70, &[(1, 4), (2, 4), (3, 4), (4, 4)]),
+    // void_accessories
+    (0x73, &[(1, 4), (2, 4), (3, 4), (4, 4)]),
+    // element_change
+    (0xAF, &[(1, 4), (2, 3)]),
+    // rogue_wind
+    (
+        0xB0,
+        &[
+            (1, 4),
+            (50, 4),
+            (51, 3),
+            (52, 4),
+            (53, 4),
+            (54, 4),
+            (55, 4),
+            (56, 1),
+        ],
+    ),
+    // rogue_thunder
+    (
+        0xB1,
+        &[
+            (1, 4),
+            (100, 3),
+            (101, 3),
+            (102, 3),
+            (103, 3),
+            (104, 4),
+            (105, 4),
+            (106, 1),
+        ],
+    ),
+    // rogue_flame
+    (
+        0xB2,
+        &[
+            (1, 4),
+            (2, 3),
+            (3, 3),
+            (4, 4),
+            (5, 4),
+            (6, 4),
+            (7, 4),
+            (8, 1),
+        ],
+    ),
+    // stone_circle
+    (0xB9, &[(1, 4), (2, 4), (3, 4), (4, 3)]),
+];
+
+/// The step retail ran module phase `phase` of the capture cast `spell` at.
+pub fn capture_arm_frame_step(spell: u8, phase: u8) -> Option<u8> {
+    let (_, steps) = CAPTURE_ARM_STEPS.iter().find(|(s, _)| *s == spell)?;
+    steps.iter().find(|(p, _)| *p == phase).map(|&(_, s)| s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,5 +253,14 @@ mod tests {
         assert_eq!(cast_arm_frame_step(921, 5), Some(4));
         assert_eq!(cast_arm_frame_step(921, 200), None);
         assert_eq!(cast_arm_frame_step(960, 1), None);
+    }
+
+    #[test]
+    fn the_capture_band_reads_by_action_and_arm() {
+        // V-Windhash's blade arms: a trail seated per pass seats half as many
+        // at `4` as at the default `2`.
+        assert_eq!(capture_arm_frame_step(0x57, 3), Some(4));
+        assert_eq!(capture_arm_frame_step(0x57, 200), None);
+        assert_eq!(capture_arm_frame_step(0x01, 1), None);
     }
 }

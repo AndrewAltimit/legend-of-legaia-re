@@ -23,9 +23,7 @@ use std::path::PathBuf;
 
 use legaia_engine_core::world::World;
 use legaia_engine_field::man_field_scripts::{CLEAN_RESYNC_INSNS, partition_record_span};
-use legaia_engine_fishing::fishing::{
-    FLIGHT_FRAMES, FishingRecord, PondPhase, PondSession, WINDUP_FRAMES,
-};
+use legaia_engine_fishing::fishing::{FishingRecord, PondPhase, PondSession, WINDUP_FRAMES};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene::man_census::scene_man_carriers;
 use legaia_engine_scene::scene::{ProtIndex, Scene};
@@ -122,14 +120,14 @@ fn a_matched_reel_gesture_spawns_the_strike_splash_through_the_world_tick() {
     // again locks the power, and the lure flies.
     frame(&mut world, 0);
     frame(&mut world, PadButton::Circle.mask());
-    for _ in 0..WINDUP_FRAMES + 28 {
+    for _ in 0..WINDUP_FRAMES + 112 {
         frame(&mut world, 0);
     }
     frame(&mut world, PadButton::Circle.mask());
-    for _ in 0..FLIGHT_FRAMES {
+    let phase = |w: &World| w.minigames.fishing.as_ref().map(|s| s.phase());
+    while phase(&world) == Some(PondPhase::Flight) {
         frame(&mut world, 0);
     }
-    let phase = |w: &World| w.minigames.fishing.as_ref().map(|s| s.phase());
     assert_eq!(phase(&world), Some(PondPhase::Waiting), "the lure settled");
 
     // Play the template's own gesture - Cross (reel A) held for HOLD frames,

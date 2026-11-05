@@ -101,6 +101,7 @@ FRAME_PATHS: dict[str, dict] = {
 # `check_battle_vram_residency`, `maybe_install_demo_tile_board` and
 # `service_cutscene_fmv`, none of which such a rule would find.
 FRAME_PATH_NON_KERNELS = {
+    "capture_gate_met",  # the capture child's phase gate: a read, drives no game state
     "handle_key",
     "rebuild_scene_render_state",
     "rebuild_render_state",

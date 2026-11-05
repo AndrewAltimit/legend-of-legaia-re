@@ -277,7 +277,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
     assert_eq!(sp.phase, SpecialUsePhase::PickDestination);
 
     // The host-facing model is the readout: the list window now shows the
-    // landmarks, with no Yes/No prompt and no info window.
+    // landmarks, with no Yes/No prompt, the info window keeping the staged item.
     let m = items_screen_model(&s);
     assert_eq!(
         m.page_rows
@@ -287,7 +287,7 @@ fn door_of_wind_opens_the_destination_list_and_stages_the_warp() {
         vec!["Rim Elm", "Sol"]
     );
     assert!(m.special_confirm.is_none());
-    assert!(m.info.is_none());
+    assert!(m.info.is_some(), "the info window keeps the staged item");
 
     // Pick the second row.
     press(&mut s, PadButton::Down);

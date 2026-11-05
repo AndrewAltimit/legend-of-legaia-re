@@ -790,6 +790,12 @@ class TmdRenderer {
       }
     }
     gl.bindVertexArray(null);
+    /* The winding goes back with the cull. The scene pass reads gl_FrontFacing
+     * for retail's NCLIP (`nclipCull`) and states no winding of its own, so a
+     * `cullFrontFace: 'cw'` left behind (the dance hall) inverts the field's
+     * cull for the rest of the session: the ground gone, the bodies inside out. */
+    gl.disable(gl.CULL_FACE);
+    gl.frontFace(gl.CCW);
   }
 
   dispose() {

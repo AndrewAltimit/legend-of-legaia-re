@@ -52,6 +52,18 @@ pub fn art_name(character: Character, action: ActionConstant) -> Option<&'static
     table.get(idx).copied().flatten()
 }
 
+/// [`art_name`] as the game prints it on the battle plaque. The `(Hyper)` and
+/// `(Miracle)` these tables carry tell arts of one name apart for tools; the
+/// disc's name pool in `SCUS_942.54` has only the plain string, which is what a
+/// Hyper Art's plaque shows (`minigame_muscle_dome_retail_tornado_flame`).
+pub fn art_display_name(character: Character, action: ActionConstant) -> Option<&'static str> {
+    art_name(character, action).map(|n| {
+        n.strip_suffix(" (Hyper)")
+            .or_else(|| n.strip_suffix(" (Miracle)"))
+            .unwrap_or(n)
+    })
+}
+
 /// Test if an action constant resolves to an art for the given character.
 pub fn is_art(character: Character, action: ActionConstant) -> bool {
     art_name(character, action).is_some()
@@ -361,6 +373,19 @@ const GALA_ART_ANIM_NAMES: [Option<&'static str>; 0x13] = [
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_plaque_prints_the_plain_name() {
+        let hyper = ActionConstant::from_byte(0x1E).unwrap();
+        assert_eq!(
+            art_display_name(Character::Vahn, hyper),
+            Some("Tornado Flame")
+        );
+        assert_eq!(
+            art_name(Character::Vahn, hyper),
+            Some("Tornado Flame (Hyper)")
+        );
+    }
+
     use super::*;
 
     #[test]

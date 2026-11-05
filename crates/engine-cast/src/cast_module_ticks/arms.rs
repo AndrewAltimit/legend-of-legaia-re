@@ -209,6 +209,11 @@ pub fn chaos_breath_tick(
             }
             CastArmStep::Advance
         }
+        // Arm 3 leaves for `0xFF` directly (`0x801F79FC`).
+        3 => {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
+        }
         CHOREOGRAPHY_DONE_PHASE => {
             caster.anim_rate = caster.anim_rate.wrapping_shl(1);
             CastArmStep::Finish

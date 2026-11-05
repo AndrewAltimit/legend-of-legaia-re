@@ -73,7 +73,8 @@ impl World {
         // `FUN_8004FE5C(0xFD, ctx[+0x13])` when the remainder rose.
         let rem = st.wheel_tick_rem(fd::WHEEL_TICK_SPAN);
         if st.tick_rem < rem {
-            self.route_battle_cue(fd::WHEEL_TICK_CUE, caster);
+            let category = self.retail_actor_category(caster);
+            self.route_battle_cue(fd::WHEEL_TICK_CUE, category);
         }
         st.tick_rem = rem;
         self.casting.module_cam.countdown.0 = st.countdown;
@@ -88,6 +89,7 @@ impl World {
             busy: !pass.done,
             tick_ported: true,
             camera_shot: pass.shot,
+            camera_end_frame: pass.end_frame,
             ..Default::default()
         }
     }
@@ -134,6 +136,13 @@ impl World {
     /// `*(actor[+0x22C]) + 0x58`: [`PARTY_BODY_RADIUS`] on a party seat, the
     /// record size class `<< 5` on a monster's.
     pub(crate) fn battle_body_radius(&self, slot: u8) -> i16 {
+        if let Some(r) = self
+            .actors
+            .get(usize::from(slot))
+            .and_then(|a| a.battle.render_radius)
+        {
+            return r;
+        }
         match self
             .actors
             .get(usize::from(slot))

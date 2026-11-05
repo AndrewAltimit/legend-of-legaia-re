@@ -90,7 +90,7 @@ fn digest(world: &mut World, frames: u32) -> u64 {
 /// opt-in vertical settle (whose ledge hop the raised block triggers) -
 /// measured on the controller before the action model existed. A change here
 /// is a change to the faithful walk.
-const RETAIL_WALK_DIGEST: [u64; 2] = [0x0ac5_703f_d86c_ecb1, 0x12d3_69c6_935c_b18b];
+const RETAIL_WALK_DIGEST: [u64; 2] = [0x3842_d7e1_9612_b31b, 0xd825_0283_8b28_2f55];
 
 #[test]
 fn switched_off_the_walk_is_the_retail_walk() {

@@ -172,6 +172,7 @@ Environment switches that open up a battle state's channels:
 | `LEGAIA_RC_CAM_TRACE=1` | to the `camera` detail: the engine's camera phase, live pose and glide target against retail's live pose and tween-table endpoints, the origin-alignment mask, and per combatant both sides' live pair, body pair, heading, clip and monster size class |
 | `LEGAIA_RC_POS_TRACE=1` | on stderr, one line per drive tick: the acting seat, the action state, the camera's yaw counter, focus, glide-target focus and yaw, and each of the first four combatants' live pair, body pair, heading, clip and target |
 | `LEGAIA_RC_DRIVE_TRACE=1` | on stderr, one line per tick of a replayed cast's run to its gate: the action state, the yaw counter, the close-up accumulator, every heading, the caster's body pair, the glide-target focus and the camera pose |
+| `LEGAIA_RC_NPC_EXTRA=1` | on stderr, one `[npc-extra]` line for each placement the engine stands on the map with no retail node for its flat index: the `npcs` channel walks retail's nodes, so an extra is scored nowhere. What remains is a record retail ran earlier in the visit (`chapter2_garmel_pre_songi`: `P2[12]` / `P2[14]` retire slots 13..26) |
 | `LEGAIA_RC_NPC_Y=1` | on stderr, one `[npc-y]` line for each drawn placement whose height stands more than 8 units from retail's, read at retail's `(X, Z)`: the `npcs` channel scores `(X, Z)` alone |
 | `LEGAIA_RC_FX_TRACE=1` | on stderr, at the sampled tick: each active combatant's live pair, burn selector `+0x21F` and colour word, then the effect-VM pool (`FUN_801E0080`'s masters and children) with positions in the retail pool's whole units - the engine half of a side-by-side against the capture's `_DAT_8007BD30` pool |
 | `LEGAIA_RC_SEED_TRACE=1` | on stderr, one line per stream the battle search tried (prompt, drive or cast outcome, surprise opening, measured ground drift) and one for the undrift re-run's verdict |
@@ -1499,6 +1500,11 @@ round's turn left, which the replay never runs. Che in
 `delilas_che_hammer_gaps_v3` stands at heading `113`, so his ring framing
 reads yaw `2175`, against the `2288` of an unturned member.
 
+- **A gauge that sizes a body is seeded with its bars.** Dohati's size class,
+  scale and radius follow his Spirit gauge
+  ([battle](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c)), so
+  the bar seed and the re-seat carry the capture's `+0x170` (`:g<gauge>`,
+  `RetailBattle::dohati_gauge`) and re-derive them before the action seeds.
 - **A reacting monster stands on its body pair.** A body on a reaction clip
   (`2`..`5`, `0x0B`) the replay strikes at another keyframe than retail's
   puts its centroid elsewhere for the same live pair (`rim_elm_gimard_seru_capture_before`'s
@@ -1529,8 +1535,11 @@ reads yaw `2175`, against the `2288` of an unturned member.
   (`image` `.843` to `.932`); `rim_elm_gimard_victory` `.840` to `.891`,
   `battle_noa_miracle_art_combo` `.861` to `.892`. A partly aligned camera
   keeps the body-pair ground, which its own framing still reads.
-- **Past the end signal** nothing is moved: the winners' poses and the
-  results framing read clips the replay does not share.
+- **Past the end signal** the same holds. The seed stands the bars on the
+  capture's closing ground and the replay then runs its one action from there,
+  so `battle_results_gimard_retail`'s Vahn walks `875` units past his captured
+  `(-33, 126)`. The results framing is `0x800 - actor[+0x46]` on his body pair,
+  so the replayed heading and ground were the whole of its camera residual.
 
 ### Combatants that had already acted
 
@@ -1804,6 +1813,12 @@ holds radii `224 / 320` at rates `224 / 320` on `battle_gimard_tail_fire_a`;
 the displayed frame drew it at half that, almost wholly behind Vahn's boots,
 where the replay's ring, on its own clock, stood a white band around them.
 
+The ring also stands where a stomp seated it, on a walk the replay runs on its
+own clock, and its depth cue ramps with its age, so `0x801F5EB0` seats its
+position `+0x14..+0x18` and its level `+0x78` taken back the lag
+(`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
+his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
+
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
 records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a
@@ -1993,7 +2008,9 @@ too (`super_queue_replace_*` `image` `.926` to `.938`). So does a monster
 melee's target from the approach `0x14` through the strike loop `0x1E` while
 it idles: the hit that stages its reaction has not landed, and nothing else
 in the action touches its loop (`battle_korb2_warhalf_strike`'s Vahn, walked
-onto at idle cursor `0` on the displayed frame).
+onto at idle cursor `0` on the displayed frame). So does the acting monster
+idling in the strike loop `0x1E` with its first swing staged: the idle runs
+from the end of its walk or close-in.
 
 A monster target is seated on one reaction: the get-up a killed monster
 rises on for the absorb, with a Seru staged in `ctx[+0x269]` (the commit's
@@ -2179,6 +2196,12 @@ frame shows no "level increased" line or banner.
   between the HP / MP the seed wrote and the replayed action, which reads as an
   HP miss.
 
+A capture can also stand inside the ambush round the entry rolled: a monster on its action
+with `ctx[+0x291]` latched and every party key the zero the round's seeder left
+(`RetailBattle::in_formation_round`, `battle_deene_lapis_lapis_wave_mid_cast`, whose monster
+`0xA7` always ambushes). No prompt comes ahead of that action, so the seed samples the
+combatant channels at the sweep's end instead of at a prompt the cast has already passed.
+
 ### Placing the phase
 
 The capture's command-flow byte `ctx[+0x06]` picks one of five plans
@@ -2288,6 +2311,12 @@ and the child takes the frame on the engine's own column at that level, or
 once none is live (`LEGAIA_CAPTURE_ARRIVAL=cue:<level>|gone`,
 `legaia_engine_capture::arrival_gate::ArrivalGate`).
 
+A drive capture of the same fight stands rounds past the columns, while the
+replay reaches its first strike inside their life, so their dimmed shells wash
+the frame (`battle_jou_cort_181_strike`, `.504` to `.863`). A drive whose RAM holds no
+column retires the replay's on the capture frame (`LEGAIA_SEAT_ARRIVAL_GONE`,
+`World::retire_arrival_spawns`).
+
 The frame under the sweep is the one two passes older than the RAM, as
 everywhere ([a drive's frame](#a-drives-frame-is-the-one-the-display-showed)),
 and the counter is part of what moved: the frame driver adds the frame step
@@ -2307,6 +2336,10 @@ A battle state whose RAM does not describe a seedable fight (the context
 pointer not yet resident, counts out of range, an empty cell) is kept with a
 `battle not seedable:` reason and counted as a classified limit, not as a
 seed failure.
+
+A capture-band capture whose whole frame history ran the default step stands on it
+(`RetailBattle::frame_step_seed`): the [arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)
+is one fight's reading, and `zeto_big_wave_mid_cast` ran arm 5 at `2` where the table reads `4`.
 
 ### Battle channels
 
@@ -3116,7 +3149,10 @@ record the state's entry-context pointer `_DAT_8007B450` names
 window follows the sub-screen id: a state saved on a buy list's first row replays.
 
 Past a row's confirm, the path reads the state: `0x06` and `0x07` press through the
-Items command window, `0x0F` past the Magic caster picker, and on `0x15` the party
+Items command window, `0x0F` past the Magic caster picker, the apply screens
+`0x09..=0x0D` and a quantity `0x1D` walk the list to the row the state confirmed
+(`_DAT_8007BB88`: a bag slot, a spell id, a stock item id), `0x10` and `0x11` find the
+spell in the caster's learned list, and on `0x15` the party
 cursor `DAT_801E46C4`, the page cursor `DAT_801E46C0` and the step word
 `DAT_801E46AC` say how far Down, how far Right, and whether the page's list is open.
 
@@ -3905,6 +3941,12 @@ pose is law from what the RAM still holds
 - **The start** is the earlier actor's framing, or the prompt's far framing on a
   round's first actor (`walk_start`).
 
+One pass into `0x2B` the display is older again: it stands on `0x29`'s exit, an
+armed pass, with the terminator still to come (`case6_walk_passes`'s
+`shot_passes`). `battle_kor_gaza_166_astral_wave_mid_cast` is that case, and its
+ring reads step `3` under a newest `4`, so the walk comes off the ring and not
+off the newest step.
+
 Three inputs are not in the RAM. `FUN_801DABA4` picks the highest key among ties
 by `rand()` and zeroes spent keys, so it leaves no battle order behind; the
 earlier action's style byte `ctx[+0xD]` has been overwritten; and the seed arms
@@ -4473,7 +4515,9 @@ focus on the seat. So the corpus reads retail's focus pair whenever it is not
 headless seed arms it on the zone camera (`ZoneFollow::seat_focus_after_snap`)
 and the image child takes it as `LEGAIA_SEAT_FOCUS`, and in both the snap
 lands it after its clamp. The ease then leaves it until the player moves, so
-the `camera` channel and the frame both look where retail's looked. It is
+the `camera` channel and the frame both look where retail's looked. A menu over
+a field carries the same history: the Retock `shop_*_retock_retail` captures poke
+the player beside the merchant, so their focus stays where the door left it. It is
 history the seat cannot replay, exactly as the camera parameter block is -
 what the channel still scores is the pose the engine composes around it.
 

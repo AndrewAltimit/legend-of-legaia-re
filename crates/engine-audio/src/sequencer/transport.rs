@@ -44,6 +44,13 @@ impl Sequencer {
             voice_prio: [0; crate::spu::NUM_VOICES],
             voice_note: [None; crate::spu::NUM_VOICES],
             voice_age: [0; crate::spu::NUM_VOICES],
+            voice_held: 0,
+            voice_env: [0; crate::spu::NUM_VOICES],
+            voice_env_next: [0; crate::spu::NUM_VOICES],
+            silent_ring: [0; SILENT_RING_LEN],
+            silent_at: 0,
+            voice_keys_seen: [0; crate::spu::NUM_VOICES],
+            voices_seen: false,
             flush_pos: 0,
             pending: Vec::new(),
             next_pending_id: 0,
@@ -69,9 +76,8 @@ impl Sequencer {
     /// [`Self::remix_all`] at the next flush)
     ///
     /// Partial: retail keeps independent left / right sequence volumes, each
-    /// clamped to `0x7F` (`+0x58` / `+0x5A`, `0x80067ef0..0x80067f24`), and
-    /// re-reads the channel pan from the per-voice record (`0x8006824c`);
-    /// this keeps one value for both sides and the channel's current pan.
+    /// clamped to `0x7F` (`+0x58` / `+0x5A`, `0x80067ef0..0x80067f24`); this
+    /// keeps one value for both sides.
     pub fn set_master_vol(&mut self, v: u8) {
         let v = v.min(127);
         if v != self.master_vol {
@@ -240,9 +246,13 @@ impl Sequencer {
     /// PORT: FUN_80026740
     /// REF: FUN_8002657C, FUN_80067E9C
     pub fn pause(&mut self, spu: &mut Spu) {
+        // The walk goes by the voice records, so a tail already releasing goes
+        // silent with the held notes.
         self.release_lost_voices(spu);
-        for note in &self.active {
-            if let Some(v) = spu.voices.get_mut(note.voice as usize) {
+        for (voice, slot) in self.voice_note.iter().enumerate() {
+            if let (Some(stamp), Some(v)) = (slot.and_then(|n| n.stamp), spu.voices.get_mut(voice))
+                && v.key_on_count() == stamp
+            {
                 v.vol_left = 0;
                 v.vol_right = 0;
             }

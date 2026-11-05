@@ -17,7 +17,8 @@
 //!      is gzipped, has an `MDFNSVST` magic header, and carries VRAM as a variable
 //!      named `&GPURAM[0][0]` inside the `GPU` section.
 //!
-//! Both modes emit the same 5 files. The extractor produces no Sony bytes by
+//! Both modes emit the same 5 files, and `--disc` is
+//! [`legaia_font::export_extracted_font_dir`], what `legaia-extract` runs. The extractor produces no Sony bytes by
 //! itself - the inputs are user-supplied and the outputs land in
 //! `extracted/font/` which is gitignored.
 
@@ -99,7 +100,7 @@ struct Args {
     verbose: bool,
 }
 
-/// The glyph page + CLUT, whatever the source.
+/// The glyph page + CLUT read from a save state.
 struct GlyphPage {
     /// 256×256 row-major 4-bit indices (one byte per pixel).
     indexed: Vec<u8>,
@@ -110,7 +111,7 @@ struct GlyphPage {
     raw_4bpp: Vec<u8>,
     /// Human-readable provenance for the metadata JSON.
     source: String,
-    /// Per-source explanation of what the recorded CLUT is.
+    /// What the recorded CLUT is.
     clut_note: String,
 }
 
@@ -121,6 +122,19 @@ fn main() -> Result<()> {
     // 1. SCUS - width table + escape table.
     let scus_bytes =
         std::fs::read(&args.scus).with_context(|| format!("read {}", args.scus.display()))?;
+
+    // Disc mode is the library's own export, the one `legaia-extract` runs: the
+    // engine's loader reads the shadow mark in its atlas, so a second bake here
+    // is a second answer to what the shadow texel is.
+    if let Some(disc) = &args.disc {
+        let tim = read_font_tim_bytes(disc, args.verbose)
+            .with_context(|| format!("read font TIM from {}", disc.display()))?;
+        legaia_font::export_extracted_font_dir(&tim, &scus_bytes, &args.out)
+            .with_context(|| format!("export the font TIM from {}", disc.display()))?;
+        eprintln!("[ok] wrote 5 files into {}", args.out.display());
+        return Ok(());
+    }
+
     let t_addr = parse_psx_exe_t_addr(&scus_bytes).unwrap_or(SCUS_LOAD_ADDR_FALLBACK);
     if args.verbose {
         eprintln!("[scus] t_addr = 0x{t_addr:08X}");
@@ -137,13 +151,12 @@ fn main() -> Result<()> {
     .context("read escape table")?;
     let escape = parse_escape_table(escape_bytes);
 
-    // 2. Glyph page - from the disc's font TIM or a save state's VRAM.
-    let page = match (&args.save, &args.disc) {
-        (Some(save), None) => glyph_page_from_save(save, args.verbose)?,
-        (None, Some(disc)) => glyph_page_from_disc(disc, &scus_bytes, args.verbose)?,
-        // clap's ArgGroup(required, single) makes the other arms unreachable.
-        _ => bail!("pass exactly one of --save <state> or --disc <bin-or-PROT.DAT>"),
+    // 2. Glyph page - a save state's VRAM. clap's ArgGroup(required, single)
+    // leaves `--save` here.
+    let Some(save) = &args.save else {
+        bail!("pass exactly one of --save <state> or --disc <bin-or-PROT.DAT>")
     };
+    let page = glyph_page_from_save(save, args.verbose)?;
     let (indexed, clut) = (&page.indexed, &page.clut);
     if args.verbose {
         eprintln!("[clut] ({}):", page.source);
@@ -228,50 +241,6 @@ fn glyph_page_from_save(save: &Path, verbose: bool) -> Result<GlyphPage> {
              2..5 are anti-aliasing gray ramp; the upper half of the CLUT is unused by the \
              dialog renderer."
         ),
-    })
-}
-
-/// Disc-only mode: slice the font TIM out of `PROT.DAT` (either given
-/// directly or found inside a raw Mode2/2352 disc image), validate it
-/// through the shared tested decoder, then unpack page + CLUT locally.
-///
-/// The TIM's baked CLUT is a mastering placeholder (bright primaries), NOT
-/// the runtime dialog CLUT - retail uploads that separately at runtime, so
-/// it isn't reachable without a VRAM capture. The PNGs are therefore
-/// rendered as the same whitewashed stencil
-/// [`legaia_font::Font::from_disc_tim_and_scus`] produces (index 0 ->
-/// transparent, index 14 -> the (32,32,32) drop shadow, everything else ->
-/// pure white), which is exactly what the engine's atlas loader would
-/// reduce any capture to anyway.
-fn glyph_page_from_disc(disc: &Path, scus_bytes: &[u8], verbose: bool) -> Result<GlyphPage> {
-    let tim = read_font_tim_bytes(disc, verbose)
-        .with_context(|| format!("read font TIM from {}", disc.display()))?;
-    // Cross-check through the library's tested disc-font path so a wrong
-    // slice fails loudly with its diagnostics (bad magic / framebuffer).
-    let font = legaia_font::Font::from_disc_tim_and_scus(&tim, scus_bytes)
-        .with_context(|| format!("validate font TIM from {}", disc.display()))?;
-    let (indexed, _tim_clut, raw_4bpp) = decode_disc_font_tim(&tim)?;
-    // Stencil CLUT: index 0 transparent, FONT_SHADOW_INDEX = 14 the
-    // (32,32,32) shadow (BGR555 0x1084), every other index pure white.
-    let mut clut = [0x7FFFu16; CLUT_ENTRIES];
-    clut[0] = 0x0000;
-    clut[14] = 0x1084;
-    // Self-check: rendering our page through the stencil CLUT must equal
-    // the library's tested atlas bake bit-for-bit.
-    if pack_atlas(&indexed, &clut) != font.atlas_rgba() {
-        bail!("internal error: stencil atlas diverges from legaia_font::Font's bake");
-    }
-    Ok(GlyphPage {
-        indexed,
-        clut,
-        raw_4bpp,
-        source: format!("PROT.DAT font TIM read from disc ({})", disc.display()),
-        clut_note: "Whitewashed stencil palette (disc mode): the font TIM's baked CLUT is a \
-                    mastering placeholder, and the real runtime dialog CLUT is uploaded at \
-                    runtime (VRAM (96, 510)) rather than carried on disc. Index 0 = transparent, \
-                    index 14 = the (32,32,32) drop shadow, all other indices = pure white - \
-                    identical to what the engine's atlas loader normalises a VRAM capture to."
-            .to_string(),
     })
 }
 
@@ -366,55 +335,6 @@ fn find_prot_dat(f: &mut File) -> Result<(u32, u32)> {
         }
     }
     bail!("PROT.DAT not found in the ISO9660 root directory - is this a Legend of Legaia disc?")
-}
-
-/// Unpack the font TIM (4bpp, CLUT block + image block) into the 256×256
-/// indexed page, its 16-entry CLUT, and the on-wire packed pixel bytes.
-/// Layout already validated by [`legaia_font::Font::from_disc_tim_and_scus`].
-fn decode_disc_font_tim(tim: &[u8]) -> Result<(Vec<u8>, [u16; CLUT_ENTRIES], Vec<u8>)> {
-    let rd_u32 = |o: usize| -> Result<u32> {
-        tim.get(o..o + 4)
-            .map(|b| u32::from_le_bytes(b.try_into().unwrap()))
-            .ok_or_else(|| anyhow!("font TIM truncated at 0x{o:X}"))
-    };
-    if rd_u32(0)? != 0x10 {
-        bail!("not a TIM (bad magic)");
-    }
-    let flags = rd_u32(4)?;
-    let mut p = 8usize;
-    let mut clut = [0u16; CLUT_ENTRIES];
-    if flags & 0x8 != 0 {
-        // CLUT block: [u32 block_len][u16 dx][u16 dy][u16 w][u16 h][entries].
-        let clut_len = rd_u32(p)? as usize;
-        let entries_off = p + 12;
-        for (i, slot) in clut.iter_mut().enumerate() {
-            let o = entries_off + i * 2;
-            *slot = tim
-                .get(o..o + 2)
-                .map(|b| u16::from_le_bytes(b.try_into().unwrap()))
-                .ok_or_else(|| anyhow!("font TIM CLUT truncated at 0x{o:X}"))?;
-        }
-        p = p
-            .checked_add(clut_len)
-            .filter(|&e| e <= tim.len())
-            .ok_or_else(|| anyhow!("font TIM CLUT block overruns"))?;
-    } else {
-        bail!("font TIM carries no CLUT block");
-    }
-    // Image block: [u32 len][u16 dx][u16 dy][u16 w16][u16 h][pixels].
-    let pixels_off = p + 12;
-    let n_pixel_bytes = FONT_VRAM_W16 * 2 * FONT_VRAM_H; // 32768
-    let raw_4bpp = tim
-        .get(pixels_off..pixels_off + n_pixel_bytes)
-        .ok_or_else(|| anyhow!("font TIM pixel data truncated"))?
-        .to_vec();
-    let width = FONT_VRAM_W16 * 4;
-    let mut indexed = vec![0u8; width * FONT_VRAM_H];
-    for (i, &b) in raw_4bpp.iter().enumerate() {
-        indexed[i * 2] = b & 0x0F;
-        indexed[i * 2 + 1] = (b >> 4) & 0x0F;
-    }
-    Ok((indexed, clut, raw_4bpp))
 }
 
 /// Pack the live VRAM tile-page back to its on-wire 4bpp bytes (so

@@ -793,3 +793,34 @@ fn the_journal_travels_and_arms_challenges() {
         Some("c")
     );
 }
+
+/// Retail's apply screens step back to their own cursor (`FUN_801D8308`): a
+/// heal takes one copy and the screen stays on the target panel while somebody
+/// is still short of HP, and the screen does not finish.
+#[test]
+fn a_use_leaves_the_items_screen_up() {
+    let mut w = fresh_world();
+    w.party.inventory.insert(0x77, 3);
+    {
+        let m = &mut w.party.roster.members[0];
+        let mut h = m.hp_mp_sp();
+        h.hp_max = 1000;
+        h.hp_cur = 1;
+        m.set_hp_mp_sp(h);
+    }
+    let mut s = build(FieldMenuRow::Items, &w);
+    let cross = PadButton::Cross.mask();
+    let _ = tick_open_subsession(&mut s, cross, None, &mut w);
+    let _ = tick_open_subsession(&mut s, cross, None, &mut w);
+    let FieldMenuSubsession::Items(items) = &s else {
+        panic!("Items");
+    };
+    assert!(items.target_select(), "the target panel opened");
+    let _ = tick_open_subsession(&mut s, cross, None, &mut w);
+    assert!(!s.is_done(), "the screen outlives the use");
+    assert_eq!(w.party.inventory.get(&0x77).copied(), Some(2));
+    let FieldMenuSubsession::Items(items) = &s else {
+        panic!("Items");
+    };
+    assert!(items.target_select(), "Vahn is still short of HP");
+}

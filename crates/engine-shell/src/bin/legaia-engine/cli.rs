@@ -25,12 +25,15 @@ use std::path::PathBuf;
         also resolve against the current directory - run from the same directory \
         each time, or pass explicit paths where supported.",
     after_help = "COMMAND GROUPS:\n  \
-        Playing:      play-window, play-str, config, save, load, packs\n  \
+        Playing:      play-window, launch, play-str, config, save, load, packs\n  \
         Exploring:    list-scenes, info, record, replay, export-glb, mesh-catalog\n  \
         Diagnostics (engine development; not needed to play):\n    \
-        scene / script analysis:  play, clut-trace, man-scripts, xa-cue\n    \
-        parity oracles:           vram-oracle, mode-trace, audio-trace, pcm-trace, gte-replay, scenarios,\n                              \
-        sim-trace, retail-compare, cast-sequence-score\n    \
+        scene / script analysis:  play, clut-trace, man-scripts, xa-cue, entry-bench\n    \
+        parity:                   gte-replay, scenarios\n    \
+        parity oracles, in a `--features oracles` build only:\n                              \
+        vram-oracle, mode-trace, audio-trace, pcm-trace, sim-trace,\n                              \
+        retail-compare, cast-sequence-score, audio-sweep, pcm-retail,\n                              \
+        seq-differential, cue-differential\n    \
         synthetic state drivers:  inventory, equip, title, save-select, encounter,\n                              \
         target-pick, chain-editor, seru-capture"
 )]
@@ -49,6 +52,15 @@ pub(crate) struct Cli {
 #[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 pub(crate) enum Cmd {
+    /// Start the game on a disc with everything the launcher remembers: its
+    /// switches and expansion pack from `launcher.toml`. What Legaia
+    /// Explorer's Play runs.
+    #[command(display_order = 1)]
+    Launch {
+        /// The disc image (`.bin` or `.cue`).
+        #[arg(long)]
+        disc: PathBuf,
+    },
     /// Load one scene's assets headlessly and print a summary line.
     /// Use this to verify the asset chain produces the right state without
     /// firing up the windowed viewer. The optional flags below are VRAM
@@ -1736,6 +1748,17 @@ pub(crate) enum Cmd {
     #[command(display_order = 32)]
     #[cfg(feature = "oracles")]
     PcmRetail(legaia_parity::pcm_retail::PcmRetailArgs),
+    /// Run each track's score through retail's libsnd (off the disc's code, in the
+    /// retail-exec interpreter) and the port's sequencer, comparing every voice
+    /// register at every vsync.
+    #[command(display_order = 33)]
+    #[cfg(feature = "oracles")]
+    SeqDifferential(legaia_parity::seq_differential::SeqDifferentialArgs),
+    /// Key every cue both ways in a library state: retail's drainer off the state's
+    /// RAM in the retail-exec interpreter, the port's director seeded into the state.
+    #[command(display_order = 34)]
+    #[cfg(feature = "oracles")]
+    CueDifferential(legaia_parity::cue_differential::CueDifferentialArgs),
 }
 
 #[derive(Subcommand, Debug)]

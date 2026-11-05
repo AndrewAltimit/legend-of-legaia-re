@@ -178,7 +178,7 @@ fn rod_gate_wraps_past_the_last_kind() {
 #[test]
 fn cast_power_oscillates_within_bounds_and_locks() {
     let mut c = CastPower::new();
-    assert_eq!(c.value(), CAST_POWER_SEED);
+    assert_eq!(c.value(), 0);
     // Sweep up to the ceiling and confirm it bounces back down.
     for _ in 0..200 {
         c.advance(0x40);
@@ -196,7 +196,7 @@ fn cast_power_oscillates_within_bounds_and_locks() {
 fn cast_power_bounces_at_ceiling() {
     let mut c = CastPower::new();
     // Big step jumps straight to the ceiling and flips direction.
-    c.advance(CAST_POWER_MAX);
+    c.advance(CAST_POWER_MAX + 1);
     assert_eq!(c.value(), CAST_POWER_MAX);
     c.advance(0x40);
     assert!(
@@ -597,7 +597,7 @@ fn cadence_recogniser_matches_template_3() {
 
 #[test]
 fn cadence_recogniser_matches_template_0_with_tolerance() {
-    // idle 40, Cross 25, idle 40, Square 15 - +-10 slop on each step.
+    // idle 40, Cross 25, idle 40, Square 15 - within 9 on each step.
     let mut c = ReelCadence::new(templates());
     let got = drive(&mut c, &[(0, 45), (1, 20), (0, 35), (2, 18)]);
     assert_eq!(got, Some(0));
@@ -718,7 +718,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     );
     assert_eq!(p.phase(), PondPhase::Flight);
     let casts_before = p.casts;
-    for _ in 0..FLIGHT_FRAMES {
+    while p.phase() == PondPhase::Flight {
         p.tick(PondInput::default(), 1, 0x80);
     }
     assert_eq!(p.phase(), PondPhase::Waiting);
@@ -734,6 +734,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
     for _ in 0..8000 {
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: 0x40,
                 ..Default::default()
             },
@@ -765,7 +766,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
                 1,
                 0x80,
             );
-            for _ in 0..FLIGHT_FRAMES {
+            while p.phase() == PondPhase::Flight {
                 p.tick(PondInput::default(), 1, 0x80);
             }
         }
@@ -797,6 +798,7 @@ fn pond_session_full_loop_hooks_fights_and_lands() {
         let reel = if p.tension() < 0x800 { 0x40 } else { 0 };
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: reel,
                 ..Default::default()
             },
@@ -851,6 +853,7 @@ fn pond_session_is_deterministic_for_a_seed() {
         let mut log = Vec::new();
         for i in 0..4000u32 {
             let input = PondInput {
+                reel_edge: 0,
                 reel_mask: if i % 90 < 45 { 0x40 } else { 0 },
                 cast_edge: i % 200 == 0,
                 ..Default::default()
@@ -886,7 +889,7 @@ fn pond_snaps_when_tension_pins() {
         1,
         0x80,
     );
-    for _ in 0..FLIGHT_FRAMES {
+    while p.phase() == PondPhase::Flight {
         p.tick(PondInput::default(), 1, 0x80);
     }
     // Hold reel forever: the session must terminate (a weak fish lands
@@ -896,6 +899,7 @@ fn pond_snaps_when_tension_pins() {
     for _ in 0..30000 {
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: 0x40,
                 ..Default::default()
             },
@@ -932,6 +936,7 @@ fn the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure() {
         p.gauge.tension = TENSION_MAX;
         p.tick(
             PondInput {
+                reel_edge: 0,
                 reel_mask: 0x40,
                 ..Default::default()
             },
@@ -966,6 +971,7 @@ fn the_line_breaks_on_a_roll_at_the_ceiling_and_spends_the_lure() {
             p.gauge.tension = TENSION_MAX;
             p.tick(
                 PondInput {
+                    reel_edge: 0,
                     reel_mask: 0x40,
                     ..Default::default()
                 },

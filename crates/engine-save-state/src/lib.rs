@@ -63,11 +63,12 @@ impl WorldSaveState for World {
         // so a file written here still reads on a consumer that only knows
         // the list.
         let item_slots: Vec<(u8, u8)> = self.party.inventory.slots().to_vec();
-        let mut inventory: Vec<(u8, u8)> = self
-            .party
-            .inventory
+        // The whole array, as `item_slots`: the window a lone character has
+        // installed bounds the bag helpers, never what a save holds.
+        let mut inventory: Vec<(u8, u8)> = item_slots
             .iter()
-            .map(|(&id, &count)| (id, count))
+            .copied()
+            .filter(|&(id, _)| id != 0)
             .collect();
         inventory.sort_by_key(|&(id, _)| id);
 

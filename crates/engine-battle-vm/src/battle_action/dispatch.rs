@@ -650,6 +650,7 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
     host: &mut H,
     actor_slot: u8,
     party_count: u8,
+    sole_monster: u8,
 ) {
     use crate::battle_cue_group::{BannerInputs, plan_target_banner};
     let Some(actor) = host.actor(actor_slot) else {
@@ -674,7 +675,13 @@ fn raise_target_banner<H: BattleActionHost + ?Sized>(
             action_category,
             action_id,
             target: to_retail(target),
-            ctx_override_slot: 0,
+            // `ctx[+0x24B]`, the census's lone monster; zero means none, and
+            // the engine keeps the word in its own seating.
+            ctx_override_slot: if sole_monster == 0 {
+                0
+            } else {
+                to_retail(sole_monster)
+            },
             monster_alive,
         },
         0,
@@ -931,7 +938,7 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // the same `jal 0x801e6d84` (`overlay_battle_action_801e295c.txt`
     // `0x801E3028`) before jumping to the epilogue, so the plan is raised here
     // rather than per-band.
-    raise_target_banner(host, actor_slot, party_count);
+    raise_target_banner(host, actor_slot, party_count, ctx.item_target_b);
 
     // Dispatch into the appropriate band.
     let next = match category {

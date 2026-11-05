@@ -271,7 +271,11 @@ pub fn battle_hud_frame_draws(
             // `Begin` tab (`bh::battle_begin_tab_alone`).
             plaque: plaque
                 .as_ref()
-                .filter(|_| w.battle.item_menu.is_none() && !bh::battle_begin_tab_alone(w))
+                .filter(|_| {
+                    w.battle.item_menu.is_none()
+                        && !bh::battle_begin_tab_alone(w)
+                        && !bh::battle_run_tab_alone(w)
+                })
                 .map(|(_, n)| n.as_str()),
             plaque_badge: bh::battle_plaque_element_badge(w),
             banner: banner.as_deref(),
@@ -296,7 +300,8 @@ pub fn battle_hud_frame_draws(
             host_box: tutorial_rect,
             active_slot: bh::battle_readout_bar_slot(w),
             panels_parked: !bh::battle_panels_visible(w),
-            begin_tab: bh::battle_begin_tab_visible(w),
+            begin_tab: bh::battle_begin_tab_visible(w) || bh::battle_run_tab_alone(w),
+            run_tab: bh::battle_run_tab_alone(w),
             begin_tab_offset: bh::battle_begin_tab_offset(w),
             third_tab: third_tab.as_deref(),
             move_name: move_name.as_deref(),
@@ -855,6 +860,7 @@ pub fn battle_text_draws(
             CommandPhase::RoundPrompt { .. }
             | CommandPhase::Menu { .. }
             | CommandPhase::AttackMode { .. }
+            | CommandPhase::RunConfirm { .. }
             | CommandPhase::CommitConfirm { .. } => {
                 // Retail's command surfaces are clusters of framed chips
                 // around a D-pad glyph, not lists: the round-open

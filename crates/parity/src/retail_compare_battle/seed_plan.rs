@@ -55,6 +55,19 @@ pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>);
 const DYNAMIC_SLOT_ART: u8 = 0x10;
 
 impl RetailBattle {
+    /// Whether the capture stands inside the ambush round the entry rolled: a
+    /// monster on its action with the advantage latched and every party key
+    /// still the zero the round's seeder gave the disadvantaged side. The
+    /// action is then the fight's first, and no prompt comes ahead of it
+    /// (`battle_deene_lapis_lapis_wave_mid_cast`: monster `0xA7` always ambushes,
+    /// so the party's bars read before Lapis Wave has zeroed them).
+    pub fn in_formation_round(&self) -> bool {
+        self.formation_latch == 1
+            && matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
+            && (0..usize::from(self.party_count.clamp(1, 3)))
+                .all(|s| self.init_keys.get(s).copied().flatten() == Some(0))
+    }
+
     /// The battle frame step a replay of this capture runs its capture state
     /// on, and that state: the step the capture's own frame ran at, applied
     /// while the engine sits in the capture's action state
@@ -79,7 +92,18 @@ impl RetailBattle {
     ///   states `0x35` / `0x36` measured mixed (`gimard_burning_attack`
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
-        let default = legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
+        let default = self.child_ordinary_step();
+        // A capture on the capture band's module tick whose whole history ran the
+        // default step stands on it: the arm step table
+        // (`capture_arm_frame_step`) is one fight's reading, and
+        // `zeto_big_wave_mid_cast` ran arm 5 at `2` where the table reads `4`.
+        if self.action_state == 0x70
+            && self.step_run == (default, self.step_run.1)
+            && self.step_run.1 >= 16
+            && !matches!(self.seed_plan(), SeedPlan::Cast)
+        {
+            return Some((default, self.action_state, None));
+        }
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)
@@ -118,6 +142,34 @@ impl RetailBattle {
         self.step_run_start
             .filter(|&(clip, _)| clip >= DYNAMIC_SLOT_ART)
             .map(|from| (step, self.action_state, Some(from)))
+    }
+
+    /// The step a replay's ordinary frames run on. A replayed cast, a monster's
+    /// capture-band walk-in and a Done-band hold gate on a word of the action, standing on a camera that
+    /// starts from the replay's own prompt rather than the earlier actor's shot, so
+    /// they read the framing by how long the walk has had, and the capture holds no
+    /// word for the passes before its history. They keep the default step
+    /// (`LEGAIA_BATTLE_PARTY_STEP=0`); a played round takes the party's.
+    pub fn child_ordinary_step(&self) -> u8 {
+        if self.replay_keeps_default_step() {
+            legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP
+        } else {
+            legaia_engine_battle_loop::frame_clock::steady_battle_frame_step(self.party_count)
+        }
+    }
+
+    /// See [`Self::child_ordinary_step`].
+    pub fn replay_keeps_default_step(&self) -> bool {
+        // A history that left the step inside its sixteen passes ran the walk
+        // up to the capture on a cheaper one (`FUN_80016B6C`'s ring holds the
+        // frames): only a history that never left the party's step stands on it.
+        let unsteady = self.step_run.1 < 16;
+        unsteady
+            || matches!(
+                self.span_gate,
+                SpanGate::CaptureFade { .. } | SpanGate::DoneHold { .. }
+            )
+            || matches!(self.seed_plan(), SeedPlan::Cast)
     }
 
     /// The slot-1 backdrop angle the **displayed** frame was drawn at. The

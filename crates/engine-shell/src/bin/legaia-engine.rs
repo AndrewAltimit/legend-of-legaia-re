@@ -54,6 +54,8 @@ const ORACLE_SUBCOMMANDS: &[&str] = &[
     "cast-sequence-score",
     "audio-sweep",
     "pcm-retail",
+    "seq-differential",
+    "cue-differential",
 ];
 
 /// Restore the default SIGPIPE disposition so piping stdout (JSONL traces,
@@ -106,6 +108,9 @@ fn main() -> Result<()> {
     // then boots `play-window` on it - in this process when no picker window
     // was needed, otherwise in a child it already ran.
     let cmd = match cli.cmd {
+        Some(Cmd::Launch { disc }) => Cli::parse_from(launcher_window::launch_args(&disc)?)
+            .cmd
+            .expect("launcher play args name a subcommand"),
         Some(cmd) => cmd,
         None => match launcher_window::run()? {
             Some(args) => Cli::parse_from(args)
@@ -120,6 +125,7 @@ fn main() -> Result<()> {
         fatal_panic::install();
     }
     match cmd {
+        Cmd::Launch { .. } => unreachable!("expanded into play-window above"),
         #[cfg(feature = "oracles")]
         Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
         #[cfg(feature = "oracles")]
@@ -128,6 +134,10 @@ fn main() -> Result<()> {
         Cmd::AudioSweep(args) => legaia_parity::audio_sweep::run(args),
         #[cfg(feature = "oracles")]
         Cmd::PcmRetail(args) => legaia_parity::pcm_retail::run(args),
+        #[cfg(feature = "oracles")]
+        Cmd::SeqDifferential(args) => legaia_parity::seq_differential::run(args),
+        #[cfg(feature = "oracles")]
+        Cmd::CueDifferential(args) => legaia_parity::cue_differential::run(args),
         Cmd::Info {
             scene,
             extracted_root,

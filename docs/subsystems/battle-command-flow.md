@@ -302,6 +302,16 @@ Which `s2` bit routes where, in the three prompt states:
 `0x32`'s confirm arm stamps `+0x1DE = 5` (the Run action category) on all three
 party actors at `0x801D1174..0x801D1184` before storing `0xFE`.
 
+The `0x32` screen is `Escape` / `Reselect` around the D-pad glyph, on the commit
+confirm's seats (records `0x10` and `0x13`, the former's word the pool's
+`Escape`, stamped at `0x801D10D8`), with `Run` walked to the tab seat (record 4)
+and the panels sunk (step 3: `10/0 13/0 02/0 04/0 06/1 4E/1 4F/1`). Step 4 is the
+way back. The state tests no confirm mask, so under the direct entry a Cross does
+nothing there, and `0x1E` has no cancel arm, so a Circle on the round prompt does
+nothing either: `battle_run_confirm_gaza2_retail` and pad walks from
+`gaza2_card_first_menu` show each. Port: `battle_input::CommandPhase::RunConfirm`,
+`World::tick_battle_command` for the glide, `battle_hud::battle_run_tab_alone`.
+
 The ring's four arms sit on the same four masks, and every one of them commits
 through the same idiom - **advance to the next member that still owes a
 command, or raise the [commit confirm](#the-commit-confirm-screen-0x6e)**:
@@ -752,7 +762,7 @@ the current lesson is not teaching.
 
 | Flow state | Handler | What it prompts |
 |---|---|---|
-| `30` | `0x801F6C00` | Turn start - the per-lesson intro, plus a first-visit vs repeat-visit input explainer selected by `_DAT_801D46C8`. |
+| `30` | `0x801F6C00` | Turn start - the per-lesson intro, plus the input explainer for the Battle Command option `_DAT_800846C8` (directional or cross-button). |
 | `40` | `0x801F6CB8` | `[Begin]` chosen - name the category to pick. Lesson 3 has no prompt here. |
 | `50` | `0x801F6CAC` | Run selected - always rejected, always rewinds. |
 | `60` | `0x801F6DCC` | Item window opened - the item lesson explains the two windows; every other lesson rewinds. |
@@ -765,7 +775,7 @@ the current lesson is not teaching.
 The hyper-arts drill at flow state `90` asks for `[High] [Low] [High]`
 (`0x0F, 0x0E, 0x0F`) and accepts it at three alignments of the command buffer
 `actor[+0x1DF..=+0x1E3]`, each a differently-masked load at `0x801F6FD8`. When
-`_DAT_801D46C4 == 1` the buffer is auto-filled for the player at `0x801F6FB0`.
+`_DAT_800846C4 == 1` (Battle Select Attack on Automatic) the buffer is auto-filled for the player at `0x801F6FB0`, ahead of the Auto rewind, so that option cannot strand the drill.
 `[High] [Low] [High]` is the swing bytes `0F 0E 0F` - Vahn's Somersault,
 `Up Down Up` - so a Somersault preceded by up to two other arrows passes too.
 

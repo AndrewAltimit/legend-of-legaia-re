@@ -259,7 +259,7 @@ pub fn jedo_direct(st: &mut ModuleCamState, phase: u8, _seats: ModuleCamSeats) -
             if gated(st, 0x40) {
                 return ArmDirection::HOLD;
             }
-            cut([0, 0], [0, i32::from(st.jedo_row_tr_y), 0], [0; 3], 1)
+            cut([0, 0], [0, i32::from(st.row_tr_y), 0], [0; 3], 1)
         }
         27 => {
             st.countdown.0 -= D;

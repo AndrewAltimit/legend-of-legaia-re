@@ -325,7 +325,12 @@ impl LegaiaMinigames {
             .then_some(legaia_engine_core::world::SideBandBank::ARENA);
         d.sync_field_sfx(&bundle.unwrap_or_default(), false, side_band, read);
         if let Some(mode) = game.scene_mode() {
-            let want = self.audio_residency.sync(mode, "", None);
+            let want = self.audio_residency.sync(
+                mode,
+                "",
+                None,
+                legaia_engine_mode::sfx_residency::SharedRegionBank::CLASS2,
+            );
             d.sync_shared_region(want, read);
         }
     }

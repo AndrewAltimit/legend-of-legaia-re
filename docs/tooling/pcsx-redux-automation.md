@@ -1100,7 +1100,10 @@ instrument produced them.
 |---|---|---|---|
 | [`autorun_identify_state.lua`](../../scripts/pcsx-redux/autorun_identify_state.lua) | `game_mode`, CDNAME scene, which overlay entry points tick | any state | What a state really **is** - first aid for "my breakpoint never fired" (states get overwritten, see [the library](#save-state-library-immutable-backups)) | |
 | [`autorun_pad_walk.lua`](../../scripts/pcsx-redux/autorun_pad_walk.lua) | Scripted pad sequence; every `game_mode` transition, player position, distinct pad words | `LEGAIA_PAD_SCRIPT="<vsync>:<BUTTON>[:<hold>]"`, optional `LEGAIA_WATCH_FN` exec watches | Reaches a screen no state is parked on. More than one distinct pad word proves the presses arrived | |
+| [`autorun_fight_pace.lua`](../../scripts/pcsx-redux/autorun_fight_pace.lua) | A whole fight from a state, CROSS through every prompt, walking the field to an encounter first: `pace.csv` per vsync with the frame counter, step and ring entry. What [the ring](../subsystems/battle-stage-camera.md#what-the-ring-holds) is measured on |
 | [`autorun_walk_route.lua`](../../scripts/pcsx-redux/autorun_walk_route.lua) | Walks a planned route (`<scene> <x> <z>` waypoints from [`plan_walk_route.py`](../../scripts/pcsx-redux/plan_walk_route.py) over `asset scene-nav` JSON) through one or more scenes, steering on the player position through the pad octant `0x8007B5F0`; fights encounters; `ACT` / `TALK` / `WAIT` / `AVOID` lines; pad only | `--fast`, a retail field state; `LEGAIA_ROUTE_FILE`, `LEGAIA_SHOTS`, `LEGAIA_MASH`, `LEGAIA_PLAY_SCRIPT`, `LEGAIA_WATCH` | `<prefix>_scene_<label>_v<vsync>.rawsstate` per scene entered, `_end_` at the last waypoint, `_mode<mm>_t<t>` after an `ACT`: the retail minigame and far-scene states of the [capture-coverage](capture-coverage.md#filling-the-worklist) worklist | |
+| [`autorun_field_walk_film.lua`](../../scripts/pcsx-redux/autorun_field_walk_film.lua) | Player, follow camera, staging descriptor and every field-ticked placement once a vsync under a pad schedule; the retail side of the [walk film](walk-film.md) | `LEGAIA_PAD_SCRIPT="A-B:BTN"` |
+| [`autorun_field_ease_callers.lua`](../../scripts/pcsx-redux/autorun_field_ease_callers.lua) | Who enters the follow ease `FUN_801DB510`, its compose and pin legs, the walk controller and each focus write, with the gates and position pairs | `LEGAIA_PAD_SCRIPT="A-B:BTN"`, interpreter |
 | [`autorun_film.lua`](../../scripts/pcsx-redux/autorun_film.lua) | A screenshot every `LEGAIA_SHOT_EVERY` vsyncs under a pad schedule (`LEGAIA_PAD_SCRIPT="V:BTN,A-B:BTN"`), optional battle-actor pokes (`LEGAIA_POKES="V:SLOT:OFF:VAL"`, e.g. a boss's HP to 1) | `--fast`, any state | The retail side of "does the port look like this?": the same pad-script and screenshot-cadence shape as `play-window`'s `--pad-script` / `--screenshot-every`. Convert with `raw2png.py` | |
 | [`autorun_effect_pool_film.lua`](../../scripts/pcsx-redux/autorun_effect_pool_film.lua) | The battle effect pool's live children one line a vsync (`pool.txt`), a screenshot beside each from `LEGAIA_SHOT_FROM` | `--fast`, an earlier state of the same cast | Ground truth for a capture's displayed effect children: `effect_pool_film_match.py <pool.txt> <ram.bin>` finds the vsync whose pool equals the capture's RAM pool and prints the lines before it | |
 | [`autorun_drawn_pose_film.lua`](../../scripts/pcsx-redux/autorun_drawn_pose_film.lua) | Per battle pass, in execution order: the frame-end flip, each seat's anim tick and pose decode cursors, the decode's display trio, the damage readout's trio read, ring timer and projected square (`film.txt`); a screenshot a vsync from `LEGAIA_SHOT_FROM` | interpreter (breakpoints); optional `LEGAIA_SPELL` / `LEGAIA_POKE32` inject at seat 0's `0x0A` | Which pass's pose and trio a frame drew: the tick advances, the readout reads the previous pass's trio, then the decode draws the advanced cursor | |
@@ -1783,6 +1786,24 @@ Two consequences for `juui1` in particular:
   900-vsync run there holding the probe's default direction enters the VM
   dispatcher 600 times and sees **zero** op-`0x3F` doors. The player is not
   near that exit, so the donor has to come from a new capture either way.
+
+#### One-question probes
+
+Each answers one question from its own save state; its header says which state and what the output means. Pages that cite a probe explain it in place, and these are the ones no page cites.
+
+| Probe | Question |
+|---|---|
+| `autorun_arts_input_press.lua` | Injects directional presses on an off-class weapon and read-watches the party weapon bytes: where the arm-width consult fires. |
+| `autorun_chest_give_trace.lua` | Does a randomized chest item reach the running game's op `0x39`? |
+| `autorun_delilas_e2e.lua` | End-to-end verdict for a `--delilas-party` disc, from a field state to a natural encounter. |
+| `autorun_gaza2_magic_wedge.lua` | The Gaza rematch's camera-orbit softlock, from a state at the start of the fight. |
+| `autorun_opening_capture.lua` | Retail frames of the whole New Game opening, cold boot to the Rim Elm name entry. |
+| `autorun_pause_vram_upload_trace.lua` | Which upload writes the pause path's changed words of VRAM row 271. |
+| `autorun_tetsu_confirm.lua` | Drives the spar menu cursor to its training-fight row and asserts the battle mode. |
+| `autorun_w1a_view_window_cross.lua` | Does a scripted camera tile window survive into the next scene? |
+| `autorun_w3a_field_walk.lua` | One field anchor, a scripted pad ladder, optional breakpoint banks and a per-vsync poll. |
+
+`dump_flag_bank_from_sstate.py` dumps the story-flag bank from states; `record_interactive.sh` starts the input recorder, retrying through a resume that crashes early.
 
 ### Save-state to Python (offline analysis)
 

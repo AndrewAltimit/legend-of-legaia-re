@@ -117,7 +117,16 @@ impl World {
                     }
                 }
             }
-            949 => ticks::water_crystals_stager(&mut victim, arm),
+            // PROT 0949's stager is reached through its parts' op-`0x20` calls,
+            // never off the phase: a retail cast walks the rate `7..=0` while
+            // the crystals close, and the hit's commit leaves the victim's
+            // knockdown on its own rate. Run off the phase, phases 4 and 5
+            // wrote `3` and `2` over it.
+            949 => {
+                for (call_arm, _) in std::mem::take(&mut self.casting.module_stager_calls) {
+                    ticks::water_crystals_stager(&mut victim, call_arm);
+                }
+            }
             _ => {}
         }
         // Only these modules' stager calls are run; any other module's are
@@ -259,6 +268,9 @@ impl World {
         if direction.is_some() {
             self.apply_seru_seat_writes(entry, ctx.phase);
         }
+        if entry == 966 {
+            self.evil_seru_ride_lead();
+        }
         if entry == 927
             && let Some(d) = direction
         {
@@ -342,6 +354,7 @@ impl World {
         let mut capture_arm = None;
         let mut capture_vram_move = None;
         let phase_in = ctx.phase;
+        let mut death_game_pass = None;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
         if let Some(direct) = legaia_engine_cast::cast_module_camera::capture_camera_director(
@@ -365,7 +378,14 @@ impl World {
             if entry == 964 {
                 st.module_words[0] = i32::from(self.cast_element_change_last_roll());
             }
+            let death_game = entry == 957 && body == Some(ticks::SUMMON_EFFECT_TICK_B);
+            if death_game {
+                self.feed_death_game(ctx.phase, seats.caster_monster, caster_slot, &mut st);
+            }
             let arm = direct(&mut st, ctx.phase, seats);
+            if death_game {
+                death_game_pass = Some(st.death_game);
+            }
             self.store_module_cam(st);
             if let Some(v) = arm.latch
                 && let Some(i) = self.caster_latch_index(caster_slot)
@@ -398,6 +418,30 @@ impl World {
             self.casting.module_scatter_pairs = arm.scatter_pairs;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
+        }
+        if let Some(g) = death_game_pass {
+            self.carry_death_game_pass(&g, phase_in, caster_slot);
+            if let Some(outcome) = g.outcome {
+                let max_hp = [caster_slot, victim_slot].map(|s| {
+                    self.actors
+                        .get(usize::from(s))
+                        .map_or(0, |a| a.battle.max_hp)
+                });
+                let opened = [victim.hp, caster.hp];
+                ticks::death_game_outcome(outcome, &mut caster, &mut victim, max_hp);
+                // The bleed's number pops (`FUN_801F44A0` at `0x801F93AC`,
+                // `0x801F9558`), each for the `(hp + 3) >> 2` it opens with.
+                if outcome == legaia_engine_cast::cast_module_camera::DeathGameOutcome::BothBleed {
+                    let pops = [0, 1].map(|i| ticks::AoeHit {
+                        seat: [victim_slot, caster_slot][i],
+                        applied: (i32::from(opened[i]) + 3) >> 2,
+                    });
+                    run.aoe_hits.extend(pops);
+                }
+            }
+        }
+        if let Some(reach) = capture_arm.as_ref().and_then(|a| a.caster_reach) {
+            self.store_caster_reach(caster_slot, reach);
         }
         // A director arm that names the body's damage-wrapper call folds the
         // owed cast on the pass it makes it (PROT 0962 `0xA2` arm 3), so the
@@ -576,6 +620,15 @@ impl World {
             if phase_in == hit_arm && self.casting.module_hit_arm != Some(hit_arm) {
                 self.casting.module_hit_arm = Some(hit_arm);
                 self.fold_pending_cast();
+                // PROT 0951 `0x36`'s strike stores the victim's rate `2`
+                // (`li v1,2; sb v1,0x21d(s1)` at `0x801F7494`), and the
+                // reaction's cues run on it.
+                if entry == 951
+                    && body == Some(ticks::CHAOS_FLARE_TICK)
+                    && let Some(v) = self.actors.get_mut(usize::from(victim_slot))
+                {
+                    v.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+                }
                 caster = self.cast_view(caster_slot);
                 victim = self.cast_view(victim_slot);
                 seat = self.cast_view(seat_slot);
@@ -590,6 +643,9 @@ impl World {
                 && let Some(hit) = self.casting.spore_gas_beat.tick()
             {
                 self.spore_gas_hit(hit, caster_slot, victim_slot);
+                self.casting
+                    .module_debris
+                    .push(legaia_engine_cast::cast_module_camera::spore_gas_hit_spawn());
             }
             caster = self.cast_view(caster_slot);
             victim = self.cast_view(victim_slot);
@@ -771,9 +827,6 @@ impl World {
                         &mut victim,
                         hit,
                     ))
-                }
-                (957, Some(ticks::SUMMON_EFFECT_TICK_B)) => {
-                    Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
                 }
                 // PROT 0942's Power Up reads the caster's own monster record
                 // `+0x0E` and writes the AGL **base** half only.
@@ -1012,12 +1065,24 @@ impl World {
                     self.write_cast_arm_ext_row(&exts);
                     Some(step)
                 }
-                (944, Some(arms::GUILTY_CROSS_TICK)) => Some(arms::guilty_cross_tick(
-                    &mut ctx,
-                    &mut caster,
-                    &mut victim,
-                    None,
-                )),
+                (944, Some(arms::GUILTY_CROSS_TICK)) => {
+                    // Arm 0 rolled with its line; once it lands, the band's
+                    // generic fold owes nothing.
+                    let hit = if ctx.phase == 3 {
+                        self.casting.module_cam.latched_hit.take()
+                    } else {
+                        None
+                    };
+                    if hit.is_some() {
+                        self.casting.module_skips_fold = true;
+                    }
+                    Some(arms::guilty_cross_tick(
+                        &mut ctx,
+                        &mut caster,
+                        &mut victim,
+                        hit,
+                    ))
+                }
                 (944, Some(arms::GUILTY_CROSS_CURSE_TICK)) => {
                     let code = caster.target_code;
                     let mut seats: Vec<ticks::CastActorState> = self.cast_seat_row();
@@ -1570,7 +1635,8 @@ impl World {
                 _ => None,
             };
             if let Some(cue) = cue {
-                self.route_battle_cue(cue, caster_slot);
+                let category = self.retail_actor_category(caster_slot);
+                self.route_battle_cue(cue, category);
             }
         }
         if matches!(entry, 903 | 913) && ctx.phase != phase_entry {
@@ -1594,6 +1660,39 @@ impl World {
                 self.battle.camera_frame_height = d;
                 self.battle_ctx.camera_frame_height = d;
             }
+            // The same pass turns the victim onto the creature
+            // (`jal 0x80019B28` at `0x801F756C`, `sh v0,0x46(s2)`), which is what
+            // case 8's dead-target yaw reads through arm 12.
+            if (entry, phase_entry) == (903, 11)
+                && let Some((cz, cx)) = self
+                    .actors
+                    .get(usize::from(seat_slot))
+                    .map(|c| (c.move_state.world_z, c.move_state.world_x))
+                && let Some(v) = self.actors.get_mut(usize::from(victim_slot))
+            {
+                v.battle.facing_angle =
+                    legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                        v.move_state.world_z,
+                        v.move_state.world_x,
+                        cz,
+                        cx,
+                    );
+            }
+        }
+        // PROT 0903's `3/2` above reads the victim's HP after the hit
+        // (`0x801F74F8`, `0x801F75A8`), but the band folds that hit behind this
+        // pass: arm 12 finds a victim the breath killed and the depth stays on
+        // the bare framing.
+        if entry == 903
+            && phase_entry == 12
+            && self
+                .actors
+                .get(usize::from(victim_slot))
+                .is_some_and(|a| a.battle.hp == 0)
+        {
+            let h = self.cast_target_frame_depth(caster_slot);
+            self.battle.camera_frame_height = h;
+            self.battle_ctx.camera_frame_height = h;
         }
         // The `0xFF` arm of eight player-Seru modules leaves the creature
         // seat's loop counter clear for the next cast's installer, which

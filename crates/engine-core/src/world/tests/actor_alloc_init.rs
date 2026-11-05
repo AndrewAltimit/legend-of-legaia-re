@@ -53,3 +53,20 @@ fn op_4c_50_on_a_placement_re_stages_its_live_model() {
     vm::field::step(&mut host, &mut ctx, &[0x4C, 0x50, 0x22, 0x00], 0);
     assert_eq!(w.field_npc_live_model(5), Some(0x21));
 }
+
+/// Field op `4C ED` writes the dither word `_DAT_8007BA66` (`sh` at
+/// `0x801E351C`) over its boot value of `1` (`0x8001D520`).
+#[test]
+fn op_4c_ed_writes_the_dither_word() {
+    let mut w = World::new();
+    assert!(w.toggles.draw_dither);
+    for (operand, want) in [(0u8, false), (1, true)] {
+        let mut ctx = FieldCtx::default();
+        let mut host = FieldHostImpl { world: &mut w };
+        match vm::field::step(&mut host, &mut ctx, &[0x4C, 0xED, operand], 0) {
+            FieldStepResult::Advance { next_pc } => assert_eq!(next_pc, 3),
+            other => panic!("4C ED should advance 3, got {other:?}"),
+        }
+        assert_eq!(w.toggles.draw_dither, want);
+    }
+}

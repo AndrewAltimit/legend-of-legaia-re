@@ -1081,13 +1081,14 @@ impl World {
         let clip_control = op == 0xAB
             || op == 0xAC
             || (op == 0xCC && matches!(self.field_bytecode.get(pc + 2), Some(&(0x35 | 0x36))));
-        if op != 0xA3 && !clip_control {
+        let object_seat = op == 0xCC && self.field_bytecode.get(pc + 2) == Some(&0x51);
+        if op != 0xA3 && !clip_control && !object_seat {
             return None;
         }
         let ci =
             legaia_engine_field::field_channels::resolve_target(&self.field_vm.channels, target)?;
         let object = self.field_vm.channels[ci].object_bind;
-        if clip_control && !object {
+        if (clip_control || object_seat) && !object {
             return None;
         }
         let width = legaia_scene_formats::field_disasm::decode(&self.field_bytecode, pc)
@@ -1552,6 +1553,28 @@ mod cross_context_cflag_tests {
         assert_eq!(w.field_pc, 7);
         assert!(w.hidden_object_records().contains(&6));
         assert!(!w.hidden_object_records().contains(&1));
+    }
+
+    /// `son`'s sky: `P0[5]` opens parked and the cutscene seats it with
+    /// `CC 05 51`, heading from the depth byte's compass index.
+    #[test]
+    fn a_system_script_npc_run_seats_a_parked_object() {
+        let mut w = World::default();
+        let mut sky = channel(5, 5);
+        sky.object_bind = true;
+        sky.ctx.world_x = 0x3FC0;
+        sky.ctx.world_z = 0x3FC0;
+        sky.ctx.field_72 = 0x1000;
+        w.field_vm.channels = vec![sky];
+        assert!(w.hidden_object_records().contains(&5));
+        w.load_field_script_at(vec![0xCC, 0x05, 0x51, 0x08, 0x10, 0x05, 0x00, 0x21], 0);
+        w.step_field();
+        assert_eq!(w.field_pc, 7);
+        let ctx = &w.field_vm.channels[0].ctx;
+        assert_eq!((ctx.world_x, ctx.world_z), (1088, 2112));
+        assert_eq!(ctx.field_26, 0xA00);
+        assert!(!w.hidden_object_records().contains(&5));
+        assert_eq!((w.field_ctx.world_x, w.field_ctx.world_z), (0, 0));
     }
 
     /// The player anchor and an unresolved id take the ordinary step.

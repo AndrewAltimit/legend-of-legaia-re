@@ -167,6 +167,12 @@ pub struct ScreenshotConfig {
     /// merchant's or innkeeper's conversation without walking to it. The
     /// browser twin is `LegaiaRuntime::debug_talk_to_placement`.
     pub talk_at: Option<(u64, u8)>,
+    /// `LEGAIA_CAPTURE_BATTLE=<tick>[,caster,spell,target]`: at that world
+    /// tick, force the scene's first rollable formation, a fight opening out
+    /// of a live field frame, with that cast seeded for its first prompt. The
+    /// browser twins are `LegaiaRuntime::debug_force_battle(-1)` and
+    /// `debug_seed_inflight_cast`.
+    pub battle_at: Option<(u64, Option<[u8; 3]>)>,
     /// `LEGAIA_CAPTURE_SHOP=<idx>@<tick>`: stage scene shop `idx` at `tick`
     /// (`World::debug_arm_scene_shop`), the browser page's
     /// `debug_arm_scene_shop` twin.
@@ -452,6 +458,10 @@ pub struct ScreenshotConfig {
     /// ([`legaia_engine_capture::drive_clock::DriveClock`]), whatever the
     /// window's own tick count was.
     pub battle_drive_clock: std::cell::Cell<legaia_engine_capture::drive_clock::DriveClock>,
+    /// A `LEGAIA_DIAG_CAST_SEQ_BEGIN=gate` film lets go of the drive once its
+    /// gate has opened: the drive's steer holds the yaw counter on the capture's
+    /// word for as long as the state lasts, and a film scores the frames after it.
+    pub battle_drive_released: std::cell::Cell<bool>,
     /// Ticks the drive's phase has held so far; the capture waits for
     /// [`legaia_engine_capture::battle_drive::BattleDrive::hold_ticks`]
     /// of them, as the headless seed does.
@@ -490,6 +500,11 @@ pub struct ScreenshotConfig {
     /// `scripts/ci/cast-sequence.py`; taken once.
     pub cast_seq_seat_pose:
         std::cell::Cell<Option<legaia_engine_camera::projection::BattleCamPose>>,
+    /// `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR=clip,cursor`: the caster's clip and
+    /// cursor on the recording's cast begin, seated with the pose. A heal's
+    /// `0x3D` waits out the idle the caster stands on, and the child's idle
+    /// has its own phase. Taken once.
+    pub cast_seq_seat_cursor: std::cell::Cell<Option<(u8, i32)>>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
     /// pass before the band's first arm spawned its parts, and it stands on
@@ -549,6 +564,10 @@ pub struct ScreenshotConfig {
     /// (`World::install_action_fx_part_snapshot`); taken once.
     pub seat_action_fx_parts:
         std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
+    /// `LEGAIA_SEAT_ARRIVAL_GONE`: the capture's RAM holds no PROT 0968 column,
+    /// so the replay's are retired on the capture frame
+    /// (`World::retire_arrival_spawns`); taken once.
+    pub seat_arrival_gone: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_EFFECT_CHILDREN`: a captured state's live effect-pool
     /// children as the displayed frame held them, stood in the engine's
     /// pool on the capture frame (`World::install_effect_child_snapshot`);
@@ -980,6 +999,13 @@ impl ScreenshotConfig {
                 let (slot, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, slot.trim().parse().ok()?))
             }),
+            battle_at: std::env::var("LEGAIA_CAPTURE_BATTLE").ok().and_then(|v| {
+                let mut f = v.split(',').map(|x| x.trim().parse::<u64>().ok());
+                let tick = f.next()??;
+                let mut byte = || f.next().flatten().map(|b| b as u8);
+                let cast = byte().zip(byte()).zip(byte()).map(|((c, s), t)| [c, s, t]);
+                Some((tick, cast))
+            }),
             prize_at: std::env::var("LEGAIA_SEAT_PRIZE").ok().and_then(|v| {
                 let (t, b) = v.split_once(':')?;
                 Some((t.parse().ok()?, b.parse().ok()?))
@@ -1195,6 +1221,7 @@ impl ScreenshotConfig {
                 .ok()
                 .and_then(|v| legaia_engine_capture::battle_drive::BattleDrive::from_env(&v)),
             battle_drive_clock: std::cell::Cell::new(Default::default()),
+            battle_drive_released: std::cell::Cell::new(false),
             battle_drive_held: std::cell::Cell::new(0),
             display_lag: std::env::var("LEGAIA_CAPTURE_DISPLAY_LAG")
                 .ok()
@@ -1218,6 +1245,14 @@ impl ScreenshotConfig {
                         focus: [f[5], f[6], f[7]],
                     })
                 }),
+            cast_seq_seat_cursor: std::cell::Cell::new(
+                std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR")
+                    .ok()
+                    .and_then(|v| {
+                        let (c, k) = v.split_once(',')?;
+                        Some((c.trim().parse().ok()?, k.trim().parse().ok()?))
+                    }),
+            ),
             cast_seq_seat_pose: std::cell::Cell::new(
                 std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_POSE")
                     .ok()
@@ -1273,6 +1308,9 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_ACTION_FX_PARTS")
                     .ok()
                     .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
+            ),
+            seat_arrival_gone: std::cell::Cell::new(
+                std::env::var_os("LEGAIA_SEAT_ARRIVAL_GONE").is_some(),
             ),
             seat_effect_children: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_EFFECT_CHILDREN")
@@ -1430,7 +1468,7 @@ fn write_capture_png_at(
 /// that returns before the pad lookup: `C` (camera vantage) and `D`
 /// (occlusion fade, named in the user guide). Moving those two arms onto
 /// non-pad keys is what finishes the set.
-pub(super) fn keycode_to_name(code: KeyCode) -> &'static str {
+pub fn keycode_to_name(code: KeyCode) -> &'static str {
     match code {
         KeyCode::ArrowUp => "Up",
         KeyCode::ArrowDown => "Down",

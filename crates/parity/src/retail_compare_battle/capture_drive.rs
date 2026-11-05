@@ -6,6 +6,7 @@ use super::*;
 /// The rung the Attack arm stands the yaw counter `ctx[+0x6DA]` on as the
 /// seed enters `0x14` (`0x801E2F20`).
 const ATTACK_YAW_RUNG: u16 = 0x200;
+
 /// The rung the seed pass stands the counter on (`0x801E2CF8`), which a Spirit
 /// band action climbs from with no store of its own.
 const SEED_YAW_RUNG: u16 = 0x800;
@@ -139,6 +140,16 @@ impl RetailBattle {
                 .copied()
                 .flatten()
                 .is_some_and(|c| c.hp <= c.hp_max / 3)
+    }
+
+    /// Whether a monster's captured cast stands with its latch
+    /// `DAT_801C8FE0[i + 4]` raised. The body reads the word at its arm 0, and
+    /// the replay re-enters the cast there: PROT 0953 forks on it
+    /// (`0x801F6B04`), so a clear word takes the charge, which holds another
+    /// stage and has no strike (`battle_tunnelc_xain_terio_punch_mid_cast`
+    /// holds `1` with its phase still `0`).
+    pub fn caster_latch_raised(&self) -> bool {
+        self.active_actor >= 3 && self.queued_category == 2 && self.caster_latch != 0
     }
 
     /// Whether the capture is a monster strike gated on a swing clip
@@ -418,9 +429,13 @@ impl RetailBattle {
             return None;
         };
         let (step, _) = self.step_run;
-        if accum != 16 * u16::from(step) {
+        let shot_passes = if accum == 16 * u16::from(step) {
+            2
+        } else if accum == 8 * u16::from(step) {
+            1
+        } else {
             return None;
-        }
+        };
         let (live, end) = self.cam_tween;
         let turning = self.retake_turning_yaw();
         let landed =
@@ -428,7 +443,7 @@ impl RetailBattle {
         if !landed {
             return None;
         }
-        let passes = case6_walk_passes(&self.ring_steps);
+        let passes = case6_walk_passes(&self.ring_steps, shot_passes);
         let start = self.walk_start(pin)?;
         let caster = usize::from(self.active_actor);
         let [gx, gz] = (*self.ground.get(caster)?)?;
@@ -492,8 +507,10 @@ impl RetailBattle {
             let b = bbox?;
             let raw = legaia_engine_battle_vm::battle_cam_script::menu_raw_z(Some(b));
             // The prompt's orbit is a clock the RAM does not date: only a turning
-            // shot takes this start.
-            self.retake_turning_yaw()?;
+            // shot, or a capture whose yaw is pinned, takes this start.
+            if pin.and_then(|p| p.yaw).is_none() {
+                self.retake_turning_yaw()?;
+            }
             return Some(WalkStart {
                 pitch: 32,
                 yaw: 0,
@@ -549,10 +566,9 @@ impl RetailBattle {
     /// six ticks back from the gate is the child's `0x29` exit pass, a pass
     /// before the frame retail's display held.
     pub fn drive_display_lag(&self) -> u16 {
-        let step = self.frame_step_seed().map_or(
-            legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP,
-            |s| s.0,
-        );
+        let step = self
+            .frame_step_seed()
+            .map_or(self.child_ordinary_step(), |s| s.0);
         DISPLAY_LAG_PASSES * u16::from(step.max(1))
     }
 
@@ -871,12 +887,6 @@ impl RetailBattle {
         displayed_struck: bool,
         displayed_walker: bool,
     ) -> Vec<legaia_engine_capture::ground_snap::GroundSnap> {
-        // Past the end signal the sequencer poses the winners and the results
-        // framing reads poses the replay's clips do not share; the ground
-        // stays the replay's.
-        if self.span_gate.is_end() {
-            return Vec::new();
-        }
         let pc = usize::from(self.party_count.clamp(1, 3));
         self.captured
             .iter()
@@ -1019,8 +1029,17 @@ impl RetailBattle {
                     && self.active_actor >= 3
                     && self.queued_category == 3
                     && (0x14..=0x1E).contains(&self.action_state);
+                // ... and a monster on its idle in the strike loop, with the
+                // first swing staged behind it: the idle runs from the end of
+                // the walk or close-in, whose passes the replay's clock does
+                // not share (`battle_jou_cort_181_strike`).
+                let strike_idle = clip == 0
+                    && slot == self.active_actor
+                    && self.active_actor >= 3
+                    && self.action_state == 0x1E;
                 !in_flight
                     || capture_band_idle
+                    || strike_idle
                     || parked_idle
                     || walking
                     || melee_target_idle
@@ -1856,6 +1875,38 @@ pub struct DisplayedWalkPin {
 
 const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
     (
+        // One `0x2B` pass in on a step that has just gone to `4`. The seed's
+        // arm read the caster's old heading, which took the yaw down from the
+        // Spirit's framing rather than up across the wrap.
+        "battle_kor_gaza_166_astral_wave_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 0,
+            yaw: Some(440),
+        },
+    ),
+    (
+        // The round's first actor, walking off the prompt's far framing; the
+        // seat does not enter on that start.
+        "battle_rugi_barra_windcutter_mid_cast",
+        DisplayedWalkPin {
+            seat: 0,
+            style: 0,
+            yaw: Some(3260),
+        },
+    ),
+    (
+        // Seats 1 and 2 both spent a Spirit; the walk set out from seat 1's.
+        // Off seat 2's, the focus stands 94 units nearer Gala on the shot's
+        // axis and she clears the near gate, filling the frame.
+        "battle_doman_boogie_pump_windcutter_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 0,
+            yaw: None,
+        },
+    ),
+    (
         "battle_stone_zenoir_v2_fire_claw_mid_cast",
         DisplayedWalkPin {
             seat: 2,
@@ -1944,12 +1995,22 @@ const CAST_WAIT_TIMER: i32 = 0x14;
 /// the exit, then the terminator (ring slot `3`). `ring` is
 /// [`super::frame_step::recent_pass_steps`]. Recordings walk `14` passes at
 /// step `2`, `10` at step `3`.
-pub fn case6_walk_passes(ring: &[u8; 16]) -> Vec<i32> {
+///
+/// `shot_passes` counts the `0x2B` passes in the RAM, and the display stands
+/// two passes behind them. On two the display is the terminator. On one it is
+/// the pass before, `0x29`'s exit, which armed and walked, so the terminator
+/// takes no step and [`case6_walk`] arms the exit like the rest.
+pub fn case6_walk_passes(ring: &[u8; 16], shot_passes: usize) -> Vec<i32> {
     // A step-`2` walk runs past the ring's end; its oldest slot stands in.
     let step = |slot: usize| i32::from(ring[slot.min(15)]);
-    let mut passes = vec![step(3)];
+    let terminator = shot_passes + 1;
+    let mut passes = vec![if shot_passes == 1 {
+        0
+    } else {
+        step(terminator)
+    }];
     let mut drained = 0;
-    let mut slot = 4;
+    let mut slot = terminator + 1;
     while drained <= CAST_WAIT_TIMER {
         passes.push(step(slot));
         drained += step(slot);

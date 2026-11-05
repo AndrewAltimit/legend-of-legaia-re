@@ -102,6 +102,7 @@ enum Reach {
 fn queued_call_phase(entry: u32) -> u8 {
     match entry {
         923 => 5,
+        949 => 2,
         _ => 3,
     }
 }
@@ -196,7 +197,7 @@ const ROWS: [Row; 33] = [
         949,
         None,
         None,
-        Reach::Stager,
+        Reach::QueuedCall,
     ),
     row(&[0x801F_90E4], 922, None, None, Reach::QueuedCall),
     row(&[0x801F_8B90], 923, None, None, Reach::QueuedCall),

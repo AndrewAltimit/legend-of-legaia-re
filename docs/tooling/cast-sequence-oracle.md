@@ -90,6 +90,7 @@ Flags worth knowing:
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
+| `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
@@ -109,6 +110,13 @@ default-arm mesh's vertex count, the spawn record's address, the flag word
 part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
+
+Set against a retail recording made with `--retail-parts`, the file reads a mechanism
+off directly: Spoon's fans stood at scale `0x400` beside retail's `0x666`, Barra's cone
+at `z = 0` beside `456`. Each retail part appears once per list walk of its vsync, so
+compare by value, not by count. The same goes for `cam.csv` against the pairs of
+`report.json` (`shown_vsync`, `engine_tick`): a constant difference through an arm names
+a store or a drift, one that grows names a rate.
 
 `LEGAIA_DIAG_CAST_VRAM_AT=<tick>` writes the battle VRAM at that tick as
 `engine/vram_<tick>.bin`, to hold against a retail recording's
@@ -204,6 +212,31 @@ state `0x65`, so the Spikefish cast ends cleanly. A cast's arm can run longer in
 than its countdown says: the frame step stops at 4 while a heavy arm's real frame runs
 past 4 vsyncs, so the module's word drains slower per vsync. Ozma's arm 6 runs 462
 vsyncs to the engine's 191. The pairing keys on arms, so those frames pair by arm.
+
+## The camera against the step
+
+`cam.csv` on both sides read at the score's own pairs (`shown_vsync` on retail's
+side, `engine_tick` on the engine's) is the camera's error frame by frame. Set
+`--retail-steps` beside the plain run and the two together split it: what the seated
+run closes is the frame step's, what it leaves is the framing law's or the seat's. On
+`balden_swordie_v2_pre_vacuum_slicer` the seated run leaves `.3` px of the plain run's
+`4`, and the whole of that gap is the step ([the frame step](../subsystems/battle-stage-camera.md#the-frame-step)).
+
+A `--physical` film has three traps of its own, each closed in the driver or the
+recorder. It keeps the capture's re-seat (`PHYSICAL_KEEP_ENV`), which stands the round
+on the capture's ground; it lets go of the drive at its gate
+(`ScreenshotConfig::battle_drive_released`), because the drive's steer pins the yaw
+counter for as long as the state lasts and leaves the camera short by what the state
+would have drifted; and the score keeps the recording's first action only
+(`Side::first_action_only`), because a recording's tail can hold the next actors'
+whole turns, and the alignment prefers a later actor's complete run of states to a
+capture that starts inside the strike loop. Its second clip and every melee roll are
+a draw, so a strike film wants `--strike-deal`, or it scores another hand: Thermo's
+strike lands clip `7` twice on the engine's stream where retail's second is `8`.
+
+An injected cast seats the caster's clip and cursor on its begin
+(`LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`) beside the pose: a heal's `0x3D` waits out the idle
+the caster stands on.
 
 ## The pairing rule
 
@@ -355,7 +388,7 @@ scripts/ci/cast-sequence.py --physical --state battle_korb2_warhalf_strike --eve
   may replay rounds until its target and clip match, and a recording started on
   an earlier one reads as a strike that "lands nothing".
 
-On the retail side the same switch starts on a state held on `0x2B`, with
+On the retail side the same switch starts on a state held on `0x2B` or `0x70`, with
 `--retail-only`: `LEGAIA_RAM_AT` then films a monster cast from the state on the
 fast core, where the `--monster-pick` run is an interpreter's.
 
@@ -683,7 +716,8 @@ monster's own pick would write.
 
 ## Waits the engine does not run
 
-Three waits in a summon band are CD reads, which the engine's resident
+The capture band's two CD polls are the exception: the engine holds them
+([below](#the-capture-bands-reads)). Three waits in a summon band are CD reads, which the engine's resident
 streams answer at once, so their segments part on length without any engine
 error. The pairing keys each segment on its own, so they do not shift the
 rest of the cast's pairs; they do move the band's flash against the module's
@@ -706,6 +740,25 @@ in retail that arm holds while the applier runs on past the band head.
 Horn's arm 2 ends on the pass the byte drops. Jedo's band flash-out reads
 about `25` vsyncs younger in the engine at the same arm, which is most of
 that cast's low score in arms 2 to 4.
+
+### A fight that opens on an ambush
+
+`LEGAIA_BATTLE_MONSTER_CAST`'s `p` stands each listed slot on its ground at the first prompt.
+A fight that opens on an ambush reaches the cast in that round's own order, ahead of any
+prompt, so the turn arming stands the slots there as well (`World::stand_on_forced_ground`).
+Without it Lapis Wave's rings and columns stand on seats the fight never held.
+
+### The capture band's reads
+
+State `0x6E` polls `FUN_8003DE7C(1)` (`0x801E4F08`) for the read `0x28` queued, then
+`0x8003EAE4` starts the module's own read, which `0x6F` polls through `FUN_8003F2B8(1)`.
+The recordings of the harvest-state casts hold them `14..=17` and `4..=6` vsyncs, whichever
+module or fight. Neither poll idles: each `0x6E` pass walks the case-6 framing and each
+`0x6F` pass pulls `ctx[+0x6D0]` in by `step * 16`, so an arm-0 tween opened two ticks in
+stands on another pose for its whole length (Spore Gas read yaw `1991` where retail held
+`1121`) and every shot built on `ctx[+0x6D0]` lands at another depth. The engine holds the
+two states `14` and `4` ticks (`World::arm_capture_read_wait`), and the walk then matches
+retail to the unit through `0x6E`.
 
 ## See also
 

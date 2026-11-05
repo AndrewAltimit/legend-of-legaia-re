@@ -14,7 +14,7 @@ This page documents both gates, the invariant each relies on, the mechanism that
 | Retail trigger | a restore's assigning seed landing on a drain still in flight | Kemaro putting a walk-less monster back with the flag still set, then that monster's out-of-reach melee inside one idle cycle |
 | Caught in unmodified play | no capture; a pad-reachable trigger is read from the code (the Point Card aimed at a party member) | yes - Gaza 2, scenario `battle_gaza2_park_0x19` |
 | Self-recovers | on a poison / regen tick of the affected member | never |
-| Disc patch | none | `legaia-patcher --approach-softlock-fix` |
+| Disc patch | none | `legaia-patcher randomize --approach-softlock-fix` |
 | Port | same conventions, seeds paired at every call site; the HP-readout guard (on by default, off in retail mode) re-seeds an absorbing readout | approach drive runs in every approach state |
 
 Key routines:
@@ -443,7 +443,7 @@ Port: roll kernel `legaia_engine_battle_vm::status_effects::agl_status_inflict_r
 | **Retail trigger** | Kemaro (action `0x90`, PROT 0918) on a single target that survives, followed inside one idle cycle by that monster's melee. An ordinary hit cannot leave the flag behind ([why](#why-a-hit-alone-cannot-arm-it)). |
 | **Evidence** | Caught in unmodified play on Gaza 2; trigger reproduced; flag causally verified; Kemaro's put-back caught leaving the flag on Gaza. Scenarios `battle_gaza2_park_0x19`, `battle_gaza2_park_0x19_summon_melee` (`scripts/scenarios.toml`). Every Gaza 2 state carries the arts AP override in SCUS arena 1, which touches no animation code. |
 | **Recovery** | None. Nothing bounds the poll. |
-| **Disc patch** | `legaia-patcher --approach-softlock-fix`. |
+| **Disc patch** | `legaia-patcher randomize --approach-softlock-fix`. |
 | **Port** | Cannot park, in either mode: the approach drive does not depend on a live clip, and no toggle turns that off. A retail park is only ever replayed from a capture (`BattleState::approach_hold`). |
 
 Every party HP triple is synced in the caught park (`+0x14C == +0x172`, `+0x10 == 0`); the `0x51` gate plays no part.
@@ -552,7 +552,7 @@ The `+0x21D = 8` Kemaro writes also explains Gaza 2's doubled speed scale: the c
 
 ### The disc patch
 
-`legaia-patcher --approach-softlock-fix` (`legaia_code_hooks::approach_fix`, `crates/code-hooks/src/approach_fix.rs`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
+`legaia-patcher randomize --approach-softlock-fix` (`legaia_code_hooks::approach_fix`, `crates/code-hooks/src/approach_fix.rs`; off by default, also offered by the site's ROM patcher). The `0x19` arm spends nine words at `0x801E3568` re-deriving facing every frame, which is redundant: the target does not move during an approach, and states `0x14` and `0x1E` derive facing themselves. The patch replaces those nine words with a guard: if the staged clip is dead (`+0x1DA == 0`) while the poll still fails, set the state byte back to `0x14`.
 
 Retail's own `0x14` arm then re-runs the staging next frame and the monster resumes walking. By the time the guard fires, the commit that killed the clip has consumed the stale bit, so the re-staged clip loops cleanly. The same bounce rescues a party attacker whose run clip dies. Healthy approaches never see a dead clip and are unaffected.
 

@@ -221,15 +221,25 @@ impl LegaiaRuntime {
         // Volumetric fog: where the ground is, so the bank lies on it and
         // spills off its rims - the call the native window makes at its
         // scene load (`install_fog_ground`), over the same static draws:
-        // the story-hidden placements already gone, each at its render scale.
+        // less the story-hidden placements, each at its render scale.
         if let Some(host) = self.scene_host.host_mut()
             && let (Some(scene), Some(res)) = (host.scene.as_ref(), host.resources.as_ref())
             && let Some(fr) = self.field.as_ref()
         {
+            let hidden = host.world.hidden_object_records();
+            let (fog_placements, fog_scales): (Vec<_>, Vec<_>) = fr
+                .placements
+                .iter()
+                .cloned()
+                .zip(fr.placement_scales.iter().copied())
+                .zip(&fr.placement_records)
+                .filter(|(_, r)| !r.is_some_and(|r| hidden.contains(&r)))
+                .map(|(p, _)| p)
+                .unzip();
             let source = legaia_engine_scene::fog_ground::source_for_scene(
                 &fr.terrain,
-                &fr.placements,
-                &fr.placement_scales,
+                &fog_placements,
+                &fog_scales,
                 res,
                 scene,
                 &host.index,

@@ -3,11 +3,12 @@
 //!
 //! See `ghidra/scripts/funcs/overlay_cast_spore_gas_0939_801f69d8.txt`.
 
-use super::v_windhash::{HIDDEN, SHOWN};
+use super::v_windhash::{HIDDEN, SHOWN, seat};
 use super::{
     CaptureCamArm, CaptureSeatWrite, ModuleCamSeats, ModuleCamState, ModuleSeat, ModuleShot,
     SPEED_SCALAR, bearing_12bit_approx, focus_on, yaw_from,
 };
+use legaia_engine_system::trig::trig12;
 
 /// The shot on the caster the first three arms build.
 fn on_caster(c: ModuleSeat, pitch: i16, tr: [i16; 2], frames: u16) -> ModuleShot {
@@ -17,6 +18,32 @@ fn on_caster(c: ModuleSeat, pitch: i16, tr: [i16; 2], frames: u16) -> ModuleShot
         focus: focus_on(c),
         frames,
     }
+}
+
+/// The cloud arm 1 seats, with the yaw each call holds. The arm keeps one
+/// angle trio on its stack and steps its `y` between calls, `+0x100` twice,
+/// `-0x300`, then `-0x100`.
+const CLOUD_RECORDS: [(u32, i16); 8] = [
+    (0x801F_7598, 0),
+    (0x801F_767C, 0),
+    (0x801F_7928, 0),
+    (0x801F_7760, 0x100),
+    (0x801F_7844, 0x100),
+    (0x801F_7928, 0x200),
+    (0x801F_7760, -0x100),
+    (0x801F_7844, -0x100),
+];
+/// Arm 1's ninth call (`0x801F6E24`), past [`CaptureCamArm::charge_spawns`]'s eight.
+const CLOUD_LAST: (u32, i16) = (0x801F_7928, -0x200);
+/// `li v0,-0x1C2` / `sh v0,0x22(sp)` at `0x801F6D20`.
+const CLOUD_Y: i16 = -0x1C2;
+/// The burst each of arm 4's hits seats (`0x801F70B0..0x801F70C8`): camera-locked at
+/// `(0, 0, 0x100)` on the prologue's zeroed trios.
+pub const HIT_RECORD: u32 = 0x801F_74BC;
+
+/// The spawn each of arm 4's hits makes ([`HIT_RECORD`]).
+pub const fn spore_gas_hit_spawn() -> super::ModuleSpawn {
+    seat(HIT_RECORD, [0, 0, 0x100], [0; 3])
 }
 
 /// **Spore Gas** (`beq` / `slti` tree over `0..=5` and `0xFF`; caster
@@ -53,6 +80,20 @@ pub fn spore_gas_camera(
         }
         1 => {
             arm.shot = Some(on_caster(c, 0x200, [0x200, 0xC00], 0x50));
+            // The victim goes off while the gas rises (`0x801F6C60..0x801F6C68`).
+            arm.victim_write = HIDDEN;
+            // The cloud, `0x190` ahead of the caster (`0x801F6C6C..0x801F6E24`).
+            let (s, co) = trig12(c.facing);
+            let ahead = |t: i16| (i32::from(t) * 400 / 4096) as i16;
+            let pos = [
+                c.x.wrapping_add(ahead(s)),
+                CLOUD_Y,
+                c.z.wrapping_add(ahead(co)),
+            ];
+            for (slot, (record, yaw)) in arm.charge_spawns.iter_mut().zip(CLOUD_RECORDS) {
+                *slot = Some(seat(record, pos, [0, yaw, 0]));
+            }
+            arm.pass_spawns[0] = Some(seat(CLOUD_LAST.0, pos, [0, CLOUD_LAST.1, 0]));
             st.countdown.0 += SPEED_SCALAR * 0x50;
         }
         2 => {
@@ -114,6 +155,25 @@ mod tests {
         assert_eq!(shot.angles[1], 920);
         assert_eq!(shot.tr, [0, 0x600, 0x800]);
         assert_eq!(shot.frames, 0x80);
+    }
+
+    #[test]
+    fn arm_one_hides_the_victim_and_seats_the_cloud_ahead_of_the_caster() {
+        let mut st = ModuleCamState::default();
+        let mut s = seats();
+        s.caster.facing = 0;
+        let arm = spore_gas_camera(&mut st, 1, s);
+        assert_eq!(arm.victim_write.render_flag, Some(0xFF));
+        assert_eq!(arm.charge_spawns.iter().flatten().count(), 8);
+        let first = arm.charge_spawns[0].expect("a record");
+        // Facing `0`: `0x190` along +Z from the caster, at `-0x1C2`.
+        assert!(matches!(
+            first.anchor,
+            crate::cast_module_camera::SpawnAnchor::LiteralScaled {
+                pos: [-6, CLOUD_Y, 588],
+                ..
+            }
+        ));
     }
 
     #[test]

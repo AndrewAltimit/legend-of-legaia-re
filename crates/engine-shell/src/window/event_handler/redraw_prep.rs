@@ -115,6 +115,12 @@ impl PlayWindowApp {
                     &ghosts,
                 );
             }
+            // ... and the arrival's columns off a frame whose RAM holds none
+            // (`LEGAIA_SEAT_ARRIVAL_GONE`): a replay reaches its first strike
+            // inside their life, a fight rounds further on does not.
+            if due && sc.seat_arrival_gone.take() {
+                self.session.host.world.retire_arrival_spawns();
+            }
             // ... and the effect pool's billboards where retail's walker had
             // put them (`LEGAIA_SEAT_EFFECT_CHILDREN`).
             if due && let Some(children) = sc.seat_effect_children.take() {
@@ -737,6 +743,12 @@ impl PlayWindowApp {
                 && let Some(cam) = world.battle.camera.as_mut()
             {
                 cam.stand_on_pose(pose);
+            }
+            if matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
+                && let Some((clip, cursor)) = sc.cast_seq_seat_cursor.take()
+            {
+                let slot = usize::from(world.battle_ctx.active_actor);
+                world.seat_battle_clip_cursor(slot, clip, cursor);
             }
         }
         // Colour the ground grid from this frame's battle ambient (a summon

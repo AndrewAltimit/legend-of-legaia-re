@@ -123,6 +123,23 @@ pub fn battle_command_chips(
             cursor: cursor as usize,
             phase: CommandChipPhase::CommitConfirm,
         }),
+        // The flee confirm's left chip is the same record `0x10`, whose word
+        // the round prompt's `Run` arm stamps with the pool's `Escape`
+        // (`0x801D10D8`); the seats are the commit confirm's.
+        CommandPhase::RunConfirm { cursor } => {
+            let label = |disc: BattleUiLabel, fallback: &'static str| {
+                let s = world.battle.ui_strings.get(disc).filter(|s| !s.is_empty());
+                chip(s.unwrap_or(fallback), true)
+            };
+            Some(BattleCommandChips {
+                chips: vec![
+                    label(BattleUiLabel::CommitEscape, "Escape"),
+                    label(BattleUiLabel::Reselect, CommitChoice::Reselect.label()),
+                ],
+                cursor: cursor as usize,
+                phase: CommandChipPhase::CommitConfirm,
+            })
+        }
         _ => None,
     }
 }

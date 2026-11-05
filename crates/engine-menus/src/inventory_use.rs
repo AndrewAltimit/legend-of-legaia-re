@@ -155,6 +155,10 @@ pub enum InventoryUseState {
     /// Picking a target. `cursor` indexes into [`InventoryUseSession::targets`].
     /// `item_cursor` is preserved so Cancel returns to the same item row.
     TargetSelect { item_cursor: usize, cursor: usize },
+    /// An all-party item's confirm: no row to pick, Confirm applies it to the
+    /// whole party and Cancel returns to the list (the field's sub-screen `9`,
+    /// `FUN_801D7FF8`, `FUN_801D688C` over zero rows; the battle's `0x66`).
+    AllPartyConfirm { item_cursor: usize },
     /// Terminal - the engine should drain the outcome and dispose of the
     /// session.
     Done(ItemOutcome),
@@ -349,7 +353,8 @@ impl InventoryUseSession {
     pub fn cursor_bag_slot(&self) -> Option<u8> {
         let cursor = match self.state {
             InventoryUseState::Browsing { cursor } => cursor,
-            InventoryUseState::TargetSelect { item_cursor, .. } => item_cursor,
+            InventoryUseState::TargetSelect { item_cursor, .. }
+            | InventoryUseState::AllPartyConfirm { item_cursor } => item_cursor,
             _ => return None,
         };
         let idx = *self.filtered_items.get(cursor)?;
@@ -409,7 +414,8 @@ impl InventoryUseSession {
     pub fn current_item(&self) -> Option<&ItemEntry> {
         let cursor = match self.state {
             InventoryUseState::Browsing { cursor } => cursor,
-            InventoryUseState::TargetSelect { item_cursor, .. } => item_cursor,
+            InventoryUseState::TargetSelect { item_cursor, .. }
+            | InventoryUseState::AllPartyConfirm { item_cursor } => item_cursor,
             _ => return None,
         };
         let item_idx = self.filtered_items.get(cursor).copied()?;
@@ -465,6 +471,7 @@ impl InventoryUseSession {
                 item_cursor,
                 cursor,
             } => (Some(item_cursor), true, cursor),
+            InventoryUseState::AllPartyConfirm { item_cursor } => (Some(item_cursor), true, 0),
             _ => (None, false, 0),
         };
         let selected_id = item_cursor
@@ -488,6 +495,20 @@ impl InventoryUseSession {
                 item_cursor,
                 cursor,
             } => self.input_target_select(item_cursor, cursor, input),
+            InventoryUseState::AllPartyConfirm { item_cursor } => match input {
+                InventoryUseInput::Confirm => {
+                    if let Some(entry) = self.current_item().copied() {
+                        self.confirm_all_party(entry);
+                    }
+                }
+                InventoryUseInput::Cancel => {
+                    self.state = InventoryUseState::Browsing {
+                        cursor: item_cursor,
+                    };
+                    self.events.push(InventoryUseEvent::Cancelled);
+                }
+                _ => {}
+            },
             // Terminal states swallow input.
             _ => {}
         }
@@ -518,14 +539,26 @@ impl InventoryUseSession {
                     return;
                 }
                 let entry = self.current_item().copied();
-                // All-party items (Healing Bloom / Fruit) skip target select and
-                // fan out across every valid ally in one use.
+                // All-party items (Healing Bloom / Fruit) pick no row: their
+                // confirm screen takes one more Cross, which fans out across
+                // every valid ally in one use.
                 if let Some(entry) = entry
                     && self.context.allows(&entry)
                     && self.catalog.is_all_party(entry.id)
                     && effect_is_party_distributable(&entry.effect)
                 {
-                    self.confirm_all_party(entry);
+                    if self
+                        .targets
+                        .iter()
+                        .any(|t| target_valid_for_effect(&entry.effect, t))
+                    {
+                        self.state = InventoryUseState::AllPartyConfirm {
+                            item_cursor: cursor,
+                        };
+                        self.events.push(InventoryUseEvent::EnteredTargetSelect);
+                    } else {
+                        self.events.push(InventoryUseEvent::InvalidConfirm);
+                    }
                     return;
                 }
                 // Start the cursor on the first target that's valid for this
@@ -1077,7 +1110,18 @@ mod tests {
         let mut s = InventoryUseSession::new(cat, vec![0x01], targets, InventoryContext::Field);
         s.input(InventoryUseInput::Confirm);
 
-        // Completed in one input (no TargetSelect), Done state.
+        // The confirm screen picks no row and applies nothing yet; Cancel
+        // backs out to the list, one more Confirm applies.
+        assert!(matches!(
+            s.state,
+            InventoryUseState::AllPartyConfirm { item_cursor: 0 }
+        ));
+        assert!(s.used_slots.is_empty());
+        s.input(InventoryUseInput::Cancel);
+        assert!(matches!(s.state, InventoryUseState::Browsing { cursor: 0 }));
+        s.input(InventoryUseInput::Confirm);
+        s.input(InventoryUseInput::Confirm);
+
         assert!(matches!(s.state, InventoryUseState::Done(_)));
         // Applied to the two living allies (slots 0 and 1), not the dead one.
         assert_eq!(s.used_slots, vec![0, 1]);

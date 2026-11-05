@@ -86,3 +86,59 @@ pub fn apply_hit_floor_one(victim: &mut CastActorState, roll: i32) -> i32 {
 pub fn aoe_seat_is_hittable(actor: &CastActorState) -> bool {
     actor.hp != 0 && (actor.flags & FLAG_NON_TARGETABLE) == 0
 }
+
+/// PROT 0957 `0x76`'s picked card on its two seats, past arm 9's gate.
+///
+/// | card | `0x801F...` | stores |
+/// |---|---|---|
+/// | victim falls | `922C` | victim HP `0` with the whole bar as damage, its `+0x1F1` staged and bumped |
+/// | caster falls | `935C` | caster HP `0` (no damage word), capture state `+0x225 = 2` by the host, its `+0x1F1` staged and bumped |
+/// | both bleed | `9390` | each loses `(hp + 3) >> 2`, its `+0x1F1` staged and bumped |
+/// | both heal | `95D0` | each gains `(max + 3) >> 2`, capped at its missing HP; the victim's clip stands |
+///
+/// PORT: FUN_801F798C (`0x801F922C..0x801F9794`, the four results)
+pub fn death_game_outcome(
+    outcome: crate::cast_module_camera::DeathGameOutcome,
+    caster: &mut CastActorState,
+    victim: &mut CastActorState,
+    max_hp: [u16; 2],
+) {
+    use crate::cast_module_camera::DeathGameOutcome as O;
+    let fall = |a: &mut CastActorState| {
+        let clip = a.knockdown_anim;
+        stage_clip(a, clip);
+    };
+    let bleed = |a: &mut CastActorState| {
+        let hp = u32::from(a.hp);
+        let dmg = ((hp + 3) >> 2).min(hp);
+        a.hp_bar_delta = a.hp_bar_delta.wrapping_add(dmg as i32);
+        a.hp = (hp - dmg) as u16;
+    };
+    let heal = |a: &mut CastActorState, max: u16| {
+        let (hp, max) = (u32::from(a.hp), u32::from(max));
+        let gain = ((max + 3) >> 2).min(max.saturating_sub(hp));
+        a.hp_bar_delta = a.hp_bar_delta.wrapping_sub(gain as i32);
+        a.hp = (hp + gain) as u16;
+    };
+    match outcome {
+        O::VictimFalls => {
+            victim.hp_bar_delta = victim.hp_bar_delta.wrapping_add(i32::from(victim.hp));
+            victim.hp = 0;
+            fall(victim);
+        }
+        O::CasterFalls => {
+            caster.hp = 0;
+            fall(caster);
+        }
+        O::BothBleed => {
+            bleed(victim);
+            fall(victim);
+            bleed(caster);
+            fall(caster);
+        }
+        O::BothHeal => {
+            heal(caster, max_hp[0]);
+            heal(victim, max_hp[1]);
+        }
+    }
+}

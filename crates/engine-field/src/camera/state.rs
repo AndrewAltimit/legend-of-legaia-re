@@ -199,6 +199,14 @@ pub struct ZoneFollow {
     /// onto the player (`0x801DB820`) only for the other modes, and a
     /// stationary mode-5 frame leaves it where it was.
     pub(super) focus_held: Option<[i32; 2]>,
+    /// Vsyncs banked toward the next ease step: retail eases once a game
+    /// pass (`FUN_801DB510`), the world ticks once a vsync.
+    pub(super) ease_credit: i32,
+    /// The player moved on a vsync since the last ease step, so the next pass
+    /// eases though the pass's own vsync stood still.
+    pub(super) ease_moved: bool,
+    /// The player's `(X, Z)` when the current game pass began.
+    pub(super) pass_player: Option<[i32; 2]>,
     /// The follow switch `_DAT_8007B606` (byte): off, `FUN_801DB510` only
     /// pins the focus onto the player and neither composes nor eases
     /// (`0x801DB550`). New-game init stores `1` (SCUS `0x80034B60`, the
@@ -261,6 +269,9 @@ impl Default for ZoneFollow {
             shake_offset: [0, 0],
             shake_seed: 1,
             focus_held: None,
+            ease_credit: 0,
+            ease_moved: false,
+            pass_player: None,
             follow_enabled: true,
             seat_focus: None,
             seat_eye: None,

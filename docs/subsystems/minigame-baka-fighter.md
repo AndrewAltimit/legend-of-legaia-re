@@ -298,6 +298,8 @@ stage == 5    && high_score > 0x3D090 (250,000)  ->  override = 1
 stage == 0xD  && high_score > 0xAAE60 (700,000)  ->  override = 2
 ```
 
+`high_score` is the running total `DAT_801DBEE4` the tally's score rows drain into (`0x801D26B0`, `0x801D2734`, `0x801D27E8`), standing across a visit's matches and cleared only at the fighter select (`0x801CF8F0`); the port's `BakaTally::total` carries it and publishes it to the cabinet.
+
 Both comparisons are `slt`, so a score exactly on the threshold does not qualify. An armed override **suppresses the stage advance** and replaces the rung fold: the install state loads `roster = override + 2` / `mesh = override + 4` instead of `stage + 3` / `stage + 5`. The two secret rungs are therefore inserted at stages 5 and 13 rather than replacing a rung. The override is consumed on use (the install state clears it, and `override == 2` additionally latches `DAT_801DBEB8 = 2`), so each bonus rung is served once per arming. A dev build can force either through the held pad (`_DAT_8007B9B0` gate, `_DAT_8007B850 & 0x8` / `& 0xA`).
 
 Port: `baka_cabinet::{secret_opponent_gate, rung_fold, advance_stage}`. **Confirmed.**

@@ -548,6 +548,12 @@ power % = power * 100 &gt;&gt; 12</code></pre>
   </details>
 </section>
 
+<section class="doc-section" id="cast-and-line" data-doc="the-cast-and-the-line">
+  <h2>The cast and the line</h2>
+  <p>The cast releases at the power meter's lock: the lure spawns 200 units behind the angler's facing, and that spawn point stays as the line's anchor. The line record is the lure's distance from it, measured every frame, so a stronger cast really is a longer line.</p>
+  <p>In flight the lure travels on the locked power until the power is spent. In the water it moves by a pull that presses set: Cross and Square set different strengths, and the pull fades each frame until it drops out. A line reeled in below the landing distance returns the angler to the shore with nothing, which is why a weak throw comes straight back.</p>
+</section>
+
 <section class="doc-section" id="see-also" data-doc="-">
   <h2>See also</h2>
   <p>Every state, the cadence ring, the fish-weight registers, the rod pose and cull, the sky strip, the floor buffer, the full RAM map and the port&rsquo;s kernel table are in <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/minigame-fishing.md" target="_blank" rel="noopener"><code>docs/subsystems/minigame-fishing.md</code></a>.</p>

@@ -1246,6 +1246,7 @@ impl BattleCamera {
                         per_vsync: false,
                         angle_left: [0.0; 2],
                         angle_dir: [1.0; 2],
+                        lane_dir: [1.0; 6],
                     });
                 } else {
                     // Submenu exit: swing up over the shoulder, then ease

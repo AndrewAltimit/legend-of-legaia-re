@@ -251,11 +251,12 @@ pub const CADENCE_TEMPLATE_COUNT: usize = 4;
 /// Byte stride of one template record.
 pub const CADENCE_TEMPLATE_STRIDE: usize = 0x40;
 
-/// Matching tolerance on each step's held duration, in frame-steps.
+/// A step's held duration matches when it is closer than this, in frame-steps
+/// (`slt` on both sides, `0x801D3F28` / `0x801D3F34`).
 pub const CADENCE_TOLERANCE: i32 = 10;
 
 /// One reel-cadence step: hold `button` (`0` idle / `1` Cross / `2` Square)
-/// for `duration` frame-steps (+- [`CADENCE_TOLERANCE`]).
+/// for `duration` frame-steps (within [`CADENCE_TOLERANCE`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CadenceStep {
     /// Held duration in frame-steps.

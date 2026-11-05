@@ -398,14 +398,15 @@ impl VabBank {
         //   step = vel * bank_mvol * 0x3FFF / 0x3F01
         //   vol  = step * prog_mvol * tone_vol / 0x3F01
         //
-        // Four 0..=127 factors (velocity, bank master, program master, tone)
-        // against 127^2 twice widen the product into the SPU's 14-bit
-        // register domain; a full-scale product lands exactly on 0x3FFF.
-        // All intermediates fit i32 (max 0x3FFF * 127 * 127 < 2^31).
+        // Four factors (velocity, bank master, program master, tone) against
+        // 127^2 twice widen the product into the SPU's register domain. A bank
+        // master above 127 passes 0x3FFF, and nothing caps it: the register holds
+        // it and the voice is that much louder XX
+        // rows, measured by `cue-differential`).
         let vel = velocity as i32;
         let bank_master = self.master_vol as i32;
         let step = (vel * bank_master * 0x3FFF) / 0x3F01;
-        let combined = ((step * prog.mvol as i32 * tone.vol as i32) / 0x3F01).min(0x3FFF) as i16;
+        let combined = ((step * prog.mvol as i32 * tone.vol as i32) / 0x3F01) as i16;
         // Retail attenuates once per pan source, in order: tone pan, then
         // program pan. The channel pan is the sequencer's own source,
         // applied on top by `channel_mix`.
@@ -701,9 +702,11 @@ pub enum PitchPath {
 /// interpretation this function used to carry.
 ///
 /// `n / 12` and `n % 12` truncate toward zero, matching MIPS `div`. For
-/// `n < 0` - a note more than five octaves under the tone's centre, which no
-/// disc-authored pair reaches - the remainder goes negative and retail reads
-/// off the front of its own table; the port clamps the index instead.
+/// `n < 0` - a note more than five octaves under the tone's centre, which the
+/// score of track `2030` reaches - the remainder goes negative and retail reads
+/// off the front of its own table, into libspu's globals, five octaves down.
+/// The port reads the zero most of those words hold: a voice that keys and does
+/// not move.
 ///
 /// PORT: FUN_80066d8c (sequencer arm)
 ///
@@ -733,6 +736,9 @@ fn pitch_from_key(key: i32, fine: u32, tone: &VagAtr) -> u16 {
 
 fn pitch_at_index(key: i32, fine_index: i32, tone: &VagAtr) -> u16 {
     let n = key + 60 - tone.center as i32;
+    if n < 0 {
+        return 0;
+    }
     let octave = n / 12 - 5;
     let mut pitch = pitch_table_entry((n % 12) * 16 + fine_index);
     if octave > 0 {
@@ -743,7 +749,7 @@ fn pitch_at_index(key: i32, fine_index: i32, tone: &VagAtr) -> u16 {
         pitch >>= (-octave).min(31);
     }
     // Hardware clamps the pitch-counter step at 0x4000 (4.0x / 176.4 kHz).
-    pitch.clamp(1, 0x4000) as u16
+    pitch.min(0x4000) as u16
 }
 
 /// Split a combined volume into (left, right) for a tone's 0..=127 pan value

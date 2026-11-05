@@ -58,6 +58,7 @@ pub fn inventory_use_session_draws(
     let (phase, cursor) = match s.state {
         InventoryUseState::Browsing { cursor } => (0u8, cursor as u8),
         InventoryUseState::TargetSelect { cursor, .. } => (1u8, cursor as u8),
+        InventoryUseState::AllPartyConfirm { .. } => (1u8, 0),
         _ => (0u8, 0),
     };
     let args = ui::InventoryUseDrawArgs {

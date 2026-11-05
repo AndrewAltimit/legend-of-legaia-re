@@ -70,6 +70,9 @@ impl World {
                 .actors
                 .get(caster_slot as usize)
                 .map_or(0, |a| a.battle.params[0]),
+            victim_flinch: self
+                .battle_reaction_map(victim_slot as usize)
+                .map_or(0, |m| m[0]),
             depth_raw: self.battle.camera_frame_height as i32,
             caster_latch: self.caster_latch(caster_slot).unwrap_or(0),
             victim_radius: self.battle_body_radius(victim_slot),

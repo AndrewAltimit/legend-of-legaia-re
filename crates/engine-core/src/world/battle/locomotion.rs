@@ -92,6 +92,12 @@ const TERRA_ROSTER_ID: u8 = 4;
 /// allocator's `0x1000` (`FUN_80020DE0`), 4.12 unity.
 const BATTLE_RENDER_SCALE: i32 = 0x1000;
 
+/// Body `a`'s `+0x72`, which only a cast module or Dohati's growth moves off
+/// the allocator's value.
+fn body_render_scale(a: &Actor) -> i32 {
+    a.battle.render_scale.map_or(BATTLE_RENDER_SCALE, i32::from)
+}
+
 /// The pose centroid (`FUN_8004998C`): the shared kernel
 /// [`motion::pose_centroid_xz`].
 pub(crate) fn pose_centroid_xz(parts: &[([i16; 3], [i16; 3])]) -> (i16, i16) {
@@ -156,7 +162,7 @@ impl World {
     /// The display trio `+0x3C / +0x3E / +0x40` of battle seat `slot`: the
     /// body pair ([`Self::refresh_battle_body_pairs`]) plus the display
     /// height, the live `+0x36` raised by the pose centroid's Y
-    /// ([`pose_centroid_y`]). Falls back to the live position for a seat with
+    /// ([`pose_centroid_y`]) at the render scale `+0x72`. Falls back to the live position for a seat with
     /// no body pair or no decoded pose.
     pub fn battle_display_trio(&self, slot: usize) -> Option<[f32; 3]> {
         let a = self.actors.get(slot)?;
@@ -164,8 +170,14 @@ impl World {
             .battle
             .seat
             .unwrap_or((a.move_state.world_x, a.move_state.world_z));
-        let cy = stream_pose(a).map_or(0, pose_centroid_y);
-        let y = a.move_state.world_y.wrapping_add(cy);
+        // `+0x3E = +0x36 + (cy * +0x72) >> 12`: a body at half scale (PROT 0933's
+        // row) stands its middle half as far off the floor.
+        let cy = i32::from(stream_pose(a).map_or(0, pose_centroid_y));
+        let scale = a.battle.render_scale.map_or(0x1000, i32::from);
+        let y = a
+            .move_state
+            .world_y
+            .wrapping_add(((cy * scale) >> 12) as i16);
         Some([f32::from(x), f32::from(y), f32::from(z)])
     }
 
@@ -186,6 +198,11 @@ impl World {
     /// party slot / empty slot / unresolved catalog (the same resolution the
     /// battle host's `monster_size_class` performs).
     pub(in crate::world) fn battle_size_class_of(&self, slot: u8) -> u8 {
+        if let Some((seat, size)) = self.casting.caster_size_store
+            && seat == slot
+        {
+            return size;
+        }
         let Some(id) = self
             .actors
             .get(slot as usize)
@@ -511,8 +528,7 @@ impl World {
     /// runs ahead of the pass's anim advance, so the pass measures and
     /// frames the pose the last pass drew, as retail's does (the summon
     /// close-up's focus is the caster's pair, and read off the new pose it
-    /// led retail's by a pass: `theeder_summon_mid_cast`). The render scale is the allocator's `0x1000` (no battle
-    /// path the port models rewrites `+0x72`). The `+0x44` pitch arm
+    /// led retail's by a pass: `theeder_summon_mid_cast`). The render scale is the body's own `+0x72`. The `+0x44` pitch arm
     /// (`0x8004A534..0x8004A5F8`), which only re-derives `z` when a battle
     /// actor carries a pitch, is not taken: the only pitched bodies are
     /// PROT 0917's creature and victim (`BattleActor::render_pitch`), whose
@@ -534,7 +550,7 @@ impl World {
         let a = self.actors.get(slot)?;
         let centroid = stream_pose(a).map(pose_centroid_xz);
         let (dx, dz) = centroid
-            .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, BATTLE_RENDER_SCALE))
+            .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, body_render_scale(a)))
             .unwrap_or((0, 0));
         Some((
             a.move_state.world_x.wrapping_add(dx),
@@ -549,7 +565,7 @@ impl World {
             }
             let centroid = stream_pose(a).map(pose_centroid_xz);
             let (dx, dz) = centroid
-                .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, BATTLE_RENDER_SCALE))
+                .map(|(cx, cz)| body_offset(a.battle.facing_angle, cx, cz, body_render_scale(a)))
                 .unwrap_or((0, 0));
             a.battle.seat = Some((
                 a.move_state.world_x.wrapping_add(dx),
@@ -962,7 +978,10 @@ impl World {
                 PARTY_SEPARATION_RADIUS
             }
         } else {
-            i16::from(self.battle_size_class_of(s)) << 5
+            self.actors
+                .get(slot)
+                .and_then(|a| a.battle.render_radius)
+                .unwrap_or(i16::from(self.battle_size_class_of(s)) << 5)
         }
     }
 

@@ -112,7 +112,7 @@ With `player[+0x72] = 0x1000` (1.0, seeded by `FUN_8003AEB0`) cancelling the `>>
 | `0xC` | run | 12 | **720** | 5.63 |
 | `0x18` | debug turbo | 24 | 1440 | 11.25 |
 
-One collision tile is `0x80` = 128 units. The diagonal normalise trims x0.75 on the quantised path. Pinned by `engine-core/tests/sim_cadence_wall_speed.rs`: displacement per second of held pad on the walk and run arms, the gated and ungated halves of the frame advancing the same number of retail frames, and the speed holding still while `World::clock.frame_step` sweeps `1..=4`.
+One collision tile is `0x80` = 128 units. The diagonal normalise trims x0.75 on the quantised path. Retail computes its speed per game pass and walks it in 2-unit sub-steps, so it never walks an odd pass speed at step `2` (run diagonal `18`). A vsync's half of that can be odd (`9`), and the port carries the odd unit to the next vsync rather than rounding each vsync up to `10` (`FieldLocomotion::step_carry`). Pinned by `engine-core/tests/sim_cadence_wall_speed.rs`: displacement per second of held pad on the walk and run arms, the gated and ungated halves of the frame advancing the same number of retail frames, and the speed holding still while `World::clock.frame_step` sweeps `1..=4`.
 
 ## Player actor fields used
 
@@ -361,7 +361,9 @@ Plus one clear at `0x801E5664`, the walker's delay-slot clear at `0x801EF8B0` (e
 
 The `0x4C 2x` arm turns the player with it. When `0x8007B6B0` reads `-1000` the arm also rewrites the facing by the delta it applied - `actor[+0x26] += (new - old) * 0x200` (`0x801E0EE4..0x801E0EFC`) - so the character keeps facing the same way on screen across a camera change.
 
-**Port.** `World::remap_pad_direction` is the faithful 45-degree ring; `World::decode_field_direction` builds retail's raw direction nibble from the held keys and rings it. The rotation index is where the port departs: its camera free-orbits, so an authored constant goes stale the moment the player drags the view. `World::field_pad_ring_rotation` rounds the live camera azimuth to the nearest of the eight steps instead. On every axis-aligned camera this decodes identically to a 90-degree quantisation and halves the worst-case heading error elsewhere. See [movement compass](#movement-compass-and-precise-movement).
+**Port.** `World::remap_pad_direction` is the faithful 45-degree ring; `World::decode_field_direction` builds retail's raw direction nibble from the held keys and rings it, and `4C 2x` stores the word (`FieldPartyInventoryHost::set_camera_octant`). `World::field_pad_ring_rotation` reads it under the retail follow view with nothing turning the camera (`FieldLocomotion::pad_octant_live`, raised by `frame_step::camera_before_world_tick`).
+
+A camera the player or a host has turned has no authored index that fits it, so there the live azimuth rounds to the nearest of the eight steps. The two part wherever a follow camera sweeps past a step: `town01_field_card_boot` holds yaw `-260` on octant `0`, `kor3_field_route_walk` yaw `511` on octant `6`, and a [walk film](../tooling/walk-film.md) of `kor3` shows retail turning `UP` to heading `1024` as the port now does. See [movement compass](#movement-compass-and-precise-movement).
 
 ## Collision - `FUN_801cfe4c`
 
@@ -1600,7 +1602,7 @@ With `World::toggles.live_gameplay_loop` set, `World::live_field_tick` treats th
 
 ### Movement compass and precise movement
 
-The held d-pad goes through the eight-entry ring retail's remap walks, rotated by `World::locomotion.camera_azimuth` rounded to the nearest 45-degree step ([why the port derives it](#gp0x2d8-is-authored-not-computed)). The azimuth feed is `Camera::compass_azimuth_units()`: scripted yaw + the user's `manual_orbit` (the play-window's drag-orbit) + the follow camera's base yaw in the compass sense, pushed into the world each `BootSession::tick`.
+The held d-pad goes through the eight-entry ring retail's remap walks, rotated by the [authored octant](#gp0x2d8-is-authored-not-computed) under the retail follow view and otherwise by `World::locomotion.camera_azimuth` rounded to the nearest 45-degree step. The azimuth feed is `Camera::compass_azimuth_units()`: scripted yaw + the user's `manual_orbit` (the play-window's drag-orbit) + the follow camera's base yaw in the compass sense, pushed into the world each `BootSession::tick`.
 
 All three default to 0, so headless hosts keep the identity remap. A host that renders the retail follow view sets `render_yaw_bias`; while the zone-driven follow camera composes that view the base term is the negation of the live yaw it eased (`Camera::zone_follow_yaw_units`), so the compass turns with the scene's authored camera. The follow camera itself is documented with its record format in [`encounter.md`](../formats/encounter.md#man-section-3-the-camera-region-table) and ported in `camera_zone`.
 

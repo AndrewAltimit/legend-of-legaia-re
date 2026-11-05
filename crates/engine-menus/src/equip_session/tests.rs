@@ -628,7 +628,7 @@ fn best_equipment_swaps_only_differing_in_bag_candidates() {
     assert_eq!(equips[0], 0x05);
     assert_eq!(equips[1], 0x26);
     assert_eq!(equips[2], 0);
-    assert_eq!(inv.get(&0x26), Some(&0));
+    assert_eq!(inv.get(&0x26), None, "the last copy leaves a hole");
     // The displaced 0x25 went back to the bag.
     assert_eq!(inv.get(&0x25), Some(&1));
 }

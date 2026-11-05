@@ -136,6 +136,18 @@ pub fn run_engine_listening(
     Ok((obs, audio))
 }
 
+/// [`run_engine_listening`] with cues to key once the seed has settled.
+pub fn run_engine_listening_with(
+    extracted: &Path,
+    retail: &RetailObs,
+    probe: Option<crate::cue_differential::CueProbe>,
+) -> Result<(EngineObs, crate::audio_sweep::EngineAudio)> {
+    let mut audio = crate::audio_sweep::EngineAudio::default();
+    audio.cue_probe = probe;
+    let obs = seed_and_settle(extracted, retail, SeedOrder::Resume, None, Some(&mut audio))?;
+    Ok((obs, audio))
+}
+
 /// [`run_engine_listening`] for a state reached through a door
 /// ([`legaia_ram_image::scenarios::ScenarioArrival`]): the card load lands
 /// in the door's scene instead, the door is taken
@@ -450,11 +462,13 @@ fn seed_and_settle(
         obs.script = script;
         if let (Some(audio), Some(a)) = (listen, audio_at_settle) {
             *audio = a;
+            crate::cue_differential::probe(&mut session, audio);
         }
         return Ok(obs);
     }
     if let Some(audio) = listen {
         crate::audio_sweep::finish_listen(&session, audio);
+        crate::cue_differential::probe(&mut session, audio);
     }
     let menu_subscreen = match &retail.menu {
         Some(Ok(menu)) => {
@@ -481,6 +495,9 @@ fn seed_and_settle(
         }
         _ => None,
     };
+    if let Some(film) = super::walk_film::WalkFilm::from_env() {
+        film.run(&mut session, retail)?;
+    }
     let mut obs = sample_engine(&mut session, retail, &director, menu_subscreen);
     obs.script = script;
     Ok(obs)
@@ -576,6 +593,29 @@ pub(super) fn sample_engine(
                     retail.scene, a.flat, a.x, a.z, a.flags, a.y
                 );
             }
+        }
+    }
+    if std::env::var_os("LEGAIA_RC_NPC_EXTRA").is_some()
+        && let Some(n0) = n0
+    {
+        // A placement the engine stands on the map with no retail node for
+        // its flat index: the `npcs` channel walks retail's nodes, so an
+        // extra is scored nowhere.
+        for (&slot, &(x, z)) in &world.npcs.positions {
+            let flat = n0 + u16::from(slot);
+            if npc_parked(x, z) || retail.actor_facings.iter().any(|a| a.flat == flat) {
+                continue;
+            }
+            let flags = world
+                .field_vm
+                .channels
+                .iter()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+                .map_or(0, |c| c.ctx.flags);
+            eprintln!(
+                "[npc-extra] {} slot {slot} flat {flat} at ({x}, {z}) engine +0x10={flags:08X}",
+                retail.scene
+            );
         }
     }
     let npc_facings = n0

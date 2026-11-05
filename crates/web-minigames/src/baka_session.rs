@@ -144,6 +144,13 @@ impl LegaiaMinigames {
                 let f = f
                     .with_roster_clip_headers(headers)
                     .with_special_cameras(cameras);
+                let f = match img
+                    .as_deref()
+                    .and_then(legaia_engine_minigames::baka_fighter::BakaScoreTables::from_overlay)
+                {
+                    Some(tables) => f.with_score_tables(tables),
+                    None => f,
+                };
                 Some(match img.as_deref() {
                     Some(i) => f.with_impact_overlay(i).with_overlay_text(i),
                     None => f,

@@ -17,9 +17,16 @@ impl World {
             .filter(|b| b.slot == 6)
             .map(|b| (b.request, b.prot_entry));
         let mode = self.mode;
+        // `FUN_800520F0` picks the bank off `DAT_8007BD11`, party seat 1's
+        // roster id (`0x80052378..0x80052398`).
+        let class2 = if self.party.party_count > 1 && self.battle_party_char_id(1) == 4 {
+            SharedRegionBank::CLASS2_ALT
+        } else {
+            SharedRegionBank::CLASS2
+        };
         self.audio
             .residency
-            .sync(mode, &self.active_scene_label, side_band)
+            .sync(mode, &self.active_scene_label, side_band, class2)
     }
 
     /// The bank the shared slot-2 / slot-6 region holds, as of the last
@@ -150,6 +157,21 @@ mod tests {
         assert!(!w.audio.residency.field_bank_latch);
         w.mode = SceneMode::Field;
         assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::FIELD));
+    }
+
+    #[test]
+    fn terra_on_seat_one_takes_the_alternate_class_two_bank() {
+        let mut w = world_in(SceneMode::Field, "town01");
+        w.sync_sfx_residency();
+        w.party.party_count = 2;
+        w.party.active_party = vec![0, 3];
+        w.mode = SceneMode::Battle;
+        assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::CLASS2_ALT));
+        w.mode = SceneMode::Field;
+        w.sync_sfx_residency();
+        w.party.active_party = vec![0, 1];
+        w.mode = SceneMode::Battle;
+        assert_eq!(w.sync_sfx_residency(), Some(SharedRegionBank::CLASS2));
     }
 
     #[test]

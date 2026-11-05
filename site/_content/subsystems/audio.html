@@ -98,7 +98,7 @@
 
 <section class="doc-section" id="sfx">
   <h2>Sound effects</h2>
-  <p>A footstep, a menu blip, a sword clang: each is one 8-byte descriptor, and the actor or script that wants the sound just names its id. The static table holds 100 descriptors; ids at or above <code>0x200</code> come from a runtime bank instead - in battle, <code>bse.dat</code>.</p>
+  <p>A menu blip, a chest, a sword clang: each is one 8-byte descriptor, and the actor or script that wants the sound just names its id. The static table holds 100 descriptors; ids at or above <code>0x200</code> come from a runtime bank instead - in battle, <code>bse.dat</code>.</p>
   <div class="byte-map">
     <div class="bm-cell"><span class="bm-off">+0</span><span class="bm-name">program</span><span class="bm-size">u8</span></div>
     <div class="bm-cell"><span class="bm-off">+1</span><span class="bm-name">tone / region base</span><span class="bm-size">u8</span></div>
@@ -128,7 +128,7 @@
     <tbody>
       <tr><td>0</td><td>PROT 0868 system bank (the shared UI cues)</td><td>resident from boot</td></tr>
       <tr><td>1</td><td>the current track's own VAB (<code>music_01</code>)</td><td>the BGM poller</td></tr>
-      <tr><td>2</td><td>PROT 0869 battle class-2 bank (0875 alternate); a minigame's own bank in fishing, slots and dance</td><td>battle loader, minigame inits</td></tr>
+      <tr><td>2</td><td>PROT 0869 battle class-2 bank (0875 with Terra on party seat 1); a minigame's own bank in fishing, slots and dance</td><td>battle loader, minigame inits</td></tr>
       <tr><td>3</td><td>a <code>vab_01</code> side-band bank</td><td>the BGM poller</td></tr>
       <tr><td>6</td><td>PROT 0876 field bank</td><td>field init</td></tr>
       <tr><td>7 / 8</td><td>the active battle's two <code>monster.snd</code> banks</td><td>monster bank loader</td></tr>

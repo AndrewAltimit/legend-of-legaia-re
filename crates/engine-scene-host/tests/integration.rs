@@ -87,6 +87,7 @@ mod field_object_placement_disc;
 mod field_object_render_scale_disc;
 mod field_object_visibility_disc;
 mod field_party_gesture_bank_disc;
+mod field_placement_retire_disc;
 mod field_player_clip_disc;
 mod field_prop_anim_disc;
 mod field_reflection_conc2_capture_disc;
@@ -134,6 +135,7 @@ mod move_ext_strip_census_disc;
 mod move_op03_census_disc;
 mod muscle_contest_real;
 mod muscle_dome_battle_leg_disc;
+mod party_mesh_swap_disc;
 // --- lane D2 ---
 mod muscle_dome_choreo_real;
 // --- end lane D2 ---

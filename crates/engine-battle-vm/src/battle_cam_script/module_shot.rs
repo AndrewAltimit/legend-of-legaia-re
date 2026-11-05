@@ -358,7 +358,41 @@ impl BattleCamera {
                     *r *= step;
                 }
                 let angles = [self.pose.pitch, self.pose.yaw];
-                self.step_components(&walk);
+                // The translation and focus lanes take the signed increment and
+                // land on the endpoint once at or past it (`bVar1` at
+                // `0x800215A0`, `sw a0,0x0(a1)` at `0x800215C8` / `0x8002165C`), so
+                // a lane a drift walked past its endpoint comes straight back
+                // rather than chasing it from the far side.
+                let mut lanes_landed = true;
+                let lane = |live: f32, end: f32, inc: f32, dir: f32, landed: &mut bool| -> f32 {
+                    if inc == 0.0 {
+                        return live;
+                    }
+                    let v = live + inc * dir;
+                    let short = if dir < 0.0 { end < v } else { v < end };
+                    if short {
+                        *landed = false;
+                        v
+                    } else {
+                        end
+                    }
+                };
+                for k in 0..3 {
+                    self.pose.tr[k] = lane(
+                        self.pose.tr[k],
+                        g.target.tr[k],
+                        walk.rate[2 + k],
+                        g.lane_dir[k],
+                        &mut lanes_landed,
+                    );
+                    self.pose.focus[k] = lane(
+                        self.pose.focus[k],
+                        g.target.focus[k],
+                        walk.rate[5 + k],
+                        g.lane_dir[3 + k],
+                        &mut lanes_landed,
+                    );
+                }
                 // The angle lanes count down their remaining arc instead
                 // (`0x800214C0..0x80021534`): the live angle takes the signed
                 // increment, the arc the increment's size, and the lane lands
@@ -394,12 +428,11 @@ impl BattleCamera {
                 }
                 // Every component on its endpoint: the walker task ends, and
                 // a drift after it survives.
-                let p = &self.pose;
-                if angles_landed && p.tr == g.target.tr && p.focus == g.target.focus {
-                    self.land(&g);
-                    if let Some(m) = self.module_glide.as_mut() {
-                        m.steps_left = Some(0);
-                    }
+                if angles_landed
+                    && lanes_landed
+                    && let Some(m) = self.module_glide.as_mut()
+                {
+                    m.steps_left = Some(0);
                 }
             }
             None => self.step_components(&g),

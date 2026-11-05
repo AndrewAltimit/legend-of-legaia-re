@@ -114,7 +114,9 @@ fn hand(s: &Session, entry_open: &mut bool) -> u16 {
             InventoryUseState::Browsing { .. } if !menu.filtered_items.is_empty() => {
                 PadButton::Cross.mask()
             }
-            InventoryUseState::TargetSelect { .. } => PadButton::Cross.mask(),
+            InventoryUseState::TargetSelect { .. } | InventoryUseState::AllPartyConfirm { .. } => {
+                PadButton::Cross.mask()
+            }
             _ => PadButton::Circle.mask(),
         };
     }

@@ -48,6 +48,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use legaia_engine_menus::key_rebind::{
+    KeyRebindEvent, KeyRebindInput, KeyRebindPhase, KeyRebindSession,
+};
 use legaia_engine_menus::options::OptionsState;
 use legaia_engine_render::window::EngineWindow;
 use legaia_engine_render::{RenderTarget, TextOverlay, UploadedFontAtlas};
@@ -55,11 +58,12 @@ use legaia_engine_shell::launcher::{
     self, DiscInfo, DiscProblem, ExpansionInfo, LaunchDecision, LauncherSettings, OPTION_ROWS,
     OptionRow,
 };
+use legaia_engine_system::input::Mapping;
 use legaia_engine_ui::TextDraw;
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
-use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::keyboard::{Key, ModifiersState, NamedKey, PhysicalKey};
 use winit::window::WindowId;
 
 /// Debug aid: when set, the launcher writes its first frame to this PNG and
@@ -107,11 +111,54 @@ pub(crate) fn run() -> Result<Option<Vec<OsString>>> {
         }
     };
     let mut app = LauncherApp::new(disc, problem, settings, settings_file);
-    let event_loop = picker_event_loop()?;
+    let event_loop = match picker_event_loop() {
+        Ok(l) => l,
+        Err(e) => no_window(&format!("{e:#}")),
+    };
     event_loop
         .run_app(&mut app)
         .context("launcher event loop")?;
+    if let Some(why) = app.win.open_error.take() {
+        no_window(&why);
+    }
     Ok(None)
+}
+
+/// The launcher's window could not open, so it has no screen to say that on,
+/// and started by a double-click it has no terminal either: without this the
+/// program just ends and nothing has happened. Tell the player in a message
+/// box and end as a failure.
+fn no_window(why: &str) -> ! {
+    let text = legaia_app_theme::game_exit::window_failure_message(why);
+    eprintln!("{text}");
+    if std::env::var_os(SCREENSHOT_ENV).is_none() {
+        let _ = rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title(TITLE)
+            .set_description(&text)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+    }
+    std::process::exit(legaia_app_theme::game_exit::ALREADY_REPORTED_EXIT);
+}
+
+/// `legaia-engine launch --disc <disc>`: the `play-window` argument list a
+/// *Play* in this launcher would use on `disc`, every switch and the pack in
+/// `launcher.toml` included. Legaia Explorer's *Play* goes through here, so a
+/// game started from either program is the same game. A settings file that
+/// does not parse plays on the defaults, the way the launcher window treats it.
+pub(crate) fn launch_args(disc: &Path) -> Result<Vec<OsString>> {
+    let settings = launcher::settings_path()
+        .and_then(|f| {
+            LauncherSettings::load(&f)
+                .inspect_err(|e| log::warn!("launch: {} ignored: {e:#}", f.display()))
+                .ok()
+        })
+        .unwrap_or_default();
+    let info = launcher::validate_disc(disc).map_err(|p| anyhow::anyhow!("{p}"))?;
+    let mut args = vec![OsString::from("legaia-engine")];
+    args.extend(launcher::play_args_with(&info, &settings));
+    Ok(args)
 }
 
 /// Make the per-user data directory the working directory.
@@ -294,6 +341,11 @@ fn scroll_to_reveal(lines: &[Line], scroll: usize, idx: usize) -> usize {
     s.min(max)
 }
 
+/// The disc card's line with no disc chosen. The card holds two lines of it;
+/// that no game data ships is on the *Choose disc* help.
+const FIRST_RUN_CARD: &str =
+    "Use your own .bin or .cue dump: click Choose disc, drop the file here, or paste its path.";
+
 /// A focusable control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -305,6 +357,10 @@ enum Item {
     DataFolder,
     Quit,
     Opt(OptionRow),
+    /// A row of the Controls page: the rebind session's row with this index.
+    Bind(u8),
+    /// The Controls page's last row: every key back on its default.
+    BindReset,
 }
 
 const BUTTONS: [Item; 7] = [
@@ -376,6 +432,10 @@ struct LauncherApp {
     /// When the window last opened (input settles for a moment after).
     opened_at: Instant,
     screenshot: Option<PathBuf>,
+    /// The Controls page's table and the key it may be waiting for. Read from
+    /// [`launcher::INPUT_FILE`] when the page opens; every bound key is
+    /// written straight back, the same file the game's Key Config writes.
+    rebind: KeyRebindSession,
 }
 
 impl LauncherApp {
@@ -427,6 +487,9 @@ impl LauncherApp {
             cursor: None,
             game: None,
             opened_at: Instant::now(),
+            rebind: KeyRebindSession::new(Mapping::load_or_default(Path::new(
+                launcher::INPUT_FILE,
+            ))),
             screenshot: std::env::var_os(SCREENSHOT_ENV).map(PathBuf::from),
         };
         app.set_disc(disc);
@@ -866,9 +929,22 @@ impl LauncherApp {
             Item::Expansion => self.next_expansion(),
             Item::Panel => {
                 self.panel = match self.panel {
-                    Panel::Options => Panel::Controls,
+                    Panel::Options => {
+                        self.rebind = KeyRebindSession::new(Mapping::load_or_default(Path::new(
+                            launcher::INPUT_FILE,
+                        )));
+                        Panel::Controls
+                    }
                     Panel::Controls => Panel::Options,
                 };
+            }
+            Item::Bind(row) => {
+                self.rebind.begin_bind(row);
+                self.status = None;
+            }
+            Item::BindReset => {
+                self.rebind = KeyRebindSession::new(Mapping::default());
+                self.save_bindings("Every key is back on its default.".into());
             }
             Item::DataFolder => self.open_data_folder(),
             Item::Quit => evl.exit(),
@@ -881,6 +957,65 @@ impl LauncherApp {
             }
         }
         self.win.request_redraw();
+    }
+
+    /// The Controls page is waiting for the key of this rebind row.
+    fn awaiting_key(&self) -> Option<u8> {
+        match self.rebind.phase() {
+            KeyRebindPhase::AwaitingKey { cursor } => Some(cursor),
+            _ => None,
+        }
+    }
+
+    /// A key arrived while the Controls page waits for one: Esc cancels, a
+    /// key the game can bind takes the row, any other says why it cannot.
+    fn capture_key(&mut self, physical: PhysicalKey) {
+        let PhysicalKey::Code(code) = physical else {
+            return;
+        };
+        if code == winit::keyboard::KeyCode::Escape {
+            let _ = self.rebind.tick(KeyRebindInput {
+                circle: true,
+                ..Default::default()
+            });
+            self.status = None;
+            return;
+        }
+        let name = legaia_engine_shell::window::keycode_to_name(code);
+        if name.is_empty() {
+            self.status = Some(vec![(UNBINDABLE_KEY.to_string(), WARN)]);
+            return;
+        }
+        let before = self.rebind.mapping().clone();
+        let events = self.rebind.tick(KeyRebindInput {
+            key_pressed: Some(name.to_string()),
+            ..Default::default()
+        });
+        for e in events {
+            if let KeyRebindEvent::Bound { button, key, .. } = e {
+                let done = bound_message(&before, self.rebind.mapping(), button.name(), &key);
+                self.save_bindings(done);
+            }
+        }
+    }
+
+    /// Write the table to the file the game reads, and say what happened.
+    fn save_bindings(&mut self, done: String) {
+        self.status = Some(vec![
+            match self.rebind.mapping().save(Path::new(launcher::INPUT_FILE)) {
+                Ok(()) => (done, GOOD),
+                Err(e) => (format!("The keys could not be saved: {e:#}"), WARN),
+            },
+        ]);
+    }
+
+    /// Back from the Controls page to the options; a focus on one of its rows
+    /// goes to the button that opened it.
+    fn leave_controls(&mut self) {
+        self.panel = Panel::Options;
+        if matches!(self.focus, Item::Bind(_) | Item::BindReset) {
+            self.focus = Item::Panel;
+        }
     }
 
     /// `Delete` (or `Backspace` with nothing typed) on an option row: put
@@ -921,8 +1056,12 @@ impl LauncherApp {
     /// Every focusable control in Up / Down order.
     fn order(&self) -> Vec<Item> {
         let mut v = BUTTONS.to_vec();
-        if self.panel == Panel::Options {
-            v.extend(OPTION_ROWS.iter().map(|(_, r)| Item::Opt(*r)));
+        match self.panel {
+            Panel::Options => v.extend(OPTION_ROWS.iter().map(|(_, r)| Item::Opt(*r))),
+            Panel::Controls => {
+                v.extend((0..BIND_ROWS).map(Item::Bind));
+                v.push(Item::BindReset);
+            }
         }
         v
     }
@@ -971,9 +1110,9 @@ impl LauncherApp {
     /// Tab: jump between the button column and the option rows.
     fn switch_column(&mut self) {
         self.focus = match self.focus {
-            Item::Opt(_) => Item::Play,
+            Item::Opt(_) | Item::Bind(_) | Item::BindReset => Item::Play,
             _ if self.panel == Panel::Options => Item::Opt(OPTION_ROWS[0].1),
-            f => f,
+            _ => Item::Bind(0),
         };
         self.reveal_focus();
     }
@@ -1052,7 +1191,7 @@ impl LauncherApp {
                 Item::Expansion => &expansion_label,
                 Item::DataFolder => "Saves folder",
                 Item::Quit => "Quit",
-                Item::Opt(_) => "",
+                Item::Opt(_) | Item::Bind(_) | Item::BindReset => "",
             };
             let label = fit_button_label(c, label, r.w);
             c.text_centered(r, &label, ink);
@@ -1093,7 +1232,7 @@ impl LauncherApp {
         c.rect(panel, CARD);
         match self.panel {
             Panel::Options => self.options_panel(c, panel, hits),
-            Panel::Controls => self.controls_panel(c, panel),
+            Panel::Controls => self.controls_panel(c, panel, hits),
         }
     }
 
@@ -1128,12 +1267,7 @@ impl LauncherApp {
             (d.path.display().to_string(), DIM)
         } else {
             match &self.problem {
-                Some(DiscProblem::NotSet) | None => (
-                    "Use your own .bin or .cue dump: click Choose disc, drop the file here, \
-                     or paste its path. No game data is included."
-                        .into(),
-                    DIM,
-                ),
+                Some(DiscProblem::NotSet) | None => (FIRST_RUN_CARD.into(), DIM),
                 Some(p) => match problem_path(p) {
                     Some(path) => (path.display().to_string(), DIM),
                     None => (p.to_string(), WARN),
@@ -1263,56 +1397,54 @@ impl LauncherApp {
         }
     }
 
-    fn controls_panel(&self, c: &mut Canvas, panel: Rect) {
-        let mapping =
-            legaia_engine_system::input::Mapping::load_or_default(Path::new(launcher::INPUT_FILE));
-        let keys = |button: &str| -> String {
-            let mut k: Vec<&str> = mapping
-                .bindings
-                .iter()
-                .filter(|(_, b)| b.as_str() == button)
-                .map(|(k, _)| match k.as_str() {
-                    "RShift" => "Right Shift",
-                    "LShift" => "Left Shift",
-                    "RCtrl" => "Right Ctrl",
-                    "LCtrl" => "Left Ctrl",
-                    k => k,
-                })
-                .collect();
-            k.sort_unstable();
-            if k.is_empty() {
-                "-".into()
-            } else {
-                k.join(", ")
+    fn controls_panel(&self, c: &mut Canvas, panel: Rect, hits: &mut Vec<(Item, Rect)>) {
+        let mapping = self.rebind.mapping();
+        let waiting = self.awaiting_key();
+        let mut y = panel.y + LIST_INSET;
+        for (i, row) in self
+            .rebind
+            .rows()
+            .iter()
+            .take(usize::from(BIND_ROWS))
+            .enumerate()
+        {
+            let item = Item::Bind(i as u8);
+            let r = Rect::new(panel.x + 4, y - 1, panel.w - 8, ROW_PITCH);
+            hits.push((item, r));
+            let focused = self.focus == item;
+            if focused {
+                c.rect(r, FOCUS);
+                c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
             }
-        };
-        let dpad = ["Up", "Down", "Left", "Right"];
-        let dpad_keys = if dpad.iter().all(|b| keys(b) == *b) {
-            "Arrow keys".to_string()
-        } else {
-            dpad.iter().map(|b| keys(b)).collect::<Vec<_>>().join(" ")
-        };
-        let mut rows: Vec<(String, String)> = vec![("D-pad".into(), dpad_keys)];
-        for b in [
-            "Cross", "Circle", "Triangle", "Square", "L1", "R1", "L2", "R2", "Start", "Select",
-        ] {
-            rows.push((b.into(), keys(b)));
-        }
-        debug_assert_eq!(rows.len() as i32 + 1, CONTROLS_ROWS);
-        let mut y = panel.y + 5;
-        c.text(panel.x + 8, y, "Button", GOLD);
-        let kh = "Key";
-        c.text(panel.x + panel.w - 10 - c.width(kh), y, kh, GOLD);
-        y += ROW_PITCH;
-        for (b, k) in rows {
-            c.text(panel.x + 10, y, &b, INK);
-            let w = c.width(&k);
+            c.text(panel.x + 10, y, button_label(row.button.name()), INK);
             // Key names take the key ink the play window's F12 panel and
             // Explorer's shortcut list use (`chrome::KEY`); gold is for
             // headings and values here.
-            c.text(panel.x + panel.w - 10 - w, y, &k, KEY);
+            let (shown, ink) = if waiting == Some(i as u8) {
+                ("Press a key...".to_string(), GOLD)
+            } else {
+                match keys_for_button(mapping, row.button.name()) {
+                    k if k.is_empty() => ("No key".to_string(), WARN),
+                    k => (k, KEY),
+                }
+            };
+            let shown = if focused && waiting.is_none() {
+                format!("< {shown} >")
+            } else {
+                shown
+            };
+            let w = c.width(&shown);
+            c.text(panel.x + panel.w - 10 - w, y, &shown, ink);
             y += ROW_PITCH;
         }
+        let r = Rect::new(panel.x + 4, y - 1, panel.w - 8, ROW_PITCH);
+        hits.push((Item::BindReset, r));
+        if self.focus == Item::BindReset {
+            c.rect(r, FOCUS);
+            c.rect(Rect::new(r.x, r.y, 2, r.h), GOLD);
+        }
+        c.text(panel.x + 10, y, "All keys back to default", INK);
+        y += ROW_PITCH;
         for (i, l) in controls_note_lines(c, panel).into_iter().enumerate() {
             c.text(panel.x + 10, y + 4 + i as i32 * 12, &l, DIM);
         }
@@ -1332,7 +1464,7 @@ impl LauncherApp {
             Item::ChooseDisc => match &self.disc {
                 Some(d) => format!("Pick another disc image. Now: {}", d.path.display()),
                 None => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                         raw dump, or its .cue. It is checked and remembered. Ctrl+O."
+                         raw dump, or its .cue. It is checked and remembered. No game data is included. Ctrl+O."
                     .into(),
             },
             Item::Online => "Start the game with the Multiplayer screen open: host a room \
@@ -1370,9 +1502,20 @@ impl LauncherApp {
                 Some(_) => self.expansion_problem().unwrap_or_default(),
             },
             Item::Panel => match self.panel {
-                Panel::Options => "Show the keyboard controls.".into(),
-                Panel::Controls => "Back to the options.".into(),
+                Panel::Options => "See and change the keyboard keys. In the game, F12 or \
+                                   Select+Start opens settings and the key list."
+                    .into(),
+                Panel::Controls => "Back to the options. Right or Tab goes to the keys.".into(),
             },
+            Item::Bind(row) => match self.awaiting_key() {
+                Some(_) => waiting_message(self.rebind_button_label(row)),
+                None => format!(
+                    "Enter or click, then press the key for {}. A key another button is on \
+                     swaps with it.",
+                    self.rebind_button_label(row)
+                ),
+            },
+            Item::BindReset => "Put every button back on the key it starts on.".into(),
             Item::DataFolder => {
                 let dir = std::env::current_dir().unwrap_or_default();
                 format!("Saves, options and key bindings live in {}", dir.display())
@@ -1386,6 +1529,14 @@ impl LauncherApp {
                 s
             }
         }
+    }
+
+    /// The name of rebind row `row`'s button.
+    fn rebind_button_label(&self, row: u8) -> &'static str {
+        self.rebind
+            .rows()
+            .get(usize::from(row))
+            .map_or("", |r| button_label(r.button.name()))
     }
 
     /// The help box's lines: a status when one outranks the focus, else the
@@ -1511,6 +1662,7 @@ impl ApplicationHandler for LauncherApp {
                 let moved = self.cursor.is_some_and(|c| c != at);
                 self.cursor = Some(at);
                 if moved
+                    && self.awaiting_key().is_none()
                     && let Some(item) = self.hit()
                     && item != self.focus
                 {
@@ -1540,6 +1692,12 @@ impl ApplicationHandler for LauncherApp {
                 button,
                 ..
             } => {
+                // A click while the Controls page waits for a key calls it off.
+                if self.awaiting_key().is_some() {
+                    self.capture_key(PhysicalKey::Code(winit::keyboard::KeyCode::Escape));
+                    self.win.request_redraw();
+                    return;
+                }
                 let dir = match button {
                     MouseButton::Left => 1,
                     MouseButton::Right => -1,
@@ -1585,6 +1743,13 @@ impl ApplicationHandler for LauncherApp {
                 if settling || (event.repeat && activation) {
                     return;
                 }
+                if self.awaiting_key().is_some() {
+                    if !event.repeat {
+                        self.capture_key(event.physical_key);
+                        self.win.request_redraw();
+                    }
+                    return;
+                }
                 let typing = !self.typed.is_empty();
                 match &event.logical_key {
                     Key::Named(NamedKey::Escape) => {
@@ -1592,7 +1757,7 @@ impl ApplicationHandler for LauncherApp {
                             self.typed.clear();
                             self.typed_tried = false;
                         } else if self.panel == Panel::Controls {
-                            self.panel = Panel::Options;
+                            self.leave_controls();
                         } else {
                             evl.exit();
                         }
@@ -1637,7 +1802,9 @@ impl ApplicationHandler for LauncherApp {
                         };
                         match self.focus {
                             Item::Opt(_) => self.activate(self.focus, dir, evl),
-                            _ if dir > 0 && self.panel == Panel::Options => self.switch_column(),
+                            Item::Bind(_) | Item::BindReset if dir < 0 => self.focus = Item::Panel,
+                            Item::Bind(_) | Item::BindReset => {}
+                            _ if dir > 0 => self.switch_column(),
                             _ => {}
                         }
                     }
@@ -1660,6 +1827,9 @@ impl ApplicationHandler for LauncherApp {
                     {
                         self.copy_failure_report();
                     }
+                    // On the key table a stray letter is a player looking for
+                    // a rebind, not the start of a disc path.
+                    _ if matches!(self.focus, Item::Bind(_) | Item::BindReset) => {}
                     _ => {
                         if !(self.modifiers.control_key() || self.modifiers.super_key())
                             && let Some(t) = &event.text
@@ -2118,14 +2288,85 @@ fn panel_rect() -> Rect {
     Rect::new(RIGHT_X, COLUMNS_Y, RIGHT_W, STAGE_H - PAD - COLUMNS_Y)
 }
 
-/// The controls panel's rows: the header and the D-pad, then ten buttons.
-const CONTROLS_ROWS: i32 = 12;
+/// How many of the rebind session's rows the Controls page lists: its order
+/// ends on L3 and R3, which no default binds and the game never reads.
+const BIND_ROWS: u8 = 14;
 
-/// The notes under the controls table, wrapped to the panel.
-const CONTROLS_NOTES: [&str; 2] = [
-    "Gamepad: bottom button Cross, right Circle, left Square, top Triangle.",
-    "In the game, F12 or Select+Start opens settings and the key list. Options > Key Config rebinds keys.",
-];
+/// The controls panel's lines: the rows, and the reset row under them.
+#[cfg(test)]
+const CONTROLS_ROWS: i32 = BIND_ROWS as i32 + 1;
+
+/// The note under the controls table, wrapped to the panel.
+const CONTROLS_NOTES: [&str; 1] =
+    ["Gamepad: bottom Cross, right Circle, left Square, top Triangle."];
+
+/// Why a pressed key was refused, and which ones work: the names
+/// `keycode_to_name` knows. The rest are the game window's own shortcuts.
+const UNBINDABLE_KEY: &str = "That key belongs to the game window's own shortcuts. Use an arrow \
+                              key, Z X C V A S D Q W E, 1, 2, Enter, Space or Right Shift. Esc \
+                              cancels.";
+
+/// The help line while a row waits for its key.
+fn waiting_message(button: &str) -> String {
+    format!("Press the key for {button}. Esc cancels.")
+}
+
+/// A pad button's name on the Controls page.
+fn button_label(name: &str) -> &'static str {
+    match name {
+        "Up" => "D-pad up",
+        "Down" => "D-pad down",
+        "Left" => "D-pad left",
+        "Right" => "D-pad right",
+        "Cross" => "Cross",
+        "Circle" => "Circle",
+        "Triangle" => "Triangle",
+        "Square" => "Square",
+        "L1" => "L1",
+        "R1" => "R1",
+        "L2" => "L2",
+        "R2" => "R2",
+        "Start" => "Start",
+        "Select" => "Select",
+        _ => "",
+    }
+}
+
+/// A key's name as the Controls page shows it.
+fn key_label(key: &str) -> &str {
+    match key {
+        "RShift" => "Right Shift",
+        "Up" => "Up arrow",
+        "Down" => "Down arrow",
+        "Left" => "Left arrow",
+        "Right" => "Right arrow",
+        k => k,
+    }
+}
+
+/// Every key on `button`, sorted so the row does not flicker between frames.
+fn keys_for_button(m: &Mapping, button: &str) -> String {
+    let mut k: Vec<&str> = m
+        .bindings
+        .iter()
+        .filter(|(_, b)| b.as_str() == button)
+        .map(|(k, _)| key_label(k))
+        .collect();
+    k.sort_unstable();
+    k.join(", ")
+}
+
+/// What a finished rebind did, naming a button the key was taken from.
+fn bound_message(before: &Mapping, after: &Mapping, button: &str, key: &str) -> String {
+    let done = format!("{} is on {}.", button_label(button), key_label(key));
+    match before.bindings.get(key).filter(|b| b.as_str() != button) {
+        Some(other) => match keys_for_button(after, other) {
+            k if k.is_empty() => format!("{done} {} has no key now.", button_label(other)),
+            k => format!("{done} {} moved to {k}.", button_label(other)),
+        },
+        None => done,
+    }
+}
 
 fn controls_note_lines(c: &Canvas, panel: Rect) -> Vec<String> {
     CONTROLS_NOTES
@@ -2138,7 +2379,11 @@ fn controls_note_lines(c: &Canvas, panel: Rect) -> Vec<String> {
 /// measure of [`LauncherApp::controls_panel`]).
 #[cfg(test)]
 fn controls_notes_bottom(c: &Canvas, panel: Rect) -> i32 {
-    panel.y + 5 + CONTROLS_ROWS * ROW_PITCH + 4 + controls_note_lines(c, panel).len() as i32 * 12
+    panel.y
+        + LIST_INSET
+        + CONTROLS_ROWS * ROW_PITCH
+        + 4
+        + controls_note_lines(c, panel).len() as i32 * 12
 }
 
 /// How a help-box message lays out: its wrapped lines, whether the key
@@ -2574,6 +2819,22 @@ mod tests {
             ),
         };
         out.push(("renamed cue".into(), problem_message(&renamed)));
+        // The Controls page's lines.
+        out.push(("unbindable key".into(), vec![(UNBINDABLE_KEY.into(), WARN)]));
+        for b in ["Cross", "Up"] {
+            out.push((
+                format!("waiting {b}"),
+                one(&waiting_message(button_label(b))),
+            ));
+        }
+        let mut swapped = Mapping::default();
+        swapped.bindings.remove("X");
+        swapped.bindings.insert("X".into(), "Cross".into());
+        swapped.bindings.insert("Z".into(), "Square".into());
+        out.push((
+            "bound with a swap".into(),
+            one(&bound_message(&Mapping::default(), &swapped, "Cross", "X")),
+        ));
         // A failed game: the longest headline, the log line and a reason at
         // its cap; and a failure the disc explains.
         #[cfg(unix)]
@@ -2649,6 +2910,95 @@ mod tests {
     }
 
     /// The controls table and its notes stay inside the panel, in both fonts.
+    /// The first-run line fits the disc card's two lines in both fonts: the
+    /// sentence was once cut off in the middle on the very first screen.
+    #[test]
+    fn first_run_card_fits_its_two_lines() {
+        for (font, condense, name) in fonts() {
+            let c = canvas_for(&font, condense);
+            let inner = STAGE_W - 2 * PAD - 8 - 10 - c.width("Disc") - 10;
+            let lines = c.wrap(FIRST_RUN_CARD, inner);
+            assert!(lines.len() <= 2, "{name}: {lines:?}");
+        }
+    }
+
+    /// The Controls page's table is the rebind kernel's: each listed row is a
+    /// button the page has a name for, a bound key is written where the game
+    /// reads it, and every key the refusal names is one the kernel can take.
+    #[test]
+    fn controls_page_rows_and_named_keys_are_real() {
+        use winit::keyboard::KeyCode as K;
+        let s = KeyRebindSession::new(Mapping::default());
+        for row in s.rows().iter().take(usize::from(BIND_ROWS)) {
+            assert!(!button_label(row.button.name()).is_empty(), "{row:?}");
+            assert!(!row.key.is_empty(), "{row:?} has no default key");
+        }
+        for r in &s.rows()[usize::from(BIND_ROWS)..] {
+            assert!(r.key.is_empty(), "{r:?} is left off the page but has a key");
+        }
+        for k in [
+            K::ArrowUp,
+            K::ArrowDown,
+            K::ArrowLeft,
+            K::ArrowRight,
+            K::KeyZ,
+            K::KeyX,
+            K::KeyC,
+            K::KeyV,
+            K::KeyA,
+            K::KeyS,
+            K::KeyD,
+            K::KeyQ,
+            K::KeyW,
+            K::KeyE,
+            K::Digit1,
+            K::Digit2,
+            K::Enter,
+            K::Space,
+            K::ShiftRight,
+        ] {
+            assert!(
+                !legaia_engine_shell::window::keycode_to_name(k).is_empty(),
+                "{k:?}"
+            );
+        }
+    }
+
+    /// A rebind says what moved, and a key nothing else was on moves nothing.
+    #[test]
+    fn bound_message_names_what_moved() {
+        let before = Mapping::default();
+        let mut s = KeyRebindSession::new(before.clone());
+        s.begin_bind(0);
+        let _ = s.tick(KeyRebindInput {
+            key_pressed: Some("X".into()),
+            ..Default::default()
+        });
+        assert_eq!(
+            bound_message(&before, s.mapping(), "Cross", "X"),
+            "Cross is on X. Square moved to Z."
+        );
+        assert_eq!(
+            bound_message(&before, &before, "Cross", "E"),
+            "Cross is on E."
+        );
+    }
+
+    /// Leaving the Controls page moves a focus that sat on one of its rows,
+    /// and Tab reaches the table and comes back.
+    #[test]
+    fn controls_page_focus_stays_on_a_real_control() {
+        let mut app = LauncherApp::new(None, Some(DiscProblem::NotSet), Default::default(), None);
+        app.panel = Panel::Controls;
+        app.focus = Item::Panel;
+        app.switch_column();
+        assert_eq!(app.focus, Item::Bind(0));
+        assert!(app.order().contains(&Item::BindReset));
+        app.leave_controls();
+        assert_eq!(app.focus, Item::Panel);
+        assert!(!app.order().contains(&Item::Bind(0)));
+    }
+
     #[test]
     fn controls_notes_fit_the_panel() {
         let panel = panel_rect();

@@ -268,8 +268,8 @@ pub fn body_head_cue(image: &[u8], body_va: u32) -> Option<ModuleHeadCue> {
 /// a scan reads only the `li a0` nearest the call. `acting` is the acting seat's
 /// monster id `DAT_8007BD0C[seat - 3]`, `head` the formation's first, `DAT_8007BD0C[0]`.
 /// The outer `None` is no fork; `Some(None)` a caster the fork gives no line.
-/// PROT 0944's fork on its latched roll against the victim's HP is not carried: its
-/// scan reads `0x1AD`.
+/// PROT 0944's fork is on its latched roll against the victim's HP, which the cast
+/// band holds (`World::guilty_cross_line`).
 ///
 /// - PROT 0940 Glare, `0x801F6ACC..0x801F6AEC`: Zora's line against everyone's.
 /// - PROT 0947, `0x801F6AD8..0x801F6AEC`: Neo Windhash against V Windhash.

@@ -166,6 +166,17 @@ impl World {
         if was_round_prompt && matches!(session.phase, CommandPhase::Menu { .. }) {
             self.battle.start_ring_open_glide();
         }
+        // `Run` is step 3: the panels sink and `Run` walks to the tab seat on
+        // the same sixteen vsyncs (`06/1 4E/1 4F/1`, `04/0`), and the confirm
+        // reads no pad until they land. `Reselect` is step 4, the way back.
+        // REF: FUN_801D0748 (`0x801D10E8`, `0x801D1128`)
+        if was_round_prompt && matches!(session.phase, CommandPhase::RunConfirm { .. }) {
+            self.battle.start_ring_open_glide();
+        } else if matches!(phase_before, CommandPhase::RunConfirm { .. })
+            && matches!(session.phase, CommandPhase::RoundPrompt { .. })
+        {
+            self.battle.start_round_prompt_glide();
+        }
         // Target-cursor tint: retail stamps the four monster slots bright /
         // dimmed while the cursor is walking them and clears the tint the
         // moment it closes.

@@ -457,6 +457,13 @@ pub(super) fn cmd_play_window_with_record(
             .run_app_on_demand(&mut app)
             .context("event loop")?;
     }
+    // A window that never opened ends the loop with nothing on screen. Exit
+    // as a failure, so a launcher or Explorer that started the game says why
+    // rather than taking it for a game the player closed.
+    if let Some(why) = app.win.open_error.take() {
+        log::error!("window: {why}");
+        anyhow::bail!("could not open the game window: update your graphics driver");
+    }
     // After the event loop returns, flush any pending record log. The
     // Escape / CloseRequested handlers also flush proactively so a
     // mid-run crash still produces a partial replay file - the trailing

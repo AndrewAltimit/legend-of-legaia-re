@@ -44,10 +44,19 @@ pub const ACTIVE_PARTY_LIVE_GROUPS: u32 = 10;
 /// Noa's field mesh out of the character pack (PROT 0874) - resident global
 /// pool slot 1, the model kind 0's descriptor names - with an active-party
 /// mesh's object count capped to [`ACTIVE_PARTY_LIVE_GROUPS`].
-pub fn resident_body_tmd(character_pack: &[u8], slot: usize) -> Option<Vec<u8>> {
+pub fn resident_body_tmd(
+    character_pack: &[u8],
+    slot: usize,
+    party_equip: [u8; 3],
+) -> Option<Vec<u8>> {
+    use legaia_actor_formats::character_pack::equipment_swap;
     let pack = legaia_actor_formats::character_pack::parse(character_pack).ok()?;
     let cslot = pack.slot(slot)?;
     let mut tmd_bytes = cslot.tmd_bytes.clone();
+    // The loader's arm swap (`FUN_8001EBEC`), the wedge at the dancer's wrist.
+    if let Some(patch) = equipment_swap::ACTIVE_PARTY_SLOTS.get(slot) {
+        tmd_bytes = equipment_swap::apply(&tmd_bytes, *patch, party_equip[slot]);
+    }
     if cslot.is_active_party() && tmd_bytes.len() >= 0x0C {
         tmd_bytes[0x08..0x0C].copy_from_slice(&ACTIVE_PARTY_LIVE_GROUPS.to_le_bytes());
     }
@@ -86,6 +95,7 @@ impl DanceCastAssets {
         venue: &DanceVenue,
         cast: &legaia_minigame_formats::dance_cast::DanceCast,
         character_pack: Option<&[u8]>,
+        party_equip: [u8; 3],
     ) -> Option<Self> {
         let anm = venue.anm.clone()?;
         let mut resident = Vec::new();
@@ -93,7 +103,7 @@ impl DanceCastAssets {
         for (kind, k) in cast.kinds.iter().enumerate() {
             if kind == 0 {
                 if let Some(m) = character_pack
-                    .and_then(|p| resident_body_tmd(p, usize::from(k.model)))
+                    .and_then(|p| resident_body_tmd(p, usize::from(k.model), party_equip))
                     .and_then(BodyMesh::parse)
                 {
                     resident.push((k.model, m));

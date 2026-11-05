@@ -144,7 +144,7 @@ pub const NOVA_LANDING_SPAWNS: [ModuleSpawn; 2] = [
 /// | 20 | every pass | `FUN_801D5854(caster, 8)`, the post-action framing |
 ///
 /// Arm 0x10's yaw add is a fixed sine step a **pass**, not a multiple of the
-/// frame product, so the engine's two ticks a battle frame each take half.
+/// frame product, so the engine's ticks of a battle frame share it.
 ///
 /// PORT: FUN_801F69F0 (PROT 0913; every camera arm, the drifts of arms 1..4, 11 and 16, the yaw stores of arms 3/4/13 and the arm 6/7 captions)
 pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) -> ArmDirection {
@@ -242,11 +242,18 @@ pub fn nova_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
                     )
                 }
                 0x10 => {
-                    // The body's countdown climbs `P / 2` a tick from the
-                    // `0` arm 0x0F left.
-                    let n = (p / 2) * (ticks + 1);
+                    // The body's countdown climbs `P / 2` a tick from the `0`
+                    // arm 0x0F left, and `yaw += sin(n / 2) / 2` lands once a pass
+                    // (`0x801F8068..0x801F80A4`): on the first tick of each,
+                    // at the word as the pass leaves it.
+                    let step = crate::cast_module_frame_step::cast_arm_frame_step(913, arm)
+                        .map_or(2, i32::from);
+                    if ticks % step != 0 {
+                        return ArmDirection::PASS;
+                    }
+                    let n = (p / 2) * (ticks + step);
                     let (sin, _) = trig12(((n / 2) & 0xFFF) as u16);
-                    drift(0, i32::from(sin) / 4, 0, 0)
+                    drift(0, i32::from(sin) / 2, 0, 0)
                 }
                 0x14 => ArmDirection {
                     end_frame: true,

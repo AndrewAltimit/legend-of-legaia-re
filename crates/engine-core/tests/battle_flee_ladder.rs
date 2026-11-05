@@ -3,8 +3,8 @@
 //! `0x64..0x66`) and the retail escape roll (`FUN_801E791C`,
 //! `battle_formulas::escape_roll`).
 //!
-//! Retail reaches Run from the round-open `Begin | Run` prompt - state `0x1E`
-//! takes it on the Circle press without a confirm. The live loop's
+//! Retail reaches Run from the round-open `Begin | Run` prompt: Right at state
+//! `0x1E` opens the flee confirm `0x32`, and Left there takes it. The live loop's
 //! `Resolution::RunAway` arm rolls `World::roll_battle_escape` and arms
 //! category 5; the SM's `0x64` arm floors every downed party member's
 //! liveness at 1 on a successful roll (the mechanism behind "escape restores
@@ -143,9 +143,10 @@ fn assured_escape_runs_the_run_band_and_leaves_the_battle() {
         .apply_with_duration(1, StatusKind::Stone, 255);
     let xp_before = w.party.roster.members[0].raw.to_vec();
 
-    // Round prompt: Circle takes Run without a confirm (retail state 0x1E).
+    // Round prompt: Right opens the flee confirm (`0x1E` -> `0x32`), Left takes it.
     let mut trace: Vec<u8> = Vec::new();
-    press(&mut w, PadButton::Circle, &mut trace);
+    press(&mut w, PadButton::Right, &mut trace);
+    press(&mut w, PadButton::Left, &mut trace);
     // Run band: RunBegin (0x3C-frame banner) -> RunWait -> RunEscape.
     idle_ticks(&mut w, 0x100, &mut trace);
 
@@ -208,7 +209,8 @@ fn failed_escape_consumes_the_turn_and_the_battle_goes_on() {
     w.rng_state = 0xDEAD_BEEF;
 
     let mut trace: Vec<u8> = Vec::new();
-    press(&mut w, PadButton::Circle, &mut trace);
+    press(&mut w, PadButton::Right, &mut trace);
+    press(&mut w, PadButton::Left, &mut trace);
     idle_ticks(&mut w, 0x200, &mut trace);
 
     // The band ran its failure shape: RunBegin -> RunWait -> Done band, no

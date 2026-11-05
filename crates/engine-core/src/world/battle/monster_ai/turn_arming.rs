@@ -87,6 +87,9 @@ impl World {
                 // The seed is spent by the cast it names.
                 if self.battle.forced_monster_cast == Some((slot, spell_id)) {
                     self.battle.forced_monster_cast = None;
+                    if std::mem::take(&mut self.battle.forced_monster_cast_at_prompt) {
+                        self.stand_on_forced_ground();
+                    }
                 }
                 let def = self.monster_cast_def(spell_id);
                 let mp = self

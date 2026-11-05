@@ -1010,6 +1010,19 @@ impl World {
         {
             ch.ctx.local_flags = id.ctx.local_flags;
         }
+        // The talk runs on its own copy of the context; a `31 03` in the
+        // record retires the actor it speaks for (`cave01` P1[9] after the
+        // pickup: `39 A3`, `50 74`, `31 03`).
+        if id.ctx.flags & legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT != 0
+            && let Some(slot) = id.npc_slot.filter(|_| id.prop_anchor.is_none())
+            && let Some(ch) = self
+                .field_vm
+                .channels
+                .iter_mut()
+                .find(|c| !c.object_bind && c.placement_index == usize::from(slot))
+        {
+            ch.ctx.flags |= legaia_engine_field::field_channels::CONTEXT_RETIRE_BIT;
+        }
         if id.done {
             self.restore_owed_player_scale(&id.bytecode, id.pc, &id.visited);
         }

@@ -646,6 +646,31 @@ impl World {
     }
 }
 
+/// The formation's `monster.snd` banks ([`World::battle_monster_sound_banks`]).
+pub fn monster_sound_banks(ids: impl Iterator<Item = u16>) -> Vec<(u8, u16)> {
+    let ids: Vec<u16> = ids.collect();
+    let (Some(&min), Some(&max)) = (ids.iter().min(), ids.iter().max()) else {
+        return Vec::new();
+    };
+    let mut out = vec![(7u8, min - 1)];
+    if min != max {
+        out.push((8, max - 1));
+    }
+    out
+}
+
+/// The mixer record a monster's runtime cues key in, the byte the battle loader
+/// leaves at render node `+0x80`: `7` on every seated monster
+/// (`0x8005225C`, `FUN_800520F0`), then `8` on the seats holding the largest id
+/// when the formation mixes ids (`0x8005234C`). Written once at load, so `ids` is
+/// the formation as it was seated, the dead included.
+// REF: FUN_800520F0
+pub fn monster_sound_category(ids: &[u16], id: u16) -> u8 {
+    let max = ids.iter().copied().max().unwrap_or(id);
+    let mixed = ids.iter().any(|&x| x != ids[0]);
+    if mixed && id == max { 8 } else { 7 }
+}
+
 /// [`World::runtime_sfx_descriptor`] over an explicit bundle.
 pub fn runtime_sfx_descriptor_in(bundle: &[u8], id: i16) -> Option<[u8; 8]> {
     if id < 0x200 {
@@ -660,6 +685,18 @@ pub fn runtime_sfx_descriptor_in(bundle: &[u8], id: i16) -> Option<[u8; 8]> {
 
 #[cfg(test)]
 mod sfx_ring_op_tests {
+    use super::monster_sound_category;
+
+    /// `FUN_800520F0`: `7` on every seat, `8` on the largest id of a mixed formation.
+    #[test]
+    fn a_mixed_formation_keys_its_largest_id_on_the_second_record() {
+        assert_eq!(monster_sound_category(&[0x4B], 0x4B), 7);
+        assert_eq!(monster_sound_category(&[4, 4, 4], 4), 7);
+        let mixed = [0x19, 0x16];
+        assert_eq!(monster_sound_category(&mixed, 0x19), 8);
+        assert_eq!(monster_sound_category(&mixed, 0x16), 7);
+    }
+
     use super::*;
     use legaia_engine_mode::mode::SceneMode;
 

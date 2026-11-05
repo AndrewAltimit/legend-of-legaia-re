@@ -32,6 +32,7 @@ If a change would put Sony bytes in git history, it doesn't land, however useful
 ## Getting set up
 
 ```bash
+apt install libasound2-dev libudev-dev pkg-config   # Linux: what audio and gamepad input link (Debian / Ubuntu names)
 cargo build --release
 scripts/ci/install-hooks.sh   # once per clone
 ```
@@ -52,13 +53,14 @@ cargo test --workspace --profile release-test
 
 While iterating, `--profile dev-fast` recompiles a mid-graph edit in a fraction of the time and gives the same results; run `release-test` before you commit. See [`docs/tooling/build-and-test-speed.md`](docs/tooling/build-and-test-speed.md).
 
-**Run them yourself.** The full CI job triggers on push-to-main and manual dispatch, not on pull-request events, so opening a PR does not automatically prove your branch is green.
+**Run them yourself.** A pull request runs the lint half only (format, clippy, the wasm32 type-check); the full job with the tests triggers on push-to-main and manual dispatch, so a green PR does not prove your branch's tests pass.
 
 CI also builds the workspace and the WASM target, which is easy to break from native-only code:
 
 ```bash
 cargo build --release --workspace
-cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer
+rustup target add wasm32-unknown-unknown   # once
+cargo build --release --target wasm32-unknown-unknown -p legaia-web-viewer -p legaia-web-play-bundle
 ```
 
 The port ships three hosts on one engine - the native `play-window`, the browser play page, and the minigames page - so a feature wired into one host is invisible in a diff of the others. [`docs/tooling/host-drift.md`](docs/tooling/host-drift.md) covers the gates that catch that.

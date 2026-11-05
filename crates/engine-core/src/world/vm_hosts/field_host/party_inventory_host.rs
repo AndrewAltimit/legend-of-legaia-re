@@ -3,6 +3,38 @@
 use super::*;
 
 impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
+    // Op `4C 32`: the zeroing loop covers the flag bank exactly
+    // (`0x801E0F48..0x801E0F64`). Three shipped records reach it, behind dev
+    // pickers (`rikuroa` P1[13]'s "Clear all flags").
+    fn clear_party_state_region(&mut self) {
+        self.world.flags.system_flags.fill(0);
+    }
+
+    // Op `4C 3F`: the Ra-Seru mesh swap, at the frame's sweep.
+    fn copy_party_tmd_poses(&mut self) {
+        self.world.request_party_mesh_swap();
+    }
+
+    fn set_camera_octant(&mut self, new_index: u8) {
+        // Op `4C 2x` (arm `0x801E0EB8`): store the pad octant `gp+0x2D8`; on
+        // a landing tick (`_DAT_8007B6B0 == -1000`) the player's heading turns
+        // by the octants the store moved, so he keeps facing the same way on
+        // screen across the shot the same script installs (`0x801E0EE4..EFC`).
+        let old = self.world.locomotion.pad_octant;
+        let new = u32::from(new_index & 7);
+        self.world.locomotion.pad_octant = new;
+        if self.world.locomotion.warp.timer
+            == legaia_engine_field::field_warp_tile::WARP_LANDED_SENTINEL
+            && let Some(actor) = self
+                .world
+                .player_actor_slot
+                .and_then(|s| self.world.actors.get_mut(usize::from(s)))
+        {
+            let delta = (new.wrapping_sub(old) as i32 * 0x200) as i16;
+            actor.move_state.render_26 = actor.move_state.render_26.wrapping_add(delta);
+        }
+    }
+
     fn give_item(&mut self, item_id: u8) {
         // Op 0x39 GIVE_ITEM: add one of `item_id` to the inventory, capacity-
         // checked like the retail add-by-id primitive FUN_800421D4(item_id, 1).

@@ -347,6 +347,9 @@ pub fn run_engine_battle(
     // Held through the intro transition, so the field's own draws there do
     // not re-deal the fight (`EncounterState::rng_hold`).
     session.host.world.encounters.rng_hold = Some(rng_seed);
+    if battle.replay_keeps_default_step() {
+        session.host.world.toggles.battle_party_cost_step = false;
+    }
     if let Some((step, state, from)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
         session.host.world.battle.frame_step_seed_from = from;
@@ -449,7 +452,8 @@ pub fn run_engine_battle(
                     init_key: keys.get(slot).copied().flatten(),
                     heal_latch: slot
                         == usize::from(engine_seat(battle.active_actor, battle.party_count))
-                        && battle.heal_gate_passed(),
+                        && (battle.heal_gate_passed() || battle.caster_latch_raised()),
+                    gauge: battle.dohati_gauge.filter(|_| slot == pc),
                 })
             })
             .collect::<Vec<_>>()
@@ -513,7 +517,10 @@ pub fn run_engine_battle(
             let reached = seeded
                 && match seed {
                     Some(_) => w.battle.inflight_seed.is_none(),
-                    None => w.battle.flow != BattleFlowState::Idle,
+                    // A capture inside the ambush round the entry rolled
+                    // (`RetailBattle::in_formation_round`) has no prompt ahead
+                    // of it: the seat's action is the fight's first.
+                    None => w.battle.flow != BattleFlowState::Idle || battle.in_formation_round(),
                 };
             if reached {
                 prompt_tick = Some(t);

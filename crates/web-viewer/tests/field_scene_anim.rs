@@ -144,6 +144,7 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
             .iter()
             .map(|c| c.is_none_or(|t| pack.live.as_ref().unwrap().in_live_room(t)))
             .collect();
+        let built_parked = rt.field_placement_parked();
         for t in 0..ticks {
             rt.tick_frame().expect("tick");
             tick_field_scene_vsync(&mut pack);
@@ -200,7 +201,16 @@ fn the_map_viewer_animates_what_the_play_page_animates_or_skip() {
                 "{scene} t{t}: actor clip states"
             );
             moved_actors |= ac.chunks(4).any(|c| c[0] > 0);
-            let (fv, fp) = (pack.placement_frames(), rt.field_placement_frames());
+            // The viewer's bake drops what stands parked at load; the page keeps
+            // an entry for it, since a script may seat it later (`son`'s sky).
+            let kept = |i: usize| built_parked.get(i).is_none_or(|&p| p == 0);
+            let fp: Vec<i32> = rt
+                .field_placement_frames()
+                .into_iter()
+                .enumerate()
+                .filter_map(|(i, k)| kept(i).then_some(k))
+                .collect();
+            let fv = pack.placement_frames();
             assert_eq!(fv, fp, "{scene} t{t}: placed-prop pose keys");
             moved.2 |= fv.iter().any(|&k| k > 0);
         }

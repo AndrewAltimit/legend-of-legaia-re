@@ -254,35 +254,37 @@ never drawn directly. Its epilogue then calls `FUN_8001EBEC`
 (`jal` at `0x8001EBB4`; dump `ghidra/scripts/funcs/8001ebec.txt`), which for
 each of the three party slots:
 
-1. Reads the equipment toggle byte from the character record.
+1. Reads the character's Ra-Seru equipment byte.
 2. Picks the group-10 template (`TMD+0x124`) if it is non-zero, else the
    group-11 template (`TMD+0x140`).
-3. Copies that 28-byte (7 × u32) descriptor over the visible group at the
+3. Copies that 28-byte (7 x u32) descriptor over the visible group at the
    slot's patched index (`group = base + 0xC + sel*0x1C`).
 
 | Party slot | Character | Patched group | Equip byte (record offset) |
 |---:|---|:---:|:---:|
-| 0 | Vahn | 0 | `+0x196` |
-| 1 | Noa | 3 | `+0x199` |
-| 2 | Gala | 5 | `+0x19B` |
+| 0 | Vahn | 3 | `+0x199` |
+| 1 | Noa | 5 | `+0x198` |
+| 2 | Gala | 3 | `+0x199` |
 
-The patched index and the offset within the equip-byte window are the same
-three numbers `{0, 3, 5}` - the routine reuses one small stack table for both.
+Two three-byte SCUS tables hold the rows, copied to the stack at `0x8001EC14`
+and `0x8001EC34`: `0x8007B3A4 = {3, 2, 3}` is the equip slot added to
+`record + 0x196`, and `0x8007B3A8 = {3, 5, 3}` is the group. The bytes are the
+Ra-Seru slots ([`save-record.md`](save-record.md)), and the live TMD groups of
+eight retail states hold the law for all three characters with the byte both
+zero and non-zero (capture): `town0b`, `uru` and `concend` before the Ra-Seru,
+`vozz`, `rikuroa`, `chitei2`, `rugi` and `bubu1` after.
 
-The swap is **binary**: one visible group toggles between two pre-baked
-variants. It never changes `nobj`, adds no object and uploads no mesh. Item
-identity on the field model is carried by the
-[texture atlas](#textures-field-form), not by geometry. The Rust equivalent is
-`legaia_actor_formats::character_pack::equipment_swap::apply`.
+The swap is **binary**: it never changes `nobj`, adds no object and uploads no
+mesh. Other item identity on the field model is carried by the
+[texture atlas](#textures-field-form), not by geometry.
 
-**Open: Vahn's row.** Applied literally, patched group `0` is Vahn's largest
-group (77 vertices / 132 primitives - the head), while both templates are 12-
-and 16-vertex parts the size of his groups 3/4 and 10, so the result renders
-him headless. Noa's and Gala's raw groups already equal their template-zero
-variant, so the disc-form mesh is the cold new-game look for all three; the
-`export-glb --party` field export ships that and applies no swap. Re-verify
-Vahn's patched index against a live capture before applying the swap to slot
-0 anywhere.
+Retail runs it from the party pack load and from field op `4C 3F` (`jal` at
+`0x801E1128`; `town0b`, `vozz`, `rikuroa`, `urudre3`, `jouine`), so an equip made
+in a menu shows at the next of those. The port does the same over the head of
+`World::global_tmd_pool` (`World::apply_party_mesh_swap`), which both hosts'
+player rig reads and the rig signal rebuilds. A party placement a host already
+built takes the new mesh at the next scene entry. The fishing shore and the dance
+floor load the pack themselves and take the same bytes (`World::party_field_equip`).
 
 ## Textures (field form)
 

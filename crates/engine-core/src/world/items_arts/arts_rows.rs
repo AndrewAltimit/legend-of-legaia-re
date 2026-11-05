@@ -261,6 +261,17 @@ impl World {
     ///
     /// Subsequent calls for the same `(char_id, art_id)` pair are no-ops.
     pub fn notify_art_used(&mut self, char_id: u8, art_id: u8) {
+        // The tracker is rebuilt by a save load; the table outlives it. The
+        // tracker keys on the art byte, the table on the record id.
+        if let Some(cap) = self
+            .tables
+            .art_innate_caps
+            .and_then(|c| c.get(usize::from(char_id)).copied())
+        {
+            self.party
+                .tactical_arts
+                .set_innate_cap(char_id, cap.saturating_add(0x1B));
+        }
         if let Some(ev) = self.party.tactical_arts.notify_art_used(char_id, art_id) {
             let text = format!("Learned {}!", ev.name);
             self.party.current_art_banner = Some(ArtLearnedBanner {

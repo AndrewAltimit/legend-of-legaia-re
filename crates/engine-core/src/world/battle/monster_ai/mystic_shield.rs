@@ -109,6 +109,39 @@ impl World {
         ))
     }
 
+    /// Dohati's per-frame arm of the actor pass `FUN_8004CE2C`
+    /// (`0x8004D43C..0x8004D530`): with the formation lead `0x8A`, the first
+    /// monster seat's gauge is clamped and its scale, size class and radius
+    /// follow the gauge ([`dohati_growth`]).
+    ///
+    /// [`dohati_growth`]: legaia_engine_battle_vm::battle_impact_fx::dohati_growth
+    ///
+    /// PORT: FUN_8004CE2C (the Dohati arm, `0x8004D43C..0x8004D530`)
+    pub(in crate::world) fn tick_dohati_growth(&mut self) {
+        use legaia_engine_battle_vm::battle_impact_fx as fx;
+        if self.battle_first_monster_byte() != fx::DOHATI_MONSTER_ID {
+            return;
+        }
+        let action_state = self.battle_ctx.action_state;
+        let slot = usize::from(self.party.party_count);
+        let Some(a) = self.actors.get_mut(slot) else {
+            return;
+        };
+        a.battle.spirit_gauge = a.battle.spirit_gauge.min(fx::DOHATI_GAUGE_CLAMP);
+        let Some(g) = fx::dohati_growth(a.battle.spirit_gauge, action_state) else {
+            return;
+        };
+        a.battle.render_scale = Some(g.render_scale);
+        a.battle.render_radius = Some(g.radius);
+        if let Some(def) = self
+            .tables
+            .monster_catalog
+            .get_mut(u16::from(fx::DOHATI_MONSTER_ID))
+        {
+            def.size_class = g.size_class;
+        }
+    }
+
     /// The shield's per-frame arm of the actor pass `FUN_8004CE2C`
     /// (`0x8004D534..0x8004D674`).
     ///

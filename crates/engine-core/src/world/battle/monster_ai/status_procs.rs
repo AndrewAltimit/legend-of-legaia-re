@@ -130,12 +130,7 @@ impl World {
     /// REF: FUN_801DEA50 (the `ctx+0x1014` move-power record the arm reads)
     /// REF: FUN_801EC3E4 (the sibling arts/melee arm, whose selector comes from
     /// the art record's `+0x7A` instead - the party -> monster direction)
-    pub(in crate::world) fn apply_enemy_move_status(
-        &mut self,
-        caster: u8,
-        move_id: u8,
-        hit_fx_start: usize,
-    ) {
+    pub fn apply_enemy_move_status(&mut self, caster: u8, move_id: u8, hit_fx_start: usize) {
         // The move-power table is the *enemy* special-attack table; a party
         // caster's art power comes from the art record instead, and its status
         // byte rides the `ApplyArtStrike` event (`World::fold_battle_event`).
@@ -190,6 +185,7 @@ impl World {
             let Some(proc) = rolled else {
                 continue;
             };
+            let before = self.raw_status_word(target);
             let applied = self
                 .battle
                 .status_effects
@@ -198,6 +194,14 @@ impl World {
                 (applied, proc.rot_limb)
             {
                 self.battle.status_effects.set_rot_limb(target, limb);
+                // `0x801E1744..0x801E1784`: a limb newly rotted empties both
+                // Auto strings, as the melee arm's Rot does.
+                if self.raw_status_word(target) != before {
+                    let roster = self.party_roster_slot(usize::from(target));
+                    if let Some(rec) = self.party.roster.members.get_mut(roster) {
+                        rec.clear_auto_command_heads();
+                    }
+                }
             }
         }
     }

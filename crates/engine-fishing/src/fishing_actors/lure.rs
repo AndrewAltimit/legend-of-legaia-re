@@ -70,6 +70,70 @@ pub struct LureActor {
     /// z layout the field player record uses. The 24.8 accumulator for this
     /// `z` is `0x801D917C`, the third of the `<< 8` triple.
     pub z: i16,
+    /// `0x801D917C` - the `z` accumulator.
+    pub z_fixed: i32,
+    /// `0x801D9178` - the height accumulator.
+    pub y_fixed: i32,
+    /// The tracked point `0x801D9184..0x801D9188` as last frame's tail left it:
+    /// the bearing and both tile probes read this, not the accumulators.
+    pub tracked: (i16, i16, i16),
+    /// The spawn point `0x801D918C` / `0x801D9190` the record measures from.
+    pub spawn: (i16, i16),
+    /// The cast power `0x801D9274`, spent as the lure flies.
+    pub power: i32,
+    /// The lure actor's `+0x3E`: the fall speed, `0x40` at the release.
+    pub fall: i16,
+    /// The reel pull `0x801D9148`.
+    pub pull: i32,
+    /// The rod sway `0x801D9140` and its target `0x801D9144`.
+    pub sway: (i32, i32),
+}
+
+/// `(sin, cos) * radius * scale >> 12`, `FUN_801D7BB8`.
+fn lure_polar(angle: i32, radius: i32, scale: i32) -> (i32, i32) {
+    let (sin, cos) = legaia_engine_field::minigame_floor::polar_tables();
+    legaia_engine_field::minigame_floor::polar_offset(angle as u32, radius, scale, sin, cos)
+        .unwrap_or((0, 0))
+}
+
+/// `FUN_8005AF0C`: the SCUS root, normalised onto `FUN_8005ADB8`'s range, whose
+/// hyperbolic rotation runs six shifts with `4` taken twice. The result carries
+/// six fractional bits; the rotation's rounding is what the record's last unit
+/// rests on, so a float root will not do.
+///
+/// PORT: FUN_8005AF0C
+/// PORT: FUN_8005ADB8
+pub fn scus_sqrt(n: i32) -> i32 {
+    if n == 0 {
+        return 0;
+    }
+    let e = 8 - n.leading_zeros() as i32;
+    let (scale, arg) = if e >= 0 {
+        let s = e >> 1;
+        (s, n >> (s * 2))
+    } else {
+        let s = (e >> 1) + 1;
+        (s, n.wrapping_shl((-2 * s) as u32))
+    };
+    let (mut x, mut y) = (arg.wrapping_add(0x5D_50AD), arg.wrapping_sub(0x5D_50AD));
+    let mut turn = |shift: i32| {
+        let (dx, dy) = (y >> shift, x >> shift);
+        if y < 0 {
+            x = x.wrapping_add(dx);
+            y = y.wrapping_add(dy);
+        } else {
+            x = x.wrapping_sub(dx);
+            y = y.wrapping_sub(dy);
+        }
+    };
+    for shift in 1..=6 {
+        turn(shift);
+        if shift == 4 {
+            turn(shift);
+        }
+    }
+    let shift = scale - 6;
+    if shift >= 0 { x << shift } else { x >> -shift }
 }
 
 impl LureActor {
@@ -86,7 +150,14 @@ impl LureActor {
     /// masked angle, which the materialised pair never is.
     ///
     /// PORT: FUN_801cf3bc (case 0x14 - the cast lure spawn)
-    pub fn cast(anchor_x: i16, anchor_z: i16, facing: i16, frame_step: i32) -> Option<Self> {
+    pub fn cast(
+        anchor_x: i16,
+        anchor_y: i16,
+        anchor_z: i16,
+        facing: i16,
+        power: i32,
+        frame_step: i32,
+    ) -> Option<Self> {
         let (sin, cos) = legaia_engine_field::minigame_floor::polar_tables();
         let (dx, dz) = legaia_engine_field::minigame_floor::polar_offset(
             facing as u32,
@@ -97,10 +168,151 @@ impl LureActor {
         )?;
         let x = (anchor_x as i32 - dx) as i16;
         let z = (anchor_z as i32 - dz) as i16;
+        let height = anchor_y.wrapping_sub(0x80);
         Some(Self {
             x_fixed: (x as i32) << 8,
             z,
+            z_fixed: (z as i32) << 8,
+            y_fixed: (height as i32) << 8,
+            tracked: (x, height, z),
+            spawn: (x, z),
+            power,
+            fall: 0x40,
+            pull: 0,
+            sway: (0, 0),
         })
+    }
+
+    /// One frame of flight: the lure goes out along the facing on what is left
+    /// of the power, and falls. A lure below the water plane spends the power
+    /// faster, and one reaching height `0xC8` spends it all. Returns `true` on
+    /// the frame the power runs out, the landing.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D279C..0x801D2944`)
+    pub fn flight_step(&mut self, facing: i16, fs: i32) -> bool {
+        // `power * 5 << 7`, truncated to `/ 0x1000`, negated.
+        let radius = -(self.power.wrapping_mul(5).wrapping_shl(7) / 0x1000);
+        let (dx, dz) = lure_polar(i32::from(facing), radius, fs);
+        self.x_fixed = self.x_fixed.wrapping_add(dx.wrapping_mul(26));
+        self.z_fixed = self.z_fixed.wrapping_add(dz.wrapping_mul(26));
+        self.y_fixed = self
+            .y_fixed
+            .wrapping_add((i32::from(self.fall) / 10).wrapping_mul(fs).wrapping_shl(8));
+        self.fall = self.fall.wrapping_add((fs * 3) as i16);
+        if self.tracked.1 > 0 {
+            self.power -= fs * 120;
+            if self.y_fixed > 0xC800 {
+                self.y_fixed = 0xC800;
+                self.power = 0;
+            }
+        }
+        self.power -= fs * 50;
+        if self.power < 0 {
+            self.power = 0;
+            return true;
+        }
+        false
+    }
+
+    /// One in-water frame's move: the pull along `heading`, the sway across the
+    /// facing while pulling, and (hooked) half the fish's swim. Close in, the
+    /// sway and the swim fade with the record: `(record - 300) * 8` and
+    /// `* 16`, from `0x1000`.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D2C3C..0x801D2DC8`)
+    pub fn water_step(
+        &mut self,
+        heading: u16,
+        facing: i16,
+        record: i32,
+        swim: Option<(i32, i32)>,
+        fs: i32,
+    ) {
+        let (px, pz) = lure_polar(i32::from(heading), -0x900, fs);
+        let mut near = 0x1000;
+        if record < 0x32C {
+            near = (record - 300) * 8;
+        }
+        near = near.max(0);
+        let radius = (-self.sway.0).wrapping_mul(near) / 0x1000;
+        let (mut ax, mut az) = lure_polar(i32::from(facing) + 0x400, radius, fs);
+        if record < 0x22C {
+            near = (record - 300) * 16;
+        }
+        near = near.max(0);
+        if self.pull == 0 {
+            (ax, az) = (0, 0);
+        }
+        let (sx, sz) = swim.unwrap_or((0, 0));
+        self.x_fixed = self.x_fixed.wrapping_add(
+            px.wrapping_mul(self.pull) / 0x1000 + ax + ((sx / 2).wrapping_mul(near) / 0x1000),
+        );
+        self.z_fixed = self.z_fixed.wrapping_add(
+            pz.wrapping_mul(self.pull) / 0x1000 + az + ((sz / 2).wrapping_mul(near) / 0x1000),
+        );
+    }
+
+    /// The reel pull: a press on an idle reel starts it at `0xA00` (Cross) or
+    /// `0xC00` (Square, or both); it falls `0x80` a frame-step and drops to
+    /// nothing under `0x600`, so line comes in by the press.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D2E60..0x801D2F40`)
+    pub fn pull_step(&mut self, edge: u32, fs: i32) {
+        if edge & 0xC0 != 0 && self.pull == 0 {
+            self.pull = if edge & 0x80 != 0 { 0xC00 } else { 0xA00 };
+        }
+        self.pull -= fs << 7;
+        if self.pull < 0x600 {
+            self.pull = 0;
+        }
+    }
+
+    /// The rod sway: the D-pad sets the target to `+-0x100`, which otherwise
+    /// falls back `4` a frame-step; the sway follows it at `0x10`.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D3830..0x801D3958`)
+    pub fn sway_step(&mut self, held: u32, fs: i32) {
+        let (ref mut sway, ref mut target) = self.sway;
+        if *target > 0 {
+            *target = (*target - (fs << 2)).max(0);
+        } else if *target < 0 {
+            *target = (*target + (fs << 2)).min(0);
+        }
+        if held & 0x2000 != 0 {
+            *target = 0x100;
+        }
+        if held & 0x8000 != 0 {
+            *target = -0x100;
+        }
+        if *sway < *target {
+            *sway = (*sway + (fs << 4)).min(*target);
+        } else if *target < *sway {
+            *sway = (*sway - (fs << 4)).max(*target);
+        }
+    }
+
+    /// The frame's tail: the tracked point takes the accumulators, and the
+    /// record is its distance from the spawn point.
+    ///
+    /// PORT: FUN_801d26cc (`0x801D39C8..0x801D3A40`)
+    pub fn tail(&mut self) -> i32 {
+        self.tracked = (
+            (self.x_fixed >> 8) as i16,
+            (self.y_fixed >> 8) as i16,
+            (self.z_fixed >> 8) as i16,
+        );
+        self.z = self.tracked.2;
+        super::tracked_point_separation((self.tracked.0, self.tracked.2), self.spawn, scus_sqrt)
+    }
+
+    /// The bearing from the spawn point to the lure (`FUN_80019B28`, `0x801D2A08`).
+    pub fn heading(&self) -> u16 {
+        legaia_engine_field::camera_zone::bearing(
+            i32::from(self.spawn.1),
+            i32::from(self.spawn.0),
+            i32::from(self.tracked.2),
+            i32::from(self.tracked.0),
+        )
     }
 
     /// The lure's world `x` (the accumulator's integer part).
@@ -131,7 +343,8 @@ impl LureActor {
         frame_step: i32,
     ) -> LureProbe {
         let fs = frame_step.max(1);
-        let x = self.x();
+        let x = self.tracked.0;
+        let z = self.tracked.2;
         let mut out = LureProbe {
             weight: WATER_TILE_DEFAULT.1,
             ..Default::default()
@@ -141,14 +354,14 @@ impl LureActor {
         let walk = map
             .get(legaia_engine_field::field_regions::MAP_WALK_GRID_OFFSET..)
             .unwrap_or(&[]);
-        if walk_grid_overhead(walk, x as i32, self.z as i32) {
+        if walk_grid_overhead(walk, x as i32, z as i32) {
             let push = fs << LURE_DRIFT_SHIFT;
             let signed = if cast_counter & 1 != 0 { push } else { -push };
             self.x_fixed = self.x_fixed.saturating_add(signed);
             out.drift = signed >> 8;
         }
         let tile_x = (x as i32) >> LURE_TILE_SHIFT;
-        let tile_z = (self.z as i32) >> LURE_TILE_SHIFT;
+        let tile_z = (z as i32) >> LURE_TILE_SHIFT;
         let grid = legaia_engine_field::minigame_floor::FloorGrid::new(map);
         if grid.cell(tile_x, tile_z) & CELL_WATER_BIT == 0 {
             return out;

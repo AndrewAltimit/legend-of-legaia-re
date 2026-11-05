@@ -71,6 +71,29 @@ fn fixed(angles: [i16; 2], tr: [i16; 3], fz: i16, frames: u16) -> Option<ModuleS
     })
 }
 
+/// The record of arm 23's first handle (`0x801FA4A4`, the call at `0x801F8074`),
+/// the part whose position the epilogue copies.
+pub const EVIL_SERU_ARM23_LEAD: u32 = 0x801F_9914;
+
+/// The records of arm 23's other thirteen handles (`0x801FA4A8..=0x801FA4D8`),
+/// the parts the epilogue stands on the lead's `+0x14..+0x1B` on every pass
+/// (`0x801F8AF0..0x801F8D30`), until arm 26 zeroes the lead's handle.
+pub const EVIL_SERU_ARM23_RIDERS: [u32; 13] = [
+    0x801F_9AD0,
+    0x801F_9B48,
+    0x801F_9BC4,
+    0x801F_9C40,
+    0x801F_9CB8,
+    0x801F_9D34,
+    0x801F_9DB0,
+    0x801F_9F54,
+    0x801F_9FB4,
+    0x801F_A018,
+    0x801F_A07C,
+    0x801F_A0E0,
+    0x801F_A144,
+];
+
 /// Cort's **Evil Seru Magic**, PROT 0966's tick body `0x801F6A74`.
 ///
 /// | arm | drift a tick | gate re-arm | on pass |

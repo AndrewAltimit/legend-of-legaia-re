@@ -277,7 +277,7 @@ fn the_door_shot_keeps_every_drop_shadow_under_its_body() {
         let on_screen = |view: &legaia_engine_field::fog_particles::FogView, p: [i32; 3]| {
             view.project_gte(p).map(|(x, y, _)| (x, y))
         };
-        for blob in v.drop_shadow_prims(Some(shot)).chunks(4) {
+        for blob in v.drop_shadow_prims(Some(shot), false).chunks(4) {
             let centre = blob[0].corners()[3];
             let body = bodies
                 .iter()

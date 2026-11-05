@@ -90,6 +90,7 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 |---|---|---|---|
 | Does the port grant the summons worn gear teaches? | resolved (it does now; it had no code for it) | `disassembly` + `capture` | `FUN_80042558`'s grant scan (`0x80042714..0x80042890`) and revoke scan (`0x80042894..0x80042990`) run in `crates/retail-exec` against `CharacterRecord::sync_equipment_summons`, byte-equal over whole records. [`retail-kernel-differential.md`](../../tooling/retail-kernel-differential.md). |
 | Do level-ups draw `rand()`? | resolved (eight a level, on the one stream; the port drew none until the stream was lent to the tracker) | `disassembly` + `capture` | The eight `jal 0x80056798` of `FUN_801E9504`; the differential holds the record and the draw count equal on one stream. [`level-up.md`](../../subsystems/level-up.md). |
+| Why does Aluru's arm 19 read as a white ramp running twice retail's? | resolved (the wash ended early, no ramp is wrong) | `disassembly` + `capture` | The kill of the fade parked at `ctx[+0x102C]` and its white fall sit behind `word > 3 * scalar << 6` (`0x801F86AC`) in the tail arms `0x12` and `0x13` share; fired on the arm's first pass, they took the wash away and the frame fell to the night stage. On the pass alone, with the verdict's draw held on retail's seed (`--rand-at 0x34:0`), arm 19 tracks retail. [cast-module.md](../../subsystems/cast-module.md#prot-0916-aluru) |
 | Why do Aluru's and Nighto's cast-sequence cues read `.33` and `.40`? | resolved (the verdict's draw, not the cues) | `capture` | Both draw a kill verdict in arm 0. Retail's seed word gives Nighto `22235 % 8 = 3`, no kill, and the engine's stream `30808 % 8 = 0`, a kill, whose death clip sounds the extra cues. Aluru's differs the other way, and `--rand-at 0x34:0` puts it on retail's kill path with cue score `1.00`. Nighto's draw sits later in that tick than the hold reaches. |
 | Why do Vera's and Spoon's shots miss retail's yaw by `34`? | resolved (the oracle's seed, not the cast) | `capture` | Those arms read `0x800 - caster +0x46`, and a group-target cast does not turn the caster, so the shot keeps the facing `34` the fight left in the state. The cast-sequence seed leaves it `0`. Seeding `34` gives yaw `2014` on both sides and leaves both casts' scores where they were. |
 | Why did Zenoir's first hit sound `0x200`, `0x16`, `0x16`? | resolved (the wrong stage on the pre-hit) | `disassembly` + `capture` | Arm 8's hit stages `+0x1EF`, else `+0x1F0`, with no knockdown fork (`0x801F77B4..0x801F77D4`). The port ran the shared pre-hit, whose fork took the knockdown entry on a monster with a get-up. Retail's recording shows clip `2`, then arm 9's `sb zero,0x1da` leaves its cue `0x21C`. |
@@ -2498,3 +2499,23 @@ Evidence: `disassembly` for the laws, `capture` for the states. Three separate f
 - **The monster's pull-in never opened.** `FUN_801E93C8` keeps `ctx[+0x243]` while the seat's clip has `+0x87` set (`0x801E9458..0x801E94A4`); the live host had no such read, the gate stood open and the strike loop's tail cleared the latch the commit had stored. Case 7 then tested a stand-in for it, and its glide chased the unpulled depth.
 
 Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#post-strike-shots-cases-7-and-8).
+
+### How long `0x6E` and `0x6F` hold, and what the hold moves
+
+Grade `capture` for the lengths, `disassembly` for what runs through them. The two states poll CD reads (`jal 0x8003DE7C` at `0x801E4F08`, `FUN_8003F2B8(1)` in `0x6F`), and over the harvest-state casts they hold `14..=17` and `4..=6` vsyncs whichever module or fight. The polls are not idle, so a load the engine answers at once still costs retail's look: `0x6E` walks the framing each pass (`0x801E4F00`) and `0x6F` pulls `ctx[+0x6D0]` in. Held in the engine, the walk matches retail to the unit through `0x6E`, and the shots built on `ctx[+0x6D0]` land where retail's do.
+
+### What a hidden seat draws
+
+Grade `disassembly`. The draw tick `FUN_800480D8` reaches the after-image walk only past its word-zero test (`0x800481CC`), so a hide takes the ghosts too. A body hidden with its ghosts left walking reads as a pink double of the caster on V-Windhash's far shot and, as the camera passes it, an olive wash over the frame.
+
+Owning pages: [`cast-sequence-oracle.md`](../../tooling/cast-sequence-oracle.md#the-capture-bands-reads), [`battle-actor-rendering.md`](../../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348).
+
+### What stands the camera on the Windcutter frames
+
+Grade `capture`, with the walk `disassembly`. Both Windcutter frames show the case-6 walk ahead of a one-frame shot, and neither is a mid-retake of something the seed cannot reproduce. The body filling `battle_doman_boogie_pump_windcutter_mid_cast` was the walk's start, not a depth or a ghost: seats 1 and 2 had both spent a Spirit, and the selector `FUN_801DABA4` leaves no order behind, so the law's default took seat 2.
+
+The walk's focus closes on the caster from that seat's framing, and the residue left after ten step-`3` passes stands the eye `94` units nearer Gala on the shot's axis. She then clears the near gate `0xA1` (`0x8001AEE8`) and fills the frame. From seat 1 she falls under the gate and the frame matches, with the walk's TR z untouched; the earlier continuous search that wanted TR z `4569` was compensating for this. `FUN_8004DC68` keeping her solid is correct and plays no part.
+
+`battle_rugi_barra_windcutter_mid_cast` is the same walk from the round's first action, so it starts on the prompt's far framing. That framing's orbit is a clock the RAM does not date, and the yaw is read off the frame. Which of two Spirit seats went last is also not read from the RAM: the actor records of the seats differ in their idle clip's phase, and no rule over that has been tested. Each capture carries a [walk pin](../../tooling/retail-compare.md#a-shot-armed-after-the-displayed-frame), which moves no game state.
+
+Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-action.md`](../../subsystems/battle-action.md).

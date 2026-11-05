@@ -158,7 +158,7 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             }
             legaia_art::ActionConstant::from_byte(b)
                 .filter(|c| c.is_art())
-                .and_then(|c| legaia_art::tables::art_name(character, c))
+                .and_then(|c| legaia_art::tables::art_display_name(character, c))
                 .map(str::to_string)
         })
     } else if cat == ActionCategory::Magic.as_byte() {
@@ -305,6 +305,18 @@ fn round_prompt_glide(
 
 /// The ring's open glide while the ring is what the frame draws
 /// ([`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]), still in flight.
+/// The glide `Run` opens the flee confirm on (sub-draw step 3): the panels
+/// sink and `Run` walks to the tab seat. Same store as the ring's, whose
+/// surface it is not.
+pub(super) fn run_confirm_glide(
+    world: &legaia_engine_core::world::World,
+) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
+    (crate::chrome::battle_run_tab_alone(world))
+        .then_some(world.battle.ring_open_glide.as_ref())
+        .flatten()
+        .filter(|g| !g.settled())
+}
+
 pub(super) fn ring_open_glide(
     world: &legaia_engine_core::world::World,
 ) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
@@ -323,6 +335,10 @@ pub(super) const RING_ARM_SEATS_X: (i32, i32) = (328, 160);
 /// Seat A / seat B of the `Begin` tab (record 1): the round prompt's own
 /// `Begin` seat `(104, 88)` to the tab seat `(16, 14)`.
 pub(super) const BEGIN_TAB_SEATS: ((i32, i32), (i32, i32)) = ((104, 88), (16, 14));
+
+/// Seat A / seat B of the `Run` tab (record 4): the round prompt's own `Run`
+/// seat `(180, 88)` to the tab seat `(16, 14)`.
+pub(super) const RUN_TAB_SEATS: ((i32, i32), (i32, i32)) = ((180, 88), (16, 14));
 
 /// Seat A / seat B rows of the plaque behind the tab (record `0x1A`:
 /// `y = -24` -> `14`).
@@ -346,7 +362,7 @@ pub(super) const RING_AP_PLATE_SEATS_X: (i32, i32) = (328, 208);
 /// on every other surface that shows the panels.
 pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -> i32 {
     let (a, b) = ROSTER_PANEL_SEATS_Y;
-    if let Some(g) = ring_open_glide(world) {
+    if let Some(g) = ring_open_glide(world).or(run_confirm_glide(world)) {
         return (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1));
     }
     if battle_hud_phase(world) == BattleHudPhase::Action
@@ -377,6 +393,13 @@ pub fn battle_chip_offsets(world: &legaia_engine_core::world::World) -> [(i32, i
 /// The `Begin` tab's offset from its seat this frame: record 1 walking from
 /// the round prompt's `Begin` seat as the ring opens. `(0, 0)` at rest.
 pub fn battle_begin_tab_offset(world: &legaia_engine_core::world::World) -> (i32, i32) {
+    if let Some(g) = run_confirm_glide(world) {
+        let ((ax, ay), (bx, by)) = RUN_TAB_SEATS;
+        return (
+            LogLaunch::seat_dy(Some(g), ax, bx),
+            LogLaunch::seat_dy(Some(g), ay, by),
+        );
+    }
     let g = ring_open_glide(world);
     let ((ax, ay), (bx, by)) = BEGIN_TAB_SEATS;
     (LogLaunch::seat_dy(g, ax, bx), LogLaunch::seat_dy(g, ay, by))
@@ -408,7 +431,10 @@ pub fn battle_ring_ap_plate_dx(world: &legaia_engine_core::world::World) -> i32 
 ///
 /// REF: FUN_801D0748, FUN_801DB8F4
 pub fn battle_chip_dpad_visible(world: &legaia_engine_core::world::World) -> bool {
-    if ring_open_glide(world).is_some() {
+    if ring_open_glide(world)
+        .or(run_confirm_glide(world))
+        .is_some()
+    {
         return false;
     }
     let ring_landing = battle_command_surface(world) == Some(CommandSurface::Ring)
@@ -676,6 +702,9 @@ pub fn battle_target_select_plaque(
     world: &legaia_engine_core::world::World,
 ) -> Option<(String, Option<u8>)> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
+    if battle_command_surface(world) == Some(CommandSurface::ItemAllAllies) {
+        return Some(("All Allies".to_string(), None));
+    }
     let b = &world.battle;
     let picker: Option<&TargetPickerSession> = b
         .command

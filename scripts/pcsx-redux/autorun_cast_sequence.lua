@@ -590,7 +590,7 @@ probe.run({
         -- Cast begin (0x28) is the state every Magic action passes through
         -- first - a party summon, a monster spell, a capture-class cast - and
         -- the engine recorder starts on the same one.
-        if not cast_seen and ((PHYSICAL and (st7 == 0x1E or st7 == 0x1F or st7 == 0x20 or st7 == 0x2B or st7 == 0x6E)) or (not PHYSICAL and (st7 == 0x28 or st7 == 0x3C)
+        if not cast_seen and ((PHYSICAL and (st7 == 0x1E or st7 == 0x1F or st7 == 0x20 or st7 == 0x2B or st7 == 0x70 or st7 == 0x6E)) or (not PHYSICAL and (st7 == 0x28 or st7 == 0x3C)
             and ((CASTER_SEAT == 255 and acting < 3) or acting == CASTER_SEAT))) then
             cast_seen = true
             cast_vsync = elapsed

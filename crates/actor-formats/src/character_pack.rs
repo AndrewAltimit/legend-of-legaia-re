@@ -352,10 +352,12 @@ pub fn locomotion_record_index(character_slot: usize, bank_slot: usize) -> usize
 /// |     1     | 3 | `+0x199` | Noa (active party slot 1)  |
 /// |     2     | 5 | `+0x19B` | Gala (active party slot 2) |
 ///
-/// (The "patched group index" and "equip-byte offset within the per-slot
-/// byte window" are the same three numbers `{0, 3, 5}` - retail's
-/// `FUN_8001EBEC` reuses one tiny stack table for both roles. See the asm
-/// trace in `ghidra/scripts/funcs/8001ebec.txt`.)
+/// Two three-byte SCUS tables drive it, copied to the stack at `0x8001EC14` and
+/// `0x8001EC34`: `0x8007B3A4 = {3, 2, 3}`, the equip slot read per character,
+/// and `0x8007B3A8 = {3, 5, 3}`, the group index. The byte each row reads is the
+/// character's Ra-Seru equipment (`+0x199` for Vahn and Gala, `+0x198` for Noa),
+/// so the visible group is the arm or back a Ra-Seru changes. Eight retail
+/// states hold the law for all three characters, with the byte both ways.
 ///
 /// The swap is binary: a non-zero equip byte copies the group-10 template
 /// (`TMD+0x124`), a zero byte copies the group-11 template (`TMD+0x140`).
@@ -371,7 +373,7 @@ pub mod equipment_swap {
         /// Active-party slot index (`0..=2`).
         pub slot: u8,
         /// Group descriptor index inside the slot's TMD whose 28 bytes get
-        /// overwritten by the chosen template. `0` (Vahn), `3` (Noa), `5` (Gala).
+        /// overwritten by the chosen template. `3` (Vahn), `5` (Noa), `3` (Gala).
         pub patched_group_index: u8,
         /// Per-character record byte offset of the equipment toggle. Read by
         /// retail as `*(0x80084140 + slot*0x414 + 0x75e + local_10[slot])`;
@@ -379,22 +381,26 @@ pub mod equipment_swap {
         pub equip_byte_record_offset: u16,
     }
 
-    /// The three active-party patch slots in pack order.
+    /// The three active-party patch slots in pack order: `FUN_8001EBEC`'s two
+    /// `.rodata` tables, the group index at `0x8007B3A8` (`03 05 03`) and the
+    /// equip-byte index at `0x8007B3A4` (`03 02 03`, from record `+0x196`). The
+    /// group each names is the arm carrying the character's Ra-Seru: a capture
+    /// holds group `3` / `5` / `3` with group 10's descriptor once it is on.
     pub const ACTIVE_PARTY_SLOTS: [PatchSlot; 3] = [
         PatchSlot {
             slot: 0,
-            patched_group_index: 0,
-            equip_byte_record_offset: 0x196,
-        },
-        PatchSlot {
-            slot: 1,
             patched_group_index: 3,
             equip_byte_record_offset: 0x199,
         },
         PatchSlot {
-            slot: 2,
+            slot: 1,
             patched_group_index: 5,
-            equip_byte_record_offset: 0x19B,
+            equip_byte_record_offset: 0x198,
+        },
+        PatchSlot {
+            slot: 2,
+            patched_group_index: 3,
+            equip_byte_record_offset: 0x199,
         },
     ];
 
@@ -406,6 +412,15 @@ pub mod equipment_swap {
         } else {
             EQUIP_GROUP_NONZERO_OFFSET
         }
+    }
+
+    /// The equip byte of pack slot `slot` out of its record's eight equip
+    /// bytes (`+0x196..`). `None` past the three active-party slots.
+    pub fn equip_byte(slot: usize, equipment: &[u8]) -> Option<u8> {
+        let p = ACTIVE_PARTY_SLOTS.get(slot)?;
+        equipment
+            .get(usize::from(p.equip_byte_record_offset) - 0x196)
+            .copied()
     }
 
     /// Apply the runtime equipment-swap patch to a disc-form character TMD.
@@ -473,7 +488,7 @@ mod tests {
 
     #[test]
     fn patch_slots_match_fun_8001ebec_table() {
-        let want = [(0u8, 0u8, 0x196u16), (1, 3, 0x199), (2, 5, 0x19B)];
+        let want = [(0u8, 3u8, 0x199u16), (1, 5, 0x198), (2, 3, 0x199)];
         for (i, (slot, group, off)) in want.into_iter().enumerate() {
             let p = equipment_swap::ACTIVE_PARTY_SLOTS[i];
             assert_eq!(p.slot, slot);
@@ -512,21 +527,21 @@ mod tests {
         assert_eq!(tmd[EQUIP_GROUP_NONZERO_OFFSET], 10);
         assert_eq!(tmd[EQUIP_GROUP_ZERO_OFFSET], 11);
 
-        // Vahn patch with equip_byte=1 should copy group 10's bytes over group 0.
+        // Vahn patch with equip_byte=1 copies group 10 over group 3.
+        let group = |g: usize| FIRST_GROUP_DESCRIPTOR_OFFSET + g * GROUP_DESCRIPTOR_BYTES;
         let v = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[0], 1);
-        assert_eq!(v[FIRST_GROUP_DESCRIPTOR_OFFSET], 10);
-        // Other groups untouched.
-        assert_eq!(v[FIRST_GROUP_DESCRIPTOR_OFFSET + GROUP_DESCRIPTOR_BYTES], 1);
+        assert_eq!(v[group(3)], 10);
+        // Other groups untouched: group 0 is Vahn's head.
+        assert_eq!(v[group(0)], 0);
+        assert_eq!(v[group(1)], 1);
 
-        // Noa patch with equip_byte=0 should copy group 11 over group 3.
+        // Noa patch with equip_byte=0 copies group 11 over group 5.
         let n = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[1], 0);
-        let dst = FIRST_GROUP_DESCRIPTOR_OFFSET + 3 * GROUP_DESCRIPTOR_BYTES;
-        assert_eq!(n[dst], 11);
+        assert_eq!(n[group(5)], 11);
 
-        // Gala patch with equip_byte=0xFF should copy group 10 over group 5.
+        // Gala patch with equip_byte=0xFF copies group 10 over group 3.
         let g = equipment_swap::apply(&tmd, equipment_swap::ACTIVE_PARTY_SLOTS[2], 0xFF);
-        let dst = FIRST_GROUP_DESCRIPTOR_OFFSET + 5 * GROUP_DESCRIPTOR_BYTES;
-        assert_eq!(g[dst], 10);
+        assert_eq!(g[group(3)], 10);
     }
 
     #[test]

@@ -98,13 +98,8 @@ impl PlayWindowApp {
             .flatten();
         let (mut draws, _) =
             field_env::resolve_placed_env_draws(&env_tmds, &placements, floor_lut, Some(&binds));
-        // Same story-hidden gate as the static placement pass: a parked
-        // prop's clip must not draw either.
-        field_env::retain_visible_placed_draws(
-            &mut draws,
-            &binds,
-            &self.session.host.world.hidden_object_records(),
-        );
+        // A parked prop keeps its entry too: `posed_prop_frame_draws` skips it
+        // per frame while it stands at the hide box.
         self.follow_floor_placed_draws(&mut draws, &binds);
 
         let scales = field_env::placed_render_scales(
@@ -438,16 +433,11 @@ impl PlayWindowApp {
         let (mut env_draws, dropped) = legaia_engine_scene::field_env::resolve_placed_env_draws(
             &env_tmds, placements, floor_lut, binds,
         );
-        // Story-hidden placed objects: a bind record's spawn prologue that
-        // parked its actor at the hide box (flag-gated scenery like town01's
-        // gate rocks) draws nothing, exactly as retail draws the actor rather
-        // than the raw `.MAP` table.
+        // A record whose prologue parks its actor at the hide box still gets a
+        // draw here: the per-frame pass skips it while it stands there
+        // (`World::hidden_object_records`), and a script can seat it later
+        // (`son`'s sky, `CC 05 51 08 10 05 00` on a `23 7F 7F` record).
         if let Some(binds) = binds {
-            legaia_engine_scene::field_env::retain_visible_placed_draws(
-                &mut env_draws,
-                binds,
-                &self.session.host.world.hidden_object_records(),
-            );
             self.follow_floor_placed_draws(&mut env_draws, binds);
         }
         // Render scale: a bind record's prologue can leave the actor's

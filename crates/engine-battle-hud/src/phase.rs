@@ -163,6 +163,9 @@ pub enum CommandSurface {
     /// 29/0 2A/0 34/1 3B/3` - the panels park and the bar (7) rises for the
     /// member the cursor points at (`None` while it points at an enemy).
     ItemTarget(Option<u8>),
+    /// `0x66`: an all-party item's confirm, the panels up under an `All Allies`
+    /// plate (`battle_item_allparty_gaza2`).
+    ItemAllAllies,
     /// `0x46`, step 7: `01/3 06/0 4E/0 4F/0 07/1 08/1 09/1 0B/1 0E/0 18/0
     /// 19/0 1A/3 1F/0 64/0 52/1` - panels up, bar parked, plate gone.
     SpellBrowse,
@@ -218,6 +221,12 @@ pub fn battle_command_surface(world: &legaia_engine_core::world::World) -> Optio
     }
     if let Some(menu) = world.battle.item_menu.as_ref() {
         let view = menu.menu_view();
+        if matches!(
+            menu.state,
+            legaia_engine_menus::inventory_use::InventoryUseState::AllPartyConfirm { .. }
+        ) {
+            return Some(CommandSurface::ItemAllAllies);
+        }
         return Some(if view.target_select {
             CommandSurface::ItemTarget(
                 menu.targets

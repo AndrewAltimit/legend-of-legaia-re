@@ -101,14 +101,10 @@ pub fn spawn_species(table: &[[u32; 8]], lure: u32, band: u32) -> Option<usize> 
 /// The reel-cadence recogniser: a 16-slot `{button, held-frames}` ring buffer
 /// (`DAT_801d91e4`, write index `DAT_801d91dc`) fed the decoded reel button
 /// each frame and walked backwards against the overlay's four gesture
-/// templates with a +-10 frame-step tolerance. On a full match the buffer is
+/// templates, tolerance and skip rule on [`Self::feed`]. On a full match the buffer is
 /// reset (`FUN_801d746c`) and the matched template id is reported - the
 /// consumer stores it **as the cast band**.
 ///
-/// The `history_window` word of each template bounds the total duration the
-/// backwards walk may span; reading it as an inclusive bound (+ tolerance) is
-/// this port's interpretation - the per-step button/duration match and the
-/// reset are the pinned parts.
 // PORT: FUN_801d3db4 (reel-cadence recogniser: ring accumulate + template walk)
 // PORT: FUN_801d746c (ring reset: index + all 16 slots cleared)
 #[derive(Debug, Clone)]
@@ -141,37 +137,62 @@ impl ReelCadence {
         crate::fishing_chrome::clear_slot_ring(&mut self.idx, &mut self.ring);
     }
 
+    /// The ring, its write index and the last-button latch.
+    pub fn state(&self) -> (&[(u8, i32)], usize, u8) {
+        (&self.ring, self.idx, self.last)
+    }
+
     /// Feed this frame's decoded reel button (`0` idle / `1` reel A / `2`
     /// reel B) and frame step; returns the matched template id (= the band)
     /// if a gesture completed this frame, resetting the ring.
+    ///
+    /// The frame a button changes opens a slot at zero and adds no step. The
+    /// walk runs each template's steps newest first down the ring, on a budget
+    /// that starts at the template's window and loses every visited slot's
+    /// held time:
+    ///
+    /// * a slot matches a step when the button is equal and the duration is
+    ///   within `9` either way (`slt` both ways, `0x801D3F28` / `0x801D3F34`);
+    /// * one slot that does not match is passed over, and the same step tries
+    ///   the next older slot. A second miss in a row fails the template
+    ///   (`0x801D3F78..0x801D3F90`), so a brief tap between two steps does not
+    ///   spoil a gesture;
+    /// * the budget at or below zero ends the walk, and with steps left over
+    ///   the template fails.
+    ///
+    /// The last-button latch is written only on a frame with no match: the
+    /// matched exit `0x801D3E60` jumps past the store at `0x801D3FC8`.
     pub fn feed(&mut self, button: u8, frame_step: i32) -> Option<usize> {
         if button != self.last {
-            self.last = button;
             self.idx = (self.idx + 1) % self.ring.len();
             self.ring[self.idx] = (button, 0);
+        } else {
+            self.ring[self.idx].1 += frame_step;
         }
-        self.ring[self.idx].1 += frame_step.max(1);
 
-        'template: for (t, tpl) in self.templates.iter().enumerate() {
-            let n = tpl.steps.len();
-            if n == 0 || n > self.ring.len() {
-                continue;
-            }
-            let mut span = 0i32;
-            for k in 0..n {
-                let slot = self.ring[(self.idx + self.ring.len() - k) % self.ring.len()];
-                let step = tpl.steps[n - 1 - k];
-                if slot.0 != step.button || (slot.1 - step.duration).abs() > CADENCE_TOLERANCE {
-                    continue 'template;
+        for (t, tpl) in self.templates.iter().enumerate() {
+            let mut left = tpl.steps.len();
+            let mut budget = tpl.history_window;
+            let mut misses = 0;
+            let mut age = 0usize;
+            while budget > 0 && left > 0 && misses < 2 {
+                let slot = self.ring[(self.idx + self.ring.len() - (age & 0xF)) % self.ring.len()];
+                let step = tpl.steps[left - 1];
+                if slot.0 == step.button && (step.duration - slot.1).abs() < CADENCE_TOLERANCE {
+                    misses = 0;
+                    left -= 1;
+                } else {
+                    misses += 1;
                 }
-                span += slot.1;
+                budget -= slot.1;
+                age += 1;
             }
-            if span > tpl.history_window + CADENCE_TOLERANCE {
-                continue;
+            if left == 0 {
+                self.reset();
+                return Some(t);
             }
-            self.reset();
-            return Some(t);
         }
+        self.last = button;
         None
     }
 }
@@ -216,8 +237,7 @@ impl BandCheck {
     /// `0x801D3434` for the water class, then one `addiu s1,s1,1` per newly-pressed
     /// pad mask from `0x801D3450` - and not two readings of one quantity.
     ///
-    /// Pinned: the every-frame re-entry (countdown clamped at 0), the
-    /// cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
+    /// Pinned: the cadence-match band store + `0x40` hold + splash, the roll cutoffs, the
     /// `credit = countdown + 2 (+ edges)` strike credit and its `0x40`
     /// cadence-match override, the modulus ladder
     /// ([`crate::fishing_actors::bite_interval`]) and the far band's credit
@@ -243,11 +263,12 @@ impl BandCheck {
     ) -> bool {
         self.splash = false;
         let mut credit_base = self.countdown + STRIKE_CREDIT_BASE;
-        if self.countdown > 0 {
-            // Matched band holds for the countdown; clamped to 0 on underflow
-            // so the steady state re-enters every tick.
-            self.countdown = (self.countdown - frame_step.max(1)).max(0);
-        } else if record > BAND_CHECK_MIN_RECORD {
+        let due = self.band_due(record, frame_step);
+        // No clamp: at a short line the word keeps falling below zero, and the
+        // next body entry is what zeroes it (`0x801D31E4`).
+        self.countdown -= frame_step;
+        if due {
+            self.countdown = 0;
             match cadence {
                 Some(t) => {
                     self.band = t as u32;
@@ -263,14 +284,15 @@ impl BandCheck {
                 }
             }
         }
-
+        // The readout picks both halves of the roll: the modulus off the
+        // interval ladder, and - in the far band - a credit base that replaces
+        // the countdown term outright. The draw is every frame's, held or not
+        // (`0x801D3300`).
+        let interval = crate::fishing_actors::bite_interval(readout, false);
+        let roll = rng.next_u15() as i32 % interval.max(1);
         if !reel_held {
             return false;
         }
-        // The readout picks both halves of the roll: the modulus off the
-        // interval ladder, and - in the far band - a credit base that replaces
-        // the countdown term outright.
-        let interval = crate::fishing_actors::bite_interval(readout, false);
         let mut credit = crate::fishing_actors::bite_credit_override(readout)
             .unwrap_or(credit_base)
             + water_bonus.max(0)
@@ -278,7 +300,16 @@ impl BandCheck {
         if readout < STRIKE_CREDIT_ZERO_READOUT {
             credit = 0;
         }
-        (rng.next_u15() as i32 % interval.max(1)) < credit
+        roll < credit
+    }
+
+    /// Whether this frame runs the band body: the countdown has run out under
+    /// this frame's step and the line is out past the minimum
+    /// (`0x801D31C0..0x801D31D8`). The cadence recogniser is called only from
+    /// inside the body (`0x801D31E0`), so its ring stands still through a held
+    /// band and at a short line.
+    pub fn band_due(&self, record: i32, frame_step: i32) -> bool {
+        self.countdown - frame_step < 0 && record > BAND_CHECK_MIN_RECORD
     }
 }
 
@@ -337,7 +368,7 @@ pub struct FishFrame {
     pub load: i32,
     /// The swim offset `FUN_801D7BB8` writes to `DAT_801D9100` / `DAT_801D9104`
     /// this frame - `(sin, cos) * radius * 3 * step >> 12` at the arm's angle,
-    /// 24.8 - in the fish's own frame (its facing taken as `0`).
+    /// 24.8, world space.
     pub swim: (i32, i32),
     /// The surge term `DAT_801D90F4`, `0..=0x3C0`: the lure tick caps the
     /// hooked reel speed at `0x1800 - 2 * surge` (`0x801D2B98..0x801D2BB0`).
@@ -364,6 +395,8 @@ pub struct FishAi {
     pub(super) phase: i32,
     /// The depth ceiling `DAT_801D929C`.
     pub(super) ceiling: i32,
+    /// The angler's `+0x26`: every arm's swim angle starts from it.
+    pub facing: i16,
 }
 
 impl Default for FishAi {
@@ -389,6 +422,7 @@ impl FishAi {
             timer: 0,
             phase: 0,
             ceiling: FIGHT_DEPTH_CEILING,
+            facing: 0,
         }
     }
 
@@ -448,7 +482,7 @@ impl FishAi {
             }
         };
         // `FUN_801D7BB8(facing - ((rand & 0x7f) - K), radius, .., step * 3)`.
-        let angle = (angle_k - (rng.next_u15() & 0x7f) as i32) as u16;
+        let angle = (i32::from(self.facing) + angle_k - (rng.next_u15() & 0x7f) as i32) as u16;
         let scale = fs * 3;
         let polar = |t: i32| (t.wrapping_mul(radius).wrapping_mul(scale)) >> 12;
         let swim = (

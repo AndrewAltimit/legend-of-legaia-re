@@ -45,8 +45,10 @@ pub struct TargetPanelModel {
 /// staged item ([`target_panel_mode`]; pass 0 without disc effect
 /// tables - the plain `cur/max` panel).
 pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPanelModel> {
-    let InventoryUseState::TargetSelect { cursor, .. } = &s.inner.state else {
-        return None;
+    let (cursor, all_targets) = match &s.inner.state {
+        InventoryUseState::TargetSelect { cursor, .. } => (*cursor, false),
+        InventoryUseState::AllPartyConfirm { .. } => (0, true),
+        _ => return None,
     };
     let members = s
         .inner
@@ -65,8 +67,8 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
     Some(TargetPanelModel {
         members,
         mode,
-        cursor_row: *cursor as u8,
-        all_targets: false,
+        cursor_row: cursor as u8,
+        all_targets,
     })
 }
 
@@ -74,7 +76,9 @@ pub fn target_panel_model(s: &PauseItemsSession, mode: u32) -> Option<TargetPane
 /// the target select was entered from (`item_cursor` -> `filtered_items`
 /// -> `items`). `None` outside target select.
 pub fn staged_use_item_id(s: &PauseItemsSession) -> Option<u8> {
-    let InventoryUseState::TargetSelect { item_cursor, .. } = &s.inner.state else {
+    let (InventoryUseState::TargetSelect { item_cursor, .. }
+    | InventoryUseState::AllPartyConfirm { item_cursor }) = &s.inner.state
+    else {
         return None;
     };
     let idx = s.inner.filtered_items.get(*item_cursor).copied()?;
@@ -150,4 +154,44 @@ pub fn target_panel_view_model_of(
         m.stat_base = [base.atk, base.udf, base.ldf, base.spd, base.int];
     }
     Some(model)
+}
+
+/// The window-14 panel for the Magic screen's target flows, off the session's
+/// target rows and the roster: the plain `cur / max` preview, the hand on the
+/// picked row or, for a group spell, on every row.
+pub fn spell_target_panel_view_model_of(
+    s: &crate::spell_menu::SpellMenuSession,
+    records: &[legaia_save::CharacterRecord],
+) -> TargetPanelModel {
+    use crate::spell_menu::SpellMenuPhase;
+    let (cursor_row, all_targets) = match s.phase() {
+        SpellMenuPhase::TargetSelect { cursor, .. } => (*cursor, false),
+        _ => (0, true),
+    };
+    let members = s
+        .targets()
+        .iter()
+        .map(|t| {
+            let rec = records.get(t.slot as usize);
+            let hms = rec.map(|r| r.hp_mp_sp());
+            TargetPanelMemberModel {
+                name: t.name.clone(),
+                level: rec.map_or(0, |r| match r.magic_rank() {
+                    l @ 1..=99 => l,
+                    _ => legaia_save::level_for_cumulative_xp(r.cumulative_xp()),
+                }),
+                hp: t.hp,
+                hp_max: t.hp_max,
+                mp: hms.map_or(0, |h| h.mp_cur),
+                mp_max: hms.map_or(0, |h| h.mp_max),
+                ..Default::default()
+            }
+        })
+        .collect();
+    TargetPanelModel {
+        members,
+        mode: 0,
+        cursor_row,
+        all_targets,
+    }
 }

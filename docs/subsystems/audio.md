@@ -1028,7 +1028,7 @@ Legaia statically links Sony's PsyQ **libsnd / SsAPI** sequencer for `.SEQ`-driv
 | `_DAT_801CE080..AC` | Voice-attribute slots (per-voice pitch + vol working state). |
 | `_DAT_801CE088[voice]` | Voice base-note table (stride 2). |
 | `_DAT_801CE204` | Ring index (0..15) into `_DAT_801CE208`, advanced once per `FUN_80065BAC` flush. |
-| `_DAT_801CE208` | **16-word silent-history ring**: one word per recent flush frame, bit `v` set when voice `v`'s envelope read zero that frame. AND of all 16 = "silent 16 consecutive frames", the condition that unreserves a voice. Not a free/busy bitmap. |
+| `_DAT_801CE208` | **16-word silent-history ring**: one word per recent flush frame, bit `v` set when voice `v`'s envelope read zero that frame. The release test ANDs words `0..=14` (`slti s1,0xf` at `0x80065CB0`, so word 15 is written and never read), and a voice set through all of them loses its held mark. Not a free/busy bitmap. |
 | `_DAT_801CDB50` | Per-voice driver records (24 × stride `0x36`): `+0x02` allocation age, `+0x06` live envelope level, `+0x1A` note priority, `+0x1D` in-use marker. The state the allocation scan (`FUN_80066B00`) reads. |
 | `_DAT_801CE362` | Chosen-voice halfword: the allocation scan's winner, consumed by `_SsVoKeyOnDirect` (`FUN_80065978`). |
 | `_DAT_801CDB48 / _DAT_801CDB4A` | **Key-ON mask accumulator** (lo/hi 16 of the 24-voice key-on word). OR'd by the voice-alloc path, flushed to the SPU by `FUN_8006C048`, cleared at flush. Register-for-register the retail twin of `engine-audio`'s `Spu::key_on_mask`. |
@@ -1291,16 +1291,39 @@ Between the SEQ event dispatch above and the documented 24-voice SPU broadcaster
 | `FUN_800675C8()` | **Key-OFF / release sweep** (no callees, pure state). Scans sounding voices, clears the per-voice flag `_DAT_801CE060`, sets the key-off accumulator `_DAT_801CDB4C/4E`, updates the sounding mask `_DAT_801CE248/24A`. |
 | `FUN_80065FE8()` | **All-voice reset / calc-top.** Zeroes every mask (`DB48/4A/4C/4E`, `E248/24A`) + voice flags, drives `FUN_80065BAC` over the active set, installs the SPU transfer-callback block (`FUN_8006BC70`). A `Spu` reset + one `Sequencer` tick pass. |
 
-**Port.** `sequencer.rs`'s `alloc_voice` implements the retail scan order
-(`// PORT: FUN_80066B00`): first-idle-ascending with early stop, the
-tightening-threshold steal tier keyed on the VAB tone `prior` byte
-(`VabBank::tone_prior`), the envelope-then-age tie-breaks (with the retail
-signedness quirk - challenger age sign-extends, incumbent zero-extends), the
-drop-when-outranked case, and the age bookkeeping. Engine stand-ins: "reserved"
-= bound to an active sequencer note; "envelope" = the live ADSR level. The
-engine keeps no 16-frame silent-history ring - a released voice unreserves when
-its owning note drops, and its decaying tail stays steal-visible through the
-envelope tie-break.
+**Port.** `alloc_voice` is the scan (`// PORT: FUN_80066B00`), reading what retail
+reads: the held mark `+0x1D` and the envelope `+0x06` as the flush last read them
+(`Sequencer::read_envelopes`), not the voice's live state. Those two lag on purpose:
+retail reads `ENVX` ahead of the KON and KOFF it is about to write, one vsync after the
+note-on that staged them. A key-on raises the mark and stores `0x7FFF`; a note-off
+lowers the mark at once (`FUN_80067480`), so a released voice is free the moment its
+envelope reads zero; a held note whose sample has ended is let go by the silent
+history. A cue's key-on marks the voice held with age zero and leaves the priority the
+last note wrote there (`FUN_80065034` writes neither `+0x1A` nor the ring beyond
+clearing it), which the port picks up off the voice's key-on count at the next flush.
+
+**A note-off goes by program and key, not by channel.** `FUN_8006688C` releases every
+record whose owner, VAB, `+0x14` program and `+0x0E` key match, with the program being
+the channel's as it stands now (`rec[+0x37 + ch]`). So a channel that changed program
+since it keyed does not find its note, which holds until something steals the voice,
+and a note on another channel sharing the program and key is released with it.
+
+**A volume or pan move walks the records too.** `0xB7` and `0xBA`
+(`FUN_80060EBC`, `FUN_80060F8C`) call `FUN_8006861C`, which rebuilds every voice whose
+record names the sequence and the channel's program, released ones included, from the
+record's velocity and the event's volume and pan, each floored at `1`. A pan move
+therefore swings a tail still ringing (the Baka Fighter theme does this constantly), and
+a pan event of `0` leaves the far side at a whisper rather than silence. The sequence
+volume walk `FUN_80067E9C` takes every record the sequence owns, from the record's own
+channel volume and **the pan the note keyed with** (`+0x0A`, which no CC writes), so a
+duck or a fade puts a moved note back where it keyed. The pause's zero level goes
+through that walk, which is why it cuts release tails as well. Port:
+`Sequencer::remix_program`, `remix_all`, `note_off`, over `voice_note`.
+
+Provenance: per-instruction read of the dumps' disassembly sections, and
+[the keying differential](#the-keying-differential). `see ghidra/scripts/funcs/80066b00.txt`,
+`80065bac.txt`, `80065978.txt`, `80066308.txt`, `8006688c.txt`, `8006861c.txt`,
+`80067e9c.txt`.
 
 **A note-on keys one voice per covering tone.** `FUN_80068568` walks the
 program's tones on its page (count `0x801CE348`, page `0x801CE34F`) and records
@@ -1326,10 +1349,6 @@ samples): the voice is chosen and reserved at the note-on, the key-on is
 written at the period's end unless a note-off cancelled it. That puts every BGM
 key-on on the vsync grid retail keys on, and the census agrees exactly on
 `tunnelb` (`2007`, `291`) and `korb2` / `uru` (`2008`).
-
-Provenance: per-instruction read of the four dumps' disassembly sections. `see
-ghidra/scripts/funcs/80066b00.txt`, `80065bac.txt`, `80065978.txt`,
-`80066308.txt`.
 
 ### SPU command shims (`*0x81` scaling = 0..127 → 0..16383)
 
@@ -3285,6 +3304,81 @@ is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op o
 activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
+## The keying differential
+
+The PCM channels score a window of a state's own music against an emulator's output, and
+the key-on census counts edges. Neither runs a whole score, and neither sees a voice number.
+`legaia-engine seq-differential` ([`legaia_parity::seq_differential`](../../crates/parity/src/seq_differential.rs))
+runs retail's `FUN_80062F98` off a library state's RAM in
+[`crates/retail-exec`](../tooling/retail-kernel-differential.md), beside the port's `Sequencer`, and
+compares every sounding voice's registers at every vsync.
+
+libspu reaches the chip through one base pointer, `DAT_8007AF40`, so the harness points it at
+a block of RAM and reads the registers there. The port's `Spu` is the hardware model on both
+sides, with the samples where the port's bank put them (the bank's program table maps a retail
+VAG address onto the port's). Retail's writes are applied to one copy, and that copy's envelopes
+go back as `ENVX`, which is the input the allocation scan feeds on. Both sides start the score
+from the top on an idle voice file. The port's KON falls one vsync ahead by construction
+(retail flushes at the top of the next calc), and the lag is measured off the first key-on.
+
+| Channel | Counts vsyncs where |
+|---|---|
+| `key` | the keyed notes differ, voice numbers aside: sample, pitch, both volumes, ADSR, reverb bit |
+| `voice` | the notes agree and the voice numbers do not |
+| `release` | a different number of voices went into release |
+| `sound` | the held voices differ, voice numbers and levels aside |
+| `level` | only the envelope levels differ: a few samples of KON lag |
+
+`--cues` keys a seeded run of cues beside the score on both sides, through `FUN_800653C8` and
+`FUN_80065034` on retail's and `play_tone_pair` on the port's, on the drainer's voices: the
+contention a state cannot show on demand. `--filter`, `--vsyncs`, `--all-states`, `--dump-at`
+(retail's voice records and both sides' voices at one vsync). Disc-gated test:
+`parity/tests/seq_differential_disc.rs`.
+
+Over every track the library holds, four minutes each, it reads zero in `key`, `release` and
+`sound` but for the two rows below, and `voice` on about one vsync in six hundred. Every
+such voice row is a tail ending inside one vsync's lag on one side.
+
+What it leaves open:
+
+- `2064`, one key-on in `s2_rimelm_town01`'s run, retail's voice reading ADSR2 `0` where the tone
+  holds `5FC8`. No retail mechanism is named yet.
+- `2013`, four single-vsync rows of a held voice sounding on retail's side alone.
+- A note past the table's front. A key more than five octaves under its tone's centre reads
+  `DAT_8007A940` at a negative index, into libspu's globals; track `2030` keys these. Retail's words there
+  are mostly zero and the port reads zero, so the voice keys and does not move
+  (`vab_bind::pitch_at_index`).
+
+## The cue differential
+
+`legaia-engine cue-differential` ([`legaia_parity::cue_differential`](../../crates/parity/src/cue_differential.rs))
+keys every static cue and every runtime row both ways in one library state, one state per scene.
+Retail's side runs `FUN_80016B6C` off the state's RAM with one ring slot armed, up to its first call past the
+ring walk, and reads what it staged from libsnd's shadow registers. The engine is seeded into the
+same state through the corpus's seed and keys the ring id through its audio director. A row that
+differs is a cue that sounds different: another bank open, another tone, another level.
+
+Every static cue of every ordinary scene reads alike, the bank residency included. What it found is one
+level: `FUN_80067550`'s head has no cap, so a bank master above `127` carries a cue past `0x3FFF`
+(`0x4B63` on the rows that reach it), where the port clamped. What remains is not a defect:
+
+- A row past the end of a scene's runtime bank. Retail reads whatever follows the table, and the port
+  stops at its own bound, so the last row of a scene's run disagrees.
+- `doman_arrival_from_korb2`, whose runtime bank is still `korb2`'s on the frame the state stands on.
+- The credits vignettes seeded without their chain (`arrival` in the manifest). The slots the
+  ending theme overwrote hold stale tone data in retail's RAM.
+
+`--battle` takes one battle state per formation, with the class-2 bank, the formation's two
+`monster.snd` banks and the state's own `bse.dat` rows, whose `+4` categories retail has already
+written. These read alike but for a state in the battle loader (slot `2` not open yet, as
+`v0_1_battle_loading_tetsu` shows beside `v0_1_battle_start_tetsu`), the reward cue `0x50`,
+whose bank the port stages on demand, and the `map01` arts states captured under the Monaural option.
+
+The engine side takes the rows as retail's RAM holds them, so the run checks the port's `+4` writes
+apart: it prints each seat's category byte at node `+0x80` against `monster_sound_category`, the rule
+behind `World::battle_sound_category`
+([settled](../reference/re-settled-threads/audio.md#where-a-monsters-4-category-comes-from)).
+
 ## Real retail PCM
 
 Everything above compares registers and notes. This compares sound: mednafen's
@@ -3331,12 +3425,12 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `keikoku_chest_pre` | `1.000` | `0.9986` | `-26` dB | `0.00` dB | |
 | `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
-| `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and open |
+| `minigame_baka_fighter` | | `0.9972` | `-23` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and [the keying differential](#the-keying-differential) has these keyed alike, so the fit is locking on that tone's period |
 | `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
 | `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
 | `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
 | `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
-| `zeto_call_wave_mid_cast` | | `0.9994` | `-30` dB | `+5.09` dB | the cast's own cues hold the level: `+4` to `+14` dB over the recording's first six seconds, then within `0.11` dB in every two-second window |
+| `zeto_call_wave_mid_cast` | | `0.9995` | `-30` dB | `+5.09` dB | a cast's cues this channel does not render: `+2` to `+16` dB over the recording's first six seconds, then within `0.11` dB in every two-second window; the cue differential reads every row of this state alike, levels included |
 
 The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
 stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,

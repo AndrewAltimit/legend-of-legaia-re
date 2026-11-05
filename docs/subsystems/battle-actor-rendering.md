@@ -284,6 +284,8 @@ So the strike loop's first swing, staged under bit 1 over the idle `0x19`'s arri
 | `0x1A` SpecialStarter | all slots `0`, acting actor `2` | `0x8004B728..0x8004B750` |
 | `>= 0x1B` art constant | all slots `2` if `ctx[+0x243]` set, else `4` | `0x8004BB78..0x8004BBA8` |
 
+The first row holds on a re-commit too, a looping clip's natural end included: a summon creature seated at rate `2` loops at `4` from its first wrap (capture: PROT 0916's arm 9).
+
 Outside the commit, a cast's arms slow the seats they strike, beside each reaction
 stage, and so pace its knockdown and get-up. Earthquake stores `4` and restores `8` in
 its own `0xFF` arm. The Rogue strikes and Stone Circle store `2` on the hit and again
@@ -318,6 +320,8 @@ The anim tick keeps four 32-deep per-actor **history rings**, shifted one slot p
 The per-actor draw tick `FUN_800480D8` runs `FUN_80049348`, which draws **two ghosts** of the actor's own mesh from the rings.
 
 **Spacing.** `step = 8 / actor[+0x21D]` (monster seats double it), at ring depths `step` and `2*step`. The trail stretches exactly when slow-motion drops the rate (quarter speed → depths 4 and 8).
+
+**A hidden body has none.** The tick reaches the walk only past its word-zero test (`bne v0,zero,0x80048244` at `0x800481CC`), so a cast module's hide (`+0x04 = 0`, `+0x21C = 0xFF`) takes the ghosts off with the body. PROT 0947 hides its caster on arm 2 and then flies the camera past where it stands.
 
 **Gate.** Ring id `> 0x10` (`sltiu 0x11` at `0x80049460`). The anim tick stamps the ring id from the committed record's own bytes, never from staging state:
 

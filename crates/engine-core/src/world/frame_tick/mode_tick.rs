@@ -4,6 +4,22 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// The bag's active window off the party: retail's selector `FUN_8004313C`
+    /// runs ahead of every bag helper, and a lone character before story flag
+    /// `20` gets one half of the array, the low half for Vahn and the high for
+    /// anyone else. Ticked here, since no bag helper changes the party.
+    ///
+    /// PORT: FUN_8004313C (the call sites)
+    fn refresh_bag_window(&mut self) {
+        const FULL_WINDOW_FLAG: u16 = 20;
+        let members = self.party.party_count;
+        let full = self.system_flag_test(FULL_WINDOW_FLAG);
+        let solo = self.party_roster_slot(0) as u8;
+        self.party
+            .inventory
+            .install_window_for_party(members, full, solo);
+    }
+
     /// Per-frame world tick. Drives whichever scene-mode VMs are live.
     /// Returns the battle-step outcome when in [`SceneMode::Battle`], else
     /// `None`.
@@ -49,6 +65,7 @@ impl World {
         // The move-VM strip set on screen is one tick's
         // (`MoveVmGlobals::strip_frame`).
         self.move_vm.begin_strip_tick();
+        self.refresh_bag_window();
         let outcome = self.tick_modes();
         // An active expansion pack's per-tick step (pack-line resolve, quest
         // state re-test); the identity with none.
@@ -691,6 +708,7 @@ impl World {
                 // `FUN_8003774C` once per game tick and multiplies each leg by
                 // `DAT_1F800393` (`0x80037868 lbu s2,0x393(s2)`).
                 // REF: FUN_8003774C
+                self.sweep_field_channel_lifetimes();
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }
@@ -853,6 +871,7 @@ impl World {
                 // a placement and then waits on its halt bit (`B3 <id> 0A` -
                 // urudre2's hand-off onto `map01`) parks for good.
                 // REF: FUN_8003774C
+                self.sweep_field_channel_lifetimes();
                 if self.clock.display_frame_step == 1 {
                     self.tick_field_npc_motions();
                 }

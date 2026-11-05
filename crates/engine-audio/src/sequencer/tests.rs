@@ -1,6 +1,7 @@
 use super::voices::flush_key_on_lag;
 use super::*;
 use crate::Spu;
+use crate::spu::adsr::Phase;
 use legaia_seq::ChannelMessage;
 use legaia_seq::SEQ_MAGIC;
 
@@ -53,10 +54,11 @@ fn alloc_voice_steal_frees_the_stolen_note_slot() {
     let mut spu = Spu::new();
     // One active note per voice (0..24): the occupied mask blocks every
     // voice, so allocation must steal.
+    seq.voice_held = 0xFF_FFFF;
+    seq.voice_env = [0x4000; 24];
     for v in 0..24u8 {
         seq.active.push(ActiveNote {
             channel: 0,
-            key: 60 + v,
             voice: v,
             velocity: 127,
             program: 0,
@@ -93,7 +95,6 @@ fn a_voice_rekeyed_under_a_note_is_not_keyed_off_by_its_note_off() {
     let stamp = spu.voices[23].key_on_count();
     seq.active.push(ActiveNote {
         channel: 0,
-        key: 60,
         voice: 23,
         velocity: 127,
         program: 0,
@@ -116,12 +117,101 @@ fn a_voice_rekeyed_under_a_note_is_not_keyed_off_by_its_note_off() {
     assert!(seq.active.is_empty(), "the note no longer owns the voice");
 }
 
+fn record(program: usize, key: u8, stamp: u32) -> Option<VoiceNote> {
+    Some(VoiceNote {
+        program,
+        tone: 0,
+        key,
+        channel: 0,
+        velocity: 100,
+        pan: PAN_CENTER,
+        stamp: Some(stamp),
+        staged_wheel: None,
+        staged_mix: None,
+    })
+}
+
+/// `FUN_8006688C` tests the channel's program as it stands now and the key, not
+/// the channel: a note whose channel changed program is not found, and another
+/// channel's note on that program and key is.
+#[test]
+fn a_note_off_goes_by_program_and_key_not_by_channel() {
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let mut spu = Spu::new();
+    let ram = spu.ram.clone();
+    for v in 0..2u8 {
+        spu.voices[v as usize].key_on(&ram);
+        occupy(&mut seq, v);
+        seq.active.last_mut().unwrap().key_on_stamp = 1;
+    }
+    seq.voice_note[0] = record(3, 60, 1);
+    seq.voice_note[1] = record(4, 60, 1);
+    seq.channels[0].program = 4;
+    seq.channels[5].program = 3;
+    // Channel 5 never keyed anything, and its note-off releases channel 0's note.
+    seq.note_off(&mut spu, 5, 60);
+    assert_eq!(spu.voices[0].adsr.phase, Phase::Release);
+    assert_ne!(spu.voices[1].adsr.phase, Phase::Release);
+    assert_eq!(seq.voice_held, 1 << 1);
+    // Channel 1 on program 2: nothing of that program is sounding.
+    seq.channels[1].program = 2;
+    seq.note_off(&mut spu, 1, 60);
+    assert_ne!(spu.voices[1].adsr.phase, Phase::Release);
+}
+
+/// The history holds a voice through fifteen silent flushes after its last
+/// key-on, and a released voice with its envelope down is free at once.
+#[test]
+fn the_silent_history_lets_a_held_voice_go() {
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let spu = Spu::new();
+    occupy(&mut seq, 2);
+    seq.forget_silence(2);
+    let mut flushes = 0;
+    while seq.voice_held != 0 {
+        seq.read_envelopes(&spu);
+        flushes += 1;
+        assert!(flushes <= SILENT_RING_LEN + 1, "never let go");
+    }
+    assert!(flushes >= SILENT_RING_LEN - 1);
+}
+
+/// A sequencer started over tails another one left: they count by their envelope
+/// and hold no mark.
+#[test]
+fn a_new_sequencer_counts_inherited_tails_by_their_envelopes() {
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let mut spu = Spu::new();
+    let ram = spu.ram.clone();
+    spu.voices[0].key_on(&ram);
+    spu.voices[0].adsr.level = 0x2000;
+    spu.voices[0].key_off();
+    seq.read_envelopes(&spu);
+    assert_eq!(seq.voice_held, 0);
+    assert_eq!(seq.voice_env[0], 0x2000);
+    assert_eq!(seq.alloc_voice(&mut spu, 0), Some(1));
+}
+
+/// A cue keying a voice marks it held for the scan, with its age zeroed.
+#[test]
+fn a_cue_key_on_holds_the_voice_for_the_scan() {
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let mut spu = Spu::new();
+    let ram = spu.ram.clone();
+    seq.voice_age[23] = 9;
+    seq.read_envelopes(&spu);
+    spu.voices[23].key_on(&ram);
+    seq.read_envelopes(&spu);
+    assert_ne!(seq.voice_held & (1 << 23), 0);
+    assert_eq!(seq.voice_age[23], 0);
+}
+
 /// Occupy a voice with a synthetic active note so the allocator treats it
 /// as reserved (the engine stand-in for the retail in-use marker).
 fn occupy(seq: &mut Sequencer, voice: u8) {
+    seq.voice_held |= 1 << voice;
     seq.active.push(ActiveNote {
         channel: 0,
-        key: 60 + voice,
         voice,
         velocity: 127,
         program: 0,
@@ -156,8 +246,7 @@ fn retail_alloc_skips_ringing_release_tails() {
     let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
     let mut spu = Spu::new();
     // Voice 0: unreserved but still ringing (release tail).
-    spu.voices[0].adsr.level = 0x1000;
-    spu.voices[0].adsr.phase = crate::spu::adsr::Phase::Release;
+    seq.voice_env[0] = 0x1000;
     assert_eq!(seq.alloc_voice(&mut spu, 0), Some(1));
 }
 
@@ -170,7 +259,7 @@ fn retail_steal_picks_minimum_priority_at_or_below_request() {
     let mut spu = Spu::new();
     for v in 0..24 {
         occupy(&mut seq, v);
-        spu.voices[v as usize].adsr.level = 0x4000;
+        seq.voice_env[v as usize] = 0x4000;
     }
     seq.voice_prio = [9; 24];
     seq.voice_prio[5] = 4; // strictly below request: tier-1 candidate
@@ -187,17 +276,17 @@ fn retail_steal_ties_break_on_env_then_age() {
     let mut spu = Spu::new();
     for v in 0..24 {
         occupy(&mut seq, v);
-        spu.voices[v as usize].adsr.level = 0x4000;
+        seq.voice_env[v as usize] = 0x4000;
     }
     // All equal priority (= request). Voice 7 is quietest.
-    spu.voices[7].adsr.level = 0x0100;
+    seq.voice_env[7] = 0x0100;
     assert_eq!(seq.alloc_voice(&mut spu, 0), Some(7));
 
     // Re-occupy 7 (alloc freed it) and equalize envelopes; voice 11 is
     // now the least-recently allocated (largest age).
     occupy(&mut seq, 7);
     for v in 0..24 {
-        spu.voices[v as usize].adsr.level = 0x4000;
+        seq.voice_env[v as usize] = 0x4000;
     }
     seq.voice_age = [3; 24];
     seq.voice_age[11] = 200;
@@ -213,7 +302,7 @@ fn retail_alloc_drops_note_when_all_voices_outrank_request() {
     let mut spu = Spu::new();
     for v in 0..24 {
         occupy(&mut seq, v);
-        spu.voices[v as usize].adsr.level = 0x4000;
+        seq.voice_env[v as usize] = 0x4000;
     }
     seq.voice_prio = [10; 24];
     assert_eq!(seq.alloc_voice(&mut spu, 3), None);
@@ -228,7 +317,7 @@ fn retail_steal_age_signedness_quirk() {
     let mut spu = Spu::new();
     for v in 0..24 {
         occupy(&mut seq, v);
-        spu.voices[v as usize].adsr.level = 0x4000;
+        seq.voice_env[v as usize] = 0x4000;
     }
     seq.voice_age[0] = 5;
     seq.voice_age[1] = 0x8001; // huge age, but sign-extends negative
@@ -722,7 +811,8 @@ fn cc10_pan_repans_the_sounding_voice() {
     seq.flush_key_ons(&mut spu);
     let v = seq.active[0].voice as usize;
     let centre = (spu.voices[v].vol_left, spu.voices[v].vol_right);
-    // Pan hard left: the right side is silenced, the left keeps its level.
+    // Pan hard left: `FUN_8006861C` floors the pan at one, so the right side is
+    // all but silenced, the left keeps its level, and the record holds the zero.
     seq.fire_channel(
         &mut spu,
         0,
@@ -732,7 +822,7 @@ fn cc10_pan_repans_the_sounding_voice() {
         },
     );
     assert_eq!(seq.channels[0].pan, 0);
-    assert_eq!(spu.voices[v].vol_right, 0);
+    assert!(spu.voices[v].vol_right < centre.1 / 100);
     assert_eq!(spu.voices[v].vol_left, centre.0);
     // Back to centre re-pans from scratch.
     seq.fire_channel(
@@ -1058,8 +1148,15 @@ fn a_pause_cuts_the_sounding_notes() {
     spu.voices[2].vol_right = 0x2000;
     spu.voices[2].adsr.level = 0x4000;
     spu.voices[2].adsr.phase = crate::spu::adsr::Phase::Sustain;
+    seq.voice_note[2] = record(0, 60, 0);
+    // A tail already releasing is in the walk too.
+    spu.voices[3].vol_left = 0x2000;
+    spu.voices[3].adsr.level = 0x4000;
+    spu.voices[3].adsr.phase = crate::spu::adsr::Phase::Release;
+    seq.voice_note[3] = record(0, 61, 0);
     seq.pause(&mut spu);
     assert_eq!((spu.voices[2].vol_left, spu.voices[2].vol_right), (0, 0));
+    assert_eq!(spu.voices[3].vol_left, 0);
     assert_eq!(spu.voices[2].adsr.phase, crate::spu::adsr::Phase::Release);
     assert_eq!(seq.master_vol(), 107);
 }

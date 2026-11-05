@@ -70,9 +70,11 @@ fn the_play_page_draw_list_carries_the_line_while_a_fish_is_hooked() {
     let cast = |rt: &mut LegaiaRuntime| {
         tick(rt, 0, 1);
         tick(rt, CIRCLE, 1);
-        tick(rt, 0, 40);
+        // A full charge: a weak throw lands inside `LAND_RECORD` and retail
+        // reels it straight back in.
+        tick(rt, 0, 110);
         tick(rt, CIRCLE, 1);
-        tick(rt, 0, 30);
+        tick(rt, 0, 200);
     };
     let line_drawn = |rt: &LegaiaRuntime| {
         let c = prim_colours(&rt.play_screen_prim_vertex_bytes());
@@ -159,7 +161,7 @@ fn the_minigames_page_gets_the_engine_line_off_the_real_rod() {
             }
             mg.fishing_pond_tick(0, false, 0);
         }
-        for _ in 0..40 {
+        for _ in 0..110 {
             mg.fishing_pond_tick(0, false, 0);
         }
         mg.fishing_pond_tick(0, true, 0);

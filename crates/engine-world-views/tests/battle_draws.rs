@@ -137,6 +137,12 @@ fn special_starter_commit_freezes_the_battle_and_ghosts_the_dash() {
     // Colour: Vahn's red base, the second ghost one decay dimmer.
     assert_eq!(ghosts[0].color, [0x60, 0x30, 0x30]);
     assert_eq!(ghosts[1].color, [0x50, 0x20, 0x20]);
+
+    // A cast module's hide zeroes the word the draw tick tests ahead of the
+    // walk (`0x800481CC`): the ring stays, the ghosts go with the body.
+    world.actors[0].battle.render_color = 0;
+    world.actors[0].battle.render_flag = 0xFF;
+    assert!(legaia_engine_world_views::battle_draws::battle_ghost_draws(&world).is_empty());
 }
 
 /// A seated ghost is drawn from the slot the walk reads, re-posed from the

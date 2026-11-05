@@ -179,12 +179,12 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         approach: true,
         arms: Some(&[2]),
     },
-    // PROT 0952 `0x5C` (`0x801F7118`): walk, then `9` at `0x801F7494` and
-    // `0x0A` at `0x801F7538`.
+    // PROT 0952 `0x5C` (`0x801F7118`): the walk; `9` and `0x0A` are its
+    // director's, on arms 2 and 3 (`0x801F7494`, `0x801F7538`).
     CasterStageRow {
         prot_entry: 952,
         action_ids: &[0x5C],
-        rule: CasterClipRule::Fixed(&[0x09, 0x0A]),
+        rule: CasterClipRule::Fixed(&[]),
         approach: true,
         arms: None,
     },
@@ -196,7 +196,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x5D],
         rule: CasterClipRule::Fixed(&[0x0A]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0955 `0x6F` (`0x801F7FA4`): walk, then `7` at `0x801F826C`.
     CasterStageRow {
@@ -242,7 +242,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x76],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0960 `0xA6` (`0x801F69D8`, Neo Star Slash): `li v0,0xa;
     // sb v0,0x1da(s4)` at `0x801F6B98`, in arm 1 (`0x801F6B48`) behind its

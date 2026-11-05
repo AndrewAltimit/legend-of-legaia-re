@@ -209,6 +209,10 @@ impl PlayWindowApp {
             w.battle_backdrop_cue(),
             w.active_effect_sprites().len(),
         );
+        eprintln!(
+            "capture stage: drawn objects {:?} rebound {} stage id {}",
+            self.battle_stage_shell, w.battle.backdrop_rebound, w.battle.stage_id,
+        );
         if let (Some(path), Some(v)) = (
             std::env::var_os("LEGAIA_DIAG_CAPTURE_VRAM"),
             self.dance_venue_gpu
@@ -231,6 +235,28 @@ impl PlayWindowApp {
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
         eprintln!("capture object moves {:?}", w.object_draw_displacements());
+        if let Some(view) = self.last_frame_field_view {
+            for q in w.field_drop_shadows(
+                &view,
+                self.win.renderer.as_ref().is_some_and(|r| r.psx_mode()),
+            ) {
+                eprintln!(
+                    "capture shadow cell {:?} slot {} depth {:?}",
+                    q.xy, q.ot_index, q.depth
+                );
+            }
+        }
+        for c in w.field_vm.channels.iter().filter(|c| c.object_bind) {
+            eprintln!(
+                "capture object channel {}: at ({}, {}, {}) scale {} flags {:#x}",
+                c.placement_index,
+                c.ctx.world_x as i16,
+                c.ctx.world_y as i16,
+                c.ctx.world_z as i16,
+                c.ctx.field_72,
+                c.ctx.flags,
+            );
+        }
         eprintln!(
             "capture field camera: globals {:?} mover {:?}",
             self.session.camera.globals, self.session.camera.mover,

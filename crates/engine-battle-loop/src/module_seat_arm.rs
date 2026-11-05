@@ -214,21 +214,25 @@ pub const PUERA_SLIDE_PER_TICK: i16 = 16;
 pub const PUERA_WAKE_ARM: u8 = 5;
 
 /// The modules whose seat arm drains a countdown and calls the installer
-/// only on the pass that finds it spent (`bgez` / `bgtz` straight ahead of
+/// only on the pass that finds it spent (a `bgez` / `bgtz` straight ahead of
 /// `jal 0x801F19EC`), so the creature appears as the arm **leaves**, not as
-/// it is entered: PROT 0907 (`0x801F76B8`), 0911 (`0x801F70A0`), 0923
-/// (`0x801F6D9C`) and 0932 (`0x801F6EA4`). PROT 0928's arm 4 returns on
-/// every pass its sweep word has not reached its end (`bne t0,v0` at
-/// `0x801F73B0`), and only the passing one cuts the camera and calls the
-/// installer (`0x801F7444` / `0x801F744C`). PROT 0929's arm 5 drains its
-/// countdown (`bgtz` at `0x801F6FFC`) ahead of `jal 0x801F19EC` at
-/// `0x801F7080`. Their seat arm is
+/// it is entered: PROT 0904 (`0x801F6E5C`), 0907 (`0x801F76B8`), 0911
+/// (`0x801F70A0`), 0915 (`0x801F6E54`), 0916 (`0x801F706C`), 0917
+/// (`0x801F6E30`), 0920 (`0x801F6CEC`), 0921 (the gate at the head of the arm
+/// whose spawn block ends in `0x801F6FA4`), 0923 (`0x801F6D9C`), 0931
+/// (`0x801F6E1C`), 0932 (`0x801F6EA4`) and 0934 (`0x801F7028`). PROT 0928's arm 4 returns on every pass its sweep word has
+/// not reached its end (`bne t0,v0` at `0x801F73B0`), and only the passing one
+/// cuts the camera and calls the installer (`0x801F7444` / `0x801F744C`).
+/// PROT 0929's arm 5 drains its countdown (`bgtz` at `0x801F6FFC`) ahead of
+/// `jal 0x801F19EC` at `0x801F7080`. Their seat arm is
 /// [`legaia_engine_cast::cast_module_camera::module_seat_arm`]; the
-/// summon-hold modules already name the arm after theirs. PROT 0915
-/// (`0x801F6E54`) and 0934 (`0x801F7028`) seat on the pass too, but their
-/// camera-only directors park on that arm, so the port seats them as it is
-/// entered.
-pub const SEATS_ON_PASS: [u32; 6] = [907, 911, 923, 928, 929, 932];
+/// summon-hold modules already name the arm after theirs. The recorded
+/// `creature.csv` of each cast reads the seat's node first on the arm after.
+/// PROT 0933's arm 2 passes in a few vsyncs and hides the creature on the same
+/// pass, so it seats as it is entered and the hide lands on the seat.
+pub const SEATS_ON_PASS: [u32; 14] = [
+    904, 907, 911, 915, 916, 917, 920, 921, 923, 928, 929, 931, 932, 934,
+];
 
 /// Whether PROT `prot_entry`'s owed seat is due at module phase `phase`,
 /// given its seat arm `arm`.
@@ -237,5 +241,20 @@ pub fn seat_due(prot_entry: Option<u32>, arm: u8, phase: u8) -> bool {
         phase > arm
     } else {
         phase >= arm
+    }
+}
+
+#[cfg(test)]
+mod seat_due_tests {
+    use super::*;
+
+    /// A gate ahead of the installer holds the seat to the arm's pass; an arm
+    /// with none seats as it is entered.
+    #[test]
+    fn a_gated_seat_arm_seats_on_its_way_out() {
+        assert!(!seat_due(Some(934), 5, 5));
+        assert!(seat_due(Some(934), 5, 6));
+        assert!(seat_due(Some(903), 3, 3));
+        assert!(seat_due(None, 3, 3));
     }
 }

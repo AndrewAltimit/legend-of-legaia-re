@@ -11,6 +11,52 @@ const SHOWN_TINT: u32 = 0x2008_0200;
 const HIDDEN: u8 = 0xFF;
 
 impl World {
+    /// The epilogue's copy on every pass, held or not (`0x801F832C..`): arm
+    /// 23's first kept part carries the position its program moves, and the
+    /// other thirteen handles take its `+0x14..+0x1B`, so the rings and the
+    /// ray fan stand on one moving point.
+    ///
+    /// PORT: overlay_summon_juggernaut_0927_801f6a84 (PROT 0927; the position copy at `0x801F832C..0x801F8570`)
+    fn juggernaut_ride_lead(&mut self) {
+        use legaia_engine_cast::cast_module_camera::{
+            JUGGERNAUT_ARM23_LEAD, JUGGERNAUT_ARM23_RIDERS,
+        };
+        self.parts_ride_lead(JUGGERNAUT_ARM23_LEAD, &JUGGERNAUT_ARM23_RIDERS);
+    }
+
+    /// PROT 0966's copy of the same shape (`0x801F8AF0..0x801F8D30`).
+    ///
+    /// PORT: overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the position copy at `0x801F8AF0..0x801F8D30`)
+    pub(in crate::world::battle) fn evil_seru_ride_lead(&mut self) {
+        use legaia_engine_cast::cast_module_camera::{
+            EVIL_SERU_ARM23_LEAD, EVIL_SERU_ARM23_RIDERS,
+        };
+        self.parts_ride_lead(EVIL_SERU_ARM23_LEAD, &EVIL_SERU_ARM23_RIDERS);
+    }
+
+    fn parts_ride_lead(&mut self, lead: u32, riders: &[u32]) {
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            return;
+        };
+        let Some(lead) = scene
+            .parts
+            .iter()
+            .find(|p| !p.finished && p.tag == Some(lead))
+        else {
+            return;
+        };
+        let (x, y, z) = (lead.state.world_x, lead.state.world_y, lead.state.world_z);
+        for part in scene
+            .parts
+            .iter_mut()
+            .filter(|p| !p.finished && p.tag.is_some_and(|t| riders.contains(&t)))
+        {
+            part.state.world_x = x;
+            part.state.world_y = y;
+            part.state.world_z = z;
+        }
+    }
+
     /// Apply PROT 0927's arm `phase` writes for one pass of its director;
     /// `passed` is whether the arm's countdown let it through.
     ///
@@ -51,6 +97,7 @@ impl World {
             self.casting.module_shake = 0;
         }
         self.juggernaut_shake();
+        self.juggernaut_ride_lead();
         // Arm 19 walks the creature every pass, ahead of its gate.
         if phase == 19
             && let Some(a) = creature.and_then(|c| self.actors.get_mut(c))
@@ -351,5 +398,43 @@ impl World {
         let tail = module.bytes.get(off..)?;
         let end = tail.iter().position(|&b| b == 0)?;
         std::str::from_utf8(&tail[..end]).ok().map(str::to_string)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legaia_engine_cast::cast_module_camera::{JUGGERNAUT_ARM23_LEAD, JUGGERNAUT_ARM23_RIDERS};
+
+    /// The epilogue stands arm 23's other kept parts on the first one's point,
+    /// and a part outside the handle table keeps its own.
+    #[test]
+    fn the_kept_parts_ride_the_first() {
+        let mut w = World::new();
+        let part = |tag: u32, x: i16| {
+            let mut p = legaia_engine_effects::summon::SummonPartRuntime {
+                model_sel: -1,
+                reserved: 0,
+                buf: vec![0x08],
+                state: Default::default(),
+                finished: false,
+                origin: Some([0; 3]),
+                tag: Some(tag),
+                seat_pokes: Vec::new(),
+                seat_halve_speed: false,
+            };
+            p.state.world_x = x;
+            p
+        };
+        let mut scene =
+            legaia_engine_effects::summon::SummonScene::spawn_parts(&[], &[], 0, [0; 3]);
+        scene.parts.push(part(JUGGERNAUT_ARM23_LEAD, 77));
+        scene.parts.push(part(JUGGERNAUT_ARM23_RIDERS[12], 0));
+        scene.parts.push(part(0x801F_91D0, 5));
+        w.casting.active_summon = Some(scene);
+        w.juggernaut_ride_lead();
+        let parts = &w.casting.active_summon.as_ref().unwrap().parts;
+        assert_eq!(parts[1].state.world_x, 77);
+        assert_eq!(parts[2].state.world_x, 5);
     }
 }

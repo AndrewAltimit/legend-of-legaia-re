@@ -167,6 +167,9 @@ pub fn apply_env_world_toggles(toggles: &mut legaia_engine_core::world::WorldTog
     if let Some(on) = env_battle_frame_cadence() {
         toggles.battle_sm_frame_cadence = on;
     }
+    if std::env::var("LEGAIA_BATTLE_PARTY_STEP").is_ok_and(|v| v.trim() == "0") {
+        toggles.battle_party_cost_step = false;
+    }
     if env_arts_saved_list() {
         toggles.arts_saved_list = true;
     }

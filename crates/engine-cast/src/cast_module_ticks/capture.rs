@@ -229,7 +229,7 @@ pub const ALL_STATS_SURGE_TICK: u32 = 0x801F_69F8;
 pub const PLASMA_STRIKE_TICK: u32 = 0x801F_74E4;
 /// PROT 0957's `0x77` arm - [`crate::cast_module_camera::thunder_storm_camera`].
 pub const SUMMON_EFFECT_TICK_A: u32 = 0x801F_6A14;
-/// PROT 0957's `0x76` arm - [`summon_effect_tick_b`].
+/// PROT 0957's `0x76` arm - [`crate::cast_module_camera::death_game_camera`].
 pub const SUMMON_EFFECT_TICK_B: u32 = 0x801F_798C;
 /// PROT 0952's tick body, the arm its trampoline reaches for action `0xB8`.
 pub const ASTRAL_SLASH_TICK: u32 = 0x801F_6A0C;

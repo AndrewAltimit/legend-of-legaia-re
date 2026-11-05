@@ -61,6 +61,11 @@ pub(super) struct Glide {
     /// The angle lanes' directions (`+1` / `-1`), the sign the arming
     /// routine gives each increment (`0x80021368..0x8002138C`).
     pub(super) angle_dir: [f32; 2],
+    /// The translation and focus lanes' directions `[tr.x, tr.y, tr.z, focus.x,
+    /// focus.y, focus.z]`, the sign of each increment in the builder's table:
+    /// the walker adds it whatever side of the endpoint the live value reads
+    /// and lands the lane once it is at or past it (`0x80021574..0x8002165C`).
+    pub(super) lane_dir: [f32; 6],
 }
 
 impl Glide {
@@ -122,6 +127,21 @@ impl Glide {
         let angle_left = [gap(0).unsigned_abs() as f32, gap(1).unsigned_abs() as f32];
         let dir = |k: usize| if gap(k) < 0 { -1.0 } else { 1.0 };
         let angle_dir = [dir(0), dir(1)];
+        let sign = |from: i16, to: i16| {
+            if i32::from(to) < i32::from(from) {
+                -1.0
+            } else {
+                1.0
+            }
+        };
+        let lane_dir = [
+            sign(cur.shake[0], tgt.shake[0]),
+            sign(cur.shake[1], tgt.shake[1]),
+            sign(cur.shake[2], tgt.shake[2]),
+            sign(cur.focus[0], tgt.focus[0]),
+            sign(cur.focus[1], tgt.focus[1]),
+            sign(cur.focus[2], tgt.focus[2]),
+        ];
         // Step 1 of the builder converted TR.z into projection units in place.
         target.tr[2] = tgt.shake[2] as f32;
         if yaw {
@@ -150,6 +170,7 @@ impl Glide {
             per_vsync: false,
             angle_left,
             angle_dir,
+            lane_dir,
         }
     }
 

@@ -76,6 +76,42 @@ struct KnownDivergence {
 /// engine's).
 const KNOWN_DIVERGENCES: &[KnownDivergence] = &[
     KnownDivergence {
+        label: "son_field_door_hop",
+        key: "pos:4",
+        class: "b",
+        note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
+    },
+    KnownDivergence {
+        label: "son_field_door_hop",
+        key: "pos:6",
+        class: "b",
+        note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
+    },
+    KnownDivergence {
+        label: "son_field_door_hop",
+        key: "pos:24",
+        class: "b",
+        note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
+    },
+    KnownDivergence {
+        label: "son_field_door_hop",
+        key: "vis:2",
+        class: "b",
+        note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
+    },
+    KnownDivergence {
+        label: "son_field_door_hop",
+        key: "vis:3",
+        class: "b",
+        note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
+    },
+    KnownDivergence {
+        label: "son_field_door_hop",
+        key: "vis:23",
+        class: "b",
+        note: "a door-hop capture standing in a cutscene: the system script seats these records shot by shot (`CC 05 51 ..`, the `4C 51` arms at `0x801E1880`), clustered round (2752, 2752) in retail's RAM, where a cold entry holds their authored seats. Inferred from the seats and the script; the state's frame reads .996.",
+    },
+    KnownDivergence {
         label: "balden2_field_door_hop",
         key: "vis:62",
         class: "a-reported",

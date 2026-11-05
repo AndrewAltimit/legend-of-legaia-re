@@ -240,48 +240,13 @@ pub fn astral_slash_tick(
 }
 
 /// The action id PROT 0957's trampoline `0x801F9BA8` sends to
-/// [`summon_effect_tick_b`] (`beq v1, 0x76` at `0x801F9BDC`).
+/// [`crate::cast_module_camera::death_game_camera`] (`beq v1, 0x76` at `0x801F9BDC`).
 pub const SUMMON_EFFECT_TICK_B_ID: u8 = 0x76;
 /// The action id the same trampoline sends to tick body A, Thunder Storm
 /// ([`crate::cast_module_camera::thunder_storm_camera`], `beq v1, 0x77` at
 /// `0x801F9BE4`). Any other id falls through to the
 /// epilogue and ticks nothing.
 pub const SUMMON_EFFECT_TICK_A_ID: u8 = 0x77;
-
-/// PROT 0957 tick body B - the long one (8296 B, 2074 instructions).
-///
-/// No damage-wrapper call: every HP write here is computed in line, and there
-/// are **four** shape-A clamp sites, not two, in three kinds - which is the
-/// module's head string table `['Dies','Puera','Both','Damage','Recover']`
-/// spelled out over the two seats:
-///
-/// * **Dies** - `sh zero, 0x14c(...)` at `0x801F92DC` (seat `s2`) and
-///   `0x801F9364` (seat `s0`), each accumulating the whole bar into `+0x10`.
-/// * **Damage** - a quarter of current HP (`(hp + 3) >> 2`) clamped against
-///   the bar itself at `0x801F93D0` (`s2`) and `0x801F957C` (`s0`), then
-///   `+0x10 += d`, `+0x14C -= d`.
-/// * **Recover** - a quarter of **max** HP (`+0x14E`) clamped against the
-///   missing HP (`subu v1, a0, v0; sltu v0, v1, a3`) at `0x801F9740` (`s0`)
-///   and `0x801F978C` (`s2`), then `+0x10 -= d`, `+0x14C += d`. The HP goes
-///   **up** here: this pair is a heal, not the drain an earlier reading of the
-///   same two instructions took it for.
-///
-/// Seven phase stores through `$fp = ctx+0x279`, seven `+0x1DA` stages, five
-/// restage bumps.
-///
-/// Ported: the phase walk and the staging discipline. Not ported: the drain's
-/// per-arm rate, which is a frame-gated packet arm.
-///
-/// Wired: `World::run_cast_module_code`.
-///
-/// PORT: FUN_801F798C (phase machine + staging; the drain arms unported)
-pub fn summon_effect_tick_b(ctx: &mut CastModuleCtx, victim: &mut CastActorState) -> CastTickStep {
-    run_tick(ctx, 8, |_| {
-        let knockdown = victim.knockdown_anim;
-        stage_clip(victim, knockdown);
-        false
-    })
-}
 
 /// PROT 0958's last chained arm: once its countdown at `0x801F8BF8..
 /// 0x801F8C04` runs out it stores `0xFF` to the phase (`addiu v0,zero,0xff;

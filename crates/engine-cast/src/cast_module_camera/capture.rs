@@ -33,6 +33,10 @@ pub struct CaptureDrift {
 /// What a capture module's camera does on one pass of one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureCamArm {
+    /// The arm's pass stores the caster's size class (record `+0x1F`) and body
+    /// radius (`+0x58` behind `+0x22C`), the words the range poll and the
+    /// separation pass read.
+    pub caster_reach: Option<(u8, i16)>,
     /// The arm's pass calls the seat installer `FUN_801F19EC`: the stream's
     /// record stands as seat 7, on the caster.
     pub seats_creature: bool,
@@ -241,6 +245,11 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (940, GLARE_BODY) => Some(glare_camera),
         (940, crate::cast_arm_ticks::GLARE_DIVIDE_SPLIT_TICK) => Some(slime_divide_camera),
+        (952, super::BLOODY_HORNS_BODY) => Some(super::bloody_horns_camera),
+        (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => Some(super::water_column_camera),
+        (943, crate::cast_arm_ticks::CURSE_MP_DRAIN_TICK) => Some(super::lapis_wave_camera),
+        (956, crate::cast_arm_ticks::WATER_HAZARD_TICK) => Some(super::water_hazard_camera),
+        (949, SINGLE_BODY) => Some(super::water_crystals_camera),
         (953, SINGLE_BODY) => Some(terio_punch_camera),
         (939, SINGLE_BODY) => Some(super::spore_gas_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
@@ -260,12 +269,15 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (947, SINGLE_BODY) => Some(super::v_windhash_camera),
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
+        (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
+        (950, super::ROLLING_FLARE_BODY) => Some(super::rolling_flare_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
         (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
+        (957, super::DEATH_GAME_BODY) => Some(super::death_game_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
         (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
@@ -1188,6 +1200,14 @@ pub fn terio_punch_camera(
             st.countdown.0 = 0;
             CaptureCamArm {
                 latch: Some(0),
+                // `li 3; sb 0x278` and `li 1; sb 0x21d(s4)` at `0x801F6C94`. A
+                // recording's cursor advances one a vsync under it, though the
+                // byte itself reads `4` there.
+                ctx_278: Some(3),
+                caster_write: CaptureSeatWrite {
+                    rate: Some(1),
+                    ..Default::default()
+                },
                 ..step(
                     shot([0x20, yaw_from(0x400, h), 0], [0, 0x600, depth], 1),
                     Some(4),
@@ -1255,13 +1275,39 @@ pub fn terio_punch_camera(
                 return held;
             }
             st.countdown.add(160);
-            step(None, Some(8))
+            // The way out of the gate is the party's hits
+            // (`0x801F73CC..0x801F74DC`): `FUN_801DD6B4(0x274, ctx[+0x13], seat)`
+            // for each seat with HP and without Stone, whose rate halves and
+            // whose heading turns to `caster[+0x46] + 0x800`. The caster's
+            // clip park is released on the way (`0x801F73AC..0x801F73B8`).
+            CaptureCamArm {
+                folds_hit: true,
+                party_write: CaptureSeatWrite {
+                    rate: Some(WAVE_HIT_RATE),
+                    facing: Some(c.facing.wrapping_add(0x800) & 0xFFF),
+                    ..Default::default()
+                },
+                party_live_only: true,
+                party_skip_stoned: true,
+                caster_write: CaptureSeatWrite {
+                    stage: Some(0),
+                    loop_release: true,
+                    ..Default::default()
+                },
+                ..step(None, Some(8))
+            }
         }
         8 => {
-            if st.countdown.0 > 0 && st.countdown.drain_above(0) {
+            // The body returns `0` once the word is spent and every party
+            // seat has settled (`0x801F7518..0x801F75EC`: `+0x1D9 == 0`, a
+            // downed one `8`).
+            if (st.countdown.0 > 0 && st.countdown.drain_above(0)) || !st.party_settled {
                 return held;
             }
-            step(None, None)
+            CaptureCamArm {
+                ctx_278: Some(0),
+                ..step(None, None)
+            }
         }
         _ => CaptureCamArm::default(),
     }
