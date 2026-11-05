@@ -49,6 +49,15 @@ pub(crate) struct Cli {
 #[allow(clippy::large_enum_variant)]
 #[derive(Subcommand, Debug)]
 pub(crate) enum Cmd {
+    /// Start the game on a disc with everything the launcher remembers: its
+    /// switches and expansion pack from `launcher.toml`. What Legaia
+    /// Explorer's Play runs.
+    #[command(display_order = 1)]
+    Launch {
+        /// The disc image (`.bin` or `.cue`).
+        #[arg(long)]
+        disc: PathBuf,
+    },
     /// Load one scene's assets headlessly and print a summary line.
     /// Use this to verify the asset chain produces the right state without
     /// firing up the windowed viewer. The optional flags below are VRAM

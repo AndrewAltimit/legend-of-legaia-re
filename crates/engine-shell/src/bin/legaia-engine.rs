@@ -108,6 +108,9 @@ fn main() -> Result<()> {
     // then boots `play-window` on it - in this process when no picker window
     // was needed, otherwise in a child it already ran.
     let cmd = match cli.cmd {
+        Some(Cmd::Launch { disc }) => Cli::parse_from(launcher_window::launch_args(&disc)?)
+            .cmd
+            .expect("launcher play args name a subcommand"),
         Some(cmd) => cmd,
         None => match launcher_window::run()? {
             Some(args) => Cli::parse_from(args)
@@ -122,6 +125,7 @@ fn main() -> Result<()> {
         fatal_panic::install();
     }
     match cmd {
+        Cmd::Launch { .. } => unreachable!("expanded into play-window above"),
         #[cfg(feature = "oracles")]
         Cmd::RetailCompare(args) => legaia_parity::retail_compare_cli::run(args),
         #[cfg(feature = "oracles")]

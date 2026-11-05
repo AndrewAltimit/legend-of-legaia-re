@@ -37,6 +37,15 @@ pub struct Settings {
     /// The PROT index selected in Browse when the app last closed, selected
     /// again (and scrolled to) when the next start reopens a disc.
     pub entry: Option<u32>,
+    /// The character or monster open in *Characters & monsters* when the app
+    /// last closed: `char:<slot>` or `monster:<id>`, the
+    /// `LEGAIA_EXPLORER_ACTOR` form.
+    pub actor: Option<String>,
+    /// The ISO path open in *Movies & voice* when the app last closed.
+    pub media: Option<String>,
+    /// The width of each view's left panel (points), by view key, when the
+    /// app last closed. A hand edit is held to the panel's limits on use.
+    pub side_widths: std::collections::BTreeMap<String, f32>,
     /// Disc images and extracted folders opened recently, newest first, at
     /// most [`RECENT_MAX`] ([`Settings::remember_recent`]).
     pub recent: Vec<PathBuf>,
@@ -168,6 +177,22 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What the views reopen on survives a save and a load, and a settings
+    /// file from before these keys loads without them.
+    #[test]
+    fn view_memory_round_trips_and_older_files_load() {
+        let mut s = Settings {
+            actor: Some("monster:10".into()),
+            media: Some("MOV/MV1.STR".into()),
+            ..Default::default()
+        };
+        s.side_widths.insert("browse".into(), 512.0);
+        let text = serde_json::to_string(&s).unwrap();
+        assert_eq!(serde_json::from_str::<Settings>(&text).unwrap(), s);
+        let old: Settings = serde_json::from_str(r#"{"skip_png":true}"#).unwrap();
+        assert!(old.actor.is_none() && old.media.is_none() && old.side_widths.is_empty());
+    }
 
     #[test]
     fn round_trips_and_tolerates_missing_fields() {

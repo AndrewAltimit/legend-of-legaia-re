@@ -34,6 +34,13 @@ pub(crate) struct MediaState {
 }
 
 impl MediaState {
+    /// The ISO path open in the view.
+    pub(crate) fn selected(&self) -> Option<&str> {
+        self.sel.as_deref()
+    }
+}
+
+impl MediaState {
     /// `true` while a file is being read (the scripted screenshot waits).
     pub(crate) fn busy(&self) -> bool {
         self.loading.is_some()
@@ -107,10 +114,29 @@ impl App {
         files.sort_by_key(|f| media::natural_key(&f.path));
 
         let mut pick = None;
+        // Reopen what was open last time. A disc without that file opens on
+        // nothing, as a first start does.
+        if self.media.sel.is_none()
+            && let Some(last) = self.explorer.settings.media.take()
+            && files.iter().any(|f| f.path == last)
+        {
+            pick = Some(last);
+        }
+        // Up / Down walk the list, as the archive list does.
+        let cur = files
+            .iter()
+            .position(|f| self.media.sel.as_deref() == Some(f.path.as_str()));
+        let walked = (!ui.egui_wants_keyboard_input() && !files.is_empty())
+            .then(|| super::list_step(ui, cur, files.len() - 1))
+            .flatten();
+        if let Some(i) = walked {
+            pick = Some(files[i].path.clone());
+        }
         let side_max = super::side_panel_max(ui, 200.0);
-        egui::Panel::left("media_files")
+        let side = self.side_width("media", 260.0).min(side_max);
+        let panel = egui::Panel::left("media_files")
             .resizable(true)
-            .default_size(260.0f32.min(side_max))
+            .default_size(side)
             .max_size(side_max)
             .show(ui, |ui| {
                 egui::ScrollArea::vertical()
@@ -130,17 +156,20 @@ impl App {
                                     f.path,
                                     super::human_size(f.size as u64)
                                 );
-                                if ui
-                                    .selectable_label(sel, RichText::new(text).monospace())
-                                    .clicked()
-                                {
+                                let row = ui.selectable_label(sel, RichText::new(text).monospace());
+                                if row.clicked() {
                                     pick = Some(f.path.clone());
+                                }
+                                if walked.is_some() && pick.as_deref() == Some(f.path.as_str()) {
+                                    row.scroll_to_me(None);
                                 }
                             }
                             ui.separator();
                         }
                     });
             });
+        self.side_widths
+            .insert("media", panel.response.rect.width());
         if let Some(p) = pick
             && self.media.sel.as_deref() != Some(p.as_str())
         {

@@ -4,10 +4,10 @@
 //!
 //! The game is a separate program shipped in the same release folder
 //! (`docs/tooling/releases.md`), so Explorer starts it as a child process
-//! rather than linking the engine. The child gets the same argument list the
-//! engine's own first-run launcher boots (`play-window --disc <bin>
-//! --boot-ui`, `legaia_engine_shell::launcher::play_args`) and runs in the
-//! same per-user data folder (`launcher::data_dir`), so saves, key bindings
+//! rather than linking the engine. The child runs `legaia-engine launch --disc
+//! <bin>`, which expands to the argument list the engine's own launcher boots,
+//! its remembered switches and expansion pack included, and runs in the same
+//! per-user data folder (`launcher::data_dir`), so saves, key bindings
 //! and options are shared with a game started by double-clicking it. Its log
 //! goes to a file in that folder, which the error line names when the game
 //! exits with a failure. A game that dies in the X11 startup race (`SIGSEGV`
@@ -82,23 +82,6 @@ pub fn record_disc_for_engine(settings: &Path, disc: &Path) -> anyhow::Result<()
         .with_context(|| format!("writing {}", settings.display()))
 }
 
-/// The `play-window` switches the engine's launcher keeps in `settings`
-/// (`psx_render`, `retail`; `legaia_engine_shell::launcher::LauncherSettings`),
-/// as arguments. A missing or unreadable file gives none.
-pub fn launch_switches(settings: &Path) -> Vec<std::ffi::OsString> {
-    let Some(table) = std::fs::read_to_string(settings)
-        .ok()
-        .and_then(|t| t.parse::<toml::Table>().ok())
-    else {
-        return Vec::new();
-    };
-    [("psx_render", "--psx-render"), ("retail", "--retail")]
-        .into_iter()
-        .filter(|(key, _)| table.get(*key).and_then(|v| v.as_bool()) == Some(true))
-        .map(|(_, flag)| flag.into())
-        .collect()
-}
-
 /// The log file a Explorer-started game writes into.
 pub const GAME_LOG: &str = "legaia-explorer-game.log";
 
@@ -121,14 +104,12 @@ pub fn playable_disc(lib: &Library) -> Result<PathBuf, String> {
     }
 }
 
-/// The engine's argument list for `bin`: the title screen on that disc.
+/// The engine's argument list for `bin`: the title screen on that disc,
+/// with whatever its launcher remembers. The engine expands `launch` into the
+/// full `play-window` list itself, so a switch added to the launcher reaches a
+/// game started from here with nothing to change in this program.
 pub fn play_args(bin: &Path) -> Vec<std::ffi::OsString> {
-    vec![
-        "play-window".into(),
-        "--disc".into(),
-        bin.as_os_str().to_owned(),
-        "--boot-ui".into(),
-    ]
+    vec!["launch".into(), "--disc".into(), bin.as_os_str().to_owned()]
 }
 
 /// A game Explorer started.
@@ -161,14 +142,8 @@ impl Game {
     /// Start `engine` on `bin`. The working directory is `data_dir` (the
     /// engine's data folder, [`engine_data_dir`]; created when missing);
     /// stdout and stderr go to [`GAME_LOG`] inside it.
-    pub fn start(
-        engine: &Path,
-        bin: &Path,
-        extra: &[std::ffi::OsString],
-        data_dir: Option<&Path>,
-    ) -> anyhow::Result<Self> {
-        let mut args = play_args(bin);
-        args.extend(extra.iter().cloned());
+    pub fn start(engine: &Path, bin: &Path, data_dir: Option<&Path>) -> anyhow::Result<Self> {
+        let args = play_args(bin);
         let (child, log) = spawn(engine, &args, data_dir, false)?;
         Ok(Self {
             child,
@@ -360,12 +335,9 @@ mod tests {
     }
 
     #[test]
-    fn play_args_boot_the_title_screen() {
+    fn play_args_go_through_the_engines_launcher() {
         let a = play_args(Path::new("/g/legaia.bin"));
-        assert_eq!(a[0], "play-window");
-        assert_eq!(a[1], "--disc");
-        assert_eq!(a[2], "/g/legaia.bin");
-        assert_eq!(a[3], "--boot-ui");
+        assert_eq!(a, ["launch", "--disc", "/g/legaia.bin"]);
     }
 
     #[test]
@@ -392,7 +364,7 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o755)).unwrap();
         let data = dir.path().join("data");
-        let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();
+        let mut game = Game::start(&engine, Path::new("/g/l.bin"), Some(&data)).unwrap();
         let res = loop {
             if let Some(r) = game.poll() {
                 break r;
@@ -403,10 +375,7 @@ mod tests {
         let log = game.log.clone().unwrap();
         assert_eq!(log, data.join(GAME_LOG));
         let text = std::fs::read_to_string(&log).unwrap();
-        assert!(
-            text.contains("args play-window --disc /g/l.bin --boot-ui"),
-            "{text}"
-        );
+        assert!(text.contains("args launch --disc /g/l.bin"), "{text}");
         assert!(text.contains(&format!("cwd {}", data.display())), "{text}");
         assert!(text.trim_end().ends_with("boom"), "{text}");
     }
@@ -438,7 +407,7 @@ mod tests {
         };
 
         write_engine("kill -SEGV $$\n");
-        let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();
+        let mut game = Game::start(&engine, Path::new("/g/l.bin"), Some(&data)).unwrap();
         let err = wait(&mut game).unwrap_err();
         assert!(err.contains(STARTUP_RACE_FAILURE), "{err}");
         let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
@@ -446,7 +415,7 @@ mod tests {
         assert!(text.contains("[explorer]"), "{text}");
 
         write_engine(&format!("echo '{EVENT_LOOP_OPEN_MARKER}'\nkill -SEGV $$\n"));
-        let mut game = Game::start(&engine, Path::new("/g/l.bin"), &[], Some(&data)).unwrap();
+        let mut game = Game::start(&engine, Path::new("/g/l.bin"), Some(&data)).unwrap();
         let err = wait(&mut game).unwrap_err();
         assert!(!err.contains(STARTUP_RACE_FAILURE), "{err}");
         let text = std::fs::read_to_string(game.log.as_ref().unwrap()).unwrap();
@@ -475,18 +444,5 @@ mod tests {
         std::fs::write(&file, "not = = toml").unwrap();
         assert!(record_disc_for_engine(&file, Path::new("/g/new.bin")).is_err());
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "not = = toml");
-    }
-
-    #[test]
-    fn launch_switches_follow_the_engine_launcher_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("launcher.toml");
-        assert!(launch_switches(&file).is_empty(), "no file, no switches");
-        std::fs::write(&file, "disc = \"/g/l.bin\"\npsx_render = true\n").unwrap();
-        assert_eq!(launch_switches(&file), vec!["--psx-render"]);
-        std::fs::write(&file, "retail = true\npsx_render = false\n").unwrap();
-        assert_eq!(launch_switches(&file), vec!["--retail"]);
-        std::fs::write(&file, "not = = toml").unwrap();
-        assert!(launch_switches(&file).is_empty());
     }
 }

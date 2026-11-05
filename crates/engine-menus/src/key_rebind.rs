@@ -3,9 +3,9 @@
 //! Drives the per-key rebind sub-screen reachable from
 //! `crate::options::OptionsSession`: pick a [`PadButton`], then press the
 //! desired keyboard key. The session swaps the new key into the
-//! [`legaia_engine_system::input::Mapping`] table, evicting the previous binding (if any
-//! key was already bound to the same button, it gets cleared so two keys
-//! never report the same button).
+//! [`legaia_engine_system::input::Mapping`] table: the button's old key is
+//! cleared, and a key another button was on hands that button the old key, so
+//! a rebind never leaves a button no key can press.
 //!
 //! Renderer-agnostic. Engines drive [`KeyRebindSession::tick`] each frame
 //! with a [`KeyRebindInput`] bundle (cursor moves + the most-recent key
@@ -169,46 +169,57 @@ impl KeyRebindSession {
         }
     }
 
+    /// Go straight to waiting for the key of row `row`, for a host that keeps
+    /// its own cursor (the launcher's Controls page). Out of range does nothing.
+    pub fn begin_bind(&mut self, row: u8) {
+        if usize::from(row) < self.rows.len() {
+            self.phase = KeyRebindPhase::AwaitingKey { cursor: row };
+        }
+    }
+
     /// Apply a captured key press in [`KeyRebindPhase::AwaitingKey`]:
     /// remove any existing binding for the chosen button, install the
-    /// new key→button binding, return `Some(evicted_key)` if a key got
-    /// shadowed.
+    /// new key→button binding, and hand a button the key was taken from the
+    /// chosen button's old key, so no button loses its only key. Returns
+    /// `Some(old_key)` if the button had a different key.
     fn apply_binding(&mut self, button: PadButton, key: &str) -> Option<String> {
         let evicted = {
-            let to_remove: Vec<String> = self
+            let mut to_remove: Vec<String> = self
                 .mapping
                 .bindings
                 .iter()
                 .filter(|(_, v)| PadButton::from_name(v) == Some(button))
                 .map(|(k, _)| k.clone())
                 .collect();
+            // Start holds two keys by default: the same one is handed on
+            // every time, whatever order the table iterates in.
+            to_remove.sort_unstable();
             let mut e = None;
             for k in &to_remove {
                 self.mapping.bindings.remove(k);
-                if Some(k.as_str()) != Some(key) {
+                if k != key && e.is_none() {
                     e = Some(k.clone());
                 }
             }
             e
         };
-        // Remove any other binding currently using `key` (so we don't
-        // double-bind a single key to two buttons).
-        self.mapping.bindings.remove(key);
+        // The key can sit on one button only.
+        let displaced = self.mapping.bindings.remove(key);
         self.mapping
             .bindings
             .insert(key.to_string(), button.name().to_string());
+        if let (Some(other), Some(old)) = (displaced, &evicted) {
+            let still_has_a_key = self.mapping.bindings.values().any(|v| *v == other);
+            if !still_has_a_key {
+                self.mapping.bindings.insert(old.clone(), other);
+            }
+        }
         // Refresh the row that just got rebound, plus any row whose key
         // matched and got shadowed.
-        self.rebuild_row(button);
-        if let Some(ref e) = evicted {
-            // The evicted key may have been another button's binding -
-            // refresh every row to be safe; the cost is trivial (16 rows).
-            for btn in self.rows.iter().map(|r| r.button).collect::<Vec<_>>() {
-                if btn != button {
-                    self.rebuild_row(btn);
-                }
-            }
-            let _ = e;
+        // The key may have been another button's: refresh every row; the
+        // cost is trivial (16 rows).
+        for btn in self.rows.iter().map(|r| r.button).collect::<Vec<_>>() {
+            self.rebuild_row(btn);
         }
         evicted
     }
@@ -338,13 +349,56 @@ mod tests {
             ..Default::default()
         });
         assert_eq!(s.mapping().pad_button_for_key("X"), Some(PadButton::Cross));
-        // Square row now has empty key.
+        // Square, whose key was taken, gets Cross's old one: a rebind leaves
+        // no button without a key.
+        assert_eq!(s.mapping().pad_button_for_key("Z"), Some(PadButton::Square));
         let square_row = s
             .rows()
             .iter()
             .find(|r| r.button == PadButton::Square)
             .unwrap();
-        assert_eq!(square_row.key, "");
+        assert_eq!(square_row.key, "Z");
+    }
+
+    /// A row a host starts directly takes the key, whatever the cursor was,
+    /// and a key free of any button leaves the others alone.
+    #[test]
+    fn begin_bind_starts_any_row_and_a_free_key_moves_nothing_else() {
+        let mut s = KeyRebindSession::new(Mapping::default());
+        s.begin_bind(1);
+        assert!(matches!(s.phase, KeyRebindPhase::AwaitingKey { cursor: 1 }));
+        let _ = s.tick(KeyRebindInput {
+            key_pressed: Some("E".into()),
+            ..Default::default()
+        });
+        assert_eq!(s.mapping().pad_button_for_key("E"), Some(PadButton::Circle));
+        assert_eq!(s.mapping().pad_button_for_key("S"), None);
+        assert_eq!(s.mapping().pad_button_for_key("Z"), Some(PadButton::Cross));
+        s.begin_bind(200);
+        assert!(matches!(s.phase, KeyRebindPhase::Browsing { cursor: 1 }));
+    }
+
+    /// Start holds two keys. Moving it to a key another button was on hands
+    /// that button the same old key every time, and Space is freed.
+    #[test]
+    fn start_giving_up_two_keys_hands_on_the_first() {
+        let mut s = KeyRebindSession::new(Mapping::default());
+        let start = s
+            .rows()
+            .iter()
+            .position(|r| r.button == PadButton::Start)
+            .unwrap() as u8;
+        s.begin_bind(start);
+        let _ = s.tick(KeyRebindInput {
+            key_pressed: Some("Z".into()),
+            ..Default::default()
+        });
+        assert_eq!(s.mapping().pad_button_for_key("Z"), Some(PadButton::Start));
+        assert_eq!(
+            s.mapping().pad_button_for_key("Enter"),
+            Some(PadButton::Cross)
+        );
+        assert_eq!(s.mapping().pad_button_for_key("Space"), None);
     }
 
     #[test]

@@ -71,6 +71,10 @@ pub struct EngineWindow {
     last_tick: Instant,
     /// Fixed-timestep accumulator (seconds). Driven by [`Self::drain_ticks`].
     accumulator: f64,
+    /// Why the last [`Self::open_with`] gave up, for a host to report once
+    /// the event loop has returned: a program whose window never opened has
+    /// nowhere else to say so.
+    pub open_error: Option<String>,
 }
 
 impl Default for EngineWindow {
@@ -88,6 +92,7 @@ impl EngineWindow {
             started_at: now,
             last_tick: now,
             accumulator: 0.0,
+            open_error: None,
         }
     }
 
@@ -121,6 +126,7 @@ impl EngineWindow {
             Ok(w) => Arc::new(w),
             Err(e) => {
                 log::error!("create_window: {e:#}");
+                self.open_error = Some(format!("{e:#}"));
                 evl.exit();
                 return false;
             }
@@ -130,6 +136,7 @@ impl EngineWindow {
             Ok(r) => r,
             Err(e) => {
                 log::error!("Renderer::new: {e:#}");
+                self.open_error = Some(format!("{e:#}"));
                 evl.exit();
                 return false;
             }

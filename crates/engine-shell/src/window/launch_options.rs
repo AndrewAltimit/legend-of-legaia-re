@@ -1437,7 +1437,7 @@ fn write_capture_png_at(
 /// that returns before the pad lookup: `C` (camera vantage) and `D`
 /// (occlusion fade, named in the user guide). Moving those two arms onto
 /// non-pad keys is what finishes the set.
-pub(super) fn keycode_to_name(code: KeyCode) -> &'static str {
+pub fn keycode_to_name(code: KeyCode) -> &'static str {
     match code {
         KeyCode::ArrowUp => "Up",
         KeyCode::ArrowDown => "Down",

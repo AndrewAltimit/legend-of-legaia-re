@@ -53,6 +53,25 @@ pub fn exit_headline(status: &std::process::ExitStatus) -> String {
     }
 }
 
+/// The exit status of a game program that has already told the player what
+/// went wrong in a message box: the `Legend of Legaia` stub (a program with no
+/// console) shows its own box for any other failure, and two boxes for one
+/// failure read as two failures.
+pub const ALREADY_REPORTED_EXIT: i32 = 3;
+
+/// What a program says when its window could not be opened: what happened,
+/// the fix a player can make, then `detail` (the graphics library's own
+/// words) for a bug report.
+pub fn window_failure_message(detail: &str) -> String {
+    std::format!(
+        "Legend of Legaia could not open its window.\n\n\
+         The game draws through your graphics driver, and the driver did not offer \
+         what it needs. Installing the latest driver for your graphics card usually \
+         fixes this. Over a remote desktop, try again at the computer itself.\n\n\
+         Details: {detail}"
+    )
+}
+
 /// The reason a failed game's log gives, phrased for a desktop program's message: a
 /// panic's message, else the root of the `Error:` chain the engine exits
 /// with, else its last `ERROR` record. Paths shrink to their file name and
@@ -209,6 +228,24 @@ fn capitalise_first(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A window that never opened says what to do first and keeps the
+    /// library's words for a bug report; the game's own exit line (what the
+    /// launcher and Explorer read back from the log) fits the detail length
+    /// whole, with the fix in it.
+    #[test]
+    fn a_window_failure_names_the_fix() {
+        let m = window_failure_message("no adapter");
+        let (fix, detail) = (
+            m.find("latest driver").unwrap(),
+            m.find("no adapter").unwrap(),
+        );
+        assert!(fix < detail, "{m}");
+        let log = "Error: could not open the game window: update your graphics driver\n";
+        let d = failure_detail(log).unwrap();
+        assert!(d.contains("update your graphics driver"), "{d}");
+        assert!(!d.ends_with("..."), "{d}");
+    }
 
     #[test]
     fn a_report_carries_the_end_of_the_log_without_the_home_folder() {

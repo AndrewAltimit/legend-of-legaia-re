@@ -84,6 +84,10 @@ fn run(mut cmd: Command, engine: &std::path::Path) -> ExitCode {
     match cmd.status() {
         Ok(status) => match status.code() {
             Some(0) => ExitCode::SUCCESS,
+            // The engine has already shown its own message box.
+            Some(c) if c == legaia_app_theme::game_exit::ALREADY_REPORTED_EXIT => {
+                ExitCode::from(u8::try_from(c).unwrap_or(1))
+            }
             Some(c) => {
                 report(&format!(
                     "The engine stopped with an error (exit status {c}).\n\n\
