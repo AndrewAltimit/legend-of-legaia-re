@@ -160,10 +160,16 @@ impl RetailBattle {
 
     /// See [`Self::child_ordinary_step`].
     pub fn replay_keeps_default_step(&self) -> bool {
-        matches!(
-            self.span_gate,
-            SpanGate::CaptureFade { .. } | SpanGate::DoneHold { .. }
-        ) || matches!(self.seed_plan(), SeedPlan::Cast)
+        // A history that left the step inside its sixteen passes ran the walk
+        // up to the capture on a cheaper one (`FUN_80016B6C`'s ring holds the
+        // frames): only a history that never left the party's step stands on it.
+        let unsteady = self.step_run.1 < 16;
+        unsteady
+            || matches!(
+                self.span_gate,
+                SpanGate::CaptureFade { .. } | SpanGate::DoneHold { .. }
+            )
+            || matches!(self.seed_plan(), SeedPlan::Cast)
     }
 
     /// The slot-1 backdrop angle the **displayed** frame was drawn at. The
