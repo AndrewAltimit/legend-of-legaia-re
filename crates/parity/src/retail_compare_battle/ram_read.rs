@@ -197,6 +197,8 @@ const ACTION_FX_SEED_OFFSETS: [u16; 3] = [0x24, 0x26, 0x28];
 /// its own clock, stood a white band around them.
 const DEFAULT_ARM_CHANNEL_OFFSETS: [u16; 5] = [0xB4, 0xB6, 0xB8, 0xBA, 0xC8];
 
+const FLOOR_RING_RECORD: u32 = 0x801F_5EB0;
+
 /// Whether part `node` is a draw-kind-4 node on the default arm
 /// (`+0x56 == 4`, `+0x9E & 0x6000 == 0`, `0x8001B128..0x8001B134`) in a
 /// render mode whose channel block grows (`+0x5A` `2` or `6`,
@@ -393,8 +395,15 @@ pub(super) fn retail_action_fx_parts(
                 && game_anchors::u32_at(ram, n + 0x10) & 0x1000 != 0
                 && game_anchors::u16_at(ram, n + 0xA0) < 0x1000)
                 .then(|| (0xA0, displayed_morph_halfword(ram, n, 0xA0, lag)));
-            let level = fan_level_ramping(ram, n)
+            let level = (fan_level_ramping(ram, n) || is_floor_ring(ram, n))
                 .then(|| (0x78, displayed_morph_halfword(ram, n, 0x78, lag)));
+            // A floor ring stands where the strike's stomp seated it, a point
+            // on a walk the replay runs on its own clock.
+            let stood: Vec<(u16, u16)> = RAY_BURST_POSITION_OFFSETS
+                .iter()
+                .filter(|_| is_floor_ring(ram, n))
+                .map(|&o| (o, game_anchors::u16_at(ram, n + u32::from(o))))
+                .collect();
             legaia_engine_effects::summon::CastPartSeed {
                 tag,
                 pokes: offsets
@@ -402,10 +411,17 @@ pub(super) fn retail_action_fx_parts(
                     .map(|&o| (o, displayed_part_halfword(ram, n, o, lag)))
                     .chain(lane)
                     .chain(level)
+                    .chain(stood)
                     .collect(),
             }
         })
         .collect()
+}
+
+/// The effect script's floor ring (`0x801DEEC0..0x801DEF08`), record
+/// `0x801F5EB0`.
+fn is_floor_ring(ram: &[u8], node: u32) -> bool {
+    game_anchors::u32_at(ram, node + 0x48) == FLOOR_RING_RECORD
 }
 
 /// A battle actor's ring-id history `+0x1FB`: one byte a battle frame,

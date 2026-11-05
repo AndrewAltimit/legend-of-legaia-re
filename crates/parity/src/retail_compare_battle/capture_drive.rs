@@ -1013,8 +1013,17 @@ impl RetailBattle {
                     && self.active_actor >= 3
                     && self.queued_category == 3
                     && (0x14..=0x1E).contains(&self.action_state);
+                // ... and a monster on its idle in the strike loop, with the
+                // first swing staged behind it: the idle runs from the end of
+                // the walk or close-in, whose passes the replay's clock does
+                // not share (`battle_jou_cort_181_strike`).
+                let strike_idle = clip == 0
+                    && slot == self.active_actor
+                    && self.active_actor >= 3
+                    && self.action_state == 0x1E;
                 !in_flight
                     || capture_band_idle
+                    || strike_idle
                     || parked_idle
                     || walking
                     || melee_target_idle

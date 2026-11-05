@@ -1499,6 +1499,11 @@ round's turn left, which the replay never runs. Che in
 `delilas_che_hammer_gaps_v3` stands at heading `113`, so his ring framing
 reads yaw `2175`, against the `2288` of an unturned member.
 
+- **A gauge that sizes a body is seeded with its bars.** Dohati's size class,
+  scale and radius follow his Spirit gauge
+  ([battle](../subsystems/battle.md#per-frame-actor-maintenance-fun_8004ce2c)), so
+  the bar seed and the re-seat carry the capture's `+0x170` (`:g<gauge>`,
+  `RetailBattle::dohati_gauge`) and re-derive them before the action seeds.
 - **A reacting monster stands on its body pair.** A body on a reaction clip
   (`2`..`5`, `0x0B`) the replay strikes at another keyframe than retail's
   puts its centroid elsewhere for the same live pair (`rim_elm_gimard_seru_capture_before`'s
@@ -1807,6 +1812,12 @@ holds radii `224 / 320` at rates `224 / 320` on `battle_gimard_tail_fire_a`;
 the displayed frame drew it at half that, almost wholly behind Vahn's boots,
 where the replay's ring, on its own clock, stood a white band around them.
 
+The ring also stands where a stomp seated it, on a walk the replay runs on its
+own clock, and its depth cue ramps with its age, so `0x801F5EB0` seats its
+position `+0x14..+0x18` and its level `+0x78` taken back the lag
+(`is_floor_ring`). `battle_jou_cort_181_strike`'s Cort walks three rings down
+his approach. A third ring on its way out (`+0x10` bit 3) is not seated.
+
 A battle-burst child is the other case, and its words **are** draws. The
 move VM's op `0x17` (`FUN_801F30C4`) seats twelve children on one of two
 records (`0x801F5DA4` wide, `0x801F5D0C` narrow), each with a heading, a
@@ -1996,7 +2007,9 @@ too (`super_queue_replace_*` `image` `.926` to `.938`). So does a monster
 melee's target from the approach `0x14` through the strike loop `0x1E` while
 it idles: the hit that stages its reaction has not landed, and nothing else
 in the action touches its loop (`battle_korb2_warhalf_strike`'s Vahn, walked
-onto at idle cursor `0` on the displayed frame).
+onto at idle cursor `0` on the displayed frame). So does the acting monster
+idling in the strike loop `0x1E` with its first swing staged: the idle runs
+from the end of its walk or close-in.
 
 A monster target is seated on one reaction: the get-up a killed monster
 rises on for the absorb, with a Seru staged in `ctx[+0x269]` (the commit's
@@ -2290,6 +2303,12 @@ ramp (`+0x90 >> 3` a vsync), or that it has gone (`RetailBattle::arrival_cue`),
 and the child takes the frame on the engine's own column at that level, or
 once none is live (`LEGAIA_CAPTURE_ARRIVAL=cue:<level>|gone`,
 `legaia_engine_capture::arrival_gate::ArrivalGate`).
+
+A drive capture of the same fight stands rounds past the columns, while the
+replay reaches its first strike inside their life, so their dimmed shells wash
+the frame (`battle_jou_cort_181_strike`, `.504` to `.863`). A drive whose RAM holds no
+column retires the replay's on the capture frame (`LEGAIA_SEAT_ARRIVAL_GONE`,
+`World::retire_arrival_spawns`).
 
 The frame under the sweep is the one two passes older than the RAM, as
 everywhere ([a drive's frame](#a-drives-frame-is-the-one-the-display-showed)),
