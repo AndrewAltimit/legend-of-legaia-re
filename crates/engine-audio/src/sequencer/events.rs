@@ -35,11 +35,16 @@ impl Sequencer {
             ChannelMessage::ControlChange { control, value } => match control {
                 0x07 => {
                     self.channels[ch].volume = value;
-                    self.remix_channel(spu, ch);
+                    self.remix_program(spu, ch);
                 }
                 0x0A => {
                     self.channels[ch].pan = value;
-                    self.remix_channel(spu, ch);
+                    // `FUN_8006861C` writes a channel volume of zero back as one
+                    // once a record matched; `FUN_80060EBC`'s own store follows
+                    // it on the volume path, so only the pan path keeps the one.
+                    if self.remix_program(spu, ch) && self.channels[ch].volume == 0 {
+                        self.channels[ch].volume = 1;
+                    }
                 }
                 // `FUN_8006126C`: the data entry after a Loop Start names how
                 // many passes the loop runs. A loop already counting ignores it.

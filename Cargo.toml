@@ -235,6 +235,7 @@ legaia-pcsx-redux = { path = "crates/pcsx-redux", default-features = false }
 legaia-prot = { path = "crates/prot", default-features = false }
 legaia-save = { path = "crates/save", default-features = false }
 legaia-seq = { path = "crates/seq", default-features = false }
+legaia-retail-exec = { path = "crates/retail-exec", default-features = false }
 legaia-tim = { path = "crates/tim", default-features = false }
 legaia-tmd = { path = "crates/tmd", default-features = false }
 legaia-vab = { path = "crates/vab", default-features = false }

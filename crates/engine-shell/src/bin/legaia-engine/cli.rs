@@ -1736,6 +1736,12 @@ pub(crate) enum Cmd {
     #[command(display_order = 32)]
     #[cfg(feature = "oracles")]
     PcmRetail(legaia_parity::pcm_retail::PcmRetailArgs),
+    /// Run each track's score through retail's libsnd (off the disc's code, in the
+    /// retail-exec interpreter) and the port's sequencer, comparing every voice
+    /// register at every vsync.
+    #[command(display_order = 33)]
+    #[cfg(feature = "oracles")]
+    SeqDifferential(legaia_parity::seq_differential::SeqDifferentialArgs),
 }
 
 #[derive(Subcommand, Debug)]

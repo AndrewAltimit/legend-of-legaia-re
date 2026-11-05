@@ -3041,6 +3041,7 @@ dependencies = [
  "legaia-ram-image",
  "legaia-randomizer",
  "legaia-render-kernels",
+ "legaia-retail-exec",
  "legaia-save",
  "legaia-scene-formats",
  "legaia-seq",

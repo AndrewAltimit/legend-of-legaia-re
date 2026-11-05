@@ -80,6 +80,7 @@ impl Sequencer {
     /// The end of one flush period: the vsync's pump, then the writes it
     /// staged.
     pub(super) fn flush_period(&mut self, spu: &mut Spu) {
+        self.read_envelopes(spu);
         if !self.exact_tempo {
             self.pump_vsync(spu);
         }

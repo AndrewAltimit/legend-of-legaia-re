@@ -3750,6 +3750,7 @@
     "pcsx-redux",
     "prot",
     "ram-image",
+    "retail-exec",
     "save",
     "scene-formats",
     "seq",
@@ -3788,6 +3789,7 @@
     "retail_compare_image",
     "retail_compare_script",
     "retail_coverage",
+    "seq_differential",
     "sim_trace",
     "vram_oracle",
     "window_child"
@@ -4169,7 +4171,9 @@
    "band": "top",
    "track": "tooling",
    "scope": "A user-mode R3000 interpreter that runs retail routines off the user's disc, and the disc-gated differential comparing them with their Rust ports.",
-   "dependents": [],
+   "dependents": [
+    "parity"
+   ],
    "readme": "https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/crates/retail-exec/README.md"
   },
   "save": {
