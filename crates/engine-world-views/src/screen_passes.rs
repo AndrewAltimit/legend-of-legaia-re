@@ -368,18 +368,44 @@ pub fn move_fx_streak_quads(world: &World, mvp: &glam::Mat4) -> Vec<AfterimageQu
             frame,
         ));
     }
-    // A cast arm's ribbon ring (PROT 0962 `0xA3` arm 4): one ribbon call
-    // per point, each drawing its own run of BIOS `rand` - so each point
-    // takes its own seed off the frame.
-    if let Some(ring) = world.battle.cast_ribbons {
-        for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
-            out.extend(clip_ribbon_quads(
-                p.map(f32::from),
-                ring.trail_id,
-                mvp,
-                frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
-            ));
-        }
+    out
+}
+
+/// A cast arm's ribbon ring as screen primitives (PROT 0962 `0xA3` arm 4, PROT
+/// 0934's arms 5..9): one ribbon call per point, each drawing its own run of
+/// BIOS `rand` - so each point takes its own seed off the frame. Retail links
+/// each packet at its anchor's own depth bucket (`FUN_801E1D98`'s `AddPrim`,
+/// `0x801E20D8`), so a body nearer the camera hides it: every corner carries the
+/// anchor's scene depth.
+pub fn cast_ribbon_prims(
+    world: &World,
+    mvp: &glam::Mat4,
+    ot_index: u32,
+) -> Vec<legaia_render_kernels::screen_prim::ScreenPrim> {
+    use legaia_render_kernels::screen_prim::{CornerDepth, ScreenPrim};
+    use legaia_render_kernels::streak_pass::clip_ribbon_quads;
+    let Some(ring) = world.battle.cast_ribbons else {
+        return Vec::new();
+    };
+    let frame = world.clock.display_frames as u32;
+    let mut out = Vec::new();
+    for (i, p) in ring.points.iter().take(usize::from(ring.count)).enumerate() {
+        let at = p.map(f32::from);
+        let clip = *mvp * glam::Vec4::new(at[0], at[1], at[2], 1.0);
+        let depth = (clip.w > 1e-4).then(|| CornerDepth::new([clip.z / clip.w; 4]));
+        let quads = clip_ribbon_quads(
+            at,
+            ring.trail_id,
+            mvp,
+            frame.wrapping_mul(17).wrapping_add(i as u32 + 1),
+        );
+        out.extend(quads.iter().map(|q| {
+            let mut prim = q.to_screen_prim(ot_index);
+            if let ScreenPrim::Textured(t) = &mut prim {
+                t.depth = depth;
+            }
+            prim
+        }));
     }
     out
 }

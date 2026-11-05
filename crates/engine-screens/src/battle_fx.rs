@@ -51,7 +51,9 @@ pub fn battle_fx_vp(world: &World) -> [f32; 16] {
 // REF: FUN_800485BC, FUN_801E1AB0, FUN_801E1D98 - the packet ports live in
 // render-kernels (`battle_trail`, `afterimage`, `streak_pass`).
 pub fn battle_fx_prims(world: &World) -> Vec<ScreenPrim> {
-    use legaia_engine_world_views::screen_passes::{move_fx_streak_quads, weapon_trail_prims};
+    use legaia_engine_world_views::screen_passes::{
+        cast_ribbon_prims, move_fx_streak_quads, weapon_trail_prims,
+    };
     use legaia_render_kernels::streak_pass::MOVE_FX_STREAK_OT;
     if world.mode != SceneMode::Battle {
         return Vec::new();
@@ -65,6 +67,7 @@ pub fn battle_fx_prims(world: &World) -> Vec<ScreenPrim> {
             .iter()
             .map(|q| q.to_screen_prim(MOVE_FX_STREAK_OT)),
     );
+    out.extend(cast_ribbon_prims(world, &mvp, MOVE_FX_STREAK_OT));
     out
 }
 

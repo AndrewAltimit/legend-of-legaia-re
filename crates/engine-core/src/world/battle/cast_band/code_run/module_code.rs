@@ -1606,6 +1606,38 @@ impl World {
                 self.battle.camera_frame_height = d;
                 self.battle_ctx.camera_frame_height = d;
             }
+            // The same pass turns the victim onto the creature
+            // (`jal 0x80019B28` at `0x801F756C`, `sh v0,0x46(s2)`), which is what
+            // case 8's dead-target yaw reads through arm 12.
+            if (entry, phase_entry) == (903, 11)
+                && let Some((cz, cx)) = self
+                    .actors
+                    .get(usize::from(seat_slot))
+                    .map(|c| (c.move_state.world_z, c.move_state.world_x))
+                && let Some(v) = self.actors.get_mut(usize::from(victim_slot))
+            {
+                v.battle.facing_angle = legaia_engine_battle_vm::battle_action::bearing_12bit_approx(
+                    v.move_state.world_z,
+                    v.move_state.world_x,
+                    cz,
+                    cx,
+                );
+            }
+        }
+        // PROT 0903's `3/2` above reads the victim's HP after the hit
+        // (`0x801F74F8`, `0x801F75A8`), but the band folds that hit behind this
+        // pass: arm 12 finds a victim the breath killed and the depth stays on
+        // the bare framing.
+        if entry == 903
+            && phase_entry == 12
+            && self
+                .actors
+                .get(usize::from(victim_slot))
+                .is_some_and(|a| a.battle.hp == 0)
+        {
+            let h = self.cast_target_frame_depth(caster_slot);
+            self.battle.camera_frame_height = h;
+            self.battle_ctx.camera_frame_height = h;
         }
         // The `0xFF` arm of eight player-Seru modules leaves the creature
         // seat's loop counter clear for the next cast's installer, which
