@@ -7,6 +7,16 @@ use legaia_engine_cast::cast_module_camera::{
 };
 use legaia_engine_system::input::PadButton;
 
+/// Whether a part's record is a card handle on `phase`: the faces stand from
+/// arm 2 until arm 5 turns them, the backs after.
+fn card_record(phase: u8, tag: u32) -> bool {
+    if phase <= 5 {
+        CARD_RECORDS.contains(&tag)
+    } else {
+        tag == PICK_RECORD
+    }
+}
+
 impl World {
     /// Arm 0's deal and arm 4's swap draws off the world `rand()` stream
     /// (`jal 0x80056798`), and arm 5's pad. Retail reads the pad on a monster's
@@ -29,6 +39,19 @@ impl World {
         st.death_game.pad.right = self.input.just_pressed(PadButton::Right);
         st.death_game.pad.left = self.input.just_pressed(PadButton::Left);
         st.death_game.pad.confirm = self.input.just_pressed(PadButton::Cross);
+        // The arms read each card's live point: its own script walks it in
+        // (`lhu v0,0x16(a0)` at `0x801F823C`, the `lwl` / `lwr` copy at
+        // `0x801F8B7C`).
+        if let Some(scene) = self.casting.active_summon.as_ref() {
+            let mut cards = scene
+                .parts
+                .iter()
+                .filter(|p| !p.finished && p.tag.is_some_and(|t| card_record(phase, t)));
+            for card in st.death_game.cards.iter_mut() {
+                let Some(part) = cards.next() else { break };
+                *card = [part.state.world_x, part.state.world_y, part.state.world_z];
+            }
+        }
         let caster = self.actors.get(usize::from(caster_slot));
         st.death_game.caster_faded = caster.is_some_and(|a| a.battle.render_color == 0);
         st.caster_settled = self.cast_view(caster_slot).playing_anim == 0;
@@ -54,18 +77,13 @@ impl World {
         let Some(scene) = self.casting.active_summon.as_mut() else {
             return;
         };
-        // The faces stand from arm 2 until arm 5 turns them, the backs after.
-        let live_record = |tag: u32| {
-            if phase <= 5 {
-                CARD_RECORDS.contains(&tag)
-            } else {
-                tag == PICK_RECORD
-            }
-        };
+        if phase < 3 {
+            return;
+        }
         let mut cards = scene
             .parts
             .iter_mut()
-            .filter(|p| !p.finished && p.tag.is_some_and(live_record));
+            .filter(|p| !p.finished && p.tag.is_some_and(|t| card_record(phase, t)));
         for i in 0..4 {
             let Some(part) = cards.next() else { break };
             let st = &mut part.state;

@@ -61,7 +61,8 @@ pub struct DeathGamePad {
 pub struct DeathGame {
     /// `0x801FA288`: each card's value.
     pub table: [u8; 4],
-    /// `0x801FA2B8`'s parts, as `+0x14` / `+0x16` / `+0x18`.
+    /// `0x801FA2B8`'s parts, as `+0x14` / `+0x16` / `+0x18`: the host feeds their
+    /// live points each pass, since each card's own script walks it in.
     pub cards: [[i16; 3]; 4],
     /// Which handles still hold a part (arm 9 zeroes the picked one's).
     pub live: [bool; 4],
