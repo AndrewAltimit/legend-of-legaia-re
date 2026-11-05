@@ -725,7 +725,10 @@ joined yet, into the bag ahead of the present members' armour: retail's Noa
 fights row 16 with the Nail Glove `dolk` sells, and she joins in `cave01`
 unarmed with no counter on her stretch. The same counters stock heals for
 that member too (`joining_members`: a character the anchors ahead show grown
-past level 1), since her training and her fight draw on the shared bag.
+past level 1), for the stretches she shares with the party. Alone she sees only
+her half of the bag ([`inventory.md`](../subsystems/inventory.md#the-active-window)),
+so none of those heals reach her `cave01` training, and past half her HP with
+nothing to heal with she runs.
 
 ### A counter the story has closed
 

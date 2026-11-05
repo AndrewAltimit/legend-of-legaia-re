@@ -541,6 +541,15 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             {
                 PadButton::Right.mask()
             }
+            // Alone, past half HP, with nothing in reach to heal with: a player
+            // leaves. A lone character sees one half of the bag
+            // (`FUN_8004313C`), so Noa's `cave01` training has none of the
+            // heals Vahn carried.
+            CommandPhase::RoundPrompt { .. }
+                if !w.battle.no_escape && !heal() && lone_and_worn(w) =>
+            {
+                PadButton::Right.mask()
+            }
             // A member whose every limb is rotted cannot Attack: the ring
             // refuses the arm and stays up, and pressing it for good left the
             // fight unresolved (Sol's monster 120). The Spirit stance spends

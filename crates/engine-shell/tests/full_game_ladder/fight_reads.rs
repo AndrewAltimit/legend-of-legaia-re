@@ -814,3 +814,12 @@ fn can_cast_group_heal(w: &legaia_engine_core::world::World, actor: u8) -> bool 
                 && u32::from(d.mp_cost) <= u32::from(a.battle.mp)
         })
 }
+
+/// A lone member under half of their HP, off the fight's own actor: the
+/// character record holds what the fight started with.
+pub(super) fn lone_and_worn(w: &legaia_engine_core::world::World) -> bool {
+    w.party.party_count == 1 && {
+        let b = &w.actors[0].battle;
+        u32::from(b.hp) * 2 < u32::from(b.max_hp)
+    }
+}
