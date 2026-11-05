@@ -290,11 +290,11 @@ pub fn build_field_render(
     } else {
         placements.len()
     };
-    // Story-hidden placed objects (bind prologue parked at the hide box -
-    // town01's flag-gated gate rocks): same gate the native shell applies in
-    // `resolve_placement_draws`.
+    // A record whose prologue parks its actor at the hide box still gets a
+    // draw: `field_placement_parked` hides it per frame while it stands there,
+    // and a script can seat it later (`son`'s sky). The native shell's
+    // `resolve_placement_draws` keeps it the same way.
     if let Some(binds) = binds.as_ref() {
-        field_env::retain_visible_placed_draws(&mut placements, binds, hidden_records);
         // A bind record carrying the actor tick's floor-follow law draws on
         // the floor sample under it, not at its `.MAP` lift - the same pass
         // the native shell runs (`follow_floor_placed_draws`).

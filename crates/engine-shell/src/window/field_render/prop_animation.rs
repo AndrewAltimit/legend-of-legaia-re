@@ -162,6 +162,7 @@ impl PlayWindowApp {
         // the prop's draw tint for the caller.
         let moves = self.session.host.world.object_draw_displacements();
         let turns = self.session.host.world.object_draw_turn_matrices();
+        let parked = self.session.host.world.hidden_object_records();
         let mut baked_v = Vec::new();
         let mut baked_c = Vec::new();
         let mut live_v = Vec::new();
@@ -186,6 +187,9 @@ impl PlayWindowApp {
                 .props
                 .get(&p.anchor)
                 .map(|s| s.record);
+            if record.is_some_and(|r| parked.contains(&r)) {
+                continue;
+            }
             let base = match record.and_then(|r| turns.get(&r)) {
                 Some(t) => Mat4::from_cols_array(
                     &legaia_engine_scene::field_env::turn_placed_model(&p.model.to_cols_array(), t),

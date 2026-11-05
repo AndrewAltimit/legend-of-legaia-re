@@ -233,13 +233,12 @@ impl<'m> DrawCtx<'_, 'm> {
         // about its origin (`World::object_draw_turn_matrices`,
         // folded into the same `field_placement_live_models` on the page).
         let object_turns = app.session.host.world.object_draw_turn_matrices();
-        // A placed object a script parks at the hide box after
-        // the scene built its draw lists (`rugi`'s entry script
-        // runs `A3 06 7F 7F` on the stone block the opened wall
-        // leaves behind) stops drawing that frame: retail's
-        // case-5 draw reads the actor, which now stands off the
-        // map. The build-time pass drops the records parked by
-        // then; this is the same set, read per frame. Shared
+        // A placed object standing at the hide box does not draw
+        // that frame, and draws again the frame a script seats it:
+        // retail's case-5 draw reads the actor (`rugi`'s entry
+        // script runs `A3 06 7F 7F` on the stone block the opened
+        // wall leaves behind; `son`'s sky opens parked and a
+        // cutscene seats it with `CC 05 51`). Shared
         // kernel `World::hidden_object_records`; the browser play
         // page reads it through `field_placement_parked`.
         let object_parked = app.session.host.world.hidden_object_records();

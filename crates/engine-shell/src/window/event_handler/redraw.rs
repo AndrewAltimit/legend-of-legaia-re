@@ -235,6 +235,17 @@ impl PlayWindowApp {
         );
         eprintln!("capture camera: {:?}", w.battle_cam_pose());
         eprintln!("capture object moves {:?}", w.object_draw_displacements());
+        for c in w.field_vm.channels.iter().filter(|c| c.object_bind) {
+            eprintln!(
+                "capture object channel {}: at ({}, {}, {}) scale {} flags {:#x}",
+                c.placement_index,
+                c.ctx.world_x as i16,
+                c.ctx.world_y as i16,
+                c.ctx.world_z as i16,
+                c.ctx.field_72,
+                c.ctx.flags,
+            );
+        }
         eprintln!(
             "capture field camera: globals {:?} mover {:?}",
             self.session.camera.globals, self.session.camera.mover,

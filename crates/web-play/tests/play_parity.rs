@@ -69,15 +69,9 @@ fn play_render_state_matches_native_field_pipeline() {
             floor_lut,
             binds.as_ref(),
         );
-        // The native shell applies the story-hidden object filter after the
-        // resolve (`resolve_placement_draws`); mirror it here so the parity
-        // claim covers the filter too.
+        // Neither host drops a parked record here: both hide it per frame
+        // (`World::hidden_object_records`), since a script can seat it later.
         if let Some(binds) = binds.as_ref() {
-            legaia_engine_scene::field_env::retain_visible_placed_draws(
-                &mut native_placed,
-                binds,
-                &hidden,
-            );
             let follow = host.world.object_floor_follow_records();
             legaia_engine_scene::field_env::follow_floor_placed_draws(
                 &mut native_placed,
