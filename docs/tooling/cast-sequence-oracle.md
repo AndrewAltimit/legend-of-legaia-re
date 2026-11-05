@@ -90,6 +90,7 @@ Flags worth knowing:
 | `--monster-pick` | Retail: with `--caster 3..7`, the cast is written where the monster AI's pick returns (a breakpoint on `0x801DAF50`, see [below](#a-monster-cast-from-any-battle-state)), so any battle state that reaches the monster's turn records any spell the monster owns a clip for. Runs on the breakpoint core, several times slower |
 | `--cast-queue <hex,..>` | Retail, with `--monster-pick`: the bytes behind the spell at `+0x1E0` (clip, shot, `ff`). A pick that was not a cast leaves no terminator there and `0x2A` parks on it; read the bytes off a capture of the same cast (`battle_korb2_aluru_cannon_mid_cast` holds `3F 09 0E FF`) |
 | `LEGAIA_BATTLE_MONSTER_CAST=seat,spell,p,t<target>` (engine child) | The driver passes `--target` as `t<seat>`, so a single-target cast lands on retail's victim; a group target stays the cast's own class |
+| `--retail-steps` | Engine: run on the recording's own frame steps (`LEGAIA_CAST_STEP_TRACK`, `RetailStepTrack`), frame by frame under each key. A harness seat: what remains in the film is the law's, with the frame's cost taken out ([below](#the-camera-against-the-step)) |
 | `--rand-at <st7>:<phase>` | Engine: hold the world `rand()` stream on retail's seed word under this cast key (`LEGAIA_CAST_RAND_SEED`, [below](#the-rand-stream)). `--rand-at 0x70:3` on Gigaton Press gives arm 3's pass retail's sixteen rock picks |
 | `--allow-patched` | Measure a state whose manifest entry carries `resident_patch` (refused by default: retail states only) |
 | `--save-inject` | Retail: keep the whole emulator state one vsync past the inject (`retail/state_inject.rawsstate`), a pre-cast state that replays the cast on the fast core with a plain `--caster` |
@@ -211,6 +212,25 @@ state `0x65`, so the Spikefish cast ends cleanly. A cast's arm can run longer in
 than its countdown says: the frame step stops at 4 while a heavy arm's real frame runs
 past 4 vsyncs, so the module's word drains slower per vsync. Ozma's arm 6 runs 462
 vsyncs to the engine's 191. The pairing keys on arms, so those frames pair by arm.
+
+## The camera against the step
+
+`cam.csv` on both sides read at the score's own pairs (`shown_vsync` on retail's
+side, `engine_tick` on the engine's) is the camera's error frame by frame. Set
+`--retail-steps` beside the plain run and the two together split it: what the seated
+run closes is the frame step's, what it leaves is the framing law's or the seat's. On
+`balden_swordie_v2_pre_vacuum_slicer` the seated run leaves `.3` px of the plain run's
+`4`, and the whole of that gap is the step ([the frame step](../subsystems/battle-stage-camera.md#the-frame-step)).
+
+A `--physical` film has three traps of its own, each closed in the driver or the
+recorder. It keeps the capture's re-seat (`PHYSICAL_KEEP_ENV`), which stands the round
+on the capture's ground; it lets go of the drive at its gate
+(`ScreenshotConfig::battle_drive_released`), because the drive's steer pins the yaw
+counter for as long as the state lasts and leaves the camera short by what the state
+would have drifted; and the score keeps the recording's first action only
+(`Side::first_action_only`), because a recording's tail can hold the next actors'
+whole turns, and the alignment prefers a later actor's complete run of states to a
+capture that starts inside the strike loop.
 
 ## The pairing rule
 

@@ -3554,6 +3554,15 @@ back at the arm's tail. The walk clip stays staged for that pass, so its root mo
 steps once more before arm 2 stages the wind-up. Scythe Wind's recording reads
 `(376, -502)`, `(-64, +127)` of push, `(+38, -50)` of walk: `(350, -425)`.
 
+Rolling Flare (PROT 0950 `0x5A`) walks further out than the others. Its arm 0 stores
+the caster's size class `0x34` (record `+0x1F`) and body radius `0x680` (`+0x58`
+behind `+0x22C`), so the range poll stops the walk at `0x340` units, and arm 2 and the
+finish store `8` / `0x100` and `0x25` / `0x4A0` as literals, not a saved copy
+(`capture_approach_reach`, `rolling_flare_camera`). Melt Spray (PROT 0955 `0x6F`)
+shares the walk and its arm 4 jumps straight to `0xFF` on the victim's settle
+(`0x801F8664`), so a chain that only advances climbs a pass at a time through 250
+phases that name no arm.
+
 <a id="prot-0962-koru-charge-bodies"></a>
 
 **0962's charge bodies** (`blade_breath_camera`, `thunder_needle_camera`,

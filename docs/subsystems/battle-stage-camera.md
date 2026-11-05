@@ -1326,7 +1326,18 @@ vsyncs, the walker scales each increment by it, a tween armed over `a3` frames
 lands in `a3 / step` steps (`frames_to_steps`; `steps_of` for the glides
 authored in default-step steps), and the idle orbit turns `2 * step` a step.
 
-Play keeps the default outside a summon band. Inside one, each module arm runs
+Outside a summon band a frame takes the step its party's cost reads
+(`frame_clock::ordinary_battle_frame_step`, `World::ordinary_battle_frame_step`,
+raised by `WorldToggles::battle_party_cost_step`): `3` for a full party, the
+default `2` for a lone member. Across the library's battle states outside the module
+bands, the ring's maximum reads step `3` on 196 of 215 full-party states and step `2`
+on 46 of 54 lone-member ones; the library holds no two-member fight, so that party
+keeps the default. A wrong step does not only place the frame boundaries. Every tween
+closes `step / 12` of its gap a pass, so its curve per vsync differs, and the yaw
+counter gains `4` a pass at step `3` where step `2` gains `2`. Run at the default, a
+full party's films stood `4` px of camera from retail and `.76` on
+`balden_swordie_v2_pre_vacuum_slicer`; on the party's step they stand under `.5` px
+and `.86`, the same frames, with no other change. Inside a band, each module arm runs
 on a step read off a retail recording of the cast
 (`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
 a band opens at `1` and its whole-screen arms read `4`. The table is a measurement
