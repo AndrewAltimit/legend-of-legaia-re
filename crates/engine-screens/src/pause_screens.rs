@@ -702,7 +702,9 @@ pub fn magic_draws(
     let panel = model
         .target_select
         .then(|| {
-            world.map(|w| legaia_engine_world_views::pause_screens::spell_target_panel_view_model(s, w))
+            world.map(|w| {
+                legaia_engine_world_views::pause_screens::spell_target_panel_view_model(s, w)
+            })
         })
         .flatten()
         .filter(|m| !m.members.is_empty());

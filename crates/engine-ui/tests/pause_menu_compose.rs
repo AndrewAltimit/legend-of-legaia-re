@@ -424,7 +424,9 @@ fn compose_items_target(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         label_icons: ctx.chrome.is_some(),
         text_cursor: ctx.chrome.is_none(),
     };
-    pause_screen_draws(ctx, PauseScreen::ItemsTarget {
+    pause_screen_draws(
+        ctx,
+        PauseScreen::ItemsTarget {
             panel: &view,
             items: &PauseItemsView {
                 arrows_blink: false,
@@ -438,7 +440,8 @@ fn compose_items_target(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
                 info: None,
                 text_cursor: false,
             },
-        })
+        },
+    )
 }
 
 fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {

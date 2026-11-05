@@ -547,8 +547,14 @@ impl InventoryUseSession {
                     && self.catalog.is_all_party(entry.id)
                     && effect_is_party_distributable(&entry.effect)
                 {
-                    if self.targets.iter().any(|t| target_valid_for_effect(&entry.effect, t)) {
-                        self.state = InventoryUseState::AllPartyConfirm { item_cursor: cursor };
+                    if self
+                        .targets
+                        .iter()
+                        .any(|t| target_valid_for_effect(&entry.effect, t))
+                    {
+                        self.state = InventoryUseState::AllPartyConfirm {
+                            item_cursor: cursor,
+                        };
                         self.events.push(InventoryUseEvent::EnteredTargetSelect);
                     } else {
                         self.events.push(InventoryUseEvent::InvalidConfirm);

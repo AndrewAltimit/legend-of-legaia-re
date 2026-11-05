@@ -1888,7 +1888,10 @@ fn pause_path(ram: &[u8], subscreen: u8) -> Vec<legaia_engine_system::input::Pad
         // slot, except where a special route has reused the word.
         MENU_ITEMS_APPLY_ALL | MENU_ITEMS_APPLY_ONE => {
             let mut path = vec![P::Cross];
-            path.extend(list_walk(game_anchors::u32_at(ram, MENU_SELECTED) as usize, 12));
+            path.extend(list_walk(
+                game_anchors::u32_at(ram, MENU_SELECTED) as usize,
+                12,
+            ));
             path.push(P::Cross);
             path
         }

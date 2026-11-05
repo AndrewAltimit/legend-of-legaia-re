@@ -1705,8 +1705,13 @@ impl BattleDrive {
         }
         // The item window's target step: `Cross` on the row the window opens
         // on, the bag's first battle-usable row a state's probe confirmed.
-        if matches!(self, Self::Menu { flow: BattleFlowState::TargetConfirm, .. })
-            && world.battle.item_menu.is_some()
+        if matches!(
+            self,
+            Self::Menu {
+                flow: BattleFlowState::TargetConfirm,
+                ..
+            }
+        ) && world.battle.item_menu.is_some()
             && world.battle.flow == BattleFlowState::ItemWindow
         {
             return Some(PadButton::Cross);

@@ -431,7 +431,10 @@ pub fn battle_ring_ap_plate_dx(world: &legaia_engine_core::world::World) -> i32 
 ///
 /// REF: FUN_801D0748, FUN_801DB8F4
 pub fn battle_chip_dpad_visible(world: &legaia_engine_core::world::World) -> bool {
-    if ring_open_glide(world).or(run_confirm_glide(world)).is_some() {
+    if ring_open_glide(world)
+        .or(run_confirm_glide(world))
+        .is_some()
+    {
         return false;
     }
     let ring_landing = battle_command_surface(world) == Some(CommandSurface::Ring)
