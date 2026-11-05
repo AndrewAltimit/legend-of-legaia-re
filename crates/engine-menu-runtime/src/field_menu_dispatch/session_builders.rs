@@ -62,11 +62,12 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
                 // `character_ability_bits` mirror is ordinal-indexed and
                 // names a different member once `active_party` reorders).
                 ability_bits: legaia_engine_battle::spells::record_ability_word(member),
-                // Retail resolves the Ra-Seru slot through the
-                // per-character offset table at 0x8007B424; the engine's
-                // roster always carries the Ra-Seru equipped, so the
-                // gate stays open here.
-                ra_seru_missing: false,
+                // Retail's caster gate reads `record[0x196 + table[char]]`,
+                // the halfword table at 0x8007B424 (`lbu v0,0x75e(v0)` at
+                // 0x801D908C), and buzzes on an empty Ra-Seru byte.
+                ra_seru_missing: legaia_engine_menus::equip_session::RETAIL_RASERU_EQUIP_BYTE
+                    .get(i)
+                    .is_some_and(|&b| member.equipment().slots[b as usize] == 0),
             }
         })
         .collect();
