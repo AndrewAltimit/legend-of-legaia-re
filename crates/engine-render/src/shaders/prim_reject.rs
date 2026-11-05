@@ -41,10 +41,7 @@ pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 // the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
 // as `depth_affine` reads it.
 fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
-    // A corner behind the eye keeps the mean too under PSX mode, where
-    // `gte_saturate_clip` seats it on screen ahead of the eye.
-    if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w == 0.0
-        || (clip.w < 0.0 && u.psx_params.z < 0.5)) {
+    if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w <= 0.0) {
         return clip;
     }
     let m = u.mvp;
@@ -259,7 +256,20 @@ fn gte_saturate_prim(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32
     if (!front) {
         return clip;
     }
-    return gte_saturate_clip(clip);
+    // The seated corner's depth word: the primitive's mean when the draw
+    // links at it (`prim_mean_depth` read at `w = 1`), else the nearest.
+    // Only here - a corner left to the near-plane clip keeps its own depth,
+    // since the clip's crossing point depends on it.
+    var c = clip;
+    if (clip.w < 0.0) {
+        let md = prim_mean_depth(vec4<f32>(clip.xy, 2.0, 1.0), c0, c1, c2, c3);
+        var z = 1.0;
+        if (md.z >= 0.0 && md.z <= 1.0) {
+            z = md.z;
+        }
+        c.z = z * clip.w;
+    }
+    return gte_saturate_clip(c);
 }
 
 fn gte_saturate_clip(clip: vec4<f32>) -> vec4<f32> {

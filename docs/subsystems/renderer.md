@@ -2573,13 +2573,14 @@ near reject drops most primitives that reach behind the eye, so this
 corner case shows only on a large primitive whose mean `SZ` still clears the
 floor. The vertex stage seats such a corner at that screen point and at the
 depth the cap stands for (`w = H / 2 / sz_per_w`), with the primitive's mean
-depth word (`prim_mean_depth` keeps it for a corner behind the eye under PSX
-mode), or the nearest when the draw links at no mean. It does so only for a
-primitive with a single owner and a corner in front of the eye
-(`gte_saturate_prim`, the GLSL `primReachesFront`): a primitive wholly behind
-the eye keeps the clip, and so does a welded mesh such as the battle ground
-grid, whose emitter drops cells behind the eye itself
-([`battle-stage-camera.md`](battle-stage-camera.md#ground-grid-func_0x801d02c0)).
+depth word when the draw links at its mean (`prim_mean_depth` read at
+`w = 1`), or the nearest otherwise. It does so only for a primitive with a
+single owner and a corner in front of the eye (`gte_saturate_prim`, the GLSL
+`primReachesFront`). A primitive wholly behind the eye, or a vertex two
+primitives weld, keeps the near-plane clip and its own depth, since the
+clip's crossing point depends on that depth. The battle ground grid's cells
+behind the eye are the emitter's own cull
+([`battle-stage-camera.md`](battle-stage-camera.md#the-two-culls)).
 
 The port applies the limits in the mesh vertex stage under PSX mode only
 (`Renderer::set_psx_mode`): `prim_near_reject::gte_saturated_clip` on the
