@@ -431,7 +431,7 @@ mod tests {
         let cam = Camera::default();
         let v = HostView::new(&world, &cam, AABB);
         assert!(v.fog_prims(true).is_empty());
-        assert!(v.drop_shadow_prims(None).is_empty());
+        assert!(v.drop_shadow_prims(None, false).is_empty());
         assert!(v.move_strip_prims(None).is_empty());
         assert!(v.light_prims(None).is_empty());
         assert!(v.world_map_marker_prims(true).is_empty());
@@ -496,13 +496,13 @@ mod tests {
             let (sx, sy, _) = world.field_fx_view(view).project_gte(p).expect("in front");
             (sx, sy)
         };
-        let prims = v.drop_shadow_prims(Some(shot));
+        let prims = v.drop_shadow_prims(Some(shot), false);
         assert_eq!(prims.len(), 8, "four cells per caster");
         let drawn = v.frame(Some(shot)).field_view().expect("shot");
         assert_eq!(prims[0].corners()[3], centre(&drawn, player));
         assert_eq!(prims[4].corners()[3], centre(&drawn, npc));
         // The follow frame is a different camera: its blobs sit elsewhere.
-        let stale = v.drop_shadow_prims(None);
+        let stale = v.drop_shadow_prims(None, false);
         assert_eq!(stale[0].corners()[3], centre(&follow, player));
         assert_ne!(stale[0].corners()[3], prims[0].corners()[3]);
     }
