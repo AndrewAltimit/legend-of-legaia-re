@@ -107,7 +107,7 @@ fn the_0951_0952_bodies_finish_on_their_terminal_arm() {
 /// module phase walk one step per frame.
 #[test]
 fn the_phase_advances_exactly_once_per_tick() {
-    for arm in 0..6u8 {
+    for arm in 0..3u8 {
         let mut c = ctx(arm, 7);
         let mut caster = actor(100);
         let mut seats = vec![actor(100); 7];
@@ -115,6 +115,12 @@ fn the_phase_advances_exactly_once_per_tick() {
         let (_, _) = chaos_breath_tick(&mut c, &mut caster, &mut seats, |_| 5, |_| (1, 1));
         assert_eq!(c.phase, before.wrapping_add(1), "arm {arm}");
     }
+    // Chaos Breath's arm 3 leaves for `0xFF` rather than stepping off its table.
+    let mut c = ctx(3, 7);
+    let mut caster = actor(100);
+    let mut seats = vec![actor(100); 7];
+    chaos_breath_tick(&mut c, &mut caster, &mut seats, |_| 5, |_| (1, 1));
+    assert_eq!(c.phase, 0xFF);
 }
 
 /// Mystic Circle and Doomsday end their choreography: table word 4 and the
@@ -404,7 +410,7 @@ fn power_charge_raises_both_halves_and_caps_at_999() {
     assert_eq!(power_charge_step(800), 999, "1000 would exceed the cap");
     assert_eq!(power_charge_step(999), 999);
 
-    let mut c = ctx(3, 7);
+    let mut c = ctx(2, 7);
     let mut caster = actor(500);
     caster.atk = 200;
     caster.atk_base = 200;
@@ -412,7 +418,9 @@ fn power_charge_raises_both_halves_and_caps_at_999() {
     assert_eq!((caster.atk, caster.atk_base), (250, 250));
     assert_eq!(caster.render_flag, 0);
 
-    let mut c = ctx(4, 7);
+    let mut c = ctx(3, 7);
+    power_charge_tick(&mut c, &mut caster);
+    assert_eq!(c.phase, 0xFF);
     assert_eq!(power_charge_tick(&mut c, &mut caster), CastTickStep::Done);
 }
 

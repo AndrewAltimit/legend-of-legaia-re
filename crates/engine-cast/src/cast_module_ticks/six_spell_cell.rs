@@ -244,6 +244,10 @@ pub fn melt_spray_tick(
         if c.phase == CHOREOGRAPHY_DONE_PHASE {
             c.ctx_0d = 0;
             CastArmStep::Finish
+        } else if c.phase == 4 {
+            // Arm 4 leaves for `0xFF` directly.
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
         } else {
             CastArmStep::Advance
         }
@@ -329,13 +333,18 @@ pub fn power_charge_step(stat: u16) -> u16 {
 /// PORT: FUN_801F7158 (phase chain + the ATK buff; packet arms unported)
 pub fn power_charge_tick(ctx: &mut CastModuleCtx, caster: &mut CastActorState) -> CastTickStep {
     run_tick_latched(ctx, |c| match c.phase {
-        3 => {
+        // The cap at `0x3E8` sits on arm 2's pass; arm 3 leaves for `0xFF`.
+        2 => {
             caster.atk = power_charge_step(caster.atk);
             caster.atk_base = power_charge_step(caster.atk_base);
             caster.render_flag = 0;
             CastArmStep::Advance
         }
-        4 => {
+        3 => {
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            CastArmStep::Hold
+        }
+        CHOREOGRAPHY_DONE_PHASE => {
             c.ctx_0d = 0;
             CastArmStep::Finish
         }

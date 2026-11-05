@@ -1496,7 +1496,9 @@ knockdown and ends the count. Its caster stage sits on arm 1 (`0x801F6C54`).
 **Water Column, Water Crystals and Rolling Flare's `0x5A`** gate on the same countdown shape
 with no chain descriptor (`capture_countdown::WATER_COLUMN`, `WATER_CRYSTALS`, `ROLLING_FLARE`).
 One hit lands as an arm passes, arm 5, arm 3 and arm 3, and the terminal arm then waits for the
-victim to settle (`gated_hit_arm`). Water Column runs its caster at half rate from arm 0 and halves the
+victim to settle (`gated_hit_arm`). Chaos Breath, Chaos Flare, Melt Spray, White Shield and Power
+Charge have the same shape: without their tables every arm took one pass, so Chaos Breath's sweep
+landed `384` game frames early and a body that stepped off the end of its arms walked on to `0xFF`. Water Column runs its caster at half rate from arm 0 and halves the
 victim's beside the hit, so the knockdown's cues sit twice as far apart, and doubles both
 back in arm 7.
 

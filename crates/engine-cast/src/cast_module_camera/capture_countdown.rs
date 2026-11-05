@@ -196,6 +196,59 @@ pub const CURSE_MP_DRAIN: &[ArmCountdown] = &[
 /// victim's clip alone.
 pub const ROLLING_FLARE: &[ArmCountdown] = &[seed(2, S << 7), gate(3, P, None)];
 
+/// PROT 0938 `0x4E` (`0x801F726C`, word `0x801F8040`): arm 0 seeds `0x800`, arm 1's
+/// product-of-step-and-8 gate adds `0x400` (`0x801F74A4..`), arm 2's is the sweep, which
+/// stores the drain budget `0x32` (`0x801F7880`), and arm 3 drains that a step at a time
+/// out of the caster's gauge before it waits on the row. The arms are literals where the
+/// other bodies carry the scalar: `-8 * step` against `0x800` and `0x400`.
+pub const CHAOS_BREATH: &[ArmCountdown] = &[
+    seed(0, 0x800),
+    gate(1, P, add(0x400)),
+    gate(2, P, Some(CountdownWrite::Set(0x32))),
+    gate(3, DRAIN_STEP, None),
+];
+
+/// PROT 0951 `0x36` (`0x801F6A20`, word `0x801F89CC`), twelve arms: arm 1 is the walk,
+/// arm 2 seeds `scalar * 0xE0`, arms 3..=10 are product gates each re-arming the word,
+/// arm 8's pass is the strike, and terminal arm 11 ends on the gate.
+pub const CHAOS_FLARE: &[ArmCountdown] = &[
+    seed(2, S * 0xE0),
+    gate(3, P, add(S * 0x80)),
+    gate(4, P, add(S * 0x80)),
+    gate(5, P, add(S * 0x40)),
+    gate(6, P, add(S * 0x60)),
+    gate(7, P, add(S * 0x60)),
+    gate(8, P, add(S * 0xC0)),
+    gate(9, P, add(S * 0x80)),
+    gate(10, P, add(S * 0x80)),
+    gate(11, P, None),
+];
+
+/// PROT 0955 `0x6F` (`0x801F7FA4`, word `0x801F9D28`): arm 1 is the walk, arm 2 seeds
+/// `scalar << 7` and stages clip 7, arm 3's product gate is the debuff and adds
+/// `scalar * 0x40`, arm 4's gate waits on the victim's clip as well.
+pub const MELT_SPRAY: &[ArmCountdown] =
+    &[seed(2, S << 7), gate(3, P, add(S * 0x40)), gate(4, P, None)];
+
+/// PROT 0955 `0x60` (`0x801F8F0C`, the same word): arm 0 seeds `scalar * 0xC`, arms 1 and
+/// 2 add `scalar * 0x100` and `scalar * 0x60`, arm 3's gate is the buff.
+pub const WHITE_SHIELD: &[ArmCountdown] = &[
+    seed(0, S * 0xC),
+    gate(1, P, add(S * 0x100)),
+    gate(2, P, add(S * 0x60)),
+    gate(3, P, None),
+];
+
+/// PROT 0955 `0x72` (`0x801F7158`, the same word): arm 0 seeds `scalar * 0x60`, arm 1
+/// adds `scalar * 0x80`, arm 2's gate is the buff and adds `scalar * 0x60`, arm 3's gate
+/// waits on the target's clip as well.
+pub const POWER_CHARGE: &[ArmCountdown] = &[
+    seed(0, S * 0x60),
+    gate(1, P, add(S * 0x80)),
+    gate(2, P, add(S * 0x60)),
+    gate(3, P, None),
+];
+
 /// PROT 0950 `0xAB` (`0x801F6A24`, word `0x801F86B0`), fourteen arms: seed
 /// `scalar << 8` (`0x801F6B44`), then a product gate on every arm, re-arming
 /// as listed (arm 3 `0x801F6EE4` / `6F00`, arm 5 `0x801F7068` / `7084`, arm 6
@@ -545,6 +598,11 @@ const CHAIN_0964: u32 = crate::cast_module_ticks::ELEMENT_STRIKE_CHAIN.body;
 pub fn capture_arm_countdowns(entry: u32, body: u32) -> Option<&'static [ArmCountdown]> {
     Some(match (entry, body) {
         (940, arms::GLARE_DIVIDE_SPLIT_TICK) => GLARE_DIVIDE_SPLIT,
+        (938, crate::cast_module_ticks::CHAOS_BREATH_TICK) => CHAOS_BREATH,
+        (951, crate::cast_module_ticks::CHAOS_FLARE_TICK) => CHAOS_FLARE,
+        (955, crate::cast_module_ticks::MELT_SPRAY_TICK) => MELT_SPRAY,
+        (955, crate::cast_module_ticks::WHITE_SHIELD_TICK) => WHITE_SHIELD,
+        (955, crate::cast_module_ticks::POWER_CHARGE_TICK) => POWER_CHARGE,
         (941, arms::STEAL_TICK) => STEAL,
         (941, arms::STEAL_SWEEP_TICK) => STEAL_SWEEP,
         (943, arms::CURSE_SINGLE_TICK) | (944, arms::GUILTY_CROSS_CURSE_TICK) => CURSE,

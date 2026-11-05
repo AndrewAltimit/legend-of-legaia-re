@@ -656,16 +656,28 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
     ],
 };
 
+/// An arm no body reaches.
+pub const NO_ARM: u8 = 0xFE;
+
 /// The arm of a countdown-gated body with no chain descriptor that lands the
 /// cast's one hit as it passes, and its terminal arm's settle wait: PROT 0945's
 /// Water Column (`0x801F74A4`, arm 7's `0x801F7654..0x801F769C`) and PROT 0949's
 /// Water Crystals (`0x801F7318`, arm 5's `0x801F7438..0x801F7480`), and PROT 0950's
 /// Rolling Flare (`0x801F7F80`, arm 4's `0x801F80E0..0x801F80FC`).
+///
+/// [`NO_ARM`] names a half the body does not have.
 pub fn gated_hit_arm(entry: u32, body: Option<u32>) -> Option<(u8, u8, ChainSettle)> {
     match (entry, body) {
         (945, Some(WATER_COLUMN_TICK)) => Some((5, 7, ChainSettle::VictimOrFaded)),
         (949, None) => Some((3, 5, ChainSettle::VictimOrFaded)),
         (950, Some(crate::cast_arm_ticks::ROLLING_FLARE_TICK)) => Some((3, 4, ChainSettle::Victim)),
+        // Chaos Flare's arm 8 pass is the strike; its terminal arm waits on no clip.
+        (951, Some(CHAOS_FLARE_TICK)) => Some((8, NO_ARM, ChainSettle::Victim)),
+        // These land their own effect in the tick; only the last arm's wait is here:
+        // the row (`0x801F799C`), the victim and the target.
+        (938, Some(CHAOS_BREATH_TICK)) => Some((NO_ARM, 3, ChainSettle::PartyRow)),
+        (955, Some(MELT_SPRAY_TICK)) => Some((NO_ARM, 4, ChainSettle::Victim)),
+        (955, Some(POWER_CHARGE_TICK)) => Some((NO_ARM, 3, ChainSettle::Victim)),
         _ => None,
     }
 }
