@@ -266,11 +266,15 @@ one upkeep pass, in this order:
    struck off that visit's list rather than ending the visit: ending it
    there left `rayman2`'s item counter with a purse of 20000 and two
    Healing Flowers bought.
-   A purse that pays for that stock four times over buys up to three
-   stocks, and MP restoratives beside them: past Jette's fortress the run
-   carried 650000 gold through `ropeway` and `station3` with its stock
-   full, met no counter after them, and fought Cort out of an empty bag
-   with Vahn at 22 MP.
+   A purse that pays for that stock twice over buys up to four stocks, and
+   MP restoratives beside them, each out of a part of the purse so the next
+   town's armour keeps the rest: past Jette's fortress the run carried 650000
+   gold through `ropeway` and `station3` with its stock full, met no counter
+   after them, and fought Cort out of an empty bag with Vahn at 22 MP. What a
+   stock costs is counted in the heal on the counter, not at 800 HP a coin:
+   read that way `conc3`'s Healing Berries priced a stock at 135000 gold, and
+   a run left the counter holding 361508 and met Jette on 15% of its HP with
+   no MP.
 2. **Equipment.** Start, Equip, each member, the Best Equipment row. That row ranks only the four armament slots, so the hand then fills each member's empty Goods slots from the bag, best passive first (HP, attack and arts boosts ahead of guards), never two of one passive on a member and never Rage, Zero Defense, Last Attack or No Escape.
 
    Best Equipment (`FUN_801CF760`) ranks a weapon by its stats alone, and a weapon outside the wearer's class raises the arm command's AP cost ([`arts-command-gauge.md`](../subsystems/arts-command-gauge.md)): the Astral Sword costs Vahn 54 a swing, his nine-command art no longer fits a turn, and Koru (`nilboa` P2[20]) outlasts him. So after the row the hand reads each member's arm cost off its player battle file, the way the battle loader does (`swing_command_costs`), and where a weapon in the bag swings cheaper than the one worn it puts that one on (Start, Equip, the member, the weapon row, the weapon, Yes), the best attack among equally cheap ones.
@@ -632,6 +636,44 @@ the bag is short of an errand's copies:
 The waypoints put the stretch in order: `koin2` for the chests' first
 contact (and the gold), `koin4` for the bread, `koin2` again to feed them.
 `kor` P1[13]'s talk then raises `0x40A` and the doorway is clear.
+
+### Arriving at a boss
+
+Past Rogue's tower the anchors' party is level 30 and the run's is 48 to 53, so
+a loss there is not a question of levels. What decides those fights is what the
+party still holds when it reaches the door, and what a reload hands back:
+
+- **It walks back to a rest before it leaves.** A hop out of a scene whose rest
+  still works, with the lower of HP and MP under four fifths, walks to the rest
+  first however far off it stands (no scene's clock running): the beats leave
+  the party wherever the last talk stood, and `chitei2` has no rest past
+  `deroa`'s keeper P1[7]. A lone member keeps to the rest's usual reach, since
+  for it the walk is the danger: Vahn alone at level 2 crossing mist-era `dolk`
+  for its bed wiped on most streams, on a stretch that walking straight out clears.
+- **A fight on the lean does not end the talk.** An encounter rolled on the lean
+  toward a keeper ended the lean, and the failure to face was read as a rest that
+  lifts nobody ([below](#a-rest-that-stops-resting)), which struck `deroa` P1[7]
+  off for the run. The lean now plays the fight and is taken up again. A keeper no
+  walk reaches stays struck off: `bylon` P1[29] listed as a rest stops the
+  bag standing in for one, and a run left `bylon` with Gala at level 8 of 20
+  and 30000 gold poorer.
+- **Only a race walks for AP.** The walk for AP after a boss wipe
+  (`pad_charge_for_race`) spent every heal in the dungeon, and the attempts it
+  prepared left Zora higher than the attempt before it. Spirit turns earn the same
+  in the boss's own rounds, so only Koru's race takes the walk: that race is lost
+  on the rounds spent standing.
+- **A doomed save is not reloaded for ever.** A milestone's save counts as fit
+  when nobody is under two fifths of its HP, the party holds a third of its MP or
+  the bag's MP reserve, and the bag holds its heal reserve; a scene whose rest
+  still works makes any party fit, since the save stands beside what mends it.
+  The run keeps the last
+  fit save within three milestones beside the latest one, as a player keeps an
+  older slot. Once the latest save, unfit, has lost twice, the next reload is the
+  fit one, and the stretches between are played again each as itself.
+- **A lone trainee goes back to the bed early.** A member alone with a working
+  rest ends an outing under four fifths of its HP, not 55%: nothing shares the
+  hits, and a level-1 Noa who walked on at 90 of 150 from `cave01`'s Terra met
+  three foes she could neither beat nor outrun.
 
 ### A rest that stops resting
 
@@ -1519,9 +1561,11 @@ For each member, in order of priority:
 1. **Revive.** A member who is down gets a revive.
 2. **Heal.** A member in danger gets a heal: a party heal when two or more are in danger, else the smallest single heal that lifts the worst-off member clear (in a solo duel, clear after the foe's next round too - see [Guards and boss reads](#guards-and-boss-reads)), aimed at that member. Heals the round's earlier members already committed count as landed, so two members never spend their turns on one wound.
 3. **Cast.** Otherwise a member with an affordable damaging Seru spell casts the strongest one. A command ring that answers Magic by reopening itself (a fight whose special word forbids the Ra-Seru chip, or a caster with no spell session) is asked for two seconds and then not again that battle.
-4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved.
+4. **Attack.** Otherwise it attacks through `Command`, entering the longest art its command pool pays for and spending the rest on plain directions. Whether a matched art fires is the queue builder's call, out of the Spirit gauge. The plan runs up to nine commands, the length of each character's Miracle Art. A member with all three limbs rotted (`+0x16E & 0x38`) takes the Spirit stance instead: the ring refuses its Attack arm (`FUN_801D0748`, `0x801D1560`) and stays up, and a fighter that kept pressing it left Sol's fights against monster 120 unresolved. The finishing blow is no exception: a fully rotted member passes on it.
 
    One or two rotted limbs leave the entry open but refuse their own directions (Left for `0x08`, Right for `0x10`, Up and Down for `0x20`; `rot_blocks`, `0x801D1E60..0x801D1F7C`), so the plan keeps to the open ones: a plan through a rotted arm waited on a Left that never landed, and a `jouinc` fight after a party-wide Rot ran out its budget with the entry half typed.
+
+A plain string goes where it can land. A party swing whose power byte cannot reach the target's record `+0x1E` class misses outright (`FUN_801EC3E4`, `0x801EC488..0x801EC554`, [the limb-vs-height miss](../subsystems/battle-formulas.md#the-limb-vs-height-miss)), and the action ends with the swing: a class-2 foe takes nothing from a whole string of Low. Retail shows the "Miss" a player reads off the first swing; the hand reads the class it stands for and strings High there, Low everywhere else (`plain_order`). Zora and `taiku`'s monsters 112 and 91 are class 2, and a hand keeping its Spirit typed nine Low into Zora for 0 damage, every time.
 
 A member is **in danger** when it is standing and either:
 
@@ -1604,28 +1648,52 @@ way, the run beats Songi on the first attempt on both streams. The retail
 party also carries about twenty Seru spells a member to the run's five to
 ten.
 
-Koru (`nilboa` P2[20], 20000 HP) is a race. Its pick arm casts by the
+Koru (`nilboa` P2[20], monster `0xB6`, 20000 HP) is a race. Its pick arm casts by the
 battle-mode counter - `0xA2`, `0xA3`, `0xA4`, `0xA5` on modes `0..=3`, then
 Dead End Crisis (`0xA1`), which in this fight writes a flat 9999 to every
 party seat - and the scene runs it with no scripted-loss latch, so the party
-must deal 20000 inside four rounds while each round's cast takes 600..700 off
-one member. The hand fights it without heal turns (`racing_a_finisher`):
-Vahn and Noa type their Fury-boosted Miracle Arts every round, Gala casts or
-hands out the attack Elixir, and spends a turn on a heal only when an Arts
-member would not live through Koru's biggest hit so far, never on the
-finisher's own round. A seated beat whose band stages a fight tops a party
-not near full up first, as the pad walk does, and the seated pass reloads a
-boss wipe with a fresh hand up to `PAD_WIPE_ATTEMPTS` times, as the pad pass
-does: on one stream the race is won or lost by a few dozen HP.
+must deal 20000 inside five rounds while each round's cast takes 500..700 off
+one member. The hand fights it without heal turns (`racing_a_finisher`), and
+spends a turn on a heal only when a Miracle typist would not live through
+Koru's biggest hit so far, never on the finisher's own round. A seated beat
+whose band stages a fight tops a party not near full up first, as the pad walk
+does, and both passes reload a boss wipe with a fresh hand up to
+`PAD_WIPE_ATTEMPTS` times.
 
-Koru (monster `0xB6`, 20000 HP) is a timed fight: its AI casts the
-all-party finisher on round counter `4` (`timed_fight.rs`), so the party
-has five rounds. Spells and short Arts strings fall a few hundred HP
-short. The fighter spends a member's first turn on a Fury Boost when that
-buys a Miracle Art (the `+0x1F9` byte makes every later round boundary
-restore the pool to `base * 7 / 5 + 8`), prefers the Miracle over any
-summon once the live pool pays for it, and has a member with no Miracle
-hand Power Elixirs to the Miracle typists.
+The race is won on Spirit as much as on damage. A Miracle Art's price is 99 AP
+(`11 x 9`, ordinal 0 of the bank's walk) and the queue builder asks for it in
+the walk (`FUN_801EED1C`, [`arts-command-gauge.md`](../subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)): typed short of 99, the walk ends and all nine arrows
+stay plain swings. A member earns about a hundred over the race, `+8` an action
+and a third of the gauge for a hit of a quarter of its HP, so no member types one
+every round. Measured against Koru at level 32: a Miracle about 2600..4500, a Super
+(54 AP) about 1200, nine plain presses of Low about 1000..1750 for no AP at all.
+So the hand:
+
+- Reads the gauge before typing (`spirit_pays`, the builder's own gate over `legaia_art::tokenize_bank_gated`). No fight's plan names an art the gauge cannot pay, and a plain swing goes Low, the command with the largest power scalar (`0x801F64EC`: Left 12, Right 18, High 20, Low 22). Low beats the arm for Vahn by 1750 to 1050 and draws level for Noa.
+- Saves its AP in a race: a member whose pool can type the Miracle swings until 99 is up. A member whose pool never can has nothing to save for, so Gala's Spirit buys Arts, about 1000 from five presses against 480 from plain swings.
+- Takes a Fury Boost on the opening turn when four rounds of nine presses, with a Miracle among them for a member within a race's income of the price, beat five casts (`race_fury_pays`). The boost's `+0x1F9` byte makes every later round boundary restore the pool to `base * 7 / 5 + 8`.
+- Casts when the turn's Miracle is out of reach and the best spell beats the member's swings (`race_spell_gain`): about ten per point of catalog power until a cast is measured, against presses at about seven tenths of ATK and any Arts hit measured this battle. A caster's magic level makes the difference: Gala's Kemaro takes about 2900, retail's level-25 party casts Aluru at 1500..1700 each. A race keeps no MP back and drinks the largest MP item while a cast is still to come.
+- Strikes with the Point Card whenever `min(bank, 9999)` off the shop-points bank beats the member's own turn (`wanted_point_card`, any fight that forbids running, [`item-effect-table.md`](../formats/item-effect-table.md)). The card goes back in the bag, so a run that has shopped opens Koru with a third to a half of its HP.
+- Hands out Power Elixirs from the opening round when a fifth of what a typist still has to deal beats the giver's own turn (`race_ramp_pays`). Each use ramps again, so Vahn's Miracle reaches about 5600.
+- Dresses on the reload after a lost race (`race_goods_plan`, `RACE_LOST`): each member who can type a Miracle under a Fury Boost takes Maximum AP, AP Used Down, ATK Boost, Arts Power and the AP Boosts from the bag and from whoever cannot, keeping any AGL Boost, which is what pays for the nine presses (Vahn 169 without it, 202 with it, at retail's level 25). AP Used Down makes Vahn's Miracle 45 AP, which is two or three in the race where an undressed run has one.
+- Walks in charged on a reload after a lost race against a timed finisher (`pad_charge_for_race`, `RACE_LOST`). The gauge carries between fights through the record's AP cell, so where the scene rolls encounters the hand walks them first, taking the Spirit stance (`+0x20` a turn) until every typist holds 99, with no art spending what the turns earn. A party that walks into Koru off the duels holds 30..60 AP, and in a race that is the difference between a Miracle in the first round and one in the third. The stance deals nothing, so a charging party flees past half its HP, starts each outing healed, stops under half its MP, and meets the boss healed.
+  A boss above 15000 HP is a race too for what its typists save in the fight (`long_boss`), but takes no walk ([arriving at a boss](#arriving-at-a-boss)).
+
+A status that takes a member out of the fight is cured ahead of a heal
+(`wanted_cure_item`). Zora's Glare turns a member to stone: Stone lasts the
+battle, its member deals nothing, and the `0x5A` wipe scan counts it as down, so
+a party can wipe with two statues holding near-full HP and Medicine in the bag.
+Medicine's class-3 arm stores the whole status word (`FUN_800402F4`,
+`0x80040E64..`), and the member comes back with the HP it was Stoned at, which
+beats any revive. The heal arm goes first only while a standing member sits
+within one party-wide hit of death.
+
+Against a boss a member's first attack is its Arts string, and a cast after that
+has to beat what the string took (`arts_measured_first`, `wanted_spell`). The MP
+is the party's Spoons, and Gala's Gola Gola took about 550 off Zora for 40 MP
+where her five presses took about 620 for none. Measured at level 33 against
+Zora: Vahn's Miracle about 2900, Noa's about 2200, Gala's Kemaro about 2000 and
+Nova about 1100. A race keeps its own sum (`race_spell_gain`).
 
 One boss's tell is its shield. Monster `0xB4` (the `chitei2` P2[13] fight)
 opens behind a Mystic Shield that halves every hit on it, and its pick arm
@@ -1637,6 +1705,13 @@ member of the anchor's lv30 party - more than any member holds - and about
 half that in the Spirit stance. So once the shield has dropped, on the rounds
 the cast can come, every member above 55% of its HP takes Spirit; the others
 are the heal arm's, and the even rounds are the party's to act on.
+
+The shield also stops every plain swing whoever swings it (`FUN_801EC3E4`,
+`0x801ECA84..0x801ECAF8`, a clip below `0x10`), and an art passes at half damage.
+A member keeping its Spirit for the Miracle (`long_boss`) would otherwise type
+nine plain presses for nothing, so behind the shield it takes the stance until
+the gauge pays (`wants_miracle_stance`): `+0x20` a turn where a swung action
+earns `+8`, and half of the foe's round.
 
 A lone member against a foe of several times its HP (the `nilboa` Delilas
 duels) alternates a Spirit round with an Arts round, and holds the stance
@@ -1820,7 +1895,8 @@ clips and matches the same arts a windowed one does. Beyond that:
 |---|---|
 | `LEGAIA_FGL_TRACE=1` | One line per played beat: what ran, how it ended and the flags it set. As `[hop]`, the hop failure that sent the pass to the beats, which the final stall would otherwise hide. A `[battle]` line at each fight's start and end (formation, both sides' HP, the action-SM state). Each pad segment's frames and planner cost. In part C, an `[aim]` line for each target cursor the aim gave up on, with where the cursor stood. On success, the seated tier's trail, so a pad stall can be read against the route the seated tier took. |
 | `LEGAIA_FGL_TRACE_BATTLE=1` | A `[battle]` line every 1000 ticks. |
-| `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state. |
+| `LEGAIA_FGL_TRACE_HITS=1` | Each HP change with its actor and action state, each commit, and at each round's command window the round history, statuses, Spirit gauges, MP and the foes' HP. |
+| `LEGAIA_FGL_TRACE_ACTS=1` | With the two above: each change of the acting seat or the action state, with its clip, queue and target. How a string that ends on its first swing shows up. |
 | `LEGAIA_FGL_CAPS=1` | Each script context the engine's anti-hang timeline cap ends (`World::cutscene.capped`): scene, modal or helper, record length, PC and opcode. Retail has no such cap, so each line is a record the engine cut short; over both passes there are none. |
 | `LEGAIA_FGL_PAD_DEBUG=1` | In a fight where no foe has lost HP for 6000 ticks, the fighter's pad and the command, spell and item windows' phases every 97 ticks: what a battle that will end `unresolved` was being asked. |
 | `LEGAIA_FGL_SHOP_DEBUG=1` | Each pad edge of a shop screen with the hand's next buy and sale, the screen state, the purse and the bag's heals in Healing Flowers' worth. |
@@ -2046,20 +2122,15 @@ Scene-specific facts the route and the pad hand depend on. Each is a property of
   fought one member at a time out of the party's one bag
   ([guards and boss reads](#guards-and-boss-reads)).
 - Koru (P2[20]'s challenge, F32, 20000 HP) is a race against its round-4
-  finisher ([`KORU_MONSTER_ID`](#guards-and-boss-reads)), and the retail
-  party wins it on Miracle Arts: Vahn and Noa drink a Fury Boost in the first
-  round and type their nine-command Miracle every round after (about 2500
-  each). A Miracle costs nine presses at the arm's price (30), 270 from the
+  finisher ([`KORU_MONSTER_ID`](#guards-and-boss-reads)), won on Miracle Arts and the
+  AP to pay for them. A Miracle costs nine presses at the arm's price (30), 270 from the
   action gauge, and a Fury Boost lifts the gauge to `base * 7 / 5 + 8`, so it
   fits from a base AGL of 188. The anchors' party holds that at level 25
   (Vahn 202, Noa 189, the AGL Boost accessory's +20% included). AGL grows by
   its own divisor in the level-up applier (`0x18C0` against every other
-  stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)); an engine
-  that divided it by `0x24C0` grew it two a level where retail grows three,
-  and its level-31 party (Vahn 157, Noa 177) lost the race at about half
-  Koru's HP on every stream. With the divisor corrected the run's party
+  stat's `0x24C0`, [`level-up.md`](../subsystems/level-up.md)). The run's party
   reaches `nivora_late` at AGL 191 / 211 / 173 and, carried past the ledge,
-  beats Koru on the first or second attempt. The ledge band P2[20] is
+  beats Koru within its reloads, dressed for the race from the second. The ledge band P2[20] is
   reached from its other tiles ([how the pad tier
   walks](#how-the-pad-tier-walks)), and the stretch then plays the chain
   that opens `deene`'s dock ([overworld and dungeon

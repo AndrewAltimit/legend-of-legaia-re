@@ -61,6 +61,12 @@ impl World {
         self.casting.module_saved_poses.clear();
         self.casting.module_creature_clip_kind = 0;
         self.casting.module_shake = 0;
+        // A module with pre-hits keeps the readout flag down from its first
+        // popup, which the HUD reads a frame late: hold from the start, and let
+        // the band's fold release it.
+        self.battle.combo_cluster_held = self
+            .cast_module_for(spell_id)
+            .is_some_and(|e| matches!(e, 908 | 915 | 928 | 932 | 933 | 934));
         self.casting.summon_stager = Some(SummonStager {
             caster,
             spell_id,
@@ -165,7 +171,9 @@ impl World {
             if !r.spawns.is_empty() {
                 self.stage_module_arm_spawns(r.prot_entry, r.spawns, r.camera_shot, r.arm_point);
             }
-            if !r.every_spawns.is_empty() {
+            // A pass's call: the arm spawns once a battle frame, however many
+            // one-vsync ticks the pass runs.
+            if !r.every_spawns.is_empty() && !self.casting.module_pass_repeat {
                 self.stage_module_arm_spawns(
                     r.prot_entry,
                     r.every_spawns,
@@ -331,12 +339,10 @@ impl World {
                 };
                 if strike {
                     // The fold's own finisher raises the readout flag the
-                    // module's pre-hits kept down. PROT 0915 has no fold: every
-                    // one of its rolls stores `0` there, so its cluster never
-                    // opens and the hits it counted go with it.
+                    // module's pre-hits kept down. PROT 0915 has no fold: its
+                    // rolls store `0` there and arm `0xC`'s pass raises it
+                    // (`li v0,0x78` at `0x801F7DA0`).
                     self.battle.combo_cluster_held = false;
-                    self.battle.combo_cluster_dropped =
-                        self.cast_module_for(st.spell_id) == Some(915);
                     self.fold_pending_cast();
                     st.phase = SummonPhase::Linger;
                     st.frames = 0;
@@ -345,9 +351,6 @@ impl World {
             }
             SummonPhase::Linger => {
                 st.frames = st.frames.saturating_add(1);
-                if st.frames == 2 {
-                    self.battle.combo_cluster_dropped = false;
-                }
                 // A module still running owns the creature's clip: PROT 0934
                 // holds clip `3` through its closing arm `0x19`.
                 if st.frames == 1

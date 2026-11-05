@@ -471,6 +471,7 @@
   </ul>
 
   <h3>The ringside still</h3>
+  <p>The first visit stands on black. The hub runs in the mode-<code>0x19</code> overlay with the field swapped out and no 3D scene, and the arena loads only when the fight is kicked, so nothing but the hub&rsquo;s own wall and screens reaches the frame until then (port: <code>HubTimers::first_visit_up</code>, on both hosts).</p>
   <p>Between rounds the hub does not show the brick wall of the first visit. It shows a pre-rendered still of the party at the ring fence, streamed into VRAM at <code>(384, 0)</code> at the battle&rsquo;s teardown. Two stills exist, and the loader picks between them on the lead character&rsquo;s live HP: <code>int.tim</code> (extraction 1221) normally, <code>int2.tim</code> (1222), the different-reaction version, when current HP is below half of max. A re-entry latch set on every return decides still versus wall. The format and the draw are on the <a href="../formats/ringside-still.html">ringside still</a> page.</p>
 </section>
 

@@ -114,9 +114,13 @@ fn hand(session: &NativeSession, typed: &mut usize) -> u16 {
     }
 }
 
-/// The cue router's per-call debug line (`battle_cue_route`), collected so
-/// the SFX side of the turn can be laid against the retail router calls.
-static ROUTES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+// The cue router's per-call debug line (`battle_cue_route`), collected so
+// the SFX side of the turn can be laid against the retail router calls. The
+// logger is process-global and this binary runs other fights on other test
+// threads, so a line counts only on the thread that opened the collection.
+thread_local! {
+    static ROUTES: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
 struct RouteLog;
 impl log::Log for RouteLog {
     fn enabled(&self, m: &log::Metadata) -> bool {
@@ -124,7 +128,11 @@ impl log::Log for RouteLog {
     }
     fn log(&self, r: &log::Record) {
         if self.enabled(r.metadata()) {
-            ROUTES.lock().unwrap().push(r.args().to_string());
+            ROUTES.with_borrow_mut(|routes| {
+                if let Some(routes) = routes {
+                    routes.push(r.args().to_string());
+                }
+            });
         }
     }
     fn flush(&self) {}
@@ -195,6 +203,7 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
     assert!(session.host.world.force_encounter(fid));
 
     let _ = log::set_logger(&RouteLog).map(|()| log::set_max_level(log::LevelFilter::Debug));
+    ROUTES.with_borrow_mut(|routes| *routes = Some(Vec::new()));
     let mut typed = 0usize;
     let mut prev = 0u16;
     let mut in_battle = false;
@@ -255,7 +264,10 @@ fn noa_lizard_tail_acrobatic_blitz_voices_as_retail() {
             );
         }
         if typed == NOA_ENTRY.len() {
-            sfx.extend(ROUTES.lock().unwrap().drain(..).map(|m| (tick, m)));
+            ROUTES.with_borrow_mut(|routes| {
+                let routes = routes.as_mut().expect("opened above");
+                sfx.extend(routes.drain(..).map(|m| (tick, m)));
+            });
         }
         for c in w.drain_battle_xa_cues() {
             clips.push((tick, c.clip, c.channel, c.duration_sectors));

@@ -83,7 +83,7 @@ stateDiagram-v2
 | `5` | `GO!` out: ramps `DAT_801d515c` back to 0, then calls the actor-start helper and advances. |
 | `6` | Zeroes the beat counters `DAT_801d581c` / `DAT_801d5820` / `DAT_801d5824`, sets the lead-in countdown `DAT_801d513c = 4`, goes to `7`. Its `func_0x80026478` call (`FUN_80026478`) is the actor sound-source attach / re-pan primitive ([`functions.md`](../reference/functions.md)), not the BGM start. |
 | `7` | Decrements `DAT_801d513c`; at 0 jumps to `10`. |
-| `10` (`0xa`) | **Main play loop.** The beat clock advances, `FUN_801d231c` draws the HUD, the song-end test runs. |
+| `10` (`0xa`) | **Main play loop.** The beat clock advances, the song-end test runs. |
 | `11` (`0xb`) | Finish countdown: spawns `3`, `2`, `1` and `FINISH!` as four sprite parts at once and advances. |
 | `12` (`0xc`) | Result wipe: ramps `DAT_801d515c`, raises the pause flag `DAT_801d5130` past a threshold, then jumps to `0x14`. |
 | `0x14` (20) | Results: copies the scores to display RAM, grades the run, clears the win flag on a loss, and tears down through `FUN_801D414C` once the fade reaches `0x100`. |
@@ -238,17 +238,23 @@ So the move is worth `8.3x` an ordinary press plus a lane promotion, but only on
 | Triangle anywhere else | `(lane + 1) * 3` | - |
 | Direction (`pad & 0x80` / `& 0x20`) closing the lane's chain | `+ DAT_801d608c` (the kind's bonus, accuracy-weighted for the human) | `+250` |
 | Direction that matches but does not close the chain | nothing (the cursor advances) | - |
-| Direction that misses | nothing (the miss counter `DAT_801d568c` rises) | - |
+| Direction that misses | nothing (the miss counter `DAT_801d568c` rises, by `1` on Square and `2` on Circle) | - |
 
 **Groove gauge** `DAT_801d544c[player]` is clamped to `[0, 2999]`. The chart row is `gauge / 1000`, so crossing 1000 / 2000 promotes the dancer. **No path in the overlay lowers it** - not a miss, not a dropped chain: every writer in the image is an award, a clamp, or a run / tutorial reset. The how-to script says the same ("the level rises automatically").
 
-**Latch.** Every judged press sets the hit-tier latch `DAT_801d548c[player]` (0/1/2/3) and its timer `DAT_801d54cc[player]` (`0xf`, decayed `2 * frame_delta`), so a held button is not re-judged every frame.
+**Latch.** Every judged press sets the hit-tier latch `DAT_801d548c[player]` (0/1/2/3) and its timer `DAT_801d54cc[player]` (`0xf`, decayed `2 * frame_delta`), so a held button is not re-judged every frame. It runs out in three game frames at the hall's delta, and on a standing loop nothing else holds a dancer, so a second press inside one beat's window counts toward the chain. The chain cursor stands at zero through every frame of a bar's first beat (`0x801D164C..0x801D1688`).
 
 **Feedback** is player 0's only: a sound cue (`_DAT_8007b6de` / `_DAT_8007b6d8`), a banner through the sprite spawner `FUN_801d3fd0`, and the face pose switch `FUN_801d03c4`. See [rating banners](#rating-banners-per-tier-fun_801d1af4-body) and [Sound](#sound).
 
 ### The rival dancers
 
-The competitors run the same award routine off a pad word synthesised from the same chart. They differ from the human only by **kind**, which selects their row of the two [scoring tables](#scoring-tables). A CPU dancer therefore hits every note its own lane calls for (so its gauge climbs and promotes it), takes the flat table bonus for each closed chain, and throws its groovy moves on the disc's schedule. Its cadence is limited by the same latch as the human's plus the move clip it is playing.
+The competitors run the same award routine off a pad word synthesised from the same chart. They differ from the human only by **kind**, which selects their row of the two [scoring tables](#scoring-tables). A CPU dancer therefore hits every note its own lane calls for (so its gauge climbs and promotes it), takes the flat table bonus for each closed chain, and throws its groovy moves on the disc's schedule. Its cadence is limited by the same latch as the human's plus the move clip it is playing, and only those: it presses again as soon as both allow, several times a beat.
+
+The feed sits inside the award routine, so its schedule stands still while a move plays and moves on regardless of the latch and the stock: a due triangle that meets the latch is lost. The read is unbounded (`0x801D18DC..0x801D18F8`), so a free-play Disco King (kind `4`, past the table) reads on into the actor templates that follow it and spends at every combo slot. Free play's rivals copy the lead's gauge each frame and bank nothing (`0x801D1394..0x801D13BC`). A rival's spend arms the feedback window `DAT_801d5144` as the human's does.
+
+All of the Disco King's move clips are his own loop, so a judged press holds him for no time.
+
+`crates/retail-exec/tests/dance_floor.rs` holds `DanceGame` to the bytes through whole songs, every dancer, frame by frame, at frame deltas `1` and `3`.
 
 ## The setumei (how-to) tutorial script (`FUN_801d0750`)
 
@@ -422,8 +428,9 @@ The clip index is the record's `record` byte plus one:
 
 - Kernel: `legaia_engine_field::dance_marker::step_marker`, with `MarkerActor` carrying the three fields the retail actor does (`+0x50` class, `+0x9C` script cursor, `+0x54` countdown). `DanceGame::advance` steps one cursor per class.
 - Pool: `minigame_floor::MarkerFloor` runs the `floor_tile_spawns` sweep over a venue's floor rect, keeps the cells `marker_template` classes as markers, advances every tile in `MarkerFloor::step`, and reports the staged meshes through `draws`.
-- Both browser pages draw the tiles. `bake_dance_markers` in `web-minigames::dance_presentation` bakes every candidate mesh of every tile into the page's static-topology buffer; each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
-- The native play window builds and draws the hall but does not draw the marker tiles. See [`host-drift.md`](../tooling/host-drift.md).
+- `DanceVenue::markers` takes the cells a tile stands on out of the hall's static draws: the tile is that cell's draw, on the mesh its flipbook names. The hall's wall panels and stage screens are these tiles, so their moving art is this flipbook: at `(6144, 256, 13712)`, `(5760, 192, 13808)` and `(6496, 192, 13808)` in `minigame_dance_retail_go_out`, the actor's `+0x64` names the sheet of Noa or the emblem on screen.
+- The native play window bakes each tile's row at its place and uploads the mesh `DanceGame::step_marker_mesh` names (`bake_venue_markers`, `refresh_dance_venue_view`). The browser pages bake every candidate mesh into the page's static-topology buffer (`bake_dance_markers` in `web-minigames::dance_presentation`); each frame `dance_marker_step` (`play_mg_dance_marker_step` on the play page) returns positions with the non-current meshes collapsed to a point, so the index buffer stays static.
+- The flipbook runs on the hall's game frames, count-in included: a step of `12` lasts five frames of step `3` (`12, 9, 6, 3, 0`, staged on `-3`). A game frame's length varies with what it draws, so the count-in's counter does not name a tile's phase: between `minigame_dance_retail_go_in` and `_go_out` the `GO!` accumulator walks `11` steps while the ambient leader takes `8` rows of one frame each. The retail comparison seats the tiles' steps off the state (`LEGAIA_SEAT_DANCE_MARKERS`, taken back the display lag).
 
 The marker lookup is the read side of the step data in *floor space* ("is there a marker at cell (x, z)"); the chart read in [Input judging](#input-judging--timing-windows) is the *beat-space* side.
 
@@ -573,6 +580,37 @@ Extraction PROT 1230 is a `prot::timpack` of **31 TIMs** - parser [`legaia_minig
 
 The HUD member at `(512, 0)` matches live VRAM exactly: 16384 of 16384 halfwords, plus 256 of 256 CLUT entries at `(0, 500)`. The widget table's `tpage` / `clut` pair therefore resolves to disc data with no runtime edit in between.
 
+## The hall's ambient tree
+
+The hall's light show is palette work, not geometry. State `1` of `FUN_801cf470` spawns records `2` and `1` of the `other7` stager bundle at the origin (`FUN_800252EC` at `0x801CF9A8` and `0x801CF9C0`) and keeps record `2`'s part in `DAT_801D51A0`. The two records tree out into the mode-3 [CLUT-cell cyclers](field-ambient-fx.md#mechanism-2---the-ambient-move-vm-effect-tree) over rows `504..=508` (the floor, the walls and the stage lamps) and the scrollers and `MoveImage` strips of the wall panels.
+
+The cyclers follow one leader through op `0x20`. The overlay installs `FUN_801D387C` in that slot (`sw v0,-0x45d4(v1)` at `0x801CF07C`), and two arms of it serve the tree:
+
+| Arm | Writes |
+|---|---|
+| `0` | Copies `DAT_801D51A0`'s `+0x90/+0x92/+0x94` (the HSV adds) into the caller and zeroes the caller's rates `+0x96/+0x98/+0x9A` |
+| `1` | Caller's V add `+0x94 = arg` |
+
+Arm `1` with `-200` on record `2`'s first frames is why the hall opens dark: `minigame_dance_retail_ready` holds that leader at `H 96, V -200` on gate `25` at banner counter `72`, and every follower reads the same.
+
+The tree runs at the hall's frame step, `DAT_1F800393 = 3` in every parked dance state. State `1` is a game tick ahead of the first READY run, so a part's gate reads one past the banner's run count.
+
+Port: `World::stage_dance_ambient` moves the walked-in scene's ambient seat aside and installs the hall's, `World::step_dance_ambient` repaints the hall's own VRAM (the native window's venue copy, the page's `play_mg_dance_ambient_step`), and `MoveVmHostImpl::ext_20` carries arms `0` and `1` while the seat is the hall's. The walked-in scene's VRAM effects stop for the length of the dance, as they do in retail with that overlay swapped out.
+
+A follower's loop sets how far it can stand behind the leader. Most run `20 0 _, 09 0`, a copy every pass. The floor's two cells `(0, 506)` and `(16, 506)` run `20 0 _, 2D 0x80 0 0, 09 0, 09 0`: they copy every other pass and sit half a turn of hue off, so on a strobe frame the floor can show a different `V` from the walls.
+
+### The hall's palettes are the field's last paint
+
+The init loads the art pack only with the field-entry word `_DAT_8007B8B8` clear (`lw` at `0x801CF190`, `bne` at `0x801CF198`, `jal 0x8002541C` at `0x801CF1A0`). A door entry has the word up, so the hall stands on the VRAM `koin3` left, and the tree's op `0x2C`s capture their cells from there. `koin3` runs cyclers on the same cells, so what they capture is whatever strobe the field last painted, not the disc's palette. In the three retail count-in states the floor's captured entries read `0xB484, 0xB4A3, 0xB483` where the disc's palette has `0x99F4, 0x95B4, 0x95D4`: the disc's orange floor, turned to blue and darkened. Every later hue the hall shows is a rotation of that paint, so the hall's colours depend on the frame the player left the field on.
+
+Port: `World::carry_walked_in_cells`, called by both hosts just before `stage_dance_ambient`, copies each cell the walked-in scene's cyclers paint into the hall's VRAM. The rest of the hall's VRAM stays the venue build's. The same call copies the drop shadow's boot-resident blob and palette, which the venue build does not hold. Retail's VRAM also carries a white-keyed `64 x 128` block at `(384, 128)` the port's does not.
+
+### The stage lamps
+
+The stage's front riser is two coplanar layers of one mesh: an opaque base (`0x7EC0`) and an additive lamp sheet (`0x7E84`, ABR `1`, a `(64, 506)` cycler cell). The sheet comes first in the mesh, and a later prim links ahead of an earlier one in its ordering-table bucket, so the base draws first and the sheet lands on it. `legaia_tmd::mesh::separate_coplanar_prims` follows that order between equal areas.
+
+The floor's three dancers carry the placement class bit (flags `0x8020880`), so retail's table holds their drop shadows too; `World::field_drop_shadows` builds them on retail's corners, and the hall's floor currently hides them ([open threads](../reference/open-rev-eng-threads.md)).
+
 ## HUD
 
 ### HUD widget table (`DAT_801d46cc`) + emitter geometry
@@ -639,7 +677,7 @@ Port: `engine-minigame-scenes::dance_hud_art::stage_dance_hud_vram`, driven from
 
 ### HUD render driver (`FUN_801d231c`)
 
-`FUN_801d231c` is the per-frame driver, called from the main play state. In order it draws:
+`FUN_801d231c` is the per-frame driver, called from the tail of `FUN_801cf470` past the state switch (`jal` at `0x801CFFA0`), so it draws through the count-in as well as the play state: `minigame_dance_retail_ready` shows the score boxes, the gauge and the beat track under READY. In order it draws:
 
 1. the three score readouts (`FUN_801d32f8`), then their box frames;
 2. the human's groove gauge (`FUN_801d3e28`) and beat track (`FUN_801d2524`);

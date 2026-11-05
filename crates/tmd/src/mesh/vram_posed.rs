@@ -3,7 +3,7 @@
 use crate::{Tmd, legaia_prims};
 
 use super::vram::prim_color;
-use super::{compute_smooth_normals, pack_tsb_semi, rot_zyx};
+use super::{compute_smooth_normals, prim_tsb_word, rot_zyx};
 
 /// Like [`tmd_to_vram_mesh`] but applies per-object (per-bone) pose offsets
 /// before emitting vertices. Each element of `bone_offsets` is a `(pos, rot)`
@@ -48,7 +48,7 @@ pub fn tmd_to_vram_mesh_posed(
                 if prim.uvs.is_empty() {
                     continue;
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -164,7 +164,7 @@ pub fn tmd_to_vram_mesh_posed_rot_lit(
                 if prim.uvs.is_empty() {
                     continue;
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let lit_normals =
                     super::vram_filtered::lit_prim_normals(buf, o, g.header.flags, prim);
                 let object_rgb = super::vram_filtered::object_rgb(o);

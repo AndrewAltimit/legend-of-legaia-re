@@ -6,6 +6,9 @@ use super::*;
 /// The rung the Attack arm stands the yaw counter `ctx[+0x6DA]` on as the
 /// seed enters `0x14` (`0x801E2F20`).
 const ATTACK_YAW_RUNG: u16 = 0x200;
+/// The rung the seed pass stands the counter on (`0x801E2CF8`), which a Spirit
+/// band action climbs from with no store of its own.
+const SEED_YAW_RUNG: u16 = 0x800;
 /// The shortest walk [`RetailBattle::party_approach`] places: under a few
 /// passes the replay's own arrival is as near as the estimate.
 const PARTY_WALK_MIN_VSYNCS: u32 = 8;
@@ -112,6 +115,32 @@ impl RetailBattle {
         (u32::from(c.hp) + dealt).min(u32::from(c.hp_max.max(c.hp))) as u16
     }
 
+    /// Whether a monster's captured Attack stands past its self-heal gate.
+    /// Monsters `0x47`, `0x48`, `0x68`, `0x69` and `0x6A` cast `0x52` from the
+    /// picker's switch at HP `<= max / 3` with the latch `DAT_801C8FE0[i + 4]`
+    /// clear (`0x801EAD38`). The round's setup picks ahead of its prompt, so a
+    /// strike on those words was picked on more HP, and a harvest probe cut it
+    /// at the prompt after (`battle_map03_heavy_grude_strike`: `832` of `2498`,
+    /// latch `0`). The live game cannot stand here. The replay picks on the
+    /// seeded HP, and on every stream casts the heal the capture never ran, so
+    /// the seed raises the latch.
+    pub fn heal_gate_passed(&self) -> bool {
+        let Some(m) = usize::from(self.active_actor).checked_sub(3) else {
+            return false;
+        };
+        self.queued_category == 3
+            && self
+                .monster_ids
+                .get(m)
+                .is_some_and(|id| matches!(id, 0x47 | 0x48 | 0x68 | 0x69 | 0x6A))
+            && self
+                .monsters
+                .get(m)
+                .copied()
+                .flatten()
+                .is_some_and(|c| c.hp <= c.hp_max / 3)
+    }
+
     /// Whether the capture is a monster strike gated on a swing clip
     /// (`0x1E` on a clip's accumulator, a swing clip committed), whose
     /// strike stream the drive can stand on the capture's
@@ -120,8 +149,23 @@ impl RetailBattle {
         matches!(self.seed_plan(), SeedPlan::Action { seat, .. } if seat >= 3)
             && self.queued_category == 3
             && self.action_state == 0x1E
-            && self.caster_clip > 1
+            && (self.caster_clip > 1 || self.strike_swing_pending())
             && matches!(self.span_gate, SpanGate::Age { .. })
+    }
+
+    /// Whether the capture's first swing is staged and not yet committed, the
+    /// attacker still on the idle or walk clip it arrived on (`+0x1D9 <= 1`):
+    /// the strike-loop pass staged the byte at `+0x1DF` (`0x801E3734`) and
+    /// found another behind it, or it would have left for `0x1F` on that same
+    /// pass (`0x801E3998`). A stream the replay rolled shorter leaves the loop
+    /// on its first pass and never holds retail's state.
+    pub fn strike_swing_pending(&self) -> bool {
+        self.caster_clip <= 1
+            && self.strike_cursor > 0
+            && self
+                .committed_queue
+                .get(usize::from(self.strike_cursor))
+                .is_some_and(|&b| b != 0)
     }
 
     /// Whether the image child takes the frame the display showed - the
@@ -189,11 +233,23 @@ impl RetailBattle {
     /// reads the law. The same stand over every battle state loses badly
     /// (`cort_evolved_final_crisis_mid_cast` `1.000` to `.344`): those shots
     /// were not armed by the pass the table describes.
+    ///
+    /// Scythe Wind's arms `3..=5` are the same shape: each held pass re-aims
+    /// the shot (`scythe_wind_camera`'s sweep, `0x801F7C04` / `0x801F7D30` /
+    /// `0x801F8008`), so the table describes its pass, and the replay's sweep
+    /// reads its own countdown and heading. `battle_jou_nova_v3_scythe_wind_mid_cast`
+    /// reads `.691` on the replay's pose, with Noa near the camera `60` px off,
+    /// and `.942` here; every other cast in the corpus's band falls.
     pub fn stand_on_displayed_pose(&self) -> bool {
-        matches!(
+        let strike = matches!(
             (self.seed_plan(), self.span_gate),
             (SeedPlan::Action { seat, state: 0x1E }, SpanGate::Age { .. }) if seat >= 3
-        ) && self.queued_category == 3
+        ) && self.queued_category == 3;
+        let scythe_sweep = self.active_actor >= 3
+            && self.action_state == 0x70
+            && self.queued_action == 0x5B
+            && (3..=5).contains(&self.module_phase);
+        strike || scythe_sweep
     }
 
     /// A monster's magic-band capture: [`SpanGate::Age`] on a monster seat,
@@ -329,6 +385,147 @@ impl RetailBattle {
             })
             .max_by(|a, b| a.0.total_cmp(&b.0))?;
         Some((fit.1[0].signum(), fit.1[1].signum()))
+    }
+
+    /// The pose the displayed frame stands on when a capture holds a one-frame
+    /// shot on its second pass (`0x2B`, accumulator `2 * 8 * step`). The shot's
+    /// arming pass is `N - 1` and it has landed, so the RAM holds nothing of
+    /// the frame before it; the display's `N - 2` is the `0x2A` terminator
+    /// pass, on the case-6 walk. That walk is law from three things the RAM
+    /// keeps: where it ended, the steps of the passes it ran, and the earlier
+    /// actor it set out from.
+    ///
+    /// The passes are the seed `0x0C` (which arms case 6 on the counter's
+    /// `0x800` rung), `0x28`, the wait `0x29` draining its `0x14` timer by each
+    /// pass's step, and the terminator, which re-arms nothing
+    /// ([`case6_walk_passes`]). Each armed pass moves
+    /// `ceil(gap / 0xC) * step`, the depth and focus closing on the caster.
+    ///
+    /// The start is the earlier actor's framing ([`Self::walk_start`]). The yaw
+    /// of a turning shot comes off the shot ([`Self::retake_turning_yaw`]);
+    /// elsewhere it walks from that actor's case-6 yaw with the caster's
+    /// heading taken at home for the seed's arm, an inference.
+    ///
+    /// `pin` is what the RAM cannot say ([`displayed_walk_pin`]).
+    pub fn retake_stale_walk_pose(
+        &self,
+        pin: Option<DisplayedWalkPin>,
+    ) -> Option<legaia_engine_camera::projection::BattleCamPose> {
+        if !self.retake_on_shot_only() || self.action_state != 0x2B || self.cam_style != 0 {
+            return None;
+        }
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (step, _) = self.step_run;
+        if accum != 16 * u16::from(step) {
+            return None;
+        }
+        let (live, end) = self.cam_tween;
+        let turning = self.retake_turning_yaw();
+        let landed =
+            live.tr == end.tr && live.focus[0] == end.focus[0] && live.focus[2] == end.focus[2];
+        if !landed {
+            return None;
+        }
+        let passes = case6_walk_passes(&self.ring_steps);
+        let start = self.walk_start(pin)?;
+        let caster = usize::from(self.active_actor);
+        let [gx, gz] = (*self.ground.get(caster)?)?;
+        let tr_z_end = i32::from(self.cam_depth) * 8 / 5;
+        let walk = |from: i32, to: i32| case6_walk(from, to, &passes);
+        let yaw = match (turning, pin.and_then(|p| p.yaw)) {
+            (Some(y), _) => i32::from(y),
+            (None, Some(y)) => i32::from(y),
+            (None, None) => {
+                let facing = i32::from((*self.facing.get(caster)?)?);
+                case6_yaw_walk(start.yaw, facing, &passes)
+            }
+        };
+        Some(legaia_engine_camera::projection::BattleCamPose {
+            pitch: walk(start.pitch, 0).rem_euclid(4096) as f32,
+            yaw: yaw as f32,
+            tr: [
+                0.0,
+                walk(
+                    start.tr_y,
+                    i32::from(legaia_engine_battle_vm::battle_cam_script::ACTION_TR_Y as i16),
+                ) as f32,
+                walk(start.tr_z, tr_z_end) as f32,
+            ],
+            focus: [
+                walk(start.focus[0], i32::from(gx)) as f32,
+                0.0,
+                walk(start.focus[1], i32::from(gz)) as f32,
+            ],
+        })
+    }
+
+    /// Where the case-6 walk of this capture's actor set out: the framing the
+    /// earlier actor's `0x5A` armed, or the prompt's far framing on a round's
+    /// first actor. The selector `FUN_801DABA4` leaves no battle order behind,
+    /// only spent keys, and the style byte `ctx[+0xD]` of that action is gone,
+    /// so the seat and the style come from a pin, or else the last spent party
+    /// seat on the plain style. A party seat's Spirit frames it at the party's
+    /// depth `0x800`. `None` where the earlier action is one whose framing the
+    /// RAM does not name.
+    fn walk_start(&self, pin: Option<DisplayedWalkPin>) -> Option<WalkStart> {
+        let party = 0..usize::from(self.party_count.clamp(1, 3));
+        let monsters = 3..3 + usize::from(self.monster_count);
+        let spent = |s: &usize| {
+            *s != usize::from(self.active_actor)
+                && self.init_keys.get(*s).copied().flatten() == Some(0)
+        };
+        if self.turn_cursor == 0 {
+            let mut bbox: Option<legaia_engine_battle_vm::battle_cam_script::FormationBox> = None;
+            for s in party.chain(monsters) {
+                let [x, z] = (*self.ground.get(s)?)?;
+                let (x, z) = (f32::from(x), f32::from(z));
+                let b =
+                    bbox.get_or_insert(legaia_engine_battle_vm::battle_cam_script::FormationBox {
+                        min: [x, z],
+                        max: [x, z],
+                    });
+                b.min = [b.min[0].min(x), b.min[1].min(z)];
+                b.max = [b.max[0].max(x), b.max[1].max(z)];
+            }
+            let b = bbox?;
+            let raw = legaia_engine_battle_vm::battle_cam_script::menu_raw_z(Some(b));
+            // The prompt's orbit is a clock the RAM does not date: only a turning
+            // shot takes this start.
+            self.retake_turning_yaw()?;
+            return Some(WalkStart {
+                pitch: 32,
+                yaw: 0,
+                tr_y: 1280,
+                tr_z: raw * 8 / 5,
+                focus: [
+                    ((b.min[0] + b.max[0]) * 0.5) as i32,
+                    ((b.min[1] + b.max[1]) * 0.5) as i32,
+                ],
+            });
+        }
+        let seat = match pin {
+            Some(p) => usize::from(p.seat),
+            None => party.clone().rfind(spent)?,
+        };
+        // Style `2` raises the pitch `0x80` and drops TR y `0x100`.
+        let (pitch, tr_y) = match pin.map(|p| p.style) {
+            Some(2) => (128, 1024),
+            _ => (0, 1280),
+        };
+        if self.seat_category.get(seat).copied().flatten() != Some(4) {
+            return None;
+        }
+        let [x, z] = (*self.ground.get(seat)?)?;
+        let facing = i32::from((*self.facing.get(seat)?)?);
+        Some(WalkStart {
+            pitch,
+            yaw: (SPIRIT_END_COUNTER - facing).rem_euclid(4096),
+            tr_y,
+            tr_z: 0x800 * 8 / 5,
+            focus: [i32::from(x), i32::from(z)],
+        })
     }
 
     /// A monster's capture-band gate ([`SpanGate::CaptureFade`]): captured
@@ -778,7 +975,12 @@ impl RetailBattle {
                 // action SM sits through the command flow: no action runs,
                 // so the commanding member's idle loop is a clock like any
                 // other seat's (`delilas_che_hammer_gaps_v3`'s Che).
-                let in_flight = !matches!(self.action_state, 0 | 0xFD | 0xFF)
+                // `0x0A` / `0x0B` are the setup passes ahead of the seed `0x0C`:
+                // the acting seat has staged nothing yet, so its idle loop is a
+                // clock too (`rikuroa_caruban_pre_fire_breath`'s Caruban, a
+                // close-up its sway fills, reads `.675` on the replay's cursor
+                // and `.938` on retail's).
+                let in_flight = !matches!(self.action_state, 0 | 0x0A | 0x0B | 0xFD | 0xFF)
                     && staged
                     && !(0x50..=0x5A).contains(&self.action_state);
                 let capture_band_idle = clip == 0 && (0x6F..=0x71).contains(&self.action_state);
@@ -951,13 +1153,13 @@ impl RetailBattle {
         .max(1);
         let inc = legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(step);
         // A capture still on the walk clip in the strike loop
-        // ([`Self::walk_clock_capture`]) arrived after the walk's last loop
-        // re-commit - the first loop pass staged the strike, which that
-        // re-commit would have installed - so inside the accumulator's
-        // window: halfway, and at least a pass in, so the loop's framing
-        // (case 7, `0x801E36E8`) has armed.
+        // ([`Self::walk_clock_capture`]): the accumulator counts from the
+        // walk's last loop re-commit, which says nothing of the arrival. The
+        // loop's framing (case 7, `0x801E36E8`) re-arms every pass, so the
+        // table's yaw increment says how many passes have run
+        // ([`strike_passes_off_table`]).
         let passes = if self.walk_clock_capture() {
-            (accum / (8 * u16::from(step)) / 2).max(1)
+            strike_passes_off_table(self.cam_tween_steps[1], step)
         } else {
             accum / (8 * u16::from(step)) + 2
         };
@@ -1135,10 +1337,22 @@ impl RetailBattle {
     /// (`battle_noaru_gilium_lv2_thunder_storm_mid_cast`: retail `0x6C0`, the
     /// engine at the `0x800` indoor ceiling, the cave drawn a fifth darker -
     /// `image` `.414`; on retail's word `.805`).
+    ///
+    /// The Spirit / Item band is the same clock. Its pre-arm raises the latch
+    /// at `0x3C` (`0x801E3B6C`), and `0x3D` then holds until the caster's idle
+    /// ends, a wait as long as the idle's phase left it: Garnet's Heal stands
+    /// retail's `0x500`, 20 units past the latch and 10 vsyncs into `0x3E` on
+    /// its accumulator, where the replay's idle has waited out the `0x800`
+    /// ceiling. The accumulator gates the band's run, so the weight is seated
+    /// the same way (`battle_deene_garnet_heal_mid_cast`, `.77` to `.93`).
     pub fn capture_band_backdrop_cue(&self) -> Option<u16> {
         matches!(self.seed_plan(), SeedPlan::Action { .. })
             .then_some(())
-            .filter(|_| super::CAPTURE_BAND_STATES.contains(&self.action_state))
+            .filter(|_| {
+                self.monster_magic_band_age()
+                    || super::CAPTURE_BAND_STATES.contains(&self.action_state)
+                    || super::SPIRIT_STAGE_STATES.contains(&self.action_state)
+            })
             .and(self.backdrop_cue)
     }
 
@@ -1157,6 +1371,20 @@ impl RetailBattle {
         })
     }
 
+    /// The ambient base the displayed frame coloured the ground grid from, on a
+    /// monster's magic capture: the latch is up, so `FUN_80050120` took `8` a
+    /// channel a vsync off the base since that frame was drawn, from a ceiling of
+    /// `0x80`. A base on the floor `0x20` may have sat there for those vsyncs, so
+    /// it stays as read, the way a weight on a ceiling does
+    /// ([`Self::displayed_backdrop_cue`]).
+    pub fn displayed_ambient_base(&self) -> Option<u8> {
+        if !self.monster_magic_band_age() {
+            return None;
+        }
+        let base = u16::from(self.ambient_word).checked_sub(0x40)?;
+        (base > 0x20).then(|| (base + 8 * self.display_lag).min(0x80) as u8)
+    }
+
     /// A monster's Attack captured in a round every party seat committed
     /// Spirit (`+0x1DE == 4` on each): the party sat that round out, so the
     /// drive's party commits Spirit as well ([`BattleDrive::Action`]'s
@@ -1171,6 +1399,23 @@ impl RetailBattle {
             && self.queued_category == 3
             && !self.party_categories.is_empty()
             && self.party_categories.iter().all(|&c| c == 4)
+    }
+
+    /// The maximum HP engine slot `slot` stands on when the capture's seat
+    /// word holds what its character record does not: a harvest probe's
+    /// raised pool (`LEGAIA_TOUGH=2`, `autorun_battle_harvest.lua`). The seed
+    /// builds a seat from the record, so such a state's HUD read the record's
+    /// maximum, with every HP clamped under it, beside retail's `9999`. Only
+    /// the probe's own value counts: two battle-less states hold other words
+    /// in a seat no fight stood up (`rim_elm_queen_bee_battle`'s `5636`).
+    pub fn party_seat_pool_raised(&self, slot: usize, seat: &Combatant) -> Option<u16> {
+        const RAISED_POOL: u16 = 9999;
+        let record = *self.record_hp_max.get(slot)?;
+        (slot < usize::from(self.party_count.clamp(1, 3))
+            && seat.hp_max == RAISED_POOL
+            && record != RAISED_POOL
+            && record != 0)
+            .then_some(RAISED_POOL)
     }
 
     /// A monster's strike loop `0x1E` captured still on its walk clip `1`
@@ -1200,6 +1445,7 @@ impl RetailBattle {
                 end: self.span_gate,
                 style: Some(self.cam_style),
                 steer: ActionSteer {
+                    prior: self.prior_framing,
                     park: seat >= 3 && self.parked_approach(),
                     // A frame-time history that never left one step names the
                     // rate retail's yaw counter drifted at.
@@ -1216,6 +1462,10 @@ impl RetailBattle {
                         || (seat >= 3
                             && matches!(self.queued_category, 2 | 3)
                             && self.target_code < 3)
+                        // A monster's Heal on another monster: the Spirit band
+                        // films its patient (`FUN_801D5854` on the stacked target
+                        // in `0x3F` / `0x40`) and names it on the plaque.
+                        || (seat >= 3 && self.queued_category == 2 && self.target_code < 8)
                         // A monster cast on itself (Cort's Ultra Charge,
                         // `+0x1DD == ctx[+0x13]`): retail's cast-begin skips
                         // the facing store for a self target (`beq v0,t2` at
@@ -1226,8 +1476,19 @@ impl RetailBattle {
                     yaw: Some(self.walk_yaw_base),
                     // An Attack's counter climbs from the arm's `0x200`
                     // unless a swing re-seed could have moved it.
-                    rung: (self.queued_category == 3 && !self.swing_reseed_entry)
-                        .then_some(ATTACK_YAW_RUNG),
+                    // A Spirit band action's climbs from the seed's, and how
+                    // far by the stage wait's end is the caster's idle phase
+                    // (`battle_bubu2_spoon_heal_mid_cast`: retail `2064`, the
+                    // replay `2136`, past the clock's slack).
+                    rung: if self.queued_category == 3 && !self.swing_reseed_entry {
+                        Some(ATTACK_YAW_RUNG)
+                    } else if self.queued_category == 2
+                        && super::SPIRIT_STAGE_STATES.contains(&self.action_state)
+                    {
+                        Some(SEED_YAW_RUNG)
+                    } else {
+                        None
+                    },
                     coin: Some(self.track_coin),
                     message: self.timed_message,
                     // An empty content word is the counter swap's only on
@@ -1314,12 +1575,16 @@ impl RetailBattle {
                     // the cursor already on `2`, the pass after its commit
                     // read the next byte; a stream of `07 06 ff` stops the
                     // cursor on `2` under the second swing.
-                    played: (seat >= 3
-                        && state == 0x1E
-                        && self.queued_category == 3
-                        && self.caster_clip > 1
-                        && matches!(self.span_gate, SpanGate::Age { .. }))
-                    .then_some(self.committed_queue),
+                    // Also carried on a capture still on its walk clip, where no
+                    // cursor gate reads it: the cast-sequence oracle's strike deal
+                    // stands the fight's stream on it (`strike_deal`).
+                    played: (seat >= 3 && state == 0x1E && self.queued_category == 3)
+                        .then_some(self.committed_queue),
+                    ramps: (seat >= 3 && state == 0x1E && self.queued_category == 3).then_some((
+                        self.approach_terms.0,
+                        self.approach_terms.1,
+                        self.acting_attack,
+                    )),
                     // On a dynamic art slot the cursor cannot tell a starter
                     // from the art the loop staged behind it - both install
                     // into slot `0x11` - so the latched raw id names which
@@ -1553,6 +1818,180 @@ pub(super) fn run_drive(
 /// A float pose's ground pair as whole units.
 fn live_pair(focus: [f32; 3]) -> [i32; 2] {
     [focus[0] as i32, focus[2] as i32]
+}
+
+/// How many strike-loop passes a capture's yaw increment `inc` stands on.
+///
+/// Case 7 aims `0x700` below the case-6 yaw the approach left
+/// (`0x801D6700`) and every pass re-arms `ceil(gap / 0xC)` and walks
+/// `inc * step` of it, so the increments fall on one ladder from the first
+/// pass's `150`: the pass is the rung nearest `inc`. The approach's own lag
+/// behind its endpoint puts a capture a few units off a rung.
+pub fn strike_passes_off_table(inc: u16, step: u8) -> u16 {
+    let (inc, step) = (i32::from(inc), i32::from(step.max(1)));
+    let mut gap = 0x700;
+    let mut passes = 1;
+    loop {
+        let here = (gap + 0xB) / 0xC;
+        gap -= here * step;
+        let next = (gap + 0xB) / 0xC;
+        if gap <= 0 || (here - inc).abs() <= (next - inc).abs() {
+            return passes;
+        }
+        passes += 1;
+    }
+}
+
+/// What a capture's RAM cannot say about the walk its displayed frame stands on,
+/// read off that retail frame by scoring the law's discrete candidates: the
+/// earlier actor and its style. `yaw` is a measured angle, for a shot that does
+/// not turn and whose caster held a heading the seed's arm read and nothing
+/// kept. It reads the capture and moves no game state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DisplayedWalkPin {
+    pub seat: u8,
+    pub style: u8,
+    pub yaw: Option<u16>,
+}
+
+const DISPLAYED_WALK_PINS: &[(&str, DisplayedWalkPin)] = &[
+    (
+        "battle_stone_zenoir_v2_fire_claw_mid_cast",
+        DisplayedWalkPin {
+            seat: 2,
+            style: 0,
+            yaw: Some(3923),
+        },
+    ),
+    (
+        "battle_vozz_viguro_thunder_break_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 2,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_retona_viguro_lv2_thunder_break_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 2,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_korb2_ghost_knight_windhash_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 2,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_tower_guardian_windhash_mid_cast",
+        DisplayedWalkPin {
+            seat: 0,
+            style: 0,
+            yaw: None,
+        },
+    ),
+    (
+        "battle_bylon_theeder_v2_thunderbolt_mid_cast",
+        DisplayedWalkPin {
+            seat: 1,
+            style: 0,
+            yaw: Some(1215),
+        },
+    ),
+    (
+        "battle_jou_slippery_v3_moldy_breath_mid_cast",
+        DisplayedWalkPin {
+            seat: 2,
+            style: 0,
+            yaw: Some(102),
+        },
+    ),
+];
+
+/// A capture's [`DisplayedWalkPin`].
+pub fn displayed_walk_pin(label: &str) -> Option<DisplayedWalkPin> {
+    DISPLAYED_WALK_PINS
+        .iter()
+        .find(|(l, _)| *l == label)
+        .map(|(_, p)| *p)
+}
+
+/// The start of a case-6 walk ([`RetailBattle::retake_stale_walk_pose`]).
+struct WalkStart {
+    pitch: i32,
+    yaw: i32,
+    tr_y: i32,
+    tr_z: i32,
+    focus: [i32; 2],
+}
+
+/// The yaw counter a party seat's Spirit leaves behind: recordings read `2294`
+/// and `2324` in the last `0x0A` before the next actor's seed. Off by a hundred
+/// units, the displayed yaw moves by about eight.
+const SPIRIT_END_COUNTER: i32 = 2300;
+
+/// `0x28` stores `ctx[+0x6D8] = 0x14`; `0x29` drains it by the pass's step and
+/// leaves on the pass that reads negative.
+const CAST_WAIT_TIMER: i32 = 0x14;
+
+/// The steps of a case-6 walk that ended two passes before the capture's, in
+/// the order retail ran them: the seed `0x0C`, `0x28`, `0x29`'s passes down to
+/// the exit, then the terminator (ring slot `3`). `ring` is
+/// [`super::frame_step::recent_pass_steps`]. Recordings walk `14` passes at
+/// step `2`, `10` at step `3`.
+pub fn case6_walk_passes(ring: &[u8; 16]) -> Vec<i32> {
+    // A step-`2` walk runs past the ring's end; its oldest slot stands in.
+    let step = |slot: usize| i32::from(ring[slot.min(15)]);
+    let mut passes = vec![step(3)];
+    let mut drained = 0;
+    let mut slot = 4;
+    while drained <= CAST_WAIT_TIMER {
+        passes.push(step(slot));
+        drained += step(slot);
+        slot += 1;
+    }
+    passes.extend([step(slot), step(slot + 1)]);
+    passes.reverse();
+    passes
+}
+
+/// One component's case-6 walk: every pass but the last re-arms
+/// `ceil(gap / 0xC)` (`FUN_801D829C`), and each moves that increment times its
+/// step. The last pass is the terminator, which arms nothing.
+pub fn case6_walk(from: i32, to: i32, passes: &[i32]) -> i32 {
+    let mut v = from;
+    let mut inc = 0;
+    for (i, s) in passes.iter().enumerate() {
+        if i + 1 < passes.len() {
+            let gap = to - v;
+            inc = gap.signum() * ((gap.abs() + 11) / 12);
+        }
+        v += inc * s;
+    }
+    v
+}
+
+/// The yaw of a case-6 walk: the seed's arm aims the counter's `0x800` rung
+/// less the caster's home heading (the turn to the target comes after it), and
+/// every later pass the drifting counter less the heading it now holds.
+pub fn case6_yaw_walk(from: i32, facing: i32, passes: &[i32]) -> i32 {
+    let wrap = |g: i32| (g + 2048).rem_euclid(4096) - 2048;
+    let (mut v, mut inc, mut counter) = (from, 0, 0x800);
+    for (i, s) in passes.iter().enumerate() {
+        if i + 1 < passes.len() {
+            let heading = if i == 0 { 0x800 } else { facing };
+            let gap = wrap(counter - heading - v);
+            inc = gap.signum() * ((gap.abs() + 11) / 12);
+        }
+        v = (v + inc * s).rem_euclid(4096);
+        counter += (s * 4 / 3).max(1);
+    }
+    v
 }
 
 /// The gap to case 6's endpoint one pass before `gap`, across the terminator

@@ -36,7 +36,7 @@
       <text class="dg-sub" x="270" y="215">round prompt, centre (160, 92)</text>
       <text class="dg-sub" x="250" y="140">intro enemy-name labels, pen y = 48</text>
       <text class="dg-label" x="440" y="392">move name, y = 150, centred on x = 160</text>
-      <rect class="dg-node" x="500" y="405" width="260" height="34" rx="4"/><text class="dg-sub" x="630" y="427">target-select plaque, y = 162, centred x = 232</text>
+      <rect class="dg-node" x="500" y="405" width="260" height="34" rx="4"/><text class="dg-sub" x="630" y="427">target plaque, y = 162, x = 232</text>
       <rect class="dg-node-ok" x="58" y="430" width="255" height="120" rx="4"/>
       <rect class="dg-node-ok" x="313" y="430" width="255" height="120" rx="4"/>
       <rect class="dg-node-ok" x="568" y="430" width="255" height="120" rx="4"/>
@@ -143,6 +143,13 @@
     <figcaption>The string&rsquo;s hits push numerals as they land; only the apply arm that writes the bank opens the cluster. The fade-down band at the end of the action re-spawns it at rest and glides it back out the way it came, when the action landed damage.</figcaption>
   </figure>
   <p>Two library states pin both sides. A Somersault capture shows the cluster gliding in beside the third hit&rsquo;s <code>15</code>, twelve frames into its sixteen. A Muscle Dome capture holds three swings&rsquo; <code>430</code> in the Skeleton&rsquo;s bank at full HP, the total word at zero and no cluster up as the Hyper Art commits. The port counts a melee hit hidden and opens (or restarts) the cluster on the hit event that applies the bank; a cast hit opens it as it lands.</p>
+</section>
+
+<section class="doc-section" id="value-rows" data-doc="-">
+  <h2>A row-aimed cast opens value rows instead</h2>
+  <p>The action seed lists every living monster in a row table when the target is the every-enemy code <code>9</code> and no lone survivor replaced it, and always for spells <code>0x82</code>, <code>0x86</code> and <code>0x8D</code>. The finisher then adds each hit to its target&rsquo;s halfword in a value window with the combo flag left down, so the flag pass finds no cluster to open. It opens a pair of records per row instead: the row&rsquo;s name plate rising from <code>y = 236</code> to <code>194</code>, and its value record gliding in at the same <code>x</code>. One row rests at <code>x = 244</code>, four at <code>16 / 92 / 168 / 244</code>, and the <code>DAMAGE</code> word draws once, over the last row. A hit that keeps the flag down counts without opening: spell <code>0x8D</code> holds its running total in the window from arm 8 on and shows the rows only at arm <code>0xD</code>.</p>
+  <p>A party-wide cast on a lone survivor is the other side of the same seed: the HUD reads the target code before the cast begins, ahead of the rewrite to the survivor&rsquo;s slot, so the panels stay up through the whole action.</p>
+  <p class="dg-note">Row walk <code>0x801E8128..</code>, digits <code>FUN_801E805C</code>, value window <code>0x801F6980</code>, seed <code>FUN_801E6D84</code>. Port: <code>BattleHud::multi_readout</code>, <code>battle_value_readout::multi_row_cluster</code>.</p>
 </section>
 
 <section class="doc-section" id="placement" data-doc="screen-element-placement-table-0x80076c10-and-its-copy-helpers">

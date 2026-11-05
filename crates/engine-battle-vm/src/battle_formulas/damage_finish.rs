@@ -21,7 +21,7 @@
 //
 // The finisher's remaining tail is genuinely coupled to live battle state and is
 // **not** reproduced here: the damage-popup accumulator (`_DAT_8007bd14`), the
-// `DAT_801f6980` AI revenge / counter-aggro table, the MP-drain + the
+// `DAT_801f6980` per-seat readout window, the MP-drain + the
 // per-element stat-debuff `switch` keyed on the attacker's element
 // (`DAT_801c9358+0x1d`), and the `+0x16e` "nullify" status that zeroes the hit
 // after the spirit accrual. The action SM applies those; see the REF in the
@@ -155,7 +155,27 @@ pub fn damage_finish(i: &DamageFinish) -> u32 {
 /// shared RNG cursor advances it by zero or one draw, exactly as retail does;
 /// [`DamageFinish::floor_rand`] is ignored on this path.
 pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) -> u32 {
+    damage_finish_net(i, floor_rand).unsigned_abs()
+}
+
+/// A roll of `over == 0` on [`damage_finish_net`]'s alias arm, as the `u16` the
+/// monster special path carries: bigger than any real hit (`9999` is the cap),
+/// so the HP write saturates at the victim's HP, which is what the retail caller
+/// makes of the negative net. The Spirit stage reads it as the zero it was.
+pub const ROLL_ALIAS_KILLS: u16 = u16::MAX;
+
+/// [`damage_finish_lazy`] with retail's signed result: the party-defender block
+/// ends with `addiu s0,s0,4` when the ladder leaves `over == 0` (`0x801DE088..
+/// 0x801DE090`), which moves the attacker-word pointer onto the defender word.
+/// From there the floor's `rand()%9 + 8` lands on the defender word, so the
+/// kernel's `attacker - defender` comes back **negative**.
+///
+/// The monster special's caller (`0x801E192C`) clamps it with an unsigned
+/// `sltu` against the victim's HP, so a roll that lands exactly on the defence
+/// through a Jewel or none at all takes the victim's whole HP.
+pub fn damage_finish_net(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) -> i32 {
     let mut over = i.predamage;
+    let mut aliased = false;
 
     // Stage 1: party-defender elemental resistance.
     if (i.defender_slot as u32) < 3 {
@@ -169,6 +189,7 @@ pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) ->
                 // Absorb bit set + elemental attacker: 3/4 scale.
                 over = (over * 3) >> 2;
             }
+            aliased = over == 0;
         }
     } else if i.enemy_defender_halve {
         // Stage 2: enemy-defender global halve.
@@ -182,7 +203,11 @@ pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) ->
 
     // Stage 4: no-damage floor (the only RNG draw the finisher consumes).
     if over == 0 {
-        over = (floor_rand() as u32) % 9 + 8;
+        let floor = (floor_rand() as u32) % 9 + 8;
+        if aliased {
+            return -(floor as i32);
+        }
+        over = floor;
     }
 
     // Stage 5: summon power-percent scale.
@@ -194,7 +219,7 @@ pub fn damage_finish_lazy(i: &DamageFinish, floor_rand: impl FnOnce() -> u16) ->
     if over > 9999 {
         over = 9999;
     }
-    over
+    over as i32
 }
 
 /// The defender's spirit-gauge fill from a finished hit, `FUN_801ddb30`'s spirit
@@ -242,6 +267,35 @@ pub fn spirit_gauge_fill(
     }
     spirit += pct;
     spirit.min(100) as u16
+}
+
+/// The melee body's Spirit accrual (`FUN_801EC3E4`, `0x801EDB80..0x801EDCC8`).
+/// The arithmetic is [`spirit_gauge_fill`]'s except that the percent is masked
+/// to a byte at every use (`andi v0,a2,0xff`, `andi v1,a2,0xff`): a hit of
+/// exactly 256% of max HP adds nothing, and 300% adds 44. The floor of `1` is
+/// taken ahead of the mask.
+pub fn melee_spirit_gauge_fill(
+    over: u32,
+    defender_maxhp: u16,
+    current_spirit: u16,
+    resist: DefenderResist,
+    defender_is_party: bool,
+) -> u16 {
+    if defender_maxhp == 0 {
+        return current_spirit.min(100);
+    }
+    let pct = over.wrapping_mul(100) / u32::from(defender_maxhp);
+    let pct = pct.max(1) & 0xFF;
+    let mut spirit = u32::from(current_spirit);
+    if defender_is_party {
+        if resist.hi & 0x200 != 0 {
+            spirit += pct >> 2;
+        }
+        if resist.hi & 0x100 != 0 {
+            spirit += pct / 10;
+        }
+    }
+    (spirit + pct).min(100) as u16
 }
 
 /// The retail scale of [`spirit_gauge_fill`]: a hit costing 100% of max HP

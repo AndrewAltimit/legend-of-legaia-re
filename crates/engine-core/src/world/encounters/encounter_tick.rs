@@ -128,6 +128,7 @@ impl World {
                 tracker.counter()
             );
             self.encounters.step_counter = tracker.counter();
+            self.encounters.last_formation = tracker.last_formation();
             self.terrain.region_tracker = Some(tracker);
             return match roll {
                 Some(r) => {
@@ -279,19 +280,24 @@ impl World {
     /// [`World::enter_battle_from_formation`]. The entity is armed on the frame
     /// the session enters `Transition` and dropped when it leaves.
     ///
-    /// Two of the kernel's effects have engine-side consumers. The phase-2
-    /// `LoadBattleBgm` is the point retail starts the battle track - *during*
-    /// the spin, not after it. Routing it here is what moves the swap off
-    /// [`World::enter_battle_from_formation`]; the swap is idempotent, so the
-    /// later call is a no-op once this one has run. The phase-0 `SetAudioCue`
-    /// is the battle-start sound: retail stores the cue id (`0x1F` plain,
-    /// `0x4D` for a flagged/boss row) straight into slot 0 of the pending SFX
-    /// ring `_DAT_8007B6D8`, and the engine's carrier for that ring is
-    /// [`crate::world::AudioState::battle_sfx_cues`] - the queue both hosts drain into their SFX
-    /// scheduler every frame - so the cue is pushed there. Because retail's
-    /// store is a slot-0 **overwrite** (no ring-counter bump), only the last
-    /// `SetAudioCue` of the tick is pushed. The remaining effects (mesh
-    /// assembly, the bundle read, the load waits) are recorded in
+    /// The music moves twice, and neither is phase 2. The init `FUN_801CE8CC`
+    /// keys off the field-BGM source for sound set `0` (`0x801CEB58..0x801CEB70`)
+    /// and every cue voice (`0x801CE990..0x801CE9A8`), so the spin plays under
+    /// the battle-start cue alone. Phase 2 only reads the bundle (its
+    /// `FUN_800567A8` is a debug print). The completion arm installs and attaches
+    /// the battle track (`0x801CF91C..0x801CF930`), beside its mode-`0x14` store,
+    /// and [`World::enter_battle_from_formation`] is that moment here. A capture
+    /// of a walked fight reads the field sequence stopped three vsyncs after the
+    /// mode-`8` store and the battle sequence playing on the mode-`0x14` vsync, 139
+    /// after it. The phase-0 `SetAudioCue` is the battle-start sound: retail
+    /// stores the cue id (`0x1F` plain, `0x4D` for a flagged/boss row) straight
+    /// into slot 0 of the pending SFX ring `_DAT_8007B6D8`, and the engine's
+    /// carrier for that ring is [`crate::world::AudioState::battle_sfx_cues`] -
+    /// the queue both hosts drain into their SFX scheduler every frame - so the
+    /// cue is pushed there. Because retail's store is a slot-0 **overwrite** (no
+    /// ring-counter bump), only the last `SetAudioCue` of the tick is pushed. The
+    /// remaining effects (mesh assembly, the bundle read, the load waits) are
+    /// recorded in
     /// [`legaia_engine_battle_loop::battle_state::BattleState::intro_effects`] for a host that owns those reads.
     ///
     /// The kernel's own load-wait response is reported idle: the engine has
@@ -324,6 +330,7 @@ impl World {
         // shortening the bracket) keeps its own.
         if self.battle.intro.is_none() {
             self.encounter_rumble();
+            self.silence_field_audio_for_intro();
             use legaia_render_kernels::battle_intro_styles::{
                 INTRO_DURATION_FRAMES, INTRO_DURATION_FRAMES_SWIRL, intro_duration_frames,
                 select_intro_style,
@@ -424,7 +431,6 @@ impl World {
         let mut battle_start_cue = None;
         for effect in &tick.effects {
             match effect {
-                TransitionEffect::LoadBattleBgm { .. } => self.swap_to_battle_bgm(),
                 // Retail's slot-0 overwrite: the last cue written this tick
                 // is the one the ring drainer plays.
                 TransitionEffect::SetAudioCue { cue } => battle_start_cue = Some(*cue),
@@ -482,6 +488,29 @@ impl World {
     /// here, on the transition's first frame, for that many ticks.
     ///
     /// PORT: FUN_801DA51C (`0x801DA6F0..0x801DA718`, the encounter rumble)
+    /// The intro init's audio half: every cue voice off, and the field track
+    /// keyed off when the sound set is `0`. A set above `0` leaves the track to
+    /// the completion arm's attach, and `-1` plays it through the fight.
+    ///
+    /// PORT: FUN_801CE8CC (0x801CE990..0x801CE9A8, 0x801CEB58..0x801CEB70)
+    fn silence_field_audio_for_intro(&mut self) {
+        self.audio.sfx_voice_stops.extend(0x10..=0x17);
+        // A looping emitter's voices just went off under it: its latch drops,
+        // so the first field tick after the fight keys it again.
+        for part in &mut self.ambient.fx {
+            if part.state.move_submode == legaia_engine_vm::sfx_emitter::EMITTER_RENDER_MODE {
+                part.state.flags |= legaia_engine_vm::sfx_emitter::EMITTER_STOP_FLAG;
+            }
+        }
+        if self.audio.battle_sound_set == 0 && self.audio.battle_bgm.is_some() {
+            self.audio.bgm_keyed_off_for_intro = true;
+            self.pending_field_events.push(FieldEvent::Bgm {
+                text_id: 0,
+                sub_op: 3,
+            });
+        }
+    }
+
     fn encounter_rumble(&mut self) {
         if !self.encounter_vibration_off() {
             self.rumble.motors.pulse = 0xFF;

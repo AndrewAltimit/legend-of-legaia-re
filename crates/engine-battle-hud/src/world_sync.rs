@@ -141,9 +141,10 @@ pub fn sync_battle_hud_rows(hud: &mut BattleHud, world: &legaia_engine_core::wor
         hud.clear_slot(slot);
     }
     hud.arm_combo(battle_combo_style(world), world.battle_ctx.active_actor);
-    if world.battle.combo_cluster_dropped {
-        hud.drop_held_combo();
-    }
+    hud.arm_multi_readout(
+        world.battle_ctx.active_actor,
+        crate::battle_multi_readout_rows(world),
+    );
     hud.hold_combo(world.battle.combo_cluster_held);
     hud.close_combo_on_fade_down(
         world.battle_ctx.action_state,

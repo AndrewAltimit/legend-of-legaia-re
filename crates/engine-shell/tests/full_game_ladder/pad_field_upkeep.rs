@@ -1400,6 +1400,188 @@ pub(super) fn pad_undress_after_duels(session: &mut NativeSession) -> usize {
     pad_swap_goods(session, &plan, "duel goods back")
 }
 
+thread_local! {
+    /// A race against a timed finisher wiped the party this stretch
+    /// ([`racing_a_finisher`]): the reload dresses for it
+    /// ([`pad_dress_for_race`]). Set by the fight, cleared at a new stretch.
+    pub(super) static RACE_LOST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The beat being played, through the fight it stages.
+    pub(super) static FIGHT_BEAT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
+    /// The beat that boss was met on ([`FIGHT_BEAT`]). The reload prepares at
+    /// that door alone: the scene's solo duels come first on a seeded segment,
+    /// and a duellist stripped of its Goods for the race loses them.
+    pub(super) static LOST_BEAT: std::cell::Cell<Option<u8>> = const { std::cell::Cell::new(None) };
+}
+
+/// The passives a race's Miracle typists want, most wanted first. A Miracle
+/// costs 99 AP (`FUN_801EED1C`, `11 x 9`) and a member earns about a hundred
+/// over the race, so what the AP Goods buy is more Miracles: Maximum AP keeps
+/// the gauge at 100, AP Used Down halves the price. ATK Boost and Arts Power
+/// then raise every strike, and the AP Boosts raise the income.
+const RACE_GOODS: [u8; 6] = [0x2A, 0x2B, 0x06, 0x2C, 0x29, 0x28];
+
+/// The passives a race's casters want: MP Used Down 2 and 1, then INT Boost.
+const CASTER_GOODS: [u8; 3] = [0x05, 0x04, 0x0B];
+
+/// AGL Boost, accessory passive `0x0C` (Vitality Ring).
+const AGL_BOOST: u8 = 0x0C;
+
+/// Whether roster member `m` can type its Miracle under a Fury Boost
+/// (`base * 7 / 5 + 8` against nine presses).
+pub(super) fn race_typist(w: &legaia_engine_core::world::World, m: u8) -> bool {
+    const MIRACLE_PRESSES: u32 = 9;
+    let press = u32::from(legaia_engine_battle::arts_command_input::FAVORED_COST);
+    w.party.roster.members.get(usize::from(m)).is_some_and(|r| {
+        legaia_engine_battle_vm::battle_action::miracle_marker_armed(
+            m.wrapping_add(1),
+            &r.equipment().slots,
+        ) && (u32::from(r.live_stats().agl) * 7 / 5 + 8).min(0x120) >= press * MIRACLE_PRESSES
+    })
+}
+
+/// The Goods swaps a reload makes after losing a race, `(member, Goods slot,
+/// item)` in pad order. A [`race_typist`] takes [`RACE_GOODS`] from the bag and
+/// from the casters: anyone who cannot type, and, when its gauge cannot be
+/// `charged` first ([`pad_charge_for_race`]), anyone a race's income short of
+/// the price. Gala met Koru in the War Soul and Power Ring, casting spells at
+/// 800. A caster gives those up for the bag's most wanted other Goods, and wears
+/// [`CASTER_GOODS`]: retail's level-25 party casts Aluru at 1500 and pays a turn
+/// to drink for each two it casts.
+pub(super) fn race_goods_plan(
+    w: &legaia_engine_core::world::World,
+    charged: bool,
+) -> Vec<(u8, u8, u8)> {
+    const MIRACLE_PRICE: u16 = 99;
+    const RACE_INCOME: u16 = 60;
+    let passive = |id: u8| w.tables.accessory_passives.passive_index(id);
+    let rank = |id: u8, wants: &[u8]| passive(id).and_then(|p| wants.iter().position(|&g| g == p));
+    let present = w.present_party_list();
+    let cell = |m: u8| {
+        w.party
+            .roster
+            .members
+            .get(usize::from(m))
+            .map_or(0, |r| r.hp_mp_sp().sp_cur)
+    };
+    let typist = |m: u8| race_typist(w, m) && (charged || cell(m) + RACE_INCOME >= MIRACLE_PRICE);
+    let mut bag: BTreeMap<u8, u32> = w
+        .party
+        .inventory
+        .iter()
+        .filter(|&(_, &n)| n > 0)
+        .map(|(&id, &n)| (id, u32::from(n)))
+        .collect();
+    let worn = |m: u8| -> [u8; 3] {
+        let e = w.party.roster.members[usize::from(m)].equipment().slots;
+        [e[5], e[6], e[7]]
+    };
+    let mut dresses: BTreeMap<u8, [u8; 3]> = present.iter().map(|&m| (m, worn(m))).collect();
+    let mut plan = Vec::new();
+    // The casters first: what they give up reaches the bag for the typists.
+    for &m in present.iter().filter(|&&m| !typist(m)) {
+        let dress = dresses.entry(m).or_default();
+        for k in 0..3 {
+            if rank(dress[k], &RACE_GOODS).is_none() {
+                continue;
+            }
+            let taken: Vec<Option<u8>> = dress.iter().map(|&id| passive(id)).collect();
+            let other = bag
+                .iter()
+                .filter(|&(&id, &n)| {
+                    n > 0
+                        && rank(id, &RACE_GOODS).is_none()
+                        && goods_value(w, id) > 0
+                        && !taken.contains(&passive(id))
+                })
+                .map(|(&id, _)| (goods_value(w, id), std::cmp::Reverse(id)))
+                .max();
+            let Some((_, std::cmp::Reverse(id))) = other else {
+                continue;
+            };
+            *bag.entry(id).or_insert(0) -= 1;
+            *bag.entry(dress[k]).or_insert(0) += 1;
+            dress[k] = id;
+            plan.push((m, GOODS_SLOTS[k], id));
+        }
+    }
+    // Then each member's own wants, most wanted first, in its least wanted
+    // slot: no Goods on its list, or one the new item outranks. An AGL Boost
+    // stays: it is what lets a Fury Boost pay for the nine presses (Vahn 169
+    // without it, 202 with it, at retail's level 25).
+    let wearers: Vec<(u8, &[u8])> = present
+        .iter()
+        .filter(|&&m| typist(m))
+        .map(|&m| (m, &RACE_GOODS[..]))
+        .chain(
+            present
+                .iter()
+                .filter(|&&m| !typist(m))
+                .map(|&m| (m, &CASTER_GOODS[..])),
+        )
+        .collect();
+    for (m, wants) in wearers {
+        let dress = dresses.entry(m).or_default();
+        loop {
+            let taken: Vec<Option<u8>> = dress.iter().map(|&id| passive(id)).collect();
+            let Some((want, id)) = bag
+                .iter()
+                .filter(|&(&id, &n)| {
+                    n > 0 && rank(id, wants).is_some() && !taken.contains(&passive(id))
+                })
+                .map(|(&id, _)| (rank(id, wants).unwrap_or(usize::MAX), id))
+                .min()
+            else {
+                break;
+            };
+            let Some(k) = (0..3)
+                .filter(|&k| passive(dress[k]) != Some(AGL_BOOST))
+                .filter(|&k| rank(dress[k], wants).is_none_or(|r| r > want))
+                .min_by_key(|&k| {
+                    (
+                        rank(dress[k], wants).is_some(),
+                        if dress[k] == 0 {
+                            0
+                        } else {
+                            goods_value(w, dress[k])
+                        },
+                        k,
+                    )
+                })
+            else {
+                break;
+            };
+            *bag.entry(id).or_insert(0) -= 1;
+            if dress[k] != 0 {
+                *bag.entry(dress[k]).or_insert(0) += 1;
+            }
+            dress[k] = id;
+            plan.push((m, GOODS_SLOTS[k], id));
+        }
+    }
+    plan
+}
+
+/// Whether the beat at hand is the one the last boss wipe was met on.
+pub(super) fn at_lost_door() -> bool {
+    LOST_BEAT.with(std::cell::Cell::get) == FIGHT_BEAT.with(std::cell::Cell::get)
+}
+
+/// Dress for a lost race ([`race_goods_plan`]) with the pad, once the party is
+/// walking. A player who watched the finisher land reads the fight off the AP
+/// plate on the reload; the first attempt goes in the Goods the run chose.
+pub(super) fn pad_dress_for_race(session: &mut NativeSession, charged: bool) -> usize {
+    if !RACE_LOST.with(std::cell::Cell::get)
+        || !at_lost_door()
+        || session.host.world.party.party_count < 3
+        || !walking(session)
+        || !released(session)
+    {
+        return 0;
+    }
+    let plan = race_goods_plan(&session.host.world, charged);
+    pad_swap_goods(session, &plan, "race goods")
+}
+
 /// Make Goods swaps with the pad, `(member, Goods slot, item)` each: Start,
 /// Equip, the member, its Goods row, the accessory, Yes, for each in turn,
 /// and Circle back to the field. Each confirm commits through the menu's
@@ -1681,6 +1863,10 @@ pub(super) fn pad_equip_goods(session: &mut NativeSession) -> usize {
 /// the rest. The segmented passes heal with [`pad_field_heal`] alone.
 pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, String> {
     if !continuous::PLAYS_ON.with(std::cell::Cell::get) {
+        pad_dress_for_race(session, true);
+        if let Some(s) = pad_charge_for_race(session)? {
+            return Ok(Some(s));
+        }
         pad_field_heal(session, 900);
         return Ok(None);
     }
@@ -1698,8 +1884,12 @@ pub(super) fn pad_ready(session: &mut NativeSession) -> Result<Option<String>, S
     // the run wore before them.
     if continuous::STRETCH_TO.with(|t| t.borrow().as_str() == "nivora_late") {
         pad_dress_for_duels(session);
-    } else {
+    } else if !RACE_LOST.with(std::cell::Cell::get) {
         pad_undress_after_duels(session);
+    }
+    pad_dress_for_race(session, true);
+    if let Some(s) = pad_charge_for_race(session)? {
+        return Ok(Some(s));
     }
     // A party that spent its MP on the way tops it up from the bag: the
     // casts are half of what a boss fight is won with.

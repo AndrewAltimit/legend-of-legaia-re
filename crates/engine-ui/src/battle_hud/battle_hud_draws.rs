@@ -824,9 +824,14 @@ pub fn battle_hud_draws_for(
     // centred and does not glide. Plain glyphs, no plate - the display
     // list carries the run and nothing around it.
     if let Some(name) = frame.move_name.filter(|n| !n.is_empty()) {
-        let name_w = font.layout_ascii(name).advance_x as i32;
+        // A spell name's element plate counts in the width it centres on.
+        let layout = font.layout(&crate::battle_hud_chrome::banner_line_bytes(name));
         let lead = name.as_bytes()[0];
-        let x = i32::from(crate::battle_name_banner::banner_x(name_w, lead, 0));
+        let x = i32::from(crate::battle_name_banner::banner_x(
+            layout.advance_x as i32,
+            lead,
+            0,
+        ));
         // A module's own line (`FUN_8003541C(.., 0x96, ..)`) puts its pen on
         // the row it is given, two rows under the label's.
         let y = if frame.move_name_module_line {
@@ -834,7 +839,9 @@ pub fn battle_hud_draws_for(
         } else {
             MOVE_NAME_Y
         };
-        stage_text(&mut text, font, name, x, y, ink);
+        let mut rows = text_draws_for(&layout, (x, y), ink);
+        scale_stage_text_draws(&mut rows, origin, scale as u32);
+        text.extend(rows);
     }
 
     // ---- The target plaque ----
@@ -879,6 +886,34 @@ pub fn battle_hud_draws_for(
             stage_sprite(&mut sprites, src, content_x, content_y);
         }
         stage_text(&mut text, font, name, content_x + lead, content_y, ink);
+    }
+
+    // ---- The value window's name plates ----
+    //
+    // Records `0x60..=0x63`, on the blue class like the target plaque, their
+    // fixed content width `0x3C` from the record, one per row of a cast
+    // aimed at the whole monster row (`FUN_801E805C`'s flag pass).
+    for (name, badge_index, x, dy) in frame.multi_plates {
+        let badge = badge_index.and_then(|i| frame.badges.and_then(|b| b.element_badge(i)));
+        let lead = if badge.is_some() {
+            PLAQUE_BADGE_W + PLAQUE_BADGE_GAP
+        } else {
+            0
+        };
+        let plate_y = BAR_Y + *dy;
+        plate_run(
+            &mut text,
+            &mut sprites,
+            *x - PLATE_CAP_W,
+            plate_y,
+            0x3C,
+            false,
+        );
+        let content_y = plate_y + PLAQUE_CONTENT_DY;
+        if let Some(src) = badge {
+            stage_sprite(&mut sprites, src, *x, content_y);
+        }
+        stage_text(&mut text, font, name, *x + lead, content_y, ink);
     }
 
     // ---- The target-select plaque ----

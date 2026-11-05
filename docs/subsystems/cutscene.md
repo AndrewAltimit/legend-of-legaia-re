@@ -2303,7 +2303,7 @@ the `FUN_801CF5BC` row of [`functions.md`](../reference/functions.md).
 
 | Effect | Engine handling |
 |---|---|
-| phase-2 `LoadBattleBgm` | starts the battle track during the spin, where retail starts it |
+| phase-2 `LoadBattleBgm` | nothing: retail's phase 2 prints `battle bgm %d` and reads the bundle. The track attaches at completion ([timeline](audio.md#the-battle-music-timeline)) |
 | phase-0 `SetAudioCue` | pushed to `World::audio.battle_sfx_cues`, the queue both hosts drain into their SFX scheduler each frame; the last cue of the tick (retail's slot-0 overwrite) plays on the spin's first frame |
 | `ReapplyBgmLevel` | a no-op: the BGM director already plays at its configured level and the world models no field-mode duck |
 | mesh assembly, bundle read, load waits | surfaced on `World::battle.intro_effects` for a host that owns those reads |

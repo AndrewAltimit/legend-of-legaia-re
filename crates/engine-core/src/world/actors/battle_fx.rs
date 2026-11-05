@@ -246,11 +246,7 @@ impl World {
         for emit in walk.emits {
             match emit {
                 AnimCueEmit::Route { id, slot } => self.route_battle_cue(id, slot),
-                AnimCueEmit::Dispatch { id } => {
-                    if let Some(rid) = legaia_engine_battle::anim_cue::dispatch_ring_id(id) {
-                        self.audio.sfx_ring_ops.push(SfxRingOp::Push(rid as i16));
-                    }
-                }
+                AnimCueEmit::Dispatch { id } => self.dispatch_battle_cue(id),
                 AnimCueEmit::Suppressed { .. } => {}
             }
         }
@@ -264,7 +260,9 @@ impl World {
     /// ring as the drainer's descriptor index: `id - 1` under `0x40`
     /// (`addiu a1,s0,-0x1` / `sh a1` at `0x8004FD9C..0x8004FE28`), `id`
     /// itself from there to `0x100` (`sh s0` at `0x8004FDE4`). The de-dup
-    /// word `0x8007B724` is `-1` from the mode init and never matches.
+    /// word `0x8007B724` lives with the drainer on the host, so the ring op
+    /// carries the key (`id - 1` under `0x40`, `id + 0x19C` above it) for the
+    /// host to compare ([`SfxRingOp::PushUnlessSustained`]).
     // PORT: FUN_8004FCC8 (the whole dispatch; the voice arm's kernel is
     // `admit_voice_cue`, the ring arm's `anim_cue::dispatch_ring_id`)
     pub(in crate::world) fn dispatch_battle_cue(&mut self, id: u16) {
@@ -290,7 +288,17 @@ impl World {
             return;
         }
         if let Some(ring) = legaia_engine_battle::anim_cue::dispatch_ring_id(id) {
-            self.audio.sfx_ring_ops.push(SfxRingOp::Push(ring as i16));
+            let key = if id < 0x40 {
+                i32::from(id) - 1
+            } else {
+                i32::from(id) + 0x19C
+            };
+            self.audio
+                .sfx_ring_ops
+                .push(SfxRingOp::PushUnlessSustained {
+                    id: ring as i16,
+                    key,
+                });
         }
     }
 
@@ -315,7 +323,12 @@ impl World {
             side_band_streaming: false,
             cd_read_busy: self.audio.battle_xa_busy_frames > 0,
         };
-        let mut ring = legaia_engine_battle::sfx_cue::SfxCueRing::default();
+        // The last-played word lives with the drainer on the host: the ring op
+        // below carries the key, and the router's own compare never matches.
+        let mut ring = legaia_engine_battle::sfx_cue::SfxCueRing {
+            last_played: u32::MAX,
+            ..Default::default()
+        };
         let out =
             legaia_engine_battle::sfx_cue::route_sfx_cue(&mut ring, u32::from(id), category, &src);
         log::debug!(
@@ -333,7 +346,12 @@ impl World {
             if let Some(cat) = out.element_write {
                 self.write_battle_sfx_category(rid, cat);
             }
-            self.audio.sfx_ring_ops.push(SfxRingOp::Push(rid as i16));
+            self.audio
+                .sfx_ring_ops
+                .push(SfxRingOp::PushUnlessSustained {
+                    id: rid as i16,
+                    key: out.dedupe_key.map_or(-1, |k| k as i32),
+                });
         }
     }
 

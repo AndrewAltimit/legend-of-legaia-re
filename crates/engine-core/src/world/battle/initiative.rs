@@ -202,7 +202,7 @@ impl World {
     ///
     /// PORT: FUN_801DA780 (the slot sweep + lockout; per-actor scoring in
     /// `battle_formulas::seed_initiative`)
-    pub(in crate::world) fn reseed_initiative(&mut self) {
+    pub fn reseed_initiative(&mut self) {
         use legaia_engine_battle_vm::battle_formulas::{
             InitiativeActor, initiative_roll_modulus, seed_initiative,
         };
@@ -223,8 +223,14 @@ impl World {
             return;
         }
         for i in 0..BATTLE_SLOTS {
-            let alive = self.actors.get(i).is_some_and(|a| a.battle.liveness != 0);
-            if !alive {
+            // The sweep skips an empty seat, not a fallen one (`0x801DA7C0`
+            // tests the seat bytes): a fallen actor draws its roll like any
+            // other, and the pick passes it over on its HP.
+            let seated = self
+                .actors
+                .get(i)
+                .is_some_and(|a| a.battle.max_hp != 0 || a.battle.liveness != 0);
+            if !seated {
                 if let Some(a) = self.actors.get_mut(i) {
                     a.battle.init_key = 0;
                 }
@@ -256,6 +262,31 @@ impl World {
             }
         }
         self.apply_engine_side_lockout();
+        self.apply_scripted_initiative();
+    }
+
+    /// The two fights with a written order, after the lockout
+    /// (`0x801DAA88..0x801DAB7C`, keyed on the battle's first monster byte):
+    /// Cort's final form `0xB4` takes round one outright, and Tetsu's spar `0x4F`
+    /// plays the lead's turn first for its first three rounds and Tetsu's first on
+    /// the fourth, whatever the rolls said.
+    ///
+    /// PORT: FUN_801DA780 (`0x801DAA88..0x801DAB7C`, the scripted orders)
+    fn apply_scripted_initiative(&mut self) {
+        let round = self.battle_mode();
+        let first_monster = usize::from(self.party.party_count);
+        let keys = match (self.battle_first_monster_byte(), round) {
+            (0xB4, 0) => (None, Some(30000)),
+            (0x4F, 0..=2) => (Some(2), Some(1)),
+            (0x4F, 3) => (Some(1), Some(2)),
+            _ => (None, None),
+        };
+        if let (Some(k), Some(a)) = (keys.0, self.actors.get_mut(0)) {
+            a.battle.init_key = k;
+        }
+        if let (Some(k), Some(a)) = (keys.1, self.actors.get_mut(first_monster)) {
+            a.battle.init_key = k;
+        }
     }
 
     /// The `ctx+0x290` side lockout over the engine's compacted seating - the
@@ -340,7 +371,7 @@ impl World {
     ///
     /// PORT: FUN_80051D84 (the caller side; arithmetic in
     /// `battle_formulas::roll_formation_advantage`)
-    pub(in crate::world) fn roll_battle_formation(
+    pub fn roll_battle_formation(
         &mut self,
         formation: &legaia_engine_battle::monster_catalog::FormationDef,
     ) {
@@ -421,7 +452,7 @@ impl World {
     ///
     /// REF: FUN_801E295C (state 0x00; the kernel carries the `PORT:` tag)
     /// REF: FUN_801D0748 (the `0xFE` arm that writes `ctx[7] = 0`)
-    pub(in crate::world) fn run_round_state_zero(&mut self) {
+    pub fn run_round_state_zero(&mut self) {
         let mut ctx = self.battle_ctx.clone();
         let mut host = crate::world::vm_hosts::BattleHostImpl { world: self };
         legaia_engine_battle_vm::battle_action::round_state_zero(&mut host, &mut ctx);

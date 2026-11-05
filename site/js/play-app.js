@@ -463,9 +463,25 @@ void main() { o_color = texture(u_layer, v_uv); }
       const drawFrame = this._frame;
       this._frame = (skipDraw) => {
         const psx = this.psxRender && !skipDraw && !this._movieCovers() && !(this.vr && this.vr.isActive());
-        if (psx) this._psxTarget.begin();
+        if (psx) {
+          /* A cast's frames build on earlier ones, the native window's
+           * `Renderer::set_frame_persist`. The question is asked at the scene's
+           * clear, after this frame's ticks, as the window asks it after its
+           * own; bloom reads the frame it adds to, so it stands the frames
+           * down, as the native renderer's bloom target does. */
+          const rt = this.rt;
+          this._psxTarget.begin(typeof rt.play_cast_module_resident === 'function'
+            && rt.play_cast_module_resident());
+          this.renderer.loadFrameHook = () => !this.bloom
+            && typeof rt.play_cast_frame_persists === 'function'
+            && rt.play_cast_frame_persists()
+            && this._psxTarget.loadEarlierFrame();
+        }
         const r = drawFrame.call(this, skipDraw);
-        if (psx) this._psxTarget.present();
+        if (psx) {
+          this.renderer.loadFrameHook = null;
+          this._psxTarget.present();
+        }
         return r;
       };
       /* Every scene mesh carries its primitives' corners for retail's

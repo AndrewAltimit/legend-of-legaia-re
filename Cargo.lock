@@ -2584,6 +2584,7 @@ name = "legaia-engine-shell"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "arboard",
  "clap",
  "dirs",
  "env_logger",
@@ -3015,8 +3016,10 @@ dependencies = [
  "legaia-engine-effects",
  "legaia-engine-expansion",
  "legaia-engine-field",
+ "legaia-engine-fishing",
  "legaia-engine-menu-runtime",
  "legaia-engine-menus",
+ "legaia-engine-minigames",
  "legaia-engine-mode",
  "legaia-engine-save-state",
  "legaia-engine-scene",
@@ -3162,6 +3165,34 @@ dependencies = [
  "legaia-tim",
  "legaia-tmd",
  "serde_json",
+]
+
+[[package]]
+name = "legaia-retail-exec"
+version = "0.1.0"
+dependencies = [
+ "legaia-actor-formats",
+ "legaia-art",
+ "legaia-container-formats",
+ "legaia-disc-patch",
+ "legaia-engine-battle",
+ "legaia-engine-battle-loop",
+ "legaia-engine-battle-vm",
+ "legaia-engine-cast",
+ "legaia-engine-core",
+ "legaia-engine-fishing",
+ "legaia-engine-menus",
+ "legaia-engine-minigame-scenes",
+ "legaia-engine-minigames",
+ "legaia-engine-scene",
+ "legaia-engine-system",
+ "legaia-engine-vm",
+ "legaia-game-tables",
+ "legaia-lzs",
+ "legaia-minigame-formats",
+ "legaia-render-kernels",
+ "legaia-save",
+ "legaia-scene-formats",
 ]
 
 [[package]]
@@ -3397,6 +3428,7 @@ dependencies = [
  "glam",
  "js-sys",
  "legaia-actor-formats",
+ "legaia-app-theme",
  "legaia-art",
  "legaia-engine-audio",
  "legaia-engine-battle",

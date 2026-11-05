@@ -161,9 +161,18 @@ fn item_applies_to_anyone(world: &World, id: u8) -> bool {
     ) {
         return true;
     }
-    let members = world.party.roster.members.len();
-    (0..members).any(|i| {
-        let hms = world.party.roster.members[i].hp_mp_sp();
+    // `FUN_8003043C` walks the present party (`DAT_80084594` over
+    // `0x80084598`, ids under `3`), not the roster: an absent member's
+    // wounds light no row.
+    world.present_party_list().into_iter().any(|slot| {
+        let i = usize::from(slot);
+        let Some(member) = world.party.roster.members.get(i) else {
+            return false;
+        };
+        if slot >= 3 {
+            return false;
+        }
+        let hms = member.hp_mp_sp();
         let status_mask = world
             .battle
             .status_effects
@@ -180,9 +189,13 @@ fn item_applies_to_anyone(world: &World, id: u8) -> bool {
             is_dead: hms.hp_cur == 0 && hms.hp_max > 0,
             status_mask,
         };
+        // A heal that would restore nothing is no effect either: `FUN_8003FB10`
+        // refuses a member already full (a Healing Leaf greys at full party HP).
         !matches!(
             legaia_engine_menus::items::apply_effect(entry.effect, &snap),
             legaia_engine_menus::items::ItemOutcome::NoEffect
+                | legaia_engine_menus::items::ItemOutcome::HealedHp { amount: 0 }
+                | legaia_engine_menus::items::ItemOutcome::HealedMp { amount: 0 }
         )
     })
 }

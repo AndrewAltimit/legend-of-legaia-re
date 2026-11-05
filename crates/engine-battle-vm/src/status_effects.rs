@@ -156,19 +156,17 @@ impl StatusKind {
         }
     }
 
-    /// Default duration in turns for this kind. The retail engine uses
-    /// per-status duration tables - these defaults match the most common
-    /// observed value across the catalogued enemy attack scripts.
+    /// Default duration in turns for this kind. Retail has no status timer:
+    /// every store to `+0x16E` that clears a bit is a cure, a guard passive's
+    /// sweep (`FUN_8004CE2C`), a hit's `0x0F80` strip, the scripted-monster arm of
+    /// the tick or the `0x400` waker. So Venom, Toxic, Rot and Curse last until
+    /// cured; the number on them is the port's "until battle end".
     pub fn default_duration(self) -> u8 {
         match self {
-            StatusKind::Toxic => 4,
+            StatusKind::Toxic | StatusKind::Venom | StatusKind::Rot | StatusKind::Curse => 255,
             StatusKind::Numb => 3,
-            StatusKind::Venom => 6,
             StatusKind::Sleep => 3,
             StatusKind::Confuse => 3,
-            // Rot persists like the DoT ailments (cured by item / battle end).
-            StatusKind::Rot => 6,
-            StatusKind::Curse => 4,
             // Stone has no in-battle cure - it lasts the whole battle. 255 is
             // effectively "until battle end" (no battle runs that many turns).
             StatusKind::Stone => 255,
@@ -469,34 +467,41 @@ impl StatusEffectTracker {
     ///
     /// PORT: FUN_801E752C
     pub fn tick_actor(&mut self, actor_slot: u8, current_hp: u16, max_hp: u16) -> u16 {
+        let word = pack_display_flags(self.slots(actor_slot));
+        self.tick_actor_word(actor_slot, word, current_hp, max_hp)
+    }
+
+    /// [`Self::tick_actor`] on a status word the caller holds: retail's one
+    /// `+0x16E`, which the port splits between this list and the raw word a cast
+    /// writes. The tick tests the word alone, Toxic first with Venom as its
+    /// `else`, and has no Stone test, so a Stoned actor with Venom still drains.
+    pub fn tick_actor_word(
+        &mut self,
+        actor_slot: u8,
+        word: u16,
+        current_hp: u16,
+        max_hp: u16,
+    ) -> u16 {
         let mut total_damage = 0u16;
         let mut to_clear: Vec<StatusKind> = Vec::new();
-        // Compute damages first to avoid holding a mutable borrow while
-        // we push events.
-        let snapshot: Vec<StatusInstance> = self.slots(actor_slot).to_vec();
-        // A petrified actor can't be damaged, so its poison DoTs don't tick.
-        let petrified = snapshot.iter().any(|s| s.kind == StatusKind::Stone);
-        // Retail: the strong-DoT bit (Toxic) is tested first and the weak one
-        // (Venom) only ticks when it is clear.
-        let toxic_active = snapshot.iter().any(|s| s.kind == StatusKind::Toxic);
-        for inst in &snapshot {
-            let dmg = if petrified || current_hp == 0 {
-                0
-            } else {
-                match inst.kind {
-                    StatusKind::Toxic => toxic_tick_damage(current_hp, max_hp),
-                    StatusKind::Venom if !toxic_active => venom_tick_damage(current_hp, max_hp),
-                    _ => 0,
-                }
-            };
-            if dmg > 0 {
-                total_damage = total_damage.saturating_add(dmg);
-                self.pending_events.push(StatusEvent::TickDamage {
-                    actor_slot,
-                    kind: inst.kind,
-                    damage: dmg,
-                });
-            }
+        let tick = if current_hp == 0 {
+            None
+        } else if word & 2 != 0 {
+            Some((StatusKind::Toxic, toxic_tick_damage(current_hp, max_hp)))
+        } else if word & 1 != 0 {
+            Some((StatusKind::Venom, venom_tick_damage(current_hp, max_hp)))
+        } else {
+            None
+        };
+        if let Some((kind, dmg)) = tick
+            && dmg > 0
+        {
+            total_damage = dmg;
+            self.pending_events.push(StatusEvent::TickDamage {
+                actor_slot,
+                kind,
+                damage: dmg,
+            });
         }
         // Decrement timers and queue clears.
         let v = self.slots_mut(actor_slot);
@@ -728,6 +733,10 @@ pub mod display_flags {
     /// Note the AI-delegation group is **not** in it: Rage is an equipment
     /// passive, not an ailment, so a full cure does not lift it.
     pub const AILMENT_MASK: u16 = 0x1C7F;
+
+    /// The group the seed sends to the retarget `FUN_801E7320` (`andi 0x380` at
+    /// `0x801E2C94`).
+    pub const CONFUSE_GROUP: u16 = 0x0380;
 
     /// The bits taking damage clears (`FUN_801EC3E4` `0x801EDA5C`:
     /// `andi 0xF07F` on the damaged actor's word). Sleep, Numb and the

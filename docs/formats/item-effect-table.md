@@ -171,6 +171,10 @@ tests `actor[+0x1DF] == 0xFE` at `0x801E4080..0x801E4088` and overwrites the
 seeded selector `actor[+0x1E8]` with `0x0E` at `0x801E40C0`, so a Point Card used
 in battle with a non-zero bank runs the strike. See
 [`glitches/items-and-equipment.md`](../reference/glitches/items-and-equipment.md).
+The port seeds the card by id (`ItemCatalog::apply_point_card_items`) and aims it at
+the enemy rows only, so the living-ally hang has no way in. The band reads the overwritten
+selector and not the descriptor: class 1's arm serves the whole party, and the strike
+takes its one target byte.
 
 ## Heal-amount table (`0x8007655C`)
 
@@ -235,13 +239,11 @@ boost is worn, and the gain is not refilled: current HP / MP stay where they
 were.
 
 Port: `World::apply_stat_up_item` raises the base window and
-`World::rebuild_record_live_hp_mp` rebuilds the two maxima from it - the
+`World::rebuild_record_live_hp_mp` rebuilds the live window from it - the
 same rebuild `World::refresh_party_ability_bits` runs for every party
 member, since the aggregator is one pass: an equipment change (the equip
-screen, a shop's equip-now, the field VM's `0x3B`) moves the maxima with
-the accessory; the combat
-stats take the base raise and the same increment on the live value, which
-the battle seed re-derives from the base. A library save shows the rebuild
+screen, a shop's equip-now, the field VM's `0x3B`) moves the live stats with
+the accessory. A library save shows the rebuild
 on its own: a record with base Max HP `521` under a +10% accessory carries
 a live maximum of `573`.
 

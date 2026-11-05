@@ -543,11 +543,11 @@ impl ItemCatalog {
     /// Seed every id whose descriptor carries [`POINT_CARD_STRIKE_CLASS`] as an
     /// [`ItemEffect::PointCardStrike`] marker.
     ///
-    /// This one **sweeps the id space** rather than naming ids, because the
-    /// retail item table carries no class-`14` row at all: the arm exists with
-    /// no data pointing at it, and only an edited effect table (a randomizer
-    /// seed, a translation-adjacent patch) puts an item in front of it. An id
-    /// the catalog already names keeps its name.
+    /// The retail item table carries no class-`14` row: the Point Card
+    /// (`0xFE`, descriptor `01 00 C4 41`) reaches the arm by id, through the
+    /// action SM's override at state `0x3E`, so it is seeded by id. The sweep
+    /// is for an edited effect table that puts another item in front of the
+    /// arm. An id the catalog already names keeps its name.
     pub fn apply_point_card_items(
         &mut self,
         table: &legaia_game_tables::item_effect::ItemEffectTable,
@@ -556,7 +556,8 @@ impl ItemCatalog {
             let Some(eff) = table.effect(id) else {
                 continue;
             };
-            if eff.class != POINT_CARD_STRIKE_CLASS {
+            let the_card = id == crate::shop::POINT_CARD_ITEM_ID && eff.battle_usable();
+            if eff.class != POINT_CARD_STRIKE_CLASS && !the_card {
                 continue;
             }
             let name = self

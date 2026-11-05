@@ -113,6 +113,9 @@ impl CameraWorld for World {
         self.pending_field_events.extend(events);
     }
 
+    fn set_camera_mode_byte(&mut self, mode: Option<u8>) {
+        self.locomotion.camera_mode_byte = mode;
+    }
     fn set_npc_cull_view(&mut self, view: Option<FieldCullView>) {
         self.npcs.cull_view = view;
     }

@@ -479,6 +479,16 @@ flight (`0x801E0238`, requested against loaded) and sub-op `0xA` until bit
 3 (`0x801E0288`). Sub-op 1 waits on nothing: it stores the word
 (`0x801E012C`) and the next poller call starts the walk.
 
+Stage 6 latches the requested index of that call (`0x800247B4..0x800247C4`), not the one
+stage 2 read. A new word arriving past stage 2 therefore plays the old track with the
+walk reporting the new one loaded; the port's `route_bgm_events` starts the newer word
+instead. No library state catches a walk in that window, so whether a script reaches it
+is unmeasured.
+
+Stage 4's commit also closes battle source 5 (`0x80024750..0x80024760`) and rests every
+source's volume at `0` until stage 6: the only thing that stops a battle theme is the next
+walk.
+
 A scene's entry start does not take this time on screen. The field init
 calls the poller in a loop with no `VSync` until requested and loaded agree
 (`0x801D72D4..0x801D7320`), so the settle runs down in microseconds and the
@@ -579,7 +589,7 @@ does to the sequence is read off the libsnd call under it:
 | Sub-op | Arm | Primitive -> libsnd | What the sequence does |
 |---|---|---|---|
 | `2` | `0x801E0138`, sets bit 1 | `FUN_800266E0` -> `FUN_80064370` -> `FUN_800641EC` | **stop**: the channel's notes are killed now (`FUN_800684CC`), the read cursor goes back to the sequence start (`+0x4`), flag `0x4` is raised |
-| `3` | `0x801E015C`, sets bit 1 | `FUN_80026740` -> `FUN_8006282C` -> `FUN_8006275C` | **pause**: flags `0x1` / `0x8` clear and `0x2` raised; the next calc (`FUN_80062F98`) keys the notes off through `FUN_800638D8`, and the cursor is left alone |
+| `3` | `0x801E015C`, sets bit 1 | `FUN_80026740` -> `FUN_8006282C` -> `FUN_8006275C` | **pause**: `FUN_8002657C(0, slot)` first sets the playing sequence's volume to `0`, the sounding notes with it (`FUN_80067E9C`), so they cut at once; then flags `0x1` / `0x8` clear and `0x2` raised; the next calc (`FUN_80062F98`) keys the notes off through `FUN_800638D8`, and the cursor is left alone |
 | `4` | `0x801E0180`, clears bit 1 | `FUN_80026478` -> `FUN_80062880(id, 1, 1)` -> `FUN_800628F0` | **replay**: `FUN_800628F0` resets the read cursor to the sequence start for every mode, then mode `1` raises the play flag |
 
 So no script word resumes a track mid-phrase: the re-attach plays it again
@@ -758,7 +768,7 @@ entry".
 
 **Battle↔Field swap.** The port reuses the same dispatch: `World::set_battle_bgm`
 configures a battle track id, the live gameplay loop queues an ordinary
-`FieldEvent::Bgm{sub_op: 1}` start for it on encounter (`swap_to_battle_bgm`)
+`FieldEvent::Bgm{sub_op: 1}` start for it at the intro's end (`swap_to_battle_bgm`)
 and resumes the stashed field track on battle end (`restore_field_bgm`). Both
 transitions run through the host's `AudioDirector` `start_inner` path - no
 separate battle-audio code path. The battle id resolves like any op-`0x35` id
@@ -798,6 +808,58 @@ it, then the last sound-set selection
 (`man_field_scripts::walk_battle_entry_scores`). The Gaza, first-Nivora and
 evolved-Cort fights then play their event's theme instead of the scene
 entry's track and the default battle theme.
+
+<a id="the-battle-music-timeline"></a>
+#### The battle music timeline
+
+`autorun_battle_harvest.lua` with `LEGAIA_AUDIO_LOG=1` logs both sound sources per
+vsync through a walked fight. `teien_field_run` into a set-`0` fight, from the
+mode-`8` store (`T`) and from the fight's end (`E`, mode `2`):
+
+| Vsync | Retail | Cause |
+|---|---|---|
+| `T` | mode `8`, the field sequence plays | `FUN_801DA51C`'s hand-off |
+| `T + 3` | field sequence stopped (flag `0x2`, then `0x20`), volume `0`: its notes cut, their release unheard | the intro init `FUN_801CE8CC`: `FUN_80026740(0x8007052C)` under `_DAT_8007B880 == 0` (`0x801CEB58..0x801CEB70`) |
+| `T + 7` | three cue voices: the battle-start sound | phase 0's ring store |
+| `T + 80` | the field's last envelopes reach `0` | |
+| `T + 139` | mode `0x14`, source 5 attached and playing | the completion arm: `FUN_8001E54C(5, ..)` + `FUN_80026478(0x8007056C)` (`0x801CF91C..0x801CF930`) |
+| `E` | mode `2`, the battle sequence plays on | |
+| `E + 121` | it ramps down one step a vsync, over `129` vsyncs | the field init's `FUN_80062004(.., 0x78)`, while the map reads |
+| `E + 251` | the field source plays from its head | the init's poller |
+| `E + 306` | mode `3`, the first field frame | |
+
+The spin is therefore the cue alone, for over two seconds, and the theme arrives with
+the fight. Phase 2 only reads the bundle: its `FUN_800567A8` is the debug print of
+`battle bgm %d`. Port: `World::silence_field_audio_for_intro` keys off the track
+(sub-op `3`, set `0` only) and voices `0x10..0x17` on the transition's first tick, and
+`World::enter_battle_from_formation` attaches, both hosts through
+`route_bgm_events`. A set above `0` leaves the field track alone until the attach, and
+`-1` plays it through.
+
+The session test `parity/tests/battle_music_timeline_disc.rs` reads the same order on a
+forced fight: the key-off on the transition's first tick, the start on the battle's, `132`
+ticks on, where retail's mode `9` runs `133` vsyncs.
+
+The return is the part the port does not reproduce: its load is instant, so the
+`250` vsyncs of battle theme over the loading screen collapse, and the field track
+restarts from its head on the frame the field returns, as retail's does.
+
+**A fight on the park word ends the music.** The return loads what the track word
+names, and the word `0x1000` names nothing. `retockin`'s word is the park, the door
+from `retock` having kept `2014` behind sub-op 6, and a capture from
+`battle_retockin_skull_knight_strike` reads the field source stopped by the intro, the
+battle sequence ramped to volume `1` by the init, and no load: both are silent from the
+fight's end until a scene starts a track. That fight was rolled by the harvester's
+region write, so the capture pins the law and not a route a player walks. Port: `World::restore_field_bgm` restores the
+word and stops the director rather than leaving the battle theme attached.
+
+A row is not owned by its record. `teien`'s row `0` is the Berserker fight its
+`P2[1]` stages, and it is also a row a random roll can land on: the
+`teien_berserker_*` states rolled it, so nothing ran the record, the track word
+holds the field's `2054` and the fight plays the default bundle's `2027`. The
+record opens by raising `0x1C8`, which those states hold lowered. The comparison
+seed therefore replays the words only when every flag the record raises on the
+way to its entry op is up (`World::scripted_battle_record_ran`).
 
 A record that starts no track before its entry op fights under the word of
 the arm that spawned it. `nilboa`'s second and third Delilas duels are entered
@@ -2101,9 +2163,9 @@ cancelled, `2` chosen) at `0x801D17F8`. The press that exhausts the arts gauge
 leaves the entry silently: `bne s0,zero,0x801D3290` at `0x801D20CC` steps over
 the tail's cue.
 
-The dispatcher's de-dup word `0x8007B724` is `-1` from the mode init
-(`0x8001DDA4`) and no other dumped routine stores it, so it never suppresses
-one of these.
+The dispatcher's de-dup word `0x8007B724` is `gp+0x40C`, the sustained cue the
+drainer last keyed ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
+None of the menu's cues is sustained, so it never suppresses one of these.
 
 Every caller's id goes through the same split: `id >= 0x100` takes the
 dispatcher's CD-XA arm whoever calls it. The Cort stage modules' cues `0x20A`
@@ -2138,7 +2200,10 @@ A descriptor with `+3 & 0x20` is a sustained cue: the drainer keys it on voices
 Its sample loops (the VAG repeat flag) under a held ADSR sustain, so nothing in
 the voice ends it. Two things do: the drainer's own release of the old run when
 the next sustained cue keys, and the teardown `FUN_80017910`, which keys off
-voices `7 .. 7 + gp+0x5D0`, clears the count and writes `-1` to `gp+0x40C`.
+voices `7 .. 7 + gp+0x5D0`, clears the count and writes `-1` to `gp+0x40C`, the
+latched cue id the battle funnels
+[drop a repeat against](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat).
+With no run held it stores neither.
 Its callers:
 
 | Caller | Site | When |
@@ -2412,7 +2477,7 @@ The engine wires this end-to-end:
 - **Bank staging** (`engine-session` boot): `read_arts_shout_bank` demuxes `XA2/XA4/XA6` per channel from the **raw 2352-byte sectors** (`legaia_xa::demux` - the CD-XA subheader carries the channel number, which a 2048-byte ISO view strips), decodes each channel to mono PCM, and pairs it with the `ArtsVoiceTable` pools in a `legaia_engine_audio::ArtsShoutBank`. Disc-image boots only; extracted-directory boots leave arts silent. The browser play page stages the same files through the same calls.
 - **Playback** (`engine-session` / `engine-audio`): `AudioDirector::play_xa_clip` serves a request for slot `1` / `3` / `5` out of the shout bank, cut at the starter's read span, and stages it through `AudioSink::play_xa_shout`, which mixes decoded XA into the SPU output the way the PSX CD-input path does (never through the 24 voices).
 
-Two timing behaviours model the retail CD/XA sequencing contract: a fixed response-presentation delay (`SHOUT_CD_RESPONSE_DELAY`, ~150 ms of 44.1 kHz samples - the modelled seek / first-sector latency; the recomp cross-reference established that the shout **trails** the clip install) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
+Two timing behaviours model the retail CD/XA sequencing contract: the drive's start ([`xa_start_delay`](#a-clips-start)) holds the clip silent after its request, and a request while a clip is sounding **replaces** it. There is one drive: the starter `FUN_8003D53C` mutes the CD input and re-arms the seek / filter / read sequencer for the new clip without testing the old one, so the old stream ends on the request. Callers that must not interrupt gate themselves first (the dispatcher's `FUN_8003DE7C(1)` read-span gate, the field op's busy word); the shout site does not.
 
 `OfflineMixer` exposes the same mixing core device-free. Oracles: `engine-session/tests/arts_voice_spar_disc.rs` plays the Rim Elm spar through the real boot (tables and banks) and asserts the battle's CD-XA request sequence - item voice, Spirit line, the Somersault's first-use starter line (`XA1` channel 1), its shout (`XA2` channel `0xC` under Tetsu's formation) - and, differencing a voiced run against a bank-less one, that each clip is silent through the CD delay and then reaches the mix. `engine-session/tests/arts_shout_battle.rs` covers the unresolved (bank-picked) path; `engine-core/tests/battle_shout_cue.rs` is the disc-free cue-emission check (known art, three arts in one entry, first use, a staged selector, the silent synthetic baseline).
 
@@ -3125,15 +3190,13 @@ varies from run to run of one state.
 
 ### The Field↔Battle swap is not on this axis
 
-The Field↔Battle BGM swap plays on both hosts but is not measured by this
-oracle: the scenario captures hold no battle-entry window, so no trace pairs
-the swap against retail. The default battle track is the global-pool id `2026`
+The per-voice oracle above pairs no battle-entry window. What a fight does to the
+music is measured separately, by the [battle music timeline](#the-battle-music-timeline).
+The default battle track is the global-pool id `2026`
 (`music_labels::BATTLE_THEME_1_BGM_ID`), which resolves through the `music_01`
 bank arm of `route_bgm_events` (`music_bank_entry_bytes` → `start_owned_vab`),
-the path the disc-gated `global_bgm_owned_vab_disc` test pins. The transition
-itself is pinned on the mode-trace axis
-(`v0_1_battle_leg_mode_trace_matches_expected`), and the swap *contract*
-(track stash → battle start → field restore) at the `World` level
+the path the disc-gated `global_bgm_owned_vab_disc` test pins. The swap *contract*
+(track stash → battle start → field restore) is pinned at the `World` level
 (`battle_bgm_swaps_on_encounter_and_restores_on_finish`,
 `playable_default_swaps_to_the_standard_battle_theme`). The battle key-on
 census above covers the battle theme's notes once it is playing.
@@ -3165,12 +3228,12 @@ word `2015`); the sweep counts those as one track.
 
 | Channel | Scores | Result |
 |---|---|---|
-| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | 85 of 85 walkable states |
-| `playing` | that sequence is playing exactly when the engine's gate is open | 85 of 85 |
-| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | 80 of 80 |
-| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | 80 of 80 |
-| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | 19 of 20 |
-| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | 129 of 129 battle states |
+| `track` | the field-BGM source's track (else the ending source's, else any playing track) is the engine's attached one | every walkable state |
+| `playing` | that sequence is playing exactly when the engine's gate is open | every walkable state |
+| `seq_vol` | its `+0x58` against the engine sequencer's volume, same track | every state on one track |
+| `tempo` | its `+0x94` is a tempo its score writes, rounded as `FUN_80062410` rounds (`0x80062598..0x800625E4`) | every state on one track |
+| `ambient` | the engine sounds as many SFX-bus voices as retail has cue voices ringing | every state with a cue voice |
+| `battle_track` | the battle source's track is what `music_labels::battle_track_for_sound_set` (the rule `World::swap_to_battle_bgm` runs) picks from the state's own sound set and `DAT_8007B64B` | every battle state scored |
 
 Battle states are not seeded - the battle half of the corpus is
 `retail_compare_battle`'s - so their channel tests the rule on retail's
@@ -3190,7 +3253,7 @@ installs a door record no tile spawns), and the session ticks until it holds
 the captured scene. Whatever track sounds there is the engine's own door
 logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
 `kor4`, `P2[13]` / `P2[9]`) and `retockin_field_route_walk` (from `retock`,
-`P2[18]`) are seeded this way and match retail; with the sub-op 6 latch
+`P2[18]`) and `station_field_door_hop` (from `ropeway`, `P2[27]`) are seeded this way and match retail; with the sub-op 6 latch
 disabled the first three fail again (the head start replaces the kept
 track), while `retockin` passes either way because its entry parks.
 
@@ -3216,23 +3279,11 @@ swap walk ([above](#the-swap-takes-a-settle-and-a-read)) settles
 `kor5_post_436_organic`, captured between a commit and the install (flags
 `0x19`, no field-BGM source open, requested `1009` against loaded `1023`):
 the engine seeded there holds the committed track as retail's poller does.
-What it still reports:
-
-- **`tower_field_walk`** - the one-shot on voice 22 reads as cue `0x30`
-  (inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 /
-  6 and its note is 63, which is static row `0x30` (program 2, tone 3, note
-  63, category 6, mapped to VAB slot 6 in the state) and the only row that
-  fits among the cues `tower`'s scripts fire. `tower`'s lift pads (partition-0 records `2..17`, gate-0
-  object binds) fire it as the first op of their activation arm
-  (`36 00 80 30 00`), and retail's pad `17` context is parked at `+0xF4`
-  past its `ExecMove`, so the random walk had just stepped on it. The
-  engine runs the same record on contact: the lifts are prop-bank entries,
-  so a touch resumes the record from its parked cursor, and the cue, the
-  `4C 60` flicker and the jump follow in that order
-  (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`). The row misses
-  because the seed stands the player still: the touch is history the
-  capture holds (the record's context at `+0xF4`, the cue voice keyed) and
-  a seat does not replay it.
+`tower_field_walk` holds a one-shot on voice 22 that reads as cue `0x30`
+(inference): the voice record's `+0x14` / `+0x16` / `+0x18` hold 2 / 3 / 6 and its note
+is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op of their
+activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
+(`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
 ## Real retail PCM
 
@@ -3257,7 +3308,7 @@ Each recording has a private home, disc stage and X server, so `--capture --jobs
 runs them side by side with the same bytes. `-nothrottle` changes neither the bytes
 nor the speed: the emulator is not being held back by its throttle here.
 
-**Three channels.**
+**The channels.**
 
 - **`core`: the SPU model alone.** A scratch copy of the state has the open
   sequence bitmap `_DAT_801CD2B8` zeroed, so no sequence writes a voice while the
@@ -3280,8 +3331,20 @@ nor the speed: the emulator is not being held back by its throttle here.
 | `keikoku_chest_pre` | `1.000` | `0.9986` | `-26` dB | `0.00` dB | |
 | `title_screen_new_game` | `1.000` | `0.9984` | `-23` dB | `0.02` dB | first 10 s; it then times out into the attract sequence |
 | `minigame_slot_machine` | | `0.9984` | `-25` dB | `0.00` dB | |
-| `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | |
-| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render: `+1` to `+4.6` dB between `350` Hz and `4` kHz |
+| `minigame_baka_fighter` | | `0.9954` | `-21` dB | `0.00` dB | the note fit moves `7` of `195` flushes, all one tone (`6AC0`), by `+670` samples at pitch `0x800` and `+376` at `0x720`: not a vsync, and open |
+| `rimelm_wall_press_left` | | `0.925` | `-9` dB | `+0.49` dB | retail's river emitter is in the recording, which this channel does not render; the `emitter` channel below does |
+| `noa_levelup_field_pre` | | `0.9990` | `-28` dB | `0.00` dB | |
+| `new_game_cutscene_intro_a` | | `0.9994` | `-29` dB | `0.00` dB | |
+| `ending_vignette_fullscreen` | | `0.9997` | `-32` dB | `+0.01` dB | the credits theme on source 10 |
+| `zeto_call_wave_mid_cast` | | `0.9994` | `-30` dB | `+5.09` dB | the cast's own cues hold the level: `+4` to `+14` dB over the recording's first six seconds, then within `0.11` dB in every two-second window |
+
+The `rimelm` row's residual is the emitter, and a silenced recording cannot show it alone:
+stopping the sequences leaves their held notes ringing beside the emitter. The fourth channel,
+**`emitter`** (`--cue-voices`), mixes the track with the state's cue voices resumed from its SPU
+(voice records owned `0x21`: voices 16..18 here, nothing else stood up). It reads correlation `0.986`,
+level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
+window, so the river is right to the sample. What remains reads `-25` to `-27` dB in the clean
+windows and near `-11` dB in others; that split is not traced.
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not
@@ -3352,9 +3415,27 @@ volume, whose attenuation matrix reads unity in the state (`DecodeVolume`), and 
 every window; whether it is mednafen's filter against the published zig-zag rows is not settled here.
 On the page, a shout fired through the live output and read off the output node
 is that channel's sibling (`XA2` channel 14) at correlation `0.993` and no lag drift
-across a second, at the mix's `0.81` of the decoded channel. Its first sample lands
-`205` ms past the call: `SHOUT_CD_RESPONSE_DELAY` plus the queue. The start against a
-retail trigger is not scored, because no library state stands just ahead of a cue.
+across a second, at the mix's `0.81` of the decoded channel.
+
+<a id="a-clips-start"></a>
+**A clip's start.** A mid-cast state plays on into its module's head cue with no input, so a run
+stepped frame by frame (`scripts/mednafen/xa-start.py`) reads the frame the starter ran off the
+drive-state word `0x8007BC20`, and the same run's recording, with the resumed SPU subtracted, places
+the channel's first sample by correlation. Both are on one clock, the state being sample `0`.
+
+| Head parked in | Runs | Call to first sample, less the channel's place |
+|---|---|---|
+| the clip's file | 14 (Orb, Juggernaut, Viguro, Swordie, Freed, Puera, Aluru, Iota, Terra, Slippery, Gilium, Palma, Horn, Jedo) | `62` or `88` ms |
+| another file (`XA8`, playing `XA7`) | 4 (Zenoir, Gizam, Theeder, Nighto) | `371` ms, within a millisecond |
+
+The channel's place is one double-speed sector per channel, `1 / 150` s, because channel `n`'s first
+sector lies `n` sectors into the file: over the runs, Juggernaut's channel `7` and Viguro's `0` read the
+same base with it taken off. Each frame's bracket is a vsync wide, and the `62` / `88` split is not traced.
+Port: `legaia_engine_audio::xa_start_delay`, with `module_head_seek` naming the parked file for a
+cast's voice. A shout or a melee line takes the parked figure: the battle selector
+([`FUN_8004DA00`](#streamed-cue-census-fun_8003eae4--fun_80019794)) has the head in that file. These are mednafen's
+drive timings, and PCSX-Redux models no seek at all (`54.6` ms flat, `xa_start.csv`); no console has been
+timed. The browser's output queue adds about `55` ms on the page.
 
 **The tempo offset.** Onsets drift against mednafen at `0.29 %`: its vsync is `59.8261` Hz,
 an NTSC frame of 263 lines of 3413 video clocks at 53.693175 MHz, `737.1365` samples, where
@@ -3483,8 +3564,6 @@ timer throttling does not touch.
 - **ADPCM rounding** is the remaining difference on the
   [real retail PCM](#real-retail-pcm) core channel; the track channel's rest is a fraction of a
   sample per flush ([the flush's own cost](#the-flushs-own-cost)) and retail's own cues.
-- **A CD-XA clip's start against a retail trigger** is unscored: it wants a mednafen
-  state just ahead of a cue ([above](#real-retail-pcm)).
 - **Two emitter inputs are constants.** The per-row scale pair is set once:
   the boot-time mode initialiser `FUN_8001DCF8` stores `0x80`, `0x80`, `0` at
   `0x80091658..0x80091660` (`0x8001DD60..0x8001DD74`), the pair's only writer
@@ -3500,10 +3579,6 @@ timer throttling does not touch.
 - **The Field↔Battle swap** has no retail audio trace
   ([above](#the-fieldbattle-swap-is-not-on-this-axis)); the track it picks is
   checked by the sweep's `battle_track` channel.
-- **The sweep's open row** ([above](#the-audio-state-sweep)) is
-  `tower`'s lift cue, which sounded on a contact
-  before the capture: seeding it means resuming the lift's context mid-record (`+0xF4`) with its cue voice
-  still keyed, which no seed does yet.
 - **`.MAP` / `.PCH` / `.spk` / `.pac`** have no retail carrier to decode; the
   dispatch chain into them and the `.dpk` payload are traced on
   [`sound-driver.md`](../formats/sound-driver.md). `FUN_8001FA88`'s buffer

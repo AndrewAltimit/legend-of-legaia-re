@@ -373,6 +373,7 @@ pub const DITHER_BOOT_VALUE: bool = true;
 /// | Variant | Retail | Scheduler |
 /// |---|---|---|
 /// | [`Self::Push`] | `FUN_80035B50(id)` | `push_ring_cue` |
+/// | [`Self::PushUnlessSustained`] | the funnels' ring write | `push_ring_cue`, unless `key` is latched |
 /// | [`Self::SetLastDelay`] | `FUN_80035BAC(delay)` | `set_ring_cue_delay` |
 /// | [`Self::ReplaceLast`] | `FUN_80035BD0(id)` | `replace_ring_cue` |
 /// | [`Self::ReleaseSustained`] | `FUN_80017910()` | `SfxBank::release_sustained` |
@@ -387,6 +388,13 @@ pub enum SfxRingOp {
     /// `FUN_80035B50(id)` - write `id` into the cursor's slot with a zero
     /// countdown and advance the cursor.
     Push(i16),
+    /// The ring write of the battle cue funnels `FUN_8004FE5C` and
+    /// `FUN_8004FCC8`: `Push(id)` unless the sustained cue the drainer last keyed
+    /// (`gp+0x40C`, held on the host beside the voices) equals `key`. The key is
+    /// not always the ring id: the funnels compare `id - 1` below their low bound
+    /// and `id + 0x19C` above it, whatever they then store. A dropped cue leaves
+    /// the slot cursor where it was.
+    PushUnlessSustained { id: i16, key: i32 },
     /// `FUN_80035BAC(delay)` - set the last-written slot's countdown.
     SetLastDelay(i16),
     /// `FUN_80035BD0(id)` - overwrite the last-written slot's id, zero its
@@ -410,6 +418,17 @@ pub enum SfxRingOp {
     /// it whenever an actor's staged clip differs from its latched one
     /// (`0x8004AE54..0x8004AE68`).
     ReleaseSustained,
+}
+
+impl SfxRingOp {
+    /// The id this op writes through the slot cursor, whichever producer's
+    /// write it is.
+    pub fn pushed_id(&self) -> Option<i16> {
+        match *self {
+            Self::Push(id) | Self::PushUnlessSustained { id, .. } => Some(id),
+            _ => None,
+        }
+    }
 }
 
 /// One CD-XA voice clip request (the `FUN_8003D53C` call, decoded): the

@@ -19,6 +19,8 @@ impl World {
         use legaia_engine_cast::seru_magic_ticks as ticks_a;
 
         let entry = self.cast_module_for(spell_id)?;
+        self.raise_cast_voice_on_arm(arm);
+        self.fold_glare_on_its_arm(entry, spell_id, arm);
         // PROT 0954's body is ported whole - camera, records, wheel and
         // outcomes - and drives the band on its own
         // (`world::battle::fatal_decision`).
@@ -433,7 +435,15 @@ impl World {
                         && !self.battle.actor_is_petrified(s)
                 })
                 .collect();
-            self.fold_pending_cast();
+            self.fold_pending_cast_at_rate(
+                if has_trampoline {
+                    body.and_then(|b| ticks::chain_body_for(entry, b))
+                } else {
+                    ticks::direct_chain_body(entry)
+                }
+                .and_then(|c| c.arm(phase_in))
+                .and_then(|a| a.hit_rate),
+            );
             for s in struck {
                 self.face_seat_away_from_caster(s, caster_slot);
             }
@@ -539,12 +549,61 @@ impl World {
         } else {
             ticks::direct_chain_body(entry)
         };
+        // The arm's party-row rate store sits ahead of its countdown test, so
+        // it runs on every pass the arm holds.
+        if let Some(rate) = legaia_engine_cast::cast_module_ticks::party_rate_sweep(
+            entry,
+            if has_trampoline { body } else { None },
+            phase_in,
+        ) {
+            for s in 0..usize::from(self.party.party_count) {
+                if let Some(a) = self.actors.get_mut(s) {
+                    a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(rate);
+                }
+            }
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+        }
+        if let Some((hit_arm, settle_arm, settle)) =
+            ticks::gated_hit_arm(entry, if has_trampoline { body } else { None })
+            && !capture_held
+        {
+            if phase_in == settle_arm && !self.chain_settled(settle, caster_slot, victim_slot, &ctx)
+            {
+                capture_held = true;
+            }
+            if phase_in == hit_arm && self.casting.module_hit_arm != Some(hit_arm) {
+                self.casting.module_hit_arm = Some(hit_arm);
+                self.fold_pending_cast();
+                caster = self.cast_view(caster_slot);
+                victim = self.cast_view(victim_slot);
+                seat = self.cast_view(seat_slot);
+                (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+            }
+        }
+        if entry == 939 {
+            if phase_in == 3 {
+                self.casting.spore_gas_beat = ticks::SporeGasBeat::armed();
+            }
+            if phase_in == 4
+                && let Some(hit) = self.casting.spore_gas_beat.tick()
+            {
+                self.spore_gas_hit(hit, caster_slot, victim_slot);
+            }
+            caster = self.cast_view(caster_slot);
+            victim = self.cast_view(victim_slot);
+            seat = self.cast_view(seat_slot);
+            (caster_orig, victim_orig, seat_orig) = (caster, victim, seat);
+        }
         if let Some(arm) = chain.and_then(|c| c.arm(phase_in))
             && !capture_held
         {
             if arm.wrapper_site.is_some() && self.casting.module_hit_arm != Some(phase_in) {
                 self.casting.module_hit_arm = Some(phase_in);
-                self.fold_pending_cast();
+                // PROT 0939's hits are its own, on their beat.
+                self.casting.module_skips_fold = entry == 939;
+                self.fold_pending_cast_at_rate(arm.hit_rate);
                 // The arm runs on the seats the hit left (a dead victim
                 // takes PROT 0956's reaction branch, not its turn-steal).
                 caster = self.cast_view(caster_slot);
@@ -668,9 +727,13 @@ impl World {
                         arm0_rand,
                     ))
                 }
-                (945, Some(ticks::WATER_COLUMN_TICK)) => {
-                    Some(ticks::water_column_tick(&mut ctx, &mut victim, None, 0))
-                }
+                (945, Some(ticks::WATER_COLUMN_TICK)) => Some(ticks::water_column_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                    0,
+                )),
                 // PROT 0945's other choreography: the band's widest stat
                 // write, on the caster.
                 (945, Some(ticks::ALL_STATS_SURGE_TICK)) => {
@@ -780,9 +843,12 @@ impl World {
                 (951, Some(ticks::CHAOS_FLARE_TICK)) => {
                     Some(ticks::chaos_flare_tick(&mut ctx, &mut victim, None))
                 }
-                (951, Some(ticks::SCYTHE_WIND_TICK)) => {
-                    Some(ticks::scythe_wind_tick(&mut ctx, &mut victim, None))
-                }
+                (951, Some(ticks::SCYTHE_WIND_TICK)) => Some(ticks::scythe_wind_tick(
+                    &mut ctx,
+                    &mut caster,
+                    &mut victim,
+                    None,
+                )),
                 (952, Some(ticks::BLOODY_HORNS_TICK)) => Some(ticks::bloody_horns_tick(
                     &mut ctx,
                     &mut caster,
@@ -845,6 +911,11 @@ impl World {
                             rolls.push(self.next_rand());
                         }
                     }
+                    // A capture past arm 0 names the roll its arm accepted.
+                    let (rolls, last_roll) = match self.battle.element_roll_seed.take() {
+                        Some(roll) if ctx.phase == 0 => (vec![u32::from(roll)], u8::MAX),
+                        _ => (rolls, last_roll),
+                    };
                     let mut cursor = rolls.into_iter();
                     let (step, outcome) =
                         ticks::element_change_tick(&mut ctx, &mut seats, last_roll, || {
@@ -1571,6 +1642,21 @@ impl World {
             let latched = self.casting.module_cam.victim_slot.unwrap_or(victim_slot);
             self.zenoir_shatter(latched);
         }
+        // PROT 0964's strike `0xFF` arm flushes the pool (`0x801F8854`) and
+        // shows the caster again (`sb zero,0x21c(s7)` at `0x801F88B4`).
+        if entry == 964
+            && phase_entry == legaia_engine_cast::cast_module_ticks::CHOREOGRAPHY_DONE_PHASE
+            && (0xB0..=0xB2).contains(&spell_id)
+        {
+            self.apply_capture_seat_writes(
+                caster_slot,
+                legaia_engine_cast::cast_module_camera::CaptureSeatWrite {
+                    render_flag: Some(0),
+                    ..Default::default()
+                },
+            );
+            self.casting.flush_module_part_pool();
+        }
         // A capture arm's streak-ribbon calls are per pass: this tick's, or
         // none.
         self.battle.cast_ribbons = capture_arm
@@ -1582,6 +1668,36 @@ impl World {
         // A capture director's seat stores (PROT 0959's stand-ins, heights
         // and hides), after the fold-back for the same reason.
         if let Some(arm) = capture_arm {
+            if arm.element_stream
+                && let Some(readef) = self.tables.readef_dat.clone()
+            {
+                let roll = self.battle.monster_ai_state.counter().clamp(0, 2) as u8;
+                crate::battle_sideband_textures::write_readef_group_textures(
+                    &readef,
+                    legaia_actor_formats::summon_readef::element_strike_group(roll),
+                    &mut self.battle.vram_loads,
+                );
+            }
+            if arm.flushes_pool {
+                self.casting.flush_module_part_pool();
+            }
+            if arm.hides_creature {
+                self.despawn_summon_actor();
+            }
+            if arm.seats_creature
+                && let Some(c) = self.actors.get(usize::from(caster_slot))
+            {
+                let m = &c.move_state;
+                let at = [m.world_x, m.world_y, m.world_z];
+                self.casting.module_cam.creature =
+                    Some(legaia_engine_cast::cast_module_camera::ModuleSeat {
+                        x: at[0],
+                        y: at[1],
+                        z: at[2],
+                        facing: c.battle.facing_angle & 0xFFF,
+                    });
+                self.casting.pending_summon_spawn = Some((spell_id, at));
+            }
             if !arm.others_write.is_empty() && !capture_held {
                 let monsters = self.party.party_count..self.actors.len() as u8;
                 for slot in 0..self.party.party_count {
@@ -1773,6 +1889,27 @@ impl World {
                     seat_slot,
                 );
             }
+            if entry == legaia_engine_cast::cast_module_camera::SLIPPERY_ENTRY {
+                self.apply_slippery_writes(phase_in, ctx.phase != phase_in, seat_slot);
+            }
+            if entry == 931 && phase_in >= 4 {
+                // The tail every pass runs (`0x801F89A0..0x801F89F0`): arm 4 saved
+                // channels 6 and 22 of the creature's model table, and from clip
+                // 4 on channel 6 draws object 22.
+                let clip = self
+                    .actors
+                    .get(usize::from(seat_slot))
+                    .map_or(0, |a| a.battle.current_anim);
+                self.casting.creature_channel_object = (clip >= 4).then_some((6, 22));
+            }
+            if entry == 931 {
+                self.apply_jedo_writes(
+                    phase_in,
+                    ctx.phase != phase_in,
+                    ctx.monster_count,
+                    seat_slot,
+                );
+            }
             if entry == 932 {
                 self.apply_meta_writes(
                     phase_in,
@@ -1926,6 +2063,90 @@ impl World {
 }
 
 impl World {
+    /// One of PROT 0939's four hits, `hit` counting from `1`
+    /// (`0x801F70B0..0x801F7400`): skipped on a dead or Stoned victim (the count
+    /// still moved), else `FUN_801DD4B0(0x60)` cut to a third and clamped, the
+    /// hit's reaction clip with `+0x1DC = 1`, its Rot roll behind the record's
+    /// immunity bits, and the victim turned on the caster. A dead victim takes
+    /// the knockdown and ends the count.
+    fn spore_gas_hit(&mut self, hit: u8, caster_slot: u8, victim_slot: u8) {
+        use legaia_engine_cast::cast_module_ticks as ticks;
+        const IMMUNE: u32 = 0x1100_0000;
+        let v = usize::from(victim_slot);
+        let Some(a) = self.actors.get(v) else {
+            return;
+        };
+        if a.battle.hp == 0 || self.battle.actor_is_petrified(victim_slot) {
+            return;
+        }
+        let Some(roll) =
+            self.capture_module_roll_site(&ticks::SPORE_GAS_SHAPE, 0, caster_slot, victim_slot)
+        else {
+            return;
+        };
+        let roll = roll.max(0) / 3;
+        // The HP and bar writes of the hit arm; this body picks its own clip.
+        let staged = self.actors[v].battle.queued_anim;
+        self.apply_effect_child_hit(v, roll);
+        self.actors[v].battle.queued_anim = staged;
+        self.battle
+            .hit_fx
+            .push(legaia_engine_battle::battle_events::BattleHitFx {
+                target_slot: victim_slot,
+                amount: roll.clamp(0, i32::from(u16::MAX)) as u16,
+                is_heal: false,
+                is_crit: false,
+            });
+        let party = victim_slot < self.party.party_count;
+        let immune = party
+            && self
+                .party
+                .character_ability_bits
+                .get(v)
+                .is_some_and(|&b| b & IMMUNE != 0);
+        if hit < 4
+            && !immune
+            && let Some(limb) = ticks::spore_gas_rot(hit, self.next_rand())
+        {
+            self.battle.status_effects.apply(
+                victim_slot,
+                legaia_engine_battle_vm::status_effects::StatusKind::Rot,
+            );
+            self.battle.status_effects.set_rot_limb(victim_slot, limb);
+        }
+        let dead = self.actors[v].battle.hp == 0;
+        if dead {
+            self.casting.spore_gas_beat.hits = 4;
+        }
+        let clip = self.battle_reaction_map(v).map(|m| {
+            m[if dead {
+                2
+            } else {
+                ticks::spore_gas_reaction(hit)
+            }]
+        });
+        if let Some(clip) = clip {
+            self.commit_battle_reaction_entry(v, clip);
+        }
+        self.turn_victim_to_caster(victim_slot, caster_slot);
+    }
+
+    /// [`Self::fold_pending_cast`] for a chain arm that stores a rate on each
+    /// seat it strikes, beside the reaction ([`ticks::ChainArm::hit_rate`]). The
+    /// clip commit that follows decays anything off normal to `4`.
+    fn fold_pending_cast_at_rate(&mut self, rate: Option<u8>) {
+        let struck: Vec<u8> = match (&self.casting.pending_cast, rate) {
+            (Some(pc), Some(_)) => pc.targets.clone(),
+            _ => Vec::new(),
+        };
+        self.fold_pending_cast();
+        for s in struck {
+            if let (Some(a), Some(rate)) = (self.actors.get_mut(usize::from(s)), rate) {
+                a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(rate);
+            }
+        }
+    }
+
     /// PROT 0925's outcome arm (arm 8, `FUN_801F6A00`). With the no-escape
     /// byte `ctx[+0x287]` clear (`0x801F7764`) the arm stages the party's
     /// flee - the same staging, camera cut and HP floor the run band's

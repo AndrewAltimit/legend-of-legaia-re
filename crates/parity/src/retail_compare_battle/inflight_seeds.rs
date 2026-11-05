@@ -71,11 +71,13 @@ impl RetailBattle {
                     slot: legaia_engine_capture::bar_seeds::EMPTY_SEAT_SLOT_BASE + r as u8,
                     hp: 0,
                     mp: 0,
+                    hp_max: None,
                     ground: Some(ground),
                     facing: None,
                     defeat_lanes: None,
                     status: 0,
                     init_key: None,
+                    heal_latch: false,
                 })
             })
             .collect()
@@ -537,6 +539,22 @@ impl RetailBattle {
         // The cast writes the caster's (its own `0x28` recomputes it from
         // the target bearing) and may turn its targets as it lands, so
         // those stay the replay's.
+        // A monster's cast on itself: the cast begin skips the facing store for
+        // a self target (`beq v0,t2` at `0x801E4350`), so the caster's heading
+        // is the one its last turn left, and a module frames from it
+        // (`battle_nilboa_neo_grude_power_up_mid_cast`: heading `0`, Power Up's
+        // yaw `0x800 - facing`).
+        if matches!(self.seed_plan(), SeedPlan::Action { .. })
+            && self.active_actor >= 3
+            && self.queued_category == 2
+            && self.target_code == self.active_actor
+            && let Some(a) = spent.get_mut(usize::from(engine_seat(
+                self.active_actor,
+                self.party_count,
+            )))
+        {
+            *a = true;
+        }
         if self.seed_plan() == SeedPlan::Cast {
             let pc = usize::from(self.party_count);
             let caster = usize::from(engine_seat(self.active_actor, self.party_count));
@@ -564,7 +582,11 @@ impl RetailBattle {
                     .get(s)
                     .and_then(Option::as_ref)
                     .is_some_and(|c| c.hp == 0);
-            if ground[s].is_none() || !(end || spent[s] || downed) {
+            // Ahead of the seed pass nothing writes a heading before the
+            // frame, and the replay's rounds are not the capture's: the
+            // member whose turn the framing shows faces where retail's does.
+            let settled = self.prior_framing.is_some();
+            if ground[s].is_none() || !(end || spent[s] || downed || settled) {
                 continue;
             }
             let pool = if s < pc { s } else { 3 + (s - pc) };

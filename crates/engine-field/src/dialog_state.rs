@@ -10,6 +10,8 @@ pub struct DialogState {
     /// renderer reads `text_id` + `inline`; the world-coords + depth feed
     /// the box placement.
     pub current: Option<DialogRequest>,
+    /// The staged mode switch `4C 53` / `4C 54` step (`FUN_801D65D8`).
+    pub mode_switch: legaia_engine_vm::field::dispatch_leaves::FieldModeSwitch,
     /// Active 3-actor talk session (field-VM op `0x43` sub-2; retail talk
     /// controller from `FUN_801D2D38`). Refreshed on every sub-2
     /// instruction; the paired system flag `0xD` is the retail talk-active
@@ -78,6 +80,7 @@ impl DialogState {
     pub fn new() -> Self {
         Self {
             current: None,
+            mode_switch: Default::default(),
             three_actor_talk: None,
             talk_switch_requested: false,
             last_field_interact: None,

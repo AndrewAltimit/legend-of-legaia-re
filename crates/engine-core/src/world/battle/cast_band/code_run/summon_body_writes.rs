@@ -243,8 +243,9 @@ impl World {
             } else {
                 legaia_engine_cast::seru_magic_ticks::summon_pre_hit(&mut v, u32::from(dmg));
             }
-            // PROT 0928's parks the flinch at rate 0 (`0x801F81C8`), so its cues
-            // wait with it; arm 0x13 sets the row going again.
+            // PROT 0928's parks the flinch at rate 0 (`0x801F81C8`); arm 0xF's
+            // pass runs its cue cursor off the track and arm 0x13 sets the row
+            // going again (`apply_palma_writes`).
             if entry == 928 {
                 v.anim_rate = 0;
             }
@@ -684,16 +685,17 @@ impl World {
     ///   word is under `0x1C1` it hides every seat (`0x801F81CC..0x801F81E4`,
     ///   after the pre-hit), and its pass lights each unmarked seat, the
     ///   colour word `0x3C0` under the soft-red state `7`, standing at
-    ///   `+0x38 = |+0x34| / 4 - 0x400` (`0x801F82CC..0x801F8370`);
+    ///   `+0x38 = |+0x34| / 4 - 0x400`, with the cue cursor `+0x1F6` run off
+    ///   the end of its eight-slot track, so the flinch the arm parked plays
+    ///   out silent (`0x801F82CC..0x801F8370`);
     /// - arm `0x10` keeps that stand every pass (`0x801F8418..0x801F8484`);
     /// - arm `0x11`'s pass hides the living row (`0x801F8694..0x801F86DC`);
     /// - the hit arm `0x13`'s pass puts each living seat's parked trio and
     ///   facing back, turns it from the creature (`FUN_80019B28` + `0x800`)
     ///   and shows it lit `0x3C0` (`0x801F892C..0x801F8B40`).
     ///
-    /// Not carried: the render node's colour word `+0x74 = 0x00F00000`, the
-    /// `+0x1F6` cue cursor arm `0xF` stores and the node `+0x26` / `+0x68`
-    /// halfwords arms `0xE` / `0x10` zero and set.
+    /// Not carried: the render node's colour word `+0x74 = 0x00F00000` and
+    /// the node `+0x26` / `+0x68` halfwords arms `0xE` / `0x10` zero and set.
     pub(in crate::world::battle::cast_band) fn apply_palma_writes(
         &mut self,
         phase_in: u8,
@@ -795,6 +797,8 @@ impl World {
                         a.move_state.world_z = stand(a.move_state.world_x);
                         a.battle.render_color = LIT;
                         a.battle.render_flag = STATE_RED_SOFT;
+                        a.battle_anim_cue_cursor =
+                            legaia_engine_battle::anim_cue::ANIM_CUE_TRACK_LEN;
                     }
                 }
             }
@@ -925,7 +929,7 @@ impl World {
         }
     }
 
-    fn living_monster_slots(&self) -> Vec<usize> {
+    pub fn living_monster_slots(&self) -> Vec<usize> {
         let pc = usize::from(self.party.party_count);
         (pc..self.actors.len().min(pc + 5))
             .filter(|&s| {
@@ -947,5 +951,37 @@ impl World {
                 == Some(legaia_engine_cast::cast_module_camera::ALURU_ENTRY))
         .then_some(self.casting.module_cam.band_spread)
         .flatten()
+    }
+}
+
+#[cfg(test)]
+mod palma_tests {
+    use super::*;
+
+    /// PROT 0928 arm `0xF`'s pass runs each unmarked seat's cue cursor off its
+    /// track (`sb a1,0x1F6(v0)`, `a1 = 8`, `0x801F82D8` / `0x801F8360`), so the
+    /// flinch it parked plays out silent; a marked seat keeps its cursor.
+    #[test]
+    fn arm_f_pass_silences_the_parked_flinch() {
+        let mut w = World::new();
+        w.party.party_count = 1;
+        for (slot, facing) in [(1, 0), (2, 1)] {
+            w.actors[slot].active = true;
+            w.actors[slot].battle_monster_id = Some(1);
+            w.actors[slot].battle.hp = 10;
+            w.actors[slot].battle.facing_angle = facing;
+        }
+        w.casting.module_cam.countdown.0 = 0x1000;
+        w.apply_palma_writes(0xF, false);
+        assert_eq!(
+            w.actors[1].battle_anim_cue_cursor, 0,
+            "only the pass stores it"
+        );
+        w.apply_palma_writes(0xF, true);
+        assert_eq!(
+            w.actors[1].battle_anim_cue_cursor,
+            legaia_engine_battle::anim_cue::ANIM_CUE_TRACK_LEN
+        );
+        assert_eq!(w.actors[2].battle_anim_cue_cursor, 0);
     }
 }

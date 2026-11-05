@@ -152,7 +152,9 @@ pub fn art_spirit_cost(rows_visited: usize, command_count: u8, halved: bool) -> 
 /// arts the queue actually runs, in performed order; an art performed twice
 /// is charged twice, at the same ordinal both times.
 ///
-/// PORT: FUN_801E295C (state `0x50` cleanup: `+0x224` -> Spirit)
+/// REPLACED-BY: the action SM's Done band spends the builder's accumulator
+/// `+0x224` at cleanup (`0x801E5D74`), per art as the walk adds it; this sum
+/// stays as the formula the tests read.
 pub fn arts_turn_spirit_cost(
     catalog: &[(ActionConstant, u8)],
     performed: &[ActionConstant],

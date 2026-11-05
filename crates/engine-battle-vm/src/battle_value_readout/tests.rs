@@ -331,3 +331,27 @@ fn prim_size_matches_a_ten_word_quad() {
     // The tag's length field counts the words after it.
     assert_eq!(OT_TAG >> 24, 9);
 }
+
+/// A row's digits run under the label to the record's `+0x3D`, and the label
+/// goes up once, over the last row (`FUN_801E805C`, `0x801E8208..`).
+#[test]
+fn the_value_window_seats_its_rows_on_the_records() {
+    let c = multi_row_cluster(&[2574], 0);
+    assert_eq!(c.labels.len(), 1);
+    assert_eq!((c.labels[0].x, c.labels[0].y), (254, 154));
+    assert_eq!(c.cells.len(), 4);
+    assert_eq!(
+        c.cells.last().map(|v| (v.x, v.y, v.w)),
+        Some((290, 170, 16))
+    );
+    let two = multi_row_cluster(&[12, 34], 0);
+    assert_eq!(two.labels.len(), 1);
+    assert_eq!(two.cells[0].x, 168 + 0x2E - 16);
+    assert_eq!(two.cells[2].x, 244 + 0x2E - 16);
+    // From five digits on the cells narrow to twelve, on `+0x32`.
+    let wide = multi_row_cluster(&[12345], 0);
+    assert_eq!(
+        wide.cells.last().map(|v| (v.x, v.w)),
+        Some((244 + 0x32, 12))
+    );
+}

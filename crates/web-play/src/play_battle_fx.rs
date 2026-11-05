@@ -685,11 +685,16 @@ impl LegaiaRuntime {
                     .collect::<Vec<i32>>()
             })
             .unwrap_or_default();
+        // The creature's clip morphs blend over this source, as a monster's do
+        // (`play_battle_actor_morph`).
+        let morph_src = std::sync::Arc::new((tmd, mesh.tmd_bytes().to_vec()));
 
         let Some(br) = self.battle_render.as_mut() else {
             return;
         };
-        br.push_summon_actor(vram, tex_slot, slot, vmesh, object_ids, rest_pose);
+        br.push_summon_actor(
+            vram, tex_slot, slot, vmesh, object_ids, rest_pose, morph_src,
+        );
         self.battle_render_generation = self.battle_render_generation.wrapping_add(1);
         if let Some(br) = self.battle_render.as_mut() {
             br.generation = self.battle_render_generation;

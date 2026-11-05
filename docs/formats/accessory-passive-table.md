@@ -244,7 +244,7 @@ Talismans `0x72..=0x76` grant the summon spells `0x9A/0x9B/0x9C/0x9D/0x99`
 `0x09/0x11/0x19` grant `0x9E/0x9F/0xA0`. The spell-slot list is maintained at
 `char +0x13D` via `FUN_800432BC` / `FUN_80042DBC`. So a Talisman is "guard
 passive by index + summon by id" - the curated `summon_seru` class is this
-arm, not a passive index.
+arm, not a passive index. Port: `legaia_save::CharacterRecord::sync_equipment_summons`.
 
 ## Provenance + parser
 

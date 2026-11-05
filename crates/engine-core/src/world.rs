@@ -93,7 +93,7 @@ mod types;
 mod world_map_state;
 mod world_toggles;
 
-pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect};
+pub use ambient_fx_state::{AmbientFxState, FrameGrab, SeededVramRect, VenueAmbientRestore};
 pub use audio_state::{
     ARENA_SIDE_BAND_REQUEST, AudioState, BGM_PARK_SENTINEL, BGM_SUB_OP_ENGINE_FADE,
     BGM_SUB_OP_ENGINE_FIELD_CLOSE, BGM_SUB_OP_ENGINE_LATCH, BGM_SUB_OP_ENGINE_STOP,

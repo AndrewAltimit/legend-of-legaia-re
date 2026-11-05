@@ -176,6 +176,12 @@ pub mod sprite_cell_ids {
     pub const PAGE_PREV: u16 = 0x230;
     /// The list's next-page triangle (icon `0x28`, 8x8).
     pub const PAGE_NEXT: u16 = 0x231;
+    /// The Ra-Seru tag beside a Seru name (icon `0x45`, 12x12).
+    pub const SERU_TAG: u16 = 0x232;
+    /// A list's more-rows-above arrow (icon `0x67`, 8x8).
+    pub const LIST_UP: u16 = 0x233;
+    /// A list's more-rows-below arrow (icon `0x68`, 8x8).
+    pub const LIST_DOWN: u16 = 0x234;
     /// Base of the 12x12 command arrows the arrow primitive `FUN_8003C310`
     /// blits (menu-glyph page, `uv = (0xD0 + 12 * dir, 0xD0)`, `dir` `0` up,
     /// `1` down, `2` right, `3` left), one block of four per ink-staging id.

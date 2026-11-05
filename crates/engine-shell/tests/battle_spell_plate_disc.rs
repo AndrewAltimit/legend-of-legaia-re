@@ -153,7 +153,7 @@ fn the_battle_magic_window_draws_each_spells_element_plate() {
     );
 
     let text = legaia_engine_screens::with_battle_spell_frame(&model, |f| {
-        legaia_engine_ui::battle_item_ui::battle_spell_window_text(&font, f, (0, 0), 1)
+        legaia_engine_ui::battle_item_ui::battle_spell_window_text(&font, f, true, (0, 0), 1)
     });
     let pen = legaia_engine_ui::battle_item_ui::SPELL_ICON_PEN_X;
     let plate = text

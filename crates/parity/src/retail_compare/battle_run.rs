@@ -134,6 +134,13 @@ pub(super) fn run_battle(
             // An aged action state the engine left younger than retail's:
             // the same stream again, sampled on that state's last tick.
             if let Ok(e) = &run
+                && e.age_short.is_some()
+                && battle.strike_stream_steerable()
+            {
+                first.get_or_insert(run);
+                continue;
+            }
+            if let Ok(e) = &run
                 && let Some(accum) = e.age_short
             {
                 let mut aged = battle.clone();
@@ -600,6 +607,9 @@ pub(super) fn battle_image(
     if let Some(w) = battle.displayed_backdrop_cue() {
         env.push(("LEGAIA_BATTLE_BACKDROP_CUE", w.to_string()));
     }
+    if let Some(b) = battle.displayed_ambient_base() {
+        env.push(("LEGAIA_BATTLE_AMBIENT_BASE", b.to_string()));
+    }
     // The cast's live parts where retail's passes had put them: a part
     // rolled off `rand()` or aged by the frame-skip history stands where no
     // replay reproduces.
@@ -685,6 +695,10 @@ pub(super) fn battle_image(
         let back = i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES);
         let yaw = (i32::from(retail.camera.yaw) + ORBIT_YAW_PER_PASS * back).rem_euclid(4096);
         env.push(("LEGAIA_BATTLE_ORBIT_YAW", yaw.to_string()));
+    }
+    // The effect palette an earlier action's cue group left swapped in.
+    if let Some(x) = retail.cue_clut_source {
+        env.push(("LEGAIA_SEAT_CUE_CLUT", x.to_string()));
     }
     // A round prompt caught with its far framing still walking: the
     // engine's own case-9 arm, stood as far along as retail's displayed
@@ -814,6 +828,11 @@ pub(super) fn battle_image(
     }
     if battle.ai_counter != 0 {
         env.push(("LEGAIA_SEAT_AI_COUNTER", battle.ai_counter.to_string()));
+    }
+    // Element Change's arm 0 rolled its element into that counter: a capture
+    // past it names the roll the replay's own arm must land on.
+    if battle.queued_action == 0xAF && battle.action_state == 0x70 && battle.module_phase > 0 {
+        env.push(("LEGAIA_SEAT_ELEMENT_ROLL", battle.ai_counter.to_string()));
     }
     if battle.move_label_unseen() {
         env.push(("LEGAIA_SEAT_MOVE_LABEL_UNSEEN", "1".to_string()));
@@ -955,7 +974,11 @@ pub(super) fn battle_image(
                     battle.drive_display_lag().to_string(),
                 ));
                 env.push(("LEGAIA_CAPTURE_RETAKE_SHOT", "1".to_string()));
-                if let Some(p) = battle.retake_turning_pose() {
+                if let Some(p) = battle.retake_turning_pose().or_else(|| {
+                    battle.retake_stale_walk_pose(crate::retail_compare_battle::displayed_walk_pin(
+                        &entry.label,
+                    ))
+                }) {
                     env.push((
                         "LEGAIA_CAPTURE_RETAKE_POSE",
                         format!(

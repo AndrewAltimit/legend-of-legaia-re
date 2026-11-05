@@ -153,9 +153,10 @@ fn the_retail_accessor_family_runs_over_a_real_bag() {
         assert_eq!(left, before - 1, "the occupied arm decrements in place");
     }
 
-    // normalize (FUN_800423E0): merge duplicate stacks then squeeze holes.
-    // The law asserted is conservation - the per-id totals survive (capped),
-    // holes disappear, and occupancy packs to the front.
+    // normalize (FUN_800423E0): merge duplicate stacks then squeeze holes. The
+    // law asserted is conservation - the per-id totals survive (capped). One call
+    // need not pack the bag: its two cursors can pass a hole by, as the routine's
+    // own run shows (`crates/retail-exec/tests/inventory.rs`).
     let mut totals_before = std::collections::BTreeMap::<u8, u32>::new();
     for &(id, count) in inv.slots() {
         if id != 0 {
@@ -163,11 +164,6 @@ fn the_retail_accessor_family_runs_over_a_real_bag() {
         }
     }
     inv.normalize();
-    let occupied = inv.slots().iter().take_while(|(id, _)| *id != 0).count();
-    assert!(
-        inv.slots()[occupied..].iter().all(|&(id, _)| id == 0),
-        "normalize must pack every live id to the front"
-    );
     let mut totals_after = std::collections::BTreeMap::<u8, u32>::new();
     for &(id, count) in inv.slots() {
         if id != 0 {

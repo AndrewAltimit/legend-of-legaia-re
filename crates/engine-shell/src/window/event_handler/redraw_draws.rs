@@ -67,6 +67,10 @@ pub(super) struct DrawLists<'m> {
     pub color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
     /// Per-draw NCLIP words by colour draw index.
     pub color_nclip_marks: Vec<(usize, u32)>,
+    /// `DRAW_ORDER_*` words by textured draw index.
+    pub order_marks: Vec<(usize, u8)>,
+    /// `DRAW_ORDER_*` words by colour draw index.
+    pub color_order_marks: Vec<(usize, u8)>,
 }
 
 /// The per-draw cues every mode's pass shares: the player's op-`4C 81` tint
@@ -142,6 +146,8 @@ impl<'m> DrawCtx<'_, 'm> {
             nclip_marks: Vec::new(),
             color_clip_marks: Vec::new(),
             color_nclip_marks: Vec::new(),
+            order_marks: Vec::new(),
+            color_order_marks: Vec::new(),
         };
         // Object-effect clips (a raised `+0x42`, field-VM `4C C2`): the
         // draw indices that carry one, staged on the renderer below.
@@ -163,10 +169,16 @@ impl<'m> DrawCtx<'_, 'm> {
         };
         // Untextured (F*/G*) field props, drawn on the colour
         // pipeline alongside the textured `draws`.
-        if (app.boot_ui.is_active() && !game_over_hold) || app.menu_runtime.covers_field() {
+        if (app.boot_ui.is_active() && !game_over_hold)
+            || app.menu_runtime.covers_field()
+            || legaia_engine_screens::field_frame::minigame_screen_covers_field(
+                &app.session.host.world,
+            )
+        {
             // A shop is a menu-overlay session: the field overlay is
             // swapped out and the screen behind the windows is black.
-            // Boot UI is fullscreen - suppress 3D draws.
+            // Boot UI is fullscreen - suppress 3D draws. So is the contest
+            // hub's first visit: nothing is loaded behind its screens.
         } else if let Some(g) = store
             .baka_gpu
             .as_ref()
@@ -228,6 +240,23 @@ impl<'m> DrawCtx<'_, 'm> {
                     mvp: cam,
                     cue: None,
                 });
+            }
+            // The step-marker tiles: the wall panels and stage screens.
+            for m in &g.markers {
+                if let Some(mesh) = m.textured_gpu.as_ref() {
+                    draws.push(SceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+                if let Some(mesh) = m.untextured_gpu.as_ref() {
+                    color_draws.push(ColorSceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
             }
             // The floor's bodies, posed in raw world coordinates by the
             // engine surface (`refresh_dance_cast_gpu`).

@@ -79,9 +79,11 @@ impl World {
         // Same validator-backed target rows as the command menu.
         let (party, monsters) = self.battle_target_rows();
 
+        // The window kernel's cursor auto-repeat, on the D-pad alone in battle.
+        let repeat = self.input.take_menu_repeat();
         let ev = BattleSpellInput {
-            up: self.input.just_pressed(PadButton::Up),
-            down: self.input.just_pressed(PadButton::Down),
+            up: self.input.just_pressed(PadButton::Up) || repeat & PadButton::Up.mask() != 0,
+            down: self.input.just_pressed(PadButton::Down) || repeat & PadButton::Down.mask() != 0,
             left: self.input.just_pressed(PadButton::Left),
             right: self.input.just_pressed(PadButton::Right),
             cross: self.input.just_pressed(PadButton::Cross),
@@ -141,15 +143,19 @@ impl World {
             InventoryContext, InventoryUseSession, TargetRow,
         };
         let names = self.party.roster_names();
-        let mut items: Vec<u8> = self
+        // One entry per stack, each carrying its count: the window's rows
+        // print the bag's count (the list builder `FUN_80030628`).
+        let (mut items, mut counts): (Vec<u8>, Vec<u8>) = self
             .party
             .inventory
             .iter()
-            .filter_map(|(id, qty)| (*qty > 0).then_some(*id))
-            .collect();
+            .filter(|(_, qty)| **qty > 0)
+            .map(|(id, qty)| (*id, *qty))
+            .unzip();
         // An expansion pack's battle consumables, under this fight's
         // aliases (none without a pack).
         items.extend(self.pack_battle_item_ids());
+        counts.resize(items.len(), 1);
         let pc = self.party.party_count.clamp(1, 3) as usize;
         let mut targets: Vec<TargetRow> = (0..pc)
             .filter_map(|i| {
@@ -204,6 +210,7 @@ impl World {
             targets,
             InventoryContext::Battle,
         )
+        .with_bag_counts(counts)
     }
 
     /// Drive the open battle inventory submenu one frame from [`World::input`].
@@ -228,11 +235,14 @@ impl World {
         // ring uses), so during target select Left/Right drive the strip
         // cursor alongside Up/Down.
         let target_select = matches!(menu.state, InventoryUseState::TargetSelect { .. });
+        let repeat = self.input.take_menu_repeat();
         let ev = if self.input.just_pressed(PadButton::Up)
+            || repeat & PadButton::Up.mask() != 0
             || (target_select && self.input.just_pressed(PadButton::Left))
         {
             Some(InventoryUseInput::Up)
         } else if self.input.just_pressed(PadButton::Down)
+            || repeat & PadButton::Down.mask() != 0
             || (target_select && self.input.just_pressed(PadButton::Right))
         {
             Some(InventoryUseInput::Down)
@@ -357,11 +367,16 @@ impl World {
     ///
     /// REF: FUN_800402F4 (the assigning seed; kernel in
     /// `legaia_engine_battle_vm::battle_hp_bar::assign_pending`)
-    pub(in crate::world) fn apply_battle_item(
+    pub fn apply_battle_item(
         &mut self,
         item_id: u8,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
+        // An expansion pack consumable runs its retail item's arm.
+        let retail_id = self.pack_alias_as_item(item_id).unwrap_or(item_id);
+        if let Some(outcome) = self.battle_applier_arm(retail_id, target_slot) {
+            return outcome;
+        }
         let before = self
             .actors
             .get(target_slot as usize)
@@ -397,7 +412,7 @@ impl World {
     /// damage-coloured number; cures push the status letter. The HP / status
     /// side is already applied by [`Self::use_item`]; this is presentation-only
     /// (drained via [`Self::drain_battle_hit_fx`]).
-    pub(super) fn push_item_use_fx(
+    pub(in crate::world) fn push_item_use_fx(
         &mut self,
         target_slot: u8,
         outcome: legaia_engine_menus::items::ItemOutcome,

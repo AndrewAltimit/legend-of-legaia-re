@@ -65,8 +65,9 @@ pub use tables::{
     learned_art_max_slot,
 };
 pub use tokenize::{
-    BankArt, BankRow, BankTokens, art_ends, bank_rows, bank_view, derive_super_input,
-    hyper_queue_constants, tokenize, tokenize_bank, tokenize_bank_over,
+    ArtRun, BankArt, BankRow, BankTokens, QUEUE_LEN, art_ends, bank_group_starts, bank_rows,
+    bank_view, derive_super_input, hyper_queue_constants, tokenize, tokenize_bank,
+    tokenize_bank_gated, tokenize_bank_over,
 };
 
 #[cfg(test)]

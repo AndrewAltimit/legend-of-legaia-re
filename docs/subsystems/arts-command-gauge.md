@@ -392,6 +392,8 @@ Port: `legaia_engine_battle_vm::battle_formulas::arms_command_equip_slots` / `ar
 
 ## What an art costs in AP
 
+The price is a **gate in the walk**, not a bill after it. A full match whose price the gauge cannot cover ends the walk at that start, so the arrows stay plain swings; a run the learn check turns down leaves its arrows for a later group. Each taken run debits the gauge for the rest of the walk and adds to the byte `actor[+0x224]`; the tail undoes the debit and the action SM's cleanup arm spends the byte. Port: `legaia_art::tokenize_bank_gated`, driven by `World::build_arts_action_queue`.
+
 This is a different AP from the command cost. The command byte `+0x74` is spent from the per-turn input pool; a named *art* is paid from the caster's **Spirit** gauge `actor[+0x170]`, the gauge the Spirit command charges (see [`randomizer.md` § spirit AP](../tooling/randomizer.md)).
 
 **The gauge carries between fights** through the character record's AP cell `+0x10E`:
@@ -511,14 +513,12 @@ Costs come from the equipped set at scene entry ([above](#reading-it)) into `Wor
 | ending entry | auto-end, **or** confirm mask | same |
 | cancel, buffer typed | clears the entry, refunds the pool | same |
 | cancel, buffer empty | leaves to `0x78` / `0x28` | leaves to the command menu |
-| art body | paid from **Spirit** `+0x170` | same, at the commit rather than at the cleanup arm |
+| art body | paid from **Spirit** `+0x170`, in the cleanup arm | same |
 | target | the `0x5A` cursor after the entry (Left / Right walk `+0x1DD` through `FUN_801D8D00`, `0x801D21D4..0x801D2268`) | the target picker after the review press |
 
 `ap_gauge` (`crates/engine-battle/src/ap_gauge.rs`) backs the Spirit-command path and the Spirit side of an art; it is not what an Arts input spends.
 
-**Spirit charge.** `ap_gauge::art_spirit_cost` is the builder's three-immediate multiplier. `arts_turn_spirit_cost` sums it over the arts a turn performs, each at its **visit** ordinal in `battle_arts::spirit_catalog` (the builder's walk order, not the arts grid's display index). `World::charge_art_spirit` debits `actor[+0x170]` when the turn commits, with the halving flag read off the caster's record word 1.
-
-One disclosed departure: retail accrues into `actor[+0x224]` and spends it once in the battle-action cleanup arm rather than at the commit. It is the same turn and the same total, observable only by a mid-action read.
+**Spirit charge.** `ap_gauge::art_spirit_cost` is the builder's three-immediate multiplier, the gate of the walk (`legaia_art::tokenize_bank_gated`), with the halving flag read off the caster's record word 1. `World::charge_art_spirit` leaves the walk's total in the accumulator `actor[+0x224]` at the dispatch, and the Done band pays it out of `actor[+0x170]` in the cleanup arm (`0x801E5D74`), just ahead of the action's own `+8`. So the AP plate holds its figure until the art ends. A pack art (`engine-expansion::arts`) is the port's own and pays at the dispatch.
 
 ## Common misconceptions
 

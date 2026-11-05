@@ -98,6 +98,34 @@ fn throw_out_discard_applies_to_world_inventory() {
 
 /// An equipped slot prints the item's name from the staged item table,
 /// not its raw id; an empty slot stays blank.
+/// The grid prints the stat block `FUN_801CF650` sums: the record's word plus
+/// the worn gear (`menu_status_skills_conc_retail`: ATK 364 over a growth of 150).
+#[test]
+fn status_grid_folds_the_worn_equipment() {
+    use legaia_engine_battle::battle_stats::{EquipmentTable, ItemModifier};
+    let mut w = World::new();
+    w.party.roster = legaia_save::Party::zeroed(1);
+    let member = &mut w.party.roster.members[0];
+    let mut hms = member.hp_mp_sp();
+    hms.hp_max = 100;
+    hms.hp_cur = 100;
+    member.set_hp_mp_sp(hms);
+    let mut equip = member.equipment();
+    equip.slots[2] = 0x30;
+    member.set_equipment(equip);
+    let mut table = EquipmentTable::new();
+    table.set(
+        0x30,
+        ItemModifier {
+            atk: 40,
+            ..Default::default()
+        },
+    );
+    w.set_equipment_table(table);
+    let base = w.party.roster.members[0].live_stats().atk;
+    assert_eq!(status_snapshots(&w)[0].stats[0].0, base + 40);
+}
+
 #[test]
 fn status_equipment_rows_print_item_names() {
     let mut w = fresh_world();

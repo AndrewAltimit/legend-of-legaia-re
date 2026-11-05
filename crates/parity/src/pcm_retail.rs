@@ -70,6 +70,10 @@ pub struct PcmRetailArgs {
     /// key-ons), `PREFIX.flush` (how many voices each flush staged).
     #[arg(long)]
     pub stems: Option<PathBuf>,
+    /// Mix in the state's own cue voices, resumed from its SPU, on the track's
+    /// lag: a state with a looping emitter holds it for the whole recording.
+    #[arg(long, requires = "retail_wav")]
+    pub cue_voices: bool,
     /// mednafen's recording of the same window: score the engine against it.
     #[arg(long)]
     pub retail_wav: Option<PathBuf>,
@@ -508,6 +512,46 @@ pub fn spu_resumed_from_retail(st: &legaia_mednafen::SaveState) -> Result<Spu> {
     Ok(spu)
 }
 
+/// libsnd's per-voice driver records (24 x `0x36`), `+0x10` the note owner.
+const VOICE_RECORDS: usize = 0x1C_DB50;
+const VOICE_STRIDE: usize = 0x36;
+/// The note owner key of the cue slot (`audio_sweep::CUE_OWNER`).
+const CUE_OWNER: u16 = 0x21;
+
+/// The state's cue voices alone, from its first sample on: every other voice
+/// is stood down, while the reverb tank keeps the tails already in it. The
+/// track render starts on an empty tank, so the two tails sum to the state's.
+fn render_cue_voices(st: &legaia_mednafen::SaveState, samples: usize) -> Result<Vec<i16>> {
+    let ram = st.main_ram()?;
+    let mut spu = spu_resumed_from_retail(st)?;
+    for (v, voice) in spu.voices.iter_mut().enumerate() {
+        let at = VOICE_RECORDS + v * VOICE_STRIDE + 0x10;
+        if u16::from_le_bytes([ram[at], ram[at + 1]]) != CUE_OWNER {
+            voice.adsr.level = 0;
+            voice.adsr.phase = Phase::Off;
+        }
+    }
+    let mut pcm = vec![0i16; samples * 2];
+    spu.render_into(&mut pcm);
+    Ok(pcm)
+}
+
+/// `add` into `pcm`, shifted the way [`score_window`] reads a lag: retail's
+/// frame `t` stands on the engine's frame `t + lag`, and a voice resumed from
+/// the state is on retail's clock.
+fn mix_at_lag(pcm: &mut [i16], add: &[i16], lag: i64) {
+    for (t, frame) in add.as_chunks::<2>().0.iter().enumerate() {
+        let Ok(at) = usize::try_from(t as i64 + lag) else {
+            continue;
+        };
+        let Some(out) = pcm.get_mut(at * 2..at * 2 + 2) else {
+            break;
+        };
+        out[0] = out[0].saturating_add(frame[0]);
+        out[1] = out[1].saturating_add(frame[1]);
+    }
+}
+
 pub fn run(args: PcmRetailArgs) -> Result<()> {
     let (pcm, label) = if let Some(state) = &args.resume_state {
         let st = legaia_mednafen::SaveState::from_path(state)?;
@@ -576,7 +620,7 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
                 );
             }
         }
-        let pcm = render_aligned(
+        let mut pcm = render_aligned(
             &track_bytes,
             &pos,
             args.samples,
@@ -585,6 +629,13 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             args.verbose,
             args.stems.as_deref(),
         )?;
+        if args.cue_voices {
+            let retail = read_wav(args.retail_wav.as_deref().context("--retail-wav")?)?;
+            let lag = score_window(&retail, &pcm).lag;
+            let st = legaia_mednafen::SaveState::from_path(&path)?;
+            let cues = render_cue_voices(&st, args.samples)?;
+            mix_at_lag(&mut pcm, &cues, lag);
+        }
         (pcm, args.label.clone())
     };
     if let Some(p) = &args.engine_wav {
@@ -750,6 +801,20 @@ fn read_position(state: &Path, extracted: &Path) -> Result<(RetailSeqPosition, V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_resumed_voice_lands_on_the_tracks_lag() {
+        let mut pcm = vec![0i16; 12];
+        mix_at_lag(&mut pcm, &[1, 2, 3, 4, 5, 6], -1);
+        assert_eq!(
+            &pcm[..6],
+            &[3, 4, 5, 6, 0, 0],
+            "frame 0 falls before sample 0"
+        );
+        let mut pcm = vec![0i16; 6];
+        mix_at_lag(&mut pcm, &[1, 2, 3, 4, 5, 6], 2);
+        assert_eq!(pcm, [0, 0, 0, 0, 1, 2], "the rest runs off the end");
+    }
 
     fn tone(n: usize, gain: f64, shift: usize) -> Vec<i16> {
         (0..n)

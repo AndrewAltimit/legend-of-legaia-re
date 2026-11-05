@@ -72,6 +72,7 @@ mod summon_fade;
 
 use camera_align::*;
 use camera_pool::*;
+pub use capture_drive::displayed_walk_pin;
 use capture_drive::*;
 pub use display_lag::*;
 use effect_children::*;
@@ -297,6 +298,11 @@ pub type CapturedActor = ([i16; 2], [i16; 2], u8, u8);
 /// The action SM's capture band `0x6E..=0x71`.
 pub(crate) const CAPTURE_BAND_STATES: std::ops::RangeInclusive<u8> = 0x6E..=0x71;
 
+/// The Spirit / Item band past the pre-arm that raises `ctx[+0x243]`: `0x3D`'s
+/// stage wait to `0x40`'s post-damage. The backdrop weight runs from `0x3C`
+/// ([`RetailBattle::capture_band_backdrop_cue`]).
+pub(crate) const SPIRIT_STAGE_STATES: std::ops::RangeInclusive<u8> = 0x3D..=0x40;
+
 /// Everything the battle channels read off a retail battle state.
 #[derive(Debug, Clone)]
 pub struct RetailBattle {
@@ -369,6 +375,10 @@ pub struct RetailBattle {
     pub backdrop_slot_1_yaw: u16,
     /// `0x8007BD10[0..party_count]`.
     pub seat_chars: Vec<u8>,
+    /// Each party seat's character record's maximum HP (`0x80084708 +
+    /// (char - 1) * 0x414 + 0x104`), against which a seat's own word `+0x14E`
+    /// shows a probe's raise ([`Self::party_seat_pool_raised`]).
+    pub record_hp_max: Vec<u16>,
     /// Each party seat's committed action category `+0x1DE` (`4` = Spirit).
     /// For the seats a menu capture's member follows, this round's commit.
     pub party_categories: Vec<u8>,
@@ -452,6 +462,9 @@ pub struct RetailBattle {
     pub gimard_countdown: i32,
     /// `ctx[+0xD]` - the acting action's framing style.
     pub cam_style: u8,
+    /// The earlier actor whose framing a capture parked ahead of the seed pass
+    /// still holds ([`camera_align::prior_framing`]).
+    pub prior_framing: Option<legaia_engine_capture::battle_drive::PriorFraming>,
     /// Retail's live camera and the endpoints its tween table
     /// (`ctx[+0x118C]`) steps toward, in the engine's pose space
     /// ([`retail_cam_tween`]): `(live, end)`.
@@ -467,6 +480,13 @@ pub struct RetailBattle {
     pub turn_cursor: u8,
     /// The newest passes' frame steps ([`recent_pass_steps`]), newest first.
     pub recent_steps: [u8; 4],
+    /// One channel of the ambient word `0x8007B7B0`.
+    pub ambient_word: u8,
+    /// `ctx[+0x6D0]`, the depth case 6 frames at, before the projection
+    /// prescale.
+    pub cam_depth: u16,
+    /// Each pool slot's committed category `+0x1DE`.
+    pub seat_category: Vec<Option<u8>>,
     /// [`Self::cam_tween`] with the live pose walked back to the frame the
     /// display shows ([`displayed_cam_live`]).
     pub displayed_cam_live: legaia_engine_camera::projection::BattleCamPose,
@@ -553,6 +573,11 @@ pub struct RetailBattle {
     /// The active seat's committed queue `+0x1DF..+0x1EE` itself - the
     /// tokenized turn the player entered ([`ActionSteer::queue`]).
     pub committed_queue: [u8; 16],
+    /// `ctx[+0x6D2]` / `ctx[+0x6D4]`: the approach terms the next melee hit's
+    /// block roll reads.
+    pub approach_terms: (i16, i16),
+    /// The active seat's working ATK `+0x158`.
+    pub acting_attack: u16,
     /// `ctx[+0x15]` - the strike cursor into that queue.
     pub strike_cursor: u8,
     /// A monster strike gated on its first swing clip has its strike stream

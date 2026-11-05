@@ -182,8 +182,8 @@ impl App {
                 ui.label("Pick a party member or a monster on the left.");
                 ui.label(
                     RichText::new(
-                        "Party members are assembled from their player files (PROT 863..866) with \
-                         the equipment you choose; monsters come from the monster archive (PROT 867).",
+                        "The party can wear any equipment you pick. Every battle animation plays or steps \
+                         frame by frame, and Export saves the model as a .glb.",
                     )
                     .weak(),
                 );
@@ -285,17 +285,29 @@ impl App {
                 let mut changed = false;
                 ui.horizontal_wrapped(|ui| {
                     let before = v.clip;
-                    egui::ComboBox::from_id_salt("clip")
-                        .selected_text(a.clips[v.clip].label.clone())
-                        .show_ui(ui, |ui| {
-                            for (i, c) in a.clips.iter().enumerate() {
-                                ui.selectable_value(
-                                    &mut v.clip,
-                                    i,
-                                    format!("{} ({} frames)", c.label, c.frames.len()),
-                                );
-                            }
-                        });
+                    // An art's label names its whole command string; uncut it
+                    // pushes Play and the frame slider off a small window.
+                    let cap = (ui.max_rect().width() * 0.4).clamp(100.0, 360.0);
+                    // (A truncating combo box fills the width it is given, and
+                    // a wrapping row gives it the whole row.)
+                    let clip = &mut v.clip;
+                    ui.scope(|ui| {
+                        ui.set_max_width(cap);
+                        egui::ComboBox::from_id_salt("clip")
+                            .selected_text(a.clips[*clip].label.clone())
+                            .truncate()
+                            .show_ui(ui, |ui| {
+                                for (i, c) in a.clips.iter().enumerate() {
+                                    ui.selectable_value(
+                                        clip,
+                                        i,
+                                        format!("{} ({} frames)", c.label, c.frames.len()),
+                                    );
+                                }
+                            })
+                            .response
+                            .on_hover_text(a.clips[*clip].label.as_str());
+                    });
                     if v.clip != before {
                         v.frame = 0;
                         v.since = Instant::now();

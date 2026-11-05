@@ -365,14 +365,18 @@ fn separate_coplanar_prims_with(mesh: &mut VramMesh, sweep: bool) -> usize {
     // Greedy colouring in area-descending order: the largest surface takes
     // rank 0 (stays), each overlapping layer takes the smallest rank its
     // already-ranked neighbours don't hold. Rank grows only inside a mutual
-    // overlap clique, so long tile chains stay at rank <= 1.
+    // overlap clique, so long tile chains stay at rank <= 1. Between equal
+    // areas the later prim stays: a prim links at the head of its ordering-table
+    // bucket, so the earlier of two coplanar prims is the one drawn on top
+    // (`koin3`'s stage lamps, overlay ahead of base in the mesh, draw base then
+    // overlay in `minigame_dance_retail_go_in`'s table).
     let mut order: Vec<usize> = edges.keys().copied().collect();
     order.sort_by(|&a, &b| {
         recs[b]
             .area
             .partial_cmp(&recs[a].area)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then(recs[a].tri.cmp(&recs[b].tri))
+            .then(recs[b].tri.cmp(&recs[a].tri))
     });
     let mut rank: FastMap<usize, u32> = FastMap::default();
     for &i in &order {

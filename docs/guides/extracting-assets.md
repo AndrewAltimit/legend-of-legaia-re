@@ -32,12 +32,13 @@ common cases with buttons:
    of the list saves any file of the disc's own file system. After an export,
    *Show folder* on the status line opens the folder it went to.
 5. **Extract** the whole disc: switch to *Extract*, choose an output folder
-   (it proposes one beside the disc image), tick the same skip options the
+   (it proposes one beside the disc image), open *Options* for the same skip options the
    command line offers, and start. The tab shows progress and the log, can be
    cancelled, and offers *Open output folder* when it ends; the folder it writes is
-   exactly what the `legaia-extract` command below produces. Tick *Export
-   all textures as PNG* to also get every texture on the disc as a PNG under
-   `tim_scan/` (the same files as the two-command chain in the next section).
+   exactly what the `legaia-extract --all-textures` command below produces.
+   *Every texture as PNG*, ticked unless you clear it, is what puts the disc's
+   textures in the folder, under `tim_scan/` (the same files as the two-command
+   chain in the next section); left out, a run writes only a few images.
 6. **Characters & monsters**: the party in their battle form with any
    equipment, and every monster by name (`Gimard Lv2`, with its element
    badge), each with its battle animations - for Vahn, Noa and Gala also
@@ -87,7 +88,7 @@ directory - run from the same place each time.
 
 The bulk texture path is a two-command chain: sweep every PROT entry for TIM
 images (raw and inside LZS compression), then convert the hits.
-`legaia-extract --all-textures` (or the Explorer's *Export all textures* box)
+`legaia-extract --all-textures` (or the Explorer's *Every texture as PNG* box)
 runs both as one step and writes the same tree.
 
 ```bash

@@ -204,11 +204,14 @@ pub(super) fn op_4c_ne<H: FieldHost>(
                 next_pc: pc + header_size + 1,
             }
         }
-        // Sub-A: 1-byte. Call overlay-resident `func_0x8003C7EC`,
-        // halt at PC.
+        // Sub-A: `[4C, 0xEA]`. `FUN_8003C7EC`, then the advanced PC
+        // (`0x801E34CC..0x801E34D8`): the op runs once, and the scripts carry on
+        // past it into a wait loop while the mode change takes hold.
         0xA => {
             host.trigger_game_over();
-            StepResult::Halt { final_pc: pc }
+            StepResult::Advance {
+                next_pc: pc + header_size + 1,
+            }
         }
         0xC => {
             host.reroll_encounter_step_counter();

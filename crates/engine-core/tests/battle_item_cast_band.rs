@@ -194,15 +194,17 @@ fn item_use_runs_the_sm_item_band_to_the_cast_states() {
     assert!(w.battle.command.is_none(), "Begin plays the round out");
 
     // The dispatch ARMS the SM, not parks it: the item id staged as the
-    // action parameter, and the simulation fold ahead of the band.
+    // action parameter. The applier runs inside the band, at state `0x3F`'s
+    // timer (`jal 0x800402f4` at `0x801E4134`).
     assert_eq!(
         w.actors[user].battle.params[0], 0x77,
         "the staged action parameter is the item id"
     );
-    assert_eq!(w.actors[0].battle.hp, 100, "Healing Leaf healed the target");
+    assert_eq!(w.actors[0].battle.hp, 40, "the heal waits for state 0x3F");
 
     // Let the band run. SpiritPostDamage alone holds 0x80 frames.
     idle_ticks(&mut w, 0x140, &mut trace);
+    assert!(w.actors[0].battle.hp > 40, "Healing Leaf healed the target");
 
     // The whole Item band executed through the world's own battle host: the
     // seed states and every Spirit-band cast state.

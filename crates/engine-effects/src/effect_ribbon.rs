@@ -802,6 +802,18 @@ pub struct RibbonDraw {
     /// faces retail's winding calls front draw. `false` for a draw that
     /// keeps both sides.
     pub single_sided: bool,
+    /// The colour word sends the quads through handler bank 3's tessellating
+    /// leaf (`0x20000000`), which links them a shade nearer
+    /// ([`legaia_render_kernels::gte::TESSELLATED_LINK_NEARER_SZ`]).
+    pub tessellated: bool,
+    /// The node's `+0x42`. Non-zero sends the draw down the model loop's far
+    /// arm (`bne s7,zero` at `0x8001B454`, `FUN_8002735C`): row `+0x42 - 1`
+    /// of the object-effect table clips it, and the arm's own winding test
+    /// replaces the dispatcher's ([`crate::object_effect::far_arm_mesh`]).
+    pub object_effect_kind: u16,
+    /// The render scale `+0x72` the clip measures with (`1.0 = 0x1000`); the
+    /// mesh already carries it.
+    pub object_effect_scale: f32,
 }
 
 /// A move-VM node's model rotation, radians X / Y / Z: its rotation banks

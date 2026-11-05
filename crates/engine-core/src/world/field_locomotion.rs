@@ -138,6 +138,14 @@ pub struct FieldLocomotion {
     /// directly; this flag forces the same arm on any scene, for tests and
     /// debug drivers.
     pub(crate) forced_slow: bool,
+    /// The scene control byte `*0x801C6EA4 + 0x61`: `1` turns on the terrain
+    /// slow tiles. Written by field-VM op `4C DF` (`0x801E303C`), cleared by the
+    /// scene reset `FUN_8003A024` (`0x8003A0A8`).
+    pub scene_ctrl_61: u8,
+    /// The camera parameter block's mode byte `0x8007B607`, published by the
+    /// host-owned follow camera; `None` with no camera composing (a headless
+    /// run), which takes the common mode `4` arm of the walk's diagonal cut.
+    pub camera_mode_byte: Option<u8>,
     /// Sub-step remainder carried between precise-movement frames, in world
     /// units per axis (|carry| < one collision step). Lets shallow movement
     /// angles accumulate distance across frames instead of rounding to
@@ -369,6 +377,8 @@ impl FieldLocomotion {
             run_button_held: false,
             run_button_mask: crate::world::config::FIELD_RUN_BUTTON_MASK_DEFAULT,
             forced_slow: false,
+            scene_ctrl_61: 0,
+            camera_mode_byte: None,
             precise_move_carry: (0.0, 0.0),
             player_scale_ramps: legaia_engine_motion_vm::ambient_motion::RampScheduler::new(),
             player_8e: 0,

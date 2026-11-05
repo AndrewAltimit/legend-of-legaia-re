@@ -242,7 +242,14 @@ impl World {
                         };
                         let mut seat = None;
                         legaia_engine_system::fade::spawn_fade(&mut seat, &t, r.id);
-                        if let Some(state) = seat {
+                        if let Some(mut state) = seat {
+                            // A fade an arm's exit spawned: its own tick runs
+                            // later in that pass, so it takes the frame's step at
+                            // once. An arm's first pass already runs a frame early
+                            // on the engine's cadence.
+                            if passed {
+                                state.step_vsyncs(self.battle_frame_step().max(1));
+                            }
                             spawned_now.push(s.va);
                             self.casting.module_pres.fades.push(HookFade {
                                 site: s.va,

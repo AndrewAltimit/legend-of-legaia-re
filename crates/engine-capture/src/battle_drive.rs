@@ -177,6 +177,34 @@ pub enum BattleDrive {
 /// on it from the seed to the approach's end, so the gate does not hang on
 /// which picks the replay's stream drew.
 ///
+/// What the end-of-action gate `0x5A` armed its last framing from, on a capture
+/// parked in `0x0A` behind an earlier actor of the round (retail seat
+/// `ctx[+0x13]`, its category `+0x1DE`, target `+0x1DD`, style `ctx[+0xD]` and
+/// frame depth `ctx[+0x6D0]`). The replay's Spirit rounds do not run that
+/// actor last, and a spent monster does not run at all, so the drive stands
+/// the camera on [`World::seat_prior_action_framing`] instead: the framing law
+/// over these inputs and the capture's ground.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PriorFraming {
+    pub seat: u8,
+    pub category: u8,
+    pub target: u8,
+    pub style: u8,
+    pub depth: u16,
+}
+
+impl PriorFraming {
+    /// The actor's engine seat and its target's, on a fight seating `pc`.
+    pub fn engine_seats(&self, pc: u8) -> (u8, u8) {
+        let target = if self.target < 8 {
+            engine_seat(self.target, pc)
+        } else {
+            self.target
+        };
+        (engine_seat(self.seat, pc), target)
+    }
+}
+
 /// `cursor` is that queue's strike cursor `ctx[+0x15]` on an
 /// [`SpanGate::Age`] capture inside the strike loop. With the queue
 /// replayed byte for byte, the age alone matches the first clip of the turn
@@ -186,6 +214,9 @@ pub enum BattleDrive {
 /// gate cannot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ActionSteer {
+    /// The actor whose turn the capture's framing still shows, on a capture
+    /// ahead of the seed pass ([`SpanGate::Landed`]).
+    pub prior: Option<PriorFraming>,
     pub target: Option<u8>,
     pub yaw: Option<u16>,
     /// The track coin `ctx[+0x26D]` the capture holds - a `rand() % 2`
@@ -205,6 +236,12 @@ pub struct ActionSteer {
     /// capture's. A stream that rolled a shorter queue stops its cursor on
     /// the capture's value on a later swing of the same clip.
     pub played: Option<[u8; 16]>,
+    /// The capture's approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]`, which its
+    /// first hit's block roll reads, and the striker's working ATK `+0x158`, a
+    /// Power Charge the replay never cast included: carried beside
+    /// [`Self::played`] for the cast-sequence oracle's strike deal, no gate
+    /// reads them.
+    pub ramps: Option<(i16, i16, u16)>,
     /// Retail pool seat of a victim the capture shows in its defeat fade, and
     /// the fade lane it reads: an [`SpanGate::Age`] phase is met only once
     /// the engine's victim has faded at least as far.
@@ -767,6 +804,12 @@ impl BattleDrive {
                 if let Some(style) = style {
                     s.push_str(&format!(",{style}"));
                 }
+                if let Some(e) = steer.prior {
+                    s.push_str(&format!(
+                        ",e{}/{}/{}/{}/{}",
+                        e.seat, e.category, e.target, e.style, e.depth
+                    ));
+                }
                 if let Some(t) = steer.target {
                     s.push_str(&format!(",t{t}"));
                 }
@@ -824,6 +867,9 @@ impl BattleDrive {
                         s.push_str(&format!("{b:02x}"));
                     }
                 }
+                if let Some((attack, guard, atk)) = steer.ramps {
+                    s.push_str(&format!(",j{attack}/{guard}/{atk}"));
+                }
                 if let Some(q) = steer.played {
                     s.push_str(",b");
                     for b in q {
@@ -862,7 +908,16 @@ impl BattleDrive {
         let mut fields: Vec<&str> = s.split(',').collect();
         while fields.len() > 1 {
             let last = fields[fields.len() - 1].trim();
-            if let Some(t) = last.strip_prefix('t') {
+            if let Some(e) = last.strip_prefix('e') {
+                let mut f = e.split('/');
+                steer.prior = Some(PriorFraming {
+                    seat: f.next()?.parse().ok()?,
+                    category: f.next()?.parse().ok()?,
+                    target: f.next()?.parse().ok()?,
+                    style: f.next()?.parse().ok()?,
+                    depth: f.next()?.parse().ok()?,
+                });
+            } else if let Some(t) = last.strip_prefix('t') {
                 steer.target = Some(t.parse().ok()?);
             } else if let Some(y) = last.strip_prefix('y') {
                 steer.yaw = Some(y.parse().ok()?);
@@ -907,6 +962,13 @@ impl BattleDrive {
                     *b = u8::from_str_radix(q.get(i * 2..i * 2 + 2)?, 16).ok()?;
                 }
                 steer.queue = Some(queue);
+            } else if let Some(j) = last.strip_prefix('j') {
+                let mut f = j.split('/');
+                steer.ramps = Some((
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                ));
             } else if let Some(q) = last.strip_prefix('b') {
                 if q.len() != 32 {
                     return None;
@@ -1080,14 +1142,14 @@ impl BattleDrive {
             let seat = engine_seat(seat, pc);
             if seat >= pc {
                 world.battle.forced_monster_cast = Some((seat, queued));
-                // A party seat keeps its number; the caster's own retail
-                // seat is re-keyed to its engine seat.
+                // A party seat keeps its number; a monster seat, the caster's
+                // own or the patient of its Heal, is re-keyed to its engine seat.
                 world.battle.forced_monster_target = self
                     .steering()
                     .and_then(|s| s.target)
                     .and_then(|t| match t {
                         0..3 => Some(t),
-                        t if engine_seat(t, pc) == seat => Some(seat),
+                        t if t < 8 => Some(engine_seat(t, pc)),
                         _ => None,
                     });
             }
@@ -1095,6 +1157,18 @@ impl BattleDrive {
     }
 
     /// Whether the engine holds the capture's phase.
+    /// What a monster strike's drive holds of the capture's hand.
+    pub fn strike_hand(&self) -> Option<StrikeHand> {
+        match self {
+            Self::Action { seat, steer, .. } => steer.played.map(|queue| StrikeHand {
+                seat: *seat,
+                queue,
+                ramps: steer.ramps,
+            }),
+            _ => None,
+        }
+    }
+
     pub fn reached(&self, world: &legaia_engine_core::world::World) -> bool {
         if world.mode != SceneMode::Battle {
             return false;
@@ -1454,6 +1528,13 @@ impl BattleDrive {
                 && !CAPTURE_BAND.contains(&want)
         });
         if end == SpanGate::Landed {
+            if let Some(e) = steer.prior
+                && ours
+                && state == want
+            {
+                let (seat, target) = e.engine_seats(pc);
+                world.seat_prior_action_framing(seat, e.category, target, e.style, e.depth as i16);
+            }
             let gliding = world.battle.camera.as_ref().is_some_and(|c| c.is_gliding());
             world.battle.prev_action_cleared = !(ours && state == want && state == 0x0A && gliding);
             return;
@@ -1851,6 +1932,16 @@ pub fn entry_sweep_reached(world: &legaia_engine_core::world::World, entry: u8) 
 /// The engine battle ordinal of retail pool slot `seat`: party slots are
 /// shared, but retail's monsters sit at fixed pool slots `3..` whatever the
 /// party size while the engine seats them straight after the party.
+/// The capture's monster strike as its state stood: the retail seat, the queue
+/// `+0x1DF..`, the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` and the working
+/// ATK `+0x158`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StrikeHand {
+    pub seat: u8,
+    pub queue: [u8; 16],
+    pub ramps: Option<(i16, i16, u16)>,
+}
+
 pub fn engine_seat(seat: u8, party_count: u8) -> u8 {
     if seat >= 3 {
         party_count + (seat - 3)

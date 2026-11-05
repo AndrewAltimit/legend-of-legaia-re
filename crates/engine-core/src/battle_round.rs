@@ -119,7 +119,7 @@ impl BattleRound {
     /// `FUN_801D88CC` is two loops over the actor pointer table at
     /// `DAT_801C9370`, and they cover different bands:
     ///
-    /// - **Loop A** (`801d892c..801d89f4`) walks all 7 slots. Per actor it
+    /// - **Loop A** (`801d892c..801d89f4`) walks slots `0..7`. Per actor it
     ///   restores the action gauge `+0x154` through the three arms of
     ///   [`legaia_engine_battle_vm::battle_formulas::round_reset_agility`], then zeroes the 16-byte
     ///   action-parameter stream at `+0x1DF`
@@ -152,8 +152,14 @@ impl BattleRound {
         let party_count = (world.party.party_count as usize).max(1);
         let slots = world.actors.len().min(8);
 
-        // Loop A: every slot - gauge restore + action-stream clear.
+        // Loop A: retail's seven slots - gauge restore + action-stream clear.
+        // The walk stops at `DAT_801C9370 + 0x1C` (`0x801D8928`), so the fifth
+        // monster seat, retail slot 7 (a Divide clone's), keeps its spent gauge
+        // and its stream.
         for slot in 0..slots {
+            if slot >= party_count + 4 {
+                continue;
+            }
             let a = &mut world.actors[slot].battle;
             // `+0x1DE == 4` or the `+0x1F9` charge byte non-zero.
             let spirit_charged = a.action_category == 4 || a.spirit_shield != 0;

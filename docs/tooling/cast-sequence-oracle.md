@@ -80,7 +80,10 @@ Flags worth knowing:
 | `--engine-env K=V` | Extra environment for the engine child |
 | `--sound-tolerance <n>` | Sound channel: ticks a cue still matches at (default `6`) |
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
+| `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
+| `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, position, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`): the retail half of `LEGAIA_DIAG_CAST_PARTS` |
+| `--prim-calls` | Retail: `primcall.csv` (breakpoint core), each prim dispatcher entry with its word, level, caller and first group words, and each cued leaf: whether a part reached the dispatcher at all, and by which leaf |
 | `--learned <level>` | Both sides: the spell sits on the caster's list at this level. Off the list `FUN_801DD864` reads list slot `0x20`, and level `0` wraps into a capped hit ([the summon roll](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)), so a damage measurement wants this |
 | `--monster-hp <hp>` | Both sides: every living monster's HP from the cast begin, so a cast's whole damage shows in the HP columns. HP feeds the defender roll (`hp >> 8`) and a monster's own swing, so keep it modest and it goes in after the monster's turn |
 | `--guard <seats>` | Engine: party seats in the Spirit stance when the cast starts (`LEGAIA_BATTLE_GUARD`), for a capture whose victim guarded (`+0x1DE == 4`): `nivora_duel_pre_megaton_press` needs `--guard 0` for its damage to match |
@@ -101,10 +104,17 @@ colours `+0xA0` / `+0xA4`, the radius and height channels `+0xB4..+0xBA`, the
 position, then the draw kind `+0x56`, scale `+0x72`, `+0x52`, the count
 `+0x9C`, the UV words `+0xA8` / `+0xAC`, tpage `+0xB0`, CLUT `+0xB2`, the
 default-arm mesh's vertex count, the spawn record's address, the flag word
-`+0x10`, the angle trio `+0x24..+0x28` and `+0x7A` - the engine half of a
+`+0x10`, the angle trio `+0x24..+0x28`, `+0x7A`, a mode-3 cycler's H / S / V adds
+`+0x90..+0x94` and its gate `+0x9C` - the engine half of a
 part-by-part comparison. It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
+
+`LEGAIA_DIAG_CAST_VRAM_AT=<tick>` writes the battle VRAM at that tick as
+`engine/vram_<tick>.bin`, to hold against a retail recording's
+`LEGAIA_RAM_AT` state through `sstate_vram.py`. A byte comparison of the side-band pages
+and CLUT rows is how a palette or texture reading is settled before a frame's colours are
+argued over: Iota's cycler rows match the kernel entry for entry.
 
 ## What each side records
 
@@ -177,6 +187,14 @@ tick (pitch, yaw, TR trio), the engine half of the retail side's file, and
 clip loops, its cursor in sixteenths of a keyframe and the live pair: the
 engine half of the retail `body.csv`, which a clip that ends early or late
 is read off.
+
+The child drops the capture's drive and runs no earlier actor, so nothing in it left
+the camera where retail's stood. On cast begin it takes retail's pose from the
+recording's first row of that state (`LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`, `retail_opening_pose`
+in the driver): `cam.csv`'s pitch, yaw and eye with `body.csv`'s focus. This is a
+seat of the harness and moves no game state. Without it `0x28` and `0x29` score
+wherever the child's camera happened to stand; with it their framing tracks retail's to
+a couple of units, and the opening's error is the frame's own.
 
 Both sides also write `creature.csv`, the summon creature's clip, staged byte,
 cursor and stand per row (slot 7's `+0x1D9`, `+0x1DA`, node `+0x68`, `+0x34..+0x38`), so a
@@ -348,6 +366,32 @@ side's own stream. So the channel's number mixes rule differences with deals.
 cue under the seat and clip it landed in, with its offset from the clip's commit,
 on both sides, so a clip both sides played can be read cue for cue.
 
+`--strike-deal` takes the deal out of the score as well. When the capture's gate opens, the engine child stands on the hand retail held:
+
+- the striker's queue `+0x1DF..` off the state. A monster's swings were rolled at its pick, so the
+  drive's gate holds only the bytes up to the cursor;
+- the approach terms `ctx[+0x6D2]` / `ctx[+0x6D4]` off the state. They feed the first hit's block roll,
+  and the replay walked in from elsewhere to a target facing elsewhere: `battle_rugi_barra_strike`
+  holds `393` / `64`, the replay `86` / `116`;
+- the striker's working ATK `+0x158` off the state: `battle_map02_mad_ogre_strike` stands on a Power
+  Charge's `257` where the replay, which never cast it, holds `206`;
+- the seed word `0x80009010` going into each hit, off the recording's `rand` column. A hit's spark burst
+  makes its frame draw tens of times where any other frame draws once, so the frames read straight
+  off the generator's distance between two rows. The frame driver's discard at `0x80046D2C` runs ahead of the
+  hit, so the word steps on once.
+
+```bash
+scripts/ci/cast-sequence.py --physical --state battle_rugi_barra_strike --engine-only --strike-deal
+```
+
+Most strike recordings dealt this way match retail cue for cue: block verdict, damage rolls, the flinch's
+impact pick and the times. The ones that still part are not proven to part on a rule, because the deal is
+not complete. An emitter's draw can fall ahead of the hit: Nova's second hit follows a frame with an extra draw,
+and retail's verdict comes out only one word further on. Stepping every hit by the frame before's draws fixes
+Nova and breaks others, so the option keeps the one step the disassembly gives. A walk-clip capture's gate
+can also open past the first swing (`battle_retona_king_frog_strike`), and a defender's own stats stay the
+replay's. Read a residual by hand, as `battle_map02_mad_ogre_strike`'s Power Charge was read.
+
 What thirteen strike states show (`warhalf`, `warman`, `frog`, `spoon`,
 `gilium_lv2`, `hells_rat`, `gizam`, `wolf`, `guardian`, `freed`, `barra`,
 `chitei2_gilium`, `mad_ogre`): every clip both sides played carries the same ids
@@ -378,7 +422,8 @@ Both sides also write `sfx.csv`, one row per sound cue played:
   `FUN_800250D4` releases voices, it keys none, and `FUN_80065034`'s only callers
   outside the drainer are the emitter arm and four minigame overlays, so no battle
   voice is keyed around the ring. A CD-XA voice clip (`FUN_8003D53C`) is not a ring
-  cue and is not in this channel.
+  cue and is scored apart: a `--sfx-callers` recording's dispatcher rows at `id >= 0x100`
+  against the engine's `xa.csv`, under **CD-XA clips** in the report.
 - **Engine.** The recorder reads the audio director's command record each
   tick: the cues that came due (`SfxDue` off the delay scheduler, `RingDue`
   off the retail ring, `SfxNow`). The driver drops the child's `--no-audio`
@@ -391,9 +436,18 @@ frame is: its segment, its offset on the game clock, the same offset into
 the aligned engine segment. It matches the nearest unmatched engine cue of
 the same id within the tolerance. A second pass pairs what is left within
 `120` ticks and lists those as **timing** misses with their offset; the rest
-are **missing** (retail only) or **extra** (engine only). The channel's
-number is `2 * matched / (retail cues + engine cues)`; `id score` is the same
+are **missing** (retail only) or **extra** (engine only).
+Only the span both sides recorded is compared: cues past the last aligned segment on either side are
+dropped, so a capped retail recording (Fatal Decision's wheel) does not read as engine extras. A
+`--physical` recording's window opens on the state's first vsync and closes at the end of its first
+`0x51` band: a state standing past `0x1E` has its first frame rows on a later seat's action, whose
+states read the same, and the engine stops after the state's own. The channel's
+number is `2 * matched / (retail cues + engine cues)`, once each id's pairs are put back
+in time order (repeats play in order, and the nearest-free pick can cross them); `id score` is the same
 over the id multisets alone, whatever the time.
+
+`rates.csv` (retail only) holds each seat's rate `+0x21D` and node cursor `+0x68`
+per vsync: a same-id timing miss on a reaction is usually the rate, read straight off it.
 
 A missing cue is traced back with `--sfx-callers`, which also write-watches
 the ring's id half (a `store` row is any store into `0x8007B6D8..DF`, `a0`
@@ -429,6 +483,37 @@ adds its reaction-channel entry). What the recordings on
   `+0x1D9`, where a hit reaction commits, so the victim's knockdown and get-up
   hold the magic band's exit. The engine counted the action channel and left
   `0x2E` on its second pass, moving the band's closing cues `43` ticks early.
+- **A looping walk's second step.** `0x253` on a Nova's Scythe Wind walk rings once
+  while `+0x1F6` steps twice: it is a sustained row, so the funnel drops the repeat
+  ([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)).
+- **A reaction on the wrong clock.** Earthquake, the three Rogue strikes and Stone
+  Circle part by a factor of two to six on every party reaction cue with the ids all
+  right: each arm slows the seats it strikes
+  ([writers](../subsystems/battle-actor-rendering.md#the-animation-rate-byte-actor0x21d)).
+- **A deal is not a cue defect.** Void Accessories' three engine-only cues are its
+  strip landing where retail's roll said "Nothing happened": `--rand-at 0x70:3` scores
+  it `1.000`.
+- **A flinch with its cues skipped.** Palma's three engine-only cues were its pre-hit's
+  flinch: arm `0xF`'s pass stores `8` into each row's `+0x1F6` (`0x801F8360`), one past the
+  track, and `seats.csv` reads the jump with no cue behind it.
+- **A re-commit outside the juggle window.** Swordie's second slash re-staged its flinch at
+  frame `8` of a clip whose window closes at `8`, so the cursor restarted and `0x21C` sounded
+  twice: the engine's slash arm had left its pass early and the later slashes ran a pass late.
+- **The flee's silent walk.** Both flee sites zero the walk record's cue track
+  ([the staging](../subsystems/battle-action-helpers.md#the-escape-roll-fun_801e791c)), so a
+  Spikefish flee sounds no steps.
+- **A mid-cast state's first segment.** A `battle_*_mid_cast` recording opens part-way into its first
+  state, and the projection counts from there, so every cue in that segment reads late by the state's
+  age: Windhash's `+7..+11` is the state standing about nine vsyncs in. The arm's spacing agrees, and the
+  head cue the engine plays before the state's instant reads as an extra.
+- **The voice waiting on an idle loop.** A heal's `0x20C` fires on the commit state `0x3D` waits for, which
+  the seat's idle clip holds off until its natural end. The recording injects on retail's idle cursor (`256`
+  on `deene_garnet_pre_heal`) and the engine's child on its own (`16`), so the same clip of the same length
+  reads `+6..+49` late. It is the seat's idle phase, not a late line.
+- **A capped recording's last segment.** Fatal Decision's retail run stops inside arm 6 and the engine's
+  segment runs on, so its wheel clicks read as extras past the cut. Both sides click every sixteen vsyncs.
+- **A roll on the wrong side.** Nighto's kill roll takes arm 14 in the engine and goes round it in
+  the retail recording (`13` to `15`, HP unchanged), and its three extras are that hit.
 - **The drainer's gate never closed** (`0x8007BABC != 0x8007BAA0`): no
   retail recording has a cue behind it.
 
@@ -480,7 +565,11 @@ offset, both states, class, `within`, `mae`, both lumas) for scripts.
   seat against retail's 432 before the ground was carried).
 - **The target has to suit the spell.** A heal aimed at a monster seat parks
   the module (Orb on seat `3` sits in its phase `9`); pass `--target 0` for an
-  ally spell. The probe quits on a park (`LEGAIA_PARK`, state and module phase
+  ally spell. A party caster's group codes are the player picker's
+  (`0x801D1CF8`, `0x801D1D68`): `--target 9` for every enemy (spell byte `0x64`),
+  `--target 8` for the whole party (`0x24` / `0x26`). A group offensive spell
+  injected with `8` frames the band as a party-wide cast and scores low on the
+  framing alone. The probe quits on a park (`LEGAIA_PARK`, state and module phase
   unchanged for `900` vsyncs) and the driver reports it.
 
 `--engine-only` on a state with no retail recording runs the engine half
@@ -573,6 +662,11 @@ A `<scene>_<monster>_pre_<spell>` state replays the AI's pick, but the probe's
   still inject nothing in that span (`inject=-1`). `--physical --retail-only` from the
   corpus's `*_mid_cast` state then records the cast from its instant, and
   `--spell .. --engine-only` runs the engine side, which pairs by arm.
+
+A `--physical` recording runs on past the cast into the next action, and its `done.txt`
+names that action's caster and target, which the engine half then reads. Patch the
+recording's `caster=` and `cast_target=` to the state's own seat and cut its `sfx.csv` and
+`meta.csv` at the cast's Done band before scoring, or the engine dispatches another cast.
 
 ### The target has to be the engine's
 

@@ -76,3 +76,20 @@ impl LegaiaRuntime {
         }
     }
 }
+
+impl LegaiaRuntime {
+    /// The backquote key, the native window's `key_pack_modes`: open the
+    /// mode picker over the field or the overworld, or leave the mode seat.
+    /// `true` when the press was taken.
+    pub(crate) fn play_pack_mode_key(&mut self) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        match host.world.mode {
+            SceneMode::Expansion => host.world.exit_pack_mode(),
+            SceneMode::Field | SceneMode::WorldMap => host.world.open_pack_mode_picker(),
+            _ => return false,
+        }
+        true
+    }
+}

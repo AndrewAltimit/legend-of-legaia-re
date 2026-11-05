@@ -34,6 +34,22 @@ const ACTIVE_SPELL_SLOT_STRIDE: usize = 0x14;
 /// Maximum number of active-spell slots that fit in `+0x2B0..0x380`.
 const MAX_ACTIVE_SPELL_SLOTS: usize = (0x380 - 0x2B0) / ACTIVE_SPELL_SLOT_STRIDE;
 
+/// What wearing an item teaches: `(item, spell, stash slot)`, the literal arms
+/// of the aggregator's grant scan (`0x80042718..0x8004287C`). The five Talismans
+/// and each Ra-Seru's final form. All three Ra-Seru arms pass stash slot `0`,
+/// Palma's, so their summon arrives at the level Palma last parked on that
+/// character: retail's own quirk.
+pub const EQUIPMENT_SUMMON_GRANTS: [(u8, u8, usize); 8] = [
+    (0x72, 0x9A, 0),
+    (0x73, 0x9B, 1),
+    (0x74, 0x9C, 2),
+    (0x75, 0x9D, 3),
+    (0x76, 0x99, 4),
+    (0x09, 0x9E, 0),
+    (0x11, 0x9F, 0),
+    (0x19, 0xA0, 0),
+];
+
 /// Equipment slot count at `+0x196..0x19D`.
 const EQUIPMENT_SLOT_COUNT: usize = 8;
 
@@ -481,6 +497,16 @@ impl CharacterRecord {
         self.raw[0x196..0x196 + EQUIPMENT_SLOT_COUNT].copy_from_slice(&eq.slots);
     }
 
+    /// Empty both Auto command strings by clearing their first byte, which is
+    /// how Rot retires them (`FUN_801EC3E4`, `0x801EE660` / `0x801EE688`).
+    pub fn clear_auto_command_heads(&mut self) {
+        for band in [AutoCommandBand::Primary, AutoCommandBand::Secondary] {
+            let mut s = self.auto_command_string(band);
+            s[0] = 0;
+            self.set_auto_command_string(band, s);
+        }
+    }
+
     /// One of the two [`AutoCommandBand`] strings (`+0x1A7` / `+0x1B7`,
     /// [`AUTO_COMMAND_STRING_LEN`] bytes each).
     ///
@@ -673,6 +699,169 @@ impl CharacterRecord {
         w(0x128, s.ldf);
         w(0x12A, s.spd);
         w(0x12C, s.int);
+    }
+
+    /// The grant and revoke scans of the stat aggregator: make the spell list
+    /// agree with what the record wears.
+    ///
+    /// The grant scan walks all eight equipment bytes against a literal list
+    /// ([`EQUIPMENT_SUMMON_GRANTS`]) and inserts a missing spell at the head of
+    /// the list. The revoke scan then walks the list and takes each summon
+    /// `0x99..=0x9D` whose Talisman is in none of the three accessory bytes.
+    /// Meta, Terra and Ozma are past its bound, so a final-form Ra-Seru's summon
+    /// stays for good. Removing an entry moves the next one onto the index the
+    /// walk then steps past, which is retail's own skip: the skipped summon goes
+    /// on the next pass.
+    ///
+    /// PORT: FUN_80042558 (the grant scan `0x80042714..0x80042890`, the revoke
+    /// scan `0x80042894..0x80042990`)
+    pub fn sync_equipment_summons(&mut self) {
+        for slot in 0..EQUIPMENT_SLOT_COUNT {
+            let item = self.raw[0x196 + slot];
+            let Some(&(_, spell, stash)) =
+                EQUIPMENT_SUMMON_GRANTS.iter().find(|(i, _, _)| *i == item)
+            else {
+                continue;
+            };
+            if !self.knows_spell(spell) {
+                self.insert_spell_from_stash(spell, stash);
+            }
+        }
+        let mut i = 0;
+        while i < self.raw[0x13C] as usize {
+            let spell = self.raw[0x13D + i];
+            if (0x99..=0x9D).contains(&spell) {
+                // The table at `0x800151D0`, in `id - 0x99` order.
+                let (item, stash) = match spell {
+                    0x99 => (0x76, 4),
+                    0x9A => (0x72, 0),
+                    0x9B => (0x73, 1),
+                    0x9C => (0x74, 2),
+                    0x9D => (0x75, 3),
+                    _ => unreachable!(),
+                };
+                if !self.raw[0x19B..0x19E].contains(&item) {
+                    self.remove_spell_to_stash(spell, stash);
+                }
+            }
+            i += 1;
+        }
+    }
+
+    /// Whether the spell list carries `spell`.
+    ///
+    /// PORT: FUN_800431FC
+    fn knows_spell(&self, spell: u8) -> bool {
+        let n = self.raw[0x13C] as usize;
+        self.raw[0x13D..0x13D + n].contains(&spell)
+    }
+
+    /// Insert `spell` at the head of the list with the level and counter parked
+    /// in stash slot `stash`, level `0` raised to `1`. The stash keeps its bytes.
+    ///
+    /// PORT: FUN_800432BC
+    fn insert_spell_from_stash(&mut self, spell: u8, stash: usize) {
+        let base = 0x2B0 + stash * ACTIVE_SPELL_SLOT_STRIDE;
+        let level = self.raw[base + 5].max(1);
+        let counter = [
+            self.raw[base + 1],
+            self.raw[base + 2],
+            self.raw[base + 3],
+            self.raw[base + 4],
+        ];
+        let n = self.raw[0x13C] as usize;
+        for j in (1..=n).rev() {
+            self.raw[0x13D + j] = self.raw[0x13D + j - 1];
+            self.raw[0x161 + j] = self.raw[0x161 + j - 1];
+            self.raw.copy_within(8 + (j - 1) * 4..8 + j * 4, 8 + j * 4);
+        }
+        self.raw[0x13D] = spell;
+        self.raw[0x161] = level;
+        self.raw[8..12].copy_from_slice(&counter);
+        self.raw[0x13C] = (n + 1) as u8;
+    }
+
+    /// Take `spell` off the list, parking its level and counter in stash slot
+    /// `stash`, and close the gap.
+    ///
+    /// PORT: FUN_80042DBC
+    fn remove_spell_to_stash(&mut self, spell: u8, stash: usize) {
+        let n = self.raw[0x13C] as usize;
+        let Some(at) = self.raw[0x13D..0x13D + n].iter().position(|s| *s == spell) else {
+            return;
+        };
+        let base = 0x2B0 + stash * ACTIVE_SPELL_SLOT_STRIDE;
+        self.raw.copy_within(8 + at * 4..8 + at * 4 + 4, base + 1);
+        self.raw[base + 5] = self.raw[0x161 + at];
+        // Retail's loop runs while the moved-to index is below the count, so it
+        // also copies the slot one past the last entry down onto the last one.
+        for j in at..n {
+            self.raw[0x13D + j] = self.raw[0x13D + j + 1];
+            self.raw[0x161 + j] = self.raw[0x161 + j + 1];
+            self.raw
+                .copy_within(8 + (j + 1) * 4..8 + (j + 1) * 4 + 4, 8 + j * 4);
+        }
+        self.raw[0x13C] = (n - 1) as u8;
+    }
+
+    /// Rebuild the live window `+0x104..+0x11A` from the base window
+    /// `+0x11C..+0x12C` under the record's own ability word `+0xF4`: copy, add
+    /// the percent boosts off the base, clamp, and lower a current HP / MP / AP
+    /// that now exceeds its maximum.
+    ///
+    /// The base window is what stat-up items and level-ups write; the live one
+    /// is what the status screen, the turn order and the battle seed read. So
+    /// a Power Ring moves the live ATK when it goes on and when it comes off.
+    ///
+    /// PORT: FUN_80042558 (`0x800425FC..0x8004261C`, `0x800429A0..0x80042D34`)
+    pub fn rebuild_live_window(&mut self) {
+        let word = u32::from_le_bytes([
+            self.raw[0xF4],
+            self.raw[0xF5],
+            self.raw[0xF6],
+            self.raw[0xF7],
+        ]);
+        let on = |bit: u32| word & (1 << bit) != 0;
+        let rd = |raw: &[u8], off: usize| u16::from_le_bytes([raw[off], raw[off + 1]]);
+        let base = |off: usize| rd(&self.raw, off);
+        let fifth = |off: usize| base(off) / 5;
+        let hp = base(0x11C);
+        let mp = base(0x11E);
+        let hp_max = hp
+            .wrapping_add(if on(0) { hp / 10 } else { 0 })
+            .wrapping_add(if on(1) { hp >> 2 } else { 0 });
+        let mp_max = mp
+            .wrapping_add(if on(2) { mp / 10 } else { 0 })
+            .wrapping_add(if on(3) { mp >> 2 } else { 0 });
+        let boosted = |off: usize, bits: &[u32]| {
+            bits.iter().fold(base(off), |v, b| {
+                if on(*b) {
+                    v.wrapping_add(fifth(off))
+                } else {
+                    v
+                }
+            })
+        };
+        let writes = [
+            (0x104, hp_max.min(9999)),
+            (0x108, mp_max.min(999)),
+            (0x10C, base(0x120).min(100)),
+            (0x110, boosted(0x122, &[0xC]).min(280)),
+            (0x112, boosted(0x124, &[6]).min(999)),
+            (0x114, boosted(0x126, &[7, 9]).min(999)),
+            (0x116, boosted(0x128, &[8, 9]).min(999)),
+            (0x118, boosted(0x12A, &[0xA]).min(999)),
+            (0x11A, boosted(0x12C, &[0xB]).min(999)),
+        ];
+        for (off, v) in writes {
+            self.raw[off..off + 2].copy_from_slice(&v.to_le_bytes());
+        }
+        for max in [0x104, 0x108, 0x10C] {
+            let cap = rd(&self.raw, max);
+            if cap < rd(&self.raw, max + 2) {
+                self.raw[max + 2..max + 4].copy_from_slice(&cap.to_le_bytes());
+            }
+        }
     }
 
     /// Per-character summon-level bytes at `+0x161..+0x178` (16

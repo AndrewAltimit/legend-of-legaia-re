@@ -177,6 +177,27 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     /// `+0xB4` (PROT 0907's arm 1 sizes its ring off it) for the band to run
     /// on the module's next tick. Battle-only.
     fn ext_20(&mut self, state: &mut vm::move_vm::ActorState, arg0: i16, arg1: i16) {
+        // The dance overlay's tenant of the slot (`FUN_801D387C`, installed at
+        // `0x801CF07C`): the hall's palette cyclers follow one leader, the part
+        // the setup state keeps in `DAT_801D51A0`. Arm `0` copies its HSV adds
+        // and clears the caller's rates, arm `1` sets the caller's V add.
+        if self.world.ambient.venue_restore.is_some() {
+            match arg0 {
+                0 => {
+                    if let Some(leader) = self.world.ambient.fx.first() {
+                        state.tween_src_x = leader.state.tween_src_x;
+                        state.tween_src_y = leader.state.tween_src_y;
+                        state.tween_src_z = leader.state.tween_src_z;
+                    }
+                    state.tween_scale_x = 0;
+                    state.tween_scale_y = 0;
+                    state.tween_scale_z = 0;
+                }
+                1 => state.tween_src_z = arg1,
+                _ => {}
+            }
+            return;
+        }
         if self.world.mode != SceneMode::Battle {
             return;
         }

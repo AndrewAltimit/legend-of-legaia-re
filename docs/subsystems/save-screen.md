@@ -1719,17 +1719,16 @@ and return.
 sub15_frame, sub15_swap_rows}` is the record arithmetic and
 `engine-menus::list_order::ListOrderSession` the page: the clamping row
 picker, the seven-row window with retail's Left / Right page arithmetic, and
-the latch / exchange confirm. Both hosts reach it by confirming on the pause
-menu's Status screen and draw it through one `engine-ui` builder. Closing it
-runs `engine-menu-runtime::field_menu_dispatch::apply_list_order_outcome`, which
+the latch / exchange confirm. Both hosts reach it by confirming on the Magic or
+Moves page of the pause menu's Status screen
+([field-menu](field-menu.md#status-main-panel-fun_801d33d8)) and draw it in that
+page's own pens. Closing it runs `engine-menu-runtime::field_menu_dispatch::apply_list_order_outcome`, which
 re-derives the live row count and replays the exchanges onto the character's
 bytes, so a cancelled visit changes nothing and an exchange naming a row the
 record no longer carries is dropped.
 
-The rows handed over are the shown character's spell list in record order
-(`status_screen::StatusScreenSession::spell_rows_for_cursor`). The port does
-not model the screen's two-column second cursor, so the `+0x185` list -
-retail's other reachable step - is not reachable in the port.
+The rows handed over are the shown character's list in record order, and the
+second cursor's other column changes nothing the port draws.
 
 ## See also
 

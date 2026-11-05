@@ -61,6 +61,10 @@ impl World {
                 bytes[w * 4..w * 4 + 4].copy_from_slice(&word.to_le_bytes());
             }
             self.party.roster.members[rslot].set_ability_bits(bytes);
+            // The same pass keeps the spell list in step with the gear: a
+            // Talisman or a final-form Ra-Seru teaches its summon, and a
+            // Talisman taken off parks its summon in the stash.
+            self.party.roster.members[rslot].sync_equipment_summons();
             // The same pass rebuilds the record's live HP / MP maxima from
             // its base window under the bits just derived, so an equipment
             // change - the equip screen, a shop's equip-now, a script's
@@ -233,6 +237,33 @@ impl World {
                 &[],
                 &legaia_engine_battle::battle_stats::StatusModifiers::default(),
             );
+            // With a base window, the aggregator pass above left the live
+            // window on retail's own values: base plus percent boosts, clamped.
+            // `FUN_80053CB8` loads that window and adds the flat equipment bytes
+            // after the clamp, unclamped (`0x80053E84..0x80054138`), so a stat
+            // at the `999` cap keeps its gear on top. The later lines take the
+            // flats back off the ones retail does not seed with.
+            if !self.tables.accessory_passives.is_empty() && recs.atk != 0 {
+                let live = rec.live_stats();
+                let mut flat = [0i32; 5];
+                for m in record
+                    .equip
+                    .iter()
+                    .take(legaia_engine_battle_vm::battle_formulas::EQUIP_SLOTS)
+                    .filter(|id| **id != 0)
+                    .filter_map(|id| self.tables.equipment_table.get(*id))
+                {
+                    for (f, d) in flat.iter_mut().zip([m.atk, m.udf, m.ldf, m.spd, m.int]) {
+                        *f += i32::from(d);
+                    }
+                }
+                let fold = |v: u16, d: i32| (i32::from(v) + d).clamp(0, 0xFFFF) as u16;
+                stats.atk = fold(live.atk, flat[0]);
+                stats.udf = fold(live.udf, flat[1]);
+                stats.ldf = fold(live.ldf, flat[2]);
+                stats.spd = fold(live.spd, flat[3]);
+                stats.int = fold(live.int, flat[4]);
+            }
             // An expansion pack's worn gear: its flat bonuses fold like the
             // retail table's (UDF / LDF / SPD into the seed; a worn item's
             // ATK into its slot's per-swing byte below), its passives join
@@ -300,7 +331,12 @@ impl World {
             // go to `battle_equip_atk` for `land_melee_hit` to fold per hit.
             let mut equip_atk = [0u8; legaia_engine_battle_vm::battle_formulas::EQUIP_SLOTS];
             let mut equip_atk_sum: u16 = 0;
-            for (i, &id) in record.equip.iter().enumerate() {
+            for (i, &id) in record
+                .equip
+                .iter()
+                .enumerate()
+                .take(legaia_engine_battle_vm::battle_formulas::EQUIP_SLOTS)
+            {
                 if id == 0 {
                     continue;
                 }
@@ -340,6 +376,7 @@ impl World {
             let equip_int: i32 = record
                 .equip
                 .iter()
+                .take(legaia_engine_battle_vm::battle_formulas::EQUIP_SLOTS)
                 .filter(|&&id| id != 0)
                 .filter_map(|&id| self.tables.equipment_table.get(id))
                 .map(|m| i32::from(m.int))

@@ -94,6 +94,13 @@ struct VsOut {
     // barycentric weights, which keep PSX mode's texel row inside the
     // primitive (`psx_sample_uv`). All ones on a vertex with no single owner.
     @location(6) @interpolate(linear) prim_bary: vec4<f32>,
+    // A quad's four corners for PCSX-Redux's quad walk (`quad_walk_uv`, an
+    // instrument): snapped stage X, stage Y, then each corner's U and V.
+    // `quad_u.x < 0` when the fragment's primitive is no such quad.
+    @location(7) @interpolate(flat) quad_x: vec4<f32>,
+    @location(8) @interpolate(flat) quad_y: vec4<f32>,
+    @location(9) @interpolate(flat) quad_u: vec4<f32>,
+    @location(10) @interpolate(flat) quad_v: vec4<f32>,
 };
 
 // `z = a * w + b` of `m`'s depth row over its `w` row, read the way
@@ -232,7 +239,11 @@ fn vs_main(
     clip = overworld_flat_depth(clip, flat_a, flat_b, u.flags.w);
     clip = field_far_bucket_depth(clip, flat_a, u.flags.w);
     clip = field_sorted_cell_depth(clip, flat_a, flat_b, u.flags.w);
-    clip = prim_mean_depth(clip, prim_c0, prim_c1, prim_c2, prim_c3);
+    // A ground cell carries its own bucket (the two above); only a mesh
+    // primitive links at its corners.
+    if (all(flat_a == vec4<f32>(0.0))) {
+        clip = prim_mean_depth(clip, prim_c0, prim_c1, prim_c2, prim_c3);
+    }
     // PSX mode: the GTE's register limits (a corner past `IR = 0x7FFF` or
     // `SZ = 0xFFFF` lands where retail's packet put it), then the snap.
     if u.psx_params.z >= 0.5 {
@@ -257,9 +268,68 @@ fn vs_main(
         u.flags.w,
     );
     out.prim_bary = prim_corner_weight(position, prim_c0, prim_c1, prim_c2, prim_c3);
+    out.quad_u = vec4<f32>(-1.0);
+    if u.psx_params.z > 2.5 {
+        // The normal lane carries the quad's UVs under this rule
+        // (`Renderer::upload_vram_mesh_with_flat_refs`).
+        out.normal = vec3<f32>(0.0, 1.0, 0.0);
+        if prim_c0.w > 3.5 && normal_in.x >= 0.0 {
+            quad_walk_stage(&out, prim_c0.xyz, prim_c1, prim_c2, prim_c3, normal_in);
+        }
+    }
     let p4 = vec4<f32>(position, 1.0);
     out.world_w = vec3<f32>(dot(u.model_r0, p4), dot(u.model_r1, p4), dot(u.model_r2, p4));
     return out;
+}
+
+// One corner of a quad on the snapped stage, as `vs_main` places a vertex
+// ahead of `psx_native_centre`; `z < 0` for a corner with no screen position.
+fn quad_corner_stage(c: vec3<f32>) -> vec3<f32> {
+    let clip = gte_saturate_clip(overworld_curve_clip(u.mvp * vec4<f32>(c, 1.0), u.flags.w));
+    if clip.w <= 0.0 {
+        return vec3<f32>(0.0, 0.0, -1.0);
+    }
+    let s = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
+    return vec3<f32>(
+        round((s.x / s.w * 0.5 + 0.5) * PSX_STAGE_W),
+        round((0.5 - s.y / s.w * 0.5) * PSX_STAGE_H),
+        1.0,
+    );
+}
+
+// Hands the fragment stage a quad's corners. The UVs arrive as three whole
+// numbers of 24 bits each, which a float holds exactly: `u0 v0 u1`, `v1 u2 v2`,
+// `u3 v3`.
+fn quad_walk_stage(
+    out: ptr<function, VsOut>,
+    c0: vec3<f32>,
+    c1: vec3<f32>,
+    c2: vec3<f32>,
+    c3: vec3<f32>,
+    packed: vec3<f32>,
+) {
+    let a = quad_corner_stage(c0);
+    let b = quad_corner_stage(c1);
+    let c = quad_corner_stage(c2);
+    let d = quad_corner_stage(c3);
+    if min(min(a.z, b.z), min(c.z, d.z)) < 0.0 {
+        return;
+    }
+    let n = vec3<u32>(packed);
+    (*out).quad_x = vec4<f32>(a.x, b.x, c.x, d.x);
+    (*out).quad_y = vec4<f32>(a.y, b.y, c.y, d.y);
+    (*out).quad_u = vec4<f32>(
+        f32(n.x >> 16u),
+        f32(n.x & 0xFFu),
+        f32((n.y >> 8u) & 0xFFu),
+        f32(n.z >> 8u),
+    );
+    (*out).quad_v = vec4<f32>(
+        f32((n.x >> 8u) & 0xFFu),
+        f32(n.y >> 16u),
+        f32(n.y & 0xFFu),
+        f32(n.z & 0xFFu),
+    );
 }
 
 fn bgr555_to_rgba(c: u32) -> vec4<f32> {
@@ -458,6 +528,132 @@ fn psx_row_inset(bary: vec4<f32>, bary_dy: vec4<f32>, margin: f32) -> f32 {
     return min(d, 2.0 * margin);
 }
 
+// Which side of the chord `a -> b` corner `c` falls on, as
+// `SoftRenderer::setupSectionsFlatTextured4` tests it: negative means `c` is
+// to the chord's right.
+fn quad_side(a: vec3<f32>, b: vec3<f32>, c: vec3<f32>) -> f32 {
+    var h = b.y - a.y;
+    if h == 0.0 {
+        h = 1.0;
+    }
+    return (c.y - a.y) / h * (b.x - a.x) + (a.x - c.x);
+}
+
+// Where the chain of up to four corners crosses row `y`: `x`, `u`, `v`.
+fn quad_chain_at(chain: array<vec3<f32>, 4>, uvs: array<vec2<f32>, 4>, n: i32, y: f32) -> vec3<f32> {
+    for (var i = 0; i < n - 1; i = i + 1) {
+        let a = chain[i];
+        let b = chain[i + 1];
+        if y < b.y && b.y > a.y {
+            let t = (y - a.y) / (b.y - a.y);
+            return vec3<f32>(mix(a.x, b.x, t), mix(uvs[i], uvs[i + 1], t));
+        }
+    }
+    return vec3<f32>(chain[n - 1].x, uvs[n - 1]);
+}
+
+// PCSX-Redux's software GPU (`PsxTexelRule::PcsxRedux`) draws a textured quad
+// whole where the console draws two triangles: `drawPoly4TEx*` walks the
+// outline's left and right chains (`setupSectionsFlatTextured4`) and steps U and
+// V linearly along each row between them, so a quad whose corners do not lie on
+// one UV plane maps its texture differently. An instrument, so the score
+// measures the engine and not that emulator's rasteriser.
+fn quad_walk_uv(p: vec2<f32>, qx: vec4<f32>, qy: vec4<f32>, qu: vec4<f32>, qv: vec4<f32>) -> vec2<f32> {
+    // The call's corner order (`v0, v1, v3, v2`) and its exchange sort by row.
+    var v = array<vec3<f32>, 4>(
+        vec3<f32>(qx.x, qy.x, 0.0),
+        vec3<f32>(qx.y, qy.y, 1.0),
+        vec3<f32>(qx.w, qy.w, 3.0),
+        vec3<f32>(qx.z, qy.z, 2.0),
+    );
+    let order = array<vec2<i32>, 6>(
+        vec2<i32>(0, 1), vec2<i32>(0, 2), vec2<i32>(0, 3),
+        vec2<i32>(1, 2), vec2<i32>(1, 3), vec2<i32>(2, 3),
+    );
+    for (var i = 0; i < 6; i = i + 1) {
+        let o = order[i];
+        if v[o.x].y > v[o.y].y {
+            let t = v[o.x];
+            v[o.x] = v[o.y];
+            v[o.y] = t;
+        }
+    }
+    let v1 = v[0];
+    let v2 = v[1];
+    let v3 = v[2];
+    let v4 = v[3];
+    var left = array<vec3<f32>, 4>(v1, v4, v4, v4);
+    var right = array<vec3<f32>, 4>(v1, v4, v4, v4);
+    var nl = 2;
+    var nr = 2;
+    if quad_side(v1, v4, v2) < 0.0 {
+        if quad_side(v1, v4, v3) < 0.0 {
+            if quad_side(v1, v3, v2) >= 0.0 {
+                right = array<vec3<f32>, 4>(v1, v3, v4, v4);
+                nr = 3;
+            } else if quad_side(v2, v4, v3) >= 0.0 {
+                right = array<vec3<f32>, 4>(v1, v2, v4, v4);
+                nr = 3;
+            } else {
+                right = array<vec3<f32>, 4>(v1, v2, v3, v4);
+                nr = 4;
+            }
+        } else {
+            left = array<vec3<f32>, 4>(v1, v3, v4, v4);
+            right = array<vec3<f32>, 4>(v1, v2, v4, v4);
+            nl = 3;
+            nr = 3;
+        }
+    } else if quad_side(v1, v4, v3) < 0.0 {
+        left = array<vec3<f32>, 4>(v1, v2, v4, v4);
+        right = array<vec3<f32>, 4>(v1, v3, v4, v4);
+        nl = 3;
+        nr = 3;
+    } else if quad_side(v1, v3, v2) < 0.0 {
+        left = array<vec3<f32>, 4>(v1, v3, v4, v4);
+        nl = 3;
+    } else if quad_side(v2, v4, v3) < 0.0 {
+        left = array<vec3<f32>, 4>(v1, v2, v4, v4);
+        nl = 3;
+    } else {
+        left = array<vec3<f32>, 4>(v1, v2, v3, v4);
+        nl = 4;
+    }
+    var left_uv: array<vec2<f32>, 4>;
+    var right_uv: array<vec2<f32>, 4>;
+    for (var i = 0; i < 4; i = i + 1) {
+        let li = i32(left[i].z);
+        let ri = i32(right[i].z);
+        left_uv[i] = vec2<f32>(qu[li], qv[li]);
+        right_uv[i] = vec2<f32>(qu[ri], qv[ri]);
+    }
+    let l = quad_chain_at(left, left_uv, nl, p.y);
+    let r = quad_chain_at(right, right_uv, nr, p.y);
+    let xa = floor(l.x);
+    let span = max(floor(r.x) - xa, 1.0);
+    let t = clamp((p.x - xa) / span, 0.0, 1.0);
+    return mix(l.yz, r.yz, t) + vec2<f32>(QUAD_WALK_TEXEL_EPS);
+}
+
+// A row's value lands on a whole texel exactly at a corner; the float walk must
+// not fall just under it where the fixed-point walk does not.
+const QUAD_WALK_TEXEL_EPS: f32 = 0.001;
+
+// The fragment's sample UV: the quad walk on such a primitive, else the texel
+// rule of its triangle.
+fn fragment_sample_uv(
+    in: VsOut,
+    uv_dx: vec2<f32>,
+    uv_dy: vec2<f32>,
+    bary_dx: vec4<f32>,
+    bary_dy: vec4<f32>,
+) -> vec2<f32> {
+    if u.psx_params.z > 2.5 && in.quad_u.x >= 0.0 {
+        return quad_walk_uv(floor(in.clip_pos.xy), in.quad_x, in.quad_y, in.quad_u, in.quad_v);
+    }
+    return psx_texel_uv(in.uv_affine, uv_dx, uv_dy, in.prim_bary, bary_dx, bary_dy);
+}
+
 @fragment
 fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0) vec4<f32> {
     // Taken ahead of any discard, in uniform control flow.
@@ -495,7 +691,7 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(psx_texel_uv(in.uv_affine, uv_dx, uv_dy, in.prim_bary, bary_dx, bary_dy), cba, tsb);
+    var word = fetch_vram_word(fragment_sample_uv(in, uv_dx, uv_dy, bary_dx, bary_dy), cba, tsb);
     // Prologue palette-collapse grade: retail rewrites the scene's uploaded
     // CLUTs (and TMD colour words) to the gold law at load; the engine's
     // VRAM carries the disc palettes, so the law applies per decoded texel
@@ -535,6 +731,27 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
     if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
+    // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
+    // the GPU multiplies the texel by the result and saturates. A cued draw
+    // therefore cues `prim` here, ahead of the modulate - see `psx_cue_colour`
+    // for what the other order loses on a bright texture. The grade tint
+    // models the amber modulation colour and belongs to the near term only;
+    // the far colour is staged in absolute display units and is not re-tinted.
+    //
+    // Palette mode replaces the pixel multiply with the texel/packet collapse
+    // above (`apply_grade` would double-grade), carries the global screen
+    // tint in `palette.rgb`, and makes the view-depth cue ramp inert - the
+    // opening capture shows every render node holds `IR0 = 0` across the
+    // prologue, so the far-field crush is entirely the palette law + the
+    // amber packet words, not a depth cue.
+    var ir0 = u.depth_cue.a;
+    if !palette_on {
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
+    let cue_first = !palette_on && ir0 > 0.0;
+    if cue_first {
+        prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
+    }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
@@ -545,33 +762,18 @@ fn fs_main(in: VsOut, @builtin(front_facing) front_facing: bool) -> @location(0)
         ),
         color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
-    // Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
-    // the GPU multiplies the texel by the result - so the far term reaches the
-    // pixel as `texel * far / 128` (`psx_modulate` with the far colour in
-    // colour-byte units). The grade tint models the amber modulation colour
-    // and belongs to the near term only; the far colour is staged in absolute
-    // display units and is not re-tinted.
-    //
-    // Palette mode replaces the pixel multiply with the texel/packet collapse
-    // above (`apply_grade` would double-grade), carries the global screen
-    // tint in `palette.rgb`, and makes the view-depth cue ramp inert - the
-    // opening capture shows every render node holds `IR0 = 0` across the
-    // prologue, so the far-field crush is entirely the palette law + the
-    // amber packet words, not a depth cue.
-    var graded: vec3<f32>;
-    var ir0: f32;
+    var cued: vec3<f32>;
     if palette_on {
-        graded = enhanced * u.palette.rgb;
-        ir0 = u.depth_cue.a;
+        cued = psx_depth_cue(
+            enhanced * u.palette.rgb,
+            dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
+            ir0,
+        );
+    } else if cue_first {
+        cued = enhanced;
     } else {
-        graded = apply_grade(enhanced, u.grade);
-        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+        cued = apply_grade(enhanced, u.grade);
     }
-    let cued = psx_depth_cue(
-        graded,
-        dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
-        ir0,
-    );
     let rgb = psx_dither(cued, in.clip_pos.xy, u.psx_params.w);
     return vec4<f32>(rgb, color.a);
 }
@@ -615,7 +817,7 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     }
     let tsb = in.cba_tsb.y;
     let cba = in.cba_tsb.x;
-    var word = fetch_vram_word(psx_texel_uv(in.uv_affine, uv_dx, uv_dy, in.prim_bary, bary_dx, bary_dy), cba, tsb);
+    var word = fetch_vram_word(fragment_sample_uv(in, uv_dx, uv_dy, bary_dx, bary_dy), cba, tsb);
     // Texel 0x0000 never draws; STP=0 texels were already drawn opaque by
     // the first pass. 0x8000 (black + STP) correctly blends.
     if word == 0u || ((word >> 15u) & 1u) == 0u {
@@ -636,6 +838,15 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
     if palette_on && (tsb & 0x0800u) == 0u {
         prim = palette_collapse_prim(prim);
     }
+    // Same cue-then-modulate order as the opaque pass (see fs_main).
+    var ir0 = u.depth_cue.a;
+    if !palette_on {
+        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+    }
+    let cue_first = !palette_on && ir0 > 0.0;
+    if cue_first {
+        prim = psx_cue_colour(apply_grade(prim, u.grade), u.depth_cue.rgb * 255.0, ir0);
+    }
     let lit = psx_modulate(color.rgb, prim);
     let geo_n = cross(dpdx(in.world_pos), dpdy(in.world_pos));
     let pg = scene_point_gain(in.world_w, in.normal, geo_n);
@@ -646,22 +857,18 @@ fn blend_pass_color(in: VsOut, front_facing: bool, f_scale: f32) -> vec4<f32> {
         ),
         color.rgb, u.light_dir, (tsb & 0x1000u) != 0u,
     );
-    // Same grade-then-cue order as the opaque pass (see fs_main): the far
-    // term is the texel-modulated far colour, un-tinted.
-    var graded: vec3<f32>;
-    var ir0: f32;
+    var cued: vec3<f32>;
     if palette_on {
-        graded = enhanced * u.palette.rgb;
-        ir0 = u.depth_cue.a;
+        cued = psx_depth_cue(
+            enhanced * u.palette.rgb,
+            dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
+            ir0,
+        );
+    } else if cue_first {
+        cued = enhanced;
     } else {
-        graded = apply_grade(enhanced, u.grade);
-        ir0 = cue_ramp_ir0(u.depth_cue.a, u.cue_ramp, in.clip_pos.w);
+        cued = apply_grade(enhanced, u.grade);
     }
-    let cued = psx_depth_cue(
-        graded,
-        dyn_far(psx_modulate(color.rgb, u.depth_cue.rgb * 255.0), u.light_dir, u.light_color),
-        ir0,
-    );
     // The GPU reads the foreground as a saturated 5-bit channel
     // (`psx_blend_foreground`), and the mode-3 quarter applies to that value
     // (`B + 0.25 * F`), as it does on the browser play page where the 0.25 is

@@ -40,7 +40,7 @@ fn sweep(on: [i16; 3], facing: u16, cd: i32, base: i32, far: i32) -> ModuleShot 
 ///
 /// | arm | camera and seats | countdown |
 /// |---|---|---|
-/// | 0, 1 (`0x801F7874`) | the walk into reach, framed by the action SM's case 6 | - |
+/// | 0, 1 (`0x801F7874`) | the walk into reach, framed by the action SM's case 6 (the host's approach leg, `capture_approach_follows`) | - |
 /// | 2 (`0x801F7B58`) | both seats' rate `1`; on the caster: pitch `0x40`, yaw `0xA00 - facing`, TR `(0, 0x500, 0x600)`, `0xC` frames | seed `scalar << 5` |
 /// | 3 (`0x801F7C04`) | every pass on the caster: yaw base `0x9E0`, TR z `0x700 - cd`. On its pass, the wind's record on the victim and the caster's rate back | `+= scalar << 7` |
 /// | 4 (`0x801F7D30`) | every pass on the victim: yaw base `0x960`, TR z `0xB00 - cd`; below `scalar << 6`, four scattered records a pass. On its pass, the hit and the victim's rate back | `+= scalar * 0x60` |
@@ -145,6 +145,25 @@ mod tests {
             action: 0x5B,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn the_walk_runs_on_case_six_from_the_arm_zero_yaw_store() {
+        use crate::cast_module_camera::{capture_approach_follows, capture_approach_yaw_base};
+        assert!(capture_approach_follows(951, Some(SCYTHE_WIND_BODY)));
+        assert_eq!(
+            capture_approach_yaw_base(951, Some(SCYTHE_WIND_BODY)),
+            Some(0x200)
+        );
+        // Rolling Flare walks on case 6 with no store of its own.
+        let flare = Some(crate::cast_arm_ticks::ROLLING_FLARE_TICK);
+        assert!(capture_approach_follows(950, flare));
+        assert_eq!(capture_approach_yaw_base(950, flare), None);
+        // Steal frames on other arms, through its own director.
+        assert!(!capture_approach_follows(
+            941,
+            Some(crate::cast_module_camera::STEAL_BODY)
+        ));
     }
 
     #[test]

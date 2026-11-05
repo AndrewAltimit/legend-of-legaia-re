@@ -17,6 +17,12 @@ impl BakaFight {
             StrikeTable::action_of(attack),
             attack == BakaAttack::Special,
         );
+        self.special_fx(slot, attack);
+    }
+
+    /// What a special's commit does beyond the clip store: the latch, the
+    /// camera glide, the slowed rate and the afterimage.
+    fn special_fx(&mut self, slot: usize, attack: BakaAttack) {
         if attack == BakaAttack::Special {
             self.special_latch = true;
         }
@@ -54,9 +60,233 @@ impl BakaFight {
         if attack == BakaAttack::Special || !self.can_choose(slot) {
             return false;
         }
+        if self.strike.is_some() {
+            // The commit is the combat tick's, on the tick that reads the edge.
+            self.pad_attack[slot] = Some(attack);
+            return true;
+        }
         self.f[slot].chosen = Some(attack);
         self.commit(slot, attack);
         true
+    }
+
+    /// One frame of the duel on the disc tables, in the pool walk's order:
+    /// the player's combat tick, the round SM, the opponent's combat tick
+    /// (the actor list of `minigame_baka_fighter_retail_fight`).
+    pub(super) fn duel_frame(&mut self, frame_step: i32) {
+        self.combat_tick(0, frame_step);
+        self.round_sm(frame_step);
+        self.combat_tick(1, frame_step);
+        self.clips_stepped = true;
+    }
+
+    /// The per-fighter combat tick.
+    ///
+    /// The opponent reads no pad and picks only in answer to the player's
+    /// commit (`DAT_801DC124`, `0x801D41B4..0x801D42EC`): that answer clears
+    /// its lock, marks its strike consumed and passes the commit gate
+    /// whatever its clip is doing, so a player who holds back is never
+    /// attacked. A commit needs the clip idle or the seat's strike booked; the
+    /// clip's end returns the seat to idle, clearing its type, its lock and
+    /// its streak (`0x801D411C..0x801D415C`).
+    ///
+    /// PORT: FUN_801d3f44
+    fn combat_tick(&mut self, slot: usize, frame_step: i32) {
+        let other = slot ^ 1;
+        let pad = std::mem::take(&mut self.pad_attack[slot]);
+        let live = self.cabinet.state() == crate::baka_cabinet::ST_DUEL;
+        if !live || self.f[slot].committed {
+            self.step_clip(slot, frame_step, false);
+            return;
+        }
+        if self.motion[slot].ended {
+            self.motion[slot].record = 0;
+            self.motion[slot].hold = false;
+            self.motion[slot].ended = false;
+            let fs = &mut self.f[slot];
+            fs.chosen = None;
+            fs.locked = false;
+            fs.combo = 0;
+        }
+        let mut pad = pad;
+        let mut answered = false;
+        if slot == 1 && self.ai_controlled[1] {
+            pad = None;
+            if self.player_commit >= 0 {
+                self.f[1].locked = false;
+                self.f[1].clock.state = StrikeState::Consumed;
+                pad = Some(self.ai_pick(1));
+                answered = true;
+                self.player_commit = -1;
+            }
+        }
+        if self.f[slot].locked {
+            pad = None;
+        }
+        // The keyframe lookup, on the cursor's last step over whatever clip
+        // the seat stands in (`0x801D4304..0x801D435C`).
+        if let Some(st) = self.strike.as_ref() {
+            let clock = &mut self.f[slot].clock;
+            if clock.state != StrikeState::Landed {
+                let frames = st[slot]
+                    .frames
+                    .get(self.motion[slot].record)
+                    .map_or(&[][..], |f| &f[..]);
+                let hit = keyframe_in_range(frames, clock.prev, self.motion[slot].cursor);
+                if let Some(i) = hit
+                    && clock.landed != Some(i)
+                {
+                    clock.landed = Some(i);
+                    clock.state = StrikeState::Landed;
+                }
+            }
+        }
+        let mut next = None;
+        if !self.special_latch {
+            next = pad;
+            if self.f[slot].hp != 0 && self.f[other].hp == 0 {
+                next = Some(BakaAttack::Special);
+            }
+        }
+        let fs = &mut self.f[slot];
+        if matches!(fs.chosen.map(BakaAttack::type_id), Some(1..=3)) {
+            fs.hold += frame_step;
+        } else {
+            fs.hold = 0;
+        }
+        if let Some(attack) = next
+            && !self.f[slot].committed
+            && !self.f[other].committed
+            && (self.f[slot].clock.state == StrikeState::Consumed
+                || self.motion[slot].record == 0
+                || answered)
+        {
+            self.f[slot].clock.state = StrikeState::Armed;
+            self.f[other].clock.state = StrikeState::Armed;
+            self.f[slot].clock.landed = None;
+            self.f[slot].hold = 0;
+            self.f[slot].chosen = Some(attack);
+            let action = StrikeTable::action_of(attack);
+            let hold = self.motion[slot].hold || attack == BakaAttack::Special;
+            self.motion[slot].play(action, hold);
+            if slot == 0 {
+                self.player_commit = if attack == BakaAttack::Special {
+                    -1
+                } else {
+                    action as i32
+                };
+            }
+            self.special_fx(slot, attack);
+        }
+        self.step_clip(slot, frame_step, true);
+    }
+
+    /// The clip selector's advance at the record's speed, with the pre-step
+    /// cursor stored for the next lookup (`0x801D47E0..0x801D47EC`). The rate
+    /// `+0x6A` is written only by the tick's logic half (`0x801D4780..
+    /// 0x801D47CC`): the other half steps at whatever it left, so a knocked-down
+    /// seat plays its knockdown at the rate of the clip it was in.
+    fn step_clip(&mut self, slot: usize, frame_step: i32, rate: bool) {
+        let Some(st) = self.strike.as_ref() else {
+            return;
+        };
+        let m = &mut self.motion[slot];
+        let r = m
+            .record
+            .min(legaia_minigame_formats::baka_opponents::ACTIONS_PER_FIGHTER - 1);
+        let clip = st[slot].clips[r].unwrap_or(FALLBACK_CLIP);
+        if rate {
+            self.clip_rate[slot] = st[slot].speed[r].wrapping_mul(self.rate_divisor);
+        }
+        self.f[slot].clock.prev = m.cursor;
+        // The stored rate is already `speed * divisor`, and `step` takes it `>> 3`.
+        m.step(self.clip_rate[slot], 1, Some(clip), frame_step);
+        self.f[slot].clock.cursor = m.cursor;
+    }
+
+    /// The round SM's body in the duel state: the booking arms and what they
+    /// leave. The types stand after a booking, so an attack with a second
+    /// strike lands again on the same exchange, until a clip ends or someone
+    /// commits.
+    ///
+    /// PORT: FUN_801d3468
+    fn round_sm(&mut self, frame_step: i32) {
+        for r in &mut self.rumble {
+            if *r > 0 {
+                *r -= frame_step << 4;
+            }
+            *r = (*r).max(0);
+        }
+        if self.cabinet.state() != crate::baka_cabinet::ST_DUEL {
+            return;
+        }
+        match self.resolve(frame_step) {
+            ExchangeOutcome::FighterWins(w) if self.f[w].clock.state == StrikeState::Landed => {
+                let l = w ^ 1;
+                self.spawn_impact(w, false);
+                let (damage, critical, special_round_win) = self.apply_damage(l);
+                self.rumble = if w == 0 {
+                    [0, COOLDOWN_RESET]
+                } else {
+                    [COOLDOWN_RESET; 2]
+                };
+                self.f[0].crit_pending = false;
+                self.f[1].crit_pending = false;
+                self.f[w].combo = 0;
+                self.roll_comeback_crit(l);
+                self.last_exchange = Some(ExchangeReport {
+                    winner: w,
+                    draw: false,
+                    damage,
+                    critical,
+                    special_round_win,
+                });
+                if special_round_win {
+                    self.end_round(w, true);
+                } else if self.f[l].hp == 0 && !self.has_finisher(w) {
+                    self.end_round(w, false);
+                }
+            }
+            ExchangeOutcome::Draw
+                if self.f[0].clock.state == StrikeState::Landed
+                    || self.f[1].clock.state == StrikeState::Landed =>
+            {
+                self.spawn_impact(0, true);
+                self.spawn_impact(1, true);
+                let (d0, c0, _) = self.apply_damage(0);
+                let (d1, c1, _) = self.apply_damage(1);
+                self.rumble = [COOLDOWN_RESET; 2];
+                self.f[0].combo = 0;
+                self.f[1].combo = 0;
+                self.f[0].crit_pending = false;
+                self.f[1].crit_pending = false;
+                self.roll_comeback_crit(0);
+                self.roll_comeback_crit(1);
+                self.last_exchange = Some(ExchangeReport {
+                    winner: 1,
+                    draw: true,
+                    damage: d0.max(d1),
+                    critical: c0 || c1,
+                    special_round_win: false,
+                });
+                match (self.f[0].hp == 0, self.f[1].hp == 0) {
+                    // Double KO replays the round: no round win is credited.
+                    (true, true) => self.phase = MatchPhase::RoundOver(0),
+                    (true, false) if !self.has_finisher(1) => self.end_round(1, false),
+                    (false, true) if !self.has_finisher(0) => self.end_round(0, false),
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A seat's standing fighter has a special with strikes to land.
+    fn has_finisher(&self, slot: usize) -> bool {
+        self.f[slot].hp > 0
+            && self.strike.as_ref().is_some_and(|st| {
+                !st[slot].frames[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL].is_empty()
+            })
     }
 
     /// The CPU move pick: random attack or a backward step of the scripted
@@ -158,8 +388,14 @@ impl BakaFight {
                 st[winner].frames[legaia_minigame_formats::baka_opponents::ACTION_SPECIAL].len();
             n > 0 && self.f[winner].clock.landed == Some(n - 1)
         });
-        if self.f[winner].clock.state == StrikeState::Landed {
+        if self.strike.is_some() {
             self.f[winner].clock.state = StrikeState::Consumed;
+            self.f[loser].locked = true;
+            // Both actors step back from the blow, and the camera focus
+            // follows (`0x801D3EB4..0x801D3F28`).
+            let push = if loser == 0 { -0x20 } else { 0x20 };
+            self.push_x += push;
+            self.push_ease += push;
         }
         let mut special_round_win = false;
         if winner_type == 4 && full_hit {
@@ -167,6 +403,22 @@ impl BakaFight {
             self.f[loser].committed = true;
             special_round_win = true;
         }
+        // The clip store on the struck side, held on its last frame: `base + 6`,
+        // one further for the third attack, two for the special's last strike
+        // (`0x801D3BA0..0x801D3CA0`). The kernel leaves `+0x62 & 0x100` alone, so
+        // a blow landing on the frame the seat's last clip ended is lost to
+        // that clip's idle reset on the seat's next tick.
+        let ended = self.motion[loser].ended;
+        self.motion[loser].play(
+            match (winner_type, special_round_win) {
+                (_, true) => crate::baka_duel::MOTION_KNOCKDOWN,
+                (3, _) => crate::baka_duel::MOTION_HIT_THIRD,
+                _ => crate::baka_duel::MOTION_HIT,
+            },
+            true,
+        );
+        self.motion[loser].ended = ended;
+        self.motion[loser].down = special_round_win;
 
         let def_tier = self.cfg[loser].def_tier(self.f[loser].hp);
         let atk_tier = self.cfg[winner].atk_tier(self.f[winner].hp);

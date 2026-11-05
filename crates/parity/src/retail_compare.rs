@@ -208,7 +208,9 @@ impl StateClass {
             0x03 if has_player && !scene.is_empty() => StateClass::Field,
             0x02 => StateClass::FieldInit,
             0x14 | 0x15 => StateClass::Battle,
-            0x17 => StateClass::Menu,
+            // The map display reads as a menu class: a settled field, then a
+            // press that opens it.
+            0x17 | 0x0D => StateClass::Menu,
             0x1A | 0x1B => StateClass::Cutscene,
             0x19 => StateClass::Minigame,
             _ => StateClass::Other,

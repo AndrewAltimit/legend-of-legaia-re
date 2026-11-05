@@ -867,7 +867,7 @@ the **spirit-gauge** fill at defender `+0x170` (`+ margin/4` or `/10` per `+0x6C
 `damage_finish` (the six damage-rewrite stages - elemental-resistance halving / guard halve / `rand%9+8` floor / summon power-% scale / 9999 cap),
 `spirit_gauge_fill` (the gauge accrual + the two gain-up bits), and
 `summon_spell_xp_gain` (the **spell-XP accrual tail**, `attacker_slot == 7` only: the cast spell's slot in the caster record's `+0x13D` id list gains `damage * 12 / target_max_hp` per single-target hit / `* 4` group-target, flat `12`/`4` on a kill, nothing from a target below 2 HP, into the `+0x8` u32 XP array - the XP `FUN_801E70BC` then checks; gates `_DAT_8007BAC0` no-reward + `_DAT_8007BDB8` unmodelled),
-all unit-tested. The state-mutating tail (damage-popup accumulator, AI revenge table, MP drain, the per-element stat-**debuff** switch) reads/writes ~20 battle globals and stays in the live battle context (see the `battle_formulas` boundary note). Dump: `overlay_battle_action_801ddb30.txt`.
+all unit-tested. The state-mutating tail (damage-popup accumulator, per-seat readout window, MP drain, the per-element stat-**debuff** switch) reads/writes ~20 battle globals and stays in the live battle context (see the `battle_formulas` boundary note). Dump: `overlay_battle_action_801ddb30.txt`.
 
 ### `801E295C`
 
@@ -1345,7 +1345,7 @@ shifted once more, `sra a0,t4,1` at `0x801F0BB0` - not the `/10` an earlier
 reading took it for) and splices learned arts' arrow strings over the end of
 the still-free queue, paying out of a **local copy** of the Spirit gauge
 `actor[+0x170]` that is never stored back. Each pass is gated on a
-`rand() % 7 + 0x12` Spirit draw and two free slots; the per-arrow cost
+`rand() % 14 + 0x12` Spirit draw and two free slots; the per-arrow cost
 (`0xB`, then `0xA`, then `6` from the fifth pass) is halved under record
 `+0xF8 & 0x800` (`andi 0x800` at `0x801F0D00` - the routine's only test of
 that bit, so the pool arm's AP budget is not halved); a `rand() % 100` roll,

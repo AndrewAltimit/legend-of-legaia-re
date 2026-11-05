@@ -69,10 +69,37 @@ fn the_post_strike_states_arm_the_two_shot() {
             "the dead-target arm is gated on actor[+0x1DD] < 3"
         );
     }
-    // The far framing still owns the end-of-action gate.
+    // The end-of-action gate arms the category's framing once more
+    // (`0x801E6428..0x801E6470`): case 8 for an Attack, nothing for a Run, and
+    // case 6 for the rest, a dead party target included.
     assert_eq!(
         phase_for_state(false, false, 0x5A, attack),
+        BattleCamPhase::ActionEnd
+    );
+    assert_eq!(
+        phase_for_state(false, false, 0x5A, run),
         BattleCamPhase::Menu
+    );
+    assert_eq!(
+        phase_for_state(false, false, 0x5A, monster_spell),
+        BattleCamPhase::Action
+    );
+    assert_eq!(
+        phase_for_state(false, false, 0x5A, party_target_corpse),
+        BattleCamPhase::Action
+    );
+    assert_eq!(
+        phase_for_state(
+            false,
+            false,
+            0x5A,
+            DoneBandInputs {
+                results_begun: true,
+                ..attack
+            }
+        ),
+        BattleCamPhase::Action,
+        "ctx[+0x6CE] takes an Attack off case 8"
     );
 }
 
@@ -379,7 +406,7 @@ fn the_done_band_owns_the_action_framing_until_end_of_action() {
 /// two-shot, not a close-up. What must hold: no tail frame is on the far
 /// framing, and every frame from `0x5A` on is.
 #[test]
-fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
+fn a_real_turn_films_its_done_tail_and_holds_it_for_the_next_actor() {
     // (state byte, display frames spent there) - one measured turn.
     let turn: [(u8, u32); 10] = [
         (0x00, 2),  // Begin
@@ -444,15 +471,92 @@ fn a_real_turn_films_its_done_tail_and_hands_back_at_end_of_action() {
         tail_far, 0,
         "the Done tail is a per-action framing ({tail} frames)"
     );
+    // The first round's `Begin` stands on the entry's far framing; every
+    // state after it stands on the last action's shot.
     assert_eq!(
-        gate_far, gate,
-        "end of action and Begin are the far framing"
+        gate_far, 2,
+        "only the round's first actor reads far ({gate})"
     );
+    let cam = slot.as_mut().unwrap();
+    assert_eq!(cam.phase(), BattleCamPhase::ActionEnd);
+    // The next prompt's case 9 is what takes it back.
+    cam.set_phase_on_state(BattleCamPhase::Menu, 0xFF);
     assert_eq!(
-        slot.as_ref().unwrap().phase(),
+        cam.phase(),
         BattleCamPhase::Menu,
         "the round closes on the far framing"
     );
+}
+
+/// **Between two actors the camera stays on the last shot.** No state from
+/// `0x5A` to the seed arms case 9: the setup states walk the last tween and
+/// orbit the yaw, `kor_ghost_knight_pre_v_windhash` reads a Spirit member's
+/// case 6 landed in `0x0A`, and only the seed's case 6 moves it.
+#[test]
+fn a_setup_state_holds_the_action_framing_until_the_seed_rearms() {
+    let actor = BattleCamActor {
+        facing: 0,
+        world: [100.0, 0.0, 200.0],
+        height: None,
+    };
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_actor(actor);
+    cam.set_phase_on_state(BattleCamPhase::Action, 0x14);
+    steps(&mut cam, 40);
+    let shot = cam.framing_pose();
+    assert_eq!(shot.focus[0], 100.0);
+
+    // The next actor's setup: a new actor in the inputs, the far framing
+    // resolved, and neither moves anything but the orbit.
+    cam.set_actor(BattleCamActor {
+        world: [-500.0, 0.0, -500.0],
+        ..actor
+    });
+    cam.set_phase_on_state(BattleCamPhase::Menu, 0x0A);
+    assert!(cam.holds_framing());
+    let drawn = cam.rand_state;
+    steps(&mut cam, 8);
+    let held = cam.framing_pose();
+    assert_eq!(cam.phase(), BattleCamPhase::Action);
+    assert_eq!(
+        (held.pitch, held.tr, held.focus),
+        (shot.pitch, shot.tr, shot.focus)
+    );
+    assert_ne!(held.yaw, shot.yaw, "the setup states still orbit the yaw");
+    assert_eq!(cam.rand_state, drawn, "a setup state draws nothing");
+
+    // The seed: a case-6 arm toward the new actor, with the new action's coin.
+    cam.observe_action_state(0x0C);
+    cam.set_phase_on_state(BattleCamPhase::Action, 0x0C);
+    assert!(!cam.holds_framing());
+    assert_ne!(cam.rand_state, drawn, "the seed re-rolls the track coin");
+    steps(&mut cam, 40);
+    assert_eq!(cam.framing_pose().focus[0], -500.0);
+}
+
+/// A round's first actor has no action framing to keep: the far framing the
+/// prompt armed runs on through the setup states
+/// (`taiku_topaz_pre_hyper_heal`, `evil_medallion_rage_battle`).
+#[test]
+fn a_rounds_first_actor_keeps_the_far_framing_in_setup() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase_on_state(BattleCamPhase::Menu, 0x0A);
+    assert!(!cam.holds_framing());
+    assert_eq!(cam.phase(), BattleCamPhase::Menu);
+}
+
+/// The end-of-action gate's case 6 is the finished actor's, no new action: it
+/// draws no track coin even when the phase changes under it (`0x52`'s case 8
+/// handing to a cast's case 6).
+#[test]
+fn the_end_of_action_gate_draws_no_track_coin() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
+    cam.set_phase_on_state(BattleCamPhase::ActionEnd, 0x52);
+    let drawn = cam.rand_state;
+    cam.observe_action_state(0x5A);
+    cam.set_phase_on_state(BattleCamPhase::Action, 0x5A);
+    assert_eq!(cam.phase(), BattleCamPhase::Action);
+    assert_eq!(cam.rand_state, drawn);
 }
 
 /// The strike loop `0x1E` arms case 7 on every pass with no fork
@@ -631,4 +735,23 @@ fn a_monsters_solo_clip_pulls_the_strike_framing_in() {
     // The far option keeps its framing.
     cam.option = CAMERA_OPTION_CLOSE + 1;
     assert_eq!(cam.recover_pose().tr[2], plain.tr[2]);
+}
+
+/// The pull-in's depth reaches the glide: TR z chases `3z/5` as TR y chases its
+/// `+0x40`, or a table of `battle_map01_frog_strike`'s (`1344`, `2948`) walks
+/// TR y alone.
+#[test]
+fn the_pull_in_walks_the_depth_too() {
+    let mut cam = BattleCamera::new(BattleCamPhase::Recover, 0);
+    cam.set_actor(BattleCamActor::default());
+    cam.set_action_framing(ActionFraming {
+        party_slot: false,
+        depth_raw: 3072,
+        solo: true,
+        ..Default::default()
+    });
+    cam.advance_to(2);
+    cam.set_phase(BattleCamPhase::ActionEnd);
+    cam.set_phase(BattleCamPhase::Recover);
+    assert_eq!(cam.glide_target().tr[2], prescale_tr_z(3072 * 3 / 5));
 }

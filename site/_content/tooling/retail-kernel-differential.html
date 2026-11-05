@@ -1,0 +1,87 @@
+<header class="page-header">
+  <div class="breadcrumb"><a href="../index.html">home</a> &middot; <a href="index.html">tooling</a> &middot; retail kernel differential</div>
+  <h1>The retail kernel differential: run the game's own routine beside its port</h1>
+  <p class="lede"><code>crates/retail-exec</code> is a user-mode R3000 interpreter. Its disc-gated tests load <code>SCUS_942.54</code> and any overlay off your disc, seed RAM with generated inputs, call a retail routine, and compare what it wrote with what the Rust kernel claiming to port it produces. No decompiled C and no hand reading sit between the two sides. No Sony bytes are committed; without <code>LEGAIA_DISC_BIN</code> the tests skip.</p>
+</header>
+
+<section class="doc-section" id="at-a-glance" data-doc="-">
+  <h2>At a glance</h2>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Generated inputs seed two sides. The first runs the retail routine, loaded off the disc, in the R3000 interpreter. The second runs the Rust kernel. Both write to a whole region of the record, and the two regions are compared byte for byte. A scripted rand hook feeds both sides one stream.">
+      <rect class="dg-node" x="4" y="75" width="176" height="60" rx="4"/>
+      <text class="dg-label" x="92" y="100">Generated inputs</text><text class="dg-sub" x="92" y="120">caps and empty cases too</text>
+      <rect class="dg-node-accent" x="240" y="15" width="240" height="70" rx="4"/>
+      <text class="dg-label" x="360" y="43">Retail routine off the disc</text><text class="dg-sub" x="360" y="63">in the R3000 interpreter</text>
+      <rect class="dg-node" x="240" y="125" width="240" height="70" rx="4"/>
+      <text class="dg-label" x="360" y="153">Rust kernel</text><text class="dg-sub" x="360" y="173">the routine its tag names</text>
+      <rect class="dg-node" x="670" y="70" width="200" height="70" rx="4"/>
+      <text class="dg-label" x="770" y="98">Whole regions equal?</text><text class="dg-sub" x="770" y="118">not chosen fields</text>
+      <path class="dg-edge" d="M180 95 L238 55" marker-end="url(#rkd-arrow)"/>
+      <path class="dg-edge" d="M180 115 L238 155" marker-end="url(#rkd-arrow)"/>
+      <path class="dg-edge" d="M480 50 L668 95" marker-end="url(#rkd-arrow)"/>
+      <path class="dg-edge" d="M480 160 L668 115" marker-end="url(#rkd-arrow)"/>
+      <text class="dg-edge-label" x="360" y="110" text-anchor="middle">one scripted rand() stream</text>
+      <defs><marker id="rkd-arrow" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+    </svg>
+    <figcaption>The <a href="port-catalog.html">port catalog</a> asks whether a routine has a tag and a caller, and the <a href="retail-compare.html">retail comparison corpus</a> asks about what a save state happens to show. This asks whether the Rust computes what the bytes compute, over inputs no capture reached.</figcaption>
+  </figure>
+  <div class="cli"><code>cargo test -p legaia-retail-exec --profile dev-fast --test integration</code></div>
+</section>
+
+<section class="doc-section" id="what-it-can-run" data-doc="what-it-can-run">
+  <h2>What it can run</h2>
+  <p>Integer instructions, <code>hi</code> / <code>lo</code>, unaligned loads and stores, RAM and the scratchpad. A routine with no <code>break</code> guard can run a <code>div</code> by zero as the chip does (<code>Cpu::hardware_zero_div</code>), since that result is what ships. A routine that reaches the GTE or COP0 stops with <code>Stop::Unsupported</code>, so a pure kernel is the natural target.</p>
+  <ul class="bullets">
+    <li><strong><code>Cpu::hook</code></strong> replaces a call, which is how <code>rand()</code> is scripted so both sides draw one stream.</li>
+    <li><strong><code>Cpu::calls</code></strong> records the calls made, which is how a test proves it reached the arm it claims.</li>
+  </ul>
+</section>
+
+<section class="doc-section" id="how-to-add-a-routine" data-doc="how-to-add-a-routine">
+  <h2>How to add a routine</h2>
+  <ol class="steps">
+    <li><b>Read the disassembly</b><span>Find what it reads and writes. Seed those bytes with the shapes a game reaches, including the caps and the empty cases.</span></li>
+    <li><b>Compare whole regions</b><span>A write the port does not know about is exactly what this is for, and a field-by-field test cannot see one.</span></li>
+    <li><b>Assert the arms</b><span>Hold that the run reached the interesting arms, so a seed change cannot leave the test passing on nothing.</span></li>
+  </ol>
+</section>
+
+<section class="doc-section" id="what-it-has-found" data-doc="what-it-has-found">
+  <h2>What it has found</h2>
+  <p>Every row was a disagreement between the bytes and a port that read as finished.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Routine</th><th>What the run showed</th></tr></thead>
+    <tbody>
+      <tr><td>Stat aggregator <code>FUN_80042558</code></td><td>Its grant and revoke scans had no port, behind a heading that tagged them ported: nothing put a Talisman's or a final-form Ra-Seru's summon on a spell list (<a href="../writeups/glitches/index.html">glitches</a>). The live stat window was only rebuilt for HP and MP, so an accessory's percent boost never reached the status screen's ATK.</td></tr>
+      <tr><td>Battle seed <code>FUN_80053CB8</code></td><td>The port clamped after the flat equipment bytes; retail clamps before them.</td></tr>
+      <tr><td>Level-up applier <code>FUN_801E9504</code></td><td>The stat spread was never enabled on any host, so every level-up took the curve's exact mean and drew none of retail's eight <code>rand()</code> calls a level. The six battle stats had no cap on the way up.</td></tr>
+      <tr><td>Melee resolver <code>FUN_801EC3E4</code></td><td>A clip's <code>+0x7A</code> selector inflicted nothing on a normal swing. A defender whose Stone was the raw word a cast writes still took damage. The Mystic Shield halved a plain swing where it stops it; the block breaker's quarter damage and the drain clip had no port; the shared finisher's no-damage floor was wired onto a routine that has none; the Spirit percent wraps at a byte here alone; a granted block spends the approach terms even when the verdict is overturned.</td></tr>
+      <tr><td>Spoils arm of <code>FUN_8004E568</code></td><td>The port paid EXP and gold for every seat; retail pays a seat that died and was not captured. Level-ups draw <code>rand()</code> ahead of the drop walk, and the port drew them the other way, so a level-up changed which item dropped. A Stoned member takes no EXP and leaves the split, a fallen member's Items Up still counts, and a level 99 member keeps earning up to the record's cap.</td></tr>
+      <tr><td>Monster flee roll <code>FUN_801EC0DC</code></td><td>It read the monster's INT back off its record under the scripted fight's profile, even in a random encounter.</td></tr>
+      <tr><td>The round opening (<code>FUN_801DA780</code>, <code>FUN_80051D84</code>, <code>FUN_801E752C</code>)</td><td>A fallen actor draws its initiative roll, and the port skipped it, shifting every later roll. The written turn order of Tetsu's spar and Cort's final form had no port. The formation roll's unguarded divide leaves the raw draw as the spread when the sides' levels match: the port neither drew nor added it, so an even fight had no ambush. A poison a cast wrote never drained, poison wore off on a timer retail does not have, and Life Grail and Magic Grail restored nothing in battle.</td></tr>
+      <tr><td>Action validator</td><td>The kernel matches over every arm. Its battle host read the raw word alone, so a member poisoned by a hit had nothing a cure could target.</td></tr>
+      <tr><td>Bag accessors, walk probes</td><td>Normalize <code>FUN_800423E0</code> is one pass of two cursors, not a whole compaction: a call can pass a hole by. The wall probes <code>FUN_801CFE4C</code> match, except that a negative coordinate wraps through the grid's masks where the port called it a wall.</td></tr>
+      <tr><td>Monster picker <code>FUN_801E9FD4</code></td><td>A walk matching nothing drew a target and a full swing budget the retail seat never gets; the interrupt arm of monsters <code>0x28..0x2A</code>, <code>0x7F</code>, <code>0x85</code> cast at members who had acted; monster <code>0xB6</code> cast past its five round cases; Tetsu's post-amble was missing; a pass that failed on its target forgot the cast it had stored.</td></tr>
+      <tr><td>Battle items <code>FUN_800402F4</code></td><td>Phoenix healed a flat quarter and skipped its draw, status and gauge. Medicine and Antidote missed the raw status word, MP items restored the dead, Fury Boost landed on the dead, and a heal landed at commit, not at state <code>0x3F</code>. The Point Card was not offered in battle at all.</td></tr>
+      <tr><td>Queue builder <code>FUN_801EED1C</code></td><td>An art ran with too little Spirit and an unknown art still ran. The price now comes off the gauge at the cleanup arm <code>0x801E5D74</code>, ahead of the action's own <code>+8</code>.</td></tr>
+      <tr><td>Walk step <code>FUN_801D01B0</code></td><td>A wall skid kept the held heading and full speed, the diagonal cut ignored the camera mode, and terrain slow and op <code>4C DF</code> had no port.</td></tr>
+      <tr><td>Encounter roll <code>FUN_801D9E1C</code></td><td>The anti-repeat latch was cleared on every scene entry, where retail's one global stands across them. The counter, rate shifts, story-group walk and battle setup all match.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The death arm of <code>FUN_8004AD80</code> and the MP-cost leaf <code>FUN_80035394</code> match. The death arm's table test leaves out row <code>0xBF</code>, which holds the neighbouring table's <code>[9, 0]</code>: retail would add item <code>0</code> there and the port refuses it, and a second test holds that no shipped monster reaches such a row.</p>
+</section>
+
+<section class="doc-section" id="see-also" data-doc="-">
+  <h2>See also</h2>
+  <div class="see-also">
+    <span class="see-also-label">Reference</span>
+    <a href="retail-compare.html">Retail comparison corpus</a>
+    <a href="recomp-differential.html">Recomp differential</a>
+    <a href="port-catalog.html">Port catalog</a>
+    <a href="../subsystems/level-up.html">Level-up</a>
+    <a href="../subsystems/battle-formulas.html">Battle formulas</a>
+    <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/retail-kernel-differential.md" target="_blank" rel="noopener">Full doc</a>
+  </div>
+</section>

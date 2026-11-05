@@ -160,8 +160,14 @@ pub fn snap_battle_ground(world: &mut World, snaps: &[GroundSnap]) -> Option<Bat
 /// `0x801E371C`), so retail's endpoint subtracts the heading the pass
 /// before stored, while the capture - and the snap - hold the one this pass
 /// stored. The strike's turn is a few units a pass; within
-/// [`STRIKE_HEADING_SLACK`] the yaw endpoint is retail's own. Every other
-/// framing, and every other component, is the probe's.
+/// [`STRIKE_HEADING_SLACK`] the yaw endpoint is retail's own.
+///
+/// A magic band shot lags the same way from the other side: `0x2B` arms it on
+/// its first pass (`jal 0x801DC0A0` at `0x801E4834`) and its table holds that
+/// pass's counter, where the probe reads the RAM's, which has drifted since
+/// (`battle_garmel_songi_hyper_wave_mid_cast`: endpoint `3121`, probe `3124`
+/// at counter `2080`, three passes in). Every other framing, and every other
+/// component, is the probe's.
 pub fn strike_heading_target(
     world: &World,
     target: BattleCamPose,
@@ -171,7 +177,9 @@ pub fn strike_heading_target(
         c.phase() == legaia_engine_battle_vm::battle_cam_script::BattleCamPhase::Recover
     });
     let turn = (target.yaw - end.yaw + 2048.0).rem_euclid(4096.0) - 2048.0;
-    if world.battle_ctx.action_state == 0x1E && recover && turn.abs() <= STRIKE_HEADING_SLACK {
+    let state = world.battle_ctx.action_state;
+    let armed_once = legaia_engine_battle_vm::battle_cam_script::SPELL_CAM_STATES.contains(&state);
+    if (state == 0x1E && recover || armed_once) && turn.abs() <= STRIKE_HEADING_SLACK {
         BattleCamPose {
             yaw: target.yaw - turn,
             ..target

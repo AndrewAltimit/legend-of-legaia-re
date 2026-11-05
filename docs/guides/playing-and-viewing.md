@@ -67,8 +67,8 @@ lettered in the game's own dialog font, read from that disc.
 ### Choosing the disc
 
 *Choose disc...* opens the system file dialog (`Ctrl+O` does too); dragging
-the `.bin` (or `.cue`) onto the window, or typing its path and pressing
-`Enter`, works as well. On Linux the dialog goes through the desktop's
+the `.bin` (or `.cue`) onto the window, or typing or pasting (`Ctrl+V`) its
+path and pressing `Enter`, works as well. On Linux the dialog goes through the desktop's
 file-chooser portal; where no portal runs, the drag-and-drop and typed-path
 routes still work.
 
@@ -84,8 +84,10 @@ game boots from: a `.cue` resolves to its `.bin`, the image must be raw
 Mode 2/2352, its `SYSTEM.CNF` must boot `SCUS_942.54`, and `PROT.DAT` must be
 present. A PAL or Japanese disc is refused with the executable it boots; a
 randomized or translated USA disc is accepted, since it still boots the USA
-executable. The check reads a few sectors, not the whole image - it is not the
-SHA-256 fingerprint `disc-extract verify` computes. The disc card says what is
+executable. The check reads the file table and a few sectors, not the whole
+image - it is not the SHA-256 fingerprint `disc-extract verify` computes. An
+image shorter than its own file table says is called incomplete, with how much
+of the disc it holds: a copy or a download that stopped early. The disc card says what is
 wrong in one line (the file moved, is not a disc image, is another region's
 disc) and the help box gives the reason and the fix. A file that is not a raw
 dump is named for what it is (`legaia_iso::sniff`): a 2048-byte `.iso` (it
@@ -124,6 +126,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Enhancements | Time of day (auto, day, dusk, night) | `legaia-options.toml` | `F8` | auto |
 | Enhancements | Lamp shadows | `legaia-options.toml` | `Y` | on |
 | Enhancements | Bloom | `legaia-options.toml` | `F10` | off |
+| Enhancements | Ambient occlusion | `legaia-options.toml` | `Home` | on |
 | Enhancements | Ground fog | `legaia-options.toml` | `F9` | off |
 | Enhancements | See-through walls | `legaia-options.toml` | `F4` | on |
 | Enhancements | Living ground pulse (off = `--no-entry-pulse`) | `launcher.toml` | - | on |
@@ -194,7 +197,9 @@ moved) turns the disc card back into the picker with that reason. Otherwise
 the help box names the log, `legaia-engine-game.log` in the saves folder, and
 the reason the log gives - a panic's message, or the root of the error chain
 the engine exits with. A crash leaves no reason in the log, and none is
-invented from the lines before it. A panic on any of the game's threads (the
+invented from the lines before it. `Ctrl+C` then copies a report for a bug
+report: how the game ended, the reason and the end of the log, with your home
+folder cut out of it. A panic on any of the game's threads (the
 audio mixer inside the sound callback, the controller reader) ends the
 process, so it is reported instead of the game playing on silent or deaf to
 the pad. Run from a terminal, the game's output still prints there too.
@@ -274,6 +279,7 @@ enhancement has a retail-faithful off position
 | `F4` | Camera-occlusion fade: walls between the camera and your character dissolve to a dither | on, remembered | `--no-occlusion-fade` |
 | `F9` | Volumetric ground fog | off, remembered | `--no-volumetric-fog` |
 | `F10` | Bloom: lamps, glowing props, lit windows and bright sky glow softly, stronger at night | off, remembered | - |
+| `Home` | Ambient occlusion: soft contact shadows where walls meet floors and at characters' feet | on, remembered | `--no-ssao` |
 | `R` | Free-angle movement | off (retail 4/8-way movement), remembered | - |
 | `T` | Camera distance preset: retail, far, farther | far, remembered | - |
 | `F3` | Wide debug orbit camera | off | - |
@@ -336,7 +342,7 @@ No window toggle sits on a key the pad table can bind, and that is not
 cosmetic: a window key arm runs **before** the pad lookup, so one parked on a
 bindable key deletes that button from the keyboard entirely. The bindable
 vocabulary is the table above plus `C`, `V`, `D` and `E`. Every window toggle
-is either an F-key, which the pad lookup never resolves, or a letter outside
+is an F-key or `Home` / `End`, which the pad lookup never resolves, or a letter outside
 that vocabulary (`I`, `R`, `T`, `Y`, the dev triggers, and the minigame entries below), so no
 rebinding can collide with one.
 

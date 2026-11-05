@@ -635,6 +635,12 @@ pub struct HomingSlots {
     /// The child bytes (target actor index plus one) of the slots the last
     /// [`Self::step`] hit and freed, `0` for none. Slot-indexed.
     pub hits: [u8; HOMING_SLOTS],
+    /// This pass's victims of a landed slot whose counter still runs, on a
+    /// record whose `+0x16` list holds an `0xFF`: the arm draws a ribbon for
+    /// each such byte and stores `+0x21D = 0x20` on the victim
+    /// (`0x801E1800..0x801E1824`), so the body shivers until the hit. Thunder
+    /// Break's Gala reads rate `0x20` from the landing to the hit.
+    pub shocks: [u8; HOMING_SLOTS],
     /// Where the last [`Self::step`] dragged each slot's handle actor: on a
     /// record whose `+0x09` byte is set, a phase-`2` slot between two list
     /// spawns copies its fresh position into the actor its last table-form
@@ -733,7 +739,9 @@ impl HomingSlots {
         let mut out = Vec::new();
         let fall = 4 * delta as i16;
         self.hits = [0; HOMING_SLOTS];
+        self.shocks = [0; HOMING_SLOTS];
         self.follows = [None; HOMING_SLOTS];
+        let shock_list = (0..4).any(|k| record.get(0x16 + k) == Some(&0xFF));
         let tracks = record.get(0x09).copied().unwrap_or(0) != 0;
         let byte = |o: usize| record.get(o).copied().unwrap_or(0);
         let speed = i32::from(byte(0x08));
@@ -808,6 +816,9 @@ impl HomingSlots {
                         if landing_counts {
                             if s.counter != 0 {
                                 s.counter = (s.counter - fall).max(0);
+                                if shock_list {
+                                    self.shocks[i] = s.child;
+                                }
                             } else {
                                 self.hits[i] = s.child;
                                 s.phase = 0;
@@ -819,6 +830,9 @@ impl HomingSlots {
                 3 => {
                     if s.counter != 0 {
                         s.counter = (s.counter - fall).max(0);
+                        if shock_list {
+                            self.shocks[i] = s.child;
+                        }
                     } else {
                         // `0x801E1844..0x801E1A68`: the hit, then the free.
                         self.hits[i] = s.child;
@@ -1496,6 +1510,26 @@ mod tests {
         assert_eq!(h.slots[0].counter, 0);
         h.step_pass(&rec, 0, 2, |_| Some(target));
         assert_eq!(h.hits, [1, 0, 0, 0]);
+    }
+
+    /// A record whose `+0x16` list holds `0xFF` shocks its victim through the
+    /// landing counter (`0x801E1800..0x801E1824`), and not on the hit's pass.
+    #[test]
+    fn an_ff_landing_list_shocks_the_victim_until_the_hit() {
+        let mut rec = vec![0u8; 0x1A];
+        rec[0x06] = 8;
+        rec[0x16] = 0xFF;
+        let target = [0, 0, 0];
+        let mut h = HomingSlots::default();
+        h.seed(Some(18), (0, 0, 0), &[Some(target)], |_| 1);
+        // The landing's pass drains the counter too: 8 falls by 4 a pass.
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.slots[0].phase, 3);
+        assert_eq!(h.shocks, [1, 0, 0, 0]);
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!(h.shocks, [1, 0, 0, 0]);
+        h.step(&rec, 0, |_| Some(target));
+        assert_eq!((h.shocks, h.hits), ([0; 4], [1, 0, 0, 0]));
     }
 
     /// Tail Fire's record arms no landing counter (`+0x06 == 0`): the pass

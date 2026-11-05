@@ -280,8 +280,13 @@ pub fn run_engine_battle(
             // The same record's op-0x35 words pick the fight's music: a
             // scripted boss's event starts its theme and selects the battle
             // sound set before the entry op (korb3's Gaza: `2028`, set
-            // `-1`), so the forced entry replays them too.
-            world.replay_scripted_battle_score(row);
+            // `-1`), so the forced entry replays them too - when the state
+            // says the record ran. A random roll can land on the same row
+            // (`teien` row `0`, the harvest's Berserker): the record's opening
+            // flag is down and the fight holds the field's own word.
+            if world.scripted_battle_record_ran(row) {
+                world.replay_scripted_battle_score(row);
+            }
             row
         }
         None => {
@@ -431,6 +436,7 @@ pub fn run_engine_battle(
                     slot: u8::try_from(slot).ok()?,
                     hp,
                     mp: c.mp,
+                    hp_max: battle.party_seat_pool_raised(slot, c),
                     ground: ground.get(slot).copied().flatten(),
                     facing: facing.get(slot).copied().flatten(),
                     defeat_lanes: (hp == 0)
@@ -441,6 +447,9 @@ pub fn run_engine_battle(
                         .flatten()
                         .map_or(0, seedable_status_bits),
                     init_key: keys.get(slot).copied().flatten(),
+                    heal_latch: slot
+                        == usize::from(engine_seat(battle.active_actor, battle.party_count))
+                        && battle.heal_gate_passed(),
                 })
             })
             .collect::<Vec<_>>()

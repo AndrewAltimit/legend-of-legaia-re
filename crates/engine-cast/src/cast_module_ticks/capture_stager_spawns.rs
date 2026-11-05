@@ -198,12 +198,13 @@ pub fn guilty_cross_cell_stager_spawns(arm: u8, caller: StagerCaller) -> Vec<Sta
 
 /// The records a capture-cell stager seats with words rolled off `rand()`
 /// stored over the seat: PROT 0946's Call Wave rays (`0x801F7970`, arm 0 of
-/// [`call_wave_stager_spawns`]) and PROT 0961's shards (`0x801F7E80`, arm 2
-/// of [`dead_end_crisis_stager_spawns`]). Each part's wait, lean rate
+/// [`call_wave_stager_spawns`]), PROT 0961's shards (`0x801F7E80`, arm 2
+/// of [`dead_end_crisis_stager_spawns`]) and PROT 0964's rays (`0x801F9008`,
+/// arm 1 of [`enemy_cast_stager_spawns`]). Each part's wait, lean rate
 /// `+0x84`, spread, length and roll are draws on the stream's history since
 /// the fight began, which a replay does not re-deal; a capture reads them
 /// back off the part.
-pub const ROLLED_STAGER_RECORDS: [u32; 2] = [0x801F_7970, 0x801F_7E80];
+pub const ROLLED_STAGER_RECORDS: [u32; 3] = [0x801F_7970, 0x801F_7E80, 0x801F_9008];
 /// The rolled words of a [`ROLLED_STAGER_RECORDS`] part beyond a seated
 /// part's position, banks, wait and channel block: the lean rate `+0x84`.
 pub const ROLLED_STAGER_EXTRA_OFFSETS: [u16; 1] = [0x84];

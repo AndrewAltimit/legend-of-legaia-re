@@ -5,6 +5,99 @@ use super::*;
 use legaia_engine_mode::mode::SceneMode;
 
 impl World {
+    /// The hall's ambient tree: the dance's setup state spawns records `2` and
+    /// `1` of the block's stager bundle at the origin (`FUN_800252EC` at
+    /// `0x801CF9A8` and `0x801CF9C0`, state `1` of `FUN_801CF470`). They are
+    /// the floor and wall palette cyclers and the strip scroller, which repaint
+    /// the hall's VRAM for as long as the dance runs. The walked-in scene's
+    /// own seat is kept aside for [`Self::restore_dance_ambient`]: retail
+    /// replaces it, the port keeps that scene underneath.
+    ///
+    /// PORT: FUN_801cf470 (state `1`'s two stager installs)
+    pub fn stage_dance_ambient(&mut self, stager_bytes: &[u8]) {
+        if self.ambient.venue_restore.is_some() {
+            return;
+        }
+        let restore = crate::world::VenueAmbientRestore {
+            ambient: std::mem::take(&mut self.ambient),
+            stagers: std::mem::take(&mut self.props.stagers),
+            stager_bytes: std::mem::take(&mut self.props.stager_bytes),
+            frame_step: self.clock.frame_step,
+        };
+        // A capture seat aims at the frame the comparison scores, which the
+        // hall's seat draws.
+        let mut ambient = restore.ambient;
+        self.ambient.cell_fx_seed = std::mem::take(&mut ambient.cell_fx_seed);
+        self.ambient.vram_rect_seed = std::mem::take(&mut ambient.vram_rect_seed);
+        self.ambient.cell_source_seed = std::mem::take(&mut ambient.cell_source_seed);
+        let restore = crate::world::VenueAmbientRestore { ambient, ..restore };
+        self.ambient.venue_restore = Some(Box::new(restore));
+        // The hall runs at a game tick per three vsyncs: `DAT_1F800393 = 3`
+        // in the parked dance states, the step the count-in's banner reads too
+        // ([`legaia_engine_minigames::dance::COUNTIN_ANIM_PERIOD_VSYNCS`]).
+        self.clock.frame_step = legaia_engine_minigames::dance::COUNTIN_ANIM_PERIOD_VSYNCS;
+        self.install_field_stagers(stager_bytes);
+        self.spawn_ambient_record(2, [0, 0, 0]);
+        self.spawn_ambient_record(1, [0, 0, 0]);
+        // State `1` itself is a game tick ahead of the first READY run
+        // (state `3`): the parts' gate reads `25` at banner counter `72`.
+        self.ambient.pending_game_ticks = 1;
+    }
+
+    /// Carry the walked-in scene's painted palette cells into the hall's VRAM,
+    /// ahead of [`Self::stage_dance_ambient`].
+    ///
+    /// The hall's init loads its art pack only with the field-entry word
+    /// `_DAT_8007B8B8` clear (`lw` at `0x801CF190`, `jal 0x8002541C` at
+    /// `0x801CF1A0`), so a door entry stands on the VRAM the field left. The
+    /// hall's cyclers capture their cells from there (op `0x2C`), and on `koin3`
+    /// those cells hold the strobe the field's own cyclers last painted: every
+    /// later hue and V of the hall's light show is a rotation of that paint.
+    /// `minigame_dance_retail_go_in` holds `(4, 4, 13)` as the floor's captured
+    /// entry where the disc's palette has `(20, 15, 6)`.
+    ///
+    /// PORT: FUN_801cef54 (the art pack's door-entry skip)
+    pub fn carry_walked_in_cells(&self, walked_in: &legaia_tim::Vram, hall: &mut legaia_tim::Vram) {
+        if self.ambient.venue_restore.is_some() {
+            return;
+        }
+        // The drop shadow's blob and palette are boot-resident
+        // (`FUN_8001C394`'s `(960, 256)` page, CLUT `0x7F86`), which the venue
+        // build does not hold.
+        const SHADOW_BLOB: (u16, u16, u16, u16) = (1016, 256, 4, 16);
+        const SHADOW_CLUT: (u16, u16, u16, u16) = (96, 510, 16, 1);
+        let rects = self.ambient.cell_captures.keys().copied();
+        for (x, y, w, h) in rects.chain([SHADOW_BLOB, SHADOW_CLUT]) {
+            let painted = crate::world::ambient::read_rect(walked_in, x, y, w, h);
+            crate::world::ambient::write_rect(hall, x, y, w, &painted);
+        }
+    }
+
+    /// Put the walked-in scene's ambient seat back when the hall comes down.
+    pub fn restore_dance_ambient(&mut self) {
+        if let Some(r) = self.ambient.venue_restore.take() {
+            self.ambient = r.ambient;
+            self.props.stagers = r.stagers;
+            self.props.stager_bytes = r.stager_bytes;
+            self.clock.frame_step = r.frame_step;
+        }
+    }
+
+    /// Step the hall's tree against the hall's own VRAM; `true` when it wrote.
+    pub fn step_dance_ambient(&mut self, vram: &mut legaia_tim::Vram) -> bool {
+        if self.ambient.venue_restore.is_none() {
+            return false;
+        }
+        // Ahead of the tree's first pass, whose op `0x2C`s capture from here.
+        for ((x, y, w, _), texels) in std::mem::take(&mut self.ambient.cell_source_seed) {
+            crate::world::ambient::write_rect(vram, x, y, w, &texels);
+        }
+        let moved = self.apply_script_vram_moves(vram);
+        let ambient = self.step_ambient_fx(vram);
+        let seeded = self.apply_vram_rect_seed(vram);
+        moved | ambient | seeded
+    }
+
     /// Enter the Noa dance (rhythm) minigame on `game`, suspending the current
     /// scene mode. The suspended mode is restored by [`World::exit_dance`] (and
     /// automatically once the song ends). Mirrors the pause-menu suspend/restore
@@ -96,6 +189,7 @@ impl World {
     /// installed, or the mode is still the hall" is exactly the set of frames
     /// with something to tear down.
     pub fn exit_dance(&mut self) -> Option<legaia_engine_minigames::dance::DanceGame> {
+        self.restore_dance_ambient();
         if self.mode != SceneMode::Dance && self.minigames.dance.is_none() {
             return None;
         }
@@ -139,9 +233,14 @@ impl World {
             return;
         }
         // Every body's clip runs every frame, count-in included: the clip
-        // driver ticks each actor whatever state the dance is in.
+        // driver ticks each actor whatever state the dance is in. The song's
+        // own advance steps the marker tiles; through the count-in, this does:
+        // they are actors on the same lists.
         if let Some(g) = self.minigames.dance.as_mut() {
             g.advance_body_clips(1);
+            if self.minigames.dance_countin.is_some() {
+                g.advance_step_markers(1);
+            }
         }
         // The pre-song count-in owns the frame while it runs: the beat clock
         // does not advance and no press is judged, which is retail's
@@ -168,7 +267,6 @@ impl World {
         let Some(game) = self.minigames.dance.as_mut() else {
             return;
         };
-        game.advance(1);
         // Judge at most one directional press this frame (retail tests all
         // three bits in one pass, but a rhythm player presses one at a time);
         // the scan order is retail's - Triangle, then Square, then Circle.
@@ -183,8 +281,8 @@ impl World {
         let dir = [DanceDir::C, DanceDir::A, DanceDir::B]
             .into_iter()
             .find(|d| pressed & d.pad_bit() != 0);
-        if let Some(dir) = dir {
-            self.minigames.dance_last_judge = Some(game.judge_press(dir));
+        if let Some(event) = game.advance_pressing(1, dir) {
+            self.minigames.dance_last_judge = Some(event.judge());
         }
         let finish_cues = game.take_finish_cues();
         let award_sounds = game.take_award_sounds();

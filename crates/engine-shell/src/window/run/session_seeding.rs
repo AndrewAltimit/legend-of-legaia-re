@@ -455,6 +455,22 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
         world.battle.forced_monster_target = target;
         world.battle.forced_monster_ground = ground;
     }
+    // `LEGAIA_SEAT_CUE_CLUT=<x>`: the parked palette column the retail state's
+    // effect row holds (`BattleState::cue_clut_seed`).
+    if let Some(x) = std::env::var("LEGAIA_SEAT_CUE_CLUT")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+    {
+        world.battle.cue_clut_seed = Some(x);
+    }
+    // `LEGAIA_SEAT_ELEMENT_ROLL=<n>`: the roll the state's Element Change
+    // accepted (`BattleState::element_roll_seed`).
+    if let Some(n) = std::env::var("LEGAIA_SEAT_ELEMENT_ROLL")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+    {
+        world.battle.element_roll_seed = Some(n);
+    }
     // `LEGAIA_BATTLE_GUARD=seat[,seat..]`: party seats that stand in the
     // Spirit stance (`+0x1DE == 4`) when the fight opens - a capture's
     // guarding member, which the cast-sequence oracle's monster cast lands
@@ -625,6 +641,16 @@ pub(super) fn apply_capture_palette_seeds(session: &mut NativeSession) {
         std::env::var_os("LEGAIA_SEAT_VRAM_RECTS").and_then(|p| std::fs::read(p).ok())
     {
         session.host.world.ambient.vram_rect_seed =
+            legaia_engine_capture::field_seeds::vram_rects_from_file(&bytes);
+    }
+
+    // `LEGAIA_SEAT_CELL_SOURCES=<file>` (the retail-compare image channel): the
+    // palettes a dance hall state's cyclers captured
+    // (`AmbientFxState::cell_source_seed`).
+    if let Some(bytes) =
+        std::env::var_os("LEGAIA_SEAT_CELL_SOURCES").and_then(|p| std::fs::read(p).ok())
+    {
+        session.host.world.ambient.cell_source_seed =
             legaia_engine_capture::field_seeds::vram_rects_from_file(&bytes);
     }
 }

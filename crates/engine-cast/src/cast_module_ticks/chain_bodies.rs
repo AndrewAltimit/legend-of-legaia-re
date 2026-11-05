@@ -64,7 +64,11 @@
 //! that the port does not have, so carrying the store would leave the
 //! actor frozen for the rest of the battle; those stores are named in the
 //! body's docs instead. `every_chain_body_leaves_its_actors_at_the_normal_rate`
-//! holds the rule.
+//! holds the rule. Two stores sit beside it because they reach seats the
+//! runner's three views do not name: a hit arm's rate on each seat it struck
+//! ([`ChainArm::hit_rate`]) and an arm's per-pass rate on the party row
+//! ([`party_rate_sweep`]). The action SM's Done tail puts those seats back
+//! (`FUN_801E93C8`), and PROT 0935's own `0xFF` arm does it sooner.
 
 use super::*;
 
@@ -233,6 +237,9 @@ pub struct ChainArm {
     /// The VA of the damage-wrapper `jal` in this arm, if it has one (the
     /// fold's hit - recorded, not applied).
     pub wrapper_site: Option<u32>,
+    /// The `+0x21D` store beside each struck seat's reaction stage. It lands on
+    /// the seats the fold hits, so the band's caller makes it.
+    pub hit_rate: Option<u8>,
     /// Any other simulation write.
     pub effect: Option<ChainEffect>,
     /// The seats whose clips the arm waits on before it leaves. The runner
@@ -252,6 +259,7 @@ const fn arm(phase: u8, entry: u32, exit: ChainExit) -> ChainArm {
         ctx_278: None,
         clears_0d: false,
         wrapper_site: None,
+        hit_rate: None,
         effect: None,
         settle: None,
     }
@@ -278,6 +286,11 @@ impl ChainArm {
         self.wrapper_site = Some(site);
         self
     }
+    const fn hit_rate(mut self, rate: u8) -> Self {
+        self.hit_rate = Some(rate);
+        self
+    }
+
     const fn effect(mut self, e: ChainEffect) -> Self {
         self.effect = Some(e);
         self
@@ -484,9 +497,10 @@ pub const SPOON_CHAIN: ChainBody = ChainBody {
 /// (`+0x1DA = 0`, no bump, `0x801F7A8C`), then sweeps the party row
 /// (`FUN_801DD4B0(0x1AE)` at `0x801F7AFC`) when the caster's `+0x1DD` is
 /// `8` or below `3`, else the enemy row minus the caster (`0x801F7C50`) -
-/// shape A both ways, each hit seat staged with its own reaction. Arm 6 waits
-/// for the row to settle and stores `0xFF`; `0xFF` restores every live
-/// seat's rate to `8` and clears the busy register (`0x801F7FBC`).
+/// shape A both ways, each hit seat staged with its own reaction at rate `4`.
+/// Arm 6 waits for the row to settle and stores `0xFF`; `0xFF` restores every
+/// live seat's rate to `8` ([`party_rate_sweep`]) and clears the busy register
+/// (`0x801F7FBC`).
 ///
 /// Not ported: the packet and camera arms, the party-row presentation
 /// stores and the holds of arms 1 and 3 (caster `+0x21B`, model `+0x68`).
@@ -509,11 +523,32 @@ pub const EARTHQUAKE_CHAIN: ChainBody = ChainBody {
                 stage(Caster, Literal(0), Untouched, 0x801F_7A8C),
                 reaction(One, 0x801F_7B70),
             ])
-            .hit(0x801F_7AFC),
+            .hit(0x801F_7AFC)
+            // `0x801F7BB4` on the party sweep, `0x801F7D40` on the enemy row.
+            .hit_rate(4),
         arm(6, 0x801F_7D88, Set(DONE)).settles(ChainSettle::TargetRow),
         arm(DONE, 0x801F_7F60, Finish).rates(&[rate(Caster, 8, 0x801F_7FA8)]),
     ],
 };
+
+/// The rate an arm stores on every party seat on each of its passes, ahead of
+/// its own countdown test, so a clip commit's decay lasts one frame there
+/// (`rugi_rogue_pre_rogue_wind`'s Vahn reads `4` for one step-`4` frame after
+/// his get-up commits under arm `0x37`, then `2` again).
+///
+/// | Arm | Rate | Site |
+/// |---|---|---|
+/// | PROT 0941 `0xB9` arm 3 | `2` | `0x801F7180` |
+/// | PROT 0964 `0xB0..=0xB2` arms `7`, `0x37`, `0x69` | `2` | `0x801F86B4`, `0x801F7E98`, `0x801F7648` |
+/// | PROT 0935 `0xFF` | `8` | `0x801F7FA8` |
+pub fn party_rate_sweep(entry: u32, body: Option<u32>, phase: u8) -> Option<u8> {
+    match (entry, phase) {
+        (941, 3) if body == Some(crate::cast_arm_ticks::STEAL_SWEEP_TICK) => Some(2),
+        (964, 7 | 0x37 | 0x69) if body == Some(ELEMENT_STRIKE_CHAIN.body) => Some(2),
+        (935, DONE) => Some(8),
+        _ => None,
+    }
+}
 
 /// PROT 0936 (Hyper Crush, `0x4B`) tick body, `0x801F69D8..0x801F7BD0`.
 ///
@@ -599,8 +634,8 @@ pub const HYPER_LIGHTNING_CHAIN: ChainBody = ChainBody {
 /// `+0x1F1`. Arm 5 waits for the victim to settle and stores `0xFF`; `0xFF`
 /// clears the busy register (`fp`).
 ///
-/// Not ported: the packet arms and the per-hit status
-/// rolls (the fold lands the cast's outcome as one hit). Countdowns:
+/// The four hits are the band's ([`SporeGasBeat`]; the fold owes the cast
+/// nothing). Not ported: the packet arms. Countdowns:
 /// `capture_countdown::SPORE_GAS`.
 ///
 /// PORT: FUN_801F69D8 (PROT 0939; phase chain + caster staging; packet arms unported)
@@ -620,6 +655,91 @@ pub const SPORE_GAS_CHAIN: ChainBody = ChainBody {
         arm(DONE, 0x801F_746C, Finish),
     ],
 };
+
+/// The arm of a countdown-gated body with no chain descriptor that lands the
+/// cast's one hit as it passes, and its terminal arm's settle wait: PROT 0945's
+/// Water Column (`0x801F74A4`, arm 7's `0x801F7654..0x801F769C`) and PROT 0949's
+/// Water Crystals (`0x801F7318`, arm 5's `0x801F7438..0x801F7480`).
+pub fn gated_hit_arm(entry: u32, body: Option<u32>) -> Option<(u8, u8, ChainSettle)> {
+    match (entry, body) {
+        (945, Some(WATER_COLUMN_TICK)) => Some((5, 7, ChainSettle::VictimOrFaded)),
+        (949, None) => Some((3, 5, ChainSettle::VictimOrFaded)),
+        _ => None,
+    }
+}
+
+/// The pace of PROT 0939's four hits. Arm 3's pass zeroes the hit count
+/// `0x801F7AF8` and seeds the word `0x801F7AF4` with `scalar << 5`
+/// (`0x801F6F94..0x801F6FB8`). Every pass of arm 4 under four hits drains it by
+/// the product, and a negative word counts the next hit and re-arms by
+/// `scalar << 4` (`0x801F7054..0x801F7098`), with the victim alive and not
+/// Stoned or not.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SporeGasBeat {
+    /// Hits counted, `0..=4`. A victim that dies stores `4` (`0x801F73D0`).
+    pub hits: u8,
+    word: i32,
+}
+
+impl SporeGasBeat {
+    /// Arm 3's pass.
+    pub const fn armed() -> Self {
+        Self {
+            hits: 0,
+            word: crate::cast_module_camera::SPEED_SCALAR << 5,
+        }
+    }
+
+    /// One pass of arm 4: the hit this pass counts, if any.
+    pub fn tick(&mut self) -> Option<u8> {
+        if self.hits >= 4 {
+            return None;
+        }
+        self.word -= crate::cast_module_camera::SPEED_SCALAR;
+        if self.word >= 0 {
+            return None;
+        }
+        self.word += crate::cast_module_camera::SPEED_SCALAR << 4;
+        self.hits += 1;
+        Some(self.hits)
+    }
+}
+
+/// PROT 0939's one wrapper site, `FUN_801DD4B0(0x60)` at `0x801F70E0`, which the
+/// four hits share. It stands apart from [`CAST_DAMAGE_SHAPES`], whose rows the
+/// fold's power lookup reads.
+pub const SPORE_GAS_SHAPE: CastDamageShape = CastDamageShape {
+    prot_entry: 939,
+    routine: 0x801F_69D8,
+    wrapper: CastWrapper::Respect,
+    never_kills: false,
+    powers: &[0x60],
+};
+
+/// PROT 0939 hit `k`'s reaction: index into the `+0x1EF..=+0x1F1` trio, hits 1
+/// and 2 the first, hit 3 the second, hit 4 the knockdown
+/// (`0x801F71A8`, `0x801F7224`, `0x801F72BC`, `0x801F73A4`).
+pub const fn spore_gas_reaction(hit: u8) -> usize {
+    match hit {
+        1 | 2 => 0,
+        3 => 1,
+        _ => 2,
+    }
+}
+
+/// PROT 0939 hit `k`'s Rot roll on one `rand()`: the limb it lands, `0` left,
+/// `1` right, `2` low (`+0x16E |= 8 / 0x10 / 0x20`). Hit 1 is `rand & 1`
+/// (`0x801F7204`), hit 2 `rand % 3 != 0` (`0x801F7280`), hit 3 `rand & 3 != 0`
+/// (`0x801F7318`). Hit 4 draws nothing, and the caller draws only behind the
+/// record's two immunity bits (`+0x6BC & 0x11000000`, the sites' guards).
+pub const fn spore_gas_rot(hit: u8, roll: u32) -> Option<u8> {
+    match hit {
+        1 if roll & 1 != 0 => Some(0),
+        2 if !roll.is_multiple_of(3) => Some(1),
+        3 if roll & 3 != 0 => Some(2),
+        _ => None,
+    }
+}
 
 /// PROT 0942's `0xAA` tick body, `0x801F69F4..0x801F7D34`.
 ///
@@ -992,8 +1112,9 @@ pub const GENOCIDAL_CANNON_CHAIN: ChainBody = ChainBody {
 /// creature seat's rate `2`, `k = 3` steps its clip with a bump and rate `4`,
 /// `k = 4` clears its stage and sweeps the party row
 /// (`FUN_801DD4B0(0x580)` at `0x801F853C` / `0x801F7D28` / `0x801F74CC`,
-/// shape A, each hit seat staged with its own reaction), and `k = 5` despawns
-/// the creature (its `+0x14C = 0`, not a hit). The closing arm (`8`, `0x38`,
+/// shape A, each hit seat staged with its own reaction at rate `2`), and
+/// `k = 5` despawns the creature (its `+0x14C = 0`, not a hit) and holds the
+/// party at rate `2` ([`party_rate_sweep`]). The closing arm (`8`, `0x38`,
 /// `0x6A`, all at `0x801F8800`) stores `0xFF`; `0xFF` zeroes `ctx[+0x0D]`,
 /// stages the seat `0` with a bump and clears the busy flag.
 ///
@@ -1021,7 +1142,8 @@ pub const ELEMENT_STRIKE_CHAIN: ChainBody = ChainBody {
                 stage(Seat, Literal(0), Untouched, 0x801F_8378),
                 reaction(Bump, 0x801F_85DC),
             ])
-            .hit(0x801F_853C),
+            .hit(0x801F_853C)
+            .hit_rate(2), // `0x801F8600`
         arm(7, 0x801F_8664, Advance),
         arm(8, 0x801F_8800, Set(DONE)),
         // Selector 0.
@@ -1036,7 +1158,8 @@ pub const ELEMENT_STRIKE_CHAIN: ChainBody = ChainBody {
                 stage(Seat, Literal(0), Untouched, 0x801F_7B78),
                 reaction(Bump, 0x801F_7DC8),
             ])
-            .hit(0x801F_7D28),
+            .hit(0x801F_7D28)
+            .hit_rate(2), // `0x801F7DEC`
         arm(0x37, 0x801F_7E44, Advance),
         arm(0x38, 0x801F_8800, Set(DONE)),
         // Selector 1.
@@ -1051,7 +1174,8 @@ pub const ELEMENT_STRIKE_CHAIN: ChainBody = ChainBody {
                 stage(Seat, Literal(0), Untouched, 0x801F_72E4),
                 reaction(Bump, 0x801F_756C),
             ])
-            .hit(0x801F_74CC),
+            .hit(0x801F_74CC)
+            .hit_rate(2), // `0x801F7590`
         arm(0x69, 0x801F_75F8, Advance),
         arm(0x6A, 0x801F_8800, Set(DONE)),
         arm(DONE, 0x801F_8854, Finish)
@@ -1143,6 +1267,78 @@ mod chain_tests {
                 }
             }
         }
+    }
+
+    /// `vozz_gizam_water_column`'s arm lengths on the game clock read `64`, `128`,
+    /// an ungated pass, `64`, `128`, `96`, then the settle; the tables hold them.
+    #[test]
+    fn the_water_bodies_land_one_hit_and_settle() {
+        use crate::cast_module_camera::{SINGLE_BODY, capture_arm_countdowns};
+        let col = capture_arm_countdowns(945, WATER_COLUMN_TICK).unwrap();
+        assert!(!col.iter().any(|a| a.arm == 3), "arm 3 runs ungated");
+        assert!(capture_arm_countdowns(949, SINGLE_BODY).is_some());
+        assert_eq!(
+            gated_hit_arm(945, Some(WATER_COLUMN_TICK)).map(|g| (g.0, g.1)),
+            Some((5, 7))
+        );
+        assert_eq!(gated_hit_arm(949, None).map(|g| (g.0, g.1)), Some((3, 5)));
+        let (mut c, mut k, mut v) = (
+            CastModuleCtx::default(),
+            CastActorState::default(),
+            CastActorState::default(),
+        );
+        k.anim_rate = 8;
+        v.anim_rate = 8;
+        for _ in 0..6 {
+            water_column_tick(&mut c, &mut k, &mut v, None, 0);
+        }
+        assert_eq!((k.anim_rate, v.anim_rate), (4, 4));
+        c.phase = 7;
+        water_column_tick(&mut c, &mut k, &mut v, None, 0);
+        assert_eq!((k.anim_rate, v.anim_rate), (8, 8));
+    }
+
+    /// `teien_berserker_pre_spore_gas`: hits 33, 49, 65 and 81 passes into arm 4
+    /// (retail's cues sound `36`, `52`, `68`, `84` vsyncs in on a `3`-vsync lag).
+    #[test]
+    fn spore_gas_lands_four_hits_on_its_beat() {
+        let mut beat = SporeGasBeat::armed();
+        let hits: Vec<(u32, u8)> = (1..=200u32)
+            .filter_map(|pass| beat.tick().map(|k| (pass, k)))
+            .collect();
+        assert_eq!(hits, [(33, 1), (49, 2), (65, 3), (81, 4)]);
+        assert_eq!(
+            [1, 2, 3, 4].map(spore_gas_reaction),
+            [0, 0, 1, 2],
+            "the trio's indices"
+        );
+        assert_eq!(spore_gas_rot(1, 2), None);
+        assert_eq!(spore_gas_rot(1, 3), Some(0));
+        assert_eq!(spore_gas_rot(2, 3), None);
+        assert_eq!(spore_gas_rot(3, 4), None);
+        assert_eq!(spore_gas_rot(3, 5), Some(2));
+    }
+
+    /// The struck seats' rates and the party-row stores the measured reactions
+    /// pace on: `nilboa_rock_lizard_pre_earthquake` holds the party at `4`,
+    /// `rugi_rogue_pre_rogue_wind` at `2` through its get-ups.
+    #[test]
+    fn hit_rates_and_party_sweeps_name_their_arms() {
+        assert_eq!(EARTHQUAKE_CHAIN.arm(5).unwrap().hit_rate, Some(4));
+        for phase in [6, 0x36, 0x68] {
+            assert_eq!(ELEMENT_STRIKE_CHAIN.arm(phase).unwrap().hit_rate, Some(2));
+        }
+        let strike = Some(ELEMENT_STRIKE_CHAIN.body);
+        for phase in [7, 0x37, 0x69] {
+            assert_eq!(party_rate_sweep(964, strike, phase), Some(2));
+        }
+        assert_eq!(party_rate_sweep(964, strike, 6), None);
+        assert_eq!(party_rate_sweep(964, Some(0x801F_0000), 7), None);
+        assert_eq!(party_rate_sweep(935, None, DONE), Some(8));
+        assert_eq!(
+            party_rate_sweep(941, Some(crate::cast_arm_ticks::STEAL_SWEEP_TICK), 3),
+            Some(2)
+        );
     }
 
     /// The module's rate rule: no body leaves its caster or victim off the

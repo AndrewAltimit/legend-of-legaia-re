@@ -330,8 +330,12 @@ pub fn battle_combo_style(world: &legaia_engine_core::world::World) -> Option<Co
     let a = world.battle_ctx.active_actor;
     let actor = world.actors.get(a as usize)?;
     let cat = actor.battle.action_category;
-    let party_wide =
-        actor.battle.active_target == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
+    // A lone survivor's cast keeps the seed's code for this as well: the
+    // recording of Caruban's Fire Breath on a solo Vahn holds the panels through
+    // both hits and raises no readout, with `+0x1DD` rewritten to his slot.
+    let party_wide = actor.battle.seed_party_wide
+        || actor.battle.active_target
+            == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
     if party_wide
         && (cat == ActionCategory::Magic.as_byte() || cat == ActionCategory::Item.as_byte())
     {

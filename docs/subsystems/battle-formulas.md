@@ -70,7 +70,7 @@ blocking and the limb-height "Miss" are separate gates.
 | [Special / summon roll](#roll---fun_801dd0ac) | `FUN_801DD0AC` | INT-driven attacker roll vs INT + HP + DEF defender roll | `summon_predamage`, `arts_physical_predamage` |
 | [Scale](#scale---fun_801dd864-and-the-element-matrix) | `FUN_801DD864` | `atk * matrix[a][d] / 100`, Venom / Toxic, magic level | `apply_element_affinity`, `apply_status_weaken`, `apply_magic_power` |
 | [Finisher](#finisher---fun_801ddb30) | `FUN_801DDB30` | resist halve, guard halve, `rand%9+8` floor, summon %, cap 9999 | `damage_finish` |
-| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, cap 100 | `spirit_gauge_fill` |
+| [Spirit-gauge fill](#spirit-gauge-fill-on-damage-taken) | `FUN_801DDB30` / `FUN_801EC3E4` | `max(1, dmg*100/maxHP)` + AP Boost, cap 100; melee masks the percent to a byte | `spirit_gauge_fill`, `melee_spirit_gauge_fill` |
 | [Capture-class wrappers](#capture-class-wrappers---fun_801dd4b0--fun_801dd6b4) | `FUN_801DD4B0` / `FUN_801DD6B4` | baked power, respect or bypass the resist ladder | `battle_damage_wrappers` |
 | [Recovery summons](#recovery-summons) | PROT 0905 / 0911 | Vera `level*0x20 + 0xE0`; Orb `(level<<6) + 0x1C0` | `heal_summon_amount` |
 | [Spell XP + magic level](#summon-spell-xp--magic-level-up) | `FUN_801DDB30` tail, `FUN_801E70BC` | `gain = dmg*(12 or 4)/maxHP`; level up when `xp > table*mult>>1` | `summon_spell_xp_gain`, `summon_magic_levels_up` |
@@ -85,7 +85,7 @@ blocking and the limb-height "Miss" are separate gates.
 | [Party escape](#run--escape-roll---fun_801e791c) | `FUN_801E791C` | caught iff `rand % party_score < rand % enemy_score` | `escape_roll` |
 | [Monster escape](#monster-escape-roll---fun_801ec0dc) | `FUN_801EC0DC` | HP + ATK side averages, then a 1-in-8 gate | `monster_escape_roll` |
 | [Status DoT](#per-round-status-dot-ticker---fun_801e752c) | `FUN_801E752C` | Toxic `maxHP>>4` cap 256; Venom `maxHP>>5` cap 128; never lethal | `status_effects::toxic_tick_damage` / `venom_tick_damage` |
-| [Status application](#status-application-the-art--move-record-status-byte) | `FUN_801EC3E4`, `FUN_801E09F8` | byte `3..6` -> Venom / Toxic 1/8, Rot, Curse 1/4 | `monster_ai::enemy_impact_status_proc` |
+| [Status application](#status-application-the-art--move-record-status-byte) | `FUN_801EC3E4`, `FUN_801E09F8` | byte `3..6` -> Venom / Toxic 1/8, Rot, Curse 1/4 | `World::roll_melee_status_arm`, `monster_ai::enemy_impact_status_proc` |
 | [Victory gold / EXP](#victory-spoils-rewards) | `FUN_8004E568` | gold `sum(g>>1)` halved again; EXP `sum*3/4` split | `victory_gold_finalize`, `victory_exp_per_member` |
 | [Victory drop](#the-victory-drop-roll) | `FUN_8004E568` `0x8004F3D8` | `rand%100 < chance` per seat, one item, 1-in-4 gate | `victory_drop_roll` |
 | [MP cost](#mp-cost--ability-bit-modifiers) | `FUN_80035394`, `FUN_801E295C` `0x28` | `cost - cost>>1` (bit `0x20`) or `cost - cost>>2` (bit `0x10`) | `mp_cost_after_ability_bits` |
@@ -364,17 +364,42 @@ then the inlined [spirit-gauge fill](#spirit-gauge-fill-on-damage-taken).
 
 **Port (Offense through cap).** `physical_predamage` (`PhysicalHit`,
 `command_power_scalar`, `physical_defense_is_udf`) ports the stages from the
-attack roll down; the party-defender guard ladder is `damage_finish`'s resist
-stage, handed the monster attacker's element (`World::monster_seat_element`,
+attack roll down; `melee_guard_ladder` is the party-defender guard ladder and
+the cap, keyed on the monster attacker's element (`World::monster_seat_element`,
 the live `+0x1D`). `World::land_melee_hit` runs every physical hit - party and monster,
 swing and Art - through the fold and the roll, once per hit event the anim tick
 admits; a committed Art clip (`+0x1D9 > 0x10`) takes the `0x11` all-slots arm.
-RNG draws follow retail call order: attack roll, guard roll, then the rewrite
-draw and the chip-floor draw only when those arms fire. `damage_finish`'s post
-stages (equipment resists, the zeroed-hit floor, the cap) run on top by
-default, on the uncapped excess (`physical_excess`) so the guard halve comes
-before the 9999 cap as at `0x801EDA00`; `--no-damage-finish` keeps the flat path, and the finisher supplies no
-guard halve because the Spirit stance is already the Defense triple. The
+RNG draws follow retail call order: block pair, attack roll, guard roll, then the
+rewrite draw and the chip-floor draw only when those arms fire, then the absorb
+roll and the status arm of the clip's `+0x7A`. The guard ladder has none of the
+shared finisher's other stages: no zeroed-hit floor, no Mystic Shield halve and no
+guard halve, because the Spirit stance is already the Defense triple;
+`--no-damage-finish` skips the ladder. The whole body runs against the retail bytes
+in [the kernel differential](../tooling/retail-kernel-differential.md).
+
+**After the cap.** A Stoned defender (`+0x16E & 4`, `0x801EDA30`) jumps to
+`0x801EDD5C` and takes no accumulate, no strip, no Spirit and no rumble. A hit the
+block breaker turned (attacker ability `0x4000`) lands a quarter of its excess
+(`0x801EDA54`) and plays the block pose on a defender left standing. A monster on a
+clip whose `+0x77` is `0x3B` drains: `raw` becomes `raw*7/4`, the hit is that minus
+Defense, and the attacker heals by it (`0x801EDAA4..0x801EDB14`); a heal reaching
+the attacker's max owes its bar nothing, because the delta is read after the HP
+store. The Spirit percent is masked to a byte at every use here (`0x801EDC04`,
+`0x801EDC9C`), where the finisher's is not, so a hit of 256% of max HP adds nothing.
+
+**The Mystic Shield.** While `_DAT_8007BD84` is up, an attacker on a clip below
+`0x10` is blocked whatever the defender's poses, and an Art passes
+(`0x801ECA84..0x801ECAF8`). The tail clears the reaction, turns the defender and
+raises cue `0x10C` (`0x801EEB60..0x801EEBEC`). This is the one thing the word does
+to a melee hit; the halve is the finisher's alone.
+
+**Approach terms.** `ctx[+0x6D2]` / `+0x6D4` are spent where a block roll grants
+(`0x801EC888`), ahead of the damage roll, so a verdict the juggle window or the
+block breaker overturns rolls without them; a hit that no roll granted spends them
+after the damage roll (`0x801EE3C4`), and a block the juggle window forced spends
+nothing.
+
+The
 `legaia_actor_formats::monster_archive` accessors (`attack()` / `defense_high()` /
 `defense_low()`) and `engine-core`'s `monster_def_from_record` follow the ATK /
 UDF / LDF binding. Regressions: `engine-battle-vm/tests/battle_physical_predamage.rs`,
@@ -763,7 +788,7 @@ the rest 70-95 (`asset element-affinity` prints the rows).
 
 The rest of the routine is its **tail**, which reads and writes about twenty
 battle globals: the [spirit-gauge fill](#spirit-gauge-fill-on-damage-taken), the
-damage-popup accumulator (`_DAT_8007bd14`), the `DAT_801f6980` AI revenge table,
+damage-popup accumulator (`_DAT_8007bd14`), its per-seat window `DAT_801f6980` for a group target (the multi-cast readout `FUN_801E805C` draws both),
 the MP drain, the [spell-XP accrual](#summon-spell-xp--magic-level-up) and the
 per-element stat-debuff `switch` keyed on the summon record's element
 (`DAT_801c9358+0x1d`) - the Seru-magic
@@ -984,7 +1009,7 @@ one); what players report as boss immunities falls out of the gates below.
 // stager FUN_801F3D3C, once per cast, called from inside the spell's module
 if level < 3:                                   return          // 0x801F3D90..0x801F3DA0
 if ctx[+0x287] && summon_el != 5 && rand() % 5 != 0:
-    if affinity[summon_el][first_enemy_el] < 0x65: return       // suppressed
+    if affinity[summon_el][record0_el] < 0x65: return           // suppressed
 switch summon_el:                                                // 0x801F3EB4
   0 2 3 4 6:  if ctx[+0x287] && target is an enemy seat:
                   compare target BASE halfword vs raw record; differ -> return
@@ -1003,7 +1028,8 @@ stat -= stat * (*0x801F6960) / 100
 | `level` | caster magic level for `actor[+0x1DF]` (record `+0x161` array, `0x20`-entry scan of `+0x13D`) |
 | `summon_el` | summon record `+0x1D` through `0x801C9358` - the creature's element, never the caster's |
 | `ctx[+0x287]` | the **scripted-fight flag**: bit `0x80` of `DAT_8007BD60`, raised by a formation row whose header byte is non-zero ([encounter.md](../formats/encounter.md#the-per-battle-flags-byte-dat_8007bd60)), latched by `FUN_800513F0`. `4` in every boss capture, `0` in every random-encounter capture. |
-| first enemy | the single target, or the first living enemy seat of a group cast |
+| `record0_el` | the formation's first record's element (`0x801C9348` `+0x1D`), whoever the cast is aimed at and whether that seat stands |
+| compared seat | the single enemy target, or the first enemy seat of a group cast with HP left |
 | table | `0x801F6870` (PROT 0898 file `0x28058`), `[element][band]`, `0x20` bytes per element, 8-byte records `[u8 amount][3 pad][u32 banner_va]` |
 
 | Summon element | Effect on the target | lv 3-4 | lv 5-6 | lv 7-8 | lv 9 |
@@ -1021,7 +1047,7 @@ fight class:
 
 | Debuff | Random encounter (flag clear) | Scripted fight (flag set) |
 |---|---|---|
-| suppression roll | none | four casts in five suppressed, unless light or the first enemy is weak (`affinity >= 101`: thunder vs the four base elements at 102, each opposed pair at 104) |
+| suppression roll | none | four casts in five suppressed, unless light or the formation's first monster is weak (`affinity >= 101`: thunder vs the four base elements at 102, each opposed pair at 104) |
 | ATK, DEF, INT | every hit, stacking multiplicatively (two 10% hits leave 81%) | **never** - the scripted [boost profile](#actor-stat-block--monster-record-mapping) already moved the base halfword off the record value (exceptions: ATK `< 4`, INT `< 8`, UDF `0`, which the boost cannot move) |
 | SPD | every hit | once per battle |
 | AGL | once per battle (the compare is unconditional and the shave moves the compared halfword) | once per battle |
@@ -1210,7 +1236,8 @@ ability +0xF4 & 0x20000            -> key += 0x1000          // always first
       (each arm applies only when the other class is absent)
 formation advantage ctx[+0x290]: the disadvantaged side's keys = 0
 monster id 0xB4 with ctx[+0x28A] == 0: slot 3 key = 30000
-monster id 0x4F: slots 0 and 3 fixed to a hand-written order
+monster id 0xB4, round 0: slot 3 = 30000
+monster id 0x4F, round < 3: slot 0 = 2, slot 3 = 1; round 3: slot 0 = 1, slot 3 = 2
 actor[+0x16C] = key
 ```
 
@@ -1236,6 +1263,9 @@ maximum is entered twice, so the first seat above 0 to reach the top key wins
 roll alone also appears under the phantom name `overlay_0897_801e23ec`: PROT
 0897's extraction over-reads into 0898 and that Ghidra program maps the file at
 `0x801C0000` instead of `0x801CE818`, so do not cite that address.
+The sweep skips an empty seat, not a fallen one: a fallen actor takes its draw, and
+the pick passes it over on its HP.
+
 **Port.** `seed_initiative` / `wounded_bonus` / `initiative_roll_modulus`
 (`InitiativeActor`, `InitiativeAbility`), driven by `World::reseed_initiative`
 (`engine-core::world::battle::initiative`); next actor
@@ -1265,6 +1295,9 @@ pre-emptive  if b < a && rand() % mod_pre  == 0         // mod_pre  16, or  2 wi
 forced back attack: monster ids 0x3D..=0x3F on maps 0x0C / 0x15 (also _DAT_8007BAC0 |= 0x200),
                     and monster id 0xA7 anywhere
 ```
+
+Neither divide carries a `break`: level means divide by zero, and the chip leaves
+the raw draw in `HI`, so `a = p + rand()`. Both draws are taken either way.
 
 The two draws are correlated: `b`'s spread is taken about `|a - e|`. The
 disadvantaged side is turned to face the wrong way (`+0x46 = 0x800` for the
@@ -1398,9 +1431,10 @@ if (sub_index < 3 && (i16)delta > DAT_8007655C[sub_index])   // party-side cap
 ```
 
 This is an HP **applicator**, not an attack-vs-defence calculation. The cap
-table `DAT_8007655C` is six halfwords. `800402f4.txt` lines 2037-2043.
-**Confidence: Inferred** for the role of `sub_index` and the cap table - the
-read is from the decompiled C. **Port.** `damage_cap_for_party_slot`.
+table `DAT_8007655C` is six halfwords, and `sub_index` is the item's tier. The
+retail kernel differential runs this arm off the disc for every field heal and
+holds the record to the port's ([`retail-kernel-differential.md`](../tooling/retail-kernel-differential.md)).
+**Port.** `damage_cap_for_party_slot`.
 
 ### Selector 9 - opposed INT roll (Stone)
 
@@ -1639,7 +1673,7 @@ into the 5-entry table at `0x801F53D4`.
 | `1`, `2` | none - cosmetic lingering visuals only (`+0x21F` marker, tints `0x801F53D4` / `0x801F53D8`); `FUN_801D0748` never reads `+0x21F` | - | - |
 | `3` | `\|= 1` (**Venom**) | `rand & 7 == 0` (1/8) | - |
 | `4` | `\|= 2` (**Toxic**) | `rand & 7 == 0` (1/8) | - |
-| `5` | `\|= 1 << (rand%3 + 3)` (**Rot**: bit `8` grays LEFT, `0x10` RIGHT, `0x20` UP and DOWN; `== 0x38` blocks Attack - [arts-command-gauge.md](arts-command-gauge.md#status-limb-gating)) | always, party target only | record `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
+| `5` | `\|= 1 << (rand%3 + 3)` (**Rot**: bit `8` grays LEFT, `0x10` RIGHT, `0x20` UP and DOWN; `== 0x38` blocks Attack - [arts-command-gauge.md](arts-command-gauge.md#status-limb-gating)). A limb newly set clears the first byte of both Auto command strings (record `+0x1A7` / `+0x1B7`) | always, party target only | record `+0xF4` bit 24 (passive `0x18` Rot Guard) or bit 28 (`0x1C` Master Guard) nullifies |
 | `6` | `\|= 0x1000` (**Curse**: grays the Magic command) | `rand & 3 == 0` (1/4) | physical-strike resolver only; writes no `+0x21F` marker |
 
 | Resolver | Byte source | Ladder |
@@ -1679,6 +1713,11 @@ carries the matching guard bit:
 | 27 | `0x400` | (the guard-disable status) |
 | 28 | `0x1C7F` | Master Guard (`0x1C`, all bits) |
 
+**No timer.** Nothing in the battle code wears a status off with time. Every store
+to `+0x16E` that clears a bit is a cure, the sweep above, a hit's `0x0F80` strip, the
+tick's scripted-monster arm or the `0x400` waker, so Venom, Toxic, Rot and Curse last
+until cured. The tick has no Stone test either: a Stoned actor with Venom drains.
+
 **Port.** `legaia_engine_battle_vm::status_effects` follows the byte map (`4` = Toxic,
 `5` = Rot with a rolled disabled limb; Sleep and Confuse kinds remain
 host-drivable with no on-disc byte). The monster path is
@@ -1703,18 +1742,30 @@ fields inline in each monster record
 
 ```text
 // NTSC-U (SCUS_942.54)
-gold = sum over dead enemies (record.gold >> 1)              // 0x8004EFBC
+// A seat pays when +0x14C == 0 and +0x227 == 0: it died and was not captured,
+// so a Seru the Ra-Seru took pays nothing and neither does a monster that ran.
+gold = sum over paying seats (record.gold >> 1)              // 0x8004EFBC
 if a living member has +0xF4 bit 0x10000:  gold += gold >> 2 // Golden Book, 0x8004F094
 if _DAT_8007BAC0 != 0:  gold = 0                             // 0x8004F0AC
 gold = gold - (gold >> 1)                                    // second halving, 0x8004F0DC
 purse (0x8008459C) = min(purse + gold, 99,999,999)
 
-exp  = sum over dead enemies record.exp
+exp  = sum over paying seats record.exp
 exp -= exp >> 2                                              // x3/4, 0x8004F0B8
-share = ceil(exp / living_members)                           // divu, 0x8004F198
+n = members with +0x14C != 0, not Stoned, seat byte != 4
+share = ceil(exp / n)                                        // divu, 0x8004F198
 if _DAT_8007BAC0 != 0:  share = 0                            // 0x8004F274
-each living member: level-up applier FUN_801E9504(share)
+each member:
+  +0x14C == 0:  +0x14C = 1, next member                      // stood back up, no EXP (0x8004F390)
+  Stoned:       next member                                  // 0x8004F248
+  otherwise:    xp = min(xp + share (twice with +0xF4 bit 0x8000), 9,999,999)
+                level-up applier FUN_801E9504
+then the drop walk                                           // 0x8004F3D8
 ```
+
+The order is load-bearing: `FUN_801E9504` draws eight `rand()` per level, ahead of
+the drop walk, and a fallen member's Items Up counts because the loop above has
+already stood them up when the scan reads `+0x14C != 0`.
 
 | Record field | Meaning |
 |---|---|

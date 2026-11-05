@@ -607,7 +607,10 @@ impl LegaiaRuntime {
     pub fn play_mg_muscle_scene_frame(&mut self) -> i32 {
         let host = self.scene_host.host();
         let world = host.map(|h| &h.world);
-        let live = world.is_some_and(|w| w.mode == legaia_engine_mode::mode::SceneMode::MuscleDome);
+        let live = world.is_some_and(|w| {
+            w.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
+                && !w.minigames.muscle_hub.first_visit_up()
+        });
         let session = world
             .filter(|_| live)
             .and_then(|w| w.minigames.muscle_dome.as_ref());
@@ -1182,6 +1185,61 @@ impl LegaiaRuntime {
         }
     }
 
+    /// One frame of the hall's ambient tree (`World::stage_dance_ambient`,
+    /// the palette cyclers and strip scrollers that repaint the hall's VRAM):
+    /// the whole image when it wrote, for the page to re-upload, else empty.
+    /// Staged on the first frame of a dance and put back after the last, as
+    /// the native window's venue copy does.
+    pub fn play_mg_dance_ambient_step(&mut self) -> Vec<u8> {
+        let in_dance = self.scene_host.host().is_some_and(|h| {
+            h.world.mode == legaia_engine_mode::mode::SceneMode::Dance
+                && h.world.minigames.dance_venue.is_some()
+        });
+        if !in_dance {
+            self.minigame_ui.dance_ambient_vram = None;
+            if let Some(h) = self.scene_host.host_mut() {
+                h.world.restore_dance_ambient();
+            }
+            return Vec::new();
+        }
+        let staged = self
+            .scene_host
+            .host()
+            .is_some_and(|h| h.world.ambient.venue_restore.is_some());
+        if !staged {
+            let body = self.play_mg_dance_body_vram();
+            if body.is_empty() {
+                return Vec::new();
+            }
+            let mut vram = legaia_tim::Vram::new();
+            vram.write_block(0, 0, 1024, 512, &body);
+            self.minigame_ui.dance_ambient_vram = Some(vram);
+            if let Some(h) = self.scene_host.host_mut()
+                && let Some(bytes) =
+                    legaia_engine_minigame_scenes::dance_venue::venue_stager_bytes(&h.index)
+            {
+                if let (Some(res), Some(hall)) = (
+                    h.resources.as_ref(),
+                    self.minigame_ui.dance_ambient_vram.as_mut(),
+                ) {
+                    h.world.carry_walked_in_cells(&res.vram, hall);
+                }
+                h.world.stage_dance_ambient(&bytes);
+            }
+        }
+        let Some(vram) = self.minigame_ui.dance_ambient_vram.as_mut() else {
+            return Vec::new();
+        };
+        let Some(h) = self.scene_host.host_mut() else {
+            return Vec::new();
+        };
+        if h.world.step_dance_ambient(vram) {
+            vram.as_bytes().to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn play_mg_dance_body_vram(&self) -> Vec<u8> {
         self.minigame_art()
             .map(|a| a.dance_body_vram())
@@ -1315,6 +1373,13 @@ mod muscle_fighter_tests {
             rt.tick_frame().expect("tick");
         }
         assert_eq!(rt.scene_mode(), "MuscleDome");
+        // The first visit's hub stands on black; the arena comes after it.
+        for _ in 0..2000 {
+            if !rt.world_mut().minigames.muscle_hub.first_visit_up() {
+                break;
+            }
+            rt.tick_frame().expect("tick");
+        }
         let g: serde_json::Value = serde_json::from_str(&rt.play_mg_game_json()).unwrap();
         assert!(
             rt.play_mg_muscle_scene_frame() >= 0,

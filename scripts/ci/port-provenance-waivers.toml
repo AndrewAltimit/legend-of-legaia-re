@@ -911,19 +911,6 @@ in the same image, which is a layout fact and not an identity one.
 """
 
 [[waiver]]
-key = "module-orphan:crates/engine-menus/src/menu_list_rows.rs:80034250"
-reason = """
-The corroborating datum is gp-relative and therefore invisible. FUN_80034250
-resolves the highlighted row's description through the item / goods tables
-(0x8007625C and the item record's +8), while its module siblings (8002ff8c,
-80030104, 80030628, 80032434) build the window rows; the thing they actually
-share is the screen-class / mode / payload trio at gp+0x884, gp+0x87C and
-gp+0x878, which the tracker only sees as `imm(gp)`. Both doc carriers
-(battle.md and menus.md) agree on the identity; the row is a duplicate, not a
-conflict.
-"""
-
-[[waiver]]
 key = "module-orphan:crates/engine-scene/src/overlay_loader.rs:8003ebe4"
 reason = """
 The two loaders are twins that deliberately share NO datum, which makes the
@@ -1347,4 +1334,49 @@ Read against PROT 0915's bytes: arm 0 seats `0x801F8004` (`addiu a2,a2,-0x7ffc`
 at 0x801F7F6C), arm 1 `0x801F80A4` (0x801F7F7C), each `FUN_80021B04` on the
 caller with scale `lhu +0x72`. Image-local records, as for every slot-B
 stager in this module.
+"""
+
+[[waiver]]
+key = "doc-citation:docs/reference/functions/audio.md:80018db0:8001d7cc"
+reason = """
+The word at 0x8001D7CC is `lui a0,0x8002`, and with `addiu a0,a0,-0x7250` in the
+delay slot of `jal 0x8005FE18` at 0x8001D7D0 it forms 0x80018DB0 as the callback
+argument. The citation names the site that registers the routine, which is what
+the row says, one word above the shape site_relation accepts.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-cast/src/cast_module_ticks.rs:801f7ff0"
+reason = """
+PROT 0935's stager: `bne a1,zero` past `addiu a2,a2,-0x7E14` over `lui a2,0x8020`
+(record 0x801F81EC), `li a3,0x1000`, `jal 0x80021B04`, and nothing else. That is
+the one row the Rust table gives it. The body forms one datum no sibling forms
+because each cast image's records are its own.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/actors/battle_fx.rs:8004998c"
+reason = """
+The tag claims the selector emit loop 0x8004A5FC..0x8004A8D8 and the dump carries
+it: `lbu v1,0x0(s4)` at 0x8004A634 is the `rand() % part count` the Rust cites. The
+routine is the battle draw callback, whose other work is the pose decode; only this
+loop is in battle_fx.rs, so the module's siblings share nothing with the rest.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/encounters/encounter_tick.rs:801da51c"
+reason = """
+The tag claims 0x801DA6F0..0x801DA718 and the dump has the rumble stores there:
+`lw v1,0x45CC(v0)`, `sw v1,-0x46D0(v0)`, `sw v1,-0x46D4(v0)`. The routine is the
+world-map entity state machine and the encounter jolt is one arm of it; the rest
+of the module is the battle-intro overlay.
+"""
+
+[[waiver]]
+key = "module-orphan:crates/engine-core/src/world/frame_tick.rs:801d27e0"
+reason = """
+The tag sits on the three-actor talk host. The dump's `jal 0x8003CE64` at 0x801D28C8
+and its `_DAT_8007B874 & 0x80` read at 0x801D2998 are the two the comment cites, and
+the routine calls the talk's own fade 0x80024E80. frame_tick dispatches many state
+machines, each with its own tables, and this one shares none of them.
 """

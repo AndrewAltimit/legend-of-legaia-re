@@ -26,16 +26,31 @@ pub(super) fn present_target<'a>(
     }
 }
 
-/// Stage the per-draw object-effect clips and NCLIP words on the renderer.
+/// The frame's per-draw marks, each by draw index.
+pub(super) struct DrawMarks {
+    pub clip: Vec<(usize, legaia_engine_render::DrawClip)>,
+    pub color_clip: Vec<(usize, legaia_engine_render::DrawClip)>,
+    pub nclip: Vec<(usize, u32)>,
+    pub color_nclip: Vec<(usize, u32)>,
+    pub order: Vec<(usize, u8)>,
+    pub color_order: Vec<(usize, u8)>,
+}
+
+/// Stage the per-draw object-effect clips, NCLIP and order words on the renderer.
 pub(super) fn stage_draw_marks(
     r: &legaia_engine_render::Renderer,
     draws_len: usize,
     color_draws_len: usize,
-    clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
-    color_clip_marks: Vec<(usize, legaia_engine_render::DrawClip)>,
-    nclip_marks: Vec<(usize, u32)>,
-    color_nclip_marks: Vec<(usize, u32)>,
+    marks: DrawMarks,
 ) {
+    let DrawMarks {
+        clip: clip_marks,
+        color_clip: color_clip_marks,
+        nclip: nclip_marks,
+        color_nclip: color_nclip_marks,
+        order: order_marks,
+        color_order: color_order_marks,
+    } = marks;
     let mut tex = vec![None; draws_len];
     for (i, c) in clip_marks {
         if let Some(slot) = tex.get_mut(i) {
@@ -63,6 +78,19 @@ pub(super) fn stage_draw_marks(
         }
     }
     r.set_color_draw_nclip(color_nclip);
+    let mut order = vec![0; draws_len];
+    for (i, o) in order_marks {
+        if let Some(slot) = order.get_mut(i) {
+            *slot = o;
+        }
+    }
+    let mut color_order = vec![0; color_draws_len];
+    for (i, o) in color_order_marks {
+        if let Some(slot) = color_order.get_mut(i) {
+            *slot = o;
+        }
+    }
+    r.set_draw_order(order, color_order);
 }
 
 /// The `--screenshot-every` sweep: capture this frame into the sweep dir
@@ -310,6 +338,8 @@ struct CastSeqRecorder {
     /// director's command record), the engine half of the retail probe's
     /// cue-ring file. Empty without an audio director (`--no-audio`).
     sfx: std::io::BufWriter<std::fs::File>,
+    /// `xa.csv`: the CD-XA clip requests each tick, `tick,st7,phase,clip,channel,dur`.
+    xa: std::io::BufWriter<std::fs::File>,
     /// Director commands already read ([`AudioCommandLog::count`]).
     ///
     /// [`AudioCommandLog::count`]: legaia_engine_session::audio_director::AudioCommandLog::count
@@ -373,7 +403,7 @@ impl PlayWindowApp {
             use std::io::Write as _;
             let _ = writeln!(
                 meta,
-                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot"
+                "tick,st7,phase,acting,frames,c6d8,cd,yaw,c87c,fade_white,fade_age,hp0,hp1,hp2,hp3,hp4,hp5,hp6,hp7,shot,rand"
             );
             let mut cam = std::io::BufWriter::new(std::fs::File::create(dir.join("cam.csv")).ok()?);
             let _ = writeln!(cam, "tick,st7,phase,pitch,yaw,trx,try,trz,fx,fy,fz");
@@ -381,6 +411,8 @@ impl PlayWindowApp {
             let _ = writeln!(body, "tick,st7,acting,clip,queued,looping,cursor,lx,lz");
             let mut sfx = std::io::BufWriter::new(std::fs::File::create(dir.join("sfx.csv")).ok()?);
             let _ = writeln!(sfx, "tick,st7,phase,id,kind");
+            let mut xa = std::io::BufWriter::new(std::fs::File::create(dir.join("xa.csv")).ok()?);
+            let _ = writeln!(xa, "tick,st7,phase,clip,channel,dur");
             if self.session.bgm.is_none() {
                 eprintln!(
                     "cast sequence: no audio director (--no-audio) - sfx.csv stays empty \
@@ -391,6 +423,7 @@ impl PlayWindowApp {
                 cam,
                 body,
                 sfx,
+                xa,
                 sfx_seen: 0,
                 every: num("LEGAIA_DIAG_CAST_SEQ_EVERY", 1).max(1),
                 tail: num("LEGAIA_DIAG_CAST_SEQ_TAIL", 60),
@@ -416,6 +449,7 @@ impl PlayWindowApp {
         // ring, `SfxNow` a blip), read before any early return so a cue
         // before the cast never lands on its first tick.
         let mut due: Vec<(i32, &'static str)> = Vec::new();
+        let mut clips: Vec<(u32, u32, u32)> = Vec::new();
         if let Some(d) = self.session.bgm.as_ref() {
             let log = d.commands();
             let fresh = log.count().saturating_sub(rec.sfx_seen);
@@ -430,6 +464,7 @@ impl PlayWindowApp {
                     C::SfxDue(id) => due.push((i32::from(id), "queue")),
                     C::RingDue(id) => due.push((i32::from(id), "ring")),
                     C::SfxNow(id) => due.push((i32::from(id), "now")),
+                    C::XaClip(clip, channel, dur) => clips.push((clip, channel, dur)),
                     _ => {}
                 }
             }
@@ -537,14 +572,23 @@ impl PlayWindowApp {
         use std::io::Write as _;
         let _ = writeln!(
             rec.meta,
-            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot}",
+            "{tick},{st},{},{acting},{},{},{},{},{accum},{fade_white},{fade_age},{},{shot},{}",
             w.casting.module_phase,
             w.clock.display_frames,
             w.battle_ctx.frame_timer,
             w.casting.module_cam.countdown.0,
             w.casting.module_cam.yaw_base,
             hp.join(","),
+            w.rng_state,
         );
+        // `LEGAIA_DIAG_CAST_VRAM_AT=<tick>`: the battle VRAM at that tick
+        // (`vram_<tick>.bin`, 1 MiB BGR555), for a byte comparison with a retail
+        // recording's `sstate_vram.py` image.
+        if std::env::var("LEGAIA_DIAG_CAST_VRAM_AT").is_ok_and(|v| v == tick.to_string())
+            && let Some(v) = self.battle_vram.as_ref()
+        {
+            let _ = std::fs::write(rec.dir.join(format!("vram_{tick}.bin")), v.as_bytes());
+        }
         // `LEGAIA_DIAG_CAST_PARTS=1`: every live part of the cast's scene
         // graph each tick (`parts.csv`) - its record, draw words and
         // channels, the engine half of a part-pool side-by-side.
@@ -561,7 +605,7 @@ impl PlayWindowApp {
                 let h = |o: usize| st.actor_u16(o) as i16;
                 let _ = writeln!(
                     f,
-                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{}",
+                    "{tick},{i},{},{},{:#010x},{},{:#06x},{:#06x},{:#010x},{:#010x},{},{},{},{},{},{},{},{},{},{:#06x},{},{:#06x},{:#06x},{:#06x},{:#06x},{},{:#010x},{},{},{},{},{},{},{},{},{},{},{}",
                     part.model_sel,
                     u8::from(part.finished),
                     st.field_74,
@@ -593,6 +637,12 @@ impl PlayWindowApp {
                     st.render_26,
                     st.render_28,
                     st.field_7a,
+                    st.tween_src_x,
+                    st.tween_src_y,
+                    st.tween_src_z,
+                    st.field_9c,
+                    h(0xBC),
+                    h(0xBE),
                 );
             }
         }
@@ -600,6 +650,13 @@ impl PlayWindowApp {
             let _ = writeln!(
                 rec.sfx,
                 "{tick},{st},{},{id},{kind}",
+                w.casting.module_phase
+            );
+        }
+        for (clip, channel, dur) in &clips {
+            let _ = writeln!(
+                rec.xa,
+                "{tick},{st},{},{clip},{channel},{dur}",
                 w.casting.module_phase
             );
         }
@@ -744,6 +801,7 @@ impl PlayWindowApp {
         let _ = rec.cam.flush();
         let _ = rec.body.flush();
         let _ = rec.sfx.flush();
+        let _ = rec.xa.flush();
         if rec.done.is_some_and(|d| tick >= d + rec.tail) || rec.shots >= rec.max {
             let _ = rec.meta.flush();
             let _ = rec.cam.flush();

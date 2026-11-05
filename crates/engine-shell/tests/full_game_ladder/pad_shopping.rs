@@ -80,12 +80,13 @@ pub(super) fn mp_items_held(w: &legaia_engine_core::world::World) -> u32 {
 }
 
 /// The buy that brings the bag's MP restoratives up to `target`: the stock
-/// row that restores the most MP per gold, as many as the purse pays for
-/// after the errands' price.
+/// row that restores the most MP per gold, as many as `purse` pays for after
+/// the errands' price.
 fn mp_want(
     session: &legaia_engine_menus::shop::ShopSession,
     w: &legaia_engine_core::world::World,
     target: u32,
+    purse: i64,
 ) -> Option<Want> {
     let short = target.saturating_sub(mp_items_held(w));
     if short == 0 {
@@ -104,8 +105,7 @@ fn mp_want(
         .map(|(row, id, price, _)| (row, id, price))?;
     let held = w.party.inventory.get(&id).copied().unwrap_or(0);
     let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held);
-    let afford =
-        u32::try_from((i64::from(w.party.money) - errand_cost(w)).max(0)).unwrap_or(0) / price;
+    let afford = u32::try_from((purse - errand_cost(w)).max(0)).unwrap_or(0) / price;
     let qty = short.min(afford).min(u32::from(room));
     (qty > 0).then_some(Want::Stack {
         row,
@@ -318,7 +318,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         })
         .sum::<u32>()
         / 800;
-    let heal_want = |target: u32| -> Option<Want> {
+    let heal_want = |target: u32, purse: i64| -> Option<Want> {
         let (row, id, price, _) = heal_row?;
         let room = legaia_engine_menus::shop::SHOP_HELD_CAP.saturating_sub(held(id));
         // The errands' price is kept back: the counter that sells their
@@ -329,7 +329,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
         } else {
             errand_cost(w)
         };
-        let afford = u32::try_from((i64::from(gold) - keep).max(0)).unwrap_or(0) / price;
+        let afford = u32::try_from((purse - keep).max(0)).unwrap_or(0) / price;
         let qty = target
             .saturating_sub(heals_held)
             .min(afford)
@@ -346,7 +346,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // A member the coming stretches seat counts too: the bag is shared,
     // and the one who joins with no counter on her stretch (`cave01`'s Noa)
     // trains and meets her boss out of what it holds.
-    if let Some(want) = heal_want(HEAL_RESERVE * members) {
+    if let Some(want) = heal_want(HEAL_RESERVE * members, i64::from(gold)) {
         return Some(want);
     }
     if errand_short {
@@ -362,7 +362,7 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     // it on two Magic Fruit beside two Healing Berries, and Gala fell to Che
     // Delilas with the bag dry and Che at 1611..6243 of 12000.
     let into_duels = continuous::STRETCH_TO.with(|s| s.borrow().as_str() == "nivora");
-    if !into_duels && let Some(want) = mp_want(session, w, members * MP_RESERVE) {
+    if !into_duels && let Some(want) = mp_want(session, w, members * MP_RESERVE, i64::from(gold)) {
         return Some(want);
     }
     // Equipment. At a counter with no healing row, a bag short of its
@@ -495,22 +495,32 @@ fn next_want(menu: &MenuRuntime, w: &legaia_engine_core::world::World) -> Option
     if let Some((_, _, want)) = best {
         return Some(want);
     }
-    // A purse that pays for the stock many times over buys up to three
-    // stocks: past the Jette fortress the run carried 650000 gold through
-    // `ropeway` and `station3`, passed both with the stock full, met no
-    // counter after them, and fought Cort (Bio castle's end) out of an empty
-    // bag three times running.
+    // A purse that pays for the stock many times over buys up to four stocks,
+    // and MP for the casts the long road and the boss call for: past the Jette
+    // fortress the run carried 650000 gold through `ropeway` and `station3`,
+    // passed both with the stock full, and fought Cort out of an empty bag
+    // three times running, with Vahn at 22 MP. What a stock costs is counted
+    // in the heal on the counter: `conc3`'s 800-HP-worth is under a quarter of
+    // a Healing Berry, and a run that read 45 of them as 135000 gold left it
+    // with 361508 unspent and met Jette (`chitei2`) on 15% HP and no MP. Each
+    // kind takes a part of the purse, and the next town's armour the rest.
     let stock = u32::from(HEAL_STOCK) * members;
-    let wealth = heal_row.map_or(1, |(_, _, price, _)| {
-        (u32::try_from(gold).unwrap_or(0) / (price * stock * 4).max(1)).clamp(1, 3)
+    let wealth = heal_row.map_or(1, |(_, _, price, amount)| {
+        let cost = u64::from(price) * u64::from(stock) * 800 / u64::from(amount.max(1));
+        (u64::try_from(gold).unwrap_or(0) / (cost * 2).max(1)).clamp(1, 4) as u32
     });
-    // And MP for the casts the long road and the boss call for: Vahn met
-    // Cort with 22 MP and three Magic Leaves in the bag.
-    heal_want(stock * wealth).or_else(|| {
-        (wealth > 1)
-            .then(|| mp_want(session, w, members * 5 * wealth))
-            .flatten()
-    })
+    let purse = i64::from(gold);
+    heal_want(stock, purse)
+        .or_else(|| {
+            (wealth > 1 && !into_duels)
+                .then(|| mp_want(session, w, members * 5 * wealth, purse / 3))
+                .flatten()
+        })
+        .or_else(|| {
+            (wealth > 1)
+                .then(|| heal_want(stock * wealth, purse / 2))
+                .flatten()
+        })
 }
 
 /// The armament pieces in the bag the hand sells while an errand is short

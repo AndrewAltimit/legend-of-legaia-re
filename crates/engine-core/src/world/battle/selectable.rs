@@ -35,7 +35,7 @@ impl World {
     /// zero), which is why every consumer pairs this with liveness.
     ///
     /// REF: FUN_8002C2E4 (the bit map, via `pack_display_flags`)
-    pub(in crate::world) fn raw_status_word(&self, slot: u8) -> u16 {
+    pub fn raw_status_word(&self, slot: u8) -> u16 {
         let raw = self
             .actors
             .get(usize::from(slot))

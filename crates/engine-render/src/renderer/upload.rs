@@ -243,6 +243,13 @@ impl Renderer {
         }
         let prim_refs =
             legaia_render_kernels::prim_near_reject::prim_corner_refs(positions, indices);
+        // A PCSX-Redux capture's quad walk reads all four corners' UVs on the
+        // normal lane, which only the enhancement passes read. It walks a
+        // `POLY_FT4` alone: `drawPoly4TGEx*` splits a Gouraud quad into two
+        // triangles, as the console does.
+        let quad_uvs = (self.psx_texel_rule.get() == PsxTexelRule::PcsxRedux).then(|| {
+            legaia_render_kernels::prim_near_reject::prim_corner_plan(positions.len(), indices)
+        });
         let mut bytes =
             Vec::with_capacity(positions.len() * crate::renderer::VRAM_VERTEX_STRIDE as usize);
         for (i, ((((pos, uv), ct), n), c)) in positions
@@ -261,7 +268,16 @@ impl Renderer {
             bytes.push(0);
             bytes.extend_from_slice(&ct[0].to_le_bytes());
             bytes.extend_from_slice(&ct[1].to_le_bytes());
-            bytes.extend_from_slice(bytemuck::cast_slice(n));
+            let n = match quad_uvs.as_ref().map(|p| p[i]) {
+                Some([c0, c1, c2, c3, 4])
+                    if cba_tsb[c0 as usize][1] & psx_blend::TSB_FLAT_QUAD_BIT != 0 =>
+                {
+                    pack_quad_uvs([c0, c1, c2, c3].map(|v| uvs[v as usize]))
+                }
+                Some(_) => [QUAD_WALK_OFF; 3],
+                None => *n,
+            };
+            bytes.extend_from_slice(bytemuck::cast_slice(&n));
             // Baked prim colour, raw bytes (Uint8x4; alpha slot unused).
             bytes.push(c[0]);
             bytes.push(c[1]);
@@ -631,4 +647,18 @@ impl Renderer {
             height,
         })
     }
+}
+
+/// The normal lane's mark for a primitive the quad walk leaves as triangles.
+const QUAD_WALK_OFF: f32 = -1.0;
+
+/// A quad's four corner UVs as the three whole numbers the vertex stage's
+/// `quad_walk_stage` unpacks: each under `2^24`, which a float holds exactly.
+fn pack_quad_uvs(uv: [[u8; 2]; 4]) -> [f32; 3] {
+    let w = |a: u8, b: u8, c: u8| (u32::from(a) << 16 | u32::from(b) << 8 | u32::from(c)) as f32;
+    [
+        w(uv[0][0], uv[0][1], uv[1][0]),
+        w(uv[1][1], uv[2][0], uv[2][1]),
+        w(0, uv[3][0], uv[3][1]),
+    ]
 }

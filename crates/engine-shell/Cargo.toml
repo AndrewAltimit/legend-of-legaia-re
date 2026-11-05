@@ -91,6 +91,7 @@ sha2.workspace = true
 # zig-cross x86_64 Linux release build free of a GTK sysroot.
 dirs.workspace = true
 rfd.workspace = true
+arboard.workspace = true
 
 # Controller input for the play window (`window::gamepad`): gilrs reads every
 # connected gamepad, and the shared `legaia_engine_system::gamepad` layout folds

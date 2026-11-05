@@ -239,6 +239,23 @@ same pixels as retail's per-edge clip, and since each draw clips in its own
 mesh space - the posed mesh for an animated actor - both brackets agree with
 retail.
 
+**A raised effect part.** Move-VM op `0x10` raises `+0x42` on a part as well,
+and the far arm then replaces more than the clip. `FUN_8002735C` runs `NCLIP`
+on a quad's first three corners and drops it on a negative area
+(`0x80027548..0x8002755C`): there is no double-sided mask, the word's `0x08000000`
+is ignored, and the second triangle is never tested. So a quad whose `v0` and `v2`
+coincide has an area of exactly zero and stays while the planar quads around it go.
+The colour word's `0x20000000` does not reach the sixteen-way leaf either. PROT
+0946's arm 6 raises the sheet `0x801F7A50` (word `0xC9000000`, mode `0x300`) and its
+sibling: of `20 x 4` packets the far arm links the innermost band alone, the fan
+whose corners meet at the centre, and the floor row cuts that to the half above the
+stage. `autorun_cast_sequence.lua`'s `LEGAIA_PRIM_CALLS` shows neither record
+entering the dispatcher, and its `parts.csv` holds `+0x42 = 1` on those two alone.
+
+Port: `engine-effects::object_effect::far_arm_mesh`, a CPU clip of the node's mesh
+through `engine-world-views::effect_draws`, so both hosts read one list. Off retail's
+camera every face stays.
+
 A `4C C2` aimed at the player (`CC F8 C2`, five of the 50 sites, in `uru2`,
 `rugi` and `noaru`) runs on the same player stand-in context the `CC F8 40`
 scale op uses (`field_step_routed`) and lands in
@@ -341,6 +358,16 @@ Structural facts, read from the raw table:
   Port: `render_kernels::sprite_arm::subdivide_quad`, which the draw-kind-4
   default emitter (`effect_default_arm::vram_mesh`) applies when the colour
   word carries the bit; both hosts draw that emitter's mesh.
+  Each `GT3` links on its own `AVSZ3` (`cop2 0x158002D` at `0x80046000`,
+  `andi v0,v0,0xFFFC` at `0x80046020`), so a sheet at one depth links a shade
+  nearer through this leaf than through a quad's `AVSZ4`: `ZSF3 = 0x555` is
+  under a third. On a retail table of PROT 0921's arm 5, two discs on one plane
+  at `SZ 0x2000` hold the opaque quads in bucket `2048` and the additive `GT3`s
+  in `2046`, and the additive disc paints over the opaque one everywhere. The
+  port's depth buffer has no bucket to tie on, and two model matrices round
+  apart, so the sheets would cross along a line. A kernel keeps the links' order
+  instead: `effect_draws` brings a node on this bank `TESSELLATED_LINK_NEARER_SZ`
+  nearer along the view axis, on both hosts.
 - **`0x80044798` is not a table entry.** It sits between the lit set and the
   cued banks and is the leaves' off-screen reject: a transform-free read of
   the four projected corners (`SXY0..2` plus the first corner saved in
@@ -823,9 +850,11 @@ The window bytes are relative tile offsets, so the double loop runs
 - takes the four corner tiers from the collision grid at `+0x4000` (`& 0xf`,
   through the height ladder), `RTPT`s them, and near-clips on `OTZ < 0x40`;
 - indexes the object-record table at the block's base by `cell & 0x1FF`
-  (`* 0x20`), taking the tile's UVs from record `+0x14`, its tpage / CLUT
-  from `+0x1C` / `+0x1D`, and OR-ing the semi-transparency bit when `+0x1A`
-  is non-zero;
+  (`* 0x20`), taking the tile from record `+0x14`, its tpage from `+0x15`, its
+  CLUT from `+0x16`, and OR-ing the semi-transparency bit and ABR `+0x1A - 1` when
+  `+0x1A` is non-zero. The tile's high `V` and `U` are `31` past its origin plus the
+  signed `+0x1C` / `+0x1D` (`0x801F6EE4..0x801F6F0C`), so a cell can stretch over
+  several atlas tiles, as `deene`'s rock face does;
 - sorts on `cell & 0x8000`: set, the packet goes in the bucket its farthest
   vertex `Z` picks (`(max SZ >> 5) + 2`, the `sub` / `bgez` / `move` steps at
   `0x801F6FAC..0x801F6FD8`); clear, it goes in the fixed far bucket
@@ -943,18 +972,7 @@ The flagged cells are mostly large slabs: `koin1`'s overhead boards over the
 Sol Tower lobby (meshes `96` and `106`, records `0x813` / `0x817`),
 `taiku2`'s throne dais and steps (`0x812`), cells in `town01` and `teien`.
 
-**Not ported.** The port draws these cells at their own per-pixel depth. A
-whole-mesh emulation (each flagged draw rasterised at the depth of its
-mesh's farthest bounding corner, the model for lights and shadows still
-recovered from the unseated matrix) changes `koin1`, `town01`, `teien` and
-`taiku2` frames, but no retail capture of those views is in hand to say it
-matches retail better than per-pixel depth does. Per-prim keying, which
-retail does, needs every prim's corner depths in the vertex stage. Seating
-the depth by baking it into a draw's `mvp`, as the battle ground grid's
-`pin_to_far_bucket` does, also corrupts the `view_proj^-1 * mvp` model
-recovery the point-light and shadow passes read, which darkens the whole
-frame through bogus shadow casters. Any port of this rule has to carry the
-seated clip matrix beside the draw's own `mvp`.
+The port takes the rule in PSX mode through `DRAW_ORDER_FAR_CORNER`, with the rest of the field's linking ([renderer-port](renderer-port.md#the-field-sorts-by-each-primitives-link)).
 
 ## The billboard projector (`FUN_800195A8`)
 
@@ -2414,22 +2432,12 @@ dispatcher loads that floor into `t4` per group (`lhu t4,0x6A(t2)` at
 The scene init writes the floor as `0x10` (`FUN_8001D424` at `0x8001D4E8`,
 `FUN_8001DCF8` at `0x8001DD5C`); the catalogued PCSX-Redux states hold
 `s = 3` on the field and `s = 2` in battle. So a field primitive whose mean
-`SZ` is under 128, or a battle one under 64, is not drawn. Both hosts run
-the field cut on the port's eye depth (`sz_per_w = 1`), and that is a
-calibration rather than the GTE's scale. The field camera folds a 6x world
-scale into its rotation ([the field view matrix](#the-field-view-matrix-where-tr-comes-from)),
+`SZ` is under 128, or a battle one under 64, is not drawn. The field camera folds
+a 6x world scale into its rotation ([the field view matrix](#the-field-view-matrix-where-tr-comes-from)),
 so a field `SZ` is six times the port's `w` ([the register limits](#the-gtes-register-limits)
-measure it), and a cut at `SZ = 6 * w` would drop only what sits within about
-`21` units of the eye. `rikuroa_field_card_walk` is the counter-weight: its
-capture leaves out a near wall quad (corners `(31, 194)`, `(-285, 487)`,
-`(11, 44)`, `(-293, -26)`, mean `w` near `100`) whose packet the display
-list holds, which the `w`-unit cut drops and a `6 * w` cut keeps (`.985`
-against `.959`). The packet's second half spans `513` rows and its first `443`,
-so a size limit that drops the whole quad when one half exceeds it, where the
-port drops it only when both halves do, is the other reading; which rule
-drops it is open. `SZ` saturates at
-`0`, so a corner behind the eye pulls the mean toward zero rather than below
-it. Worked case: the evolved-Cort approach in `jouine` parks the camera
+measure it), and the cut drops what sits within about `21` units of the eye. `SZ`
+saturates at `0`, so a corner behind the eye pulls the mean toward zero rather than
+below it. Worked case: the evolved-Cort approach in `jouine` parks the camera
 against a root-wall body that a per-pixel clip would stretch across the
 frame.
 
@@ -2468,7 +2476,11 @@ Both hosts run the span test in the same vertex stage as the near reject
 `primSxy`), armed in battle and on the field (`camera_frame::prim_gpu_span_h`:
 the battle camera's `H = 256`, the field camera's own `_DAT_8007B6F4`, riding
 the parameters' enable lane). A split quad is dropped only when both halves
-exceed the limit. On the field it keeps `rim_elm_queen_bee_battle`'s frame
+exceed the limit. A PCSX-Redux capture drops more: its software GPU rejects a whole
+quad on any corner pair past the limit (`SoftRenderer::checkCoord4`), where the
+console skips the one triangle. `rikuroa_field_card_walk` leaves out a near wall
+quad whose halves span `513` and `443` rows, and the child of a PCSX-Redux state
+takes that rule beside its texel rule (`PsxTexelRule::PcsxRedux`). On the field it keeps `rim_elm_queen_bee_battle`'s frame
 clear: its camera stands beside a decoration rock whose near face projects
 past the span. The dance hall applies the same rule to its baked hall on the
 CPU ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).

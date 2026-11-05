@@ -343,6 +343,19 @@ impl World {
                 self.finish_battle_node_slice(i, commit_after, hits, &mut foreign);
                 continue;
             }
+            // A seat past the party with a zero colour word does not tick at
+            // all (`lw v0,0x74(s5)`, the low 24 bits, `beq v0,zero,0x800480B0`
+            // at `0x800474D4..0x800474E0`): no advance, no commit, no clip
+            // cue. A row parked under the hide holds its clip with no sound
+            // (Palma's flinch), and a creature hidden on its seat holds its
+            // first frames until a module shows it (Terra's arms 3..6).
+            // PORT: FUN_80047430 (`0x800474D4..0x800474E0`, the zero-colour skip)
+            if (self.actors[i].battle_monster_id.is_some()
+                || self.casting.summon_actor_slot == Some(i as u8))
+                && self.battle_body_hidden(i)
+            {
+                continue;
+            }
             self.stamp_rage_delegation(i);
             // The decoder's last-frame tween reads the clip queued behind
             // this one; recompute it before the step, like the draw that
@@ -353,6 +366,10 @@ impl World {
             let creature_diag = *CREATURE_DIAG
                 .get_or_init(|| std::env::var_os("LEGAIA_DIAG_CREATURE_ANIM").is_some())
                 && self.casting.summon_actor_slot == Some(i as u8);
+            let creature_channel = self
+                .casting
+                .creature_channel_object
+                .filter(|_| self.casting.summon_actor_slot == Some(i as u8));
             let module_phase = self.casting.module_phase;
             let mirrors_loop = self.mirrors_loop_counter(i);
             // A clip committed on this seat since its own slice of the last
@@ -404,6 +421,15 @@ impl World {
                     if let Some(rest) = prev.bone_outputs.get(n..) {
                         pose.bone_outputs.extend_from_slice(rest);
                     }
+                }
+                // The channel a module's table store moved an object onto
+                // places that object, and the object's own channel stands past
+                // the stream.
+                if let Some((channel, object)) = creature_channel
+                    && let Some(&placed) = pose.bone_outputs.get(usize::from(channel))
+                    && let Some(slot) = pose.bone_outputs.get_mut(usize::from(object))
+                {
+                    *slot = placed;
                 }
                 let after = player.current_frame();
                 // The window arm's counter store (`actor+0x21B = +0x176 >> 4`,
@@ -588,7 +614,11 @@ impl World {
                 // ([`Self::summon_seat_waits_for_cycle`]).
                 // So does a byte whose bit-0 cut the loop's `+0x76` lock
                 // refused ([`Self::loop_cut_locked`]).
-                if (self.summon_seat_waits_for_cycle(i) || self.loop_cut_locked(i))
+                // And the Spirit band's stage
+                // ([`Self::spirit_stage_waits_for_cycle`]).
+                if (self.summon_seat_waits_for_cycle(i)
+                    || self.loop_cut_locked(i)
+                    || self.spirit_stage_waits_for_cycle(i))
                     && self.actors[i].battle.queued_anim != self.actors[i].battle.current_anim
                 {
                     self.commit_staged_battle_anim_at_boundary(i);
@@ -778,7 +808,9 @@ impl World {
                 .as_ref()
                 .and_then(|p| p.hit_source())
                 .is_none_or(|s| s.event_lock == 0);
-        if (self.summon_seat_waits_for_cycle(i) || self.loop_cut_locked(i))
+        if (self.summon_seat_waits_for_cycle(i)
+            || self.loop_cut_locked(i)
+            || self.spirit_stage_waits_for_cycle(i))
             && !cut_now
             && actor
                 .battle_animation

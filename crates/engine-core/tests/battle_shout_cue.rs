@@ -109,6 +109,8 @@ fn walk_into_battle(w: &mut World) {
         w.set_pad(up);
         w.tick();
         if w.mode == SceneMode::Battle {
+            // The walk takes an art only when Spirit covers its price (`0x801EF40C`).
+            w.actors[0].battle.spirit_gauge = 100;
             return;
         }
     }

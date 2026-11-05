@@ -3,7 +3,7 @@
 
 use crate::{Tmd, legaia_prims};
 
-use super::{compute_smooth_normals, pack_tsb_semi};
+use super::{compute_smooth_normals, prim_tsb_word};
 
 /// VRAM-aware textured mesh: per-vertex `(u, v)` and per-vertex `(cba, tsb)`
 /// PSX VRAM addresses. Built by [`tmd_to_vram_mesh`]; consumed by the
@@ -183,7 +183,7 @@ pub fn tmd_to_vram_mesh_with_prim_ids(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u
                 if prim.uvs.is_empty() {
                     continue;
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -260,7 +260,7 @@ pub fn tmd_to_vram_mesh_with_object_ids_lenient(tmd: &Tmd, buf: &[u8]) -> (VramM
                 if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
                     continue;
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -375,7 +375,7 @@ pub fn tmd_to_vram_mesh_field_hybrid(tmd: &Tmd, buf: &[u8]) -> (VramMesh, Vec<u3
                 if raw_idx.is_empty() || raw_idx.iter().any(|&i| (i as u32) >= object_vert_count) {
                     continue;
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let tex_flag = if is_textured { 1u8 } else { 0u8 };
                 let mut push_vert = |vidx: u16, uv_idx: usize, corner: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];

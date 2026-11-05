@@ -131,6 +131,17 @@ pub(super) fn spirit_fire<H: BattleActionHost + ?Sized>(
     if class == GAUGE_EXTEND_CLASS {
         gauge_extend_fire(host, ctx, slot);
     }
+    // The Point Card's selector comes from its id, not its descriptor
+    // (`0x801E4080..0x801E40C0`).
+    if let Some(a) = host.actor_mut(slot)
+        && a.params[0] == 0xFE
+        && matches!(
+            ActionCategory::from_byte(a.action_category),
+            ActionCategory::Item
+        )
+    {
+        a.cast_class = 0x0E;
+    }
     ctx.frame_timer = 0x20;
     transition(ctx, ActionState::SpiritFireDamage)
 }

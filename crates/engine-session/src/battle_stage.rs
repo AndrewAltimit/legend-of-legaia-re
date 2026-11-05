@@ -221,17 +221,47 @@ pub fn seat_summon_creature(
             legaia_actor_formats::summon_readef::SUMMON_PROT_INDEX,
         ))
         .ok();
-    let asset = legaia_engine_effects::summon::summon_spawn_asset(
-        spell_id,
-        archive,
-        summon_dat.as_ref().map(|b| b.as_slice()),
-    )?;
+    // PROT 0964's strikes stand the element's creature off the `readef.DAT`
+    // group Element Change wrote into the record, not a `summon.dat` group.
+    let strike = (0xB0..=0xB2).contains(&spell_id).then(|| {
+        let readef = host
+            .index
+            .entry_bytes(u32::from(
+                legaia_actor_formats::summon_readef::READEF_PROT_INDEX,
+            ))
+            .ok()?;
+        let roll = host.world.battle.monster_ai_state.counter().clamp(0, 2) as u8;
+        legaia_actor_formats::summon_readef::parse_readef_creature(
+            &readef,
+            legaia_actor_formats::summon_readef::element_strike_group(roll),
+            spell_id,
+        )
+        .ok()
+    });
+    let strike = strike.flatten();
+    let asset = match strike.as_ref() {
+        Some(c) => legaia_engine_effects::summon::SummonSpawnAsset {
+            creature_id: None,
+            idle: c.clips.first().cloned(),
+            mesh: c.mesh.clone(),
+            clips: c.clips.clone(),
+        },
+        None => legaia_engine_effects::summon::summon_spawn_asset(
+            spell_id,
+            archive,
+            summon_dat.as_ref().map(|b| b.as_slice()),
+        )?,
+    };
     legaia_tmd::parse(asset.mesh.tmd_bytes()).ok()?;
     // The creature node's size `+0x58`, which the seat installer takes from
     // the cast's own actor record (`+0x1F << 5`, `0x801F1DE4..0x801F1DF0`).
-    let body_radius = summon_dat
+    let cast = strike.or_else(|| {
+        summon_dat
+            .as_ref()
+            .and_then(|b| legaia_actor_formats::summon_readef::parse_cast(b, spell_id).ok())
+    });
+    let body_radius = cast
         .as_ref()
-        .and_then(|b| legaia_actor_formats::summon_readef::parse_cast(b, spell_id).ok())
         .and_then(|c| c.mesh.block.get(SUMMON_RECORD_SIZE_CLASS).copied())
         .map(|size| i16::from(size) << 5);
     let world = &mut host.world;
@@ -268,6 +298,13 @@ pub fn seat_summon_creature(
         let clips: Vec<_> = asset.clips.iter().cloned().map(Some).collect();
         world.set_actor_battle_action_clips(slot, std::sync::Arc::new(clips));
     }
+    // The record's clip morphs, which the battle draw blends over the creature
+    // as over a monster (`FUN_800495C8`). Set on every cast, so a seat the last
+    // cast used does not keep its table.
+    world.set_actor_battle_clip_morphs(
+        slot,
+        std::sync::Arc::new(cast.map(|c| c.clip_morphs).unwrap_or_default()),
+    );
     // Hand the seat to the world: a cast in its summon band places the
     // creature at the stager's spawn point (behind the caster, facing the
     // enemy) and retires it when the choreography ends; a debug spawn keeps

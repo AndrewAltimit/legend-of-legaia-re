@@ -165,15 +165,13 @@ pub trait FieldDialogMenuHost {
     /// `FUN_8003DE7C(1)`, then for `target = 1` save `0x8007B9CC` to
     /// `0x8007BA38` and set its `0x28000` bits (and `0x8007B72C =
     /// 0x8007B85C`), for `target = 0` restore both - and finally stores
-    /// `target` to `0x8007BA3C`, returning 1 while a step is in flight. The dispatch ends in either case - this is a
-    /// halt-style instruction - but PC has been incremented to `pc + 2`
-    /// before the joined block runs.
+    /// `target` to `0x8007BA3C`, returning 1 while a step is in flight.
     ///
-    /// The hook is purely a side-effect callback (the host pumps its dialog
-    /// state machine). PC advances by 2 and the VM halts (yields to the
-    /// host); the next pump reads from `pc + 2`.
-    fn op4c_n5_sub3_dialog_wait(&mut self, ctx: &mut FieldCtx) {
+    /// Returns `true` while the switch is stepping (the VM holds at `pc`),
+    /// `false` once it is done (the VM advances `pc += 2`).
+    fn op4c_n5_sub3_dialog_wait(&mut self, ctx: &mut FieldCtx) -> bool {
         let _ = ctx;
+        false
     }
 
     /// Dialog advance poll (op 0x4C n5 sub-4, 2 bytes).

@@ -48,7 +48,7 @@ fn playwindow_load_path_spins_the_real_payout_table() {
     let mut world = World::new();
     world.mode = SceneMode::Field;
     world.minigames.casino_coins = 200;
-    world.enter_slot_machine(SlotMachine::new(payouts.clone(), 15, 200));
+    world.enter_slot_machine(SlotMachine::new(payouts.clone(), 41, 200));
     assert_eq!(world.mode, SceneMode::SlotMachine);
 
     // Play a handful of spins through the pad; every evaluated spin must

@@ -103,6 +103,19 @@ mod tests {
         assert_eq!(due, 5);
     }
 
+    /// The park word ends the walk: requested and loaded agree on the next
+    /// call, so a select right after it does not wait (`0x801E0238`).
+    #[test]
+    fn the_park_word_ends_a_walk_in_flight() {
+        use legaia_engine_vm::field::StepResult;
+        let mut w = World::new();
+        op35(&mut w, 2001, 1);
+        assert!(w.audio.bgm_swap_in_flight());
+        op35(&mut w, crate::world::BGM_PARK_SENTINEL, 1);
+        assert!(!w.audio.bgm_swap_in_flight());
+        assert!(matches!(op35(&mut w, 2033, 9), StepResult::Advance { .. }));
+    }
+
     /// The field init's install slice loads with the init: no walk.
     #[test]
     fn an_entry_start_does_not_run_the_walk() {

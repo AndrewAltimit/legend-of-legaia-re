@@ -215,26 +215,37 @@ fn confuse_retargets_a_monster_cast_to_the_opposite_side() {
         .status_effects
         .apply_with_duration(3, StatusKind::Confuse, 3);
 
+    world.actors[3].battle.field_flags = 0x380;
+
     // Non-confused caster (slot 4): targets untouched.
     let mut t = vec![0u8, 1, 2];
-    world.confuse_retarget_cast(4, &mut t);
+    assert!(world.confuse_retarget_cast(4, true, &mut t));
     assert_eq!(t, vec![0, 1, 2]);
 
-    // Confused single-target cast at a party member flips to one living monster.
-    let mut t1 = vec![1u8];
-    world.confuse_retarget_cast(3, &mut t1);
-    assert_eq!(t1.len(), 1);
-    assert!(t1[0] >= 3, "single cast flips to a monster, got {}", t1[0]);
+    // Confused single-target cast at a party member crosses to a monster, and
+    // one that lands on the caster comes to nothing.
+    for _ in 0..40 {
+        let mut t1 = vec![1u8];
+        if world.confuse_retarget_cast(3, false, &mut t1) {
+            assert_eq!(t1, vec![4]);
+        }
+    }
 
-    // Confused area cast at the whole party flips to every living monster.
-    let mut t2 = vec![0u8, 1, 2];
-    world.confuse_retarget_cast(3, &mut t2);
-    assert_eq!(t2, vec![3, 4]);
+    // A confused area cast crosses to every living monster or comes to nothing.
+    let mut crossed = 0;
+    for _ in 0..300 {
+        let mut t2 = vec![0u8, 1, 2];
+        if world.confuse_retarget_cast(3, true, &mut t2) {
+            assert_eq!(t2, vec![3, 4]);
+            crossed += 1;
+        }
+    }
+    assert!((60..140).contains(&crossed), "one in three: {crossed}");
 
-    // A self-only cast is left alone.
+    // A self-cast crosses too: its byte is a monster seat.
     let mut t3 = vec![3u8];
-    world.confuse_retarget_cast(3, &mut t3);
-    assert_eq!(t3, vec![3]);
+    assert!(world.confuse_retarget_cast(3, false, &mut t3));
+    assert!(t3[0] < 3, "{t3:?}");
 }
 
 #[test]

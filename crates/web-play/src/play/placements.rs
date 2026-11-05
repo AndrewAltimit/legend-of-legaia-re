@@ -139,6 +139,47 @@ impl LegaiaRuntime {
         out
     }
 
+    /// Per-placement `DRAW_ORDER_*` word (parallel to
+    /// [`Self::field_placement_slots`]): `1` the record's flag `0x800`,
+    /// `2` the bound actor's `+0x10 & 0x80800000`.
+    pub fn field_placement_draw_order(&self) -> Vec<u8> {
+        let (Some(f), Some(h)) = (self.field.as_ref(), self.scene_host.host()) else {
+            return Vec::new();
+        };
+        let near = h.world.near_bucket_object_records();
+        f.placements
+            .iter()
+            .zip(&f.placement_records)
+            .map(|(d, r)| {
+                u8::from(d.far_corner_order) + 2 * u8::from(r.is_some_and(|r| near.contains(&r)))
+            })
+            .collect()
+    }
+
+    /// The partition-1 placements drawing ten buckets nearer
+    /// (`World::near_bucket_npcs`).
+    pub fn play_npc_near_slots(&self) -> Vec<u32> {
+        self.scene_host
+            .host()
+            .map(|h| {
+                h.world
+                    .near_bucket_npcs()
+                    .iter()
+                    .map(|&s| s as u32)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Whether the lead draws ten buckets nearer on the cell it stands on
+    /// (`World::player_near_buckets`).
+    pub fn play_player_near_buckets(&self) -> bool {
+        self.scene_host.host().is_some_and(|h| {
+            let [x, _, z] = h.world.fog_player_world_pos();
+            h.world.player_near_buckets(x, z)
+        })
+    }
+
     /// Per-placement **parked** mask (parallel to
     /// [`Self::field_placement_slots`]): `1` where the placed object's actor
     /// now stands at the off-map hide box (or carries a zero render scale),

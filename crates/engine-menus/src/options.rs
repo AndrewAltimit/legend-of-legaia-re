@@ -128,7 +128,8 @@ pub struct OptionsState {
     /// a quarter of it - the full mix is far too loud through a desktop
     /// output. A config file written before the key existed loads the
     /// default. The native window applies it; the browser play page has its
-    /// own output-gain slider and ignores it.
+    /// own output-gain slider, on its own scale and in its own store, and
+    /// ignores it.
     pub master_volume: u8,
     /// Full-mono downmix (engine-only output setting, `false` = off): the
     /// finished mix, XA voice and FMV audio included, is averaged into both

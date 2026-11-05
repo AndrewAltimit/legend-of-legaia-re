@@ -294,15 +294,16 @@ fn a_guard_hit_drops_a_command_but_still_lowers_the_min_cost() {
 }
 
 #[test]
-fn the_default_weight_can_outgrow_retails_scratch() {
-    // Four commands, no family match, weight 8 apiece = 32 pushes into a
-    // 16-byte buffer.
+fn the_default_weight_fills_the_scratch_exactly() {
+    // Four commands, no family match, weight 8 apiece = 32 pushes, ending at
+    // the slot counter `sp+0x30`, 0x20 bytes past the scratch's start.
     let commands: Vec<ArtsCommand> = (FIRST_COMMAND..LAST_COMMAND_EXCL)
         .map(|id| cmd(id, 10, [0x20, 0, 0, 0], 0))
         .collect();
     let pool = build_candidate_pool(&commands, WeightFamily::None, 0);
-    assert!(pool.overflowed);
+    assert!(!pool.overflowed);
     assert_eq!(pool.entries.len(), CANDIDATE_SCRATCH);
+    assert_eq!(pool.entries.iter().filter(|&&e| e == 0x0F).count(), 8);
 }
 
 #[test]

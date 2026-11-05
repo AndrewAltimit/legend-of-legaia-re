@@ -1041,11 +1041,13 @@ fn roll_formation_advantage_scores_and_gates() {
         roll_formation_advantage(&[40, 40], &[10, 10], &inputs, &mut || draws.next().unwrap());
     assert_eq!(got, FormationAdvantage::None);
 
-    // Dead-level sides: both spreads are zero, so no rand is drawn for them
-    // (a `% 0` would trap on hardware) and neither side wins.
-    let mut draws = [7u32].into_iter();
+    // Dead-level sides: the first divide is by zero, which leaves the whole
+    // draw as the spread (`a = 20 + 7`); the second is against `|27 - 20| * 2`.
+    // b = 20 + 3 < a, and the gate's 1 % 16 fails it.
+    let mut draws = [7u32, 3, 1].into_iter();
     let got = roll_formation_advantage(&[20], &[20], &inputs, &mut || draws.next().unwrap());
     assert_eq!(got, FormationAdvantage::None);
+    assert_eq!(draws.next(), None, "all three draws are taken");
 }
 
 /// The two scripted ambushes force a back attack whatever the scores say.

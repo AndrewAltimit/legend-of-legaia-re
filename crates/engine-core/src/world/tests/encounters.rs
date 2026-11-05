@@ -862,9 +862,24 @@ fn the_battle_intro_sm_runs_through_the_transition_phase() {
         world.battle.intro_effects
     );
     assert_eq!(
-        world.audio.current_bgm,
-        Some(2001),
-        "the BGM swap runs during the spin, not at battle entry"
+        world.audio.current_bgm, None,
+        "phase 2 only reads the bundle: the attach is the completion arm's"
+    );
+    let evs = world.drain_field_events();
+    assert!(
+        evs.iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 3, .. })),
+        "the intro's init keys off the field track: {evs:?}"
+    );
+    assert!(
+        !evs.iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 1, .. })),
+        "no battle track during the spin: {evs:?}"
+    );
+    assert_eq!(
+        world.take_sfx_voice_stops(),
+        (0x10..=0x17).collect::<Vec<u8>>(),
+        "and every cue voice"
     );
 
     // Leaving the phase drops the entity. The transition's length is retail's
@@ -971,6 +986,9 @@ fn the_battle_sound_set_picks_the_battle_track() {
         for _ in 0..3 {
             world.tick_encounter();
         }
+        // The spin leaves the word alone; the completion arm attaches.
+        assert_eq!(world.audio.current_bgm, Some(2028));
+        world.swap_to_battle_bgm();
         (
             world.audio.current_bgm,
             world.audio.battle_bgm_active,
@@ -983,6 +1001,79 @@ fn the_battle_sound_set_picks_the_battle_track() {
         run(-1),
         (Some(2028), false, None),
         "the boss theme plays on"
+    );
+}
+
+/// A field track that is the battle's own, keyed off by the intro's init: the
+/// completion arm's attach plays it again from its head.
+#[test]
+fn a_field_track_the_battle_shares_is_reattached_at_the_completion() {
+    use legaia_engine_battle::encounter::EncounterRoll;
+    let mut world = World::new();
+    let theme = legaia_engine_system::music_labels::BATTLE_THEME_1_BGM_ID;
+    world.audio.current_bgm = Some(theme);
+    world.set_battle_bgm(Some(theme));
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.tick_encounter();
+    let _ = world.drain_field_events();
+    world.swap_to_battle_bgm();
+    let evs = world.drain_field_events();
+    assert!(
+        evs.iter()
+            .any(|e| matches!(e, FieldEvent::Bgm { sub_op: 4, .. })),
+        "{evs:?}"
+    );
+}
+
+/// A positional emitter stops with the other cue voices at the intro's init:
+/// the arm drops its latch without a release, so it keys again after the fight.
+#[test]
+fn the_intro_drops_an_emitters_key_latch() {
+    use legaia_engine_battle::encounter::EncounterRoll;
+    use legaia_engine_vm::sfx_emitter::{EMITTER_RENDER_MODE, EMITTER_STOP_FLAG};
+    let mut world = World::new();
+    let mut state = legaia_engine_vm::move_vm::ActorState {
+        move_submode: EMITTER_RENDER_MODE,
+        ..Default::default()
+    };
+    state.set_actor_u32(0xB4, 1);
+    world.ambient.fx.push(crate::world::ambient::AmbientPart {
+        record_off: 0,
+        model_sel: 0x4001,
+        reserved: 0,
+        buf: Vec::new(),
+        state,
+        finished: false,
+        cell_fx: None,
+        scroll_fx: Vec::new(),
+        prev_morph_weights: Vec::new(),
+    });
+    let mut session = legaia_engine_battle::encounter::EncounterSession::new(
+        legaia_engine_battle::encounter::EncounterTracker::new(
+            legaia_engine_battle::encounter::EncounterTable::default(),
+        ),
+    );
+    session.trigger_with(EncounterRoll {
+        formation_id: 3,
+        row_index: 0,
+        roll_q8: 0,
+    });
+    world.set_encounter_session(Some(session));
+    world.tick_encounter();
+    assert_ne!(world.ambient.fx[0].state.flags & EMITTER_STOP_FLAG, 0);
+    assert!(
+        world.battle.intro.is_some(),
+        "the arm's field mode reads this"
     );
 }
 

@@ -791,6 +791,7 @@ PAGES: list[tuple[str, str, str, str]] = [
     ("tooling/mednafen-automation.html","Mednafen automation",      "tooling/mednafen-automation","tooling/mednafen-automation.html"),
     ("tooling/pcsx-redux-automation.html","PCSX-Redux automation",  "tooling/pcsx-redux-automation","tooling/pcsx-redux-automation.html"),
     ("tooling/recomp-differential.html","Recomp differential oracle","tooling/recomp-differential","tooling/recomp-differential.html"),
+    ("tooling/retail-kernel-differential.html", "Retail kernel differential", "tooling/retail-kernel-differential", "tooling/retail-kernel-differential.html"),
     ("tooling/spine-flag-writers-capture.html","Spine flag-writers capture","tooling/spine-flag-writers-capture","tooling/spine-flag-writers-capture.html"),
     ("tooling/determinism-replay.html","Determinism + replay",      "tooling/determinism-replay", "tooling/determinism-replay.html"),
     ("tooling/retail-compare.html", "Retail comparison corpus", "tooling/retail-compare", "tooling/retail-compare.html"),

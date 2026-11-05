@@ -452,7 +452,8 @@ pub struct BattleActor {
     /// `FUN_80050120` once the tint has decayed to neutral. `0` = no
     /// impact tint armed.
     pub impact_state: u8,
-    /// `+0x224` - action recoil magnitude - written by `DoneCleanup`.
+    /// `+0x224` - the Spirit accumulator: an art's price from the queue builder,
+    /// spent, refilled and paid back into the gauge by `DoneCleanup`.
     pub action_recoil: u8,
     /// `+0x225` - capture state byte - `2` while captured.
     pub capture_state: u8,
@@ -579,6 +580,10 @@ pub struct BattleActor {
     /// `+0x1DD` - active-target slot index (used by Magic / Item to retarget
     /// mid-chain).
     pub active_target: u8,
+    /// The action seed read `+0x1DD` as the party-wide code `8`, which is what
+    /// its plate routine `FUN_801E6D84` raises the roster panels on. The cast
+    /// begin `0x28` may rewrite the byte to a lone survivor's slot afterwards.
+    pub seed_party_wide: bool,
     /// `+0x1DE` - action category. See [`ActionCategory`].
     pub action_category: u8,
     /// `+0x1DF..+0x1F2` - per-action parameter byte stream (item ID / spell
@@ -1047,6 +1052,8 @@ pub struct BattleActionCtx {
     pub menu_open: u8,
     /// `[+0x277]` - summon-frame index written at `SummonInvoke`.
     pub summon_frame_idx: u8,
+    /// Passes `0x32` has held on the drive (`SUMMON_INVOKE_DRIVE_PASSES`).
+    pub summon_invoke_passes: u8,
     /// `[+0x278]` / `[+0x279]` - summon staging counters.
     pub summon_staging_a: u8,
     pub summon_staging_b: u8,

@@ -394,6 +394,34 @@ pub fn sprite_arms_from_env(s: &str) -> Vec<legaia_engine_core::world::ambient::
         .collect()
 }
 
+/// The dance's displayed marker tiles as `LEGAIA_SEAT_DANCE_MARKERS`:
+/// `class:cursor:timer:mesh` per script row a tile stands on, `;`-joined.
+pub fn dance_markers_env(rows: &[Option<[i16; 3]>]) -> String {
+    rows.iter()
+        .enumerate()
+        .filter_map(|(class, r)| r.map(|[c, t, m]| format!("{class}:{c}:{t}:{m}")))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`dance_markers_env`]: `(class, [cursor, timer, mesh])`; malformed
+/// entries are dropped.
+pub fn dance_markers_from_env(v: &str) -> Vec<(usize, [i16; 3])> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            Some((
+                f.next()?.parse().ok()?,
+                [
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                    f.next()?.parse().ok()?,
+                ],
+            ))
+        })
+        .collect()
+}
+
 /// `retail_turning_parts` as `LEGAIA_SEAT_TURNING_PARTS`:
 /// `record:r24:r26:r28` per part, `;`-joined, decimal.
 pub fn turning_parts_env(s: &[legaia_engine_core::world::ambient::AmbientBankSeed]) -> String {

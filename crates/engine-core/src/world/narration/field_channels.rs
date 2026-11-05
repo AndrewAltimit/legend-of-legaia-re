@@ -71,6 +71,43 @@ impl World {
             .collect()
     }
 
+    /// The flat partition-0 records whose bound actor carries a bit of
+    /// `+0x10 & 0x80800000`, which `FUN_8001ADA4` draws with the ordering-table
+    /// base `0x28` lower (`0x8001B204..0x8001B21C`), ten buckets nearer. A
+    /// spawn prologue raises it with `31 1F`.
+    pub fn near_bucket_object_records(&self) -> std::collections::HashSet<usize> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| c.object_bind && c.ctx.flags & 0x8080_0000 != 0)
+            .map(|c| c.placement_index)
+            .collect()
+    }
+
+    /// The partition-1 placements whose actor carries a bit of
+    /// `+0x10 & 0x80800000`: [`Self::near_bucket_object_records`] for an NPC,
+    /// or a seated prop the entry poses through one (`deroa`'s slabs, `31 1F`).
+    pub fn near_bucket_npcs(&self) -> std::collections::HashSet<usize> {
+        self.field_vm
+            .channels
+            .iter()
+            .filter(|c| !c.object_bind && c.ctx.flags & 0x8080_0000 != 0)
+            .map(|c| c.placement_index)
+            .collect()
+    }
+
+    /// Whether the player draws ten buckets nearer: the floor sampler
+    /// `FUN_80019278` raises `+0x10 & 0x800000` per step on an object-grid
+    /// cell without bit `0x1000` (`0x80019314..0x80019328`).
+    pub fn player_near_buckets(&self, x: i32, z: i32) -> bool {
+        if !(0..0x4000).contains(&x) || !(0..0x4000).contains(&z) {
+            return false;
+        }
+        let i = ((z >> 7) * 128 + (x >> 7)) as usize;
+        let cell = self.terrain.object_cells.get(i).copied().unwrap_or(0);
+        cell & 0x1000 == 0
+    }
+
     /// Flat partition-0 record index -> render scale for every **object-bind
     /// channel** whose spawn prologue left `actor[+0x72]` at a non-zero,
     /// non-unit value. Retail's per-actor render dispatcher composes that word

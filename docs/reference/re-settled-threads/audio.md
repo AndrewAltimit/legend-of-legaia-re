@@ -34,6 +34,13 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| When is a cast's voice heard? | resolved | `disassembly` + `capture` | On the arm of `ctx[+0x279]` that holds the head cue's `FUN_8004FCC8` call, past the module's seek and stream wait: the caller log has PROT 0904's call on arm `3`, `120` vsyncs into the phase byte's walk, where the port had raised it at the arming seam. Port: `module_head_cue_arm`, `World::raise_cast_voice_on_arm`. |
+| How long does a CD-XA clip take to start after its trigger? | resolved (on mednafen) | `capture` | `62` or `88` ms with the head in the clip's file and `371` ms from another file, plus one sector per channel: [a clip's start](../../subsystems/audio.md#a-clips-start). No console has been timed. |
+| Is the `zeto_call_wave_mid_cast` track level a mix-law gap? | resolved (no) | `capture` | The `+5.09` dB is the cast's own cues: per two-second window `+4` to `+14` dB over the recording's first six seconds, then within `0.11` dB to its end. |
+| Why does Palma's parked flinch sound in the engine and not in retail? | resolved | `disassembly` + `capture` | Nothing holds retail's clip: `seats.csv` commits the row's clip `2` inside arm `0xF`, and arm `0xF`'s pass stores `8` into its cue cursor (`sb a1,0x1F6(v0)` at `0x801F8360`, `li a1,0x8` at `0x801F82D8`), one past the eight-slot track, so `FUN_800508DC` fires nothing for the rest of the clip. It is the only slot-B module with that store. Port: `World::apply_palma_writes`. |
+| Why does a flee's walk sound no steps? | resolved | `disassembly` + `capture` | The flee staging zeroes the eight cue slots of every party slot's walk record, bank entry `1`, ahead of its `+0x1DA = 1`: `0x801E7D68..0x801E7D80` in the run band, `0x801F7600..0x801F7618` in PROT 0925. A write watch on `flute_spikefish_midcast` catches both stores at `0x801F7600` / `0x801F7618` on the flee's pass, and the walker `FUN_800508DC` then reads a zero track. The gate at `0x800478C0` reads `0x8007BD71 = 0xFF` and is open. |
+| What is `0x8007B724`? | resolved | `disassembly` + `capture` | The last sustained cue the drainer keyed (`sw s0,0x40c(gp)` at `0x80016DC8`), `-1` after the teardown. The battle funnels drop a repeat against it ([the repeat rule](../../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)). `tunnelb_nova_pre_scythe_wind`: the caster's cue cursor steps twice, the ring takes `0x253` once. |
+| When does a fight's music change? | resolved | `disassembly` + `capture` | The intro init keys the field track off for sound set `0`, three vsyncs after the mode-`8` store; the battle track attaches at the mode-`0x14` store, `139` vsyncs after it ([timeline](../../subsystems/audio.md#the-battle-music-timeline)). |
 | Does the sequencer key notes on a coarser grid than retail? | resolved (no) | `capture` + `inference` | Under PCSX-Redux `FUN_80065BAC` holds its vsync phase within `0.2` of a sample on a field and a battle state; the KON write falls `8.7` to `20.8` samples after its entry, by the frame's work. The port against its own render with that spread at random reads the same residual as retail, so the `track` channel's `-12` to `-15` dB is CPU cost ([real retail PCM](../../subsystems/audio.md#real-retail-pcm)). |
 | Does a channel hold its pitch-bend wheel for later notes? | resolved (no) | `disassembly` + `capture` | `FUN_8006166C` reads the wheel byte, hands it to the voice scan `FUN_80067A1C` and stores it nowhere, so a key-on plays at its own pitch. `party_battle_gobu_gobu`'s track `2026` leaves channel 0 at wheel `0x0F` and retail's later notes read `0x80E`, the note's own; holding the wheel gave `0x4C2` and a `0.743` PCM correlation, `0.987` without ([sequencer port](../../subsystems/audio.md#engine-audio-model---sequencer-port)). |
 | Does any XA stream on the NA disc use 8-bit ADPCM? | resolved (no; every channel is 4-bit at 37.8 kHz) | `capture` | `demux-disc-all` reports `bits_per_sample = 4` for all 316 channels across the 34 `*.XA` files. The 8-bit decode path is covered by synthetic tests only and is wired through the demux, CLI and cutscene consumers, which map each channel's reported width ([xa.md](../../formats/xa.md)). |
@@ -352,3 +359,24 @@ Against mednafen's recorded output, the SPU model resumed sample for sample
 reads correlation `1.000` and level within `0.003` dB, and a track from the state's read
 cursor reads within `0.2` dB, under `0.1` dB per band. The recorder's own `0.75` is divided
 out. See [real retail PCM](../../subsystems/audio.md#real-retail-pcm).
+
+### What a monster's strike sounds like against retail's
+
+*Status:* resolved - grade `capture`
+
+Dealt retail's hand (`--strike-deal`: the state's queue, approach terms and ATK, retail's seed word going
+into each hit), most strike recordings match cue for cue: the swing, the block or flinch voice, the impact
+pick and their times, which no chance could do across their hits. So the block roll, its draw order and the
+damage rolls hold, and what the plain score reads is mostly two streams dealing two hands. The rest are
+not all read: see the oracle's list of what the deal leaves out. The frame driver's discard at `0x80046D2C` runs ahead of the
+hit, so a block roll's words sit one step past the frame's first word. See
+[the oracle](../../tooling/cast-sequence-oracle.md#a-monsters-physical-attack).
+
+### Where Glare's landing cue sits
+
+*Status:* resolved - grade `disassembly` (the id and the arm), `capture` (one landed roll)
+
+PROT 0940's `0x3C` arm 2 counts out at `0x801F6F30`, rolls the Stone test (`0x801F6F9C`), calls
+`FUN_8004FE5C(0xF4, ctx[+0x13])` on a landing (`0x15B` for Zora, `0x801F7018`) ahead of the guard tests, and
+steps to arm 3. Ring id `0x290`. The port rolls on that pass, not at the band's closing seam. See
+[the cast module page](../../subsystems/cast-module.md).

@@ -258,11 +258,15 @@ pub fn run(opts: &Options, r: &dyn Reporter) -> Result<Summary> {
 
     r.log("done");
     let o = out.display();
-    r.log(&format!(
-        "textures: inventoried in {o}/prot_tim_catalog.tsv (+ prot_tim_deep_catalog.tsv); \
-         export them with `asset tim-scan {o}/PROT --out {o}/tim_scan` and convert to \
-         PNG with `tim convert-dir {o}/tim_scan`"
-    ));
+    if opts.all_textures {
+        r.log(&format!("textures: every PNG is under {o}/tim_scan"));
+    } else {
+        r.log(&format!(
+            "textures: inventoried in {o}/prot_tim_catalog.tsv (+ prot_tim_deep_catalog.tsv); \
+             export them with `asset tim-scan {o}/PROT --out {o}/tim_scan` and convert to \
+             PNG with `tim convert-dir {o}/tim_scan`"
+        ));
+    }
     Ok(sum)
 }
 

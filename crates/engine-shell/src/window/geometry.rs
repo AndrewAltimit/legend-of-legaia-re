@@ -164,8 +164,13 @@ pub(crate) fn heightfield_to_vram_mesh(
     legaia_tmd::mesh::VramMesh {
         positions,
         uvs: hf.uvs.clone(),
-        // Per-cell terrain page + palette (multi-page terrain atlas).
-        cba_tsb: hf.cba_tsb.clone(),
+        // Per-cell terrain page + palette (multi-page terrain atlas); the
+        // emitter links each cell as one `POLY_FT4`.
+        cba_tsb: hf
+            .cba_tsb
+            .iter()
+            .map(|&[cba, tsb]| [cba, tsb | legaia_tmd::mesh::TSB_FLAT_QUAD_BIT])
+            .collect(),
         normals: vec![[0.0, 0.0, 0.0]; n],
         // The heightfield carries the ground's baked prim colour
         // (`GROUND_PRIM_COLOR`): retail's ground quads are neutral `0x808080`

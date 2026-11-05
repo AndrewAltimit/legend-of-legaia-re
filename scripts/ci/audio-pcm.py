@@ -16,6 +16,8 @@ Two channels per state:
     xa     the same recording of a state with a CD-XA clip sounding, the resumed
            SPU subtracted: the CD input against the channel through the port's
            rate converter and cue gain. Rate, level and waveform; not the start.
+    emitter  the track channel with the state's own cue voices resumed into it:
+           a looping positional emitter holds its voices for the whole recording
 
     scripts/ci/audio-pcm.py --capture             # record what is missing, score
     scripts/ci/audio-pcm.py --capture --jobs 6    # the recordings side by side
@@ -61,6 +63,10 @@ STATES = [
     "minigame_slot_machine",
     "minigame_fishing",
     "minigame_baka_fighter",
+    "noa_levelup_field_pre",
+    "zeto_call_wave_mid_cast",
+    "new_game_cutscene_intro_a",
+    "ending_vignette_fullscreen",
 ]
 CORE_STATES = ["mei_house_inside", "keikoku_chest_pre", "title_screen_new_game"]
 # The title screen times out into the attract sequence past this.
@@ -70,6 +76,9 @@ SHORT_WINDOWS = {"title_screen_new_game": 10}
 # The start is on the converter's own six-step phase: it repeats every 6 samples,
 # and three off reads a correlation of `0.991` against `0.999` on the same audio.
 XA_STATES = {"battle_melee_hit_spark": ("XA2_file1_ch9.wav", 35891, 11025)}
+# A state a looping emitter sounds through: the track alone reads its energy as
+# level and correlation.
+EMITTER_STATES = ["rimelm_wall_press_left"]
 OPEN_SEQUENCE_BITMAP = 0x1C_D2B8  # _DAT_801CD2B8, main-RAM offset
 CORR_SLACK = 0.002
 LEVEL_SLACK = 0.05
@@ -247,6 +256,14 @@ def main() -> int:
             key=lambda r: r["corr_median"],
         )
         results[label] = {"track_corr": s["corr_median"], "track_level": s["level_db"]}
+        if label in EMITTER_STATES:
+            e = max(
+                (score(exe, ["--label", label, "--pass", p, "--cue-voices"], wav, seconds * 44100,
+                       out / f"{label}.emitter.json")
+                 for p in ("0", "1", "2")),
+                key=lambda r: r["corr_median"],
+            )
+            results[label] |= {"emitter_corr": e["corr_median"], "emitter_level": e["level_db"]}
     for label in filter(want, CORE_STATES):
         state = state_file(label, library, manifest)
         wav = out / f"{label}.core.wav"

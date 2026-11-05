@@ -13,7 +13,22 @@ impl World {
     ///
     /// REF: FUN_801E295C (state `0x0C`, the party-slot `jal 0x801EED1C`)
     /// REF: FUN_801EED1C
-    pub(in crate::world) fn dispatch_pending_party_action(
+    /// The string the queue builder forces on the lead in the third round of
+    /// Tetsu's spar under the Automatic option (`0x801EED9C..0x801EEE04`):
+    /// `0E 0F 0E 0F`, whatever was entered or spent.
+    ///
+    /// PORT: FUN_801EED1C (`0x801EED94..0x801EEE08`, the spar's forced string)
+    pub fn spar_lesson_arrows(&self, actor: u8) -> Option<[legaia_art::Command; 4]> {
+        use legaia_engine_system::option_values::SelectAttackOpt;
+        const LESSON: [u8; 4] = [0x0E, 0x0F, 0x0E, 0x0F];
+        (actor == 0
+            && self.battle_first_monster_byte() == 0x4F
+            && self.battle_mode() == 3
+            && self.toggles.select_attack == SelectAttackOpt::Automatic)
+            .then(|| LESSON.map(|b| swing_byte_command(b).expect("a swing byte")))
+    }
+
+    pub fn dispatch_pending_party_action(
         &mut self,
         actor: u8,
         action: legaia_engine_battle_loop::round_flow::PendingPartyAction,
@@ -47,27 +62,36 @@ impl World {
                 // `FUN_801F0450` rebuilt this seat's queue from the direction
                 // commands and the learned arts (`super::super::auto_combo`), and
                 // that is what the round plays.
-                if let Some(queue) = self.battle.take_auto_attack_queue(actor) {
-                    if let Some(a) = self.actors.get_mut(actor as usize) {
-                        a.battle.params =
-                            [0; legaia_engine_battle_vm::battle_action::ACTION_PARAM_BYTES];
-                        for (dst, src) in a.battle.params.iter_mut().zip(queue.iter()) {
-                            *dst = *src;
-                        }
-                        a.battle.strike_index = 0;
-                    }
-                } else {
+                //
+                // Either way the seed's builder runs over the stream (`jal
+                // 0x801EED1C` at `0x801E2C7C`, every seat under 3), so the
+                // arrows the tail spliced in become arts here. The spar's third
+                // lesson overwrites the lead's stream ahead of all of it.
+                let auto = self.battle.take_auto_attack_queue(actor);
+                let forced = self.spar_lesson_arrows(actor);
+                {
                     // The preseeded string is raw arrows, which retail's
                     // builder tokenizes at this dispatch like any entered
                     // string - arts, learn-on-use and the Spirit cost
                     // included.
-                    let arrows = self.preseed_arts_entry_string(actor);
-                    let commands: Vec<legaia_art::Command> = arrows
-                        .iter()
-                        .filter_map(|&b| legaia_art::Command::from_byte(b))
-                        .collect();
+                    let commands: Vec<legaia_art::Command> = match (forced, &auto) {
+                        (Some(forced), _) => forced.to_vec(),
+                        (None, Some(queue)) => queue
+                            .iter()
+                            .copied()
+                            .filter_map(swing_byte_command)
+                            .collect(),
+                        (None, None) => self
+                            .preseed_arts_entry_string(actor)
+                            .iter()
+                            .filter_map(|&b| legaia_art::Command::from_byte(b))
+                            .collect(),
+                    };
                     if commands.is_empty() {
-                        self.seed_basic_attack_queue(actor, target);
+                        // An Auto spend that bought nothing plays nothing.
+                        if auto.is_none() {
+                            self.seed_basic_attack_queue(actor, target);
+                        }
                     } else {
                         let (queue, actions, marks) =
                             self.build_arts_action_queue(actor, &commands);
@@ -132,29 +156,33 @@ impl World {
                 item_id,
                 used_slots,
             } => {
-                // Apply to every affected slot (the copy went at the commit).
-                for &target_slot in &used_slots {
-                    let outcome = self.apply_battle_item(item_id, target_slot);
-                    self.push_item_use_fx(target_slot, outcome);
+                // The port's offensive catalog effects have no retail arm and
+                // nothing for the band's seam to run; they fold here.
+                if self.item_folds_at_dispatch(item_id) {
+                    for &target_slot in &used_slots {
+                        let outcome = self.apply_battle_item(item_id, target_slot);
+                        self.push_item_use_fx(target_slot, outcome);
+                    }
+                    if self.battle.escaped {
+                        // Escape item succeeded: leave the encounter (no loot,
+                        // no game-over) through the escape teardown's fade +
+                        // exit hold instead of cycling the turn.
+                        self.battle.end = Some(BattleEndCause::Escaped);
+                        self.begin_battle_end_sequence();
+                        return;
+                    }
                 }
-                if self.battle.escaped {
-                    // Escape item succeeded: leave the encounter (no loot, no
-                    // game-over) through the escape teardown's fade + exit
-                    // hold instead of cycling the turn.
-                    self.battle.end = Some(BattleEndCause::Escaped);
-                    self.begin_battle_end_sequence();
-                    return;
-                }
-                // Using an item is the actor's whole turn - and in retail the
-                // turn *is* the action SM's Item band: the committed
-                // category-1 action seeds through `FUN_801E295C`'s item arm
-                // (`item_seed_band`) into the `0x3C..0x40` cast states, which
-                // fire the cast-audio cue (`FUN_801F3990` via `spirit_wait`),
-                // stamp the item's effect-descriptor `(class, tier)` pair, and
-                // expand the item's cue group (`FUN_800402F4`'s eleven
-                // `FUN_801E22C8` sites via `place_cue_group`). The simulation
-                // fold stays above; the band's own `apply_damage` hook is the
-                // presentation seam. The two SummonFlute ids (`0x98`/`0x99`)
+                // The copy went at the commit. Using an item is the actor's
+                // whole turn - and in retail the turn *is* the action SM's Item
+                // band: the committed category-1 action seeds through
+                // `FUN_801E295C`'s item arm (`item_seed_band`) into the
+                // `0x3C..0x40` cast states, which fire the cast-audio cue
+                // (`FUN_801F3990` via `spirit_wait`), stamp the item's
+                // effect-descriptor `(class, tier)` pair, run the applier when
+                // state `0x3F`'s timer runs out (`0x801E4134`,
+                // `World::fold_battle_item_action`) and expand the item's cue
+                // group (`FUN_800402F4`'s eleven `FUN_801E22C8` sites via
+                // `place_cue_group`). The two SummonFlute ids (`0x98`/`0x99`)
                 // reroute inside `action_seed` to the summon band, which the
                 // live loop's settle glue (`live_battle_tick`) walks to
                 // completion.

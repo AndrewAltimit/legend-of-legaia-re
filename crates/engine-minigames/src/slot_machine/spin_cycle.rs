@@ -45,11 +45,12 @@ impl SlotMachine {
         // The claimed values are cleared with the reel flags at the bet charge,
         // which is what resets the marquee tally to `0 x 0 x 0`.
         self.claimed = [0; REEL_COUNT];
-        self.reel_vel = SPIN_VELOCITY;
+        self.reel_vel = [0; REEL_COUNT];
         // A bonus spin (and the first spin after one) runs long, so the display
         // strip has room to rotate onto the other source strip before the
         // payline row comes round - see BONUS_SPIN_UP_FRAMES.
         self.spin_timer = self.next_spin_up_frames();
+        self.spin_long = self.spin_timer != SPIN_UP_FRAMES;
         self.bonus_just_ended = false;
         self.last_result = None;
         // State 2 clears the latch and its one-shot guard on entry
@@ -77,15 +78,21 @@ impl SlotMachine {
     /// player who mashes buttons while the reels spin up makes the next
     /// spin's reach / hot modes rarer (`1/700` becomes `1/900..=1/999`).
     ///
-    /// Call once per frame after [`Self::tick`] with this frame's edge; a no-op
-    /// outside [`SlotPhase::Spinning`] - retail's test lives in state `2`
-    /// alone. One frame differs: retail tests after the decrement that ends
-    /// the spin-up, so an edge on that last frame still latches; the port's
-    /// tick has already left `Spinning` by then.
+    /// The test is `DAT_801d3c90 != 0` with the frame's decrement already taken,
+    /// and that word sits at `0` through a normal spin's ramp: only the last
+    /// frame, the one that runs it to `-1`, can latch. A long spin starts it at
+    /// `0x18`, so every frame can but the one where it passes through `0`.
+    ///
+    /// Call once per frame after [`Self::tick`] with this frame's edge.
     ///
     /// PORT: FUN_801cf0d8 (`0x801CF6D4`..`0x801CF704`, state 2's latch)
     pub fn latch_spin_up(&mut self, face_edge: bool) {
-        if face_edge && self.phase == SlotPhase::Spinning && self.spin_timer != 0 {
+        let timer_up = if self.spin_long {
+            self.spin_timer != 1
+        } else {
+            self.spin_timer == 0
+        };
+        if face_edge && self.spin_up_last_tick && timer_up {
             self.spin_up_pressed = true;
         }
     }
@@ -127,6 +134,12 @@ impl SlotMachine {
         if self.phase == SlotPhase::Payout {
             self.tick_payout();
         }
+        // State 2 brings the reels up one at a time.
+        let spinning = self.phase == SlotPhase::Spinning;
+        self.spin_up_last_tick = spinning;
+        if spinning && let Some(v) = self.reel_vel.iter_mut().find(|v| **v < SPIN_SPEED) {
+            *v = (*v + SPIN_RAMP).min(SPIN_SPEED);
+        }
         for reel in 0..REEL_COUNT {
             if self.stopped[reel].is_none() {
                 self.reel_pos[reel] =
@@ -164,6 +177,9 @@ impl SlotMachine {
         for ((display, src), &row) in self.strips.iter_mut().zip(source.iter()).zip(rows.iter()) {
             display[row] = src[row];
         }
+        // The state machine's tail draws the LCG every frame (`jal 0x801D30CC`),
+        // so where a stop lands depends on when the button went down.
+        self.rng.next_u32();
         self.frame = self.frame.wrapping_add(1);
     }
 
@@ -207,7 +223,8 @@ impl SlotMachine {
         // table): a forced target lands on that payline, not on the middle row.
         let line = LANDING_LINE_BY_JITTER[self.jitter.rem_euclid(5) as usize];
         let line_offset = |r: usize| PAYLINE_ROW_OFFSETS[line][r];
-        let (depth, target) = stop_plan(&mut self.rng, self.feature_mode, self.normal_target);
+        let (depth, target, budget) =
+            stop_plan_with_budget(&mut self.rng, self.feature_mode, self.normal_target);
         let from_row = self.payline_row(reel);
         let row = land_row(
             &self.strips[reel],
@@ -216,6 +233,7 @@ impl SlotMachine {
             target,
             line_offset(reel),
         );
+        let row = roll_to_row(self.reel_pos[reel], row, budget);
         self.reel_pos[reel] = (row as i32) << 8;
         self.reel_vel[reel] = 0;
         self.stopped[reel] = Some(row);
@@ -321,8 +339,10 @@ impl SlotMachine {
             };
             let (a, b, c) = (sym(0), sym(1), sym(2));
             if a == b && b == c {
+                // The evaluator keeps the highest symbol id of the lines that
+                // match (`DAT_801d3d34 < iVar2`), not the best-paying.
                 let value = self.payouts.payout(a).unwrap_or(0) as i32;
-                if best.map(|(_, _, v)| value > v).unwrap_or(true) {
+                if best.map(|(_, s, _)| a > s).unwrap_or(true) {
                     best = Some((line, a, value));
                 }
             }
@@ -334,18 +354,21 @@ impl SlotMachine {
             bonus_triggered: false,
             bonus_spin,
         };
-        if let Some((_, sym, _)) = best {
-            if let Some(rounds) = slot_payout::bonus_rounds_for(sym) {
-                // The jackpot symbols kick off the bonus round: 3 rounds for the
-                // red "punch" (id 9), 1 for the blue "kick" (id 8). From the next
-                // spin the display strip starts rotating onto the numerals.
-                self.feature_mode = FEATURE_MODE_BONUS;
-                self.bonus_spins = rounds as i32;
-                result.bonus_triggered = true;
-            } else if self.feature_mode != 0 && self.feature_mode != 4 {
-                // A resolved normal-mode win clears a tease/hot feature.
-                self.feature_mode = 0;
-            }
+        if let Some((_, sym, _)) = best
+            && let Some(rounds) = slot_payout::bonus_rounds_for(sym)
+        {
+            // The jackpot symbols kick off the bonus round: 3 rounds for the
+            // red "punch" (id 9), 1 for the blue "kick" (id 8). From the next
+            // spin the display strip starts rotating onto the numerals.
+            self.feature_mode = FEATURE_MODE_BONUS;
+            self.bonus_spins = rounds as i32;
+            result.bonus_triggered = true;
+        }
+        // Reach and tease modes stand until their jackpot lands. Hot mode has
+        // a one-in-150 chance to end on every spin, won or lost, off the LCG
+        // (`0x801D1A8C`); the bonus trigger above leaves it nothing to end.
+        if self.feature_mode == 3 && self.rng.next_u32().is_multiple_of(0x96) {
+            self.feature_mode = 0;
         }
         result
     }

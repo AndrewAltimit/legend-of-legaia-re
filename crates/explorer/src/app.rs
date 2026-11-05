@@ -248,6 +248,9 @@ pub struct App {
     tim_sel: usize,
     clut: usize,
     tim_zoom: f32,
+    /// The Extract view's options are unfolded; a started run folds them, so
+    /// a small window has room for its log.
+    extract_options_open: bool,
     tim_tex: Option<((usize, usize, usize), TextureHandle)>,
     /// The decode failure for the key [`Self::tim_tex`] would hold.
     tim_err: Option<((usize, usize, usize), String)>,
@@ -276,12 +279,17 @@ pub struct App {
     engine: Option<PathBuf>,
     /// A game started with Play, while it runs.
     game: Option<crate::launch::Game>,
+    /// The banner a failed game put up and the report its button copies.
+    error_report: Option<(String, String)>,
     /// The folder the last export or extraction wrote into, for the
     /// status line's *Show folder* button.
     last_written: Option<PathBuf>,
     /// The informational status text last seen and when it appeared (or
     /// was last hovered): it clears itself after [`STATUS_TTL`].
     status_seen: Option<(String, std::time::Instant)>,
+    /// The zoom last set on egui, to tell a change the user made from one
+    /// [`crate::settings::fit_zoom`] made.
+    zoom_applied: f32,
     /// Theme and zoom from the settings have been pushed into egui.
     appearance_applied: bool,
     // Automation.
@@ -361,6 +369,8 @@ impl App {
             tim_sel: 0,
             clut: 0,
             tim_zoom: 2.0,
+            zoom_applied: 1.0,
+            extract_options_open: true,
             tim_tex: None,
             tim_err: None,
             tmd_sel: 0,
@@ -380,6 +390,7 @@ impl App {
                 .ok()
                 .and_then(|exe| crate::launch::find_engine(&exe)),
             game: None,
+            error_report: None,
             last_written: None,
             status_seen: None,
             appearance_applied: false,
@@ -651,11 +662,12 @@ impl App {
             skip_xa: s.skip_xa,
             skip_catalog: s.skip_catalog,
             skip_font: s.skip_font,
-            all_textures: s.all_textures,
+            all_textures: !s.skip_all_textures,
             verbose: false,
         };
         self.explorer.save_settings();
         self.explorer.error = None;
+        self.extract_options_open = false;
         self.job = Some(ExtractJob::start(options));
     }
 
@@ -709,7 +721,11 @@ impl App {
             self.path_focus = self.path_row;
         }
         if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::F5)) {
-            self.start_game();
+            // A key has no greyed-out look to hover over: say why not.
+            match self.play_blocked() {
+                Some(why) => self.explorer.status = Some(why),
+                None => self.start_game(),
+            }
         }
         for (key, mode) in [
             (egui::Key::Num1, Mode::Browse),
@@ -862,13 +878,13 @@ impl App {
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| lib.source.path().display().to_string());
                 ui.label(format!(
-                    "{kind} {name}: {} PROT entries, {} ISO files{}",
-                    lib.entries.len(),
-                    lib.iso_files.len(),
+                    "{kind} {name}{}: {} archive entries, {} files",
                     lib.region
                         .as_ref()
-                        .map(|r| format!(", region {r}"))
-                        .unwrap_or_default()
+                        .map(|r| format!(", {r}"))
+                        .unwrap_or_default(),
+                    lib.entries.len(),
+                    lib.iso_files.len(),
                 ))
                 .on_hover_text(lib.source.path().display().to_string());
                 // Another region's disc browses fine but cannot start the
@@ -920,12 +936,20 @@ impl App {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal_top(|ui| {
-                        if ui
-                            .small_button("Copy")
-                            .on_hover_text("Copy this message to the clipboard")
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(e.clone());
+                        // A failed game's banner copies the whole report: the
+                        // banner is one line, a bug report wants the log's end.
+                        let report = self
+                            .error_report
+                            .as_ref()
+                            .filter(|(banner, _)| banner == e)
+                            .map(|(_, report)| report.clone());
+                        let (label, hint) = if report.is_some() {
+                            ("Copy report", "Copy a report of this failure, with the end of the log, for a bug report")
+                        } else {
+                            ("Copy", "Copy this message to the clipboard")
+                        };
+                        if ui.small_button(label).on_hover_text(hint).clicked() {
+                            ui.ctx().copy_text(report.unwrap_or_else(|| e.clone()));
                         }
                         dismiss = ui.small_button("Dismiss").clicked();
                         // In a vertical child the wrapped lines count
@@ -1043,6 +1067,16 @@ impl App {
         ui.separator();
         ui.label(RichText::new(format!("Zoom ({:.0}%)", ui.ctx().zoom_factor() * 100.0)).strong());
         egui::gui_zoom::zoom_menu_buttons(ui);
+        let wanted = crate::settings::sane_zoom(self.explorer.settings.zoom);
+        if wanted > ui.ctx().zoom_factor() + 1e-3 {
+            ui.label(
+                RichText::new(format!(
+                    "Make the window larger for {:.0}%.",
+                    wanted * 100.0
+                ))
+                .weak(),
+            );
+        }
         ui.separator();
         if ui
             .add(egui::Button::new("Keyboard shortcuts").shortcut_text("?"))
@@ -1075,13 +1109,28 @@ impl App {
             self.appearance_applied = true;
             crate::theme::install(ctx);
             ctx.set_theme(theme_preference(s.theme));
-            ctx.set_zoom_factor(crate::settings::sane_zoom(s.zoom));
+            self.zoom_applied = crate::settings::sane_zoom(s.zoom);
+            ctx.set_zoom_factor(self.zoom_applied);
             return;
         }
+        // A zoom that differs from the last one set here is the user's.
         let z = ctx.zoom_factor();
-        if (z - crate::settings::sane_zoom(s.zoom)).abs() > 1e-3 {
+        if (z - self.zoom_applied).abs() > 1e-3 {
             s.zoom = (z.is_finite() && (z - 1.0).abs() > 1e-3).then_some(z);
             self.explorer.save_settings();
+        }
+        // What is remembered is what was asked for; what is applied is what
+        // this window has room for, so a window made larger gets it back.
+        let size = ctx.content_rect().size() * z;
+        let fit = crate::settings::fit_zoom(
+            crate::settings::sane_zoom(self.explorer.settings.zoom),
+            size.x,
+            size.y,
+        );
+        self.zoom_applied = fit;
+        if (fit - z).abs() > 1e-3 {
+            ctx.set_zoom_factor(fit);
+            ctx.request_repaint();
         }
     }
 
@@ -1098,14 +1147,15 @@ impl App {
     /// *Play*: start the game on the open disc, when the game binary ships
     /// beside this one and the disc is the one it runs on. The hover text
     /// says why it is unavailable otherwise.
-    fn play_button(&mut self, ui: &mut egui::Ui) {
-        let running = self.game.is_some();
+    /// Why the game cannot start now, in the words of the Play button's hover
+    /// and of `F5`.
+    fn play_blocked(&self) -> Option<String> {
         let disc = match &self.explorer.library {
             Some(lib) => crate::launch::playable_disc(lib),
             None => Err("Open your Legend of Legaia (USA) disc image first.".to_string()),
         };
-        let blocked = match (&self.engine, &disc) {
-            _ if running => Some("The game is running.".to_string()),
+        match (&self.engine, &disc) {
+            _ if self.game.is_some() => Some("The game is running.".to_string()),
             (None, _) => Some(format!(
                 "{} was not found. It ships in the release folder's {} \
                  folder; keep that folder beside Legaia Explorer.",
@@ -1114,7 +1164,12 @@ impl App {
             )),
             (_, Err(why)) => Some(why.clone()),
             _ => None,
-        };
+        }
+    }
+
+    fn play_button(&mut self, ui: &mut egui::Ui) {
+        let running = self.game.is_some();
+        let blocked = self.play_blocked();
         let button = if running {
             egui::Button::new("Game running")
         } else if blocked.is_none() {
@@ -1197,17 +1252,28 @@ impl App {
             Err(headline) => {
                 // The launcher's words for the same failure: how it ended,
                 // then the reason its log gives, if it gives one.
-                let mut msg = headline;
+                use legaia_app_theme::game_exit;
+                let log_text = log.as_ref().and_then(|l| std::fs::read_to_string(l).ok());
+                let why = log_text.as_deref().and_then(game_exit::failure_detail);
+                let mut msg = headline.clone();
+                if let Some(why) = &why {
+                    msg.push(' ');
+                    msg.push_str(why);
+                }
                 if let Some(log) = &log {
-                    if let Some(why) = std::fs::read_to_string(log)
-                        .ok()
-                        .and_then(|t| legaia_app_theme::game_exit::failure_detail(&t))
-                    {
-                        msg.push(' ');
-                        msg.push_str(&why);
-                    }
                     msg.push_str(&format!("\nFull log: {}", log.display()));
                 }
+                self.error_report = Some((
+                    msg.clone(),
+                    game_exit::report_text(
+                        "legaia-explorer",
+                        env!("CARGO_PKG_VERSION"),
+                        &headline,
+                        why.as_deref(),
+                        log_text.as_deref(),
+                        game_exit::home_folder().as_deref(),
+                    ),
+                ));
                 self.explorer.error = Some(msg);
             }
         }
@@ -1265,18 +1331,21 @@ impl App {
             .map(|&k| (k, count(k)))
             .filter(|&(_, n)| n > 0)
             .collect();
-        egui::ComboBox::from_label("Show")
-            .selected_text(self.class_filter.as_deref().unwrap_or("Everything"))
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.class_filter, None, "Everything");
-                for (k, n) in kinds {
-                    ui.selectable_value(
-                        &mut self.class_filter,
-                        Some(k.to_string()),
-                        format!("{k} ({n})"),
-                    );
-                }
-            });
+        ui.horizontal(|ui| {
+            ui.label("Show:");
+            egui::ComboBox::from_id_salt("browse_kind")
+                .selected_text(self.class_filter.as_deref().unwrap_or("Everything"))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.class_filter, None, "Everything");
+                    for (k, n) in kinds {
+                        ui.selectable_value(
+                            &mut self.class_filter,
+                            Some(k.to_string()),
+                            format!("{k} ({n})"),
+                        );
+                    }
+                });
+        });
         let filter = self.filter.trim().to_string();
         let filtering = !filter.is_empty() || self.class_filter.is_some();
         // The rows the search shows, per block, in disc order.
@@ -1499,21 +1568,23 @@ impl App {
         };
         let e = &lib.entries[pos];
         ui.horizontal_wrapped(|ui| {
-            ui.heading(lib.stem(e.index));
-            // The stem is the extracted file's name, whose CDNAME label runs
-            // two entries late; the tree files the entry under the block it
-            // belongs to on the disc. Name that block beside the stem
-            // whenever the two differ, so the heading and the tree agree.
-            if let Some(retail) = lib.retail_block(e.index)
-                && lib.label(e.index) != Some(retail)
-            {
-                ui.label(RichText::new(format!("block {retail}")).color(crate::theme::accent(ui)))
-                    .on_hover_text(format!(
-                        "On the disc this entry belongs to {retail}. The file name keeps the \
-                         label legaia-extract gives it, {}, which applies the CDNAME numbers two \
-                         entries late (docs/formats/cdname.md).",
-                        lib.label(e.index).unwrap_or("-")
-                    ));
+            // The heading agrees with the tree: the block the entry belongs
+            // to on the disc. The stem is the extracted file's name, whose
+            // CDNAME label runs two entries late, so it can name a neighbour
+            // (Rim Elm's first map files as `0001_gameover_data`).
+            let stem = lib.stem(e.index);
+            match lib.retail_block(e.index) {
+                Some(retail) if lib.label(e.index) != Some(retail) => {
+                    ui.heading(format!("{:04}_{retail}", e.index))
+                        .on_hover_text(format!(
+                            "On the disc this entry belongs to {retail}. Exported and extracted \
+                         files keep the name {stem}: legaia-extract applies the CDNAME \
+                         numbers two entries late (docs/formats/cdname.md)."
+                        ));
+                }
+                _ => {
+                    ui.heading(stem);
+                }
             }
             ui.label(format!("{} - {}", a.class.name(), human_size(e.size_bytes)));
         });
@@ -1562,9 +1633,12 @@ impl App {
             // no gap to read as separate, and the six fit one row of the
             // narrowest pane.
             ui.spacing_mut().item_spacing.x = 2.0;
+            // An entry with big counts would wrap the last tab onto a row of
+            // its own at the narrowest pane; the counts go first.
+            let room_for_counts = ui.available_width() >= TAB_COUNTS_MIN_WIDTH;
             for t in Tab::ALL {
                 let n = count(t);
-                let label = tab_label(t.name(), n);
+                let label = tab_label(t.name(), n.filter(|_| room_for_counts));
                 let enabled = n.is_none_or(|n| n > 0);
                 let resp = ui
                     .add_enabled(enabled, egui::Button::selectable(shown == t, label))
@@ -2172,7 +2246,9 @@ impl App {
                 ui.checkbox(&mut self.seq_loop, "loop");
             });
             for s in a.seqs.clone() {
-                ui.horizontal(|ui| {
+                // Wrapped: the label and the two buttons outrun the pane at
+                // the minimum window width.
+                ui.horizontal_wrapped(|ui| {
                     ui.monospace(format!(
                         "SEQ @ 0x{:X}  {:.1} BPM, {} PPQN",
                         s.offset, s.bpm, s.ppqn
@@ -2346,9 +2422,10 @@ impl App {
     fn extract_panel(&mut self, ui: &mut egui::Ui) {
         ui.heading("Extract the whole disc");
         ui.label(
-            "Runs the full legaia-extract pipeline: ISO9660 files, PROT entries with CDNAME names, \
-             categorize.json, streaming sub-assets, TIM -> PNG, CD-XA audio -> WAV, the TIM catalogs \
-             and the dialog font. The output folder is yours; nothing is uploaded anywhere.",
+            "Unpacks the disc into a folder you choose: its files, every archive entry, the \
+             textures as PNG, the voice and streamed music as WAV, the models in their raw form \
+             (.tmd) and the dialog font. Nothing is uploaded anywhere. To get one model as OBJ or \
+             glTF, use Export in Browse or Characters & monsters.",
         );
         ui.add_space(6.0);
         let running = self.job.as_ref().is_some_and(|j| j.outcome().is_none());
@@ -2362,12 +2439,28 @@ impl App {
         {
             self.out_text = dir.display().to_string();
         }
+        // The rows' first column and the buttons beside the folder field; the
+        // field and the disc line take what is left of the window.
+        let value_w = ui.available_width() - 100.0;
         egui::Grid::new("extract_opts")
             .num_columns(2)
             .show(ui, |ui| {
                 ui.label("Disc image");
                 match &disc {
-                    Some(p) => ui.monospace(p.display().to_string()),
+                    Some(p) => {
+                        let text = p.display().to_string();
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(value_w, ui.spacing().interact_size.y),
+                            egui::Layout::left_to_right(egui::Align::Center),
+                            |ui| {
+                                ui.add(
+                                    egui::Label::new(RichText::new(&text).monospace()).truncate(),
+                                )
+                                .on_hover_text(&text)
+                            },
+                        )
+                        .inner
+                    }
                     None => {
                         let r = ui.add(crate::theme::primary_button("Open disc image..."));
                         if r.clicked() {
@@ -2382,7 +2475,7 @@ impl App {
                     ui.add_enabled(
                         !running,
                         egui::TextEdit::singleline(&mut self.out_text)
-                            .desired_width((ui.available_width() - 90.0).clamp(420.0, 900.0)),
+                            .desired_width((value_w - 145.0).clamp(120.0, 900.0)),
                     );
                     if ui
                         .add_enabled(!running, egui::Button::new("Choose..."))
@@ -2412,6 +2505,21 @@ impl App {
                     match ExtractOutDir::of(&out) {
                         ExtractOutDir::New => ui.label(RichText::new("A new folder.").weak()),
                         ExtractOutDir::Empty => ui.label(RichText::new("An empty folder.").weak()),
+                        // The run just finished is why it has files; that is
+                        // not a warning.
+                        ExtractOutDir::HasFiles
+                            if self
+                                .job
+                                .as_ref()
+                                .is_some_and(|j| j.outcome().is_some() && j.options.out == out) =>
+                        {
+                            ui.label(
+                                RichText::new(
+                                    "Another run here replaces the files with the same names.",
+                                )
+                                .weak(),
+                            )
+                        }
                         ExtractOutDir::HasFiles => ui.label(
                             RichText::new(
                                 "This folder already has files: ones with the same names are \
@@ -2426,30 +2534,49 @@ impl App {
                     };
                     ui.end_row();
                 }
-                ui.label("Options");
-                ui.vertical(|ui| {
-                    let s = &mut self.explorer.settings;
-                    ui.add_enabled_ui(!running, |ui| {
-                        ui.checkbox(
-                            &mut s.skip_verify,
-                            "Skip SHA-256 verification (--skip-verify)",
-                        );
-                        ui.checkbox(&mut s.skip_png, "Skip TIM -> PNG conversion (--skip-png)");
-                        ui.checkbox(&mut s.skip_xa, "Skip CD-XA audio -> WAV (--skip-xa)");
-                        ui.checkbox(
-                            &mut s.skip_catalog,
-                            "Skip TIM catalog TSVs (--skip-catalog)",
-                        );
-                        ui.checkbox(&mut s.skip_font, "Skip dialog font (--skip-font)");
-                        ui.checkbox(
-                            &mut s.all_textures,
-                            "Export all textures as PNG: every TIM, raw and compressed, \
-                             into tim_scan/ (--all-textures)",
-                        );
-                    });
-                });
-                ui.end_row();
             });
+        let options = egui::CollapsingHeader::new("Options")
+            .open(Some(self.extract_options_open))
+            .show(ui, |ui| {
+                let s = &mut self.explorer.settings;
+                ui.add_enabled_ui(!running, |ui| {
+                    let mut every = !s.skip_all_textures;
+                    ui.checkbox(&mut every, "Every texture as PNG, in a tim_scan folder")
+                        .on_hover_text(
+                            "Finds every texture on the disc, compressed ones too. Left out, \
+                             only a few images are written. Command line: --all-textures",
+                        );
+                    s.skip_all_textures = !every;
+                    for (flag, label, hover) in [
+                        (
+                            &mut s.skip_verify,
+                            "Skip the check of the disc image",
+                            "Compares the image's SHA-256 with the known dumps. --skip-verify",
+                        ),
+                        (
+                            &mut s.skip_png,
+                            "Skip the PNGs of the streamed textures",
+                            "--skip-png",
+                        ),
+                        (
+                            &mut s.skip_xa,
+                            "Skip the voice and streamed music (WAV)",
+                            "--skip-xa",
+                        ),
+                        (
+                            &mut s.skip_catalog,
+                            "Skip the texture lists (.tsv)",
+                            "--skip-catalog",
+                        ),
+                        (&mut s.skip_font, "Skip the dialog font", "--skip-font"),
+                    ] {
+                        ui.checkbox(flag, label).on_hover_text(hover);
+                    }
+                });
+            });
+        if options.header_response.clicked() {
+            self.extract_options_open = !self.extract_options_open;
+        }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             let can_start = !running && disc.is_some();
@@ -2503,20 +2630,11 @@ impl App {
             None if p.step == 0 => format!("Checking the disc image: {step_name}{units}"),
             None => format!("Step {} of {}: {step_name}{units}", p.step, steps - 1),
             Some(Outcome::Done(s)) => format!(
-                "Done: {} disc files, {} PROT entries, {} streams, {} PNGs, {} WAVs{}",
-                s.iso_files,
-                s.prot_entries,
-                s.streams,
-                s.pngs,
+                "Done: {} images (PNG), {} sounds (WAV), {} archive entries, {} disc files",
+                s.pngs + s.all_textures.1,
                 s.wavs,
-                if s.all_textures.0 > 0 {
-                    format!(
-                        ", {} textures -> {} PNGs in tim_scan/",
-                        s.all_textures.0, s.all_textures.1
-                    )
-                } else {
-                    String::new()
-                }
+                s.prot_entries,
+                s.iso_files,
             ),
             Some(Outcome::Cancelled) => "Cancelled".into(),
             Some(Outcome::Failed(e)) => format!("Failed: {e}"),
@@ -2961,7 +3079,7 @@ impl App {
                                         .min_size(big),
                                 )
                                 .on_hover_text(
-                                    "Your .bin (a raw Mode2/2352 dump) or its .cue. Ctrl+O",
+                                    "Your .bin (a raw dump, 2352-byte sectors) or its .cue. Ctrl+O",
                                 )
                                 .clicked()
                             {
@@ -3028,8 +3146,9 @@ impl App {
                                     ),
                                     (
                                         "Extract",
-                                        "Unpack the whole disc into a folder of PNG, WAV, \
-                                         OBJ and glTF files.",
+                                        "Unpack the whole disc into a folder: textures as \
+                                         PNG, voice and streamed music as WAV, raw models and \
+                                         data.",
                                     ),
                                     (
                                         "Play",
@@ -3070,6 +3189,9 @@ fn cycle_tab(from: Tab, forward: bool, enabled: impl Fn(Tab) -> bool) -> Tab {
         .find(|&t| enabled(t))
         .unwrap_or(from)
 }
+
+/// The preview pane's width below which the tab labels leave out their counts.
+const TAB_COUNTS_MIN_WIDTH: f32 = 430.0;
 
 /// A preview tab's label: its name with the count of what it shows, the
 /// count left out when there is nothing (the tab is disabled then).

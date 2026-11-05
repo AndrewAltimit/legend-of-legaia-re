@@ -412,7 +412,9 @@ int overworldCurveEntry(int i) {
 
 vec4 overworldCurve(vec4 clip) {
   float t = u_curve_bias;
-  if (u_curve > 0.0 && clip.w > 0.0) {
+  /* 1 + 1/4096 is overworld_curvature::FLAT_TABLE_SCALE: the map display's
+   * flat table, which keeps the scale for the ground's cue and sort. */
+  if (u_curve > 0.0 && u_curve != 1.0 + 1.0 / 4096.0 && clip.w > 0.0) {
     int sz = clamp(int(floor(clip.w * u_curve + 0.5)), 0, 0xFFFF);
     t += float(overworldCurveEntry((sz >> 5) + 1));
   }
@@ -437,10 +439,24 @@ vec2 depthAffine(mat4 m) {
 uniform float u_prim_mean_depth;
 float primMeanW(mat4 m) {
   if (u_prim_mean_depth < 0.5 || u_psx.z < 0.5 || a_prim_c0.w < 2.5) return -1.0;
-  float w = (m * vec4(a_prim_c0.xyz, 1.0)).w + (m * vec4(a_prim_c1, 1.0)).w
-    + (m * vec4(a_prim_c2, 1.0)).w;
-  if (a_prim_c0.w > 3.5) return (w + (m * vec4(a_prim_c3, 1.0)).w) / 4.0;
-  return w / 3.0;
+  float w0 = (m * vec4(a_prim_c0.xyz, 1.0)).w;
+  float w1 = (m * vec4(a_prim_c1, 1.0)).w;
+  float w2 = (m * vec4(a_prim_c2, 1.0)).w;
+  float sum = w0 + w1 + w2;
+  float far = max(max(w0, w1), w2);
+  float n = 3.0;
+  if (a_prim_c0.w > 3.5) {
+    float w3 = (m * vec4(a_prim_c3, 1.0)).w;
+    sum += w3;
+    far = max(far, w3);
+    n = 4.0;
+  }
+  /* u_prim_mean_depth - 1 is the draw's DRAW_ORDER_* word (engine-render's
+   * prim_mean_depth): bit 0 the farthest corner, bit 1 ten buckets nearer. */
+  int order = int(u_prim_mean_depth + 0.5) - 1;
+  float w = (order == 1 || order == 3) ? far : sum / n;
+  if (order >= 2) w = max(w - 320.0 / 6.0, 1.0);
+  return w;
 }
 
 /* The flat bucket's representative w for a continent cell (the w whose
@@ -646,7 +662,8 @@ void main() {
    * Perspective interpolation of w is exact. */
   float flatW = overworldFlatW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
   if (flatW <= 0.0) flatW = fieldSortedCellW(u_mvp * u_model, a_ground_ref_xz, a_ground_ref_y);
-  if (flatW <= 0.0) flatW = primMeanW(u_mvp * u_model);
+  /* A ground cell carries its own bucket (above, or the far bucket). */
+  if (flatW <= 0.0 && a_ground_ref_xz == vec4(0.0)) flatW = primMeanW(u_mvp * u_model);
   v_depth_w = flatW > 0.0 ? flatW : gl_Position.w;
   v_far_bucket = fieldFarBucket(a_ground_ref_xz) ? 1.0
     : (fieldFlatFarBucket(a_ground_ref_xz) ? 2.0 : 0.0);
@@ -1380,33 +1397,30 @@ void main() {
   vec3 prim_color = (palette_on && (tsb & 0x0800u) == 0u)
                         ? palette_collapse_prim(v_flat_rgba.rgb)
                         : v_flat_rgba.rgb;
+  /* Retail order: DPCS blends the PACKET COLOUR toward the far colour, then
+   * the GPU multiplies the texel by the result and saturates (twin of
+   * engine-render's psx_cue_colour, which says what the other order loses on
+   * a bright texture). The grade tints the near term only. Palette mode
+   * replaces the pixel multiply with the texel + packet collapse above
+   * (grade_near would double-grade), carries the global screen tint
+   * whole-pixel, and holds the cue ramp inert. */
+  float ir0 = palette_on ? 0.0 : cue_ir0(v_view_z);
+  if (ir0 > 0.0) {
+    prim_color = clamp(mix(grade_near(prim_color), u_cue_far, ir0), vec3(0.0), vec3(1.0));
+  }
   vec3 lit = clamp(color.rgb * prim_color * (255.0 / 128.0),
                    vec3(0.0), vec3(1.0));
   /* Opt-in dynamic light over the baked shading (identity when off), at
-   * native's point in the chain: after the modulate, before grade and cue. */
+   * native's point in the chain: after the modulate. */
   lit = dyn_window(dyn_light(lit, v_normal, geo_n, (tsb & 0x2000u) != 0u),
                    color.rgb, (tsb & 0x1000u) != 0u);
 
   lit = apply_distance_fog_tex(lit, color.rgb);
 
-  /* Prologue grade + depth-cue ramp (identity when unset). Retail order:
-   * the grade tints the NEAR term; the far term is texel * far colour
-   * (texture detail survives the crush - DPCS runs on the packet colour
-   * before the GPU texel multiply).
-   *
-   * Palette mode replaces the pixel multiply with the texel + packet
-   * collapse above (grade_near would double-grade), carries the global
-   * screen tint whole-pixel, and holds the cue ramp inert. */
   if (palette_on) {
     lit = clamp(lit * u_palette.rgb, vec3(0.0), vec3(1.0));
-  } else {
-    float ir0 = cue_ir0(v_view_z);
-    /* The far term is the far colour MODULATED by the texel, on the same
-     * / 128 scale as the near term (native: psx_modulate(texel,
-     * depth_cue.rgb * 255.0)) - u_cue_far is a display 0..1 colour, so it
-     * needs the identical 255/128 that the packet word gets. */
-    vec3 far = dyn_far(clamp(color.rgb * u_cue_far * (255.0 / 128.0), vec3(0.0), vec3(1.0)));
-    lit = mix(grade_near(lit), far, ir0);
+  } else if (ir0 <= 0.0) {
+    lit = grade_near(lit);
   }
 
   /* Ghost (after-image) draw: keep the cutout silhouette (the discard above

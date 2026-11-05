@@ -9,7 +9,7 @@
 use std::time::Duration;
 
 use super::*;
-use legaia_engine_netplay::room::{NetPlay, pack_identity};
+use legaia_engine_netplay::room::{NetPlay, RoomKey, pack_identity};
 use legaia_netplay::protocol::RoomCode;
 use legaia_netplay::relay::server::{RelayHandle, RelayServer};
 use legaia_netplay::transport::stream::StreamTransport;
@@ -213,21 +213,10 @@ impl PlayWindowApp {
         if state != ElementState::Pressed || self.boot_ui.is_active() {
             return false;
         }
-        // In a room, the number keys 1-5 not bound to a pad button send a
-        // quick reaction (`EMOTES`), mid-game too.
-        let reaction = match code {
-            KeyCode::Digit1 => Some(0),
-            KeyCode::Digit2 => Some(1),
-            KeyCode::Digit3 => Some(2),
-            KeyCode::Digit4 => Some(3),
-            KeyCode::Digit5 => Some(4),
-            _ => None,
-        }
-        .filter(|_| {
-            self.mapping
-                .pad_button_for_key(super::launch_options::keycode_to_name(code))
-                .is_none()
-        });
+        let pad_bound = self
+            .mapping
+            .pad_button_for_key(super::launch_options::keycode_to_name(code))
+            .is_some();
         let Some(nh) = self.netplay.as_mut() else {
             // Offline, Tab opens (or closes) the Multiplayer screen.
             if code == KeyCode::Tab {
@@ -239,23 +228,13 @@ impl PlayWindowApp {
             }
             return false;
         };
-        if let Some(i) = reaction
-            && nh.net.draft.is_none()
-        {
-            nh.net.emote(i);
-            return true;
+        match nh.net.room_key(&format!("{code:?}"), pad_bound) {
+            Some(RoomKey::Reaction(i)) => nh.net.emote(i),
+            Some(RoomKey::ToggleScreen) => nh.net.toggle_screen(),
+            Some(RoomKey::BeginChat) => nh.net.begin_chat(),
+            None => return false,
         }
-        match code {
-            KeyCode::Tab | KeyCode::Backquote if !nh.net.in_mode() => {
-                nh.net.toggle_screen();
-                true
-            }
-            KeyCode::KeyT if nh.net.screen_open && nh.net.draft.is_none() => {
-                nh.net.begin_chat();
-                true
-            }
-            _ => false,
-        }
+        true
     }
 
     /// A key while a chat line is being typed: Enter sends, Escape cancels,

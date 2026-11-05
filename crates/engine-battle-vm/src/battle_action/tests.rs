@@ -57,6 +57,7 @@ struct RecHost {
     rng_pos: RefCell<usize>,
     pad_word: u16,
     party_count: u8,
+    size_classes: std::collections::HashMap<u8, u8>,
     slot_count: u8,
     first_monster_id: u8,
     /// Pre-staged art records returned by `art_record(character, action)`
@@ -101,6 +102,7 @@ impl RecHost {
             prev_cleared: true,
             sound_ready: true,
             party_count: 3,
+            size_classes: Default::default(),
             slot_count: ACTOR_SLOTS as u8,
             ..Default::default()
         }
@@ -262,6 +264,9 @@ impl BattleActionHost for RecHost {
     }
     fn party_count(&self) -> u8 {
         self.party_count
+    }
+    fn monster_size_class(&self, slot: u8) -> u8 {
+        self.size_classes.get(&slot).copied().unwrap_or(0)
     }
     fn slot_count(&self) -> u8 {
         self.slot_count

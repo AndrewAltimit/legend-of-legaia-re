@@ -250,11 +250,9 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 return StepResult::Unknown { opcode, pc };
             }
             if host.field_halt_acquire_predicate(ctx, 0x80) {
-                let resume = pc + header_size + 2;
-                ctx.flags |= 0x400;
-                ctx.wait_accum = 0;
-                ctx.saved_pc = pc as u32;
-                host.field_halt_acquire_apply(ctx, 0x80, resume, [0; 3]);
+                // The parent walks past the records its children run: `addiu
+                // s8,s8,3`, then `FUN_8003CA38` + 1 per record
+                // (`0x801E1F78..0x801E1FB8`).
                 let count = bytecode[operand + 1];
                 let tail_start = operand + 2;
                 let tail = if tail_start <= bytecode.len() {
@@ -262,6 +260,18 @@ pub(super) fn op_4c_n8<H: FieldHost>(
                 } else {
                     &[][..]
                 };
+                let mut walked = 0usize;
+                for _ in 0..count {
+                    let Some(rest) = tail.get(walked..) else {
+                        break;
+                    };
+                    walked += legaia_scene_formats::field_disasm::packet_length(rest) + 1;
+                }
+                let resume = tail_start + walked;
+                ctx.flags |= 0x400;
+                ctx.wait_accum = 0;
+                ctx.saved_pc = pc as u32;
+                host.field_halt_acquire_apply(ctx, 0x80, resume, [0; 3]);
                 host.allocate_child_actors(ctx, count, tail);
                 StepResult::Advance { next_pc: resume }
             } else {

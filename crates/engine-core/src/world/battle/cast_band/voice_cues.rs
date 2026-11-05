@@ -4,32 +4,19 @@
 use super::*;
 
 impl World {
-    /// Raise the paged module's **own** CD-XA voice - the head cue every
+    /// Schedule the paged module's **own** CD-XA voice - the head cue every
     /// slot-B image calls the dispatcher `FUN_8004FCC8` with near its head
-    /// (`docs/subsystems/cast-module.md`, "The cast's own CD-XA voice"),
-    /// scanned off the module's bytes at cast time
-    /// ([`legaia_engine_battle_vm::battle_cast_cue::module_head_cue`]) and run
-    /// through the dispatcher's CD-XA arm
-    /// ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`]).
+    /// (`docs/subsystems/cast-module.md`, "The cast's own CD-XA voice"). The
+    /// call sits on one arm of the phase byte, past the module's seek and its
+    /// stream wait, so the cast is heard when that arm's pass runs
+    /// ([`Self::raise_cast_voice_on_arm`]). An image whose call no arm holds
+    /// raises it here.
     ///
-    /// Retail raises it from inside the module's first tick, after the
-    /// module's own poll of the side-band stage byte; the port raises it at
-    /// the arming seam, the frame the module becomes resident - which is
-    /// the same frame, since the port's side-band is resident rather than
-    /// streamed (`VoiceCueGates::side_band_stage` is `0` here for that
-    /// reason). The other gate is live: a cast inside the previous clip's
-    /// read span (`battle_xa_busy_frames`, retail's `gp+0x91C`) plays no
-    /// voice, exactly as `FUN_8003DE7C(1)` declines it.
-    ///
-    /// The request lands on [`crate::world::AudioState::battle_xa_cues`],
-    /// the `(clip_slot, channel, dur)` channel both hosts already play
-    /// through their XA lane, and arms the busy span the way the melee
-    /// kernel's clip start does. Nothing here touches gameplay state; a
-    /// disc-free build (no pool, no span table) emits nothing.
-    ///
-    /// REF: FUN_8004FCC8 (the CD-XA arm), FUN_8003D53C (the starter the
-    /// request stands for)
+    /// The same scan names the file the module's head seek parks the drive on,
+    /// which decides how long the clip takes to start.
     pub(super) fn emit_cast_module_voice(&mut self, spell_id: u8) {
+        self.casting.module_voice_due = None;
+        self.audio.xa_parked_clip = None;
         let Some(entry) = self.cast_module_for(spell_id) else {
             return;
         };
@@ -39,19 +26,93 @@ impl World {
         let Some(module) = pool.module(entry) else {
             return;
         };
-        let Some(head) = legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes)
-        else {
+        self.audio.xa_parked_clip =
+            legaia_engine_battle_vm::battle_cast_cue::module_head_seek(&module.bytes);
+        // PROT 0924 draws its kill roll on arm 0, ahead of the cue's arm.
+        if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
+            self.ultimate_rave_verdict();
+        }
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id);
+        let arm = match body {
+            Some(va) => {
+                legaia_engine_battle_vm::battle_cast_cue::body_head_cue_arm(&module.bytes, va)
+            }
+            None => legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm(&module.bytes),
+        };
+        match arm {
+            Some(arm) => self.casting.module_voice_due = Some((spell_id, arm)),
+            None => self.raise_cast_module_voice(spell_id),
+        }
+    }
+
+    /// The module's pass on `arm` makes the head cue's call once `arm` has
+    /// reached the cue's. An arm that leaves the module (a chain that skips the
+    /// cue's arm) still raises it on the next pass it runs.
+    pub fn raise_cast_voice_on_arm(&mut self, arm: u8) {
+        if let Some((spell_id, due)) = self.casting.module_voice_due
+            && arm >= due
+        {
+            self.casting.module_voice_due = None;
+            self.raise_cast_module_voice(spell_id);
+        }
+    }
+
+    /// Scan the module's head cue and run it through the dispatcher's CD-XA arm
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::admit_voice_cue`]). The
+    /// other gate is the live one: a cast inside the previous clip's read span
+    /// (`battle_xa_busy_frames`, retail's `gp+0x91C`) plays no voice, exactly as
+    /// `FUN_8003DE7C(1)` declines it. The port's side-band is resident, so
+    /// `VoiceCueGates::side_band_stage` is `0`.
+    ///
+    /// The request lands on [`crate::world::AudioState::battle_xa_cues`],
+    /// the `(clip_slot, channel, dur)` channel both hosts already play
+    /// through their XA lane, and arms the busy span the way the melee
+    /// kernel's clip start does. Nothing here touches gameplay state; a
+    /// disc-free build (no pool, no span table) emits nothing.
+    ///
+    /// REF: FUN_8004FCC8 (the CD-XA arm), FUN_8003D53C (the starter the
+    /// request stands for)
+    fn raise_cast_module_voice(&mut self, spell_id: u8) {
+        let Some(entry) = self.cast_module_for(spell_id) else {
             return;
         };
-        // PROT 0924 picks its cue off arm 0's kill roll; the arming seam is
-        // the module's first tick, so the roll is drawn here, ahead of the
-        // cue, as retail's arm 0 draws it ahead of arm 2's.
+        let Some(pool) = self.casting.effect_pool.clone() else {
+            return;
+        };
+        let Some(module) = pool.module(entry) else {
+            return;
+        };
+        let body = legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id);
+        let head = match body {
+            Some(va) => legaia_engine_battle_vm::battle_cast_cue::body_head_cue(&module.bytes, va),
+            None => legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes),
+        };
+        let Some(head) = head else {
+            return;
+        };
         let id = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             legaia_engine_cast::cast_module_ticks::ultimate_rave_cue(self.ultimate_rave_verdict())
+        } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
+            let Some(cue) = line else {
+                return;
+            };
+            cue
         } else {
             head.resolve(|| self.next_rand())
         };
         self.emit_battle_xa_cue(id);
+    }
+
+    /// The line a forked module picks for this caster
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::forked_head_cue`]).
+    fn forked_head_cue(&self, entry: u32, spell_id: u8) -> Option<Option<u16>> {
+        let acting = self
+            .actors
+            .get(usize::from(self.battle_ctx.active_actor))
+            .and_then(|a| a.battle_monster_id)
+            .unwrap_or(0);
+        let head = self.formation_slot0_monster_id().map_or(0, u16::from);
+        legaia_engine_battle_vm::battle_cast_cue::forked_head_cue(entry, spell_id, acting, head)
     }
 
     /// PROT 0924's arm-0 kill roll (`ultimate_rave_kill_verdict`), drawn
@@ -123,24 +184,29 @@ impl World {
         else {
             return Vec::new();
         };
-        let ids: Vec<u16> =
-            match legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes) {
-                Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => {
-                    vec![id]
-                }
-                Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Random {
-                    base,
-                    span,
-                }) => (0..u16::from(span.max(1)))
-                    .map(|k| base.wrapping_add(k))
-                    .collect(),
-                None => Vec::new(),
-            };
+        let head = match legaia_engine_cast::cast_module_ticks::capture_tick_body(entry, spell_id) {
+            Some(va) => legaia_engine_battle_vm::battle_cast_cue::body_head_cue(&module.bytes, va),
+            None => legaia_engine_battle_vm::battle_cast_cue::module_head_cue(&module.bytes),
+        };
+        let ids: Vec<u16> = match head {
+            Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Literal(id)) => {
+                vec![id]
+            }
+            Some(legaia_engine_battle_vm::battle_cast_cue::ModuleHeadCue::Random {
+                base,
+                span,
+            }) => (0..u16::from(span.max(1)))
+                .map(|k| base.wrapping_add(k))
+                .collect(),
+            None => Vec::new(),
+        };
         // PROT 0924's cue follows its kill roll: either path's literal.
         let ids = if entry == legaia_engine_cast::cast_module_ticks::ULTIMATE_RAVE_ENTRY {
             [true, false]
                 .map(legaia_engine_cast::cast_module_ticks::ultimate_rave_cue)
                 .to_vec()
+        } else if let Some(line) = self.forked_head_cue(entry, spell_id) {
+            line.into_iter().collect()
         } else {
             ids
         };

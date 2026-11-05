@@ -110,6 +110,8 @@ MIRRORS = [
      "site/_content/tooling/soak-harness.html"),
     ("docs/porting-by-reimplementation.md",
      "site/_content/tooling/porting-by-reimplementation.html"),
+    ("docs/tooling/retail-kernel-differential.md",
+     "site/_content/tooling/retail-kernel-differential.html"),
     ("docs/tooling/frame-bench.md",
      "site/_content/tooling/frame-bench.html"),
     ("docs/tooling/frame-hash.md",

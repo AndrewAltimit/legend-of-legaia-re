@@ -181,6 +181,7 @@ impl Camera {
         // the frame that runs the op already culls and crops against it (a
         // record's `46 ..` beat one frame late drew its shot against the
         // previous region's window).
+        world.set_camera_mode_byte(self.zone.active.then_some(self.zone.config.mode));
         world.set_npc_cull_view(self.zone.active.then(|| FieldCullView {
             focus_stored: [self.globals.0[6], self.globals.0[8]],
             attr_box: self.zone.attrs.box_bytes,

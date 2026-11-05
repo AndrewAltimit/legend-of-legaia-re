@@ -2,6 +2,7 @@
 //! environment, the terrain tiles and the placed objects.
 
 use super::*;
+use legaia_engine_render::{DRAW_ORDER_FAR_CORNER, DRAW_ORDER_NEAR_BUCKETS};
 
 impl<'m> DrawCtx<'_, 'm> {
     /// The field's environment layers (ground, terrain tiles, placements,
@@ -48,7 +49,11 @@ impl<'m> DrawCtx<'_, 'm> {
         let view_cells = self.view_cells;
         let in_world_map = self.in_world_map;
         let DrawLists {
-            draws, color_draws, ..
+            draws,
+            color_draws,
+            order_marks,
+            color_order_marks,
+            ..
         } = out;
         // Bulk ground FIRST: the `.MAP` floor-grid
         // heightfield (the `0x1000` ground layer - most
@@ -128,6 +133,13 @@ impl<'m> DrawCtx<'_, 'm> {
                         .or_else(|| store.meshes.get(*mesh_idx))
                 });
                 if let Some(mesh) = mesh {
+                    if app
+                        .field_terrain_cell_keys
+                        .get(di)
+                        .is_some_and(|k| k.far_corner_order)
+                    {
+                        order_marks.push((draws.len(), DRAW_ORDER_FAR_CORNER));
+                    }
                     draws.push(SceneDraw {
                         mesh,
                         mvp: cam * facing_model(model, app.field_terrain_facing.get(di)),
@@ -152,6 +164,13 @@ impl<'m> DrawCtx<'_, 'm> {
                     continue;
                 }
                 if let Some(mesh) = store.color_meshes.get(*mesh_idx) {
+                    if app
+                        .field_terrain_color_cell_keys
+                        .get(di)
+                        .is_some_and(|k| k.far_corner_order)
+                    {
+                        color_order_marks.push((color_draws.len(), DRAW_ORDER_FAR_CORNER));
+                    }
                     color_draws.push(ColorSceneDraw {
                         mesh,
                         mvp: cam * facing_model(model, app.field_terrain_color_facing.get(di)),
@@ -186,6 +205,8 @@ impl<'m> DrawCtx<'_, 'm> {
             color_draws,
             clip_marks,
             color_clip_marks,
+            order_marks,
+            color_order_marks,
             ..
         } = out;
         // Static environment geometry: draw each placed
@@ -223,6 +244,13 @@ impl<'m> DrawCtx<'_, 'm> {
         // page reads it through `field_placement_parked`.
         let object_parked = app.session.host.world.hidden_object_records();
         let parked = |record: Option<usize>| record.is_some_and(|r| object_parked.contains(&r));
+        // An object's ordering-table link: ten buckets nearer on its bound
+        // actor's flag, at the farthest corner on its record's.
+        let near_buckets = app.session.host.world.near_bucket_object_records();
+        let object_order = |record: Option<usize>, far_corner: bool| -> u8 {
+            let near = record.is_some_and(|r| near_buckets.contains(&r));
+            u8::from(far_corner) * DRAW_ORDER_FAR_CORNER + u8::from(near) * DRAW_ORDER_NEAR_BUCKETS
+        };
         // Turn, then move: the shared `field_env::live_placed_model` the
         // overworld's landmarks go through too.
         let object_moved = |model: &Mat4, record: Option<usize>| -> Mat4 {
@@ -326,6 +354,15 @@ impl<'m> DrawCtx<'_, 'm> {
                     if let Some(c) = object_key(record).and_then(|k| effect_clip(k, model)) {
                         clip_marks.push((draws.len(), c));
                     }
+                    order_marks.push((
+                        draws.len(),
+                        object_order(
+                            record,
+                            app.field_placement_cell_keys
+                                .get(di)
+                                .is_some_and(|k| k.far_corner_order),
+                        ),
+                    ));
                     draws.push(SceneDraw {
                         mesh,
                         mvp,
@@ -357,6 +394,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model)) {
                         clip_marks.push((draws.len(), c));
                     }
+                    order_marks.push((draws.len(), object_order(*record, false)));
                     draws.push(SceneDraw {
                         mesh,
                         mvp,
@@ -375,6 +413,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model)) {
                     clip_marks.push((draws.len(), c));
                 }
+                order_marks.push((draws.len(), object_order(*record, false)));
                 draws.push(SceneDraw {
                     mesh,
                     mvp,
@@ -422,6 +461,15 @@ impl<'m> DrawCtx<'_, 'm> {
                     if let Some(c) = object_key(record).and_then(|k| effect_clip(k, model)) {
                         color_clip_marks.push((color_draws.len(), c));
                     }
+                    color_order_marks.push((
+                        color_draws.len(),
+                        object_order(
+                            record,
+                            app.field_placement_color_cell_keys
+                                .get(di)
+                                .is_some_and(|k| k.far_corner_order),
+                        ),
+                    ));
                     color_draws.push(ColorSceneDraw {
                         mesh,
                         mvp,
@@ -441,6 +489,7 @@ impl<'m> DrawCtx<'_, 'm> {
                     if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model)) {
                         color_clip_marks.push((color_draws.len(), c));
                     }
+                    color_order_marks.push((color_draws.len(), object_order(*record, false)));
                     color_draws.push(ColorSceneDraw {
                         mesh,
                         mvp,
@@ -459,6 +508,7 @@ impl<'m> DrawCtx<'_, 'm> {
                 if let Some(c) = object_key(*record).and_then(|k| effect_clip(k, model)) {
                     color_clip_marks.push((color_draws.len(), c));
                 }
+                color_order_marks.push((color_draws.len(), object_order(*record, false)));
                 color_draws.push(ColorSceneDraw {
                     mesh,
                     mvp,

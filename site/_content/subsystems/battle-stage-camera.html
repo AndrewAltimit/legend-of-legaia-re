@@ -35,7 +35,7 @@
       <circle class="dg-node-warn" cx="450" cy="170" r="9"/><circle class="dg-node-warn" cx="510" cy="170" r="9"/>
       <text class="dg-sub" x="480" y="148">monster seats</text>
       <rect class="dg-node" x="60" y="180" width="150" height="60" rx="4"/>
-      <text class="dg-label" x="135" y="204">Camera</text><text class="dg-sub" x="135" y="222">far framing: TR (0, 1280, 7680)</text>
+      <text class="dg-label" x="135" y="204">Camera</text><text class="dg-sub" x="135" y="222">TR (0, 1280, 7680)</text>
       <path class="dg-edge" d="M210 210 L374 210" marker-end="url(#bsc-arrow)"/>
       <path class="dg-edge-dim" d="M135 180 A345 345 0 0 1 300 60" marker-end="url(#bsc-arrow)"/>
       <text class="dg-edge-label" x="120" y="110">idle orbit: yaw is a clock</text>
@@ -89,7 +89,20 @@
     </tbody>
   </table>
   </div>
-  <p>The end-of-action gate arms nothing; the far framing takes over there.</p>
+  <h3 id="between-actors">Between two actors the camera stays on the last shot</h3>
+  <p>The end-of-action gate <code>0x5A</code> arms the finished actor&rsquo;s framing once more: case 8 for an Attack, nothing for a Run, case 6 otherwise. The setup states <code>0x00</code>, <code>0x0A</code> and <code>0x0B</code> arm nothing, so the tween walks on and the yaw orbits, and the next actor&rsquo;s seed <code>0x0C</code> tweens from that shot to its own case 6. A round&rsquo;s first actor is the only one that stands on the far framing in those states, the one the prompt&rsquo;s case 9 left. Over the library&rsquo;s states parked in <code>0x0A</code> behind an earlier actor, every tween table holds that actor&rsquo;s endpoints with the walker landed.</p>
+  <div class="table-wrap">
+  <table class="compact">
+    <thead><tr><th>State</th><th>Last actor</th><th>Shot</th></tr></thead>
+    <tbody>
+      <tr><td><code>kor_ghost_knight_pre_v_windhash</code></td><td>Noa, Spirit</td><td>case 6: pitch 128, <code>TR (0, 1024, 3276)</code>, focus her seat</td></tr>
+      <tr><td><code>noaru_barra_v2_pre_multi_cutter</code></td><td>a monster&rsquo;s spell</td><td>case 6: pitch 0, <code>TR (0, 1280, 4915)</code>, focus its seat</td></tr>
+      <tr><td><code>chitei2_kemaro_v2_pre_lava_breath</code></td><td>a monster&rsquo;s strike on Noa</td><td>case 8: pitch 128, <code>TR (0, 768, 2457)</code>, focus her body pair</td></tr>
+      <tr><td><code>taiku_topaz_pre_hyper_heal</code></td><td>none this round</td><td>case 9: pitch 32, <code>TR (0, 1280, 8712)</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="dg-note">Gate arm <code>0x801E6428..0x801E6470</code>; orbit stores <code>0x801E2A3C..0x801E2A6C</code> and <code>0x801E5BE4..0x801E5C04</code>; seed tween <code>0x801E2D50</code>. Port: <code>battle_cam_script::end_of_action_phase</code>, <code>BattleCamera::set_phase_on_state</code>.</p>
   <h3>The tween is an ease-out</h3>
   <p>Every framing is <strong>re-armed each pass</strong>: the target vectors are rebuilt from the live actor record every display frame and the step table re-emitted. The target is never frozen at the state change. Each rebuild divides the remaining gap by the duration again, so a pass covers about a sixth of what remains, and the camera is still closing in long after its nominal twelve frames. Captured step tables match that law exactly.</p>
   <h3>Idle orbit</h3>
@@ -107,6 +120,12 @@
   <h3>The frame step</h3>
   <p>Retail&rsquo;s battle runs once per <em>battle frame</em>, not once per vsync. The frame driver measures what each frame cost and turns it into a step of one to four vsyncs (usually two, three or four in heavy summon close-ups); the action state machine, the camera walker, effect waits and root motion all scale by it.</p>
   <p>The port runs retail&rsquo;s own cadence by default: the whole battle pass once a frame of the default step two, with every counter tested once per pass and drained by the step. The <em>Retail battle cadence</em> toggle (<code>WorldToggles::battle_sm_frame_cadence</code>, see <a href="engine.html#fidelity">engine</a>) turns it off, and the battle then steps every vsync with its timers draining by one. Measured against retail&rsquo;s battle captures, the cadence matches retail&rsquo;s frame on as many states or more than the per-vsync pass does, the summon close-ups most of all.</p>
+  <p>Inside a summon band each module arm runs on the step a retail recording of the cast reads for it (<code>legaia_engine_cast::cast_module_frame_step</code>): a band opens at <code>1</code> and its whole-screen arms read <code>4</code>, on every summon module. The reading is a property of the arm because the arm draws the same screen each time.</p>
+</section>
+
+<section class="doc-section" id="clip-clock">
+  <h2>The cast driver's clip clock</h2>
+  <p>The cast driver's case <code>0xA</code> aims its yaw at <code>node[+0x68] * 2 + 0x700 - facing</code> on every pass of the magic band, so the endpoint climbs with the clip: 24 units a pass at the usual cursor step of 12. It reads the animation cursor in retail's own sixteenths, sub-keyframe bits included. Rounding the cursor down to a keyframe aims up to 30 units short. A capture cast's finishing arm also clears the style byte <code>ctx+0xD</code>, so the Done band frames from the default side; the bodies without that store keep the half turn.</p>
 </section>
 
 <section class="doc-section" id="intro">

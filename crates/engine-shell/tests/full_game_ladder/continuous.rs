@@ -166,6 +166,36 @@ fn checkpoint(session: &mut NativeSession) -> Checkpoint {
     }
 }
 
+/// Milestones a run keeps a fit save behind it while it holds no fitter one.
+const FIT_SAVE_REACH: usize = 3;
+
+/// Is the party one a player would walk on from: nobody under two fifths of its
+/// HP, a third of its MP or the bag's restoratives to refill it, and the bag's
+/// reserve of heals? A save that is not is a doomed save to reload again and
+/// again: a run reached `jette_fortress_late` on 15% HP, no MP and an empty
+/// bag, and six reloads replayed that same party into Jette (50000 HP). A scene
+/// whose rest still works makes any party fit, since the save stands beside
+/// what mends it: read otherwise, a run that wiped twice past a `town0c` save
+/// went back through mist-era `dolk` with Vahn at level 2 and stopped there.
+fn fit_to_go_on(session: &NativeSession) -> bool {
+    if session.host.world.mode == SceneMode::Field && rest_works_here(session) {
+        return true;
+    }
+    let w = &session.host.world;
+    let party = w.present_party_list();
+    let members = party.len().max(1) as u32;
+    let (mp, max) = party
+        .iter()
+        .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+        .map(|r| r.hp_mp_sp())
+        .fold((0u32, 0u32), |(c, x), v| {
+            (c + u32::from(v.mp_cur), x + u32::from(v.mp_max))
+        });
+    party_hp_permille(session) >= 400
+        && (mp * 3 >= max || mp_items_held(w) >= members * MP_RESERVE)
+        && heals_held(w) >= members * HEAL_RESERVE
+}
+
 /// Where `LEGAIA_FGL_CHECKPOINT_DIR` keeps milestone `id`'s checkpoint: the
 /// engine's own save, and beside it the scene, the rand stream, the
 /// learned exchange rate and the Field Move option.
@@ -460,6 +490,11 @@ fn part_c_continuous_run() {
     // The milestone whose state `cp` holds: behind the one last reached
     // when that one was reached with a fight committed (see below).
     let mut cp_at = start;
+    // The latest save the party was fit to go on from ([`fit_to_go_on`]), and
+    // its milestone: where a run goes back to when the latest save has lost
+    // twice, as a player keeps an older slot.
+    let mut fit_cp: Option<(Checkpoint, usize)> = None;
+    let mut cp_fit = true;
     let mut reloads = 0u32;
     let mut run_tried = false;
     let mut stall: Option<String> = None;
@@ -552,6 +587,9 @@ fn part_c_continuous_run() {
         // A stretch played again after a reload from behind it keeps the
         // attempts it had used.
         let (mut attempt, mut prepare) = retries.remove(&i).unwrap_or((0, None));
+        if attempt == 0 {
+            RACE_LOST.with(|l| l.set(false));
+        }
         let t0 = std::time::Instant::now();
         loop {
             attempt += 1;
@@ -592,6 +630,14 @@ fn part_c_continuous_run() {
                     } else {
                         cp = checkpoint(&mut session);
                         cp_at = i + 1;
+                        cp_fit = fit_to_go_on(&session);
+                        if cp_fit
+                            || fit_cp
+                                .as_ref()
+                                .is_none_or(|(_, at)| cp_at - at >= FIT_SAVE_REACH)
+                        {
+                            fit_cp = Some((checkpoint(&mut session), cp_at));
+                        }
                     }
                     store_checkpoint(&to.id, &cp, &session);
                     if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
@@ -650,6 +696,21 @@ fn part_c_continuous_run() {
             // milestone, and another hand of the rand stream unless this is
             // the guard retry (which measures the guard alone).
             reloads += 1;
+            if wiped
+                && !cp_fit
+                && attempt >= 2
+                && let Some((fit, at)) = fit_cp.take_if(|(_, at)| *at < cp_at)
+            {
+                if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+                    eprintln!(
+                        "    [checkpoint] the {} save lost twice: back to {}'s",
+                        cp.scene, spine[at].id
+                    );
+                }
+                cp = fit;
+                cp_at = at;
+                cp_fit = true;
+            }
             session = match reload(&inp, &cp, &opts) {
                 Ok(s) => s,
                 Err(e) => {

@@ -251,6 +251,7 @@ SFX drain (cues queued by the menu this frame) and the party-HUD kernel.
 `poll_game_over` runs ahead of every arm, so no arm skips it.
 """
 skips = [
+    "seat_strike_deal",
     "advance_ocean_animation",
     "apply_world_clut_fx",
     "check_battle_vram_residency",
@@ -285,6 +286,7 @@ Nothing else in the list has a reader that changes while the overlay owns the
 pad.
 """
 skips = [
+    "seat_strike_deal",
     "advance_ocean_animation",
     "apply_world_clut_fx",
     "check_battle_vram_residency",
@@ -317,6 +319,7 @@ torn down. The party-HUD kernel is stepped because a scene change is its own
 rearm condition.
 """
 skips = [
+    "seat_strike_deal",
     "advance_ocean_animation",
     "apply_world_clut_fx",
     "check_battle_vram_residency",
@@ -348,6 +351,7 @@ mode-`0x17` handler runs the cue drainer under the menu, and the page's twin
 steps it too) and the party-HUD kernel against the state it just set.
 """
 skips = [
+    "seat_strike_deal",
     "advance_ocean_animation",
     "apply_world_clut_fx",
     "check_battle_vram_residency",
@@ -380,6 +384,7 @@ hands the frame to the boot UI. It fires the open blip and drains it, and
 steps the party-HUD kernel against the menu state it just raised.
 """
 skips = [
+    "seat_strike_deal",
     "advance_ocean_animation",
     "apply_world_clut_fx",
     "check_battle_vram_residency",
@@ -507,6 +512,7 @@ unpark on close, and the SFX scheduler step the pause-menu arm also runs.
 the world raised nothing this tick, so the drain half has nothing to take.
 """
 skips = [
+    "seat_strike_deal",
     "advance_ocean_animation",
     "apply_world_clut_fx",
     "check_battle_vram_residency",
@@ -762,7 +768,7 @@ reason = "The step itself is one pair of shared calls on both hosts (`legaia_eng
 [[frame_content]]
 native = "tick_minigame_extras"
 web = "tick_minigame_ui"
-native_only = ["build_filtered_vram_mesh_lit", "chrome_frame", "entry_bytes", "frame", "frame0_bone_offsets", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "place_point", "rotate", "set_assets", "stage_dance_hud_vram", "still_sheet_rgba", "walk_heightfield"]
+native_only = ["carry_walked_in_cells", "chrome_frame", "entry_bytes", "frame", "from_venue", "glyph_u", "has_assets", "hud_vram_rects", "parse_sprite_table", "restore_dance_ambient", "set_assets", "stage_dance_ambient", "stage_dance_hud_vram", "step_dance_ambient", "still_sheet_rgba", "venue_stager_bytes", "walk_heightfield"]
 web_only = ["apply", "course", "last_result", "of_mode", "opponent_roster", "phase", "prot_dat_raw_bytes", "round", "with_system_ui"]
 reason = """
 Everything the step does to the world or the audio director is a session step
@@ -780,8 +786,12 @@ pose the dance cast through) lists native-only because the page exports a host
 fn of that name; the walk excludes both by name.
 
 Native-only, the window uploading to wgpu inside this step what the page bakes
-elsewhere. `build` / `build_filtered_vram_mesh_lit` / `frame0_bone_offsets` /
-`place_point` / `rotate` / `walk_heightfield` upload the dance venue
+elsewhere. `restore_dance_ambient` / `stage_dance_ambient` / `step_dance_ambient` /
+`venue_stager_bytes` run the hall's ambient tree, and `carry_walked_in_cells`
+paints the field's last cells into its VRAM ahead of the stage: the native step calls them
+directly, the page through its own export `play_mg_dance_ambient_step`, which
+its venue bake's frame calls. The venue's placement moved out of this step into
+`append_venue_draw`, so `place_point` and `rotate` no longer list. `walk_heightfield` uploads the dance venue
 (`DanceVenue::build`) on the staging edge; the pages bake the same build,
 placed through the same `EnvDraw::place_point` (a SIM_PAIRS row), once at disc
 load (`load_dance_bodies`). `entry_bytes` / `from_venue` / `has_assets` /
@@ -817,3 +827,12 @@ the real PROT.DAT; the window uploads the same sheet through
 method = "set_active_scene_label"
 reason = "Not a table install: the native `--world-map` launcher's failure arm (`BootSession::enter_world_map_live` when `enter_world_map_scene` errors) labels the world by hand so the window still has a camera. The page has no such launcher arm - its scene entries go through `SceneHost::enter_field_scene` / `enter_world_map_scene`, which set the label themselves."
 
+[[frame_kernel]]
+host = "native"
+kernel = "seat_strike_deal"
+host_only = true
+reason = """
+The capture child's hand-off: it reads the `LEGAIA_STRIKE_DEAL` environment
+record the strike oracle hands the window and does nothing without one. A
+browser has no capture child, and a player's run never carries the record.
+"""

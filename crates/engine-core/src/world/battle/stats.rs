@@ -35,6 +35,33 @@ impl World {
         )
     }
 
+    /// Zero the eight `(frame, cue)` slots of a party actor's walk record, the
+    /// bank's clip `1`, in the bank and in the committed copy if the walk is
+    /// what the actor is playing: retail edits the one record both read.
+    fn clear_walk_cue_track(a: &mut Actor) {
+        use legaia_engine_battle::anim_cue::{ANIM_CUE_TRACK_LEN, ANIM_CUE_TRACK_OFFSET};
+        let span =
+            ANIM_CUE_TRACK_OFFSET..ANIM_CUE_TRACK_OFFSET + usize::from(ANIM_CUE_TRACK_LEN) * 4;
+        let clear = |script: &mut Vec<u8>| {
+            if let Some(track) = script.get_mut(span.clone()) {
+                track.fill(0);
+            }
+        };
+        if let Some(walk) = a
+            .battle_action_clips
+            .as_mut()
+            .and_then(|clips| std::sync::Arc::make_mut(clips).get_mut(1))
+            .and_then(Option::as_mut)
+        {
+            clear(&mut walk.effect_script);
+        }
+        if a.battle.current_anim == 1
+            && let Some(script) = a.battle_effect_script.as_mut()
+        {
+            clear(script);
+        }
+    }
+
     /// Roll the Run command's escape chance - the retail `FUN_801E791C`
     /// formula (the routine battle-action state `0x64` calls, the writer of
     /// the `_DAT_8007726C` outcome pointer). Party score = per-slot
@@ -64,7 +91,7 @@ impl World {
     /// PORT: FUN_801E791C (roll + compare via
     /// `battle_formulas::escape_roll`; the success-side flee staging stays
     /// with the run band in `battle_action`)
-    pub(in crate::world) fn roll_battle_escape(&mut self) -> bool {
+    pub fn roll_battle_escape(&mut self) -> bool {
         use legaia_engine_battle_vm::battle_formulas::{
             EscapeActor, EscapeFlags, escape_enemy_score, escape_party_score, escape_roll,
         };
@@ -130,10 +157,21 @@ impl World {
     /// Retail stages every party slot; the port stages the members still
     /// standing and leaves a downed one where it fell (the run band floors
     /// its HP at 1 for the field either way), so only the living run.
+    ///
+    /// The walk's own footsteps are silenced for the rest of the battle
+    /// ([`Self::clear_walk_cue_track`]).
+    // PORT: FUN_801F6A00 (arm 8's cue-track clear, `0x801F75EC..0x801F7620`)
     // PORT: FUN_801E791C (`0x801E7B98..0x801E8030`, the flee staging; the
     // record-side HP / MP write-back is the battle teardown's)
     pub(in crate::world) fn stage_party_flee(&mut self) {
         let party_n = (self.party.party_count as usize).min(self.actors.len());
+        // Both flee sites clear the cue track of every party slot's walk record,
+        // bank entry 1 (`*(0x801C9360[slot]) + 4`, eight `sh zero` pairs at
+        // `0x801E7D68..0x801E7D80` and PROT 0925's `0x801F7600..0x801F7618`,
+        // ahead of the slot's `+0x1DA = 1`): the party runs off silently.
+        for a in self.actors.iter_mut().take(party_n) {
+            Self::clear_walk_cue_track(a);
+        }
         let runners: Vec<usize> = (0..party_n)
             .filter(|&i| self.actors[i].battle.hp > 0 && self.actors[i].battle.liveness != 0)
             .collect();
@@ -213,7 +251,7 @@ impl World {
     /// plus the 1-in-8 gate draw only when the score compare passes).
     ///
     /// REF: FUN_801EC0DC
-    pub(in crate::world) fn monster_flee_roll(&mut self, slot: u8) -> bool {
+    pub fn monster_flee_roll(&mut self, slot: u8) -> bool {
         use legaia_engine_battle_vm::battle_formulas::FleeActor;
         let pc = (self.party.party_count as usize).min(self.actors.len());
         let fold = |world: &Self, i: usize| FleeActor {
@@ -242,17 +280,14 @@ impl World {
             })
             .collect();
         let target = fold(self, slot as usize);
+        // The live `+0x168` (`0x801EC2B8`), which the seat seed installed under
+        // this fight's own boost profile. Reading the record back here took the
+        // scripted profile for every random encounter too.
         let target_int = self
-            .actors
+            .battle
+            .accuracy
             .get(slot as usize)
-            .and_then(|a| a.battle_monster_id)
-            .and_then(|id| self.tables.monster_catalog.get(id))
-            // The INT the seed installed, under the enemy stat scale (the
-            // catalog's `intel` is the scripted profile's `[4]`).
-            .map(|d| {
-                crate::world::field_loop::scale_monster_def(d, self.run_enemy_stat_permille(d.id))
-                    .installed_stats(true)[4]
-            })
+            .copied()
             .unwrap_or(0);
         let no_escape = u8::from(self.battle.no_escape);
         legaia_engine_battle_vm::battle_formulas::monster_escape_roll(
@@ -278,7 +313,12 @@ impl World {
     /// value retail accrues from).
     ///
     /// PORT: FUN_801ddb30 (spirit-gauge stage)
-    pub(in crate::world) fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+    pub fn accrue_spirit_gauge(&mut self, defender_slot: u8, over: u16) {
+        let over = if over == legaia_engine_battle_vm::battle_formulas::ROLL_ALIAS_KILLS {
+            0
+        } else {
+            over
+        };
         let defender_is_party = defender_slot < self.party.party_count;
         let resist = self.defender_resist(defender_slot);
         let damage_ap = self.run_scale_ap(self.toggles.damage_ap);
@@ -297,21 +337,25 @@ impl World {
         );
     }
 
-    /// The shared finisher's rumble, right after its Spirit stage: a struck
-    /// party seat jolts the controller hard and slow to fade, a struck
-    /// monster lighter, and a Stoned defender not at all - the stores sit
-    /// behind the finisher's `+0x16E & 0x4` test (`0x801DE2E4..0x801DE2E8`,
-    /// the Stone arm jumps past them) and the Battles vibration row.
+    /// The shared finisher's stage after its Spirit fill, on a defender who is
+    /// not Stoned (the `+0x16E & 0x4` test at `0x801DE2E4..0x801DE2E8`, whose
+    /// Stone arm jumps past all of it and zeroes the hit). A hit strips the
+    /// wakes-when-hit family `0x0F80` from the status word, as the melee
+    /// resolver's does, so any cast wakes a sleeper and frees a Numbed seat;
+    /// and it rumbles: a struck party seat jolts the controller hard and slow
+    /// to fade, a struck monster lighter, under the Battles vibration row.
     ///
-    /// PORT: FUN_801DDB30 (`0x801DE2E4..0x801DE364`, the rumble stores)
-    pub(in crate::world) fn finisher_rumble(&mut self, defender_slot: u8) {
+    /// PORT: FUN_801DDB30 (`0x801DE2E4..0x801DE364`, the strip and the rumble)
+    pub(in crate::world) fn finisher_struck(&mut self, defender_slot: u8) {
+        use legaia_engine_battle_vm::status_effects::display_flags;
         use legaia_engine_system::rumble::battle_writes;
-        if self.raw_status_word(defender_slot)
-            & legaia_engine_battle_vm::status_effects::display_flags::STONE
-            != 0
-        {
+        if self.raw_status_word(defender_slot) & display_flags::STONE != 0 {
             return;
         }
+        if let Some(a) = self.actors.get_mut(usize::from(defender_slot)) {
+            a.battle.field_flags &= !display_flags::DAMAGE_CLEARS;
+        }
+        self.battle.status_effects.on_damaged(defender_slot);
         self.battle_rumble(if defender_slot < self.party.party_count {
             battle_writes::FINISHER_PARTY_STRUCK
         } else {
@@ -422,10 +466,10 @@ impl World {
     ///   **no draw is taken**.
     /// - **summon element**: the summon creature's record `+0x1D`.
     /// - **scripted**: [`legaia_engine_battle_loop::battle_state::BattleState::scripted_fight`].
-    /// - **affinity**: `matrix[summon element][first living enemy element]`,
+    /// - **affinity**: `matrix[summon element][the first record's element]`,
     ///   the scripted roll's bypass.
-    /// - **target**: the cast's first enemy seat's compare pairs, or
-    ///   `Party` for a party-side cast.
+    /// - **target**: the single enemy target's compare pairs, or a group
+    ///   cast's first seat with HP left, or `Party` for a party-side cast.
     ///
     /// Returns `None` with no draw when the side-effect table is not
     /// installed (a disc-free host), so those battles keep a bit-identical
@@ -433,7 +477,7 @@ impl World {
     ///
     /// REF: FUN_801f3d3c (this is the live wiring; the routine itself is
     /// ported at [`legaia_engine_battle_vm::seru_side_effect::stage_side_effect`])
-    pub(in crate::world) fn stage_seru_side_effect(
+    pub fn stage_seru_side_effect(
         &mut self,
         caster: u8,
         spell_id: u8,
@@ -454,30 +498,45 @@ impl World {
             .get(&spell_id)
             .copied()
             .or_else(|| self.summon_attacker_element(spell_id))?;
-        // The stager's compare arm walks the enemy row for a group cast and
-        // takes the first living seat; a single-enemy cast compares that seat.
-        // A party-side target skips the compare entirely.
-        let first_enemy = targets
+        // The stager's compare arm reads a single enemy target itself and, for
+        // a group cast, walks the enemy row for the first seat with HP left
+        // (`0x801F3F48..0x801F3F9C`). A party-side target skips the compare.
+        let enemies = targets
             .iter()
             .copied()
-            .find(|&t| (t as usize) >= self.party.party_count as usize);
-        let target = match first_enemy {
-            None => StagerTarget::Party,
-            Some(t) => match self.enemy_stat_compare(t) {
+            .filter(|&t| (t as usize) >= self.party.party_count as usize);
+        let group = enemies.clone().count() > 1
+            || self
+                .actors
+                .get(usize::from(caster))
+                .is_some_and(|a| a.battle.active_target > 7);
+        let first_enemy = if group {
+            enemies.clone().find(|&t| {
+                self.actors
+                    .get(t as usize)
+                    .is_some_and(|a| a.battle.hp != 0)
+            })
+        } else {
+            enemies.clone().next()
+        };
+        let target = match (first_enemy, enemies.count()) {
+            (None, 0) => StagerTarget::Party,
+            (None, _) => StagerTarget::NoLivingEnemy,
+            (Some(t), _) => match self.enemy_stat_compare(t) {
                 Some(cmp) => StagerTarget::Enemy(cmp),
                 None => StagerTarget::NoLivingEnemy,
             },
         };
-        // `matrix[summon element][target element]` - the same read
-        // `cast_affinity_pct` makes, but seeded from the element resolved
-        // above rather than from the catalog-by-name lookup.
-        let affinity_pct = match (first_enemy, self.tables.element_affinity.as_ref()) {
-            (Some(t), Some(aff)) => self
-                .battle_slot_element(t)
-                .and_then(|def_el| aff.affinity_pct(summon_element, def_el))
-                .unwrap_or(100),
-            _ => 100,
-        };
+        // The suppression roll's bypass reads the formation's first record,
+        // whoever the cast is aimed at and whether that seat still stands
+        // (`lw a1,-0x6cb8(s2)` at `0x801F3E58`).
+        let lead_seat = self.party.party_count;
+        let affinity_pct = self
+            .tables
+            .element_affinity
+            .as_ref()
+            .and_then(|aff| aff.affinity_pct(summon_element, self.battle_slot_element(lead_seat)?))
+            .unwrap_or(100);
         let inp = StagerInputs {
             level,
             summon_element,

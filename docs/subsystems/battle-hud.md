@@ -310,6 +310,11 @@ for the Done hold's close:
 - the item band's `0x3E` arm (`0x801E404C`), reached from a single branch at
   `0x801E3E88` off its non-gauge-extend path, for any caster.
 
+The seed reads the code before the cast begin `0x28` can rewrite it to a lone
+survivor's slot, so a party-wide cast on a solo Vahn keeps the panels up through
+the whole action, as `battle_rikuroa_caruban_fire_breath_mid_cast` shows
+(`+0x1DD = 0`, panel up). Its recording raises no `DAMAGE` readout either.
+
 The close is the Done band's, so the panels hold through every band the action
 runs before it - including the capture band `0x6E..=0x71`, whose state bytes
 sit above `0x51` but which exits into `0x50`. A boss special is such an action:
@@ -739,6 +744,25 @@ reads `HIT` / `TOTAL` as that capture does; a one-hit cast keeps `DAMAGE`
 (`battle_gimard_tail_fire_a`). The summon pre-hits do the same (PROT 0908, 0915,
 0928, 0929, 0932, 0933, 0934): their popups go up with no cluster, which opens on the
 band's fold.
+
+**A row-aimed cast opens value rows instead.** The action seed `FUN_801E6D84`
+lists every living monster in `0x801F6978` when the target is the every-enemy code
+`9` and no lone survivor replaced it (`ctx[+0x24B]`), and always for spells `0x82`,
+`0x86` and `0x8D`, whose single target stays on the plate list. The finisher then
+adds each hit to its target's halfword in the value window `0x801F6980`
+(`0x801DE3C4..0x801DE43C`) with `_DAT_8007BD14` left at `0`, so the flag pass finds
+no cluster to open. It opens a pair of records per row instead (`0x801E8128..`): the
+row's name plate `0x60..=0x63`, rising from `y = 236` to `194`, and its value record
+`0x5C..=0x5F` at the same `x`, gliding in from `160` right; `0x801F6834` lists the
+records by row count, so one row rests at `x = 244` and four at `16 / 92 / 168 / 244`.
+`FUN_801E805C` draws a row's digits as `16` px cells under its value record and the
+`DAMAGE` word once, over the last row. A hit that keeps the flag down counts without
+opening: PROT 0915's rolls store `0` there and its arm `0xC`'s pass raises it
+(`0x801F7DA0`), so `0x8D` holds `75`, then `2574`, in the window from arm 8 on and
+shows the rows only at arm `0xD`. Retail states: `0x8D` reads count `1`, window
+`2574` and `_DAT_8007BD14 = 0` in arm `0xC`; `0x82` and `0x86` read the same shape,
+`+0x1DD` staying `3` under `0x82`. Port: `BattleHud::multi_readout`,
+`battle_value_readout::multi_row_cluster`, `battle_multi_readout_plates`.
 
 **A party-wide cast opens nothing.** The flag a cast hit raises is the
 finisher's: `FUN_801DDB30` stores `0x78` and adds the hit to the damage word
@@ -1284,7 +1308,8 @@ What state `0x3C` puts on screen, read out of its own display list. The
 | item-list window | system-UI window-skin tile grid (widget page `(896, 256)`, CLUT row 511 sub-palette 2), spanning x `166..=313`, y `28..=164` |
 | description window | same skin, x `8..=167`, y `122..=164`; shows the highlighted item's info-window line |
 | hand cursor | 16x16 pointing-finger `POLY_FT4` (CLUT row 511 sub-palette 7) at `(167, 45 + 14*row)` - row pitch 14 |
-| rows | eight per page; `PAGE n/m` header top-right, counts right-aligned at the interior's right edge |
+| rows | eight per page on the list kernel's pen `WX = 174`: name at `WX + 0xC`, the bag count in the three-cell number field at `WX + 0x6C`; a row's ink is its enable bit, not the hand |
+| header | the kernel's `PAGE` tag and digits, as on a shop list (`battle_item_window_gaza2_retail`: tag at `(249, 35)`, digits at x `279`, `293`, `299`); the page triangles at `(308, 94)` and `(162, 94)` blink on the frame word |
 | breadcrumbs | gold tab plates `Begin` \| acting member's name \| `Item` top-left, replacing the actor-name plaque while the window is up |
 
 Content pens (row text, header, description line, breadcrumb seats) are

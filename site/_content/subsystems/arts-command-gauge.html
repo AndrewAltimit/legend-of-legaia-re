@@ -143,6 +143,7 @@ multiplier = 11 for the character's first art row, 10 for rows 1-3, 6 from row 4
              (halved while the AP Used Down passive - the Mettle Gem - is worn)</code></pre>
   <ul class="bullets">
     <li><strong>Example.</strong> Noa's Vulture Blade is a five-command art on a multiplier-10 row: 50 Spirit, 25 with the Mettle Gem.</li>
+    <li><strong>When it is paid.</strong> The builder only adds the price to the accumulator <code>actor+0x224</code>; the action&rsquo;s cleanup arm (<code>0x801E5D74</code>) takes it off the gauge. So the AP plate holds its figure until the art ends, and an art typed short of its price stays plain swings.</li>
     <li><strong>Where the gauge comes from.</strong> Every action pays +8 into Spirit at its Done step, a Spirit turn +32; the gauge is saved in the character record at the end of a fight and reloaded at the next, so a full gauge carries over.</li>
     <li><strong>Where the charge lands.</strong> The builder only tentatively debits (so a chained second art sees what the first committed) and puts the real charge in an accumulator <code>actor+0x224</code>, subtracted once in the Done band. A mod that changes an art's cost has to move the accumulator.</li>
     <li><strong>The pause menu's number is a second source.</strong> The AP the arts list shows is a byte of the static arts-name table, kept equal to the formula by hand for all 45 arts. A mod that changes one has to change the other.</li>

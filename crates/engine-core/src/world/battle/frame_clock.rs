@@ -119,6 +119,48 @@ impl World {
         }
     }
 
+    /// Run a summon module's arm on the frame step retail runs it at
+    /// ([`legaia_engine_cast::cast_module_frame_step`]): a frame that draws
+    /// a whole-screen effect costs retail four vsyncs, so its part ticks, its
+    /// scrollers and its per-pass seats all take that step. Called beside
+    /// [`Self::apply_battle_frame_step_seed`], which a replay's own step
+    /// outranks, and only on retail's cadence: the per-vsync cadence has no
+    /// frames to stretch.
+    pub(in crate::world) fn apply_cast_arm_frame_step(&mut self) {
+        use legaia_engine_battle_vm::battle_action::ActionState as S;
+        if !self.toggles.battle_sm_frame_cadence || self.clock.battle_frame_step_seed.is_some() {
+            return;
+        }
+        let state = self.battle_ctx.action_state;
+        let band = state == S::SummonSustain.as_byte() || state == S::SummonReturn.as_byte();
+        let measured = self
+            .casting
+            .summon_stager
+            .as_ref()
+            .filter(|_| band)
+            .and_then(|st| self.cast_module_for(st.spell_id))
+            .and_then(|entry| {
+                legaia_engine_cast::cast_module_frame_step::cast_arm_frame_step(
+                    entry,
+                    self.casting.module_phase,
+                )
+            });
+        let want = match (measured, self.battle.cast_arm_step_on) {
+            (Some(step), _) => step,
+            (None, true) => DEFAULT_BATTLE_FRAME_STEP,
+            (None, false) => return,
+        };
+        self.battle.cast_arm_step_on = measured.is_some();
+        if self.battle.frame_clock.step != want {
+            // The pass this tick ran opened the frame the new step spans.
+            let tick = self.clock.display_frames;
+            self.battle.frame_clock.retime_frame(tick, want);
+            if let Some(cam) = self.battle.camera.as_mut() {
+                cam.set_frame_step(want);
+            }
+        }
+    }
+
     /// The battle frame driver's discarded `rand()` draw: `FUN_80046A20`
     /// calls the generator on every pass (`jal 0x80056798` at `0x80046D2C`,
     /// after the four-slot loop that every path of falls through to
@@ -486,8 +528,9 @@ impl World {
             1
         };
         let mut live = false;
-        for _ in 0..delta {
+        for i in 0..delta {
             let phase = self.casting.module_phase;
+            self.casting.module_pass_repeat = i != 0;
             live = tick(self);
             if !live || self.casting.module_phase != phase {
                 if !cadence && live && self.casting.module_phase != phase {

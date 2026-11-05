@@ -126,6 +126,18 @@ impl World {
         true
     }
 
+    /// Whether the flags say the record behind
+    /// [`Self::replay_scripted_battle_score`] ran: every system flag it raises
+    /// on the way to its entry op is up. A row is not owned by its record: the
+    /// same row reached by a random roll has run nothing, and its fight holds
+    /// the word the field left.
+    pub fn scripted_battle_record_ran(&self, formation_id: u16) -> bool {
+        self.scene_battle_entry_scores
+            .iter()
+            .find(|s| u16::from(s.row) == formation_id)
+            .is_none_or(|s| s.raises.iter().all(|&f| self.system_flag_test(f)))
+    }
+
     /// Run op-`0x35` BGM words through the field VM's own handler, in order -
     /// the track word, the battle sound set and the host's BGM events end up
     /// where a record executing those ops would have left them. The replay

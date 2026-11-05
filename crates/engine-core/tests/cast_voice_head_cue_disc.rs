@@ -165,6 +165,59 @@ fn every_band_image_names_the_head_cue_the_doc_census_carries() {
     assert_eq!((literal_hits, random_hits), (62, 2));
 }
 
+/// The arm each module's head cue call sits on, against retail: the phase byte
+/// on the frame the clip starter ran (`capture`, the caller log for 0904 and 0927,
+/// the mednafen state series for the rest), and the disassembly for 0946, whose
+/// arm 0 makes the call as it stores phase `4`.
+#[test]
+fn the_head_cue_sits_on_the_arm_retail_calls_it_from() {
+    let Some(dir) = extracted_dir() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset or extracted/ incomplete");
+        return;
+    };
+    let images = band_images(&dir);
+    for (entry, arm) in [
+        (904, 3),
+        (906, 4),
+        (908, 4),
+        (911, 2),
+        (916, 3),
+        (920, 2),
+        (923, 2),
+        (927, 2),
+        (928, 2),
+        (930, 3),
+        (946, 0),
+    ] {
+        let (_, bytes) = images.iter().find(|(idx, _)| *idx == entry).unwrap();
+        assert_eq!(
+            legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm(bytes),
+            Some(arm),
+            "PROT {entry}"
+        );
+    }
+    // A multi-spell module's bodies each make their own call.
+    use legaia_engine_battle_vm::battle_cast_cue::body_head_cue;
+    use legaia_engine_cast::cast_module_ticks::capture_tick_body;
+    for (entry, action, cue) in [(964, 0xAF, 0x1C7), (955, 0x60, 0x196), (955, 0x6F, 0x143)] {
+        let (_, bytes) = images.iter().find(|(idx, _)| *idx == entry).unwrap();
+        let body = capture_tick_body(entry, action).expect("a trampoline arm");
+        assert_eq!(
+            body_head_cue(bytes, body),
+            Some(ModuleHeadCue::Literal(cue)),
+            "PROT {entry} action {action:#x}"
+        );
+    }
+    for (entry, slot) in [(904, 7), (908, 7), (909, 6), (911, 12), (927, 14)] {
+        let (_, bytes) = images.iter().find(|(idx, _)| *idx == entry).unwrap();
+        assert_eq!(
+            legaia_engine_battle_vm::battle_cast_cue::module_head_seek(bytes),
+            Some(slot),
+            "PROT {entry}"
+        );
+    }
+}
+
 /// A battle world with the disc's pool and span table, three party seats +
 /// three monster seats.
 fn battle_world(dir: &std::path::Path) -> World {
@@ -196,6 +249,9 @@ fn battle_world(dir: &std::path::Path) -> World {
     world
 }
 
+/// Past every module's cue arm.
+const MAX_ARM: u8 = 0xFE;
+
 #[test]
 fn arming_a_seru_cast_raises_the_captured_starter_triple() {
     let Some(dir) = extracted_dir() else {
@@ -205,6 +261,11 @@ fn arming_a_seru_cast_raises_the_captured_starter_triple() {
     let mut w = battle_world(&dir);
     // Gimard is action id 0x81 -> PROT 0903 -> cue 0x134 -> (6, 4, 686).
     w.arm_summon_stager(0, 0x81);
+    assert!(
+        w.drain_battle_xa_cues().is_empty(),
+        "no voice at the arming seam"
+    );
+    w.raise_cast_voice_on_arm(MAX_ARM);
     let xa = w.drain_battle_xa_cues();
     assert_eq!(xa.len(), 1, "one clip request per cast: {xa:?}");
     assert_eq!(
@@ -219,6 +280,7 @@ fn arming_a_seru_cast_raises_the_captured_starter_triple() {
 
     // A second cast inside that span: `FUN_8003DE7C(1) != 0` declines it.
     w.arm_summon_stager(0, 0x83);
+    w.raise_cast_voice_on_arm(MAX_ARM);
     assert!(
         w.drain_battle_xa_cues().is_empty(),
         "a cast inside the previous clip's read span plays no voice"
@@ -227,6 +289,7 @@ fn arming_a_seru_cast_raises_the_captured_starter_triple() {
     w.audio.battle_xa_busy_frames = 0;
     // Vera is action id 0x83 -> PROT 0905 -> cue 0x131 -> (6, 1, 568).
     w.arm_summon_stager(0, 0x83);
+    w.raise_cast_voice_on_arm(MAX_ARM);
     let xa = w.drain_battle_xa_cues();
     assert_eq!(xa.len(), 1);
     assert_eq!(
@@ -327,6 +390,7 @@ fn ultimate_rave_cues_its_kill_roll() {
         let VoiceCueVerdict::Play(want) = admit_voice_cue(id, gates, raw) else {
             panic!("cue {id:#x} plays");
         };
+        w.raise_cast_voice_on_arm(MAX_ARM);
         let xa = w.drain_battle_xa_cues();
         assert_eq!(xa.len(), 1);
         assert_eq!(

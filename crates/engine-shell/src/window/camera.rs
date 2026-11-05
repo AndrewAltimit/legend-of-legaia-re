@@ -178,11 +178,16 @@ impl PlayWindowApp {
             let p = c.framing_pose();
             let world = &self.session.host.world;
             eprintln!(
-                "BATCAM f={} phase={:?} st=0x{:02X} act={} pitch={} yaw={} tr={:?} focus={:?} target={:?}",
+                "BATCAM f={} phase={:?} st=0x{:02X} act={} facing={} yawbase={} pitch={} yaw={} tr={:?} focus={:?} target={:?}",
                 world.clock.display_frames,
                 c.phase(),
                 world.battle_ctx.action_state,
                 world.battle_ctx.active_actor,
+                world
+                    .actors
+                    .get(usize::from(world.battle_ctx.active_actor))
+                    .map_or(0, |a| a.battle.facing_angle),
+                c.action_yaw_base(),
                 p.pitch,
                 p.yaw,
                 p.tr,
@@ -1106,7 +1111,7 @@ mod battle_cam_shared_tests {
         tetsu.tmd_binding = Some(0);
         world.actors = vec![vahn, tetsu];
 
-        // Idle between actions: the far framing, not the action framing.
+        // A round's first setup state: the far framing, not the action framing.
         world.battle_ctx.action_state =
             legaia_engine_battle_vm::battle_action::ActionState::Begin.as_byte();
         assert_eq!(

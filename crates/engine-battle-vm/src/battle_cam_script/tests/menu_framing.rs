@@ -363,16 +363,16 @@ fn menu_framing_keeps_the_formation_on_screen() {
 #[test]
 fn only_the_input_pickers_take_the_close_up() {
     assert_eq!(
-        phase_for_state(false, false, 0x5A, DoneBandInputs::default()),
+        phase_for_state(false, false, 0xFF, DoneBandInputs::default()),
         BattleCamPhase::Menu,
         "the command chooser is retail's case 9, not the case-0 close-up"
     );
     assert_eq!(
-        phase_for_state(false, true, 0x5A, DoneBandInputs::default()),
+        phase_for_state(false, true, 0xFF, DoneBandInputs::default()),
         BattleCamPhase::Submenu
     );
     assert_eq!(
-        phase_for_state(true, true, 0x5A, DoneBandInputs::default()),
+        phase_for_state(true, true, 0xFF, DoneBandInputs::default()),
         BattleCamPhase::Dialogue
     );
 }

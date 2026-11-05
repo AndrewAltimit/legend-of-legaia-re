@@ -75,6 +75,11 @@ const PART_TICK: u32 = 0x8002_1DF4;
 /// the flash, `vera_summon_mid_cast` drew them a pass wider (`.988`); seated
 /// off the RAM a lag back they stand where the screen shows them.
 ///
+/// PROT 0955's Void Accessories records
+/// ([`VOID_RECORDS`](legaia_engine_cast::cast_module_camera::VOID_RECORDS))
+/// too: the star turns `+0x84 = -256` a step from arm 0, so its roll is a clock
+/// of the passes since, whose steps a replay does not re-deal.
+///
 /// The parts a capture-cell stager seats with `rand()` rolls
 /// ([`ROLLED_STAGER_RECORDS`](legaia_engine_cast::cast_module_ticks::ROLLED_STAGER_RECORDS))
 /// are seated the same way, their lean rate `+0x84` with them: Call Wave's
@@ -82,7 +87,9 @@ const PART_TICK: u32 = 0x8002_1DF4;
 ///
 /// The lag is [`cast_part_lag_vsyncs`]'s.
 pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon::CastPartSeed> {
-    use legaia_engine_cast::cast_module_camera::{ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS};
+    use legaia_engine_cast::cast_module_camera::{
+        ULTRA_CHARGE_SHOT_DISCS, VERA_OPEN_GLOWS, VOID_RECORDS,
+    };
     use legaia_engine_cast::cast_module_ticks::{
         ROLLED_STAGER_EXTRA_OFFSETS, ROLLED_STAGER_RECORDS,
     };
@@ -99,7 +106,8 @@ pub(super) fn retail_cast_parts(ram: &[u8]) -> Vec<legaia_engine_effects::summon
                 && (per_pass.contains(&rec)
                     || ROLLED_STAGER_RECORDS.contains(&rec)
                     || ULTRA_CHARGE_SHOT_DISCS.contains(&rec)
-                    || VERA_OPEN_GLOWS.contains(&rec))
+                    || VERA_OPEN_GLOWS.contains(&rec)
+                    || VOID_RECORDS.contains(&rec))
                 && !length_restarted_inside_lag(ram, n, lag)
         })
         .map(|n| {
@@ -407,7 +415,7 @@ const RING_ID: u32 = 0x1FB;
 const RING_CURSOR: u32 = 0x17A;
 /// The clip-record history ring: the committed entry pointer, a word a
 /// battle frame, slot 0 the live one (`FUN_80047430`, `0x80047E58..0x80048060`).
-const RING_RECORD: u32 = 0x234;
+pub(super) const RING_RECORD: u32 = 0x234;
 /// Entries the displayed-clip lookup searches in a monster record's entry
 /// array (`+0x4C`): the archive's own action count bound.
 const MONSTER_ENTRY_SEARCH: u32 = 64;
@@ -804,29 +812,62 @@ impl RetailBattle {
             let module_shot = action_state == CAPTURE_MODULE_STATE
                 && game_anchors::u8_at(ram, ctx + 0x279) > 0
                 && module_shot_walking(ram, ctx);
+            // The setup states ahead of the seed arm no framing either
+            // (`0x00` / `0x0A` / `0x0B`): the finished actor's table walks on
+            // at its own increment (`jou_nova_v3_pre_scythe_wind`: yaw `2251`
+            // on `2` a vsync reads best at `2242`, where the re-arm's widening
+            // share took it to `2233`).
+            let unarmed_setup = game_anchors::u8_at(ram, ctx + 6) == 0xFF
+                && PRE_SEED_STATES.contains(&action_state);
             let walk = |steps: &[u8]| {
-                if action_state == CAPTURE_FADE_STATE || module_shot {
+                if action_state == CAPTURE_FADE_STATE || module_shot || unarmed_setup {
                     displayed_module_cam_live(ram, ctx, steps)
                 } else {
+                    let walk_arm = walk_arm_prior_end(ram, ctx);
                     displayed_cam_live_steps(
                         ram,
                         ctx,
                         steps,
                         confirmed,
-                        {
+                        walk_arm.unwrap_or_else(|| {
                             let summon = summon_route_prior_end(ram, ctx, action_state);
                             let pull_in = strike_pull_in_prior_end(ram, ctx);
                             std::array::from_fn(|k| summon[k].or(pull_in[k]))
-                        },
+                        }),
                         {
                             let mut shift = walker_end_shift(ram, ctx).unwrap_or([0; 9]);
-                            shift[1] = walk_heading(ram, ctx).map_or(0, |h| h.end_shift);
+                            shift[1] = walk_heading(ram, ctx)
+                                .map(|h| h.end_shift)
+                                .or_else(|| clip_clock_end_shift(ram, ctx))
+                                .unwrap_or(0);
                             shift
                         },
+                        walk_arm.is_some(),
                     )
                 }
             };
-            let shown = walk(&steps);
+            let mut shown = walk(&steps);
+            // A turning shot re-aims the live yaw a fixed `step * n` on every
+            // pass and lands it inside that pass, so the RAM's yaw reads on
+            // its endpoint and the passes back stood those steps behind it
+            // (`battle_balden_swordie_v2_vacuum_slicer_mid_cast`, case `0xE`
+            // at step `3`: yaw `2594` draws at `2570`).
+            if let Some(active) = active
+                && (0x2A..=0x2E).contains(&action_state)
+                && game_anchors::u8_at(ram, active + 0x1DE) == 2
+            {
+                let shot = game_anchors::u8_at(ram, active + 0x1E1);
+                // The accumulator `ctx[+0x87C]` climbs `8 * step` a pass, so a
+                // shot younger than the walk back displays the framing it
+                // replaced: `RetailBattle::retake_turning_pose`'s case.
+                let vsyncs: i32 = steps.iter().map(|&s| i32::from(s.max(1))).sum();
+                let accum = i32::from(game_anchors::u16_at(ram, ctx + 0x87C));
+                if let Some(rate) = turning_shot_rate(shot)
+                    && accum > 8 * vsyncs
+                {
+                    shown.yaw = (shown.yaw - (vsyncs * rate) as f32).rem_euclid(4096.0);
+                }
+            }
             let mut further_steps = steps.clone();
             further_steps.push(steps.last().copied().unwrap_or(frame_step(ram)));
             let ghost = displayed_ghost_pose(ram, ctx, action_state, shown, walk(&further_steps));
@@ -852,6 +893,16 @@ impl RetailBattle {
             monster_ids,
             seat_chars: (0..u32::from(party_count))
                 .map(|s| game_anchors::u8_at(ram, SEAT_CHARS + s))
+                .collect(),
+            record_hp_max: (0..u32::from(party_count))
+                .map(|s| {
+                    // The seat's word is 1-based: `0` names no record.
+                    u32::from(game_anchors::u8_at(ram, SEAT_CHARS + s))
+                        .checked_sub(1)
+                        .map_or(0, |i| {
+                            game_anchors::u16_at(ram, 0x8008_4708 + i * 0x414 + 0x104)
+                        })
+                })
                 .collect(),
             party_categories: (0..u32::from(party_count))
                 .map(|s| {
@@ -938,11 +989,20 @@ impl RetailBattle {
                 legaia_engine_cast::cast_module_camera::GIMARD_COUNTDOWN_VA,
             ) as i32,
             cam_style: game_anchors::u8_at(ram, ctx + 0xD),
+            prior_framing: prior_framing(ram, ctx),
             cam_tween: retail_cam_tween(ram, ctx),
             cam_tween_steps: std::array::from_fn(|k| {
                 game_anchors::u16_at(ram, ctx + TWEEN_TABLE + k as u32 * 4)
             }),
             turn_cursor: game_anchors::u8_at(ram, ctx + 0x1A),
+            ambient_word: game_anchors::u8_at(ram, 0x8007_B7B0),
+            cam_depth: game_anchors::u16_at(ram, ctx + 0x6D0),
+            seat_category: (0..8u32)
+                .map(|slot| {
+                    let p = game_anchors::u32_at(ram, ACTOR_TABLE + slot * 4);
+                    in_ram(p).then(|| game_anchors::u8_at(ram, p + 0x1DE))
+                })
+                .collect(),
             recent_steps: {
                 let steps = recent_pass_steps(ram);
                 [steps[0], steps[1], steps[2], steps[3]]
@@ -1041,6 +1101,11 @@ impl RetailBattle {
             magic_level_up: game_anchors::u8_at(ram, ctx + 0x26) == MAGIC_LEVEL_BANNER,
             strike_cursor: game_anchors::u8_at(ram, ctx + 0x15),
             strike_stream_steer: false,
+            approach_terms: (
+                game_anchors::u16_at(ram, ctx + 0x6D2) as i16,
+                game_anchors::u16_at(ram, ctx + 0x6D4) as i16,
+            ),
+            acting_attack: active.map_or(0, |p| game_anchors::u16_at(ram, p + 0x158)),
             committed_queue: std::array::from_fn(|i| {
                 active.map_or(0, |p| game_anchors::u8_at(ram, p + 0x1DF + i as u32))
             }),

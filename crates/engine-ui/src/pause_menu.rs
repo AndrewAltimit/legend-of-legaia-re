@@ -434,6 +434,8 @@ pub fn money_box_rect(
 /// Status sub-screen: the main panel plus its three satellite windows.
 pub struct StatusScreenView<'a> {
     pub panel: &'a StatusPanelView<'a>,
+    /// The page sprites [`crate::status_icon_sprites_for`] draws.
+    pub icon_page: crate::StatusIconPage,
     pub satellite: &'a StatusSatelliteView<'a>,
     /// Highlighted member's AP, for the main window's gauge sprites.
     pub ap: u16,
@@ -621,6 +623,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     rects,
                     ctx.rects.pen(window_ids::STATUS_MAIN),
                     v.ap,
+                    v.icon_page,
                     ctx.origin,
                     ctx.scale,
                 ));
@@ -628,6 +631,7 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     rects,
                     v.satellite.cursor,
                     v.atr_char,
+                    v.satellite.seru.is_some(),
                     ctx.rects.pen(window_ids::STATUS_PARTY_LIST),
                     ctx.rects.pen(window_ids::STATUS_CONDITION),
                     ctx.rects.pen(window_ids::STATUS_SUMMARY),

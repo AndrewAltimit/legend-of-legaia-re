@@ -151,6 +151,10 @@ impl MuscleDomeSession {
         }
         // --- the per-monster-id `switch` and the recent-target ring.
         let ctx = legaia_engine_battle::monster_ai::MonsterAiCtx {
+            // The session picks ahead of the play-out: the fighter still holds
+            // its turn, and carries no status word the interrupt arm reads.
+            party_keys: [1, 0, 0],
+            party_status: [0; 3],
             monster_id: (ai.def.id & 0xFF) as u8,
             monster_index: 0,
             caster_slot: OPPONENT_SLOT,

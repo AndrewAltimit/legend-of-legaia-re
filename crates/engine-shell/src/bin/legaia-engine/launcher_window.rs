@@ -359,6 +359,14 @@ struct LauncherApp {
     opt_scroll: usize,
     /// A message that outranks the focused row's help (an error, a result).
     status: Option<Vec<Message>>,
+    /// The typed path was tried and failed: the next character or paste
+    /// starts over rather than adding to it.
+    typed_tried: bool,
+    /// The last failed game's report, for Ctrl+C.
+    failure_report: Option<String>,
+    /// Held once used: on X11 the copied text lives in this process, and the
+    /// last `Clipboard` dropped takes it away.
+    clipboard: Option<arboard::Clipboard>,
     /// Path typed into the window (fallback when no file dialog is available).
     typed: String,
     modifiers: ModifiersState,
@@ -411,6 +419,9 @@ impl LauncherApp {
             panel,
             opt_scroll: 0,
             status: None,
+            typed_tried: false,
+            failure_report: None,
+            clipboard: None,
             typed: String::new(),
             modifiers: ModifiersState::empty(),
             cursor: None,
@@ -507,6 +518,46 @@ impl LauncherApp {
         self.win.request_redraw();
     }
 
+    fn clipboard(&mut self) -> Result<&mut arboard::Clipboard, arboard::Error> {
+        if self.clipboard.is_none() {
+            self.clipboard = Some(arboard::Clipboard::new()?);
+        }
+        Ok(self.clipboard.as_mut().expect("just set"))
+    }
+
+    /// Ctrl+V: the clipboard's text into the disc path line. A file manager's
+    /// "copy as path" brings its quotes, which `clean_typed_path` takes off.
+    fn paste_path(&mut self) {
+        match self.clipboard().and_then(|c| c.get_text()) {
+            Ok(t) if !t.trim().is_empty() => {
+                if std::mem::take(&mut self.typed_tried) {
+                    self.typed.clear();
+                }
+                self.typed
+                    .extend(t.trim().chars().filter(|c| !c.is_control()));
+                self.status = None;
+            }
+            Ok(_) | Err(_) => {
+                self.status = Some(vec![("The clipboard holds no text to paste.".into(), DIM)]);
+            }
+        }
+    }
+
+    /// Ctrl+C after a failed game: the report for a bug report.
+    fn copy_failure_report(&mut self) {
+        let Some(report) = self.failure_report.clone() else {
+            return;
+        };
+        let done = self.clipboard().and_then(|c| c.set_text(report));
+        self.status = Some(vec![match done {
+            Ok(()) => (
+                "Report copied. Paste it into your bug report before closing this window.".into(),
+                GOOD,
+            ),
+            Err(e) => (format!("Could not copy the report: {e}"), WARN),
+        }]);
+    }
+
     fn browse(&mut self) {
         let mut dialog = rfd::FileDialog::new()
             .set_title("Choose your Legend of Legaia (USA) disc image")
@@ -530,7 +581,7 @@ impl LauncherApp {
             None => {
                 self.status = Some(vec![(
                     "No file chosen. If no dialog appeared, drag the .bin onto this window, \
-                     or type its full path and press Enter."
+                     or type or paste its full path (Ctrl+V) and press Enter."
                         .into(),
                     DIM,
                 )]);
@@ -673,6 +724,7 @@ impl LauncherApp {
                 log::info!("launcher: game started on {}", info.bin.display());
                 self.game = Some(g);
                 self.status = None;
+                self.failure_report = None;
                 self.close_window();
                 evl.set_control_flow(ControlFlow::WaitUntil(
                     Instant::now() + Duration::from_millis(250),
@@ -772,6 +824,7 @@ impl LauncherApp {
                     log_text.as_deref(),
                     disc_problem.as_ref(),
                 );
+                self.failure_report = Some(failure_report(&status, log_text.as_deref()));
                 if let Some(p) = disc_problem {
                     log::info!("launcher: after the failed start, {p}");
                     self.disc = None;
@@ -791,12 +844,15 @@ impl LauncherApp {
 
     fn open_data_folder(&mut self) {
         let dir = std::env::current_dir().unwrap_or_default();
-        if let Err(e) = open_folder(&dir) {
-            self.status = Some(vec![(
+        // The path either way: a file manager may open behind this window,
+        // or not at all on a desktop with none set.
+        self.status = Some(vec![match open_folder(&dir) {
+            Ok(()) => (format!("Saves and settings are in {}", dir.display()), DIM),
+            Err(e) => (
                 format!("Could not open a file manager on {}: {e}", dir.display()),
                 WARN,
-            )]);
-        }
+            ),
+        }]);
     }
 
     /// Activate the focused control (`dir` steps an option backwards).
@@ -1023,7 +1079,11 @@ impl LauncherApp {
             c.text(
                 help.x + 6,
                 help.y + help.h - 14,
-                "Arrows, Enter, Tab, Esc",
+                if self.failure_report.is_some() {
+                    "Ctrl+C copies a report"
+                } else {
+                    "Arrows, Enter, Tab, Esc"
+                },
                 FAINT,
             );
         }
@@ -1070,7 +1130,7 @@ impl LauncherApp {
             match &self.problem {
                 Some(DiscProblem::NotSet) | None => (
                     "Use your own .bin or .cue dump: click Choose disc, drop the file here, \
-                     or type its path. No game data is included."
+                     or paste its path. No game data is included."
                         .into(),
                     DIM,
                 ),
@@ -1272,7 +1332,7 @@ impl LauncherApp {
             Item::ChooseDisc => match &self.disc {
                 Some(d) => format!("Pick another disc image. Now: {}", d.path.display()),
                 None => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                         Mode2/2352 dump, or its .cue. It is checked and remembered. Ctrl+O."
+                         raw dump, or its .cue. It is checked and remembered. Ctrl+O."
                     .into(),
             },
             Item::Online => "Start the game with the Multiplayer screen open: host a room \
@@ -1530,6 +1590,7 @@ impl ApplicationHandler for LauncherApp {
                     Key::Named(NamedKey::Escape) => {
                         if typing {
                             self.typed.clear();
+                            self.typed_tried = false;
                         } else if self.panel == Panel::Controls {
                             self.panel = Panel::Options;
                         } else {
@@ -1540,12 +1601,14 @@ impl ApplicationHandler for LauncherApp {
                         if typing {
                             let p = PathBuf::from(clean_typed_path(&self.typed));
                             self.try_disc(&p);
+                            self.typed_tried = !self.typed.is_empty();
                         } else {
                             self.activate(self.focus, 1, evl);
                         }
                     }
                     Key::Named(NamedKey::Space) if !typing => self.activate(self.focus, 1, evl),
                     Key::Named(NamedKey::Backspace) if typing => {
+                        self.typed_tried = false;
                         self.typed.pop();
                     }
                     Key::Named(NamedKey::Delete | NamedKey::Backspace) => self.reset_focused(),
@@ -1585,10 +1648,25 @@ impl ApplicationHandler for LauncherApp {
                     {
                         self.browse();
                     }
+                    Key::Character(c)
+                        if (self.modifiers.control_key() || self.modifiers.super_key())
+                            && c.eq_ignore_ascii_case("v") =>
+                    {
+                        self.paste_path();
+                    }
+                    Key::Character(c)
+                        if (self.modifiers.control_key() || self.modifiers.super_key())
+                            && c.eq_ignore_ascii_case("c") =>
+                    {
+                        self.copy_failure_report();
+                    }
                     _ => {
                         if !(self.modifiers.control_key() || self.modifiers.super_key())
                             && let Some(t) = &event.text
                         {
+                            if std::mem::take(&mut self.typed_tried) {
+                                self.typed.clear();
+                            }
                             self.typed.extend(t.chars().filter(|c| !c.is_control()));
                             if typing || !self.typed.trim().is_empty() {
                                 self.status = None;
@@ -1897,6 +1975,19 @@ fn failure_message(
     msg
 }
 
+/// The text Ctrl+C copies after a failed game.
+fn failure_report(status: &std::process::ExitStatus, log_text: Option<&str>) -> String {
+    use legaia_app_theme::game_exit;
+    game_exit::report_text(
+        "legaia-engine",
+        env!("CARGO_PKG_VERSION"),
+        &game_exit::exit_headline(status),
+        log_text.and_then(game_exit::failure_detail).as_deref(),
+        log_text,
+        game_exit::home_folder().as_deref(),
+    )
+}
+
 /// Open `dir` in the platform's file manager.
 fn open_folder(dir: &Path) -> std::io::Result<()> {
     let opener = if cfg!(windows) {
@@ -1949,7 +2040,7 @@ fn problem_message(p: &DiscProblem) -> Vec<Message> {
         DiscProblem::Unreadable { reason, fix, .. } => (
             sentence(reason),
             fix.clone().unwrap_or_else(|| {
-                "Choose the .bin of a raw Mode2/2352 dump, or the .cue beside it.".into()
+                "Choose the .bin of a raw dump (2352-byte sectors), or the .cue beside it.".into()
             }),
         ),
         DiscProblem::WrongDisc { reason, .. } => (

@@ -192,7 +192,7 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
 | Branch | Voices | State |
 |---|---|---|
 | One-shot (`flags & 0x20 == 0`) | `23 - cursor`, descending | rolling cursor `gp+0x4BC`, wrapped when it *exceeds* the limit (so the limit value is used). Limit `3`, or `1` in game modes `3` and `0x17` |
-| Sustained (`flags & 0x20`) | `7 .. 7 + count - 1`, ascending | held count `gp+0x5D0`; the previous run is released first; the mixer-record pointer latches into `gp+0x40C` |
+| Sustained (`flags & 0x20`) | `7 .. 7 + count - 1`, ascending | held count `gp+0x5D0`; the previous run is released first; the cue's ring id latches into `gp+0x40C` ([the funnels drop a repeat against it](#a-held-sustained-cue-drops-its-repeat)) |
 
 - A one-shot stops each voice (`FUN_800653C8`) just before reprogramming it.
 - The sustained held-count write is inside the key-on loop, so a sustained cue
@@ -208,6 +208,21 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
   or the teardown `FUN_80017910`, which the mode init and the battle anim
   commit call
   ([`audio.md`](../subsystems/audio.md#sustained-cues-loop-until-the-teardown-releases-them)).
+
+<a id="a-held-sustained-cue-drops-its-repeat"></a>
+
+**A held sustained cue drops its repeat.** The drainer stores the sustained cue's
+ring id in `gp+0x40C` (`0x8007B724`, `sw s0,0x40c(gp)` at `0x80016DC8`, ahead of the
+key-on loop), and the two battle funnels read it. `FUN_8004FE5C` compares `id - 1`
+below `0x48` and `id + 0x19C` from there up (`0x80050038`, `0x8004FF50`);
+`FUN_8004FCC8` does the same with its bound at `0x40` (`0x8004FDF4`, `0x8004FDAC`). A
+match skips the ring write, the cursor bump and the category write. The word holds
+until the next sustained cue or the teardown `FUN_80017910` writes `-1`, however long
+the voice sounds. A walk clip re-commits every cycle and its track rings again, so
+this is what keeps Nova's Scythe Wind walk (cue `0xB7`, runtime row `0x253`) on one
+key-on where its cursor `+0x1F6` steps twice (`tunnelb_nova_pre_scythe_wind`). The
+script producer `FUN_80035B50` has no compare. Port:
+`SfxRingOp::PushUnlessSustained`, `SfxBank::latch_sustained_cue`.
 
 Port: `legaia_engine_audio::SfxBank` carries the cursor, limit and held count
 (`set_field_family` selects the limit, called per tick from the world's mode);

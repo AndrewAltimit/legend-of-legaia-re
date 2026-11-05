@@ -21,8 +21,10 @@ pub struct Settings {
     pub skip_xa: bool,
     pub skip_catalog: bool,
     pub skip_font: bool,
-    /// Extract tab: also export every texture as PNG.
-    pub all_textures: bool,
+    /// Extract tab: leave out the sweep that writes every texture as PNG.
+    /// Named like the other skips so a settings file without it runs the
+    /// sweep: without it a whole-disc extraction writes almost no images.
+    pub skip_all_textures: bool,
     /// The window's inner size (logical points) when it last closed.
     pub window_size: Option<[f32; 2]>,
     /// The window's outer top-left corner (physical pixels) when it last
@@ -85,6 +87,22 @@ impl Theme {
 
 /// The zoom range the settings file accepts; anything else (a hand edit, a
 /// corrupt file) falls back to 1.0.
+/// The smallest window (points at 100% zoom) every view is laid out for.
+pub const MIN_WINDOW: [f32; 2] = [720.0, 480.0];
+
+/// The zoom a window of `width` x `height` (points at 100%) can carry: the
+/// asked-for `wanted`, held down so the window stays at least [`MIN_WINDOW`]
+/// in zoomed points. Past that the views' toolbars wrap and take the height
+/// the 3D view and the lists live in. Zooming out is never held back.
+pub fn fit_zoom(wanted: f32, width: f32, height: f32) -> f32 {
+    if width <= 0.0 || height <= 0.0 {
+        // No window size yet.
+        return wanted;
+    }
+    let room = (width / MIN_WINDOW[0]).min(height / MIN_WINDOW[1]).max(1.0);
+    wanted.min(room)
+}
+
 pub fn sane_zoom(z: Option<f32>) -> f32 {
     z.filter(|z| z.is_finite() && (0.5..=3.0).contains(z))
         .unwrap_or(1.0)
@@ -220,6 +238,27 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(loud.volume_percent(), 100);
+    }
+
+    #[test]
+    fn zoom_is_held_to_what_the_window_has_room_for() {
+        // The minimum window has no room to zoom in: every view is laid out
+        // for at least that many points.
+        assert_eq!(fit_zoom(1.25, 720.0, 480.0), 1.0);
+        // Either axis can be the one short of room.
+        assert_eq!(fit_zoom(2.0, 1440.0, 600.0), 1.25);
+        assert_eq!(fit_zoom(2.0, 1080.0, 1200.0), 1.5);
+        // Room to spare gives what was asked for; zooming out always works.
+        assert_eq!(fit_zoom(1.25, 1280.0, 820.0), 1.25);
+        assert_eq!(fit_zoom(0.8, 720.0, 480.0), 0.8);
+        // Before the window has a size there is nothing to hold it to.
+        assert_eq!(fit_zoom(1.25, 0.0, 0.0), 1.25);
+    }
+
+    #[test]
+    fn a_settings_file_without_the_texture_sweep_key_runs_it() {
+        let s: Settings = serde_json::from_str(r#"{"all_textures": false}"#).unwrap();
+        assert!(!s.skip_all_textures);
     }
 
     #[test]

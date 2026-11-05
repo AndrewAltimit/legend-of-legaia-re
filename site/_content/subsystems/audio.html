@@ -89,7 +89,7 @@
   <h3 id="track-swap">Changing track on cue</h3>
   <p>A cutscene can choose the exact beat the outgoing score dies on. The poller walks a short ladder - wait for the CD, let the load settle for 30 frames, tear down the old track unless the script owns the swap, load, install the score, latch - and coordinates with the script through one sound-flag word. A swap started by sub-op 9 keeps the old track playing until the script commits it with sub-op <code>0xA</code>. The flag bits are on <a href="audio-internals.html#swap-handshake">internals</a>.</p>
   <ul class="bullets">
-    <li><strong>Stop, pause, replay.</strong> Sub-op 2 <em>stops</em> the track (notes cut, cursor back to the start), sub-op 3 <em>pauses</em> it (notes keyed off, cursor kept) and sub-op 4 <em>replays</em> it from its first event.</li>
+    <li><strong>Stop, pause, replay.</strong> Sub-op 2 <em>stops</em> the track (notes cut, cursor back to the start), sub-op 3 <em>pauses</em> it (the sequence&rsquo;s volume goes to <code>0</code> first, so its notes cut at once, then they key off; cursor kept) and sub-op 4 <em>replays</em> it from its first event.</li>
     <li><strong>Hard cuts.</strong> Retail never cross-fades between tracks: the old sequence is keyed off (notes release through their own envelopes) and the new one starts that instant.</li>
     <li><strong>Movies leave the score alone.</strong> The movie player never touches the sequencer: a score the script left sounding keeps playing under the movie's audio, and one it stopped stays silent. Only the title attract stops the title theme, and the title screen restarts it from the top.</li>
     <li><strong>The silent dawn.</strong> <code>town01</code> starts its theme and, while a story flag is clear, pauses it at once; the opening cutscene's own sub-op 9 brings it in.</li>
@@ -167,6 +167,10 @@
     <summary>History: the &ldquo;non-standard interleave&rdquo; reading</summary>
     <div class="disclosure-body"><p>An earlier reading had most XA sound groups failing validation and inferred a bespoke interleave. That was Form-1 truncation damage in the old extractor, not the format. See <a href="../reference/re-do-not-re-walk.html">do-not-re-walk</a>.</p></div>
   </details>
+
+  <p>An enemy's swing already sounds as it should. Given the same swings and the same dice as a recording of the original, nearly every fight we measured puts each swing, block or flinch voice and impact sound in the same place. Two fights sound different because they deal different hands, not because a sound is wrong. Glare's landing sound and its Stone now come at the moment the stare lands, about two seconds before the cast ends. A heal's voice waits for the monster's idle animation to finish, so how soon you hear it depends on where that loop stood.</p>
+
+  <p>A summon's voice waits for its module. The line is called on one step of the cast, after the module has parked the drive and polled it, so Theeder's line comes about two seconds after the cast begins and Juggernaut's almost at once. The drive then takes its own time: under mednafen about 77&nbsp;ms with the head already in the clip's file and 371&nbsp;ms from the next file along, plus one sector for each channel the clip sits into the file. No console has been timed. Enemies with shared spell code pick their line by who is casting: only Zora speaks Zora's line over Glare.</p>
 </section>
 
 <section class="doc-section" id="scene-entry">
@@ -216,8 +220,22 @@
   <ul class="bullets">
     <li><strong>Why step 1 exists.</strong> A scene-picker entry runs the entry script with none of the story choreography behind it. Rim Elm's script starts its theme and pauses it for the opening's silent dawn; without the cutscene that later restarts it, the pause would hold forever. The staging drops a pause issued inside the entry window on picker entries only - a new game keeps the authored pause.</li>
     <li><strong>A story twin's flags pick its track too.</strong> Rim Elm under attack opens on the town theme and then, on one flag pair, switches to the attack theme over a night grade. A picker entry with neither flag staged would play the wrong tune, so the staging seeds the flag.</li>
-    <li><strong>Battle reuses the same road.</strong> An encounter queues an ordinary track start for the battle theme and the fight's end resumes the stashed field track - one dispatch path, no battle-only audio code.</li>
+    <li><strong>Battle reuses the same road.</strong> An encounter queues an ordinary track start for the battle theme and the fight's end resumes the stashed field track - one dispatch path, no battle-only audio code. <a href="#battle-music">The theme arrives with the fight</a>, not with the spin.</li>
   </ul>
+  <h3 id="battle-music">The battle music timeline</h3>
+  <p>The spin into a fight is the cue alone, for over two seconds; the theme arrives with the fight. Logged per vsync from a walked retail fight (<code>teien_field_run</code>, a set-0 fight), counted from the mode-8 store:</p>
+  <figure class="diagram">
+    <svg viewBox="0 0 880 170" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A timeline of 139 vsyncs from the mode-8 store. At 3 vsyncs the field sequence stops and its notes cut. At 7 the battle-start cue sounds on three voices. At 80 the field track's last envelopes reach zero. At 139 the mode changes and the battle theme attaches on source 5.">
+      <path class="dg-edge" d="M60 90 L800 90"/>
+      <path class="dg-edge" d="M60 80 L60 100"/><text class="dg-label" x="60" y="122" text-anchor="middle">T</text><text class="dg-sub" x="60" y="140" text-anchor="middle">mode 8</text>
+      <path class="dg-edge" d="M75 90 L75 62"/><text class="dg-label" x="66" y="34" style="text-anchor:start">T + 3</text><text class="dg-sub" x="66" y="52" style="text-anchor:start">field track stops, notes cut</text>
+      <path class="dg-edge" d="M95 100 L95 118"/><text class="dg-label" x="95" y="134" style="text-anchor:start">T + 7</text><text class="dg-sub" x="95" y="152" style="text-anchor:start">battle-start cue, three voices</text>
+      <path class="dg-edge" d="M460 90 L460 62"/><text class="dg-label" x="460" y="34">T + 80</text><text class="dg-sub" x="460" y="52">last field envelopes reach 0</text>
+      <path class="dg-edge" d="M755 80 L755 100"/><text class="dg-label" x="755" y="122">T + 139</text><text class="dg-sub" x="755" y="140">mode 0x14, battle theme attaches</text>
+    </svg>
+    <figcaption>Drawn to scale. The field track is stopped by the intro init, not by the theme&rsquo;s start, so nothing plays under the spin but the cue. A sound set above 0 leaves the field track alone until the attach, and -1 plays it through.</figcaption>
+  </figure>
+  <p>At the fight&rsquo;s end the battle sequence plays on, ramps down over 129 vsyncs while the map reads, and the field source restarts from its head before the first field frame. The port takes the opening as measured (<code>World::silence_field_audio_for_intro</code>, <code>World::enter_battle_from_formation</code>, both hosts through <code>route_bgm_events</code>). Its load is instant, so the 250 vsyncs of battle theme over retail&rsquo;s loading screen collapse. A fight on the park word <code>0x1000</code> ends the music: the return loads what the word names, which is nothing, and both are silent until a scene starts a track.</p>
   <h3 id="battle-sound-set">The field script picks the fight's music</h3>
   <p>Which track a fight plays is the field script's choice, not the formation's. Op <code>0x35</code> sub-op 7 stores a <em>battle sound set</em> number, and the scene's map init zeroes it on every entry. The battle intro reads it: set <code>N &ge; 0</code> loads battle bundle <code>0x36F + N</code> and starts its score; set <code>-1</code> loads nothing and leaves whatever the event was already playing. That is how a boss fight keeps the boss theme its cutscene started one line earlier. Each bundle of the battle bank carries a byte-identical copy of one <code>music_01</code> score.</p>
 </section>

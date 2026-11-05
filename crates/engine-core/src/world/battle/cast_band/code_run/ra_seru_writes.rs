@@ -109,6 +109,159 @@ impl World {
         }
     }
 
+    /// PROT 0920 (Slippery)'s creature comes up out of the floor: arm 2's exit
+    /// seats it at `y = -(scalar << 8)` (`0x801F6D18..0x801F6D28`), and arm 3
+    /// lifts it `4 p` a pass until its word runs out, then stands it on the
+    /// floor (`0x801F6D94..0x801F6DE0`). Arm 8's exit hides the creature and
+    /// shows every living monster for the victim's shot (`0x801F7518..0x801F7550`).
+    pub(in crate::world::battle::cast_band) fn apply_slippery_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        creature: u8,
+    ) {
+        if (phase, passed) == (8, true) {
+            let map = self.cast_seat_map();
+            for seat in 3..7u8 {
+                if let Some(a) = map
+                    .engine(seat)
+                    .and_then(|e| self.actors.get_mut(usize::from(e)))
+                    && a.battle.hp != 0
+                {
+                    a.battle.render_color = WORD_NEUTRAL;
+                    a.battle.render_flag = 0;
+                }
+            }
+            if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                a.battle.render_color = 0;
+                a.battle.render_flag = FLAG_PARKED;
+            }
+        }
+        self.slippery_storm_clouds(phase, passed, creature);
+        let Some(a) = self.actors.get_mut(usize::from(creature)) else {
+            return;
+        };
+        match (phase, passed) {
+            (2, true) => a.move_state.world_y = -0x800,
+            (3, true) => a.move_state.world_y = 0,
+            (3, false) => {
+                let lift =
+                    (4 * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK) as i16;
+                a.move_state.world_y = a.move_state.world_y.saturating_add(lift).min(0);
+            }
+            _ => {}
+        }
+    }
+
+    /// PROT 0920's arm 6 builds the storm the backdrop's hide (`ctx[+0x278] = 2`)
+    /// leaves room for. Every fourth pass (`0x801F71DC..0x801F71EC`) it seats one
+    /// of four cloud records, `rand() % 4` (`0x801F7298..0x801F7344`), a quarter of
+    /// the trig table behind the creature at `y = -0x280`, on the creature's angle
+    /// trio. The arm's exit halts every handle it kept (`0x801F715C..0x801F7184`).
+    fn slippery_storm_clouds(&mut self, phase: u8, passed: bool, creature: u8) {
+        use legaia_engine_cast::cast_module_camera::{ModuleSpawn, SpawnAnchor, SpawnRecord};
+        const CLOUDS: [u32; 4] = [0x801F_8244, 0x801F_8284, 0x801F_82C4, 0x801F_8304];
+        if phase != 6 || self.casting.module_pass_repeat {
+            return;
+        }
+        if passed {
+            if let Some(scene) = self.casting.active_summon.as_mut() {
+                for part in &mut scene.parts {
+                    if part.tag.is_some_and(|t| CLOUDS.contains(&t)) {
+                        part.finished = true;
+                    }
+                }
+            }
+            return;
+        }
+        let n = self.casting.module_pass_counter.wrapping_add(1) & 3;
+        self.casting.module_pass_counter = n;
+        if n != 0 {
+            return;
+        }
+        let Some(a) = self.actors.get(usize::from(creature)) else {
+            return;
+        };
+        let facing = a.battle.facing_angle & 0xFFF;
+        let (x, z) = (a.move_state.world_x, a.move_state.world_z);
+        let (sin, cos) = legaia_engine_system::trig::trig12(facing);
+        let pos = [x.wrapping_sub(sin / 4), -0x280, z.wrapping_sub(cos / 4)];
+        let record = CLOUDS[(self.next_rand() % 4) as usize];
+        let spawn = [ModuleSpawn {
+            record: SpawnRecord::Module(record),
+            anchor: SpawnAnchor::LiteralScaled {
+                pos,
+                rot: [0, facing as i16, 0],
+                scale: 0x1000,
+            },
+        }];
+        self.stage_module_arm_spawns(920, &spawn, None, None);
+    }
+
+    /// PROT 0931 (Jedo)'s stores on the row and the creature, outside its
+    /// director.
+    ///
+    /// PORT: overlay_summon_jedo_0931_801f6a58 (arms 0, 1, 5, 6, 23, 30, 31)
+    pub(in crate::world::battle::cast_band) fn apply_jedo_writes(
+        &mut self,
+        phase: u8,
+        passed: bool,
+        monster_count: u8,
+        creature: u8,
+    ) {
+        // What arm 26's cut reads off the row, its middle.
+        let row = self.ra_seru_row(monster_count);
+        if !row.is_empty() {
+            let sum: i32 = row
+                .iter()
+                .map(|&(e, _)| -4 * self.battle_display_trio(e).map_or(0, |d| d[1] as i32))
+                .sum();
+            self.casting.module_cam.jedo_row_tr_y = (sum / row.len() as i32) as i16;
+        }
+        match (phase, passed) {
+            // Arm 0's re-seat onto the alternate family at half its reach,
+            // facing `0x800` (`0x801F6B74..0x801F6C5C`); arm 1 hides the row.
+            (0, true) => self.ra_seru_row_seat(monster_count, |x, z| (x / 2, z / 2), None),
+            (1, _) => self.ra_seru_row_word(monster_count, 0, FLAG_PARKED),
+            // The advance `+0x38 += step << 2` of arms 5 and 6 (`0x801F70AC`,
+            // `0x801F7220`), which arm 10's framing is built on.
+            (5 | 6, _) => {
+                if let (Some(c), Some(a)) = (
+                    self.casting.module_cam.creature,
+                    self.actors.get_mut(usize::from(creature)),
+                ) {
+                    a.move_state.world_z = c.z;
+                }
+            }
+            // Arm 23's pass shows the row, frozen on its last pose, and stands
+            // the creature up facing it (`0x801F7DC4..0x801F7E28`).
+            (23, true) => {
+                self.ra_seru_row_word(monster_count, WORD_NEUTRAL, 0);
+                for (e, _) in self.ra_seru_row(monster_count) {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.anim_rate = AnimRate(0);
+                    }
+                }
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.facing_angle = 0x200;
+                    a.move_state.world_y = 0x400;
+                }
+            }
+            // Arm 30 lets the row's last frames run out under the shatter
+            // (`0x801F8768..0x801F8784`).
+            (30, _) => {
+                for (e, _) in self.ra_seru_row(monster_count) {
+                    if let Some(a) = self.actors.get_mut(e) {
+                        a.battle.anim_rate = AnimRate(2);
+                    }
+                }
+            }
+            // The last arm puts back what arm 0 parked (`0x801F8904..0x801F8984`).
+            (31, true) => self.ra_seru_row_restore(monster_count, false),
+            _ => {}
+        }
+    }
+
     /// PROT 0914 (Gola Gola).
     ///
     /// | Arm | Edge | Store |
@@ -200,6 +353,11 @@ impl World {
             }
             (1, _) => self.ra_seru_row_word(monster_count, 0, FLAG_PARKED),
             (0xB, true) => self.ra_seru_row_word(monster_count, WORD_NEUTRAL, 0),
+            // Arm 4 saved channels 14 and 16 of the creature's model table
+            // (`0x801F6F5C..0x801F6F94`) and this pass stores the second into the
+            // first (`0x801F7738..0x801F7758`): the sword in its hand, which no
+            // stream's part count reaches on its own channel.
+            (0xC, true) => self.casting.creature_channel_object = Some((14, 16)),
             (0x12, true) => {
                 for (e, _) in self.ra_seru_row(monster_count) {
                     if let Some(a) = self.actors.get_mut(e) {
@@ -284,6 +442,7 @@ impl World {
     /// |---|---|---|
     /// | 0 (`0x801F6B20..0x801F6C80`) | pass | backdrop weight `0x1000`; row parked and re-seated at `x / 4`, `z / 4 + 0x500`, facing `0x800`, scale `0x800` |
     /// | 1 (`0x801F6CF4`) | every | row hidden |
+    /// | 6, 7 (`0x801F70C8..0x801F7154`, `0x801F7234..0x801F72C0`) | every | each part in the pool but handle `0`: `+0x7A += step`, `+0x16 += 4 * step`, killed at a level `+0x78` of `0xA00` or under |
     /// | 8 (`0x801F745C`, `0x801F7478`) | pass | creature rate `2`; row shown |
     /// | 9 (`0x801F7590`) | pass | orbit words zeroed |
     /// | `0xA`, `0xC` (`0x801F75E4..`) | every | the row's orbit about `(0, 0x613)` |
@@ -305,6 +464,24 @@ impl World {
         monster_count: u8,
         creature: u8,
     ) {
+        // The pool the arms walk holds the stager's two whirl records, one a
+        // pass's worth of them each; a pass runs a step of these ticks.
+        if matches!(phase, 6 | 7)
+            && let Some(scene) = self.casting.active_summon.as_mut()
+        {
+            const WHIRL_RECORDS: [u32; 2] = [0x801F_8838, 0x801F_88F0];
+            for part in scene
+                .parts
+                .iter_mut()
+                .filter(|p| !p.finished && p.tag.is_some_and(|t| WHIRL_RECORDS.contains(&t)))
+            {
+                part.state.field_7a = part.state.field_7a.wrapping_add(1);
+                part.state.world_y = part.state.world_y.wrapping_add(4);
+                if part.state.field_78 <= 0xA00 {
+                    part.finished = true;
+                }
+            }
+        }
         use legaia_engine_cast::cast_module_camera::DELTA_PER_TICK as D;
         const ORBIT_Z: i32 = 0x613;
         let seat_of = |count: u8, i: usize| {
@@ -318,6 +495,21 @@ impl World {
                 self.ra_seru_row_seat(monster_count, |x, z| (x / 4, z / 4 + 0x500), Some(0x800));
             }
             (1, _) => self.ra_seru_row_word(monster_count, 0, FLAG_PARKED),
+            // Arm 2's pass seats the creature hidden (`0x801F6DAC`, `0x801F6DB0`),
+            // so its clip holds until arm 4's pass shows it (`0x801F6FB0`,
+            // `0x801F6FC0`).
+            (2, true) => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = 0;
+                    a.battle.render_flag = FLAG_PARKED;
+                }
+            }
+            (4, true) => {
+                if let Some(a) = self.actors.get_mut(usize::from(creature)) {
+                    a.battle.render_color = 0x3FFF_FFFF;
+                    a.battle.render_flag = 0;
+                }
+            }
             (8, true) => self.ra_seru_row_word(monster_count, WORD_NEUTRAL, 0),
             (9, true) => self.casting.module_terra_orbit = (0, 0),
             (0x11, true) => {
@@ -592,8 +784,11 @@ impl World {
                 continue;
             }
             let mut seat = None;
-            legaia_engine_system::fade::spawn_fade(&mut seat, &t, 0);
-            if let Some(state) = seat {
+            // Id `1` (`li a1,0x1` at `0x801F903C`), the bucket under the HUD:
+            // a retail table of arm `0x18` links the fade's quad there.
+            legaia_engine_system::fade::spawn_fade(&mut seat, &t, 1);
+            if let Some(mut state) = seat {
+                state.step_vsyncs(self.battle_frame_step().max(1));
                 self.casting.module_pres.fades.push(HookFade {
                     site: OZMA_LADDER_FADE_SITE,
                     slot: None,

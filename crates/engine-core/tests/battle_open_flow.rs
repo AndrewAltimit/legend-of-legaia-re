@@ -334,18 +334,22 @@ fn a_battle_item_heal_keeps_the_readout_and_the_turn_pump_alive() {
         }
         tap(&mut world, PadButton::Cross);
     }
-    // The copy went at the commit; the heal lands when the member dispatches,
-    // which is after the last member commits (retail: nothing acts before
-    // `0x6E -> 0xFE`). Commit a plain Attack for the two members still owing
-    // a command, and the round begins - slot 0's item is the first dispatch.
+    // The copy went at the commit; the heal lands inside the member's Item
+    // band, which is after the last member commits (retail: nothing acts
+    // before `0x6E -> 0xFE`). Commit a plain Attack for the two members still
+    // owing a command, and the round begins - slot 0's item is the first
+    // dispatch.
     assert_eq!(
         world.actors[0].battle.hp, 20000,
         "the heal waits for the member's dispatch"
     );
     commit_attacks_for_rest_of_round(&mut world);
+    assert!(
+        settle_until(&mut world, 600, |w| w.actors[0].battle.hp > 20000),
+        "the item healed nothing"
+    );
 
     let healed = world.actors[0].battle.hp;
-    assert!(healed > 20000, "the item healed nothing (hp {healed})");
     assert_eq!(
         world.party.inventory.get(&HEALING_LEAF).copied(),
         Some(2),

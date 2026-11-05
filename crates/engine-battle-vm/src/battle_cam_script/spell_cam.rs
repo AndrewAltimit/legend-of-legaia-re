@@ -165,6 +165,20 @@ fn bearing(target: [f32; 2], actor: [f32; 3]) -> i32 {
     ))
 }
 
+/// Whether the arm for `case` runs the target-size framing `FUN_801F0348`
+/// before it reads `ctx[+0x6D0]`: arms `7`, `0xA`, `0xC`, `0xE`, `0x11` and
+/// `0x13` open on the call, and arm `4` makes it on its single-target branch
+/// (`sltiu v0,s1,0x8` at `0x801DC46C`).
+///
+/// REF: FUN_801DC0A0
+pub const fn spell_cam_refreshes_depth(case: u8, target_code: u8) -> bool {
+    match case {
+        0x07 | 0x0A | 0x0C | 0x0E | 0x11 | 0x13 => true,
+        0x04 => target_code < 8,
+        _ => false,
+    }
+}
+
 /// One call of `FUN_801DC0A0`, minus its prologue (the camera owns the
 /// `ctx[+0x26E]` / `ctx[+0x87C]` advance) and minus case `0x12`.
 ///

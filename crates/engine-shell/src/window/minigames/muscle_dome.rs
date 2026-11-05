@@ -26,7 +26,8 @@ impl PlayWindowApp {
     /// copy whenever no dome session is on screen.
     pub(in crate::window) fn refresh_muscle_dome_gpu(&mut self) {
         let world = &self.session.host.world;
-        let live = world.mode == SceneMode::MuscleDome;
+        let live =
+            world.mode == SceneMode::MuscleDome && !world.minigames.muscle_hub.first_visit_up();
         let index = self.session.host.index.clone();
         let read = |i: usize| index.entry_bytes(i as u32).ok();
         let session = if live {

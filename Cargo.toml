@@ -32,6 +32,7 @@ members = [
     "crates/party-swap",
     "crates/texture-replace",
     "crates/code-hooks",
+    "crates/retail-exec",
     "crates/arts-patch",
     "crates/delilas-party",
     "crates/delilas-challenge",
@@ -130,6 +131,8 @@ log = "0.4"
 png = "0.18"
 pollster = "0.4"
 rayon = "1"
+# The launcher's Ctrl+V into the disc path and its Ctrl+C failure report.
+arboard = { version = "3", default-features = false }
 rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

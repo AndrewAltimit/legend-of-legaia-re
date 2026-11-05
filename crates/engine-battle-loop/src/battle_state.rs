@@ -335,6 +335,10 @@ pub struct BattleState {
     pub steal: legaia_engine_battle::battle_steal::StealBand,
     /// The death-spoils caption on screen (HUD element `0x5B`), if any.
     pub steal_caption: Option<legaia_engine_battle::battle_steal::StealCaption>,
+    /// The acting member's Spirit owed for this turn's arts: the accumulator
+    /// byte `actor[+0x224]` the queue builder fills and the action SM's cleanup
+    /// arm spends (`0x801E5D74`).
+    pub art_turn_spirit: u8,
     /// The message bar's raise glide (placement record 91, `(16, 234)` ->
     /// `(16, 192)`): `FUN_801D8DE8(0x5B, 0)` spawns the bar at seat A and
     /// `FUN_801D9BBC` glides it to seat B. Started by a cast module's raise
@@ -463,6 +467,14 @@ pub struct BattleState {
     /// standing,
     /// instead of on a fresh roll. `None` on every ordinary fight.
     pub forced_monster_target: Option<u8>,
+    /// Capture alignment: the parked palette column a retail state's effect
+    /// row `(224, 476)` holds, copied there once the battle's VRAM has loaded
+    /// (`World::apply_battle_vram_moves`). `None` on every ordinary fight.
+    pub cue_clut_seed: Option<u8>,
+    /// Capture alignment: the roll a state past Element Change's arm 0
+    /// accepted (`0x801C8FE4`), which the replay's arm 0 takes in place of its
+    /// own. `None` on every ordinary fight.
+    pub element_roll_seed: Option<u8>,
     /// With [`Self::forced_monster_cast`]: dispatch that cast the moment the
     /// battle's first command prompt opens, in place of the party's
     /// commands, as [`Self::inflight_seed`] does for a party caster - the
@@ -482,9 +494,6 @@ pub struct BattleState {
     /// readout flag `DAT_8007B64C` its wrapper hits clear and a later arm
     /// raises (PROT 0959's barrage, `BattleHud::hold_combo`).
     pub combo_cluster_held: bool,
-    /// The held cluster is thrown away instead of opened (PROT 0915, whose
-    /// rolls all keep the readout flag down).
-    pub combo_cluster_dropped: bool,
     /// A debug seed that makes the next party killing blow's steal roll
     /// land - the retail comparison corpus's way into a capture that shows
     /// the death-spoils caption: the capture holds the outcome of a
@@ -711,6 +720,10 @@ pub struct BattleState {
     /// (`World::stretch_battle_frame`): the stretched
     /// frame's id and the step the frame after its pass returns to.
     pub frame_stretch: Option<(u64, u8)>,
+    /// Whether the clock's step is a cast arm's measured one
+    /// (`World::apply_cast_arm_frame_step`), to go back to the default when
+    /// the band ends.
+    pub cast_arm_step_on: bool,
     /// The battle frame the frame driver's discarded `rand()` draw last ran
     /// on (`World::tick_battle_pass_draw`) - one draw a
     /// battle frame, however many vsyncs it spans.
@@ -1094,6 +1107,11 @@ pub struct BattleState {
     /// a combatant standing on both sides takes the captured HP and MP back
     /// and every ailment the word does not carry is stripped. Never in play.
     pub capture_reseat_bars: Vec<CaptureReseatBars>,
+    /// The `rand()` word each coming melee hit's block roll draws from, as
+    /// retail's recording of the same strike held it
+    /// (`legaia_engine_capture::strike_deal`). Empty outside that oracle: the
+    /// hit then draws on the world stream as it stands.
+    pub capture_hit_rand: std::collections::VecDeque<u32>,
     /// Capture alignment for a driven monster-melee capture
     /// ([`CaptureApproach`]): the yaw counter `ctx[+0x6DA]` the capture's
     /// attacker reached its target on.
@@ -1242,6 +1260,7 @@ impl BattleState {
             monster_ai_state: legaia_engine_battle::monster_ai::MonsterAiState::new(),
             steal: legaia_engine_battle::battle_steal::StealBand::default(),
             steal_caption: None,
+            art_turn_spirit: 0,
             move_label_closed: false,
             player_driven: false,
             command: None,
@@ -1256,11 +1275,12 @@ impl BattleState {
             inflight_seed: None,
             forced_monster_cast: None,
             forced_monster_target: None,
+            cue_clut_seed: None,
+            element_roll_seed: None,
             forced_monster_cast_at_prompt: false,
             forced_monster_ground: [None; INFLIGHT_GROUND_SLOTS],
             forced_guard: [false; 3],
             combo_cluster_held: false,
-            combo_cluster_dropped: false,
             forced_steal: false,
             forced_melee_hits: Default::default(),
             forced_melee_total: None,
@@ -1299,6 +1319,7 @@ impl BattleState {
             cell_captures: Default::default(),
             frame_clock: Default::default(),
             frame_stretch: None,
+            cast_arm_step_on: false,
             pass_draw_frame: None,
             sm_pass_frame: None,
             anim_pass_frame: None,
@@ -1353,6 +1374,7 @@ impl BattleState {
             arrival_spawn_anchor: None,
             capture_reseat: None,
             capture_reseat_bars: Vec::new(),
+            capture_hit_rand: std::collections::VecDeque::new(),
             capture_approach_yaw: None,
             capture_approach_due: false,
         }

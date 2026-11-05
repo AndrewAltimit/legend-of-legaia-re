@@ -188,6 +188,49 @@ pub fn tile_center(b: u8) -> i16 {
     if b & 0x80 != 0 { base + 0x40 } else { base }
 }
 
+/// The staged mode switch behind `4C 53` / `4C 54`: `FUN_801D65D8(target)`,
+/// `_DAT_8007BA3C` the settled target and `_DAT_8007B9C0` the stage. Each call is
+/// one frame's step and reports whether the switch is still in flight. The step
+/// the stage `1` arm holds on `FUN_8003DE7C(1)` takes no extra frames here: that
+/// wait is the script-driven sound and CD queue, which the port does not stall on.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct FieldModeSwitch {
+    /// `_DAT_8007BA3C`.
+    pub target: u32,
+    /// `_DAT_8007B9C0`.
+    pub stage: u32,
+}
+
+impl FieldModeSwitch {
+    /// PORT: FUN_801D65D8
+    pub fn step(&mut self, target: u32) -> bool {
+        if self.target == target {
+            return false;
+        }
+        match self.stage {
+            0 | 1 => {
+                self.stage += 1;
+                true
+            }
+            2 if target != 0 => {
+                self.stage = 3;
+                true
+            }
+            2 => {
+                self.target = 0;
+                self.stage = 0;
+                false
+            }
+            3 => {
+                self.target = target;
+                self.stage = 0;
+                false
+            }
+            _ => true,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

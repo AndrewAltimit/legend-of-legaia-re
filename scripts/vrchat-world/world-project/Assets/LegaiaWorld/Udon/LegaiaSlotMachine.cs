@@ -183,7 +183,7 @@ namespace LegaiaWorld
         const int NET_TAKE_FEATURE = 1;
         const int ENTRY_BALANCE = 70;              // the retail dev-launch fallback
         const int BALANCE_CAP = 9999999;
-        const int SPIN_UP_FRAMES = 30;
+        const int SPIN_UP_FRAMES = 28;
         const int BONUS_SPIN_UP_FRAMES = 0x18;     // buys the strip-swap travel
         const int FEATURE_MODE_BONUS = 6;
         const int FEATURE_STOP_SYMBOL = 7; // modes 4 / 5 steer to it (li a2,0x7)
@@ -593,9 +593,9 @@ namespace LegaiaWorld
                 localStopRow[r] = -1;
                 claimed[r] = 0;
             }
-            reelVel[0] = 0x60;
-            reelVel[1] = 0x70;
-            reelVel[2] = 0x80;
+            reelVel[0] = 0;
+            reelVel[1] = 0;
+            reelVel[2] = 0;
             spinTimer = frames;
             // Reels start moving again - force the next visual pass.
             for (int r = 0; r < REEL_COUNT; r++)
@@ -621,16 +621,28 @@ namespace LegaiaWorld
             int depth;
             int target;
             int mode = syncFeatureMode;
-            if (mode == 1) { depth = (NextRng() & 3) + 6; target = punchSymbol; }
-            else if (mode == 2) { depth = (NextRng() & 3) + 6; target = kickSymbol; }
-            else if (mode == 3) { NextRngMod(7); depth = NextRngMod(7) + 10; target = syncNormalTarget % 3; }
+            int budget = 0x14;
+            if (mode == 1) { depth = (NextRng() & 3) + 6; target = punchSymbol; budget = 0x16; }
+            else if (mode == 2) { depth = (NextRng() & 3) + 6; target = kickSymbol; budget = 0x16; }
+            else if (mode == 3) { budget = NextRngMod(7) + 0x18; depth = NextRngMod(7) + 10; target = syncNormalTarget % 3; }
             else if (mode == 4) { NextRngMod(10); depth = NextRngMod(10) + 6; target = FEATURE_STOP_SYMBOL; }
             else if (mode == 5) { depth = NextRngMod(10) + 8; target = FEATURE_STOP_SYMBOL; }
             else if (mode == FEATURE_MODE_BONUS) { depth = 0; target = -1; } // the free stop
-            else { depth = NextRngMod(3) + 2; target = syncNormalTarget; }
+            else { depth = NextRngMod(3) + 2; target = syncNormalTarget; budget = 0x13; }
 
             int fromRow = (reelPos[reel] >> 8) % STRIP_LEN;
             int row = LandRow(reel, fromRow, depth, target, PAYLINE_OFFSETS[line * REEL_COUNT + reel]);
+            // The roll to the row (FUN_801d0554): 0x66 a frame, one budget
+            // frame each, locking wherever the budget runs out.
+            int rollPos = reelPos[reel];
+            while (true)
+            {
+                rollPos = (rollPos + 0x66) % REEL_WRAP;
+                budget--;
+                if ((rollPos >> 8) == row || budget < 0)
+                    break;
+            }
+            row = rollPos >> 8;
             SnapReel(reel, row);
 
             if (reel == 0) syncStopRow0 = row;
@@ -727,7 +739,8 @@ namespace LegaiaWorld
                     int value = a >= 0 && a < 10 && payoutTable != null && a < payoutTable.Length
                         ? payoutTable[a]
                         : 0;
-                    if (value > bestValue)
+                    // The evaluator keeps the highest symbol id, not the best-paying.
+                    if (a > bestSymbol)
                     {
                         bestLine = line;
                         bestSymbol = a;
@@ -745,11 +758,10 @@ namespace LegaiaWorld
                 syncFeatureMode = FEATURE_MODE_BONUS;
                 syncBonusSpins = bestSymbol == punchSymbol ? punchRounds : kickRounds;
             }
-            else if (bestLine >= 0 && syncFeatureMode != 0 && syncFeatureMode != 4)
-            {
-                // A resolved normal win clears a tease/hot feature.
+            // Reach modes stand until their jackpot lands. Hot mode has a
+            // one-in-150 chance to end on every spin, off the slot LCG.
+            if (syncFeatureMode == 3 && NextRngMod(0x96) == 0)
                 syncFeatureMode = 0;
-            }
         }
 
         int LineSymbol(int reel, int line)
@@ -900,6 +912,20 @@ namespace LegaiaWorld
 
         void Tick()
         {
+            // State 2 brings the reels up one at a time.
+            if (spinTimer > 0)
+            {
+                for (int r = 0; r < REEL_COUNT; r++)
+                {
+                    if (reelVel[r] < 0x66)
+                    {
+                        reelVel[r] = reelVel[r] + 0xC;
+                        if (reelVel[r] > 0x66)
+                            reelVel[r] = 0x66;
+                        break;
+                    }
+                }
+            }
             for (int r = 0; r < REEL_COUNT; r++)
                 if (localStopRow[r] == -1 && reelVel[r] != 0)
                     reelPos[r] = (reelPos[r] + reelVel[r]) % REEL_WRAP;
@@ -935,6 +961,10 @@ namespace LegaiaWorld
                 int i = r * STRIP_LEN + row;
                 displayStrip[i] = bonus ? bonusStrip[i] : symbolStrip[i];
             }
+
+            // The state machine's tail draws the LCG every frame.
+            if (isLocalOwner)
+                NextRng();
         }
 
         // --- reel drum (FUN_801d0fa8 at face granularity) --------------------

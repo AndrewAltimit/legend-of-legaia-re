@@ -79,11 +79,17 @@ fn world_with_somersault() -> World {
         list.count = 2;
         list.ids[..2].copy_from_slice(&[0x03, SOMERSAULT - 0x1B]);
         rec.set_displayed_skills(list);
+        // The gauge opens a fight from the record's AP cell.
+        let mut hms = rec.hp_mp_sp();
+        hms.sp_cur = 100;
+        rec.set_hp_mp_sp(hms);
     }
     for i in 0..3 {
         w.actors[i].active = true;
         w.actors[i].battle.hp = 100;
         w.actors[i].battle.max_hp = 100;
+        // An art is paid for: the builder's walk asks Spirit before it takes one.
+        w.actors[i].battle.spirit_gauge = 100;
         w.actors[i].battle.liveness = 1;
         w.battle.set_battle_attack(i as u8, 90);
     }

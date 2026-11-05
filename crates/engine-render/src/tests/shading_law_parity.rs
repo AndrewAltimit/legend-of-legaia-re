@@ -1417,3 +1417,39 @@ fn the_pcsx_redux_texel_row_stays_on_a_top_edge() {
         .expect("native sample");
     assert_eq!(n.floats(), &[10.0, 191.9995][..]);
 }
+
+/// PCSX-Redux's software GPU walks a flat-shaded textured quad along its
+/// outline (`SoftRenderer::setupSectionsFlatTextured4`) instead of splitting
+/// it: a fragment's UV is the row's lerp between the left and right chains.
+/// On corners that lie on no one UV plane, the two laws part: the centre of
+/// this square reads `(25, 25)` by the walk, `(50, 50)` on the split's diagonal.
+#[test]
+fn a_flat_quad_takes_the_pcsx_redux_outline_walk() {
+    let native = parse_wgsl(&compose_scene_lit_shader(VRAM_MESH_SHADER_SRC));
+    let no_fetch = || -> Box<shader_eval::ImageFetch> { Box::new(|_, _, _| [0, 0, 0, 1]) };
+    let mut m = Machine::new(&native, no_fetch());
+    let f = m.function("quad_walk_uv");
+    let mut at = |x: f32, y: f32| -> [f32; 2] {
+        let v = m
+            .call(
+                f,
+                vec![
+                    Val::f(&[x, y]),
+                    Val::f(&[0.0, 100.0, 0.0, 100.0]),
+                    Val::f(&[0.0, 0.0, 100.0, 100.0]),
+                    Val::f(&[0.0, 100.0, 0.0, 0.0]),
+                    Val::f(&[0.0, 0.0, 100.0, 0.0]),
+                ],
+            )
+            .ok()
+            .flatten()
+            .expect("walk");
+        let v = v.floats();
+        [v[0], v[1]]
+    };
+    let near = |a: [f32; 2], b: [f32; 2]| (a[0] - b[0]).abs() < 0.01 && (a[1] - b[1]).abs() < 0.01;
+    assert!(near(at(50.0, 50.0), [25.0, 25.0]), "{:?}", at(50.0, 50.0));
+    // The chains' own values at a row's two ends.
+    assert!(near(at(0.0, 50.0), [0.0, 50.0]), "{:?}", at(0.0, 50.0));
+    assert!(near(at(100.0, 50.0), [50.0, 0.0]), "{:?}", at(100.0, 50.0));
+}

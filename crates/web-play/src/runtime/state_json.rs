@@ -102,9 +102,9 @@ impl LegaiaRuntime {
     /// ```
     /// `null` before a disc scene is entered. Item labels come from the SCUS
     /// item-name table ([`Self::load_disc`]); a PROT.DAT-only load falls back to
-    /// the raw id. The retail pause menu is a native-only draw path (glyph atlas
-    /// + window-descriptor table); this feeds the browser's HTML overlay
-    /// equivalent so Start still surfaces the party / items on the play page.
+    /// the raw id. A plain read of the party and the bag for a tool that wants
+    /// them as data; the play page's pause menu is the retail one
+    /// (`crate::play_menu`).
     pub fn field_menu_model_json(&self) -> String {
         let Some(h) = self.scene_host.host() else {
             return "null".to_string();

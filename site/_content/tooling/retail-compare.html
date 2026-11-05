@@ -197,6 +197,8 @@
   </table>
   </div>
   <p>Fields a capture probe wrote into RAM after battle init, and fields on a patched-disc state, are listed in the detail but left unscored.</p>
+  <h3>The shot an earlier actor left</h3>
+  <p>A pre-cast capture parks in <code>0x0A</code> behind whoever acted before the caster, and the camera <a href="../subsystems/battle-stage-camera.html#between-actors">still frames that actor</a>, landed. The drive cannot always reproduce that last actor, so when the seat reads a spent key the steer token stands the camera on the framing law over the capture&rsquo;s inputs: category, target, style and depth, on the captured ground. The score still tests the engine&rsquo;s case 6 and case 8: no pose is read from retail but the orbit&rsquo;s yaw clock.</p>
 </section>
 
 <section class="doc-section" id="movie" data-doc="movie-states">
@@ -206,7 +208,15 @@
 
 <section class="doc-section" id="minigame" data-doc="minigame-states">
   <h2>Minigame states</h2>
-  <p>A minigame capture names its minigame by the door warp&rsquo;s sub-id; the seed lands the save in the departure scene and takes the same warp. Only a phase the warp itself reaches is seeded: today the slot machine at rest on a door entry, scored on mode, scene, the machine&rsquo;s state word, balance and coin bank, and the frame (box-filtered from the machine&rsquo;s 640-wide video mode). A decided spin, Baka Fighter, the dance, fishing and the Muscle Dome hub stay unseeded with their reason.</p>
+  <p>A minigame capture names its minigame by the door warp&rsquo;s sub-id; the seed lands the save in the departure scene and takes the same warp. Only a phase the warp itself reaches is seeded:</p>
+  <ul class="bullets">
+    <li><strong>The slot machine at rest</strong> on a door entry, scored on mode, scene, the machine&rsquo;s state word, balance and coin bank, and the frame (box-filtered from the machine&rsquo;s 640-wide video mode). The strips are not history: the machine&rsquo;s generator starts on a literal, so the frame needs no seat.</li>
+    <li><strong>The fishing venue&rsquo;s idle shore</strong>, seeded on the departure scene the mode-24 init backed up.</li>
+    <li><strong>The dance&rsquo;s count-in</strong>, sampled at the capture&rsquo;s own banner counter or <code>GO!</code> accumulator.</li>
+    <li><strong>The contest hub&rsquo;s first visit</strong>, sampled at the capture&rsquo;s level or hold.</li>
+    <li><strong>The Baka Fighter&rsquo;s title card.</strong></li>
+  </ul>
+  <p>What stays unseeded: a decided spin, whose reel stops are <code>rand()</code> history after entry, and a played phase (a Baka Fighter round, a cast&rsquo;s flight and bite rolls, the chart&rsquo;s presses, the hub&rsquo;s legs).</p>
 </section>
 
 <section class="doc-section" id="menu" data-doc="menu-states">
@@ -317,6 +327,7 @@ scripts/ci/cast-sequence-batch.py casts.txt --jobs 4</code></div>
     <a href="../subsystems/engine.html">Engine reimplementation</a>
     <a href="determinism-replay.html">Determinism + replay</a>
     <a href="recomp-differential.html">Recomp differential</a>
+    <a href="retail-kernel-differential.html">Retail kernel differential</a>
     <a href="mednafen-automation.html">Mednafen automation</a>
     <a href="pcsx-redux-automation.html">PCSX-Redux automation</a>
     <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/tooling/capture-coverage.md" target="_blank" rel="noopener">Capture coverage</a>

@@ -265,18 +265,40 @@ impl World {
         list.levels[i]
     }
 
+    /// The spell XP one summon hit banks, on the victim's HP before the hit:
+    /// nothing in a special battle (the tail's `_DAT_8007BAC0` test at
+    /// `0x801DE450`), and nothing from a Stoned victim, whose hit the finisher
+    /// has zeroed by then (`0x801DE2F0`).
+    ///
+    /// PORT: FUN_801DDB30 (`0x801DE450..0x801DE60C`, the accrual's gates)
+    pub fn summon_hit_xp(&self, target: u8, hit: u32, group: bool) -> u32 {
+        use legaia_engine_battle_vm::status_effects::display_flags;
+        let Some(t) = self.actors.get(usize::from(target)) else {
+            return 0;
+        };
+        if self.battle.special_word != 0 {
+            return 0;
+        }
+        let hit = if self.raw_status_word(target) & display_flags::STONE != 0 {
+            0
+        } else {
+            hit
+        };
+        legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(
+            hit,
+            t.battle.hp,
+            t.battle.max_hp,
+            group,
+        )
+    }
+
     /// One wrapper roll a player summon's module makes itself
     /// (`FUN_801DD0AC(_, 7, seat)`), with what the finisher does on every roll
     /// whoever applies the result: the spell XP tail (`0x801DE440`, on the
     /// victim's HP before the hit), the spirit gauge and the rumble. Banks with
     /// the cast's fold ([`Self::fold_cast`]'s waiver or the fold itself).
     /// `None` for a monster's cast, which rolls elsewhere.
-    pub(in crate::world) fn summon_module_roll(
-        &mut self,
-        caster: u8,
-        target: u8,
-        spell_id: u8,
-    ) -> Option<u32> {
+    pub fn summon_module_roll(&mut self, caster: u8, target: u8, spell_id: u8) -> Option<u32> {
         let mut roll = u32::from(self.player_summon_predamage(caster, target, spell_id)?);
         if !self.expansion_casting_pack(caster, spell_id)
             && self
@@ -288,23 +310,16 @@ impl World {
                 / 100)
                 .min(9999);
         }
-        if legaia_engine_effects::summon::module_trains_spell_xp(spell_id)
-            && let Some(t) = self.actors.get(usize::from(target))
-        {
+        if legaia_engine_effects::summon::module_trains_spell_xp(spell_id) {
             let group =
                 self.tables.spell_catalog.get(spell_id).is_some_and(|d| {
                     d.target == legaia_engine_battle::spells::SpellTarget::AllEnemies
                 });
-            let gain = legaia_engine_battle_vm::battle_formulas::summon_spell_xp_gain(
-                roll,
-                t.battle.hp,
-                t.battle.max_hp,
-                group,
-            );
+            let gain = self.summon_hit_xp(target, roll, group);
             self.casting.module_hit_xp = self.casting.module_hit_xp.saturating_add(gain);
         }
         self.accrue_spirit_gauge(target, roll.min(u32::from(u16::MAX)) as u16);
-        self.finisher_rumble(target);
+        self.finisher_struck(target);
         Some(roll)
     }
 

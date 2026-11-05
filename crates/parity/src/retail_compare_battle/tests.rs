@@ -301,6 +301,74 @@ fn a_monsters_pull_in_walks_back_no_further_than_the_landed_depth() {
     assert_eq!(p.tr[1], 1280.0);
 }
 
+/// `battle_map01_gomboo_strike`'s words: the RAM holds the arrival's idle stage
+/// one cursor past its commit, so the strike loop's first arm was one pass ago
+/// and the frame on screen stands on the walk's last pass, under case 6's aim,
+/// not `2 * 3` vsyncs back along case 7's table.
+#[test]
+fn a_frame_before_the_strike_loops_first_arm_stands_on_case_six() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D264u32, 0x800E_C9E8u32);
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0xD, 1);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x15, 1);
+    put16(&mut ram, ctx + 0x6DA, 578);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE, target);
+    put8(&mut ram, attacker + 0x1DE, 3);
+    for (k, (x, z)) in [
+        (116i32, 266i32),
+        (116, 266),
+        (92, 234),
+        (127, 324),
+        (163, 414),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    put16(&mut ram, attacker + 0x17A, 24);
+    put16(&mut ram, attacker + 0x17C, 0);
+    put32(&mut ram, attacker + 0x234, 0x800F_0000);
+    put32(&mut ram, attacker + 0x238, 0x800F_0000);
+    put32(&mut ram, attacker + 0x23C, 0x800F_0100);
+    // Frame step `3`.
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
+    assert_eq!(frame_step(&ram), 3);
+    // Yaw, then the focus trio (stored negated).
+    put16(&mut ram, 0x8007_B792, 3927);
+    put16(&mut ram, rec(1), 157);
+    put16(&mut ram, rec(1) + 2, 2523);
+    put32(&mut ram, 0x8008_9118, (-155i32) as u32);
+    put16(&mut ram, rec(6), 14);
+    put16(&mut ram, rec(6) + 2, (-30i16) as u16);
+    put32(&mut ram, 0x8008_9120, (-389i32) as u32);
+    put16(&mut ram, rec(8), 30);
+    put16(&mut ram, rec(8) + 2, (-128i16) as u16);
+
+    let prior = camera_align::walk_arm_prior_end(&ram, ctx).expect("the second pass");
+    assert_eq!(prior[6], Some(-92));
+    assert_eq!(prior[8], Some(-234));
+    let p = camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], true, prior, [0; 9], true);
+    assert_eq!((p.focus[0], p.focus[2]), (233.0, 563.0));
+    assert!((280.0..=300.0).contains(&p.yaw), "yaw {}", p.yaw);
+
+    // The commit a pass further on: the frame stands on case 7's own table.
+    put16(&mut ram, attacker + 0x17C, 24);
+    assert!(camera_align::walk_arm_prior_end(&ram, ctx).is_none());
+}
+
 /// `battle_korb2_warhalf_strike`'s words: the walk's last pass read the
 /// attacker off ring slot `3`, heading `1836` onto the target's live pair, and
 /// stood it on `(-96, 287)`, slot `2`. The loop's first arm read that heading,
@@ -347,8 +415,15 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     put16(&mut ram, rec(1) + 2, 3218);
     let mut end_shift = [0; 9];
     end_shift[1] = shift;
-    let walked =
-        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], end_shift);
+    let walked = camera_align::displayed_cam_live_steps(
+        &ram,
+        ctx,
+        &[3, 3],
+        false,
+        [None; 9],
+        end_shift,
+        false,
+    );
     assert_eq!(walked.yaw, 795.0);
 
     // A nearest slot `3` is the loop's third pass: the displayed frame's
@@ -356,6 +431,45 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     put32(&mut ram, attacker + POSITION_RING + 3 * 8 + 4, 200);
     put32(&mut ram, attacker + POSITION_RING + 4 * 8 + 4, 400);
     assert!(camera_align::walk_heading(&ram, ctx).is_none());
+}
+
+/// Case `0xA`'s yaw clock: the endpoint climbs twice the cursor's step a pass,
+/// so the walk back from Poisonous Breath's `3350` under `3368` lands on the
+/// `3320` its frame fits best, where the RAM's endpoint alone gives `3296`.
+#[test]
+fn a_clip_clock_endpoint_walks_back_against_the_cursor() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    let actor = 0x800F_0000;
+    put8(&mut ram, ctx + 7, 0x2B);
+    put8(&mut ram, ctx + 0x13, 4);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, actor);
+    put16(&mut ram, actor + 0x46, 2640);
+    for (k, cursor) in [72u16, 60, 48].into_iter().enumerate() {
+        put16(&mut ram, actor + 0x17A + k as u32 * 2, cursor);
+    }
+    put16(&mut ram, 0x8007_B792, 3350);
+    put16(&mut ram, rec(1), 6);
+    put16(&mut ram, rec(1) + 2, 3368);
+    let shift = camera_align::clip_clock_end_shift(&ram, ctx).expect("the case's law");
+    assert_eq!(shift, -24);
+    let mut end_shift = [0; 9];
+    end_shift[1] = shift;
+    let walked = camera_align::displayed_cam_live_steps(
+        &ram,
+        ctx,
+        &[3, 3],
+        false,
+        [None; 9],
+        end_shift,
+        false,
+    );
+    assert_eq!(walked.yaw, 3320.0);
+
+    // Another shot's table: the endpoint is off the law.
+    put16(&mut ram, rec(1) + 2, 3369);
+    assert!(camera_align::clip_clock_end_shift(&ram, ctx).is_none());
 }
 
 /// A `0x32` capture on the summon route's first pass: the eye depth walks
@@ -1952,6 +2066,12 @@ fn only_a_monsters_strike_stands_on_the_walked_back_pose() {
     b.active_actor = 4;
     b.action_state = 0x2B;
     assert!(!b.stand_on_displayed_pose(), "a cast");
+    b.action_state = 0x70;
+    b.queued_action = 0x5B;
+    b.module_phase = 3;
+    assert!(b.stand_on_displayed_pose(), "Scythe Wind's sweep");
+    b.module_phase = 2;
+    assert!(!b.stand_on_displayed_pose(), "the arm that arms once");
 }
 
 /// The recorded case-6 tail of Aluru Cannon: TR z `4772` walks `+36` on the
@@ -1996,4 +2116,52 @@ fn a_commit_capture_stands_two_steps_behind_the_tables_depth() {
     assert_eq!(b.displayed_commit_live().tr[2], 2151.0);
     b.cam_accum = 8;
     assert_eq!(b.displayed_commit_live().tr[2], 1945.0);
+}
+
+/// Case 7 re-arms `ceil(gap / 0xC)` from `0x700` under the approach's case 6,
+/// so the table's increment names the pass: the first at `150` on any step,
+/// and the ladder below it falls by the step.
+#[test]
+fn a_walk_clock_strike_counts_its_passes_off_the_table() {
+    // `battle_nilboa_warfish_strike`: step 2, gap 1490, increment 150, on
+    // accumulator 288 the walk's loop left.
+    assert_eq!(strike_passes_off_table(150, 2), 1);
+    // `battle_map02_poisonous_worm_strike`: step 3, gap 998, increment 111, on
+    // accumulator 384.
+    assert_eq!(strike_passes_off_table(111, 3), 2);
+    // `battle_rikuroa_worm_strike`: step 2, gap 879, increment 88.
+    assert_eq!(strike_passes_off_table(88, 2), 4);
+    // The ladder ends: a landed table does not count forever.
+    assert!(strike_passes_off_table(0, 2) < 64);
+}
+
+/// Two retail recordings of a monster's cast, pass by pass from the seed
+/// `0x0C` to the `0x2A` terminator: `retona_viguro_v2_pre_thunder_break` ran
+/// fourteen step-`2` passes and `noaru_slippery_v2_pre_poisonous_breath` ten
+/// step-`3` passes, and every component lands on the terminator row's value.
+#[test]
+fn a_case_6_walk_lands_on_the_recorded_terminator_pose() {
+    let retona = [2; 14];
+    assert_eq!(capture_drive::case6_walk(128, 0, &retona), 6);
+    assert_eq!(capture_drive::case6_walk(1024, 1280, &retona), 1264);
+    assert_eq!(capture_drive::case6_walk(3276, 5324, &retona), 5176);
+    assert_eq!(capture_drive::case6_walk(48, 943, &retona), 880);
+    assert_eq!(capture_drive::case6_walk(-296, 187, &retona), 158);
+    let slippery = [3; 10];
+    assert_eq!(capture_drive::case6_walk(3276, 4915, &slippery), 4839);
+    assert_eq!(capture_drive::case6_walk(821, 1024, &slippery), 1019);
+    assert_eq!(capture_drive::case6_walk(-525, 525, &slippery), 480);
+}
+
+/// `0x29` leaves on the pass its `0x14` timer reads negative, so a walk runs
+/// `0x14 / step + 1` wait passes behind the seed and `0x28`, then the
+/// terminator: fourteen passes at step `2`, ten at step `3`.
+#[test]
+fn a_case_6_walk_runs_the_cast_waits_passes() {
+    assert_eq!(capture_drive::case6_walk_passes(&[2; 16]).len(), 14);
+    assert_eq!(capture_drive::case6_walk_passes(&[3; 16]).len(), 10);
+    // The ring's slot `3` is the terminator, the last pass walked.
+    let mut ring = [3; 16];
+    ring[3] = 4;
+    assert_eq!(capture_drive::case6_walk_passes(&ring).last(), Some(&4));
 }

@@ -177,6 +177,21 @@ pub fn retail_page_mark(ram: &[u8]) -> Option<u8> {
 /// The actor tick that runs a move-VM part (`FUN_80021DF4`).
 pub(super) const PART_TICK: u32 = 0x8002_1DF4;
 
+/// Which of the parked palettes `(x, 476)` the effect row `(224, 476)` holds in
+/// a retail VRAM: the cue-group expansion `FUN_801E22C8` copies one there ahead
+/// of each effect (`MoveImage` at `0x801E244C`) and nothing restores it, so a
+/// state carries the swap of the last action that made one. `None` when the
+/// row matches none of them.
+pub fn retail_cue_clut_source(vram: &[u8]) -> Option<u8> {
+    if vram.len() != 1024 * 512 * 2 {
+        return None;
+    }
+    let row = |x: usize| &vram[(476 * 1024 + x) * 2..(476 * 1024 + x + 16) * 2];
+    [0xB0u8, 0xC0, 0xD0]
+        .into_iter()
+        .find(|&x| row(usize::from(x)) == row(224))
+}
+
 /// Every live mode-4 VRAM scroller on a retail state's actor lists - a
 /// `FUN_80021DF4` part with `+0x5A = 4`, rect `+0xD0..+0xD6`
 /// (`legaia_engine_field::vram_scroll`) - with the
@@ -753,26 +768,37 @@ pub(super) const FOG_POOL_PTR: u32 = 0x8007_B7E0;
 
 /// Every live record of a retail state's fog pool: 80 `0x18`-byte records
 /// from pool `+0xA4`, alive byte `+0x05`
-/// ([`legaia_engine_field::fog_particles`] has the layout).
+/// ([`legaia_engine_field::fog_particles`] has the layout), taken back to where
+/// the child's step over them draws the displayed table's sheets.
 pub fn retail_fog(ram: &[u8]) -> Vec<legaia_engine_field::fog_particles::FogParticle> {
     let pool = game_anchors::u32_at(ram, FOG_POOL_PTR);
     if (pool & 0xFFE0_0000) != 0x8000_0000 {
         return Vec::new();
     }
+    // Vsyncs of age and drift since the pass ahead of the one the displayed
+    // table was built on: the display lag's two passes, plus the one the child
+    // steps the records through to draw them.
+    let back = (i32::from(crate::retail_compare_battle::DISPLAY_LAG_PASSES) + 1)
+        * i32::from(crate::retail_compare_battle::frame_step(ram).max(1));
     (0..legaia_engine_field::fog_particles::FOG_POOL_SLOTS as u32)
         .map(|i| pool + 0xA4 + i * 0x18)
         .filter(|&r| game_anchors::u8_at(ram, r + 5) != 0)
-        .map(|r| legaia_engine_field::fog_particles::FogParticle {
-            age: game_anchors::u16_at(ram, r),
-            rate: game_anchors::u16_at(ram, r + 2),
-            slot: game_anchors::u8_at(ram, r + 4),
-            alive: true,
-            vx: game_anchors::u8_at(ram, r + 6) as i8,
-            vz: game_anchors::u8_at(ram, r + 7) as i8,
-            x: game_anchors::u32_at(ram, r + 8) as i32,
-            z: game_anchors::u32_at(ram, r + 0xC) as i32,
-            y: game_anchors::i16_at(ram, r + 0x10),
-            grey: game_anchors::u8_at(ram, r + 0x14),
+        .map(|r| {
+            let rate = game_anchors::u16_at(ram, r + 2);
+            let vx = game_anchors::u8_at(ram, r + 6) as i8;
+            let vz = game_anchors::u8_at(ram, r + 7) as i8;
+            legaia_engine_field::fog_particles::FogParticle {
+                age: game_anchors::u16_at(ram, r).wrapping_sub((i32::from(rate) * back) as u16),
+                rate,
+                slot: game_anchors::u8_at(ram, r + 4),
+                alive: true,
+                vx,
+                vz,
+                x: game_anchors::u32_at(ram, r + 8) as i32 - i32::from(vx) * back,
+                z: game_anchors::u32_at(ram, r + 0xC) as i32 - i32::from(vz) * back,
+                y: game_anchors::i16_at(ram, r + 0x10),
+                grey: game_anchors::u8_at(ram, r + 0x14),
+            }
         })
         .collect()
 }
@@ -1049,6 +1075,10 @@ pub(super) fn cell_fx_displayed_phase(
     if std::env::var("LEGAIA_RC_CELL_PHASE").is_ok_and(|v| v == "off") {
         return None;
     }
+    if let Some(follower) = dance_cell_displayed(ram, n, step, fx) {
+        return Some(follower);
+    }
+    let lag = DISPLAY_LAG_FRAMES;
     let k = cell_fx_idle_ticks(ram, n, step)?;
     let vel = [
         game_anchors::i16_at(ram, n + 0x96),
@@ -1056,7 +1086,7 @@ pub(super) fn cell_fx_displayed_phase(
         game_anchors::i16_at(ram, n + 0x9A),
     ];
     let white_rate = game_anchors::i16_at(ram, n + 0x6A);
-    let idle = cell_fx_displayed(fx, vel, white_rate, step, DISPLAY_LAG_FRAMES);
+    let idle = cell_fx_displayed(fx, vel, white_rate, step, lag);
     let buf = game_anchors::u32_at(ram, n + 0x48);
     let words: Vec<i16> = (0..CYCLER_PROGRAM_WORDS)
         .map(|i| game_anchors::i16_at(ram, buf + i * 2))
@@ -1069,7 +1099,7 @@ pub(super) fn cell_fx_displayed_phase(
         [fx.h_add, fx.s_add, fx.v_add],
         vel,
         step,
-        DISPLAY_LAG_FRAMES,
+        lag,
     );
     match walked {
         Some([h, s, v]) => Some(legaia_engine_field::clut_cell_fx::ClutCellFx {
@@ -1078,8 +1108,214 @@ pub(super) fn cell_fx_displayed_phase(
             v_add: v,
             ..idle
         }),
-        None => (k >= DISPLAY_LAG_FRAMES).then_some(idle),
+        None => (k >= lag).then_some(idle),
     }
+}
+
+/// The palettes the live mode-3 cyclers captured with op `0x2C`, by rect: the
+/// inline buffer `+0xAC` under `0x11` texels wide, else the heap buffer `+0xA8`
+/// (`FUN_8005842C`'s caller). The cyclers paint from these.
+pub fn retail_cell_sources(ram: &[u8]) -> Vec<SeededVramRect> {
+    let mut out: Vec<SeededVramRect> = Vec::new();
+    for n in crate::retail_compare_script::actor_nodes(ram) {
+        if game_anchors::u32_at(ram, n + 0x0C) != PART_TICK
+            || game_anchors::i16_at(ram, n + 0x5A) != 3
+            || game_anchors::i16_at(ram, n + 0x9C) < 1
+        {
+            continue;
+        }
+        let rect = (
+            game_anchors::u16_at(ram, n + 0xA0),
+            game_anchors::u16_at(ram, n + 0xA2),
+            game_anchors::u16_at(ram, n + 0xA4),
+            game_anchors::u16_at(ram, n + 0xA6),
+        );
+        let (_, _, w, h) = rect;
+        if w == 0 || h == 0 || w > 256 || h > 64 || out.iter().any(|(r, _)| *r == rect) {
+            continue;
+        }
+        let at = if w < 0x11 {
+            n + 0xAC
+        } else {
+            game_anchors::u32_at(ram, n + 0xA8)
+        };
+        let texels = (0..u32::from(w) * u32::from(h))
+            .map(|i| game_anchors::u16_at(ram, at + i * 2))
+            .collect();
+        out.push((rect, texels));
+    }
+    out
+}
+
+/// The dance's sub-id in `_DAT_8007BA34`.
+const DANCE_SUB_ID: i16 = 6;
+/// Whether the overlay resident is the dance's.
+fn in_dance_hall(ram: &[u8]) -> bool {
+    game_anchors::i16_at(ram, super::minigame_run::MINIGAME_SUB_ID) == DANCE_SUB_ID
+}
+/// The dance hall's ambient leader (`DAT_801D51A0`, PROT 0980): the part record
+/// `2` of the hall's stager bundle spawns, whose adds its followers copy through
+/// op `0x20 0` (`FUN_801D387C`'s arm `0`).
+const DANCE_AMBIENT_LEADER: u32 = 0x801D_51A0;
+
+/// A dance cycler's adds as the displayed frame uploaded them, when `n` is the
+/// hall's leader or one of its followers.
+///
+/// The leader re-keys its V every pass (`18 3`, then `2D` adds on `09 1` rows),
+/// so the RAM's adds are several runs from the frame on screen. A follower's whole
+/// loop is `20 0 _`, an optional `2D` offset and its `09 0` waits: it paints the
+/// adds of the leader's pass on which it last copied, no later than the pass
+/// the displayed frame painted from. The floor's rows wait twice and so copy
+/// every other pass: they stand a run behind the walls' on half the frames.
+/// Only the leader's strobe loop is walked; its rows sum to zero, so a walk past
+/// the loop's first row lands on the V the outer loop opens with.
+fn dance_cell_displayed(
+    ram: &[u8],
+    n: u32,
+    step: u8,
+    fx: legaia_engine_field::clut_cell_fx::ClutCellFx,
+) -> Option<legaia_engine_field::clut_cell_fx::ClutCellFx> {
+    if !in_dance_hall(ram) {
+        return None;
+    }
+    let leader = game_anchors::u32_at(ram, DANCE_AMBIENT_LEADER);
+    if !crate::retail_compare_script::actor_nodes(ram).contains(&leader)
+        || game_anchors::u32_at(ram, leader + 0x0C) != PART_TICK
+    {
+        return None;
+    }
+    let program = |node: u32| -> Vec<i16> {
+        let buf = game_anchors::u32_at(ram, node + 0x48);
+        (0..CYCLER_PROGRAM_WORDS)
+            .map(|i| game_anchors::i16_at(ram, buf + i * 2))
+            .collect()
+    };
+    // Passes behind the RAM's: a leader run the displayed frame's paint saw.
+    let painted = DISPLAY_LAG_FRAMES + 1;
+    let (offset, passes_back) = if n == leader {
+        ([0; 3], painted)
+    } else {
+        let f = dance_follower(
+            &program(n),
+            usize::try_from(game_anchors::i16_at(ram, n + 0x70)).ok()?,
+        )?;
+        (f.offset, f.copy_at_or_before(painted))
+    };
+    let words = program(leader);
+    let (syn, pc) = dance_leader_strobe(
+        &words,
+        usize::try_from(game_anchors::i16_at(ram, leader + 0x70)).ok()?,
+    )?;
+    let k = cell_fx_idle_ticks(ram, leader, step)?;
+    let adds = [
+        game_anchors::i16_at(ram, leader + 0x90),
+        game_anchors::i16_at(ram, leader + 0x92),
+        game_anchors::i16_at(ram, leader + 0x94),
+    ];
+    // The walk's lag `l` lands on the adds after the run `l + 1` passes back.
+    let [h, s, v] = cycler_displayed_adds(&syn, pc, k, adds, [0; 3], step, passes_back - 1)?;
+    Some(legaia_engine_field::clut_cell_fx::ClutCellFx {
+        h_add: h + offset[0],
+        s_add: s + offset[1],
+        v_add: v + offset[2],
+        ..fx
+    })
+}
+
+/// The word past the setup ops of a cycler's program: the head of its body.
+fn cycler_after_setup(words: &[i16]) -> Option<usize> {
+    let mut i = 2;
+    loop {
+        match *words.get(i)? {
+            0x2B | 0x2D | 0x2E => i += 4,
+            0x2C => i += 5,
+            0x1A => return Some(i + 2),
+            _ => return None,
+        }
+    }
+}
+
+/// A follower of the hall's leader, read off its program.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct DanceFollower {
+    /// The `2D` it adds after its copy.
+    pub offset: [i16; 3],
+    /// Passes one round of its loop takes: its `09 0` waits.
+    pub period: i32,
+    /// Passes since its last copy, by which wait its PC stands past.
+    pub since_copy: i32,
+}
+
+impl DanceFollower {
+    /// The pass of its last copy at least `passes_back` behind the RAM's.
+    pub(super) fn copy_at_or_before(&self, passes_back: i32) -> i32 {
+        let mut at = self.since_copy;
+        while at < passes_back {
+            at += self.period;
+        }
+        at
+    }
+}
+
+/// Read a follower: its body is `20 0 _`, an optional `2D h s v`, then `09 0`
+/// waits up to the loop-back. `None` for any other program, or a PC past none of
+/// its waits.
+pub(super) fn dance_follower(words: &[i16], pc: usize) -> Option<DanceFollower> {
+    let at = cycler_after_setup(words)?;
+    if words.get(at..at + 2)? != [0x20, 0] {
+        return None;
+    }
+    let at = at + 3;
+    let (mut i, offset) = if *words.get(at)? == 0x2D {
+        (at + 4, [words[at + 1], words[at + 2], words[at + 3]])
+    } else {
+        (at, [0; 3])
+    };
+    let mut period = 0;
+    let mut since_copy = None;
+    while words.get(i..i + 2)? == [0x09, 0] {
+        i += 2;
+        if i == pc {
+            since_copy = Some(period);
+        }
+        period += 1;
+    }
+    (period > 0).then_some(())?;
+    Some(DanceFollower {
+        offset,
+        period,
+        since_copy: since_copy?,
+    })
+}
+
+/// The leader's strobe loop (the finite `18 n .. 19` inside its body) as an
+/// infinite loop [`cycler_displayed_adds`] reads, and `pc` moved onto it. `None`
+/// when `pc` stands outside that loop.
+pub(super) fn dance_leader_strobe(words: &[i16], pc: usize) -> Option<(Vec<i16>, usize)> {
+    let mut i = cycler_after_setup(words)?;
+    let open = loop {
+        match *words.get(i)? {
+            0x2B | 0x2D | 0x2E => i += 4,
+            0x20 => i += 3,
+            0x18 => break i,
+            _ => return None,
+        }
+    };
+    let body = open + 2;
+    let mut close = body;
+    while *words.get(close)? != 0x19 {
+        close += match words[close] {
+            0x2D => 4,
+            0x09 => 2,
+            _ => return None,
+        };
+    }
+    if !(body..=close).contains(&pc) {
+        return None;
+    }
+    let mut syn = vec![0, 0, 0x18, 0x4000];
+    syn.extend_from_slice(&words[body..=close]);
+    Some((syn, pc - body + 4))
 }
 
 /// How many words of a cycler's record [`cycler_displayed_adds`] reads.
@@ -1438,7 +1674,7 @@ pub fn retail_older_buffer_cell_rects(ram: &[u8]) -> Vec<SeededVramRect> {
 
 /// A menu-class capture the seed can reproduce: a pause-menu screen, named
 /// by the root row whose confirm opens it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetailMenu {
     /// `DAT_801E46A4`.
     pub subscreen: u8,
@@ -1461,6 +1697,16 @@ pub struct RetailMenu {
     /// The casino prize counter: the op `49 07` operand's block, armed
     /// directly since no root row reaches it.
     pub prize_block: Option<u8>,
+    /// A gold shop's sub-screen: the op `49 00` instruction bytes off the
+    /// entry-context pointer `_DAT_8007B450`, armed directly since no root
+    /// row reaches it.
+    pub shop_instr: Option<Vec<u8>>,
+    /// The presses past the root row's confirm (or past the shop's arm) that
+    /// reach this screen: a list behind a command window, a Status page.
+    pub path: Vec<legaia_engine_system::input::PadButton>,
+    /// The world map's map display (game mode `0x0D`): `L1` over a world-map
+    /// field, not a menu-overlay screen at all.
+    pub map_display: bool,
 }
 
 /// A title front-end screen the seed drives the boot front end to, read off
@@ -1492,6 +1738,20 @@ impl RetailMenu {
     /// no root row's.
     pub(super) fn from_ram(ram: &[u8], scene: &str) -> std::result::Result<Self, String> {
         use legaia_engine_menus::field_menu::FieldMenuRow;
+        if game_anchors::u8_at(ram, GAME_MODE) == GAME_MODE_MAP_DISPLAY {
+            return Ok(Self {
+                subscreen: 0,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: true,
+            });
+        }
         let subscreen = game_anchors::u8_at(ram, MENU_SUBSCREEN);
         let card_grid = game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) == CARD_SUBMODE_GRID;
         if subscreen == 0 && card_grid {
@@ -1503,6 +1763,9 @@ impl RetailMenu {
                 title_continue: true,
                 title_screen: None,
                 prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
             });
         }
         let title_screen = match game_anchors::u32_at(ram, CARD_SCREEN_SUBMODE) {
@@ -1523,6 +1786,9 @@ impl RetailMenu {
                 title_continue: false,
                 title_screen: Some(screen),
                 prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
             });
         }
         if subscreen == 0 {
@@ -1541,6 +1807,9 @@ impl RetailMenu {
                 title_continue: false,
                 title_screen: None,
                 prize_block: None,
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
             });
         }
         if subscreen == MENU_PRIZE_EXCHANGE {
@@ -1553,9 +1822,32 @@ impl RetailMenu {
                 title_screen: None,
                 // The disc's one counter, `koin1`'s, is `49 07 00`.
                 prize_block: Some(0),
+                shop_instr: None,
+                path: Vec::new(),
+                map_display: false,
+            });
+        }
+        if let Some(path) = shop_path(subscreen) {
+            return Ok(Self {
+                subscreen,
+                row: FieldMenuRow::Items,
+                equip_depth: 0,
+                card_grid: false,
+                title_continue: false,
+                title_screen: None,
+                prize_block: None,
+                shop_instr: Some(shop_instruction(ram).ok_or_else(|| {
+                    format!(
+                        "shop sub-screen 0x{subscreen:02X} with no op 0x49 at the entry context"
+                    )
+                })?),
+                path,
+                map_display: false,
             });
         }
         let (row, equip_depth) = match subscreen {
+            MENU_ITEMS_USE | MENU_ITEMS_THROW => (FieldMenuRow::Items, 0),
+            MENU_SPELL_LIST => (FieldMenuRow::Magic, 0),
             MENU_EQUIP_PICK => (FieldMenuRow::Equip, 0),
             MENU_EQUIP_SLOTS => (FieldMenuRow::Equip, 1),
             MENU_EQUIP_CANDIDATES => (FieldMenuRow::Equip, 2),
@@ -1576,9 +1868,91 @@ impl RetailMenu {
             title_continue: false,
             title_screen: None,
             prize_block: None,
+            shop_instr: None,
+            path: pause_path(ram, subscreen),
+            map_display: false,
         })
     }
 }
+
+/// The presses past a pause-menu row's confirm that reach `subscreen`.
+fn pause_path(ram: &[u8], subscreen: u8) -> Vec<legaia_engine_system::input::PadButton> {
+    use legaia_engine_system::input::PadButton as P;
+    match subscreen {
+        MENU_ITEMS_USE => vec![P::Cross],
+        MENU_ITEMS_THROW => vec![P::Down, P::Cross],
+        MENU_SPELL_LIST => vec![P::Cross],
+        MENU_STATUS => {
+            // `FUN_801DA2A0`: the party cursor `DAT_801E46C4`, the page cursor
+            // `DAT_801E46C0` in its two columns of four (fold `5..=8` to
+            // `0..=3`), and steps `3..=7` with the page's list holding the pad.
+            let mut path = Vec::new();
+            let member = game_anchors::u32_at(ram, MENU_CURSOR_B) & 0xFFF;
+            path.extend(std::iter::repeat_n(P::Down, member as usize));
+            let page = match game_anchors::u32_at(ram, MENU_CURSOR_A) & 0xFFF {
+                c @ 5..=8 => c - 5,
+                c => c,
+            };
+            path.extend(std::iter::repeat_n(P::Right, page as usize));
+            if game_anchors::u32_at(ram, MENU_STEP) >= 3 {
+                path.push(P::Cross);
+            }
+            path
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The presses from a gold shop's root window to `subscreen`; `None` when it
+/// is no shop screen (`0x801E4F40` ids `0x1A..=0x1F`,
+/// [shop](../../../docs/subsystems/shop.md)). The buy lists' hand starts on
+/// the first row, which is the row the probe that made the state confirms.
+fn shop_path(subscreen: u8) -> Option<Vec<legaia_engine_system::input::PadButton>> {
+    use legaia_engine_system::input::PadButton as P;
+    Some(match subscreen {
+        0x1A => vec![],
+        0x1B => vec![P::Cross],
+        0x1C | 0x1D => vec![P::Cross, P::Cross],
+        0x1E => vec![P::Down, P::Cross],
+        0x1F => vec![P::Down, P::Cross, P::Cross],
+        _ => return None,
+    })
+}
+
+/// The op `0x49` sub-`0` instruction a shop session opened on, from the
+/// opcode byte: `_DAT_8007B450` points past the opcode at the record whose
+/// `+2` is the id count.
+fn shop_instruction(ram: &[u8]) -> Option<Vec<u8>> {
+    let record = game_anchors::u32_at(ram, SHOP_ENTRY_CONTEXT);
+    let opcode = (1..=2).map(|back| record.wrapping_sub(back)).find(|&va| {
+        (0x8000_0000..0x8020_0000).contains(&va) && game_anchors::u8_at(ram, va) == 0x49
+    })?;
+    let start = (opcode & 0x1F_FFFF) as usize;
+    ram.get(start..(start + 0x100).min(ram.len()))
+        .map(<[u8]>::to_vec)
+}
+
+/// The game-mode word `_DAT_8007B83C`.
+const GAME_MODE: u32 = 0x8007_B83C;
+/// The map display's game mode ([world-map](../../../docs/subsystems/world-map.md)).
+pub const GAME_MODE_MAP_DISPLAY: u8 = 0x0D;
+
+/// Items screen's Use list (`FUN_801D7E50`).
+pub const MENU_ITEMS_USE: u8 = 0x06;
+/// Items screen's Throw Out list (`FUN_801D8734`).
+pub const MENU_ITEMS_THROW: u8 = 0x07;
+/// Magic screen's spell list (`FUN_801D9110`).
+pub const MENU_SPELL_LIST: u8 = 0x0F;
+/// The Status row's screen (`FUN_801DA2A0`).
+pub const MENU_STATUS: u8 = 0x15;
+/// The sub-screen's step counter `DAT_801E46AC`.
+const MENU_STEP: u32 = 0x801E_46AC;
+/// `DAT_801E46C0`, the menu's second cursor word.
+const MENU_CURSOR_A: u32 = 0x801E_46C0;
+/// `DAT_801E46C4`, the menu's party cursor word.
+const MENU_CURSOR_B: u32 = 0x801E_46C4;
+/// `_DAT_8007B450`, the entry context a script-opened menu screen reads.
+const SHOP_ENTRY_CONTEXT: u32 = 0x8007_B450;
 
 /// The root list's own sub-screen id: the pause menu with no row open.
 pub const MENU_ROOT: u8 = 0x01;
@@ -1621,4 +1995,32 @@ pub(super) fn rd16(ram: &[u8], va: u32) -> i16 {
 
 pub(super) fn rd32(ram: &[u8], va: u32) -> i32 {
     game_anchors::u32_at(ram, va) as i32
+}
+
+#[cfg(test)]
+mod cue_clut_source_tests {
+    use super::retail_cue_clut_source;
+
+    fn vram_with_row(src_x: usize, word: u16) -> Vec<u8> {
+        let mut v = vec![0u8; 1024 * 512 * 2];
+        for x in [src_x, 224] {
+            let o = (476 * 1024 + x) * 2;
+            v[o..o + 2].copy_from_slice(&word.to_le_bytes());
+        }
+        v
+    }
+
+    /// The effect row names the parked palette it was copied from, and a row
+    /// matching none of them names nothing.
+    #[test]
+    fn the_effect_row_names_its_parked_source() {
+        assert_eq!(
+            retail_cue_clut_source(&vram_with_row(0xD0, 0xA33F)),
+            Some(0xD0)
+        );
+        let mut none = vram_with_row(0xD0, 0xA33F);
+        none[(476 * 1024 + 0xD0) * 2] = 1;
+        assert_eq!(retail_cue_clut_source(&none), None);
+        assert_eq!(retail_cue_clut_source(&[]), None);
+    }
 }

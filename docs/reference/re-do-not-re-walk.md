@@ -68,7 +68,10 @@ raw table does not have. Both have produced multiple entries below.
   - [The slot-B band: four readings the whole-band dump overturned](#the-slot-b-band-four-readings-the-whole-band-dump-overturned)
   - [The summon draw runs 35-64 times a frame](#the-summon-draw-runs-35-64-times-a-frame)
 - [Audio / sound driver](#audio--sound-driver)
+  - [The cue funnels' de-dup word is not dead](#the-cue-funnels-de-dup-word-is-not-dead)
+  - [A flee's silent steps are not the `0x800478C0` gate](#a-flees-silent-steps-are-not-the-0x800478c0-gate)
   - [Op-`0x35` sub-op 9 was never a queue](#op-0x35-sub-op-9-was-never-a-queue)
+  - [The battle track does not start during the spin](#the-battle-track-does-not-start-during-the-spin)
   - [The 256-slot SPU-address run that was really a CLUT](#the-256-slot-spu-address-run-that-was-really-a-clut)
   - [bse.dat: three readings the gp+0x678 trace overturned](#bsedat-three-readings-the-gp0x678-trace-overturned)
   - [`bse.dat` carries a second record family with a resident consumer](#bsedat-carries-a-second-record-family-with-a-resident-consumer)
@@ -254,6 +257,8 @@ op `4C 8A`) is what made the town's lit rows look baked. See
 | The battle exit (the `0x66` escape teardown / the results sequencer's `+336` frame) is a **white-out** | falsified (a fade to black) | Plausible: the fade template ramps black -> white, and the ramp's end colour reads as the screen's. The template is kind `2`, and the fade actor's tick passes the kind as `FUN_80024EE4`'s second argument, which the emitter folds into the draw-mode packet's ABR bits (`sll a3,a1,0x5; ori a3,a3,0xe` at `0x80024FB0`) - the law the intro styles obey (`abr == 1` white-out, `abr == 2` to black). Kind 2 is `B - F`, so a rising ramp subtracts more each frame and the scene, result windows included, darkens to black. |
 | Retail plays a victory **fanfare BGM** when a battle is won | falsified (the battle theme runs through the results; the only jingle is cue `0x50` on a level-up) | Plausible: `FUN_8003CE08(0x35)` at `0x8004EECC` in `FUN_8004E568`'s results frame looks like a music start. It is the story-flag setter (`DAT_80085758[idx >> 3] \|= 0x80 >> (idx & 7)`). The frame's only cue is `FUN_8004FCC8(0x50)` behind the level-up test; the hero's "fanfare" is a `monster.snd` voice clip streamed into slot 7. |
 | The member who landed the killing blow strikes the victory pose | falsified (the leader poses) | The pose actor is `ctx[+0x13]`; every store to it in the battle overlay is a round-boundary zero or the magic menu's MP-cost scratch, and the three-member `noa_levelup_banner` capture reads `0` with seat 0 posing while Noa levelled. |
+| A strike recording's low cue score is wrong cues | falsified (it is the deal) | Plausible: plain strikes read about `.6` where casts read about `.97`, with ids missing on both sides. Dealt retail's queue, approach terms, ATK and hit words, most of the same recordings match cue for cue: [the oracle](../tooling/cast-sequence-oracle.md#a-monsters-physical-attack). |
+| A heal's voice `0x20C` is late | falsified (the seat's idle phase) | Plausible: it reads `+6..+49` while other lines read `+1`. It fires on the commit state `0x3D` waits for, and that waits out the idle clip; the recording's cursor and the child's start apart (`256` and `16`), and the clip is the same: [the oracle](../tooling/cast-sequence-oracle.md#the-sound-channel). |
 | A party melee's whole sound is the `XA27` channel-4 sting (`0x10C`) | falsified (an ordinary swing is the `XA30` grunt; the sting needs `_DAT_8007BD84 != 0`) | Plausible: the sting is the loudest cue on a strike, and the decompiled C flattens the fork into "grunt first, sting dropped behind its CD read". `FUN_801EC3E4` selects **one** of the two on `_DAT_8007BD84`: zero takes the grunt at `0x801EEB44` and the re-read at `0x801EEB60` then skips the cue; non-zero branches over the grunt into the `0x10C` path (`bne v0,zero,0x801EEB70` at `0x801EEAC8`). The word is an effect handle, zeroed by the battle-start sweep and the round reset and set only by PROT 0940's stager ([details ↓](#_dat_8007bd84-is-a-mode-word-the-melee-kernel-branches-on)). |
 | Move-VM op `0x2F` extension dispatcher - per-overlay copies? | falsified (one copy, field overlay 0897 only) | Plausible: the call VA is fixed, and every slot-A overlay loads there. Every other mapped slot-A overlay and the title overlay carry unrelated bytes at the call VA and no JT at `0x801CE868`, so op `0x2F` runs only while 0897 is resident and battle-side move records cannot use it. The capture-derived `_801d362c` dumps (world-map / dialog / cutscene labels) are identical to each other; the `0897` static dump is a strict subset of them (Ghidra does not follow the JT flow). See [move-vm-overlay-ext.md](../subsystems/move-vm-overlay-ext.md#overlay-residency---one-copy-in-the-field-overlay-only). |
 | "`FUN_801F3894` spirit/magic damage roll" (state-`0x3D` chain caller) | falsified (VA-aliased dump) | Plausible: a dump exists at that entry and its body is a damage roll. The `overlay_0897_801f3894` dump is `FUN_801DD0AC` byte-for-byte under a double VA shift. The real state-`0x3D` callee `FUN_801F3990` is a cast **audio-cue dispatcher**; spirit damage is state `0x3E`'s inline formula. `801Exxxx` dumps are suspect too, not just the `0x801F` band: `801f0348` and `801e23ec` are aliased (the latter's reading drops all three initiative modifier terms); `0x801F1ED4` holds (verified from the 0898 image); `0x801F45A4` is unverified. See [battle-formulas.md](../subsystems/battle-formulas.md#initiative-key-seeding-fun_801da780). |
@@ -752,7 +757,7 @@ arm it stands in for.
 (`0x801E5E90..0x801E5EF4`, `0x801E5FC0..0x801E6018`): Run -> orbit, Attack -> case 8, party slot
 over a dead target -> case 8, else case 6, re-armed every pass. `zora_glare_petrify_post`
 (`ctx[7] == 0x51`) reads case 6's pose on the caster and `evil_medallion_rage_battle`
-(`ctx[7] == 0x0A`, between actions) reads the far framing. See
+(`ctx[7] == 0x0A`, a round's first actor) reads the prompt's far framing. See
 [battle.md](../subsystems/battle.md#battle-camera-exact) and
 [re-settled-threads.md](re-settled-threads/battle.md#the-done-band-framing-and-the-two-orbit-writers).
 
@@ -973,6 +978,39 @@ larger figure is off by more than an order of magnitude; see
 [`effect-vm.md`](../subsystems/effect-vm.md).
 
 ## Audio / sound driver
+
+### The cue funnels' de-dup word is not dead
+
+`0x8007B724` read as `-1` for the whole of a mode, because the search for its writers
+looked for the absolute address: the mode init's `sw v0,-0x48dc(at)` turned up and the
+drainer's `sw s0,0x40c(gp)` did not. The same search read that `s0` as a mixer record
+pointer, which is the one-shot arm's `move s0,v1`; the sustained arm branches past it
+with the ring id still in `s0`. So the word holds the sustained cue the drainer keyed
+([the repeat rule](../formats/sfx-table.md#a-held-sustained-cue-drops-its-repeat)). A
+global a gp-relative store can reach needs both forms searched.
+
+### A flee's silent steps are not the `0x800478C0` gate
+
+The cue walk's gate in `FUN_80047430` reads `0x8007BD71`, and a flee is close to the
+battle's end, so the silence read as that byte falling below `0x11`. A breakpoint on
+`FUN_800508DC` through state `0x65` reads the byte at `0xFF` and the walker running on
+clip `1`, against a track of zeros: the flee staging cleared the record
+([settled](re-settled-threads/audio.md)).
+
+### The battle track does not start during the spin
+
+**Reading.** The intro tick's phase 2 is "load and start battle BGM": its
+`FUN_800567A8` call and `battle bgm %d` string name the track, so the port started
+the theme there, two frames into the transition, under a test that said so.
+
+**Why it is wrong.** `FUN_800567A8` is a debug print. Phase 2's real call is
+`FUN_8001FC00(0x36F + set, 5, ..)`, a bundle read. The install and attach
+are the completion arm's (`0x801CF91C..0x801CF930`), beside its mode-`0x14` store, and
+the init keys the field track off (`0x801CEB58..0x801CEB70`). A capture of a walked
+fight reads the battle sequence open and playing on the mode-`0x14` vsync, `139` after
+the mode-`8` store, with only cue voices between
+([timeline](../subsystems/audio.md#the-battle-music-timeline)).
+
 
 | Thread | Verdict | Why |
 |---|---|---|
@@ -2052,6 +2090,12 @@ answered from the extracted image at its mapped base.
 
 | Thread | Verdict | Why |
 |---|---|---|
+| The far framing takes over at the end-of-action gate `0x5A`, between two actors of a round | falsified (`0x5A` re-arms the last actor's case 6 / 8, `0x801E6428`) | Plausible: `evil_medallion_rage_battle` reads case 9 in `0x0A`, and the C's `0x5A` arm starts a long way above the wipe scans. That capture is its round's first actor. Every later actor's `0x0A` holds the last shot landed: `kor_ghost_knight_pre_v_windhash`'s Spirit member, `chitei2_kemaro_v2_pre_lava_breath`'s struck Noa. |
+| Per-primitive painter order cannot be the field's rule, since mean depth hides `casino_ticket_counter`'s cabinet and `doman`'s floor | falsified (the trial left out two rules and overrode the ground) | Plausible: a pass that keyed every primitive on its mean broke those frames while `AVSZ4` reads plain. It also overwrote the ground cells' own buckets, ignored a record's flag `0x800` (farthest corner) and the actors' ten-bucket bias. With all three the same pass lifts `concend_field_door_hop` to `1.000` and hides nothing ([renderer-port](../subsystems/renderer-port.md#the-field-sorts-by-each-primitives-link)). |
+| `noaru_field_card_walk`'s bowl turns on the wrong yaw, since fitting the part's angle lowers the frame's error | falsified (the capture's quad walk) | Plausible: the texture sits up to `14` px off and moving the seated yaw from `-237` to `-243` helps. The bowl's corners match the table at `-241` within truncation, and a raster of those packets by two triangles matches the engine frame and misses retail's. PCSX-Redux walks a `POLY_FT4`'s outline ([renderer-port](../subsystems/renderer-port.md#the-native-target)). |
+| The wall panels' moving art in the dance hall is a VRAM scroller or a `MoveImage` strip | falsified (a mesh flipbook) | Plausible: the ambient tree carries both, and retail's VRAM holds extra art. The page under the panels is the same in the engine's VRAM; the actors at those cells carry tick `FUN_801D0640`, the marker tiles, whose `+0x64` names another mesh ([minigame-dance](../subsystems/minigame-dance.md#step-marker-tiles)). |
+| The field near cut runs in `w` units, not `SZ = 6 * w` | falsified (a capturing emulator's polygon limit) | Plausible: a `w` cut dropped `rikuroa_field_card_walk`'s near wall quad as the frame does, where a `6 * w` cut kept it. PCSX-Redux's `checkCoord4` rejects that whole quad on one corner pair. With the rule on the capture child, the true cut holds the score. |
+| Ground record `+0x1C` / `+0x1D` hold the tile's page and CLUT | falsified (the signed `V` / `U` span) | Plausible: a doc line named them so, and the emitter reads them beside the tile. `FUN_801F6D48` adds them to the high edge (`0x801F6EE4..0x801F6F0C`); page and CLUT are `+0x15` and `+0x16`. |
 | `FUN_8001CF50` builds the field / cutscene camera rotation | falsified (a per-node camera-relative rotation) | Plausible: it rebuilds a rotation from the camera globals `0x8007B790/92/94`. Its SCUS callers `FUN_8001ADA4` and `FUN_8001B964` enter it only when `node+0x52 & 0x780` (`0x8001B374`, `0x8001BA0C`); bits `0x80` / `0x100` / `0x200` drop an axis and `0x400` locks the node to the camera. Every other node uses the camera matrix `FUN_800172C0` builds through `FUN_80026988`. The roll-factor finding stands; only its routine changes. |
 | `FUN_8001D088`'s counter `_DAT_8007BD28` and journal `0x800891A8` are bookkeeping that does not affect the pose | falsified (they drive a re-blend) | `FUN_8001BE80` zeroes the counter, tests it against `0xC00` at `0x8001C164` and re-blends from the journal (`0x8001C170..0x8001C1CC`); 5098 of 337597 gated half-frame samples on the disc take the retry. |
 | Every field prop clip takes the plain, unscaled step | falsified (119 of 549 posed props carry the gate) | Clip byte `+1` bit 0 is set per clip: 2243 of 3634 records across 78 PROT entries, and not by record index. |
@@ -2226,3 +2270,8 @@ is a gapless partition - is on
 - [`re-settled-threads.md`](re-settled-threads.md) - the answered questions, each with an evidence grade.
 - [`docs/tooling/ghidra.md` § decompiler artifacts](../tooling/ghidra.md#decompiler-artifacts-that-have-produced-false-claims) - the seven C-rendering artifacts that produced several of the readings above.
 - [`docs/tooling/call-target-integrity.md`](../tooling/call-target-integrity.md) - why a decoded `jal` target is a property of the bytes, not the load base.
+
+### Iota's dark frame as a plane fight
+
+Reading: two records on one camera-relative plane fight in the depth buffer and darken the frame. `ot-raster.py` on a retail table reproduces the screen with both layers drawn in chain order, and retail's two layers sit two buckets apart, but pushing one of them back moved the score by little because the cause was elsewhere: the textures those layers sample scrolled at three times retail's speed, and a part the arm kills stood on the screen. Measure the pages' shift against a retail VRAM before reading a depth order into a frame's colour.
+

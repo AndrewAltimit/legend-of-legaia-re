@@ -31,6 +31,7 @@ TABLE = Path(__file__).resolve().parent / "crate-layering.toml"
 ENGINE_LAYER_EXTRA = {
     "render-kernels",
     "parity",
+    "retail-exec",
     "asset-viewer",
     "explorer",
     "web-expansion",

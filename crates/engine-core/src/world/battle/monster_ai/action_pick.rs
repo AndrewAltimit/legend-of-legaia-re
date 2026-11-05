@@ -56,7 +56,7 @@ impl World {
     ///
     /// PORT: FUN_801E9FD4
     /// REF: FUN_801DABA4, FUN_801DA51C
-    pub(in crate::world) fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
+    pub fn pick_monster_action(&mut self, slot: u8) -> MonsterAction {
         let pc = self.party.party_count.max(1);
         self.battle.monster_core_clip = None;
 
@@ -68,9 +68,11 @@ impl World {
         {
             let class = self.monster_cast_target_class(slot, &def);
             let mut targets = self.resolve_class_to_slots(slot, class);
-            if targets.len() == 1
-                && let Some(t) = self.battle.forced_monster_target.take()
-                && (t < pc || t == slot)
+            // The capture's `+0x1DD` names one seat whatever the record's shape
+            // says: the scripted arms store the caster's own seat under an
+            // all-allies shape (Slime Divide `0x50`, shape `0x24`,
+            // `addiu v0,s7,0x3; sb v0,0x1dd(s4)` at `0x801EB9AC`).
+            if let Some(t) = self.battle.forced_monster_target.take()
                 && self.actors.get(t as usize).is_some_and(|a| a.battle.hp > 0)
             {
                 targets = vec![t];
@@ -108,9 +110,12 @@ impl World {
             .unwrap_or(0);
 
         let core = self.generic_core_pick(slot);
-        let core_ran = core.is_some();
+        // The physical arm is the one that ran the swing loop. A walk that matched
+        // nothing ran no loop and draws nothing here.
+        let swing_loop = matches!(core, Some((3, 0, _, true)));
+        let unmatched = matches!(core, Some((_, _, _, false)));
         let (mut category, mut spell_id, mut target_class) = match core {
-            Some(picked) => picked,
+            Some((c, s, t, _)) => (c, s, t),
             None => {
                 // No record or spell table behind the monster (the disc-free
                 // synthetic catalog): one roll over `1 + live_magic_count`,
@@ -134,8 +139,12 @@ impl World {
         // the strike arm takes the picks it left
         // (`BattleState::monster_budget_armed`).
         self.battle.monster_budget_armed = None;
-        if core_ran && category == 3 {
+        if swing_loop {
             self.arm_monster_strike_budget(slot);
+            self.battle.monster_budget_armed = Some(slot);
+        } else if unmatched && category == 3 {
+            self.battle.monster_strike_entries.clear();
+            self.battle.monster_strike_budget = 1;
             self.battle.monster_budget_armed = Some(slot);
         }
 
@@ -179,7 +188,16 @@ impl World {
             // length, which would read every `monster_count != 4` / `!= 3`
             // scripted-cast gate as open.
             let seated = self.seated_monster_slots().count() as u8;
+            let seat_read = |i: usize| self.actors.get(i).map_or(0, |a| a.battle.init_key);
+            let party_keys = [seat_read(0), seat_read(1), seat_read(2)];
+            let party_status = [
+                self.raw_status_word(0),
+                self.raw_status_word(1),
+                self.raw_status_word(2),
+            ];
             let ctx = legaia_engine_battle::monster_ai::MonsterAiCtx {
+                party_keys,
+                party_status,
                 monster_id: (monster_id & 0xFF) as u8,
                 monster_index: slot.saturating_sub(pc),
                 caster_slot: slot,
@@ -199,7 +217,13 @@ impl World {
                     .get(slot as usize)
                     .map(|a| a.battle.spirit_gauge)
                     .unwrap_or(0),
-                core_category: category,
+                core_category: if unmatched {
+                    self.actors
+                        .get(slot as usize)
+                        .map_or(0, |a| a.battle.action_category)
+                } else {
+                    category
+                },
             };
             let mut ai = std::mem::take(&mut self.battle.monster_ai_state);
             let mut spirit_writeback = None;
@@ -239,6 +263,30 @@ impl World {
             }
             self.battle.monster_budget_armed = None;
             return MonsterAction::Flee;
+        }
+        // Tetsu's spar rewrites his own turn, whoever is picking
+        // (`LAB_801EBDF0`): in round one he stands with his gauge restored, and in
+        // round three his stream is the written swings `8`, `9`, `0x0B`.
+        // PORT: FUN_801E9FD4 (`0x801EBDF0..0x801EBE80`, the `0x4F` post-amble)
+        if slot == pc && self.battle_first_monster_byte() == 0x4F {
+            match self.battle_mode() {
+                1 => {
+                    if let Some(a) = self.actors.get_mut(slot as usize) {
+                        a.battle.action_category = 0;
+                        a.battle.agl = a.battle.agl_base;
+                    }
+                    self.battle.monster_budget_armed = None;
+                    return MonsterAction::Wait;
+                }
+                3 if category == 3 => {
+                    self.battle.monster_strike_entries = vec![8, 9, 0x0B];
+                    self.battle.monster_strike_budget = 3;
+                    self.battle.monster_budget_armed = Some(slot);
+                }
+                // The same store under a cast is the spell byte.
+                3 if category == 2 => spell_id = 8,
+                _ => {}
+            }
         }
         // Optional, gated, NON-FAITHFUL: smarter single-target selection. By
         // now every RNG draw of the faithful random pick (magic roll, target
@@ -284,17 +332,16 @@ impl World {
     /// ([`legaia_engine_battle::monster_ai::generic_core`]) over the monster
     /// in `slot`: its record's magic-slot window and archive entry tags, the
     /// disc spell table, the seated monsters. Returns the provisional
-    /// `(category, spell, target class)` in engine numbering, and parks a
+    /// `(category, spell, target class, matched)` in engine numbering, and parks a
     /// cast's clips for the cast arm (`BattleState::monster_core_clip`).
     /// `None` when the monster has no record or the spell table was not read
     /// - the caller's synthetic fallback.
     ///
     /// A walk that matched nothing leaves retail's command bytes as the
-    /// monster's last action left them; the port, which does not carry them,
-    /// strikes a living party member instead.
+    /// monster's last action left them, and draws nothing.
     ///
     /// PORT: FUN_801E9FD4 (`0x801EA058..0x801EA974`)
-    fn generic_core_pick(&mut self, slot: u8) -> Option<(u8, u8, u8)> {
+    fn generic_core_pick(&mut self, slot: u8) -> Option<(u8, u8, u8, bool)> {
         use legaia_engine_battle::monster_ai::generic_core::{
             self as core, CoreInput, CorePick, MonsterSeat, SpellBytes,
         };
@@ -351,7 +398,7 @@ impl World {
         let spell = |id: u8| bytes[usize::from(id)];
         let (pick, _) = core::pick(&input, &spell, &mut || self.next_rand());
         Some(match pick {
-            CorePick::Physical { target } => (3, 0, target),
+            CorePick::Physical { target } => (3, 0, target, true),
             CorePick::Magic {
                 spell,
                 clip,
@@ -361,11 +408,21 @@ impl World {
                 self.battle.monster_core_clip = Some((slot, spell, clip, spirit_clip));
                 let target = match target {
                     t @ 3..8 => pc + (t - 3),
+                    core::KEEP_TARGET => self.actors[usize::from(slot)].battle.active_target,
                     t => t,
                 };
-                (2, spell, target)
+                (2, spell, target, true)
             }
-            CorePick::Unmatched => (3, 0, self.random_living_party_member(pc).unwrap_or(slot)),
+            // Nothing stored and nothing drawn: the seat replays what its bytes
+            // still say, and a seat with no action behind it strikes its stale
+            // target.
+            CorePick::Unmatched => {
+                let a = &self.actors[usize::from(slot)].battle;
+                match a.action_category {
+                    2 => (2, a.params[0], a.active_target, false),
+                    _ => (3, 0, a.active_target, false),
+                }
+            }
         })
     }
 

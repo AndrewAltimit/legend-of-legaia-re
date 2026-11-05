@@ -60,14 +60,18 @@ pub fn battle_value_readout_layout_with(
     if world.mode != SceneMode::Battle {
         return None;
     }
-    if hud.popups.is_empty() && hud.combo.is_none() {
+    let multi = hud.multi_readout.as_ref().filter(|m| m.open);
+    if hud.popups.is_empty() && hud.combo.is_none() && multi.is_none() {
         return None;
     }
-    let cluster = hud
-        .combo
-        .as_ref()
-        .filter(|c| !c.hidden)
-        .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide()));
+    let cluster = match multi {
+        Some(m) => Some(vr::multi_row_cluster(&m.values(), m.slide())),
+        None => hud
+            .combo
+            .as_ref()
+            .filter(|c| !c.hidden)
+            .map(|c| vr::combo_cluster(c.style, c.hits, c.total, c.slide())),
+    };
     let mut newest: Vec<&DamagePopup> = Vec::new();
     for p in &hud.popups {
         if p.status.is_some() {

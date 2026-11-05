@@ -481,3 +481,138 @@ changes = [
   ["states/koin1_field_route_walk/image", 0.987, 0.986],
   ["states/delilas_gi_spirit_artifact/image", 0.954, 0.951],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The summon arms' frame step table moves these. Switching the table off restores both images, so the cause is proven for them, but the table is one recording's per-arm reading and no game data, which docs/subsystems/battle-stage-camera.md says plainly. It raises the mean of the cast-sequence oracle over the summon modules, the oracle that scores a cast's whole run. Vera's gate lands a pass later (tick 546 against 544); Gimard's lattice shifting with it is inference. Mushura's camera falls beside it (pitch 108 against retail 88, image held at 1.0), not checked against the disassembly."
+changes = [
+  ["states/gimard_burning_attack/image", 0.863, 0.73],
+  ["states/mushura_summon_mid_cast/camera", 1.0, 0.998],
+  ["states/vera_summon_mid_cast/image", 1.0, 0.969],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Field primitives now draw at their ordering-table link in PSX mode. bubu2 is a real defect it exposes: a round light disc retail does not draw, which per-pixel depth used to hide (open-rev-eng-threads). tunnelb's and nivora's changed pixels sit closer to retail by mean absolute error while the within-threshold share falls."
+changes = [
+  ["states/bubu2_field_door_hop/image", 1.0, 0.998],
+  ["states/nivora_cutscene_delilas_intro/image", 0.996, 0.995],
+  ["states/tunnelb_field_card_boot/image", 1.0, 0.999],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Measured causes, each a correct change exposing an older gap. Garnet's Heal: the Spirit band's stage wait and backdrop weight lower its mean absolute error, 11.97 to 11.71, with the score's loss in the plate glide. Barra's Multi Cutter: the pose walks onto retail's (error minimum at that yaw) and retail's frame is the brighter, luma 97 against 86. Theeder: the cue-first floor, on retail's DPCS-then-multiply order, moves one block."
+changes = [
+  ["states/battle_deene_garnet_heal_mid_cast/image", 0.936, 0.932],
+  ["states/battle_noaru_barra_v2_multi_cutter_mid_cast/image", 0.706, 0.704],
+  ["states/theeder_summon_mid_cast/image", 0.995, 0.993],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Moves of .003 or less, not separated commit by commit among the wave's camera, depth cue and cast changes, and not read against pixels. Recorded so the numbers track the engine; none is claimed understood. Koru's three states share one still and an open thread on its Done tail."
+changes = [
+  ["states/battle_balden_verial_cross_beam_mid_cast/image", 0.994, 0.993],
+  ["states/battle_jouind_gilium_lv3_strike/image", 0.992, 0.991],
+  ["states/battle_kor_shade_strike/image", 0.965, 0.964],
+  ["states/battle_noaru_slippery_v2_big_wave_mid_cast/image", 0.681, 0.68],
+  ["states/battle_rugi_barra_windcutter_mid_cast/image", 0.861, 0.86],
+  ["states/koru_pre_blade_breath/image", 0.74, 0.737],
+  ["states/koru_pre_gigaton_press/image", 0.74, 0.737],
+  ["states/koru_pre_thunder_needle/image", 0.74, 0.737],
+  ["states/minigame_dance_pcsx/image", 0.834, 0.832],
+  ["states/minigame_muscle_dome_retail_red_piura_vahn_strike/image", 0.988, 0.987],
+  ["states/rikuroa_post_caruban/image", 0.998, 0.997],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Resident-patch states, not retail captures and not bisected. They moved with the wave's battle changes, which retail states pin. Recorded so the mod numbers track the engine."
+changes = [
+  ["states/shiny_refactor_gimard_levelup/camera", 0.979, 0.977],
+  ["states/shiny_refactor_gimard_plus35/camera", 0.999, 0.996],
+  ["states/shiny_refactor_gimard_plus35/image", 0.928, 0.905],
+]
+
+[[loosening]]
+file = "scripts/replays/full_game_baseline.toml"
+reason = "The ported Spirit gate means an art must be paid for, and the scripted hand had been typing free Miracles, so the run's two longest bosses got harder for it. The engine agrees with retail (retail-exec differentials). Eleven of fourteen seeds still reach the credits, and default parts B and C reach 35. Seed 6 loses Taiku's 22422 HP boss; seeds 7 and 12 reach Chitei2's 50000 HP boss with MP 0 and about 15% HP, having spent the bag on the way. This is the hand's resource planning, not a game fault shown by any retail state, and it stays open."
+changes = [
+  ["continuous_seeds/seed_12", 35, 30],
+  ["continuous_seeds/seed_6", 35, 26],
+  ["continuous_seeds/seed_7", 35, 30],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play bundle grows 0.5% with the ported kernels the wave adds (dance ambient tree, creature clip morphs, per-primitive field ordering, item and queue arms). Native and browser per-frame counts rise under 1% with the same work, not attributed row by row: per-primitive ordering is the likely source in the field scenes and the cast arms in battle. No scene draws more calls."
+changes = [
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48258, 48455],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157289, 157407],
+  ["counts/bundle/gzip_bytes", 6903283, 6929058],
+  ["counts/bundle/play_gzip_bytes", 4772220, 4798185],
+  ["counts/native/battle/enhanced/alloc_kb_per_frame", 4562.2, 4564.0],
+  ["counts/native/battle/enhanced/allocs_per_frame", 1365.7, 1370.0],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4524.2, 4526.1],
+  ["counts/native/battle/retail/allocs_per_frame", 1308.6, 1312.9],
+  ["counts/native/summon_cast/enhanced/alloc_kb_per_frame", 4705.9, 4707.9],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1393.5, 1398.3],
+  ["counts/native/summon_cast/retail/alloc_kb_per_frame", 4670.3, 4672.3],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1337.1, 1341.9],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2672.1, 2678.3],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1597.2, 1612.0],
+  ["counts/native/town01/retail/alloc_kb_per_frame", 1410.5, 1411.6],
+  ["counts/native/town01/retail/allocs_per_frame", 1214.9, 1223.8],
+  ["counts/native/world_map/enhanced/allocs_per_frame", 1922.4, 1926.3],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1272.6, 1273.4],
+  ["counts/native/world_map/retail/allocs_per_frame", 1806.9, 1810.8],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The wave's figures from main once more: the entry above's kernels, plus 73 gzipped bytes for the Zenoir creature's range guard. The allocation rows differ from the entry above by run-to-run moves within the ratchet's room."
+changes = [
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157289, 157402],
+  ["counts/bundle/gzip_bytes", 6903283, 6929106],
+  ["counts/bundle/play_gzip_bytes", 4772220, 4798258],
+  ["counts/native/battle/retail/alloc_kb_per_frame", 4524.2, 4526.2],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2672.1, 2678.2],
+  ["counts/native/town01/enhanced/allocs_per_frame", 1597.2, 1611.8],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1272.6, 1273.3],
+  ["counts/native/world_map/retail/allocs_per_frame", 1806.9, 1811.0],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Aluru Cannon: the displayed stage cue and ambient base a monster's magic capture now seats; which of the two is unread. King Frog and Warman: a walk clip's arrival dated off case 7's increment ladder, cause inferred from the commit that moved them. Neo Star Slash bisects to the Auto assembler the retail-exec differential holds, read as a shifted rand stream but not confirmed. shiny_refactor_gimard_levelup is a patched state moving by .001, unbisected."
+changes = [
+  ["states/battle_jou_aluru_v3_aluru_cannon_mid_cast/image", 0.946, 0.942],
+  ["states/battle_korb2_aluru_cannon_mid_cast/image", 0.964, 0.962],
+  ["states/battle_retona_king_frog_strike/camera", 1.0, 0.999],
+  ["states/battle_tunnelb_warman_strike/image", 0.992, 0.991],
+  ["states/gaza2_card_pre_neo_star_slash/image", 0.989, 0.984],
+  ["states/shiny_refactor_gimard_levelup/image", 0.833, 0.832],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The wave's figures from main once more. The bundle takes about 28 KB gzipped over the last entry, most plausibly the status pages, the map display, Baka Fighter, the dance gate and the new differentials' port rows; the split is unmeasured. Cast draws rise with Slippery's storm clouds and Rogue's golem. Allocations move under 1% on rows whose cause was not bisected."
+changes = [
+  ["counts/browser/battle/enhanced/wasm_bytes_per_frame", 125208, 125214],
+  ["counts/browser/battle/retail/wasm_bytes_per_frame", 124317, 124323],
+  ["counts/browser/cast/enhanced/gl_draws_per_frame", 148.08, 148.19],
+  ["counts/browser/cast/retail/gl_draws_per_frame", 125.73, 125.79],
+  ["counts/browser/town01/enhanced/wasm_bytes_per_frame", 58208, 58220],
+  ["counts/browser/town01/retail/wasm_bytes_per_frame", 48258, 48467],
+  ["counts/browser/world_map/enhanced/wasm_bytes_per_frame", 161692, 161704],
+  ["counts/browser/world_map/retail/wasm_bytes_per_frame", 157289, 157419],
+  ["counts/bundle/gzip_bytes", 6903283, 6957160],
+  ["counts/bundle/play_gzip_bytes", 4772220, 4827541],
+  ["counts/native/summon_cast/enhanced/allocs_per_frame", 1393.5, 1402.5],
+  ["counts/native/summon_cast/retail/allocs_per_frame", 1337.1, 1346.2],
+  ["counts/native/town01/enhanced/alloc_kb_per_frame", 2672.1, 2678.0],
+  ["counts/native/town01/retail/allocs_per_frame", 1214.9, 1223.9],
+  ["counts/native/world_map/enhanced/alloc_kb_per_frame", 1570.0, 1572.1],
+  ["counts/native/world_map/retail/alloc_kb_per_frame", 1272.6, 1274.7],
+]

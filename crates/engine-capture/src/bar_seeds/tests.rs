@@ -9,41 +9,49 @@ fn bar_seeds_round_trip_through_the_child_env() {
             slot: 0,
             hp: 412,
             mp: 37,
+            hp_max: None,
             ground: None,
             facing: None,
             defeat_lanes: None,
             status: 0,
             init_key: None,
+            heal_latch: false,
         },
         BarSeed {
             slot: 4,
             hp: 1,
             mp: 0,
+            hp_max: None,
             ground: Some([-4, -707]),
             facing: Some(0x9F0),
             defeat_lanes: Some(0),
             status: 0,
             init_key: None,
+            heal_latch: false,
         },
         BarSeed {
             slot: 2,
             hp: 330,
             mp: 0,
+            hp_max: None,
             ground: Some([10, 20]),
             facing: None,
             defeat_lanes: None,
             status: 0x1,
             init_key: Some(0),
+            heal_latch: false,
         },
         BarSeed {
             slot: 3,
             hp: 9,
             mp: 1,
+            hp_max: None,
             ground: None,
             facing: None,
             defeat_lanes: Some(0xd0d),
             status: 0x1C10,
             init_key: Some(154),
+            heal_latch: false,
         },
     ];
     assert_eq!(bar_seeds_from_env(&bar_seeds_to_env(&seeds)), seeds);
@@ -65,11 +73,13 @@ fn an_empty_seat_seed_stands_the_seat() {
         slot: EMPTY_SEAT_SLOT_BASE + 2,
         hp: 0,
         mp: 0,
+        hp_max: None,
         ground: Some([-82, 543]),
         facing: None,
         defeat_lanes: None,
         status: 0,
         init_key: None,
+        heal_latch: false,
     };
     let back = bar_seeds_from_env(&bar_seeds_to_env(&[seed]));
     assert_eq!(back, vec![seed]);
@@ -91,11 +101,13 @@ fn a_ground_seed_holds_the_seed_recentre() {
         slot: 0,
         hp: 10,
         mp: 0,
+        hp_max: None,
         ground: None,
         facing: None,
         defeat_lanes: None,
         status: 0,
         init_key: None,
+        heal_latch: false,
     };
     apply_bar_seeds(&mut world, &[bars]);
     assert!(!world.battle.seed_recentre_held);
@@ -107,4 +119,42 @@ fn a_ground_seed_holds_the_seed_recentre() {
         }],
     );
     assert!(world.battle.seed_recentre_held);
+}
+
+#[test]
+fn the_heal_latch_rides_the_bars_entry() {
+    let seed = BarSeed {
+        slot: 2,
+        hp: 832,
+        mp: 50,
+        hp_max: None,
+        ground: Some([58, 316]),
+        facing: None,
+        defeat_lanes: None,
+        status: 0,
+        init_key: Some(300),
+        heal_latch: true,
+    };
+    let env = bar_seeds_to_env(&[seed]);
+    assert!(env.ends_with(":k300:v"), "{env}");
+    assert_eq!(bar_seeds_from_env(&env), vec![seed]);
+}
+
+#[test]
+fn a_raised_pool_seats_and_round_trips() {
+    let seed = BarSeed {
+        slot: 0,
+        hp: 9973,
+        mp: 79,
+        hp_max: Some(9999),
+        ground: None,
+        facing: None,
+        defeat_lanes: None,
+        status: 0,
+        init_key: Some(0),
+        heal_latch: false,
+    };
+    let env = bar_seeds_to_env(&[seed]);
+    assert_eq!(env, "0:9973:79:k:m9999");
+    assert_eq!(bar_seeds_from_env(&env), vec![seed]);
 }

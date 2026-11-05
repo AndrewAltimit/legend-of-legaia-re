@@ -36,7 +36,11 @@ fn tables() -> DanceScoreTables {
         }
         schedule.push(s);
     }
-    DanceScoreTables { bonus, schedule }
+    DanceScoreTables {
+        bonus,
+        schedule,
+        schedule_words: Vec::new(),
+    }
 }
 
 fn game() -> DanceGame {
@@ -219,7 +223,7 @@ fn triangle_on_the_combo_slot_multiplies_and_promotes_the_lane() {
 }
 
 #[test]
-fn a_spent_triangle_locks_input_out_for_the_groovy_move() {
+fn a_spent_triangle_spins_the_dancer_and_only_the_latch_holds_input() {
     // Spent at the end of a long combo (lane 2): 3 turns at 0xC0 units per
     // frame = 64 frames - the retail groovy-move window.
     let mut g = game();
@@ -235,26 +239,30 @@ fn a_spent_triangle_locks_input_out_for_the_groovy_move() {
     assert_eq!(lock, 64);
     assert!(g.in_groovy_move());
     assert_eq!(g.groovy_lock(), lock);
-    // Every press inside the window is ignored - no score, no miss.
+    // The latch ignores a press for its few frames: no score, no miss.
     let before = g.score();
-    for f in 0..lock {
-        assert_eq!(
-            g.press(DanceDir::A),
-            DanceEvent::Ignored,
-            "input is disrupted for the whole groovy move (frame {f})"
-        );
-        assert_eq!(g.score(), before);
+    assert_eq!(g.press(DanceDir::A), DanceEvent::Ignored);
+    assert_eq!(g.score(), before);
+    assert_eq!(g.dancers[0].misses, 0, "ignored presses are not misses");
+    // The spin itself gates nothing: the handler tests the clip and the latch,
+    // so once the latch runs out mid-spin the dancer is judged again.
+    while g.dancers[0].latch != 0 {
         g.advance(1);
     }
-    // ...and it ends: the dancer is judged again.
+    assert!(g.in_groovy_move());
+    assert_ne!(g.press(DanceDir::A), DanceEvent::Ignored);
+    for _ in 0..lock {
+        g.advance(1);
+    }
     assert!(!g.in_groovy_move());
     assert_eq!(g.groovy_lock(), 0);
-    assert_eq!(g.dancers[0].misses, 0, "ignored presses are not misses");
 }
 
 #[test]
 fn triangle_arms_the_feedback_window() {
     let mut g = game();
+    // A rival's spend arms the same window (`0x801D1E38`).
+    g.dancers.truncate(1);
     assert_eq!(g.triangle_feedback(), None);
     g.phase = 3 * BEAT_PERIOD;
     let _ = g.press(DanceDir::C);
@@ -1140,13 +1148,13 @@ fn a_judge_move_holds_the_dancer_until_its_clip_ends() {
     }
     assert_eq!(g.dancers[0].latch, 0, "the note latch has long expired");
     assert_eq!(g.dancers[0].clip, 101);
-    assert!(g.dancers[0].locked(u32::MAX));
+    assert!(g.dancers[0].locked());
     // The move's own end flag rebinds the loop.
     for _ in 0..20 {
         g.advance(1);
     }
     assert_eq!(g.dancers[0].clip, 20, "the loop is back at the move's end");
-    assert!(!g.dancers[0].locked(u32::MAX));
+    assert!(!g.dancers[0].locked());
 }
 
 #[test]

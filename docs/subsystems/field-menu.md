@@ -780,6 +780,19 @@ passive-effect lines from `0x8007625c`
 have any skills."
 
 <a id="scroll-widgets-submenu-2-or-3"></a>
+**The list pages' pens are `X = WX + 0x10`** on the instructions above: the Magic
+level glyph (`$` + digit, the font's small "Lv", string `0x801E46E0`) at `X + 0x68`,
+the MP at `X + 0x98`, the Moves AP at `X + 0x72`, rows from `WY + 0x28` at pitch
+`0x0D`. The hand on a list row is `FUN_8002B994` at `(X - 0x14, Y)`; a Magic row's
+latch marks it with a second hand three pixels up. The preview under the hand sits
+in the box below (`WY + h - 0x28`): a Magic row's name and level in ink 6 and its
+info lines at `(WX + 0xC, +0xE)`; a Moves row's `Command:` tag in ink 1, its arrows
+from `WX + 0x3C` in the ink its `0xFF XX` markers stage, and its description at
+`(WX + 0xC, WY + h - 0x1A)`. A Moves name's `0xCF XX` restages the ink its AP then
+prints in, so a Miracle Art's row reads in ink 9. Lines of a `|` string stand 14
+apart on the frames, where `FUN_8003CD00` itself steps `0x0D`; the last pixel is
+not traced.
+
 **Scroll widgets** (submenus 2 and 3, instr `801d477c..801d4838`): up arrow
 (ICO `0x67`) when `_DAT_8007bb90 > 0` and down arrow (ICO `0x68`) when rows
 follow, both at `X = WX + (w >> 1) - 4`; scrollbar thumb at
@@ -800,6 +813,14 @@ follow, both at `X = WX + (w >> 1) - 4`; scrollbar thumb at
 | `+0x13c / +0x13d / +0x161` | spell count / ids / levels |
 | `+0x196..` | eight equip bytes |
 | `+0x2A7` | name string |
+
+The page is the picker's second cursor: Left / Right walk it with a wrap, Up / Down
+walk the party, and a confirm routes on the page (`0x801DA3C8..0x801DA448`): Magic
+and Moves hand the pad to their lists, Skills buzzes, Condition hops to the other
+column, which shows the same panel. Port: `engine-menus::status_screen`, with the
+list itself a `list_order::ListOrderSession` whose exchanges replay on the record
+when it closes. The grid's live words are the stat block `FUN_801CF650` sums
+(`pause_screens::menu_stat_block`), not the record's own, so worn gear moves them.
 
 Port of the Status screen: `engine-ui::status_screen_draws_for` (main panel,
 off the id-28 origin), `status_satellite_draws_for`, and the sprite passes
@@ -2261,3 +2282,7 @@ items the party holds and wears; a Cross closes the menu and opens the pack
 item screen (its Gear tab for a worn item) on the first free field tick, where
 consumables are used and gear is worn with a stat compare
 ([`expansion-pack-items.md`](../formats/expansion-pack-items.md#the-item-screen)).
+
+## Cursor auto-repeat
+
+The window kernel reads a cursor word of its own, not the plain edge word: `FUN_80035C24` (inlined at the top of `FUN_80031D00`) folds a chord held unchanged back in after `0x14` vsyncs and then every `3`, the chord being the D-pad and the four shoulder buttons (`0xF00F`), or the D-pad alone in battle (`gp+0x854` the chord, `gp+0x864` the count, `gp+0x86C` the word). A list opening zeroes the chord (`FUN_80030628`), so a direction held across its opening waits the whole delay. The kind-4 list kernel `FUN_80032A44` and the shop's quantity steppers read this word. Port: `retail_pad::MenuRepeat`, folded in where the pause menu, the shop session and the battle spell and item lists take their edges.

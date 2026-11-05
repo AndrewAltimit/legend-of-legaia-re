@@ -261,6 +261,9 @@ pub struct InventoryUseSession {
     /// Empty when the host built the session without a slot-indexed bag, which
     /// is the disc-free case; consumers fall back to the id-addressed removal.
     pub bag_slots: Vec<u8>,
+    /// Bag count per entry of `items`, for a session whose entries are one
+    /// per stack. Empty: every entry is one unit.
+    pub bag_counts: Vec<u8>,
     pub state: InventoryUseState,
     pub events: Vec<InventoryUseEvent>,
     pub context: InventoryContext,
@@ -332,6 +335,7 @@ impl InventoryUseSession {
             thrown_slots: Vec::new(),
             consumed_items: Vec::new(),
             bag_slots: Vec::new(),
+            bag_counts: Vec::new(),
         }
     }
 
@@ -350,6 +354,19 @@ impl InventoryUseSession {
         };
         let idx = *self.filtered_items.get(cursor)?;
         self.bag_slots.get(idx).copied()
+    }
+
+    /// Install the per-entry bag counts: the session's entries are one per
+    /// stack, and a row prints the bag's count.
+    pub fn with_bag_counts(mut self, counts: Vec<u8>) -> Self {
+        self.bag_counts = counts;
+        self
+    }
+
+    /// The bag count entry `idx` stands for: one per entry when the session
+    /// was built with the bag's stacks flattened to one entry per unit.
+    fn bag_count_of(&self, idx: usize) -> u8 {
+        self.bag_counts.get(idx).copied().unwrap_or(1)
     }
 
     /// Install the per-entry bag slots (the row payloads).
@@ -423,7 +440,9 @@ impl InventoryUseSession {
         let mut row_of_id: std::collections::HashMap<u8, usize> = std::collections::HashMap::new();
         for (i, id) in self.items.iter().enumerate() {
             match row_of_id.get(id) {
-                Some(&r) => rows[r].count = rows[r].count.saturating_add(1),
+                Some(&r) => {
+                    rows[r].count = rows[r].count.saturating_add(self.bag_count_of(i));
+                }
                 None => {
                     row_of_id.insert(*id, rows.len());
                     let name = self
@@ -434,7 +453,7 @@ impl InventoryUseSession {
                     rows.push(ItemMenuRow {
                         id: *id,
                         name,
-                        count: 1,
+                        count: self.bag_count_of(i),
                         admissible: filter_set.contains(&i),
                     });
                 }
@@ -773,7 +792,9 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.alive && target.is_enemy,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
+            target.alive && target.is_enemy
+        }
         ItemEffect::Heal { .. } | ItemEffect::HealAll => {
             target.alive && !target.is_enemy && (target.hp_max == 0 || target.hp < target.hp_max)
         }
@@ -800,7 +821,9 @@ fn effect_benefits_target(effect: &ItemEffect, target: &TargetRow) -> bool {
 /// mirror rule.
 pub fn target_on_effect_side(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.is_enemy,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
+            target.is_enemy
+        }
         _ => !target.is_enemy,
     }
 }
@@ -814,7 +837,9 @@ fn target_valid_for_effect(effect: &ItemEffect, target: &TargetRow) -> bool {
     match effect {
         ItemEffect::Revive { .. } => target.is_dead() && !target.is_enemy,
         ItemEffect::KeyItem => false,
-        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } => target.alive && target.is_enemy,
+        ItemEffect::Damage { .. } | ItemEffect::Capture { .. } | ItemEffect::PointCardStrike => {
+            target.alive && target.is_enemy
+        }
         ItemEffect::Escape => target.alive,
         _ => target.alive && !target.is_enemy,
     }
@@ -1360,6 +1385,21 @@ mod tests {
     /// `rows[cursor]` highlight is an inadmissible row ahead of the
     /// selection, which is exactly this bag: the field-only 0x0E sits at
     /// row 0, dimmed, while the battle cursor's row 0 is really drawn row 1.
+    /// A session built one entry per stack prints the bag's counts, as the
+    /// battle item window's rows do (`battle_item_window_gaza2_retail`).
+    #[test]
+    fn menu_view_prints_the_stacks_bag_count() {
+        let s = InventoryUseSession::new(
+            test_catalog(),
+            vec![0x01, 0x02],
+            party_targets(),
+            InventoryContext::Battle,
+        )
+        .with_bag_counts(vec![99, 13]);
+        let v = s.menu_view();
+        assert_eq!((v.rows[0].count, v.rows[1].count), (99, 13));
+    }
+
     #[test]
     fn menu_view_maps_the_filtered_cursor_onto_drawn_rows() {
         let mut s = InventoryUseSession::new(

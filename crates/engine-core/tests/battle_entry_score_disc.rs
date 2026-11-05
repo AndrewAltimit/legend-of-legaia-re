@@ -130,3 +130,27 @@ fn a_row_no_record_scores_replays_nothing() {
     assert_eq!(world.audio.battle_sound_set, 0);
     assert_eq!(world.audio.current_bgm, None);
 }
+
+/// `teien`'s row `0` is entered by `P2[1]`, which opens on `51 C8` and starts
+/// `2067`. A random roll can land on the same row: the record never ran, its
+/// flag is down, and the fight holds the field's word.
+#[test]
+fn a_row_reached_without_its_record_replays_nothing() {
+    if std::env::var_os("LEGAIA_DISC_BIN").is_none() {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated convention)");
+        return;
+    }
+    let Some(extracted) = extracted_dir() else {
+        eprintln!("[skip] extracted/ missing - run `legaia-extract` first");
+        return;
+    };
+    let index = ProtIndex::open_extracted(&extracted).expect("open ProtIndex");
+    let (man_file, man) = scene_man(&index, "teien");
+    let mut world = World::new();
+    world.install_field_carriers_from_man(&man_file, &man);
+    assert!(!world.scripted_battle_record_ran(0));
+    world.system_flag_set(0x1C8);
+    assert!(world.scripted_battle_record_ran(0));
+    // A row no record enters has nothing to disprove.
+    assert!(world.scripted_battle_record_ran(200));
+}

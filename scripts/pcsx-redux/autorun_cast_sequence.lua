@@ -45,7 +45,11 @@
 --                (0x8007B6D8..DF): `a0` is the storing pc.
 --   seats.csv    per vsync from the cast, seats 0..7: clip +0x1D9, staged
 --                +0x1DA, cue-track cursor +0x1F6 (the anim cue walk
---                FUN_800508DC's).
+--                FUN_800508DC's), and rates.csv beside it: each seat's animation
+--                rate +0x21D and node cursor +0x68, off which a reaction's
+--                pace reads.
+--   watch.csv    with LEGAIA_WATCH_W=addr,addr (breakpoint core): each store into
+--                these bytes with its pc, ra and registers.
 --   manifest.txt the run's knobs.
 -- These are retail pixels and retail RAM: never commit them.
 --
@@ -108,6 +112,16 @@
 --                        (the absolute vsync, as in meta.csv), and the whole
 --                        emulator state beside it as state_<vsync>.rawsstate
 --                        (VRAM included: sstate_vram.py); empty = none
+--   LEGAIA_CAST_PARTS    1 = also write parts.csv from the cast begin, one row per
+--                        vsync per live move-VM part (actor-list nodes on the
+--                        part tick FUN_80021DF4): the retail half of the engine
+--                        recorder's LEGAIA_DIAG_CAST_PARTS, colour word, level,
+--                        draw kind, draw mode, packed colours, radius and height
+--                        channels, position, scale, UV / tpage / CLUT and the
+--                        mode-3 H / S / V adds
+--   LEGAIA_PRIM_CALLS    1 = primcall.csv (breakpoint core): each prim dispatcher
+--                        FUN_80043390 entry with its colour word, level, caller
+--                        and first group words, and each cued leaf it reaches
 --   LEGAIA_SAVE_INJECT   1 = write the whole emulator state as
 --                        state_inject.rawsstate on the first vsync after the
 --                        inject: a pre-cast state with the cast already
@@ -203,6 +217,33 @@ local function s32(a)
     if v >= 0x80000000 then v = v - 0x100000000 end
     return v
 end
+-- parts.csv: every live move-VM part, in list order. On the probe table: the
+-- frame body already sits at Lua's limit of 60 upvalues.
+local CAST_PARTS = probe.getenv_num("LEGAIA_CAST_PARTS", 0) ~= 0
+function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
+    if not (cast_seen and CAST_PARTS) then return end
+    if probe.cast_parts == nil then
+        probe.cast_parts = probe.csv_open(probe.out_path("parts.csv"),
+            "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42")
+    end
+    for k = 0, 8 do
+        local n = u32(0x8007C34C + 4 * k)
+        local guard = 0
+        while n >= 0x80000000 and n < 0x80200000 and guard < 512 do
+            guard = guard + 1
+            if u32(n + 0xC) == 0x80021DF4 then
+                probe.cast_parts:row("%d,%d,%d,0x%08X,0x%08X,0x%08X,%d,%d,%d,0x%04X,0x%08X,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,0x%04X,%d,0x%04X,0x%04X,0x%04X,0x%04X,%d,%d,%d,%d,%d,%d,%d",
+                    elapsed, st7, u8(cx + 0x279), n, u32(n + 0x10), u32(n + 0x74), s32(n + 0x78),
+                    s16(n + 0x56), s16(n + 0x5A), u16(n + 0x9E), u32(n + 0xA0), u32(n + 0xA4),
+                    s16(n + 0xB4), s16(n + 0xB6), s16(n + 0xB8), s16(n + 0xBA),
+                    s32(n + 0x14), s32(n + 0x18), s32(n + 0x1C), u16(n + 0x72), u16(n + 0x52),
+                    s16(n + 0x9C), u16(n + 0xA8), u16(n + 0xAC), u16(n + 0xB0), u16(n + 0xB2),
+                    s16(n + 0x90), s16(n + 0x92), s16(n + 0x94), s32(n + 0x34), s16(n + 0x7A), u8(n + 0x6D), s16(n + 0x42))
+            end
+            n = u32(n)
+        end
+    end
+end
 local function ptr_ok(p) return p >= 0x80000000 and p < 0x80200000 end
 local function ctxp()
     local c = u32(CTX_PTR)
@@ -248,23 +289,34 @@ local target_at_cast = -1
 -- not walked home) leaves the same stage.
 probe.cast_seats = {
     csv = nil,
+    rates = nil,
     row = function(self, elapsed, actor_of)
+        if self.rates == nil then
+            local h = {}
+            for k = 0, 7 do h[#h + 1] = string.format("s%drate,s%dcur", k, k) end
+            self.rates = probe.csv_open(probe.out_path("rates.csv"), "vsync," .. table.concat(h, ","))
+        end
         if self.csv == nil then
             self.csv = probe.csv_open(probe.out_path("seats.csv"),
                 "vsync,s0clip,s0stg,s0cue,s1clip,s1stg,s1cue,s2clip,s2stg,s2cue,s3clip,s3stg,s3cue," ..
                 "s4clip,s4stg,s4cue,s5clip,s5stg,s5cue,s6clip,s6stg,s6cue,s7clip,s7stg,s7cue")
         end
-        local cols = {}
+        local cols, rate_cols = {}, {}
         for k = 0, 7 do
             local a = actor_of(k)
             if a ~= nil then
                 cols[#cols + 1] = string.format("%d,%d,%d", probe.read_u8(a + 0x1D9) or 0,
                     probe.read_u8(a + 0x1DA) or 0, probe.read_u8(a + 0x1F6) or 0)
+                local node = probe.read_u32(a + 0x22C) or 0
+                rate_cols[#rate_cols + 1] = string.format("%d,%d", probe.read_u8(a + 0x21D) or 0,
+                    node >= 0x80000000 and (probe.read_u16(node + 0x68) or 0) or -1)
             else
                 cols[#cols + 1] = "-1,-1,-1"
+                rate_cols[#rate_cols + 1] = "-1,-1"
             end
         end
         self.csv:row("%d,%s", elapsed, table.concat(cols, ","))
+        self.rates:row("%d,%s", elapsed, table.concat(rate_cols, ","))
     end,
 }
 
@@ -335,6 +387,45 @@ probe.run({
                 "vsync,ctx6,st7,acting,step,c6da,c15,c87c," ..
                 "s0clip,s0stg,s0rate,s0cur,s0x,s0z,s0tot,s1clip,s1stg,s1rate,s1cur,s1x,s1z,s1tot," ..
                 "s2clip,s2stg,s2rate,s2cur,s2x,s2z,s2tot,s3clip,s3stg,s3rate,s3cur,s3x,s3z,s3hp")
+        end
+        -- LEGAIA_WATCH_W="addr,addr": who stores these bytes (breakpoint core).
+        local watch_w = probe.getenv("LEGAIA_WATCH_W", "")
+        if watch_w ~= "" then
+            local watch_csv = probe.csv_open(probe.out_path("watch.csv"), "vsync,st7,addr,pc,ra,v0,v1,a1")
+            for word in string.gmatch(watch_w, "[^,]+") do
+                local addr = tonumber(word)
+                probe.arm_breakpoint(addr, "Write", 1, "watch", function()
+                    local R = PCSX.getRegisters()
+                    local n = R.GPR.n
+                    local function w(v)
+                        v = tonumber(v) or 0
+                        return v < 0 and v + 0x100000000 or v
+                    end
+                    local c = u32(CTX_PTR)
+                    watch_csv:row("%d,%d,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X,0x%08X", probe.cast_elapsed or 0,
+                        c >= 0x80000000 and u8(c + 7) or -1, addr, w(R.pc), w(n.ra), w(n.v0), w(n.v1), w(n.a1))
+                end)
+            end
+        end
+        if probe.getenv_num("LEGAIA_PRIM_CALLS", 0) ~= 0 then
+            -- Each entry of the prim dispatcher FUN_80043390: mesh a0, colour
+            -- word a1, level a2, the caller, and the mesh's first group words;
+            -- and each cued quad / triangle leaf it reaches (breakpoint core).
+            local calls = probe.csv_open(probe.out_path("primcall.csv"), "vsync,fn,a0,a1,a2,ra,grp0,grp1")
+            probe.arm_breakpoint(0x80043390, "Exec", 4, "primdisp", function()
+                local r = PCSX.getRegisters().GPR.n
+                local g = u32(tou32(r.a0) + 0x10)
+                calls:row("%d,disp,0x%08X,0x%08X,%d,0x%08X,0x%08X,0x%08X", last_elapsed, tou32(r.a0), tou32(r.a1),
+                    tou32(r.a2), tou32(r.ra), ptr_ok(g) and u32(g) or 0, ptr_ok(g) and u32(g + 4) or 0)
+            end)
+            for _, f in ipairs({ { 0x800453BC, "k18b1" }, { 0x80045584, "k19b1" }, { 0x80045BB4, "k19b3" },
+                                  { 0x800457C4, "k18b2" }, { 0x80045988, "k19b2" }, { 0x80044DC8, "k17b1" },
+                                  { 0x80044C14, "k16b1" }, { 0x80045194, "k15b1" }, { 0x80044FDC, "k14b1" } }) do
+                probe.arm_breakpoint(f[1], "Exec", 4, f[2], function()
+                    local r = PCSX.getRegisters().GPR.n
+                    calls:row("%d,%s,0x%08X,0,0,0x%08X,0,0", last_elapsed, f[2], tou32(r.a1), tou32(r.ra))
+                end)
+            end
         end
         if probe.getenv_num("LEGAIA_SFX_CALLERS", 0) ~= 0 then
             -- Who fills the cue ring: the producer FUN_80035B50 / its
@@ -407,6 +498,7 @@ probe.run({
     end,
 
     on_capture = function(c, elapsed)
+        probe.cast_elapsed = elapsed
         last_elapsed = elapsed
         local cx = ctxp()
         local cs = actor(CASTER_SEAT == 255 and 0 or CASTER_SEAT)
@@ -498,7 +590,7 @@ probe.run({
         -- Cast begin (0x28) is the state every Magic action passes through
         -- first - a party summon, a monster spell, a capture-class cast - and
         -- the engine recorder starts on the same one.
-        if not cast_seen and ((PHYSICAL and (st7 == 0x1E or st7 == 0x2B)) or (not PHYSICAL and (st7 == 0x28 or st7 == 0x3C)
+        if not cast_seen and ((PHYSICAL and (st7 == 0x1E or st7 == 0x1F or st7 == 0x20 or st7 == 0x2B or st7 == 0x6E)) or (not PHYSICAL and (st7 == 0x28 or st7 == 0x3C)
             and ((CASTER_SEAT == 255 and acting < 3) or acting == CASTER_SEAT))) then
             cast_seen = true
             cast_vsync = elapsed
@@ -553,6 +645,7 @@ probe.run({
             shot, w, h, bpp, u32(FRAME_COUNTER), u8(cx + 0x276),
             s32(XA_SPAN), s16(CD_BUSY), u16(CD_MODE), s16(CD_READ), u32(RAND_SEED))
         if cast_seen then probe.cast_seats:row(elapsed, actor) end
+        probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         -- creature.csv: pool slot 7's clip, staged byte, cursor and stand, the
         -- engine recorder's file of the same name.
         if cast_seen then
@@ -623,6 +716,7 @@ probe.run({
         if body then body:close() end
         if cam then cam:close() end
         if probe.cast_sfx.csv then probe.cast_sfx.csv:close() end
+        if probe.cast_parts then probe.cast_parts:close() end
         if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then

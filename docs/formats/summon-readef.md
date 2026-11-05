@@ -561,11 +561,16 @@ no word / `j` / branch / materialisation), and slot B is loaded for the
 `summon.dat` bands. So on a readef-band cast the `base+1` actor record
 arrives in `*0x8007BD74` and nothing reads it.
 
-**No monster names those three groups.** The census below sweeps every
-LZS-decoded record in the PROT 0867 archive: `+0x1C` never takes the values
-19, 20 or 21, so the per-turn seed cannot reach bases `0x39` / `0x3C` /
-`0x3F` at all, and the duplicated actor records in slots 58 / 61 / 64 are
-unreachable through the enemy path.
+**No record on the disc names those three groups, and Element Change writes them.**
+The census below sweeps every LZS-decoded record in the PROT 0867 archive: `+0x1C` never
+takes the values 19, 20 or 21. PROT 0964's `0xAF` body stores it at runtime:
+`record[+0x1C] = roll + 0x13` on the first monster's record
+(`addiu v0,v0,0x13` / `sb v0,0x1c(v1)` at `0x801F8AAC..0x801F8AB4`), so the Rogue's next
+turn streams base `0x39` / `0x3C` / `0x3F` for Wind / Thunder / Flame. A strike's arm 1
+then calls `FUN_801F19EC` on that buffer: group 21's stone golem is what stands on the
+Rogue's seat through Rogue Flame (`ram` of a `rugi_rogue_pre_rogue_flame` run reads
+`ctx[+0x277] = 63`, enemy record `+0x1C = 21`, and `0x801C9358` equal to the stream
+buffer). Parser: `summon_readef::parse_readef_creature`.
 
 ### Which monsters name which readef group
 
@@ -646,3 +651,9 @@ Provenance: `ghidra/scripts/funcs/overlay_battle_801f17f8.txt`,
 `800558fc.txt`, `80055a5c.txt`, `800559ec.txt`, `80055b4c.txt`,
 `8003e8a8.txt`, `8003e964.txt`, `8003e4e8.txt`,
 `overlay_magic_capture_801e295c.txt`, `overlay_battle_action_801daba4.txt`.
+
+## Clip morphs in an actor record
+
+A cast's part entries name [clip-morph lanes](monster-animation.md#clip-morphs-fun_800495c8--fun_80049858) at `+0x04` / `+0x08` as a monster's do, and the words past the record's `+0x4C` table resolve them: `actor[(index + part_count + 0x12) * 4]`, an offset into the actor-record slot. The morph bytes sit in the record for the four-slot groups too, whose entries live in the raw slot's part pool. A RAM image of Ozma's arm 21 holds the resolved pointer to clip 3's envelope `(25, 28, 255, 255)`.
+
+The lanes are what changes a creature's silhouette in mid-cast. Ozma's shoulder shell draws out into its spikes on clip 3's lane 1 (three records) from frame 25; Terra's clip 1 names two lanes. Viguro, Orb, Freed, Mushura, Aluru, Kemaro, Juggernaut and the Item-band twins carry lanes as well. Parser `summon_readef::parse_cast` (`SummonCast::clip_morphs`); `engine-session::battle_stage` installs the table on the creature's seat, and both hosts blend it through `World::battle_morphed_tmd`.

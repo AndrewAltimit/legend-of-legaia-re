@@ -164,3 +164,29 @@ fn a_capture_of_the_knockdown_itself_seats_without_ending_it() {
     assert_eq!(world.actors[1].battle_reaction_entry, Some(2));
     assert_eq!(world.actors[1].battle.render_flag, 0);
 }
+
+/// `FUN_80047430`'s early exit on a zero colour word (`0x800474D4..0x800474E0`):
+/// a monster parked under the hide neither advances nor commits, and picks up
+/// where it stopped once a module shows it.
+#[test]
+fn a_hidden_monster_holds_its_clip_until_shown() {
+    use legaia_engine_battle::battle_anim::MonsterAnimPlayer;
+    let mut world = World::new();
+    world.actors[3].active = true;
+    world.actors[3].battle_monster_id = Some(1);
+    world.set_actor_battle_animation(3, MonsterAnimPlayer::new(&clip(0)).unwrap());
+    world.actors[3].battle.render_color = 0;
+    world.actors[3].battle.render_flag = 0xFF;
+    let cursor = |w: &World| {
+        w.actors[3]
+            .battle_animation
+            .as_ref()
+            .unwrap()
+            .cursor_sixteenths()
+    };
+    world.tick_battle_animations();
+    assert_eq!(cursor(&world), 0, "hidden: no advance");
+    world.actors[3].battle.render_flag = 0;
+    world.tick_battle_animations();
+    assert_ne!(cursor(&world), 0, "shown: the clip runs");
+}

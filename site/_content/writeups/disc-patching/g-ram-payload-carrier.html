@@ -71,7 +71,7 @@
   <h2>The loader: annex sectors plus a streaming stub</h2>
   <p>The payload is written into the <a href="../../formats/dmy.html"><code>DMY.DAT</code></a> annex - a bump allocator over sectors of dev-fixture data the retail game never reads, so the disc keeps its exact size and the whole install stays a PPF. A 12-instruction stub in the executable's verified-dead arena streams it in at every battle load:</p>
   <figure class="overlay-strip">
-    <svg viewBox="0 0 880 300" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Delivery path: battle init is detoured to the injected stub, which calls the game's CD reader to stream the annexed payload from DMY.DAT into RAM at 0x801FD000, flushes the instruction cache and returns; in battle the hooked retail sites jump into the resident payload">
+    <svg viewBox="0 0 930 300" width="100%" style="max-width:880px" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Delivery path: battle init is detoured to the injected stub, which calls the game's CD reader to stream the annexed payload from DMY.DAT into RAM at 0x801FD000, flushes the instruction cache and returns; in battle the hooked retail sites jump into the resident payload">
       <title>The delivery path: annex sectors, the battle-load stub, and the resident payload</title>
       <style>
         .dp-box  { fill: var(--bg-raised); stroke: var(--border); stroke-width: 1.3; }

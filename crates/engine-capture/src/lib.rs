@@ -50,6 +50,7 @@ pub mod hud_glide;
 pub mod melee_hits;
 pub mod phase_gate;
 pub mod script_gate;
+pub mod strike_deal;
 
 /// The line `play-window` logs once its event loop exists, i.e. once the
 /// X11 startup race is behind it. The capture drivers retry a `SIGSEGV`

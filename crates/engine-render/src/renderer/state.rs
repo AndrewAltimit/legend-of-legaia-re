@@ -306,6 +306,10 @@ pub struct Renderer {
     /// [`Self::set_occlusion_env_draws`]; defaults to "everything fadeable"
     /// for hosts that stage a focus without counts.
     pub(super) occl_env_counts: std::cell::Cell<(usize, usize)>,
+    /// [`Self::set_field_prim_order`].
+    pub(super) field_prim_order: std::cell::Cell<bool>,
+    /// [`Self::set_draw_order`]: textured, colour.
+    pub(super) draw_order: std::cell::RefCell<(Vec<u8>, Vec<u8>)>,
     /// Derived per-scene point lights (world space), staged by the host
     /// via [`Self::set_scene_lights`]. Cleared on scene change.
     pub(super) scene_lights:
@@ -694,6 +698,24 @@ impl Renderer {
     /// Held until the next call.
     pub fn set_draw_clips(&self, textured: Vec<Option<DrawClip>>, color: Vec<Option<DrawClip>>) {
         *self.draw_clips.borrow_mut() = (textured, color);
+    }
+
+    /// Draw every primitive of the next scene render in retail's field
+    /// painter order: at the depth of its ordering-table link
+    /// (`DRAW_ORDER_*`, per draw by [`Self::set_draw_order`]) rather than per
+    /// pixel. Takes effect only in PSX mode; a clean frame keeps per-pixel
+    /// depth, since a primitive's single depth pops as the camera turns.
+    /// Held until the next call.
+    pub fn set_field_prim_order(&self, on: bool) {
+        self.field_prim_order.set(on);
+    }
+
+    /// Stage each draw's `DRAW_ORDER_*` word for
+    /// [`Self::set_field_prim_order`]: `textured[i]` for `Scene::draws[i]`,
+    /// `color[i]` for `Scene::color_draws[i]`; a missing entry is `0`, the
+    /// corners' mean. Held until the next call.
+    pub fn set_draw_order(&self, textured: Vec<u8>, color: Vec<u8>) {
+        *self.draw_order.borrow_mut() = (textured, color);
     }
 
     /// Stage a per-draw NCLIP word for the next scene render: `textured[i]`

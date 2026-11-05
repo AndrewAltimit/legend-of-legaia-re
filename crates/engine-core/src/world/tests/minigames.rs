@@ -941,3 +941,85 @@ fn a_hooked_rod_bent_past_its_cap_creaks() {
         );
     }
 }
+
+/// The dance's setup state replaces the walked-in scene's ambient seat with
+/// the hall's tree (`FUN_801CF470`, `0x801CF9A8` / `0x801CF9C0`): the hall's
+/// VRAM steps through the dance's own call, the field's stays untouched, and
+/// leaving puts the field's seat and frame step back.
+#[test]
+fn the_dance_hall_runs_its_ambient_tree_on_its_own_vram() {
+    let mut world = World::default();
+    world.clock.frame_step = 2;
+    world.stage_dance_ambient(&[]);
+    assert!(world.ambient.venue_restore.is_some());
+    assert_eq!(world.clock.frame_step, 3, "the hall's DAT_1F800393");
+    let mut vram = legaia_tim::Vram::new();
+    assert!(!world.step_field_vram_effects(&mut vram, false));
+    world.restore_dance_ambient();
+    assert!(world.ambient.venue_restore.is_none());
+    assert_eq!(world.clock.frame_step, 2);
+}
+
+/// A door entry skips the hall's art pack (`0x801CF190`), so the cells the
+/// field's cyclers paint reach the hall as the field last painted them, and the
+/// cells they do not paint stay the hall's.
+#[test]
+fn a_door_entry_carries_the_fields_painted_cells_into_the_hall() {
+    let mut world = World::default();
+    let rect = (16, 506, 2, 1);
+    world.ambient.cell_captures.insert(rect, vec![1, 2]);
+    let mut field = legaia_tim::Vram::new();
+    field.write_block(16, 506, 3, 1, &[0x34, 0x12, 0x78, 0x56, 0xBC, 0x1A]);
+    let mut hall = legaia_tim::Vram::new();
+    world.carry_walked_in_cells(&field, &mut hall);
+    assert_eq!(hall.pixel(16, 506), 0x1234);
+    assert_eq!(hall.pixel(17, 506), 0x5678);
+    assert_eq!(hall.pixel(18, 506), 0, "outside the cycled cell");
+    // A hall already staged has replaced the field's seat.
+    world.stage_dance_ambient(&[]);
+    let mut again = legaia_tim::Vram::new();
+    world.carry_walked_in_cells(&field, &mut again);
+    assert_eq!(again.pixel(16, 506), 0);
+}
+
+/// `FUN_801D387C` arms `0` and `1`, the hall cyclers' follow-the-leader hook.
+#[test]
+fn the_hall_hook_copies_the_leader_and_sets_v() {
+    use legaia_engine_vm::move_vm::{ActorState, MoveHost};
+    let mut world = World::default();
+    world.stage_dance_ambient(&[]);
+    let leader_state = ActorState {
+        tween_src_x: 96,
+        tween_src_z: -200,
+        ..Default::default()
+    };
+    world.ambient.fx.push(crate::world::ambient::AmbientPart {
+        record_off: 0,
+        model_sel: 0x4000,
+        reserved: 0,
+        buf: Vec::new(),
+        state: leader_state,
+        finished: false,
+        cell_fx: None,
+        scroll_fx: Vec::new(),
+        prev_morph_weights: Vec::new(),
+    });
+    let mut host = crate::world::vm_hosts::MoveVmHostImpl {
+        world: &mut world,
+        current_slot: None,
+        deferred_writes: std::collections::BTreeMap::new(),
+        field_record_words: None,
+        child_spawns: Vec::new(),
+    };
+    let mut part = ActorState {
+        tween_scale_z: 64,
+        ..Default::default()
+    };
+    host.ext_20(&mut part, 0, 0);
+    assert_eq!(
+        (part.tween_src_x, part.tween_src_z, part.tween_scale_z),
+        (96, -200, 0)
+    );
+    host.ext_20(&mut part, 1, -50);
+    assert_eq!(part.tween_src_z, -50);
+}

@@ -64,6 +64,28 @@ pub fn pack_tsb_semi(tsb: u16, abe: bool) -> u16 {
     (tsb & !TSB_SEMI_TRANSPARENT_BIT) | if abe { TSB_SEMI_TRANSPARENT_BIT } else { 0 }
 }
 
+/// Bit 10 of the per-vertex TSB attribute marks a **flat-shaded textured quad**
+/// (`POLY_FT4`): one colour word over four corners. The console draws it as two
+/// triangles like every other quad, and the shaders' texture path takes no
+/// notice. PCSX-Redux's software GPU does not: it walks that one primitive kind
+/// along its outline (`Renderer::set_psx_texel_rule`), a Gouraud quad of four
+/// equal colours included among the kinds it splits, so the colours cannot say
+/// which kind a quad is. Outside every field and tag [`TSB_RUNTIME_PACKET_BIT`]
+/// lists.
+pub const TSB_FLAT_QUAD_BIT: u16 = 0x0400;
+
+/// The per-vertex TSB word of a TMD primitive: its page word, the group's ABE
+/// ([`pack_tsb_semi`]) and [`TSB_FLAT_QUAD_BIT`].
+pub(crate) fn prim_tsb_word(
+    prim: &crate::legaia_prims::Prim,
+    group: &crate::legaia_prims::GroupHeader,
+) -> u16 {
+    let flat_quad = crate::descriptor::Descriptor::for_flags(group.flags)
+        .is_some_and(|d| d.packet_shape.is_quad() && !d.packet_shape.is_gouraud());
+    (pack_tsb_semi(prim.tsb, group.abe()) & !TSB_FLAT_QUAD_BIT)
+        | if flat_quad { TSB_FLAT_QUAD_BIT } else { 0 }
+}
+
 /// Rotate a vector by the PSX `Rz · Ry · Rx` Euler composition, given the
 /// per-axis cos/sin. Mirrors the byte-for-byte order the retail engine applies
 /// (`RotMatrixX` then `Y` then `Z`, i.e. the matrix product `Rz·Ry·Rx`) and the

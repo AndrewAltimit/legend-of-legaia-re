@@ -45,6 +45,11 @@ pub struct CastFxState {
     /// Actor slot a host seated the summon creature at
     /// (`World::seat_summon_actor`); `None` while no creature is out.
     pub summon_actor_slot: Option<u8>,
+    /// A module's store into the seated creature's per-channel model table
+    /// (`*(node + 0x44) + 4 + channel * 4`) as `(channel, object)`: from then
+    /// on the channel draws that object rather than its own, as PROT 0932's arm
+    /// `0xC` and PROT 0931's tail have it.
+    pub creature_channel_object: Option<(u8, u8)>,
     /// The seated creature's render-node size `+0x58`: its `summon.dat`
     /// actor record's byte `+0x1F << 5` (`lbu v1,0x1f(v1)` / `sll v1,v1,0x5`
     /// / `sh v1,0x58(v0)` in the seat installer `FUN_801F19EC`,
@@ -61,6 +66,10 @@ pub struct CastFxState {
     /// `World::run_cast_module_code`. Zeroed when a cast is armed, exactly
     /// as retail's `0x801E4B1C` does.
     pub module_phase: u8,
+    /// The spell and arm of a cast voice not yet raised: the head cue's call
+    /// sits on one arm of the module's phase byte
+    /// ([`legaia_engine_battle_vm::battle_cast_cue::module_head_cue_arm`]).
+    pub module_voice_due: Option<(u8, u8)>,
     /// The resident slot-B module's `ctx+0x278` scratch byte, written by
     /// three of the band's stagers.
     pub module_ctx_278: u8,
@@ -71,6 +80,8 @@ pub struct CastFxState {
     /// wrapper roll runs the finisher's accrual tail (`0x801DE440`). Banked
     /// once, with the level check, when the cast folds or its fold is waived.
     pub module_hit_xp: u32,
+    /// PROT 0939 arm 4's pace, armed by arm 3's pass.
+    pub spore_gas_beat: legaia_engine_cast::cast_module_ticks::SporeGasBeat,
     /// The module's hit stages no reaction (PROT 0918's): the fold lands its
     /// HP and leaves the victim's clip alone.
     pub module_fold_quiet: bool,
@@ -293,6 +304,10 @@ pub struct CastFxState {
     /// over, and the next arm waits for the tick that opens the next battle
     /// frame (`World::module_pass`).
     pub module_handover_waits: bool,
+    /// The module tick is not the first of its pass: a pass runs a frame
+    /// step of one-vsync ticks (`World::module_pass`), and what an arm does
+    /// once a pass, such as a per-pass spawn call, runs on the first alone.
+    pub module_pass_repeat: bool,
     /// The caster's clip stages the resident capture-class body owes and its
     /// port does not write ([`legaia_engine_cast::cast_module_ticks::CAPTURE_CASTER_STAGES`]),
     /// replayed at the head of the band by
@@ -443,12 +458,15 @@ impl CastFxState {
             effect_pool: None,
             summon_stager: None,
             summon_actor_slot: None,
+            creature_channel_object: None,
             summon_body_radius: None,
             pending_cast: None,
             module_phase: 0,
+            module_voice_due: None,
             module_ctx_278: 0,
             module_skips_fold: false,
             module_hit_xp: 0,
+            spore_gas_beat: Default::default(),
             module_fold_quiet: false,
             fatal_decision: None,
             fatal_banner: None,
@@ -504,6 +522,7 @@ impl CastFxState {
             module_pass_counter: 0,
             capture_pass_mark: None,
             module_handover_waits: false,
+            module_pass_repeat: false,
             caster_stages: None,
             pending_move_fx_spawn: None,
             active_move_fx: None,

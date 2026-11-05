@@ -8,6 +8,9 @@
 .play-load input[type="file"] {
   color: var(--text-muted); font-family: var(--font-mono); font-size: 0.85rem;
 }
+.play-status.is-error { color: var(--warn, #e0a050); }
+.play-report-btn { margin-left: auto; flex: none; padding: 0.25rem 0.6rem; font-size: 0.78rem; }
+#play-report-box { width: 100%; font: 0.75rem var(--font-mono, monospace); margin: 0.4rem 0; }
 .play-status {
   color: var(--text-dim); font-family: var(--font-mono); font-size: 0.82rem;
   flex: 1; min-width: 14rem;
@@ -403,6 +406,7 @@ div.play-vis-head { cursor: default; }
 <script src="js/audio-toggle.js"></script>
 <script src="js/rom-cache.js"></script>
 <script src="js/disc-info.js"></script>
+<script src="js/play-report.js"></script>
 <script src="js/load-progress.js"></script>
 <script src="js/play-disc.js"></script>
 <script src="js/legaia-saves.js"></script>
@@ -430,6 +434,8 @@ div.play-vis-head { cursor: default; }
         No disc loaded - pick a <code>.bin</code> Mode2/2352 image of your own copy. It is read
         locally, nothing is uploaded; a disc loaded on another page here is picked up automatically.
       </span>
+      <button type="button" id="play-copy-report" class="btn btn-ghost play-report-btn"
+              title="Copy what a bug report needs: the page's version, your browser and graphics chip, what the engine was doing, recent errors. No game data. Nothing is sent anywhere.">Copy report</button>
     </div>
 
     <!-- Rich save bar (LegaiaSaves.createRichBar, js/legaia-saves.js) - the
@@ -954,6 +960,8 @@ div.play-vis-head { cursor: default; }
             <kbd data-key="KeyE">E</kbd><span>R1</span>
             <kbd data-key="Digit1">1</kbd><span>L2</span>
             <kbd data-key="Digit2">2</kbd><span>R2</span>
+            <kbd>`</kbd><span>Game modes (Tab or ` in a room: the room screen)</span>
+            <kbd>\</kbd><span>Card menu, with a pack that has cards</span>
             <kbd>Drag</kbd><span>Swing / tilt the camera (locked during cutscenes)</span>
             <kbd>Wheel</kbd><span>Zoom in / out</span>
             <kbd>Dbl-click</kbd><span>Reset the camera to retail framing</span>
@@ -1380,11 +1388,19 @@ div.play-vis-head { cursor: default; }
       const wasmLoad = wasm ? null : LegaiaWasm.load();
       if (wasmLoad) wasmLoad.catch(() => {});
       if (disc) disc.close();
-      disc = window.__playDisc = await LegaiaPlayDisc.open(file, prog, `Reading ${file.name}`);
+      /* What the file is, in the desktop programs' words (`disc_file_problem`);
+       * ahead of a whole read for a file with no PROT.DAT to find. */
+      const checkFile = async () => {
+        if (!wasm) wasm = await wasmLoad;
+        const blob = file instanceof Blob ? file : file.blob;
+        if (!(blob instanceof Blob)) return;
+        const head = await blob.slice(0, wasm.disc_problem_head_len()).arrayBuffer();
+        const problem = wasm.disc_file_problem(file.name || '', new Uint8Array(head), blob.size);
+        if (problem) throw Object.assign(new Error(problem), { discProblem: true });
+      };
+      disc = window.__playDisc = await LegaiaPlayDisc.open(file, prog, `Reading ${file.name}`, checkFile);
       prog.indeterminate('Starting the engine…');
-      if (!wasm) {
-        wasm = await wasmLoad;
-      }
+      await checkFile();
       runtime = new wasm.LegaiaRuntime();
       prog.indeterminate('Walking ISO9660 + parsing PROT.DAT…');
       await prog.paint();   /* the parse below blocks the main thread */
@@ -1425,9 +1441,20 @@ div.play-vis-head { cursor: default; }
       }
       prewarmFirstEntry(runtime);
     } catch (err) {
-      prog.fail(`Couldn't load: ${err.message || err}`);
+      const msg = String(err.message || err);
+      /* The loader's own refusal: `load_disc: ...` is a file with no game in it. */
+      const refused = err.discProblem || msg.startsWith('load_disc:');
+      prog.fail(refused ? 'This file cannot be played' : "Couldn't load the disc");
+      statusEl.textContent = err.discProblem ? msg
+        : refused ? 'This is not a disc image of the game. Choose the .bin of a raw dump (2352-byte sectors) of your own copy.'
+        : `The disc did not load: ${msg}. Reload the page to try again; Copy report has the details for a bug report.`;
+      statusEl.classList.add('is-error');
       console.warn(err);
+      disc = window.__playDisc = null;
+      runtime = null;
+      return { rejected: refused };
     }
+    statusEl.classList.remove('is-error');
   }
 
   /* ---------------- expansion packs ----------------
@@ -1806,6 +1833,7 @@ div.play-vis-head { cursor: default; }
              * disc and re-enter, so a single bad frame doesn't
              * cost a page refresh (Bug-3 belt-and-suspenders). */
             statusEl.textContent = `Engine hiccup - recovering… (${msg})`;
+            LegaiaPlayReport.note(`engine trap: ${msg}`);
             recoverRuntime();
           },
         });
@@ -3032,6 +3060,16 @@ div.play-vis-head { cursor: default; }
    * rebuilt (a WASM trap makes a fresh instance at the default). */
   const volEl    = document.getElementById('play-volume');
   const volValEl = document.getElementById('play-volume-value');
+  /* Remembered as the window's launcher remembers its master volume; this
+   * slider's scale is the page's own, so it keeps a store of its own. */
+  const VOLUME_KEY = 'legaia.play-volume';
+  try {
+    const stored = parseFloat(localStorage.getItem(VOLUME_KEY));
+    if (stored >= 0 && stored <= parseFloat(volEl.max)) {
+      volEl.value = String(stored);
+      volValEl.textContent = stored === 0 ? 'mute' : `${stored}x`;
+    }
+  } catch (e) { /* the default level */ }
   function applyVolume() {
     const v = parseFloat(volEl.value);
     volValEl.textContent = v === 0 ? 'mute' : `${v}x`;
@@ -3047,7 +3085,10 @@ div.play-vis-head { cursor: default; }
       try { rt.audio_set_gain(on ? v : 0); } catch (e) { /* audio not up yet */ }
     }
   }
-  volEl.addEventListener('input', applyVolume);
+  volEl.addEventListener('input', () => {
+    try { localStorage.setItem(VOLUME_KEY, volEl.value); } catch (e) { /* this session only */ }
+    applyVolume();
+  });
   window.__playApplyVolume = applyVolume;
   if (window.LegaiaSound) {
     window.LegaiaSound.onChange(applyVolume);
@@ -3737,13 +3778,6 @@ div.play-vis-head { cursor: default; }
       if (rt) rt.play_net_say(input.value);
       input.value = '';
     });
-    window.addEventListener('keydown', (e) => {
-      if (e.code !== 'Tab' || e.target !== canvas) return;
-      const rt = rtNet();
-      if (!rt || !JSON.parse(rt.play_net_state_json()).joined) return;
-      e.preventDefault();
-      rt.play_net_toggle_screen();
-    });
   }
 
   /* Cheats - every control is a row of the engine's one cheat list
@@ -3982,5 +4016,6 @@ div.play-vis-head { cursor: default; }
   window.__playEnter = enter;
 
   RomCache.attach(fileInput, { onLoad: load });
+  LegaiaPlayReport.install(document.getElementById('play-copy-report'));
 })();
 </script>

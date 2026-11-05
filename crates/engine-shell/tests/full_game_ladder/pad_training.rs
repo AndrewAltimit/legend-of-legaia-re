@@ -27,6 +27,109 @@ thread_local! {
 /// had gone dry and a bag-less Noa met `rikuroa`'s row 16 at level 5.
 pub(super) const LEVEL_LOOKAHEAD: usize = 6;
 
+thread_local! {
+    /// The hand is out charging the gauge for a lost boss
+    /// ([`pad_charge_for_race`]): a fight's turns go to the Spirit stance, and
+    /// no art spends what they earn.
+    pub(super) static CHARGING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the Spirit cell of every Miracle typist is up to the price.
+fn typists_charged(session: &NativeSession) -> bool {
+    const FULL: u16 = 99;
+    let w = &session.host.world;
+    w.present_party_list().into_iter().all(|m| {
+        !race_typist(w, m)
+            || w.party
+                .roster
+                .members
+                .get(usize::from(m))
+                .is_some_and(|r| r.hp_mp_sp().sp_cur >= FULL)
+    })
+}
+
+/// Whether the party still holds half its MP. Charging pays for its fights out of
+/// what would heal it, and a party that spends it all meets the boss hurt.
+fn charge_affordable(session: &NativeSession) -> bool {
+    let w = &session.host.world;
+    let (mp, max) = w
+        .present_party_list()
+        .iter()
+        .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+        .map(|r| r.hp_mp_sp())
+        .fold((0u32, 0u32), |(c, x), v| {
+            (c + u32::from(v.mp_cur), x + u32::from(v.mp_max))
+        });
+    mp * 2 >= max
+}
+
+/// After a lost race against a timed finisher (Koru), walk the scene's
+/// encounters until the typists' gauges are full. The gauge carries between
+/// fights (the record's AP cell `+0x10E`,
+/// [`arts-command-gauge.md`](../../../../docs/subsystems/arts-command-gauge.md#what-an-art-costs-in-ap)),
+/// so a player who watched the finisher land walks into the next attempt with a
+/// Miracle ready: `+0x20` a Spirit turn. Against any other boss the walk costs
+/// more than it buys: the stance earns the same in the boss's own rounds, and
+/// the first attempt from a `zora_castle` save took Zora to 4204 of 22422 on 22
+/// heals where each charged attempt after it met him with an empty bag and left
+/// him over 19000. Returns the scene, when the walk left this one.
+pub(super) fn pad_charge_for_race(session: &mut NativeSession) -> Result<Option<String>, String> {
+    /// Outings before the hand goes in with what it has.
+    const CHARGE_OUTINGS: usize = 6;
+    if !RACE_LOST.with(std::cell::Cell::get)
+        || !at_lost_door()
+        || session.host.world.party.party_count < 3
+        || !walking(session)
+        || !released(session)
+        || !session.host.world.scene_can_roll_encounters()
+    {
+        return Ok(None);
+    }
+    if typists_charged(session) {
+        return Ok(None);
+    }
+    let here = scene_name(session);
+    // The walk is taken on its feet: the stance halves what it costs.
+    pad_field_heal(session, 900);
+    // A wipe out here unwinds to the reload: the flag must not outlive the walk.
+    struct Charging;
+    impl Drop for Charging {
+        fn drop(&mut self) {
+            CHARGING.with(|c| c.set(false));
+        }
+    }
+    let charging = Charging;
+    CHARGING.with(|c| c.set(true));
+    let mut left = Ok(None);
+    for _ in 0..CHARGE_OUTINGS {
+        if typists_charged(session) || !charge_affordable(session) {
+            break;
+        }
+        // A fled fight comes back hurt, and an outing below its floor walks nowhere.
+        pad_field_heal(session, 900);
+        left = outing(session, 400);
+        if !matches!(&left, Ok(None)) || scene_name(session) != here || !walking(session) {
+            break;
+        }
+    }
+    drop(charging);
+    // The last fight may have been fled: the boss is met healed.
+    if matches!(&left, Ok(None)) && walking(session) {
+        pad_field_heal(session, 900);
+    }
+    if std::env::var_os("LEGAIA_FGL_TRACE").is_some() {
+        let w = &session.host.world;
+        let cells: Vec<u16> = w
+            .present_party_list()
+            .iter()
+            .filter_map(|&m| w.party.roster.members.get(usize::from(m)))
+            .map(|r| r.hp_mp_sp().sp_cur)
+            .collect();
+        eprintln!("    [charge] AP cells {cells:?}");
+    }
+    left.map(|s| s.filter(|s| *s != here))
+}
+
 /// Outings one training session takes before the hand moves on regardless.
 const TRAIN_ROUNDS: usize = 24;
 
@@ -179,7 +282,10 @@ fn outing(session: &mut NativeSession, floor: u32) -> Result<Option<String>, Str
     let mut pick = 0usize;
     for leg in 0..OUTING_LEGS {
         pad_budget(session)?;
-        if party_hp_permille(session) < floor || !wants_training(session) {
+        let charging = CHARGING.with(std::cell::Cell::get);
+        if party_hp_permille(session) < floor
+            || !(wants_training(session) || charging && !typists_charged(session))
+        {
             break;
         }
         if !walking(session) || !session.host.world.scene_can_roll_encounters() {
@@ -361,7 +467,18 @@ fn pad_train_from(
         }
         let xp0 = party_xp(session);
         let gold0 = session.host.world.party.money;
-        let left = outing(session, if has_rest { 550 } else { 650 })?;
+        // A lone member with a working bed goes back to it early: nothing shares
+        // the hits, and a level-1 Noa who walked on at 90 of 150 HP from `cave01`'s
+        // Terra met three foes she could neither beat nor outrun.
+        let lone = session.host.world.present_party_list().len() == 1;
+        let floor = if lone && rest_works_here(session) {
+            800
+        } else if has_rest {
+            550
+        } else {
+            650
+        };
+        let left = outing(session, floor)?;
         let gained = party_xp(session) - xp0.min(party_xp(session))
             + u64::try_from(session.host.world.party.money - gold0).unwrap_or(0);
         if trace {

@@ -115,6 +115,9 @@ pub struct ModuleCamState {
     pub blade: [i16; 2],
     /// The creature seat `actor_table[7]` once an arm has placed it.
     pub creature: Option<ModuleSeat>,
+    /// PROT 0931's arm 26 TR y: `-4 * +0x3E` averaged over the living monsters
+    /// (`0x801F80C8..0x801F812C`), the row's middle. The host keeps it current.
+    pub jedo_row_tr_y: i16,
     /// The creature's live seat, as the host last moved it (its walk-in).
     /// Fed in by the host each tick; `None` before it is seated.
     pub creature_live: Option<ModuleSeat>,
@@ -994,6 +997,7 @@ mod puera;
 mod scythe_wind;
 mod seru;
 mod spoon;
+mod spore_gas;
 mod steal;
 mod stone_circle;
 pub mod summon_holds;
@@ -1011,8 +1015,8 @@ pub use blade_breath::{
     GIGATON_PRESS_STRIKE_CURSOR, THUNDER_NEEDLE_BODY, THUNDER_NEEDLE_RING_SPAN,
     THUNDER_NEEDLE_RING_STREAKS, THUNDER_NEEDLE_RING_TRAIL, THUNDER_NEEDLE_STRIKE_CURSOR,
     THUNDER_NEEDLE_TAIL_CURSOR, WIND_UP_SHOT_FRAMES, blade_breath_camera, capture_approach_follows,
-    gigaton_press_camera, gigaton_press_debris, gigaton_press_jump_height, thunder_needle_camera,
-    thunder_needle_ring,
+    capture_approach_yaw_base, gigaton_press_camera, gigaton_press_debris,
+    gigaton_press_jump_height, thunder_needle_camera, thunder_needle_ring,
 };
 pub use capture::*;
 pub use capture_countdown::{ArmCountdown, CountdownWrite, arm_countdown, capture_arm_countdowns};
@@ -1054,6 +1058,7 @@ pub use puera::*;
 pub use scythe_wind::{SCYTHE_WIND_BODY, SCYTHE_WIND_COUNTDOWN, scythe_wind_camera};
 pub use seru::*;
 pub use spoon::*;
+pub use spore_gas::spore_gas_camera;
 pub use steal::{STEAL_BODY, steal_camera};
 pub use stone_circle::{
     RING_RECORDS, STONE_CIRCLE_BODY, STONE_CIRCLE_COUNTDOWN, stone_circle_camera,

@@ -29,22 +29,42 @@ fn effect_clipped(p: vec3<f32>) -> bool {
 "#;
 
 pub(crate) const PRIM_NEAR_WGSL: &str = r#"
-// The battle shell's painter order (`flags.w < 0`,
-// `Renderer::DRAW_WORD_MEAN_DEPTH`): retail links each shell prim at the mean
-// `SZ` of its corners, so one quad's whole area sorts as that mean. The depth
-// row is `z = a * w + b` in clip space, read as `depth_affine` reads it.
+// Retail's per-primitive painter order (`flags.w < 0`,
+// `Renderer::DRAW_WORD_MEAN_DEPTH` on the battle shell,
+// `Renderer::set_field_prim_order` on the field): a primitive links at the
+// mean `SZ` of its corners, so its whole area sorts as that mean. `-flags.w - 1`
+// is the draw's `DRAW_ORDER_*` word: bit 0 sorts at the farthest corner
+// instead (colour word bit `0x10000000`, `FUN_80045194` at
+// `0x800452AC..0x800452F8`), bit 1 draws ten ordering-table buckets nearer
+// (`actor[+0x10] & 0x80800000`, `FUN_8001ADA4` at `0x8001B204..0x8001B21C`:
+// the table base less `0x28`, ten slots of `32` `SZ`, `320 / 6` port units on
+// the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
+// as `depth_affine` reads it.
 fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
     if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w <= 0.0) {
         return clip;
     }
     let m = u.mvp;
-    var w = (m * vec4<f32>(c0.xyz, 1.0)).w + (m * vec4<f32>(c1, 1.0)).w + (m * vec4<f32>(c2, 1.0)).w;
+    let w0 = (m * vec4<f32>(c0.xyz, 1.0)).w;
+    let w1 = (m * vec4<f32>(c1, 1.0)).w;
+    let w2 = (m * vec4<f32>(c2, 1.0)).w;
+    var w = w0 + w1 + w2;
+    var far = max(max(w0, w1), w2);
     var n = 3.0;
     if (c0.w > 3.5) {
-        w = w + (m * vec4<f32>(c3, 1.0)).w;
+        let w3 = (m * vec4<f32>(c3, 1.0)).w;
+        w = w + w3;
+        far = max(far, w3);
         n = 4.0;
     }
-    let mean_w = w / n;
+    let order = u32(round(-u.flags.w)) - 1u;
+    var mean_w = w / n;
+    if ((order & 1u) != 0u) {
+        mean_w = far;
+    }
+    if ((order & 2u) != 0u) {
+        mean_w = max(mean_w - 320.0 / 6.0, 1.0);
+    }
     if (mean_w <= 0.0) {
         return clip;
     }
@@ -99,6 +119,10 @@ fn prim_near_rejected(
     let s0 = prim_sxy(m, c0.xyz, p.y, p.x);
     let s1 = prim_sxy(m, c1, p.y, p.x);
     let s2 = prim_sxy(m, c2, p.y, p.x);
+    if (c0.w > 3.5 && u.psx_params.z > 2.5
+        && pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x))) {
+        return true;
+    }
     if (!span_too_big(s0, s1, s2)) {
         return false;
     }
@@ -106,6 +130,43 @@ fn prim_near_rejected(
         return span_too_big(s1, prim_sxy(m, c3, p.y, p.x), s2);
     }
     return true;
+}
+
+// A PCSX-Redux capture's polygon limit (`PsxTexelRule::PcsxRedux`, an
+// instrument): its software GPU drops a whole quad on any corner pair past the
+// limit (`SoftRenderer::checkCoord4`), where the console skips the one triangle.
+fn pcsx_quad_rejected(a0: vec2<f32>, a1: vec2<f32>, a2: vec2<f32>, a3: vec2<f32>) -> bool {
+    let c = vec2<f32>(160.0, 120.0);
+    let p0 = a0 + c;
+    let p1 = a1 + c;
+    let p2 = a2 + c;
+    let p3 = a3 + c;
+    const X: f32 = 1024.0;
+    const Y: f32 = 512.0;
+    if (p0.x < 0.0 && (p1.x - p0.x > X || p2.x - p0.x > X) && p3.x < 0.0
+        && (p1.x - p3.x > X || p2.x - p3.x > X)) {
+        return true;
+    }
+    if (p1.x < 0.0 && (p0.x - p1.x > X || p2.x - p1.x > X || p3.x - p1.x > X)) {
+        return true;
+    }
+    if (p2.x < 0.0 && (p0.x - p2.x > X || p1.x - p2.x > X || p3.x - p2.x > X)) {
+        return true;
+    }
+    if (p3.x < 0.0 && (p1.x - p3.x > X || p2.x - p3.x > X) && p0.x < 0.0
+        && (p1.x - p0.x > X || p2.x - p0.x > X)) {
+        return true;
+    }
+    if (p0.y < 0.0 && (p1.y - p0.y > Y || p2.y - p0.y > Y)) {
+        return true;
+    }
+    if (p1.y < 0.0 && (p0.y - p1.y > Y || p2.y - p1.y > Y || p3.y - p1.y > Y)) {
+        return true;
+    }
+    if (p2.y < 0.0 && (p0.y - p2.y > Y || p1.y - p2.y > Y || p3.y - p2.y > Y)) {
+        return true;
+    }
+    return p3.y < 0.0 && (p1.y - p3.y > Y || p2.y - p3.y > Y);
 }
 
 fn prim_sxy(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32, h: f32) -> vec2<f32> {

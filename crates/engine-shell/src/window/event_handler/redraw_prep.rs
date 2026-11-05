@@ -67,6 +67,16 @@ impl PlayWindowApp {
             if due && let Some(parts) = sc.seat_turning_parts.take() {
                 self.session.host.world.seat_ambient_part_banks(&parts);
             }
+            // ... and the dance's marker tiles on the steps the displayed frame
+            // drew (`LEGAIA_SEAT_DANCE_MARKERS`).
+            if due
+                && let Some(rows) = sc.seat_dance_markers.take()
+                && let Some(g) = self.session.host.world.minigames.dance.as_mut()
+            {
+                for (class, [cursor, timer, mesh]) in rows {
+                    g.seat_step_marker(class, cursor as u16, timer, mesh);
+                }
+            }
             // ... and the text balloon the displayed frame drew, or none
             // (`LEGAIA_SEAT_BALLOON`).
             if due && let Some(b) = sc.seat_balloon.take() {
@@ -375,6 +385,15 @@ impl PlayWindowApp {
         {
             self.session.host.world.seat_battle_backdrop_cue(w);
         }
+        if let Some(b) = self
+            .screenshot
+            .as_ref()
+            .and_then(|sc| sc.battle_ambient_base)
+            && self.session.host.world.mode == SceneMode::Battle
+            && self.capture_phase_met()
+        {
+            self.session.host.world.battle.ambient_stored = [b; 3];
+        }
         // ... and, on the captured phase itself, the glide's origin
         // (`LEGAIA_BATTLE_CAM_ALIGN`, `BattleCamera::align_glide_origin`).
         if let Some((live, end)) = self.screenshot.as_ref().and_then(|sc| sc.battle_cam_align)
@@ -577,6 +596,20 @@ impl PlayWindowApp {
                     }
                 }
             }
+            // The frame on screen is the last actor's Done tail, whose ghost
+            // bits the capture's setup state has since cleared.
+            if let Some(legaia_engine_capture::battle_drive::BattleDrive::Action {
+                steer:
+                    legaia_engine_capture::battle_drive::ActionSteer {
+                        prior: Some(prior), ..
+                    },
+                ..
+            }) = self.screenshot.as_ref().and_then(|sc| sc.battle_drive)
+            {
+                let world = &mut self.session.host.world;
+                let (seat, target) = prior.engine_seats(world.party.party_count.clamp(1, 3));
+                world.refresh_prior_action_ghost(seat, prior.category, target);
+            }
         }
     }
 
@@ -696,6 +729,16 @@ impl PlayWindowApp {
         // glides between). After `sync_battle_render` so battle entry sees
         // `battle_stage_mesh`; before the render borrow reads the pose.
         self.tick_battle_camera();
+        // A cast recording's opening: the pose retail's recording stood on.
+        if let Some(sc) = self.screenshot.as_ref() {
+            let world = &mut self.session.host.world;
+            if matches!(world.battle_ctx.action_state, 0x28 | 0x3C)
+                && let Some(pose) = sc.cast_seq_seat_pose.take()
+                && let Some(cam) = world.battle.camera.as_mut()
+            {
+                cam.stand_on_pose(pose);
+            }
+        }
         // Colour the ground grid from this frame's battle ambient (a summon
         // close-up dims it); re-uploads the grid only when it moved.
         self.sync_battle_ground_ambient();

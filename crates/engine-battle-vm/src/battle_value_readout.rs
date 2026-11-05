@@ -75,15 +75,13 @@
 //!
 //! # Wiring
 //!
-//! The multi-cast half above it - the teardown pass and the
-//! `DAMAGE`/`HIT`/`TOTAL` combo cluster - stays unwired, and for a reason that
-//! is neither the site nor the port. Retail calls this unconditionally at the
-//! head of every action-SM tick (`jal 0x801e805c` at `0x801E2A70`, ahead of
-//! the `ctx[+0x07]` jump), and that head is ported and live. It would have
-//! nothing to say: the `0x801F6980` value window and the `0x801F6988` slot
-//! list are written by the summon-overlay side band (PROT 0900 / the `readef`
-//! streaming slots), which nothing in `engine-core` loads, so every slot reads
-//! empty and both the teardown and the combo walk return nothing.
+//! Retail calls this unconditionally at the head of every action-SM tick
+//! (`jal 0x801e805c` at `0x801E2A70`, ahead of the `ctx[+0x07]` jump). The
+//! finisher `FUN_801DDB30` fills the value window `0x801F6980` when the target
+//! is the every-enemy code `9`, and three spells' modules fill it from their own
+//! rolls. The port carries the window on the HUD state
+//! (`engine-battle::battle_hud_state::MultiReadout`), drawn by
+//! [`multi_row_cluster`] and `engine-battle-hud::battle_multi_readout_plates`.
 
 /// Readout slots the value window holds (`_DAT_801F6980..0x801F6987`, four
 /// halfwords).
@@ -699,6 +697,54 @@ pub fn combo_cluster(style: ComboStyle, hits: u16, total: u32, slide: i32) -> Co
         COMBO_VALUE_CELL,
         COMBO_VALUE_CELL as i32,
     ));
+    out
+}
+
+/// The content-box x each value row of a [`multi_row_cluster`] rests on, by
+/// row count: `0x801F6834` lists the records `0x60..=0x63` the rows open
+/// (`0x60`, then `0x61 0x60`, `0x62 0x61 0x60`, `0x63 0x62 0x61 0x60`), and
+/// those records rest at `x = 244`, `168`, `92`, `16`. The row's digits sit on
+/// the record four below, at the same `x`.
+pub const MULTI_ROW_X: [i32; 4] = [244, 168, 92, 16];
+
+/// The value widget's row: the records `0x5C..=0x5F` rest at `y = 170`, and a
+/// content box's pen stands two above its record.
+pub const MULTI_ROW_VALUE_Y: i32 = 168;
+
+/// `x` offset of a row's last value cell's right edge (`+0x3D`, inclusive).
+const MULTI_ROW_RIGHT: i32 = 0x3E;
+
+/// `FUN_801E805C`'s render of the value window `0x801F6980`: one value per
+/// row, rows left to right, the label once over the last. A row's digits are
+/// `16` px cells under the label (`widget + (0x2E..=0x3D, 2..=0x11)`, stepping
+/// `16` left), or `12` px cells from five digits on (`0x32..=0x3D`,
+/// `2..=0xF`, stepping `12`). The label is the `DAMAGE` word at
+/// `widget + (0x0A, -0x0E)`, drawn on slot `0` alone (`0x801E8208..0x801E82AC`).
+/// `slide` is the record's glide off its rest seat.
+pub fn multi_row_cluster(values: &[u32], slide: i32) -> ComboCluster {
+    let n = values.len().clamp(1, MULTI_ROW_X.len());
+    let mut out = ComboCluster::default();
+    for (k, &value) in values.iter().take(n).enumerate() {
+        let x = MULTI_ROW_X[n - 1 - k] + slide;
+        let value = value.min(u32::from(u16::MAX)) as u16;
+        let wide = value >= 10_000;
+        let cell = if wide { 12 } else { COMBO_VALUE_CELL };
+        out.cells.extend(right_aligned_cells(
+            value,
+            x + MULTI_ROW_RIGHT,
+            MULTI_ROW_VALUE_Y + 2,
+            cell,
+            cell as i32,
+        ));
+        if k + 1 == n {
+            out.labels.push(ComboLabel {
+                uv: LABEL_DAMAGE,
+                x: x + 0x0A,
+                y: MULTI_ROW_VALUE_Y - 0x0E,
+                word: "DAMAGE",
+            });
+        }
+    }
     out
 }
 

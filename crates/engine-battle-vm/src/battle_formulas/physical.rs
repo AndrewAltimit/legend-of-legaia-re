@@ -173,12 +173,9 @@ fn scale_pct(v: u32, pct: u8) -> u32 {
 ///    `guard + rand%4 + 5 + combo`.
 /// 7. **Cap** (`0x801EDA00`) and `damage = raw - guard` (`0x801EDA6C`).
 ///
-/// Not reproduced here (they are separate, already-ported or live-state
-/// stages): the party-defender elemental-guard / All-Guard ladder
-/// (`0x801ED844..0x801EDA00`, whose arithmetic is
-/// [`super::damage_finish`]'s resist stage), the `0x4000` quarter-damage
-/// ability arm, the HP-bar accumulator write, and the spirit-gauge accrual
-/// ([`super::spirit_gauge_fill`]).
+/// The party-defender guard ladder is [`melee_guard_ladder`]; the broken
+/// block's quarter, the drain clip and the Spirit accrual are the caller's
+/// (`World::land_melee_hit`).
 ///
 /// The capped form of [`physical_excess`], for a caller that runs no guard
 /// ladder.
@@ -194,8 +191,17 @@ pub fn physical_predamage(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> 
 /// this, so the halve happens before the cap as retail's does. Same draws as
 /// [`physical_predamage`].
 ///
-/// PORT: FUN_801EC3E4 (the melee roll pair + underdog rewrite + chip floor)
 pub fn physical_excess(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> u32 {
+    let (raw, guard) = physical_rolls(hit, rand);
+    raw.saturating_sub(guard)
+}
+
+/// The two sides [`physical_excess`] subtracts, `raw` and `guard`, as `s0` and
+/// `s1` hold them at `0x801ED5CC`. The drain clip's `raw * 7 / 4`
+/// (`0x801EDAA4`) needs the two apart.
+///
+/// PORT: FUN_801EC3E4 (the melee roll pair + underdog rewrite + chip floor)
+pub fn physical_rolls(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> (u32, u32) {
     let atk = u32::from(hit.attacker_atk);
     let scalar = u32::from(hit.command_scalar);
     let combo = u32::from(hit.combo_scale);
@@ -273,6 +279,27 @@ pub fn physical_excess(hit: &PhysicalHit, rand: &mut impl FnMut() -> u16) -> u32
         }
     }
 
-    // 7 - the excess; the cap is the caller's ([`physical_predamage`]).
-    raw.saturating_sub(guard)
+    // 7 - the excess and the cap are the caller's.
+    (raw, guard)
+}
+
+/// The melee body's guard ladder and cap on the hit's excess
+/// (`0x801ED5CC..0x801EDA10`). `ladder` is the attacking monster's element and
+/// the party defender's resist words, `None` for any other pairing, which
+/// `0x801ED5CC..0x801ED5DC` sends straight to the cap.
+///
+/// All Guard (`hi & 0x10`) takes `3/4` of the excess unless the element is `7`,
+/// and takes it instead of the per-element halve, not on top of it.
+///
+/// PORT: FUN_801EC3E4 (`0x801ED5CC..0x801EDA10`, the guard ladder and cap)
+pub fn melee_guard_ladder(excess: u32, ladder: Option<(u8, super::DefenderResist)>) -> u32 {
+    let mut over = excess;
+    if let Some((element, resist)) = ladder {
+        if resist.hi & 0x10 != 0 && element != 7 {
+            over = over.wrapping_mul(3) >> 2;
+        } else if element <= 6 && resist.resists(element) {
+            over >>= 1;
+        }
+    }
+    over.min(PHYSICAL_DAMAGE_CAP)
 }

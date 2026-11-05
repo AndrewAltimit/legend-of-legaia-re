@@ -267,6 +267,8 @@ impl World {
         man: Option<&legaia_scene_formats::man_section::ManFile>,
     ) {
         self.party.scene_save_allowed = man.is_some_and(|m| m.header.low_flag);
+        // The scene reset clears it (`sb zero,0x61(v1)` at `0x8003A0A8`).
+        self.locomotion.scene_ctrl_61 = 0;
     }
 
     /// Release an op-`0x49` **menu-entry-context** park once the pause menu

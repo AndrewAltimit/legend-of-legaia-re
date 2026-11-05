@@ -2,6 +2,7 @@
 //! `PROT.DAT` archive, its CDNAME name map and (for a disc) the ISO9660
 //! file list.
 
+use legaia_app_theme::disc_text;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -99,8 +100,35 @@ pub fn validate(path: &Path) -> Result<Source> {
             e.context(format!("opening {}", bin.display()))
         }
     })?;
-    let vol = iso9660::read_volume(&mut disc).context("reading the ISO9660 volume")?;
-    let files = iso9660::walk_files(&mut disc, &vol.root).context("walking the ISO9660 tree")?;
+    let name = bin
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| bin.display().to_string());
+    // An image cut short by a copy or a download reads fine up to where it
+    // stops; say that, rather than the read's "failed to fill whole buffer".
+    let cut_short = |e: anyhow::Error, what: &str| {
+        if e.chain().any(disc_text::is_short_read) {
+            anyhow::anyhow!(
+                "{name} can't be opened. {} {}",
+                disc_text::CUT_SHORT,
+                disc_text::INCOMPLETE_FIX
+            )
+        } else {
+            e.context(what.to_string())
+        }
+    };
+    let vol = iso9660::read_volume(&mut disc)
+        .map_err(|e| cut_short(e, "reading the disc's table of contents"))?;
+    let files = iso9660::walk_files(&mut disc, &vol.root)
+        .map_err(|e| cut_short(e, "reading the disc's file list"))?;
+    let len = std::fs::metadata(&bin).map(|m| m.len()).unwrap_or(u64::MAX);
+    let needed = disc_text::sectors_needed(files.iter().map(|(_, f)| (f.lba, f.size)));
+    if let Some(what) = disc_text::incomplete_image(len, needed) {
+        bail!(
+            "{name} can't be opened. {what} {}",
+            disc_text::INCOMPLETE_FIX
+        );
+    }
     if !files
         .iter()
         .any(|(p, _)| p.eq_ignore_ascii_case("PROT.DAT"))

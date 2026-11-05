@@ -60,8 +60,8 @@ const ZENOIR_OVER_VICTIM_ARM: u8 = 10;
 /// The commit path names no module, so the rule is the band's; a module joins
 /// this list once its director's stage stores carry their `+0x1DC` bumps
 /// (`ModuleCamState::creature_restage`), which an at-once commit hides.
-const CLIP_GATED_MODULES: [u32; 16] = [
-    907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931, 932, 933, 934,
+const CLIP_GATED_MODULES: [u32; 18] = [
+    918, 920, 907, 908, 909, 913, 914, 915, 917, 924, 927, 928, 929, 930, 931, 932, 933, 934,
 ];
 
 /// The animation rate `+0x21D` the creature seat installer `FUN_801F19EC`
@@ -95,6 +95,43 @@ impl World {
                 .is_some_and(|e| CLIP_GATED_MODULES.contains(&e))
     }
 
+    /// Whether the actor's byte is the Spirit band's stage: `0x3C` stores
+    /// `+0x1DA = +0x1E7` with neither `+0x1DC` stage bit
+    /// (`0x801E3B4C..0x801E3B54`), so `0x3D` holds until the idle's natural
+    /// end commits it (`0x80047B54`). An Orb's Heal stands `51` vsyncs in
+    /// `0x3D` on its idle's last `384` cursor units.
+    pub(in crate::world) fn spirit_stage_waits_for_cycle(&self, slot: usize) -> bool {
+        use legaia_engine_battle_vm::battle_action::ActionState;
+        usize::from(self.battle_ctx.active_actor) == slot
+            && (self.battle_ctx.action_state == ActionState::SpiritPreArm.as_byte()
+                || self.battle_ctx.action_state == ActionState::SpiritWait.as_byte())
+    }
+
+    /// Whether the walking creature has stepped clean over `victim`'s range
+    /// window. A clip's root step is `speed * frame step * +0x21D / 8` a pass:
+    /// Zenoir's clip 2 at speed 255 and a frame step of 4 goes 510 units, and a
+    /// foe of `+0x1F = 14` answers `FUN_8004E2F0` inside a window 448 across. The
+    /// module's arm 8 has no other exit, so the creature walks off the stage for
+    /// good and the action never ends. The port lets the poll pass on the first
+    /// pass beyond the victim; before that this reads false, so a walk that lands
+    /// in the window is untouched.
+    fn creature_ran_past(&self, seat: Option<u8>, victim: u8) -> bool {
+        let Some(a) = seat.and_then(|s| self.actors.get(usize::from(s))) else {
+            return false;
+        };
+        let walking = a
+            .battle_animation
+            .as_ref()
+            .is_some_and(|p| p.root_speed() > 0);
+        let (vx, vz) = self.battle_seat_of(usize::from(victim));
+        walking
+            && legaia_engine_battle_vm::battle_action::motion::walked_past(
+                (a.move_state.world_x, a.move_state.world_z),
+                a.battle.facing_angle,
+                (vx, vz),
+            )
+    }
+
     /// Feed the creature seat's clip `+0x1D9` and the range answer
     /// `FUN_8004E2F0(7, victim) == 0` into the module camera state, the two
     /// creature gates PROT 0907 / 0908 / 0909's arms poll. A seat with no
@@ -120,7 +157,8 @@ impl World {
         let in_range = seat
             .and_then(|s| self.actors.get(s as usize))
             .map(|a| (a.move_state.world_x, a.move_state.world_z))
-            .map(|pos| self.creature_range_metric(pos, 0, victim) == 0);
+            .map(|pos| self.creature_range_metric(pos, 0, victim) == 0)
+            .map(|near| near || self.creature_ran_past(seat, victim));
         // `FUN_801DCEAC(9, ..)`: the enemy row's live seats, laid out on
         // retail's `3..7`.
         let pc = usize::from(self.party.party_count);

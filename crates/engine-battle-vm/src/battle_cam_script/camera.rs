@@ -302,6 +302,9 @@ pub struct BattleCamera {
     /// ([`BattleCamera::arm_escape_shot`]): from then on the shot owns the
     /// camera for the rest of the battle, whatever the phase or state.
     pub(super) escape_shot: bool,
+    /// The last action framing stands through a setup state
+    /// ([`BattleCamera::set_phase_on_state`]).
+    pub(super) framing_held: bool,
     /// The last [`BattleCamInputs::active_commits`] seen; `None` until the
     /// first drive, so a camera created mid-action does not reset on its
     /// first frame.
@@ -617,7 +620,7 @@ pub fn drive_on_stream(
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);
     cam.set_cursor(inputs.cursor);
-    cam.set_phase(inputs.phase);
+    cam.set_phase_on_state(inputs.phase, inputs.action_state);
     cam.set_frame_step(if inputs.frame_step == 0 {
         DEFAULT_CAMERA_FRAME_STEP
     } else {

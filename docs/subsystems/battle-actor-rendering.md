@@ -95,6 +95,7 @@ Retail draws a party body channel by channel: `FUN_80048A08` draws as many chann
 - The native window masks the TMD before the posed rebuild (`battle_attach_swap::mask_tmd`); the browser page collapses the hidden objects' vertices after posing (`play_battle_actor_hidden`, `play_battle_actor_ghost_hidden`).
 - An idle body therefore draws its bones only: no `0xFE` extra, no `0xFF` duplicate z-fighting its host. Noa's windowed arts and swings swap her attach piece for its alternate-vertex variant; Noa's `0x1E` band and Gala's high Ozma tiers draw their extra on its own channel during the 17-part swings.
 - A monster's table stays the registration identity, but the loop bound is the same stream part count (`**(node[+0x4C] + 0x88)`, read at `0x80048B2C` and `0x80049020`), so a monster TMD with more objects than the playing stream has parts draws only the first `parts`. Koru's sixteenth object, a staff, has a channel only in his 16-part action `0x15`; every other clip leaves it undrawn. Both hosts take that bound through `engine-world-views::battle_draws::battle_drawn_objects` (`koru_strip_forced`, where the port stood the unposed staff through the hood: `image` `.976` to `.979`). A monster's after-image ghosts take the same bound from their own historical stream (`BattleGhostDraw::drawn_objects`), as the walk re-runs `FUN_80048A08` with each ghost's entry.
+- A summon creature goes through the same pass under the same bound: its entries put the stream at `+0x8C`, and `summon_readef::parse_cast` carries the part count to the player.
 - The Rot limb dimming tests the draw pass's channel counter (`s3`, compared against the `0x80077998` ranges at `0x80048C64..0x80048D5C` and stepped at `0x80049024`), not the object, so a variant dims with the channel it is drawn in: both hosts map objects through `engine-world-views::battle_draws::battle_live_object_channels` before applying the plan.
 - The PROT 1203 ANM (`other5`) is not this pose source. Its banks (Vahn @ 0 / Noa @ 9 / Gala @ 18) are authored against PROT 1204's own object order, which differs from the assembled tag order, so it is the rest pose of the **1204 fallback mesh only** (identity object→bone).
 
@@ -283,13 +284,25 @@ So the strike loop's first swing, staged under bit 1 over the idle `0x19`'s arri
 | `0x1A` SpecialStarter | all slots `0`, acting actor `2` | `0x8004B728..0x8004B750` |
 | `>= 0x1B` art constant | all slots `2` if `ctx[+0x243]` set, else `4` | `0x8004BB78..0x8004BBA8` |
 
+Outside the commit, a cast's arms slow the seats they strike, beside each reaction
+stage, and so pace its knockdown and get-up. Earthquake stores `4` and restores `8` in
+its own `0xFF` arm. The Rogue strikes and Stone Circle store `2` on the hit and again
+on every pass of their next arm, so a commit's decay to `4` lasts one frame
+(`cast_module_ticks::party_rate_sweep`, `ChainArm::hit_rate`). Scythe Wind's arm 2 drops caster and victim to `1` as it stages the swing, so
+the caster's commit lifts it to `4` and the victim idles at `1` until the damage arm.
+A move-power record
+whose `+0x16` list holds `0xFF` (Thunder Break) stores `0x20` on its victim for as long
+as a landed slot's counter runs (`0x801E1800..0x801E1824`), so the body shivers until
+the hit; the hit's commit decays that to `4`. The Done tail's restore puts every seat
+back.
+
 A Super / Miracle starter is therefore a freeze-frame with only the dashing actor moving, at quarter speed. Each art strike then plays the whole battle at half speed. Direction swings (`0x0C..=0x0F`) never slow anything.
 
 The `0x1A` arm also raises the `ARTS!!` banner byte `ctx[+0x28B]` (from the queue-builder's side-array mark at `0x801F6990` / the Miracle marker; default `2`), zeroes the banner clock `+0x28C`, and queues the per-character arts shout (`FUN_8004FCC8` ids `0x101/0x111/0x121` plus per-follow-up variants). This is the `+0x28B` writer behind the [`flash_ramp` banner](battle-hud.md#arts-announcement-banner-fun_801e2524--fun_801e2650).
 
 **Restore.** `FUN_801E93C8` is `jal`ed from the shared tail at `0x801E5F64`, which the Done arm falls into and which states `0x1E`, `0x1F` and `0x20` jump to on nearly every pass (`0x801E39AC`, `0x801E3A68`, `0x801E3A80`, `0x801E3AF8`, `0x801E3B18`, `0x801E56C8`, `0x801E55A0..0x801E5658`). Once the acting actor's materialised art clip has ended (party: `+0x1D9 < 0x10`; monster: committed record flag `+0x87 == 0`), every slot returns to `8` and `ctx[+0x243]` clears. The battle is back at full speed the pass the last art clip ends, so a monster an art killed plays the rest of its knockdown at normal speed.
 
-**Port.** Kernel `legaia_engine_battle_vm::battle_anim_rate` (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s `commit_staged_battle_anim`, and the decay row again in `commit_battle_reaction_entry`, the reaction channel's half of the same commit (PROT 0912's damage arm drops its victims to `2` beside the knockdown it stages, and a retail capture of the cast holds the fallen monster at `4` through it); the rate-scaled advance in `battle_anim::MonsterAnimPlayer::tick_rated`; the restore in `battle_gauge_rearm::restore_anim_rates`.
+**Port.** Kernel `legaia_engine_battle_vm::battle_anim_rate` (`BattleActor::anim_rate`, default 8); commit arms in `engine-core`'s `commit_staged_battle_anim`, and the decay row again in `commit_battle_reaction_entry`, the reaction channel's half of the same commit (PROT 0912's damage arm drops its victims to `2` beside the knockdown it stages, and a retail capture of the cast holds the fallen monster at `4` through it); the rate-scaled advance in `battle_anim::MonsterAnimPlayer::tick_rated`; the restore in `battle_gauge_rearm::restore_anim_rates`, whose monster gate reads the `+0x87` of the entry the seat's clip `+0x1D9` names (`BattleActionHost::staged_art_record_flag`).
 
 ### The after-image ghost walk (`FUN_80049348`)
 
@@ -547,7 +560,9 @@ The browser play page runs the same `Field → Battle` edge through `legaia_web_
 - **Actors.** Each actor's idle / action / swing / art-bank clips are installed on the world so the shared battle SM poses them. Meshes are exported object-local, and the page poses them per frame from `play_battle_actor_pose` (the engine's live `pose_frame`). Actor draws compose the same live-facing yaw and retail 4× world scale as the native window.
 - **Per-tick VRAM re-stamps.** Facial animation, the Stone CLUT recolour and the effect CLUT stage run the same three drains against the battle VRAM copy; the page re-uploads on `play_battle_vram_take_dirty`.
 
-**Clip morphs.** A monster clip whose entry names [clip-morph lanes](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858) deforms the mesh while it plays (`FUN_800495C8` before the draw, `FUN_80049858` after it). Both hosts take the blended clone from `World::battle_morphed_tmd`: the native window builds its posed mesh from it (`build_posed_actor_overrides`), the page poses `play_battle_actor_morph`'s object-local positions instead of the rest upload.
+**A seat with a zero colour word does not tick.** Past the party seats, `FUN_80047430` reads the render node's colour word and jumps to its epilogue when the low 24 bits are zero (`lw v0,0x74(s5)`, `beq v0,zero,0x800480B0` at `0x800474D4..0x800474E0`). No cursor advance, no commit, no clip cue. The tint pass leaves `+0x74` at zero exactly under the hide, `+0x04 = 0` with `+0x21C = 0xFF`, so a creature seated hidden holds its first frames until shown (Terra's clip 0 stays on cursor `12` through arms 3..5). Port: the tick's early `continue` on `World::battle_body_hidden`.
+
+**Clip morphs.** A monster or summon creature clip whose entry names [clip-morph lanes](../formats/monster-animation.md#clip-morphs-fun_800495c8--fun_80049858) deforms the mesh while it plays (`FUN_800495C8` before the draw, `FUN_80049858` after it). Both hosts take the blended clone from `World::battle_morphed_tmd`: the native window builds its posed mesh from it (`build_posed_actor_overrides`), the page poses `play_battle_actor_morph`'s object-local positions instead of the rest upload.
 
 Shared with the native window from one kernel: the phase-scripted camera (`battle_cam_script`), the ground grid's per-draw depth cue, the battle-intro screen-prim emitter (`tick_battle_intro`), the mid-battle summon-creature spawn (`spawn_summon_creature_web`), the tint / ghost / blend plan (`play_battle_body_blend`), the weapon trail, the move-FX streak and clip ribbon, the after-image ghosts, and the floating damage numerals and `N HIT` / `TOTAL` counter (`engine-ui::battle_numerals`, sampling retail's 24x24 cells off the resident battle effect atlas; the page falls back to font-atlas text only on frames before the battle VRAM exists).
 

@@ -67,8 +67,12 @@ Windows crash leaves), and `failure_detail` gives the reason the game's log
 holds - a panic's message, the root cause of the `Error:` chain the engine
 exits with, or its last `ERROR` record - with paths cut to their file name
 and the line capped at `DETAIL_MAX`. A log with no failure in it gives no
-reason: what a crash leaves is the chatter before it. The module needs `std`
-(an exit status, owned strings); the palette does not.
+reason: what a crash leaves is the chatter before it. `report_text` is what the
+launcher's Ctrl+C and Explorer's *Copy report* put on the clipboard: program,
+version and system, how the game ended, the reason, and the end of the log with
+the home folder cut out. The play page's *Copy report* button is its twin
+(`site/js/play-report.js`). The module needs `std` (an exit status, owned
+strings); the palette does not.
 
 ## What the tests hold
 
@@ -82,7 +86,8 @@ reason: what a crash leaves is the chatter before it. The module needs `std`
   float values.
 - `game_exit`: the error-chain, panic and crash-log readings, an audio
   underrun not read as the reason, and the signal / exit-code headlines (a
-  `SIGTERM` or `SIGKILL` is the game being closed from outside, not a crash).
+  `SIGTERM` or `SIGKILL` is the game being closed from outside, not a crash);
+  a report's log tail and its removal of the home folder.
 - The window-icon PNGs are 256 px RGBA and each `.ico` holds a 256 px image;
   the resource script and the windres pick; `find_engine` across the release
   folder, a build folder and a macOS bundle.

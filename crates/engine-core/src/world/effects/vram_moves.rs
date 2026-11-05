@@ -46,6 +46,18 @@ impl World {
         let loads = std::mem::take(&mut self.battle.vram_loads);
         let loaded = !loads.is_empty();
         loads.replay(vram);
+        if (self.battle.command.is_some() || self.battle_ctx.action_state != 0)
+            && let Some(x) = self.battle.cue_clut_seed.take()
+        {
+            self.battle.vram_moves.insert(
+                0,
+                legaia_engine_field::script_vram_move::ScriptVramMove {
+                    src: (i16::from(x), 476),
+                    size: (16, 1),
+                    dst: (224, 476),
+                },
+            );
+        }
         let moves = std::mem::take(&mut self.battle.vram_moves);
         let moved = apply_vram_moves(moves, vram);
         let mut scrolled = false;
@@ -137,8 +149,11 @@ impl World {
         if self.mode != SceneMode::Battle {
             return;
         }
-        let vsyncs = vsyncs.max(1);
-        let step = self.clock.frame_step.max(1) * vsyncs;
+        // The arm's step is the battle frame's own (`0x1F800393`), which is
+        // the vsyncs this pass spans: the scroller moves `+0xCE` rows a vsync
+        // at any step. The display clock's `frame_step` is not it: it reads
+        // `3` in a battle and tripled every battle scroller's speed.
+        let step = vsyncs.max(1);
         for part in parts.iter_mut().filter(|p| !p.finished) {
             // The mode-3 arm: a `0x4000` part's HSV adds integrate every
             // tick, and from its second armed frame on it recolours the rect
@@ -146,7 +161,7 @@ impl World {
             // hue-cycles the scanline backdrop's CLUT row 488).
             if part.state.move_submode == legaia_engine_effects::summon::RenderMode::Particle.raw()
             {
-                let delta = self.move_vm.ramp_ratio.max(1) * vsyncs;
+                let delta = self.move_vm.ramp_ratio.max(1) * step;
                 if part.state.field_9c == 1 {
                     let d = &part.state.keyframe_desc;
                     self.battle.cell_captures.remove(&(d[0], d[1], d[2], d[3]));

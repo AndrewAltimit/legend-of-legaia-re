@@ -583,6 +583,11 @@
         if (mp.length) sc.out.set(mp, sc.markerBase * 3);
       }
     }
+    /* The hall's ambient tree repaints its palettes and strips every frame. */
+    if (typeof rt.play_mg_dance_ambient_step === 'function' && view.renderer) {
+      const vram = rt.play_mg_dance_ambient_step();
+      if (vram.length) view.renderer.uploadVram(vram);
+    }
     if (skipDraw) return;
     /* The hall frames through the dance entry's own camera (FUN_801CEF54's
      * staged pose, from the engine kernel the native window draws with). */

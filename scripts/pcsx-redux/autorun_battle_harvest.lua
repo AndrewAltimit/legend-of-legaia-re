@@ -62,7 +62,10 @@
 --                    (a synthetic fight: say so in the state's description).
 --   LEGAIA_TOUGH     1 = at each round prompt write every party seat's HP, its
 --                    readout and its pending delta back to full, so a low-level
---                    party outlasts the rounds
+--                    party outlasts the rounds; 2 = also raise each seat's
+--                    maximum to 9999 first, for a party a single hit would
+--                    wipe (the raised HP stays in the saved states and on the
+--                    HUD: say so in the state's description)
 --   LEGAIA_WOUND     round number at whose prompt every monster's HP drops to a
 --                    third of its maximum: the heal arms need a patient below
 --                    half HP (0 = never)
@@ -77,6 +80,11 @@
 --                    whole emulator state at the action's state 0x0A
 --                    (<key>_pre_...), before the pick, which replays the same
 --                    cast on its own for the cast-sequence oracle
+--   LEGAIA_AUDIO_LOG 1 = write audio.csv, one row per vsync: the game mode, the
+--                    track word, the field-BGM and battle sound sources (open,
+--                    libsnd sequence, its play flags, tick wait, read cursor)
+--                    and the sounding voice records split by owner: what a
+--                    fight does to the music between the step and the return
 --
 -- No breakpoints are armed, so --fast (dynarec) runs are fine.
 
@@ -106,7 +114,8 @@ for f in string.gmatch(probe.getenv("LEGAIA_WANT", ""), "[^;]+") do
     WANT[#WANT + 1] = ids
 end
 local WANT_FORCE = probe.getenv_num("LEGAIA_WANT_FORCE", 0) == 1
-local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) == 1
+local TOUGH = probe.getenv_num("LEGAIA_TOUGH", 0) >= 1
+local TOUGH_POOL = probe.getenv_num("LEGAIA_TOUGH", 0) == 2
 local WOUND = probe.getenv_num("LEGAIA_WOUND", 0)
 local WOUND_EVERY = probe.getenv_num("LEGAIA_WOUND_EVERY", 0) ~= 0
 local FINISH = probe.getenv_num("LEGAIA_FINISH", 0) == 1
@@ -245,6 +254,7 @@ local function round_pokes(round)
             if a ~= nil and (probe.read_u16(a + 0x14E) or 0) > 0 then
                 -- All three: state 0x51 parks on a readout +0x172 that
                 -- disagrees with the live HP and the pending delta +0x10.
+                if TOUGH_POOL then probe.write_u16(a + 0x14E, 9999) end
                 local hp = probe.read_u16(a + 0x14E)
                 probe.write_u16(a + 0x14C, hp)
                 probe.write_u16(a + 0x172, hp)
@@ -280,6 +290,32 @@ local rounds = 0
 local scene_seen = {}
 local scene_key, scene_since, scene_pos, scene_moved = nil, 0, nil, false
 
+local audio_log = nil
+local function log_audio(vsync, mode)
+    local function src(base)
+        local seq = probe.read_u16(base + 0xA) or 0
+        local rec = probe.read_u32(0x801CD2C0 + (seq % 32) * 4) or 0
+        local flags, wait, cursor, vol = -1, -1, -1, -1
+        if ok_ptr(rec) then
+            flags = probe.read_u32(rec + 0x98) or -1
+            wait = probe.read_u32(rec + 0x90) or -1
+            cursor = probe.read_u32(rec) or -1
+            vol = probe.read_u16(rec + 0x58) or -1
+        end
+        return string.format("%d,%d,%d,%d,%d,%d", probe.read_u16(base + 8) or 0, seq, flags, wait, cursor, vol)
+    end
+    local music, cue = 0, 0
+    for v = 0, 23 do
+        local r = 0x801CDB50 + v * 0x36
+        if (probe.read_u16(r + 6) or 0) ~= 0 then
+            if (probe.read_u16(r + 0x10) or 0) == 0x21 then cue = cue + 1 else music = music + 1 end
+        end
+    end
+    audio_log:row("%d,%d,%d,%d,%d,%s,%s,%d,%d", vsync, mode, probe.read_u32(0x8007BAC8) or 0,
+        probe.read_u32(0x8007BAB8) or 0, probe.read_u32(0x8007B750) or 0,
+        src(0x8007052C), src(0x8007056C), music, cue)
+end
+
 probe.run({
     sstate         = SSTATE_PATH,
     capture_frames = FRAMES,
@@ -293,6 +329,11 @@ probe.run({
     on_capture = function(ctx, vsync)
         release_if_due(vsync)
         local mode = probe.read_u8(GAME_MODE_VA) or 0
+        if probe.getenv_num("LEGAIA_AUDIO_LOG", 0) == 1 then
+            audio_log = audio_log or probe.csv_open(probe.out_path("audio.csv"),
+                "v,mode,word,req,flags,f_open,f_seq,f_flags,f_wait,f_cursor,f_vol,b_open,b_seq,b_flags,b_wait,b_cursor,b_vol,music,cue")
+            log_audio(vsync, mode)
+        end
         if vsync % 600 == 0 then
             local cp = probe.read_u32(CTX_PTR)
             logf("beat vsync=%d mode=0x%02x round=%d flow=0x%02x st=0x%02x seat=%d", vsync, mode, rounds,
@@ -422,6 +463,7 @@ probe.run({
                     local key = string.format("m%03d_c%d_q%02x", mid, cat, q)
                     if band_key ~= key .. b then
                         band_key, band_since = key .. b, vsync
+                        logf("action %s band=%s st=0x%02x seat=%d vsync=%d", key, b, st, seat, vsync)
                     elseif SAVE_PRE and cat == 2 and held_pre ~= nil and not pre_written[key] then
                         pre_written[key] = true
                         local name = string.format("%s_%s_%s_pre_v%d", PREFIX, key, scene_name(), vsync)
@@ -430,7 +472,7 @@ probe.run({
                         fh:close()
                         held_pre = nil
                         logf("CKPT %s vsync=%d", name, vsync)
-                    elseif vsync - band_since == (b == "module" and HOLD_MODULE > 0 and HOLD_MODULE
+                    elseif vsync - band_since >= (b == "module" and HOLD_MODULE > 0 and HOLD_MODULE
                             or b == "magic" and HOLD_MAGIC > 0 and HOLD_MAGIC or HOLD)
                         and (per_key[key] or 0) < PER_KEY and caps < MAX_CAPS then
                         local name = string.format("%s_%s_%s_st%02x_v%d",

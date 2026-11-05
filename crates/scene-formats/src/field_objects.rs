@@ -254,6 +254,17 @@ pub struct ObjectRecord {
     /// byte is nonzero. It is **not** an animation / state selector - see
     /// the object-bind record for that.
     pub cull_radius: u8,
+    /// `+0x1C` / `+0x1D`: the ground tile's signed `V` / `U` span past the
+    /// atlas tile's `31`. The field emitter `FUN_801F6D48` adds them to the
+    /// high edge (`lb t8,0x1D(s4)` / `add s3,s3,t8` and `lb t8,0x1C(s4)` /
+    /// `add s2,s2,t8` at `0x801F6EE4..0x801F6F0C`), so one cell can map several
+    /// atlas tiles (`deene`'s rock face, `96` rows past its own tile).
+    pub terrain_v_extra: i8,
+    pub terrain_u_extra: i8,
+    /// `+0x1A`: non-zero draws the ground tile semi-transparent with ABR
+    /// `value - 1` (`FUN_801F6D48` at `0x801F6F40..0x801F6F50`; `lui s3,0x200`
+    /// is the packet's semi bit, `sll s4,s4,0x15` the page word's ABR).
+    pub terrain_semi: u8,
 }
 
 impl ObjectRecord {
@@ -279,6 +290,9 @@ impl ObjectRecord {
             terrain_tpage: r[0x15] as u16,
             terrain_clut: u16::from_le_bytes([r[0x16], r[0x17]]),
             cull_radius: r[0x1E],
+            terrain_v_extra: r[0x1C] as i8,
+            terrain_u_extra: r[0x1D] as i8,
+            terrain_semi: r[0x1A],
         })
     }
 
@@ -901,7 +915,15 @@ pub fn build_ground_heightfield(
             let rec = ObjectRecord::parse(field_map, obj_idx);
             let tile_id = rec.map(|r| r.terrain_tile).unwrap_or(0);
             let (tpage, clut) = match rec {
-                Some(r) if r.terrain_tpage != 0 => (r.terrain_tpage, r.terrain_clut),
+                Some(r) if r.terrain_tpage != 0 => {
+                    // The mesh TSB's semi bit (`legaia_tmd::mesh`), field only.
+                    let semi = if gate == GroundCellGate::WalkVisible && r.terrain_semi != 0 {
+                        0x8000 | ((u16::from(r.terrain_semi) - 1) & 3) << 5
+                    } else {
+                        0
+                    };
+                    (r.terrain_tpage | semi, r.terrain_clut)
+                }
                 _ if gate == GroundCellGate::TerrainRecord => continue,
                 _ => (GROUND_ATLAS_TPAGE, GROUND_ATLAS_CLUT),
             };
@@ -931,8 +953,16 @@ pub fn build_ground_heightfield(
             let px = GROUND_ATLAS_TILE_PX as usize;
             let u_lo = ((tile_id as usize % GROUND_ATLAS_AXIS) * px).min(255) as u8;
             let v_lo = ((tile_id as usize / GROUND_ATLAS_AXIS) * px).min(255) as u8;
-            let u_hi = (u_lo as usize + px - 1).min(255) as u8;
-            let v_hi = (v_lo as usize + px - 1).min(255) as u8;
+            // The field emitter's span bytes (`FUN_801F6D48`); the overworld
+            // emitter has no such read.
+            let (u_extra, v_extra) = match rec {
+                Some(r) if gate == GroundCellGate::WalkVisible => {
+                    (r.terrain_u_extra as i32, r.terrain_v_extra as i32)
+                }
+                _ => (0, 0),
+            };
+            let u_hi = (u_lo as i32 + px as i32 - 1 + u_extra).clamp(0, 255) as u8;
+            let v_hi = (v_lo as i32 + px as i32 - 1 + v_extra).clamp(0, 255) as u8;
             // Corner→texel mapping. U runs along +X/col (left tile edge = u_lo).
             // V is FLIPPED relative to +Z/row: the retail terrain emitter maps the
             // low-Z (row) corner to the tile's *bottom* texel row and the high-Z

@@ -465,9 +465,12 @@ pub fn compare(
     );
     let want_mode = match retail.class {
         StateClass::WorldMap => SceneMode::WorldMap,
-        // The prize counter's screen runs over the suspended field, where
+        // The prize counter's and a shop's screens run over the suspended field, where
         // retail swaps the menu overlay in (mode `0x17`).
-        StateClass::Menu if matches!(&retail.menu, Some(Ok(m)) if m.prize_block.is_some()) => {
+        StateClass::Menu if matches!(&retail.menu, Some(Ok(m)) if m.map_display) => {
+            SceneMode::WorldMap
+        }
+        StateClass::Menu if matches!(&retail.menu, Some(Ok(m)) if m.prize_block.is_some() || m.shop_instr.is_some()) => {
             SceneMode::Field
         }
         StateClass::Menu => SceneMode::Menu,
@@ -551,7 +554,11 @@ pub fn compare(
             );
         }
     }
-    put("camera", s, d);
+    // The map display's survey camera is staged on the frame, not on the
+    // follow camera's globals the channel reads.
+    if !matches!(&retail.menu, Some(Ok(m)) if m.map_display) {
+        put("camera", s, d);
+    }
     put(
         "bgm",
         f64::from(u8::from(engine.bgm_id == Some(retail.bgm_id))),

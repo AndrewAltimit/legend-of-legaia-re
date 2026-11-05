@@ -7,7 +7,8 @@ How [`legaia-engine-render`](../../crates/engine-render/README.md) draws a frame
 The 3D mesh pipelines carry the PSX rasterisation traits below. Only three
 of them - the GTE's register limits, vertex snap and dithering - are gated, by
 `Renderer::set_psx_mode(true)` (off by default); the rest are unconditional,
-and semi-transparency has its own switch. The hosts run PSX mode on the
+and semi-transparency has its own switch. PSX mode also sets the
+field's [draw order](#the-field-sorts-by-each-primitives-link). The hosts run PSX mode on the
 [native target](#the-native-target), the frame drawn at the display's own
 `320 x 240`.
 
@@ -182,6 +183,19 @@ engine. `Renderer::set_psx_texel_rule(PsxTexelRule::PcsxRedux)` samples that
 rule instead; it is an instrument, not a player mode
 ([retail-compare](../tooling/retail-compare.md#the-image-channel)).
 
+The same emulator draws a `POLY_FT4` whole. The console splits every quad into
+two triangles, and so does PCSX-Redux for a Gouraud one (`drawPoly4TGEx8`), but
+its `drawPoly4TEx8` walks the flat-shaded quad's left and right outline chains
+(`setupSectionsFlatTextured4`) and steps `U` and `V` linearly along each row
+between them. Where the four corners lie on no one UV plane the two laws map the
+texture differently, by many texels on a large quad. Under the rule, the upload
+hands the vertex stage the quad's four UVs on the normal lane, and
+`quad_walk_uv` repeats the walk per fragment. Only the TMD builders know a
+primitive's kind (`TSB_FLAT_QUAD_BIT`): a Gouraud quad of four equal colours is
+common, and it splits. `noaru_field_card_walk`'s ice floor shows it largest: a
+raster of the state's own table reads `.921` against its frame by triangles and
+`.996` by the walk, and the port's frame moves from `.913` to `.998`.
+
 Taking the row itself puts a fragment on its triangle's top edge exactly on
 that edge, whose `V` is the corner's own value. The host's interpolation lands
 a hair either side of it, and truncated, the outside value reads the texel row
@@ -247,16 +261,44 @@ rule gives the pixel to has fragments on its own side only, and the other
 side's fragments are the ones the test drops, so every diagonal shared edge
 cracks.
 
-Per-primitive painter order is not the answer to the opaque ordering
-residue. Drawing every owned field primitive at the depth of its corners'
-mean `w`, the `AVSZ` key the TMD handlers link their packets by
-(`mfc2 s2, OTZ` / `andi s2, s2, 0xFFFC` / `addu s2, s2, t0` in
-`FUN_80043B58`), puts `door_warp_town01_to_map01`'s rock quad over its
-neighbour as retail does, and in the same pass hides the slot cabinet's
-face in `casino_ticket_counter` and a beam and counter in
-`doman_field_card_boot`: retail's frame there is not one ordering table
-keyed by every primitive's own mean, so the per-object linking has to be
-read before an ordering rule is ported.
+### The field sorts by each primitive's link
+
+In PSX mode the field pass draws each primitive at the depth of its ordering-table
+link rather than per pixel (`Renderer::set_field_prim_order`, `prim_mean_depth` on
+the vertex stage). Retail has no depth buffer, and three rules set the link:
+
+- A primitive links at the mean `SZ` of its corners (`mfc2 s2, OTZ` / `andi s2,
+  s2, 0xFFFC` / `addu s2, s2, t0` in `FUN_80043B58`).
+- A primitive of a draw whose colour word carries `0x10000000` links at its
+  farthest corner, the banks' max of `SZ0..SZ3` (`FUN_80045194` at
+  `0x800452AC..0x800452F8`). The word comes from an object record's flag `0x800`
+  ([renderer](renderer.md#a-decoration-cell-with-record-flag-0x800-sorts-at-its-farthest-corner)),
+  on a decoration cell and on a placed object alike (`FUN_8003A55C` at `0x8003A754`).
+- An actor whose `+0x10` carries a bit of `0x80800000` draws with the table base
+  `0x28` lower, ten buckets nearer (`FUN_8001ADA4` at `0x8001B204..0x8001B21C`,
+  `FUN_8001B964` the same). A prologue's `31 1F` raises the high bit on a placed
+  object or a seated prop, and the floor sampler raises `0x800000` on the player
+  each step over a cell without bit `0x1000` (`FUN_80019278` at
+  `0x80019314..0x80019328`).
+
+The hosts pass the last two per draw (natively `Renderer::set_draw_order`,
+`DRAW_ORDER_FAR_CORNER` / `DRAW_ORDER_NEAR_BUCKETS`; on the play page the placement's
+`meanDepth` word, from `field_terrain_draw_order` and `field_placement_draw_order`). A ground cell keeps the bucket
+its own emitter gives it (the far bucket, or two behind its farthest corner), so
+its vertices never take the primitive's rule.
+
+The three rules hold against a state's table: on `koin1_field_route_walk` every
+`0x7F84` quad of the floor sheet sits at the bucket of its farthest corner, and the
+terrain's `0x7DC3` wall quads at their mean, ten buckets behind the sheet's rule.
+The mean alone, with no record flags and no ground exception, hides floors and
+cabinets. With them `concend_field_door_hop` reads `1.000` (`.942` per pixel), where
+the sky's quads link among the far ridge's and cover them. `ropeway_field_route_walk`
+reads `.990` (`.979`), and its Octam trees are that same ordering.
+
+Not modelled: a walking NPC's `0x800000` (the sampler runs only for actors whose
+tick reaches it, which the port does not track per actor), a posed prop's record
+flag `0x800`, and the order inside one bucket (retail's last-linked-first). A
+clean frame keeps per-pixel depth.
 
 ### The battle shell sorts by prim mean
 
@@ -659,9 +701,19 @@ frame instead of clearing, and a capture seeds from the same one. Retail's
 earlier frame is the same display page two game frames back, eight vsyncs at the
 frame step a heavy arm runs at, so the renderer keeps a ring of eight frames
 rather than building on the last one, which fills the buffer eight times too
-fast. The frame step itself is the engine's fixed reading of those arms, not a
-measurement of the running frame's cost. The window's own target and the
-browser's canvas still clear: there the additive arms draw dimmer than retail.
+fast. The frame step itself is [a table read off a recording](battle-stage-camera.md#what-the-arm-step-table-is), not a
+measurement of the running frame's cost.
+
+The play page does the same under PSX rasterisation: `LegaiaPsxTarget`
+([`webgl-psx-target.js`](../../site/js/webgl-psx-target.js)) holds the same ring,
+`renderAssembled` asks it for the picture at the scene's clear (after the frame's
+ticks, through `play_cast_frame_persists`) and `play_cast_module_resident` keeps
+the last frame while one may be asked for. Bloom stands the frames down on both
+hosts, since it reads the frame it adds to. The page's text layer is a canvas of
+its own, so a name plaque's letters do not enter the ring as the window's do. The
+window's own target and the browser's clean-rasterisation canvas still clear:
+there the additive arms draw dimmer than retail. Both hosts advance the ring once
+per drawn frame, which is a vsync only on a 60 Hz display.
 
 **Backdrops draw first.** A screen primitive whose four corners sit at the
 far plane (`ScreenPrim::is_backdrop`) is one retail links into the farthest

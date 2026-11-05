@@ -45,6 +45,13 @@ impl World {
             TARGET_GROUP_ENEMIES, TARGET_GROUP_PARTY,
         };
         let caster_is_party = caster < self.party.party_count;
+        // A monster's scripted arm stores its own seat whatever the record's
+        // shape says: Slime Divide `0x50` carries the all-allies `0x24`, and
+        // `FUN_801E9FD4` stores `s7 + 3` (`sb v0,0x1dd(s4)` at `0x801EB9B4`),
+        // so its cast-begin skips the facing store (`beq v0,t2` at `0x801E4350`).
+        if !caster_is_party && targets == [caster] {
+            return caster;
+        }
         match def.target {
             // Codes are in retail's absolute numbering: 8 = party, 9 = the
             // enemy row - whichever side the caster stands on.
@@ -281,7 +288,7 @@ impl World {
     /// Turn battle slot `victim` to face `caster` along the two live pairs
     /// `+0x34` / `+0x38` - the homing hit arm's turn
     /// (`FUN_801E09F8`, `0x801E1A20..0x801E1A54`).
-    fn turn_victim_to_caster(&mut self, victim: u8, caster: u8) {
+    pub(in crate::world) fn turn_victim_to_caster(&mut self, victim: u8, caster: u8) {
         let (Some(v), Some(c)) = (
             self.actors.get(usize::from(victim)),
             self.actors.get(usize::from(caster)),
@@ -349,6 +356,16 @@ impl World {
                 .move_power
                 .as_ref()
                 .is_some_and(|cat| cat.fx_for_move_id(pc.spell_id).is_some())
+    }
+
+    /// Glare's roll belongs to its own pass: PROT 0940's arm 2 counts out,
+    /// resolves Stone and its landing cue, and steps to arm 3
+    /// (`0x801F6F30`, `0x801F6F9C..0x801F719C`, `0x801F71A0`). The band's closing
+    /// seam would otherwise fold it some two seconds later.
+    pub(in crate::world) fn fold_glare_on_its_arm(&mut self, entry: u32, spell_id: u8, arm: u8) {
+        if entry == 940 && spell_id == 0x3C && arm >= 3 {
+            self.fold_pending_cast();
+        }
     }
 
     fn fold_cast(&mut self, pc: PendingCast) {

@@ -4,10 +4,11 @@
 //! Disc-free. The page is the port of sub-screen `0x15`'s browse half: a
 //! clamping row picker over a seven-row window with a latch-then-exchange
 //! confirm on the spell list. What this pins is the whole chain both hosts
-//! share - a confirm on the **Status** screen's character opens the page,
-//! the exchange permutes the page, and closing it replays the exchange onto
-//! the character's own `0x414` bytes so the Magic screen lists the new
-//! order.
+//! share - a confirm on the **Status** screen's Magic page opens the list,
+//! the exchange permutes it, and closing it replays the exchange onto the
+//! character's own `0x414` bytes so the Magic screen lists the new order.
+//! The confirm arm of the character picker (`0x801DA3C8..0x801DA448`) routes
+//! on the folded page cursor: the Magic page's value `2` writes step `3`.
 //!
 //! Status is retail's own route: `0x801D6C4C`, in the root picker
 //! `FUN_801D6B20`'s row-3 arm, is the only site in PROT 0899 that writes
@@ -22,7 +23,7 @@ use legaia_engine_menu_runtime::field_menu_dispatch::{
 };
 use legaia_engine_menus::field_menu::FieldMenuRow;
 use legaia_engine_menus::items::ItemCatalog;
-use legaia_engine_menus::list_order::LIST_ORDER_PAGE_ROWS;
+use legaia_engine_menus::list_order::{LIST_ORDER_PAGE_ROWS, ListOrderSession};
 use legaia_engine_menus::options::OptionsState;
 use legaia_engine_menus::save_select::{SaveRack, SlotSnapshot};
 use legaia_engine_system::input::PadButton;
@@ -70,12 +71,30 @@ fn row_session(world: &World, row: FieldMenuRow) -> FieldMenuSubsession {
     )
 }
 
-/// Open the Status screen on the lead character, then confirm into the
-/// reorder page over that character's spell list.
+/// Open the Status screen on the lead character, turn to the Magic page and
+/// confirm into its list.
 fn open_page(world: &World) -> FieldMenuSubsession {
     let mut sub = row_session(world, FieldMenuRow::Status);
-    sub.tick_pad_edge(PadButton::Cross.mask()); // status char -> list page
+    sub.tick_pad_edge(PadButton::Right.mask());
+    sub.tick_pad_edge(PadButton::Right.mask());
+    sub.tick_pad_edge(PadButton::Cross.mask());
     sub
+}
+
+/// The list while it holds the pad.
+fn open_list(sub: &FieldMenuSubsession) -> &ListOrderSession {
+    let FieldMenuSubsession::Status(s) = sub else {
+        panic!("the list runs inside the Status screen");
+    };
+    s.list().expect("the Magic page's list holds the pad")
+}
+
+/// The list a cancel closed, for the host to replay.
+fn closed_list(sub: &mut FieldMenuSubsession) -> ListOrderSession {
+    let FieldMenuSubsession::Status(s) = sub else {
+        panic!("the list runs inside the Status screen");
+    };
+    s.take_closed_list().expect("the cancel closed the list")
 }
 
 fn screen_ids(world: &World) -> Vec<u8> {
@@ -88,12 +107,10 @@ fn screen_ids(world: &World) -> Vec<u8> {
 }
 
 #[test]
-fn a_confirm_on_the_status_screen_opens_the_page_with_its_rows() {
+fn a_confirm_on_the_status_screens_magic_page_opens_its_list() {
     let world = world_with_spells();
     let sub = open_page(&world);
-    let FieldMenuSubsession::ListOrder(page) = &sub else {
-        panic!("the Status confirm opens the reorder page");
-    };
+    let page = open_list(&sub);
     let ids: Vec<u8> = page.rows().iter().map(|r| r.id).collect();
     assert_eq!(ids, SPELLS.to_vec(), "the page lists the record's order");
     assert_eq!(page.scroll_top(), 0);
@@ -113,13 +130,14 @@ fn an_exchange_reaches_the_record_and_the_screen_behind_it() {
     sub.tick_pad_edge(PadButton::Down.mask());
     sub.tick_pad_edge(PadButton::Cross.mask());
     sub.tick_pad_edge(PadButton::Circle.mask());
-    assert!(sub.is_done(), "cancel with no latch closes the page");
+    assert!(
+        !sub.is_done(),
+        "cancel with no latch closes the list, not Status"
+    );
 
-    let FieldMenuSubsession::ListOrder(page) = &sub else {
-        panic!("still the page");
-    };
+    let page = closed_list(&mut sub);
     assert_eq!(page.swaps(), &[(0, 2)]);
-    assert_eq!(apply_list_order_outcome(page, &mut world), 1);
+    assert_eq!(apply_list_order_outcome(&page, &mut world), 1);
 
     assert_eq!(
         screen_ids(&world),
@@ -142,16 +160,10 @@ fn a_cancelled_visit_leaves_the_record_alone() {
     let mut sub = open_page(&world);
     sub.tick_pad_edge(PadButton::Cross.mask()); // latch row 0
     sub.tick_pad_edge(PadButton::Circle.mask()); // drop the latch
-    assert!(
-        !sub.is_done(),
-        "the first cancel drops the latch, not the page"
-    );
+    open_list(&sub);
     sub.tick_pad_edge(PadButton::Circle.mask());
-    assert!(sub.is_done());
-    let FieldMenuSubsession::ListOrder(page) = &sub else {
-        panic!("still the page");
-    };
-    assert_eq!(apply_list_order_outcome(page, &mut world), 0);
+    let page = closed_list(&mut sub);
+    assert_eq!(apply_list_order_outcome(&page, &mut world), 0);
     assert_eq!(screen_ids(&world), SPELLS.to_vec());
 }
 
@@ -167,9 +179,7 @@ fn the_apply_refuses_a_row_the_record_no_longer_carries() {
     sub.tick_pad_edge(PadButton::Down.mask());
     sub.tick_pad_edge(PadButton::Down.mask());
     sub.tick_pad_edge(PadButton::Cross.mask());
-    let FieldMenuSubsession::ListOrder(page) = &sub else {
-        panic!("still the page");
-    };
+    let page = open_list(&sub).clone();
     assert_eq!(page.swaps(), &[(0, 3)]);
 
     // The list shrank underneath the page.
@@ -177,7 +187,7 @@ fn the_apply_refuses_a_row_the_record_no_longer_carries() {
     let mut list = member.spell_list();
     list.count = 2;
     member.set_spell_list(list);
-    assert_eq!(apply_list_order_outcome(page, &mut world), 0);
+    assert_eq!(apply_list_order_outcome(&page, &mut world), 0);
     assert_eq!(
         &world.party.roster.members[0].spell_list().ids[..2],
         &SPELLS[..2],
@@ -195,15 +205,13 @@ fn an_empty_raseru_slot_reports_no_list_to_the_apply() {
     sub.tick_pad_edge(PadButton::Cross.mask());
     sub.tick_pad_edge(PadButton::Down.mask());
     sub.tick_pad_edge(PadButton::Cross.mask());
-    let FieldMenuSubsession::ListOrder(page) = &sub else {
-        panic!("still the page");
-    };
+    let page = open_list(&sub).clone();
     assert_eq!(page.swaps().len(), 1);
 
     let member = &mut world.party.roster.members[0];
     let mut equip = member.equipment();
     equip.slots[3] = 0;
     member.set_equipment(equip);
-    assert_eq!(apply_list_order_outcome(page, &mut world), 0);
+    assert_eq!(apply_list_order_outcome(&page, &mut world), 0);
     assert_eq!(screen_ids(&world), SPELLS.to_vec());
 }

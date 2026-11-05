@@ -37,6 +37,10 @@ pub const SWORDIE_ARM5_CLIP: u8 = 2;
 /// `0x801F762C`, stored at `0x801F7634`).
 pub const SWORDIE_ARM5_RENDER_FLAG: u8 = 7;
 
+/// The frame step retail runs the slash arms at (the recording's `step`, a
+/// timer step of `32` at speed `8`), where the engine steps `1 * speed` a call.
+const SWORDIE_PASS_STEP: i32 = 4;
+
 /// How many slashes [`swordie_slash`] runs per cast - the `sltiu s0,0x4`
 /// bound on the three `FUN_801F81DC` loops (`0x801F77E8`, `0x801F7934`,
 /// `0x801F7A14`).
@@ -414,7 +418,12 @@ pub fn swordie_tick(
                     });
                 }
             }
-            if i32::from(slashes.timer) <= 96 * i32::from(clock.speed) {
+            // Retail tests the timer once a pass (`0x801F7960`), so the exit
+            // pass is a whole one: every slash takes all of its step, and the
+            // landings after the exit stay on their passes.
+            let timer = i32::from(slashes.timer);
+            let pass = i32::from(clock.speed) * SWORDIE_PASS_STEP;
+            if timer <= 96 * i32::from(clock.speed) || timer % pass != 0 {
                 return CastArmStep::Hold;
             }
             slashes.countdown = i32::from(clock.speed) << 7;

@@ -21,6 +21,11 @@ impl SlotRng {
         Self { state: seed }
     }
 
+    /// The state word `DAT_801D3C80`.
+    pub fn state(&self) -> u32 {
+        self.state
+    }
+
     /// Advance and return the next state word.
     pub fn next_u32(&mut self) -> u32 {
         let x = self.state.wrapping_mul(5).wrapping_add(1);
@@ -176,35 +181,64 @@ pub const FEATURE_STOP_SYMBOL: u8 = 7;
 /// The bonus round (`6`) passes depth `0` with target `-1`, which searches
 /// nothing and lands the reel on the next row: the three numbers you
 /// multiply are your own timing.
-// PORT: FUN_801d2114 (per-reel stop: target symbol + search depth by feature mode)
 pub fn stop_plan(rng: &mut SlotRng, feature_mode: u8, normal_target: u8) -> (usize, Option<u8>) {
+    let (depth, target, _) = stop_plan_with_budget(rng, feature_mode, normal_target);
+    (depth, target)
+}
+
+/// [`stop_plan`] with the reel's roll-in budget `DAT_801d3cf0[reel]`, the frames
+/// it may turn before it locks wherever it stands ([`roll_to_row`]).
+// PORT: FUN_801d2114 (per-reel stop: target symbol + search depth by feature mode)
+pub fn stop_plan_with_budget(
+    rng: &mut SlotRng,
+    feature_mode: u8,
+    normal_target: u8,
+) -> (usize, Option<u8>, i32) {
     match feature_mode {
-        0 => (((rng.next_u32() % 3 + 2) as usize), Some(normal_target)),
-        1 => ((((rng.next_u32() & 3) + 6) as usize), Some(9)),
-        2 => ((((rng.next_u32() & 3) + 6) as usize), Some(8)),
+        0 => ((rng.next_u32() % 3 + 2) as usize, Some(normal_target), 0x13),
+        1 => (((rng.next_u32() & 3) + 6) as usize, Some(9), 0x16),
+        2 => (((rng.next_u32() & 3) + 6) as usize, Some(8), 0x16),
         3 => {
             // The roll-in budget's draw (`0x801D2224`), then the depth's.
-            let _budget = rng.next_u32() % 7 + 0x18;
+            let budget = (rng.next_u32() % 7 + 0x18) as i32;
             let depth = rng.next_u32() % 7 + 10;
-            (depth as usize, Some(normal_target % 3))
+            (depth as usize, Some(normal_target % 3), budget)
         }
         4 => {
             // The first landing on the normal target is replaced by the
             // timer-expired re-land (`0x801D235C..0x801D2394`).
             let _first = rng.next_u32() % 10 + 6;
             let depth = rng.next_u32() % 10 + 6;
-            (depth as usize, Some(FEATURE_STOP_SYMBOL))
+            (depth as usize, Some(FEATURE_STOP_SYMBOL), 0x14)
         }
         5 => (
-            ((rng.next_u32() % 10 + 8) as usize),
+            (rng.next_u32() % 10 + 8) as usize,
             Some(FEATURE_STOP_SYMBOL),
+            0x14,
         ),
         // The bonus round: no search, no target - the reel stops where you
         // stopped it (`FUN_801d2114` case 6 passes depth 0 / target -1).
-        FEATURE_MODE_BONUS => (0, None),
+        FEATURE_MODE_BONUS => (0, None, 0x14),
         // `sltiu v0,v1,0x7` at `0x801D214C` skips the plan for a mode past
         // `6`; the feature roll writes only `0..=6`, so no spin reaches it.
-        _ => (0, None),
+        _ => (0, None, 0x14),
+    }
+}
+
+/// The turn the reel makes after its stop (`FUN_801d0554`): `0x66` a frame, one
+/// budget frame spent each, until its high byte reads the landing row or the
+/// budget runs out, then locked on the row it stands on. So a landing further off
+/// than the budget reaches is never made: the reel stops short.
+///
+/// PORT: FUN_801d0554 (the roll to the row, from `pos` to the row it locks on)
+pub fn roll_to_row(mut pos: i32, row: usize, mut budget: i32) -> usize {
+    const ROLL_SPEED: i32 = 0x66;
+    loop {
+        pos = (pos + ROLL_SPEED).rem_euclid(REEL_WRAP);
+        budget -= 1;
+        if (pos >> 8) as usize == row || budget < 0 {
+            return (pos >> 8) as usize;
+        }
     }
 }
 

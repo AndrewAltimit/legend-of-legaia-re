@@ -9,6 +9,22 @@ pub(in crate::world) struct BattleHostImpl<'a> {
 }
 
 impl<'a> BattleActionHost for BattleHostImpl<'a> {
+    fn spell_table_class(&self, id: u8) -> u8 {
+        self.world.spell_table_class(id).unwrap_or(0x14)
+    }
+
+    // PORT: FUN_801E93C8 (`0x801E9458..0x801E94A4`, the monster arm's record read)
+    fn staged_art_record_flag(&self, monster_slot: u8, action_id: u8) -> u8 {
+        self.world
+            .actors
+            .get(usize::from(monster_slot))
+            .and_then(|a| a.battle_action_clips.as_ref())
+            .and_then(|clips| clips.get(usize::from(action_id)))
+            .and_then(|c| c.as_ref())
+            .and_then(|c| c.entry_solo_flag())
+            .unwrap_or(0)
+    }
+
     fn display_tick(&self) -> u64 {
         self.world.clock.display_frames
     }
@@ -441,6 +457,12 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn capture_stager_tick(&mut self) -> bool {
         self.world.module_pass(World::capture_stager_tick)
     }
+    fn capture_exit_clears_style(&self) -> bool {
+        self.world
+            .casting
+            .module_running_entry
+            .is_none_or(legaia_engine_cast::cast_module_camera::capture_exit_clears_style)
+    }
     /// The party cast trigger the pre-cast wait runs on its timer's expiry.
     ///
     /// Two arms on the spell id (`sltiu v0,a1,0x25` at `0x801DBFA0`), both
@@ -584,6 +606,7 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         }
     }
     fn apply_damage(&mut self, icon: u8, page: u8, target_slot: u8, party_slot: u8) {
+        self.world.fold_battle_item_action(target_slot);
         self.world
             .pending_battle_events
             .push(BattleEvent::ApplyDamage {
@@ -597,6 +620,14 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     /// mirrors as [`World::party_roster_slot`] - 1-based, so `id - 1` is the
     /// roster index the character record sits at. Monster slots report `4`,
     /// the value the cast-cue dispatcher's enemy leg tests for.
+    /// The Point Card goes back in the bag as the action starts
+    /// (`jal 0x800421d4` with `(0xFE, 1)` at `0x801F3A58`).
+    ///
+    /// PORT: FUN_801F3990 (the `+0x1DF == 0xFE` leg's give; the voice stays with
+    /// the cast cue's sound seat)
+    fn cast_item_give(&mut self, _voice_arg: u8) {
+        let _ = self.world.party.inventory.add(0xFE, 1);
+    }
     fn roster_character_id(&self, slot: u8) -> u8 {
         if slot < self.world.party.party_count {
             self.world.party_roster_slot(slot as usize) as u8 + 1
@@ -671,15 +702,40 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
             CueSpawn::Actor { id, yaw } => {
                 self.world.try_spawn_effect(id, at, (yaw as u16) & 0xFFF);
             }
-            // `clut_x` is a VRAM x coordinate, not a cue id: retail's arm
-            // is `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
-            // - a 16-entry palette-row swap. It was pushed into
-            // `World::audio.battle_sfx_cues` while the table was read as an SFX
-            // map, which fed the SFX scheduler the values `0xB0` / `0xC0` /
-            // `0xD0`. The engine has no VRAM CLUT-row swap on this seam, so
-            // the copy is dropped rather than mis-routed.
-            CueSpawn::Effect { effect_index, .. } => {
-                self.world.spawn_action_table_effect(effect_index, at);
+            // `clut_x` is a VRAM x coordinate, not a cue id: the arm is
+            // `MoveImage({x = clut_x, y = 476, w = 16, h = 1}, 224, 476)`
+            // (`0x801E2400..0x801E2450`), the palette the effect's mesh draws
+            // through, swapped in ahead of its spawn. A heal's pillar is gold
+            // on it and the row's earlier occupant's green without it.
+            CueSpawn::Effect {
+                effect_index,
+                clut_x,
+                tint,
+                ..
+            } => {
+                if let Some(x) = clut_x {
+                    self.world.battle.vram_moves.push(
+                        legaia_engine_field::script_vram_move::ScriptVramMove {
+                            src: (i16::from(x), 476),
+                            size: (16, 1),
+                            dst: (224, 476),
+                        },
+                    );
+                }
+                if self.world.spawn_action_table_effect(effect_index, at)
+                    && let Some(word) = tint
+                    && let Some(root) = self
+                        .world
+                        .casting
+                        .active_action_fx
+                        .last_mut()
+                        .and_then(|scene| scene.parts.first_mut())
+                {
+                    // `sh v0,0x78(a0)` / `sw v0,0x74(a0)` on the spawn's
+                    // returned node (`0x801E2484..0x801E2494`).
+                    root.state.field_78 = 0x800;
+                    root.state.field_74 = word;
+                }
             }
         }
     }

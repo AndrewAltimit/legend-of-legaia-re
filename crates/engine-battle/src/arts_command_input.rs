@@ -49,13 +49,10 @@
 //!   back to [`DEFAULT_POOL`] (the pinned input bar's 100-AP span) only
 //!   when no roster is loaded, which retail never is.
 //! - **Charge point, not amount.** The art body *is* charged from the
-//!   Spirit gauge (`World::charge_art_spirit`, off
-//!   [`crate::ap_gauge::arts_turn_spirit_cost`]), but at the commit
-//!   rather than through retail's accumulator `actor[+0x224]`, which the
-//!   battle-action cleanup arm spends once at `0x801E5D74`. Same turn,
-//!   same total; the difference is only observable by reading `+0x170`
-//!   mid-action. The actor's `0x800` halving flag has no carrier here, so
-//!   the full-price multiplier is the one that runs.
+//!   Spirit gauge (`World::charge_art_spirit`, the walk's accumulator) at the
+//!   dispatch rather than at the battle-action cleanup arm, which spends
+//!   `actor[+0x224]` once at `0x801E5D74`. Same turn, same total; the difference
+//!   is only observable by reading `+0x170` mid-action.
 //!
 //! Two entries previously disclosed here as engine conveniences - "Cross
 //! confirms early" and "Circle backs out" - were **not** divergences: both
@@ -585,14 +582,17 @@ impl ArtsCommandInputSession {
         }
         match std::mem::replace(&mut self.phase, ArtsInputPhase::Aborted) {
             ArtsInputPhase::Entering => {
-                let dir = if ev.up {
-                    Some(Command::Up)
+                // The four tests store over one another in the order Left,
+                // Up, Down, Right (`0x801D1E60..0x801D1F74`), so the last wins
+                // when two edges share a frame.
+                let dir = if ev.right {
+                    Some(Command::Right)
                 } else if ev.down {
                     Some(Command::Down)
+                } else if ev.up {
+                    Some(Command::Up)
                 } else if ev.left {
                     Some(Command::Left)
-                } else if ev.right {
-                    Some(Command::Right)
                 } else {
                     None
                 };
@@ -611,8 +611,11 @@ impl ArtsCommandInputSession {
                         self.pennant_glides.push((self.buffer.len() - 1, 0));
                     }
                     // Auto-end on the exhausting press (retail 0x50 ->
-                    // 0x5A: entry ends by itself, no confirm).
-                    self.phase = if self.any_affordable() {
+                    // 0x5A: entry ends by itself, no confirm). The scan's
+                    // verdict is read behind the committed count
+                    // (`801d2084 beq v0,zero,801d20e4`): a pool that cannot pay
+                    // the first command stays in entry, with cancel the way out.
+                    self.phase = if self.buffer.is_empty() || self.any_affordable() {
                         ArtsInputPhase::Entering
                     } else {
                         ArtsInputPhase::Review

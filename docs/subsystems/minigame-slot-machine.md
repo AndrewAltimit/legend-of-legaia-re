@@ -521,11 +521,10 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 
 **Where the port differs from retail** (each marked at its site in the source):
 
-- The spin-up pacing constants (`SPIN_UP_FRAMES`, `SPIN_VELOCITY`) are engine-chosen; the retail magnitudes are not pinned.
 - The BIOS-`rand` stream is a deterministic LCG (`BiosRand`), so replays stay bit-identical.
-- A stopped reel snaps to its landing row at once (`stop_plan` / `land_row`); retail's roll-in (`FUN_801d0554`) creeps it there under the per-reel budget and can stop it short.
+- A stopped reel snaps at once to the row retail's roll-in (`FUN_801d0554`) would lock it on, budget and all (`roll_to_row`), where retail turns it there over the frames.
 - A host press collects the rest of a payout tally at once (`SlotMachine::collect`).
-- The submenu's cancel + confirm collision and the last-frame spin-up latch are not reproduced (see their sections).
+- The submenu's cancel + confirm collision is not reproduced (see its section).
 
 **Runtime wiring.** The machine is a suspending scene mode: `SceneMode::SlotMachine`, with `World::enter_slot_machine` / `tick_slot_machine` / `exit_slot_machine`. The exit performs the state-100 bank commit into `World::minigames.casino_coins` (= `_DAT_800845A4`). `tick_slot_machine` hands the machine the packed edge word first (`SlotMachine::cash_out_input`), so Triangle / Select open the cash-out submenu on both play hosts, and a quit or an empty machine's leave runs the bank commit and the return warp when the fade completes.
 

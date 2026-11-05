@@ -158,6 +158,17 @@ struct FieldHunt {
 /// Frames the host leaves a finished field hunt on screen before ending it.
 const HUNT_OVER_HOLD: u32 = 4 * 60;
 
+/// What a key press does in a room ([`NetPlay::room_key`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoomKey {
+    /// Send quick reaction `i` of [`EMOTES`].
+    Reaction(usize),
+    /// Open or close the room screen.
+    ToggleScreen,
+    /// Start typing a chat line.
+    BeginChat,
+}
+
 enum Phase {
     /// Hello sent, no welcome yet.
     Joining,
@@ -387,6 +398,32 @@ impl NetPlay {
         self.draft = None;
         if !self.screen_open {
             self.notice = None;
+        }
+    }
+
+    /// What a key press means to this room, for the play host holding the
+    /// keyboard: `code` is its `KeyboardEvent.code` (a winit `KeyCode`'s
+    /// `Debug` name is the same string), `pad_bound` whether a pad button is
+    /// bound to that key. The number keys 1-5 not bound to a button are the
+    /// quick reactions, mid-game too; `Tab` and the backquote key flip the room
+    /// screen, and `T` on it starts a chat line. One table, so a key means the
+    /// same in a room on either host.
+    pub fn room_key(&self, code: &str, pad_bound: bool) -> Option<RoomKey> {
+        let reaction = match code {
+            "Digit1" => Some(0),
+            "Digit2" => Some(1),
+            "Digit3" => Some(2),
+            "Digit4" => Some(3),
+            "Digit5" => Some(4),
+            _ => None,
+        };
+        if let Some(i) = reaction.filter(|_| !pad_bound && self.draft.is_none()) {
+            return Some(RoomKey::Reaction(i));
+        }
+        match code {
+            "Tab" | "Backquote" if !self.in_mode() => Some(RoomKey::ToggleScreen),
+            "KeyT" if self.screen_open && self.draft.is_none() => Some(RoomKey::BeginChat),
+            _ => None,
         }
     }
 

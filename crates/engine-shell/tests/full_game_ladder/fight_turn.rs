@@ -197,7 +197,9 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             } else {
                 wanted_item(w, (0..menu.filtered_items.len()).filter_map(listed))
             };
-        let want = heal_want
+        let want = wanted_point_card(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
+            .or_else(|| wanted_cure_item(w, (0..menu.filtered_items.len()).filter_map(listed)))
+            .or(heal_want)
             .or_else(|| wanted_mp_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor))
             .or_else(|| {
                 wanted_fury_item(w, (0..menu.filtered_items.len()).filter_map(listed), actor)
@@ -229,7 +231,7 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             InventoryUseState::TargetSelect { cursor, .. } => {
                 let aim = want.map(|(_, t)| t);
                 let on = menu.targets.get(*cursor).map(|t| t.slot);
-                if aim.is_none() || on == aim {
+                if aim.is_none() || on == aim || aim == Some(ANY_TARGET) {
                     if let Some(slot) = on {
                         ITEM_TARGET.with(|t| {
                             if let Some(a) = t.borrow_mut().get_mut(usize::from(actor)) {
@@ -322,10 +324,15 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
         let magic = || {
             !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor))
                 && !refused()
-                && !miracle_ready(w, cmd.actor)
+                && if racing_a_finisher(w) {
+                    race_cast(w, cmd.actor)
+                } else {
+                    !miracle_ready(w, cmd.actor) && arts_measured_first(w, cmd.actor)
+                }
         };
         let heal_spell = || {
             !refused()
+                && (!racing_a_finisher(w) || race_heal(w, cmd.actor))
                 && !NO_HEAL_SPELL.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
                 && spell_heal(w, cmd.actor).is_some()
         };
@@ -365,16 +372,58 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                     && wanted_power_item(w, bag.into_iter(), cmd.actor).is_some()))
                 && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
         };
+        let card = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_point_card(w, bag.into_iter(), cmd.actor).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
+        let cure = || {
+            let bag: Vec<u8> = w
+                .party
+                .inventory
+                .iter()
+                .filter(|(_, c)| **c > 0)
+                .map(|(id, _)| *id)
+                .collect();
+            wanted_cure_item(w, bag.into_iter()).is_some()
+                && !NO_ITEM.with(|n| n.borrow().contains(&(cmd.actor, party_hp_key(w))))
+        };
         return match &cmd.phase {
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Items) => {
+                PadButton::Up.mask()
+            }
+            // The Point Card's strike ahead of everything but the kill itself.
+            CommandPhase::Menu { .. }
+                if lesson.is_none() && !going_for_the_kill(w, cmd.actor) && card() =>
+            {
                 PadButton::Up.mask()
             }
             CommandPhase::Menu { .. } if lesson == Some(TutorialLesson::Spirit) => {
                 PadButton::Down.mask()
             }
+            // Out charging after a lost boss: the stance, until the gauge is up.
+            CommandPhase::Menu { .. }
+                if lesson.is_none()
+                    && CHARGING.with(std::cell::Cell::get)
+                    && w.actors[usize::from(cmd.actor)].battle.spirit_gauge < 100 =>
+            {
+                PadButton::Down.mask()
+            }
             // The finishing blow: damage ahead of every heal, item and
             // stance - a spell when that is what the count rests on.
-            CommandPhase::Menu { .. } if lesson.is_none() && going_for_the_kill(w, cmd.actor) => {
+            // A member with every limb rotted has no such swing: the ring refuses
+            // the arm and stays up, and it falls through to the arms below.
+            CommandPhase::Menu { .. }
+                if lesson.is_none()
+                    && going_for_the_kill(w, cmd.actor)
+                    && !attack_refused(w, cmd.actor) =>
+            {
                 let spell = finishing_damage(w, cmd.actor).is_some_and(|(_, s)| s);
                 if spell && !NO_MAGIC.with(|n| n.borrow().contains(&cmd.actor)) && !refused() {
                     ask_magic()
@@ -382,6 +431,9 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
                     PadButton::Left.mask()
                 }
             }
+            // A member turned to stone: Medicine, ahead of the stance and the
+            // heals ([`wanted_cure_item`]).
+            CommandPhase::Menu { .. } if lesson.is_none() && cure() => PadButton::Up.mask(),
             // A Delilas special is due this round: the stance ahead of any
             // heal. Unguarded it outweighs the member's whole bar, so a heal
             // spent on this round is spent on a member about to drop; guarded
@@ -431,6 +483,11 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             }
             // A duel's damage is its Arts; a summon spends the turn and the
             // MP for less.
+            // Behind a Mystic Shield a plain string deals nothing: the stance,
+            // until the gauge pays for the Miracle Art.
+            CommandPhase::Menu { .. } if lesson.is_none() && wants_miracle_stance(w, cmd.actor) => {
+                PadButton::Down.mask()
+            }
             // A ring that answers Magic by reopening itself (a fight whose
             // special word forbids the Ra-Seru chip, `battle_raseru_forbidden`,
             // or a caster with no spell session) is asked a few times and
@@ -462,8 +519,19 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
             // time the worse draw against foes the party can beat: a lone
             // chapter-1 Vahn on `map01` fled a pair of 99 HP monsters six
             // rounds running and fell at the last.
+            // Out charging, the fight is only worth what the gauge earns: the
+            // stance deals nothing, so a party past half its HP leaves before
+            // the scene's foes finish it.
+            CommandPhase::RoundPrompt { .. }
+                if CHARGING.with(std::cell::Cell::get)
+                    && !w.battle.no_escape
+                    && charge_too_costly(w) =>
+            {
+                PadButton::Right.mask()
+            }
             CommandPhase::RoundPrompt { .. }
                 if FLEE_ENCOUNTERS.with(std::cell::Cell::get)
+                    && !CHARGING.with(std::cell::Cell::get)
                     && !w.battle.no_escape
                     && (!heal() || losing_race(w))
                     && !runs_failing(w)
@@ -491,6 +559,16 @@ pub(super) fn fight_pad(session: &NativeSession) -> u16 {
 }
 
 /// One line of battle state for a stall report.
+/// Whether the party out charging has lost over half its HP
+/// ([`pad_charge_for_race`](super::pad_training::pad_charge_for_race)).
+fn charge_too_costly(w: &legaia_engine_core::world::World) -> bool {
+    let n = w.party.party_count.clamp(1, 3) as usize;
+    let (hp, max) = w.actors[..n].iter().fold((0u32, 0u32), |(h, m), a| {
+        (h + u32::from(a.battle.hp), m + u32::from(a.battle.max_hp))
+    });
+    hp * 2 < max
+}
+
 pub(super) fn battle_snapshot(session: &NativeSession) -> String {
     let w = &session.host.world;
     let n = w.party.party_count.clamp(1, 3) as usize;
@@ -689,11 +767,22 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
     if trace {
         eprintln!("    [battle] start: {}", battle_snapshot(session));
         party_dump(session);
+        let w = &session.host.world;
+        let classes: Vec<(u16, u8)> = w
+            .actors
+            .iter()
+            .filter_map(|a| a.battle_monster_id)
+            .filter_map(|id| Some((id, w.tables.monster_catalog.get(id)?.swing_class)))
+            .collect();
+        eprintln!("    [party] foe swing classes {classes:?}");
     }
     let trace_hits = trace && std::env::var_os("LEGAIA_FGL_TRACE_HITS").is_some();
     let hp_all = |s: &NativeSession| -> Vec<u16> {
         s.host.world.actors.iter().map(|a| a.battle.hp).collect()
     };
+    let trace_acts = trace && std::env::var_os("LEGAIA_FGL_TRACE_ACTS").is_some();
+    let mut last_act = (usize::MAX, 0u8);
+    let mut last_module_phase = u8::MAX;
     let mut last_cmd: [String; 3] = Default::default();
     let mut hp_prev = hp_all(session);
     let foe_hp = |s: &NativeSession| -> u32 {
@@ -842,7 +931,7 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             }
             if trace_hits {
                 eprintln!(
-                    "    [round] t={t} history {:?} due {} aoe {} hp {:?} mode {} foe mp {:?}",
+                    "    [round] t={t} history {:?} due {} aoe {} hp {:?} mode {} foe mp {:?} status {:?} spirit {:?} mp {:?} foe hp {:?}",
                     ROUND_HISTORY.with(|h| h.borrow().clone()),
                     big_round_due(),
                     AOE_HIT.with(std::cell::Cell::get),
@@ -857,6 +946,26 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                         .map(|a| a.battle.mp)
                         .filter(|&m| m > 0)
                         .collect::<Vec<_>>(),
+                    (0..3u8)
+                        .map(|i| {
+                            session
+                                .host
+                                .world
+                                .battle
+                                .status_effects
+                                .statuses(i)
+                                .iter()
+                                .map(|s| s.kind)
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>(),
+                    (0..3)
+                        .map(|i| session.host.world.actors[i].battle.spirit_gauge)
+                        .collect::<Vec<_>>(),
+                    (0..3)
+                        .map(|i| session.host.world.actors[i].battle.mp)
+                        .collect::<Vec<_>>(),
+                    foe_now,
                 );
                 last_cmd = Default::default();
             }
@@ -905,6 +1014,53 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
                 hp_prev = hp_now;
             }
         }
+        if trace_acts {
+            let w = &session.host.world;
+            if let Some(c) = w
+                .casting
+                .summon_actor_slot
+                .and_then(|s| w.actors.get(usize::from(s)))
+                && w.casting.module_phase != last_module_phase
+            {
+                last_module_phase = w.casting.module_phase;
+                let seats: Vec<(usize, i16, i16)> = w
+                    .actors
+                    .iter()
+                    .enumerate()
+                    .take(6)
+                    .filter(|(_, a)| a.active)
+                    .map(|(i, a)| (i, a.move_state.world_x, a.move_state.world_z))
+                    .collect();
+                eprintln!(
+                    "    [cast] t={t} module phase {} creature ({}, {}) facing {:#x} target {} clip {} seats {seats:?} body {:?}",
+                    w.casting.module_phase,
+                    c.move_state.world_x,
+                    c.move_state.world_z,
+                    c.battle.facing_angle,
+                    c.battle.active_target,
+                    c.battle.current_anim,
+                    w.actors
+                        .iter()
+                        .take(6)
+                        .map(|a| a.battle.seat)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            let who = usize::from(w.battle_ctx.active_actor);
+            let now = (who, w.battle_ctx.action_state);
+            if now != last_act {
+                last_act = now;
+                let a = w.actors.get(who);
+                eprintln!(
+                    "    [act] t={t} actor {who} sm 0x{:02X} anim {:?} queue {:02X?} target {:?} foe {}",
+                    now.1,
+                    a.map(|a| a.battle.current_anim),
+                    a.map(|a| a.battle.params),
+                    a.map(|a| a.battle.active_target),
+                    foe_now,
+                );
+            }
+        }
         if trace && std::env::var_os("LEGAIA_FGL_TRACE_BATTLE").is_some() && t % 1000 == 0 {
             eprintln!("    [battle] t={t}: {}", battle_snapshot(session));
         }
@@ -921,6 +1077,12 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             // what beat them.
             if trace {
                 eprintln!("    [battle] lost to a boss of element {boss_element:?}");
+            }
+            if boss == Some(KORU_MONSTER_ID) {
+                RACE_LOST.with(|l| l.set(true));
+            }
+            if boss.is_some() {
+                LOST_BEAT.with(|l| l.set(FIGHT_BEAT.with(std::cell::Cell::get)));
             }
             // A boss that Stoned a member beat the party with the stone, not
             // its element: Zora's Glare petrifies one member a cast, and the
@@ -990,6 +1152,28 @@ pub(super) fn fight_battle(session: &mut NativeSession) -> Option<Run> {
             target.and_then(|t| w.actors.get(usize::from(t)).map(|a| a.battle.liveness)),
             w.actors.get(caster).map(|a| a.battle.params),
         );
+        if let Some(c) = w
+            .casting
+            .summon_actor_slot
+            .and_then(|s| w.actors.get(usize::from(s)))
+        {
+            let ms = &c.move_state;
+            eprintln!(
+                "    [battle]   creature at ({}, {}) facing {:#x} target {} victim at {:?} module victim {:?} in range {:?} clip {:?}",
+                ms.world_x,
+                ms.world_z,
+                c.battle.facing_angle,
+                c.battle.active_target,
+                target.and_then(|t| w.actors.get(usize::from(t)).map(|a| (
+                    a.move_state.world_x,
+                    a.move_state.world_z,
+                    a.battle.facing_angle
+                ))),
+                w.casting.module_cam.victim_slot,
+                w.casting.module_cam.creature_in_range,
+                w.casting.module_cam.creature_clip,
+            );
+        }
         for (s, a) in w.actors.iter().enumerate().take(12) {
             eprintln!(
                 "    [battle]   seat {s}: active {} hp {} mon {:?} anim {} queued {} reaction {:?}/{:?} pose {:?} color {:#x} rflag {:#x} flags {:#x}",

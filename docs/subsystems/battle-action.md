@@ -244,7 +244,7 @@ Resets ctx counters at `+0x6DA..+0x6DB`; seeds the [turn cursor](#the-turn-curso
 
 #### State `0x0A` - Pre-action wait
 
-Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate).
+Calls `func_0x8003F2B8(1)` (likely a "pause until previous animation cleared" gate). Arms no camera framing; while it waits the yaw orbits (`0x801E5BE4..0x801E5C04`).
 
 **Next:** `0x0C` when ready, else stays.
 
@@ -368,6 +368,8 @@ Gated on `ctx[+0x249] == 0`, so a victim's knockdown and get-up clips hold the b
 
 `FUN_801D5854(actor, 6)` + waits on `func_0x8003DE7C(1)` (sound bank ready). When ready, computes summon-frame index `bVar5` from `actor[+0x1DF]` (if < 0x9A: `(actor[+0x1DF] + 0x7F) * 3 + 0x80`, else `actor[+0x1DF] * 4 + 99`); writes `ctx[+0x277] = bVar5`, `ctx[+0x276] = 1`, `ctx[+0x278] = 1`. Sets `actor[+0x1DA] = 9`, `actor[+0x1DC] |= 1`, `actor[+0x1FA]++`.
 
+The poll holds while the drive's read is in flight (`gp+0x988`, `0x8003DF70`), and the framing call above keeps walking: `14` or `16` vsyncs on every party summon recorded from `party_basic_attack_vs_gobu_gobu`. The port has no read, so `SUMMON_INVOKE_DRIVE_PASSES` holds the arm eight passes, a constant fitted to those recordings; without it `0x33`'s close-up cuts in on a shorter walk.
+
 **Next:** `0x33`.
 
 #### State `0x33` - Summon - fade in
@@ -416,7 +418,7 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3D` - Spirit - wait
 
-`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`. When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](battle-action-helpers.md#battle-helper-functions)). This is the **only** state that reaches that dispatcher, and an ordinary item use is the door into it - see [the one caller](battle-action-helpers.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
+`FUN_801D5854(actor, 6)`. Holds while `actor[+0x1DA] != actor[+0x1D9]`, and `0x3C` staged that byte with neither `+0x1DC` commit bit, so the idle's natural end commits it: an Orb's Heal stands `51` vsyncs here on the last `384` cursor units of its idle (port `World::spirit_stage_waits_for_cycle`). When matched, clears `actor[+0x1DA]`, calls `func_0x801F3990` (the [cast audio-cue dispatcher](battle-action-helpers.md#battle-helper-functions)). This is the **only** state that reaches that dispatcher, and an ordinary item use is the door into it - see [the one caller](battle-action-helpers.md#the-one-caller-is-state-0x3d-and-it-is-an-item--spirit-state).
 
 **Next:** `0x3E`.
 
@@ -428,7 +430,7 @@ OR's the fade primitive bit `8`; clears `DAT_801C938C[+0x22C]`.
 
 #### State `0x3F` - Spirit - wait & fire damage
 
-Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**. Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
+`FUN_801D5854(target, 6)` on the stacked `+0x1DD` (`lw a0,0x20(sp)` at `0x801E40D8`), so the camera turns from the caster to its patient here, on the same arm `0x40` runs. Decrements `ctx[+0x6D8]`. On expiration: calls `func_0x800402F4(actor[+0x1E8], actor[+0x1E9], target, party_id-1)` - the **damage application primitive**, and the moment a committed item takes effect (port `World::fold_battle_item_action`). Sets `ctx[+0x6D8] = 0x80` (post-damage cooldown).
 
 **Next:** `0x40`.
 
@@ -477,6 +479,8 @@ Entered from `0x51` only when the killing blow absorbed a Seru (`ctx[+0x269]` no
 **Next:** `0x5A`.
 
 #### State `0x5A` - End-of-action gate
+
+Arms the finished actor's framing first (`0x801E6428..0x801E6470`): [case 8 for an Attack, nothing for a Run, case 6 otherwise](battle-stage-camera.md#how-a-frames-camera-is-chosen). It stands through the next actor's setup.
 
 Iterates 8-actor table clearing per-actor anim flag bits (`+0x8 &= 0x7CFFFFFF`, `+0x21F = 0`). Resets dead/inactive actors' `+0x36 = 0`, `+0x21C = 0`, `+0x225 = 0`. Counts living actors per side ([plus a special-battle rule](battle-formulas.md#the-flow-readers)): if all party or all monsters dead, sets `DAT_8007BD71 = 0xFE` (battle-end signal) + `_DAT_8007BD2C = 5` (party wipe) or `0` (monster wipe), AND's `DAT_8007BD60 &= 0x7F`. Otherwise, picks the next active actor: bumps the [turn cursor](#the-turn-cursor-ctx0x1a) `ctx[+0x1A]++`; if it is `< (party_count + monster_count - ctx[+0x25])`, advances to `0x0A` (next action); else → `0xFF` (round boundary - see below).
 
@@ -609,6 +613,17 @@ TR z `3353`), and its screen shows the wider case-6 view of the whole party
 (the floor grid on the older of its two ordering tables already sits at
 case 7's pose, one accumulator step closer). The port arms the shot on the same pass
 (`BattleCamera::spell_shot_armed_at` records it).
+
+**The depth the driver reads.** Arms `7`, `0xA`, `0xC`, `0xE`, `0x11` and `0x13`,
+and arm `4` on a slot target, open on the target-size framing
+(`jal 0x801F0348` at `0x801DC6F0`, `0x801DC898`, `0x801DC99C`, `0x801DCB18`,
+`0x801DCC90`, `0x801DCDA0`, `0x801DC478`), and what they store is still in
+`ctx[+0x6D0]` when the Done band frames. The seed's run read the picker's byte, so a
+group code `8` framed at the `0xC00` floor; `0x28` has since rewritten that code
+to a lone survivor's slot (`ctx[+0x24A] - 1`), so this run takes the caster's size.
+Caruban's Fire Breath on a solo Vahn holds the seed's `0xC00` through `0x29` and
+`0x1400` from the first `0x2B` pass: the retail recording's TR z reads `10240`
+there and `8192` in the Done band. Port: `battle_action::magic::cast_effect_driver`.
 
 The turning cases `3`, `5`, `0xE` and `0x10` aim the live yaw a fixed step
 on every pass, so their yaw has no endpoint of its own: where it stands is

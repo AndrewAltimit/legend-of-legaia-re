@@ -229,7 +229,24 @@ impl Sequencer {
     /// keyed on held whatever was sounding for as long as it stayed shut -
     /// the title theme's last note ringing under the whole attract movie.
     // REF: FUN_800638D8
+    ///
+    /// The pause's first move is the level: `FUN_80026740` calls
+    /// `FUN_8002657C(0, source)`, which sets the playing sequence's volume to
+    /// `0` through `FUN_80067E9C`, re-volume of the notes already sounding
+    /// included. So the notes cut at once and their release runs unheard. The
+    /// sequence's own volume comes back with the next attach; it is left alone
+    /// here, and only the voices go silent.
+    ///
+    /// PORT: FUN_80026740
+    /// REF: FUN_8002657C, FUN_80067E9C
     pub fn pause(&mut self, spu: &mut Spu) {
+        self.release_lost_voices(spu);
+        for note in &self.active {
+            if let Some(v) = spu.voices.get_mut(note.voice as usize) {
+                v.vol_left = 0;
+                v.vol_right = 0;
+            }
+        }
         self.silence_all(spu);
     }
 

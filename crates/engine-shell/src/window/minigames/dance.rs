@@ -169,6 +169,7 @@ impl PlayWindowApp {
             .map(|s| s.generation)
         else {
             self.dance_venue_gpu = None;
+            self.session.host.world.restore_dance_ambient();
             if self.dance_cast_surface.has_assets() {
                 self.dance_cast_surface.set_assets(None);
             }
@@ -180,6 +181,7 @@ impl PlayWindowApp {
             .is_some_and(|g| g.generation == generation)
             || self.dance_venue_failed == Some(generation)
         {
+            self.step_dance_venue_ambient();
             return;
         }
         match self.build_dance_venue_gpu(generation) {
@@ -192,11 +194,50 @@ impl PlayWindowApp {
                 );
                 self.dance_cast_surface.set_assets(g.cast_assets.clone());
                 self.dance_venue_gpu = Some(g);
+                self.stage_dance_venue_ambient();
             }
             None => {
                 log::warn!("dance venue: build failed - the walked-in scene stays on screen");
                 self.dance_venue_failed = Some(generation);
                 self.dance_venue_gpu = None;
+            }
+        }
+    }
+
+    /// Install the hall's ambient tree off the venue block's stager bundle.
+    fn stage_dance_venue_ambient(&mut self) {
+        let bytes = legaia_engine_minigame_scenes::dance_venue::venue_stager_bytes(
+            &self.session.host.index,
+        );
+        match bytes {
+            Some(bytes) => {
+                if let (Some(field), Some(g)) =
+                    (self.cpu_vram_base.as_ref(), self.dance_venue_gpu.as_mut())
+                {
+                    self.session
+                        .host
+                        .world
+                        .carry_walked_in_cells(field, &mut g.cpu_vram);
+                }
+                self.session.host.world.stage_dance_ambient(&bytes);
+            }
+            None => log::warn!("dance venue: no stager bundle, the hall stays unlit"),
+        }
+    }
+
+    /// Run the hall's ambient tree on the venue's VRAM and put what it wrote
+    /// on the GPU.
+    fn step_dance_venue_ambient(&mut self) {
+        let Some(g) = self.dance_venue_gpu.as_mut() else {
+            return;
+        };
+        if !self.session.host.world.step_dance_ambient(&mut g.cpu_vram) {
+            return;
+        }
+        if let Some(r) = self.win.renderer.as_ref() {
+            match r.upload_vram(&g.cpu_vram) {
+                Ok(v) => g.vram = v,
+                Err(e) => log::warn!("dance venue: vram upload: {e:#}"),
             }
         }
     }
@@ -234,66 +275,11 @@ impl PlayWindowApp {
             .upload_vram(&res.vram)
             .map_err(|e| log::warn!("dance venue: vram upload: {e:#}"))
             .ok()?;
-        // One mesh build per (mesh, clip): a bound prop is baked at frame 0
-        // of its clip, the rest pose every host draws it in.
-        let mut built: std::collections::HashMap<
-            (usize, u8),
-            (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh),
-        > = std::collections::HashMap::new();
+        let mut built = VenueMeshCache::new();
         let mut textured = VenueTexturedBake::default();
         let mut untextured = VenueColorBake::default();
         for vd in &venue.draws {
-            let d = vd.draw;
-            let Some(rtmd) = res.tmds.get(d.res_tmd) else {
-                continue;
-            };
-            let (vmesh, cmesh) = built.entry((d.res_tmd, d.anim_id)).or_insert_with(|| {
-                let offsets = (d.anim_id != 0)
-                    .then(|| venue.frame0_bone_offsets(d.anim_id, rtmd.tmd.objects.len()))
-                    .flatten();
-                let (mut vmesh, mut cmesh) = match &offsets {
-                    Some(o) => (
-                        legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
-                        legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
-                    ),
-                    None => (
-                        rtmd.build_filtered_vram_mesh_lit(&res.vram).0,
-                        legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw),
-                    ),
-                };
-                legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
-                (vmesh, cmesh)
-            });
-            // Raw retail Y-down transform; the camera's FIELD_WORLD_FLIP is
-            // the single net negation, as for every field placement. The
-            // composition is `EnvDraw::place_point` (`Rx * Ry * Rz`, then the
-            // world position and the coplanar lift) - the one kernel the
-            // browser pages bake the same hall with.
-            let base = textured.positions.len() as u32;
-            textured
-                .positions
-                .extend(vmesh.positions.iter().map(|p| d.place_point(*p, vd.lift)));
-            textured.normals.extend(
-                vmesh
-                    .normals
-                    .iter()
-                    .map(|n| Vec3::from(d.rotate(*n)).normalize_or_zero().to_array()),
-            );
-            textured.uvs.extend_from_slice(&vmesh.uvs);
-            textured.cba_tsb.extend_from_slice(&vmesh.cba_tsb);
-            textured.colors.extend_from_slice(&vmesh.colors);
-            textured
-                .indices
-                .extend(vmesh.indices.iter().map(|i| i + base));
-            let base = untextured.positions.len() as u32;
-            untextured
-                .positions
-                .extend(cmesh.positions.iter().map(|p| d.place_point(*p, vd.lift)));
-            untextured.colors.extend_from_slice(&cmesh.colors);
-            untextured.blend.extend_from_slice(&cmesh.blend);
-            untextured
-                .indices
-                .extend(cmesh.indices.iter().map(|i| i + base));
+            append_venue_draw(&venue, &mut built, vd, &mut textured, &mut untextured);
         }
         // The walk-ground heightfield, already in world space.
         if let Some(hf) = venue
@@ -312,9 +298,11 @@ impl PlayWindowApp {
             textured.colors.extend_from_slice(&v.colors);
             textured.indices.extend(v.indices.iter().map(|i| i + base));
         }
+        let markers = bake_venue_markers(&venue, &mut built);
         Some(DanceVenueGpu {
             generation,
             vram,
+            cpu_vram: venue.resources.vram.clone(),
             hud_staged: venue.hud_staged,
             textured,
             untextured,
@@ -322,6 +310,7 @@ impl PlayWindowApp {
             textured_kept: None,
             untextured_gpu: None,
             untextured_kept: None,
+            markers,
             cast_assets,
         })
     }
@@ -377,6 +366,49 @@ impl PlayWindowApp {
                 })
                 .flatten();
             g.untextured_kept = Some(kept);
+        }
+        // The step-marker tiles, on the mesh each one's flipbook staged.
+        let game = self.session.host.world.minigames.dance.as_ref();
+        for m in &mut g.markers {
+            let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
+            let slot = game
+                .and_then(|d| d.step_marker_mesh(m.class))
+                .map(|mesh| mesh - bias)
+                .filter(|s| m.baked.contains_key(s))
+                .unwrap_or(m.rest_slot);
+            let Some((t, c)) = m.baked.get(&slot) else {
+                continue;
+            };
+            let kept_t = psx_gpu_visible_indices(&camera, &t.positions, [0.0; 3], &t.indices);
+            let kept_c = psx_gpu_visible_indices(&camera, &c.positions, [0.0; 3], &c.indices);
+            if m.shown
+                .as_ref()
+                .is_some_and(|(s, kt, kc)| *s == slot && *kt == kept_t && *kc == kept_c)
+            {
+                continue;
+            }
+            m.textured_gpu = (!kept_t.is_empty())
+                .then(|| {
+                    r.upload_vram_mesh(
+                        &t.positions,
+                        &t.uvs,
+                        &t.cba_tsb,
+                        &t.normals,
+                        &t.colors,
+                        &kept_t,
+                    )
+                    .map_err(|e| log::warn!("dance marker: textured upload failed: {e:#}"))
+                    .ok()
+                })
+                .flatten();
+            m.untextured_gpu = (!kept_c.is_empty())
+                .then(|| {
+                    r.upload_color_mesh_blended(&c.positions, &c.colors, &kept_c, &c.blend)
+                        .map_err(|e| log::warn!("dance marker: untextured upload failed: {e:#}"))
+                        .ok()
+                })
+                .flatten();
+            m.shown = Some((slot, kept_t, kept_c));
         }
     }
 
@@ -439,4 +471,115 @@ impl PlayWindowApp {
             untextured,
         });
     }
+}
+
+/// One mesh build per `(mesh, clip)`: a bound prop is baked at frame 0 of its
+/// clip, the rest pose every host draws it in.
+type VenueMeshCache = std::collections::HashMap<
+    (usize, u8),
+    (legaia_tmd::mesh::VramMesh, legaia_tmd::mesh::ColorMesh),
+>;
+
+/// Bake one of the venue's draws into world space. Raw retail Y-down
+/// transform; the camera's `FIELD_WORLD_FLIP` is the single net negation, as for
+/// every field placement. The composition is `EnvDraw::place_point`
+/// (`Rx * Ry * Rz`, then the world position and the coplanar lift) - the one
+/// kernel the browser pages bake the same hall with.
+fn append_venue_draw(
+    venue: &legaia_engine_minigame_scenes::dance_venue::DanceVenue,
+    built: &mut VenueMeshCache,
+    vd: &legaia_engine_minigame_scenes::dance_venue::VenueDraw,
+    textured: &mut VenueTexturedBake,
+    untextured: &mut VenueColorBake,
+) {
+    let res = &venue.resources;
+    let d = vd.draw;
+    let Some(rtmd) = res.tmds.get(d.res_tmd) else {
+        return;
+    };
+    let (vmesh, cmesh) = built.entry((d.res_tmd, d.anim_id)).or_insert_with(|| {
+        let offsets = (d.anim_id != 0)
+            .then(|| venue.frame0_bone_offsets(d.anim_id, rtmd.tmd.objects.len()))
+            .flatten();
+        let (mut vmesh, mut cmesh) = match &offsets {
+            Some(o) => (
+                legaia_tmd::mesh::tmd_to_vram_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
+                legaia_tmd::mesh::tmd_to_color_mesh_posed_rot(&rtmd.tmd, &rtmd.raw, o),
+            ),
+            None => (
+                rtmd.build_filtered_vram_mesh_lit(&res.vram).0,
+                legaia_tmd::mesh::tmd_to_color_mesh(&rtmd.tmd, &rtmd.raw),
+            ),
+        };
+        legaia_tmd::mesh::resolve_hybrid(&mut vmesh, &mut cmesh);
+        (vmesh, cmesh)
+    });
+    let base = textured.positions.len() as u32;
+    textured
+        .positions
+        .extend(vmesh.positions.iter().map(|p| d.place_point(*p, vd.lift)));
+    textured.normals.extend(
+        vmesh
+            .normals
+            .iter()
+            .map(|n| Vec3::from(d.rotate(*n)).normalize_or_zero().to_array()),
+    );
+    textured.uvs.extend_from_slice(&vmesh.uvs);
+    textured.cba_tsb.extend_from_slice(&vmesh.cba_tsb);
+    textured.colors.extend_from_slice(&vmesh.colors);
+    textured
+        .indices
+        .extend(vmesh.indices.iter().map(|i| i + base));
+    let base = untextured.positions.len() as u32;
+    untextured
+        .positions
+        .extend(cmesh.positions.iter().map(|p| d.place_point(*p, vd.lift)));
+    untextured.colors.extend_from_slice(&cmesh.colors);
+    untextured.blend.extend_from_slice(&cmesh.blend);
+    untextured
+        .indices
+        .extend(cmesh.indices.iter().map(|i| i + base));
+}
+
+/// Bake each marker tile's meshes at its place: the record's own, and every
+/// mesh of its flipbook row, a slot of the scene's environment pack.
+fn bake_venue_markers(
+    venue: &legaia_engine_minigame_scenes::dance_venue::DanceVenue,
+    built: &mut VenueMeshCache,
+) -> Vec<VenueMarkerGpu> {
+    let env_tmds =
+        legaia_engine_scene::field_env::env_pack_tmd_indices(&venue.scene, &venue.resources);
+    let script = &venue.marker_script;
+    venue
+        .markers
+        .iter()
+        .map(|m| {
+            let class = usize::from(m.class);
+            let rest_slot = m.venue_draw.draw.env_slot as i16;
+            let mut baked = std::collections::HashMap::new();
+            let row = (0..script.steps(class)).filter_map(|i| script.entry(class, i).map(|e| e.0));
+            for slot in row.chain([rest_slot]) {
+                let Some(&res_tmd) = usize::try_from(slot).ok().and_then(|s| env_tmds.get(s))
+                else {
+                    continue;
+                };
+                baked.entry(slot).or_insert_with(|| {
+                    let mut vd = m.venue_draw;
+                    vd.draw.env_slot = slot as usize;
+                    vd.draw.res_tmd = res_tmd;
+                    let (mut t, mut c) = Default::default();
+                    append_venue_draw(venue, built, &vd, &mut t, &mut c);
+                    (t, c)
+                });
+            }
+            VenueMarkerGpu {
+                class,
+                rest_slot,
+                baked,
+                shown: None,
+                textured_gpu: None,
+                untextured_gpu: None,
+            }
+        })
+        .collect()
 }

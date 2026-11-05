@@ -221,8 +221,9 @@ Halt-acquire with `which = 0x80`. `count` is the byte at `operand+1`; the
 `count` variable-length child records that follow are walked with the
 [`packet_length`](script-vm.md#helper-functions) rule (`FUN_8003CA38`: a byte
 `<= 0x1E` ends a record, a byte with top nibble `0xC` consumes one extra).
-The parent's PC always advances by 3; the records stay embedded in the
-bytecode and become the spawned actors' own scripts. The retail allocator
+The parent's PC walks past them (`addiu s8,s8,3`, then each record's length plus
+one, `0x801E1F78..0x801E1FB8`); the records stay embedded in the bytecode and
+become the spawned actors' own scripts. The retail allocator
 (`overlay_world_map_801de840.txt:7080-7123`) allocates from pool `0x801f28a0`
 and writes `actor[+0x90]` (bytecode start), `actor[+0x94]` (parent
 back-pointer) and `actor[+0x54] = 0`. It does **not** write `+0x3C` / `+0x3E`
@@ -709,7 +710,7 @@ stride, walking successive `vdf_idx` values.
 | 7 | 7 bytes | Camera animate: 24-bit LE target + 16-bit LE duration; `func_0x8003C5F0` tween, or an instant write when the duration is 0. |
 | 8 | 10 bytes | The crawl roller's control op ([cutscene.md](cutscene.md#narration-playback---the-crawl-roller-fun_80037174)): `w3 = 0` seeds the geometry words `+0x4C/+0x4E/+0x50`, `1` pauses the live roller or writes its release count `+0x52`, `2` resumes it, `3` kills it. Port `FieldHostImpl::configure_crawl_roller`. |
 | 9 | `[4C E9]` | Clear `_DAT_8007B9C4`; PC += 2. |
-| A | `[4C EA]` | Call `func_0x8003C7EC`, then halt. |
+| A | `[4C EA]` | Call `func_0x8003C7EC` and advance past the op. |
 | B | `[4C EB actor lo hi]` | Guard - [below](#4c-eb-actor-guard). |
 | C | `[4C EC]` | [Encounter step-counter reroll](#encounter-step-counter-reroll-fun_801ddf48); no shipped script issues a clean `4C EC`. |
 | D | 3 bytes | Set `_DAT_8007BA66`. |

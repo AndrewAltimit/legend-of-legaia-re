@@ -72,7 +72,10 @@ impl World {
     pub fn field_drop_shadows(&self, view: &FieldCameraView) -> Vec<DropShadowQuad> {
         // An in-world golf round or race keeps the field under it, and the
         // leader on that field keeps its blob.
-        if !Self::fog_mode(self.mode) && self.pack_mode_stage().is_none() {
+        if !Self::fog_mode(self.mode)
+            && self.pack_mode_stage().is_none()
+            && self.mode != SceneMode::Dance
+        {
             return Vec::new();
         }
         let curve_bias = self.overworld_curve_bias();
@@ -96,6 +99,17 @@ impl World {
                 out.extend(q);
             }
         };
+        // The dance's floor slots: `FUN_801D0190` seats each with the placement
+        // class bit, and the hall's actor pass reaches the same renderer. The
+        // walked-in scene's player and placements are not on this floor.
+        if self.mode == SceneMode::Dance {
+            if let Some(g) = self.minigames.dance.as_ref() {
+                for a in g.dancer_actors() {
+                    cast(PLACEMENT_CLASS_BIT, a.pos.map(i32::from));
+                }
+            }
+            return out;
+        }
         if let Some(a) = self
             .player_actor_slot
             .and_then(|s| self.actors.get(usize::from(s)))

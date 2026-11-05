@@ -179,13 +179,21 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
             use legaia_engine_cast::cast_module_camera::ModuleCaption;
             let id = actor.battle.params[0];
             return match world.casting.module_caption? {
+                // The line prints the spell table's raw `+8` string, its `0xCE`
+                // element plate in front of the name (`CE 18 " Mushura"`).
                 ModuleCaption::SpellName => world.expansion_cast_name(id).or_else(|| {
-                    world
-                        .menu
-                        .text
+                    let text = world.menu.text.as_ref()?;
+                    let name = text.spell_name(id)?;
+                    let plate = text
+                        .spell_names
                         .as_ref()
-                        .and_then(|t| t.spell_name(id))
-                        .map(str::to_string)
+                        .and_then(|t| t.icon(id))
+                        .and_then(|op| op.checked_add(0x2D))
+                        .filter(u8::is_ascii_uppercase);
+                    Some(match plate {
+                        Some(letter) => format!("^{} {name}", letter as char),
+                        None => name.to_string(),
+                    })
                 }),
                 ModuleCaption::AttackName => world.tables.summon_attack_names.get(&id).cloned(),
                 ModuleCaption::Cleared => None,
@@ -582,6 +590,69 @@ pub fn battle_target_plaque(
         return None;
     }
     Some((monster_name(world, t), monster_element_badge(world, t)))
+}
+
+/// The monsters a party member's cast opens the value window for
+/// ([`legaia_engine_battle::battle_hud_state::MultiReadout`]), or `None`.
+///
+/// `FUN_801E6D84` lists every living monster when the target is the every-enemy
+/// code `9` and no lone survivor has replaced it (`ctx[+0x24B]`), or the spell
+/// is one of the three that always read the row ([`ROW_PLATE_SPELL_IDS`], which
+/// aim at one seat). A party-wide or single-target cast lists none, and neither
+/// does a monster's: only a party or creature attacker raises the flag
+/// (`0x801DE3DC..0x801DE428`).
+pub fn battle_multi_readout_rows(world: &legaia_engine_core::world::World) -> Option<Vec<u8>> {
+    use legaia_engine_battle::spells::SpellTarget;
+    use legaia_engine_battle_vm::battle_action::ActionCategory;
+    if battle_hud_phase(world) != BattleHudPhase::Action
+        || world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
+    {
+        return None;
+    }
+    let a = world.battle_ctx.active_actor;
+    let pc = party_count(world) as u8;
+    let actor = world.actors.get(a as usize)?;
+    if a >= pc || actor.battle.action_category != ActionCategory::Magic.as_byte() {
+        return None;
+    }
+    let id = actor.battle.params[0];
+    let living = world.living_monster_slots();
+    let forced = ROW_PLATE_SPELL_IDS.contains(&id);
+    let all_enemies = world
+        .tables
+        .spell_catalog
+        .get(id)
+        .is_some_and(|d| d.target == SpellTarget::AllEnemies);
+    (forced || (all_enemies && living.len() > 1))
+        .then(|| living.into_iter().map(|s| s as u8).collect())
+}
+
+/// The value window's name plates: each row's monster, the content-box `x` its
+/// record rests on and the plate's rise. Records `0x60..=0x63` rise from
+/// `y = 236` to `194` as the row opens, on the value record's sixteen frames.
+pub fn battle_multi_readout_plates(
+    world: &legaia_engine_core::world::World,
+    hud: &BattleHud,
+) -> Vec<(String, Option<u8>, i32, i32)> {
+    use legaia_engine_battle_vm::battle_value_readout as vr;
+    let Some(m) = hud.multi_readout.as_ref().filter(|m| m.open) else {
+        return Vec::new();
+    };
+    let dy = m.slide() * (236 - 194) / vr::COMBO_SLIDE_IN_X;
+    let n = m.rows.len().clamp(1, vr::MULTI_ROW_X.len());
+    m.rows
+        .iter()
+        .take(n)
+        .enumerate()
+        .map(|(k, &(slot, _))| {
+            (
+                monster_name(world, slot),
+                monster_element_badge(world, slot),
+                vr::MULTI_ROW_X[n - 1 - k],
+                dy,
+            )
+        })
+        .collect()
 }
 
 /// The **target-select** plaque (placement record `0x29`): the monster name

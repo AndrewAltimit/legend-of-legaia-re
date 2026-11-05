@@ -8,7 +8,7 @@ impl BakaFight {
     /// the landed sub-keyframe, or slot `0` when `reset_keyframe` (the
     /// draw's calls). A fight without strike tables has no offsets and
     /// spawns nothing.
-    fn spawn_impact(&mut self, slot: usize, reset_keyframe: bool) {
+    pub(super) fn spawn_impact(&mut self, slot: usize, reset_keyframe: bool) {
         let Some(st) = self.strike.as_ref() else {
             return;
         };
@@ -135,7 +135,11 @@ impl BakaFight {
         } else {
             None
         };
-        if let Some(attack) = attack {
+        if self.strike.is_some() {
+            // The edge goes to the combat tick whatever the gate says now: the
+            // tick's own idle reset can open it.
+            self.pad_attack[0] = attack;
+        } else if let Some(attack) = attack {
             self.choose(0, attack);
         }
         self.set_held_pad(held);
@@ -213,7 +217,9 @@ impl BakaFight {
         if let Some(a) = self.clear_fighter.as_mut() {
             crate::baka_fighter_chrome::clear_fighter_tick(a, frame_step);
         }
-        if let Some(st) = self.strike.as_ref() {
+        if !std::mem::take(&mut self.clips_stepped)
+            && let Some(st) = self.strike.as_ref()
+        {
             for (m, t) in self.motion.iter_mut().zip(st.iter()) {
                 let r = m
                     .record
@@ -221,7 +227,27 @@ impl BakaFight {
                 m.step(t.speed[r], self.rate_divisor, t.clips[r], frame_step);
             }
         }
+        self.ease_push(frame_step);
         self.camera.tick(frame_step);
+    }
+
+    /// The camera focus following the kernel's push: `|ease| * dt / 6 + 1` a
+    /// frame toward zero, taken off the focus X too.
+    ///
+    /// REF: FUN_801CF388 (`0x801D1FEC..0x801D2070`)
+    fn ease_push(&mut self, frame_step: i32) {
+        let e = self.push_ease;
+        if e == 0 {
+            return;
+        }
+        let step = e.abs() * frame_step / 6 + 1;
+        if e > 0 {
+            self.push_ease = (e - step).max(0);
+            self.camera.follow_push(step);
+        } else {
+            self.push_ease = (e + step).min(0);
+            self.camera.follow_push(-step);
+        }
     }
 
     /// One frame of the cameo's actor: the animator's pose, the clip
@@ -376,12 +402,22 @@ impl BakaFight {
                 self.result_latch = false;
                 self.player_untouched = true;
                 self.motion = Default::default();
+                self.player_commit = -1;
+                self.pad_attack = [None; 2];
+                self.push_x = 0;
+                self.push_ease = 0;
                 self.camera.round_setup();
                 self.setup_pending = true;
                 self.phase = MatchPhase::Fighting;
                 return;
             }
             MatchPhase::Fighting => {}
+        }
+
+        if self.strike.is_some() {
+            self.duel_frame(frame_step);
+            self.tick_pool_actors(frame_step);
+            return;
         }
 
         // Cooldown decay (`cooldown -= frame_step * 0x10`, floored at 0).
@@ -456,18 +492,6 @@ impl BakaFight {
                 // kernel (`0x801D36F0` / `0x801D3744`).
                 self.spawn_impact(w, false);
                 let (damage, critical, special_round_win) = self.apply_damage(l);
-                // The damage kernel's clip store on the struck side: the hit
-                // reaction, or the knockdown when the special's last strike
-                // landed, held on its last frame (`0x801D3C60..0x801D3CA0`).
-                self.motion[l].play(
-                    if special_round_win {
-                        crate::baka_duel::MOTION_KNOCKDOWN
-                    } else {
-                        crate::baka_duel::MOTION_HIT
-                    },
-                    true,
-                );
-                self.motion[l].down = special_round_win;
                 // Winner's own hit streak clears; crit flags reset; the loser
                 // rolls the comeback crit (retail: FUN_801d6660(loser)).
                 self.f[w].combo = 0;
@@ -520,9 +544,6 @@ impl BakaFight {
                 // Both take damage, both streaks reset, both roll comebacks.
                 let (d0, c0, _) = self.apply_damage(0);
                 let (d1, c1, _) = self.apply_damage(1);
-                for m in &mut self.motion {
-                    m.play(crate::baka_duel::MOTION_HIT, true);
-                }
                 self.f[0].combo = 0;
                 self.f[1].combo = 0;
                 self.f[0].crit_pending = false;

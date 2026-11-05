@@ -145,8 +145,9 @@ pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
                 use legaia_engine_battle_vm::battle_action::{ActionCategory, ActionState};
                 let s = world.battle_ctx.action_state;
                 let cat = actor.battle.action_category;
-                let party_wide = actor.battle.active_target
-                    == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
+                let party_wide = actor.battle.seed_party_wide
+                    || actor.battle.active_target
+                        == legaia_engine_battle_vm::battle_cue_group::TARGET_PARTY_WIDE;
                 let open = panels_still_open(s);
                 let monster_seed =
                     a >= party_count(world) as u8 && seed_plates_reach_the_target_arm(cat);

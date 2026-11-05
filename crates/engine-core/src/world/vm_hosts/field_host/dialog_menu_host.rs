@@ -100,6 +100,10 @@ impl<'a> FieldDialogMenuHost for FieldHostImpl<'a> {
         Self::open_dialog(self, text_id, inline, world_x, world_z, depth_id)
     }
 
+    fn op4c_n5_sub3_dialog_wait(&mut self, _ctx: &mut FieldCtx) -> bool {
+        self.world.dialog.mode_switch.step(1)
+    }
+
     fn op4c_n5_sub4_dialog_advance(&mut self, _ctx: &mut FieldCtx) -> bool {
         Self::op4c_n5_sub4_dialog_advance(self, _ctx)
     }

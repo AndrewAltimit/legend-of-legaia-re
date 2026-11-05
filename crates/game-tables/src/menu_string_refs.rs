@@ -56,6 +56,9 @@ pub const POOL_REFS: &[(u32, PoolRef)] = &[
     (0x801C_E96C, PoolRef::Word(0x801E_4434)),
     (0x801C_E978, PoolRef::Word(0x801E_4430)),
     (0x801C_E980, PoolRef::Word(0x801E_442C)),
+    (0x801C_E988, PoolRef::Word(0x801E_46DC)),
+    (0x801C_E990, PoolRef::Word(0x801E_46D8)),
+    (0x801C_E998, PoolRef::Word(0x801E_46D4)),
     (
         0x801C_E9A0,
         PoolRef::Pair {

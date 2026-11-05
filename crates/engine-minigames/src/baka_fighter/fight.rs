@@ -168,6 +168,25 @@ pub struct BakaFight {
     /// The pause menu's disc text ([`Self::with_overlay_text`]). Without it the
     /// menu has nothing to draw, so the duel's pause edge stays shut.
     pub(super) pause_text: Option<legaia_minigame_formats::baka_opponents::BakaPauseText>,
+    /// `DAT_801DC124`: the action the player's commit left for the opponent's
+    /// tick to answer, `-1` when there is none. Seeded `-1` by the round setup
+    /// (`0x801D015C`).
+    pub(super) player_commit: i32,
+    /// The attack each seat's pad asks for on the next combat tick.
+    pub(super) pad_attack: [Option<BakaAttack>; 2],
+    /// `DAT_801DBEA0` / `DAT_801DBEA4`: the two motor levels the damage arms
+    /// store and the round SM decays, which the cabinet hands to the rumble
+    /// words every frame (`0x801CF3E8..0x801CF3F4`).
+    pub(super) rumble: [i32; 2],
+    /// `DAT_801DBEC0`: what the damage kernel's push has left for the
+    /// camera focus to follow (`0x801D1FEC..0x801D2070`).
+    pub(super) push_ease: i32,
+    /// Both actors' X off the round setup's stand: the kernel's `+/-0x20`.
+    pub(super) push_x: i32,
+    /// Actor `+0x6A` before its `>> 3`: `speed * divisor`.
+    pub(super) clip_rate: [i32; 2],
+    /// The combat ticks ran this frame's clip selectors.
+    pub(super) clips_stepped: bool,
 }
 
 /// The round-start cameo actor (`FUN_801D6310`'s record): its phase and the
@@ -237,6 +256,13 @@ impl BakaFight {
             special_latch: false,
             impact: crate::baka_impact_fx::ImpactFx::default(),
             pause_text: None,
+            player_commit: -1,
+            pad_attack: [None; 2],
+            rumble: [0; 2],
+            push_ease: 0,
+            push_x: 0,
+            clip_rate: [0; 2],
+            clips_stepped: false,
         }
     }
 
@@ -390,7 +416,8 @@ impl BakaFight {
     pub fn fighter_position(&self, slot: usize) -> [f32; 3] {
         let x = (self.stand_off[slot & 1] + 200) as f32;
         let z = self.stand_z[slot & 1] as f32;
-        [if slot & 1 == 0 { -x } else { x }, 0.0, z]
+        let x = if slot & 1 == 0 { -x } else { x };
+        [x + self.push_x as f32, 0.0, z]
     }
 
     /// A seat's yaw: the combat tick writes `+0x26 = 0x400` while the block's
@@ -570,14 +597,56 @@ impl BakaFight {
         self.f[slot].chosen
     }
 
-    /// Whether a fighter can commit an attack right now (fighting phase, no
-    /// choice pending, cooldown elapsed).
+    /// Whether a fighter can commit an attack right now. On the disc tables
+    /// that is the combat tick's gate: an edge is read in the duel state, a
+    /// struck fighter's pad is masked, and a commit needs the clip idle or the
+    /// last strike booked (`0x801D42F0`, `0x801D4498..0x801D44B0`).
     pub fn can_choose(&self, slot: usize) -> bool {
+        if self.strike.is_some() {
+            return self.phase == MatchPhase::Fighting
+                && self.cabinet.state() == crate::baka_cabinet::ST_DUEL
+                && !self.special_latch
+                && !self.f[slot].locked
+                && !self.f[0].committed
+                && !self.f[1].committed
+                && (self.motion[slot].record == 0
+                    || self.motion[slot].ended
+                    || self.f[slot].clock.state == StrikeState::Consumed);
+        }
         self.phase == MatchPhase::Fighting
             && self.f[slot].hp > 0
             && self.f[slot].chosen.is_none()
             && !self.f[slot].committed
             && self.f[slot].cooldown <= 0
+    }
+
+    /// The two motor levels this frame, in the order the cabinet copies them
+    /// to `_DAT_8007B92C` and `_DAT_8007B930` (`0x801CF3E8..0x801CF3F4`). Each
+    /// hit stores `200`, or `0` on the first when the opponent took it, and
+    /// the round SM decays them `dt << 4` a frame.
+    pub fn rumble(&self) -> [i32; 2] {
+        self.rumble
+    }
+
+    /// The `rand()` stream's state, for the differential.
+    pub fn rng_state(&self) -> u32 {
+        self.rng.state()
+    }
+
+    /// Whether a seat is struck: its pad is masked until the clip ends
+    /// (block `+0x20`).
+    pub fn locked(&self, slot: usize) -> bool {
+        self.f[slot].locked
+    }
+
+    /// Whether a seat took the finisher's last strike (block `+0x2C`).
+    pub fn knocked_down(&self, slot: usize) -> bool {
+        self.f[slot].committed
+    }
+
+    /// `DAT_801DC124`, for the differential.
+    pub fn player_commit(&self) -> i32 {
+        self.player_commit
     }
 
     /// The last resolved exchange, for the host HUD.

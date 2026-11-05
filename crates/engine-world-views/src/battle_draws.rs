@@ -119,6 +119,9 @@ pub fn battle_ground_shadow(
         // `0x8A000000` carries no double-sided bit.
         single_sided: legaia_engine_effects::effect_default_arm::SHADOW_FLAG_WORD & 0x0800_0000
             == 0,
+        tessellated: false,
+        object_effect_kind: 0,
+        object_effect_scale: 1.0,
     })
 }
 
@@ -332,7 +335,12 @@ pub fn battle_drawn_objects(world: &World, i: usize, n_objects: usize) -> Option
         return Some(d);
     }
     let actor = world.actors.get(i)?;
-    actor.battle_monster_id?;
+    // A summon creature is drawn by the same pass under the same bound: Ozma's
+    // clips 2 and 3 are 15 parts over 21 objects, and a retail table of arm 21
+    // holds none of the shell the tail objects are.
+    if actor.battle_monster_id.is_none() && world.casting.summon_actor_slot != Some(i as u8) {
+        return None;
+    }
     let parts = usize::from(
         actor
             .battle_animation
@@ -340,7 +348,25 @@ pub fn battle_drawn_objects(world: &World, i: usize, n_objects: usize) -> Option
             .variant_track()
             .stream_parts,
     );
-    (parts != 0 && parts < n_objects).then(|| (0..n_objects).map(|o| o < parts).collect())
+    let swap = world
+        .casting
+        .creature_channel_object
+        .filter(|_| world.casting.summon_actor_slot == Some(i as u8));
+    if (parts == 0 || parts >= n_objects) && swap.is_none() {
+        return None;
+    }
+    let mut drawn: Vec<bool> = (0..n_objects)
+        .map(|o| parts == 0 || parts >= n_objects || o < parts)
+        .collect();
+    if let Some((channel, object)) = swap {
+        if let Some(d) = drawn.get_mut(usize::from(channel)) {
+            *d = false;
+        }
+        if let Some(d) = drawn.get_mut(usize::from(object)) {
+            *d = true;
+        }
+    }
+    Some(drawn)
 }
 
 /// The channel each TMD object of actor `i`'s live body is drawn in

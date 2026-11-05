@@ -227,6 +227,13 @@ mod health_tier_ink_tests {
     fn a_non_zero_status_word_re_inks_the_status_panel_hp_number() {
         let font = legaia_font::Font::placeholder();
         let panel = |status: u16| StatusPanelView {
+            seru: None,
+            page: 0,
+            skills: &[],
+            spells: &[],
+            moves: &[],
+            list: None,
+            scroll: 0,
             name: "Vahn",
             level: 5,
             xp: 100,

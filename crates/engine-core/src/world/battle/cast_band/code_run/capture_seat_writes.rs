@@ -97,6 +97,9 @@ impl World {
         if let Some(c) = w.colour {
             a.battle.render_color = c;
         }
+        if let Some(b) = w.blend {
+            a.battle.render_blend = b;
+        }
         if let Some(r) = w.render_flag {
             a.battle.render_flag = r;
         }

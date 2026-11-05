@@ -472,6 +472,7 @@ mod tests {
             floor: Default::default(),
             cell: (0, 0),
             cull_radius: 0,
+            far_corner_order: false,
             view_skip: 0,
         }
     }

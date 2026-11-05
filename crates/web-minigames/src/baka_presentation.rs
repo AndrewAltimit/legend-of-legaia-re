@@ -1009,7 +1009,7 @@ impl LegaiaMinigames {
                 pcm.sample_rate,
                 channels,
                 legaia_engine_session::audio_director::XA_CUE_GAIN,
-                legaia_engine_audio::SHOUT_CD_RESPONSE_DELAY,
+                legaia_engine_audio::xa_start_delay(u32::from(xa.chan), false),
             );
         }
     }

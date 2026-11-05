@@ -1044,3 +1044,22 @@ fn a_bend_before_the_flush_keys_the_note_bent() {
     let v = seq.active[0].voice as usize;
     assert!(spu.voices[v].pitch > 0x1000);
 }
+
+/// `FUN_80026740` sets the sequence's volume to `0` before the key-off: the
+/// notes cut, and their release runs unheard. The sequence's own volume stands
+/// for the next attach.
+#[test]
+fn a_pause_cuts_the_sounding_notes() {
+    let mut seq = Sequencer::new(synthetic_seq(), empty_bank());
+    let mut spu = Spu::new();
+    seq.set_master_vol(107);
+    occupy(&mut seq, 2);
+    spu.voices[2].vol_left = 0x2000;
+    spu.voices[2].vol_right = 0x2000;
+    spu.voices[2].adsr.level = 0x4000;
+    spu.voices[2].adsr.phase = crate::spu::adsr::Phase::Sustain;
+    seq.pause(&mut spu);
+    assert_eq!((spu.voices[2].vol_left, spu.voices[2].vol_right), (0, 0));
+    assert_eq!(spu.voices[2].adsr.phase, crate::spu::adsr::Phase::Release);
+    assert_eq!(seq.master_vol(), 107);
+}

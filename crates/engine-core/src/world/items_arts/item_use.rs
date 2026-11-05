@@ -320,7 +320,7 @@ impl World {
     /// restores `+0x154` - the arts entry's command pool - to
     /// `base * 7 / 5 + 8` (cap `0x120`) while it is up. The `ApGauge` budget
     /// alone reached neither, so a Fury Boost bought a player nothing.
-    fn apply_fury_boost_item(
+    pub(super) fn apply_fury_boost_item(
         &mut self,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
@@ -441,39 +441,41 @@ impl World {
     /// [`legaia_engine_battle_vm::battle_action::selector_point_card`]; this is the
     /// seat that gives it a bank and a victim.
     ///
-    /// **No shipped item reaches it.** Decoding all 256 static item rows
-    /// through the effect descriptors finds no class-`14` row, so on the retail
-    /// disc this is reachable code over unreachable data; an edited effect
-    /// table opens it. The catalog seeder
-    /// ([`legaia_engine_menus::items::ItemCatalog::apply_point_card_items`]) therefore sweeps
-    /// the id space rather than naming ids.
-    fn apply_point_card_strike(
+    /// No row of the item table resolves to class `14`: the Point Card (`0xFE`)
+    /// reaches the arm through the action SM's override by id at state `0x3E`.
+    /// The arm writes no readout word: retail hangs on a living ally here, and
+    /// the port's item window does not offer one.
+    pub(super) fn apply_point_card_strike(
         &mut self,
         target_slot: u8,
     ) -> legaia_engine_menus::items::ItemOutcome {
         use legaia_engine_battle_vm::battle_action::{PointCardVictim, selector_point_card};
         let counter = self.minigames.point_card.max(0) as u32;
         let idx = target_slot as usize;
+        // The reaction bytes `+0x1EF` / `+0x1F1` / `+0x1F2` are the seat's
+        // clip map, which this port derives from its clip bank.
+        let map = self.battle_reaction_map(idx).unwrap_or([0; 5]);
         let Some(a) = self.actors.get_mut(idx) else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
-        let p = |i: usize| a.battle.params.get(i - 0x1DF).copied().unwrap_or(0);
         let victim = PointCardVictim {
             hp: a.battle.hp,
-            flinch_anim: p(0x1EF),
-            knockdown_anim: p(0x1F1),
-            reaction_gate: p(0x1F2),
+            flinch_anim: map[0],
+            knockdown_anim: map[2],
+            reaction_gate: map[3],
             restage: 0,
         };
         let Some(d) = selector_point_card(counter, victim) else {
             return legaia_engine_menus::items::ItemOutcome::NoEffect;
         };
         a.battle.hp = d.hp;
-        a.battle.queued_anim = d.staged_anim;
         if a.battle.max_hp > 0 && a.battle.hp == 0 {
             a.battle.liveness = 0;
         }
         self.minigames.point_card = d.remaining as i32;
+        if d.staged_anim != 0 {
+            self.commit_battle_reaction_entry(idx, d.staged_anim);
+        }
         legaia_engine_menus::items::ItemOutcome::PointCardSpent {
             spent: d.spent,
             remaining: d.remaining,
@@ -699,8 +701,8 @@ impl World {
         self.mirror_roster_hp_mp(rslot);
     }
 
-    /// Rebuild roster record `rslot`'s live HP / MP maxima from its base
-    /// window, the way the stat aggregator does, and publish the MP ceiling.
+    /// Rebuild roster record `rslot`'s live window from its base window, the
+    /// way the stat aggregator does, and publish the MP ceiling.
     /// The record only: the battle actor is not touched, so the aggregator
     /// pass can run mid-battle, where the actor and not the record holds the
     /// live HP.
@@ -720,33 +722,14 @@ impl World {
     ///
     /// REF: FUN_80042558
     pub(crate) fn rebuild_record_live_hp_mp(&mut self, rslot: usize) {
-        let Some(rec) = self.party.roster.members.get(rslot) else {
+        let Some(rec) = self.party.roster.members.get_mut(rslot) else {
             return;
         };
-        let base = rec.record_stats();
-        if base.hp_max == 0 {
+        if rec.record_stats().hp_max == 0 {
             return;
         }
-        let bits = self
-            .tables
-            .accessory_passives
-            .bits_for_equipment(&rec.equipment().slots)[0];
-        let boosted = |base: u16, tenth: bool, quarter: bool, cap: u16| {
-            let mut v = base;
-            if tenth {
-                v = v.saturating_add(base / 10);
-            }
-            if quarter {
-                v = v.saturating_add(base >> 2);
-            }
-            v.min(cap)
-        };
-        let mut hms = rec.hp_mp_sp();
-        hms.hp_max = boosted(base.hp_max, bits & 0x1 != 0, bits & 0x2 != 0, 9999);
-        hms.mp_max = boosted(base.mp_max, bits & 0x4 != 0, bits & 0x8 != 0, 999);
-        hms.hp_cur = hms.hp_cur.min(hms.hp_max);
-        hms.mp_cur = hms.mp_cur.min(hms.mp_max);
-        self.party.roster.members[rslot].set_hp_mp_sp(hms);
+        rec.rebuild_live_window();
+        let hms = rec.hp_mp_sp();
         let n = (self.party.party_count as usize).min(self.actors.len());
         for member in 0..n {
             if self.party_roster_slot(member) == rslot {

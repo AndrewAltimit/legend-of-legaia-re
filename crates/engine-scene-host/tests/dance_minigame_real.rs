@@ -144,6 +144,13 @@ fn real_tables_drive_the_rival_dancers() {
         3,
         "the qualifier floor is three dancers"
     );
+    // The rivals' presses are paced by the clips they play.
+    if let Some(disc) = std::env::var_os("LEGAIA_DISC_BIN") {
+        let host = legaia_engine_scene_host::scene_host::SceneHost::open_disc(&disc).expect("disc");
+        let bank = legaia_engine_minigame_scenes::dance_venue::dance_clip_bank(&host.index)
+            .expect("the hall's clip bank");
+        game.attach_clip_bank(&bank);
+    }
     assert_eq!(game.dancer_kind(0), 0, "slot 0 is Noa (the human)");
     for i in 0..3 {
         assert_eq!(game.dancer_triangles(i), 3, "three groovy moves per song");

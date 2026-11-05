@@ -25,7 +25,7 @@ impl World {
     /// | 13 (`0x801F7D40..0x801F7D78`, at or under `scalar << 5`; pass `0x801F7DC0..0x801F7DCC`) | the creature walks `scalar / 4` a tick along `z`; on the pass the creature and the victim hidden |
     /// | 14 (`0x801F7E84..0x801F7E90`, pass) | the victim shown |
     /// | 15 (`0x801F8088..0x801F80BC`, pass) | the victim's flinch staged |
-    /// | 16 (`0x801F81E0`, pass) | the victim hidden |
+    /// | 16 (`0x801F81E0..0x801F825C`, pass) | the victim on `+0x04 = 0x401004`, `+0x21C = 0xC8`; on the neutral word for ids `0xA8`, `0x53..0x55` |
     /// | `0x12` (`0x801F8698..0x801F86E0`, every pass) | the victim at `z = ctx[+0x6D0] / 8 - 0xA00` |
     /// | `0x13` (`0x801F893C..0x801F89B8`, pass) | the victim's pose restored, clip `0` at rate `8`; shown, or `+0x21C = 2` when it died |
     ///
@@ -111,10 +111,26 @@ impl World {
                     a.battle.facing_angle = 0;
                 }
             }
-            13 | 16 => {
+            13 => {
                 if let Some(a) = self.actors.get_mut(v) {
                     a.battle.render_color = 0;
                     a.battle.render_flag = HIDDEN;
+                }
+            }
+            // Not a hide: a dark tint on its way back (`+0x21C = 0xC8`), or the
+            // neutral word under the raised byte for the four monsters it spares.
+            16 => {
+                if let Some(a) = self.actors.get_mut(v) {
+                    let spared = a
+                        .battle_monster_id
+                        .is_some_and(|id| matches!(id, 0xA8 | 0x53 | 0x54 | 0x55));
+                    if spared {
+                        a.battle.render_color = SHOWN_TINT;
+                        a.battle.render_flag = HIDDEN;
+                    } else {
+                        a.battle.render_color = 0x0040_1004;
+                        a.battle.render_flag = 0xC8;
+                    }
                 }
             }
             14 => {

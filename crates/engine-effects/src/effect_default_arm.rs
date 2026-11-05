@@ -974,7 +974,8 @@ pub fn default_arm_vram_mesh(s: &ActorState) -> Option<legaia_tmd::mesh::VramMes
     // handler bank 3's sixteen-way split: `FUN_80029DD8` takes each packet
     // as two triangles.
     let mut colour = ColourWord::of(s);
-    if crate::part_shatter::part_shatter_word(s) != 0 {
+    // Nor is a raised `+0x42`'s: its far arm reads the packets whole.
+    if crate::part_shatter::part_shatter_word(s) != 0 || s.field_42 != 0 {
         colour.split_quads = false;
     }
     let mesh = vram_mesh(&decode(&b), s.field_72, &colour);
@@ -995,6 +996,11 @@ pub fn default_arm_draw(s: &ActorState) -> Option<crate::effect_ribbon::RibbonDr
         // The case falls into the model draw (`0x8001B160`) and the prim
         // dispatcher with the node's own colour word.
         single_sided: !ColourWord::of(s).double_sided,
+        tessellated: ColourWord::of(s).split_quads
+            && crate::part_shatter::part_shatter_word(s) == 0
+            && s.field_42 == 0,
+        object_effect_kind: s.field_42,
+        object_effect_scale: f32::from(s.field_72) / 4096.0,
     })
 }
 

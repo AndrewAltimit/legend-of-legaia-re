@@ -307,6 +307,13 @@ impl SceneHost {
                     })
                     .collect();
             self.world.tables.summon_attack_names = std::sync::Arc::new(names);
+            self.world.tables.readef_dat = self
+                .index
+                .entry_bytes(u32::from(
+                    legaia_actor_formats::summon_readef::READEF_PROT_INDEX,
+                ))
+                .ok()
+                .map(|b| std::sync::Arc::from(b.as_slice()));
             self.world.tables.summon_dat = Some(std::sync::Arc::from(summon_dat.as_slice()));
         }
     }

@@ -102,6 +102,9 @@ pub(crate) struct MinigameUi {
     /// The fishing pond surface - the engine cache the native window drives
     /// too (`legaia_engine_minigame_scenes::fishing_scene`).
     pub(crate) fishing_surface: legaia_engine_minigame_scenes::fishing_scene::FishingSurface,
+    /// The CPU copy of the hall's VRAM its ambient tree repaints
+    /// (`play_mg_dance_ambient_step`).
+    pub(crate) dance_ambient_vram: Option<legaia_tim::Vram>,
 }
 
 /// The PROT entries the standalone presentation bundle reads, in extraction

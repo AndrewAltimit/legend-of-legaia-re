@@ -597,8 +597,8 @@ impl LegaiaRuntime {
         }
     }
 
-    /// Open the disc-free scaffold menu (the headless [`MenuRuntime`] - the
-    /// retail pause menu's screens are a native-only draw path today).
+    /// Open the disc-free scaffold menu (the headless [`MenuRuntime`]); with
+    /// a scene up the retail pause menu is `crate::play_menu`'s.
     pub fn open_menu(&mut self) {
         menu_open(&mut self.menu.ctx);
     }

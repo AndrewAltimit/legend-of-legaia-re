@@ -18,6 +18,7 @@ fn tilted_draw(rot_x: u16, rot_y: u16, rot_z: u16) -> EnvDraw {
         },
         cell: (0, 0),
         cull_radius: 0,
+        far_corner_order: false,
         view_skip: 0,
     }
 }
@@ -150,6 +151,7 @@ fn draws_resolve_pack_index_and_floor_y() {
             },
             cell: (2, 3),
             cull_radius: 0,
+            far_corner_order: false,
             view_skip: 0,
         }]
     );

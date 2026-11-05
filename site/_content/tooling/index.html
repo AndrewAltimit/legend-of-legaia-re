@@ -158,6 +158,10 @@
       <div class="card-title">Recomp differential oracle</div>
       <div class="card-body">Frame-tagged parity between the from-scratch engine and a static recomp of retail: both emit the same state trace and <code>trace_diff.py</code> reports the first frame each channel diverges.</div>
     </a>
+    <a class="card" href="retail-kernel-differential.html">
+      <div class="card-title">Retail kernel differential</div>
+      <div class="card-body">Run a retail routine off the disc in an R3000 interpreter beside the Rust kernel that claims to port it, over generated inputs, and compare whole regions of what each wrote.</div>
+    </a>
     <a class="card" href="determinism-replay.html">
       <div class="card-title">Determinism + replay</div>
       <div class="card-body"><code>legaia-engine record</code> / <code>replay</code>: capture your inputs to a small text file and play them back frame-perfectly. Same input twice &rarr; bit-identical state trace.</div>

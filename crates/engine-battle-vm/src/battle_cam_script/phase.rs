@@ -68,11 +68,11 @@ pub enum BattleCamPhase {
 ///
 /// | Band | `ctx[7]` | What `FUN_801E295C` arms |
 /// |---|---|---|
-/// | Setup | `0x00`, `0x0B` | nothing; the prologue orbit runs |
-/// | Seed | `0x0C` | `FUN_801D5854(ctx[0x13], 6)` (`0x801E6464` arm) |
+/// | Setup | `0x00`, `0x0A`, `0x0B` | nothing; the last framing stands and the yaw orbits ([`FRAMING_HOLD_STATES`]) |
+/// | Seed | `0x0C` | `FUN_801D5854(ctx[0x13], 6)` (`0x801E2D50`) |
 /// | Action | `0x14..=0x48` | case `6` per state (`0x14`: `jal 0x801d5854` at `0x801E32E4`) |
 /// | Done | `0x50..=0x52` | case `6` / `8` **per category** ([`done_band_phase`]), under the `ctx[+0x6D8]` tail timer |
-/// | End of action | `0x5A` | nothing - the far framing, retail's between-action pose |
+/// | End of action | `0x5A` | the category fork once more ([`end_of_action_phase`], `0x801E6428..0x801E6470`) |
 /// | Run | `0x64..=0x67` | case `9` + the orbit (`jal 0x801d5854`, `li a1,0x9` at `0x801E5BDC`) |
 ///
 /// **The Done band is a per-action framing, not an idle.** The `0x50` arm
@@ -94,12 +94,18 @@ pub enum BattleCamPhase {
 /// combatants, so holding it through the tail is the retail look, and the
 /// tail is bounded by the same `0x3C`-frame timer the port ticks.
 ///
-/// Between actions retail *is* on the far framing: a save parked at
-/// `ctx[7] == 0x0A` with the flow byte at `0xFF`
-/// (`evil_medallion_rage_battle`) reads pitch `32`, `TR (0, 1280, 7920)`,
-/// focus at the origin - case 9 over its `+-825` seats - so `0x5A` and the
-/// setup states stay idle here. (`0x0A` precedes the seed on both sides;
-/// `FUN_801E295C` has no arm for it.)
+/// **Between two actors of a round retail stays on the last framing.** No
+/// state from `0x5A` to the next seed `0x0C` arms case `9`: `0x5A` arms case
+/// `8` or `6` on the actor that just finished, and the setup states arm
+/// nothing. Every pre-cast capture parked in `0x0A` behind an earlier actor
+/// reads that actor's shot with its tween landed
+/// (`kor_ghost_knight_pre_v_windhash`: pitch `128`, `TR (0, 1024, 3276)`, focus
+/// the Spirit member's seat). Only a round's first actor stands on the far
+/// framing there, the one the prompt's case `9` left
+/// (`evil_medallion_rage_battle`, `taiku_topaz_pre_hyper_heal`).
+/// [`action_state_frames_the_action`] stays the band test for the
+/// three-boolean [`phase_for`]; [`phase_for_state`] and the camera's
+/// [`BattleCamera::holds_framing`](super::BattleCamera) carry the rest.
 ///
 /// The Run band is idle on retail's own authority, not as a deviation: both
 /// the category-`5` seed arm and the `0x50`/`0x51` arms skip the framing call
@@ -113,7 +119,7 @@ pub const fn action_state_frames_the_action(action_state: u8) -> bool {
         action_state,
         // Setup band: nothing committed yet.
         0x00 | 0x0A | 0x0B
-        // End of action: the far framing until the next actor's seed.
+        // End of action: its framing is [`end_of_action_phase`]'s.
         | 0x5A
         // Run band: retail arms case 9 + the orbit here itself.
         | 0x64
@@ -207,6 +213,16 @@ pub const ACTION_END_STATES: [u8; 2] = [0x52, 0xFD];
 /// the action category - [`done_band_phase`].
 pub const DONE_STATES: [u8; 2] = [0x50, 0x51];
 
+/// The end-of-action gate, which arms one more framing before the next
+/// actor's setup ([`end_of_action_phase`]).
+pub const END_OF_ACTION_STATE: u8 = 0x5A;
+
+/// The states ahead of the action seed `0x0C`. `FUN_801E295C` has no framing
+/// call in any of them: the tween the last pass armed walks on and the yaw
+/// orbits, by the prologue's store in `0x00` / `0x0B`
+/// (`0x801E2A3C..0x801E2A6C`) and by `0x0A`'s own (`0x801E5BE4..0x801E5C04`).
+pub const FRAMING_HOLD_STATES: [u8; 3] = [0x00, 0x0A, 0x0B];
+
 /// What the Done-band arms read before choosing a framing case
 /// (`0x801E5E90..0x801E5EF4` in `0x50`, `0x801E5FC0..0x801E6018` in `0x51`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -234,6 +250,9 @@ pub struct DoneBandInputs {
     /// The target's current anim `+0x1D9` is `7` or `8`, a downed party
     /// member's death chain ([`post_strike_phase`], `0x20` only).
     pub target_death_clip: bool,
+    /// The results sequencer has begun (`ctx[+0x6CE] != 0`), which takes an
+    /// Attack off case `8` in [`end_of_action_phase`].
+    pub results_begun: bool,
 }
 
 /// `actor[+0x1DE]` value the Done band runs the orbit for instead of a framing.
@@ -272,6 +291,28 @@ pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
     }
 }
 
+/// The framing the end-of-action gate `0x5A` arms on the actor that just
+/// finished (`0x801E6428..0x801E6470`):
+///
+/// ```text
+/// 801e6428  lbu  v1,0x1de(s3)         ; the category
+/// 801e6430  bne  v1,3,0x801e6460      ; not an Attack: the fork below
+/// 801e6444  lh   v0,0x6ce(v0)         ; results half
+/// 801e644c  bne  v0,zero,0x801e6460
+/// 801e6458  j    0x801e646c           ; a1 = 8: an Attack's case 8
+/// 801e6460  beq  v1,5,0x801e6474      ; Run: no framing call
+/// 801e6464  _li  a1,0x6               ; everything else: case 6
+/// ```
+pub const fn end_of_action_phase(done: DoneBandInputs) -> BattleCamPhase {
+    if done.category == DONE_CATEGORY_RUN {
+        BattleCamPhase::Menu
+    } else if done.category == DONE_CATEGORY_ATTACK && !done.results_begun {
+        BattleCamPhase::ActionEnd
+    } else {
+        BattleCamPhase::Action
+    }
+}
+
 /// The retail phase for one frame of battle state, over the live `ctx[7]`.
 ///
 /// Two things this resolves that the three-boolean [`phase_for`] cannot.
@@ -296,7 +337,10 @@ pub const fn done_band_phase(done: DoneBandInputs) -> BattleCamPhase {
 /// **The Done band frames per category.** `0x50` / `0x51` arm case `8` for
 /// an Attack (or a dead party target), the orbit for a Run, and
 /// case `6` for everything else - [`done_band_phase`] over `done`, which
-/// both hosts fill from the acting actor.
+/// both hosts fill from the acting actor. So does the gate after it
+/// ([`end_of_action_phase`]); the caller hands `0x5A` here only while the
+/// round is executing, since the engine's SM rests on that byte through the
+/// next round's prompt.
 pub fn phase_for_state(
     dialogue_up: bool,
     input_menu_open: bool,
@@ -311,6 +355,8 @@ pub fn phase_for_state(
         phase
     } else if DONE_STATES.contains(&action_state) {
         done_band_phase(done)
+    } else if action_state == END_OF_ACTION_STATE {
+        end_of_action_phase(done)
     } else if ACTION_END_STATES.contains(&action_state) {
         BattleCamPhase::ActionEnd
     } else if action_state_frames_the_action(action_state) {

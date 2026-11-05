@@ -219,6 +219,8 @@ pub struct CellKey {
     pub cell: (u8, u8),
     /// [`crate::field_env::EnvDraw::cull_radius`].
     pub cull_radius: u8,
+    /// [`crate::field_env::EnvDraw::far_corner_order`].
+    pub far_corner_order: bool,
 }
 
 impl CellKey {
@@ -227,6 +229,7 @@ impl CellKey {
         CellKey {
             cell: d.cell,
             cull_radius: d.cull_radius,
+            far_corner_order: d.far_corner_order,
         }
     }
 }

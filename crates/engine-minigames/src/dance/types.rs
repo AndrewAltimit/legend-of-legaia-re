@@ -194,6 +194,23 @@ impl DanceEvent {
     }
 }
 
+/// One dancer's live words, read out for the retail differential.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DancerProbe {
+    pub score: u32,
+    pub gauge: u32,
+    pub cursor: u32,
+    pub triangles: u32,
+    pub latch: u32,
+    pub latch_timer: i32,
+    pub spin_turns: u32,
+    pub misses: u32,
+    pub landed: bool,
+    pub tri_cursor: usize,
+    pub tri_meter: i32,
+    pub clip: i16,
+}
+
 /// One dancer's live state (the per-player arrays of the retail overlay).
 #[derive(Debug, Clone, Default)]
 pub(super) struct Dancer {
@@ -221,6 +238,11 @@ pub(super) struct Dancer {
     /// its end flag (`0` = the standing loop is bound). Only counted when the
     /// run has its clip lengths ([`super::DanceGame::attach_clip_bank`]).
     pub(super) move_left: u32,
+    /// The bound judge move's end flag was raised on the last clip step, so
+    /// this tick's rebind of the loop has not reached the clip selector.
+    pub(super) move_just_ended: bool,
+    /// The clip id that move bound.
+    pub(super) last_move: u16,
     /// The actor flag word (`+0x10`). Only the bits the dance overlay writes
     /// are modelled: [`crate::minigame_actor::FLAG_PARTY_CLIP_BANK`] (the anim
     /// word's `0x200`) and [`crate::minigame_actor::FLAG_DRIVE_CLIP`].
@@ -257,16 +279,10 @@ pub(super) struct Dancer {
     /// `0xC`) - `DAT_801d538c[player] = 1` at `0x801D1D30`. Its reader is not
     /// in the dump corpus; the port keeps the store.
     pub(super) finale_landed: bool,
-    /// Beat index of the last judged press. Retail's actor handler stops calling
-    /// the award routine while the reaction / move clip plays, which is always
-    /// long enough to cover the rest of the beat's window; this is that gate in
-    /// rules terms (one registered press per beat per dancer).
+    /// Beat index of the last judged press.
     pub(super) last_beat: Option<u32>,
-    /// Last beat whose combo slot was banked into `tri_meter` (retail's
-    /// `DAT_801d57cc` edge flag).
-    pub(super) last_meter_beat: Option<u32>,
-    /// Last beat on which the chain cursor was cleared.
-    pub(super) last_reset_beat: Option<u32>,
+    /// This combo slot is banked into `tri_meter` (`DAT_801d57cc`).
+    pub(super) meter_banked: bool,
 }
 
 impl Dancer {
@@ -315,9 +331,10 @@ impl Dancer {
 
     /// Nothing is judged for this dancer right now: a judge move still
     /// playing (retail calls the award routine only while the bound clip is a
-    /// standing loop), mid-spin, latched, or a press already registered on
-    /// this beat.
-    pub(super) fn locked(&self, beat: u32) -> bool {
-        self.move_left > 0 || self.spin_turns > 0 || self.latch != 0 || self.last_beat == Some(beat)
+    /// standing loop) or latched. The latch is short, so a dancer on a standing
+    /// loop can press again inside one beat's window, and its second press
+    /// counts toward the chain.
+    pub(super) fn locked(&self) -> bool {
+        self.move_left > 0 || self.latch != 0
     }
 }

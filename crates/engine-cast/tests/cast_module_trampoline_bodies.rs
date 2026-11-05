@@ -91,7 +91,11 @@ fn the_0951_0952_bodies_finish_on_their_terminal_arm() {
     let mut v = actor(100);
     walk(|c| chaos_flare_tick(c, &mut v, None), CHAOS_FLARE_ARMS);
     let mut v = actor(100);
-    walk(|c| scythe_wind_tick(c, &mut v, None), SCYTHE_WIND_ARMS);
+    let mut scythe_caster = actor(100);
+    walk(
+        |c| scythe_wind_tick(c, &mut scythe_caster, &mut v, None),
+        SCYTHE_WIND_ARMS,
+    );
     let (mut caster, mut v) = (actor(100), actor(100));
     walk(
         |c| bloody_horns_tick(c, &mut caster, &mut v, None),
@@ -203,7 +207,7 @@ fn every_trampoline_body_clamps_shape_a() {
     // Negative roll -> compares above any HP unsigned, so it kills.
     let mut c = ctx(0, 7);
     let mut v = actor(4000);
-    scythe_wind_tick(&mut c, &mut v, Some(-1));
+    scythe_wind_tick(&mut c, &mut actor(100), &mut v, Some(-1));
     assert_eq!(v.hp, 0, "shape A kills on a negative roll");
 
     // The physical-wrapper body takes the same shape.

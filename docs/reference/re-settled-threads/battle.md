@@ -88,6 +88,8 @@ Threads whose answer needs more than a table cell. Every other thread is a row o
 
 | Thread | Status | Evidence | Answer |
 |---|---|---|---|
+| Does the port grant the summons worn gear teaches? | resolved (it does now; it had no code for it) | `disassembly` + `capture` | `FUN_80042558`'s grant scan (`0x80042714..0x80042890`) and revoke scan (`0x80042894..0x80042990`) run in `crates/retail-exec` against `CharacterRecord::sync_equipment_summons`, byte-equal over whole records. [`retail-kernel-differential.md`](../../tooling/retail-kernel-differential.md). |
+| Do level-ups draw `rand()`? | resolved (eight a level, on the one stream; the port drew none until the stream was lent to the tracker) | `disassembly` + `capture` | The eight `jal 0x80056798` of `FUN_801E9504`; the differential holds the record and the draw count equal on one stream. [`level-up.md`](../../subsystems/level-up.md). |
 | Why do Aluru's and Nighto's cast-sequence cues read `.33` and `.40`? | resolved (the verdict's draw, not the cues) | `capture` | Both draw a kill verdict in arm 0. Retail's seed word gives Nighto `22235 % 8 = 3`, no kill, and the engine's stream `30808 % 8 = 0`, a kill, whose death clip sounds the extra cues. Aluru's differs the other way, and `--rand-at 0x34:0` puts it on retail's kill path with cue score `1.00`. Nighto's draw sits later in that tick than the hold reaches. |
 | Why do Vera's and Spoon's shots miss retail's yaw by `34`? | resolved (the oracle's seed, not the cast) | `capture` | Those arms read `0x800 - caster +0x46`, and a group-target cast does not turn the caster, so the shot keeps the facing `34` the fight left in the state. The cast-sequence seed leaves it `0`. Seeding `34` gives yaw `2014` on both sides and leaves both casts' scores where they were. |
 | Why did Zenoir's first hit sound `0x200`, `0x16`, `0x16`? | resolved (the wrong stage on the pre-hit) | `disassembly` + `capture` | Arm 8's hit stages `+0x1EF`, else `+0x1F0`, with no knockdown fork (`0x801F77B4..0x801F77D4`). The port ran the shared pre-hit, whose fork took the knockdown entry on a monster with a get-up. Retail's recording shows clip `2`, then arm 9's `sb zero,0x1da` leaves its cue `0x21C`. |
@@ -932,15 +934,19 @@ camera step).
 | a party slot whose target's live HP `+0x14C` is zero | `li a1,0x8` |
 | anything else | `li a1,0x6` |
 
-- **The far framing** returns at the end-of-action gate `0x5A`.
+- **The far framing** returns with the next round's prompt. Between two actors the
+  last shot stands: `0x5A` re-arms the category's framing
+  (`0x801E6428..0x801E6470`) and the setup states arm nothing.
 - **Done-band capture.** `zora_glare_petrify_post` (mednafen, `ctx[7] == 0x51`, slot 3 acting after a
   spell, `ctx[+0x6D0] = 0xC00`, `ctx[+0x6DA] = 1966`, Zora at `(649, −47)` facing `3297`) reads pitch
   `0`, yaw `2735`, `TR (0, 1275, 4820)`, focus the negated `(624, 0, −40)`: case 6's in-fight pose
   `(0, 0x500, 4915)` on the caster's seat with the tween one step short, and yaw
   `(1966 − 3297) & 0xFFF = 2765` being chased.
-- **Between-actions capture.** `evil_medallion_rage_battle` (`ctx[7] == 0x0A`, flow byte `0xFF`) reads
-  pitch `32`, `TR (0, 1280, 7920)`, focus at the origin - case 9 over `±825` seats, i.e. the far
-  framing.
+- **A round's first actor.** `evil_medallion_rage_battle` (`ctx[7] == 0x0A`, flow byte `0xFF`) reads
+  pitch `32`, `TR (0, 1280, 7920)`, focus at the origin - case 9 over `±825` seats, the prompt's
+  framing, with no earlier actor in the round.
+- **A later actor.** `kor_ghost_knight_pre_v_windhash` (`ctx[7] == 0x0A`, `ctx[+0x13] = 1` with a spent
+  key) reads pitch `128`, `TR (0, 1024, 3276)`, focus Noa's seat: her Spirit's case 6, landed.
 - **Orbit writers.** `scripts/pcsx-redux/autorun_battle_cam_orbit.lua` on `battle_gaza2_prompt` (240
   vsyncs, `ctx[+6] == 0x1E`, `ctx[7] == 0x00`) with Exec breakpoints on both `sh v0,0x2(a0)` stores:
   the SM's at `0x801E2A6C` never fires; the battle tick's at `0x801D07CC` fires once per tick and the
@@ -1721,7 +1727,7 @@ monster special attacks, not to magic or party arts.
 
 - Kernels in `legaia_engine_battle_vm::battle_formulas`: `summon_attacker_roll` / `summon_defender_roll` /
   `summon_predamage` / the `apply_*` helpers / `heal_summon_amount` / `damage_finish` /
-  `spirit_gauge_fill`. The finisher's state-mutating tail (damage-popup accumulator, AI revenge
+  `spirit_gauge_fill`. The finisher's state-mutating tail (damage-popup accumulator, per-seat readout
   table, MP drain, per-element stat-debuff switch) lives in the live battle context.
 - Monster special attacks: the table loads onto `World::tables.move_power`
   (`engine-battle::move_power::MovePowerCatalog`) and `cast_spell_on_slots` overrides a damaging
@@ -2466,3 +2472,29 @@ that slot's level is `0`: the power's `srl` by `level - 1` wraps, and the roll c
 is an artefact of the injection, and no cast in play gets there.
 
 Owning page: [`battle-formulas.md`](../../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned).
+
+### A scatter's density and Mushura's late rampage hit
+
+Grade: capture and disassembly. An arm's per-pass spawn call seated once per one-vsync module tick, and a pass runs a frame step of those ticks (`World::module_pass`), so a cast held a step times the records: PROT 0915's `0x801F8108` trail stood at sixteen live parts against retail's five in one RAM read, and PROT 0957's sparks at twice retail's at step `2`. A call now runs on the pass's first tick (`CastFxState::module_pass_repeat`). Mushura's first rampage hit lands on the frame retail's does since arm 9's pass stores the creature's heading on its target (`jal 0x80019B28`, `sh v0,0x46(s4)` at `0x801F7578..0x801F7594`): the port had left arm 8's spin in `+0x46`, and arm `0xC`'s chase set off along it, sound cue score `.500` to `1.000`.
+
+### The case `0xA` yaw clock
+
+Grade: disassembly and capture. The word `0x801DC8B8` reads is the anim node's `+0x68` cursor, signed, in sixteenths of a keyframe, and each state in the magic band that runs the case holds an endpoint of `ring[1] * 2 + 0x700 - facing`, slot `1` of the cursor ring being the pass's value ahead of its anim tick. The engine handed the case, and `FUN_801D71B8`'s arms, the cursor rounded down to a whole keyframe, which aimed Rugi's Poisonous Breath `17` units short and Devil Pump's Multi Cutter `24`. A moving endpoint also takes the displayed frame's walk back: the capture channel's `clip_clock_end_shift` gives the walk its `24` a pass, and Poisonous Breath's `3350` under `3368` walks to the `3320` an image scan of the frame finds independently.
+
+Owning page: [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#the-cast-drivers-clip-clock).
+
+### Noa's stand in Scythe Wind
+
+Grade: capture. Noa stood `60` px off retail's in `battle_jou_nova_v3_scythe_wind_mid_cast` because the frame was on the replay's camera. PROT 0951's arms `3..=5` re-aim every pass, so the child's alignment agreed on no component and dropped the pose it was given, which is also why a yaw scan of that frame moved nothing. Standing on the walked-back pose reads `.691` to `.942`, and the two other Scythe Wind states rise with it.
+
+Owning page: [`retail-compare.md`](../../tooling/retail-compare.md#a-shot-that-re-aims-every-pass).
+
+### Why a monster's strike gate read a short age
+
+Evidence: `disassembly` for the laws, `capture` for the states. Three separate faults read as one `camera` of about `.87`.
+
+- **The replay rolled a shorter stream.** The strike loop stages a byte and tests the terminator at the new cursor on the same pass (`0x801E3998..0x801E39AC`), so a one-byte queue leaves for `0x1F` on its first pass. `battle_cave01_mushroom_strike` holds `06 06 00`, cursor `1`, the swing staged over the arrival's idle (`+0x1DC` bit 1). The replay drew `05 00`, left `0x1E` at age `0`, and `age_short` re-ran it on the state's first tick, ahead of the first case-7 arm. Such a capture now takes the [stream fallback](../../tooling/retail-compare.md#a-swing-staged-behind-the-capture).
+- **A walk-clip capture's accumulator does not date the arrival.** It counts from the walk's last loop re-commit. `battle_nilboa_warfish_strike` reads `288` at gap `1490`, increment `150`, one pass under case 7. The increments fall on a ladder from `0x700` (`ceil(gap / 0xC)`, then `gap -= inc * step`), so the increment names the pass (`strike_passes_off_table`).
+- **The monster's pull-in never opened.** `FUN_801E93C8` keeps `ctx[+0x243]` while the seat's clip has `+0x87` set (`0x801E9458..0x801E94A4`); the live host had no such read, the gate stood open and the strike loop's tail cleared the latch the commit had stored. Case 7 then tested a stand-in for it, and its glide chased the unpulled depth.
+
+Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-stage-camera.md`](../../subsystems/battle-stage-camera.md#post-strike-shots-cases-7-and-8).

@@ -640,3 +640,24 @@ fn subdraw_decoder_reads_a_synthetic_table() {
     assert_eq!(subdraw_step(&image, base, 0), None);
     assert_eq!(subdraw_step(&image, base, SUBDRAW_STEP_COUNT), None);
 }
+
+/// A row-aimed cast counts into its rows and leaves the cluster shut: a held
+/// hit opens nothing, and the release opens the rows on what they counted.
+#[test]
+fn a_row_cast_counts_into_the_value_window() {
+    let mut hud = BattleHud::new();
+    hud.arm_combo(Some(ComboStyle::Damage), 0);
+    hud.arm_multi_readout(0, Some(vec![1]));
+    hud.hold_combo(true);
+    hud.push_popup(DamagePopup::damage(1, 75));
+    let m = hud.multi_readout.clone().unwrap();
+    assert_eq!(m.rows, vec![(1, 75)]);
+    assert!(!m.open);
+    assert!(hud.combo.is_none());
+    hud.hold_combo(false);
+    assert!(hud.multi_readout.as_ref().unwrap().open);
+    hud.push_popup(DamagePopup::damage(1, 25));
+    assert_eq!(hud.multi_readout.as_ref().unwrap().rows, vec![(1, 100)]);
+    hud.arm_multi_readout(0, None);
+    assert!(hud.multi_readout.is_none());
+}

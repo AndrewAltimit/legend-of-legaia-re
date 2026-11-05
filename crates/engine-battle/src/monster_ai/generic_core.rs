@@ -117,15 +117,15 @@ pub enum CorePick {
         target: u8,
     },
     /// The magic walk reached no tag-`0x23` entry with `k` spent and matched
-    /// nothing: retail leaves the actor's command bytes as its last action
-    /// left them, which the port does not carry.
+    /// nothing, and no failed pass stored a cast: retail leaves the actor's
+    /// command bytes as its last action left them.
     Unmatched,
 }
 
 /// A pass's outcome.
 enum Pass {
     Done(CorePick),
-    Failed,
+    Failed(Option<CorePick>),
 }
 
 /// Passes the port runs before it gives up on a pick that keeps failing.
@@ -133,6 +133,10 @@ enum Pass {
 /// it with probability one, and only a forced magic arm (monster `0xB4`)
 /// whose every match fails would spin.
 pub const MAX_PASSES: usize = 64;
+
+/// A [`CorePick::Magic`] target that means "the actor's `+0x1DD` as it stands":
+/// the pick of a pass that failed before its target store.
+pub const KEEP_TARGET: u8 = 0xFE;
 
 /// The tag the cast walk counts.
 const CAST_TAG: u8 = 0x23;
@@ -145,12 +149,21 @@ pub fn pick(
     spell: &dyn Fn(u8) -> Option<SpellBytes>,
     rand: &mut dyn FnMut() -> u32,
 ) -> (CorePick, usize) {
+    // A pass that matched a cast and then failed on its target has already stored
+    // the spell, clip and category: they stand if the retry stores nothing over
+    // them (`0x801EA528..0x801EA570` ahead of the `LAB_801EA8B8` failures).
+    let mut stored = None;
     for n in 1..=MAX_PASSES {
-        if let Pass::Done(p) = one_pass(input, spell, rand) {
-            return (p, n);
+        match one_pass(input, spell, rand) {
+            Pass::Done(CorePick::Unmatched) => {
+                return (stored.unwrap_or(CorePick::Unmatched), n);
+            }
+            Pass::Done(p) => return (p, n),
+            Pass::Failed(Some(s)) => stored = Some(s),
+            Pass::Failed(None) => {}
         }
     }
-    (CorePick::Unmatched, MAX_PASSES)
+    (stored.unwrap_or(CorePick::Unmatched), MAX_PASSES)
 }
 
 fn odd_round(input: &CoreInput<'_>) -> bool {
@@ -219,11 +232,17 @@ fn one_pass(
             .copied()
             .unwrap_or(0);
         let Some(bytes) = (id != 0).then(|| spell(id)).flatten() else {
-            return Pass::Failed;
+            return Pass::Failed(None);
         };
         if input.mp < u16::from(bytes.mp) {
-            return Pass::Failed;
+            return Pass::Failed(None);
         }
+        let stored = CorePick::Magic {
+            spell: id,
+            clip: e as u8,
+            spirit_clip: e as u8,
+            target: KEEP_TARGET,
+        };
         let mut clip = e as u8;
         let target = match bytes.target & 0x60 {
             0x40 => {
@@ -246,7 +265,7 @@ fn one_pass(
                 s1 = mc;
                 match target {
                     Some(t) => t,
-                    None => return Pass::Failed,
+                    None => return Pass::Failed(Some(stored)),
                 }
             }
             0x00 => {
@@ -272,7 +291,7 @@ fn one_pass(
                 }
                 s1 = mc;
                 if weak == 0 {
-                    return Pass::Failed;
+                    return Pass::Failed(Some(stored));
                 }
                 9
             }

@@ -172,7 +172,9 @@ fn every_building_on_the_sample_pack_maps_blocks_the_player() {
             // The core reads as wall: a 16-unit lattice over the hull, each
             // point at least `INSET` inside every edge (the wall probe leads
             // the player by 47 units, and a sub-cell closes on its centre).
-            let core = shrink(m, 0.6);
+            // The walk's endpoint reads a core inside the hull: a wall skid follows
+            // the hull's stamped stair-steps, and a rotated hull's corners poke past them.
+            let core = shrink(m, 0.5);
             let (mut n, mut wall) = (0, 0);
             let (x0, x1, z0, z1) = m.hull.iter().fold(
                 (f32::MAX, f32::MIN, f32::MAX, f32::MIN),

@@ -187,6 +187,13 @@ fn status_screen_draws_pack_panel() {
     ];
     let equip_rows = [("Weapon", "Bronze Sword"), ("Helmet", "(none)")];
     let panel = StatusPanelView {
+        seru: None,
+        page: 0,
+        skills: &[],
+        spells: &[],
+        moves: &[],
+        list: None,
+        scroll: 0,
         name: "Vahn",
         level: 5,
         xp: 200,
@@ -215,7 +222,7 @@ fn status_screen_draws_pack_panel() {
 #[test]
 fn status_icon_sprites_pin_gauge_and_pictogram_positions() {
     let rects = super::title_save_screen::pinned_save_menu_rects();
-    let draws = status_icon_sprites_for(&rects, (90, 16), 0, (0, 0), 1);
+    let draws = status_icon_sprites_for(&rects, (90, 16), 0, Default::default(), (0, 0), 1);
     let at = |x: i32, y: i32| {
         draws
             .iter()
@@ -253,7 +260,7 @@ fn status_icon_sprites_gauge_value_and_fill_layout() {
     let (dgx, dgy, _, _) = rects.gauge_digits;
 
     // AP 42: tens '4' at 234, ones '2' at 240, fill 21 px at (181, 66).
-    let draws = status_icon_sprites_for(&rects, (90, 16), 42, (0, 0), 1);
+    let draws = status_icon_sprites_for(&rects, (90, 16), 42, Default::default(), (0, 0), 1);
     let digits: Vec<_> = draws
         .iter()
         .filter(|d| d.dst.1 == 66 && d.src.1 == dgy && d.src.2 == 6)
@@ -270,7 +277,7 @@ fn status_icon_sprites_gauge_value_and_fill_layout() {
     assert_eq!(fill.dst, (181, 66, 21, 6));
 
     // AP 7: no tens digit, ones '7' only, 3-px fill (7 >> 1).
-    let draws = status_icon_sprites_for(&rects, (90, 16), 7, (0, 0), 1);
+    let draws = status_icon_sprites_for(&rects, (90, 16), 7, Default::default(), (0, 0), 1);
     let digits: Vec<_> = draws
         .iter()
         .filter(|d| d.dst.1 == 66 && d.src.1 == dgy && d.src.2 == 6)
@@ -282,7 +289,7 @@ fn status_icon_sprites_gauge_value_and_fill_layout() {
     assert_eq!(fill.dst, (181, 66, 3, 6));
 
     // AP 100: the "100" glyph at anchor+0x50, no digit cells, 50-px fill.
-    let draws = status_icon_sprites_for(&rects, (90, 16), 100, (0, 0), 1);
+    let draws = status_icon_sprites_for(&rects, (90, 16), 100, Default::default(), (0, 0), 1);
     let glyph = draws
         .iter()
         .find(|d| d.src == rects.gauge_100)
@@ -301,6 +308,13 @@ fn status_screen_label_icons_suppresses_ap_text_and_empty_equips() {
     let font = legaia_font::synthetic_for_tests();
     let equip_rows = [("Weapon", "#05"), ("Helmet", "")];
     let panel = StatusPanelView {
+        seru: None,
+        page: 0,
+        skills: &[],
+        spells: &[],
+        moves: &[],
+        list: None,
+        scroll: 0,
         name: "Vahn",
         level: 1,
         xp: 0,
@@ -1041,8 +1055,17 @@ fn tab_banner_composes_retail_plaque_pieces() {
 #[test]
 fn status_satellite_icons_pin_retail_positions() {
     let rects = super::title_save_screen::pinned_save_menu_rects();
-    let draws =
-        status_satellite_icon_sprites_for(&rects, 1, 0, (14, 38), (14, 92), (14, 134), (0, 0), 1);
+    let draws = status_satellite_icon_sprites_for(
+        &rects,
+        1,
+        0,
+        false,
+        (14, 38),
+        (14, 92),
+        (14, 134),
+        (0, 0),
+        1,
+    );
     let at = |src: (u32, u32, u32, u32)| {
         draws
             .iter()
@@ -1063,8 +1086,17 @@ fn status_satellite_icons_pin_retail_positions() {
     let atr = at(rects.atr_icons[0]);
     assert_eq!((atr.dst.0, atr.dst.1), (14 + 0x20, 134 + 0x1a));
     // A Gala pick (char id 2) swaps only the ATR source rect.
-    let draws2 =
-        status_satellite_icon_sprites_for(&rects, 0, 2, (14, 38), (14, 92), (14, 134), (0, 0), 1);
+    let draws2 = status_satellite_icon_sprites_for(
+        &rects,
+        0,
+        2,
+        false,
+        (14, 38),
+        (14, 92),
+        (14, 134),
+        (0, 0),
+        1,
+    );
     assert!(draws2.iter().any(|d| d.src == rects.atr_icons[2]));
     assert!(!draws2.iter().any(|d| d.src == rects.atr_icons[0]));
 }
@@ -1076,6 +1108,8 @@ fn status_satellite_icons_pin_retail_positions() {
 fn status_satellite_text_uses_retail_pitch_and_suppresses_stand_ins() {
     let font = legaia_font::synthetic_for_tests();
     let view = StatusSatelliteView {
+        page: 0,
+        seru: None,
         party_names: &["Vahn", "Noa"],
         cursor: 0,
         name: "Vahn",
@@ -1103,6 +1137,13 @@ fn status_satellite_text_uses_retail_pitch_and_suppresses_stand_ins() {
 fn status_screen_hp_row_uses_retail_digit_cells_and_teal_parens() {
     let font = legaia_font::synthetic_for_tests();
     let panel = StatusPanelView {
+        seru: None,
+        page: 0,
+        skills: &[],
+        spells: &[],
+        moves: &[],
+        list: None,
+        scroll: 0,
         name: "Vahn",
         level: 1,
         xp: 0,

@@ -300,7 +300,12 @@ fn a_flagged_swing_on_a_monster_enqueues_the_runtime_row() {
     // monster takes the high leg, `0x10C + 0x19C`, on the SFX ring.
     assert_eq!(
         w.take_sfx_ring_ops(),
-        vec![legaia_engine_system::sound_state::SfxRingOp::Push(0x2A8)]
+        vec![
+            legaia_engine_system::sound_state::SfxRingOp::PushUnlessSustained {
+                id: 0x2A8,
+                key: 0x2A8
+            }
+        ]
     );
     assert!(
         w.drain_battle_xa_cues().is_empty(),
@@ -459,7 +464,11 @@ fn a_blocked_hit_lands_no_damage() {
         w
     };
     for seed in 1..400u32 {
-        if setup(seed).roll_block(1, 0, BASIC_ATTACK_COMMAND).is_none() {
+        if setup(seed)
+            .roll_block(1, 0, BASIC_ATTACK_COMMAND)
+            .entry
+            .is_none()
+        {
             continue;
         }
         let mut w = setup(seed);
@@ -494,7 +503,7 @@ fn the_juggle_window_gates_the_block() {
     w.actors[0].battle_reaction_entry = Some(2);
     assert!(World::juggle_window_open(&w.actors[0]), "frame 0 < beat 6");
     for _ in 0..20 {
-        assert_eq!(w.roll_block(1, 0, BASIC_ATTACK_COMMAND), None);
+        assert_eq!(w.roll_block(1, 0, BASIC_ATTACK_COMMAND).entry, None);
     }
     // Block pose with a zero first beat: the window is shut, so the
     // verdict is the roll's alone - it is not forced to `Some`.
@@ -504,7 +513,7 @@ fn the_juggle_window_gates_the_block() {
     w.actors[0].battle_reaction_entry = Some(0x0B);
     assert!(!World::juggle_window_open(&w.actors[0]));
     let blocks = (0..200)
-        .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some())
+        .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).entry.is_some())
         .count();
     assert!(
         blocks < 200,
@@ -526,13 +535,13 @@ fn a_block_committed_since_the_last_tick_reads_the_ticks_window() {
     w.actors[0].battle_juggle_window = false;
     assert!(World::juggle_window_open(&w.actors[0]), "live window open");
     let blocks = (0..200)
-        .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some())
+        .filter(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).entry.is_some())
         .count();
     assert!(blocks < 200, "the fresh block pose latched: {blocks} / 200");
     // With the tick's byte up as well, the pose holds.
     w.actors[0].battle_juggle_window = true;
     assert!(
-        (0..20).all(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).is_some()),
+        (0..20).all(|_| w.roll_block(1, 0, BASIC_ATTACK_COMMAND).entry.is_some()),
         "a held block pose inside the window keeps blocking"
     );
 }

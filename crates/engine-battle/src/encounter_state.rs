@@ -72,6 +72,9 @@ pub struct EncounterState {
     /// the scene-entry top-up) set it through
     /// `World::set_encounter_step_counter`.
     pub step_counter: i32,
+    /// `_DAT_8007B605`, the roll's anti-repeat latch: one retail global, so a
+    /// scene's first roll still tests the last scene's formation row.
+    pub last_formation: u8,
     /// The last region battle setup `FUN_801D9E1C` applied - on a field step
     /// that landed in a region, and on the op-`0x3E` scripted-battle install.
     /// Its fields are the retail globals battle entry reads: the stage
@@ -101,6 +104,7 @@ impl EncounterState {
             session: None,
             scene_rollable: false,
             scene_hint_frames: 0,
+            last_formation: crate::region_encounter::BOOT_LAST_FORMATION,
             step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
             region_setup: None,
             battle_map_define: None,

@@ -90,6 +90,8 @@ The tracker's trigger branch is destructive: it draws RNG, latches the anti-repe
 
 The MAN formation-row index the roll produces and the `World::tables.formation_table` key the battle load resolves are pinned equal across the scene corpus by [`scene_encounter_formations_disc.rs`](../../crates/engine-scene-host/tests/scene_encounter_formations_disc.rs), which also carries the New-Game-reset regression.
 
+The roll's anti-repeat latch `_DAT_8007B605` is one global, `0xFF` on the executable's image, and only the roll writes it. Scene entry leaves it alone, so a scene's first roll still tests the last scene's formation row; `EncounterState::last_formation` carries it between trackers.
+
 `World::force_encounter(row)` arms a named row through the same bracket. It is the engine side of `play-window --battle` ([playing-and-viewing.md](../guides/playing-and-viewing.md#getting-into-a-battle-on-purpose)) and does not shortcut into `enter_battle_from_formation`, so the harness exercises the path it verifies.
 
 ### Scripted-battle entry (`3E FF <row>`)
@@ -160,7 +162,7 @@ The hosts use different channels. The native window draws a bounded HUD line (`W
 Per frame:
 
 - **Field tick** (`World::live_field_tick`). A step is the player actor crossing into a new 128-unit collision tile (`pos >> 7`). Each step drives one `World::on_field_step` roll; `World::tick_encounter` advances the session's `Transition` / `Grace` countdowns every frame. At `Triggered`, `World::begin_encounter_battle` resolves the rolled `formation_id` against `World::tables.formation_table`, snapshots the field actor table into `World::field_return`, seeds the battle actor table from the formation + `MonsterCatalog` (`enter_battle_from_formation`), and flips `mode` to `Battle`.
-- **Battle BGM.** With a battle track configured (`World::audio.battle_bgm`, `World::set_battle_bgm`), `enter_battle_from_formation` calls `World::swap_to_battle_bgm`: it stashes the field track and queues a `FieldEvent::Bgm{sub_op: 1}` for the battle id, which the host's BGM director cross-fades to like a field op-`0x35` start.
+- **Battle BGM.** With a battle track configured (`World::audio.battle_bgm`, `World::set_battle_bgm`), `enter_battle_from_formation` calls `World::swap_to_battle_bgm`: it stashes the field track and queues a `FieldEvent::Bgm{sub_op: 1}` for the battle id, which the host's BGM director attaches like a field op-`0x35` start. The intro has already keyed the field track off ([timeline](audio.md#the-battle-music-timeline)).
 - **Battle tick** (`World::live_battle_tick`). Wraps `step_battle` with the glue retail performs through its render and animation systems. It folds this frame's `BattleEvent::ApplyArtStrike` damage into target HP, applies a generic physical strike (`apply_basic_attack`, through the retail melee roll pair `battle_formulas::physical_predamage` - see [battle-formulas](battle-formulas.md#the-melee-roll-pair-and-the-underdog-rewrite)) on the `AttackChain -> AttackRecovery` edge when no art strike did, marks zero-HP combatants dead so the wipe scan resolves, and re-arms the next actor at `EndOfAction`. On `StepOutcome::BattleComplete` the [results sequence](#battle-end-retails-way---the-results-sequencer) starts.
 - **Return** (`World::finish_battle`). See [what `finish_battle` does](#battle-end-both-hosts). When a BGM swap was active, `World::restore_field_bgm` queues a `FieldEvent::Bgm{sub_op: 1}` for the stashed field track, or a stop (sub-op 4) if none was playing at encounter start.
 - **Post-battle script re-entry** (`SceneHost::tick`). Retail reloads the field scene after every battle, re-running the scene-entry system script `P1[0]` (`FUN_8003ab2c`). The host mirrors that on the `Battle -> Field` mode edge (`Scene::field_man_entry_script` -> `World::load_field_script_at`).
@@ -361,8 +363,7 @@ Retail leaves a battle only through `finish_battle`'s path. The port's hosts can
 
 `World::apply_battle_loot(formation, catalog) -> BattleRewards` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`) turns a defeated formation into its side-effects:
 
-- Sums each `MonsterDef::exp` and distributes it via `World::apply_battle_xp`: an equal split among surviving party members (integer divide, remainder dropped; dead members get zero), with per-character level-up checks against `LevelUpTracker::xp_table`.
-- Sums each `MonsterDef::gold` into `World::party.money` (saturating).
+- Takes the EXP and gold of the seats that died and were not captured and distributes the EXP via `World::apply_battle_xp`: scaled 3/4 and ceiling-split over the members standing and not Stoned, with per-character level-up checks against `LevelUpTracker::xp_table`; the gold is halved twice ([battle-formulas.md](battle-formulas.md#victory-spoils-rewards)) and saturates `World::party.money`.
 - Rolls the one drop retail offers through `battle_formulas::victory_drop_roll`: one `rand() % 100` per enemy seat against its percent chance, the last winning seat's item, then a 1-in-4 gate (see [battle-formulas.md](battle-formulas.md#victory-spoils-rewards)). The item joins `BattleRewards::drops` and the inventory unless 99 are already held.
 - Returns `BattleRewards { xp, gold, level_ups, drops }` for the result window.
 
@@ -370,7 +371,7 @@ Monster ids missing from the catalog contribute zero. The rewards land in `World
 
 ### Post-battle Seru learning
 
-This is the path of the capture *spells* and capture items; the killing-blow absorb is [separate](#the-retail-capture-roll-fun_801ec3e4).
+This is the path of the capture *spells* and capture items of a synthetic catalog: no retail item descriptor carries a capture class, so a game on the disc's data learns Seru magic through the killing-blow absorb ([separate](#the-retail-capture-roll-fun_801ec3e4)) and worn gear ([the summon scans](../reference/glitches/summons-and-jette.md)).
 
 - A capture downs the monster and logs its monster id into `World::seru.battle_captures`.
 - `World::finish_battle` resolves them through `World::resolve_captures`: each id maps to a Seru id via `MonsterDef::seru_id`, and `seru_learning::record_capture` banks capture points against `World::seru.log` for every active party slot eligible by the Seru's `learnable_mask`.
@@ -474,7 +475,7 @@ Notes on the table:
 - **Kind byte** is the status-kind byte the two retail appliers switch on (below). Kinds `1` and `2` only install a lingering status visual; the art-record names for them (`1` = Toxic, `2` = Numb, `EnemyEffect::Toxic` / `Numb`) are kept in `StatusKind::from_enemy_effect` until a capture pins what they do mechanically. Sleep and Confuse have no on-disc kind byte and are host-driven kinds.
 - **Stone = bit `0x04`** is capture-pinned: a Glare before / after pair shows the word go `0 -> 4` with HP untouched and the queued action category `+0x1DE` cleared.
 - **Bit `0x0040`** sits inside the Rot group mask `0x0078` but no applier sets it.
-- **Durations** are port approximations (no retail per-status duration table is in the dumped corpus): Toxic 4 turns, Numb 3, Venom 6, Sleep 3, Confuse 3, Rot 6, Curse 4, Stone and Faint 255 (whole battle / until cured).
+- **Durations.** Retail has no status timer ([battle-formulas](battle-formulas.md#status-application-the-art--move-record-status-byte)), so Venom, Toxic, Rot, Curse, Stone and Faint stand at the port's `255`, until cured or battle end. Numb, Sleep and Confuse keep the port's own `3` turns.
 - **Poison ticks** are pinned from the per-round ticker `FUN_801E752C` ([battle-formulas](battle-formulas.md), "Per-round status DoT ticker"). The ticker subtracts `current - 1` before applying the per-status cap, so a tick that would reach 0 leaves the actor at 1 HP. It draws no RNG.
 - **Limb gating** for Rot is on [`arts-command-gauge.md`](arts-command-gauge.md#status-limb-gating).
 
@@ -617,7 +618,13 @@ Context fields: `ctx[+0]` = party count, `ctx[+1]` = monster count, `ctx[+0x13]`
 - Scripted casts emit retail spell ids. They fold when the active catalog knows the id (the disc spell table; a capture-class special resolves off its disc record through `World::monster_cast_def`) and otherwise degrade to a physical strike. `SpellCatalog::vanilla` is a disc-free test fixture; no boot catalog carries it.
 - The `actor+0x170` spirit-art gauge is modelled (`BattleActor::spirit_gauge`), filled on every damaging hit by the finisher's spirit stage (`spirit_gauge_fill`, see [`battle-formulas.md`](battle-formulas.md)). Monster `0x8A`'s AI reads it as a charge gate: past `0x31` it fires its `0x4E` all-enemies cast and the gauge is clamped back to `0x32` (`MonsterAiCtx::spirit_gauge` + `AiCast::spirit_gauge_writeback`, no RNG).
 
-**Not ported** (listed in `monster_ai`'s module docs): the `'O'` (`0x4F`) boss post-amble that rewrites another actor slot's action queue, and the capture-archive preload for spell ids `0x2E` / `0x2F`.
+**Not ported** (listed in `monster_ai`'s module docs): the capture-archive preload for spell ids `0x2E` / `0x2F`.
+
+**What a pick leaves behind.** The core's walk writes `+0x1DE` / `+0x1DF` ahead of the target-class arms, so a pass that fails on its target has already stored its cast, and a retry that matches nothing keeps it. A walk that never matched stores nothing and draws nothing more: the seat's stale bytes stand, and its swing budget is one. The MP test comes first, so a cast the monster cannot afford stores nothing.
+
+**The interrupt arm.** Monsters `0x28`, `0x29`, `0x2A`, `0x7F`, `0x85` roll a target, and only a member still holding a turn this round (`+0x16C` non-zero) draws the second roll, over five, four or three by id; a Stoned or `0x400` member is passed by (`0x801EAE4C..0x801EAEC4`).
+
+**The `'O'` (`0x4F`) post-amble.** Tetsu's first-round pick is cleared to category `0` with his gauge restored, so he waits; on round three a physical turn queues entries `8`, `9`, `0x0B` with a budget of three, and a cast turn's spell byte becomes `8`. Monster `0xB6` picks by round through five cases; past them the generic pick stands.
 
 **Faithful default = uniform-random single target.** Retail's `OneEnemy` / physical target is a uniform random party seat (`rand % party_count`), re-rolled onto a living member by the turn picker's redirect `FUN_801DB124`. An opt-in, non-faithful toggle (`World::toggles.smarter_monster_targeting`, off by default; `play-window --smart-monsters` or `LEGAIA_SMART_MONSTERS=1`, the page's "Smart monsters" box; retail mode holds it off) redirects a single-target attack to the lowest-HP living member. It is RNG-neutral: the faithful pick is still rolled in full (gate and walk, target draws, flee roll, scripted override, anti-repeat ring) and only the resolved single party slot is replaced, so the RNG stream is byte-identical and all-party / monster-band / self targets are untouched.
 
@@ -740,7 +747,7 @@ Each `ItemEntry` has an `ItemEffect` (Heal / Cure / Revive / Stat-up / Spirit-up
 - a combat-stat raise lands in the record's `+0x110` live-stat block that `seed_party_battle_stats` re-derives from, so the gain shows at once and survives a save;
 - combat stats cap at the record's per-stat cap constant, HP / MP max at 9999.
 
-These items are field-only and absent from the captured battle traces, so the exact retail cap / refill rule is not byte-pinned; the port's rules are self-consistent rather than measured.
+The disc's permanent stat-ups take `World::apply_stat_up_item`, whose result the retail kernel differential holds to `FUN_800402F4` ([`retail-kernel-differential.md`](../tooling/retail-kernel-differential.md)). The arm above is for a pack's or a synthetic catalog's `StatRaised` item, which no retail item reaches.
 
 ### Arts command input
 

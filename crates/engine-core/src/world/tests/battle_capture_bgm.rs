@@ -172,6 +172,39 @@ fn playable_default_swaps_to_the_standard_battle_theme() {
     assert!(!world.audio.battle_bgm_active);
 }
 
+/// A fight on the park word: the return loads nothing, so the battle theme must
+/// not stay attached over the field.
+#[test]
+fn a_return_to_the_park_word_stops_the_score() {
+    use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
+
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.actors[0].battle.hp = 100;
+    world.audio.current_bgm = Some(crate::world::BGM_PARK_SENTINEL);
+    world.set_battle_bgm(Some(0x40));
+    world.enter_battle_from_formation(&FormationDef::new(7, vec![FormationSlot::new(1)]));
+    let _ = world.drain_field_events();
+    world.finish_battle();
+    assert_eq!(
+        world.audio.current_bgm,
+        Some(crate::world::BGM_PARK_SENTINEL)
+    );
+    let evs = world.drain_field_events();
+    assert!(
+        evs.iter().any(|e| matches!(
+            e,
+            FieldEvent::Bgm { sub_op, .. } if *sub_op == crate::world::BGM_SUB_OP_ENGINE_STOP
+        )),
+        "{evs:?}"
+    );
+}
+
 #[test]
 fn battle_bgm_unset_leaves_music_untouched() {
     use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
@@ -440,6 +473,8 @@ fn battle_arts_uses_staged_art_record_power_tiers_and_status() {
     assert_eq!(rows[0].hits(), 2, "two damage strikes from the record");
     assert_eq!(rows[0].enemy_effect, EnemyEffect::Toxic);
 
+    // The walk takes an art only when Spirit covers its price.
+    world.actors[0].battle.spirit_gauge = 100;
     world.battle_ctx.active_actor = 0;
     world.battle.arts_menu = Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
         0, 0, rows,

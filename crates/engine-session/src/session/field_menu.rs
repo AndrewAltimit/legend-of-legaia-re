@@ -209,12 +209,14 @@ impl<S: AudioSink> BootSession<S> {
     pub(super) fn tick_field_menu(&mut self) -> bool {
         // No menu exists until the wipe spawns it; the pad goes nowhere.
         if !self.pause_wipe.menu_spawned() {
+            // The list opens on a clean count, whatever was held coming in.
+            self.host.world.input.reset_menu_repeat();
             return false;
         }
-        let pad = &self.host.world.input;
-        // The edge word every menu surface in this subsystem reads. A held
-        // mask is one event: `just_pressed` is `pad & !pad_prev`.
-        let pressed = pad.pad() & !pad.pad_prev();
+        // The edge word every menu surface in this subsystem reads, with the
+        // window kernel's cursor auto-repeat folded in (`gp+0x86C`).
+        let pad = &mut self.host.world.input;
+        let pressed = (pad.pad() & !pad.pad_prev()) | pad.take_menu_repeat();
 
         if self.field_menu_sub.is_some() {
             self.tick_field_menu_sub(pressed);

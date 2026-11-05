@@ -222,6 +222,11 @@ impl World {
                 }
             }
         }
+        for child in homing.shocks.iter().filter(|&&child| child != 0) {
+            if let Some(a) = self.actors.get_mut(usize::from(child - 1)) {
+                a.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(0x20);
+            }
+        }
         // A landed slot's hit opens on the record's impact cue
         // (`lbu a0,0xd(v0)` / `jal 0x8004FCC8` at `0x801E184C..0x801E1854`).
         // Id `0` rings `-1`, which the drainer never plays.
@@ -314,7 +319,13 @@ mod tests {
     #[test]
     fn a_landed_slot_rings_the_record_cue_once() {
         let mut world = world_with_a_landing_flight(0x49);
-        assert_eq!(ticks(&mut world), vec![SfxRingOp::Push(0x49)]);
+        assert_eq!(
+            ticks(&mut world),
+            vec![SfxRingOp::PushUnlessSustained {
+                id: 0x49,
+                key: 0x49 + 0x19C
+            }]
+        );
     }
 
     #[test]

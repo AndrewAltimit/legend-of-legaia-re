@@ -235,6 +235,7 @@ So `ctx[+0x291] == 2` is a per-formation flag that reaches the same forced-tie s
 - Live `x` is halved and `z` quartered. The group is then re-centred on `(0, 0x400)`, and every pair closer than 200 units in `x` is pushed apart by half the shortfall each.
 - Live HP / MP are written back to the character records with downed members **floored at 1 HP** (the record-side half of the state-`0x64` floor).
 - The live camera is snapped to yaw `0xF00`, TR `(0, 0x600, 0x2000)`, focus at the origin. `FUN_801D829C` tweens it over `0x30` frames to the reverse angle: yaw `0x800`, TR `(0, 0x600, 0)`, focus on the regrouped party. Nothing re-frames it before the battle ends.
+- Every party slot's walk record, bank entry `1`, has its eight cue slots zeroed (`0x801E7D68..0x801E7D80`), so the run off stage sounds no steps. PROT 0925's flute flee does the same (`0x801F7600..0x801F7618`). The record stays cleared for the rest of the battle.
 
 Port: `engine-battle-vm::battle_formulas::escape_roll` (+ `escape_party_score` / `escape_enemy_score` / `EscapeFlags`), rolled live by `World::roll_battle_escape` when the command menu resolves Run. The staging is `World::stage_party_flee` and the shot is `BattleCamera::arm_escape_shot`. Two port differences: it stages only the members still standing (a downed one stays where it fell), and it keeps no escape counter.
 
@@ -322,7 +323,8 @@ The fill wins over a commit the engine still holds for the seat, since retail's 
 - It scans the per-command arm entries of the arts-command table `DAT_801C9360[slot][cmd]` (`cmd` `0xC..=0xF`) and reads each command's AP cost byte `+0x74`, the same [arts AP-gauge cost](arts-command-gauge.md) the randomizer edits.
 - It builds a weighted candidate pool, dropping any command whose guard mask `DAT_801F672C[cmd-0xC]` collides with the target's status word `actor[+0x16E]`.
 - It draws from the pool with `func_0x80056798` until the actor's action gauge `actor[+0x154]` no longer covers the cheapest command.
-- A command's weight is a four-rung ladder (`8` default, `1` low band, `4` high band, `2` both) over two byte ranges selected by the **target monster's type byte** `+0x1E`: type `3` reads `..=0x10` / `0x16..=0x1A`, type `2` reads `0x11..=0x15` / `0x1B..=0x1F`. Any other type leaves every command at `8`, which is enough pushes to overrun the `0x10`-byte candidate scratch.
+- A command's weight is a four-rung ladder (`8` default, `1` low band, `4` high band, `2` both) over two byte ranges selected by the **target monster's type byte** `+0x1E`: type `3` reads `..=0x10` / `0x16..=0x1A`, type `2` reads `0x11..=0x15` / `0x1B..=0x1F`. Any other type leaves every command at `8`: thirty-two pushes, which the loop clears only the first `0x10` bytes of and which end exactly at the slot counter at `sp+0x30`.
+- The spend loop has no exit for a gauge at the floor with nothing left it can buy. The floor is the cheapest of the four commands, guarded out or already spent, so an off-class weapon arm at `0x2A` over a `0x1E` floor spins for ever at `0x801F0A64..0x801F0B44` once the gauge sits between them with only that arm left: Rot on the other limbs, or a one-entry-per-command pool. Grade: disassembly, run in the interpreter, not played. The port ends the spend there; every other round draws the same.
 
 Port: `engine-battle-vm::battle_arts_auto_combo` carries both arms, the ladder, the guard reject and the gauge-spend loop. The arm-by-arm decode is in [`reference/functions/battle.md`](../reference/functions/battle.md#801f0450).
 
@@ -351,7 +353,7 @@ Port: `World::begin_round_execution` (`engine-core::world::battle::auto_combo`) 
 After the spend loop has written a run of direction swings, the tail walks the character's art-animation bank (`*(DAT_801C9360[slot] + 0x58)`, `0xD0` stride, [battle-data-pack.md](../formats/battle-data-pack.md#art-animation-bank-record0-0x58)). It splices learned arts' arrow strings over the end of the still-free part of the queue, paying out of a **local copy** of the Spirit gauge `actor[+0x170]` (nothing is stored back).
 
 - **Start.** The walk starts at record `rand() % 5 + 0xB` (bank index `0xB` is learned-art id `0`). Noa (`char_id == 2`) steps over `0xD` / `0xE`.
-- **Spirit gate.** Each pass stops the walk unless `rand() % 7 + 0x12` is below the budget and at least two free slots remain.
+- **Spirit gate.** Each pass stops the walk unless `rand() % 14 + 0x12` is below the budget and at least two free slots remain.
 - **Need.** A record needs at least two arrows (byte `1` non-zero). Its need is counted from byte `1` on against a census of the free region; byte `0` is spliced but never counted (`li s2,0x1` at `0x801F0DA0`).
 - **Cost.** `len * per_input`, with `per_input` `0xB` on the first pass, `0xA` after, `6` from the fifth, halved under record `+0xF8 & 0x800` (AP Used Down). Without the slot's Miracle marker `ctx[+0x25F + slot]` the first four passes demand `100` of arrow `1`, so nothing can be spliced before the cheap passes.
 - **Roll.** A `rand() % 100` roll under `50` (below the tier bound: `0x11` for Noa, `0xF` otherwise) or `75`, a learned-list hit, not the art just placed, and not below the floor a placed low-tier art raises to that bound.
@@ -360,6 +362,8 @@ After the spend loop has written a run of direction swings, the tail walks the c
 - **Step.** Every pass then steps `rand() % 2 + 1`.
 
 Port: `battle_arts_auto_combo::insert_arts`, run by the player's Auto attack.
+
+The seed `0x0C` then runs the queue builder over the stream, so what the tail spliced in plays as arts. The learn check inside it, `FUN_801EFBFC`, reads the same flag: a seat on it draws `rand() & 0x1FF` on every art it plays, known or not, and learns one only on a zero, or in Tetsu's spar (`DAT_8007BD0C == 0x4F`). So Auto all but never teaches an art.
 
 ### Enemy AGL action-budget (`FUN_801E9FD4`)
 
@@ -425,6 +429,8 @@ flowchart LR
     SM --> H["FUN_801D8DE8"]
     H --> W["HUD widget<br/>FUN_8003541C"]
 ```
+
+**The cue group's palette swap.** Ahead of each effect it spawns, `FUN_801E22C8` copies a parked 16-entry palette onto the effect row, `MoveImage({map[id], 476, 16, 1}, 224, 476)` (`0x801E2400..0x801E2450`, `map` at `0x801F6418`, values `0xB0` / `0xC0` / `0xD0`). Nothing restores it, so the row holds the last swap across actions and across the fight: a heal's pillar is gold on the swap and the row's prior occupant's colour without it. Port: `BattleHostImpl::spawn_cue`, through `BattleState::vram_moves`. The retail comparison reads the source column a state's row holds (`retail_cue_clut_source`, `LEGAIA_SEAT_CUE_CLUT`), the one piece of a fight's history a seeded replay cannot rebuild.
 
 The callers of the pool spawner `FUN_801DFDF0` are the per-actor effect-script walk `FUN_801DEA50`, `FUN_801E09F8`, `FUN_801E22C8` and SCUS `FUN_8004998C` / `FUN_80047430`. The port routes the walk's requests through `World::route_battle_effect_spawns` on both hosts. The effect VM itself is documented in [effect-vm.md](effect-vm.md).
 
@@ -1246,7 +1252,7 @@ The engine runs it at each party dispatch - a strike, an arts string and a singl
 
 The seed state raises the per-action **target banner**. Retail's seed body ends every category arm at the same `jal 0x801e6d84` (`0x801E3028`). Category `5` (Run / Defend) is the one arm that returns before raising anything; categories `0` and `4` raise the caster banner and skip the target arm.
 
-Port: `battle_action::dispatch::raise_target_banner` runs `plan_target_banner` (`engine-battle-vm::battle_cue_group`) and raises each HUD element id it lists through `BattleActionHost::ui_element`. Two retail inputs are abstracted, neither of which reaches the id list: `ctx[+0x24B]` (the `target == 9` override slot, passed as `0`) and the `FUN_80035F04` descriptor width the banner-width term subtracts.
+Port: `battle_action::dispatch::raise_target_banner` runs `plan_target_banner` (`engine-battle-vm::battle_cue_group`) and raises each HUD element id it lists through `BattleActionHost::ui_element`. The HUD arms the value rows itself ([battle-hud](battle-hud.md), `battle_multi_readout_rows`). Two retail inputs are abstracted, neither of which reaches the id list: `ctx[+0x24B]` (the `target == 9` override slot, passed as `0`) and the `FUN_80035F04` descriptor width the banner-width term subtracts.
 
 <a id="battle-helper-functions"></a>
 ## Dump aliases in the `0x801Fxxxx` band

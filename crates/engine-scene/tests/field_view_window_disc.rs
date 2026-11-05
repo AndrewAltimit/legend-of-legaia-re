@@ -82,6 +82,7 @@ fn crop_scene(index: &ProtIndex, name: &str) -> Option<SceneCrop> {
         .map(|p| CellKey {
             cell: (p.col, p.row),
             cull_radius: p.cull_radius,
+            far_corner_order: false,
         })
         .collect();
     // The ground cells, from each quad's lowest vertex.

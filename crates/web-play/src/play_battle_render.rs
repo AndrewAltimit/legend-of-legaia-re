@@ -299,6 +299,7 @@ impl BattleRender {
     /// [`LegaiaRuntime::spawn_summon_creature_web`] after the world side of
     /// the seat is installed; the caller bumps the generation so the page
     /// re-uploads the battle scene with the new mesh.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_summon_actor(
         &mut self,
         vram: legaia_tim::Vram,
@@ -307,6 +308,7 @@ impl BattleRender {
         mesh: legaia_tmd::mesh::VramMesh,
         object_ids: Vec<u32>,
         rest_pose: Vec<i32>,
+        morph_src: std::sync::Arc<(legaia_tmd::Tmd, Vec<u8>)>,
     ) {
         self.vram = vram;
         self.tex_slots_used = self.tex_slots_used.max(tex_slot.saturating_add(1));
@@ -319,7 +321,7 @@ impl BattleRender {
             mesh: BattleMesh::textured(mesh),
             object_ids,
             rest_pose,
-            morph_src: None,
+            morph_src: Some(morph_src),
         });
     }
 }

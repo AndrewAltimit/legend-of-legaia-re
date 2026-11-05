@@ -1,7 +1,7 @@
 # legaia-asset-viewer
 
 Combined GUI viewer for everything the extraction pipeline produces.
-One binary: `asset-viewer`. Driven by `winit` 0.30 + `wgpu` 26 via
+One binary: `asset-viewer`. Driven by `winit` 0.30 + `wgpu` 30 via
 [`legaia-engine-render`], with audio playback via [`legaia-engine-audio`].
 
 ## Subcommands

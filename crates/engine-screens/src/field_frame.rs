@@ -123,6 +123,14 @@ pub fn field_glow_lights(
         .collect()
 }
 
+/// Whether a minigame screen holds the frame with nothing behind it: the
+/// contest hub's first visit stands on black in the mode-`0x19` overlay, the
+/// field swapped out and the arena not loaded until arm `6`.
+pub fn minigame_screen_covers_field(world: &legaia_engine_core::world::World) -> bool {
+    world.mode == legaia_engine_mode::mode::SceneMode::MuscleDome
+        && world.minigames.muscle_hub.first_visit_up()
+}
+
 /// The frame's clear colour, through the shared
 /// `battle_stage_clear::scene_clear` selector, with the screen term decided
 /// here: a boot UI screen (`boot_ui`, the host's) or a menu-overlay screen
@@ -141,7 +149,7 @@ pub fn frame_clear_color(
     stage_battle: bool,
 ) -> [f32; 4] {
     legaia_engine_ui::battle_stage_clear::scene_clear(
-        boot_ui || menu.covers_field(),
+        boot_ui || menu.covers_field() || minigame_screen_covers_field(world),
         stage_battle,
         world.frame_clear_rgb(),
     )

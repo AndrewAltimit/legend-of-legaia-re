@@ -81,3 +81,23 @@ impl LegaiaRuntime {
         serde_json::to_string(&lines).unwrap_or_else(|_| "[]".into())
     }
 }
+
+impl LegaiaRuntime {
+    /// The backslash key, the native window's `key_card_screen`: the active
+    /// pack's card menu over the field or the overworld, or close the screen
+    /// it is inside. `true` when the press was taken.
+    pub(crate) fn play_cards_key(&mut self) -> bool {
+        let Some(host) = self.scene_host.host_mut() else {
+            return false;
+        };
+        let w = &mut host.world;
+        if w.card_screen_open() {
+            w.close_card_screen();
+        } else if matches!(w.mode, SceneMode::Field | SceneMode::WorldMap) {
+            w.open_card_menu();
+        } else {
+            return false;
+        }
+        true
+    }
+}

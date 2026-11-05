@@ -40,7 +40,7 @@
   <h2>A walkability tile</h2>
   <p>The world is cut into 128-unit tiles, and each tile is split again into four 64-unit sub-cells. One byte per tile carries both a wall bit for each sub-cell and the tile's floor height.</p>
   <figure class="diagram">
-    <svg viewBox="0 0 780 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Left: one 128-unit tile split into four 64-unit sub-cells. Bit 0x10 is the even-column even-row cell, 0x20 odd-column even-row, 0x40 even-column odd-row, 0x80 odd-column odd-row. The example byte 0xA3 sets 0x20 and 0x80, a wall along the odd-column half, with floor tier 3 in the low nibble. Right: the player moving toward a wall tests three probe points on its leading edge, 48 units ahead and 16 apart; any one in a wall sub-cell blocks the step. Actor probes reach further, 64 ahead and 32 apart.">
+    <svg viewBox="-40 0 820 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Left: one 128-unit tile split into four 64-unit sub-cells. Bit 0x10 is the even-column even-row cell, 0x20 odd-column even-row, 0x40 even-column odd-row, 0x80 odd-column odd-row. The example byte 0xA3 sets 0x20 and 0x80, a wall along the odd-column half, with floor tier 3 in the low nibble. Right: the player moving toward a wall tests three probe points on its leading edge, 48 units ahead and 16 apart; any one in a wall sub-cell blocks the step. Actor probes reach further, 64 ahead and 32 apart.">
       <defs><marker id="fl-tile-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
       <text x="180" y="20" class="dg-label">tile byte 0xA3</text>
       <text x="180" y="300" class="dg-sub">X: columns of 64-unit sub-cells</text>

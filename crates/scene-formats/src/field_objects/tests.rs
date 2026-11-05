@@ -437,3 +437,27 @@ fn ground_cell_without_terrain_bytes_falls_back_to_grass_page() {
     assert_eq!(hf.quad_count(), 1);
     assert_eq!(hf.cba_tsb[0], [GROUND_ATLAS_CLUT, GROUND_ATLAS_TPAGE]);
 }
+
+/// `FUN_801F6D48`: record `+0x1C` / `+0x1D` stretch a field ground cell's `V`
+/// and `U` past the atlas tile (`0x801F6EE4..0x801F6F0C`), and a non-zero
+/// `+0x1A` draws it semi-transparent with ABR `value - 1`.
+#[test]
+fn a_field_ground_record_stretches_and_blends_its_tile() {
+    let mut map = vec![0u8; 0x12000];
+    let r = 5 * OBJECT_RECORD_STRIDE;
+    map[r + 0x14] = 0x20; // Tile 32: origin (0, 128).
+    map[r + 0x15] = 0x1C;
+    map[r + 0x16..r + 0x18].copy_from_slice(&0x7D43u16.to_le_bytes());
+    map[r + 0x1A] = 4;
+    map[r + 0x1C] = 96;
+    map[r + 0x1D] = 0xFF;
+    let c = OBJECT_GRID_OFFSET + (3 * GRID_DIM + 2) * 2;
+    map[c..c + 2].copy_from_slice(&(CELL_WALK_VISIBLE | 5).to_le_bytes());
+    let hf = build_walk_heightfield(&map, &[0i16; 16]);
+    assert_eq!(hf.uvs, vec![[0, 255], [30, 255], [0, 128], [30, 128]]);
+    assert!(
+        hf.cba_tsb
+            .iter()
+            .all(|&ct| ct == [0x7D43, 0x1C | 0x8000 | 3 << 5])
+    );
+}

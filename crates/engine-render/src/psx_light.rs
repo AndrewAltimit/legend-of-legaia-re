@@ -104,6 +104,21 @@ pub fn depth_cue(rgb: [f32; 3], far: [f32; 3], ir0: f32) -> [f32; 3] {
     out
 }
 
+/// The packet colour `DPCS` hands the GPU: `colour + (far - colour) * ir0` in
+/// colour-byte units, clamped by the op's own output limit. A textured prim
+/// modulates its texel by this ([`modulate`] over it), not by [`depth_cue`] of
+/// the modulated pixel: the blend saturates, so the order decides what clips.
+/// `ir0` may pass `1.0` (a bare `mtc2` load never saturates). Mirrors the
+/// `psx_cue_colour` WGSL helper.
+pub fn cue_colour(colour: [u8; 3], far: [u8; 3], ir0: f32) -> [u8; 3] {
+    let mut out = [0u8; 3];
+    for i in 0..3 {
+        let (c, f) = (f32::from(colour[i]), f32::from(far[i]));
+        out[i] = (c + (f - c) * ir0).clamp(0.0, 255.0) as u8;
+    }
+    out
+}
+
 /// The prologue **palette-collapse law** applied to one BGR555 word - the
 /// retail gold grade's asset half, mirrored from the `palette_law_word` WGSL
 /// helper.
@@ -378,6 +393,31 @@ mod tests {
         );
     }
 
+    /// `battle_tunnelc_freed_strike`'s ice floor: the near colour `0xC0` cued
+    /// toward `0x40` lands near `0x96`, and retail's pixel is the texel times
+    /// that, with the blue-over-red hue of the tile. Blending the clipped near
+    /// pixel toward the far pixel instead clips green and blue first and greys
+    /// the floor, which is what the shaders' cue-first order avoids.
+    #[test]
+    fn a_cue_dims_the_colour_before_the_texel_saturates() {
+        let texel = [169.0 / 255.0, 190.0 / 255.0, 204.0 / 255.0];
+        let ir0 = 0.33;
+        let retail = modulate(texel, cue_colour([0xC0; 3], [0x40; 3], ir0));
+        let wrong = depth_cue(modulate(texel, [0xC0; 3]), modulate(texel, [0x40; 3]), ir0);
+        assert!(retail[2] - retail[0] > 0.1, "the hue survives: {retail:?}");
+        assert!(
+            wrong[2] - wrong[0] < 0.03,
+            "the clipped order greys: {wrong:?}"
+        );
+    }
+
+    #[test]
+    fn the_cue_colour_clamps_at_the_ops_output_limit() {
+        assert_eq!(cue_colour([0xC0; 3], [0xFE; 3], 2.0), [0xFF; 3]);
+        assert_eq!(cue_colour([0xC0; 3], [0x10; 3], 2.0), [0; 3]);
+        assert_eq!(cue_colour([0xC0; 3], [0x40; 3], 0.0), [0xC0; 3]);
+    }
+
     /// The WGSL and the CPU mirror must not drift: the shader has to carry the
     /// `/ 128.0` divisor (the whole point - a `/ 255.0` normalise would silently
     /// turn the blend into a pure darken and throw the brightening tail away)
@@ -392,6 +432,7 @@ mod tests {
         assert!(src.contains("fn psx_modulate"));
         assert!(src.contains("fn psx_depth_cue"));
         assert!(src.contains("mix(rgb, far_rgb, ir0)"));
+        assert!(src.contains("clamp(mix(prim, far_bytes, ir0)"));
         // The per-render-node depth-cue ramp: disabled (`enable <= 0`) must
         // fall back to the constant IR0 so the unfogged default stays the
         // identity.

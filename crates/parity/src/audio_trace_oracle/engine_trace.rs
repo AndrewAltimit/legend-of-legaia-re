@@ -86,7 +86,9 @@ pub fn build_engine_audio_trace(
             .filter_map(|op| {
                 use legaia_engine_system::sound_state::SfxRingOp;
                 match op {
-                    SfxRingOp::Push(id) | SfxRingOp::ReplaceLast(id) => Some(id),
+                    SfxRingOp::Push(id)
+                    | SfxRingOp::PushUnlessSustained { id, .. }
+                    | SfxRingOp::ReplaceLast(id) => Some(id),
                     SfxRingOp::WriteSlot(_, id) | SfxRingOp::ArmSlot(_, id, _) => Some(id),
                     SfxRingOp::SetLastDelay(_) | SfxRingOp::ReleaseSustained => None,
                 }

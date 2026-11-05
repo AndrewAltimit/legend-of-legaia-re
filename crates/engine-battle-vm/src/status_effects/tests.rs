@@ -393,12 +393,12 @@ fn numb_blocks_actions_and_clears_on_being_hit() {
 }
 
 #[test]
-fn petrified_actor_takes_no_poison_tick() {
-    // Stone makes the unit invulnerable, so its poison DoT doesn't tick.
+fn a_petrified_actor_still_takes_the_poison_tick() {
+    // `FUN_801E752C` has no Stone test: it reads the two DoT bits alone.
     let mut t = StatusEffectTracker::new();
     t.apply(0, StatusKind::Stone);
     t.apply(0, StatusKind::Venom);
-    assert_eq!(t.tick_actor(0, 80, 160), 0, "Stone absorbs poison ticks");
+    assert_eq!(t.tick_actor(0, 80, 160), 5, "max_hp >> 5");
 }
 
 #[test]

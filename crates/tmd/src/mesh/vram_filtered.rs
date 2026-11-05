@@ -3,7 +3,7 @@
 use crate::{Tmd, legaia_prims};
 
 use super::vram::prim_color;
-use super::{VramMesh, compute_smooth_normals, pack_tsb_semi};
+use super::{VramMesh, compute_smooth_normals, prim_tsb_word};
 
 /// Like [`tmd_to_vram_mesh`] but drops primitives whose textures wouldn't
 /// have valid data when sampled - the caller's `keep_prim` closure decides
@@ -174,7 +174,7 @@ where
                 if !keep_prim(prim.cba, prim.tsb, &prim.uvs) {
                     continue;
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let lit_normals = lit_prim_normals(buf, o, g.header.flags, prim);
                 let object_rgb = object_rgb(o);
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
@@ -358,7 +358,7 @@ where
                         continue;
                     }
                 }
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;
@@ -465,7 +465,7 @@ where
                     continue;
                 }
                 stats.kept += 1;
-                let ct = [prim.cba, pack_tsb_semi(prim.tsb, g.header.abe())];
+                let ct = [prim.cba, prim_tsb_word(prim, &g.header)];
                 let mut push_vert = |vidx: u16, uv_idx: usize| -> u32 {
                     let v = &o.vertices[vidx as usize];
                     let i = positions.len() as u32;

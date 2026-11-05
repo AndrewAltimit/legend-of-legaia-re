@@ -33,6 +33,17 @@ pub struct CaptureDrift {
 /// What a capture module's camera does on one pass of one arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CaptureCamArm {
+    /// The arm's pass calls the seat installer `FUN_801F19EC`: the stream's
+    /// record stands as seat 7, on the caster.
+    pub seats_creature: bool,
+    /// The arm's pass takes the seat off: node `+0x10 |= 8`, HP `0`, colour `0`.
+    pub hides_creature: bool,
+    /// The arm's pass halts the part pool (`FUN_80050E74`), for a module whose
+    /// arm numbers mean different arms under another action.
+    pub flushes_pool: bool,
+    /// The cast opens on a stream the caster's turn made: its `readef.DAT`
+    /// group's texture pages are in VRAM.
+    pub element_stream: bool,
     /// The `FUN_801D829C` call the arm makes, if any.
     pub shot: Option<ModuleShot>,
     /// The drift the arm adds to the globals, if any.
@@ -201,6 +212,8 @@ pub struct CaptureSeatWrite {
     pub dy: i16,
     pub facing: Option<u16>,
     pub colour: Option<u32>,
+    /// The tint weight `+0x0C` the colour word draws under.
+    pub blend: Option<u32>,
     pub render_flag: Option<u8>,
     pub cursor_reset: bool,
     /// A store into the seat's node cursor `+0x68` (12.4).
@@ -227,7 +240,9 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
     match (entry, body) {
         (940, MYSTIC_SHIELD_BODY) => Some(mystic_shield_camera),
         (940, GLARE_BODY) => Some(glare_camera),
+        (940, crate::cast_arm_ticks::GLARE_DIVIDE_SPLIT_TICK) => Some(slime_divide_camera),
         (953, SINGLE_BODY) => Some(terio_punch_camera),
+        (939, SINGLE_BODY) => Some(super::spore_gas_camera),
         (944, GUILTY_CROSS_BODY) => Some(guilty_cross_camera),
         (962, ULTRA_CHARGE_BODY) => Some(ultra_charge_camera),
         (961, DEAD_END_CRISIS_BODY) => Some(dead_end_crisis_camera),
@@ -288,8 +303,8 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
 /// | 0965 | `0x801F69D8` | `0x801F7AA4` |
 /// | 0966 | single body `0x801F6A74` | `0x801F8A90` |
 ///
-/// The bodies of 0935..0937, 0939, 0946..0948, 0953, 0959, 0960 and 0962
-/// clear `ctx[+0x0D]` without the store.
+/// The bodies of 0946..0948, 0953, 0959 and 0960 clear `ctx[+0x0D]` without the
+/// store ([`capture_exit_clears_style`]).
 pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
     const YAW: i32 = 0x780;
     match (entry, body) {
@@ -310,12 +325,23 @@ pub fn capture_exit_yaw_base(entry: u32, body: u32) -> Option<i32> {
     }
 }
 
+/// Whether a capture module's finishing arm clears the framing style
+/// `ctx[+0x0D]` that state `0x70` stores `1` on every pass. PROT 0935, 0936,
+/// 0937, 0939 and 0962 hold no `sb zero,0xd`, so their Done band's case 6 frames
+/// from half a turn round (`teien_berserker__spore_gas`'s `0x51` endpoint reads
+/// `ctx[+0x6DA] - facing + 0x800`).
+pub fn capture_exit_clears_style(entry: u32) -> bool {
+    !matches!(entry, 935 | 936 | 937 | 939 | 962)
+}
+
 /// The module-resident countdown word a directed capture body gates its arms
 /// on, by the caster's queued action id `+0x1DF` - what a save state's RAM
 /// holds of where in an arm the module is.
 pub fn capture_countdown_va(action: u8) -> Option<u32> {
     match action {
         0xAC | 0x3C => Some(MYSTIC_SHIELD_COUNTDOWN),
+        // PROT 0940's split (`lui 0x8020` / `-0x79B4`).
+        0x50 | 0xAE => Some(0x801F_864C),
         0x57 | 0xA7 => Some(super::V_WINDHASH_COUNTDOWN),
         0x58 => Some(super::CROSS_BEAM_COUNTDOWN),
         0x52 => Some(super::POWER_UP_COUNTDOWN),
@@ -325,7 +351,8 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         // PROT 0954's word (`lui 0x8020` / `-0x6FE8`), mirrored by the host.
         0x5F => Some(0x801F_9018),
         0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),
-        0x70 => Some(super::KISS_OF_DEATH_COUNTDOWN),
+        // PROT 0955's cell shares the word (`lui 0x801F` / `-0x62D8`).
+        0x70 | 0x73 => Some(super::KISS_OF_DEATH_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),
@@ -809,8 +836,16 @@ pub const WAVE_BIG_STAGE_STORE: u32 = 0x801F_6BF8;
 /// runs for `action`: false only for a store on a choreography branch the
 /// action does not take ([`WAVE_BIG_STAGE_STORE`], Big Wave's alone).
 pub fn stage_store_runs(entry: u32, va: u32, action: Option<u8>) -> bool {
-    !(entry == 946 && va == WAVE_BIG_STAGE_STORE && action != Some(0x56))
+    !(entry == 946
+        && (va == WAVE_STAGE_RESTORE || (va == WAVE_BIG_STAGE_STORE && action != Some(0x56))))
 }
+
+/// PROT 0946's stage restore: `sb zero,0x278(v0)` at `0x801F7638`, behind
+/// `s3`, which only arm 8 raises and only while every party seat has settled
+/// (`0x801F7510..0x801F758C`). It is the arm's exit pass, not a store on the
+/// arm's own entry: the backdrop stays off through the party's get-up.
+/// [`wave_camera`] makes it.
+pub const WAVE_STAGE_RESTORE: u32 = 0x801F_7638;
 
 /// PROT 0946's countdown word (`lui 0x801F` / `+0x7F20`).
 pub const WAVE_COUNTDOWN: u32 = 0x801F_7F20;
@@ -961,6 +996,7 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
             }
             CaptureCamArm {
                 drift: spin,
+                ctx_278: Some(0),
                 ..pass(None, None)
             }
         }
@@ -970,6 +1006,51 @@ pub fn wave_camera(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) ->
 
 /// PROT 0940's `0x3C` body (Glare), the trampoline's first arm.
 pub const GLARE_BODY: u32 = 0x801F_69F8;
+
+/// PROT 0940's split (`0x801F78B8`, actions `0x50` Slime Divide and `0xAE`):
+/// arm 0's shot on the caster at `0xC` frames (`0x801F7A30`), then arm 1's
+/// lift at `0x100` (`0x801F7B34`) once its gate passes. Arms 2 and 3 frame
+/// nothing; each arm's countdown is `capture_countdown::GLARE_DIVIDE_SPLIT`'s.
+///
+/// | arm | pitch | TR, `0x50` | TR, `0xAE` | frames |
+/// |---|---|---|---|---|
+/// | 0 | `0` | `(0, 0x300, 0x600)` | `(0, 0x400, 0x800)` | `0xC` |
+/// | 1 | `0x100` | `(0, 0x300, 0x1000)` | `(0, 0x400, 0x1000)` | `0x100` |
+///
+/// PORT: overlay_cast_glare_divide_0940_801f78b8 (PROT 0940 `0x50` / `0xAE`; the camera arms)
+pub fn slime_divide_camera(
+    st: &mut ModuleCamState,
+    phase: u8,
+    seats: ModuleCamSeats,
+) -> CaptureCamArm {
+    let Some(gate) = super::arm_countdown(super::capture_countdown::GLARE_DIVIDE_SPLIT, phase)
+    else {
+        return CaptureCamArm::default();
+    };
+    if gate.holds(&mut st.countdown) {
+        return CaptureCamArm {
+            hold: true,
+            ..Default::default()
+        };
+    }
+    gate.pass(&mut st.countdown);
+    let y: i16 = if seats.action == 0x50 { 0x300 } else { 0x400 };
+    let (pitch, z, frames): (i16, i16, u16) = match phase {
+        0 if seats.action == 0x50 => (0, 0x600, 0xC),
+        0 => (0, 0x800, 0xC),
+        1 => (0x100, 0x1000, 0x100),
+        _ => return CaptureCamArm::default(),
+    };
+    CaptureCamArm {
+        shot: Some(ModuleShot {
+            angles: [pitch, yaw_from(0x800, seats.caster.facing), 0],
+            tr: [0, y, z],
+            focus: focus_on(seats.caster),
+            frames,
+        }),
+        ..Default::default()
+    }
+}
 
 /// **Glare** (PROT 0940, body `0x801F69F8`, a `beq` chain over `0..=3`; its
 /// countdown is the module word `0x801F864C` Mystic Shield also uses):
@@ -1183,5 +1264,40 @@ pub fn terio_punch_camera(
             step(None, None)
         }
         _ => CaptureCamArm::default(),
+    }
+}
+
+#[cfg(test)]
+mod slime_divide_tests {
+    use super::*;
+
+    /// The arm-0 shot `battle_map01_green_slime_divide_mid_cast`'s table reads
+    /// one pass in (pitch `0`, TR `(0, 768, 2457)` once prescaled, on the
+    /// caster), and arm 1 on the gate the same state's word `96` stands on.
+    #[test]
+    fn slime_divide_frames_its_arms_on_the_body_gates() {
+        let seats = ModuleCamSeats {
+            action: 0x50,
+            ..Default::default()
+        };
+        let mut st = ModuleCamState::default();
+        let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
+        assert_eq!(arm0.tr, [0, 0x300, 0x600]);
+        assert_eq!(arm0.frames, 0xC);
+        assert_eq!(st.countdown.0, SPEED_SCALAR * 12);
+        let held = slime_divide_camera(&mut st, 1, seats);
+        assert!(held.hold && held.shot.is_none());
+        st.countdown.0 = 0;
+        let arm1 = slime_divide_camera(&mut st, 1, seats).shot.unwrap();
+        assert_eq!(arm1.angles[0], 0x100);
+        assert_eq!(arm1.tr, [0, 0x300, 0x1000]);
+        // The other action of the same body stands higher and further out.
+        let seats = ModuleCamSeats {
+            action: 0xAE,
+            ..seats
+        };
+        let mut st = ModuleCamState::default();
+        let arm0 = slime_divide_camera(&mut st, 0, seats).shot.unwrap();
+        assert_eq!(arm0.tr, [0, 0x400, 0x800]);
     }
 }

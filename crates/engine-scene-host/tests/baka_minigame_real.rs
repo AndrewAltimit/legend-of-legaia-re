@@ -12,7 +12,7 @@
 //! is absent.
 
 use legaia_engine_core::world::World;
-use legaia_engine_minigames::baka_fighter::{BakaAttack, BakaFight, HP_START, MatchPhase};
+use legaia_engine_minigames::baka_fighter::{BakaFight, HP_START, MatchPhase};
 use legaia_engine_mode::mode::SceneMode;
 use legaia_engine_scene_host::scene_host::SceneHost;
 use legaia_engine_system::input::PadButton;
@@ -44,17 +44,6 @@ fn real_tables() -> Option<(
     Some((opponents, actions))
 }
 
-/// The counter to an attack under the pinned beats relation
-/// (2 beats 1, 3 beats 2, 1 beats 3).
-fn counter_of(t: BakaAttack) -> BakaAttack {
-    match t {
-        BakaAttack::A => BakaAttack::B,
-        BakaAttack::B => BakaAttack::C,
-        BakaAttack::C => BakaAttack::A,
-        BakaAttack::Special => BakaAttack::A, // unreachable for the CPU picker
-    }
-}
-
 #[test]
 fn real_tables_drive_a_decided_match_and_bank_the_gold() {
     let Some((opponents, actions)) = real_tables() else {
@@ -72,58 +61,67 @@ fn real_tables_drive_a_decided_match_and_bank_the_gold() {
         .index;
     let prize = opponents[opponent].gold_reward;
 
-    let mut world = World::new();
-    world.mode = SceneMode::Field;
-    let coins0 = world.minigames.casino_coins;
-    let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0xBAA5EED)
-        .expect("fight builds from real tables");
-    assert_eq!(fight.gold_reward(), prize);
-    world.enter_baka_fighter(fight);
-    assert_eq!(world.mode, SceneMode::BakaFighter);
-
-    // Play to a decided match by countering the CPU's committed attack each
-    // frame (readable off the fight state - the scripted patterns are real
-    // disc data). The counter strategy must eventually take 2 rounds.
-    let mut frames = 0;
-    let mut saw_player_damage = false;
-    loop {
-        frames += 1;
-        assert!(frames < 100_000, "match terminates");
-        let f = world
-            .minigames
-            .baka_fighter
-            .as_ref()
-            .expect("fight installed");
-        if f.match_over() {
+    // Play to a decided match by throwing the three attacks in turn. The CPU
+    // answers each throw blind, so a match is rock-paper-scissors on the stream:
+    // take the first seed that wins.
+    let mut won = None;
+    for seed in 0..32 {
+        let mut world = World::new();
+        world.mode = SceneMode::Field;
+        let fight = BakaFight::from_tables(&opponents, &actions, 0, opponent, 0xBAA5EED ^ seed)
+            .expect("fight builds from real tables");
+        assert_eq!(fight.gold_reward(), prize);
+        world.enter_baka_fighter(fight);
+        assert_eq!(world.mode, SceneMode::BakaFighter);
+        let mut frames = 0;
+        let mut throw = 0;
+        let mut saw_player_damage = false;
+        loop {
+            frames += 1;
+            assert!(frames < 100_000, "match terminates");
+            let f = world
+                .minigames
+                .baka_fighter
+                .as_ref()
+                .expect("fight installed");
+            if f.match_over() {
+                break;
+            }
+            let pad = if f.can_choose(0) && frames % 2 == 0 {
+                throw += 1;
+                [
+                    PadButton::Square.mask(),
+                    PadButton::Circle.mask(),
+                    PadButton::Cross.mask(),
+                ][throw % 3]
+            } else {
+                0
+            };
+            world.set_pad(pad);
+            let _ = world.tick();
+            if let Some(r) = world
+                .minigames
+                .baka_fighter
+                .as_ref()
+                .and_then(|f| f.last_exchange())
+                && r.winner == 0
+                && !r.draw
+                && r.damage > 0
+            {
+                saw_player_damage = true;
+            }
+        }
+        assert!(saw_player_damage, "the match dealt real-table damage");
+        if world.minigames.baka_fighter.as_ref().unwrap().winner() == Some(0) {
+            won = Some(world);
             break;
         }
-        let pad = match (f.chosen(1), f.can_choose(0)) {
-            (Some(cpu), true) => match counter_of(cpu) {
-                BakaAttack::A => PadButton::Square.mask(),
-                BakaAttack::B => PadButton::Circle.mask(),
-                BakaAttack::C => PadButton::Cross.mask(),
-                BakaAttack::Special => 0,
-            },
-            _ => 0,
-        };
-        world.set_pad(pad);
-        let _ = world.tick();
-        if let Some(r) = world
-            .minigames
-            .baka_fighter
-            .as_ref()
-            .and_then(|f| f.last_exchange())
-            && r.winner == 0
-            && !r.draw
-            && r.damage > 0
-        {
-            saw_player_damage = true;
-        }
     }
-    assert!(saw_player_damage, "counter play dealt real-table damage");
+    let mut world = won.expect("some seed wins the match");
+    let coins0 = World::new().minigames.casino_coins;
 
     let f = world.minigames.baka_fighter.as_ref().unwrap();
-    assert_eq!(f.winner(), Some(0), "the counter strategy wins the match");
+    assert_eq!(f.winner(), Some(0));
     assert_eq!(f.round_wins(0), baka_opponents::ROUND_WIN_TARGET);
     assert!(f.hp(1) < HP_START || matches!(f.phase(), MatchPhase::MatchOver(0)));
 

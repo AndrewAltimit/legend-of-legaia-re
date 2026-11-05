@@ -43,6 +43,8 @@ PROFILE = "release-test"
 # rebuilding over the one in the tree.
 EXE = Path(os.environ.get("LEGAIA_CAST_SEQ_EXE") or REPO / "target" / PROFILE / "legaia-engine")
 PROBE = "scripts/pcsx-redux/autorun_cast_sequence.lua"
+# Draws in one frame that mark a melee hit (`retail_hit_words`).
+HIT_FRAME_DRAWS = 20
 # Env the retail-compare child carries that would steer the fight somewhere
 # else than the injected cast: its own capture gate, pad drive and replay.
 DROP_ENV = {
@@ -143,8 +145,14 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PHYSICAL"] = "1"
     if a.save_inject:
         env["LEGAIA_SAVE_INJECT"] = "1"
+    if a.retail_parts:
+        env["LEGAIA_CAST_PARTS"] = "1"
+    if a.prim_calls:
+        env["LEGAIA_PRIM_CALLS"] = "1"
     if a.sfx_callers:
         env["LEGAIA_SFX_CALLERS"] = "1"
+    if a.watch:
+        env["LEGAIA_WATCH_W"] = a.watch
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
            "scripts/pcsx-redux/run_probe.sh", "--lua", PROBE, "--scenario", a.state,
            "--iso", disc, "--out-dir", str(rdir), "--frames", str(a.frames)]
@@ -152,7 +160,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not a.formation and not a.monster_pick and not a.sfx_callers:
+    if not a.formation and not a.monster_pick and not a.sfx_callers and not a.watch and not a.prim_calls:
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -195,6 +203,28 @@ def child_cmd(a, out: Path) -> Path | None:
     return kept
 
 
+def retail_opening_pose(out: Path) -> str | None:
+    """The camera pose on retail's cast begin (`0x28`, or a heal's `0x3C`), as
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_POSE`: `cam.csv`'s pitch, yaw and eye with
+    `body.csv`'s focus. A harness seat: the child drops the capture's drive and
+    runs no earlier actor, so its camera would open elsewhere and the band's
+    opening passes would score that, not the framing law."""
+    begin = (0x28, 0x3C)
+    try:
+        with open(out / "retail" / "cam.csv") as f:
+            cam = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+        with open(out / "retail" / "body.csv") as f:
+            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+    except OSError:
+        return None
+    if cam is None or body is None:
+        return None
+    pitch = int(cam["pitch"])
+    pitch = pitch - 4096 if pitch >= 2048 else pitch
+    return ",".join(str(v) for v in (
+        pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
+
+
 def retail_rand_seed(out: Path, key: str) -> str | None:
     """`st7:phase:seed` for `LEGAIA_CAST_RAND_SEED`: the BIOS rand() seed
     word (`rand` in the probe's meta.csv) on retail's last vsync under the
@@ -230,6 +260,31 @@ def record_key(exe: str, env: dict, args: list[str]) -> str:
             st = (p / "PROT.DAT").stat()
             h.update(f"{st.st_size} {st.st_mtime_ns}\0".encode())
     return h.hexdigest()
+
+
+def retail_hit_words(out: Path) -> list[int]:
+    """The seed word retail held going into each melee hit of a `--physical`
+    recording's first action. A hit's spark burst makes its frame draw tens of
+    times where any other frame draws once or twice, so the frame is read off
+    the distance between two rows' words on the BIOS generator. The word steps on
+    once, for the frame driver's discard (`0x80046D2C`) ahead of the hit."""
+    step = lambda w: (w * 0x41C64E6D + 0x3039) & 0xFFFFFFFF
+    words, prev, settled = [], None, False
+    with open(out / "retail" / "meta.csv") as f:
+        for r in csv.DictReader(f):
+            st7 = int(r["st7"])
+            if settled and st7 != 0x51:
+                break
+            settled = settled or st7 == 0x51
+            w = int(r["rand"])
+            if prev is not None and w != prev:
+                s, n = prev, 0
+                while s != w and n < 256:
+                    s, n = step(s), n + 1
+                if HIT_FRAME_DRAWS <= n < 256 and not settled:
+                    words.append(step(prev))
+            prev = w
+    return words
 
 
 def run_engine(a, out: Path) -> bool:
@@ -294,6 +349,8 @@ def run_engine(a, out: Path) -> bool:
         target = int(done.get("cast_target", "-1"))
         target = target if 0 <= target < 3 else a.target
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
+    if not a.physical and (pose := retail_opening_pose(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
@@ -323,6 +380,8 @@ def run_engine(a, out: Path) -> bool:
             print(f"[engine] --rand-at {a.rand_at}: the retail recording has no rand seed under that key")
             return False
         env["LEGAIA_CAST_RAND_SEED"] = seed
+    if a.strike_deal:
+        env["LEGAIA_STRIKE_DEAL"] = ",".join(str(w) for w in retail_hit_words(out))
     env.update(dict(kv.split("=", 1) for kv in a.engine_env))
     (out / "engine-cmd.txt").write_text(
         " ".join(f"{k}={shlex.quote(v)}" for k, v in sorted(env.items()) if k.startswith("LEGAIA_"))
@@ -419,9 +478,16 @@ def main() -> int:
     ap.add_argument("--strip", type=int, default=12, help="pairs in strip.png")
     ap.add_argument("--sound-tolerance", type=int,
                     help="sound channel: ticks a cue still matches at (default 6)")
+    ap.add_argument("--watch", default="",
+                    help="retail: log each store into these byte addresses (comma list) with its pc and "
+                         "ra (retail/watch.csv; breakpoint core)")
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")
+    ap.add_argument("--retail-parts", action="store_true",
+                    help="retail: parts.csv, every live move-VM part per vsync (the engine half is LEGAIA_DIAG_CAST_PARTS)")
+    ap.add_argument("--prim-calls", action="store_true",
+                    help="retail: primcall.csv, each prim dispatcher entry and cued leaf (breakpoint core)")
     ap.add_argument("--no-sound", action="store_true",
                     help="engine: keep the child's --no-audio (no audio director, no sfx.csv)")
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")
@@ -430,6 +496,9 @@ def main() -> int:
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")
+    ap.add_argument("--strike-deal", action="store_true",
+                    help="--physical: stand the engine's strike on the capture's queue, approach terms, "
+                         "ATK and retail's word at each hit, so what differs is rules")
     ap.add_argument("--engine-env", action="append", default=[], metavar="K=V",
                     help="extra environment for the engine child (repeatable)")
     ap.add_argument("--out", help="output dir (default captures/cast-sequence/<state>_<spell>)")

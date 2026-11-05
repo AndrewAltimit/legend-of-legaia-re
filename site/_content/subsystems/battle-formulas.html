@@ -113,6 +113,16 @@ if Defense + summon HP &gt; Attack:  Attack = Defense + rand(0..summon INT/2) + 
 
 Damage  = (Attack &minus; Defense) &times; caster power % / 100           (cap 9999)</code></pre>
   <p>Venom / Toxic scale either side by 9/10 / 7/10, and a defender in the Spirit stance doubles its Defense. The finisher then halves the damage for a party defender wearing the matching elemental guard (the melee kernel carries the same ladder, keyed on the attacking monster's element, so a plain monster swing is elemental too), halves it again for a guarding target, and replaces a fully-mitigated hit with <code>rand() % 9 + 8</code>.</p>
+  <p><strong>The melee resolver is its own routine.</strong> The guard ladder has none of the shared finisher&rsquo;s other stages: no zeroed-hit floor, no Mystic Shield halve and no guard halve, because the Spirit stance is already the Defense triple. Past the cap:</p>
+  <ul class="bullets">
+    <li><strong>Stone.</strong> A Stoned defender takes no accumulate, no strip, no Spirit and no rumble.</li>
+    <li><strong>The Mystic Shield.</strong> While it is up, an attacker on a clip below <code>0x10</code> is blocked whatever the defender&rsquo;s poses, and an Art passes.</li>
+    <li><strong>The block breaker.</strong> A hit it turned lands a quarter of its excess and plays the block pose on a defender left standing.</li>
+    <li><strong>The drain clip.</strong> A monster on a clip whose <code>+0x77</code> is <code>0x3B</code> drains: the raw roll becomes <code>raw &times; 7/4</code>, the hit is that minus Defense, and the attacker heals by it.</li>
+    <li><strong>The status arm.</strong> The clip&rsquo;s <code>+0x7A</code> selects a roll on every swing: <code>3</code> Venom and <code>4</code> Toxic at 1/8, <code>5</code> a Rot limb always on a party target unless a guard passive stops it, <code>6</code> Curse at 1/4. A monster special reads the same ladder off its move record and stops at <code>5</code>, so it cannot inflict Curse.</li>
+    <li><strong>The Spirit percent.</strong> It is masked to a byte at every use here, where the finisher&rsquo;s is not, so a hit of 256% of max HP adds nothing.</li>
+  </ul>
+  <p>The whole body runs against the retail bytes in the <a href="../tooling/retail-kernel-differential.html">kernel differential</a>.</p>
   <h3 id="magic-example">Worked example (illustrative numbers)</h3>
   <p>Round numbers chosen to show the shape, not a specific spell: a summon with INT 60 and HP 200, cast by a character with INT 80 at magic level 5, against a monster with INT 40, HP 1000, UDF 120, LDF 100, neutral element.</p>
   <ol class="steps">
@@ -216,8 +226,8 @@ caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pr
       <tr><td>Escape (Run)</td><td>see <a href="#escape-example">running away</a></td><td>a fast, wounded party out-rolls a slow healthy pack most rounds</td></tr>
       <tr><td>Stat buff</td><td>working stat <code>&times; 6/5</code>, clamp <code>0xFFFF</code>; each stat is a working/base halfword pair</td><td>ATK 300 &rarr; 360 for the fight</td></tr>
       <tr><td>Seru-magic stat debuff</td><td><code>stat - stat &times; pct / 100</code> per hit, <code>pct</code> = 5 / 10 / 15 / 20 by magic-level band 3-4 / 5-6 / 7-8 / 9; the stat is picked by the summon's element (<a href="#seru-side-effects">below</a>)</td><td>two level-5 Gimard hits: ATK 300 &rarr; 270 &rarr; 243</td></tr>
-      <tr><td>Victory gold</td><td>&Sigma; <code>gold/2</code> over dead enemies, &times;1.25 with the gold passive, then halved; lone enemy <code>floor((gold/2)/2)</code></td><td>Gimard (record gold 60) credits exactly <strong>+15</strong></td></tr>
-      <tr><td>Victory EXP</td><td>&Sigma; exp &times; 3/4, split evenly among living members</td><td>two survivors of a 400-EXP fight get 150 each</td></tr>
+      <tr><td>Victory gold</td><td>&Sigma; <code>gold/2</code> over seats that died and were not captured, &times;1.25 with the gold passive, then halved; lone enemy <code>floor((gold/2)/2)</code></td><td>Gimard (record gold 60) credits exactly <strong>+15</strong></td></tr>
+      <tr><td>Victory EXP</td><td>&Sigma; exp over the same seats &times; 3/4, ceiling-split over members standing and not Stoned</td><td>two survivors of a 400-EXP fight get 150 each</td></tr>
       <tr><td>RNG</td><td><code>seed = seed &times; 1103515245 + 12345; return (seed &gt;&gt; 16) &amp; 0x7FFF</code></td><td>range 0..32767 - the BIOS <code>rand()</code>, its one seed the kernel word <code>0x80009010</code>; the engine's world stream steps the same recurrence</td></tr>
     </tbody>
   </table>
@@ -269,18 +279,18 @@ caught if roll_p &lt; roll_e, or the fight is a scripted (boss) fight</code></pr
       <tr><td>6 dark</td><td>MP down - current MP <code>+0x150</code> only</td><td>5%</td><td>10%</td><td>15%</td><td>20%</td></tr>
     </tbody>
   </table>
-  <p><strong>Why bosses shrug most of it off.</strong> Level below 3 stages nothing. In a <strong>scripted fight</strong> (a formation row's non-zero header byte - every boss but Lapis), four casts in five are suppressed unless the spell is light or <code>affinity[summon][first enemy] &ge; 101</code>. Then, for earth / fire / wind / thunder / dark in a scripted fight and for water always, the target's <em>base</em> stat halfword is compared with the raw record and the effect is dropped when they differ. Because the scripted boost profile has already raised ATK, UDF/LDF and INT, those three debuffs can never land on a boss; SPD and AGL land once per battle - the first cast that passes moves the value the compare reads, and every later cast of that element prints "No effect."; MP-down compares a value the hit never moves and lands every time.</p>
+  <p><strong>Why bosses shrug most of it off.</strong> Level below 3 stages nothing. In a <strong>scripted fight</strong> (a formation row's non-zero header byte - every boss but Lapis), four casts in five are suppressed unless the spell is light or <code>affinity[summon][the formation&rsquo;s first monster] &ge; 101</code>. Then, for earth / fire / wind / thunder / dark in a scripted fight and for water always, the target's <em>base</em> stat halfword is compared with the raw record and the effect is dropped when they differ. Because the scripted boost profile has already raised ATK, UDF/LDF and INT, those three debuffs can never land on a boss; SPD and AGL land once per battle - the first cast that passes moves the value the compare reads, and every later cast of that element prints "No effect."; MP-down compares a value the hit never moves and lands every time.</p>
   <p>A random encounter runs neither the roll nor the compare (water aside), so everything lands and stacks. There is no per-monster immunity field - the record's <code>+0x24..+0x43</code> is zero across the roster. The <a href="../monsters.html#side-effects">enemy table</a> renders the verdict per enemy; the "No effect." banner is the return-from-fade pass <code>FUN_801F3C34</code> announcing a suppressed or already-landed effect.</p>
 </section>
 
 <section class="doc-section" id="victory-spoils">
   <h2>Victory spoils</h2>
-  <p>EXP / gold / drop are inline in each monster record; the spoils routine walks the dead enemies and applies the scaling in the <a href="#small-formulas">table above</a>:</p>
+  <p>EXP / gold / drop are inline in each monster record; the spoils routine walks the seats that died and were not captured, so a Seru the Ra-Seru took pays nothing and neither does a monster that ran, and applies the scaling in the <a href="#small-formulas">table above</a>. The level-ups run ahead of the drop walk, and a fallen member&rsquo;s Items Up counts because the EXP loop has already stood them up:</p>
   <table class="data-table">
     <thead><tr><th>Record</th><th>Field</th><th>Note</th></tr></thead>
     <tbody>
       <tr><td><code>+0x44</code> u16</td><td>base gold</td><td>scaled, then committed to the wallet (clamp 99,999,999)</td></tr>
-      <tr><td><code>+0x46</code> u16</td><td>base EXP</td><td>&times;3/4, split among living members</td></tr>
+      <tr><td><code>+0x46</code> u16</td><td>base EXP</td><td>&times;3/4, ceiling-split over members standing and not Stoned; a fallen member stands at 1 HP and earns nothing</td></tr>
       <tr><td><code>+0x48</code> u8</td><td>drop item id</td><td>0 = no drop</td></tr>
       <tr><td><code>+0x49</code> u8</td><td>drop chance %</td><td>one <code>rand()%100 &lt; chance</code> per enemy (+30 with Items Up); at most one item, then a 1-in-4 gate</td></tr>
     </tbody>

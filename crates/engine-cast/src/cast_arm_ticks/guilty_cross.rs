@@ -18,8 +18,9 @@ use super::*;
 /// * arm `0` - `0x801F8370 = FUN_801DD6B4(0x38E, ctx[+0x13], caster[+0x1DD])`
 ///   (`li a0, 0x38e` at `0x801F6AD0`, the `jal` at `0x801F6AD8`; the **bypass**
 ///   wrapper, so a party defender's resist block is skipped). The latched roll
-///   then picks the sound cue - `0x1AD` when it is at least the victim's HP,
-///   `0x1AB` otherwise - so the module announces a kill before it lands.
+///   then picks the sound cue - `0x1AD` when the victim's HP is below it,
+///   `0x1AB` otherwise (`sltu` at `0x801F6B2C`) - so the module announces a kill
+///   before it lands. The port's voice speaks `0x1AD` either way.
 ///   Also `caster[+0x1DA] = 8` with `+0x1DC += 1`, `caster[+0x21D] = 2`, and
 ///   the hide sweep;
 /// * arm `1` - `caster[+0x21D] = 4`, `caster[+0x1DA] = 0`;

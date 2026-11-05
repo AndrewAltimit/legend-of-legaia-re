@@ -26,6 +26,11 @@ from ui_host_drift.roots import REPO
 DIAG_GATES: list[dict[str, object]] = [
     # --- additive: draws something retail does not -------------------------
     {
+        "env": "LEGAIA_DIAG_CAST_VRAM_AT",
+        "additive": False,
+        "note": "writes the battle VRAM at one tick beside a cast recording; draws nothing",
+    },
+    {
         "env": "LEGAIA_DIAG_FX",
         "additive": True,
         "web_toggle": "FX_OUTLINE",
@@ -55,6 +60,7 @@ DIAG_GATES: list[dict[str, object]] = [
     {"env": "LEGAIA_DIAG_CAPTURE_STATE", "additive": False, "note": "print the battle state on the --screenshot frame; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ", "additive": False, "note": "record a cast's frames + per-tick metadata for the cast-sequence oracle; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_BEGIN", "additive": False, "note": "start the LEGAIA_DIAG_CAST_SEQ recording on the capture's own gate instead of on cast begin; draws nothing"},
+    {"env": "LEGAIA_DIAG_CAST_SEQ_SEAT_POSE", "additive": False, "note": "the LEGAIA_DIAG_CAST_SEQ child stands on retail's pose at cast begin; capture seating, draws nothing of its own"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_EVERY", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ frame cadence; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_SEQ_MAX", "additive": False, "note": "LEGAIA_DIAG_CAST_SEQ frame cap; draws nothing"},
     {"env": "LEGAIA_DIAG_CAST_PARTS", "additive": False, "note": "beside LEGAIA_DIAG_CAST_SEQ, write every live part of the cast scene to parts.csv; draws nothing"},

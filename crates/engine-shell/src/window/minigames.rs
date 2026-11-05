@@ -50,6 +50,8 @@ pub(super) struct DanceVenueGpu {
     /// The staging generation this copy was built for.
     pub(super) generation: u32,
     pub(super) vram: UploadedVram,
+    /// The CPU copy the hall's ambient tree repaints; re-uploaded when it wrote.
+    pub(super) cpu_vram: legaia_tim::Vram,
     /// Whether the HUD page reached the venue VRAM.
     pub(super) hud_staged: bool,
     /// The hall's textured draws + the walk-ground heightfield, baked into
@@ -65,10 +67,26 @@ pub(super) struct DanceVenueGpu {
     /// The same for [`Self::untextured`].
     pub(super) untextured_gpu: Option<UploadedColorMesh>,
     pub(super) untextured_kept: Option<Vec<u32>>,
+    /// The step-marker tiles: the hall's wall panels and stage screens.
+    pub(super) markers: Vec<VenueMarkerGpu>,
     /// The floor's body meshes + choreography bank off this venue, handed to
     /// the cast surface when this copy is installed.
     pub(super) cast_assets:
         Option<std::sync::Arc<legaia_engine_minigame_scenes::dance_cast_scene::DanceCastAssets>>,
+}
+
+/// One step-marker tile: each mesh its flipbook row can stage, baked at the
+/// tile's place, and the one on the GPU this frame.
+pub(super) struct VenueMarkerGpu {
+    /// The script row.
+    pub(super) class: usize,
+    /// The mesh a tile shows before its first step, the record's own.
+    pub(super) rest_slot: i16,
+    pub(super) baked: std::collections::HashMap<i16, (VenueTexturedBake, VenueColorBake)>,
+    /// What the uploads hold: the mesh and the kept triangles of each half.
+    pub(super) shown: Option<(i16, Vec<u32>, Vec<u32>)>,
+    pub(super) textured_gpu: Option<UploadedVramMesh>,
+    pub(super) untextured_gpu: Option<UploadedColorMesh>,
 }
 
 /// The venue's textured half in world space, kept CPU-side so each frame can

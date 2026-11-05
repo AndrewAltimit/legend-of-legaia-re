@@ -4,6 +4,10 @@
       "xa_corr": 0.999,
       "xa_level": -0.1319
     },
+    "ending_vignette_fullscreen": {
+      "track_corr": 0.9997,
+      "track_level": 0.0057
+    },
     "keikoku_chest_pre": {
       "core_corr": 1.0,
       "core_level": -0.0004,
@@ -32,11 +36,21 @@
       "track_corr": 0.9984,
       "track_level": 0.0049
     },
+    "new_game_cutscene_intro_a": {
+      "track_corr": 0.9995,
+      "track_level": -0.0068
+    },
+    "noa_levelup_field_pre": {
+      "track_corr": 0.999,
+      "track_level": 0.0033
+    },
     "party_battle_gobu_gobu": {
       "track_corr": 0.9996,
       "track_level": 0.0007
     },
     "rimelm_wall_press_left": {
+      "emitter_corr": 0.9856,
+      "emitter_level": 0.005,
       "track_corr": 0.9248,
       "track_level": 0.494
     },
@@ -53,6 +67,10 @@
       "core_level": 0.0004,
       "track_corr": 0.9984,
       "track_level": 0.0114
+    },
+    "zeto_call_wave_mid_cast": {
+      "track_corr": 0.9994,
+      "track_level": 5.0861
     }
   }
 }

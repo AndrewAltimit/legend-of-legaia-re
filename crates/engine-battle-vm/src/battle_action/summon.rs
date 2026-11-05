@@ -139,6 +139,13 @@ fn summon_close_up<H: BattleActionHost + ?Sized>(
 
 // --- summon band ------------------------------------------------------------
 
+/// Passes `0x32` holds on the drive. The engine's drive is resident and has no
+/// read in flight, so this stands in for retail's: `14` or `16` vsyncs at step `2`
+/// on every party summon recorded from `party_basic_attack_vs_gobu_gobu` (`capture`,
+/// a constant fitted to those recordings; the read itself is the emulator's CD model).
+/// It keeps the case-6 walk the arm runs on retail's length.
+pub const SUMMON_INVOKE_DRIVE_PASSES: u8 = 8;
+
 pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     host: &mut H,
     ctx: &mut BattleActionCtx,
@@ -148,6 +155,13 @@ pub(super) fn summon_invoke<H: BattleActionHost + ?Sized>(
     if !host.sound_bank_ready(1) {
         return stay(ctx);
     }
+    // `bne v0,zero` at `0x801E4994`: the arm holds while `FUN_8003DE7C(1)` reports
+    // the drive's read in flight (`gp+0x988`). The framing above keeps walking.
+    ctx.summon_invoke_passes = ctx.summon_invoke_passes.saturating_add(1);
+    if ctx.summon_invoke_passes < SUMMON_INVOKE_DRIVE_PASSES {
+        return stay(ctx);
+    }
+    ctx.summon_invoke_passes = 0;
     let param0 = host.actor(slot).map(|a| a.params[0]).unwrap_or(0);
     let frame_idx = if param0 < 0x9A {
         // (param0 + 0x7F) * 3 + 0x80

@@ -3,6 +3,12 @@
 use super::*;
 
 impl<'a> FieldSceneHost for FieldHostImpl<'a> {
+    /// Op `4C DF`: the scene control byte the walk's terrain slow reads.
+    // PORT: FUN_801DE840 (op 0x4C nibble-D sub-F arm, 0x801E303C)
+    fn op4c_nd_subf_scene_ctrl_61_write(&mut self, value: u8) {
+        self.world.locomotion.scene_ctrl_61 = value;
+    }
+
     fn scene_transition(&mut self, map_id: u8) {
         // Record the request; SceneHost::tick drains it after the field
         // step returns so the bytecode swap doesn't invalidate the

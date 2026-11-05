@@ -1296,7 +1296,8 @@ table; a switch with no page twin is a host difference, not a world default.
 | `LEGAIA_BATTLE_FRAME_CADENCE` (`0` lowers it), `--arts-saved-list` (the launcher's Saved-chain Arts list row) or `LEGAIA_ARTS_SAVED_LIST` | `set_battle_frame_cadence`, `set_arts_saved_list`. The cadence has one default, `DEFAULT_BATTLE_SM_FRAME_CADENCE`, that `WorldToggles::new`, the page's `PageToggles` and its box all start from (`the_cadence_default_is_single_sourced`); the saved-chain list is off on both hosts |
 | `--no-entry-pulse` (the launcher's Living ground pulse row) | `set_entry_pulse(false)`, the "Entry pulse" box; the retail box also holds it off |
 | `--no-shiny-seru`, `--flee-exp`, `--exp-rate`, `--no-fortress-encounter-fix`, `--jewel-fix`, `--no-hp-readout-guard`, `--equipment-drops`, `--save-anywhere`, `--action-movement` and the battle-tuning sliders `--spirit-ap`, `--damage-ap`, `--seru-catch-rate`, `--enemy-attack-count`, `--enemy-stat-scale` (the launcher's Gameplay tweaks and Battle tuning groups) | the Gameplay tweaks and Battle tuning boxes (`set_shiny_seru` ... `set_enemy_stat_permille`), one `GameplayTweaks` value on both hosts |
-| `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--no-player-battle`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
+| `--no-player-battle` | the Auto-battle box (`set_player_driven_battles`) |
+| `--simple-dialogue`, `--flat-y`, `--no-edge-collision`, `--no-solid-npcs`, `--no-live-npcs`, `--no-damage-finish`, `--seed-party`, `--battle` | none: comparison and debug opt-outs from the retail default, which is the page's only setting (`--battle` has the wasm `debug_force_battle`) |
 | `--screenshot*`, `--pad-script`, `--key-script`, `--str-file`, `--cutscene-map`, `--play-record` | none: native capture tooling |
 | `--fullscreen`, `--windowed`, `--window-scale` | the page's fullscreen button (`requestFullscreen`); the browser sizes the canvas |
 
@@ -1321,6 +1322,7 @@ so a switch added there is remembered on both hosts or on neither:
 | `OptionsState` rows (lighting, fog, see-through walls, bloom, camera distance, volumes, mono output, ...) | `legaia-options.toml`; `localStorage["legaia.options"]` |
 | `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning) | the launcher's settings file; `localStorage["legaia.switches"]` |
 | key bindings | `legaia-input.toml`; the page's pad-bindings store |
+| the output level | the launcher's Master volume row (`OptionsState::master_volume`, percent of the full mix); the page's slider under `localStorage["legaia.play-volume"]`, in its own units, since its `1x` is a different gain (see [open differences](#open-differences)) |
 | nothing (session only) | the world-map markers and the battle cadence (diagnostic environment switches natively), the cheats, the dev menu |
 
 A fresh page runtime seats the stored set before its boxes sync
@@ -1558,6 +1560,13 @@ reverse-engineering questions, so they are not on
 | launch switches | See [launch switches](#launch-switches-against-page-settings). |
 | fishing wander readout | Native dev-menu aid for `FUN_801d2050`'s tracked points; no page twin by choice. |
 | op `0x35` sub-op `8` | Open on purpose: `FUN_80019898` replays the record at `0x8007057C` through `FUN_80026478`, which in every captured state is silent, so the default no-op is faithful ([`audio.md`](../subsystems/audio.md#sub-op-8-replays-an-empty-record)). |
+| default key layout | Two named layouts in the engine, on purpose: `Mapping::default` natively (`X` Square, `A` Triangle, `S` Circle, `W` R1) and `Mapping::web_default` on the page (`WASD` walks, `X` Circle, `C` Triangle, `V` Square, `E` R1). A map holds one button per key, so the desktop layout and `WASD` walking cannot share a table; Key Config edits either. |
+| output level | The window's master volume defaults to `25%` of the full mix (`DESKTOP_MASTER_VOLUME_DEFAULT`); the page's `1x` slider is `0.125` of it (`WEB_MASTER_TRIM` times `PLAY_PAGE_GAIN_SCALE`), half the window's default, and reaches `10x`. The site's pages share a level the desktop has no reason to take. |
+| settings panel | Native only by choice: `F12` or `Select` + `Start` is a settings page inside the frame because a window has nowhere else; the page's panel sits beside the canvas. |
+| debug spawn and entry keys | Native only: `F5`, `F`, `G`, `H`, `J` hand-spawn effects, `N` opens the naming prompt, and `K`, `U`, `L`, `O`, `M`, `B` enter a minigame. The page's minigame picker (`play_mg_debug_warp`) and its debug exports are its entries; no retail flow needs a key. |
+| offline Multiplayer screen | Native only: `Tab` out of a room opens a host-or-join screen in the frame, where `play-window` has no other form. The page's Online panel is the same step, and out of a room `Tab` stays the browser's focus key. |
+| automatic quality step-down | Page only: on a machine that cannot hold the frame rate, `play-quality-ladder.js` turns ambient occlusion and lamp shadows off and lowers the 3D scale for the session, and says so; the saved options keep their values. A desktop player picks a window size and the options; neither retail nor PSX rasterisation steps down. |
+| touch controls | Neither host has an on-screen pad. Phones are not a target for now, so the page takes keyboard, controller and mouse as the window does. |
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
@@ -1773,6 +1782,15 @@ the two notice kernels; the JavaScript half is pinned by
 `play_hotkeys::tests::the_page_shows_hotkey_notices`. The native window's
 `F12` panel (every hotkey with its current state) has no page twin beyond
 that list: the page's own checkboxes already show the state.
+
+The keys a room, the game modes and the cards take are outside the table, because
+each holds only while its screen or session is up, but they mean the same on both
+hosts. `NetPlay::room_key` is the room's table (`1`..`5` not bound to a pad button
+send a reaction, `Tab` and backquote flip the room screen, `T` on it starts a chat
+line, which on the page is its chat box), asked ahead of the hotkeys through
+`play_host_key`. Out of a room, backquote and backslash are the mode picker and the
+card menu, the window's `key_pack_modes` and `key_card_screen`. Pinned by `play_hotkeys::tests::the_page_takes_the_room_and_mode_keys`
+and the `engine-netplay` `keys` test.
 
 ### Controllers
 

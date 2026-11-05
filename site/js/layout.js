@@ -321,6 +321,7 @@ const NAV = [
       { href: 'tooling/disc-coverage.html', text: 'Disc coverage', key: 'tooling/disc-coverage' },
       { href: 'tooling/byte-accounting.html', text: 'Byte accounting', key: 'tooling/byte-accounting', indent: true },
       { href: 'tooling/recomp-differential.html', text: 'Recomp differential', key: 'tooling/recomp-differential' },
+      { href: 'tooling/retail-kernel-differential.html', text: 'Retail kernel differential', key: 'tooling/retail-kernel-differential' },
       { href: 'tooling/determinism-replay.html', text: 'Determinism replay', key: 'tooling/determinism-replay' },
       { href: 'tooling/retail-compare.html', text: 'Retail comparison corpus', key: 'tooling/retail-compare' },
       { href: 'tooling/full-game-ladder.html', text: 'Full-game ladder', key: 'tooling/full-game-ladder' },

@@ -413,6 +413,17 @@ impl FirstVisitHub {
         self.xa.take()
     }
 
+    /// `0x801D1A84`: the intro hold counter while arm `1` runs, the card
+    /// level after it.
+    pub fn counter(&self) -> i32 {
+        self.card
+    }
+
+    /// `0x801D1A70`: the hold counter of the course card and ROUND card arms.
+    pub fn hold(&self) -> i32 {
+        self.hold
+    }
+
     /// Whether the modelled `_DAT_8007BC20` is up (an announcer line is
     /// still in flight).
     pub fn xa_in_flight(&self) -> bool {
@@ -642,6 +653,14 @@ pub struct HubTimersFrame {
 }
 
 impl HubTimers {
+    /// Whether a first visit's hub screens hold the frame. Retail's hub runs
+    /// in the mode-`0x19` overlay with no 3D scene: the arena loads when arm
+    /// `6` kicks the battle (`0x801CFC88..0x801CFC94`), and the fight starts
+    /// past arm `0x16`, so everything before it stands on black.
+    pub fn first_visit_up(&self) -> bool {
+        self.first_visit.as_ref().is_some_and(|h| !h.done())
+    }
+
     /// Whether a hub screen is up over an open leg - the first visit or the
     /// leg-open ROUND card. Retail runs those arms in the arena (mode `0x18`)
     /// before the round driver puts its command cluster up, so a host draws

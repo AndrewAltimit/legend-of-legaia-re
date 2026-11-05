@@ -38,7 +38,7 @@ use legaia_engine_core::world::{BattleActorDrawPlan, EffectSprite, World};
 use legaia_engine_effects::summon::SummonPartDraw;
 use legaia_engine_mode::mode::SceneMode;
 use legaia_render_kernels::gte::{
-    PartCameraPose, camera_relative_model_prefix, part_model_place, part_rotation,
+    PartCameraPose, camera_relative_model_prefix, nclip_area, part_model_place, part_rotation,
 };
 
 const IDENTITY: [f32; 16] = [
@@ -248,6 +248,41 @@ pub struct FxModelDraws {
     pub field_parts: Vec<FxPartModel>,
 }
 
+/// A raised draw-kind-4 node's mesh through the far arm's winding test and
+/// clip ([`legaia_engine_effects::object_effect::far_arm_mesh`]). The clip
+/// measures in retail's world frame off the node's own rotation and position;
+/// the winding is read through the draw's model matrix, so a camera-relative
+/// node judges where it stands. Off retail's camera (`part_cam` `None`) every
+/// face stays.
+fn far_arm_node_mesh(
+    world: &World,
+    rb: &legaia_engine_effects::effect_ribbon::RibbonDraw,
+    model: &[f32; 16],
+    part_cam: Option<&PartCameraPose>,
+    battle: bool,
+) -> legaia_tmd::mesh::VramMesh {
+    let clip = world
+        .object_effect
+        .clip_for(rb.object_effect_kind, &world.sin_lut, &world.cos_lut)
+        .map(|c| {
+            // `part_rotation` of the raw frame is retail's `Rx * Ry * Rz`.
+            let r = part_rotation(rb.rot, false);
+            let rows = std::array::from_fn(|i| [r[i], r[4 + i], r[8 + i]]);
+            c.in_scaled_mesh_space(rows, rb.world_pos, rb.object_effect_scale)
+        });
+    let to_draw = |p: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|i| {
+            model[i] * p[0] + model[4 + i] * p[1] + model[8 + i] * p[2] + model[12 + i]
+        })
+    };
+    legaia_engine_effects::object_effect::far_arm_mesh(&rb.mesh, clip.as_ref(), |corners| {
+        part_cam.is_none_or(|cam| {
+            let eye = corners.map(|p| cam.eye_point(to_draw(p), battle));
+            nclip_area(eye, 256.0) >= 0.0
+        })
+    })
+}
+
 /// Compose this frame's effect model draws. `part_cam` is the retail camera
 /// a part's `+0x52 & 0x780` camera-relative bits resolve against
 /// (`FUN_8001CF50`), `None` under a host vantage; `plan_of` is the battle
@@ -294,20 +329,43 @@ pub fn effect_model_draws(
             .active_summon_part_draws()
             .into_iter()
             .chain(world.active_move_fx_part_draws())
-            .map(|draw| FxPartModel {
-                model: node(draw.flags_52, draw.world_pos, draw.rot),
-                single_sided: per_word_cull && !draw.colour.double_sided,
-                draw,
+            .map(|draw| {
+                let model = node(draw.flags_52, draw.world_pos, draw.rot);
+                FxPartModel {
+                    model: match part_cam.filter(|_| draw.colour.split_quads) {
+                        Some(cam) => mat4_mul(
+                            &mat4_translation(cam.tessellated_link_offset(battle)),
+                            &model,
+                        ),
+                        None => model,
+                    },
+                    single_sided: per_word_cull && !draw.colour.double_sided,
+                    draw,
+                }
             })
             .collect();
     }
     out.kind4 = world
         .active_effect_kind4_draws()
         .into_iter()
-        .map(|rb| FxMeshModel {
-            model: node(rb.flags_52, rb.world_pos, rb.rot),
-            single_sided: per_word_cull && rb.single_sided,
-            mesh: rb.mesh,
+        .map(|mut rb| {
+            let model = node(rb.flags_52, rb.world_pos, rb.rot);
+            if rb.object_effect_kind != 0 {
+                rb.mesh = far_arm_node_mesh(world, &rb, &model, part_cam, battle);
+                // The arm has run its own winding test on the quad.
+                rb.single_sided = false;
+            }
+            FxMeshModel {
+                model: match part_cam.filter(|_| rb.tessellated) {
+                    Some(cam) => mat4_mul(
+                        &mat4_translation(cam.tessellated_link_offset(battle)),
+                        &model,
+                    ),
+                    None => model,
+                },
+                single_sided: per_word_cull && rb.single_sided,
+                mesh: rb.mesh,
+            }
         })
         .collect();
     out.shadows = crate::battle_draws::battle_ground_shadows(world, plan_of)

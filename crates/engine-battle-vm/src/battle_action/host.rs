@@ -10,6 +10,11 @@ use super::*;
 /// pointers via [`BattleActionHost::actor`] / [`BattleActionHost::actor_mut`]
 /// and treats the returned `&mut BattleActor` as `(&DAT_801C9370)[idx]`.
 pub trait BattleActionHost {
+    /// The spell table's class byte for `id`, `DAT_800754C8 + id * 0xC`.
+    fn spell_table_class(&self, _id: u8) -> u8 {
+        0
+    }
+
     /// Equivalent of `(&DAT_801C9370)[slot]` - read-only access to the actor
     /// pointed at by the table slot. Returning `None` aborts the step (the
     /// retail dispatcher silently exits when the active actor pointer is
@@ -362,6 +367,12 @@ pub trait BattleActionHost {
     /// existed.
     fn capture_stager_tick(&mut self) -> bool {
         false
+    }
+
+    /// Whether the capture module that just finished cleared the framing style
+    /// `ctx[+0xD]` on its way out. Default: it did, as most do.
+    fn capture_exit_clears_style(&self) -> bool {
+        true
     }
 
     /// Equivalent of `func_0x800402F4(class, tier, target_slot, party_index)` -

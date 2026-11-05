@@ -196,6 +196,24 @@ pub struct MeshClip {
     pub hi: f32,
 }
 
+impl EffectClip {
+    /// The slab for a mesh whose vertices already carry the render scale `s`
+    /// (`1.0 = 0x1000`): `s * n . (R v + pos)` with `p = s v` is
+    /// `n . (R p) + s * n . pos`. `rot` holds the node's rotation rows in
+    /// retail's frame.
+    pub fn in_scaled_mesh_space(&self, rot: [[f32; 3]; 3], pos: [f32; 3], s: f32) -> MeshClip {
+        let m = std::array::from_fn(|j| {
+            self.n[0] * rot[0][j] + self.n[1] * rot[1][j] + self.n[2] * rot[2][j]
+        });
+        let c = s * (self.n[0] * pos[0] + self.n[1] * pos[1] + self.n[2] * pos[2]);
+        MeshClip {
+            m,
+            lo: self.lo - c,
+            hi: self.hi - c,
+        }
+    }
+}
+
 impl MeshClip {
     /// Whether mesh-space point `p` survives the clip.
     pub fn keeps(&self, p: [f32; 3]) -> bool {
@@ -209,9 +227,181 @@ impl MeshClip {
     }
 }
 
+/// A raised node's emitter mesh as the far arm `FUN_8002735C` links it. Each
+/// corner carries retail's order, and `front` is the arm's winding test on the
+/// projected first three corners: `NCLIP` then `bltz` at `0x80027548..0x8002755C`
+/// for a quad, with no double-sided mask, so an area of exactly zero stays and
+/// the quad's second triangle is never tested. A kept quad goes round
+/// `FUN_80027F00`'s ring `(v0, v1, v3, v2)` against the slab, which synthesises a
+/// corner on each crossing edge with its UV and colour (`FUN_80029724`). Fewer
+/// than three corners draw nothing (`sltiu v0,a0,3` at `0x80027884`).
+///
+/// The quad form is the one every draw-kind-4 emitter writes
+/// (`[b, b + 1, b + 2, b + 2, b + 1, b + 3]`); anything else is a triangle.
+///
+/// PORT: FUN_80027F00, FUN_80029724
+/// REF: FUN_8002735C
+pub fn far_arm_mesh(
+    mesh: &legaia_tmd::mesh::VramMesh,
+    clip: Option<&MeshClip>,
+    mut front: impl FnMut([[f32; 3]; 3]) -> bool,
+) -> legaia_tmd::mesh::VramMesh {
+    #[derive(Clone, Copy)]
+    struct Corner {
+        pos: [f32; 3],
+        uv: [f32; 2],
+        rgb: [f32; 3],
+    }
+    let corner = |i: u32| {
+        let i = i as usize;
+        Corner {
+            pos: mesh.positions[i],
+            uv: mesh.uvs[i].map(f32::from),
+            rgb: mesh.colors[i].map(f32::from),
+        }
+    };
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let at = |a: Corner, b: Corner, t: f32| Corner {
+        pos: std::array::from_fn(|i| lerp(a.pos[i], b.pos[i], t)),
+        uv: std::array::from_fn(|i| lerp(a.uv[i], b.uv[i], t)),
+        rgb: std::array::from_fn(|i| lerp(a.rgb[i], b.rgb[i], t)),
+    };
+    let mut out = legaia_tmd::mesh::VramMesh {
+        positions: Vec::new(),
+        uvs: Vec::new(),
+        cba_tsb: Vec::new(),
+        indices: Vec::new(),
+        normals: Vec::new(),
+        colors: Vec::new(),
+    };
+    let idx = &mesh.indices;
+    let mut i = 0;
+    while i + 3 <= idx.len() {
+        let b = idx[i];
+        let quad = i + 6 <= idx.len()
+            && idx[i + 1] == b + 1
+            && idx[i + 2] == b + 2
+            && idx[i + 3] == b + 2
+            && idx[i + 4] == b + 1
+            && idx[i + 5] == b + 3;
+        let ring: Vec<u32> = if quad {
+            vec![b, b + 1, b + 3, b + 2]
+        } else {
+            vec![idx[i], idx[i + 1], idx[i + 2]]
+        };
+        let first = if quad {
+            [b, b + 1, b + 2]
+        } else {
+            [idx[i], idx[i + 1], idx[i + 2]]
+        };
+        i += if quad { 6 } else { 3 };
+        if !front(first.map(|c| mesh.positions[c as usize])) {
+            continue;
+        }
+        let mut poly: Vec<Corner> = ring.iter().map(|&c| corner(c)).collect();
+        if let Some(c) = clip {
+            let measure = |p: [f32; 3]| c.m[0] * p[0] + c.m[1] * p[1] + c.m[2] * p[2];
+            // The two bounds in turn: below `lo`, then above `hi`.
+            for (bound, keep_above) in [(c.lo, true), (c.hi, false)] {
+                let inside = |y: f32| if keep_above { y >= bound } else { y <= bound };
+                let mut kept = Vec::with_capacity(poly.len() + 2);
+                for (k, &here) in poly.iter().enumerate() {
+                    let next = poly[(k + 1) % poly.len()];
+                    let (a, b) = (measure(here.pos), measure(next.pos));
+                    if inside(a) {
+                        kept.push(here);
+                    }
+                    if inside(a) != inside(b) {
+                        kept.push(at(here, next, (bound - a) / (b - a)));
+                    }
+                }
+                poly = kept;
+            }
+        }
+        if poly.len() < 3 {
+            continue;
+        }
+        let base = out.positions.len() as u32;
+        let attr = ring[0] as usize;
+        for c in &poly {
+            out.positions.push(c.pos);
+            out.uvs.push(c.uv.map(|v| v.round() as u8));
+            out.cba_tsb.push(mesh.cba_tsb[attr]);
+            out.normals.push([0.0; 3]);
+            out.colors.push(c.rgb.map(|v| v.round() as u8));
+        }
+        for k in 1..poly.len() as u32 - 1 {
+            out.indices
+                .extend_from_slice(&[base, base + k, base + k + 1]);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn quad_mesh(corners: [[f32; 3]; 4]) -> legaia_tmd::mesh::VramMesh {
+        legaia_tmd::mesh::VramMesh {
+            positions: corners.to_vec(),
+            uvs: vec![[0, 0], [100, 0], [0, 100], [100, 100]],
+            cba_tsb: vec![[1, 2]; 4],
+            indices: vec![0, 1, 2, 2, 1, 3],
+            normals: vec![[0.0; 3]; 4],
+            colors: vec![[0; 3], [100; 3], [0; 3], [100; 3]],
+        }
+    }
+
+    /// The arm's winding test reads only the first three corners, and a
+    /// rejected quad leaves nothing.
+    #[test]
+    fn the_far_arm_judges_a_quad_on_its_first_three_corners() {
+        let m = quad_mesh([
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ]);
+        let mut seen = Vec::new();
+        let out = far_arm_mesh(&m, None, |c| {
+            seen.push(c);
+            false
+        });
+        assert_eq!(seen, vec![[m.positions[0], m.positions[1], m.positions[2]]]);
+        assert!(out.indices.is_empty());
+        let out = far_arm_mesh(&m, None, |_| true);
+        assert_eq!(out.indices.len(), 6);
+    }
+
+    /// `FUN_80027F00` synthesises the crossing with its UV and colour; the
+    /// half under `hi = 0` (the battle floor row, Y-down) is what stays.
+    #[test]
+    fn the_far_arm_clip_keeps_the_slab_and_lerps_the_crossing() {
+        let m = quad_mesh([
+            [0.0, -1.0, 0.0],
+            [1.0, -1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [1.0, 1.0, 0.0],
+        ]);
+        let clip = MeshClip {
+            m: [0.0, 1.0, 0.0],
+            lo: -0x7FFF as f32,
+            hi: 0.0,
+        };
+        let out = far_arm_mesh(&m, Some(&clip), |_| true);
+        assert_eq!(out.positions.len(), 4);
+        assert!(out.positions.iter().all(|p| p[1] <= 0.0));
+        let crossing = out.positions.iter().position(|p| p[1] == 0.0).unwrap();
+        assert_eq!(out.uvs[crossing][1], 50);
+        // Wholly past the bound: fewer than three corners draw nothing.
+        let below = MeshClip {
+            m: [0.0, 1.0, 0.0],
+            lo: -0x7FFF as f32,
+            hi: -5.0,
+        };
+        assert!(far_arm_mesh(&m, Some(&below), |_| true).indices.is_empty());
+    }
 
     fn luts() -> (Vec<i16>, Vec<i16>) {
         let sin: Vec<i16> = (0..0x1000)

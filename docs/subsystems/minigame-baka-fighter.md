@@ -360,7 +360,7 @@ stateDiagram-v2
 |---|---|---|
 | Setup | cabinet `0x32` | seats both fighters, HP to `0xC80`, idle clips, strike words cleared, round camera snapped |
 | Banners | cabinet `0x33`..`0x38` | round banner, camera spin, READY / FIGHT; presentation only |
-| Open | cabinet `0x64`, phase `2` | cooldowns decay; each combat tick may commit one attack type per fighter |
+| Open | cabinet `0x64`, phase `2` | each combat tick may commit one attack type: the player's on an edge, the opponent's in answer to it |
 | Committed | same | `FUN_801D3A14` has a result; the booking waits for the winner's strike keyframe ([strike clock](#the-strike-clock)) |
 | Finisher | same | the standing fighter auto-commits the type-4 special against a foe at 0 HP |
 | RoundOver | same | finisher latch `+0x2C` or both HPs at zero; the hold timer runs to `0xB5`, result banners rise |
@@ -368,7 +368,7 @@ stateDiagram-v2
 
 Per frame, while active, the body:
 
-1. Decays the two per-fighter cooldown timers `DAT_801DBEA0` / `DAT_801DBEA4` by the frame-rate step, clamped at 0.
+1. Decays the two rumble levels `DAT_801DBEA0` / `DAT_801DBEA4` by `frame step << 4`, clamped at 0. The damage arms store `200` in them (`0` in the first when the opponent took the hit), and the cabinet's frame copies them to the [motor words](audio.md#not-ssapi-the-0x801ce628-cluster-is-libpad) `_DAT_8007B92C` / `_DAT_8007B930` unless the Events vibration row is off (`0x801CF3CC..0x801CF3F4`). Nothing else reads them: they pace no attack.
 2. Records who is on the left (smaller world X at actor `+0x14`) into the facing flags `DAT_801DC08C` and `DAT_801DBFE4`.
 3. Calls `FUN_801D3A14` to resolve the current exchange.
 4. On a decided exchange whose strike has landed: spawns the impact pair (`FUN_801D4DF8`), applies damage (`FUN_801D3B18`), rolls a critical (`FUN_801D6660`), and resets per-fighter exchange state. A draw does both sides. Round wins are counted in the per-fighter records (`&DAT_801DBFF0[...]`), and the round index `DAT_801DBF20` advances.
@@ -405,7 +405,7 @@ Outcome matrix (rows = P1's type, columns = P2's type):
 
 Return value: `0` = P1 wins, `1` = P2 wins, `3` = draw (same type), `-1` = undecided. The tests run in this order:
 
-1. The settle timer `DAT_801DBF54` has not elapsed -> undecided. The timer is **vestigial**: it is only ever decremented / zeroed here and never positively stored anywhere in the overlay, so it stays `0`. Exchange pacing comes from the cooldowns `DAT_801DBEA0` / `DAT_801DBEA4`.
+1. The settle timer `DAT_801DBF54` has not elapsed -> undecided. The timer is **vestigial**: it is only ever decremented / zeroed here and never positively stored anywhere in the overlay, so it stays `0`. Exchange pacing comes from the clips ([combat tick](#player-input--actions)).
 2. A type of `4` on either side returns that side, P1 checked first (`0x801D3A54` / `0x801D3A5C`).
 3. Both sides idle -> undecided.
 4. Either committed flag `DAT_801DBFE8` / `DAT_801DC090` set -> undecided.
@@ -429,7 +429,7 @@ critical pending on the winner:  dmg = power << 7
 | `ATK` | the **winner's** roster record `+0x38` / `+0x3C` / `+0x40`, picked by HP tier |
 | `DEF` | the **loser's** roster record `+0x28` / `+0x2C` / `+0x30`, picked by HP tier |
 | `mod` | the loser's roster record `+0x24` |
-| `combo` | the loser's consecutive-hits-taken counter `&DAT_801DBFEC[loser]`: incremented after each application, cleared when that fighter wins an exchange |
+| `combo` | the loser's consecutive-hits-taken counter `&DAT_801DBFEC[loser]`: incremented after each application, cleared when that fighter wins an exchange or a clip of theirs ends |
 | critical | `&DAT_801DC05C[winner]`, set by `FUN_801D6660` |
 
 | HP | Tier index |
@@ -444,7 +444,9 @@ Effects of one application:
 
 - Writes the hit cue `0x09` to the cue ring at the top of the routine, before the arithmetic ([Sound](#sound)).
 - Decrements HP (`&DAT_801DBFC4[slot]`), floored at 0, and gated on `hp > 0` (`0x801D3E58..0x801D3E68`: `blez` skips the `subu`).
-- Pushes the loser back `0x20` world units and switches the struck side to the hit clip (record `5`), or the knockdown (record `7`) when the landed keyframe is the special's last (`0x801D3C60..0x801D3CA0`).
+- Moves **both** fighters `0x20` world units the struck side's way and banks the same step in `DAT_801DBEC0`, which the cabinet's epilogue walks back off the camera focus at `|ease| * dt / 6 + 1` a frame (`0x801D3EB4..0x801D3F28`, `0x801D1FEC..0x801D2070`).
+- Raises the struck side's lock `+0x20`, which masks its pad until a clip ends.
+- Switches the struck side to the hit clip, held on its last frame: record `5` against types `1` / `2`, record `6` against type `3`, and the knockdown (record `7`) when the landed keyframe is the special's last (`0x801D3BA0..0x801D3CA0`). It leaves the clip-end flag alone, so a blow landing on the frame the seat's last clip ended is lost to that clip's idle reset on the next tick.
 - Writes `2` to the winner's strike-state word (`0x801D3EB0`).
 - A type-4 special landing on its **final sub-keyframe** (`DAT_801DC054[winner] == record[+0x1C] - 1`, tested at `0x801D3C00..0x801D3C0C`) credits the winner a round win outright and raises the finisher latch `+0x2C` (`0x801D3C2C`).
 
@@ -467,8 +469,10 @@ The per-fighter combat tick is called once per fighter actor. The fighter's slot
 | (none - automatic) | - | `4` | base + 5 (spawns the afterimage actor) |
 
 - **Player (slot 0).** The mask comes from the edge-triggered pad word `_DAT_8007B874`.
-- **Opponent (slot 1).** The mask comes from the [CPU move pick](#cpu-move-pick-fun_801d487c), whose result index `0` / `1` / `2` maps to the same bits (`0x80` / `0x20` / `0x40`).
+- **Opponent (slot 1).** It reads no pad and never leads. The player's commit leaves its action in `DAT_801DC124` (`0x801D44F4..0x801D450C`, `-1` for the special, seeded `-1` by the round setup), and only on seeing that does the opponent's tick clear its own lock, mark its strike consumed and draw the [CPU move pick](#cpu-move-pick-fun_801d487c), whose result index `0` / `1` / `2` maps to the same bits (`0x80` / `0x20` / `0x40`) (`0x801D41B4..0x801D42EC`). The pool walk runs the player's tick, then the round SM, then the opponent's (the actor list of `minigame_baka_fighter_retail_fight`), so the answer lands on the same frame and neither side sees the other's pick. A player who holds back is not attacked.
 - **Special (type 4).** Not a button. It is an auto-finisher gated on own HP `!= 0`, opponent HP `== 0`, and the round not already decided. When the gate fires it sets `DAT_801DBF50 = 1`, plays clip base + 5, spawns the afterimage actor (prototype `0x801D7684`) and copies the fighter's transform onto it.
+
+**The commit gate.** A commit needs neither side's finisher latch up and one of three things: the seat's strike consumed (`+0x0C == 2`, a booked hit may be chained), its clip idle, or the opponent's answer (`0x801D4470..0x801D44B4`). A clip's end returns its seat to idle and clears its type, its lock and its streak (`0x801D411C..0x801D415C`). So a struck player waits out the reaction clip while a struck opponent can be pulled out of its own by the player's next throw, and the types **stand** after a booking: an attack with a second strike frame lands again on the same exchange, until a clip ends or someone commits. A throw during the banners does nothing, as the tick's logic half runs only in cabinet state `0x64`. A latched special shuts both pads (`0x801D43A8`).
 
 When an attack commits, the tick seeds the fighter's clip id (`actor + 0x5C`, `0x801D44D8` / `0x801D44DC`), zeroes the cursor (`actor + 0x68`), seeds the motion speed from the action record, zeroes both fighters' strike-state words (`0x801D44B8` / `0x801D44BC`) and records the combo step.
 
@@ -540,7 +544,7 @@ flowchart TD
 
 So an idle cursor gives a 3-in-6 chance of one uniformly random attack and a 3-in-6 chance of starting the pattern, which then plays back-to-front to exhaustion regardless of later rolls. The result is always one of the three attack types. Port: `BakaFight::ai_pick`, on a BIOS-`rand` stream. **Confirmed** (the roll and the pattern table).
 
-**Mirror / reaction remap (dev).** In the opponent branch, gated by `_DAT_8007B9B0`, the held pad `_DAT_8007B850 & 2` and the mode global `DAT_801DBF94 == 2`, the tick re-derives the opponent's type through `DAT_801DC124`, so the CPU counters the player's committed input rather than leading.
+**Mirror / reaction remap (dev).** In the opponent branch, gated by `_DAT_8007B9B0`, the held pad `_DAT_8007B850 & 2` and the mode global `DAT_801DBF94 == 2`, the tick overrides the pick from `DAT_801DC124`, so the CPU counters or copies the player's throw instead of picking blind.
 
 ## The arena in 3D
 
@@ -1014,7 +1018,8 @@ All addresses are overlay-resident globals. The fighter cluster sits around `0x8
 | `+0xA0` `DAT_801DC05C` | critical-pending flag (set by `FUN_801D6660`) |
 | `+0xA4` `DAT_801DC060` | stat pointer -> the fighter's roster record |
 | `DAT_801DC124` | queued / last player input the mirror remap reads |
-| `DAT_801DBEA0` / `DAT_801DBEA4` | per-fighter action cooldown timers |
+| `DAT_801DBEA0` / `DAT_801DBEA4` | the rumble levels the damage arms store |
+| `DAT_801DBEC0` | the push the camera focus has still to follow |
 | `DAT_801DBF50` | special-in-progress latch |
 | `DAT_801DBF54` | vestigial settle timer (always `0`) |
 | `_DAT_801DBFD0` | party clip base (`DAT_801DBF70 * 9`) |
@@ -1226,9 +1231,10 @@ The cabinet takes the live accumulator from the host (`BakaCabinet::set_pot`) an
 
 The minigames page hands the duel its held Triangle (`baka_set_held_pad`) for the cameo and keeps ticking past the deciding exchange so the cabinet's tally, the result close-up and the pinned win flourish draw.
 
+**The rules.** They run `FUN_801D3F44` and `FUN_801D3468` in the pool walk's order; `crates/retail-exec/tests/baka_fight.rs` holds them to the bytes frame by frame through whole rounds. A fight built from bare configs has no clips or strikes and keeps a simplified pace of its own.
+
 **Known differences from retail.**
 
-- Exchange recovery is immediate: `BakaFight::end_exchange` clears both fighters' exchange state where retail sequences the recovery through the per-action keyframes. Cooldowns pace re-entry.
 - The result banners' lifetime is the round-over hold, not the retail spawn template ([above](#the-round-result-banners)).
 - The play hosts draw the tally's digit strips as font glyphs ([HUD in the port](#hud-in-the-port)).
 - The VITAL bars draw untextured with the system texel's grey folded into their colours; the duel VRAM does not carry texpage `0x1F`.

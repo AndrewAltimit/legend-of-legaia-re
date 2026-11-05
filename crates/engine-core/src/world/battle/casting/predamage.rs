@@ -51,7 +51,7 @@ impl World {
     ///
     /// REF: FUN_801dd0ac (arts/physical branch)
     /// REF: FUN_801ddb30 (finisher stages on the enemy-special path)
-    pub(super) fn enemy_move_predamage(
+    pub fn enemy_move_predamage(
         &mut self,
         attacker: u8,
         target: u8,
@@ -59,7 +59,8 @@ impl World {
         move_id: u8,
     ) -> Option<u16> {
         use legaia_engine_battle_vm::battle_formulas::{
-            DamageFinish, SummonRollActor, arts_physical_predamage_lazy, damage_finish_lazy,
+            DamageFinish, ROLL_ALIAS_KILLS, SummonRollActor, arts_physical_predamage_lazy,
+            damage_finish_net,
         };
 
         // PROT 0961's party sweep rolls its wrapper only in the evolved-Cort
@@ -126,7 +127,7 @@ impl World {
         let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
-            predamage: atk.saturating_sub(def).clamp(1, 9999),
+            predamage: atk.saturating_sub(def),
             attacker_slot: 3,
             defender_slot: if target_is_party { 0 } else { 3 },
             attacker_element,
@@ -144,8 +145,11 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
-        Some(over.min(9999) as u16)
+        let net = damage_finish_net(&finish, || self.next_rand() as u16);
+        if net < 0 {
+            return Some(ROLL_ALIAS_KILLS);
+        }
+        Some(net as u16)
     }
 
     /// Roll a **capture-class boss cast** whose streamed module calls the
@@ -182,7 +186,12 @@ impl World {
     ///
     /// PORT: FUN_801DD6B4 (live wiring; pure kernel in
     /// `battle_damage_wrappers::atk_wrapper_predamage`)
-    fn capture_bypass_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+    pub fn capture_bypass_predamage(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power: i32,
+    ) -> Option<u16> {
         use legaia_engine_battle_vm::battle_damage_wrappers::{
             ATK_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
             atk_wrapper_predamage,
@@ -224,7 +233,7 @@ impl World {
         let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
-            predamage: atk.saturating_sub(def).clamp(1, 9999),
+            predamage: atk.saturating_sub(def),
             attacker_slot: 3,
             defender_slot: if target_is_party { 0 } else { 3 },
             attacker_element,
@@ -259,12 +268,19 @@ impl World {
         self.spell_table_class(move_id) == Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
     }
 
-    fn capture_respect_predamage(&mut self, attacker: u8, target: u8, power: i32) -> Option<u16> {
+    pub fn capture_respect_predamage(
+        &mut self,
+        attacker: u8,
+        target: u8,
+        power: i32,
+    ) -> Option<u16> {
         use legaia_engine_battle_vm::battle_damage_wrappers::{
             INT_WRAPPER_BYPASSES_PARTY_RESIST, WrapperAttacker, WrapperDefender,
             int_wrapper_predamage,
         };
-        use legaia_engine_battle_vm::battle_formulas::{DamageFinish, damage_finish_lazy};
+        use legaia_engine_battle_vm::battle_formulas::{
+            DamageFinish, ROLL_ALIAS_KILLS, damage_finish_net,
+        };
 
         let element_affinity_pct = self.enemy_affinity_pct(attacker, target);
         let attacker_hp = self.actors.get(attacker as usize)?.battle.hp;
@@ -302,7 +318,7 @@ impl World {
         let attacker_element = self.monster_seat_element(attacker as usize).unwrap_or(7);
         let target_is_party = target < self.party.party_count;
         let finish = DamageFinish {
-            predamage: atk.saturating_sub(def).clamp(1, 9999),
+            predamage: atk.saturating_sub(def),
             attacker_slot: 3,
             defender_slot: if target_is_party { 0 } else { 3 },
             attacker_element,
@@ -318,8 +334,11 @@ impl World {
             summon_power_pct: 100,
             floor_rand: 0,
         };
-        let over = damage_finish_lazy(&finish, || self.next_rand() as u16);
-        Some(over.min(9999) as u16)
+        let net = damage_finish_net(&finish, || self.next_rand() as u16);
+        if net < 0 {
+            return Some(ROLL_ALIAS_KILLS);
+        }
+        Some(net as u16)
     }
 
     /// Roll a player Seru-magic summon's damage through the faithful summon
@@ -355,12 +374,7 @@ impl World {
     ///
     /// PORT: FUN_801dd0ac (summon branch, live wiring; pure kernel in
     /// battle_formulas::summon_predamage_lazy)
-    pub(in crate::world) fn player_summon_predamage(
-        &mut self,
-        caster: u8,
-        target: u8,
-        spell_id: u8,
-    ) -> Option<u16> {
+    pub fn player_summon_predamage(&mut self, caster: u8, target: u8, spell_id: u8) -> Option<u16> {
         use legaia_engine_battle_vm::battle_formulas::{
             DamageFinish, DefenderResist, SummonRollActor, damage_finish_lazy,
             summon_predamage_lazy,

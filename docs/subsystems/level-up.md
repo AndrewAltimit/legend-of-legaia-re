@@ -58,7 +58,7 @@ scaled = pool - (pool >> 2)                 ; 3/4
 share  = ceil(scaled / living_members)      ; 0 in a no-reward fight
 ```
 
-Dead members receive nothing and leave the divisor. The share `s6` is stored to `gp+0xA04` at `0x8004F684` and is the figure the report window prints, so the window shows **one member's share**, not the battle's EXP: a 48-EXP monster beaten by a party of three reads `12` (`noa_levelup_banner` capture).
+Fallen and Stoned members receive nothing and leave the divisor; a fallen member stands back up at this point (`0x8004F390`). The share `s6` is stored to `gp+0xA04` at `0x8004F684` and is the figure the report window prints, so the window shows **one member's share**, not the battle's EXP: a 48-EXP monster beaten by a party of three reads `12` (`noa_levelup_banner` capture).
 
 Port: `battle_formulas::victory_exp_per_member` (`crates/engine-battle-vm/src/battle_formulas/victory.rs`), carried as `BattleRewards::xp_share`.
 
@@ -338,7 +338,7 @@ The maxima grow on the base window only: growing the live maximum and copying it
 After a battle win with `BattleEndCause::MonsterWipe`:
 
 1. The engine calls `World::apply_battle_xp(xp_reward)` (`crates/engine-core/src/world/items_arts/battle_spoils.rs`).
-2. It enumerates the surviving party members (slots whose `BattleActor::hp > 0`), scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). Dead members receive zero XP and leave the divisor.
+2. It enumerates the party members standing and not Stoned, scales the summed reward by 3/4 (`v - (v >> 2)`) and ceiling-divides it among them (`battle_formulas::victory_exp_per_member`). The others receive zero XP and leave the divisor.
 3. It calls `LevelUpTracker::grant_xp(char_id, share)` for each survivor.
 4. `grant_xp` accumulates XP and checks the XP table for threshold crossings. A multi-level jump collapses into a single `LevelUpResult` with summed gains.
 5. For each level-up, `LevelUpTracker::apply_to_record(result, record)` grows the **base** `hp_max` / `mp_max` (`+0x11C` / `+0x11E`, the window the applier's `+0x6E4` / `+0x6E6` name, capped `9999` / `999`), and `apply_battle_xp` then rebuilds the live maxima from it the way the stat aggregator `FUN_80042558` does, equipment boosts included. It leaves `hp_cur` and `mp_cur` where the fight left them ([a level-up is not a heal](#a-level-up-is-not-a-heal)), grows the six battle stats in the record-side window (`+0x11C..+0x12D`) and mirrors them into the live window (`+0x110..+0x11B`), matching the applier's write-then-mirror. It writes `result.new_level` to the `+0x130` level byte via `CharacterRecord::set_level`.
@@ -352,11 +352,11 @@ After a battle win with `BattleEndCause::MonsterWipe`:
 
 Without a disc the tracker falls back to `StatGain::default()`, a flat placeholder of +10 HP / +5 MP per level with no battle-stat growth. `with_stat_gains([StatGain; 4])` / `with_stat_curves` override per slot, and `with_seru_roster` (flat table in `crates/engine-battle/src/seru_stats.rs`) is the legacy Seru-roster convenience path. No per-level character stat table exists in `crates/gamedata`; the ground truth is the new-game seed plus the single-level capture.
 
-**Jitter is modelled and opt-in.** `LevelUpTracker::with_level_up_jitter(seed)` seeds a PSX BIOS-rand LCG (`BiosRand`: `seed = seed×0x41C6_4E6D + 0x3039; (seed>>16)&0x7FFF`). The level-up pass then draws one `rand()` per stat per level in the applier's stat order (HP, MP, AGL, ATK, UDF, LDF, SPD, INT), including the draw when `jitter == 0` (`rand() % 1 == 0`), and applies the spread to the **unfloored** core (`level_gain_core_raw`) before the `max(1, …)` floor, as `FUN_801E9504` does.
+**The jitter runs on the world's `rand()` stream.** `World::credit_character_xp` lends `World::rng_state` to the tracker for the grant and takes it back, since retail's `rand()` has one seed. The level-up pass draws one `rand()` per stat per level in the applier's stat order (HP, MP, AGL, ATK, UDF, LDF, SPD, INT), including the draw when `jitter == 0` (`rand() % 1 == 0`), and applies the spread to the **unfloored** core (`level_gain_core_raw`) before the `max(1, …)` floor, as `FUN_801E9504` does.
 
 The per-level gain itself is one kernel, `levelup::jittered_level_gains`, which the tracker's jitter pass and the minigames page's Muscle Dome fighter (a new-game template levelled to the picked level, on a stream seeded by the leg's seed) both run.
 
-It is off by default: with no jitter RNG installed the tracker applies only the deterministic core and draws zero `rand()`, so replay and determinism oracles stay bit-identical. Reproducing a *specific* retail level-up bit-exactly would also need the BIOS-rand state at that moment, which is runtime state and not on the disc. The jitter mean is 0, so default totals are unbiased.
+A tracker with no stream lent (`jitter_rng: None`, its state outside a grant) applies only the deterministic core and draws nothing. A disc-gated differential runs `FUN_801E9504` off the disc on the same stream and holds the record and the draw count equal ([`retail-kernel-differential.md`](../tooling/retail-kernel-differential.md)).
 
 ### Hydration on load
 
@@ -388,7 +388,7 @@ The banner shows HP and MP only. The other six gains are applied to the record b
 | `stat_gains` | `[StatGain; 4]` | Flat per-level gain per slot |
 | `stat_curves` | `[StatGrowthCurve; 4]` | Per-level growth curve per slot |
 | `growth_tables` | `Option<GrowthTables>` | Parsed SCUS tables, kept for the jitter pass |
-| `jitter_rng` | `Option<BiosRand>` | Opt-in jitter RNG |
+| `jitter_rng` | `Option<BiosRand>` | The lent `rand()` stream |
 
 `LevelUpResult`:
 

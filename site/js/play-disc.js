@@ -98,13 +98,16 @@
       this.closed = false;
     }
 
-    /* The image's first read. `prog` is the page's LoadProgress. */
-    static async open(source, prog, text) {
+    /* The image's first read. `prog` is the page's LoadProgress. `beforeWhole`
+     * runs ahead of reading a file whole: it may throw, so a 2 GB archive is
+     * refused without reading it. */
+    static async open(source, prog, text, beforeWhole) {
       const blob = blobOf(source);
       let layout = null;
       if (blob) {
         try { layout = await layoutOf(blob); } catch (e) { layout = null; }
       }
+      if (!layout && beforeWhole) await beforeWhole();
       const disc = new PlayDisc(blob, layout);
       if (layout) {
         disc.head = await prog.read(blob.slice(0, layout.protEnd * RAW), text);

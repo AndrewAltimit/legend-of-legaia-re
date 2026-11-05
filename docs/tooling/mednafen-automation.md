@@ -441,6 +441,12 @@ the diff naturally surfaces the camera/cursor-state addresses. Useful
 for finding `cursor_x` / `cursor_y` style globals that show up nowhere
 in static analysis.
 
+## Stepping a run frame by frame
+
+mednafen has no breakpoints, but a run can be paused, advanced and saved under `xdotool` on a private
+X server, so RAM can be read per frame and set against the same run's `-soundrecord` output, the state
+being sample `0`. `scripts/mednafen/xa-start.py` does this to time a CD-XA clip against its starter.
+
 ## Recording new scenarios
 
 Mednafen movie files (`.mcm`) record bit-exact controller input from

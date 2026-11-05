@@ -424,6 +424,14 @@ field part pass's colour half. Disc pins:
 The retail visible tile window is not applied - the port draws the kingdom
 whole.
 
+**The flat table is not a flat frame.** `FUN_800271A8(0, 0)` empties the curvature
+table and nothing else: the continent still goes through the overworld leaves, so
+its depth cue and sort bucket read `SZ` as they do on the walk view, and at the
+survey camera's `SZ` the cue lifts the ground to about `0xC4`. The port's frame
+scale carries the flag (`overworld_curvature::FLAT_TABLE_SCALE`), since a scale of
+`0` would also make each ground cell a field cell that paints over the decorations
+and the pointer. Scored on `world_map_display_map01_retail`.
+
 ### `FUN_801EAD98` - world map debug menu renderer (7280 bytes)
 
 Entry: `(ctx_ptr, x, y, scroll_idx, max_visible)`. Renders the vertically

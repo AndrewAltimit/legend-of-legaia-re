@@ -1242,7 +1242,7 @@ SIM_PAIRS: list[dict[str, object]] = [
         "hall's tilted video walls inside the back wall: the page drew brick "
         "where the window drew the dancer screens, with every tier green",
         "sites": {
-            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "build_dance_venue_gpu"),
+            "native": ("crates/engine-shell/src/window/minigames/dance.rs", "append_venue_draw"),
             "web": (WEB_MINIGAMES_DANCE, "append_draw"),
         },
         "mode": "symbols_all",
@@ -1553,6 +1553,25 @@ SIM_PAIRS: list[dict[str, object]] = [
         },
         "mode": "symbols_all",
         "symbols": ["rumble_frame"],
+    },
+    {
+        "what": "a cast's frames build on earlier ones, native vs play page - "
+        "each hands its one target that outlives a frame the world's answer "
+        "(`World::cast_frame_persists`) and draws the drain under the scene "
+        "(`World::cast_armed_wash_prim`); the additive arms read dim on a host "
+        "that only clears",
+        "sites": {
+            "native": (
+                "crates/engine-shell/src/window/event_handler/redraw_overlay.rs",
+                "build_screen_prims",
+            ),
+            "web": (
+                "crates/web-play/src/play_battle/screen_prims.rs",
+                "rebuild_screen_geom",
+            ),
+        },
+        "mode": "symbols_all",
+        "symbols": ["cast_frame_persists", "cast_armed_wash_prim"],
     },
 ]
 

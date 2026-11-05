@@ -33,13 +33,31 @@ use std::collections::BTreeMap;
 /// clip file).
 pub const SHOUT_CSLOTS: usize = 3;
 
-/// Modeled CD-controller response delay between the shout request (issued on
-/// the art's animation-start frame) and the first audible XA sample, in SPU
-/// samples (44.1 kHz). ~150 ms - the seek + first-sector-read latency of the
-/// retail CD path. This is what keeps the shout **trailing** the art
-/// animation instead of leading it (the recomp-verified retail contract:
-/// XA audio arrives after the animation begins).
-pub const SHOUT_CD_RESPONSE_DELAY: u32 = 6_615;
+/// The drive's start with its head parked in the clip's file, `77` ms in SPU
+/// samples, from the clip starter's call to the file's first sector reaching the
+/// CD input. Fourteen mid-cast mednafen runs read `62` or `88` ms once
+/// [`XA_CHANNEL_SECTOR`] is off (`scripts/mednafen/xa-start.py`); this is their mean.
+pub const XA_START_PARKED: u32 = 3_396;
+/// The same start with the head parked in another file, `371` ms: four mid-cast
+/// mednafen runs, `370` to `372` ms, whose modules seek `XA8` and then play `XA7`.
+pub const XA_START_SEEKING: u32 = 16_361;
+/// One sector at double speed, `1 / 150` s, in SPU samples. A clip's channel `n`
+/// has its first sector `n` sectors into the file, so its audio opens that much
+/// later.
+pub const XA_CHANNEL_SECTOR: u32 = 294;
+
+/// SPU samples between a clip's start and its first audible sample: the drive's
+/// response, then the channel's place in the interleave. This keeps a shout
+/// trailing the art's animation. The figures are mednafen's drive model: no
+/// console recording has been compared.
+pub const fn xa_start_delay(channel: u32, seeking: bool) -> u32 {
+    let base = if seeking {
+        XA_START_SEEKING
+    } else {
+        XA_START_PARKED
+    };
+    base + channel * XA_CHANNEL_SECTOR
+}
 
 /// One decoded mono shout clip (a single XA channel of a character's bank).
 #[derive(Debug, Clone, Default)]

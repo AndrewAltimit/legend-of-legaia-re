@@ -185,7 +185,7 @@
       <path class="dg-edge" d="M525 64 L525 80" marker-end="url(#bkf-a2)"/>
       <rect class="dg-node-accent" x="430" y="148" width="190" height="48" rx="4"/>
       <text class="dg-label" x="525" y="169">Open</text>
-      <text class="dg-sub" x="525" y="185">cooldowns decay</text>
+      <text class="dg-sub" x="525" y="185">you throw, it answers</text>
       <path class="dg-edge" d="M525 130 L525 146" marker-end="url(#bkf-a2)"/>
       <rect class="dg-node" x="430" y="214" width="190" height="48" rx="4"/>
       <text class="dg-label" x="525" y="235">Committed</text>
@@ -220,7 +220,7 @@
     </tbody>
   </table>
   </div>
-  <p>The resolver tests in a fixed order: a special on either side wins outright (P1 checked first); both idle, or either side still mid-commit, is undecided; equal types draw; otherwise the beats relation. A draw books damage to <strong>both</strong> fighters. An attack never lands on a fighter who has not thrown. The resolver also has a settle timer, but it is vestigial: nothing in the overlay ever stores a positive value to it, so exchange pacing comes from the two per-fighter cooldowns.</p>
+  <p>The resolver tests in a fixed order: a special on either side wins outright (P1 checked first); both idle, or either side still mid-commit, is undecided; equal types draw; otherwise the beats relation. A draw books damage to <strong>both</strong> fighters. An attack never lands on a fighter who has not thrown. The resolver also has a settle timer, but it is vestigial: nothing in the overlay ever stores a positive value to it, so exchange pacing comes from the clips.</p>
 
   <h3>Damage</h3>
 <pre><code>hit = power + power * ATK / 100
@@ -294,6 +294,8 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
     <li><strong>Slow motion.</strong> A special commit lowers the rate divisor from 8 to 4, which halves both fighters&rsquo; steps for the rest of the round. The impact effects run on the same divisor and slow with them.</li>
     <li><strong>What a fighter shows</strong> is a separate display clip. An attack plays out to its last frame even after its exchange is booked, then drops to the idle; a hit reaction plays out, holds one tick and idles; a knockdown holds until the next round setup.</li>
   </ul>
+  <h3>When the CPU throws</h3>
+  <p>The opponent never leads. It throws only in answer to your throw, on the same frame and blind to what you picked, so the duel stands still until you press, and a player who holds back is never attacked. Its answer pulls it out of its own hit reaction; yours does not. A struck player&rsquo;s pad stays masked until the reaction clip ends, and a throw lands from the idle or straight after a booked hit, which is how a winning attack chains. The two attacks stand after a booking, so an attack with a second strike frame can hit twice on one exchange.</p>
   <h3>How the CPU picks</h3>
   <p>Each opponent mixes random throws with a canned pattern: a NUL-terminated byte list in its roster record at <code>+0x4C</code>. Every pick:</p>
   <ol class="steps steps-vertical">
@@ -381,7 +383,7 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
   <ul class="bullets">
     <li><strong>Learn the counters.</strong> Circle answers Square, Cross answers Circle, Square answers Cross. A draw hurts both of you.</li>
     <li><strong>Read the pattern.</strong> Half the time an idle CPU starts its pattern, and once started it plays the whole list back to front whatever it rolls. A repeated sequence from an opponent is its pattern; counter it in order until it runs out.</li>
-    <li><strong>Keep a streak going.</strong> Every consecutive hit on the same fighter adds another <code>0x40</code>, and the longest streak you land also feeds the combo score row. Losing a single exchange ends it: the counter belongs to the fighter taking the hits and clears when that fighter wins one.</li>
+    <li><strong>Keep a streak going.</strong> Every consecutive hit on the same fighter adds another <code>0x40</code>, and the longest streak you land also feeds the combo score row. Losing a single exchange ends it, and so does letting the opponent recover: the counter belongs to the fighter taking the hits and clears when that fighter wins one or a clip of theirs ends.</li>
     <li><strong>Low HP is dangerous both ways.</strong> Below <code>0x280</code> HP a fighter rolls for a critical at its own roster chance - including the opponent. Finishing a foe who has dropped into that band removes the comeback threat.</li>
     <li><strong>Don&rsquo;t drop a round.</strong> A match where the opponent won no round tallies 30,000 instead of 20,000, and a round in which you take no damage raises PERFECT!!.</li>
     <li><strong>Bank before you gamble the run.</strong> NEXT GAME keeps the whole pot at stake; a single lost match zeroes it. PAY OUT is the only way coins reach the bank.</li>
@@ -476,7 +478,6 @@ critical pending on the winner:  dmg = power &lt;&lt; 7</code></pre>
   <p>The play hosts run the real ladder inside one visit: NEXT GAME seats the roster record the rung fold names, the tally drains into the same winnings accumulator retail keeps, and the exit&rsquo;s return warp pays it into the coin bank. Leaving the duel before the tally finishes banks the remainder.</p>
   <h3>Known differences from retail</h3>
   <ul class="bullets">
-    <li>Exchange recovery is immediate, where retail sequences it through the per-action keyframes; cooldowns pace re-entry.</li>
     <li>The result banners last for the round-over hold, not retail&rsquo;s spawn template (no library capture holds a result screen).</li>
     <li>The play hosts draw the tally&rsquo;s digit strips as font glyphs, and the VITAL bars untextured with the system texel&rsquo;s grey folded into their colour.</li>
     <li>The minigames page draws the duel HUD page-side rather than through the shared builder.</li>

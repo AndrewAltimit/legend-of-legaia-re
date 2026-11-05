@@ -710,10 +710,10 @@ flowchart TD
     M -- "ring 0x28, arts 0x50, item/magic" --> C0["Case 0 member close-up"]
     M -- "target cursor" --> C13["Case 1 enemy / case 3 ally"]
     A -- "yes, ctx 7" --> S{"State band"}
-    S -- "setup 0x00 0x0B" --> OR["Idle orbit, no framing call"]
+    S -- "setup 0x00 0x0A 0x0B" --> OR["Last framing stands, yaw orbits"]
     S -- "seed 0x0C, action 0x14..0x48" --> C6["Case 6 action framing"]
     S -- "strike 0x1E..0x20" --> C78["Case 7 two-shot or case 8"]
-    S -- "done 0x50 0x51" --> DN["Category fork: 6, 8 or orbit"]
+    S -- "done 0x50 0x51, gate 0x5A" --> DN["Category fork: 6, 8 or orbit"]
     S -- "0x52 0xFD" --> C8["Case 8"]
     S -- "run 0x64..0x67" --> C9
     C6 --> T["Shared tail"]
@@ -730,9 +730,31 @@ flowchart TD
     PA --> W
 ```
 
-`0x5A`, the end-of-action gate, arms nothing; the far framing takes over there
-(`evil_medallion_rage_battle`, parked at `ctx[7] == 0x0A` with the flow byte
-`0xFF` between actions, reads case 9's framing over its `±825` seats).
+**Between two actors of a round the camera stays on the last shot.** The
+end-of-action gate `0x5A` arms the finished actor's framing once more
+(`0x801E6428..0x801E6470`): case `8` for an Attack with `ctx[+0x6CE]` still
+zero, nothing for a Run, case `6` otherwise. The setup states `0x00`, `0x0A` and
+`0x0B` arm nothing: the tween walks on and the yaw orbits by `2 * step` a pass,
+through the prologue's store (`0x801E2A3C..0x801E2A6C`) in `0x00` / `0x0B` and
+`0x0A`'s own (`0x801E5BE4..0x801E5C04`). The next actor's seed `0x0C` then
+tweens from that shot to its own case 6 (`0x801E2D50`).
+
+A round's first actor is the only one that stands on the far framing in those
+states, the one the prompt's case `9` left. Over the library's states parked in
+`0x0A` with a spent key on `ctx[+0x13]`, every tween table holds the last
+actor's endpoints with the walker landed:
+
+| State | Last actor | Shot |
+|---|---|---|
+| `kor_ghost_knight_pre_v_windhash` | Noa, Spirit, style `2` | case 6: pitch `128`, `TR (0, 1024, 3276)`, focus her seat |
+| `noaru_barra_v2_pre_multi_cutter` | a monster's spell | case 6: pitch `0`, `TR (0, 1280, 4915)`, focus its seat |
+| `chitei2_kemaro_v2_pre_lava_breath` | a monster's strike on Noa | case 8: pitch `128`, `TR (0, 768, 2457)`, focus her body pair |
+| `taiku_topaz_pre_hyper_heal` | none this round | case 9: pitch `32`, `TR (0, 1280, 8712)` |
+
+Port: `battle_cam_script::end_of_action_phase` and
+`BattleCamera::set_phase_on_state`. The engine's SM rests on `0x5A` through the
+next round's prompt, so `battle_cam_inputs` hands the gate to the framing only
+while the round is executing.
 
 ### Framing cases
 
@@ -1075,7 +1097,10 @@ the acting actor and its target (`actor[+0x1DD]` through the actor table
   gated on `_DAT_800846C0 == 0` and then per seat: a party member on the art
   slot `+0x1D9 == 0x11`, a monster on `ctx[+0x243]`, the solo byte `+0x87` of
   its committed clip (`0x801D6738..0x801D6778`). The commit stores that byte
-  after its pass's arm, so the pull-in opens one pass later.
+  after its pass's arm, so the pull-in opens one pass later. The latch stands
+  until `FUN_801E93C8` clears it, which the strike band's tail runs on nearly
+  every pass and which a monster's `+0x87` holds shut for as long as its seat
+  sits on that clip (`0x801E9458..0x801E94A4`).
 
 **Case 8** is the same shape aimed at the target alone: an extra `-0x100` on
 the yaw base, `focus.y` forced to the stage floor, a `-0x600` unwrap, and a
@@ -1182,8 +1207,8 @@ monster's spell) reads pitch `0`, `TR (0, 1275, 4820)` - one tween step short
 of case 6's `(0, 0x500, prescale(0xC00) = 4915)` - with the focus on the
 caster's own seat and the yaw `ctx[+0x6DA] − actor[+0x46]`.
 
-The other bands, for reference: the setup band (`0x00`, `0x0B`) arms nothing
-and runs the orbit; the Run band (`0x64..=0x67`) arms case `9` plus the orbit.
+The other bands, for reference: the setup band (`0x00`, `0x0A`, `0x0B`) arms
+nothing and runs the orbit over the last framing; the Run band (`0x64..=0x67`) arms case `9` plus the orbit.
 
 Port: `battle_cam_script::done_band_phase` over `DoneBandInputs`, which both
 hosts fill from the acting actor; the Done band films per category and the tail
@@ -1221,8 +1246,21 @@ Port: `battle_attack_camera` runs the thirteen arm bodies and owns the ramp
 quartet; `battle_cam_script`'s Action phase steps the live pose toward whatever
 the arms produce, each frame, on the arm's own duration. Both hosts feed it the
 same three per-actor channels: `actor[+0x1DB]` as `BattleActor::latched_anim`,
-`actor[+0x21B]` as `hit_count_bound`, and `actor[+0x22C][+0x68]` from the
-battle animation player's cursor, `<< 4` into retail's sixteenths.
+`actor[+0x21B]` as `hit_count_bound`, and `actor[+0x22C][+0x68]` as the battle
+animation player's cursor in retail's own sixteenths, sub-keyframe bits included
+(`cursor_sixteenths`). The cast driver's case `0xA` reads the same word
+([below](#the-cast-drivers-clip-clock)).
+
+### The cast driver's clip clock
+
+`FUN_801DC0A0`'s case `0xA` aims its yaw at `node[+0x68] * 2 + 0x700 - facing`
+(`0x801DC8B8..0x801DC8CC`) on every pass of the magic band, so the endpoint climbs
+with the clip: `24` units a pass at the usual cursor step of `12`. The arm reads the
+word before the pass's anim tick, so a table holds the cursor of the ring's slot `1`,
+one step behind the live word. `battle_noaru_slippery_v2_poisonous_breath_mid_cast`
+holds endpoint `3368` under cursor `72`, and `3368` is `60 * 2 + 0x700 - 2640`.
+Rounding the cursor down to a keyframe aims up to `30` units short
+(`battle_rugi_slippery_poisonous_breath_mid_cast`).
 
 ### The Battle Camera option
 
@@ -1288,12 +1326,49 @@ vsyncs, the walker scales each increment by it, a tween armed over `a3` frames
 lands in `a3 / step` steps (`frames_to_steps`; `steps_of` for the glides
 authored in default-step steps), and the idle orbit turns `2 * step` a step.
 
-Play keeps the default. A replay that knows retail's step installs it while the
-action SM sits in one state (`World::seed_battle_frame_step`). The
+Play keeps the default outside a summon band. Inside one, each module arm runs
+on a step read off a retail recording of the cast
+(`legaia_engine_cast::cast_module_frame_step`, `World::apply_cast_arm_frame_step`):
+a band opens at `1` and its whole-screen arms read `4`. The table is a measurement
+standing in for the frame's cost, not game data and not a model of the cause, and
+the [next section](#what-the-arm-step-table-is) says how far it holds.
+The capture band is not in the table. A replay that knows retail's step installs it
+while the action SM sits in one state (`World::seed_battle_frame_step`). The
 retail-compare drive does so for a replayed cast caught in the summon close-up
 `0x33` / `0x34`, where each pass re-arms case `0x12`'s three-frame tween: at
 step `3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
+
+<a id="what-the-arm-step-table-is"></a>
+
+**What the arm step table is.** One recording per cast (`party_basic_attack_vs_gobu_gobu`),
+the step each arm spends the most vsyncs on. Measured against that and three other fights:
+
+- **It is not the box.** Repeat recordings of Iota, Ozma, Terra and Theeder read the same
+  per-arm histograms within a few vsyncs: the cost is the emulated machine's (CPU and
+  GPU cost model of PCSX-Redux), not the host's. No hardware reading stands behind it.
+- **It holds across fights where the screen is the effect's.** Gimard in `battle_map01`,
+  `battle_tower` and `battle_kor` reads arms 3..11 as the table's fight does, within a few
+  vsyncs, and Ozma's arms 6..20 and 24 read `4` in `battle_kor` too.
+- **It does not where the stage shows.** Gimard's arm 2 reads `1` here and `1` then `2`
+  on two of the other stages; arm 12 spends 244 vsyncs at `2` in `battle_kor` and 10 here;
+  Zenoir's arm 6 and 7 are mixed `3`/`4` on two stages and nearly all `4` on a third.
+- **The step moves inside an arm.** Gimard's arm 6 runs `4` for 64 vsyncs, `3` for 46
+  and `1` for 70, as the sixteen-frame ring empties, and the table holds one value. Over
+  the 29 recordings the table agrees with the recording on 91% of band vsyncs.
+
+The cause is the frame's cost, which a table of arms can only sample. Modelling it would
+take a per-frame cost out of the engine's own draw lists through the sixteen-entry ring;
+the corpus states hold the ring (`zenoir_summon_mid_cast` reads a clamped frame in arm 3,
+where the table says `1`), and those are the data to calibrate one against.
+
+A corpus replay gates on a word and lands on a pass, so a coarser step moves the frame it
+lands on. `vera_summon_mid_cast` gates on fade age `70` and arm 3: without the table it
+stops at tick 544 on step `2`, with it at tick 546 on arm 4's step `4`, the same fade age
+one pass on (`1.0` to `.969`). `gimard_burning_attack`'s gate is the walk yaw in arm 11, and
+at step `4` a pass moves it by 192 (`.863` to `.73`). Retail's own ring reads `4` there, so
+the table's value is right. That the replay's lattice is what moved is the reading of both
+falls, not a measurement of Gimard's; emptying the row restores both.
 
 **The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
 The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at

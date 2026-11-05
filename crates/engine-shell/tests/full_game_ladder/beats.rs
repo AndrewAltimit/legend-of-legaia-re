@@ -589,6 +589,8 @@ pub(super) fn play_beats(
             // before stepping on. So is any walk in a scene where such a band
             // is live, since the route to another beat can cross it: the
             // walk to `jagaroom` P2[4] runs over P2[9]'s tiles.
+            PLAYING_BEAT.with(|b| b.set(Some(rec)));
+            FIGHT_BEAT.with(|b| b.set(Some(rec)));
             if pad_hand()
                 && boss_band_live
                 && let Some(s) = pad_ready(session)?
@@ -596,7 +598,6 @@ pub(super) fn play_beats(
                 finish(session, log, ran);
                 return Ok(Some(s));
             }
-            PLAYING_BEAT.with(|b| b.set(Some(rec)));
             let r = if pad_hand() {
                 // A band is often several tiles wide and walled on some of
                 // them (`retockin` P2[42], Lord Saryu's audience, spans
@@ -674,6 +675,10 @@ pub(super) fn play_beats(
                 // does before such a band. Koru (`nilboa` P2[20], see
                 // [`KORU_MONSTER_ID`]) is met straight off the tunnel beats
                 // at 50..80% and is a race no heal turn can be spared in.
+                if fight_band_tiles(session).contains(&(i32::from(tile.0), i32::from(tile.1))) {
+                    // The seated pass rolls no encounters to charge the gauge on.
+                    pad_dress_for_race(session, false);
+                }
                 if party_hp_permille(session) < 900
                     && fight_band_tiles(session).contains(&(i32::from(tile.0), i32::from(tile.1)))
                 {
@@ -684,6 +689,7 @@ pub(super) fn play_beats(
             };
             PLAYING_BEAT.with(|b| b.set(None));
             let r = fight_committed(session, r);
+            FIGHT_BEAT.with(|b| b.set(None));
             // A band no member could walk to stays on the list: a later
             // beat may open the way (`nilboa` P2[39], the warp at the far
             // end of one tunnel, drops its member beside the P2[2] band).

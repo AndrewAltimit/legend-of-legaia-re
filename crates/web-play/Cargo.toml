@@ -51,6 +51,7 @@ legaia-engine-world-views.workspace = true
 legaia-font.workspace = true
 legaia-game-tables.workspace = true
 legaia-iso.workspace = true
+legaia-app-theme.workspace = true
 legaia-mdec.workspace = true
 legaia-minigame-formats.workspace = true
 legaia-render-kernels.workspace = true

@@ -27,7 +27,7 @@
 //! arithmetic (`damage_finish`: equipment elemental-resistance halving, the
 //! guard halve, the no-damage `rand%9+8` floor, the summon power-percent scale,
 //! the 9999 cap) + the spirit-gauge fill (`spirit_gauge_fill`). The finisher's
-//! state-mutating tail - damage-popup accumulator, AI revenge table, MP drain,
+//! state-mutating tail - damage-popup accumulator, per-seat readout window, MP drain,
 //! and the per-element stat-debuff switch - reads/writes ~20 battle globals and
 //! stays in the live battle context; see the REF below + `damage_finish` docs.)
 //! The four routines below carry their `// PORT:` tag on the individual `pub

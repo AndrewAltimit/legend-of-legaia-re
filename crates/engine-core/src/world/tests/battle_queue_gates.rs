@@ -34,6 +34,8 @@ fn arts_world(equip: [u8; 8]) -> World {
         w.actors[i].battle.hp = 500;
         w.actors[i].battle.max_hp = 500;
         w.actors[i].battle.liveness = 1;
+        // The walk takes an art only when Spirit covers its price.
+        w.actors[i].battle.spirit_gauge = 100;
     }
     w
 }
@@ -85,6 +87,9 @@ fn an_occupied_ra_seru_slot_arms_the_marker_and_the_row_lands() {
     equip[3] = 0x40;
     let mut w = arts_world(equip);
     assert!(w.miracle_marker_armed_for(0));
+    // The walk matches the Miracle off the bank's first record.
+    let rec = walk_record(0x1B, &vahn_miracle());
+    w.set_art_record(legaia_art::Character::Vahn, rec.action, rec);
     let (queue, _, _) = w.build_arts_action_queue(0, &vahn_miracle());
     let row = vahn_miracle_queue();
     assert_eq!(

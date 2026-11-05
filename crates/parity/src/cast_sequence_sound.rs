@@ -77,6 +77,9 @@ pub struct LoneCue {
     pub key: Key,
 }
 
+/// The action state that ends a done band (`0x50`, `0x51`).
+const DONE_BAND_LAST: u8 = 0x51;
+
 /// The sound channel's result.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SoundReport {
@@ -92,6 +95,10 @@ pub struct SoundReport {
     pub score: f64,
     /// The same over the id multisets alone, whatever the time.
     pub id_score: f64,
+    /// The CD-XA clips on the same clock: retail's starter calls off a
+    /// `--sfx-callers` log against the engine's `xa.csv`. `None` without the log.
+    #[serde(default)]
+    pub voice: Option<Box<SoundReport>>,
 }
 
 fn read_cues(path: &Path, retail: bool) -> Result<Vec<Cue>> {
@@ -135,13 +142,78 @@ pub fn compare_dirs(retail: &Side, engine: &Side, tolerance: u64) -> Result<Opti
     if !rp.exists() || !ep.exists() {
         return Ok(None);
     }
-    Ok(Some(compare(
+    // `spell = 0x00` in the probe's manifest: `LEGAIA_PHYSICAL`, no action injected.
+    let physical = std::fs::read_to_string(retail.dir.join("manifest.txt"))
+        .is_ok_and(|m| m.lines().any(|l| l.replace(' ', "") == "spell=0x00"));
+    let mut report = compare(
         retail,
         engine,
         &read_cues(&rp, true)?,
         &read_cues(&ep, false)?,
         tolerance,
-    )))
+        physical,
+    );
+    let (rv, ev) = (retail.dir.join("sfxcall.csv"), engine.dir.join("xa.csv"));
+    if rv.exists() && ev.exists() {
+        report.voice = Some(Box::new(compare(
+            retail,
+            engine,
+            &read_voice_calls(&rv)?,
+            &read_voice_clips(&ev)?,
+            tolerance,
+            physical,
+        )));
+    }
+    Ok(Some(report))
+}
+
+/// A `--sfx-callers` log's dispatcher calls that take the CD-XA arm
+/// (`FUN_8004FCC8`, `id >= 0x100`).
+fn read_voice_calls(path: &Path) -> Result<Vec<Cue>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    Ok(text
+        .lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split(',').map(str::trim).collect();
+            let (t, id) = (f.first()?.parse().ok()?, f.get(2)?.parse().ok()?);
+            (*f.get(1)? == "dispatch" && id >= 0x100).then_some(Cue {
+                t,
+                id,
+                st7: 0,
+                phase: 0,
+            })
+        })
+        .collect())
+}
+
+/// The engine's clip requests (`tick,st7,phase,clip,channel,dur`), as the cue
+/// id the dispatcher makes each from (`0x8004FCC8..0x8004FD7C`: slots `0x1A`,
+/// `0x1B`, `0x1C` remap from `1`, `3`, `5`).
+fn read_voice_clips(path: &Path) -> Result<Vec<Cue>> {
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    Ok(text
+        .lines()
+        .skip(1)
+        .filter_map(|l| {
+            let f: Vec<i64> = l.split(',').filter_map(|v| v.trim().parse().ok()).collect();
+            let [t, st7, phase, clip, channel, ..] = f[..] else {
+                return None;
+            };
+            let slot = match clip {
+                0x1A => 1,
+                0x1B => 3,
+                0x1C => 5,
+                n => n,
+            };
+            Some(Cue {
+                t: t as u64,
+                id: (0x100 + slot * 8 + channel) as i32,
+                st7: st7 as u8,
+                phase: phase as u8,
+            })
+        })
+        .collect())
 }
 
 /// Match two cue lists (see the module docs).
@@ -151,20 +223,31 @@ pub fn compare(
     rcues: &[Cue],
     ecues: &[Cue],
     tolerance: u64,
+    physical: bool,
 ) -> SoundReport {
     // Retail logs from the inject; the window is the engine's, from cast
-    // begin (the first retail frame row) to the end of the recording.
+    // begin (the first retail frame row) to the end of the recording. A physical
+    // recording has no inject: its action is the state's own, from its first
+    // vsync. The first frame row can be a later seat's action, when the state
+    // stood past `0x1E`.
     let first = retail
         .rows
         .iter()
-        .find(|r| r.shot.is_some())
+        .find(|r| physical || r.shot.is_some())
         .map_or(0, |r| r.t);
+    // The engine's physical recording stops past its first done band. Retail's
+    // runs on into the next seats' actions, whose states read the same.
+    let settled = retail.rows.iter().position(|r| r.st7 == DONE_BAND_LAST);
+    let first_action_end = settled
+        .filter(|_| physical)
+        .and_then(|at| retail.rows[at..].iter().find(|r| r.st7 != DONE_BAND_LAST))
+        .map_or(u64::MAX, |r| r.t);
     let retail = Side {
         dir: retail.dir.clone(),
         rows: retail
             .rows
             .iter()
-            .filter(|r| r.t >= first)
+            .filter(|r| r.t >= first && r.t < first_action_end)
             .cloned()
             .collect(),
     };
@@ -185,6 +268,16 @@ pub fn compare(
     let rs = retail.segments();
     let es = engine.segments();
     let to_engine: BTreeMap<usize, usize> = align(&rs, &es).into_iter().collect();
+    // Only the span both sides recorded is compared: a `--physical` retail
+    // recording runs on into the next actions and the engine stops at its first
+    // done band, and a capped retail recording stops inside a long arm.
+    let (rcues, ecues) = match to_engine.iter().next_back() {
+        Some((&ri, &ei)) => (
+            rcues.into_iter().filter(|c| c.t <= rs[ri].end).collect(),
+            ecues.into_iter().filter(|c| c.t <= es[ei].end).collect(),
+        ),
+        None => (rcues, ecues),
+    };
     let clock = retail.game_clock();
     let game = |t: u64| -> u64 {
         clock
@@ -245,6 +338,7 @@ pub fn compare(
             }
         }
     }
+    let (matched, timing) = uncross(matched, timing, tolerance);
     let missing: Vec<LoneCue> = projected
         .iter()
         .zip(&done)
@@ -292,7 +386,53 @@ pub fn compare(
         timing,
         missing,
         extra,
+        voice: None,
     }
+}
+
+/// Re-deal each id's paired engine ticks in time order. Repeats of one id play
+/// in order on both sides, but the matcher takes the nearest free tick per
+/// retail cue and its two passes run apart, so two cues can pair crossed: `-6`,
+/// `-6` read as `+2`, `-14`. An id whose in-order pairs would match fewer keeps
+/// its picks: a lone step cue on one side is not two late ones.
+fn uncross(
+    matched: Vec<CuePair>,
+    timing: Vec<CuePair>,
+    tolerance: u64,
+) -> (Vec<CuePair>, Vec<CuePair>) {
+    let mut by_id: BTreeMap<i32, Vec<CuePair>> = BTreeMap::new();
+    for pair in matched.into_iter().chain(timing) {
+        by_id.entry(pair.id).or_default().push(pair);
+    }
+    let (mut matched, mut timing) = (Vec::new(), Vec::new());
+    for pairs in by_id.values_mut() {
+        pairs.sort_by_key(|p| p.projected_tick);
+        let mut ticks: Vec<u64> = pairs.iter().map(|p| p.engine_tick).collect();
+        ticks.sort_unstable();
+        let within = |d: i64| d.unsigned_abs() <= tolerance;
+        let picked = pairs.iter().filter(|p| within(p.dt)).count();
+        let ordered = pairs
+            .iter()
+            .zip(&ticks)
+            .filter(|(p, t)| within(**t as i64 - p.projected_tick as i64))
+            .count();
+        if ordered >= picked {
+            for (pair, tick) in pairs.iter_mut().zip(ticks) {
+                pair.engine_tick = tick;
+                pair.dt = tick as i64 - pair.projected_tick as i64;
+            }
+        }
+        for pair in pairs.iter() {
+            if within(pair.dt) {
+                matched.push(pair.clone());
+            } else {
+                timing.push(pair.clone());
+            }
+        }
+    }
+    matched.sort_by_key(|p| p.retail_vsync);
+    timing.sort_by_key(|p| p.retail_vsync);
+    (matched, timing)
 }
 
 /// The report's markdown section.
@@ -343,6 +483,18 @@ pub fn markdown(s: &SoundReport) -> String {
                 id(c.id),
                 c.t,
                 c.key
+            ));
+        }
+    }
+    if let Some(v) = &s.voice {
+        out.push_str(&format!(
+            "\n**CD-XA clips**: retail {}, engine {}.\n\n",
+            v.retail_cues, v.engine_cues
+        ));
+        for p in v.matched.iter().chain(&v.timing) {
+            out.push_str(&format!(
+                "- `{:#05x}`: retail vsync {}, projected tick {}, engine tick {}, dt {:+}\n",
+                p.id, p.retail_vsync, p.projected_tick, p.engine_tick, p.dt
             ));
         }
     }
@@ -399,10 +551,56 @@ mod tests {
         // 12 into module phase 3 on both sides.
         let rc = [cue(1000 + 30 + 12, 0x205)];
         let ec = [cue(4 + 13, 0x205)];
-        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE);
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
         assert_eq!(s.matched.len(), 1);
         assert_eq!(s.matched[0].dt, 1);
         assert_eq!(s.score, 1.0);
+    }
+
+    /// A recording whose state stood past `0x1E`: its frame rows open on a later
+    /// seat's action, and the cues to compare are the state's own.
+    #[test]
+    fn a_physical_recording_starts_at_the_states_own_action() {
+        let mut r = side(
+            &[(0x1F, 0, 10), (0x51, 0, 5), (0x1F, 0, 10), (0x51, 0, 5)],
+            1000,
+            true,
+        );
+        for row in &mut r.rows[..15] {
+            row.shot = None;
+        }
+        let e = side(&[(0x1F, 0, 10), (0x51, 0, 5)], 0, true);
+        let rc = [cue(1002, 0x51), cue(1020, 0x60)];
+        let ec = [cue(2, 0x51)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, true);
+        assert_eq!(s.score, 1.0, "{s:?}");
+    }
+
+    /// Retail plays on into the next action, and the engine's recording stops
+    /// at its first done band: the later cues are not missing.
+    #[test]
+    fn cues_past_the_shared_span_are_not_compared() {
+        let r = side(&[(0x1E, 0, 10), (0x50, 0, 5), (0x1E, 0, 10)], 1000, true);
+        let e = side(&[(0x1E, 0, 10), (0x50, 0, 5)], 0, true);
+        let rc = [cue(1002, 0x51), cue(1020, 0x60)];
+        let ec = [cue(2, 0x51)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
+        assert_eq!(s.score, 1.0, "{s:?}");
+        assert!(s.missing.is_empty());
+    }
+
+    /// Two repeats of one id `6` ticks early on both sides: the nearest-free
+    /// matcher pairs the first with the second's tick and leaves the second
+    /// `14` off. They play in order, so they pair in order.
+    #[test]
+    fn repeats_of_one_id_pair_in_order() {
+        let r = side(&[(0x35, 3, 100)], 1000, true);
+        let e = side(&[(0x35, 3, 100)], 0, true);
+        let rc = [cue(1000 + 20, 0x16), cue(1000 + 28, 0x16)];
+        let ec = [cue(14, 0x16), cue(22, 0x16)];
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
+        assert_eq!(s.matched.iter().map(|p| p.dt).collect::<Vec<_>>(), [-6, -6]);
+        assert!(s.timing.is_empty());
     }
 
     /// Same id far off is a timing miss; a wrong id is one missing and one
@@ -413,7 +611,7 @@ mod tests {
         let e = side(&[(0x28, 0, 200)], 0, true);
         let rc = [cue(10, 0x20), cue(50, 0x21)];
         let ec = [cue(40, 0x20), cue(50, 0x22)];
-        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE);
+        let s = compare(&r, &e, &rc, &ec, DEFAULT_TOLERANCE, false);
         assert!(s.matched.is_empty());
         assert_eq!(s.timing.len(), 1);
         assert_eq!(s.timing[0].dt, 30);
@@ -428,7 +626,7 @@ mod tests {
     #[test]
     fn silence_scores_one() {
         let r = side(&[(0x28, 0, 10)], 0, true);
-        let s = compare(&r, &r, &[], &[], DEFAULT_TOLERANCE);
+        let s = compare(&r, &r, &[], &[], DEFAULT_TOLERANCE, false);
         assert_eq!(s.score, 1.0);
     }
 }

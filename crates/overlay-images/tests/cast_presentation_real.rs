@@ -351,3 +351,22 @@ fn kemaro_arm_eight_ramps_its_wash_behind_the_countdown() {
         .admits(1032)
     );
 }
+
+/// PROT 0933's table points arm `0xD` at the phase bump every other arm jumps
+/// to (`0x801F8614`). That bump is no arm of its own: arm `0x13`'s two kills
+/// run on its pass, on retail's `0x801F81BC` / `0x801F81D4`.
+#[test]
+fn an_arm_that_is_the_shared_bump_does_not_hide_the_phase_store() {
+    let Some(root) = extracted_dir() else {
+        return;
+    };
+    let image = std::fs::read(root.join("PROT/0933_xxx_dat.BIN")).expect("PROT 0933");
+    let p = cast_presentation::decode(&image, image.len());
+    assert!(p.dispatches[0].holding.contains(&0x13));
+    let kills: Vec<_> = p
+        .arm_sites(None, 0x13)
+        .filter(|s| matches!(s.call, PresentationCall::ActorKill { .. }))
+        .collect();
+    assert_eq!(kills.len(), 2);
+    assert!(kills.iter().all(|s| s.timing == SiteTiming::Pass));
+}

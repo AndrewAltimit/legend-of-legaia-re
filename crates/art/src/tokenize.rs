@@ -379,10 +379,9 @@ fn group_end(records: &[BankArt<'_>], mut s3: usize) -> usize {
 /// (`0x20`) are her second and third Hyper Arts.
 ///
 /// A one-arrow full match ends the walk at this start
-/// (`0x801EF420..0x801EF434`, `s3` forced to the count). Not modelled, as in
-/// [`tokenize`]: the AP test that ends it the same way and the learn verdict
-/// that drops the run (`FUN_801EFBFC`), which decide whether a run is taken,
-/// not where its tokens land.
+/// (`0x801EF420..0x801EF434`, `s3` forced to the count). The Spirit test that ends it the same way and the
+/// learn verdict that drops the run are [`tokenize_bank_gated`]'s; this entry
+/// takes every run.
 ///
 /// PORT: FUN_801EED1C (the art-normalisation loop `0x801EF2EC..0x801EF858`,
 /// both arms)
@@ -406,9 +405,55 @@ pub fn tokenize_bank(
 /// retail art has had its turn (`legaia_engine_expansion::arts`).
 pub fn tokenize_bank_over(
     records: &[BankArt<'_>],
+    q: [u8; QUEUE_LEN],
+    marks: [u32; QUEUE_LEN],
+    special_armed: bool,
+) -> BankTokens {
+    tokenize_bank_gated(records, q, marks, special_armed, None, |_, _| {
+        ArtRun::Take { starter: STARTER }
+    })
+}
+
+/// What the builder decides about a full match of `ordinal`'s arrows, ahead of
+/// either arm (`0x801EF40C..0x801EF46C`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArtRun {
+    /// Spirit does not cover the art: the walk ends at this start, every later
+    /// group skipped (`s3` forced to the count at `0x801EF42C`).
+    Refuse,
+    /// `FUN_801EFBFC` answered `0`: this group's run ends, the next group walks.
+    Drop,
+    /// Taken, with the starter a normal art writes (`0x18 + verdict`).
+    Take { starter: u8 },
+}
+
+/// The record each group of a bank opens on, `k` for record `0x1B + k`: the
+/// ordinal the walk's cost and gate are keyed by, turned back into the art.
+pub fn bank_group_starts(records: &[BankArt<'_>]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut s3 = 0usize;
+    while s3 < records.len() {
+        out.push(s3 as u8);
+        s3 = group_end(records, s3);
+    }
+    out
+}
+
+/// [`tokenize_bank_over`] with the builder's gate in the walk: `gate(ordinal,
+/// matched arrows)` runs on every full match of two or more arrows; with
+/// `miracle_row`, a taken Miracle copies it over the window. A one-arrow
+/// match ends the walk at this start without asking. The Spirit test and the
+/// learn-on-use check sit here because they decide which arts match, and a run
+/// one of them turns down leaves its arrows for a later group to read.
+///
+/// PORT: FUN_801EED1C (`0x801EF40C..0x801EF46C`, the gate of the walk)
+pub fn tokenize_bank_gated(
+    records: &[BankArt<'_>],
     mut q: [u8; QUEUE_LEN],
     mut marks: [u32; QUEUE_LEN],
     special_armed: bool,
+    miracle_row: Option<&[u8; QUEUE_LEN]>,
+    mut gate: impl FnMut(u8, usize) -> ArtRun,
 ) -> BankTokens {
     let mut hyper_matches = Vec::new();
     let mut miracle_matched = false;
@@ -439,6 +484,11 @@ pub fn tokenize_bank_over(
                 if matched == 1 {
                     break 'groups;
                 }
+                let starter = match gate(ordinal, matched) {
+                    ArtRun::Refuse => break 'groups,
+                    ArtRun::Drop => break,
+                    ArtRun::Take { starter } => starter,
+                };
                 let p = pos as usize;
                 if special {
                     if !special_armed {
@@ -449,6 +499,12 @@ pub fn tokenize_bank_over(
                     }
                     if ordinal == 0 {
                         miracle_matched = true;
+                        // The row lands in the window here, in the walk
+                        // (`0x801EF4F0..0x801EF524`), so the arrows it covers
+                        // are gone for every later group.
+                        if let Some(row) = miracle_row {
+                            q = *row;
+                        }
                         break;
                     }
                     hyper_matches.push(0x1B + s3 as u8);
@@ -483,7 +539,7 @@ pub fn tokenize_bank_over(
                         a3 += 1;
                     }
                 } else {
-                    q[p] = STARTER;
+                    q[p] = starter;
                     if p < QUEUE_LEN - 2 {
                         for k in (p + 1..QUEUE_LEN - 1).rev() {
                             q[k + 1] = q[k];

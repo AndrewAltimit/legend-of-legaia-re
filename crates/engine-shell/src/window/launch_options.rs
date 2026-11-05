@@ -117,6 +117,9 @@ impl LaunchFidelity {
     }
 }
 
+/// `(script row, [cursor, countdown, mesh])` per dance marker row.
+pub type SeatedDanceMarkers = Vec<(usize, [i16; 3])>;
+
 /// Deterministic screenshot harness for `play-window`: render one frame
 /// offscreen at [`Self::capture_tick`] and write it to [`Self::path`], then
 /// exit - and/or a periodic sweep ([`Self::sweep`]) that captures every N
@@ -171,6 +174,10 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_SEAT_PRIZE=<tick>:<block>`: arm the casino prize counter (op
     /// `49 07 <block>`) at that tick, which no root row reaches.
     pub prize_at: Option<(u64, u8)>,
+    /// `LEGAIA_SEAT_SHOP=<tick>:<hex>`: arm a gold shop from the op `49 00`
+    /// instruction bytes a retail state's entry context holds, which no root
+    /// row reaches. Set by the retail-compare child.
+    pub shop_instr_at: Option<(u64, Vec<u8>)>,
     /// `LEGAIA_CAPTURE_GATE=state[,white|black,age]`: capture the first
     /// frame the battle's action SM holds the retail capture's phase
     /// ([`legaia_engine_capture::phase_gate::PhaseGate`]) instead of
@@ -222,6 +229,10 @@ pub struct ScreenshotConfig {
     /// that key ([`legaia_engine_capture::cast_rand`]). Set by the
     /// cast-sequence oracle's `--rand-at`.
     pub cast_rand_seed: Option<legaia_engine_capture::cast_rand::CastRandSeed>,
+    /// The hand a recorded strike was dealt, stood on the fight when the
+    /// capture's gate opens ([`legaia_engine_capture::strike_deal`]). Set by the
+    /// cast-sequence oracle; `None` in play.
+    pub strike_deal: Option<legaia_engine_capture::strike_deal::StrikeDeal>,
     /// `LEGAIA_BATTLE_DISPLAYED_SEAT=slot:x:z,...`: live pairs the captured
     /// frame stands combatants on **after** the camera is aligned on
     /// [`Self::battle_ground_snap`] - the displayed frame's ground of a seat
@@ -391,6 +402,9 @@ pub struct ScreenshotConfig {
     /// over the pool on the frame the capture is taken
     /// (`FogPool::install_snapshot`); taken once.
     pub seat_fog: std::cell::Cell<Option<Vec<legaia_engine_field::fog_particles::FogParticle>>>,
+    /// `LEGAIA_SEAT_FOG_OFFSET`: the camera's eased vertical offset the seated
+    /// sheets stand against (`_DAT_8007BCAC`).
+    pub seat_fog_offset: Option<i32>,
     /// Raised on the capture frame by the seating pass and taken by the
     /// frame's fog draw, which installs `seat_fog` and re-runs the frame's
     /// render step over it (`BootSession::seat_field_fog`) where the draw
@@ -407,6 +421,10 @@ pub struct ScreenshotConfig {
     /// (`World::seat_ambient_part_banks`); taken once.
     pub seat_turning_parts:
         std::cell::Cell<Option<Vec<legaia_engine_core::world::ambient::AmbientBankSeed>>>,
+    /// `LEGAIA_SEAT_DANCE_MARKERS`: the dance's marker tiles as a retail
+    /// state's displayed frame drew them, written over the game's on the frame
+    /// the capture is taken (`DanceGame::seat_step_marker`); taken once.
+    pub seat_dance_markers: std::cell::Cell<Option<SeatedDanceMarkers>>,
     /// `LEGAIA_SEAT_BALLOON`: the text balloon a retail state's displayed
     /// frame drew (the place-name banner a door leaves up, which a card
     /// load never raises), or none, written over the field's on the frame
@@ -465,6 +483,13 @@ pub struct ScreenshotConfig {
     /// the whole pose the displayed frame stood on
     /// (`RetailBattle::retake_turning_pose` in `legaia-parity`).
     pub retake_pose: Option<legaia_engine_camera::projection::BattleCamPose>,
+    /// `LEGAIA_DIAG_CAST_SEQ_SEAT_POSE=pitch,yaw,x,y,z,fx,fy,fz`: the pose a
+    /// retail cast recording stood on at its cast begin, seated once on the
+    /// engine's cast begin. The recording's child drops the capture's drive and
+    /// runs no earlier actor, so its camera would open elsewhere. Set by
+    /// `scripts/ci/cast-sequence.py`; taken once.
+    pub cast_seq_seat_pose:
+        std::cell::Cell<Option<legaia_engine_camera::projection::BattleCamPose>>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
     /// pass before the band's first arm spawned its parts, and it stands on
@@ -500,6 +525,9 @@ pub struct ScreenshotConfig {
     /// `LEGAIA_BATTLE_BACKDROP_CUE=<weight>`: the backdrop pair's depth-cue
     /// weight a capture-band capture holds, stood on at the captured phase.
     pub battle_backdrop_cue: Option<u16>,
+    /// `LEGAIA_BATTLE_AMBIENT_BASE=<base>`: the ambient base the captured frame's
+    /// ground grid is coloured from (`RetailBattle::displayed_ambient_base`).
+    pub battle_ambient_base: Option<u8>,
     /// Whether [`Self::battle_bars`] have been seeded.
     pub battle_bars_seeded: std::cell::Cell<bool>,
     /// `LEGAIA_BATTLE_MYSTIC_SHIELD=1`: the capture holds Cort's Mystic
@@ -956,6 +984,13 @@ impl ScreenshotConfig {
                 let (t, b) = v.split_once(':')?;
                 Some((t.parse().ok()?, b.parse().ok()?))
             }),
+            shop_instr_at: std::env::var("LEGAIA_SEAT_SHOP").ok().and_then(|v| {
+                let (t, hex) = v.split_once(':')?;
+                let bytes = (0..hex.len() / 2)
+                    .map(|i| u8::from_str_radix(hex.get(i * 2..i * 2 + 2)?, 16).ok())
+                    .collect::<Option<Vec<u8>>>()?;
+                Some((t.parse().ok()?, bytes))
+            }),
             shop_at: std::env::var("LEGAIA_CAPTURE_SHOP").ok().and_then(|v| {
                 let (idx, tick) = v.trim().split_once('@')?;
                 Some((tick.trim().parse().ok()?, idx.trim().parse().ok()?))
@@ -981,6 +1016,9 @@ impl ScreenshotConfig {
             cast_rand_seed: std::env::var("LEGAIA_CAST_RAND_SEED")
                 .ok()
                 .and_then(|v| legaia_engine_capture::cast_rand::cast_rand_seed_from_env(&v)),
+            strike_deal: std::env::var("LEGAIA_STRIKE_DEAL")
+                .ok()
+                .and_then(|v| legaia_engine_capture::strike_deal::strike_deal_from_env(&v)),
             battle_ground_snap: std::env::var("LEGAIA_BATTLE_GROUND_SNAP")
                 .map(|v| legaia_engine_capture::ground_snap::ground_snaps_from_env(&v))
                 .unwrap_or_default(),
@@ -1062,6 +1100,9 @@ impl ScreenshotConfig {
                 let (s, a) = v.split_once(':')?;
                 Some((s.trim().parse().ok()?, a.trim().parse().ok()?))
             }),
+            seat_fog_offset: std::env::var("LEGAIA_SEAT_FOG_OFFSET")
+                .ok()
+                .and_then(|v| v.parse().ok()),
             script_gate: std::env::var("LEGAIA_SCRIPT_GATE")
                 .ok()
                 .and_then(|v| legaia_engine_capture::script_gate::ScriptGate::from_env(&v)),
@@ -1086,6 +1127,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_BALLOON")
                     .ok()
                     .and_then(|v| legaia_engine_capture::field_seeds::balloon_from_env(&v)),
+            ),
+            seat_dance_markers: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_DANCE_MARKERS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::dance_markers_from_env(&v)),
             ),
             seat_turning_parts: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_TURNING_PARTS")
@@ -1172,6 +1218,19 @@ impl ScreenshotConfig {
                         focus: [f[5], f[6], f[7]],
                     })
                 }),
+            cast_seq_seat_pose: std::cell::Cell::new(
+                std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_POSE")
+                    .ok()
+                    .and_then(|v| {
+                        let f: Vec<f32> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+                        (f.len() == 8).then(|| legaia_engine_camera::projection::BattleCamPose {
+                            pitch: f[0],
+                            yaw: f[1],
+                            tr: [f[2], f[3], f[4]],
+                            focus: [f[5], f[6], f[7]],
+                        })
+                    }),
+            ),
             retake_across_entry: std::env::var("LEGAIA_CAPTURE_RETAKE_ENTRY")
                 .is_ok_and(|v| v.trim() == "1"),
             state_since: std::cell::Cell::new(None),
@@ -1183,6 +1242,9 @@ impl ScreenshotConfig {
                 .and_then(|v| {
                     legaia_engine_battle_loop::battle_state::CaptureApproach::from_env(&v)
                 }),
+            battle_ambient_base: std::env::var("LEGAIA_BATTLE_AMBIENT_BASE")
+                .ok()
+                .and_then(|s| s.parse().ok()),
             battle_backdrop_cue: std::env::var("LEGAIA_BATTLE_BACKDROP_CUE")
                 .ok()
                 .and_then(|v| v.trim().parse().ok()),

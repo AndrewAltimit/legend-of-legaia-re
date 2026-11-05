@@ -48,7 +48,8 @@
 //!   slot index is out of range or the slot is already empty.
 //! - `FUN_800423E0` - **normalize**, not a plain compact: for each occupied
 //!   slot it first merges every *later* stack of the same id into it (capped at
-//!   99, zeroing the donor), then pulls occupied slots down into holes.
+//!   99, zeroing the donor), then pulls occupied slots down into holes. Its two
+//!   cursors step together, so one call can leave a hole behind.
 //!   Occupancy is keyed on `id != 0` **alone**, so a zero-count slot with a
 //!   live id survives. Calls `FUN_8004313C` first, so it normalizes whichever
 //!   window that installs.
@@ -647,46 +648,44 @@ impl RetailInventory {
         remaining
     }
 
-    /// Normalize the window the way `FUN_800423E0` does: **merge duplicate
-    /// stacks, then squeeze holes**.
+    /// Normalize the window the way `FUN_800423E0` does: merge duplicate stacks
+    /// and pull occupied slots down into holes, with one pass of two cursors.
     ///
-    /// Retail walks the window with a write cursor. At each occupied slot it
-    /// first scans the rest of the window for another stack of the same id and
-    /// folds it in - `count += donor_count`, clamped to [`STACK_CAP`], donor
-    /// slot fully zeroed - repeating until no duplicate remains. Only then
-    /// does it advance, pulling the next occupied slot down into the hole it is
-    /// sitting on.
-    ///
-    /// Two details the old "compact" model got wrong, both now reproduced:
-    /// occupancy is keyed on `id != 0` **alone** (a live id with a zero count
-    /// survives rather than being dropped), and duplicate ids are merged rather
-    /// than left as two stacks.
-    /// The pass runs over the **active window** only (`0x800423F0` /
-    /// `0x800423F4` load both bounds first): slots outside it keep their
-    /// contents and their order, so normalizing a half-bag never renumbers the
-    /// other character's half.
+    /// Occupancy is keyed on `id != 0` **alone** (a live id with a zero count
+    /// survives), and the pass runs over the **active window** only
+    /// (`0x800423F0` / `0x800423F4` load both bounds first): slots outside it
+    /// keep their contents and their order, so normalizing a half-bag never
+    /// renumbers the other character's half. A hole the read cursor has passed
+    /// stays until the next call.
     // PORT: FUN_800423E0
     pub fn normalize(&mut self) {
         let (s, e) = self.window;
         let e = e.min(self.slots.len());
-        if s >= e {
-            return;
-        }
-        let window = e - s;
-        let mut survivors: Vec<(u8, u8)> = Vec::with_capacity(window);
-        for &(id, count) in &self.slots[s..e] {
-            if id == 0 {
+        // The pass has two cursors and one step of the read cursor per turn, so
+        // it is not a whole compaction: a slot the write cursor is standing on
+        // when it advances costs the read cursor a turn, and one call can leave
+        // holes and unmerged stacks behind it. `0x80042418..0x80042540`.
+        let mut write = s;
+        for read in s..e {
+            if read == write {
                 continue;
             }
-            match survivors.iter_mut().find(|(sid, _)| *sid == id) {
-                Some(slot) => {
-                    slot.1 = slot.1.saturating_add(count).min(STACK_CAP);
+            let id = self.slots[write].0;
+            if id != 0 {
+                let mut from = write + 1;
+                while let Some(j) = (from..e).find(|&j| self.slots[j].0 == id) {
+                    // A byte add, then the cap on the byte (`0x80042490`).
+                    let total = self.slots[write].1.wrapping_add(self.slots[j].1);
+                    self.slots[write].1 = if total > 0x62 { STACK_CAP } else { total };
+                    self.slots[j] = (0, 0);
+                    from = write + 1;
                 }
-                None => survivors.push((id, count)),
+                write += 1;
+            } else if self.slots[read].0 != 0 {
+                self.slots[write] = self.slots[read];
+                self.slots[read] = (0, 0);
             }
         }
-        survivors.resize(window, (0, 0));
-        self.slots[s..e].copy_from_slice(&survivors);
     }
 
     /// Deprecated name for [`normalize`](Self::normalize). Retail's
