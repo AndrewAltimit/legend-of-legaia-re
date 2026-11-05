@@ -258,17 +258,28 @@ impl World {
                 // input (`FUN_801D0748` state 0x50). The legacy saved-chain
                 // list stays reachable behind `WorldToggles::arts_saved_list`,
                 // which both hosts can raise.
+                //
+                // The list is a shortcut over the entry, never a replacement
+                // for it: the sparring tutorial's `[High] [Low] [High]` drill
+                // is checked on the entry's own command buffer, and a list with
+                // no saved chain has no row to confirm. Either way the list
+                // was a dead end - the drill could not be passed and the
+                // sparring fight softlocked (issue #548) - so both open the
+                // entry.
                 self.battle_ctx.active_actor = session.actor;
-                if self.toggles.arts_saved_list {
-                    let rows = self.build_battle_arts_rows(session.actor);
-                    self.battle.arts_menu =
-                        Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
-                            session.actor,
-                            session.actor,
-                            rows,
-                        ));
-                } else {
-                    self.open_arts_command_input(session.actor);
+                let rows = (self.toggles.arts_saved_list && self.battle.tutorial.is_none())
+                    .then(|| self.build_battle_arts_rows(session.actor))
+                    .filter(|rows| !rows.is_empty());
+                match rows {
+                    Some(rows) => {
+                        self.battle.arts_menu =
+                            Some(legaia_engine_battle::battle_arts::BattleArtsSession::new(
+                                session.actor,
+                                session.actor,
+                                rows,
+                            ));
+                    }
+                    None => self.open_arts_command_input(session.actor),
                 }
                 // The flow byte follows the player into the window: retail's
                 // arts entry stores `ctx[+0x06] = 0x50` as it opens (`sb` at
