@@ -664,6 +664,13 @@ pub(super) fn battle_image(
             cue.map_or_else(|| "gone".to_string(), |c| format!("cue:{c}")),
         ));
     }
+    // A later capture of that fight holds no column, while a replay reaches
+    // its strike inside the columns' life: they are retired on the frame.
+    if battle.seed_plan() != crate::retail_compare_battle::SeedPlan::Prompt
+        && battle.arrival_cue == Some(None)
+    {
+        env.push(("LEGAIA_SEAT_ARRIVAL_GONE", "1".to_string()));
+    }
     // ... and the live mode-3 CLUT cyclers at the displayed frame's phase:
     // the evolved-Cort arena's flesh palette (record `0x80078760` on CLUT
     // `(32, 479)`) swings its hue add through `0x100` about every 130

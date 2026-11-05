@@ -115,6 +115,12 @@ impl PlayWindowApp {
                     &ghosts,
                 );
             }
+            // ... and the arrival's columns off a frame whose RAM holds none
+            // (`LEGAIA_SEAT_ARRIVAL_GONE`): a replay reaches its first strike
+            // inside their life, a fight rounds further on does not.
+            if due && sc.seat_arrival_gone.take() {
+                self.session.host.world.retire_arrival_spawns();
+            }
             // ... and the effect pool's billboards where retail's walker had
             // put them (`LEGAIA_SEAT_EFFECT_CHILDREN`).
             if due && let Some(children) = sc.seat_effect_children.take() {

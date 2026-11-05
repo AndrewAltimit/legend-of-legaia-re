@@ -549,6 +549,10 @@ pub struct ScreenshotConfig {
     /// (`World::install_action_fx_part_snapshot`); taken once.
     pub seat_action_fx_parts:
         std::cell::Cell<Option<Vec<legaia_engine_effects::summon::CastPartSeed>>>,
+    /// `LEGAIA_SEAT_ARRIVAL_GONE`: the capture's RAM holds no PROT 0968 column,
+    /// so the replay's are retired on the capture frame
+    /// (`World::retire_arrival_spawns`); taken once.
+    pub seat_arrival_gone: std::cell::Cell<bool>,
     /// `LEGAIA_SEAT_EFFECT_CHILDREN`: a captured state's live effect-pool
     /// children as the displayed frame held them, stood in the engine's
     /// pool on the capture frame (`World::install_effect_child_snapshot`);
@@ -1273,6 +1277,9 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_ACTION_FX_PARTS")
                     .ok()
                     .map(|v| legaia_engine_capture::cast_parts::cast_parts_from_env(&v)),
+            ),
+            seat_arrival_gone: std::cell::Cell::new(
+                std::env::var_os("LEGAIA_SEAT_ARRIVAL_GONE").is_some(),
             ),
             seat_effect_children: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_EFFECT_CHILDREN")
