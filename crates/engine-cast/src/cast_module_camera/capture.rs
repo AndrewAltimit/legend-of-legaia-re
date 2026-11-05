@@ -282,6 +282,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (941, super::STEAL_BODY) => Some(super::steal_camera),
         (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
         (955, super::VOID_ACCESSORIES_BODY) => Some(super::void_accessories_camera),
+        (955, super::WHITE_SHIELD_BODY) => Some(super::white_shield_camera),
         _ => None,
     }
 }
@@ -364,7 +365,7 @@ pub fn capture_countdown_va(action: u8) -> Option<u32> {
         0x5F => Some(0x801F_9018),
         0x5B => Some(super::SCYTHE_WIND_COUNTDOWN),
         // PROT 0955's cell shares the word (`lui 0x801F` / `-0x62D8`).
-        0x70 | 0x73 => Some(super::KISS_OF_DEATH_COUNTDOWN),
+        0x60 | 0x70 | 0x73 => Some(super::KISS_OF_DEATH_COUNTDOWN),
         0x37 => Some(GUILTY_CROSS_COUNTDOWN),
         0xA5 => Some(ULTRA_CHARGE_COUNTDOWN),
         0xA1 | 0xB4 => Some(DEAD_END_CRISIS_COUNTDOWN),

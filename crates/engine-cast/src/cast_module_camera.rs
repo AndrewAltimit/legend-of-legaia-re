@@ -1042,6 +1042,7 @@ mod void_accessories;
 mod water_column;
 mod water_crystals;
 mod water_hazard;
+mod white_shield;
 pub use aluru::*;
 pub use blade_breath::{
     BLADE_BREATH_BODY, BLADE_BREATH_STRIKE_CURSOR, GIGATON_PRESS_BODY, GIGATON_PRESS_DEBRIS,
@@ -1119,6 +1120,7 @@ pub use void_accessories::{VOID_ACCESSORIES_BODY, VOID_RECORDS, void_accessories
 pub use water_column::{WATER_COLUMN_COUNTDOWN, water_column_camera};
 pub use water_crystals::{WATER_CRYSTALS_COUNTDOWN, water_crystals_camera};
 pub use water_hazard::{water_hazard_camera, water_hazard_ring};
+pub use white_shield::{WHITE_SHIELD_BODY, WHITE_SHIELD_COUNTDOWN, white_shield_camera};
 
 pub(super) fn gate(hold: bool) -> ArmDirection {
     if hold {
