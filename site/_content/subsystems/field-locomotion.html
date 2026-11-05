@@ -23,7 +23,7 @@
     <li><b>Gate</b><span>Skip everything while the player is held: an encounter queued, a cutscene or talk owns him (flag <code>0x80000</code>). This also blocks the pause menu.</span></li>
     <li><b>Camera remap</b><span>Rotate the held d-pad by the camera's eighth-turn so "up" means "away from the camera"; snap the heading to one of eight angles.</span></li>
     <li><b>Wall slide</b><span>If the wanted direction is blocked, probe along the wall and add a perpendicular direction, so the player skids instead of sticking.</span></li>
-    <li><b>Speed</b><span>Base step (8 walk, 12 run) &times; the actor's multiplier &times; the frame scalar; halved on slow terrain, trimmed by a quarter on diagonals.</span></li>
+    <li><b>Speed</b><span>Base step (8 walk, 12 run, 5 on the world maps) &times; the actor's multiplier &times; the frame scalar; halved on slow terrain, trimmed by a quarter on a diagonal when the camera's mode nibble is 4 (any other camera mode walks a diagonal at full speed on each axis).</span></li>
     <li><b>Step loop</b><span>Spend the speed 2 units at a time, Z then X; each axis moves only if its collision probe is clear.</span></li>
     <li><b>Settle</b><span>Re-sample the floor height under the new position; hop a ledge if the floor ahead rises a step.</span></li>
     <li><b>Triggers</b><span>Entering a new tile checks the trigger block: teleports, door records, story beats, encounters.</span></li>
@@ -34,6 +34,45 @@
     <li><strong>Animation follows motion.</strong> A committed step selects the walk or run clip; no step selects idle. The pad is never consulted for the clip, and walking and wall contact are silent.</li>
     <li><strong>Run is an exclusive or.</strong> The Field Move option sets the default and the held button inverts it, so with Run selected the button walks. The button is <code>Cross | R1</code> (mask <code>0x48</code>), seeded once at new game and never rewritten: retail cannot rebind it.</li>
   </ul>
+  <figure class="diagram">
+    <svg viewBox="0 0 860 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Left: a top-down view of the player holding up-right, which the remap turns into Z plus and X plus. Each step-loop iteration moves Z by two units and then X by two units, so the path is a staircase toward a wall on the X plus side. Once the X probe meets the wall the X move is skipped while the Z move still commits, so the path turns and runs straight along the wall. Right: one frame's speed budget, base step times the actor multiplier shifted down by 12, times the frame step, spent two units an iteration. Each iteration tests the Z axis first, collision direction 2 for Z plus or 0 for Z minus, then the X axis, direction 3 for X plus or 1 for X minus, commits each axis only when its probe is clear, then runs the touch and interact dispatch, until the budget is spent.">
+      <defs><marker id="flw-ah" class="dg-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z"/></marker></defs>
+      <rect class="dg-group" x="16" y="16" width="410" height="300" rx="6"/>
+      <text class="dg-sub dg-start" x="28" y="34">top down, held: up-right = Z+ and X+</text>
+      <rect class="dg-node-warn" x="306" y="40" width="14" height="250" rx="2"/>
+      <text class="dg-sub dg-start" x="328" y="150">wall:</text><text class="dg-sub dg-start" x="328" y="165">dir 3</text><text class="dg-sub dg-start" x="328" y="180">blocked</text>
+      <polyline class="dg-edge" points="140,250 140,236 154,236 154,222 168,222 168,208 182,208 182,194 196,194 196,180 210,180 210,166 224,166 224,152 238,152 238,138 252,138 252,124 266,124 266,110 280,110 280,96 294,96 294,82 294,68 294,54 294,40" marker-end="url(#flw-ah)"/>
+      <path class="dg-edge-dim" d="M294 103 L306 103"/>
+      <path class="dg-edge-dim" d="M294 89 L306 89"/>
+      <path class="dg-edge-dim" d="M294 75 L306 75"/>
+      <path class="dg-edge-dim" d="M294 61 L306 61"/>
+      <path class="dg-edge-dim" d="M294 47 L306 47"/>
+      <circle class="dg-node-accent" cx="140" cy="250" r="7"/>
+      <text class="dg-sub" x="140" y="276">start</text>
+      <text class="dg-sub dg-start" x="128" y="60">X skipped, Z still</text><text class="dg-sub dg-start" x="128" y="75">commits: the slide</text>
+      <text class="dg-sub dg-start" x="200" y="236">Z, then X,</text><text class="dg-sub dg-start" x="200" y="251">2 units each</text>
+      <path class="dg-edge" d="M40 300 L90 300" marker-end="url(#flw-ah)"/><text class="dg-sub dg-start" x="96" y="304">X+</text>
+      <path class="dg-edge" d="M40 300 L40 250" marker-end="url(#flw-ah)"/><text class="dg-sub dg-start" x="48" y="256">Z+</text>
+      <rect class="dg-node" x="460" y="20" width="380" height="44" rx="4"/>
+      <text class="dg-label" x="650" y="38">speed budget</text><text class="dg-sub" x="650" y="55">(base step x +0x72 &gt;&gt; 12) x frame step</text>
+      <path class="dg-edge" d="M650 64 L650 100" marker-end="url(#flw-ah)"/>
+      <rect class="dg-group" x="450" y="84" width="400" height="182" rx="6"/>
+      <rect class="dg-node-accent" x="470" y="102" width="340" height="42" rx="4"/>
+      <text class="dg-label" x="640" y="120">Z first: dir 2 (Z+) or 0 (Z-)</text><text class="dg-sub" x="640" y="136">probe clear -&gt; commit Z +-2</text>
+      <path class="dg-edge" d="M640 144 L640 156" marker-end="url(#flw-ah)"/>
+      <rect class="dg-node-accent" x="470" y="158" width="340" height="42" rx="4"/>
+      <text class="dg-label" x="640" y="176">then X: dir 3 (X+) or 1 (X-)</text><text class="dg-sub" x="640" y="192">probe clear -&gt; commit X +-2</text>
+      <path class="dg-edge" d="M640 200 L640 212" marker-end="url(#flw-ah)"/>
+      <rect class="dg-node" x="470" y="214" width="340" height="30" rx="4"/>
+      <text class="dg-label" x="640" y="234">touch / interact dispatch</text>
+      <path class="dg-edge" d="M810 229 L836 229 L836 123 L812 123" marker-end="url(#flw-ah)"/>
+      <text class="dg-sub dg-start" x="462" y="259">2 units an iteration, until the budget is spent</text>
+      <rect class="dg-node-warn" x="450" y="276" width="400" height="40" rx="4"/>
+      <text class="dg-sub dg-start" x="462" y="292">a blocked axis skips only its own move;</text>
+      <text class="dg-sub dg-start" x="462" y="307">the other still steps, and the player slides</text>
+    </svg>
+    <figcaption>The step loop, the last leg of a walk frame. The probe is <code>FUN_801CFE4C</code> (walls and actors); the last committed direction per axis goes to <code>0x8007BDE0</code> (X) / <code>0x8007BDE4</code> (Z) for the settle and the camera follow, and the loop plays no sound. The port runs the same per-axis stepper over the same tables.</figcaption>
+  </figure>
 </section>
 
 <section class="doc-section" id="collision-tile" data-doc="collision---fun_801cfe4c">
