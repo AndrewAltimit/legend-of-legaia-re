@@ -223,6 +223,23 @@ fn rung2_the_disc_bonus_tables_reach_the_per_round_score_rows() {
         .unwrap()
         .score_rows();
 
+    // The rows drain into the running total the secret rungs' gates read.
+    let want = scored.iter().sum::<i32>();
+    assert!(want > 20_000, "the match bonus row is seeded: {scored:?}");
+    for _ in 0..40_000 {
+        step(&mut with_tables, 0);
+        let f = with_tables.minigames.baka_fighter.as_ref().unwrap();
+        if f.tally().is_none_or(|t| t.done()) {
+            break;
+        }
+    }
+    let f = with_tables.minigames.baka_fighter.as_ref().unwrap();
+    assert_eq!(
+        f.cabinet().high_score(),
+        want,
+        "the cabinet's running total"
+    );
+
     let mut without = world_with(fight());
     play_to_player_win(&mut without);
     let unscored = without

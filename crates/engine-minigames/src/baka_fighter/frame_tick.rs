@@ -377,6 +377,8 @@ impl BakaFight {
                 if let Some(t) = self.tally.as_mut() {
                     t.tick(frame_step, face_button);
                     self.cues.extend(t.take_cues());
+                    // The word the secret rungs' gates and the HUD read.
+                    self.cabinet.set_high_score(t.total());
                 }
                 return;
             }

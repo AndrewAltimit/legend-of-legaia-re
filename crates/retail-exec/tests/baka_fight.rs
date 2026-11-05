@@ -280,7 +280,10 @@ fn a_round_win_scores_as_retail_scores() {
             assert_eq!(cpu.call(0x801D_2A28, &[]), Stop::Returned);
             let g = baka_round_score(combo, &t.combo_bonus, hp, &t.health_bonus);
             assert_eq!(
-                (cpu.mem.rd32(ROW_COMBO) as i32, cpu.mem.rd32(ROW_BONUS) as i32),
+                (
+                    cpu.mem.rd32(ROW_COMBO) as i32,
+                    cpu.mem.rd32(ROW_BONUS) as i32
+                ),
                 (g.combo_gain, g.bonus_gain),
                 "combo {combo} hp {hp}"
             );
