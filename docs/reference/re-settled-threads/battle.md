@@ -2509,3 +2509,11 @@ Grade `capture` for the lengths, `disassembly` for what runs through them. The t
 Grade `disassembly`. The draw tick `FUN_800480D8` reaches the after-image walk only past its word-zero test (`0x800481CC`), so a hide takes the ghosts too. A body hidden with its ghosts left walking reads as a pink double of the caster on V-Windhash's far shot and, as the camera passes it, an olive wash over the frame.
 
 Owning pages: [`cast-sequence-oracle.md`](../../tooling/cast-sequence-oracle.md#the-capture-bands-reads), [`battle-actor-rendering.md`](../../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348).
+
+### What stands the camera on the Windcutter frames
+
+Grade `capture`, with the walk `disassembly`. Both Windcutter frames show the case-6 walk ahead of a one-frame shot, and neither is a mid-retake of something the seed cannot reproduce. The body filling `battle_doman_boogie_pump_windcutter_mid_cast` was the walk's start, not a depth or a ghost: seats 1 and 2 had both spent a Spirit, and the selector `FUN_801DABA4` leaves no order behind, so the law's default took seat 2. The walk's focus closes on the caster from that seat's framing, and the residue left after ten step-`3` passes stands the eye `94` units nearer Gala on the shot's axis. She then clears the near gate `0xA1` (`0x8001AEE8`) and fills the frame. From seat 1 she falls under the gate and the frame matches, with the walk's TR z untouched; the earlier continuous search that wanted TR z `4569` was compensating for this. `FUN_8004DC68` keeping her solid is correct and plays no part.
+
+`battle_rugi_barra_windcutter_mid_cast` is the same walk from the round's first action, so it starts on the prompt's far framing. That framing's orbit is a clock the RAM does not date, and the yaw is read off the frame. Which of two Spirit seats went last is also not read from the RAM: the actor records of the seats differ in their idle clip's phase, and no rule over that has been tested. Each capture carries a [walk pin](../../tooling/retail-compare.md#a-shot-armed-after-the-displayed-frame), which moves no game state.
+
+Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-action.md`](../../subsystems/battle-action.md).

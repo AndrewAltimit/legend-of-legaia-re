@@ -250,23 +250,9 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | Why does Zeto's idle in `zeto_big_wave_mid_cast` show one pass older than the display lag says? | open (measured) | The displayed frame is PROT 0946's arm-0 cut pass, and the two passes after it match at `1.000`; a retail film of the cut pass with its camera globals and Zeto's node matrix ([detail](#zetos-big-wave-idle-one-pass-older)). |
 
 
-### A near body under an inferred retake pose
+### A near body the child draws opaque
 
-`open` `battle_doman_boogie_pump_windcutter_mid_cast` (image `0.19`) is not a ghost
-defect: Freed `$2` does draw faint. The body filling the frame is Gala, the cast's
-target, which `FUN_8004DC68` keeps solid (`0x8004E0E0..0x8004E10C`). Retail's next
-frame holds no packet of hers on either ordering table: at the RAM's pose she is behind
-the eye, `SZ` saturates and the mean `OTZ` fails the near cut, so her packets sit in the
-pool off every link at `x = 1023`. On the displayed frame the child stands on
-`RetailBattle::retake_stale_walk_pose`, whose TR z and focus are inferred, and there her
-origin reads a view depth of `258` against the draw gate's `0xA1`
-(`dispatch_draws`). A search over that pose scores `.95` with her hidden, at TR z about
-`4569` against the law's `4839`, and at that depth the gate rejects her. The search is
-not a mechanism and nothing pins it. A retail film of the case-6 walk ahead of the
-state (`LEGAIA_PRE_TRACE`, from a state a round earlier) would say where the law's
-endpoint parts. Grade `capture`.
-
-`battle_uru2_nurga_glare_mid_cast` has the other half. The near body is the second Nurga
+`open` `battle_uru2_nurga_glare_mid_cast` holds a near body that retail draws faint. The body is the second Nurga
 (`+0x8 = 0x83000000` in the RAM), and it is opaque in the child because its frame reads
 action `0x6F`, outside the magic band's row arm, and the child's partly aligned pose
 takes no re-derive of the bits (`redraw_prep.rs`, `mask == 0xFF`). Grade `capture`.

@@ -3941,6 +3941,12 @@ pose is law from what the RAM still holds
 - **The start** is the earlier actor's framing, or the prompt's far framing on a
   round's first actor (`walk_start`).
 
+One pass into `0x2B` the display is older again: it stands on `0x29`'s exit, an
+armed pass, with the terminator still to come (`case6_walk_passes`'s
+`shot_passes`). `battle_kor_gaza_166_astral_wave_mid_cast` is that case, and its
+ring reads step `3` under a newest `4`, so the walk comes off the ring and not
+off the newest step.
+
 Three inputs are not in the RAM. `FUN_801DABA4` picks the highest key among ties
 by `rand()` and zeroes spent keys, so it leaves no battle order behind; the
 earlier action's style byte `ctx[+0xD]` has been overwritten; and the seed arms
