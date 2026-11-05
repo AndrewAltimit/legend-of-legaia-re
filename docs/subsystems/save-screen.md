@@ -822,7 +822,7 @@ Global header fields, as absolute block offsets:
 |---|---|---|---|
 | `0x200` | `0x24` | `0x80084340` | Location name, ASCII, NUL-terminated - retail's `0x24`-byte copy of the scene MAN's banner name ([place-names](../formats/place-names.md)); bytes after the NUL are whatever followed it in the MAN |
 | `0x254` | `0xC` x 3 | `0x80084394` | Party display-name list for the info panel, one slot per active member (`RETAIL_PARTY_NAME_TABLE_OFFSET`) |
-| `0x30C`..`0x32C` | - | `0x8008444C`.. | Fishing words ([minigame purses](#the-minigame-purses-are-live-state-words-too)) |
+| `0x30C`..`0x32C` | - | `0x8008444C`.. | Fishing words and the dance best ([minigame purses](#the-minigame-purses-are-live-state-words-too)) |
 | `0x408` | `0x10` | `0x80084548` | CDNAME label of the current scene, NUL-padded - the scene a load resumes into |
 | `0x418` | `0x10` | `0x80084558` | CDNAME label of the previous scene |
 | `0x428` | 8 | `0x80084568` / `6C` | Field position snapshot `(x, z)`, two sign-extended words |
@@ -947,7 +947,7 @@ and each host loading the other's block to the same world.
 
 ### The minigame purses are live-state words too
 
-Nine words inside the window, each at SC offset `VA - 0x80084140`:
+Ten words inside the window, each at SC offset `VA - 0x80084140`:
 
 | RAM | SC | Word |
 |---|---|---|
@@ -957,13 +957,15 @@ Nine words inside the window, each at SC offset `VA - 0x80084140`:
 | `0x80084458` | `0x318` | best award |
 | `0x8008445C` | `0x31C` | best species |
 | `0x80084460` | `0x320` | cast counter |
+| `0x80084464` | `0x324` | dance hall best score ([dance](minigame-dance.md#the-saved-best)) |
 | `0x8008446C` | `0x32C` | prize bitmask |
 | `0x800845A4` | `0x464` | casino coins |
 | `0x800845B4` | `0x474` | Point Card bank |
 
 `legaia_save::MinigameSave` carries them: `SaveFile::from_retail_sc_block`
 reads them, `write_into_retail_sc_block` writes them, an engine `LGSF` file
-holds them in the optional `LGX7` block (emitted only when one is non-zero),
+holds them in the optional `LGX7` block (emitted only when one is non-zero; a
+nine-word body from before the dance best reads it as `0`),
 and `World::save_full` / `load_full` map them to `World::minigames`.
 
 ### The play clock
@@ -1059,9 +1061,7 @@ reads on retail's load screen and in the BIOS card browser:
 
 What such a block still leaves zero are the banner name's bytes after its NUL,
 the play clock's sub-second ticks (the engine keeps whole seconds; a window
-still in the same second keeps its ticks), the dance hall's best score at `0x324`
-(`_DAT_80084464`, which the dance overlay `FUN_801cf470` raises to the human's
-score and draws on the free-play panel; the port keeps no dance best yet), and
+still in the same second keeps its ticks), and
 unnamed words at `0x300..0x308`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC` and
 `0x590..0x59C`. Which of those a resumed retail game reads is open.
 

@@ -113,7 +113,7 @@ In normal play the field script picks the mode by setting a story flag before th
 | `0` | yosenn (予選, qualifier) | Versus. Grading compares the human score `DAT_801d53cc` against score slot 2 `DAT_801d53d4`; a lower score clears the win flag. |
 | `1` | hosenn (本選, finals) | Versus. Grading compares `DAT_801d53cc` against score slot 1 `DAT_801d53d0`; a lower score clears the win flag. |
 | `2` | setumei (説明, how-to) | Short song (`0x41dc`), no [camera track](#the-camera-keyframe-track) (the camera holds the entry pose), state 1 routes through state 2. Grading clears the win flag when the score exceeds `300`. |
-| `3` | asobi (遊び, free play) | Draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`) and rotates its BGM through `_DAT_80084468` (see [the BGM pick](#the-bgm-pick)). The grading switch has no branch for it, so free play sets no win / lose flag. |
+| `3` | asobi (遊び, free play) | Draws the personal-best panel (`FUN_801d2f38` + `FUN_801d32f8` over `_DAT_80084464`, [the saved best](#the-saved-best)) and rotates its BGM through `_DAT_80084468` (see [the BGM pick](#the-bgm-pick)). The grading switch has no branch for it, so free play sets no win / lose flag. |
 
 ### Win / lose flag
 
@@ -125,7 +125,15 @@ The outcome is story flag `0x50a`, a bit in the `DAT_80085758` flag bank. `func_
 
 State `0x14` also copies the three scores into the field VM's script-counter slots `0x801C6460[0..3]` (`lhu` of `0x801D53CC + slot * 4`, `sh` to `0x801C6460 + slot * 2`, `0x801CFE58..0x801CFE7C`). Those are the slots a dialog number escape prints: back in `koin3`, the Disco King's score announcement carries escape `0xCE 0x0B`, which reads slot 0, the human's score. The port's `DanceGame::results_counter_slots` is that copy, and `World::tick_dance` lays it into `FieldVmState::slot_table` on the frame the song finishes (`dance_minigame_real::a_finished_song_hands_its_scores_to_the_script_counters`).
 
-While any state past 0 runs outside the how-to, the tail also raises the saved best `_DAT_80084464` (save-block `0x324`) to the human's score when it is higher, and free play draws it on its personal-best panel. The port keeps no dance best yet.
+### The saved best
+
+While any state past 0 runs outside the how-to, the tick's head raises the saved best `_DAT_80084464` (save-block `0x324`) to the human's score when it is higher: `lw` of `0x80084140 + 0x324`, `sltu` against `DAT_801D53CC`, `sw` of the score over it (`0x801CF584..0x801CF5A4`). The head returns before the raise in the how-to (`mode == 2`, `0x801CF514`) and while the dev counter `_DAT_8007B6D0` runs (`0x801CF4F8`), so a how-to score never lands in the save. The raise runs ahead of the state switch, so it reads the score the previous frame left.
+
+Free play then draws the personal-best panel off the raised word (`0x801CF5A8..0x801CF5EC`): widget `0x20` at `(0x28, 0x10)` through `FUN_801d2f38`, and the best as a style-B number run (widget `0x21`) from `(0x2C, 0x10)` through `FUN_801d32f8`, both at brightness `0x80`, scale `0x1000`. Both emits precede the HUD driver, which runs from the tick's tail.
+
+The word sits in the live-state window the save block mirrors, so a card carries it: the playthrough ladder's saves read `0` up to `kor5` and `568` from `korb2` on.
+
+The port seats the best on `DanceGame` from `MinigameState::dance_best` at entry, raises it at the head of `DanceGame::advance_pressing` and once more on the finishing frame (`DanceGame::raise_best_score`), and draws the panel at the front of `DanceGame::hud_draw_quads` (`DanceGame::best_panel_quads`; a `BEST` row in the text fallback), so all three hosts show it. Saves carry it as the tenth word of the `LGX7` minigame block and at `0x324` of a retail block (`legaia_save::minigame_save::RETAIL_DANCE_BEST_OFFSET`).
 
 ## Step chart and scoring tables
 

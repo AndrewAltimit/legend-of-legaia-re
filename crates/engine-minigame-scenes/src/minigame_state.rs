@@ -63,6 +63,11 @@ pub struct MinigameState {
     pub fishing_best_points: i32,
     /// Species id of the best catch, mirroring retail's `_DAT_8008445C`.
     pub fishing_best_fish: u32,
+    /// Persistent dance hall best score, mirroring retail's `_DAT_80084464`
+    /// (save block `0x324`): the dance tick raises it to the human's score
+    /// outside the how-to and free play draws it on its personal-best panel
+    /// ([`legaia_engine_minigames::dance::DanceGame::best_score`]).
+    pub dance_best: u32,
     /// Fishing point-exchange (prize shop) session. `Some` while the exchange
     /// list is open on the host's fishing screen; purchases commit through
     /// `World::fishing_exchange_buy`.
@@ -349,6 +354,7 @@ impl MinigameState {
             fishing_lure: 0,
             fishing_best_points: 0,
             fishing_best_fish: 0,
+            dance_best: 0,
             fishing_events: Vec::new(),
             fishing_exchange: None,
             fishing_prize_venues: None,

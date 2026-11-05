@@ -196,7 +196,7 @@ pub const SAVE_FILE_EXT6_MAGIC: [u8; 4] = *b"LGX6";
 pub const RETAIL_ENGINE_EXT_MAGIC: [u8; 4] = *b"LGXE";
 
 /// Optional minigame-purse block ([`crate::MinigameSave`]): the casino coin
-/// bank, the Point Card bank and the fishing point record. Emitted only when
+/// bank, the Point Card bank, the fishing point record and the dance best. Emitted only when
 /// one of them is non-zero, like `LGX6`.
 pub const SAVE_FILE_EXT7_MAGIC: [u8; 4] = *b"LGX7";
 /// Optional field-position block ([`SaveExtV2::field_position`]): `i16 x`,
@@ -296,7 +296,7 @@ pub struct SaveExt {
     /// Steal); every other one addresses it by id and cannot tell.
     pub item_slots: Vec<(u8, u8)>,
     /// The minigame purses and records (casino coins, Point Card, fishing
-    /// point record). Retail keeps all nine words in its live-state window,
+    /// point record). Retail keeps all ten words in its live-state window,
     /// so a retail block carries them at their own offsets
     /// ([`crate::minigame_save`]); an `LGSF` file carries them in the optional
     /// `LGX7` block.

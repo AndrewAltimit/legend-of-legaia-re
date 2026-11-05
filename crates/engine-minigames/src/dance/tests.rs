@@ -1300,3 +1300,80 @@ fn award_sounds_follow_the_dancer_zero_arm() {
     assert!(award_sounds(groovy(false), 1).is_empty());
     assert!(award_sounds(DanceEvent::Hit { weight: 9 }, 0).is_empty());
 }
+
+/// The tick's head raises the saved best `_DAT_80084464` to the human's score
+/// (`0x801CF584..0x801CF5A4`, an unsigned compare) and never lowers it; the
+/// how-to returns before the raise (`0x801CF514`).
+#[test]
+fn the_head_raises_the_saved_best_outside_the_how_to() {
+    let mut g = game();
+    g.set_best_score(300);
+    g.dancers[0].score = 120;
+    g.advance(1);
+    assert_eq!(g.best_score(), 300, "a lower score leaves the best");
+    g.dancers[0].score = 568;
+    g.advance(1);
+    assert_eq!(g.best_score(), 568);
+    g.dancers[0].score = 10;
+    g.raise_best_score();
+    assert_eq!(g.best_score(), 568);
+
+    let mut how_to = game();
+    how_to.mode = DanceMode::HowTo;
+    how_to.dancers[0].score = 900;
+    how_to.advance(1);
+    assert_eq!(how_to.best_score(), 0, "the how-to's score never lands");
+}
+
+/// Free play's personal-best panel is widget `0x20` at `(0x28, 0x10)` and a
+/// style-B number run (widget `0x21`) of the saved best from `x = 0x2C`
+/// (`0x801CF5B4..0x801CF5E8`), ahead of the HUD driver's quads; no other mode
+/// draws it.
+#[test]
+fn free_play_draws_the_saved_best_panel() {
+    use legaia_minigame_formats::dance_art::DanceWidget;
+    let mut g = game();
+    g.widgets = (0..=0x21u8)
+        .map(|i| {
+            (
+                DanceWidget {
+                    scale: 0x1000,
+                    tpage: 0x0008,
+                    clut: 0x7D00,
+                    u: 0,
+                    v: i,
+                    w: 8,
+                    h: 8,
+                    rgb_top: [0x80; 3],
+                    rgb_bottom: [0x80; 3],
+                    semi: 0,
+                },
+                0,
+            )
+        })
+        .collect();
+    g.set_best_score(568);
+    assert!(
+        g.best_panel_quads().is_empty(),
+        "the qualifier draws no panel"
+    );
+    g.mode = DanceMode::FreePlay;
+    let panel = g.best_panel_quads();
+    let src = |q: &DanceHudQuad| q.uv[0].1;
+    assert_eq!(panel.len(), 4, "the label and three digits");
+    assert_eq!(src(&panel[0]), 0x20);
+    // The emitter centres each widget on its `(x, y)`.
+    let centre = |q: &DanceHudQuad| ((q.x0 + q.x1) / 2, (q.y0 + q.y1) / 2);
+    assert_eq!(centre(&panel[0]), (BEST_PANEL_X, BEST_PANEL_Y));
+    assert_eq!(centre(&panel[3]), (BEST_PANEL_X + 4 + 7 * 8, BEST_PANEL_Y));
+    assert!(panel[1..].iter().all(|q| src(q) == 0x21));
+    let us: Vec<u8> = panel[1..].iter().map(|q| q.uv[0].0).collect();
+    assert_eq!(
+        us,
+        [5, 6, 8].map(dance_level_digit_u).to_vec(),
+        "the digits of 568"
+    );
+    let hud = g.hud_draw_quads(false);
+    assert_eq!(&hud[..4], &panel[..], "the panel leads the frame");
+    assert!(g.hud_frame_rows(false).iter().any(|r| r.text == "BEST 568"));
+}

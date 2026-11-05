@@ -134,6 +134,10 @@ impl World {
             self.system_flag_clear(flag);
         }
         self.system_flag_set(legaia_engine_minigames::dance::WIN_FLAG);
+        // The run raises and draws the saved best `_DAT_80084464` in place;
+        // it starts from the save's.
+        let mut game = game;
+        game.set_best_score(self.minigames.dance_best);
         self.minigames.dance = Some(game);
         self.minigames.dance_last_judge = None;
         self.minigames.dance_countin = Some(legaia_engine_minigames::dance::CountIn::new());
@@ -284,9 +288,15 @@ impl World {
         if let Some(event) = game.advance_pressing(1, dir) {
             self.minigames.dance_last_judge = Some(event.judge());
         }
+        let finished = game.finished();
+        if finished {
+            // Retail's head runs again over the results state, so the last
+            // frame's score is raised before the hall comes down.
+            game.raise_best_score();
+        }
+        self.minigames.dance_best = game.best_score();
         let finish_cues = game.take_finish_cues();
         let award_sounds = game.take_award_sounds();
-        let finished = game.finished();
         let clear_win = finished && game.results_clear_win_flag();
         let counter_slots = finished.then(|| game.results_counter_slots());
         // The countdown parts' move-VM op `0x1D` stores straight into ring

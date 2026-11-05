@@ -7,6 +7,7 @@
 
 mod card_inventory_ladder;
 mod card_item_slot_roundtrip;
+mod dance_best_card;
 mod fresh_block_reproduces_retail;
 mod real_card_roundtrip;
 mod region_gate_card_brackets;
