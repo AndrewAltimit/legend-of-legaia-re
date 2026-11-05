@@ -123,7 +123,9 @@ The outcome is story flag `0x50a`, a bit in the `DAT_80085758` flag bank. `func_
 - **Cleared on a loss** in state `0x14` (`func_0x8003ce34(0x50a)`): modes 0 / 1 when the human loses the score comparison, mode 2 against the fixed threshold `300` (`0x12d`). Mode 3 leaves it untouched.
 - The downstream field script tests it: set = passed, clear = failed.
 
-State `0x14` also copies the three scores into display halfwords (`DAT_801c6460..`) and updates the saved high score `_DAT_80084464` when `DAT_801d53cc` exceeds it.
+State `0x14` also copies the three scores into the field VM's script-counter slots `0x801C6460[0..3]` (`lhu` of `0x801D53CC + slot * 4`, `sh` to `0x801C6460 + slot * 2`, `0x801CFE58..0x801CFE7C`). Those are the slots a dialog number escape prints: back in `koin3`, the Disco King's score announcement carries escape `0xCE 0x0B`, which reads slot 0, the human's score. The port's `DanceGame::results_counter_slots` is that copy, and `World::tick_dance` lays it into `FieldVmState::slot_table` on the frame the song finishes (`dance_minigame_real::a_finished_song_hands_its_scores_to_the_script_counters`).
+
+While any state past 0 runs outside the how-to, the tail also raises the saved best `_DAT_80084464` (save-block `0x324`) to the human's score when it is higher, and free play draws it on its personal-best panel. The port keeps no dance best yet.
 
 ## Step chart and scoring tables
 

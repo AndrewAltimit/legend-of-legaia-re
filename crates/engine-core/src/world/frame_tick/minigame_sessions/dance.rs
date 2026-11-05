@@ -288,6 +288,7 @@ impl World {
         let award_sounds = game.take_award_sounds();
         let finished = game.finished();
         let clear_win = finished && game.results_clear_win_flag();
+        let counter_slots = finished.then(|| game.results_counter_slots());
         // The countdown parts' move-VM op `0x1D` stores straight into ring
         // slot 3 (`DAT_8007B6DE`), as the award does.
         for cue in finish_cues {
@@ -299,6 +300,11 @@ impl World {
             // flag, then the interrupted mode is restored, leaving `dance` in
             // place so the host can read the final score before clearing.
             self.mode = self.minigames.dance_return_mode;
+            // ... and copies the floor's scores into the script-counter
+            // slots the host town's dialogue reads back.
+            if let Some(slots) = counter_slots {
+                self.field_vm.slot_table[..3].copy_from_slice(&slots);
+            }
             if clear_win {
                 self.system_flag_clear(legaia_engine_minigames::dance::WIN_FLAG);
             }

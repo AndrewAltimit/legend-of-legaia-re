@@ -1040,6 +1040,18 @@ impl DanceGame {
         }
     }
 
+    /// The three scores the results state copies into the field VM's
+    /// script-counter slots `0x801C6460[0..3]`: each floor slot's score word
+    /// (`0x801D53CC + slot * 4`) truncated to the halfword it is stored as
+    /// (`lhu` / `sh` at `0x801CFE58..0x801CFE7C`). The host town's script
+    /// prints slot 0 back through a dialog number escape. A floor slot the
+    /// mode seats no dancer in reads zero.
+    ///
+    /// PORT: FUN_801cf470 (state `0x14`'s score copy, `0x801CFE58..0x801CFE7C`)
+    pub fn results_counter_slots(&self) -> [i16; 3] {
+        std::array::from_fn(|i| self.dancers.get(i).map_or(0, |d| d.score as u16 as i16))
+    }
+
     /// The versus grade (retail modes 0/1): the human out-scores every rival on
     /// the floor. Ties go to the human - retail clears the win flag only when
     /// `human < rival`.
