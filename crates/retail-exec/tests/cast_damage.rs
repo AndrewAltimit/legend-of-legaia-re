@@ -498,3 +498,126 @@ fn the_two_wrappers_roll_what_retail_rolls() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// Slot-B cast / summon modules' link base: every module image loads here.
+const SLOT_B_BASE: u32 = 0x801F_69D8;
+const RESPECT_WRAPPER: u32 = 0x801D_D4B0;
+const BYPASS_WRAPPER: u32 = 0x801D_D6B4;
+
+/// What a capture-class module's damage site hands its wrapper, read off the
+/// module image itself: the `jal` at `site` (whose target names the wrapper)
+/// and the `addiu a0, zero, imm` that loads its power - the delay slot's when
+/// it writes `a0`, else the nearest one before the call.
+fn module_site(image: &[u8], site: u32) -> Option<(u32, u16)> {
+    let word = |va: u32| -> Option<u32> {
+        let o = va.checked_sub(SLOT_B_BASE)? as usize;
+        Some(u32::from_le_bytes(image.get(o..o + 4)?.try_into().ok()?))
+    };
+    let jal = word(site)?;
+    if jal >> 26 != 3 {
+        return None;
+    }
+    let target = 0x8000_0000 | ((jal & 0x03FF_FFFF) << 2);
+    // `addiu a0, zero, imm`.
+    let loads_a0 = |w: u32| w >> 16 == 0x2404;
+    let power = std::iter::once(site + 4)
+        .chain((1..=32).map(|k| site - 4 * k))
+        .filter_map(word)
+        .find(|&w| loads_a0(w))?;
+    Some((target, power as u16))
+}
+
+/// A monster's capture-class special end to end: the World's roll for the
+/// move id ([`World::enemy_move_predamage`], which routes it to a module's
+/// baked power and wrapper) against retail's wrapper called the way the
+/// module's own damage site calls it - the wrapper its `jal` names, the power
+/// its `a0` immediate holds. Party victims stand in the Spirit stance half the
+/// time, the case the per-move wrappers double the defender roll on and the
+/// finisher halves.
+#[test]
+fn a_capture_special_rolls_what_its_module_site_rolls() {
+    use legaia_engine_cast::cast_module_ticks::CAPTURE_SITE_POWERS;
+    let state = Rc::new(Cell::new(0));
+    let Some((mut cpu, mut w)) = rig(&state) else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset");
+        return;
+    };
+    let disc = disc().expect("disc");
+    w.install_menu_text(&crate::common::scus().expect("SCUS"));
+    // Every move id the World pages one of the site table's modules for.
+    let mut cases = Vec::new();
+    for &(entry, ids, power, site) in CAPTURE_SITE_POWERS {
+        let image = disc.read_entry(entry as usize).expect("module image");
+        let (wrapper, retail_power) = module_site(&image, site)
+            .unwrap_or_else(|| panic!("PROT {entry} {site:#x}: no wrapper call"));
+        assert!(
+            wrapper == RESPECT_WRAPPER || wrapper == BYPASS_WRAPPER,
+            "PROT {entry} {site:#x}: jal {wrapper:#x}"
+        );
+        assert_eq!(retail_power, power, "PROT {entry} {site:#x}: a0");
+        for id in 1..=0xFFu8 {
+            if w.cast_module_for(id) == Some(entry) && (ids.is_empty() || ids.contains(&id)) {
+                cases.push((id, entry, wrapper, retail_power));
+            }
+        }
+    }
+    let mut seen: Vec<u32> = cases.iter().map(|c| c.1).collect();
+    seen.dedup();
+    // PROT 0961's evolved-Cort roll is the one site the World reaches only in
+    // that formation (`World::dead_end_crisis_wipes`): elsewhere a flat wipe.
+    cases.retain(|c| c.1 != 961);
+    assert!(cases.len() >= 12, "{} cases over {seen:?}", cases.len());
+    assert!(cases.iter().any(|c| c.0 == 0xB1), "Rogue Thunder");
+
+    let mut rng = Rng(0x4341_5054);
+    let mut failures = Vec::new();
+    let mut guarded = 0;
+    for round in 0..20000 {
+        let mut c = gen_cast(&mut rng);
+        c.target = rng.below(3) as u8;
+        c.seats[usize::from(c.target)].guarding = rng.below(2) == 0;
+        guarded += u32::from(c.seats[usize::from(c.target)].guarding);
+        let (id, entry, wrapper, power) = cases[rng.below(cases.len() as u32) as usize];
+        seed_retail(&mut cpu, &c);
+        state.set(c.seed);
+        let stop = cpu.call(
+            wrapper,
+            &[u32::from(power), u32::from(c.attacker), u32::from(c.target)],
+        );
+        assert_eq!(stop, Stop::Returned, "round {round}: {c:?}");
+        let t = actor(c.target);
+        let retail = Outcome {
+            net: cpu.regs.r[V0] as i32,
+            spirit: cpu.mem.rd16(t + 0x170),
+            status: cpu.mem.rd16(t + 0x16E),
+            xp: 0,
+            rng: state.get(),
+        };
+        seed_port(&mut w, &c);
+        // The table's scalar is not what the module rolls with; a seed the
+        // routing failed to replace shows as a wrong figure.
+        let amount = w
+            .enemy_move_predamage(c.attacker, c.target, 1, id)
+            .expect("rolled");
+        land(&mut w, c.target, amount);
+        let port = Outcome {
+            net: match amount {
+                u16::MAX => retail.net.min(-1),
+                _ if c.seats[usize::from(c.target)].status & 4 != 0 => 0,
+                _ => i32::from(amount),
+            },
+            spirit: w.actors[usize::from(c.target)].battle.spirit_gauge,
+            status: w.raw_status_word(c.target),
+            xp: 0,
+            rng: w.rng_state,
+        };
+        if retail != port && failures.len() < 8 {
+            failures.push(format!(
+                "round {round} move {id:#x} PROT {entry} jal {wrapper:#x} a0 {power:#x}:\n retail {retail:?}\n port   {port:?}\n a {} {:?} t {} {:?}\n {:x?} el {:?}",
+                c.attacker, c.seats[usize::from(c.attacker)], c.target, c.seats[usize::from(c.target)], c.ability, c.elements
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    assert!(guarded > 5000, "{guarded}");
+}

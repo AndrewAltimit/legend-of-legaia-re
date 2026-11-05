@@ -159,6 +159,11 @@ spell XP and the Seru debuff landing in a special battle, where the tail returns
 first; spell XP banked off a Stoned victim whose hit the finisher had zeroed; and a
 module's own roll ignoring both seats' Venom and Toxic, drawing a third `rand()` on
 the bypass wrapper, which draws two, and handing a Stoned victim the whole hit.
+A third test calls each capture-class special the way its module's damage site does:
+it reads the site's `jal` (which wrapper) and its `addiu a0, zero, imm` (which power)
+off the module image, calls that, and holds `World::enemy_move_predamage` on the move
+id to it, half the victims in the Spirit stance. It pins the routing from a move id to
+its module, baked power and wrapper, which the wrapper tests take as given.
 
 The Auto assembler `FUN_801F0450`, run whole over the real art banks, found the tail's
 Spirit gate drawing `% 7` where the bytes draw `% 14`, and the pool dropping every
