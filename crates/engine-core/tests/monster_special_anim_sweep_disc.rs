@@ -66,6 +66,9 @@ fn overlay_0898() -> Option<Vec<u8>> {
 /// `0x180`, `0x80` x2, `0x100`, `0x80` - every one drained by the bare frame
 /// step, arm 28 the last gate - for 3268 ticks in all. The capture band
 /// holding 3269 ticks is that choreography, not the stage guard.
+/// PROT 0957's Death Game with no pad: the deal, thirteen swaps and the timer's
+/// pick run this long as a choreography, measured on the sweep's own run.
+const DEATH_GAME_TICKS: u32 = 1095;
 const EVIL_SERU_MAGIC_TICKS: u32 = 3268;
 /// PROT 0966's owning entry.
 const EVIL_SERU_MAGIC_ENTRY: u32 = 966;
@@ -84,7 +87,9 @@ const THUNDER_STORM_TICKS: u32 = 929;
 const THUNDER_STORM_ENTRY: u32 = 957;
 
 fn band_limit(t: &CastTrace) -> u32 {
-    if t.evil_seru_magic {
+    if t.death_game {
+        DEATH_GAME_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
+    } else if t.evil_seru_magic {
         EVIL_SERU_MAGIC_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
     } else if t.doomsday {
         DOOMSDAY_TICKS + u32::from(CASTER_STAGE_TICK_LIMIT)
@@ -131,6 +136,7 @@ struct CastTrace {
     doomsday: bool,
     /// The cast is PROT 0957's Thunder Storm.
     thunder_storm: bool,
+    death_game: bool,
     /// The cast runs a capture-class body that stages no caster clip in
     /// retail either (`capture_body_idles_caster`).
     idles_in_retail: bool,
@@ -359,6 +365,7 @@ fn cast(
     t.evil_seru_magic = w.cast_module_for(spell) == Some(EVIL_SERU_MAGIC_ENTRY);
     t.doomsday = w.cast_module_for(spell) == Some(DOOMSDAY_ENTRY);
     t.thunder_storm = spell == 0x77 && w.cast_module_for(spell) == Some(THUNDER_STORM_ENTRY);
+    t.death_game = spell == 0x76 && w.cast_module_for(spell) == Some(THUNDER_STORM_ENTRY);
     // PROT 0954's roulette, and every body whose arms the band paces on
     // the module's own countdown table (`capture_arm_countdowns`): their
     // band is the choreography's retail length, which runs past the guard

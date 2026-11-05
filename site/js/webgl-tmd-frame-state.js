@@ -181,7 +181,7 @@ window.LegaiaUtil.installMethods(TmdRenderer, class {
    * dither alone. Absent means retail's boot value, on. */
   setDrawDither(on) {
     this.drawDither = !!on;
-  },
+  }
 
   /* PSX rasterisation (the native renderer's `set_psx_mode`, which the
    * native window turns on with LEGAIA_PSX_RENDER): vertex positions snap to

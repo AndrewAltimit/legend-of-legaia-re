@@ -836,3 +836,12 @@ The capture child's hand-off: it reads the `LEGAIA_STRIKE_DEAL` environment
 record the strike oracle hands the window and does nothing without one. A
 browser has no capture child, and a player's run never carries the record.
 """
+
+[[frame_kernel]]
+host = "native"
+kernel = "capture_gate_met"
+host_only = true
+reason = """
+The retail-compare capture child's phase gate: it decides when a frame is taken,
+drives no game state, and the page has no capture child.
+"""
