@@ -4154,6 +4154,7 @@
     "engine-battle-vm",
     "engine-cast",
     "engine-core",
+    "engine-dialog",
     "engine-fishing",
     "engine-menus",
     "engine-minigame-scenes",
