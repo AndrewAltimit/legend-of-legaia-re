@@ -290,6 +290,17 @@ target `0x64` through the window's first row. Both states are held on disk under
 flow byte carries them. The engine's `0x66` screen is grounded on the pad walk's
 frame alone: panels up, `All Allies` plate, no score.
 
+### Soren Camp's sky
+
+`open` `son_field_door_hop` (`image` low, every state channel at 1) shows a cloud sky
+the engine does not draw: twelve textured quads (`tpage 0x98`, CLUTs `0x7C80` / `0x7CC0`)
+first in the frame's primitive pool, a one-object TMD at model-pool slot 62. The RAM
+holds an object actor for it at `(1088, 146, 2112)`, `+0x50 = 5`, `+0x58 = 10`,
+`+0x64 = 0x3E`, `+0x10 = 0x28008880`. The engine's placed list for the scene is empty,
+so the mesh reaches no draw. First step: read how partition-0 record 5 seats that actor
+and which assembly path owns the slot; the sky band `FUN_801F73E4` is not it, since its
+gate is the overworld sweep.
+
 ### Zenoir's walk over a small window
 
 **Status: open.** Retail's arithmetic lets Zenoir's creature step over a victim's range window (510 units a pass against a window 448 across, `+0x1F = 14`) and hold arm 8 for good ([cast-module.md](../subsystems/cast-module.md#prot-0908-zenoir)). The port hit this in about one Zenoir cast in two hundred and guards it. Not settled: whether a retail fight does it, since the frame step `4` is a measurement of one recording, and a step of `3` (382 units) cannot miss. Evidence that closes it: a PCSX-Redux recording of Zenoir against monster 27, 36 or 63 reading the creature's `+0x34` through arm 8.
