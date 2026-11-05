@@ -7,11 +7,9 @@ impl World {
     /// Turn the player toward field NPC `npc_slot` (retail's face-the-NPC
     /// step after a successful interact probe: `func_0x80019b28` computes
     /// the 12-bit angle from the touched actor to the player and stores it
-    /// in the player's `+0x26`). The engine computes the same angle with
-    /// float `atan2` in its own heading convention (`0` = Z+) rather than
-    /// retail's arctan LUT at `0x8006f4c8`, so it is shape-faithful, not
-    /// bit-exact - the value only feeds the heading marker and the next
-    /// probe's 45° sector quantisation.
+    /// in the player's `+0x26`). The engine computes the same angle over the
+    /// same arctan table ([`engine_bearing`]) in its own heading convention
+    /// (`0` = Z+).
     ///
     /// REF: FUN_80019b28
     pub(crate) fn face_field_npc(&mut self, npc_slot: u8) {
@@ -95,9 +93,9 @@ impl World {
     /// and while a save is already outstanding, so a nested interaction cannot
     /// overwrite the authored heading with a talk pose.
     ///
-    /// The engine resolves the bearing with float `atan2` in its own heading
-    /// convention (`0` = Z+) rather than retail's arctan LUT at `0x8006F4C8`,
-    /// so it is shape-faithful rather than bit-exact.
+    /// The engine resolves the bearing over retail's arctan table in its own
+    /// heading convention (`0` = Z+, [`engine_bearing`]); the integer bearing
+    /// is exactly symmetric under the endpoint swap, so the half-turn is too.
     ///
     /// PORT: FUN_80039B7C (the `0x80039F48..0x80039F80` face-the-player arm)
     /// REF: FUN_80019B28, FUN_801D5B5C, FUN_8003A1E4, FUN_80020DE0

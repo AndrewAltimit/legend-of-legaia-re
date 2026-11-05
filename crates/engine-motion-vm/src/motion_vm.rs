@@ -4,10 +4,8 @@
 //!
 //! PORT: FUN_8003774C
 //!
-//! (This module's [`bearing_to_yaw`] is an `f32` approximation of the bearing
-//! helper `FUN_80019B28` used only by the face-target ramp; the byte-faithful
-//! LUT port of that function lives in
-//! `legaia_engine_battle_vm::battle_action::bearing_12bit`.)
+//! (The face-target ramp's [`bearing_to_yaw`] is the bearing helper
+//! `FUN_80019B28`, `legaia_engine_system::trig::bearing12`.)
 //!
 //! - The actor VM (FUN_801D6628) handles sprite spawn / despawn, bytecode-driven.
 //! - The move VM (FUN_80023070) drives Tactical Arts / battle-action animation.

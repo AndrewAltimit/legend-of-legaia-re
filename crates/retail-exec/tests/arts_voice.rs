@@ -65,7 +65,9 @@ fn the_shout_selector_picks_what_retail_picks() {
         });
         let l = log.clone();
         cpu.hook(ROUTE, move |r, _| {
-            l.borrow_mut().emits.push(ArtsVoiceEmit::Route(r.r[A0] as u16));
+            l.borrow_mut()
+                .emits
+                .push(ArtsVoiceEmit::Route(r.r[A0] as u16));
         });
     }
     // A pool whose every member is the last pick spins for ever in retail.
@@ -81,7 +83,11 @@ fn the_shout_selector_picks_what_retail_picks() {
                     rng.below(0x40) as u8 + 1
                 };
                 let solo_latch = u8::from(case & 2 != 0);
-                let first_enemy = if case >= 4 { 0x4F } else { rng.below(0x4F) as u8 };
+                let first_enemy = if case >= 4 {
+                    0x4F
+                } else {
+                    rng.below(0x4F) as u8
+                };
                 let last0 = rng.below(0x10) as u8;
                 let caller_seat = rng.below(3) as u8;
                 let ctx13 = rng.below(8) as u8;

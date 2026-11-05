@@ -199,7 +199,10 @@ fn cutscene_timeline_player_halt_acquire_turns_the_player_to_its_bind() {
         w.step_cutscene_timeline();
     }
     assert!(!parked(&w), "the turn's terminal frame released the park");
-    assert_eq!(w.actors[0].move_state.render_26, 0x23B);
+    // `FUN_80019B28` over `(768, 640)`: `0x400 - atan_lut[(640 << 11) / 768]`
+    // = `0x400 - 452`, the table truncating where a float `atan2` rounds to
+    // `0x23B`.
+    assert_eq!(w.actors[0].move_state.render_26, 0x23C);
     let tl = w.cutscene.timeline.as_ref().expect("timeline installed");
     assert_eq!(tl.pc, 6, "record resumed past the 6-byte acquire");
 }
