@@ -206,7 +206,8 @@ impl HeldBox {
 }
 
 /// A player walk-to-tile leg a prop run parks on: the decoded target, the
-/// per-frame step (`field_npc_walk_step_speed(0x80, mode & 7)`) and the
+/// per-frame step (`field_npc_walk_step_speed(0x80, mode & 7)`), the
+/// approach mode (`mode >> 4`, `srl a1,a1,0x4` at `0x80037BEC`) and the
 /// frames spent, bounded like a cutscene walk.
 ///
 /// REF: FUN_8003774C (case 0x47)
@@ -214,6 +215,7 @@ impl HeldBox {
 pub struct PropPlayerWalk {
     pub target: (i16, i16),
     pub speed: u16,
+    pub approach: u8,
     pub frames: u32,
 }
 

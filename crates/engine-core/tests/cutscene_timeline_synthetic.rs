@@ -242,3 +242,52 @@ fn walk_to_tile_yield_parks_and_glides_the_player() {
         "the walk lands exactly on the decoded tile centre"
     );
 }
+
+/// The player's walk-to-tile leg runs the walk kernel's own law
+/// (`FUN_8003774C` case 0x47): a default approach (`C7 F8 <tx> <tz> 03`,
+/// mode high nibble `0`) closes the dominant axis alone until the two deltas
+/// are equal and only then cuts the diagonal, and every frame's facing is a
+/// compass entry of the step's axis signs (`0x80037D4C`), so an uneven leg
+/// ends facing the diagonal rather than the longer axis.
+#[test]
+fn player_walk_leg_closes_the_dominant_axis_first_on_a_compass_facing() {
+    let mut w = World {
+        mode: SceneMode::Field,
+        ..World::default()
+    };
+    w.install_field_player(0);
+    let slot = w.player_actor_slot.expect("player installed") as usize;
+    let (tx, tz) = (18 * 128 + 0x40, 26 * 128 + 0x40);
+    // Two tiles east and half a tile north of the target.
+    w.actors[slot].move_state.world_x = tx + 256;
+    w.actors[slot].move_state.world_z = tz + 64;
+    // `[C7 F8 12 1A 03][GFLAG_SET 16]`.
+    w.cutscene.timeline = Some(CutsceneTimeline::new(
+        vec![0xC7, 0xF8, 0x12, 0x1A, 0x03, 0x2E, 0x10],
+        0,
+    ));
+    let mut headings = Vec::new();
+    let mut ticks = 0u32;
+    while w.cutscene.timeline.is_some() && ticks < 400 {
+        step_frame(&mut w);
+        let ms = &w.actors[slot].move_state;
+        let (dx, dz) = (i32::from(ms.world_x - tx), i32::from(ms.world_z - tz));
+        if dx.abs() > dz.abs() {
+            assert_eq!(dz, 64, "Z waits while X dominates (dx={dx})");
+        }
+        headings.push(ms.render_26);
+        ticks += 1;
+    }
+    assert!(
+        w.cutscene.timeline.is_none(),
+        "the leg lands and the record ends"
+    );
+    let ms = &w.actors[slot].move_state;
+    assert_eq!((ms.world_x, ms.world_z), (tx, tz));
+    assert!(
+        headings.iter().all(|h| h & 0x1FF == 0),
+        "every facing is a compass entry: {headings:?}"
+    );
+    assert!(headings.contains(&0xC00), "the X run faces -X");
+    assert_eq!(ms.render_26, 0xA00, "the leg ends on the -X -Z diagonal");
+}

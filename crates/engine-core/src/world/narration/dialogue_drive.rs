@@ -1314,6 +1314,7 @@ impl World {
                     id.player_walk = Some(legaia_engine_field::inline_dialogue::PropPlayerWalk {
                         target: (decode(b0), decode(b1)),
                         speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
+                        approach: b2 >> 4,
                         frames: 0,
                     });
                 }
@@ -1376,7 +1377,11 @@ impl World {
         let had_leg = id.player_walk.is_some() || id.player_turn.is_some();
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
-            let arrived = self.step_player_walk_leg(walk.target, walk.speed.saturating_mul(grid));
+            let arrived = self.step_player_walk_leg(
+                walk.target,
+                walk.speed.saturating_mul(grid),
+                walk.approach,
+            );
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
                 return true;
