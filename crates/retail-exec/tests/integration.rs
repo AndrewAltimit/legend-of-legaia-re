@@ -16,6 +16,7 @@ mod common;
 mod confuse;
 mod dance_floor;
 mod death_spoils;
+mod enemy_impact;
 mod encounter_roll;
 mod escape;
 mod field_vm;
