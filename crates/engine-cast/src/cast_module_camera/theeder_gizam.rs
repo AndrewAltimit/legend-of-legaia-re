@@ -494,6 +494,7 @@ mod tests {
 
     fn seats(band_timer: i32) -> ModuleCamSeats {
         ModuleCamSeats {
+            victim_flinch: 0,
             caster: ModuleSeat {
                 x: 63,
                 y: 0,

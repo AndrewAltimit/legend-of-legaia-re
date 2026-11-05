@@ -190,15 +190,12 @@ mod tests {
             }
         }
         assert_eq!(height, -1536, "three drains a pass over 64 passes");
-        let mut landed = None;
-        loop {
+        let a = loop {
             let a = bloody_horns_camera(&mut st, 5, seats());
             if !a.hold {
-                landed = Some(a);
-                break;
+                break a;
             }
-        }
-        let a = landed.expect("the hit arm");
+        };
         assert!(a.folds_hit);
         assert_eq!(a.victim_write.y, Some(0));
     }

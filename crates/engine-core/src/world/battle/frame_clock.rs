@@ -155,11 +155,6 @@ impl World {
                 self.casting.module_phase,
             )
         });
-        // The band's two polls read step `3` in the same recordings.
-        let measured = measured.or_else(|| {
-            (state == S::MagicCaptureBranch.as_byte() || state == S::MagicCaptureFade.as_byte())
-                .then_some(3)
-        });
         let want = match (measured, self.battle.cast_arm_step_on) {
             (Some(step), _) => step,
             (None, true) => DEFAULT_BATTLE_FRAME_STEP,

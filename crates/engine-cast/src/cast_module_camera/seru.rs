@@ -984,6 +984,7 @@ mod tests {
 
     fn seats() -> ModuleCamSeats {
         ModuleCamSeats {
+            victim_flinch: 0,
             caster: ModuleSeat {
                 x: 63,
                 y: 0,

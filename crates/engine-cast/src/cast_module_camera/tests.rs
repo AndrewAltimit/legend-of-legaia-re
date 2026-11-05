@@ -2,6 +2,7 @@ use super::*;
 
 fn seats() -> ModuleCamSeats {
     ModuleCamSeats {
+        victim_flinch: 0,
         caster: ModuleSeat {
             x: 82,
             y: 0,

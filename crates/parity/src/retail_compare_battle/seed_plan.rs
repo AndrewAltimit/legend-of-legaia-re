@@ -80,6 +80,17 @@ impl RetailBattle {
     ///   `image` `+.022`, `camera` `-.026`).
     pub fn frame_step_seed(&self) -> Option<FrameStepSeed> {
         let default = legaia_engine_battle_loop::frame_clock::DEFAULT_BATTLE_FRAME_STEP;
+        // A capture on the capture band's module tick whose whole history ran the
+        // default step stands on it: the arm step table
+        // (`capture_arm_frame_step`) is one fight's reading, and
+        // `zeto_big_wave_mid_cast` ran arm 5 at `2` where the table reads `4`.
+        if self.action_state == 0x70
+            && self.step_run == (default, self.step_run.1)
+            && self.step_run.1 >= 16
+            && !matches!(self.seed_plan(), SeedPlan::Cast)
+        {
+            return Some((default, self.action_state, None));
+        }
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)

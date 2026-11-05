@@ -148,37 +148,34 @@ pub fn cast_arm_frame_step(entry: u32, phase: u8) -> Option<u8> {
 /// `(action id, (module phase, step))`, the capture band's reading of the same
 /// measurement: a harvest state's cast (`*_pre_*`, `scripts/ci/cast-sequence.py`)
 /// with the step each arm spends the most vsyncs on in state `0x70`, merged over
-/// the fights a spell was recorded in. Keyed on the action, since one module's
+/// the fights a spell was recorded in, an arm under eight vsyncs left out as too short to
+/// read. Keyed on the action, since one module's
 /// bodies differ (PROT 0941, 0955). A phase no recording reached takes the default.
 const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     // earthquake
-    (
-        0x4A,
-        &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 3)],
-    ),
+    (0x4A, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 4), (6, 3)]),
     // spore_gas
-    (0x4F, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
+    (0x4F, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 2)]),
     // power_up
-    (0x52, &[(0, 3), (1, 4), (2, 4), (3, 3)]),
+    (0x52, &[(1, 4), (2, 4), (3, 3)]),
     // big_wave
-    (0x56, &[(0, 3), (4, 3), (5, 4), (6, 4), (7, 3), (8, 4)]),
+    (0x56, &[(5, 4), (6, 4), (7, 3), (8, 4)]),
     // v_windhash
-    (0x57, &[(0, 2), (1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
+    (0x57, &[(1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
     // cross_beam
     (0x58, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4), (5, 3)]),
     // scythe_wind
     (0x5B, &[(0, 3), (1, 3), (2, 3), (3, 4), (4, 4), (5, 3)]),
     // terror_scream
-    (0x70, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4)]),
+    (0x70, &[(1, 4), (2, 4), (3, 4), (4, 4)]),
     // void_accessories
-    (0x73, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 4)]),
+    (0x73, &[(1, 4), (2, 4), (3, 4), (4, 4)]),
     // element_change
-    (0xAF, &[(0, 2), (1, 4), (2, 3)]),
+    (0xAF, &[(1, 4), (2, 3)]),
     // rogue_wind
     (
         0xB0,
         &[
-            (0, 2),
             (1, 4),
             (50, 4),
             (51, 3),
@@ -193,7 +190,6 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (
         0xB1,
         &[
-            (0, 2),
             (1, 4),
             (100, 3),
             (101, 3),
@@ -208,7 +204,6 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
     (
         0xB2,
         &[
-            (0, 3),
             (1, 4),
             (2, 3),
             (3, 3),
@@ -220,7 +215,7 @@ const CAPTURE_ARM_STEPS: &[(u8, &[(u8, u8)])] = &[
         ],
     ),
     // stone_circle
-    (0xB9, &[(0, 3), (1, 4), (2, 4), (3, 4), (4, 3)]),
+    (0xB9, &[(1, 4), (2, 4), (3, 4), (4, 3)]),
 ];
 
 /// The step retail ran module phase `phase` of the capture cast `spell` at.

@@ -2330,6 +2330,10 @@ pointer not yet resident, counts out of range, an empty cell) is kept with a
 `battle not seedable:` reason and counted as a classified limit, not as a
 seed failure.
 
+A capture-band capture whose whole frame history ran the default step stands on it
+(`RetailBattle::frame_step_seed`): the [arm step table](../subsystems/battle-stage-camera.md#what-the-arm-step-table-is)
+is one fight's reading, and `zeto_big_wave_mid_cast` ran arm 5 at `2` where the table reads `4`.
+
 ### Battle channels
 
 | Channel | Score |
