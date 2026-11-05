@@ -3469,6 +3469,12 @@ three units). The bodies without that store keep the half turn
   4 to 6, while its `+0x21D` reads `4` at every vsync: what holds the byte at `4` is
   [open](../reference/open-rev-eng-threads.md).
 
+- **Capture bodies run no strike setup.** A capture-class cast's arm calls its
+  damage wrapper itself, so `FUN_801E09F8`'s effect lists and the move-power
+  record's cue `+0x0D` (`0x801E184C`) never run for it. Chaos Flare (`0x36`)'s record
+  carries cue `0x48`, and a retail recording of the cast plays none. The strike
+  also stores the victim's rate `2` (`0x801F7494`), and the reaction's cues run on it.
+
 <a id="prot-0957-thunder-storm"></a>
 
 **0957 Thunder Storm** (`cast_module_camera::thunder_storm_camera`) is the one

@@ -591,6 +591,15 @@ impl World {
             if phase_in == hit_arm && self.casting.module_hit_arm != Some(hit_arm) {
                 self.casting.module_hit_arm = Some(hit_arm);
                 self.fold_pending_cast();
+                // PROT 0951 `0x36`'s strike stores the victim's rate `2`
+                // (`li v1,2; sb v1,0x21d(s1)` at `0x801F7494`), and the
+                // reaction's cues run on it.
+                if entry == 951
+                    && body == Some(ticks::CHAOS_FLARE_TICK)
+                    && let Some(v) = self.actors.get_mut(usize::from(victim_slot))
+                {
+                    v.battle.anim_rate = legaia_engine_battle_vm::battle_anim_rate::AnimRate(2);
+                }
                 caster = self.cast_view(caster_slot);
                 victim = self.cast_view(victim_slot);
                 seat = self.cast_view(seat_slot);

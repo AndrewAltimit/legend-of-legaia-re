@@ -343,7 +343,19 @@ impl World {
             // A flight its terminator already seeded holds the lists
             // (`CastFxState::homing_holds_lists`): only the move's sound cue
             // surfaces, as on the deferred path.
-            if self.casting.homing_holds_lists == Some(caster) {
+            //
+            // A capture body's cast never reaches that strike setup: its arm
+            // calls `FUN_801DD4B0` itself, so neither the lists nor the
+            // record's cue `+0x0D` (`0x801E184C`) run
+            // (`battle_noaru_songi_chaos_flare_mid_cast` plays no `0x48`).
+            let on_flight = self.casting.homing_holds_lists == Some(caster)
+                || self.effect_script_terminates(caster as usize);
+            if !on_flight
+                && self.spell_table_class(def.id)
+                    == Some(legaia_game_tables::spell_names::CAPTURE_CLASS)
+            {
+                // The arm's own hit: nothing for the strike setup to seat.
+            } else if self.casting.homing_holds_lists == Some(caster) {
                 self.casting.homing_holds_lists = None;
                 if let Some(cue) = self
                     .tables
