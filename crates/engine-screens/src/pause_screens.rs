@@ -739,9 +739,10 @@ pub fn magic_draws(
         let view = ui::PauseMagicView {
             arrows_blink: list_arrows_blink(world),
             casters: &casters,
-            rows: &rows,
-            page: model.page,
-            pages: model.pages,
+            // Window 14 takes the list's place under a target flow.
+            rows: if panel.is_some() { &[] } else { &rows },
+            page: if panel.is_some() { 0 } else { model.page },
+            pages: if panel.is_some() { 0 } else { model.pages },
             phase: if model.focus_list {
                 ui::PauseMagicPhase::List
             } else {
@@ -1025,6 +1026,11 @@ pub fn items_draws(
                 .filter(|i| i.is_point_card)
                 .map(|_| world.map_or(0, |w| w.minigames.point_card.max(0) as u32)),
             throw_confirm: throw.as_ref(),
+            // The destination list's open script `0x801E4CC4` closes the tab
+            // (`menu_door_wind_map03_retail`).
+            hide_tab: s
+                .special_use()
+                .is_some_and(|sp| sp.phase == ps::SpecialUsePhase::PickDestination),
             special_confirm: model.special_confirm.as_ref().map(|sc| SpecialConfirmView {
                 lines: &special_lines,
                 cursor: sc.cursor,

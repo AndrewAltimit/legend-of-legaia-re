@@ -104,9 +104,9 @@ pub struct ItemsInfoModel {
 /// so the page maths is the shared one. The rows are class `0x8000`, which
 /// the kernel draws as a bare name with no count column
 /// ([`ItemsScreenModel::show_counts`] is `false`) and no ink arm of its own,
-/// so they keep the white the command flow staged. The info window stays
-/// closed (`info: None`), which is retail - the staged-id gate
-/// `DAT_801E46B0` is not restaged by this submenu.
+/// so they keep the white the command flow staged. The info window keeps the
+/// staged item: `DAT_801E46B0` still names the row that opened this submenu
+/// (`menu_door_wind_map03_retail`).
 fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> ItemsScreenModel {
     let n = sp.landmarks.len();
     let cursor = sp.cursor.min(n.saturating_sub(1));
@@ -128,7 +128,13 @@ fn destination_list_model(s: &PauseItemsSession, sp: &SpecialUseSession) -> Item
         command_cursor: s.command_cursor,
         list_cursor_on_page: (cursor - start) as u8,
         bag_empty: false,
-        info: None,
+        info: s.rows.get(s.list_cursor()).map(|r| ItemsInfoModel {
+            name: r.name.clone(),
+            count: r.count as u16,
+            desc: r.desc.clone(),
+            passive: r.passive.clone(),
+            is_point_card: false,
+        }),
         target_select: false,
         throw_confirm: None,
         special_confirm: None,

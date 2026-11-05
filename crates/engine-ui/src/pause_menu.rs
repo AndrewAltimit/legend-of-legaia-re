@@ -492,6 +492,8 @@ pub struct ItemsScreenView<'a> {
     pub point_card: Option<u32>,
     pub throw_confirm: Option<&'a PauseThrowConfirmView<'a>>,
     pub special_confirm: Option<SpecialConfirmView<'a>>,
+    /// The title tab has gone: the Door of Wind destination list.
+    pub hide_tab: bool,
 }
 
 /// Magic sub-screen in its browsing form.
@@ -741,8 +743,11 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                     points,
                 ));
             }
-            texts
-                .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
+            if !v.hide_tab {
+                texts.extend(
+                    ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")),
+                );
+            }
             if let Some(confirm) = v.throw_confirm {
                 texts.extend(crate::items_throw_confirm_draws_for(
                     ctx.font,
@@ -771,8 +776,12 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
             // the two hosts disagreed about (the browser emitted the Use
             // confirm's frame *before* the window set, so the item list's
             // frame painted over it).
-            sprites
-                .extend(ctx.window_chrome(&legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS));
+            let windows = &legaia_game_tables::menu_windows::ITEMS_SCREEN_WINDOWS;
+            sprites.extend(ctx.window_chrome(if v.hide_tab {
+                &windows[1..]
+            } else {
+                &windows[..]
+            }));
             sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
             texts.extend(crate::list_page_arrow_draws(
                 ctx.font,

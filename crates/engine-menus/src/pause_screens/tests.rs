@@ -638,7 +638,11 @@ fn door_of_wind_opens_the_destination_list_not_a_confirm() {
         m.special_confirm.is_none(),
         "no Yes/No prompt on this route"
     );
-    assert!(m.info.is_none(), "the info window stays closed");
+    assert_eq!(
+        m.info.map(|i| i.name).as_deref(),
+        s.rows.get(s.list_cursor()).map(|r| r.name.as_str()),
+        "the info window keeps the staged item"
+    );
     assert_eq!(
         m.page_rows
             .iter()

@@ -377,6 +377,7 @@ fn compose_items(ctx: &PauseMenuCtx<'_>, modal: ItemsModal) -> PauseMenuDraws {
             view: &view,
             point_card: Some(4200),
             throw_confirm: matches!(modal, ItemsModal::Throw).then_some(&throw),
+            hide_tab: false,
             special_confirm: match modal {
                 ItemsModal::SpecialOneLine => Some(SpecialConfirmView {
                     lines: &one_line,
