@@ -3317,6 +3317,13 @@ is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op o
 activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
 
+The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
+emulator's `ENVX`, and its SPU runs on the host's audio clock
+([above](#the-envelope-channel-is-not-on-emulated-time)), so a one-shot can read as still
+sounding long after its sample ended. `son_field_door_hop` is the case: its records hold
+voices 22 and 23 at `7FFF`, where one ambient part keys a `40`-vsync sample every `63` vsyncs
+and only one voice sounds ([settled](../reference/re-settled-threads/audio.md#why-son_field_door_hops-records-hold-two-0x201-voices)).
+
 ## The keying differential
 
 The PCM channels score a window of a state's own music against an emulator's output, and

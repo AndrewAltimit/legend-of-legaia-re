@@ -436,20 +436,6 @@ voice contention is not it. A retail key-on census of the scene
 whether those note-ons fire a vsync early on hardware's own clock or only in this
 recording.
 
-### Why does `son_field_door_hop` hold two `0x201` cue voices where the engine sounds one?
-
-*Status:* open (measured)
-
-The audio sweep's `ambient` channel: the state's voice records hold voices 22 and 23
-owned by the cue slot, side-band slot 3, both reading `ENVX` `7FFF`. The engine's ambient
-effect script stores cue `0x201` into ring slot 3 (move-VM op `0x1D`) every `63` vsyncs, as
-`kor5`'s does, keying voices 22 and 23 by turns, and each voice ends at its sample's end
-`38` vsyncs in, so the two never overlap. The cue keys alike in the
-[cue differential](../subsystems/audio.md#the-cue-differential). The state is a
-PCSX-Redux one, whose records' `+0x06` is the last flush's `ENVX`; a watch of voices 22 / 23's
-`ENVX` over a few periods on that state says whether the sample ends there too (and the
-records hold a stale level) or keeps sounding.
-
 ### What renders a cast's cues for the real-PCM channels?
 
 *Status:* open

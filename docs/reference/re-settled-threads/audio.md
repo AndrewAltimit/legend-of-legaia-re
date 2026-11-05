@@ -410,3 +410,24 @@ PROT 0940's `0x3C` arm 2 counts out at `0x801F6F30`, rolls the Stone test (`0x80
 `FUN_8004FE5C(0xF4, ctx[+0x13])` on a landing (`0x15B` for Zora, `0x801F7018`) ahead of the guard tests, and
 steps to arm 3. Ring id `0x290`. The port rolls on that pass, not at the band's closing seam. See
 [the cast module page](../../subsystems/cast-module.md).
+
+### Why `son_field_door_hop`'s records hold two `0x201` voices
+
+*Status:* resolved - grade `capture` (the ring writers and the records over time), `disassembly`
+of the disc's sample flags (the voice length)
+
+At the state one move-VM part stores cue `0x201` into ring slot 3 (op `0x1D`, `0x80023688`)
+every `63` vsyncs, and the drainer keys it on voices 23 and 22 by turns
+(`autorun_keyon_census.lua` from the state: stores at `34`, `97`, `160`, key-ons two vsyncs
+later). The cue keys tone 0 of bank `2038` at note `60` against centre `84`, pitch `0x400`, and
+its VAG ends at block `268` with flag `1` (end without repeat), so the voice stops about `40`
+vsyncs in on hardware and in the engine (`38`), and only one voice sounds at a time. The
+records' `+0x06` reading `7FFF` on both is PCSX-Redux's `ENVX`, which its SPU thread advances
+on the host's audio clock ([not emulated time](../../subsystems/audio.md#the-envelope-channel-is-not-on-emulated-time)):
+a watch of the two records from the state holds a voice at `7FFF` for `30` to `90` vsyncs
+after its key-on, varying period to period. A second part spawns `175` vsyncs past the state
+(`FUN_80021B04` from `FUN_800252EC`, its first store at `0x80021DC8`) and runs the same loop
+`12` vsyncs behind the first, after which two voices do overlap; the engine spawns it too, the
+two streams `11` vsyncs apart, past the sweep's listening window. So the sweep's `ambient` miss
+on this state is the capture's `ENVX`, not the engine.
+
