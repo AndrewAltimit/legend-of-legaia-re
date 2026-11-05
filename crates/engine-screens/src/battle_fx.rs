@@ -68,7 +68,27 @@ pub fn battle_fx_prims(world: &World) -> Vec<ScreenPrim> {
             .map(|q| q.to_screen_prim(MOVE_FX_STREAK_OT)),
     );
     out.extend(cast_ribbon_prims(world, &mvp, MOVE_FX_STREAK_OT));
+    out.extend(death_game_prims(world));
     out
+}
+
+/// PROT 0957 `0x76`'s two sprites on the pick's arms
+/// ([`legaia_engine_cast::cast_module_camera::DeathGame::sprites`]).
+fn death_game_prims(world: &World) -> impl Iterator<Item = ScreenPrim> {
+    let sprites = world.casting.module_cam.death_game.sprites();
+    sprites.into_iter().flatten().map(|s| {
+        ScreenPrim::Textured(legaia_render_kernels::screen_prim::ScreenQuad {
+            xy: s.xy,
+            uv: s.uv,
+            clut: s.clut,
+            tpage: s.tpage,
+            color: 0x80_8080,
+            gouraud: None,
+            semi_transparent: false,
+            ot_index: 1,
+            depth: None,
+        })
+    })
 }
 
 /// PROT 0904's (Theeder, spell `0x82`) beam packets this frame

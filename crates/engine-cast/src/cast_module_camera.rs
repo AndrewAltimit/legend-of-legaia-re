@@ -1060,8 +1060,8 @@ pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
 pub use death_game::{
-    CARD_RECORDS, DEATH_GAME_BODY, DeathGame, DeathGameOutcome, DeathGamePad, PICK_RECORD,
-    death_game_camera,
+    CARD_RECORDS, DEATH_GAME_BODY, DeathGame, DeathGameOutcome, DeathGamePad, DeathGameSprite,
+    PICK_RECORD, death_game_camera,
 };
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,

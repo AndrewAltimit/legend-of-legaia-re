@@ -93,6 +93,19 @@ pub struct DeathGame {
     pub seats_parts: bool,
     pub turns_pick: bool,
     pub outcome: Option<DeathGameOutcome>,
+    /// The word the digit reads this pass: arm 5's timer, arm 6's frozen one.
+    /// `None` off those arms, where neither sprite is drawn.
+    pub digit_word: Option<i32>,
+}
+
+/// One screen-space `0x2C` `POLY_FT4` of arms 5 and 6: colour `0x808080`, tag
+/// `9`, linked at entry `1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeathGameSprite {
+    pub xy: [(i16, i16); 4],
+    pub uv: [(u8, u8); 4],
+    pub tpage: u16,
+    pub clut: u16,
 }
 
 impl DeathGame {
@@ -193,6 +206,36 @@ impl DeathGame {
         }
     }
 
+    /// The pass's two sprites: the countdown digit, then the pointer.
+    ///
+    /// The digit is `(0x94, 8)..(0xAB, 0x1F)` on texture page `0x29`, CLUT
+    /// `0x7A40`, with `u = 24 q .. 24 q + 0x17`, `q = (word + 0x1DF) / 480`
+    /// (`0x801F8818..0x801F88DC`, `0x801F8BEC..0x801F8CBC`). The pointer is
+    /// `(cursor - 10, 0x8A)..(cursor + 0x19, 0xB1)` on page `0x28`, CLUT `0x7A08`,
+    /// two frames `0x24` texels apart flipping every sixteen vsyncs
+    /// (`0x801F89FC..0x801F8B1C`, `0x801F8D40..0x801F8E4C`).
+    pub fn sprites(&self) -> Option<[DeathGameSprite; 2]> {
+        let word = self.digit_word?;
+        let q = ((word + 0x1DF) / 480 * 24) as u8;
+        let (l, r) = (q, q.wrapping_add(0x17));
+        let digit = DeathGameSprite {
+            xy: [(0x94, 8), (0xAB, 8), (0x94, 0x1F), (0xAB, 0x1F)],
+            uv: [(l, 0), (r, 0), (l, 0x17), (r, 0x17)],
+            tpage: 0x29,
+            clut: 0x7A40,
+        };
+        let frame = (self.blink / 16 % 2 * 36) as u8;
+        let (l, r) = (frame.wrapping_add(0xB0), frame.wrapping_add(0xD3));
+        let (x0, x1) = (self.cursor - 10, self.cursor + 0x19);
+        let pointer = DeathGameSprite {
+            xy: [(x0, 0x8A), (x1, 0x8A), (x0, 0xB1), (x1, 0xB1)],
+            uv: [(l, 0x88), (r, 0x88), (l, 0xAF), (r, 0xAF)],
+            tpage: 0x28,
+            clut: 0x7A08,
+        };
+        Some([digit, pointer])
+    }
+
     /// The picked card's value.
     pub fn picked_value(&self) -> u8 {
         self.table[self.pair[0]]
@@ -229,10 +272,9 @@ fn drift(tr_z: i16, tr_y: i16) -> Option<CaptureDrift> {
 ///
 /// The host draws ahead of a pass ([`DeathGame::deal`], [`DeathGame::draw_swap`]),
 /// feeds the pad, and carries out the cues, the parts and the outcome. This
-/// director owns the phase. Arms 3, 5 and 6's packets are the host's
-/// (`DeathGame::cursor`, the word).
+/// director owns the phase. Arms 5 and 6's packets are [`DeathGame::sprites`].
 ///
-/// PORT: FUN_801F798C, overlay_summon_effect_table_0957_801f798c (PROT 0957 `0x76`; the phase walk, deal, shuffle, pad, pick and results; the labels, the two sprites and arm 4's heal flash `FUN_801E22C8` are not drawn)
+/// PORT: FUN_801F798C, overlay_summon_effect_table_0957_801f798c (PROT 0957 `0x76`; the phase walk, deal, shuffle, pad, pick and results; the labels and the heal flash `FUN_801E22C8` are not drawn)
 pub fn death_game_camera(
     st: &mut ModuleCamState,
     phase: u8,
@@ -250,6 +292,7 @@ pub fn death_game_camera(
     g.seats_parts = false;
     g.turns_pick = false;
     g.outcome = None;
+    g.digit_word = None;
     let word = &mut st.countdown;
     match phase {
         0 => {
@@ -355,6 +398,7 @@ pub fn death_game_camera(
             }
             g.ease();
             g.blink += 1;
+            g.digit_word = Some(word.0);
             if g.pad.confirm || word.0 == 0 {
                 g.cue(0x21);
                 for i in 0..4 {
@@ -370,6 +414,7 @@ pub fn death_game_camera(
             }
         }
         6 => {
+            g.digit_word = Some(g.counter);
             g.ease();
             g.blink += 1;
             if word.drain_above(0) {
@@ -601,6 +646,24 @@ mod tests {
         assert_eq!(g.cards[3][0], -0x120);
         // Back on the depth axis: the half turn has come round.
         assert_eq!(g.cards[0][2], CARD_Z);
+    }
+
+    #[test]
+    fn the_sprites_read_the_seconds_left_and_flip_every_sixteen_vsyncs() {
+        let mut g = DeathGame {
+            cursor: 0x28,
+            digit_word: Some(0x960),
+            ..Default::default()
+        };
+        let [digit, pointer] = g.sprites().expect("arm 5 draws");
+        // `0x960 + 0x1DF` is five whole steps of `480`.
+        assert_eq!(digit.uv[0], (5 * 24, 0));
+        assert_eq!(pointer.xy[0], (0x1E, 0x8A));
+        assert_eq!(pointer.uv[0], (0xB0, 0x88));
+        g.blink = 16;
+        assert_eq!(g.sprites().unwrap()[1].uv[1], (0xF7, 0x88));
+        g.digit_word = None;
+        assert!(g.sprites().is_none());
     }
 
     #[test]
