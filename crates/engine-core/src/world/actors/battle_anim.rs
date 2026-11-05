@@ -651,13 +651,29 @@ impl World {
             // engine seat of retail's `FUN_80047430` -> `FUN_801DEA50` call
             // pair (frame argument = the node's 12.4 anim cursor in whole
             // keyframes, which is `MonsterAnimPlayer::current_frame`).
-            if let Some(frame) = frame {
+            // Retail's walks run in the order hit, effect script, cue track
+            // (`0x800478A0`, `0x800478B8`, `0x800478E4`). A blocked hit steps its
+            // attacker's cue cursor over the impact cue (`0x801EE6EC`), so the
+            // hit goes first where the slice has no commit to make ahead of it:
+            // an impact cue on the hit's own keyframe would otherwise sound on a
+            // block (Nova's clip 8).
+            let hit_first = hits
+                && frame.is_some()
+                && !(commit_after && self.battle_commit_may_land(i));
+            let commits = self.actors[i].battle_clip_commits;
+            if hit_first {
+                self.walk_battle_node_hits(i, &mut foreign);
+            }
+            // A hit that committed its own attacker's next clip leaves the walk
+            // to the post-commit re-walk.
+            let cut = self.actors[i].battle_clip_commits != commits;
+            if let Some(frame) = frame.filter(|_| !cut) {
                 self.step_actor_effect_script(i, frame);
                 // ... and its third call, the animation cue track
                 // (`FUN_800508DC`, same arguments).
                 self.step_actor_anim_cues(i, frame);
             }
-            self.finish_battle_node_slice(i, commit_after, hits, &mut foreign);
+            self.finish_battle_node_slice(i, commit_after, hits && !hit_first, &mut foreign);
         }
         // The cast tick's effect-child drive. On retail's cadence the cast tick's drive runs with the frame
         // driver's pass instead (`World::tick_battle_cast_drive`).
@@ -701,7 +717,33 @@ impl World {
         if commit_after {
             self.commit_staged_battle_anim(i);
         }
-        if hits && let Some(before) = self.tick_battle_hit_events_seat(i) {
+        if hits {
+            self.walk_battle_node_hits(i, foreign);
+        }
+        if let (Some(a), Some(c)) = (
+            self.actors.get(i),
+            self.battle.anim_slice_commits.get_mut(i),
+        ) {
+            *c = a.battle_clip_commits;
+        }
+    }
+
+    /// [`Self::commit_staged_battle_anim`] could install a clip on this seat now:
+    /// a staged clip differs from the playing one and no one-shot holds it off.
+    fn battle_commit_may_land(&self, i: usize) -> bool {
+        self.actors.get(i).is_some_and(|a| {
+            a.battle.queued_anim != a.battle.current_anim
+                && !(a.battle_staged_anim.is_some()
+                    && a.battle_animation
+                        .as_ref()
+                        .is_some_and(|p| !p.finished() && !p.is_looping()))
+        })
+    }
+
+    /// One seat's hit walk inside its slice; a commit it made on another seat
+    /// is that seat's foreign commit, not its own slice's.
+    fn walk_battle_node_hits(&mut self, i: usize, foreign: &mut [u32]) {
+        if let Some(before) = self.tick_battle_hit_events_seat(i) {
             for (k, b) in before.into_iter().enumerate() {
                 if k != i
                     && let (Some(a), Some(f)) = (self.actors.get(k), foreign.get_mut(k))
@@ -709,12 +751,6 @@ impl World {
                     *f += a.battle_clip_commits.wrapping_sub(b);
                 }
             }
-        }
-        if let (Some(a), Some(c)) = (
-            self.actors.get(i),
-            self.battle.anim_slice_commits.get_mut(i),
-        ) {
-            *c = a.battle_clip_commits;
         }
     }
 
