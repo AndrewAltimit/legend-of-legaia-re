@@ -265,6 +265,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (947, SINGLE_BODY) => Some(super::v_windhash_camera),
         (948, SINGLE_BODY) => Some(super::cross_beam_camera),
         (955, super::TERROR_SCREAM_BODY) => Some(super::terror_scream_camera),
+        (955, super::MELT_SPRAY_BODY) => Some(super::melt_spray_camera),
         (942, super::POWER_UP_BODY) => Some(super::power_up_camera),
         (935, SINGLE_BODY) => Some(super::earthquake_camera),
         (941, super::STONE_CIRCLE_BODY) => Some(super::stone_circle_camera),

@@ -1009,6 +1009,7 @@ mod kemaro;
 mod kiss_of_death;
 mod lapis_wave;
 mod megaton_press;
+mod melt_spray;
 mod meta_terra_ozma;
 mod nighto;
 mod nova;
@@ -1072,6 +1073,7 @@ pub use lapis_wave::{LAPIS_WAVE_SEAT_RECORDS, lapis_wave_camera};
 pub use megaton_press::{
     MEGATON_PRESS_BODY, MEGATON_PRESS_COUNTDOWN, megaton_press_camera, megaton_press_jump_height,
 };
+pub use melt_spray::{MELT_SPRAY_BODY, melt_spray_camera};
 pub use meta_terra_ozma::*;
 pub use nighto::*;
 pub use nova::*;

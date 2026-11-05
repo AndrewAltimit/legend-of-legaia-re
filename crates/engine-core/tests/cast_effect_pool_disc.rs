@@ -331,6 +331,9 @@ fn a_live_cast_stages_its_module_records() {
         }
         rec.set_spell_list(list);
     }
+    // The default step's passes draw a `rand()` stream on which Nighto's kill
+    // roll spares the target, so eleven casts stay in one fight.
+    w.toggles.battle_party_cost_step = false;
     enter_battle(&mut w);
     w.install_cast_effect_pool(pool.clone());
     // The battle overlay the scene host retains at battle load: PROT 0903's

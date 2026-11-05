@@ -236,6 +236,11 @@ pub fn melt_spray_tick(
             stage_reaction(victim);
             victim.restage = 1;
         }
+        if c.phase == 4 {
+            // `0x801F8664`: the settle arm stores `0xFF` outright.
+            c.phase = CHOREOGRAPHY_DONE_PHASE;
+            return CastArmStep::Hold;
+        }
         if c.phase == CHOREOGRAPHY_DONE_PHASE {
             c.ctx_0d = 0;
             CastArmStep::Finish

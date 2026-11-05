@@ -908,8 +908,21 @@ mod tests {
     }
 
     #[test]
+    fn a_full_partys_ordinary_frame_runs_step_three() {
+        let mut w = World::new();
+        w.party.party_count = 3;
+        assert_eq!(w.ordinary_battle_frame_step(), 3);
+        w.party.party_count = 1;
+        assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+        w.party.party_count = 3;
+        w.toggles.battle_party_cost_step = false;
+        assert_eq!(w.ordinary_battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+    }
+
+    #[test]
     fn a_seeded_step_holds_only_inside_its_state() {
         let mut w = World::new();
+        w.toggles.battle_party_cost_step = false;
         w.seed_battle_frame_step(3, 0x33);
         w.battle_ctx.action_state = 0x32;
         w.apply_battle_frame_step_seed();
