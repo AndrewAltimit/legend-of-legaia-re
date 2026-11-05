@@ -152,7 +152,11 @@ pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
         }
         BattleHudPhase::CommandEntry => matches!(
             battle_command_surface(world),
-            Some(CommandSurface::ItemBrowse | CommandSurface::SpellBrowse)
+            Some(
+                CommandSurface::ItemBrowse
+                    | CommandSurface::ItemAllAllies
+                    | CommandSurface::SpellBrowse
+            )
         ),
         // The two `t2 == 8` openers (see above); either keeps the panels up
         // until the Done band's `0x51` hold ends.

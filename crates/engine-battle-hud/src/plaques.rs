@@ -699,6 +699,9 @@ pub fn battle_target_select_plaque(
     world: &legaia_engine_core::world::World,
 ) -> Option<(String, Option<u8>)> {
     use legaia_engine_battle::target_picker::{CursorRow, PickerState, TargetPickerSession};
+    if battle_command_surface(world) == Some(CommandSurface::ItemAllAllies) {
+        return Some(("All Allies".to_string(), None));
+    }
     let b = &world.battle;
     let picker: Option<&TargetPickerSession> = b
         .command

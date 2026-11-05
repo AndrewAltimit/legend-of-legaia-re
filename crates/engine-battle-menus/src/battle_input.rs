@@ -1184,17 +1184,12 @@ mod tests {
         for cancel in [false, true] {
             let mut s = BattleCommandSession::new_round_open(0, 0, false);
             s.input(press(|e| e.right = true), party3(), one_monster());
-            s.input(
-                press(|e| {
-                    if cancel {
-                        e.circle = true
-                    } else {
-                        e.right = true
-                    }
-                }),
-                party3(),
-                one_monster(),
-            );
+            let back = if cancel {
+                press(|e| e.circle = true)
+            } else {
+                press(|e| e.right = true)
+            };
+            s.input(back, party3(), one_monster());
             assert!(matches!(s.phase, CommandPhase::RoundPrompt { .. }));
         }
     }

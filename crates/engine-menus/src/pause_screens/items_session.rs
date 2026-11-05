@@ -270,7 +270,57 @@ impl PauseItemsSession {
     /// `true` while the item-use flow is in its target-select phase (the
     /// host overlays the target picker).
     pub fn target_select(&self) -> bool {
-        matches!(self.inner.state, InventoryUseState::TargetSelect { .. })
+        matches!(
+            self.inner.state,
+            InventoryUseState::TargetSelect { .. } | InventoryUseState::AllPartyConfirm { .. }
+        )
+    }
+
+    /// A use just committed, with the session still holding its outcome: the
+    /// host applies it and resumes on a rebuilt session
+    /// ([`Self::resume_use`]). The special routes finish on their own terms.
+    pub fn use_committed(&self) -> Option<u8> {
+        (matches!(self.inner.state, InventoryUseState::Done(_)) && self.special_use.is_none())
+            .then_some(self.inner.used_slot)
+            .flatten()
+    }
+
+    /// Come back from an applied use the way retail does
+    /// (`FUN_801D7FF8` / `FUN_801D8308`): the apply screen stays up on the same
+    /// target row while the stack lasts and `FUN_8003043C` still finds someone
+    /// it would affect (the rebuilt row's dim bit); otherwise the hand returns
+    /// to the list, or to the command window once the bag holds nothing.
+    pub fn resume_use(&mut self, slot: u8, target_row: usize) {
+        if self.bag_empty() {
+            return;
+        }
+        self.focus = PauseItemsFocus::List;
+        let row = self.rows.iter().position(|r| r.slot == slot);
+        self.cursor = row.unwrap_or(self.cursor.min(self.rows.len().saturating_sub(1)));
+        let Some(row) = row else {
+            return;
+        };
+        if self.rows[row].use_bits & crate::menu_list_rows::ROW_DISABLED != 0 {
+            return;
+        }
+        let Some(fpos) = self.inner.filtered_items.iter().position(|&ix| ix == row) else {
+            return;
+        };
+        self.inner.state = InventoryUseState::Browsing { cursor: fpos };
+        self.inner.input(InventoryUseInput::Confirm);
+        if let InventoryUseState::TargetSelect { item_cursor, .. } = self.inner.state {
+            self.inner.state = InventoryUseState::TargetSelect {
+                item_cursor,
+                cursor: target_row.min(self.inner.targets.len().saturating_sub(1)),
+            };
+        }
+        let _ = self.inner.drain_events();
+    }
+
+    /// End the session with nothing further to apply: the host's finish path
+    /// runs for a notice the use raised, and the outer menu takes the pad.
+    pub fn close(&mut self) {
+        self.closed = true;
     }
 
     /// Session finished (backed out of the command window, or the inner

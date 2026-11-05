@@ -297,9 +297,10 @@ pub fn spell_icon(text: Option<&MenuTextTables>, id: u8) -> Option<u8> {
 ///
 /// Phase map: `CharSelect` = caster focus (the hovered caster's list
 /// shows white), `SpellSelect` = list focus (rows grey, hovered spell
-/// staged into the info window), `TargetSelect` = the host overlays the
-/// target picker, `GroupConfirm` = the no-pick group flow, which draws the
-/// list exactly as `SpellSelect` does and no picker at all. `text` fills
+/// staged into the info window), `TargetSelect` = the party target panel takes
+/// the list's place, `GroupConfirm` = the same panel with the hand on every row
+/// (`magic_group_kor`'s frame: window 14 up, `FUN_801D688C` over zero rows).
+/// `text` fills
 /// descriptions; names fall back
 /// catalog -> spell-name table -> `Spell XX`.
 pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -> MagicScreenModel {
@@ -314,13 +315,20 @@ pub fn magic_screen_model(s: &SpellMenuSession, text: Option<&MenuTextTables>) -
         SpellMenuPhase::SpellSelect { caster, cursor } => {
             (*caster as usize, true, *cursor as usize, false)
         }
-        SpellMenuPhase::TargetSelect { caster, cursor, .. } => {
-            (*caster as usize, true, *cursor as usize, true)
+        // Both target flows swap the list for the party panel; the info window
+        // keeps the staged spell, so the model's list row is that spell's.
+        SpellMenuPhase::TargetSelect {
+            caster, spell_id, ..
+        } => {
+            let row = s
+                .party()
+                .get(*caster as usize)
+                .and_then(|c| c.spells.iter().position(|id| id == spell_id))
+                .unwrap_or(0);
+            (*caster as usize, true, row, true)
         }
-        // Retail's group sub-screen `0x10` draws no target rows: the spell
-        // list keeps the hand and the info window keeps the staged spell.
         SpellMenuPhase::GroupConfirm { caster, cursor, .. } => {
-            (*caster as usize, true, *cursor as usize, false)
+            (*caster as usize, true, *cursor as usize, true)
         }
         SpellMenuPhase::Done(_) => (0, false, 0, false),
     };

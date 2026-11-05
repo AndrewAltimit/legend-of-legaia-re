@@ -423,7 +423,21 @@ fn compose_items_target(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {
         label_icons: ctx.chrome.is_some(),
         text_cursor: ctx.chrome.is_none(),
     };
-    pause_screen_draws(ctx, PauseScreen::ItemsTarget(&view))
+    pause_screen_draws(ctx, PauseScreen::ItemsTarget {
+            panel: &view,
+            items: &PauseItemsView {
+                arrows_blink: false,
+                rows: &[],
+                page: 0,
+                pages: 0,
+                phase: PauseItemsPhase::Command,
+                command_cursor: 0,
+                list_cursor: 0,
+                bag_empty: false,
+                info: None,
+                text_cursor: false,
+            },
+        })
 }
 
 fn compose_magic(ctx: &PauseMenuCtx<'_>) -> PauseMenuDraws {

@@ -172,6 +172,13 @@ pub(super) fn drive_pause_menu(
                     Some(UseRoute::DoorOfWind) => MENU_ITEMS_DOOR_WIND,
                     _ => MENU_ITEMS_INCENSE,
                 },
+                _ if matches!(
+                    items.inner.state,
+                    legaia_engine_menus::inventory_use::InventoryUseState::AllPartyConfirm { .. }
+                ) =>
+                {
+                    MENU_ITEMS_APPLY_ALL
+                }
                 _ if items.target_select() => MENU_ITEMS_APPLY_ONE,
                 _ => MENU_ITEMS_USE,
             },

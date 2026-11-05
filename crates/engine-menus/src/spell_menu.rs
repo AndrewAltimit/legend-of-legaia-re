@@ -328,6 +328,52 @@ impl SpellMenuSession {
         }
     }
 
+    /// Come back from an applied cast the way retail does (`FUN_801D9280` step
+    /// `4`, `FUN_801D9594`): the target screen stays up on the same spell while
+    /// the caster can pay and `FUN_8003053C` still finds someone it would
+    /// affect, and otherwise the hand returns to the spell list.
+    pub fn resume_cast(&mut self, caster: u8, spell_id: u8, target_row: u8) {
+        self.phase = SpellMenuPhase::CharSelect { cursor: caster };
+        let row = self
+            .party
+            .get(caster as usize)
+            .and_then(|c| c.spells.iter().position(|&id| id == spell_id));
+        let Some(row) = row else {
+            self.phase = SpellMenuPhase::SpellSelect { caster, cursor: 0 };
+            return;
+        };
+        let cursor = row as u8;
+        self.phase = SpellMenuPhase::SpellSelect { caster, cursor };
+        let usable = self
+            .current_spell_rows()
+            .get(row)
+            .is_some_and(|r| r.admissible);
+        let Some(def) = self.catalog.get(spell_id) else {
+            return;
+        };
+        if !usable {
+            return;
+        }
+        self.phase = if spell_targets_group(def.target.retail_target_flag_bits()) {
+            SpellMenuPhase::GroupConfirm {
+                caster,
+                spell_id,
+                cursor,
+            }
+        } else {
+            SpellMenuPhase::TargetSelect {
+                caster,
+                spell_id,
+                cursor: target_row.min(self.targets.len().saturating_sub(1) as u8),
+            }
+        };
+    }
+
+    /// End the session with nothing further to apply.
+    pub fn close(&mut self) {
+        self.phase = SpellMenuPhase::Done(SpellMenuOutcome::Cancelled);
+    }
+
     /// Attach the relevance probe's refusals - spell ids for which
     /// `FUN_8003053C` found no party member the spell would affect
     /// (`legaia_engine_menu_runtime::menu_validator::spell_affects_anyone`). Those rows grey,

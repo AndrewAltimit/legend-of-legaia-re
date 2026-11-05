@@ -93,6 +93,9 @@ pub struct MenuState {
     /// a host to park it on its menu runtime
     /// (`legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome` fills it).
     pub pending_art_notice: Option<legaia_engine_menus::pause_screens::ArtLearnedNotice>,
+    /// The spell-level notice a cast raised while the Magic screen stayed up;
+    /// the session's finish path hands it to the host.
+    pub pending_spell_notice: Option<legaia_engine_battle::magic_xp::SpellLevelNotice>,
 }
 
 impl MenuState {
@@ -114,6 +117,7 @@ impl MenuState {
             widgets: Default::default(),
             notify_template: None,
             pending_art_notice: None,
+            pending_spell_notice: None,
         }
     }
 

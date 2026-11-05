@@ -85,7 +85,21 @@ pub const MENU_SUBWINDOW_CONTENT: (i32, i32, i32, i32) = (18, 18, 284, 200);
 
 /// Windows framed while the Items screen's Use flow picks a target: the
 /// screen tab plus descriptor 14, the party target panel (`FUN_801D0520`).
-pub const TARGET_SELECT_WINDOWS: [usize; 2] = [window_ids::TAB_ITEMS, 14];
+pub const TARGET_SELECT_WINDOWS: [usize; 4] = [
+    window_ids::TAB_ITEMS,
+    window_ids::ITEMS_COMMAND,
+    window_ids::ITEMS_INFO,
+    14,
+];
+
+/// Windows framed while the Magic screen picks a target: the caster and info
+/// windows stay up and descriptor 14 takes the spell list's place.
+pub const MAGIC_TARGET_WINDOWS: [usize; 4] = [
+    window_ids::TAB_MAGIC,
+    window_ids::MAGIC_CASTER,
+    window_ids::MAGIC_INFO,
+    14,
+];
 
 /// Pinned content rects mirroring the disc descriptor table:
 /// `(descriptor id, (x, y, w, h))`.
@@ -517,9 +531,18 @@ pub enum PauseScreen<'a> {
     Options(OptionsScreenView<'a>),
     Items(ItemsScreenView<'a>),
     /// Window 14, the party target panel that replaces the item list while
-    /// the Use flow picks a target.
-    ItemsTarget(&'a TargetPanelView<'a>),
+    /// the Use flow picks a target; the rest of the Items screen stays up.
+    ItemsTarget {
+        panel: &'a TargetPanelView<'a>,
+        items: &'a crate::PauseItemsView<'a>,
+    },
     Magic(MagicScreenView<'a>),
+    /// Window 14 in the spell list's place, over the caster and info windows.
+    MagicTarget {
+        panel: &'a TargetPanelView<'a>,
+        magic: &'a crate::PauseMagicView<'a>,
+        casters: usize,
+    },
     Equip(EquipComposeView<'a>),
     /// A screen framed by the single near-fullscreen window.
     Generic(GenericContent<'a>),
@@ -796,15 +819,73 @@ pub fn pause_screen_draws(ctx: &PauseMenuCtx, screen: PauseScreen<'_>) -> PauseM
                 }
             }
         }
-        PauseScreen::ItemsTarget(view) => {
+        PauseScreen::ItemsTarget { panel, items } => {
             let pen = ctx.rects.pen(14);
-            texts.extend(crate::target_panel_draws_for(ctx.font, view, pen));
+            texts.extend(crate::items_screen_draws_for_with(
+                ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
+                items,
+                ctx.rects.pen(window_ids::ITEMS_COMMAND),
+                ctx.rects.pen(window_ids::ITEMS_LIST),
+                ctx.rects.pen(window_ids::ITEMS_INFO),
+            ));
+            texts.extend(crate::target_panel_draws_for(ctx.font, panel, pen));
             texts
                 .extend(ctx.tab_title(window_ids::TAB_ITEMS, ctx.label(MenuLabel::Items, "Items")));
             sprites.extend(ctx.window_chrome(&TARGET_SELECT_WINDOWS));
+            sprites.extend(ctx.frame_around(crate::ITEMS_INFO_EXTRA_BOX_RECT));
             if let Some(rects) = ctx.chrome {
+                sprites.extend(crate::items_screen_sprites_for(
+                    rects,
+                    crate::PauseItemsPhase::Command,
+                    items.command_cursor,
+                    0,
+                    (0, 0),
+                    false,
+                    ctx.rects.pen(window_ids::ITEMS_COMMAND),
+                    ctx.rects.pen(window_ids::ITEMS_LIST),
+                    ctx.origin,
+                    ctx.scale,
+                ));
                 sprites.extend(crate::target_panel_sprites_for(
-                    rects, view, pen, ctx.origin, ctx.scale,
+                    rects, panel, pen, ctx.origin, ctx.scale,
+                ));
+            }
+        }
+        PauseScreen::MagicTarget {
+            panel,
+            magic,
+            casters,
+        } => {
+            let pen = ctx.rects.pen(14);
+            texts.extend(crate::magic_screen_draws_for_with(
+                ctx.font,
+                ctx.rects.table().map(|t| &t.labels),
+                magic,
+                ctx.rects.pen(window_ids::MAGIC_CASTER),
+                ctx.rects.pen(window_ids::MAGIC_LIST),
+                ctx.rects.pen(window_ids::MAGIC_INFO),
+            ));
+            texts.extend(crate::target_panel_draws_for(ctx.font, panel, pen));
+            texts
+                .extend(ctx.tab_title(window_ids::TAB_MAGIC, ctx.label(MenuLabel::Magic, "Magic")));
+            sprites.extend(ctx.window_chrome(&MAGIC_TARGET_WINDOWS));
+            if let Some(rects) = ctx.chrome {
+                sprites.extend(crate::magic_screen_sprites_for(
+                    rects,
+                    casters,
+                    crate::PauseMagicPhase::Caster,
+                    magic.caster_cursor,
+                    0,
+                    (0, 0),
+                    false,
+                    ctx.rects.pen(window_ids::MAGIC_CASTER),
+                    ctx.rects.pen(window_ids::MAGIC_LIST),
+                    ctx.origin,
+                    ctx.scale,
+                ));
+                sprites.extend(crate::target_panel_sprites_for(
+                    rects, panel, pen, ctx.origin, ctx.scale,
                 ));
             }
         }
