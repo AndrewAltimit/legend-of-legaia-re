@@ -1010,6 +1010,33 @@ fn battle_entry_arm_needs_a_scripted_entry_within_the_window() {
     assert!(walk_battle_entry_arms(&mf, &man).is_empty());
 }
 
+/// The SETs straight after the entry op are arms of the same row, flagged
+/// `after_entry`: `garmel`'s Songi beat reads `3E FF 08 · 51 96`. The run
+/// stops at the first instruction that is not a SET.
+#[test]
+fn battle_entry_arm_takes_the_sets_straight_after_the_entry() {
+    // Interact FF row 8, SET 0x196, SET 0x199, WaitFrames 16, SET 0x19A, halt.
+    let (mf, man) = man_with_placement_script(&[
+        0x3E, 0xFF, 0x08, 0x51, 0x96, 0x51, 0x99, 0x4A, 0x10, 0x00, 0x51, 0x9A, 0x21,
+    ]);
+    let arms = walk_battle_entry_arms(&mf, &man);
+    let flags: Vec<(u16, u8, bool)> = arms
+        .iter()
+        .map(|a| (a.flag, a.row, a.after_entry))
+        .collect();
+    assert_eq!(flags, vec![(0x196, 8, true), (0x199, 8, true)]);
+}
+
+/// A CLEAR inside the window is an arm with `clears` up, beside the SET:
+/// `jouine`'s Cort cutscene reads `55 15 · 66 45 · 3E FF 15`.
+#[test]
+fn battle_entry_arm_takes_a_clear_in_the_window() {
+    let (mf, man) = man_with_placement_script(&[0x55, 0x15, 0x66, 0x45, 0x3E, 0xFF, 0x15, 0x21]);
+    let arms = walk_battle_entry_arms(&mf, &man);
+    let flags: Vec<(u16, u8, bool)> = arms.iter().map(|a| (a.flag, a.row, a.clears)).collect();
+    assert_eq!(flags, vec![(0x515, 0x15, false), (0x645, 0x15, true)]);
+}
+
 /// The `op0 < 100` form of `0x3E` is the same battle entry as `3E FF`: the
 /// handler falls into one arm for both and reads only the row. `town0b`'s
 /// Gimard talk records carry it as `53 0C . 3E 00 02`.

@@ -632,6 +632,12 @@ pub struct RetailBattle {
     /// has settled, where retail's record raised them. Empty as read; the
     /// corpus run fills it.
     pub entry_latches: Vec<u16>,
+    /// The system flags the same record lowered within its battle-entry
+    /// window and the capture holds down ([`entry_latches`]'s CLEAR arms):
+    /// lowered once the field has settled, so a landing that re-ran the
+    /// record's opening (`jouine`'s Cort cutscene raising `0x645`) leaves the
+    /// flags where retail's entry op found them. Empty as read.
+    pub entry_lowers: Vec<u16>,
     /// The state was made on a shiny-Seru patched disc (its `resident_patch`
     /// names `shiny-seru`): that build's battle init takes one `rand()` draw
     /// for the shiny roll ahead of the formation draws

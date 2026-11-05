@@ -59,7 +59,8 @@ pub(super) fn run_battle(
     let battle = {
         let mut b = battle.clone();
         b.resident_shiny_seru = is_shiny_seru_patch(entry.resident_patch.as_deref());
-        b.entry_latches = crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
+        (b.entry_latches, b.entry_lowers) =
+            crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
         latched = b;
         &latched
     };
@@ -686,6 +687,17 @@ pub(super) fn battle_image(
             "LEGAIA_BATTLE_LATCHES",
             battle
                 .entry_latches
+                .iter()
+                .map(|f| format!("{f:x}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+    }
+    if !battle.entry_lowers.is_empty() {
+        env.push((
+            "LEGAIA_BATTLE_LOWERS",
+            battle
+                .entry_lowers
                 .iter()
                 .map(|f| format!("{f:x}"))
                 .collect::<Vec<_>>()

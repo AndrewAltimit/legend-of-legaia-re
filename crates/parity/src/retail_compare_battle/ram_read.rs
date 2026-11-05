@@ -1150,6 +1150,7 @@ impl RetailBattle {
             clip_pushes: clip_own_pushes(ram, ctx),
             combo_total: u32::from(game_anchors::u16_at(ram, COMBO_TOTAL)),
             entry_latches: Vec::new(),
+            entry_lowers: Vec::new(),
             resident_shiny_seru: false,
             inflight_idle: [None; legaia_engine_battle_loop::battle_state::INFLIGHT_GROUND_SLOTS],
             // Only where the close-up's three-frame tween lands inside a pass

@@ -89,7 +89,7 @@ impl World {
         let armed = self
             .scene_battle_entry_arms
             .iter()
-            .any(|a| a.flag == TUTORIAL_ARM_FLAG && u16::from(a.row) == formation_id);
+            .any(|a| a.flag == TUTORIAL_ARM_FLAG && !a.clears && u16::from(a.row) == formation_id);
         if !armed {
             return false;
         }

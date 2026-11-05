@@ -1029,6 +1029,16 @@ pub(super) fn arm_launch_battle(
                     session.host.world.system_flag_set(idx);
                 }
             }
+            // `LEGAIA_BATTLE_LOWERS` (hex): the flags the same record
+            // lowered within its battle-entry window, lowered here too.
+            if let Ok(v) = std::env::var("LEGAIA_BATTLE_LOWERS") {
+                for idx in v
+                    .split(',')
+                    .filter_map(|f| u16::from_str_radix(f.trim(), 16).ok())
+                {
+                    session.host.world.system_flag_clear(idx);
+                }
+            }
             // The settle can run a script that re-seats the present
             // party (a scripted duel's entry); the headless seed installs
             // the fight's roster after its settle, so the child does too.

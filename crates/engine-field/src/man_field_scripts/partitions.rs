@@ -625,6 +625,18 @@ pub struct BattleEntryArm {
     pub flag: u16,
     /// The formation-table row the following `3E FF <row>` enters.
     pub row: u8,
+    /// The SET sits straight **after** the entry op rather than before it
+    /// ([`walk_battle_entry_arms`]). The op leaves through the plain
+    /// `PC + 3` exit (`FUN_801DE840`, `addiu s8,s8,0x3` at `0x801E00B8`), and
+    /// the record runs the SET before the fight opens: `garmel`'s Songi beat
+    /// `P2[11]` reads `3E FF 08 · 51 96`, the only SET of `0x196` in the
+    /// scene, and both captures of that fight hold `0x196`.
+    pub after_entry: bool,
+    /// The op is a CLEAR, not a SET: the record lowers `flag` on its way into
+    /// the fight. `jouine`'s Cort cutscene `P2[5]` raises `0x645` as it opens
+    /// and reads `55 15 · 66 45 · 3E FF 15` at its end, so a capture of the
+    /// fight holds `0x645` down.
+    pub clears: bool,
 }
 
 /// How many coherently decoded instructions past a system-flag SET the
@@ -641,6 +653,14 @@ pub const BATTLE_ENTRY_ARM_WINDOW: usize = 4;
 /// error. A `3E` in either scripted-battle form in that run (`op0 == 0xFF`
 /// or `op0 < 100` - the door-warp form `op0 >= 100` is not an entry) pairs
 /// the SET with the op's row operand.
+///
+/// A CLEAR in the same window is an arm with [`BattleEntryArm::clears`] up.
+///
+/// The SETs straight after an entry op are arms too
+/// ([`BattleEntryArm::after_entry`]): the op leaves through the plain
+/// `PC + 3` exit, so the record goes on to them on the pass that requests
+/// the fight. Each consecutive SET from the instruction after the op counts,
+/// up to the first instruction of any other kind.
 pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntryArm> {
     let mut out = Vec::new();
     for partition in 0..3 {
@@ -659,13 +679,13 @@ pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntry
             };
             let body = &man[script_start..script_start + body_len];
             for insn in LinearWalker::new(body, pc0).flatten() {
-                let InsnInfo::SystemFlag {
-                    kind: FlagKind::Set,
-                    idx,
-                    ..
-                } = insn.info
-                else {
+                let InsnInfo::SystemFlag { kind, idx, .. } = insn.info else {
                     continue;
+                };
+                let clears = match kind {
+                    FlagKind::Set => false,
+                    FlagKind::Clear => true,
+                    FlagKind::Test => continue,
                 };
                 let Some(row) = battle_entry_row_after(body, insn.pc + insn.size) else {
                     continue;
@@ -676,7 +696,40 @@ pub fn walk_battle_entry_arms(man_file: &ManFile, man: &[u8]) -> Vec<BattleEntry
                     abs_pc: script_start + insn.pc,
                     flag: idx,
                     row,
+                    after_entry: false,
+                    clears,
                 });
+            }
+            // The SETs the record runs straight after an entry op, up to its
+            // first instruction of any other kind.
+            for insn in LinearWalker::new(body, pc0).flatten() {
+                let InsnInfo::WarpOrInteract {
+                    op1: row,
+                    is_warp: false,
+                    ..
+                } = insn.info
+                else {
+                    continue;
+                };
+                for next in LinearWalker::new(body, insn.pc + insn.size).map_while(Result::ok) {
+                    let InsnInfo::SystemFlag {
+                        kind: FlagKind::Set,
+                        idx,
+                        ..
+                    } = next.info
+                    else {
+                        break;
+                    };
+                    out.push(BattleEntryArm {
+                        partition,
+                        record: index,
+                        abs_pc: script_start + next.pc,
+                        flag: idx,
+                        row,
+                        after_entry: true,
+                        clears: false,
+                    });
+                }
             }
         }
     }

@@ -4267,6 +4267,27 @@ post-fight placement at the landing, the loop runs its pass, and
 `rim_elm_gimard_seru_capture_*` and `shiny_refactor_gimard_*` carry `0x30C` /
 `0x30E`, the room bit `0x528` and the selector through the seed.
 
+A SET straight after the entry op is an arm as well. The op leaves through the
+plain `PC + 3` exit (`0x801E00B8`), and the record runs on into its next
+instructions before the fight opens: `garmel`'s Songi beat `P2[11]` reads
+`3E FF 08 · 51 96`, the scene's only SET of `0x196`, and both captures of the
+fight hold `0x196`. That flag is the entry script's return arm (`P1[0]` tests
+it, clears it and spawns `P2[13]`, which re-stages the companions and raises
+`0x10` / `0x11`), so a landing with it up ran the return: the engine lost
+`0x196` and the room bit `0x52A` and gained `0x10` / `0x11`. The walk takes each
+consecutive SET after the op, up to the first instruction of another kind
+(`BattleEntryArm::after_entry`), and `battle_garmel_songi_strike` and
+`_hyper_wave_mid_cast` read `flags` `1.0` against `.983`.
+
+A CLEAR inside the window is the lowering half (`BattleEntryArm::clears`). The
+seed lowers each such flag after the settle where the capture holds it down
+(`RetailBattle::entry_lowers`; the image child reads `LEGAIA_BATTLE_LOWERS`).
+`jouine`'s Cort cutscene `P2[5]` raises `0x645` as it opens and reads
+`55 15 · 66 45 · 3E FF 15` at its end. With `0x515` held back, the landing's
+`P1[0]` takes its `0x512` arm and spawns the cutscene again, which raises
+`0x645` before the forced entry. Every evolved-Cort battle state used to read
+`+sys 0x645`, and now reads `flags` `1.0`.
+
 The fight's entry writes flags of its own. The field entity SM's entry tail
 (`FUN_801DA51C`, `0x801DA6C4..0x801DA6EC`) raises system flags `0` and `3`
 while flag `0x13` is up and lowers the victory latch `0x35`
