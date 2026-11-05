@@ -71,7 +71,8 @@ authoritative list; the broad groups are:
 | Group | Subcommands | What they do |
 |---|---|---|
 | Scene inspection | `info`, `list-scenes`, `clut-trace`, `man-scripts`, `xa-cue`, `config dump-cutscene-map` | Headless reports on a scene's resolved asset chain / dropped CLUTs / MAN field-VM scripts / XA voice-cue slots, plus the CDNAME→`MV*` map as an editable TOML. |
-| Launch | *(no subcommand)* | The launcher screen: disc status and picker (native dialog, drag-and-drop, typed path), the enhancement options and controls, *Play* boots `play-window --boot-ui` in a child process. |
+| Launch | *(no subcommand)* | The launcher screen: disc status and picker (native dialog, drag-and-drop, typed path), the enhancement options, the key table that rebinds keys, *Play* boots `play-window --boot-ui` in a child process. |
+| Launch | `launch --disc <bin>` | What the launcher's *Play* starts on that disc, with no screen; Legaia Explorer's *Play* runs it. |
 | Run | `play`, `play-window`, `play-str`, `record` | Boot a scene headless (`play`) or in a wgpu window (`play-window`); play an MDEC movie (`play-str`); capture pad input to a replay (`record`). |
 | Asset export | `export-glb` | Bake a scene (or `--all-scenes`) into textured world / NPC / animated-prop `.glb`s + a placement manifest for Unity/VRChat or Blender; `--items` exports every equipment item as animated item-alone / with-limb `.glb`s, `--party` the party's field forms as villager-shaped `.glb`s ([`docs/tooling/vrchat-world-export.md`](../../docs/tooling/vrchat-world-export.md)). |
 | Mesh catalog | `mesh-catalog` | Measure a field scene's geometry pack into the expansion-pack borrowed-mesh catalog (labels kept) and draw a numbered contact sheet to label from ([`expansion-pack-maps.md`](../../docs/formats/expansion-pack-maps.md#the-mesh-catalog)). |

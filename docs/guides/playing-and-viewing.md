@@ -60,9 +60,17 @@ lettered in the game's own dialog font, read from that disc.
 | Enter, Space, click | press the focused button, or step an option forward |
 | Right-click an option | step it back |
 | Delete (Backspace with nothing typed), middle-click an option | put it back on its default |
+| Enter, click on a *Controls* row | wait for the key that button goes on (Esc or a click calls it off) |
 | Ctrl+O | open the file dialog |
 | typing | enter a disc path (Enter uses it, Esc clears it) |
 | Esc | leave the controls page, or quit |
+
+If the launcher's window cannot open at all (usually a graphics driver with
+nothing the game can draw through, or a remote desktop session), a message box
+says so and names the fix, and the program exits with a failure rather than
+ending with nothing on screen. On Linux the box is the desktop's own dialog
+(`zenity`, through the file-chooser library); without one the text goes to the
+terminal.
 
 ### Choosing the disc
 
@@ -175,8 +183,20 @@ either place is the one the other shows. The `launcher.toml` rows are launch
 switches with no option behind them; the browser play page has a box for each.
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
-it overrides read *Original* while it is on. *Controls* swaps the option list
-for the current key bindings (`legaia-input.toml`).
+it overrides read *Original* while it is on.
+
+### Changing the keys
+
+*Controls* swaps the option list for the key table, so a key can be changed
+before the game has started. `Right` or `Tab` moves into it; `Enter` or a click
+on a row waits for the key that button goes on. A key another button was on
+swaps with it, so no button is left without one. The keys are written straight
+to `legaia-input.toml`, the same file the in-game *Key Config* screen and
+`config set --binding` edit. Keys the game window keeps for its own shortcuts
+(the function keys, `R`, `T`, `I`, ...) are refused with the list of those that
+work: an arrow key, `Z` `X` `C` `V` `A` `S` `D` `Q` `W` `E`, `1`, `2`, `Enter`,
+`Space` and right `Shift`. *All keys back to default* at the bottom of the table
+restores the first-start layout. A gamepad's layout is fixed.
 
 The *Gameplay tweaks* and *Battle tuning* rows are disc-patcher features the engine runs itself,
 so they need no patched disc: each matches one `legaia-patcher` flag, except
@@ -203,6 +223,11 @@ folder cut out of it. A panic on any of the game's threads (the
 audio mixer inside the sound callback, the controller reader) ends the
 process, so it is reported instead of the game playing on silent or deaf to
 the pad. Run from a terminal, the game's output still prints there too.
+
+`legaia-engine launch --disc <bin>` starts what *Play* starts on that disc,
+with the launcher's remembered switches and expansion pack and no screen. Legaia
+Explorer's *Play* runs it, so a game started from Explorer plays with everything
+set here.
 
 `LEGAIA_LAUNCHER_DIRECT=1` skips the screen: a remembered disc that still
 validates boots straight into the game, in the launcher's own process.
@@ -258,8 +283,8 @@ Triangle, bumpers L1 / R1, triggers L2 / R2, back / start Select / Start, and
 both the d-pad and the left stick drive the d-pad. The browser takes any
 controller it reports with the `standard` mapping; the native window takes any
 controller its platform's gamepad backend sees, and works with the keyboard
-alone when none is connected. Key Config (Select on the Options screen) rebinds
-keys only; a controller's layout is fixed.
+alone when none is connected. The launcher's *Controls* page and Key Config
+(Select on the Options screen) rebind keys only; a controller's layout is fixed.
 
 **Camera.** Left-mouse drag orbits the camera around your character
 (horizontal) and tilts it (vertical), the wheel zooms in and out, and a

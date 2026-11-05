@@ -2685,9 +2685,12 @@ impl App {
                 s.iso_files,
             ),
             Some(Outcome::Cancelled) => "Cancelled".into(),
-            Some(Outcome::Failed(e)) => format!("Failed: {e}"),
+            // The reason is on the banner and in the log; a long path in the
+            // bar ran off its end.
+            Some(Outcome::Failed(_)) => "Failed: the reason is on the line above".into(),
         };
-        let frac = if matches!(outcome, Some(Outcome::Done(_))) {
+        let frac = if matches!(outcome, Some(Outcome::Done(_) | Outcome::Failed(_))) {
+            // A failed bar at its first percent is a red dot under the text.
             1.0
         } else {
             p.fraction(steps)

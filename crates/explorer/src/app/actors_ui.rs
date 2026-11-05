@@ -468,7 +468,7 @@ fn short_section(label: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::flow_rows;
+    use super::{Pick, flow_rows};
 
     /// The pick the settings file reopens reads back as written, and a hand
     /// edit that means nothing opens on no one.

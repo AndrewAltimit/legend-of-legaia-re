@@ -24,7 +24,7 @@ runtime, and writes only into folders the user chooses.
 | Characters & monsters | The four party members assembled from their player files (PROT 863..866) with a per-section equipment picker named from the build's own executable (`ItemNameTable::from_exe`: the USA table or the French, German or Italian one, accents kept), and the monster archive (PROT 867) listed by name as the font draws it, with its element badge; every battle animation clip, and for Vahn, Noa and Gala every Tactical Art by name, plays or steps frame by frame; animated `.glb` export. The five equipment pickers fold under one *Equipment* header (closed, naming how many pieces are changed) when they would need more than one row. |
 | Movies & voice | The STR movies (`MOV/*.STR`): frames decoded on demand (Iki MDEC), played paced by their XA soundtrack's clock (a movie resumed from a paused frame resumes its soundtrack at that frame's sample), PNG frame export; the CD-XA files (`XA/*.XA`) demultiplexed per `(file, channel)` and decoded at their subheader rate, with play and WAV export. Disc images only. |
 | Play | Starts `legaia-engine` (`command-line-tools/` in the archive, or beside a `cargo build`'s binary) as `play-window --disc <bin> --boot-ui` on the open USA disc, in the engine's per-user data folder, so saves and settings match a game started directly (`launch`). Its output goes to `legaia-explorer-game.log` there; a failed exit puts the reason on the error banner, whose *Copy report* takes the log's end along (`game_exit::report_text`). `F5` presses it, or says why not; the launcher's switches ride along (below). A start also writes the disc into the engine's `launcher.toml` (`record_disc_for_engine`: the `disc` key only), so the game started directly boots it without its picker. Disabled with the reason on hover for an extracted folder, another region's disc, a missing engine. |
-| Status line | A settings file that will not save says so on the error banner, once. A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error is a wrapping banner that stays, with *Copy* and *Dismiss* ahead of the text so a long path never pushes them off the window. |
+| Status line | A settings file that will not save says so on the error banner, once. A confirmation clears itself after a few seconds (the clock restarts while the pointer is on it); an error is a wrapping banner that stays, with *Copy* and *Dismiss* ahead of the text so a long path never pushes them off the window; a game that stopped with an error adds *Copy report* and *Show log* (the folder holding its log). |
 | View | Light, dark or follow-system theme, the UI zoom (also Ctrl+= / Ctrl+- / Ctrl+0), both remembered (the zoom is held to what the window has room for, `settings::fit_zoom`, so a small window keeps the layouts of the minimum size and a larger one gets the asked-for zoom back), and the keyboard-shortcuts box (`?`). Both themes carry the Legaia look (`theme`, over the shared [`legaia-app-theme`](../app-theme/README.md) palette the launcher draws in too): blue-grey panels and the title gold for the selection and the primary buttons. |
 | About | Version, license, where `THIRD-PARTY-LICENSES.txt` sits (beside the program, or beside the macOS `.app`). The box scrolls when the window is shorter than it (`about_max_height`), so its title bar stays on screen. |
 | Extract | The full `legaia-extract` pipeline (`legaia_extract::run`) on a worker thread into a chosen folder, with the CLI's skip options, a progress bar, a log, Cancel and *Open output folder* (progress and outcome: [below](#extraction-progress)); the folder defaults to one beside the disc image; *Every texture as PNG*, on unless cleared, is the every-TIM sweep (`--all-textures`: `tim_scan/`), without which a run writes almost no images. |
@@ -135,11 +135,12 @@ finished or cancelled run with *Show folder*, a failure on the error banner
   `legaia_mdec::str_av::StrAvDemuxer` for a movie. Sound goes out on the
   mixer's XA voice (`AudioSink::play_xa`), whose cursor is the clock the
   movie preview paces its frames by.
-- **Play shares the launcher's switches.** The game's own launcher keeps
-  two launch switches in `launcher.toml` (`psx_render`, `retail`) beside the
-  disc; *Play* passes them too (`launch::launch_switches`), so a game started
-  from either program looks the same. The enhancement options live in the
-  game's `legaia-options.toml`, which both starts read.
+- **Play is the launcher's Play.** *Play* runs `legaia-engine launch --disc
+  <bin>`, which the engine expands to the launcher's own argument list from
+  `launcher.toml`: every launch switch, gameplay tweak and the expansion pack
+  (`launch::play_args`). A game started from either program is the same game,
+  and a switch added to the launcher needs nothing here. The enhancement
+  options live in the game's `legaia-options.toml`, which both starts read.
 - **UI-free model.** `Explorer` (loading, selection, background classification
   and analysis), `ExtractJob`, `media` and the exporters have no egui
   dependency, so `tests/smoke.rs` drives them headlessly.
@@ -159,7 +160,8 @@ legaia-explorer "/path/to/Legend of Legaia (USA).bin"     # open at start
 ```
 
 Settings (last disc, the recent list, output and export folders, extract
-options, window size and position, the view and preview tab last open,
+options, window size and position, the view and preview tab last open, the
+character or monster and the movie last open, each view's left panel width,
 theme and zoom) live in `legaia-explorer/settings.json` under the per-user
 config folder. The window position is restored only when its title bar
 would land on a monitor that is still connected (`placement`, checked
@@ -172,7 +174,9 @@ Ctrl+F focuses the archive search (Escape clears it), Ctrl+Tab /
 Ctrl+Shift+Tab (or Ctrl+Page Down / Up) step through the preview tabs the
 selected entry has something for, F1 toggles the About
 box, `?` (or *View*) opens the shortcuts box, Esc closes either, Ctrl+= / Ctrl+- / Ctrl+0 zoom, and Up / Down, Page Up / Down, Home / End
-walk the archive rows the search shows, opening blocks as they go.
+walk the archive rows the search shows, opening blocks as they go, and the
+same keys walk the party and monster list and the movie and voice list
+(`list_step`).
 
 ### Scripted runs
 
@@ -183,7 +187,7 @@ These environment variables drive a run without a person at the keyboard
 |---|---|
 | `LEGAIA_EXPLORER_OPEN` | Disc image or folder to open (same as the first argument). |
 | `LEGAIA_EXPLORER_SELECT` | PROT index to select once loaded. |
-| `LEGAIA_EXPLORER_TMD` | Show this TMD of the selected entry in the 3D model tab (the `TMD #` picker) instead of the first. |
+| `LEGAIA_EXPLORER_TMD` | Show this TMD of the selected entry in the 3D model tab (the `Model #` picker) instead of the first. |
 | `LEGAIA_EXPLORER_TAB` | A preview tab (`overview`, `textures`, `model`, `audio`, `text`, `hex`), a view (`browse`, `actors`, `media`, `extract`), `about` for the About box, or `keys` for the shortcuts box. |
 | `LEGAIA_EXPLORER_SEARCH` | Start with this text in the archive search. |
 | `LEGAIA_EXPLORER_MEDIA` | Open *Movies & voice* on an ISO path (`MOV/MV1.STR`, `XA/XA14.XA`), a movie optionally at `@<frame>`. |
