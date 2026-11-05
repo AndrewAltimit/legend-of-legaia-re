@@ -4495,7 +4495,9 @@ focus on the seat. So the corpus reads retail's focus pair whenever it is not
 headless seed arms it on the zone camera (`ZoneFollow::seat_focus_after_snap`)
 and the image child takes it as `LEGAIA_SEAT_FOCUS`, and in both the snap
 lands it after its clamp. The ease then leaves it until the player moves, so
-the `camera` channel and the frame both look where retail's looked. It is
+the `camera` channel and the frame both look where retail's looked. A menu over
+a field carries the same history: the Retock `shop_*_retock_retail` captures poke
+the player beside the merchant, so their focus stays where the door left it. It is
 history the seat cannot replay, exactly as the camera parameter block is -
 what the channel still scores is the pose the engine composes around it.
 

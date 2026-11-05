@@ -84,7 +84,9 @@ pub struct RetailObs {
     /// loads `P2[1]` / `P2[0]`).
     pub camera_block: Option<legaia_engine_field::camera_zone::CameraZoneConfig>,
     /// The focus pair (`0x80089118` / `0x80089120`, stored form) on a
-    /// walkable state whose focus is not on the player: history the seat
+    /// walkable state, or a menu over one, whose focus is not on the player
+    /// (the Retock shop captures poke the player beside the merchant, so the
+    /// focus stays where the door left it): history the seat
     /// cannot replay. The follow ease writes the focus only on a frame it
     /// runs and the player moved (`FUN_801DB510`'s stationary test at
     /// `0x801DB578..0x801DB5A4`), and the player tick skips the ease
@@ -352,7 +354,7 @@ impl RetailObs {
                 })
                 .filter(|b| camera_block_composed(ram, b)),
             seat_focus: match (class, player) {
-                (StateClass::Field | StateClass::WorldMap, Some([x, _, z]))
+                (StateClass::Field | StateClass::WorldMap | StateClass::Menu, Some([x, _, z]))
                     if camera.focus != [-i32::from(x), -i32::from(z)] =>
                 {
                     Some(camera.focus)
@@ -800,7 +802,9 @@ impl RetailObs {
         if !matches!(self.class, StateClass::Field | StateClass::WorldMap) {
             self.hud_countdown = None;
             self.camera_block = None;
-            self.seat_focus = None;
+            if self.class != StateClass::Menu {
+                self.seat_focus = None;
+            }
             self.seat_eye = None;
             self.seat_angles = None;
         }
