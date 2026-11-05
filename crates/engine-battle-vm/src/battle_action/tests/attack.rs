@@ -100,6 +100,37 @@ fn the_monster_approach_chain_stages_walk_then_close_in_by_tag() {
     assert_eq!(host.actors[4].queued_anim, 11, "tag-0x21 close-in");
 }
 
+/// `0x17` stages idle behind the committed close-in (`0x801E3508`) and `0x18`
+/// holds until that idle commits, so the strike loop opens on idle and a
+/// close-in's whole clip plays first.
+#[test]
+fn the_strike_loop_waits_for_the_close_in_to_end() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Attack, 4);
+    host.actors[4].active_target = 1;
+    ctx.action_state = ActionState::AttackCloseRange.as_byte();
+    host.actors[4].queued_anim = 11;
+    host.actors[4].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.action_state,
+        ActionState::AttackCloseRange.as_byte(),
+        "the close-in has not committed"
+    );
+    host.actors[4].current_anim = 11;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::AttackStrike.as_byte());
+    assert_eq!(host.actors[4].queued_anim, 0, "idle staged behind it");
+    step(&mut host, &mut ctx);
+    assert_eq!(
+        ctx.action_state,
+        ActionState::AttackStrike.as_byte(),
+        "the close-in is still playing"
+    );
+    host.actors[4].current_anim = 0;
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.action_state, ActionState::AttackChain.as_byte());
+}
+
 /// A monster that downs its target plays its tag-`0x22` entry - unless the
 /// blow wiped the party.
 #[test]
