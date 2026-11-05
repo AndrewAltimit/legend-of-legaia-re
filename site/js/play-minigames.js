@@ -775,6 +775,12 @@
   /* ================================================================== */
 
   function teardown(rt, view) {
+    /* The hall's ambient tree comes off the world on the first call outside a
+     * dance: the field's own tree, its stagers and the frame step go back. Past
+     * the last danceFrame nothing else asks. */
+    if (S.game === 'dance' && typeof rt.play_mg_dance_ambient_step === 'function') {
+      rt.play_mg_dance_ambient_step();
+    }
     if (S.game && (S.game !== 'slot' || S.slotVram)) releaseRenderer(rt, view);
     S.slotVram = false;
     S.game = null;

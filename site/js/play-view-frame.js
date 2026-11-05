@@ -919,13 +919,14 @@
       /* PSX rasterisation on the native 320 x 240 canvas: the corners take
        * the GPU's pixel centre and the textured corners its half-texel bias,
        * the native renderer's `stage_screen_overlay_split`. ScreenVertex:
-       * pos at byte 0, uv at 8, flags at 40, 48-byte stride. */
+       * pos at byte 0, uv at 8, flags at 40, 48-byte stride. PSX_TIE_NDC_Y is why
+       * a sprite's first row lands where the window's does (webgl-shaders.js). */
       if (this.psxRender && this.canvas && this.canvas.width === 320 && this.canvas.height === 240) {
         vbytes = new Uint8Array(vbytes);
         const f = new Float32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         const u = new Uint32Array(vbytes.buffer, vbytes.byteOffset, vbytes.byteLength >> 2);
         for (let o = 0; o + 12 <= f.length; o += 12) {
-          f[o] += 1 / 320; f[o + 1] -= 1 / 240;
+          f[o] += 1 / 320; f[o + 1] -= 1 / 240 - PSX_TIE_NDC_Y;
           if (u[o + 10] & 1) { f[o + 2] += 0.5; f[o + 3] += 0.5; }
         }
       }
