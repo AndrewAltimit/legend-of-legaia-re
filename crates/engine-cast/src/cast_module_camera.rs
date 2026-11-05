@@ -250,6 +250,11 @@ pub struct ModuleCamState {
     /// a dead victim's playing clip back to `0`, a living one's tint word
     /// `+0x04` cleared.
     pub victim_settled: bool,
+    /// The host's answer for the caster's own clip (`+0x1D9 == 0`, PROT 0957's
+    /// arm 12).
+    pub caster_settled: bool,
+    /// PROT 0957 `0x76`'s module words ([`DeathGame`]).
+    pub death_game: DeathGame,
     /// Every party seat's `+0x1D9` back on idle (a downed one on clip `8`),
     /// fed by the host for a capture director's row settle (PROT 0965's arm
     /// `0x0C`).
@@ -996,6 +1001,7 @@ pub mod creature;
 mod creature_spawns;
 mod cross_beam;
 mod curse_all;
+mod death_game;
 mod doomsday;
 mod earthquake;
 mod element_change;
@@ -1053,6 +1059,10 @@ pub use creature::*;
 pub use creature_spawns::*;
 pub use cross_beam::{CROSS_BEAM_COUNTDOWN, cross_beam_camera};
 pub use curse_all::{CURSE_ALL_BODY, CURSE_ALL_RECORDS, curse_all_camera};
+pub use death_game::{
+    CARD_RECORDS, DEATH_GAME_BODY, DeathGame, DeathGameOutcome, DeathGamePad, PICK_RECORD,
+    death_game_camera,
+};
 pub use doomsday::{
     DOOMSDAY_BODY, DOOMSDAY_LINE_UP_X, DOOMSDAY_RING_COUNT, DOOMSDAY_RING_RECORD, doomsday_camera,
     doomsday_ring_part_words,

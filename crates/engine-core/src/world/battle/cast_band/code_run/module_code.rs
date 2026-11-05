@@ -354,6 +354,7 @@ impl World {
         let mut capture_arm = None;
         let mut capture_vram_move = None;
         let phase_in = ctx.phase;
+        let mut death_game_pass = None;
         // A capture-class body's camera arms, on the phase it is about to
         // run (they make no gate of their own: the body's port does).
         if let Some(direct) = legaia_engine_cast::cast_module_camera::capture_camera_director(
@@ -377,7 +378,14 @@ impl World {
             if entry == 964 {
                 st.module_words[0] = i32::from(self.cast_element_change_last_roll());
             }
+            let death_game = entry == 957 && body == Some(ticks::SUMMON_EFFECT_TICK_B);
+            if death_game {
+                self.feed_death_game(ctx.phase, seats.caster_monster, caster_slot, &mut st);
+            }
             let arm = direct(&mut st, ctx.phase, seats);
+            if death_game {
+                death_game_pass = Some(st.death_game);
+            }
             self.store_module_cam(st);
             if let Some(v) = arm.latch
                 && let Some(i) = self.caster_latch_index(caster_slot)
@@ -410,6 +418,27 @@ impl World {
             self.casting.module_scatter_pairs = arm.scatter_pairs;
             capture_vram_move = arm.vram_move;
             capture_arm = Some(arm);
+        }
+        if let Some(g) = death_game_pass {
+            self.carry_death_game_pass(&g, phase_in, caster_slot);
+            if let Some(outcome) = g.outcome {
+                let max_hp = [caster_slot, victim_slot].map(|s| {
+                    self.actors
+                        .get(usize::from(s))
+                        .map_or(0, |a| a.battle.max_hp)
+                });
+                let opened = [victim.hp, caster.hp];
+                ticks::death_game_outcome(outcome, &mut caster, &mut victim, max_hp);
+                // The bleed's number pops (`FUN_801F44A0` at `0x801F93AC`,
+                // `0x801F9558`), each for the `(hp + 3) >> 2` it opens with.
+                if outcome == legaia_engine_cast::cast_module_camera::DeathGameOutcome::BothBleed {
+                    let pops = [0, 1].map(|i| ticks::AoeHit {
+                        seat: [victim_slot, caster_slot][i],
+                        applied: (i32::from(opened[i]) + 3) >> 2,
+                    });
+                    run.aoe_hits.extend(pops);
+                }
+            }
         }
         if let Some(reach) = capture_arm.as_ref().and_then(|a| a.caster_reach) {
             self.store_caster_reach(caster_slot, reach);
@@ -798,9 +827,6 @@ impl World {
                         &mut victim,
                         hit,
                     ))
-                }
-                (957, Some(ticks::SUMMON_EFFECT_TICK_B)) => {
-                    Some(ticks::summon_effect_tick_b(&mut ctx, &mut victim))
                 }
                 // PROT 0942's Power Up reads the caster's own monster record
                 // `+0x0E` and writes the AGL **base** half only.

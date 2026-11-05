@@ -830,7 +830,10 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
         ),
-        957 => body == Some(super::THUNDER_STORM_BODY),
+        957 => matches!(
+            body,
+            Some(super::THUNDER_STORM_BODY | super::DEATH_GAME_BODY)
+        ),
         941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
         944 => body == Some(super::CURSE_ALL_BODY),
         _ => false,
@@ -857,7 +860,10 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
         ),
-        957 => body == Some(super::THUNDER_STORM_BODY),
+        957 => matches!(
+            body,
+            Some(super::THUNDER_STORM_BODY | super::DEATH_GAME_BODY)
+        ),
         941 => matches!(body, Some(super::STEAL_BODY | super::STONE_CIRCLE_BODY)),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         942 => body == Some(super::POWER_UP_BODY),

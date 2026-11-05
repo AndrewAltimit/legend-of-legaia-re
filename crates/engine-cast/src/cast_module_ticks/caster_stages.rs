@@ -242,7 +242,7 @@ pub const CAPTURE_CASTER_STAGES: &[CasterStageRow] = &[
         action_ids: &[0x76],
         rule: CasterClipRule::Fixed(&[0x09]),
         approach: false,
-        arms: None,
+        arms: Some(&[0]),
     },
     // PROT 0960 `0xA6` (`0x801F69D8`, Neo Star Slash): `li v0,0xa;
     // sb v0,0x1da(s4)` at `0x801F6B98`, in arm 1 (`0x801F6B48`) behind its

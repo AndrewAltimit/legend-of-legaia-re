@@ -277,6 +277,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (964, super::ELEMENT_CHANGE_BODY) => Some(super::element_change_camera),
         (964, super::ELEMENT_STRIKE_BODY) => Some(super::element_strike_camera),
         (951, super::SCYTHE_WIND_BODY) => Some(super::scythe_wind_camera),
+        (957, super::DEATH_GAME_BODY) => Some(super::death_game_camera),
         (957, super::THUNDER_STORM_BODY) => Some(super::thunder_storm_camera),
         (941, super::STEAL_BODY) => Some(super::steal_camera),
         (944, super::CURSE_ALL_BODY) => Some(super::curse_all_camera),
