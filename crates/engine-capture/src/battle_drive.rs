@@ -1522,10 +1522,24 @@ impl BattleDrive {
         // two passes into its action would be filmed on the engine's coin.
         // Pin it through the seed instead
         // (`BattleActionCtx::camera_variant_pin`), for the driven seat only.
+        // A walk-in body's arm 0 rolls the style afresh (`rand() % 4` at
+        // `0x801F71D0` in PROT 0952) ahead of its case 6, and a capture on
+        // that pass holds the roll; every later pass re-pins `1` before the
+        // module ticks, which the roll then matches anyway. The approach leg
+        // standing in for the arm takes the pin over its own roll.
+        let arm0_roll = want == 0x70
+            && CAPTURE_BAND.contains(&state)
+            && world.casting.module_phase == 0
+            && matches!(end, SpanGate::CaptureFade { arm: Some((p, _)), .. } if p >= 1)
+            && capture_body(world, world.battle_ctx.active_actor).is_some_and(|(e, b)| {
+                legaia_engine_cast::cast_module_camera::capture_approach_yaw_base(e, Some(b))
+                    .is_some()
+            });
         world.battle_ctx.camera_variant_pin = style.filter(|_| {
-            ours && (seat < 3 || category == 3)
+            ours && ((seat < 3 || category == 3)
                 && (PRE_SEED_STATES.contains(&state) || state == 0x0C)
                 && !CAPTURE_BAND.contains(&want)
+                || arm0_roll)
         });
         if end == SpanGate::Landed {
             if let Some(e) = steer.prior
