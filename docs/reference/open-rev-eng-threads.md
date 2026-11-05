@@ -258,7 +258,9 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 
 ### A walked-back pose about twenty units of yaw off
 
-`open` Two captures peak on a yaw beside the walk-back's (`displayed_cam_live_steps`): `battle_geremi_ogre_strike` at about `190` against `168` (image `.88` to `.99`), and `battle_map01_gomboo_steal_mid_cast` at `3610` against `3631` (`.82` to `.91`). Neither is pinned, since nothing names the gap.
+`open` `battle_map01_gomboo_steal_mid_cast` peaks on a yaw beside the walk-back's (`displayed_cam_live_steps`): `3610` against `3631` (`.82` to `.91`), and nothing names the gap. The other capture once listed here, `battle_geremi_ogre_strike` (`190` against `168`), was a locked walker nearest on ring slot `3`, whose displayed pass is the walk's last and whose table chased the walk's bearing ([retail-compare](../tooling/retail-compare.md#battle-states)); its walk back now lands on `189`. `battle_jou_cort_181_strike` (step `4`, an idle arrival on case 7's second rung) peaks about `10` units past its walk back (yaw `830` against `822`, `image` `.870` to `.902`), and the rest of its residue is the party's poses.
+
+Three strike children peak on their walk back already: `battle_map02_poisonous_worm_strike` (`3328`; focus `+-20` reads no better), `battle_noaru_gilium_lv2_strike` (`652`, on the idle's cursor `0`, which a sweep of `0..40` confirms) and `battle_korb2_medusa_strike`. Poisonous Worm's residue is a large translucent body near the lens, drawn wider and brighter than retail's: the near-camera ghost (seats `0`, `2` and `4` carry `0x83000000`) on another pose or depth.
 
 Recordings confirm the yaw half of the law (`inc = ceil(gap_before / 0xC)`, the endpoint drifting with the counter), which leaves the focus: its endpoint chases walking bodies, and a focus error reads as a pan. The first step is a retail `cam.csv` across a strike's walk, comparing the recorded focus two passes back with what the walk-back gives, using `walker_end_shift`. `battle_map02_poisonous_worm_strike` and `battle_nilboa_aluru_v2_strike` peak on the law's yaw, so their residue is not the camera. Grade `capture`.
 

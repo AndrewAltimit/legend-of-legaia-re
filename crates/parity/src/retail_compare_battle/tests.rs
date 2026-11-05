@@ -433,6 +433,81 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     assert!(camera_align::walk_heading(&ram, ctx).is_none());
 }
 
+/// `battle_geremi_ogre_strike`'s words: a walker the `+0x76` lock keeps on the
+/// walk clip into the strike loop, nearest the target on ring slot `3` and
+/// backing off `13` units a pass since. The displayed frame's pass stored the
+/// walk's bearing onto the target's live pair (`2483`) and the loop's first arm
+/// read it, so the table the RAM replaced chased an endpoint `67` further than
+/// the RAM's (the loop's bearing `2420` onto the body pair, a counter step at
+/// step `3`): the walk back lands on yaw `189`, where the frame reads best,
+/// and the RAM's endpoint alone gives `168`.
+#[test]
+fn a_locked_walk_nearest_on_slot_three_chased_the_walks_heading() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D538u32, 0x800E_CF90u32);
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x15, 1);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE + 2 * 4, target);
+    put8(&mut ram, attacker + 0x1DD, 2);
+    put8(&mut ram, attacker + 0x1D9, 1);
+    put16(&mut ram, attacker + 0x46, 2423);
+    for (k, (x, z)) in [
+        (210i32, 271i32),
+        (203, 260),
+        (196, 249),
+        (188, 239),
+        (226, 287),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
+    assert_eq!(frame_step(&ram), 3);
+    put16(&mut ram, target + 0x3C, 19);
+    put16(&mut ram, target + 0x40, (-27i16) as u16);
+    let h = camera_align::walk_heading(&ram, ctx).expect("locked walk, slot 3");
+    assert_eq!(h.displayed, 2483);
+    assert_eq!(h.end_shift, -67);
+
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 3520);
+    put16(&mut ram, rec(1), 106);
+    put16(&mut ram, rec(1) + 2, 2568);
+    let mut end_shift = [0; 9];
+    end_shift[1] = h.end_shift;
+    let walked = |end_shift| {
+        camera_align::displayed_cam_live_steps(
+            &ram,
+            ctx,
+            &[3, 3],
+            false,
+            [None; 9],
+            end_shift,
+            false,
+        )
+        .yaw
+    };
+    assert_eq!(walked(end_shift), 189.0);
+    assert_eq!(walked([0; 9]), 168.0);
+
+    // Off the walk clip the same ring is an arrival two passes into the loop,
+    // which read the loop's own heading (`battle_noaru_gilium_lv2_strike`).
+    put8(&mut ram, attacker + 0x1D9, 8);
+    assert!(camera_align::walk_heading(&ram, ctx).is_none());
+}
+
 /// Case `0xA`'s yaw clock: the endpoint climbs twice the cursor's step a pass,
 /// so the walk back from Poisonous Breath's `3350` under `3368` lands on the
 /// `3320` its frame fits best, where the RAM's endpoint alone gives `3296`.
