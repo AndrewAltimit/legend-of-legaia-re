@@ -372,3 +372,14 @@
     <li>What the game does after a lone character leaves with flag 0x00D set.</li>
   </ul>
 </section>
+
+<section class="doc-section" id="tetsu-spar-before-measuring" data-doc="sparring-with-tetsu-before-the-measuring">
+  <h2>Sparring with Tetsu before the measuring</h2>
+  <p><strong>Status:</strong> explained</p>
+  <p>On the morning before the hunt, Rim Elm waits on three beats: Mei finds Vahn at the Genesis Tree, Mei measures him at home, and Tetsu spars with him. The hunters&rsquo; return starts only from Tetsu&rsquo;s talk, after a spar that counted, and a spar counts only if the measuring came first. A player who finds Tetsu and practises between the first two beats gets a spar that never counts, and nothing on the disc lets it count later: the hunters never come home.</p>
+  <ul class="bullets">
+    <li>The spar&rsquo;s return raises flag <code>0x20C</code> only while the measuring flag <code>0x227</code> is up (<code>town01</code> <code>P1[10]</code> <code>+0x7FB</code>); the return is spawned on <code>0x20C</code> alone (<code>+0xA43</code>). <code>0x20C</code> has no other writer on the disc (<code>disassembly</code>, <code>disc data</code>).</li>
+    <li>A retail state reached by a human&rsquo;s recorded route, <code>s5_tetsu_battle</code>, is in the spar before the measuring; run on to the field it leaves <code>0x20C</code> clear (<code>capture</code>, the tutorial closed by a poke that touches no story flag).</li>
+  </ul>
+  <p>The port&rsquo;s <a href="../../subsystems/gameplay-tweaks.html">Tetsu spar order fix</a>, on by default, lets the early spar count once the measuring is done; retail-faithful mode keeps the original behaviour.</p>
+</section>

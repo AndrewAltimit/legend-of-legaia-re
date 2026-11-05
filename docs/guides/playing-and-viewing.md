@@ -161,6 +161,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Gameplay tweaks | Shiny Seru (off = `--no-shiny-seru`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Run-away EXP (`--flee-exp`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Fortress battles fix (off = `--no-fortress-encounter-fix`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Tetsu spar order fix (off = `--no-tetsu-spar-fix`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |

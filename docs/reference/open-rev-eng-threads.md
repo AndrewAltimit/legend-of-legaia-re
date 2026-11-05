@@ -215,7 +215,6 @@ the cheapest place to look for a claim that is still wrong.
 
 | Thread | Status | State |
 |---|---|---|
-| Does a Tetsu spar fought before the measuring stop the hunters' return in retail? | open | The script says so: the spar's return raises `0x20C` only with `0x227` up, and `P2[6]`'s one spawner waits on `0x20C` ([`cutscene.md`](../subsystems/cutscene.md#rim-elms-day-before-the-hunt)). Next step: on a cold New Game under PCSX-Redux, spar after Mei's beat and before entering the house, then measure, and watch `0x80085799` (bits for `0x20B` / `0x20C`) and whether Tetsu's talk ever spawns `P2[6]`. Grade `inference` from the script bytes. |
 
 Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
 

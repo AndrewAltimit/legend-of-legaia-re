@@ -36,6 +36,11 @@ pub struct GameplayTweaks {
     /// `WorldToggles::fortress_encounter_fix`). On by default: a healthy save
     /// plays the same either way.
     pub fortress_encounter_fix: bool,
+    /// Tetsu spar order fix (`WorldToggles::tetsu_spar_fix`): a spar with
+    /// Tetsu fought before the measuring still lets the hunters return. A
+    /// port softlock fix. On by default: a game in retail's order plays the
+    /// same either way.
+    pub tetsu_spar_fix: bool,
     /// Jewel fix (`--jewel-fix`): the boss cinematic casts respect elemental
     /// guards (`WorldToggles::jewel_fix`). Off by default.
     pub jewel_fix: bool,
@@ -91,6 +96,7 @@ impl GameplayTweaks {
             flee_exp: t.flee_exp,
             exp_rate_permille: t.exp_rate_permille,
             fortress_encounter_fix: t.fortress_encounter_fix,
+            tetsu_spar_fix: t.tetsu_spar_fix,
             jewel_fix: t.jewel_fix,
             hp_readout_guard: t.hp_readout_guard,
             spirit_ap: t.spirit_ap,
@@ -120,6 +126,7 @@ impl GameplayTweaks {
         let range = legaia_engine_core::world::EXP_RATE_RANGE;
         toggles.exp_rate_permille = self.exp_rate_permille.clamp(*range.start(), *range.end());
         toggles.fortress_encounter_fix = self.fortress_encounter_fix;
+        toggles.tetsu_spar_fix = self.tetsu_spar_fix;
         toggles.jewel_fix = self.jewel_fix;
         toggles.hp_readout_guard = self.hp_readout_guard;
         use legaia_engine_core::world::{DAMAGE_AP_RANGE, SCALE_RANGE, SPIRIT_AP_RANGE};
@@ -258,6 +265,9 @@ pub struct PersistedSwitches {
     /// Without the Fortress encounter fix (`--no-fortress-encounter-fix`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_fortress_encounter_fix: bool,
+    /// Without the Tetsu spar order fix (`--no-tetsu-spar-fix`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_tetsu_spar_fix: bool,
     /// The jewel fix (`--jewel-fix`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub jewel_fix: bool,
@@ -307,6 +317,7 @@ impl PersistedSwitches {
             flee_exp: self.flee_exp,
             exp_rate_permille: self.exp_rate_permille.unwrap_or(EXP_RATE_RETAIL),
             fortress_encounter_fix: !self.no_fortress_encounter_fix,
+            tetsu_spar_fix: !self.no_tetsu_spar_fix,
             jewel_fix: self.jewel_fix,
             hp_readout_guard: !self.no_hp_readout_guard,
             spirit_ap: self.spirit_ap.unwrap_or(SPIRIT_AP_RETAIL),
@@ -330,6 +341,7 @@ impl PersistedSwitches {
         self.flee_exp = t.flee_exp;
         self.exp_rate_permille = off_retail(t.exp_rate_permille, EXP_RATE_RETAIL);
         self.no_fortress_encounter_fix = !t.fortress_encounter_fix;
+        self.no_tetsu_spar_fix = !t.tetsu_spar_fix;
         self.jewel_fix = t.jewel_fix;
         self.no_hp_readout_guard = !t.hp_readout_guard;
         self.spirit_ap = (t.spirit_ap != SPIRIT_AP_RETAIL).then_some(t.spirit_ap);
@@ -393,6 +405,7 @@ mod tests {
                 flee_exp: true,
                 exp_rate_permille: 2000,
                 fortress_encounter_fix: true,
+                tetsu_spar_fix: true,
                 jewel_fix: true,
                 hp_readout_guard: true,
                 spirit_ap: -16,
@@ -436,7 +449,7 @@ mod tests {
     fn tweak_defaults_are_the_engine_defaults_and_rates_cycle() {
         let d = GameplayTweaks::default();
         assert_eq!(d, GameplayTweaks::from_toggles(&WorldToggles::new()));
-        assert!(d.shiny_seru && d.fortress_encounter_fix && d.hp_readout_guard);
+        assert!(d.shiny_seru && d.fortress_encounter_fix && d.tetsu_spar_fix && d.hp_readout_guard);
         assert!(!d.flee_exp && !d.jewel_fix && !d.save_anywhere && !d.action_movement);
         assert_eq!(d.exp_rate_permille, 1000);
         assert_eq!(GameplayTweaks::exp_rate_label(1500), "1.5x");

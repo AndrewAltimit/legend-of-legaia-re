@@ -278,3 +278,162 @@ fn mei_stands_on_the_floor_in_vahns_house() {
     }
     assert!(checked > 0, "Mei never sat down in Vahn's house");
 }
+
+/// Tetsu's placement (`P1[10]`).
+const TETSU_SLOT: u8 = 10;
+
+/// Talk to Tetsu and take answer `choice` of his four, then play out what it
+/// starts - the spar included, fought with the ladder's battle hand - until
+/// the pad is back.
+fn ask_tetsu(w: &mut HeadlessPlayWindow, log: &mut PadLog, choice: usize) {
+    assert!(seat_facing(w, TETSU_SLOT), "no seat faces Tetsu");
+    log.frame(w, mask(PadButton::Cross));
+    let mut chose = false;
+    let mut since = 0u32;
+    let mut settled = 0;
+    for f in 0..20_000u32 {
+        let world = &w.session().host.world;
+        if std::env::var_os("TETSU_TRACE").is_some() && f % 100 == 0 {
+            eprintln!(
+                "[tetsu] f{f} mode {:?} inline {:?} free {} 0x20B {} tl {} {:?}",
+                world.mode,
+                world
+                    .dialog
+                    .inline
+                    .as_ref()
+                    .map(|i| (i.pc, i.panel.is_some())),
+                free_roam(w),
+                world.system_flag_test(0x20B),
+                world.cutscene_timeline_active(),
+                world.cutscene.timeline.as_ref().map(|t| (
+                    t.pc,
+                    t.bytecode.get(t.pc).copied(),
+                    t.dialog.is_some(),
+                    t.player_wait,
+                    t.channel_wait.map(|c| (c.target_id, c.bit))
+                ))
+            );
+        }
+        if world.mode == legaia_engine_mode::mode::SceneMode::Battle {
+            let pad = super::full_game_ladder::fight_turn::fight_pad(w.session());
+            log.frame(w, if f % 4 < 2 { pad } else { 0 });
+            continue;
+        }
+        if free_roam(w) && f > 30 {
+            settled += 1;
+            if settled > 300 {
+                return;
+            }
+            log.frame(w, 0);
+            continue;
+        }
+        settled = 0;
+        // The talk's box, or - after the spar, whose return resumes the talk
+        // as a cutscene record - the timeline's.
+        let picker = world
+            .dialog
+            .inline
+            .as_ref()
+            .and_then(|i| i.panel.as_ref())
+            .or_else(|| {
+                world
+                    .cutscene
+                    .timeline
+                    .as_ref()
+                    .and_then(|t| t.dialog.as_ref())
+            })
+            .and_then(|p| {
+                p.picker_takes_input()
+                    .then(|| (p.picker_cursor(), p.picker_labels().len()))
+            });
+        let pad = match picker {
+            Some((cursor, _)) if !chose => {
+                since += 1;
+                if !since.is_multiple_of(30) {
+                    0
+                } else if cursor < choice {
+                    mask(PadButton::Down)
+                } else {
+                    chose = true;
+                    mask(PadButton::Cross)
+                }
+            }
+            // After the answer, Tetsu's own four-way picker is closed on its
+            // last row, "Nothing in particular"; any other on its default.
+            Some((cursor, rows)) => {
+                since += 1;
+                if !since.is_multiple_of(30) {
+                    0
+                } else if rows == 4 && cursor < 3 {
+                    mask(PadButton::Down)
+                } else {
+                    mask(PadButton::Cross)
+                }
+            }
+            None => {
+                since = 0;
+                if f % 8 < 2 { mask(PadButton::Cross) } else { 0 }
+            }
+        };
+        log.frame(w, pad);
+    }
+    panic!("Tetsu's talk never handed the pad back");
+}
+
+/// The order a player can take that retail never recovers from: the spar
+/// with Tetsu after Mei's beat and before the measuring, then the measuring,
+/// then Tetsu's "Nothing in particular". Returns whether the hunters came
+/// home (`0x22E`).
+fn spar_before_the_measuring(disc: &std::path::Path, fix: bool) -> bool {
+    let (mut w, mut log) = new_game(disc, if fix { "spar-fix" } else { "spar-retail" });
+    w.session_mut().host.world.toggles.tetsu_spar_fix = fix;
+    play_mei_beat(&mut w, &mut log);
+    ask_tetsu(&mut w, &mut log, 2);
+    let f = |w: &HeadlessPlayWindow, n| w.session().host.world.system_flag_test(n);
+    assert!(f(&w, 0x20B), "the spar was not fought");
+    assert!(
+        !f(&w, 0x20C),
+        "a spar before the measuring does not count in retail's bank"
+    );
+    {
+        let host = &mut w.session_mut().host;
+        let man = host
+            .scene
+            .as_ref()
+            .and_then(|s| s.field_man_payload(&host.index).ok().flatten())
+            .expect("town01 MAN");
+        let mf = legaia_scene_formats::man_section::parse(&man).expect("parse the MAN");
+        assert!(
+            host.world
+                .install_gated_p2_record(&mf, &man, MEASURING_RECORD)
+        );
+    }
+    assert!(
+        play_out(&mut w, &mut log, 6000),
+        "the measuring never ended"
+    );
+    assert!(f(&w, 0x227), "the measuring did not raise 0x227");
+    // "Nothing in particular" twice: what a stuck player would try.
+    ask_tetsu(&mut w, &mut log, 3);
+    ask_tetsu(&mut w, &mut log, 3);
+    f(&w, 0x22E)
+}
+
+/// Retail: a spar fought before the measuring never counts, and the hunters'
+/// return can never start. With the Tetsu spar order fix (the default) it
+/// starts on Tetsu's next "Nothing in particular".
+#[test]
+fn tetsu_spar_before_the_measuring() {
+    let Some(disc) = disc() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN unset (disc-gated)");
+        return;
+    };
+    assert!(
+        !spar_before_the_measuring(&disc, false),
+        "retail order: the hunters returned without the fix"
+    );
+    assert!(
+        spar_before_the_measuring(&disc, true),
+        "with the fix the hunters never returned"
+    );
+}

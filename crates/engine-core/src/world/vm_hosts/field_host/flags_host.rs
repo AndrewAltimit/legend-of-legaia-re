@@ -69,7 +69,7 @@ impl<'a> FieldFlagsHost for FieldHostImpl<'a> {
     }
 
     fn system_flag_test(&self, idx: u16) -> bool {
-        self.world.system_flag_test(idx)
+        self.world.script_system_flag_test(idx)
     }
 
     /// Op `4C CA <slot> <u16>` - store into the script-counter slot table

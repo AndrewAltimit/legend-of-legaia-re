@@ -2998,6 +2998,7 @@ mod tests {
                 flee_exp: true,
                 exp_rate_permille: Some(2000),
                 no_fortress_encounter_fix: true,
+                no_tetsu_spar_fix: true,
                 jewel_fix: true,
                 no_hp_readout_guard: true,
                 spirit_ap: Some(-16),
@@ -3018,6 +3019,7 @@ mod tests {
                 flee_exp,
                 exp_rate,
                 no_fortress_encounter_fix,
+                no_tetsu_spar_fix,
                 jewel_fix,
                 no_hp_readout_guard,
                 spirit_ap,
@@ -3036,6 +3038,7 @@ mod tests {
                 );
                 assert!(equipment_drops);
                 assert!(no_shiny_seru && flee_exp && no_fortress_encounter_fix && jewel_fix);
+                assert!(no_tetsu_spar_fix);
                 assert!(no_hp_readout_guard);
                 assert_eq!(exp_rate, Some(2000));
             }

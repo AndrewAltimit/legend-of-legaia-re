@@ -2256,9 +2256,9 @@ fought after the measuring. Retail agrees: the `v0_1_pre_battle_tetsu` state sta
 house with `0x227` set and `0x22E` clear.
 
 A spar fought before the measuring leaves `0x20B` up and `0x20C` down, and Tetsu's third answer
-then only says there is nothing more to learn: nothing in `town01` raises `0x20C` again. That is
-read from the script alone; [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#field--locomotion)
-carries the retail check.
+then only says there is nothing more to learn: nothing on the disc raises `0x20C` again, so
+retail can never leave Rim Elm. The port's Tetsu spar order fix lets that spar count; see
+[`field-sequence-breaks.md`](../reference/glitches/field-sequence-breaks.md#sparring-with-tetsu-before-the-measuring).
 
 Two of the beats lean on ops the port had to get exactly right:
 

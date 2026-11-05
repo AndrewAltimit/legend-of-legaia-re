@@ -1,8 +1,9 @@
 # Incense, doors and the Door of Light
 
-Four field sequence breaks, each traced to the code and scene data that produce it: the Incense
+Five field sequence breaks, each traced to the code and scene data that produce it: the Incense
 notice that swallows a walk-on trigger, the Incense effect that outlives a save file, the door to
-the Juggernaut Room in Ratayu, and the one spot in Nivora Ravine where a Door of Light works.
+the Juggernaut Room in Ratayu, the one spot in Nivora Ravine where a Door of Light works, and the
+spar with Tetsu that, fought too early, keeps the hunters from coming home.
 Everything on this page is read from the disassembly of `SCUS_942.54` and the field overlay (PROT
 entry 0897, load base `0x801CE818`) and from the scene files on the USA disc. The Juggernaut Room
 door is also captured in an emulator, and its section says how each capture was set up; so is one
@@ -638,3 +639,48 @@ breakpoint at `0x801DA0C8` stops on the clear, with `s2` pointing at the matched
 - Whether the box was left allowed on purpose or kept a default byte nobody restricted.
 - Which of the three split characters can reach the box; the community report says Noa.
 - What the game does after a lone character leaves with `0x00D` set.
+
+## Sparring with Tetsu before the measuring
+
+**Status:** explained
+
+**Reported as:** after Mei measures Vahn for his hunting clothes, the hunters never come back and
+the story cannot go on (a player of the port; the order of events below is what produces it).
+
+On the morning before the hunt, Rim Elm (`town01`) waits on three beats in order: Mei finds Vahn at
+the Genesis Tree, Mei measures him at home, and Tetsu spars with him. The hunters' return
+(`P2[6]`) starts only from Tetsu's talk, when the player answers "Nothing in particular" after a
+spar that counted. Nothing stops the player from finding Tetsu and asking to practise between the
+first beat and the second, and a spar fought then never counts.
+
+| Step | Script (`town01`, `P1[10]` unless named) | Flag |
+|---|---|---|
+| Third answer, "I want to practice with you" | `52 0B` at `+0x76A`, then the fight `3E FF 04` | `0x20B` set |
+| Return from the spar | `72 27 05 00` / `26 04 00` / `52 0C` at `+0x7FB`: raise `0x20C` only if `0x227` is up | `0x20C` set only after the measuring |
+| Third answer again | `72 0B 76 01` at `+0x766`: `0x20B` is up, so "nothing more you can learn" | none |
+| "Nothing in particular" | `72 0C 1B 01` at `+0xA43`: spawn `P2[6]` (`44 5F`) only with `0x20C` | none |
+
+`0x20C` has that one setter on the whole disc (the system-flag census of every scene MAN), and the
+move VM's flag writer cannot reach it: its operand is one byte, so it writes flags `0..0xFF` only
+(`2F 1C` / `2F 1D`, [`move-vm-overlay-ext.md`](../../subsystems/move-vm-overlay-ext.md)). A spar
+fought before the measuring leaves `0x20B` up and `0x20C` down for good, and the hunters never
+return.
+
+Evidence: the script bytes and the census are `disassembly` / `disc data`. The order is one a
+player takes: `s5_tetsu_battle`, a retail state reached by replaying a human's recorded route, is
+in the spar with `0x226` set and `0x227` clear. Run on to the field from that state under
+PCSX-Redux (`scripts/pcsx-redux/autorun_tetsu_spar_order.lua`), the talk resumes with `0x20B` set
+and `0x20C` still clear (`capture`, poked: the battle tutorial's lesson byte `ctx[+0x28A]` was set
+to 4 to close the fight, which touches no story flag). The measuring and the later talk were not
+played on retail; that leg rests on the census.
+
+**The port.** The engine plays the same script, so it reproduces the softlock in retail-faithful
+mode. Its *Tetsu spar order fix* (on by default; [`gameplay-tweaks.md`](../../subsystems/gameplay-tweaks.md#tetsu-spar-order-fix))
+answers the field VM's test of `0x20C` as set in `town01` once `0x20B` and `0x227` both are, so the
+next "Nothing in particular" starts the return. A game played in retail's order plays the same
+either way.
+
+**Verifying it:** from `s5_tetsu_battle`, watch byte `0x80085799` (bit `0x10` is `0x20B`, bit
+`0x08` is `0x20C`) across the fight's end and the resumed talk; `0x20C` stays clear. The disc-gated
+test `rim_elm_opening_issues::tetsu_spar_before_the_measuring` plays the order headless both ways.
+

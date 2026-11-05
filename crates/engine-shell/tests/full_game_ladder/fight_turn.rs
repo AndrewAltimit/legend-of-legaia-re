@@ -156,7 +156,7 @@ fn aim_press(
     PadButton::Cross.mask()
 }
 
-pub(super) fn fight_pad(session: &NativeSession) -> u16 {
+pub(crate) fn fight_pad(session: &NativeSession) -> u16 {
     use legaia_engine_battle::arts_command_input::ArtsInputPhase;
     use legaia_engine_battle::battle_magic::SpellPhase;
     use legaia_engine_battle::battle_tutorial::TutorialLesson;

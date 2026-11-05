@@ -451,6 +451,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if settings.switches.no_fortress_encounter_fix {
         args.push("--no-fortress-encounter-fix".into());
     }
+    if settings.switches.no_tetsu_spar_fix {
+        args.push("--no-tetsu-spar-fix".into());
+    }
     if settings.switches.jewel_fix {
         args.push("--jewel-fix".into());
     }
@@ -854,6 +857,7 @@ pub enum OptionRow {
     FleeExp,
     ExpRate,
     FortressFix,
+    TetsuSparFix,
     JewelFix,
     HpReadoutGuard,
     BonusDrop,
@@ -870,7 +874,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 38] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 39] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -894,6 +898,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 38] = [
     (None, OptionRow::BonusDrop),
     (None, OptionRow::SaveAnywhere),
     (None, OptionRow::FortressFix),
+    (None, OptionRow::TetsuSparFix),
     (None, OptionRow::JewelFix),
     (None, OptionRow::HpReadoutGuard),
     (Some("Battle tuning"), OptionRow::ExpRate),
@@ -929,6 +934,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.flee_exp = false;
     w.exp_rate_permille = None;
     w.no_fortress_encounter_fix = true;
+    w.no_tetsu_spar_fix = true;
     w.jewel_fix = false;
     w.no_hp_readout_guard = true;
     w.spirit_ap = None;
@@ -1027,6 +1033,7 @@ impl OptionRow {
             Self::FleeExp => "Run-away EXP",
             Self::ExpRate => "EXP rate",
             Self::FortressFix => "Fortress battles fix",
+            Self::TetsuSparFix => "Tetsu spar order fix",
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
             Self::BonusDrop => "Bonus equipment drops",
@@ -1121,6 +1128,10 @@ impl OptionRow {
                 "Fixes Jette's fortress having no battles and a dead Door of Light after \
                  escaping the floating castle with under a minute left."
             }
+            Self::TetsuSparFix => {
+                "Sparring with Tetsu before Mei measures you still counts, so the hunters \
+                 come home. In the original the game cannot go on."
+            }
             Self::JewelFix => {
                 "Elemental jewels and guards protect against the bosses' signature \
                  attacks too, which the original lets through."
@@ -1192,6 +1203,7 @@ impl OptionRow {
                 | Self::FleeExp
                 | Self::ExpRate
                 | Self::FortressFix
+                | Self::TetsuSparFix
                 | Self::JewelFix
                 | Self::HpReadoutGuard
                 | Self::BonusDrop
@@ -1260,6 +1272,7 @@ impl OptionRow {
                 )
             }
             Self::FortressFix => on_off(!s.switches.no_fortress_encounter_fix),
+            Self::TetsuSparFix => on_off(!s.switches.no_tetsu_spar_fix),
             Self::JewelFix => on_off(s.switches.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
@@ -1402,6 +1415,7 @@ impl OptionRow {
             Self::FleeExp => w.flee_exp = d.flee_exp,
             Self::ExpRate => w.exp_rate_permille = d.exp_rate_permille,
             Self::FortressFix => w.no_fortress_encounter_fix = d.no_fortress_encounter_fix,
+            Self::TetsuSparFix => w.no_tetsu_spar_fix = d.no_tetsu_spar_fix,
             Self::JewelFix => w.jewel_fix = d.jewel_fix,
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
@@ -1507,6 +1521,7 @@ impl OptionRow {
                 s.switches.exp_rate_permille = (next != EXP_RATE_RETAIL).then_some(next);
             }
             Self::FortressFix => s.switches.no_fortress_encounter_fix ^= true,
+            Self::TetsuSparFix => s.switches.no_tetsu_spar_fix ^= true,
             Self::JewelFix => s.switches.jewel_fix ^= true,
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
@@ -2299,6 +2314,7 @@ mod tests {
             FleeExp => "play-flee-exp",
             ExpRate => "play-exp-rate",
             FortressFix => "play-fortress-fix",
+            TetsuSparFix => "play-tetsu-spar-fix",
             JewelFix => "play-jewel-fix",
             HpReadoutGuard => "play-hp-readout-guard",
             BonusDrop => "play-bonus-drop",
