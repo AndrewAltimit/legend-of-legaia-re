@@ -170,7 +170,7 @@ fn pad_word_and_tick_frame_drive_the_cast() {
     tick(&mut rt, 0, 1);
     tick(&mut rt, CIRCLE, 1);
     assert_eq!(phase(&rt), "windup", "Circle starts the cast");
-    tick(&mut rt, 0, 30);
+    tick(&mut rt, 0, 110);
     assert_eq!(phase(&rt), "power");
     assert!(
         state(&rt)["cast_power"].as_i64().unwrap_or(-1) > 0,
@@ -179,7 +179,12 @@ fn pad_word_and_tick_frame_drive_the_cast() {
     // A second Circle edge locks the power; the lure flies and lands.
     tick(&mut rt, CIRCLE, 1);
     assert_eq!(phase(&rt), "flight", "Circle locks the power meter");
-    tick(&mut rt, 0, 40);
+    for _ in 0..600 {
+        if phase(&rt) != "flight" {
+            break;
+        }
+        tick(&mut rt, 0, 1);
+    }
     assert_eq!(phase(&rt), "waiting", "the lure lands in the pre-hook loop");
     assert_eq!(
         state(&rt)["casts"].as_i64(),

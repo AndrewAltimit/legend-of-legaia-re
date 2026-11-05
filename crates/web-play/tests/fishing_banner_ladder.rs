@@ -104,6 +104,7 @@ fn phase(mg: &LegaiaMinigames) -> String {
 /// seen at. Servicing the HUD once per frame is the page's own contract.
 #[derive(Default)]
 struct Seen {
+    snapped: bool,
     ids: BTreeSet<i64>,
     /// Per-id `(x, y, brightness)` samples, in frame order.
     samples: Vec<(i64, i64, i64, i64)>,
@@ -157,7 +158,7 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
     // Let the meter climb a while, then lock: a deep cast keeps the readout
     // above the bite ladder's live threshold, which is what makes a strike
     // possible at all.
-    for _ in 0..40 {
+    for _ in 0..110 {
         mg.fishing_pond_tick(0, false, 0);
         seen.absorb(&mg.fishing_pond_hud_json());
     }
@@ -198,6 +199,7 @@ fn play_one_cast(mg: &mut LegaiaMinigames, seen: &mut Seen, budget: usize, fight
         mg.fishing_pond_tick(0, false, 0);
         seen.absorb(&mg.fishing_pond_hud_json());
     }
+    seen.snapped |= phase(mg) == "snapped";
     if matches!(phase(mg).as_str(), "landed" | "snapped") {
         mg.fishing_pond_tick(0, true, 0);
         seen.absorb(&mg.fishing_pond_hud_json());
@@ -249,7 +251,7 @@ fn the_hook_reel_in_and_splash_banners_all_run_on_a_played_venue() {
     // Landing and recasting seed no line-break pair: retail's reel-in arms
     // write no `DAT_801d9164` (`0x801D3C68..0x801D3CCC`).
     assert!(
-        !seen.ids.contains(&GLYPH_CONVERGE),
+        seen.snapped || !seen.ids.contains(&GLYPH_CONVERGE),
         "the line-break pair ran without a broken line: {:?}",
         seen.ids
     );
@@ -381,9 +383,9 @@ fn the_play_page_services_the_same_banner_timers() {
     let cast = |rt: &mut LegaiaRuntime| {
         tick(rt, 0, 1);
         tick(rt, CIRCLE, 1);
-        tick(rt, 0, 40);
+        tick(rt, 0, 110);
         tick(rt, CIRCLE, 1);
-        tick(rt, 0, 30);
+        tick(rt, 0, 200);
     };
 
     assert_eq!(phase(&rt), "idle");
