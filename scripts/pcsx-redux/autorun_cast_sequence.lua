@@ -119,6 +119,8 @@
 --                        draw kind, draw mode, packed colours, radius and height
 --                        channels, position, scale, UV / tpage / CLUT and the
 --                        mode-3 H / S / V adds
+--                        and fxpool.csv beside it: every live effect-pool child
+--                        (_DAT_8007BD30) with its frame count, cursor and position
 --   LEGAIA_PRIM_CALLS    1 = primcall.csv (breakpoint core): each prim dispatcher
 --                        FUN_80043390 entry with its colour word, level, caller
 --                        and first group words, and each cued leaf it reaches
@@ -225,6 +227,23 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
     if probe.cast_parts == nil then
         probe.cast_parts = probe.csv_open(probe.out_path("parts.csv"),
             "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42")
+    end
+    -- fxpool.csv: every live child of the effect pool `_DAT_8007BD30`
+    -- (128 x 32-byte slots at `+0x10`): frame count, cursor, position >> 8.
+    if probe.cast_fxpool == nil then
+        probe.cast_fxpool = probe.csv_open(probe.out_path("fxpool.csv"),
+            "vsync,st7,phase,slot,frames,cursor,x,y,z")
+    end
+    local pool = u32(0x8007BD30)
+    if pool >= 0x80000000 and pool < 0x80200000 then
+        for k = 0, 127 do
+            local c = pool + 0x10 + 32 * k
+            local frames = u8(c)
+            if frames ~= 0 then
+                probe.cast_fxpool:row("%d,%d,%d,%d,%d,%d,%d,%d,%d", elapsed, st7, u8(cx + 0x279), k,
+                    frames, u8(c + 2), math.floor(s32(c + 0xC) / 256), math.floor(s32(c + 0x10) / 256), math.floor(s32(c + 0x14) / 256))
+            end
+        end
     end
     for k = 0, 8 do
         local n = u32(0x8007C34C + 4 * k)

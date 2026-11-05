@@ -613,6 +613,34 @@ impl PlayWindowApp {
         {
             let _ = std::fs::write(rec.dir.join(format!("vram_{tick}.bin")), v.as_bytes());
         }
+        // Beside it, `fxpool.csv`: every live child of the effect pool
+        // (`_DAT_8007BD30`) each tick - slot, frame count and cursor, the
+        // integer position - the engine half of the probe's file of the
+        // same name: where the burning bodies' puffs sit.
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && w.casting.active_summon.is_some()
+            && let Ok(f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("fxpool.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            for (i, c) in w.effect_pool.children.iter().enumerate() {
+                if c.frame_count == 0 {
+                    continue;
+                }
+                let _ = writeln!(
+                    f,
+                    "{tick},{i},{},{},{},{},{},{}",
+                    c.frame_count,
+                    c.frame_cursor,
+                    c.pos[0] >> 8,
+                    c.pos[1] >> 8,
+                    c.pos[2] >> 8,
+                    c.anim_id,
+                );
+            }
+        }
         // `LEGAIA_DIAG_CAST_PARTS=1`: every live part of the cast's scene
         // graph each tick (`parts.csv`) - its record, draw words and
         // channels, the engine half of a part-pool side-by-side.

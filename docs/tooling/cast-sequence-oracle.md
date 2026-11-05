@@ -82,7 +82,7 @@ Flags worth knowing:
 | `--no-sound` | Engine: keep the child's `--no-audio`, so no audio director and no `sfx.csv` |
 | `--watch <addr,..>` | Retail: each store into these bytes with its pc, `ra` and registers to `retail/watch.csv` (breakpoint core): who wrote a seat's rate |
 | `--sfx-callers` | Retail: breakpoints on the cue producers `FUN_80035B50` / `FUN_80035BD0`, the battle router `FUN_8004FE5C` and the dispatcher `FUN_8004FCC8`, each call's `a0` / `a1` / `ra` to `retail/sfxcall.csv` (breakpoint core): who fired a cue |
-| `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, position, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`): the retail half of `LEGAIA_DIAG_CAST_PARTS` |
+| `--retail-parts` | Retail: `parts.csv`, every live move-VM part per vsync (`+0x10`, colour word, level, draw kind, `+0x5A`, `+0x9E`, packed colours, `+0xB4..+0xBA`, position, scale, `+0x52`, `+0x9C`, UV / tpage / CLUT, H / S / V adds, view depth `+0x34`, `+0x7A`, `+0x6D`, `+0x42`): the retail half of `LEGAIA_DIAG_CAST_PARTS`. Beside it `fxpool.csv`, every live child of the effect pool `_DAT_8007BD30` (slot, frame count, cursor, position `>> 8`): where the 2D sprites, a burning body's puffs among them, sit |
 | `--prim-calls` | Retail: `primcall.csv` (breakpoint core), each prim dispatcher entry with its word, level, caller and first group words, and each cued leaf: whether a part reached the dispatcher at all, and by which leaf |
 | `--learned <level>` | Both sides: the spell sits on the caster's list at this level. Off the list `FUN_801DD864` reads list slot `0x20`, and level `0` wraps into a capped hit ([the summon roll](../subsystems/battle-formulas.md#a-spell-the-caster-has-not-learned)), so a damage measurement wants this |
 | `--monster-hp <hp>` | Both sides: every living monster's HP from the cast begin, so a cast's whole damage shows in the HP columns. HP feeds the defender roll (`hp >> 8`) and a monster's own swing, so keep it modest and it goes in after the monster's turn |
@@ -107,7 +107,8 @@ position, then the draw kind `+0x56`, scale `+0x72`, `+0x52`, the count
 default-arm mesh's vertex count, the spawn record's address, the flag word
 `+0x10`, the angle trio `+0x24..+0x28`, `+0x7A`, a mode-3 cycler's H / S / V adds
 `+0x90..+0x94` and its gate `+0x9C` - the engine half of a
-part-by-part comparison. It is how Neo
+part-by-part comparison. It writes `fxpool.csv` beside it, the effect pool's live
+children (tick, slot, frame count, cursor, position, anim id). It is how Neo
 Star Slash's arm-6 excess was traced to one cylinder's back faces
 ([renderer](../subsystems/renderer.md#the-field-pass-culls-back-faces)).
 
