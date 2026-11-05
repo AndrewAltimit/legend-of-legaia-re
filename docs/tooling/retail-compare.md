@@ -3915,6 +3915,28 @@ engine's default step, accumulator `48` lands a pass later than retail's three
 step-`3` passes, the clip's cursor reads `32` for retail's `36`, and two
 passes back is already on the shot.
 
+The step can rise inside `0x2B`. A pass runs on the step the frames before it
+left in the ring ([the frame step](../subsystems/battle-stage-camera.md#a-pass-runs-on-the-step-the-frames-before-it-left)),
+so the first `0x2B` pass, which draws the breath and arms the shot, runs on the
+`0x29` frames' step and only the passes after it pay for it. Caruban's Fire
+Breath on a full party (`battle_rugi_caruban_2_` / `_3_fire_breath_mid_cast`)
+holds accumulator `64` over steps `2`, `3`, `3`: its ring reads `553`, `550`,
+then `451` and older entries near `450`. The seed waits until the accumulator
+has counted the passes before the run (`RetailBattle::step_run_accum_hold`,
+`BattleState::frame_step_seed_after_accum`, `LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM`),
+and the display lag takes the pass behind the run at the ordinary step
+(`drive_display_lag`). Seated over all three passes, the replay reached `72`
+on a `24` lattice, its displayed frame stood a pass too far into the shot, and
+the camera yaw read `3521` for retail's `3493` (`image` `.654` / `.687`, camera
+`.994`; with the hold `.929` / `.938`, camera `1.000`). This is a harness seat:
+the step is retail's measured one, and the engine's own cost table does not
+price the breath. The hold is self-checking: it is taken only when the
+history's per-pass gains add up to the capture's accumulator exactly, and only
+when the passes before the run ran at the replay's ordinary step, which is the
+step the replay counts them on (`battle_deene_ironman_jagged_earth_mid_cast`
+runs three step-`3` passes ahead of its step-`4` run, and keeps the whole-state
+seed).
+
 What the retake frames depends on the shot. A shot still walking (the group
 breaths' six-frame case 9) leaves retail's table in the RAM, so the retake
 stands on the pose walked back along it (`BattleCamera::stand_on_pose`). A

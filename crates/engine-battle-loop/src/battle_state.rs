@@ -789,6 +789,12 @@ pub struct BattleState {
     /// `.1` (sixteenths): the pass a capture's step run began on, as its
     /// cursor history holds it. Not a retail field.
     pub frame_step_seed_from: Option<(u8, i32)>,
+    /// A replay's seeded battle frame step held back until the close-up
+    /// accumulator `ctx[+0x87C]` reaches this value: the passes of the
+    /// capture state that ran before its step run began, as the
+    /// accumulator's per-pass gains (`8 * step`) count them. Not a retail
+    /// field.
+    pub frame_step_seed_after_accum: Option<u32>,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// (`World::battle_camera_state`).
@@ -1349,6 +1355,7 @@ impl BattleState {
             anim_slice_commits: Vec::new(),
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
+            frame_step_seed_after_accum: None,
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

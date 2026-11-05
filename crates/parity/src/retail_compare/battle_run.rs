@@ -898,9 +898,12 @@ pub(super) fn battle_image(
     if battle.replay_keeps_default_step() {
         env.push(("LEGAIA_BATTLE_PARTY_STEP", "0".to_string()));
     }
-    if let Some((step, state, from)) = battle.frame_step_seed() {
+    if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
         env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));
+        if let Some(hold) = hold {
+            env.push(("LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM", hold.to_string()));
+        }
     }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));

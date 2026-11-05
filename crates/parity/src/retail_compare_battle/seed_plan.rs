@@ -46,9 +46,11 @@ pub(super) const SPARRING_OPEN_TICKS: u32 = 160;
 pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 
 /// A replay's battle frame step seed: the step, the action state it holds
-/// in, and the acting body's `(clip, cursor)` the step waits for
-/// ([`RetailBattle::step_run_start`]), `None` to run it over the whole state.
-pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>);
+/// in, the acting body's `(clip, cursor)` the step waits for
+/// ([`RetailBattle::step_run_start`]), `None` to run it over the whole state,
+/// and the close-up accumulator the step waits for
+/// ([`RetailBattle::step_run_accum_hold`]).
+pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>, Option<u32>);
 
 /// The first committed dynamic animation slot (`+0x1D9`), where a party art
 /// materialises (`docs/subsystems/battle-actor-rendering.md`).
@@ -102,13 +104,13 @@ impl RetailBattle {
             && self.step_run.1 >= 16
             && !matches!(self.seed_plan(), SeedPlan::Cast)
         {
-            return Some((default, self.action_state, None));
+            return Some((default, self.action_state, None, None));
         }
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)
                 && self.frame_step != default)
-                .then_some((self.frame_step, self.action_state, None));
+                .then_some((self.frame_step, self.action_state, None, None));
         }
         // A monster's magic-band capture on `0x2B`: the capture is a pass or
         // three past the clip commit, the commit's cursor and accumulator
@@ -118,7 +120,12 @@ impl RetailBattle {
         // the displayed frame is two of them back.
         if self.monster_magic_band_age() && self.action_state == 0x2B {
             let (step, _) = self.step_run;
-            return (step != default).then_some((step, self.action_state, None));
+            return (step != default).then_some((
+                step,
+                self.action_state,
+                None,
+                self.step_run_accum_hold(),
+            ));
         }
         // An action in flight: the newest passes' step, from the pass the
         // run began on (`step_run_start`) when the history holds where it
@@ -141,7 +148,56 @@ impl RetailBattle {
         // `1.000` to `.967` and `camera` `1.000` to `.987`.
         self.step_run_start
             .filter(|&(clip, _)| clip >= DYNAMIC_SLOT_ART)
-            .map(|from| (step, self.action_state, Some(from)))
+            .map(|from| (step, self.action_state, Some(from), None))
+    }
+
+    /// Where a magic-band capture's step run began, as the close-up
+    /// accumulator counts it: the value `ctx[+0x87C]` held after the `0x2B`
+    /// passes that ran before the run. `None` when the run covers every
+    /// `0x2B` pass, or the history does not add up to the capture's
+    /// accumulator.
+    ///
+    /// Each `0x2B` pass's framing prologue adds `8 * step` of the step that
+    /// pass ran at (`0x801D5900..0x801D5914`), and a pass runs at the step
+    /// the frames before it left in `FUN_80016B6C`'s ring, so the pass that
+    /// first draws an expensive effect runs at the cheaper step and only the
+    /// passes after it at the dearer one. Caruban's Fire Breath on a full
+    /// party (`battle_rugi_caruban_3_fire_breath_mid_cast`): accumulator `64`
+    /// over steps `2`, `3`, `3`, the first `0x2B` frame costing `550`
+    /// hblanks where the `0x29` frames cost `450`.
+    pub fn step_run_accum_hold(&self) -> Option<u32> {
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (_, run) = self.step_run;
+        let mut sum = 0u32;
+        let mut passes = 0usize;
+        for &s in &self.recent_steps {
+            if sum >= u32::from(accum) {
+                break;
+            }
+            sum += 8 * u32::from(s);
+            passes += 1;
+        }
+        if sum != u32::from(accum) || run >= passes {
+            return None;
+        }
+        // The passes before the run stand on the replay's ordinary step,
+        // so they must have run at it: `battle_deene_ironman_jagged_earth_mid_cast`
+        // ran three step-`3` passes ahead of its step-`4` run, which the
+        // replay's step `2` counts in five (`image` `.871` to `.846`).
+        let ordinary = self.child_ordinary_step();
+        if self.recent_steps[run..passes]
+            .iter()
+            .any(|&s| s != ordinary)
+        {
+            return None;
+        }
+        let in_run: u32 = self.recent_steps[..run]
+            .iter()
+            .map(|&s| 8 * u32::from(s))
+            .sum();
+        Some(u32::from(accum) - in_run)
     }
 
     /// The step a replay's ordinary frames run on. A replayed cast, a monster's

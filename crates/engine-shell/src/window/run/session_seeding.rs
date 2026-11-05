@@ -370,6 +370,15 @@ pub(super) fn arm_requested_battle(session: &mut NativeSession, spec: &str) {
             };
         }
     }
+    // `LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM=<n>` (the retail-compare image
+    // channel): hold that seeded step until the close-up accumulator reaches
+    // `n` (`BattleState::frame_step_seed_after_accum`).
+    if let Some(hold) = std::env::var("LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM")
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+    {
+        world.battle.frame_step_seed_after_accum = Some(hold);
+    }
 
     // `LEGAIA_CAST_STEP_TRACK=<file>` (the cast-sequence oracle's
     // `--retail-steps`): run the action on a recording's own frame steps.

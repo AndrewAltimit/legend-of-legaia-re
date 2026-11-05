@@ -1346,6 +1346,25 @@ retail-compare drive does so for a replayed cast caught in the summon close-up
 step `3` the walker lands it every pass, at `2` it trails
 ([retail-compare](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)).
 
+<a id="a-pass-runs-on-the-step-the-frames-before-it-left"></a>
+
+**A pass runs on the step the frames before it left.** The frame-end pass
+stores the new step to `0x1F800393` (`0x80017130..0x8001715C`, floor at
+`0x80017198`), waits `VSync(0x1F800392)` (`0x800171B0..0x800171C0`), and only
+then copies the new step into `0x1F800392` (`0x800171D8`). So the frame the
+pass just ran is waited out on the step that pass ran at, and the step its own
+cost raised belongs to the next pass, which both drains its timers by it and is
+waited out on it. A pass's step and its frame's length are one value, read off
+the ring through the frame before it. The first frame of an expensive draw
+therefore runs on the cheaper step: Caruban's Fire Breath on a full party runs
+its `0x29` frames near `450` hblanks (step `2`), its first `0x2B` pass on step
+`2`, and the next passes on step `3` once that pass has cost `550`; deeper into
+the breath its frames reach the `0x2BC` clamp and the step goes to `4`
+(`battle_rugi_caruban_3_fire_breath_mid_cast` and its recording). On a lone
+Vahn the same breath costs about `505`, under `0x1FF`, and stays at `2`
+(`battle_rikuroa_caruban_fire_breath_mid_cast`). `FrameCostRing::push` keeps
+this order: it stores a pass's cost and returns the step of the next one.
+
 <a id="what-the-ring-holds"></a>
 
 **What the ring holds.** `FUN_800173BC` reads the hblanks since the last vsync
@@ -1419,6 +1438,15 @@ one pass on (`1.0` to `.969`). `gimard_burning_attack`'s gate is the walk yaw in
 at step `4` a pass moves it by 192 (`.863` to `.73`). Retail's own ring reads `4` there, so
 the table's value is right. That the replay's lattice is what moved is the reading of both
 falls, not a measurement of Gimard's; emptying the row restores both.
+
+Frame by frame the step is not what Gimard's late arms miss. A recording of the
+cast (`scripts/ci/cast-sequence.py --spell 0x81 --state party_basic_attack_vs_gobu_gobu`)
+scores arms 10, 11 and 12 at `.809`, `.707` and `.802`, and the same film run on
+retail's own steps (`--retail-steps`) at `.809`, `.714` and `.805`. Reading each
+arm's table step as that arm's cost through the ring, so a cheap arm after a dear
+one runs the ring's step until it empties, moves the film from `.866` to `.867`.
+What differs in those arms is the creature's pose and the burn puffs around it
+([open threads](../reference/open-rev-eng-threads.md)).
 
 **The action SM's cadence.** Retail runs `FUN_801E295C` once a battle frame.
 The battle frame driver `FUN_80046A20` calls it (`jal 0x801E295C` at

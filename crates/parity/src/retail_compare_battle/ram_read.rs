@@ -1020,10 +1020,7 @@ impl RetailBattle {
                     in_ram(p).then(|| game_anchors::u8_at(ram, p + 0x1DE))
                 })
                 .collect(),
-            recent_steps: {
-                let steps = recent_pass_steps(ram);
-                [steps[0], steps[1], steps[2], steps[3]]
-            },
+            recent_steps: recent_pass_steps(ram),
             displayed_cam_live,
             displayed_ghost_pose,
             displayed_cam_end: {

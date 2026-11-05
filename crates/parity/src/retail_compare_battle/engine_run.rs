@@ -371,9 +371,10 @@ pub fn run_engine_battle(
     if battle.replay_keeps_default_step() {
         session.host.world.toggles.battle_party_cost_step = false;
     }
-    if let Some((step, state, from)) = battle.frame_step_seed() {
+    if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
         session.host.world.battle.frame_step_seed_from = from;
+        session.host.world.battle.frame_step_seed_after_accum = hold;
     }
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");

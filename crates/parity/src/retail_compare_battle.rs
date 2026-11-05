@@ -484,8 +484,9 @@ pub struct RetailBattle {
     pub cam_tween_steps: [u16; 9],
     /// The turn cursor `ctx[+0x1A]`: order entries this round has consumed.
     pub turn_cursor: u8,
-    /// The newest passes' frame steps ([`recent_pass_steps`]), newest first.
-    pub recent_steps: [u8; 4],
+    /// The newest sixteen passes' frame steps ([`recent_pass_steps`]),
+    /// newest first.
+    pub recent_steps: [u8; 16],
     /// One channel of the ambient word `0x8007B7B0`.
     pub ambient_word: u8,
     /// `ctx[+0x6D0]`, the depth case 6 frames at, before the projection

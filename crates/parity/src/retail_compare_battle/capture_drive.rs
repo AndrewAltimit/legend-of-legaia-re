@@ -322,7 +322,7 @@ impl RetailBattle {
         if self.cam_style != 0 || accum != 8 * u16::from(step) {
             return None;
         }
-        let [_, pass_n, pass_n1, pass_n2] = self.recent_steps.map(i32::from);
+        let [_, pass_n, pass_n1, pass_n2] = [0, 1, 2, 3].map(|i| i32::from(self.recent_steps[i]));
         let (s1, s2) = (pass_n1, pass_n2);
         let drift = |s: i32| (s * 4 / 3).max(1);
         let (live, end) = self.cam_tween;
@@ -565,11 +565,27 @@ impl RetailBattle {
     /// not two of the child's passes: Barra's Windcutter ran step `3`, and
     /// six ticks back from the gate is the child's `0x29` exit pass, a pass
     /// before the frame retail's display held.
+    ///
+    /// A seed held on the accumulator ([`Self::step_run_accum_hold`]) runs
+    /// only the run's passes on its step: of the two frames behind the gate,
+    /// one past the run's start keeps the ordinary step.
     pub fn drive_display_lag(&self) -> u16 {
-        let step = self
-            .frame_step_seed()
-            .map_or(self.child_ordinary_step(), |s| s.0);
-        DISPLAY_LAG_PASSES * u16::from(step.max(1))
+        let ordinary = self.child_ordinary_step();
+        let Some((step, _, _, hold)) = self.frame_step_seed() else {
+            return DISPLAY_LAG_PASSES * u16::from(ordinary.max(1));
+        };
+        let seeded = hold.map_or(usize::MAX, |_| self.step_run.1);
+        (0..usize::from(DISPLAY_LAG_PASSES))
+            .map(|k| {
+                // The frame `k + 1` passes behind the gate: the engine opens a
+                // seeded frame on each run pass after the first.
+                if k + 1 < seeded {
+                    u16::from(step.max(1))
+                } else {
+                    u16::from(ordinary.max(1))
+                }
+            })
+            .sum()
     }
 
     /// Whether the image child's camera is aligned to the pose the

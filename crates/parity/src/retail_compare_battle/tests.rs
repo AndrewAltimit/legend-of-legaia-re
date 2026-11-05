@@ -2009,7 +2009,7 @@ fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
     // The whole pose: `battle_korb2_aluru_cannon_mid_cast`'s table and steps.
     b.queued_shot = 0x0E;
     b.step_run = (4, 3);
-    b.recent_steps = [4, 4, 4, 3];
+    b.recent_steps[..4].copy_from_slice(&[4, 4, 4, 3]);
     b.walk_yaw_base = 2088;
     b.cam_style = 0;
     b.cam_tween.0.focus = [474.0, 0.0, 978.0];
@@ -2169,4 +2169,47 @@ fn a_case_6_walk_runs_the_cast_waits_passes() {
     let one_in = capture_drive::case6_walk_passes(&[3; 16], 1);
     assert_eq!(one_in.len(), 10);
     assert_eq!(one_in.last(), Some(&0));
+}
+
+/// A magic-band step run that began inside `0x2B` holds its step back until
+/// the accumulator reaches the passes before it: Caruban's Fire Breath on a
+/// full party (`battle_rugi_caruban_3_fire_breath_mid_cast`) reads
+/// accumulator `64` over steps `3`, `3`, `2` (newest first), so the run's two
+/// step-`3` passes open once the first `0x2B` pass has added its `16`.
+#[test]
+fn a_magic_band_step_run_waits_for_the_passes_before_it() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.span_gate = SpanGate::Age { accum: 64 };
+    b.step_run = (3, 2);
+    b.recent_steps = [3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+    assert_eq!(b.step_run_accum_hold(), Some(16));
+    // A run over every `0x2B` pass waits for nothing (Windhash's
+    // accumulator `48` over two step-`3` passes of a three-pass run).
+    b.span_gate = SpanGate::Age { accum: 48 };
+    b.step_run = (3, 3);
+    b.recent_steps[..3].copy_from_slice(&[3, 3, 3]);
+    assert_eq!(b.step_run_accum_hold(), None);
+    // Passes before the run on another step than the replay's ordinary one
+    // cannot be counted by it (`battle_deene_ironman_jagged_earth_mid_cast`:
+    // `136` over `4`, `4`, `3`, `3`, `3`).
+    b.span_gate = SpanGate::Age { accum: 136 };
+    b.step_run = (4, 2);
+    b.recent_steps[..5].copy_from_slice(&[4, 4, 3, 3, 3]);
+    assert_eq!(b.step_run_accum_hold(), None);
+    // A history that does not add up to the accumulator names no pass.
+    b.span_gate = SpanGate::Age { accum: 60 };
+    b.step_run = (3, 2);
+    b.recent_steps[..3].copy_from_slice(&[3, 3, 2]);
+    assert_eq!(b.step_run_accum_hold(), None);
 }
