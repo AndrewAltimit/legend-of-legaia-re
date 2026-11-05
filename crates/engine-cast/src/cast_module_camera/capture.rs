@@ -242,6 +242,7 @@ pub fn capture_camera_director(entry: u32, body: u32) -> Option<CaptureCamDirect
         (940, GLARE_BODY) => Some(glare_camera),
         (940, crate::cast_arm_ticks::GLARE_DIVIDE_SPLIT_TICK) => Some(slime_divide_camera),
         (952, super::BLOODY_HORNS_BODY) => Some(super::bloody_horns_camera),
+        (945, crate::cast_module_ticks::WATER_COLUMN_TICK) => Some(super::water_column_camera),
         (949, SINGLE_BODY) => Some(super::water_crystals_camera),
         (953, SINGLE_BODY) => Some(terio_punch_camera),
         (939, SINGLE_BODY) => Some(super::spore_gas_camera),

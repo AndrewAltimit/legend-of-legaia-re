@@ -821,6 +821,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
         949 => true,
+        945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
         951 => body == Some(super::SCYTHE_WIND_BODY),
         952 => body == Some(super::BLOODY_HORNS_BODY),
         955 => matches!(
@@ -847,6 +848,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         940 => body == Some(0x801F_7240),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
         946..=949 => true,
+        945 => body == Some(crate::cast_module_ticks::WATER_COLUMN_TICK),
         955 => matches!(
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
@@ -948,6 +950,8 @@ pub const CAPTURE_PER_PASS_SPAWNS: &[&[ModuleSpawn]] = &[&E962_1_EVERY];
 pub fn capture_arm_spawns_for(prot_entry: u32, phase: u8, action: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
         (946, 0) if action == 0x56 => &[],
+        // PROT 0945's per-arm tables are Water Column's.
+        (945, _) if action != 0x54 => &[],
         // PROT 0944's per-arm tables are Guilty Cross's; Curse All (`0x53`)
         // seats its two records through its director.
         (944, _) if action == 0x53 => &[],
@@ -988,6 +992,8 @@ pub fn capture_arm_spawns_in(
 /// alone makes is listed ([`capture_arm_spawns_for`] filters it).
 pub fn capture_arm_spawns(prot_entry: u32, phase: u8) -> &'static [ModuleSpawn] {
     match (prot_entry, phase) {
+        (945, 1) => &super::water_column::ARM1_SPAWNS,
+        (945, 4) => &super::water_column::ARM4_SPAWNS,
         (949, 0) => &super::water_crystals::ARM0_SPAWNS,
         (949, 2) => &super::water_crystals::ARM2_SPAWNS,
         (940, 1) => &E940_1,
