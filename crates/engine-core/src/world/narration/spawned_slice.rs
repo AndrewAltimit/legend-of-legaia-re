@@ -1437,21 +1437,17 @@ impl World {
                 // wait accumulator) and `0x49` STATE_RESUME (the name-entry
                 // suspend, driven by the op-49 host hooks).
                 let op = opcode_byte & 0x7F;
-                // Cross-context `4C A0` busy-wait (`CC <ch> A0 <bit> <s16>`):
-                // "while the poked channel's ctx-flag bit is still set, jump".
-                // Retail's channel clears its own busy bit as its move plays
-                // out frame by frame; the timeline's channel pokes complete
-                // synchronously, so the busy branch must always fall through -
-                // and the s16 target is meaningless in the caller record's pc
-                // space (taking it here derailed the Mei beat into its own
-                // header + dialog text). Force the skip path (6-byte width).
-                if op == 0x4C
-                    && target.is_some()
-                    && tl.bytecode.get(pc + 2).is_some_and(|b| b >> 4 == 0xA)
-                {
-                    next_pc = pc + 2 + 4;
-                    stop = false;
-                }
+                // A cross-context `4C A0` (`CC <ch> A0 <bit> <s16>`) is not a
+                // busy-wait: it is nibble A's conditional skip, run against
+                // the target's context like any other cross-context op, and
+                // its `s16` is relative to the end of the instruction
+                // (`LAB_801E360C`). `town01` P2[4] pairs it with the 3-byte
+                // `JmpRel` that follows (`CC 01 A0 00 05 00`, `26 1D 00`):
+                // while Mei's door is open (`+0x10` bit 0) the skip lands on
+                // the close sequence that follows. Forcing the fall-through
+                // here jumped over the close, and the door stood open behind
+                // her for the rest of the day.
+                // REF: FUN_801DE840 (0x801E2568, LAB_801E360C)
                 // Cross-context channel wait (`B3 <id> <bit>`, CFLAG_TST against
                 // a spawned channel): PARK the timeline while the awaited
                 // channel's bit is set (`0x801DEE44`), rather than
