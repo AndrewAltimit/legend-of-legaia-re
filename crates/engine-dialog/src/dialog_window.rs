@@ -81,6 +81,9 @@ pub enum WindowPhase {
     ScrollAway,
     /// `0x19`: the page is shown whole and waits for a press.
     Wait,
+    /// State `0xA`: the box collapses on [`RowWindow::box_ramp`] and then goes
+    /// away for `0x18` frame-steps.
+    Collapse,
 }
 
 impl WindowPhase {
@@ -96,6 +99,7 @@ impl WindowPhase {
             WindowPhase::CompleteScroll => 0x0E,
             WindowPhase::ScrollAway => 0x0F,
             WindowPhase::Wait => 0x19,
+            WindowPhase::Collapse => 0x0A,
         }
     }
 }
@@ -136,6 +140,11 @@ pub struct RowWindow {
     /// The instant-page latch `_DAT_801F2744` (op `4C E0 00`): the next page
     /// loads whole, no typing, and waits (`0x801D8798..0x801D88C4`).
     pub instant: bool,
+    /// The box's collapse ramp `_DAT_801F274C`, `0..=0x1000`.
+    pub box_ramp: i32,
+    /// `_DAT_801F273C`: while non-zero a pager call only counts it down and
+    /// returns ahead of the draw, so no box shows (`0x801D8630..0x801D864C`).
+    pub box_gone: i32,
 }
 
 impl RowWindow {
@@ -155,6 +164,8 @@ impl RowWindow {
             keep_rows: false,
             capacity: WINDOW_ROWS,
             instant: false,
+            box_ramp: 0,
+            box_gone: 0,
         };
         // State 2's load: the first row in slot 0, `_DAT_801F3534 = 1`.
         if w.push_next_line() {
@@ -266,6 +277,11 @@ impl RowWindow {
     /// [`WindowPhase::Wait`].
     pub fn call(&mut self, dt: u8, pressed: bool, mut count: impl FnMut(usize) -> u32) -> bool {
         let step = i32::from(dt.min(4));
+        // `0x801D8630..0x801D864C`, ahead of everything else in the pager.
+        if self.box_gone != 0 {
+            self.box_gone = (self.box_gone - step).max(0);
+            return false;
+        }
         let was_waiting = self.phase == WindowPhase::Wait;
         // `0x801D865C`: state 0x19 clears the hold - the press call of a
         // page turn is a state-0x19 call too.
@@ -287,7 +303,12 @@ impl RowWindow {
         let max = self.capacity as i32;
         // A page load under the instant latch: a fresh box's opening call
         // (state 2) or a page turn's load (state 5) - not its press call.
-        if self.instant && !matches!(self.phase, WindowPhase::Wait | WindowPhase::PressTurn) {
+        if self.instant
+            && !matches!(
+                self.phase,
+                WindowPhase::Wait | WindowPhase::PressTurn | WindowPhase::Collapse
+            )
+        {
             self.fill_instant();
             return !was_waiting;
         }
@@ -296,7 +317,31 @@ impl RowWindow {
             WindowPhase::PressTurn => {
                 // The 0x19 press handler (`0x801D8FE4`).
                 self.rows_on_page = 0;
-                self.phase = WindowPhase::Load;
+                if self.keep_rows {
+                    self.phase = WindowPhase::Load;
+                } else {
+                    // State 9 (`0x801D920C`): the rows go, the box stays up.
+                    self.rows.clear();
+                    self.scroll = 0;
+                    self.pacer.counter = 0;
+                    self.pacer.acc = 0;
+                    self.pacer.hold = 0;
+                    self.capacity = WINDOW_ROWS;
+                    self.box_ramp = 0;
+                    self.phase = WindowPhase::Collapse;
+                }
+            }
+            WindowPhase::Collapse => {
+                // State 0xA (`0x801D92A4`): the call that sees the ramp full
+                // drops to the idle state, which the script feed leaves the
+                // same frame, so the next live call is the load.
+                if self.box_ramp == 0x1000 {
+                    self.box_ramp = 0;
+                    self.box_gone = 0x18;
+                    self.phase = WindowPhase::Load;
+                } else {
+                    self.box_ramp = (self.box_ramp + (step << 9)).min(0x1000);
+                }
             }
             WindowPhase::Load => {
                 // State 5 (`0x801D88C8..0x801D89B4`); a fresh box is state 2.
@@ -319,7 +364,8 @@ impl RowWindow {
                 }
             }
             WindowPhase::Typing => {
-                if pressed {
+                // A box's opening call is state 2's, which reads no press.
+                if pressed && !self.pacer.setup {
                     self.speed = SPEED_SKIP;
                 }
                 if self.speed == SPEED_SKIP {
@@ -553,6 +599,9 @@ mod tests {
         until_wait(&mut w, 2, &[5, 5], &[]);
         w.turn_page(1, false);
         let calls = until_wait(&mut w, 2, &[5], &[]);
-        assert_eq!(calls[1].1, vec![(1, 0)]);
+        // The press call empties the box, which collapses and goes away ahead
+        // of the new line: at this step, five ramp calls and twelve gone.
+        assert_eq!(calls[0].1, Vec::<(u32, usize)>::new());
+        assert_eq!(calls[18].1, vec![(1, 0)]);
     }
 }

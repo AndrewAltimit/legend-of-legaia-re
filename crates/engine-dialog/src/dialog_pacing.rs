@@ -78,7 +78,7 @@ pub struct TypewriterPacer {
     /// Short-row hold `_DAT_801F275C`.
     pub hold: i32,
     /// The next call is a box-opening call.
-    setup: bool,
+    pub setup: bool,
 }
 
 impl TypewriterPacer {

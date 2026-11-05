@@ -3182,6 +3182,7 @@ dependencies = [
  "legaia-engine-battle-vm",
  "legaia-engine-cast",
  "legaia-engine-core",
+ "legaia-engine-dialog",
  "legaia-engine-fishing",
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",

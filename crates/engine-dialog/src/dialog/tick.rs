@@ -292,6 +292,19 @@ impl OwnedDialogPanel {
             .collect()
     }
 
+    /// The reading box's collapse ramp (`_DAT_801F274C`): `0` unless a `0x48`
+    /// turn is taking the box away. While [`crate::dialog_window::RowWindow`]
+    /// counts `box_gone` the window has no rows and no box draws.
+    pub fn box_ramp(&self) -> i32 {
+        self.window.as_ref().map_or(0, |w| {
+            if w.phase == crate::dialog_window::WindowPhase::Collapse {
+                w.box_ramp
+            } else {
+                0
+            }
+        })
+    }
+
     /// Rows the reading box is tall: the window's capacity
     /// (`_DAT_801F2740`, [`crate::dialog_window::WINDOW_ROWS`] unless op
     /// `4C E0` set it) on the box path (the page buffer can hold one more
@@ -438,6 +451,11 @@ impl OwnedDialogPanel {
             return;
         };
         let keep = matches!(cur.dispatch, legaia_mes::Dispatch::NextPage);
+        if !keep {
+            // State 9 puts the row count back (`0x801D9234`): a format lasts
+            // one box.
+            self.window_rows = crate::dialog_window::WINDOW_ROWS;
+        }
         let next = cur
             .next_box_pc()
             .filter(|&n| self.bytes.get(n) == Some(&0x1F))

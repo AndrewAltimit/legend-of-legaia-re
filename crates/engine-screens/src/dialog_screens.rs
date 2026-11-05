@@ -38,6 +38,8 @@ pub struct DialogSnapshot {
     /// The page mark's strip frame, `None` when the pager draws none (no
     /// wait, or an automatic press counting down).
     pub advance_icon: Option<u8>,
+    /// The collapse ramp of a box going away (`_DAT_801F274C`), `0` otherwise.
+    pub box_ramp: i32,
 }
 
 /// Stage-pixel dialog box layout: the reading-box centre rect and the option
@@ -71,7 +73,8 @@ pub fn dialog_snapshot_from_panel(
     require_text: bool,
 ) -> Option<DialogSnapshot> {
     let page = legaia_engine_ui::dialog_page_string(&panel.page_bytes());
-    if require_text && page.is_empty() {
+    // A collapsing box has no rows left and still draws.
+    if require_text && page.is_empty() && panel.box_ramp() == 0 {
         return None;
     }
     let (options, cursor) = match (panel.menu_active(), panel.picker()) {
@@ -91,6 +94,7 @@ pub fn dialog_snapshot_from_panel(
         picker_hand: panel.picker_hand_drawn(),
         hand_bob: panel.picker_hand_bob(),
         advance_icon: world.page_mark_frame(panel),
+        box_ramp: panel.box_ramp(),
     })
 }
 
@@ -133,6 +137,23 @@ pub fn dialog_reading_box_rect(lines: i32) -> StageRect {
     (0x26, 0x10, 0xF4, lines * 0xF - 3)
 }
 
+/// The reading box under the collapse ramp `a` (`0x801D9970..0x801D99A0`):
+/// with `h` the frame height plus 8, it goes out at `y + h*a >> 13` and
+/// `h*(0x1000 - a) >> 12` tall, so it shrinks to its centre line.
+pub fn collapsed_box_rect(rect: StageRect, ramp: i32) -> StageRect {
+    if ramp == 0 {
+        return rect;
+    }
+    let (x, y, w, frame) = rect;
+    let h = frame + 8;
+    (
+        x,
+        y + ((h * ramp) >> 13),
+        w,
+        ((h * (0x1000 - ramp)) >> 12) - 8,
+    )
+}
+
 /// The stage layout for a snapshot.
 ///
 /// The box is `rows` tall where `rows` is the pager's own window height word
@@ -145,7 +166,7 @@ pub fn dialog_reading_box_rect(lines: i32) -> StageRect {
 pub fn dialog_stage_layout(snap: &DialogSnapshot) -> DialogStageLayout {
     let lines = legaia_engine_ui::dialog_reading_box_lines(&snap.page, snap.box_rows);
     DialogStageLayout {
-        main: dialog_reading_box_rect(lines),
+        main: collapsed_box_rect(dialog_reading_box_rect(lines), snap.box_ramp),
         picker: if snap.options.is_empty() {
             None
         } else {
@@ -165,7 +186,11 @@ pub fn dialog_box_chrome_draws(
     scale: u32,
 ) -> Vec<SpriteDraw> {
     let lay = dialog_stage_layout(snap);
-    let mut out = legaia_engine_ui::dialog_window_chrome_draws_for(rects, lay.main, origin, scale);
+    let mut out = if lay.main.3 > 0 {
+        legaia_engine_ui::dialog_window_chrome_draws_for(rects, lay.main, origin, scale)
+    } else {
+        Vec::new()
+    };
     if let Some(prect) = lay.picker {
         out.extend(legaia_engine_ui::dialog_window_chrome_draws_for(
             rects, prect, origin, scale,
@@ -229,6 +254,7 @@ mod tests {
     #[test]
     fn standard_reading_box_is_three_rows_at_the_top() {
         let snap = DialogSnapshot {
+            box_ramp: 0,
             box_rows: Some(3),
             ..Default::default()
         };
@@ -240,6 +266,7 @@ mod tests {
     #[test]
     fn the_pager_window_word_sets_the_box_height() {
         let snap = DialogSnapshot {
+            box_ramp: 0,
             box_rows: Some(5),
             ..Default::default()
         };
@@ -251,6 +278,7 @@ mod tests {
     fn a_plain_page_sizes_three_to_four_rows() {
         for (page, rows) in [("a", 3), ("a|b|c|d", 4), ("a|b|c|d|e", 4)] {
             let snap = DialogSnapshot {
+                box_ramp: 0,
                 page: page.to_string(),
                 ..Default::default()
             };
