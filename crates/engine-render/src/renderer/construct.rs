@@ -254,6 +254,7 @@ impl Renderer {
             native: None,
             psx_texel_rule: std::cell::Cell::new(PsxTexelRule::Gpu),
             psx_mode: std::cell::Cell::new(false),
+            draw_dither: std::cell::Cell::new(true),
             ui_psx_tint: std::cell::Cell::new(true),
             vram_upload_counter: std::cell::Cell::new(0),
             tex_window: std::cell::Cell::new([0; 4]),

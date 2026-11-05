@@ -1066,6 +1066,10 @@
        * page-wide presentation choices, so every branch draws under the
        * checkbox state. Both off unless the player ticked them. */
       if (this.renderer.setPsxMode) this.renderer.setPsxMode(!!this.psxRender);
+      /* The game's own dither word (field op `4C ED`), under the PSX box. */
+      if (this.renderer.setDrawDither && typeof rt.play_draw_dither === 'function') {
+        this.renderer.setDrawDither(rt.play_draw_dither());
+      }
       if (this.renderer.setDynamicLighting) this.renderer.setDynamicLighting(!!this.dynLighting);
       if (this.renderer.setDynShadows) this.renderer.setDynShadows(this.dynShadows !== false);
       /* Log-of-w depth on every branch's perspective frames (webgl-shaders.js

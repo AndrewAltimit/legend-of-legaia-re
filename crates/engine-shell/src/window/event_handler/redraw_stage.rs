@@ -556,6 +556,7 @@ impl PlayWindowApp {
         // shaders apply per texel / packet colour) - plus the per-render-
         // node DPCS far-colour pull staged as a view-depth IR0 ramp; every
         // other frame stages the identity on all three.
+        r.set_draw_dither(self.session.host.world.toggles.draw_dither);
         let grade = self.session.host.world.frame_grade();
         r.set_color_grade(grade.gold, grade.strength);
         r.set_palette_grade([1.0; 3], grade.palette_collapse);

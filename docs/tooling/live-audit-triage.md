@@ -114,7 +114,7 @@ Settled rows:
 | `copy_party_tmd_poses`, `4C 3F` | 8 sites | Wired: [`character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap). |
 | `move_image`, move op `0x40` | `conc*`, `deroa`, `bubu1`, ending scenes | Wired: [`move-vm.md`](../subsystems/move-vm.md#0x40---move_image). |
 | `clear_party_state_region`, `4C 32` | 5 sites, dev pickers | Wired: clears the flag bank. |
-| `set_dither`, `4C ED` | 27 sites | Gap, in PSX mode only. Open thread, [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#field--locomotion). |
+| `set_dither`, `4C ED` | 27 sites | Wired: [`shading.md`](../subsystems/shading.md#step-7-dither-and-the-15-bit-framebuffer). |
 | `face_rotation_setup`, move op `0x21` | Not censused here | Gap: needs the render path `field_channels.rs` names. |
 | `snapshot_play_clock`, `4C EE` | `edlast` only | Left: the end of the game, with no save after it. |
 | `refresh_collision_y`, `4C DA` | 9 sites | Replaced: the VM drops the height bit and the next tick's floor sample lands the same `+0x16`. |

@@ -166,3 +166,13 @@ beat records), while a linear census walks partition 1:
   negative record in `crates/scene-formats/tests/thread_camera_roll_census.rs`.
 
 Owning page: [`cutscene.md`](../../subsystems/cutscene.md).
+
+### What does field op `4C ED` do to a PSX-mode frame?
+
+**Answer:** it writes the dither word `_DAT_8007BA66` (`sh` at `0x801E351C`), which the frame-begin driver `FUN_80016B6C` copies into the DRAWENV `dtd` bit. Boot writes `1` at `0x8001D520`.
+
+**Evidence:** `disassembly` for the writers; `capture` for the word, which reads `1` in every library state, `ending_vignette_fullscreen` included. The census (`asset field-op-census --only "4C ED" --context`) finds `00` only in the ending scenes, immediately ahead of the closing `43 12` / `43 13` wipe of a vignette, with the next vignette's head raising it again. So the word is off for the wipe and the wait that follows it, not for the picture.
+
+**Port:** `World::toggles.draw_dither`, read per frame by both hosts into PSX mode's dither gate (`Renderer::set_draw_dither`, the page's `setDrawDither`). No channel of the retail-compare corpus can see it, because no state stands inside the window.
+
+Owning page: [`shading.md`](../../subsystems/shading.md#step-7-dither-and-the-15-bit-framebuffer).

@@ -306,8 +306,11 @@ entries. Port detail: [`renderer.md`](renderer.md#set_semi_blend---semi-transpar
 
 The framebuffer is 15-bit. Retail boots with dithering **on** (`FUN_8001D424`
 writes `1` to `_DAT_8007BA66`, and the frame-begin driver `FUN_80016B6C`
-copies it into the DRAWENV `dtd` bit every frame), and a field-VM opcode can
-change it per scene. With dither on, a 4x4 ordered offset is added before each
+copies it into the DRAWENV `dtd` bit every frame). Field op `4C ED` writes it,
+and only the ending scenes write `0`: each vignette clears it right before its
+closing `43 12` / `43 13` wipe and the next one's head raises it again, so the
+word reads `1` in every library state. `World::toggles.draw_dither` carries it,
+and both hosts gate PSX mode's dither on it. With dither on, a 4x4 ordered offset is added before each
 channel is cut to 5 bits, which is where the fine cross-hatch on gradients
 comes from. The port renders clean by default and reproduces the retail
 dither with `set_psx_mode`

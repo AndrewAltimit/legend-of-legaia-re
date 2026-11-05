@@ -176,6 +176,8 @@ pub struct Renderer {
     /// positions to reproduce the GTE's per-vertex sub-pixel-truncation
     /// "vertex jitter." Default `false` for clean smooth rendering.
     pub(super) psx_mode: std::cell::Cell<bool>,
+    /// The game's dither word ([`Self::set_draw_dither`]).
+    pub(super) draw_dither: std::cell::Cell<bool>,
     /// Retail's 5-bit texture modulation on the 2D overlay
     /// ([`Self::set_ui_psx_tint`]). Default `true`.
     pub(super) ui_psx_tint: std::cell::Cell<bool>,
@@ -397,6 +399,12 @@ impl Renderer {
         self.psx_mode.set(enable);
     }
 
+    /// The game's own dither word (`_DAT_8007BA66`, field op `4C ED`), which
+    /// gates PSX mode's dither and nothing else. Default on, retail's boot value.
+    pub fn set_draw_dither(&self, on: bool) {
+        self.draw_dither.set(on);
+    }
+
     /// Read current PSX-mode flag.
     pub fn psx_mode(&self) -> bool {
         self.psx_mode.get()
@@ -414,12 +422,13 @@ impl Renderer {
     /// `1` on, `2` on with the native target's pixel centre - see
     /// [`Self::set_native_resolution`]) and the dither enable.
     pub(super) fn psx_snap_params(&self) -> (f32, f32) {
+        let dither = if self.draw_dither.get() { 1.0 } else { 0.0 };
         match (self.psx_mode.get(), self.native.is_some()) {
             (false, _) => (0.0, 0.0),
-            (true, false) => (1.0, 1.0),
+            (true, false) => (1.0, dither),
             (true, true) => match self.psx_texel_rule.get() {
-                PsxTexelRule::Gpu => (2.0, 1.0),
-                PsxTexelRule::PcsxRedux => (3.0, 1.0),
+                PsxTexelRule::Gpu => (2.0, dither),
+                PsxTexelRule::PcsxRedux => (3.0, dither),
             },
         }
     }

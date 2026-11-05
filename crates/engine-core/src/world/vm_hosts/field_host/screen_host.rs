@@ -3,6 +3,10 @@
 use super::*;
 
 impl<'a> FieldScreenHost for FieldHostImpl<'a> {
+    fn set_dither(&mut self, value: u8) {
+        self.world.toggles.draw_dither = value != 0;
+    }
+
     fn write_or_ramp_global_slot(&mut self, sub: u8, target: i32, ticks: u16) {
         // Subs 6 / 7: the rumble motor words (`_DAT_8007B92C` /
         // `_DAT_8007B930`), written or ramped from their live value.

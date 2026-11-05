@@ -22,6 +22,11 @@ pub struct WorldToggles {
     /// through untouched. The move-VM state itself always advances
     /// retail-exact - this only shapes the VRAM presentation.
     pub(crate) reduce_flashing: bool,
+    /// The dither word `_DAT_8007BA66`, which `FUN_80016B6C` copies into the
+    /// DRAWENV `dtd` bit each frame. Boots on (`FUN_8001D424`, `0x8001D520`);
+    /// op `4C ED` writes it, and the ending scenes clear it across each
+    /// vignette's closing wipe. Only a PSX-mode frame shows it.
+    pub draw_dither: bool,
     /// Retail's **visible-tile crop** on the field ground + decoration layers
     /// (`legaia_engine_world_views::field_view_window::field_view_cells`), from
     /// [`legaia_engine_menus::options::OptionsState::retail_view_window`]. Default on; it
@@ -375,6 +380,7 @@ impl WorldToggles {
         Self {
             entry_pulse_enabled: true,
             reduce_flashing: true,
+            draw_dither: true,
             view_window_crop: true,
             volumetric_fog: false,
             live_gameplay_loop: false,
