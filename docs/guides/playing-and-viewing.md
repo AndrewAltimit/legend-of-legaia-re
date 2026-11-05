@@ -126,6 +126,12 @@ the selected row stays in view, a bar on the panel's right edge shows where the
 view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 `End` move through it.
 
+A controller works the launcher the way it works the game's menus: the D-pad
+or left stick moves the focus and steps an option, Cross presses, Triangle is
+the right-click (an option a value back, the previous disc on *Choose
+disc...*), Circle leaves the *Controls* page, Start plays a ready disc, and
+L1 / R1 page the option list. Key rebinding stays a keyboard task.
+
 The first row, *Look and feel*, speaks for every row below it except the
 window and the sound levels. *Enhanced* is the first-start set, *Original* is
 *Original game only* with the PlayStation pixel look on, and *Custom* is what

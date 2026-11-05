@@ -31,6 +31,10 @@
 //!   A clean exit ends the launcher; a failure brings the window back with
 //!   the end of the game's log (`legaia-engine-game.log`).
 //!
+//! A controller works the screen as the game's menus do: the D-pad or left
+//! stick moves, Cross activates, Triangle is the right-click, Circle leaves
+//! the Controls page, Start plays, L1 / R1 page the options.
+//!
 //! The screen is keyboard-first: arrows move, Enter activates, Left / Right
 //! change a value, Tab jumps between the columns, Page Up / Page Down / Home
 //! / End move through the option list, Delete puts the focused option back
@@ -456,6 +460,10 @@ struct LauncherApp {
     /// When the window last opened (input settles for a moment after).
     opened_at: Instant,
     screenshot: Option<PathBuf>,
+    /// The connected controllers, opened with the window (none in a
+    /// scripted capture): the D-pad moves the focus, Cross activates, as in
+    /// the game's own menus ([`Self::pad_input`]).
+    pad: Option<legaia_engine_shell::window::GamepadHost>,
     /// The Controls page's table and the key it may be waiting for. Read from
     /// [`launcher::INPUT_FILE`] when the page opens; every bound key is
     /// written straight back, the same file the game's Key Config writes.
@@ -516,6 +524,7 @@ impl LauncherApp {
                 launcher::INPUT_FILE,
             ))),
             screenshot: std::env::var_os(SCREENSHOT_ENV).map(PathBuf::from),
+            pad: None,
         };
         app.set_disc(disc);
         app.refresh_recent_offer();
@@ -919,7 +928,69 @@ impl LauncherApp {
         self.atlas = None;
         self.upload_font();
         self.opened_at = Instant::now();
+        if self.pad.is_none() && self.screenshot.is_none() {
+            self.pad = legaia_engine_shell::window::GamepadHost::open();
+        }
+        if let Some(pad) = &mut self.pad {
+            // A button still held from the game (the Start that quit it)
+            // re-enters as a fresh press only after it is let go.
+            let _ = pad.poll();
+        }
         self.win.request_redraw();
+    }
+
+    /// Poll the controllers and act on the buttons pressed since the last
+    /// poll, while the window is up: the D-pad (or left stick) moves the
+    /// focus and steps an option, Cross activates, Triangle is the second
+    /// action (a right-click), Circle backs out of the Controls page, Start
+    /// plays, L1 / R1 page the option list.
+    fn pad_input(&mut self, evl: &ActiveEventLoop) {
+        let Some(pad) = &mut self.pad else { return };
+        if self.win.window.is_none() {
+            return;
+        }
+        let poll = pad.poll();
+        let pressed = poll.edges.pressed | poll.taps;
+        evl.set_control_flow(ControlFlow::WaitUntil(
+            Instant::now() + Duration::from_millis(16),
+        ));
+        if pressed == 0
+            || self.awaiting_key().is_some()
+            || self.opened_at.elapsed() < Duration::from_millis(300)
+        {
+            return;
+        }
+        for nav in pad_nav(pressed) {
+            match nav {
+                PadNav::Focus(d) => self.step_focus(d),
+                PadNav::Horizontal(d) => self.horizontal(d, evl),
+                PadNav::Page(d) => self.step_option(d * (VISIBLE_LINES as i32 - 2)),
+                PadNav::Back => {
+                    if self.panel == Panel::Controls {
+                        self.leave_controls();
+                    }
+                }
+                PadNav::Activate(d) => self.activate(self.focus, d, evl),
+                PadNav::Play => {
+                    if self.disc.is_some() {
+                        self.activate(Item::Play, 1, evl);
+                    }
+                }
+            }
+        }
+        self.win.request_redraw();
+    }
+
+    /// Left / Right (arrow keys, D-pad): step the focused option, or move
+    /// between the columns.
+    fn horizontal(&mut self, dir: i8, evl: &ActiveEventLoop) {
+        match self.focus {
+            Item::Opt(_) => self.activate(self.focus, dir, evl),
+            Item::Bind(_) | Item::BindReset if dir < 0 => self.focus = Item::Panel,
+            Item::Bind(_) | Item::BindReset => {}
+            _ if dir > 0 => self.switch_column(),
+            _ => {}
+        }
     }
 
     /// Notice the game ending: a clean exit ends the launcher, a failure
@@ -1711,6 +1782,7 @@ impl ApplicationHandler for LauncherApp {
 
     fn about_to_wait(&mut self, evl: &ActiveEventLoop) {
         self.poll_game(evl);
+        self.pad_input(evl);
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -1883,13 +1955,7 @@ impl ApplicationHandler for LauncherApp {
                         } else {
                             1
                         };
-                        match self.focus {
-                            Item::Opt(_) => self.activate(self.focus, dir, evl),
-                            Item::Bind(_) | Item::BindReset if dir < 0 => self.focus = Item::Panel,
-                            Item::Bind(_) | Item::BindReset => {}
-                            _ if dir > 0 => self.switch_column(),
-                            _ => {}
-                        }
+                        self.horizontal(dir, evl);
                     }
                     Key::Character(c)
                         if !typing
@@ -2261,6 +2327,53 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 
 /// The disc card's one-line summary of `p`; the full reason goes in the
 /// help box ([`problem_message`]).
+/// What a controller button does on the launcher screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PadNav {
+    /// Up / Down: the focus.
+    Focus(i32),
+    /// Left / Right: step an option, or change column.
+    Horizontal(i8),
+    /// L1 / R1: a page of the option list.
+    Page(i32),
+    /// Circle: out of the Controls page.
+    Back,
+    /// Cross (`1`) or Triangle, the right-click (`-1`).
+    Activate(i8),
+    /// Start: play the ready disc.
+    Play,
+}
+
+/// The launcher actions for one poll's newly pressed PSX buttons, in order:
+/// the moves first, then at most one activation (Triangle before Cross
+/// before Start), so a chord cannot both play and change an option.
+fn pad_nav(pressed: u16) -> Vec<PadNav> {
+    use legaia_engine_system::pad::PadButton as B;
+    let on = |b: B| pressed & b.mask() != 0;
+    let mut out = Vec::new();
+    for (b, nav) in [
+        (B::Up, PadNav::Focus(-1)),
+        (B::Down, PadNav::Focus(1)),
+        (B::Left, PadNav::Horizontal(-1)),
+        (B::Right, PadNav::Horizontal(1)),
+        (B::L1, PadNav::Page(-1)),
+        (B::R1, PadNav::Page(1)),
+        (B::Circle, PadNav::Back),
+    ] {
+        if on(b) {
+            out.push(nav);
+        }
+    }
+    if on(B::Triangle) {
+        out.push(PadNav::Activate(-1));
+    } else if on(B::Cross) {
+        out.push(PadNav::Activate(1));
+    } else if on(B::Start) {
+        out.push(PadNav::Play);
+    }
+    out
+}
+
 /// A path's file name, for a line that names a disc.
 fn file_name_of(p: &Path) -> String {
     p.file_name()
@@ -2607,6 +2720,24 @@ mod tests {
             },
             draws: Vec::new(),
         }
+    }
+
+    #[test]
+    fn controller_buttons_drive_the_screen_like_its_keys() {
+        use legaia_engine_system::pad::PadButton as B;
+        assert!(pad_nav(0).is_empty());
+        assert_eq!(pad_nav(B::Down.mask()), [PadNav::Focus(1)]);
+        assert_eq!(pad_nav(B::Left.mask()), [PadNav::Horizontal(-1)]);
+        assert_eq!(pad_nav(B::R1.mask()), [PadNav::Page(1)]);
+        assert_eq!(pad_nav(B::Cross.mask()), [PadNav::Activate(1)]);
+        assert_eq!(pad_nav(B::Triangle.mask()), [PadNav::Activate(-1)]);
+        assert_eq!(pad_nav(B::Circle.mask()), [PadNav::Back]);
+        assert_eq!(pad_nav(B::Start.mask()), [PadNav::Play]);
+        // One activation per poll: a chord does not both play and step.
+        assert_eq!(
+            pad_nav(B::Cross.mask() | B::Start.mask() | B::Up.mask()),
+            [PadNav::Focus(-1), PadNav::Activate(1)]
+        );
     }
 
     #[test]
