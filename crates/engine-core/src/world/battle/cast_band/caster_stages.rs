@@ -13,6 +13,38 @@ impl World {
         legaia_engine_cast::cast_module_camera::capture_spawns_per_arm(e, body).then_some(e)
     }
 
+    /// An arm's writes through the handles of parts it seated earlier: the
+    /// records it halts, and the one it carries onto the victim's ground point.
+    fn apply_capture_arm_part_writes(&mut self, entry: u32, arm: u8) {
+        use legaia_engine_cast::cast_module_camera as cmc;
+        let halted = cmc::capture_arm_halts_records(entry, arm);
+        let moved = cmc::capture_arm_moves_to_victim(entry, arm);
+        if halted.is_empty() && moved.is_none() {
+            return;
+        }
+        let victim = self
+            .casting
+            .module_cam
+            .victim_slot
+            .and_then(|s| self.actors.get(usize::from(s)))
+            .map(|v| (v.move_state.world_x, v.move_state.world_z));
+        let Some(scene) = self.casting.active_summon.as_mut() else {
+            return;
+        };
+        for part in &mut scene.parts {
+            let Some(tag) = part.tag else { continue };
+            if halted.contains(&tag) {
+                part.finished = true;
+            }
+            if moved == Some(tag)
+                && let Some((x, z)) = victim
+            {
+                part.state.world_x = x;
+                part.state.world_z = z;
+            }
+        }
+    }
+
     /// One tick of the **capture band's** resident module - the engine body
     /// behind `BattleActionHost::capture_stager_tick`, and the twin of
     /// [`Self::summon_stager_tick`] on the other dispatcher.
@@ -265,6 +297,7 @@ impl World {
                 if cmc::capture_arm_flushes_pool(run.prot_entry, arm) {
                     self.casting.flush_module_part_pool();
                 }
+                self.apply_capture_arm_part_writes(run.prot_entry, arm);
                 if cmc::capture_arm_resets_pass_counter(run.prot_entry, arm) {
                     self.casting.module_pass_counter = 0;
                 }

@@ -846,7 +846,7 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
         944 => matches!(body, Some(0x801F_6A04 | super::CURSE_ALL_BODY)),
-        946..=948 => true,
+        946..=949 => true,
         955 => matches!(
             body,
             Some(super::TERROR_SCREAM_BODY | super::VOID_ACCESSORIES_BODY)
@@ -876,6 +876,28 @@ pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     }
 }
 
+/// The records a capture-class arm halts by handle (`ori 0x8` into each one's
+/// flag word), leaving the rest of the pool running: PROT 0949's arm 2 walks
+/// the handles at `0x801F8214..=0x801F8240` (`0x801F7024..0x801F713C`). The
+/// first record (`0x801F76BC`, the backdrop) has no handle there, and
+/// `0x801F7720`'s handle at `0x801F8210` is skipped.
+pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
+    match (prot_entry, phase) {
+        (949, 2) => &super::water_crystals::ARM2_HALTS,
+        _ => &[],
+    }
+}
+
+/// The record a capture-class arm carries onto the victim's ground point
+/// (`+0x14` / `+0x18` from its `+0x34` / `+0x38`): PROT 0949's arm 2 moves
+/// `0x801F7720` through the handle at `0x801F8210` (`0x801F6F48..0x801F6F64`).
+pub fn capture_arm_moves_to_victim(prot_entry: u32, phase: u8) -> Option<u32> {
+    match (prot_entry, phase) {
+        (949, 2) => Some(super::water_crystals::ORB_RECORD),
+        _ => None,
+    }
+}
+
 /// The capture-class arms that flush the part pool (`jal 0x80050E74`) on
 /// their pass, ahead of their own spawns: every part the module seated
 /// through `FUN_80050ED4` gets its halt bit. PROT 0938's arms 2 and 3
@@ -892,7 +914,6 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
     matches!(
         (prot_entry, phase),
         (938, 2 | 3)
-            | (949, 2)
             | (940, 7)
             | (944, 2 | 4)
             | (946, 6)

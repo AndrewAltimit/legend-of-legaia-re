@@ -40,6 +40,23 @@ pub(super) const ARM0_SPAWNS: [ModuleSpawn; 14] = [
     seat(0x801F_8094, [0; 3], [0; 3]),
     seat(0x801F_7720, [0; 3], [0; 3]),
 ];
+/// Arm 0's last record, the one arm 2 keeps alive and moves to the victim.
+pub(super) const ORB_RECORD: u32 = 0x801F_7720;
+/// The twelve records arm 2 halts by handle.
+pub(super) const ARM2_HALTS: [u32; 12] = [
+    0x801F_7C18,
+    0x801F_7C6C,
+    0x801F_7CC0,
+    0x801F_7D14,
+    0x801F_7D84,
+    0x801F_7DF4,
+    0x801F_7E64,
+    0x801F_7ED4,
+    0x801F_7F44,
+    0x801F_7FB4,
+    0x801F_8024,
+    0x801F_8094,
+];
 /// Arm 2's sixteen calls on the victim's `+0x34` / `+0x44`
 /// (`0x801F7140..0x801F72A8`), after the halt bit on arm 0's first thirteen.
 pub(super) const ARM2_SPAWNS: [ModuleSpawn; 16] = [
