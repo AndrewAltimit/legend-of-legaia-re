@@ -281,11 +281,14 @@ the pointer's prims under `FUN_801CE850`.
 
 ### A battle target surface's replay
 
-`open` `battle_item_target_gaza2_retail` (`ctx[+0x06] = 0x64`) and
-`battle_magic_target_gaza2_retail` (`0x5C`) hold a party pick reached through a
-window; `BattleDrive::Menu`'s steer only reaches the cursor through the Attack arm,
-so neither drive lands. Both states are held on disk under `captures/` and not in
-the catalog until the drive can take a window's row first.
+`open` `battle_magic_target_gaza2_retail` (`ctx[+0x06] = 0x5C`) and the all-party
+item confirm `0x66` hold a surface reached through a window on a flow byte
+`BattleFlowState` does not model (`from_raw` reads both as `Idle`), so the seed
+stands them on the round prompt. `BattleDrive::Menu` reaches the single-ally item
+target `0x64` through the window's first row. Both states are held on disk under
+`captures/` and not in the catalog until the drive can walk a window's row and the
+flow byte carries them. The engine's `0x66` screen is grounded on the pad walk's
+frame alone: panels up, `All Allies` plate, no score.
 
 ### Zenoir's walk over a small window
 
