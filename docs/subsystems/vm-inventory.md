@@ -205,6 +205,10 @@ always. See [`boot.md`](boot.md#a-cold-boot-always-shows-sub-mode-0x10-never-0x0
 
 ## Ported but inert
 
+A live arm whose host hook is still its trait default is inert too, and no
+reachability column shows it:
+[`live-audit-triage.md`](../tooling/live-audit-triage.md#a-hook-left-on-its-trait-default).
+
 "Inert" is a reachability statement, not a correctness one: the port is
 faithful and tested, and nothing outside its own crate calls it.
 

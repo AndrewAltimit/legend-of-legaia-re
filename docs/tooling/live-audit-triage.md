@@ -99,6 +99,31 @@ missing, not by the crate the port lives in. The exception is a port whose
 natural home is a rooted crate: the SC block checksum lives in `legaia-save`,
 which `save-tool` roots, so it is live as soon as it exists.
 
+## A hook left on its trait default
+
+The audit's `live` stops at the call. A VM arm that calls a host method whose
+default does nothing reads live, on both graphs, and the game skips it. The
+instrument is `scripts/ci/host-default-noops.py`, which lists every trivially
+bodied default no real impl overrides; cross it with
+[`field-op-census.md`](field-op-census.md) for whether the disc drives the arm.
+Settled rows:
+
+| Hook | Disc | Verdict |
+|---|---|---|
+| `spawn_placement_if_absent`, `4C D2` | 77 sites | Wired, with the retire bit it answers: [`script-vm-menuctrl.md`](../subsystems/script-vm-menuctrl.md#4c-d2--4c-d6--4c-d7-advance-in-retail). |
+| `copy_party_tmd_poses`, `4C 3F` | 8 sites | Wired: [`character-mesh.md`](../formats/character-mesh.md#10-group-cap--equipment-conditional-swap). |
+| `move_image`, move op `0x40` | `conc*`, `deroa`, `bubu1`, ending scenes | Wired: [`move-vm.md`](../subsystems/move-vm.md#0x40---move_image). |
+| `clear_party_state_region`, `4C 32` | 5 sites, dev pickers | Wired: clears the flag bank. |
+| `set_dither`, `4C ED` | 27 sites | Gap, in PSX mode only. Open thread, [`open-rev-eng-threads.md`](../reference/open-rev-eng-threads.md#field--locomotion). |
+| `face_rotation_setup`, move op `0x21` | Not censused here | Gap: needs the render path `field_channels.rs` names. |
+| `snapshot_play_clock`, `4C EE` | `edlast` only | Left: the end of the game, with no save after it. |
+| `refresh_collision_y`, `4C DA` | 9 sites | Replaced: the VM drops the height bit and the next tick's floor sample lands the same `+0x16`. |
+| `reset_party_pack_load_state`, `4C E9` | `opurud` only | Replaced: the port has no load gate; every scene entry runs the swap. |
+| `set_door_of_light_destination`, `4C 88`; `bgm_swap_pending`, `4C C9`; `op4c_ne_sub7_ramp_73ee4`, `4C E7` | None | No carrier. |
+| `hsv_grade_resident_meshes`, `4C E6` | 6 sites | Replaced: the prologue palette mode (`primitive_colour_grade.rs`). |
+| `equip_attack_bonuses` | Battle | Replaced: the hit resolver folds `BattleState::equip_atk` itself (`loop_driver/hits.rs`). |
+| `first_monster_id`, `victory_stage` | Battle | Off the live path: the sequencer poses `ctx[+0x13]`, the leader ([`battle-round-loop.md`](../subsystems/battle-round-loop.md)). |
+
 ## Analysis defects this triage found
 
 Five shapes of audit false result. The first four are fixed in

@@ -152,6 +152,29 @@ pub(super) struct MoveVmHostImpl<'a> {
 }
 
 impl<'a> MoveHost for MoveVmHostImpl<'a> {
+    /// Op `0x40` - libgpu `MoveImage` (`FUN_80058490`), the animated-texture
+    /// strip primitive: `conc`'s `P`-record cycles, `deroa`, `bubu1`,
+    /// `edretoin`. It lands on the VRAM queue both hosts drain each frame, the
+    /// battle queue while a battle's parts run.
+    fn move_image(&mut self, src_rect: [u16; 4], dst_x: i16, dst_y: i16) {
+        let words = [
+            src_rect[0] as i16,
+            src_rect[1] as i16,
+            src_rect[2] as i16,
+            src_rect[3] as i16,
+            dst_x,
+            dst_y,
+        ];
+        if self.world.mode == SceneMode::Battle {
+            self.world
+                .battle
+                .vram_moves
+                .push(legaia_engine_field::script_vram_move::ScriptVramMove::from_words(words));
+        } else {
+            self.world.queue_script_vram_move(words);
+        }
+    }
+
     /// Op `0x17` - the battle-overlay escape `FUN_801F30C4(actor, mode)`,
     /// queued with what the burst reads off the parent (its `+0x14` position,
     /// `+0x24` rotation trio and `+0x72` scale) for

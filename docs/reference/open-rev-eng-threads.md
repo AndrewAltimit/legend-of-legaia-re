@@ -213,7 +213,9 @@ the cheapest place to look for a claim that is still wrong.
 
 ## Field / locomotion
 
-No open threads.
+| Thread | Status | State |
+|---|---|---|
+| What does field op `4C ED` do to a PSX-mode frame? | open | The arm writes the dither word `_DAT_8007BA66`, which `FUN_80016B6C` copies into DRAWENV `dtd`. 27 sites: `town01` `P2[3]` and the ending scenes, `01` near a record's head and `00` near its tail. The host hook is still the default, and `psx_dither` follows PSX mode alone. First step: read the word in `ending_vignette_fullscreen` and a plain field state, then route it through `Renderer::set_psx_mode`'s uniform on both hosts. |
 
 Answered questions: [settled field / locomotion](re-settled-threads/field.md), [settled text / dialog](re-settled-threads/text-dialog.md); falsified readings: [field / locomotion](re-do-not-re-walk.md#field--locomotion), [menus / UI](re-do-not-re-walk.md#menus--ui).
 

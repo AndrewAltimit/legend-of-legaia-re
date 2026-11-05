@@ -116,13 +116,12 @@ pub trait FieldPartyInventoryHost {
     /// (An earlier note here guessed an inventory / menu re-raster.) PC += 2.
     fn rebuild_party_roster(&mut self) {}
 
-    /// Op 0x4C sub-3 sub-2 (clear the 512-byte party/inventory state region).
+    /// Op 0x4C sub-3 sub-2 - clear every story flag.
     ///
-    /// 2-byte instruction `[4C, 0x32]`. The original zeroes the 512 bytes at
-    /// `[0x80085718 .. 0x80085918)` - a region holding party / inventory state
-    /// adjacent to the fourth-flag-bank bitfield (`DAT_80085758`). Hosts model
-    /// their own party-state representation and call this hook to reset it.
-    /// PC += 2.
+    /// 2-byte instruction `[4C, 0x32]`. The arm zeroes the 512 bytes at
+    /// `[0x80085758 .. 0x80085958)` (`0x801E0F48..0x801E0F64`: base
+    /// `0x80084140 + 0x1618`, index `0x1FF` down to `0`), the whole flag bank
+    /// and nothing of the bag above it. PC += 2.
     fn clear_party_state_region(&mut self) {}
 
     /// Op 0x4C sub-2 - the camera-octant / pad-rotation setter.

@@ -398,8 +398,10 @@ they come from the facial animator `FUN_8004C7B4`
 ([`battle-data-pack.md`](../formats/battle-data-pack.md#facial-animation-tracks-entry-0x8c--0x98)).
 
 Port: the hook is `MoveHost::move_image`
-(`crates/engine-vm/src/move_vm/host.rs`), default no-op. `MoveVmHostImpl` in
-`engine-core` does not override it.
+(`crates/engine-vm/src/move_vm/host.rs`). `MoveVmHostImpl` in `engine-core`
+queues it for the VRAM pass both hosts run: the field VM's `4C 60` queue, or the
+battle queue while a battle's parts tick. `concnow_field_door_hop_settled` is
+the state that reads it: its strip rects match retail only with the op live.
 
 ### Keyframe-pose ops (`0x3C` / `0x3D`)
 

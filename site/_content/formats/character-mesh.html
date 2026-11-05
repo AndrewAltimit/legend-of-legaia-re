@@ -120,13 +120,13 @@
   </div>
 
   <h3 id="10-group-cap--equipment-conditional-swap">10-group cap + equipment swap</h3>
-  <p>In the field, equipping a weapon changes one thing: a single group toggles between two pre-baked variants. The field player loader overwrites the three party TMDs' group count to <strong>10</strong> after install; disc groups 10 and 11 are never drawn directly - they are the templates the per-frame patch loop copies over the visible group:</p>
+  <p>In the field, holding a Ra-Seru changes one thing: a single group toggles between two pre-baked variants. The field player loader overwrites the three party TMDs' group count to <strong>10</strong> after install; disc groups 10 and 11 are never drawn directly - they are the templates the per-frame patch loop copies over the visible group:</p>
   <table>
     <thead><tr><th>Party slot</th><th>Character</th><th>Patched group</th><th>Equip-byte record offset</th><th>Template when zero</th><th>Template when non-zero</th></tr></thead>
     <tbody>
-      <tr><td>0</td><td>Vahn</td><td>0</td><td><code>+0x196</code></td><td>group 11 (<code>TMD+0x140</code>)</td><td>group 10 (<code>TMD+0x124</code>)</td></tr>
-      <tr><td>1</td><td>Noa</td><td>3</td><td><code>+0x199</code></td><td>group 11</td><td>group 10</td></tr>
-      <tr><td>2</td><td>Gala</td><td>5</td><td><code>+0x19B</code></td><td>group 11</td><td>group 10</td></tr>
+      <tr><td>0</td><td>Vahn</td><td>3</td><td><code>+0x199</code></td><td>group 11 (<code>TMD+0x140</code>)</td><td>group 10 (<code>TMD+0x124</code>)</td></tr>
+      <tr><td>1</td><td>Noa</td><td>5</td><td><code>+0x198</code></td><td>group 11</td><td>group 10</td></tr>
+      <tr><td>2</td><td>Gala</td><td>3</td><td><code>+0x199</code></td><td>group 11</td><td>group 10</td></tr>
     </tbody>
   </table>
   <p>The swap is binary and never changes the object count; item identity in the field comes from the texture atlas, not the mesh. From-scratch port: <code>character_pack::equipment_swap::apply</code>.</p>

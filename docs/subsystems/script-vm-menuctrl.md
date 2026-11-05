@@ -541,6 +541,21 @@ All three advance: sub-2 and sub-6 exit through `0x801E00B8`
 `4C D2 0F .. 4C D2 16` back to back. A VM that halts on them holds a
 cross-context `CC <ch> D6 <b1>` record forever.
 
+A context's retire bit is what makes `4C D2` do anything: `31 03` on itself or
+`B1 <id> 03` on another raises `+0x10 & 8`, `FUN_8002519C` stops walking the
+node, and `FUN_8003C83C` then answers nothing for its id. The disc spends it on
+story gates in spawn sections (`cave01` P1[3]), on the pickup itself (`cave01`
+P1[9], after `39 A3` and `50 74`), and in paired records: `balden` `P2[18]`
+retires ten placements and `P2[19]` re-seats them with `4C D2`, spawn section
+included. A cross-context op at an absent id holds its PC in retail
+(`0x801DE8C4` exits with `s8` unmoved); the port skips it by width, because a
+modal timeline has no parallel context to wait on.
+
+Port: `World::sweep_field_channel_lifetimes`, called from both field tick arms.
+A retired placement parks in the hide box and leaves the channel set;
+`crates/engine-scene-host/tests/field_placement_retire_disc.rs` runs both paths
+through `SceneHost::tick`.
+
 #### `4C D3`: the timed-flag scheduler
 
 ```text

@@ -91,6 +91,21 @@ fn census_move_op_45_carriers() {
     census(0x45);
 }
 
+/// Op `0x40` is `MoveImage`, the animated-texture strip primitive.
+#[test]
+fn census_move_op_40_carriers() {
+    census(0x40);
+}
+
+/// Op `0x21` seats a per-face rotation config; `0x2C` / `0x30` hold the VRAM
+/// capture a mode-3 CLUT cell recolours.
+#[test]
+fn census_move_ops_21_2c_30_carriers() {
+    census(0x21);
+    census(0x2C);
+    census(0x30);
+}
+
 fn census(op: u16) {
     let Some(root) = extracted_root() else {
         return;

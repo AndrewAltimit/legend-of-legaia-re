@@ -3,6 +3,13 @@
 use super::*;
 
 impl<'a> FieldPartyInventoryHost for FieldHostImpl<'a> {
+    // Op `4C 32`: the zeroing loop covers the flag bank exactly
+    // (`0x801E0F48..0x801E0F64`). Three shipped records reach it, behind dev
+    // pickers (`rikuroa` P1[13]'s "Clear all flags").
+    fn clear_party_state_region(&mut self) {
+        self.world.flags.system_flags.fill(0);
+    }
+
     // Op `4C 3F`: the Ra-Seru mesh swap, at the frame's sweep.
     fn copy_party_tmd_poses(&mut self) {
         self.world.request_party_mesh_swap();

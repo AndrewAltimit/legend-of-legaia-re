@@ -596,12 +596,9 @@ impl AmbientMotion {
     /// PORT: FUN_80038158 (`0x8003973C`, op `0x13`)
     /// REF: FUN_80058490
     ///
-    /// Live like every other arm - the interpreter reaches it on both hosts -
-    /// but its *effect* has no consumer: the only surface a `MoveImage` could
-    /// land on is `engine-render`'s software PSX VRAM, and `World` has no path
-    /// from a field-actor tick into it. The op runs, decodes its operands and
-    /// queues [`AmbientEffect::MoveImage`]; nothing drains that variant. That
-    /// is a consumer gap, not a wiring gap, so this carries no inert marker.
+    /// The op decodes its operands and queues [`AmbientEffect::MoveImage`];
+    /// `engine-core` drains that onto the field VM's `4C 60` blit queue, which
+    /// both hosts apply to their software VRAM.
     ///
     /// `[13, x_lo, x_hi, y_lo, y_hi, w_lo, w_hi, h_lo, h_hi, dx_lo, dx_hi,
     /// dy_lo, dy_hi]` - thirteen bytes, assembled on the stack as a libgpu
