@@ -188,7 +188,13 @@ The pad-mask packer `FUN_8001822C` builds the held mask `_DAT_8007b850` (and the
 
 **Decoder.** `FUN_801d7450` reduces the held mask to a reel state: `if (m & 0x40) return 1; else return (m >> 6) & 2;` - Cross wins and returns reel A (`1`), Square alone returns reel B (`2`), neither returns idle (`0`). Holding both resolves to reel A.
 
-**Cadence recogniser.** `FUN_801d3db4` decodes the reel button each frame and compares it to the previous decode `DAT_801d9064`. While unchanged it adds the frame step `DAT_1f800393` to the current slot of a 16-entry `{button, held-frames}` ring buffer `DAT_801d91e4` (write index `DAT_801d91dc`, mod 16); on a change it advances the index and opens a fresh slot. It then walks a window of that history backwards against the [cadence templates](#cadence-templates) with a +/-10 frame-step tolerance. On a full match it resets the ring through `FUN_801d746c` and returns the template id, which the caller stores as the cast band.
+**Cadence recogniser.** `FUN_801d3db4` decodes the reel button each frame and compares it to the previous decode `DAT_801d9064`. While unchanged it adds the frame step `DAT_1f800393` to the current slot of a 16-entry `{button, held-frames}` ring buffer `DAT_801d91e4` (write index `DAT_801d91dc`, mod 16); on a change it advances the index and opens a fresh slot at zero, adding no step that frame. It then walks the history newest first against each of the [cadence templates](#cadence-templates) in turn, last step first:
+
+- A slot matches a step when the button is equal and the held time is within 9 frame-steps of the duration (strict `slt` against `dur +- 10`, `0x801D3F28` / `0x801D3F34`).
+- One slot that does not match is passed over, and the same step tries the next older slot. Two misses in a row fail the template (`0x801D3F78..0x801D3F90`), so a stray tap between steps does not spoil a gesture.
+- The template's `history_window` is a budget: every visited slot's held time comes off it, and the walk stops at zero or below. Steps left over fail the template.
+
+On a full match it resets the ring through `FUN_801d746c` and returns the template id, which the caller stores as the cast band. The latch `DAT_801d9064` is written only on a frame with no match (the matched exit jumps past the store at `0x801D3FC8`).
 
 `FUN_801d746c` zeroes `DAT_801d91dc` and both words of all sixteen 8-byte records of `DAT_801d91e4`. Retail unrolls the loop two words at a time, so the table is `16 * 8` bytes.
 

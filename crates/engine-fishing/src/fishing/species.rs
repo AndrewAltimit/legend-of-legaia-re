@@ -101,14 +101,10 @@ pub fn spawn_species(table: &[[u32; 8]], lure: u32, band: u32) -> Option<usize> 
 /// The reel-cadence recogniser: a 16-slot `{button, held-frames}` ring buffer
 /// (`DAT_801d91e4`, write index `DAT_801d91dc`) fed the decoded reel button
 /// each frame and walked backwards against the overlay's four gesture
-/// templates with a +-10 frame-step tolerance. On a full match the buffer is
+/// templates, tolerance and skip rule on [`Self::feed`]. On a full match the buffer is
 /// reset (`FUN_801d746c`) and the matched template id is reported - the
 /// consumer stores it **as the cast band**.
 ///
-/// The `history_window` word of each template bounds the total duration the
-/// backwards walk may span; reading it as an inclusive bound (+ tolerance) is
-/// this port's interpretation - the per-step button/duration match and the
-/// reset are the pinned parts.
 // PORT: FUN_801d3db4 (reel-cadence recogniser: ring accumulate + template walk)
 // PORT: FUN_801d746c (ring reset: index + all 16 slots cleared)
 #[derive(Debug, Clone)]
@@ -141,37 +137,62 @@ impl ReelCadence {
         crate::fishing_chrome::clear_slot_ring(&mut self.idx, &mut self.ring);
     }
 
+    /// The ring, its write index and the last-button latch.
+    pub fn state(&self) -> (&[(u8, i32)], usize, u8) {
+        (&self.ring, self.idx, self.last)
+    }
+
     /// Feed this frame's decoded reel button (`0` idle / `1` reel A / `2`
     /// reel B) and frame step; returns the matched template id (= the band)
     /// if a gesture completed this frame, resetting the ring.
+    ///
+    /// The frame a button changes opens a slot at zero and adds no step. The
+    /// walk runs each template's steps newest first down the ring, on a budget
+    /// that starts at the template's window and loses every visited slot's
+    /// held time:
+    ///
+    /// * a slot matches a step when the button is equal and the duration is
+    ///   within `9` either way (`slt` both ways, `0x801D3F28` / `0x801D3F34`);
+    /// * one slot that does not match is passed over, and the same step tries
+    ///   the next older slot. A second miss in a row fails the template
+    ///   (`0x801D3F78..0x801D3F90`), so a brief tap between two steps does not
+    ///   spoil a gesture;
+    /// * the budget at or below zero ends the walk, and with steps left over
+    ///   the template fails.
+    ///
+    /// The last-button latch is written only on a frame with no match: the
+    /// matched exit `0x801D3E60` jumps past the store at `0x801D3FC8`.
     pub fn feed(&mut self, button: u8, frame_step: i32) -> Option<usize> {
         if button != self.last {
-            self.last = button;
             self.idx = (self.idx + 1) % self.ring.len();
             self.ring[self.idx] = (button, 0);
+        } else {
+            self.ring[self.idx].1 += frame_step;
         }
-        self.ring[self.idx].1 += frame_step.max(1);
 
-        'template: for (t, tpl) in self.templates.iter().enumerate() {
-            let n = tpl.steps.len();
-            if n == 0 || n > self.ring.len() {
-                continue;
-            }
-            let mut span = 0i32;
-            for k in 0..n {
-                let slot = self.ring[(self.idx + self.ring.len() - k) % self.ring.len()];
-                let step = tpl.steps[n - 1 - k];
-                if slot.0 != step.button || (slot.1 - step.duration).abs() > CADENCE_TOLERANCE {
-                    continue 'template;
+        for (t, tpl) in self.templates.iter().enumerate() {
+            let mut left = tpl.steps.len();
+            let mut budget = tpl.history_window;
+            let mut misses = 0;
+            let mut age = 0usize;
+            while budget > 0 && left > 0 && misses < 2 {
+                let slot = self.ring[(self.idx + self.ring.len() - (age & 0xF)) % self.ring.len()];
+                let step = tpl.steps[left - 1];
+                if slot.0 == step.button && (step.duration - slot.1).abs() < CADENCE_TOLERANCE {
+                    misses = 0;
+                    left -= 1;
+                } else {
+                    misses += 1;
                 }
-                span += slot.1;
+                budget -= slot.1;
+                age += 1;
             }
-            if span > tpl.history_window + CADENCE_TOLERANCE {
-                continue;
+            if left == 0 {
+                self.reset();
+                return Some(t);
             }
-            self.reset();
-            return Some(t);
         }
+        self.last = button;
         None
     }
 }

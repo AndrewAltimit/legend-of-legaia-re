@@ -21,6 +21,7 @@ mod encounter_roll;
 mod escape;
 mod field_vm;
 mod field_walls;
+mod fishing_cadence;
 mod fishing_fight;
 mod inventory;
 mod item_apply;
