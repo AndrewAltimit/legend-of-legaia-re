@@ -41,7 +41,10 @@ pub(crate) const PRIM_NEAR_WGSL: &str = r#"
 // the field's 6x scale). The depth row is `z = a * w + b` in clip space, read
 // as `depth_affine` reads it.
 fn prim_mean_depth(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
-    if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w <= 0.0) {
+    // A corner behind the eye keeps the mean too under PSX mode, where
+    // `gte_saturate_clip` seats it on screen ahead of the eye.
+    if (u.flags.w >= 0.0 || c0.w < 2.5 || clip.w == 0.0
+        || (clip.w < 0.0 && u.psx_params.z < 0.5)) {
         return clip;
     }
     let m = u.mvp;
@@ -119,9 +122,14 @@ fn prim_near_rejected(
     let s0 = prim_sxy(m, c0.xyz, p.y, p.x);
     let s1 = prim_sxy(m, c1, p.y, p.x);
     let s2 = prim_sxy(m, c2, p.y, p.x);
-    if (c0.w > 3.5 && u.psx_params.z > 2.5
-        && pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x))) {
-        return true;
+    // A PCSX-Redux capture runs its own limit in place of the console's: it
+    // drops more (a whole quad on one corner pair) and less (no pair counts
+    // unless one of its corners is negative).
+    if (u.psx_params.z > 2.5) {
+        if (c0.w > 3.5) {
+            return pcsx_quad_rejected(s0, s1, s2, prim_sxy(m, c3, p.y, p.x));
+        }
+        return pcsx_tri_rejected(s0, s1, s2);
     }
     if (!span_too_big(s0, s1, s2)) {
         return false;
@@ -133,14 +141,43 @@ fn prim_near_rejected(
 }
 
 // A PCSX-Redux capture's polygon limit (`PsxTexelRule::PcsxRedux`, an
-// instrument): its software GPU drops a whole quad on any corner pair past the
-// limit (`SoftRenderer::checkCoord4`), where the console skips the one triangle.
+// instrument). Its software GPU measures a corner pair only from a corner
+// that is negative, so a primitive wholly on the positive side of the screen
+// origin is drawn at any size, where the console skips a triangle past
+// `1023 x 511`. Triangles: `SoftRenderer::checkCoord3`.
+// A `prim_sxy` offset (Y up) as the packet's screen corner (Y down), the
+// frame the emulator's sign tests read.
+fn pcsx_screen(a: vec2<f32>) -> vec2<f32> {
+    return vec2<f32>(160.0 + a.x, 120.0 - a.y);
+}
+
+fn pcsx_tri_rejected(a0: vec2<f32>, a1: vec2<f32>, a2: vec2<f32>) -> bool {
+    let p0 = pcsx_screen(a0);
+    let p1 = pcsx_screen(a1);
+    let p2 = pcsx_screen(a2);
+    let lim = vec2<f32>(1024.0, 512.0);
+    for (var k = 0; k < 2; k++) {
+        let l = lim[k];
+        if (p0[k] < 0.0 && (p1[k] - p0[k] > l || p2[k] - p0[k] > l)) {
+            return true;
+        }
+        if (p1[k] < 0.0 && (p0[k] - p1[k] > l || p2[k] - p1[k] > l)) {
+            return true;
+        }
+        if (p2[k] < 0.0 && (p0[k] - p2[k] > l || p1[k] - p2[k] > l)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Quads (`SoftRenderer::checkCoord4`): one corner pair past the limit drops
+// the whole quad, where the console skips the one triangle.
 fn pcsx_quad_rejected(a0: vec2<f32>, a1: vec2<f32>, a2: vec2<f32>, a3: vec2<f32>) -> bool {
-    let c = vec2<f32>(160.0, 120.0);
-    let p0 = a0 + c;
-    let p1 = a1 + c;
-    let p2 = a2 + c;
-    let p3 = a3 + c;
+    let p0 = pcsx_screen(a0);
+    let p1 = pcsx_screen(a1);
+    let p2 = pcsx_screen(a2);
+    let p3 = pcsx_screen(a3);
     const X: f32 = 1024.0;
     const Y: f32 = 512.0;
     if (p0.x < 0.0 && (p1.x - p0.x > X || p2.x - p0.x > X) && p3.x < 0.0
@@ -173,8 +210,11 @@ fn prim_sxy(m: mat4x4<f32>, c: vec3<f32>, sz_per_w: f32, h: f32) -> vec2<f32> {
     let cl = m * vec4<f32>(c, 1.0);
     let d = max(max(cl.w * sz_per_w, 0.0), h * 0.5);
     let half = vec2<f32>(160.0, 120.0);
+    // `off` is Y up; `SY` saturates on the screen's own Y-down axis.
     let off = cl.xy * half * sz_per_w / d;
-    return clamp(off + half, vec2<f32>(-1024.0), vec2<f32>(1023.0)) - half;
+    let sx = clamp(half.x + off.x, -1024.0, 1023.0);
+    let sy = clamp(half.y - off.y, -1024.0, 1023.0);
+    return vec2<f32>(sx - half.x, half.y - sy);
 }
 
 fn span_too_big(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> bool {
@@ -189,22 +229,61 @@ fn span_too_big(a: vec2<f32>, b: vec2<f32>, c: vec2<f32>) -> bool {
 // `SX` / `SY` to `-0x400..=0x3FF`, in GTE units (`sz_per_w` times the eye
 // space; `gte_sat_params()` = `(sz_per_w, H)`, zero off). `w` is kept, a
 // corner inside every limit is returned as it came.
+//
+// A corner on or behind the eye has `SZ = 0`, so the capped divide puts it at
+// `OF + 2 * IR`, a real screen point the GPU draws the primitive to - not a
+// point a near-plane clip trims the primitive at. Such a corner is returned
+// at the depth the cap stands for (`SZ = H / 2`), its depth word the
+// primitive's mean (`prim_mean_depth`) or, with none, the nearest.
 const GTE_OFY_BIAS: f32 = 0.05;
+
+// `gte_saturate_clip` for a mesh vertex: a corner behind the eye is seated
+// on screen only when its primitive reaches in front of the eye. A
+// primitive wholly behind it, or a vertex with no single owner (`c0.w`
+// below 3: a welded ground mesh, whose own emitter culls such cells), keeps
+// the near-plane clip.
+fn gte_saturate_prim(clip: vec4<f32>, c0: vec4<f32>, c1: vec3<f32>, c2: vec3<f32>, c3: vec3<f32>) -> vec4<f32> {
+    if (clip.w > 0.0) {
+        return gte_saturate_clip(clip);
+    }
+    if (c0.w < 2.5) {
+        return clip;
+    }
+    let m = u.mvp;
+    var front = (m * vec4<f32>(c0.xyz, 1.0)).w > 0.0
+        || (m * vec4<f32>(c1, 1.0)).w > 0.0
+        || (m * vec4<f32>(c2, 1.0)).w > 0.0;
+    if (c0.w > 3.5) {
+        front = front || (m * vec4<f32>(c3, 1.0)).w > 0.0;
+    }
+    if (!front) {
+        return clip;
+    }
+    return gte_saturate_clip(clip);
+}
 
 fn gte_saturate_clip(clip: vec4<f32>) -> vec4<f32> {
     let p = gte_sat_params();
     let w = clip.w;
-    if (p.x <= 0.0 || p.y <= 0.0 || w <= 0.0) {
+    if (p.x <= 0.0 || p.y <= 0.0) {
         return clip;
     }
     let h = p.y;
     let ir = vec2<f32>(clip.x * 160.0, -(clip.y - GTE_OFY_BIAS * w) * 120.0) * p.x / h;
     let irc = clamp(ir, vec2<f32>(-32768.0), vec2<f32>(32767.0));
     let sz = w * p.x;
-    let d = max(min(sz, 65535.0), h * 0.5);
+    let d = max(clamp(sz, 0.0, 65535.0), h * 0.5);
     let centre = vec2<f32>(160.0, 120.0 - GTE_OFY_BIAS * 120.0);
     let s_raw = centre + h * irc / d;
     let s = clamp(s_raw, vec2<f32>(-1024.0), vec2<f32>(1023.0));
+    if (w <= 0.0) {
+        let wc = d / p.x;
+        var z = 1.0;
+        if (w < 0.0 && clip.z / w >= 0.0 && clip.z / w <= 1.0) {
+            z = clip.z / w;
+        }
+        return vec4<f32>((s.x - 160.0) / 160.0 * wc, (120.0 - s.y) / 120.0 * wc, z * wc, wc);
+    }
     if (all(irc == ir) && d == sz && all(s == s_raw)) {
         return clip;
     }
