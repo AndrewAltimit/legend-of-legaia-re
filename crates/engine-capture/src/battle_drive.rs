@@ -1386,6 +1386,7 @@ impl BattleDrive {
         // (`0x801E2CF8`), which is no coin; with the SM running one pass a
         // battle frame that rung is live for a whole frame, and flipping it
         // swung the seed's framing half a turn.
+        let mut coin_seat = None;
         {
             let pc = world.party.party_count.clamp(1, 3);
             let state = world.battle_ctx.action_state;
@@ -1458,8 +1459,14 @@ impl BattleDrive {
                 }
                 if let Some(coin) = steer.coin {
                     cam.align_phase_cursor(coin);
+                    coin_seat = Some(coin);
                 }
             }
+        }
+        // The coin is a ctx byte the camera reads every drive
+        // (`BattleCamInputs::track_coin`): seat it on the world.
+        if let Some(coin) = coin_seat {
+            world.battle_ctx.track_coin = coin & 1;
         }
         let pc = world.party.party_count.clamp(1, 3);
         let ours = world.mode == SceneMode::Battle

@@ -1193,6 +1193,13 @@ pub struct BattleActionCtx {
     /// The last re-seed's coin, `rand() % 2`: the counter becomes
     /// `coin * 0x800 + 0x280`.
     pub swing_yaw_coin: u8,
+    /// `ctx[+0x26D]`, the per-action track coin: `rand() % 2`, drawn by
+    /// `FUN_8004E13C` (`sb v0,0x26d(a0)` at `0x8004E2DC`) on every clip
+    /// commit whose entry's `+0x87` byte is set, after that routine's
+    /// value-2 re-seed draw. It picks the per-art track column and the
+    /// case-8 dead-target yaw's `0x200` turn; the battle camera reads it
+    /// (`BattleCamInputs::track_coin`).
+    pub track_coin: u8,
     /// The display frame of the active actor's last clip commit - the
     /// origin the re-zeroed `ctx[+0x87C]` counts from (`8` per vsync), which
     /// the retail comparison corpus aligns a summon `0x33` capture on.

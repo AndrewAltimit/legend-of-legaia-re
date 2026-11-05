@@ -193,6 +193,7 @@ pub fn battle_cam_inputs(world: &World) -> script::BattleCamInputs {
             world.battle_ctx.swing_yaw_seeds,
             world.battle_ctx.swing_yaw_coin,
         ),
+        track_coin: world.battle_ctx.track_coin,
         acting_body,
         cursor,
         spell_cam: world.battle.spell_cam,

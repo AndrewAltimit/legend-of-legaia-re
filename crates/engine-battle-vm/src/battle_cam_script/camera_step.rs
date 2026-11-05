@@ -1144,18 +1144,13 @@ impl BattleCamera {
         self.glides.clear();
         match phase {
             BattleCamPhase::Action => {
-                // A new action: retail's `FUN_8004E13C` re-rolls the per-art
-                // track column (`ctx[+0x26D] = rand() % 2`), so the swing
-                // frames from one of the table's two columns. The ramps and
-                // the accumulator restart only on the acting actor's clip
-                // commit (`observe_active_commits` / `observe_active_installs`),
+                // No coin is drawn here: the track coin `ctx[+0x26D]` is the
+                // clip commit's (`FUN_8004E13C`, `0x8004E2DC`), on the world
+                // stream, and reaches the camera as
+                // `BattleCamInputs::track_coin`. The ramps and the
+                // accumulator restart only on the acting actor's clip commit
+                // (`observe_active_commits` / `observe_active_installs`),
                 // which retail's seed does not make.
-                // The end-of-action gate's own case 6 is no new action.
-                if self.last_action_state != END_OF_ACTION_STATE {
-                    let coin =
-                        legaia_engine_system::rand::world_rand(&mut self.rand_state) & 1 != 0;
-                    self.attack.ctx.begin_action(coin);
-                }
                 // Retail re-arms case 6 on the state change and tweens over
                 // its own `a3 = 0xC` (6 camera steps), yaw included.
                 self.glides.push_back(Glide::linear(

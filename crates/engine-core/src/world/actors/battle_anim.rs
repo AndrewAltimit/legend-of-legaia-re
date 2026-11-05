@@ -1211,7 +1211,7 @@ impl World {
         // `ctx[+0xD]` - the swing camera's per-swing side. The counter is the
         // camera's (`BattleCamInputs::swing_reseed`); the style byte is the
         // live one both hosts feed it from.
-        // PORT: FUN_8004E13C (the `+0x243` store and the value-2 re-seed)
+        // PORT: FUN_8004E13C (the `+0x243` store, the value-2 re-seed and the `ctx[+0x26D]` coin)
         // The shout site (`0x8004BCF0..0x8004BD6C`): a party seat committing
         // a staged id `>= 0x10` asks the arts-voice selector when the byte
         // before the cursor is the known-art starter, or under the solo
@@ -1236,6 +1236,11 @@ impl World {
                 self.battle_ctx.camera_variant = 0;
             }
             self.battle_ctx.gauge_rearm_latch = v;
+            // The routine's tail: `ctx[+0x26D] = rand() % 2`
+            // (`0x8004E2BC..0x8004E2DC`), on every such commit, after the
+            // re-seed's own draw.
+            self.battle_ctx.track_coin =
+                (legaia_engine_system::rand::world_rand(&mut self.rng_state) & 1) as u8;
         }
         let a = &mut self.actors[i];
         // The FUN_8004AD80 rewrite: both id fields hold the committed slot
