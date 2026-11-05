@@ -200,6 +200,18 @@ switches with no option behind them; the browser play page has a box for each.
 every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on.
 
+*Saved-chain Arts list* is an addition of the port's; the original has nothing
+like it. With it on, the battle command ring's **Arts** opens a list of the
+chains saved for the acting character instead of the original's entry, where
+each command is one D-pad press until the AP runs out. The chains are the ones
+composed and named in the chain editor (Triangle on the pause menu's *Status*
+screen). Confirming a row plays that chain's arrows through the same arts queue
+the entry builds from typed presses, so learning an art by using it, Miracle Arts
+and Super Arts work from a row as they do from the entry. Two cases still open
+the press-by-press entry: the sparring tutorial, whose drill checks the presses
+themselves, and a character with no saved chain. *Original game only* holds it
+off.
+
 ### Changing the keys
 
 *Controls* swaps the option list for the key table, so a key can be changed
