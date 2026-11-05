@@ -109,6 +109,15 @@ Windows, `~/Library/Application Support/legaia-engine` on macOS); the next
 start shows it ready, with *Play* focused, so `Enter` starts the game.
 *Change disc...* picks another one.
 
+The launcher keeps the last few discs that passed (`recent_discs` in the same
+file, newest first), so a retail disc and a randomized or translated copy are
+both one key away. Right-click or `Shift+Enter` on *Choose disc...* steps to
+the next remembered disc that still passes, skipping any that are gone; the
+help box names it. When the disc used last time is gone, the help box offers
+the newest one that still passes in place of the advice to choose again.
+*Play* moves the disc it starts to the head of the list, and so does a game
+started from Legaia Explorer (`legaia-engine launch --disc`).
+
 ### Options
 
 The option list holds the engine's enhancement knobs, so none of them needs a

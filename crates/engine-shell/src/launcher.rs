@@ -86,6 +86,13 @@ pub struct LauncherSettings {
     /// as it shipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expansion: Option<PathBuf>,
+    /// Disc images that validated here before, newest first, at most
+    /// [`RECENT_DISCS_MAX`] ([`Self::remember_disc`]). [`Self::disc`] is the
+    /// head of the list once one has been chosen; the rest are what *Choose
+    /// disc* offers back (a retail disc beside a patched copy, a disc on a
+    /// drive that comes and goes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_discs: Vec<PathBuf>,
     /// The `play-window` launch switches, in the layout the play page
     /// stores too (one serde shape for both hosts), flattened so the file
     /// keeps its keys at the top level.
@@ -93,7 +100,33 @@ pub struct LauncherSettings {
     pub switches: PersistedSwitches,
 }
 
+/// How many disc images [`LauncherSettings::recent_discs`] keeps.
+pub const RECENT_DISCS_MAX: usize = 6;
+
 impl LauncherSettings {
+    /// Make `path` the disc to boot and the newest entry of
+    /// [`Self::recent_discs`] (an older entry for the same file moves up).
+    pub fn remember_disc(&mut self, path: &Path) {
+        self.disc = Some(path.to_path_buf());
+        self.note_recent_disc(path);
+    }
+
+    /// Put `path` at the head of [`Self::recent_discs`] without making it
+    /// the disc to boot.
+    pub fn note_recent_disc(&mut self, path: &Path) {
+        self.recent_discs.retain(|p| p != path);
+        self.recent_discs.insert(0, path.to_path_buf());
+        self.recent_discs.truncate(RECENT_DISCS_MAX);
+    }
+
+    /// The remembered discs other than [`Self::disc`], newest first.
+    pub fn other_recent_discs(&self) -> impl Iterator<Item = &Path> {
+        self.recent_discs
+            .iter()
+            .map(PathBuf::as_path)
+            .filter(move |p| self.disc.as_deref() != Some(*p))
+    }
+
     /// Read the settings file. A missing file is the first-run case and
     /// yields the empty default; a file that exists but does not parse is an
     /// error (the caller re-prompts rather than guessing).
@@ -319,11 +352,35 @@ pub fn decide(
     }
 }
 
-/// Remember `info` as the disc to boot next time.
+/// Remember `info` as the disc to boot next time (and the newest recent disc).
 pub fn remember(settings_file: &Path, info: &DiscInfo) -> Result<()> {
     let mut s = LauncherSettings::load(settings_file).unwrap_or_default();
-    s.disc = Some(info.path.clone());
+    s.remember_disc(&info.path);
     s.save(settings_file)
+}
+
+/// The recent disc after [`LauncherSettings::disc`] in
+/// [`LauncherSettings::recent_discs`] that still validates, wrapping round
+/// the list: what *Choose disc*'s second action steps to. When the current
+/// disc itself no longer validates the walk starts at the newest entry. Stepping does not
+/// reorder the list (only [`LauncherSettings::remember_disc`] does), so
+/// repeated steps visit every remembered disc in turn.
+pub fn next_recent_disc(
+    settings: &LauncherSettings,
+    validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
+) -> Option<DiscInfo> {
+    let list = &settings.recent_discs;
+    let cur = settings.disc.as_deref();
+    // From a current disc that no longer validates (moved, unplugged) the
+    // newest good disc comes first.
+    let start = cur
+        .filter(|c| validate(c).is_ok())
+        .and_then(|c| list.iter().position(|p| p == c))
+        .map_or(0, |i| i + 1);
+    (0..list.len())
+        .map(|k| list[(start + k) % list.len()].as_path())
+        .filter(|p| Some(*p) != cur)
+        .find_map(|p| validate(p).ok())
 }
 
 /// The `play-window` argument list a launcher start boots: the title screen
@@ -1708,6 +1765,72 @@ mod tests {
         remember(&f, &info).unwrap();
         let back = LauncherSettings::load(&f).unwrap();
         assert_eq!(back.disc.as_deref(), Some(info.path.as_path()));
+    }
+
+    #[test]
+    fn recent_discs_keep_newest_first_without_repeats() {
+        let mut s = LauncherSettings::default();
+        for i in 0..(RECENT_DISCS_MAX + 2) {
+            s.remember_disc(Path::new(&format!("/g/{i}.bin")));
+        }
+        assert_eq!(s.recent_discs.len(), RECENT_DISCS_MAX);
+        assert_eq!(s.recent_discs[0], Path::new("/g/7.bin"));
+        // Choosing an older disc again moves it up instead of repeating it.
+        s.remember_disc(Path::new("/g/4.bin"));
+        assert_eq!(s.recent_discs[0], Path::new("/g/4.bin"));
+        assert_eq!(s.recent_discs.len(), RECENT_DISCS_MAX);
+        assert_eq!(
+            s.recent_discs
+                .iter()
+                .filter(|p| p.ends_with("4.bin"))
+                .count(),
+            1
+        );
+        assert!(s.other_recent_discs().all(|p| p != Path::new("/g/4.bin")));
+        // The list round-trips through the settings file beside the switches.
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join(SETTINGS_FILE);
+        s.switches.retail = true;
+        s.save(&f).unwrap();
+        assert_eq!(LauncherSettings::load(&f).unwrap(), s);
+        // A settings file from before the list still loads.
+        std::fs::write(&f, "disc = \"/g/old.bin\"\n").unwrap();
+        assert!(LauncherSettings::load(&f).unwrap().recent_discs.is_empty());
+    }
+
+    #[test]
+    fn next_recent_disc_skips_dead_entries_and_wraps() {
+        let mut s = LauncherSettings::default();
+        for p in ["/g/a.bin", "/g/gone.bin", "/g/b.bin", "/g/cur.bin"] {
+            s.remember_disc(Path::new(p));
+        }
+        let validate = |p: &Path| {
+            if p.ends_with("gone.bin") {
+                Err(DiscProblem::Missing(p.to_path_buf()))
+            } else {
+                Ok(ok_info(p))
+            }
+        };
+        // Newest first: cur, b, gone, a. Stepping walks on from the current
+        // disc, skips the one that is gone, and wraps.
+        let first = next_recent_disc(&s, validate).unwrap();
+        assert_eq!(first.path, Path::new("/g/b.bin"));
+        s.disc = Some(first.path.clone());
+        let second = next_recent_disc(&s, validate).unwrap();
+        assert_eq!(second.path, Path::new("/g/a.bin"));
+        s.disc = Some(second.path.clone());
+        let wrapped = next_recent_disc(&s, validate).unwrap();
+        assert_eq!(wrapped.path, Path::new("/g/cur.bin"));
+        // A remembered disc that is gone steps to the newest good one.
+        s.disc = Some("/g/gone.bin".into());
+        assert_eq!(
+            next_recent_disc(&s, validate).unwrap().path,
+            Path::new("/g/cur.bin")
+        );
+        // Nothing else that validates: nothing to offer.
+        let mut lone = LauncherSettings::default();
+        lone.remember_disc(Path::new("/g/cur.bin"));
+        assert!(next_recent_disc(&lone, validate).is_none());
     }
 
     #[test]

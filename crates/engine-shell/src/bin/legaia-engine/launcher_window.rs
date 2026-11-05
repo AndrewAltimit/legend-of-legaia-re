@@ -12,7 +12,9 @@
 //!   the native file dialog (`rfd`); dropping a file on the window or typing
 //!   a path also works, for desktops without a file-dialog portal. A disc
 //!   that validates is remembered, and from then on the screen letters
-//!   itself in the game's own font, read from that disc.
+//!   itself in the game's own font, read from that disc. The last few
+//!   discs are kept (`LauncherSettings::recent_discs`); right-click or
+//!   Shift+Enter on *Choose disc* steps to the next that still validates.
 //! - **Options.** The engine's enhancement knobs the game remembers
 //!   (written to its own `legaia-options.toml`, the value the in-game keys
 //!   toggle) and the launch switches with no option behind them
@@ -147,15 +149,33 @@ fn no_window(why: &str) -> ! {
 /// `launcher.toml` included. Legaia Explorer's *Play* goes through here, so a
 /// game started from either program is the same game. A settings file that
 /// does not parse plays on the defaults, the way the launcher window treats it.
+///
+/// The disc becomes the launcher's disc and the newest of its recent ones
+/// ([`LauncherSettings::remember_disc`]), as a *Play* in the launcher makes
+/// it: the disc played before stays one Shift+Enter away there.
 pub(crate) fn launch_args(disc: &Path) -> Result<Vec<OsString>> {
-    let settings = launcher::settings_path()
-        .and_then(|f| {
-            LauncherSettings::load(&f)
-                .inspect_err(|e| log::warn!("launch: {} ignored: {e:#}", f.display()))
-                .ok()
-        })
-        .unwrap_or_default();
+    let settings_file = launcher::settings_path();
+    let loaded = settings_file.as_deref().and_then(|f| {
+        LauncherSettings::load(f)
+            .inspect_err(|e| log::warn!("launch: {} ignored: {e:#}", f.display()))
+            .ok()
+    });
     let info = launcher::validate_disc(disc).map_err(|p| anyhow::anyhow!("{p}"))?;
+    // A settings file that does not parse is left alone (the launcher window
+    // re-prompts on it); only a readable or absent one is updated.
+    let settings = match (settings_file.as_deref(), loaded) {
+        (Some(f), Some(mut s)) => {
+            s.remember_disc(&info.path);
+            if let Err(e) = s.save(f) {
+                log::warn!(
+                    "launch: could not remember the disc in {} ({e:#})",
+                    f.display()
+                );
+            }
+            s
+        }
+        (_, s) => s.unwrap_or_default(),
+    };
     let mut args = vec![OsString::from("legaia-engine")];
     args.extend(launcher::play_args_with(&info, &settings));
     Ok(args)
@@ -399,6 +419,10 @@ struct LauncherApp {
     solid: (u32, u32, u32, u32),
     disc: Option<DiscInfo>,
     problem: Option<DiscProblem>,
+    /// The disc *Choose disc*'s second action (right-click, Shift+Enter)
+    /// switches to: the next remembered disc that still validates
+    /// ([`launcher::next_recent_disc`]).
+    recent_offer: Option<DiscInfo>,
     /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
     /// or why it could not be read.
     expansion: Option<Result<ExpansionInfo, String>>,
@@ -463,6 +487,7 @@ impl LauncherApp {
             solid: (0, 0, 1, 1),
             disc: None,
             problem,
+            recent_offer: None,
             expansion: settings
                 .expansion
                 .as_deref()
@@ -493,11 +518,18 @@ impl LauncherApp {
             screenshot: std::env::var_os(SCREENSHOT_ENV).map(PathBuf::from),
         };
         app.set_disc(disc);
-        app.status = app
-            .problem
-            .as_ref()
-            .map(problem_message)
-            .filter(|m| !m.is_empty());
+        app.refresh_recent_offer();
+        let offer = app
+            .disc
+            .is_none()
+            .then_some(app.recent_offer.as_ref())
+            .flatten();
+        app.status = match (&app.problem, offer) {
+            (Some(p), _) => Some(problem_status(p, offer)),
+            (None, Some(o)) => Some(vec![(recent_offer_line(o), GOOD)]),
+            (None, None) => None,
+        }
+        .filter(|m| !m.is_empty());
         if let Some(n) = std::env::var(FOCUS_ENV)
             .ok()
             .and_then(|v| v.trim().parse::<i32>().ok())
@@ -546,20 +578,54 @@ impl LauncherApp {
         }
     }
 
+    /// Recompute [`Self::recent_offer`] after the disc or the list changed.
+    fn refresh_recent_offer(&mut self) {
+        self.recent_offer = launcher::next_recent_disc(&self.settings, launcher::validate_disc);
+    }
+
+    /// *Choose disc*'s second action: switch to the next remembered disc
+    /// that still validates. The list keeps its order while stepping, so
+    /// repeated steps visit each disc; *Play* moves the one played to the
+    /// head.
+    fn step_recent_disc(&mut self) {
+        let Some(info) = self.recent_offer.take() else {
+            self.status = Some(vec![(
+                "No other disc has been chosen here yet. Choose disc... adds one; the last \
+                 few are remembered."
+                    .into(),
+                DIM,
+            )]);
+            self.win.request_redraw();
+            return;
+        };
+        log::info!("launcher: switched to recent disc {}", info.path.display());
+        self.settings.disc = Some(info.path.clone());
+        self.save_settings();
+        self.problem = None;
+        self.typed.clear();
+        let name = file_name_of(&info.path);
+        self.set_disc(Some(info));
+        self.refresh_recent_offer();
+        self.focus = Item::Play;
+        self.status = Some(vec![(
+            format!("Disc ready: {name}, chosen before. Press Enter to play."),
+            GOOD,
+        )]);
+        self.win.request_redraw();
+    }
+
     fn try_disc(&mut self, path: &Path) {
         match launcher::validate_disc(path) {
             Ok(info) => {
+                self.settings.remember_disc(&info.path);
+                self.save_settings();
                 if let Some(f) = &self.settings_file {
-                    if let Err(e) = launcher::remember(f, &info) {
-                        log::warn!("launcher: could not save settings ({e:#})");
-                    } else {
-                        log::info!("launcher: remembered {} in {}", path.display(), f.display());
-                    }
+                    log::info!("launcher: remembered {} in {}", path.display(), f.display());
                 }
-                self.settings.disc = Some(info.path.clone());
                 self.problem = None;
                 self.typed.clear();
                 self.set_disc(Some(info));
+                self.refresh_recent_offer();
                 self.focus = Item::Play;
                 self.status = Some(vec![("Disc ready. Press Enter to play.".into(), GOOD)]);
             }
@@ -782,6 +848,12 @@ impl LauncherApp {
             self.focus = Item::Expansion;
             return;
         }
+        // The disc played becomes the newest of the remembered ones.
+        if self.settings.recent_discs.first() != Some(&info.path) {
+            self.settings.remember_disc(&info.path);
+            self.save_settings();
+            self.refresh_recent_offer();
+        }
         match spawn_game(&info, &self.settings, online) {
             Ok(g) => {
                 log::info!("launcher: game started on {}", info.bin.display());
@@ -924,6 +996,7 @@ impl LauncherApp {
         match item {
             Item::Play => self.play(evl, false),
             Item::Online => self.play(evl, true),
+            Item::ChooseDisc if dir < 0 => self.step_recent_disc(),
             Item::ChooseDisc => self.browse(),
             Item::Expansion if dir < 0 => self.clear_expansion(),
             Item::Expansion => self.next_expansion(),
@@ -1461,12 +1534,18 @@ impl LauncherApp {
                     "Choose your disc image first.".into()
                 }
             }
-            Item::ChooseDisc => match &self.disc {
-                Some(d) => format!("Pick another disc image. Now: {}", d.path.display()),
-                None => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                         raw dump, or its .cue. It is checked and remembered. No game data is included. Ctrl+O."
-                    .into(),
-            },
+            Item::ChooseDisc => {
+                match (&self.disc, &self.recent_offer) {
+                    (Some(_), Some(offer)) => change_disc_help(offer),
+                    (Some(d), None) => {
+                        format!("Pick another disc image. Now: {}", d.path.display())
+                    }
+                    (None, Some(offer)) => choose_disc_help(offer),
+                    (None, None) => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
+                             raw dump, or its .cue. It is checked and remembered. No game data is included. Ctrl+O."
+                        .into(),
+                }
+            }
             Item::Online => "Start the game with the Multiplayer screen open: host a room \
                              others on your network join, or join one with its address and \
                              room code. Tab opens the same screen in play."
@@ -1714,7 +1793,8 @@ impl ApplicationHandler for LauncherApp {
                 };
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
                 if let Some(item) = self.hit()
-                    && (dir > 0 || matches!(item, Item::Opt(_) | Item::Expansion))
+                    && (dir > 0
+                        || matches!(item, Item::Opt(_) | Item::Expansion | Item::ChooseDisc))
                 {
                     self.activate(item, dir, evl);
                 }
@@ -1768,7 +1848,10 @@ impl ApplicationHandler for LauncherApp {
                             self.try_disc(&p);
                             self.typed_tried = !self.typed.is_empty();
                         } else {
-                            self.activate(self.focus, 1, evl);
+                            // Shift+Enter is the right-click: the second
+                            // action (the previous disc, a value back).
+                            let dir = if self.modifiers.shift_key() { -1 } else { 1 };
+                            self.activate(self.focus, dir, evl);
                         }
                     }
                     Key::Named(NamedKey::Space) if !typing => self.activate(self.focus, 1, evl),
@@ -2178,6 +2261,46 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 
 /// The disc card's one-line summary of `p`; the full reason goes in the
 /// help box ([`problem_message`]).
+/// A path's file name, for a line that names a disc.
+fn file_name_of(p: &Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| p.display().to_string())
+}
+
+/// The line that offers a remembered disc back.
+fn recent_offer_line(offer: &DiscInfo) -> String {
+    format!("Shift+Enter: {}, chosen before.", file_name_of(&offer.path))
+}
+
+/// *Change disc*'s help while another remembered disc is on offer: the disc
+/// card already shows the current one.
+fn change_disc_help(offer: &DiscInfo) -> String {
+    format!(
+        "Pick another disc image (Ctrl+O). Right-click or Shift+Enter: {}, chosen before.",
+        file_name_of(&offer.path)
+    )
+}
+
+/// *Choose disc*'s help with no usable disc but a remembered one on offer.
+fn choose_disc_help(offer: &DiscInfo) -> String {
+    format!(
+        "Pick your disc image (.bin or .cue). {}",
+        recent_offer_line(offer)
+    )
+}
+
+/// The help box's lines for a disc problem; with a remembered disc on offer,
+/// the problem's reason and the offer in place of its advice.
+fn problem_status(p: &DiscProblem, offer: Option<&DiscInfo>) -> Vec<Message> {
+    let mut msg = problem_message(p);
+    if let Some(o) = offer {
+        msg.truncate(1);
+        msg.push((recent_offer_line(o), GOOD));
+    }
+    msg
+}
+
 fn problem_headline(p: &DiscProblem) -> &'static str {
     match p {
         DiscProblem::NotSet => "Choose your Legend of Legaia (USA) disc image",
@@ -2783,9 +2906,29 @@ mod tests {
                     .into(),
             },
         ];
+        // A remembered disc offered back, under each problem and in the
+        // Choose disc help with a disc in use (the longest file name the
+        // test path has).
+        let offer = DiscInfo {
+            path: path.clone(),
+            bin: path.clone(),
+            executable: launcher::USA_EXECUTABLE.into(),
+        };
         for p in problems {
             out.push((format!("{p:?}"), problem_message(&p)));
+            out.push((
+                format!("{p:?} + recent offer"),
+                problem_status(&p, Some(&offer)),
+            ));
         }
+        out.push((
+            "change disc + recent offer".into(),
+            one(&change_disc_help(&offer)),
+        ));
+        out.push((
+            "choose disc + recent offer".into(),
+            one(&choose_disc_help(&offer)),
+        ));
         // Every reason the disc sniffer gives.
         let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];
         iso[16 * 2048 + 1..16 * 2048 + 6].copy_from_slice(b"CD001");
