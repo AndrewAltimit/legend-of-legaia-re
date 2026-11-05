@@ -3460,9 +3460,14 @@ three units). The bodies without that store keep the half turn
   `dat[m + 4]`). Zero takes the **charge**: the body sets the latch and leaves
   without reaching its `FUN_801DD6B4`, so the fold owes that cast nothing (the
   director reports `skips_fold`). Non-zero takes the **punch** (arms 4..8):
-  the latch is cleared and the party sweep lands through the fold at power
-  `0x274`. The branches hold different caster stages (`0x5E` charge, `0x5D`
-  punch).
+  the latch is cleared and arm 7's way out of its gate is the party sweep at
+  power `0x274` (`0x801F73CC..0x801F74DC`), each struck seat's rate halved and its
+  heading `caster[+0x46] + 0x800`. Arm 8 returns once the word is spent and every
+  party seat has settled. The branches hold different caster stages (`0x5E` charge,
+  `0x5D` punch). The punch's arm 0 stores the caster's rate `1`
+  (`0x801F6CA0`), and a retail recording's cursor advances one a vsync through arms
+  4 to 6, while its `+0x21D` reads `4` at every vsync: what holds the byte at `4` is
+  [open](../reference/open-rev-eng-threads.md).
 
 <a id="prot-0957-thunder-storm"></a>
 
