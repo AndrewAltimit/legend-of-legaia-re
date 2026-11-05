@@ -232,8 +232,8 @@ impl World {
     /// timers and sub-screen, which the hosts compose. The point-exchange
     /// branch (`0x64..0x7a`) is [`World::fishing_exchange_input`].
     pub(in crate::world::frame_tick) fn tick_fishing(&mut self) {
-        use legaia_engine_fishing::fishing::{PondEvent, PondInput};
         use legaia_engine_fishing::fishing::CAST_POWER_STEP as FISHING_CAST_STEP;
+        use legaia_engine_fishing::fishing::{PondEvent, PondInput};
         /// The lure-landing cue and the ring slot it is stored into.
         const LURE_DOWN_CUE: i16 = 0x204;
         const LURE_DOWN_CUE_SLOT: u8 = 2;

@@ -90,7 +90,11 @@ fn a_contest_runs_and_settles_as_retails_does() {
         cpu.mem.wr32(WORD, 0);
         cpu.mem.wr32(TALLY, 0x7777);
         assert_eq!(cpu.call(ENTRY, &[]), Stop::Returned, "{:x?}", cpu.calls);
-        assert_eq!(cpu.mem.rd32(WORD), port.word(), "contest {contest}: entry word");
+        assert_eq!(
+            cpu.mem.rd32(WORD),
+            port.word(),
+            "contest {contest}: entry word"
+        );
         assert_eq!(cpu.mem.rd32(TALLY) as i32, port.tally(), "entry tally");
         assert_eq!(cpu.mem.rd32(STATE), 0, "first visit");
 
@@ -115,7 +119,11 @@ fn a_contest_runs_and_settles_as_retails_does() {
             let at = format!("contest {contest} leg {leg} outcome {outcome} survived {survived}");
             assert_eq!(cpu.mem.rd32(WORD), port.word(), "{at}: word");
             assert_eq!(cpu.mem.rd32(STATE), port.state() as u32, "{at}: state");
-            assert_eq!(cpu.mem.rd32(LATCH) != 0, port.continue_latch(), "{at}: latch");
+            assert_eq!(
+                cpu.mem.rd32(LATCH) != 0,
+                port.continue_latch(),
+                "{at}: latch"
+            );
             assert_eq!(cpu.mem.rd32(GAVE_UP) != 0, port.gave_up(), "{at}: gave up");
             assert_eq!(cpu.call(ROWS, &[]), Stop::Returned);
             let rows = port.rows();
@@ -144,7 +152,11 @@ fn a_contest_runs_and_settles_as_retails_does() {
             let out = port.settle(&cf);
             assert_eq!(cpu.call(SETTLE, &[]), Stop::Returned, "{:x?}", cpu.calls);
             assert_eq!(cpu.mem.rd32(TALLY) as i32, out.score, "{at}: settled tally");
-            assert_eq!(cpu.mem.rd32(LATCH) != 0, out.continuing, "{at}: settled latch");
+            assert_eq!(
+                cpu.mem.rd32(LATCH) != 0,
+                out.continuing,
+                "{at}: settled latch"
+            );
             let f = flags.borrow();
             assert_eq!(f.contains(&0x50A), out.set_continue_flag, "{at}: 0x50A");
             assert_eq!(f.contains(&0x35), out.set_gave_up_flag, "{at}: 0x35");
@@ -157,7 +169,11 @@ fn a_contest_runs_and_settles_as_retails_does() {
             }
             assert_eq!(
                 items.borrow().as_slice(),
-                if out.award_prize { &[0xCD][..] } else { &[][..] },
+                if out.award_prize {
+                    &[0xCD][..]
+                } else {
+                    &[][..]
+                },
                 "{at}: prize"
             );
             settled += 1;

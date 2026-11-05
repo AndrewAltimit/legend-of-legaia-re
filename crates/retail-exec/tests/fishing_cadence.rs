@@ -55,9 +55,7 @@ fn a_reel_gesture_is_recognised_as_retail_recognises_it() {
                 cpu.mem.wr8(FRAME_STEP, step as u8);
                 assert_eq!(cpu.call(RECOGNISE, &[]), Stop::Returned);
                 let retail = cpu.regs.r[V0] as i32;
-                let ours = port
-                    .feed(button as u8, step)
-                    .map_or(-1, |t| t as i32);
+                let ours = port.feed(button as u8, step).map_or(-1, |t| t as i32);
                 assert_eq!(retail, ours, "scenario {scenario} frame {frame}: match");
                 if retail >= 0 {
                     matched[retail as usize] += 1;
@@ -132,10 +130,18 @@ fn the_waiting_lines_band_and_strike_go_as_retails_do() {
         stream.set(next);
         r.r[V0] = (next >> 16) & 0x7FFF;
     });
-    cpu.hook(CHECK_END, |r, _| r.r[RA] = legaia_retail_exec::RETURN_SENTINEL);
+    cpu.hook(CHECK_END, |r, _| {
+        r.r[RA] = legaia_retail_exec::RETURN_SENTINEL
+    });
     cpu.stub(0x8005_67A8, 0); // the debug printf
     cpu.hook(0x8002_4C88, |r, _| r.r[V0] = FISH);
-    for f in [0x8002_66E0, 0x8002_6520, 0x8001_E54C, 0x8005_FB84, 0x8002_6478] {
+    for f in [
+        0x8002_66E0,
+        0x8002_6520,
+        0x8001_E54C,
+        0x8005_FB84,
+        0x8002_6478,
+    ] {
         cpu.stub(f, 0);
     }
     cpu.mem.wr32(0x1F80_03EC, SCENE);
@@ -214,20 +220,39 @@ fn the_waiting_lines_band_and_strike_go_as_retails_do() {
                 step,
             );
             let at = format!("scenario {scenario} frame {frame} record {record}");
-            assert_eq!(cpu.mem.rd32(COUNTDOWN) as i32, band.countdown, "{at}: countdown");
+            assert_eq!(
+                cpu.mem.rd32(COUNTDOWN) as i32,
+                band.countdown,
+                "{at}: countdown"
+            );
             assert_eq!(cpu.mem.rd32(HOOKED) != 0, struck, "{at}: strike");
             if struck {
                 let mut b = band.band;
-                if band4_gate(venue as usize, lure, rod as i32, b, casts as i32, &mut port_rng) {
+                if band4_gate(
+                    venue as usize,
+                    lure,
+                    rod as i32,
+                    b,
+                    casts as i32,
+                    &mut port_rng,
+                ) {
                     b = 4;
                 }
                 bands[b as usize] += 1;
                 assert_eq!(cpu.mem.rd32(BAND), b, "{at}: band");
                 let id = spawn_species(&table, lure, b).expect("species");
-                assert_eq!(cpu.mem.rd32(SPECIES) as usize, id, "{at}: species, band {b}");
+                assert_eq!(
+                    cpu.mem.rd32(SPECIES) as usize,
+                    id,
+                    "{at}: species, band {b}"
+                );
                 let hs = hook_strength(&mut port_rng, 10, record, rod as i32);
                 assert_eq!(cpu.mem.rd32(STRENGTH) as i32, hs.strength, "{at}: strength");
-                assert_eq!(cpu.mem.rd32(FISH_SCALE) as u16, hs.fish_scale, "{at}: scale");
+                assert_eq!(
+                    cpu.mem.rd32(FISH_SCALE) as u16,
+                    hs.fish_scale,
+                    "{at}: scale"
+                );
                 hooked += 1;
                 break;
             }
@@ -254,7 +279,9 @@ fn the_power_meter_sweeps_as_retails_does() {
     cpu.mem.load(fs::FISHING_OVERLAY_BASE_VA, &overlay);
     const METER: u32 = 0x801D_9274;
     const DIR: u32 = 0x801D_9278;
-    cpu.hook(0x801C_FB98, |r, _| r.r[RA] = legaia_retail_exec::RETURN_SENTINEL);
+    cpu.hook(0x801C_FB98, |r, _| {
+        r.r[RA] = legaia_retail_exec::RETURN_SENTINEL
+    });
     for step in [1i32, 2, 3] {
         cpu.mem.wr32(METER, 0);
         cpu.mem.wr32(DIR, 1);

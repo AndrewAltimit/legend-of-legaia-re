@@ -597,7 +597,7 @@ fn cadence_recogniser_matches_template_3() {
 
 #[test]
 fn cadence_recogniser_matches_template_0_with_tolerance() {
-    // idle 40, Cross 25, idle 40, Square 15 - +-10 slop on each step.
+    // idle 40, Cross 25, idle 40, Square 15 - within 9 on each step.
     let mut c = ReelCadence::new(templates());
     let got = drive(&mut c, &[(0, 45), (1, 20), (0, 35), (2, 18)]);
     assert_eq!(got, Some(0));

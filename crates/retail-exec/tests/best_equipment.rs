@@ -4,7 +4,7 @@
 
 use crate::common::{Rng, disc, scus, scus_cpu};
 use legaia_engine_menus::equip_session::{
-    EquipSession, engine_equip_from_record, SLOT_BROWSE_BEST_ROW,
+    EquipSession, SLOT_BROWSE_BEST_ROW, engine_equip_from_record,
 };
 use legaia_engine_menus::equipment::{DiscEquipInfo, equip_modifier_table_from_disc};
 use legaia_engine_menus::item_bag::ItemBag;
@@ -85,8 +85,10 @@ fn the_best_equipment_row_picks_and_applies_what_retail_does() {
             assert_eq!(cpu.mem.rd8(rec + EQUIP + i as u32), *b, "restored");
         }
 
-        let mut record = legaia_engine_battle::battle_stats::StatRecord::default();
-        record.equip = engine_equip_from_record(worn, ch as u8);
+        let record = legaia_engine_battle::battle_stats::StatRecord {
+            equip: engine_equip_from_record(worn, ch as u8),
+            ..Default::default()
+        };
         let mut session = EquipSession::new(
             record,
             ItemBag::from_slots(&slots),

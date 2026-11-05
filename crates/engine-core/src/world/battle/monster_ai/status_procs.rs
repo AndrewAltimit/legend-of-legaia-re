@@ -130,12 +130,7 @@ impl World {
     /// REF: FUN_801DEA50 (the `ctx+0x1014` move-power record the arm reads)
     /// REF: FUN_801EC3E4 (the sibling arts/melee arm, whose selector comes from
     /// the art record's `+0x7A` instead - the party -> monster direction)
-    pub fn apply_enemy_move_status(
-        &mut self,
-        caster: u8,
-        move_id: u8,
-        hit_fx_start: usize,
-    ) {
+    pub fn apply_enemy_move_status(&mut self, caster: u8, move_id: u8, hit_fx_start: usize) {
         // The move-power table is the *enemy* special-attack table; a party
         // caster's art power comes from the art record instead, and its status
         // byte rides the `ApplyArtStrike` event (`World::fold_battle_event`).

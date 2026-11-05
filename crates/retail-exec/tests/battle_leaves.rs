@@ -6,9 +6,8 @@
 
 use crate::common::{Rng, disc, scus_cpu};
 use legaia_engine_battle_vm::battle_action::{
-    FormationPos, PoolActor, clear_pool_flag_words,
-    first_selectable_target, next_selectable_actor, normalize_formation_span,
-    seed_formation_recentre,
+    FormationPos, PoolActor, clear_pool_flag_words, first_selectable_target, next_selectable_actor,
+    normalize_formation_span, seed_formation_recentre,
 };
 use legaia_retail_exec::{Cpu, Stop, V0};
 

@@ -202,7 +202,13 @@ pub struct World {
     /// The Muscle Dome's saved party window: the arena copies the `0x2000`-byte
     /// SC block out on a contest's first entry (`0x801CEB80`) and back over the
     /// live one at settlement (`0x801D0FDC`). `None` with no contest open.
-    pub muscle_saved_party: Option<Box<(legaia_save::Party, legaia_engine_menus::item_bag::ItemBag, i32)>>,
+    pub muscle_saved_party: Option<
+        Box<(
+            legaia_save::Party,
+            legaia_engine_menus::item_bag::ItemBag,
+            i32,
+        )>,
+    >,
     /// The active expansion pack and its runtime state; inert with no pack
     /// loaded. See [`legaia_engine_expansion::ExpansionState`].
     pub expansion: legaia_engine_expansion::ExpansionState,

@@ -184,8 +184,8 @@ fn the_master_prize_lands_in_the_bag_once() {
         "the War God Icon is in the bag"
     );
     assert!(
-        w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG),
-        "and the one-shot flag latched"
+        !w.system_flag_test(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG),
+        "the arena reads the latch; the lobby's winner's scene sets it"
     );
 }
 
@@ -562,7 +562,11 @@ fn settlement_hands_back_the_party_the_contest_found() {
             1,
         ),
     );
-    assert_eq!(w.party.roster.members[0].equipment().slots[0], 0, "stripped");
+    assert_eq!(
+        w.party.roster.members[0].equipment().slots[0],
+        0,
+        "stripped"
+    );
     assert_eq!(w.party.roster.members[0].hp_mp_sp().hp_cur, 500, "refilled");
 
     // The legs spend HP and items, and earn on the kept words.

@@ -353,7 +353,9 @@ impl World {
             self.system_flag_set(id);
         }
         if out.award_prize {
-            self.system_flag_set(legaia_engine_minigames::muscle_dome::CONTEST_PRIZE_FLAG);
+            // The arena only reads the latch `0x6CB`: the lobby's winner's scene
+            // sets it after its own test of it (`koin1` P2[9] `+0x03E1`), so a
+            // set here would send that scene down its ordinary ending.
             let slot = self
                 .party
                 .inventory
