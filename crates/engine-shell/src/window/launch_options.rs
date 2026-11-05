@@ -500,6 +500,11 @@ pub struct ScreenshotConfig {
     /// `scripts/ci/cast-sequence.py`; taken once.
     pub cast_seq_seat_pose:
         std::cell::Cell<Option<legaia_engine_camera::projection::BattleCamPose>>,
+    /// `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR=clip,cursor`: the caster's clip and
+    /// cursor on the recording's cast begin, seated with the pose. A heal's
+    /// `0x3D` waits out the idle the caster stands on, and the child's idle
+    /// has its own phase. Taken once.
+    pub cast_seq_seat_cursor: std::cell::Cell<Option<(u8, i32)>>,
     /// `LEGAIA_CAPTURE_RETAKE_ENTRY=1`: a monster's capture-band gate under
     /// the lag into its state may still retake: the displayed frame is the
     /// pass before the band's first arm spawned its parts, and it stands on
@@ -1240,6 +1245,14 @@ impl ScreenshotConfig {
                         focus: [f[5], f[6], f[7]],
                     })
                 }),
+            cast_seq_seat_cursor: std::cell::Cell::new(
+                std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR")
+                    .ok()
+                    .and_then(|v| {
+                        let (c, k) = v.split_once(',')?;
+                        Some((c.trim().parse().ok()?, k.trim().parse().ok()?))
+                    }),
+            ),
             cast_seq_seat_pose: std::cell::Cell::new(
                 std::env::var("LEGAIA_DIAG_CAST_SEQ_SEAT_POSE")
                     .ok()

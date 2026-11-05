@@ -232,6 +232,18 @@ def retail_opening_pose(out: Path) -> str | None:
         pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
 
 
+def retail_opening_cursor(out: Path) -> str | None:
+    """`clip,cursor` of the caster on retail's cast begin, for
+    `LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR`. A harness seat, like the pose."""
+    begin = (0x28, 0x3C)
+    try:
+        with open(out / "retail" / "body.csv") as f:
+            body = next((r for r in csv.DictReader(f) if int(r["st7"]) in begin), None)
+    except OSError:
+        return None
+    return None if body is None else f"{body['clip']},{body['cursor']}"
+
+
 def retail_rand_seed(out: Path, key: str) -> str | None:
     """`st7:phase:seed` for `LEGAIA_CAST_RAND_SEED`: the BIOS rand() seed
     word (`rand` in the probe's meta.csv) on retail's last vsync under the
@@ -379,6 +391,8 @@ def run_engine(a, out: Path) -> bool:
         env["LEGAIA_BATTLE_MONSTER_CAST"] = f"{pc + caster - 3},{a.spell},p,t{target}" + (f";{ground}" if ground else "")
     if not a.physical and (pose := retail_opening_pose(out)):
         env["LEGAIA_DIAG_CAST_SEQ_SEAT_POSE"] = pose
+    if not a.physical and (cursor := retail_opening_cursor(out)):
+        env["LEGAIA_DIAG_CAST_SEQ_SEAT_CURSOR"] = cursor
     edir = out / "engine"
     env.update({
         "LEGAIA_DIAG_CAST_SEQ": str(edir),
