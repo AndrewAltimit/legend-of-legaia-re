@@ -381,7 +381,11 @@ pub mod equipment_swap {
         pub equip_byte_record_offset: u16,
     }
 
-    /// The three active-party patch slots in pack order.
+    /// The three active-party patch slots in pack order: `FUN_8001EBEC`'s two
+    /// `.rodata` tables, the group index at `0x8007B3A8` (`03 05 03`) and the
+    /// equip-byte index at `0x8007B3A4` (`03 02 03`, from record `+0x196`). The
+    /// group each names is the arm carrying the character's Ra-Seru: a capture
+    /// holds group `3` / `5` / `3` with group 10's descriptor once it is on.
     pub const ACTIVE_PARTY_SLOTS: [PatchSlot; 3] = [
         PatchSlot {
             slot: 0,
@@ -408,6 +412,15 @@ pub mod equipment_swap {
         } else {
             EQUIP_GROUP_NONZERO_OFFSET
         }
+    }
+
+    /// The equip byte of pack slot `slot` out of its record's eight equip
+    /// bytes (`+0x196..`). `None` past the three active-party slots.
+    pub fn equip_byte(slot: usize, equipment: &[u8]) -> Option<u8> {
+        let p = ACTIVE_PARTY_SLOTS.get(slot)?;
+        equipment
+            .get(usize::from(p.equip_byte_record_offset) - 0x196)
+            .copied()
     }
 
     /// Apply the runtime equipment-swap patch to a disc-form character TMD.

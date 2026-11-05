@@ -274,18 +274,17 @@ eight retail states hold the law for all three characters with the byte both
 zero and non-zero (capture): `town0b`, `uru` and `concend` before the Ra-Seru,
 `vozz`, `rikuroa`, `chitei2`, `rugi` and `bubu1` after.
 
-The swap is **binary**: one visible group toggles between two pre-baked
-variants. It never changes `nobj`, adds no object and uploads no mesh. Item
-identity on the field model is carried by the
-[texture atlas](#textures-field-form), not by geometry. The Rust equivalent is
-`legaia_actor_formats::character_pack::equipment_swap::apply`.
+The swap is **binary**: it never changes `nobj`, adds no object and uploads no
+mesh. Other item identity on the field model is carried by the
+[texture atlas](#textures-field-form), not by geometry.
 
 Retail runs it from the party pack load and from field op `4C 3F` (`jal` at
 `0x801E1128`; `town0b`, `vozz`, `rikuroa`, `urudre3`, `jouine`), so an equip made
 in a menu shows at the next of those. The port does the same over the head of
 `World::global_tmd_pool` (`World::apply_party_mesh_swap`), which both hosts'
 player rig reads and the rig signal rebuilds. A party placement a host already
-built takes the new mesh at the next scene entry.
+built takes the new mesh at the next scene entry. The fishing shore and the dance
+floor load the pack themselves and take the same bytes (`World::party_field_equip`).
 
 ## Textures (field form)
 

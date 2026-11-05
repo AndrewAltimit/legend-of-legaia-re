@@ -97,7 +97,12 @@ impl PlayWindowApp {
         let generation_before = self.fishing_surface.generation();
         if self
             .fishing_surface
-            .frame(&self.session.host.index, &world.minigames, live)
+            .frame(
+                &self.session.host.index,
+                &world.minigames,
+                live,
+                world.party_field_equip(),
+            )
             .is_none()
         {
             self.fishing_gpu = None;

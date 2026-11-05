@@ -712,7 +712,12 @@ impl LegaiaRuntime {
         };
         let live = host.world.mode == legaia_engine_mode::mode::SceneMode::Fishing;
         let surface = &mut self.minigame_ui.fishing_surface;
-        match surface.frame(&host.index, &host.world.minigames, live) {
+        match surface.frame(
+            &host.index,
+            &host.world.minigames,
+            live,
+            host.world.party_field_equip(),
+        ) {
             Some(_) => surface.generation() as i32,
             None => -1,
         }

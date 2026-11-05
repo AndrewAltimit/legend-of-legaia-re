@@ -1427,3 +1427,29 @@ op-`0x49` sub-op.
   that the byte bound finds, so an absent walk row means "not decoded here", not "not on the disc".
 - **Port.** `World::record_op49_park` / `World::menu_entry_context_kind`,
   `FieldMenuSession::{open_entry_screen, Notice, ReadyConfirm}`.
+
+### What Soren Camp's sky is
+
+*Status:* resolved (disassembly + capture)
+
+The sky over `son` is an object actor like any other,
+seated by a cutscene: `P0[5]`, the kind-1 bind of the map's one placed record
+(cell `(16, 103)`, pack mesh 57), opens with `23 7F 7F` and parks, and the system
+script seats it for each shot, `CC 05 51 08 10 05 00` here. The `4C 51` arm writes
+tile and heading into whichever actor the op names (`0x801E1880`, `0x801E1898`,
+`0x801E1900`); `son_field_door_hop` holds the actor at `(1088, 146, 2112)`, heading
+`0xA00`. Port: the object arm of `run_to_tile`, and both hosts keep a record parked
+at scene entry in their bake and hide it per frame (`World::hidden_object_records`),
+so a script can bring it back.
+
+### What the wedge at a party member's wrist is
+
+*Status:* resolved (disassembly + capture)
+
+The character's Ra-Seru. See
+[`character-mesh.md`](../../formats/character-mesh.md#10-group-cap--equipment-conditional-swap):
+`FUN_8001EBEC` copies the arm group with the Ra-Seru over the bare arm once the
+record's slot is non-zero. The centre dancer's green `0x7785` texels in
+`minigame_dance_retail_go_in`, Vahn's red bracer and Gala's blue glove are that
+one swap.
+

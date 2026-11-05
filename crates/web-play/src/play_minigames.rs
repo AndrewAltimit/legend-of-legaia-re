@@ -200,6 +200,7 @@ impl LegaiaRuntime {
             return false;
         };
         let mut art = Box::new(LegaiaMinigames::new());
+        art.set_party_equip(host.world.party_field_equip());
         if art.load_disc(img).is_err() {
             self.minigame_ui.art_failed = true;
             return false;

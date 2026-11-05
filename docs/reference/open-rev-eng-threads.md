@@ -243,7 +243,6 @@ Answered questions: [settled field / locomotion](re-settled-threads/field.md), [
 | What pose does `battle_garmel_songi_hyper_wave_mid_cast` display? | open (measured) | A fit reads `.992` at pitch `10`, yaw `3970`, TR y `1251`, TR z `5051`, focus `(289, -601)`. The walk back along the RAM's table stands at pitch `6`, TR z `5171`, on the shot's origin, so the frame is about two case-6 passes older than the terminator, where every other second-pass capture shows the terminator itself. Its step ring reads `3` only on the newest pass, so a recording of this cast would show which passes the accumulator counted. |
 | Which pose does `kor_field_route_walk`'s frame stand on after the walk rewind? | open (measured) | A hand-seated pose of pitch `240`, yaw `1770`, `H` `256`, eye `(0, 580, 4850)` reads `.991` over the seat's `.912`: the rewind's yaw law holds (`1769`), and the eye is `(-42, +82)` from its `(622, 4768)`. A [walk film](../tooling/walk-film.md) from the state matches the ease to the unit on every pass after it, and eye Z sits on its target `4768` in the RAM; a step of the ease cannot close `82` units in two passes, so the fit's Z is not the ease's history. The `(868, 4521)` target an earlier backing-out implied has no support in the block, whose floor is flat here; a film of the same corner walked in from the stairs would show the frame's own lead-in. |
 | Why does the dance floor hide the dancers' shadows in PSX mode? | open (measured) | `World::field_drop_shadows` builds the hall's three blobs on retail's packets to a pixel (`146..174, 156..161` under the centre dancer on `minigame_dance_retail_go_in`), and with no depth they show, over the dancers' feet, where retail draws them under. With their scene depth the floor occludes all of them, though the blob's world height is the floor's less the lift. Comparing the hall bake's depth at the blob's corners with `FogView::ndc_depth` there would say which side is off. |
-| What is the green wedge on the centre dancer's wrist? | open (measured) | Retail's `minigame_dance_retail_go_in` table draws `POLY_GT3`s of `0x7785` / tpage `0x3D` at `(174..180, 125..139)`, UVs about `(134..145, 5..38)`, green texels. CLUT and texels match the engine's VRAM word for word and the frame shows no wedge there. Whether the mesh's prims are dropped or their bone is posed elsewhere is unmeasured. |
 | What is left of `minigame_dance_retail_go_out`'s `.891`? | open (measured) | The coloured beams across the top stand elsewhere than retail's, about a tenth of the frame's blocks. The state's newest ordering table holds only the HUD above row `60`, so the retail side of a per-draw comparison needs the other table (`--all-ots`). |
 | Why does the engine's `camera.offset_ease` stand apart from retail's `_DAT_8007BCAC` after a door hop? | open (measured) | The fog sheets stand against this word (`FUN_8003F3FC` at `0x8003F448`). `concnow_field_door_hop` holds `163` where the engine's accumulator reads `233`; the child seats the word. A [walk film](../tooling/walk-film.md) from the state shows retail climbing about one unit a vsync through the `45 07` glide and freezing at `266` as the glide lands, with the footing still bobbing under it, so its input lock rises there. The engine stands frozen at `234` from the first tick: its script gate runs the record to the phase with the lock already up, and the seed ramps nothing. So the gap is the seed's phase, not the ease. |
 | What deals `minigame_muscle_dome_retail_skeleton_hyper_arts`' speed lines? | open (measured) | With the frame's depth right they are what is left of its score, and they differ between retail's own two buffers, so each pass deals them afresh. Seating Vahn on the starter the rings name (`0x1A` at `224`, through the art bank) moves the frame's error by less than a unit. A retail film of the banner's packets across a few passes, against the `rand()` word, would close it. |
@@ -291,17 +290,6 @@ target `0x64` through the window's first row. Both states are held on disk under
 `captures/` and not in the catalog until the drive can walk a window's row and the
 flow byte carries them. The engine's `0x66` screen is grounded on the pad walk's
 frame alone: panels up, `All Allies` plate, no score.
-
-### Soren Camp's sky
-
-`open` `son_field_door_hop` (`image` low, every state channel at 1) shows a cloud sky
-the engine does not draw: twelve textured quads (`tpage 0x98`, CLUTs `0x7C80` / `0x7CC0`)
-first in the frame's primitive pool, a one-object TMD at model-pool slot 62. The RAM
-holds an object actor for it at `(1088, 146, 2112)`, `+0x50 = 5`, `+0x58 = 10`,
-`+0x64 = 0x3E`, `+0x10 = 0x28008880`. The engine's placed list for the scene is empty,
-so the mesh reaches no draw. First step: read how partition-0 record 5 seats that actor
-and which assembly path owns the slot; the sky band `FUN_801F73E4` is not it, since its
-gate is the overworld sweep.
 
 ### Zenoir's walk over a small window
 

@@ -51,6 +51,8 @@ The mode-24 entry `FUN_80025980` backs the departure scene's id word `_DAT_80084
 | `0x187` | `map03` (Karisto) | `0` | Buma | `(0x25, 0x54)` | fenced wooden deck on a grassy pond, mountain backdrop (high-Z half) |
 | `0xF4` | `map02` (Sebucus) | `1` | Vidna | `(0x2E, 0x23)` | rocky-shore blue pool with two rock islets (low-Z half) |
 
+The same state latches the region box at the anchor tile (`jal 0x800180EC` at `0x801CF65C`), and the floor pass `FUN_801d6bbc` spawns a placed record only inside it (`0x1F800384..87`, the loops at `0x801D6C74..0x801D6ED8`), so a venue never draws the other's half: Vidna's box is `[11, 28, 93, 66]` in `minigame_fishing_retail_shore`, which leaves out Buma's mountains and bank at rows `102..110`.
+
 Any other value leaves the variant alone. The immediates are the raw CDNAME `#define`s of the two scenes whose scripts carry a fishing door. The variant then selects the [prize page](#point-exchange-prize-shop) (`PTR_DAT_801d90b8`) and the [spawn page](#venue-spawn-tables) (`PTR_DAT_801d9114`). Both pond areas are in the bundle's one map; the area column follows from the anchor tile's Z.
 
 Port: `fishing::venue_for_departure_scene`, applied by `SceneHost::enter_fishing_from_overlay` to the still-loaded departure scene.

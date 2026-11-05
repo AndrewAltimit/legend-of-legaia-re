@@ -146,7 +146,7 @@ fn frame0_offsets(
 impl FishingSceneAssets {
     /// Decode the pond off `index`. `None` when the venue scene does not
     /// resolve on this image.
-    pub fn load(index: &ProtIndex, venue: usize) -> Option<Self> {
+    pub fn load(index: &ProtIndex, venue: usize, party_equip: [u8; 3]) -> Option<Self> {
         let scene = Scene::load(index, FISHING_VENUE_SCENE).ok()?;
         let (res, _) = SceneResources::build_targeted_with_options(
             &scene,
@@ -186,6 +186,18 @@ impl FishingSceneAssets {
                 character_pack::LOCOMOTION_IDLE_SLOT,
             );
             let mut tmd_bytes = cslot.tmd_bytes.clone();
+            // The loader's arm swap (`FUN_8001EBEC`): retail stages the pool
+            // through the same `FUN_8001E890` here as on a field entry.
+            if let Some(patch) = character_pack::equipment_swap::ACTIVE_PARTY_SLOTS
+                .iter()
+                .find(|p| p.slot == seat.model)
+            {
+                tmd_bytes = character_pack::equipment_swap::apply(
+                    &tmd_bytes,
+                    *patch,
+                    party_equip[usize::from(patch.slot)],
+                );
+            }
             if let Some(cap) = locomotion
                 .as_ref()
                 .and_then(|l| l.record_lenient(idle_rec).ok())
@@ -669,6 +681,7 @@ impl FishingSurface {
         index: &ProtIndex,
         mg: &MinigameState,
         in_fishing: bool,
+        party_equip: [u8; 3],
     ) -> Option<&FishingScene> {
         let Some(session) = mg.fishing.as_ref().filter(|_| in_fishing) else {
             if self.scene.take().is_some() {
@@ -687,7 +700,7 @@ impl FishingSurface {
             if self.failed {
                 return None;
             }
-            match FishingSceneAssets::load(index, venue) {
+            match FishingSceneAssets::load(index, venue, party_equip) {
                 Some(a) => {
                     self.assets = Some(Arc::new(a));
                     self.generation = self.generation.wrapping_add(1);

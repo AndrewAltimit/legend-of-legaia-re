@@ -60,7 +60,8 @@ fn every_mode_draws_its_own_floor() {
     let pack = index
         .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
         .expect("0874");
-    let assets = DanceCastAssets::from_venue(&venue, &cast, Some(pack.as_slice())).expect("assets");
+    let assets =
+        DanceCastAssets::from_venue(&venue, &cast, Some(pack.as_slice()), [0; 3]).expect("assets");
 
     let mut surface = DanceCastSurface::default();
     surface.set_assets(Some(Arc::new(assets.clone())));

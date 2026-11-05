@@ -26,6 +26,24 @@ pub enum PlayerRigSource {
 }
 
 impl World {
+    /// Each pack slot's byte for the field loader's arm swap (`FUN_8001EBEC`):
+    /// the record's Ra-Seru equip byte. A zero picks the bare arm.
+    pub fn party_field_equip(&self) -> [u8; 3] {
+        std::array::from_fn(|slot| {
+            self.party
+                .roster
+                .members
+                .get(slot)
+                .and_then(|m| {
+                    legaia_actor_formats::character_pack::equipment_swap::equip_byte(
+                        slot,
+                        &m.equipment().slots,
+                    )
+                })
+                .unwrap_or(0)
+        })
+    }
+
     /// Resolve [`crate::world::FieldLocomotion::player_live_model`] into the
     /// pool the player's rig mesh comes from.
     ///
