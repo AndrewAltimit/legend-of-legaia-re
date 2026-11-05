@@ -974,6 +974,12 @@ pub fn zenoir_direct(st: &mut ModuleCamState, phase: u8, seats: ModuleCamSeats) 
             lift(st, 1);
             gate(zenoir_drain_holds(st)).drifted(drift)
         }
+        // The terminal arm zeroes the yaw ladder (`sh zero,0x2(s8)` at `0x801F82B4`),
+        // so the Done band's case 6 frames from `0` plus its own drift.
+        0xFF => {
+            st.yaw_base = 0;
+            ArmDirection::PASS
+        }
         _ => ArmDirection::PASS,
     }
 }
