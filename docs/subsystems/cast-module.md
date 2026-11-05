@@ -2911,6 +2911,27 @@ rays are seated, so the trail's density follows the frame step, and retail's
 recording runs these arms at step `4` ([the capture table](battle-stage-camera.md#what-the-arm-step-table-is)). Arm 3's shot closes on the
 victim as the countdown falls.
 
+### PROT 0943, 0945, 0949 and 0956: a director, the arm tables and a stager
+
+These enemy bodies share one shape. The camera arms and the seat writes live in the body,
+each arm seats its records on its own pass, and the records' op `0x20` calls run the
+module's stager. A body with a countdown table and no such row in
+`capture_spawns_per_arm` still runs its arms on time, but the pager seats the whole image on
+the first tick: every program runs out within a few ticks and the screen holds nothing of
+the cast. `water_crystals_camera`, `water_column_camera`, `lapis_wave_camera` and
+`water_hazard_camera` carry the arms, with the tables `capture_arm_spawns` and
+`enemy_cast_stager_spawns`.
+
+- PROT 0949's arm 2 halts twelve records by handle (`0x801F8214..=0x801F8240`, walk
+  `0x801F7024..0x801F713C`), not the pool: the backdrop `0x801F76BC` has no handle there and
+  `0x801F7720` keeps running, carried onto the victim's ground through the handle at
+  `0x801F8210` (`0x801F6F48..0x801F6F64`). `capture_arm_halts_records`,
+  `capture_arm_moves_to_victim`. The parts film shows both.
+- PROT 0943's arm 2 seats two records on each party seat (`0x801F6C9C..0x801F6D30`),
+  `capture_arm_party_records`. Its gate drains the bare step, its seeds are literals.
+- PROT 0956's arm 2 seats a ring of twenty-four records at twelve bearings, a third and a
+  sixth of `sin` / `cos` off the caster (`0x801F7704..0x801F7838`), `water_hazard_ring`.
+
 ### PROT 0952 (Bloody Horns)
 
 `cast_module_camera::bloody_horns_camera` carries arms 2 to 6 of the `0x5C` body

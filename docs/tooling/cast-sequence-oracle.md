@@ -715,6 +715,13 @@ Horn's arm 2 ends on the pass the byte drops. Jedo's band flash-out reads
 about `25` vsyncs younger in the engine at the same arm, which is most of
 that cast's low score in arms 2 to 4.
 
+### A fight that opens on an ambush
+
+`LEGAIA_BATTLE_MONSTER_CAST`'s `p` stands each listed slot on its ground at the first prompt.
+A fight that opens on an ambush reaches the cast in that round's own order, ahead of any
+prompt, so the turn arming stands the slots there as well (`World::stand_on_forced_ground`).
+Without it Lapis Wave's rings and columns stand on seats the fight never held.
+
 ### The capture band's reads
 
 State `0x6E` polls `FUN_8003DE7C(1)` (`0x801E4F08`) for the read `0x28` queued, then

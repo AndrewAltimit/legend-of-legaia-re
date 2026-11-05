@@ -2195,6 +2195,12 @@ frame shows no "level increased" line or banner.
   between the HP / MP the seed wrote and the replayed action, which reads as an
   HP miss.
 
+A capture can also stand inside the ambush round the entry rolled: a monster on its action
+with `ctx[+0x291]` latched and every party key the zero the round's seeder left
+(`RetailBattle::in_formation_round`, `battle_deene_lapis_lapis_wave_mid_cast`, whose monster
+`0xA7` always ambushes). No prompt comes ahead of that action, so the seed samples the
+combatant channels at the sweep's end instead of at a prompt the cast has already passed.
+
 ### Placing the phase
 
 The capture's command-flow byte `ctx[+0x06]` picks one of five plans
