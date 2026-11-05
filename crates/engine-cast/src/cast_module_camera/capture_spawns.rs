@@ -923,6 +923,7 @@ pub fn capture_arm_flushes_pool(prot_entry: u32, phase: u8) -> bool {
             | (965, 3 | 8 | 9 | 0x0B)
             | (961, 1 | 3 | 5)
             | (957, 3 | 6)
+            | (966, 10 | 26 | 27)
     )
 }
 

@@ -2355,7 +2355,9 @@ Beside the directors an engine-side pass applies each arm's seat writes
 thirteen on every pass, held or not (`+0x14..+0x1B`, `0x801F832C..0x801F8570`): the
 first record's program carries the point, and the rings and the ray fan of arms 24..26
 stand on it (`World::juggernaut_ride_lead`, records `JUGGERNAUT_ARM23_LEAD` and
-`JUGGERNAUT_ARM23_RIDERS`). PROT 0966 keeps the same copy at `0x801F8B14..`.
+`JUGGERNAUT_ARM23_RIDERS`). PROT 0966 keeps the same copy at `0x801F8AF0..0x801F8D30`
+(`World::evil_seru_ride_lead`, records `EVIL_SERU_ARM23_LEAD` and
+`EVIL_SERU_ARM23_RIDERS`), until arm 26 flushes the pool and zeroes the lead's handle.
 
 0927's clip stores of arms 19 and 24 are bare (`sb v0,0x1da(s3)` at
 `0x801F7524` and `0x801F7AD4`, no `+0x1DC` bump), so they commit at the

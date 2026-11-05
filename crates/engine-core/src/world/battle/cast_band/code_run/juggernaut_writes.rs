@@ -21,13 +21,27 @@ impl World {
         use legaia_engine_cast::cast_module_camera::{
             JUGGERNAUT_ARM23_LEAD, JUGGERNAUT_ARM23_RIDERS,
         };
+        self.parts_ride_lead(JUGGERNAUT_ARM23_LEAD, &JUGGERNAUT_ARM23_RIDERS);
+    }
+
+    /// PROT 0966's copy of the same shape (`0x801F8AF0..0x801F8D30`).
+    ///
+    /// PORT: overlay_cast_evil_seru_magic_0966_801f6a74 (PROT 0966; the position copy at `0x801F8AF0..0x801F8D30`)
+    pub(in crate::world::battle) fn evil_seru_ride_lead(&mut self) {
+        use legaia_engine_cast::cast_module_camera::{
+            EVIL_SERU_ARM23_LEAD, EVIL_SERU_ARM23_RIDERS,
+        };
+        self.parts_ride_lead(EVIL_SERU_ARM23_LEAD, &EVIL_SERU_ARM23_RIDERS);
+    }
+
+    fn parts_ride_lead(&mut self, lead: u32, riders: &[u32]) {
         let Some(scene) = self.casting.active_summon.as_mut() else {
             return;
         };
         let Some(lead) = scene
             .parts
             .iter()
-            .find(|p| p.tag == Some(JUGGERNAUT_ARM23_LEAD))
+            .find(|p| !p.finished && p.tag == Some(lead))
         else {
             return;
         };
@@ -35,7 +49,7 @@ impl World {
         for part in scene
             .parts
             .iter_mut()
-            .filter(|p| !p.finished && p.tag.is_some_and(|t| JUGGERNAUT_ARM23_RIDERS.contains(&t)))
+            .filter(|p| !p.finished && p.tag.is_some_and(|t| riders.contains(&t)))
         {
             part.state.world_x = x;
             part.state.world_y = y;

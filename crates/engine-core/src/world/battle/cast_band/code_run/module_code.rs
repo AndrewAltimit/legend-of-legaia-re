@@ -259,6 +259,9 @@ impl World {
         if direction.is_some() {
             self.apply_seru_seat_writes(entry, ctx.phase);
         }
+        if entry == 966 {
+            self.evil_seru_ride_lead();
+        }
         if entry == 927
             && let Some(d) = direction
         {

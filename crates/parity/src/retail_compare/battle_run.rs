@@ -181,7 +181,7 @@ pub(super) fn run_battle(
                 Ok(e)
                     if e.mode == legaia_engine_mode::mode::SceneMode::Battle
                         && e.prompt_tick.is_some()
-                        && (!e.surprise_opening || opening || battle.in_formation_round())
+                        && (!e.surprise_opening || opening)
                         && e.driven != Some(None)
                         && e.inflight != Some(None) =>
                 {
