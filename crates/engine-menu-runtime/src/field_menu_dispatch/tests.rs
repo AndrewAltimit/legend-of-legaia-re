@@ -824,3 +824,35 @@ fn a_use_leaves_the_items_screen_up() {
     };
     assert!(items.target_select(), "Vahn is still short of HP");
 }
+
+/// Arrange sorts the bag itself (`FUN_801D64A8` swaps the physical slot
+/// pairs), so the order outlives the screen: the next Items screen, the
+/// battle window and the save all read the sorted bag.
+#[test]
+fn arrange_sorts_the_bag_not_only_the_screen() {
+    let mut w = fresh_world();
+    w.party.inventory = legaia_engine_menus::item_bag::ItemBag::from_slots(&[
+        (0x79, 1),
+        (0x00, 0),
+        (0x78, 2),
+        (0x77, 3),
+    ]);
+    let mut s = build(FieldMenuRow::Items, &w);
+    tick_open_subsession(&mut s, PadButton::Down.mask(), None, &mut w);
+    tick_open_subsession(&mut s, PadButton::Down.mask(), None, &mut w);
+    tick_open_subsession(&mut s, PadButton::Cross.mask(), None, &mut w);
+    // No rank table installed: the id order.
+    assert_eq!(
+        &w.party.inventory.slots()[..4],
+        &[(0x77, 3), (0x78, 2), (0x79, 1), (0x00, 0)]
+    );
+    let FieldMenuSubsession::Items(items) = &s else {
+        panic!("expected Items");
+    };
+    let ids: Vec<u8> = items.rows.iter().map(|r| r.id).collect();
+    assert_eq!(
+        ids,
+        vec![0x77, 0x78, 0x79],
+        "the rows are rebuilt over the sorted bag"
+    );
+}

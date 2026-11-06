@@ -163,6 +163,18 @@ impl ItemBag {
         self.inv.normalize();
     }
 
+    /// The Items screen's **Arrange**: sort the active window's physical slots
+    /// by `rank` (`FUN_801D64A8`, over `gp[+0x2D2]..gp[+0x2D4]`). The bag
+    /// itself moves, so the order stands for every later list and the save.
+    pub fn arrange(&mut self, rank: &crate::menu_arrange::ArrangeRankTable) {
+        let (start, end) = self.inv.window_bounds();
+        let slots = self.inv.slots_mut();
+        let end = end.min(slots.len());
+        if start < end {
+            crate::menu_arrange::arrange_bag_slots(&mut slots[start..end], rank);
+        }
+    }
+
     /// Place `qty` of `id` through retail's add helper: merge into an existing
     /// stack (capped at 99), else the window's first free slot. `false` when
     /// the window is full (retail's OOB arm, which this model surfaces rather
