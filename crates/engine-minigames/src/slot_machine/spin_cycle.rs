@@ -42,6 +42,7 @@ impl SlotMachine {
             self.feature_mode = mode;
         }
         self.stopped = [None; REEL_COUNT];
+        self.rolling = [None; REEL_COUNT];
         // The claimed values are cleared with the reel flags at the bet charge,
         // which is what resets the marquee tally to `0 x 0 x 0`.
         self.claimed = [0; REEL_COUNT];
@@ -140,10 +141,16 @@ impl SlotMachine {
         if spinning && let Some(v) = self.reel_vel.iter_mut().find(|v| **v < SPIN_SPEED) {
             *v = (*v + SPIN_RAMP).min(SPIN_SPEED);
         }
-        for reel in 0..REEL_COUNT {
-            if self.stopped[reel].is_none() {
-                self.reel_pos[reel] =
-                    (self.reel_pos[reel] + self.reel_vel[reel]).rem_euclid(REEL_WRAP);
+        if self.phase == SlotPhase::Stopping {
+            // State 3 turns the reels through the integrator, after the
+            // frame's stops (`jal 0x801D0554` at `0x801CF7E4`).
+            self.roll_reels();
+        } else {
+            for reel in 0..REEL_COUNT {
+                if self.stopped[reel].is_none() {
+                    self.reel_pos[reel] =
+                        (self.reel_pos[reel] + self.reel_vel[reel]).rem_euclid(REEL_WRAP);
+                }
             }
         }
         if self.phase == SlotPhase::Spinning {
@@ -168,6 +175,13 @@ impl SlotMachine {
                 self.anticipation_sounded = true;
                 self.sounds.ring.push((2, CUE_REACH));
                 self.sounds.voice_on.push(spin_voice(1));
+            }
+            // The spin is evaluated once all three stops are in and every
+            // reel stands on a whole row (the three `lbu` of the positions'
+            // low bytes at `0x801CF808..0x801CF834`, then the count at
+            // `0x801CF838`).
+            if self.reels_stopped() == REEL_COUNT && self.reel_pos.iter().all(|p| p & 0xFF == 0) {
+                self.finish_spin();
             }
         }
         // The display-strip refill, after the advance - as in retail's tail.
@@ -207,16 +221,21 @@ impl SlotMachine {
         }
     }
 
-    /// Stop reel `reel` (a Stop input in state `3`): plan the stop for the
-    /// active feature mode, run the landing search from the live row, snap the
-    /// reel, and **claim** it - latch the landed payline value + 1 into
-    /// [`SlotMachine::claimed`], which is what fills that column of the marquee
-    /// tally. Once all three reels are stopped the spin is evaluated and the
-    /// machine moves to [`SlotPhase::Payout`]. Returns `false` when stopping
-    /// isn't allowed or the reel is already stopped.
-    // PORT: FUN_801cf0d8 state 3 (per-reel stop) + FUN_801d0554 (snap + claim)
-    pub fn stop_reel(&mut self, reel: usize) -> bool {
-        if self.phase != SlotPhase::Stopping || reel >= REEL_COUNT || self.stopped[reel].is_some() {
+    /// A Stop press on `reel` in state `3` (`FUN_801D2114`): plan the stop
+    /// for the active feature mode, run the landing search from the live row,
+    /// and set the reel rolling in toward its landing row on its budget. The
+    /// reel lands, and claims its payline value, in the integrator
+    /// ([`Self::roll_reels`]) over the frames that follow; the spin is
+    /// evaluated once all three stand on whole rows ([`Self::tick`]).
+    /// Returns `false` when stopping isn't allowed or the reel's stop is
+    /// already taken.
+    // PORT: FUN_801cf0d8 state 3 (per-reel stop) + FUN_801d2114 (stop plan)
+    pub fn press_stop(&mut self, reel: usize) -> bool {
+        if self.phase != SlotPhase::Stopping
+            || reel >= REEL_COUNT
+            || self.stopped[reel].is_some()
+            || self.rolling[reel].is_some()
+        {
             return false;
         }
         // This spin's landing line (`DAT_801d4134` row of the `0x801d3630`
@@ -233,16 +252,69 @@ impl SlotMachine {
             target,
             line_offset(reel),
         );
-        let row = roll_to_row(self.reel_pos[reel], row, budget);
-        self.reel_pos[reel] = (row as i32) << 8;
         self.reel_vel[reel] = 0;
-        self.stopped[reel] = Some(row);
-        // `DAT_801d3d20[reel] = display[reel][payline_row] + 1`, the frame the
-        // reel locks. The +1 is retail's, and it is what makes the tally's
-        // "unclaimed" state (`0`) distinguishable from a landed value of `0`.
-        self.claimed[reel] = self.strips[reel][row] as i32 + 1;
+        self.rolling[reel] = Some((row, budget));
         self.sounds.ring.push((0, CUE_REEL_STOP));
-        if self.reels_stopped() == REEL_COUNT {
+        true
+    }
+
+    /// Stop `reel` and settle it at once, for a caller with no frames to give
+    /// it: [`Self::press_stop`], then the reel's whole roll-in with the other
+    /// reels held ([`roll_to_row`]), and - once all three have landed - the
+    /// evaluation. The landing row, the claim and the LCG are the per-frame
+    /// path's; only the frames between press and landing are skipped.
+    pub fn stop_reel(&mut self, reel: usize) -> bool {
+        if !self.press_stop(reel) {
+            return false;
+        }
+        if let Some((row, budget)) = self.rolling[reel].take() {
+            let at = roll_to_row(self.reel_pos[reel], row, budget);
+            self.reel_pos[reel] = (at as i32) << 8;
+            self.stopped[reel] = Some(at);
+            self.claimed[reel] = self.strips[reel][at] as i32 + 1;
+        }
+        if self.stopped.iter().all(Option::is_some) {
+            self.finish_spin();
+        }
+        true
+    }
+
+    /// The reel integrator (`FUN_801D0554`), one frame: every reel turns
+    /// `0x66`; a reel rolling in spends one frame of its budget and lands on
+    /// the frame its row reads the landing row or the budget runs out -
+    /// snapped onto the whole row it stands on, its landed flag raised and
+    /// the payline value + 1 claimed (`DAT_801d3d20[reel]`; the `+1` is what
+    /// tells the tally's unclaimed `0` from a landed value `0`). A landed
+    /// reel turns and snaps back onto its row each frame. State 3 runs it
+    /// after the frame's stops ([`Self::tick`]).
+    // PORT: FUN_801d0554 (the reel integrator: turn, roll-in budget, snap, claim)
+    pub fn roll_reels(&mut self) {
+        for reel in 0..REEL_COUNT {
+            self.reel_pos[reel] = (self.reel_pos[reel] + ROLL_IN_SPEED).rem_euclid(REEL_WRAP);
+            let target = match (self.stopped[reel], self.rolling[reel]) {
+                (Some(row), _) => Some((row, 0)),
+                (None, Some((row, budget))) => Some((row, budget - 1)),
+                (None, None) => None,
+            };
+            let Some((row, budget)) = target else {
+                continue;
+            };
+            let at = (self.reel_pos[reel] >> 8) as usize;
+            if self.stopped[reel].is_some() || at == row || budget < 0 {
+                self.reel_pos[reel] = (at as i32) << 8;
+                self.rolling[reel] = None;
+                self.stopped[reel] = Some(at);
+                self.claimed[reel] = self.strips[reel][at] as i32 + 1;
+            } else {
+                self.rolling[reel] = Some((row, budget));
+            }
+        }
+    }
+
+    /// All three stops are in and every reel stands on a whole row: evaluate
+    /// the spin and enter the payout state (`0x801CF848..0x801CF878`).
+    fn finish_spin(&mut self) {
+        {
             // The third stop leaves the scanner's two-stop window; retail's
             // next state-3 frame zeroes the latch before the payout state.
             self.anticipation = 0;
@@ -265,13 +337,12 @@ impl SlotMachine {
             self.win_line = result.line.map_or(-1, |l| l as i32);
             self.sounds.voice_off.push(SPIN_VOICE);
         }
-        true
     }
 
     /// Stop the leftmost still-spinning reel (host convenience for a single
     /// stop button; retail maps three pad bits to the three reels).
     pub fn stop_next_reel(&mut self) -> bool {
-        (0..REEL_COUNT).any(|r| self.stopped[r].is_none() && self.stop_reel(r))
+        (0..REEL_COUNT).any(|r| self.reel_stop_open(r) && self.stop_reel(r))
     }
 
     /// Evaluate the stopped spin (`FUN_801d13e8`): outside a bonus round,
@@ -283,7 +354,10 @@ impl SlotMachine {
     /// net-take counter.
     // PORT: FUN_801d13e8 (win evaluation + payout lookup + bonus trigger)
     pub(super) fn evaluate_spin(&mut self) -> SpinResult {
-        let rows: [usize; REEL_COUNT] = core::array::from_fn(|r| self.stopped[r].unwrap_or(0));
+        // A reel the evaluation catches between rows' worth of roll-in on a
+        // whole row is read where it stands.
+        let rows: [usize; REEL_COUNT] =
+            core::array::from_fn(|r| self.stopped[r].unwrap_or_else(|| self.payline_row(r)));
         let bonus_spin = self.in_bonus_round() && self.bonus_spins > 0;
         if bonus_spin {
             // The bonus round's arithmetic, whole:

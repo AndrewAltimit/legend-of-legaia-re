@@ -173,7 +173,9 @@ fn page_press(mg: &mut LegaiaMinigames) -> &'static str {
             .and_then(|a| a.iter().position(|v| v == true))
         {
             Some(r) => (STOP[r], "stop"),
-            None => return "none",
+            // Every stop is in and a reel is still rolling in
+            // (`FUN_801D0554`): the page steps a frame with no press.
+            None => (0, "roll"),
         },
         "payout" => (CROSS, "collect"),
         _ => return "none",
@@ -496,6 +498,14 @@ fn the_minigames_page_drives_its_machine_into_a_bonus_round() {
             }
         }
         mg.slot_step(0);
+        // The last reels roll in before the spin is evaluated.
+        for _ in 0..64 {
+            let st: serde_json::Value = serde_json::from_str(&mg.slot_state_json()).unwrap();
+            if st["phase"] != "stopping" {
+                break;
+            }
+            mg.slot_step(0);
+        }
         // A win waits in the payout state for the collect press.
         if page_press(&mut mg) == "collect" {
             mg.slot_step(0);

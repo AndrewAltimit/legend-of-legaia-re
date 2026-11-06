@@ -65,13 +65,14 @@
 //!   cash-out (state `100`), not debited per spin.
 //!
 //! What is an **engine-side reconstruction** (marked at each site): the
-//! spin-up velocity/timer magnitudes (visual pacing, not pinned), and the
 //! BIOS-`rand` feature stream substituted with a second deterministic
-//! [`BiosRand`] LCG so replays stay bit-identical.
-//! The reel's roll-in after a stop is not modelled: retail's integrator
-//! `FUN_801d0554` creeps a stopped reel `0x66` a frame toward its landing row
-//! and snaps it there, or wherever it stands once the per-reel budget
-//! `DAT_801d3cf0` runs out; the port snaps it to the landing row at once.
+//! [`BiosRand`] LCG so replays stay bit-identical. The spin-up is retail's
+//! (`SPIN_RAMP` `0xC` a frame to `SPIN_SPEED` `0x66`, one reel at a time,
+//! then the timer run below zero: `0x801CF60C..0x801CF684`).
+//! The reel's roll-in after a stop is retail's: the integrator `FUN_801d0554`
+//! creeps a stopped reel `0x66` a frame toward its landing row and snaps it
+//! there, or wherever it stands once the per-reel budget `DAT_801d3cf0` runs
+//! out ([`SlotMachine::roll_reels`]).
 //!
 //! Chain: retail `FUN_801cf0d8` (reel SM) -> `FUN_801d258c` (feature roll) ->
 //! `FUN_801d2114` / `FUN_801d2440` (stop) -> `FUN_801d0554` (snap + claim) ->

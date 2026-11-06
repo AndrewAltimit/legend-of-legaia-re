@@ -396,15 +396,13 @@ screen = (320 + 1024 * vx / vz, 114 + 1024 * vy / vz)</code></pre>
   <h2>Where this is in the port</h2>
   <p>The rules engine (<code>engine-minigames::slot_machine</code>) runs on all three hosts: the native play window, the browser play page and the standalone <a href="../minigames.html#play">minigames page</a>, where you can play it now with your own disc. Walking up to a cabinet in either play host runs the record&rsquo;s script through the field VM, including the coin-bank compare that refuses an empty bank. The standalone page racks its own 60 coins.</p>
   <ul class="bullets">
-    <li><strong>Faithful:</strong> strip construction in retail&rsquo;s draw order, the feature roll with its exact draw order and bracket edges, the bet charge and net-take accrual, the stop plan and landing search including the bonus round&rsquo;s free stop, the five-line evaluation and bonus product, the claimed-column tally and marquee, the cash-out picker and the bank commit on exit.</li>
+    <li><strong>Faithful:</strong> strip construction in retail&rsquo;s draw order, the feature roll with its exact draw order and bracket edges, the bet charge and net-take accrual, the spin-up&rsquo;s one-reel-at-a-time ramp to its top speed, each stopped reel&rsquo;s roll-in to its landing row (which can stop it short), the stop plan and landing search including the bonus round&rsquo;s free stop, the five-line evaluation and bonus product, the claimed-column tally and marquee, the cash-out picker and the bank commit on exit.</li>
     <li><strong>Drawn as retail draws it:</strong> both play hosts build the whole frame through one primitive builder sampling the art pack from VRAM; the standalone page rasterises the same primitive list on the CPU.</li>
   </ul>
   <div class="callout callout-warn">
     <p class="callout-title">Where the port differs</p>
     <ul class="bullets">
-      <li>The spin-up length and reel speed are engine-chosen; retail&rsquo;s magnitudes are not pinned.</li>
       <li>The BIOS <code>rand</code> stream is a deterministic generator, so replays stay bit-identical.</li>
-      <li>A stopped reel snaps to its landing row at once; retail&rsquo;s roll-in, which can stop it short, is not modelled.</li>
       <li>A press collects the rest of a payout tally at once.</li>
       <li>The picker&rsquo;s cancel + confirm collision and a press latched on the spin-up&rsquo;s last frame are not reproduced.</li>
     </ul>

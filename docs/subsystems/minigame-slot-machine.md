@@ -81,7 +81,7 @@ stateDiagram-v2
 |---|---|---|
 | Init | `0` | discard four LCG draws (`0x801CF150..0x801CF160`), build the reel strips, clone the symbol strip into the display strip, fade in, advance to `1` |
 | Idle | `1` | attract; tests the submenu edge, then the coin gate, then the bet (order below) |
-| SpinUp | `2` | adds the reel velocities `DAT_801d3cd0..` into the positions `DAT_801d3cc0..` each frame (mod `0x1400`) until the spin timer `DAT_801d3c90` expires; a face-button edge raises the [spin-up press latch](#the-spin-up-press-latch) |
+| SpinUp | `2` | brings the reels up one at a time, `+0xC` a frame to `0x66` (the ramp index is the stop counter `DAT_801d3d2c`, so nine frames a reel, `0x801CF60C..0x801CF650`), then runs the spin timer `DAT_801d3c90` down by the frame step until it goes below zero (`0x801CF654..0x801CF684`); every frame it adds the reel velocities `DAT_801d3cd0..` into the positions `DAT_801d3cc0..` (mod `0x1400`), and a face-button edge raises the [spin-up press latch](#the-spin-up-press-latch) |
 | Stopping | `3` | each Stop press (pad bits `0x80` / `0x40` / `0x20` → reels 0 / 1 / 2) calls `FUN_801d2114`; at `DAT_801d3d2c == 3` it runs `FUN_801d13e8` and advances to `4` |
 | Payout | `4` | ticks the win `DAT_801d3d38` into the balance `DAT_801d4114` ([timing](#sound)), then returns to `1` |
 | Picker | `0x32` | the 3-row [cash-out submenu](#the-cash-out-submenu), cursor `DAT_801d4110` |
@@ -97,7 +97,7 @@ State `1` reads the packed pad-edge word `_DAT_8007b874` in a fixed order:
 
 **There is no bet-line selection.** Every spin plays all five paylines for the flat cost. `DAT_801d4110` is the cash-out submenu cursor and nothing else.
 
-After the switch, the tail of `FUN_801cf0d8` runs every frame: it advances the three reel positions (`FUN_801d0554`), refills one display-strip row per reel, draws the reels (`FUN_801d0fa8`), and refreshes the marquee and HUD (`FUN_801cfff0`).
+After the switch, the tail of `FUN_801cf0d8` runs every frame: it refills one display-strip row per reel, draws the reels (`FUN_801d0fa8`), and refreshes the marquee and HUD (`FUN_801cfff0`). The reels turn in state `2` by their velocities and in state `3` through the integrator `FUN_801d0554` (`jal` at `0x801CF7E4`, after the frame's stops); no other state moves them.
 
 ### Reel strips
 
@@ -227,7 +227,9 @@ When a reel is told to stop, `FUN_801d2114(reel)` (`overlay_slot_machine_801d211
 
 Mode `4` lands once on the normal target, decrements the spin timer `DAT_801d3c90`, and while that timer is negative draws again and re-lands on symbol `7` (`bgez a0` at `0x801D2354`). State `2` leaves for state `3` only once it has run the timer below zero (`0x801CF660..0x801CF670`), and nothing raises it before the stops, so the re-land always runs and symbol `7` is the target that holds.
 
-The budget is the reel's roll-in. After a stop the per-frame integrator `FUN_801d0554` creeps the reel `0x66` a frame (two-fifths of a row), decrementing the budget, and snaps it on the frame it reaches the landing row - or wherever it stands once the budget runs out (`0x801D05C4..0x801D0600`). A landing farther than the budget carries stops short of its target.
+The budget is the reel's roll-in. After a stop the per-frame integrator `FUN_801d0554` creeps the reel `0x66` a frame (two-fifths of a row), decrementing the budget, and snaps it on the frame it reaches the landing row - or wherever it stands once the budget runs out (`0x801D05C4..0x801D0600`). A landing farther than the budget carries stops short of its target. The snap raises the landed flag `DAT_801d3d10[reel]` and claims the payline value. State `3` evaluates the spin only once the stop count is `3` and all three positions stand on whole rows (the low bytes of `DAT_801d3cc0..` read zero, `0x801CF808..0x801CF840`), so the payout waits for the last reel to roll in.
+
+Port: `SlotMachine::press_stop` (the press, `FUN_801d2114`) and `SlotMachine::roll_reels` (the integrator, one frame), which `SlotMachine::frame` runs in retail's order - the frame's stops, then the integrator, then the scanner and the evaluation; `SlotMachine::stop_reel` is the frame-free form that settles the reel at once on the same row (`roll_to_row`). Pinned by `slot_machine::tests::a_stop_press_rolls_the_reel_in_over_the_frames_that_follow` and the retail differential `crates/retail-exec/tests/slot_machine.rs`.
 
 `FUN_801d2440(reel, depth, target_symbol)` (`overlay_slot_machine_801d2440.txt`) is the landing search. With `cur` = reel position `>> 8`:
 
@@ -522,7 +524,6 @@ Each has a dump `overlay_slot_machine_<addr>.txt` unless marked SCUS.
 **Where the port differs from retail** (each marked at its site in the source):
 
 - The BIOS-`rand` stream is a deterministic LCG (`BiosRand`), so replays stay bit-identical.
-- A stopped reel snaps at once to the row retail's roll-in (`FUN_801d0554`) would lock it on, budget and all (`roll_to_row`), where retail turns it there over the frames.
 - A host press collects the rest of a payout tally at once (`SlotMachine::collect`).
 - The submenu's cancel + confirm collision is not reproduced (see its section).
 
@@ -862,7 +863,6 @@ The library captures reach the machine by a debug warp from `town01`, so their *
 - The identities of the sibling dev modules PROT 973 (`OTHER2`) and PROT 974 (`OTHER3`).
 - The cabinet's per-frame draw path is **Inferred**: no frame is traced from `actor+0x44` to a GP0 word at the machine.
 - The cheat-database pointer "near `0x801d3cac`" has **Inferred** semantics.
-- Retail's spin-up timer and velocity magnitudes are not pinned; the port uses its own pacing constants.
 
 ## See also
 

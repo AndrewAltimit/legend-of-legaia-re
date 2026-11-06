@@ -642,6 +642,14 @@ fn slot_machine_spins_stops_and_collects_through_the_pad() {
     let _ = world.tick();
     world.set_pad(input::PadButton::Square.mask() | input::PadButton::Circle.mask());
     let _ = world.tick();
+    // The reels roll in (`FUN_801D0554`) before the spin is evaluated.
+    world.set_pad(0);
+    for _ in 0..64 {
+        if world.minigames.slot_machine.as_ref().unwrap().phase() != SlotPhase::Stopping {
+            break;
+        }
+        let _ = world.tick();
+    }
     let m = world.minigames.slot_machine.as_ref().unwrap();
     assert_eq!(m.phase(), SlotPhase::Payout);
     assert_eq!(

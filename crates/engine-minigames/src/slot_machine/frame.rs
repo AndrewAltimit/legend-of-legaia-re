@@ -35,6 +35,20 @@ impl SlotMachine {
         use legaia_engine_system::pad::{PACK_CIRCLE, PACK_CROSS, PACK_SQUARE, PACK_TRIANGLE};
         let on = |m: u16| packed & u32::from(m) != 0;
         let phase = self.phase();
+        // State 3 takes the frame's stops ahead of its integrator
+        // (`FUN_801D2114` at `0x801CF74C..0x801CF7DC`, then `jal 0x801D0554`),
+        // so a Stop press plans from the row the reel stood on and the roll-in
+        // turns it the same frame.
+        if phase == SlotPhase::Stopping {
+            for (reel, m) in [PACK_SQUARE, PACK_CROSS, PACK_CIRCLE]
+                .into_iter()
+                .enumerate()
+            {
+                if on(m) {
+                    self.press_stop(reel);
+                }
+            }
+        }
         self.tick();
         if self.cash_out_input(packed) {
             return if self.phase() == SlotPhase::CashedOut {
@@ -52,23 +66,17 @@ impl SlotMachine {
                     self.spin();
                 }
             }
-            SlotPhase::Stopping => {
-                for (reel, m) in [PACK_SQUARE, PACK_CROSS, PACK_CIRCLE]
-                    .into_iter()
-                    .enumerate()
-                {
-                    if on(m) {
-                        self.stop_reel(reel);
-                    }
-                }
-            }
             SlotPhase::Payout => {
                 if on(PACK_CROSS) {
                     self.collect();
                 }
             }
             SlotPhase::CashedOut => return SlotFrameOutcome::Committed,
-            SlotPhase::Spinning | SlotPhase::Menu | SlotPhase::NoCoins | SlotPhase::Leaving => {}
+            SlotPhase::Stopping
+            | SlotPhase::Spinning
+            | SlotPhase::Menu
+            | SlotPhase::NoCoins
+            | SlotPhase::Leaving => {}
         }
         SlotFrameOutcome::Stepped
     }
