@@ -159,6 +159,12 @@ pub struct PartyState {
     /// The previous scene's CDNAME label (retail `0x80084558`), backed up by
     /// every scene change and written into a card Save.
     pub previous_scene: Option<String>,
+    /// The lifetime battle and escape counters retail keeps in its save
+    /// window (`0x800846A4` / `0x800846A8`), the records screen's "No. of
+    /// Battles" / "No. of Escapes". Bumped by `World::enter_battle` and the
+    /// Run's success arm; carried by saves
+    /// ([`legaia_save::SaveExtV2::record_tally`]); zeroed by a New Game.
+    pub record_tally: legaia_save::card::RetailRecordTally,
 }
 
 impl PartyState {
@@ -187,6 +193,10 @@ impl PartyState {
             name_entry: None,
             retail_window: None,
             previous_scene: None,
+            record_tally: legaia_save::card::RetailRecordTally {
+                battles: 0,
+                escapes: 0,
+            },
         }
     }
 }

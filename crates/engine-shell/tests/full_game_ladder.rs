@@ -108,7 +108,7 @@ mod disc_graph;
 mod errands;
 mod fight_choices;
 mod fight_reads;
-mod fight_turn;
+pub(crate) mod fight_turn;
 mod interactions;
 mod pad_field_upkeep;
 mod pad_follower;

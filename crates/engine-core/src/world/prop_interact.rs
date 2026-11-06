@@ -439,7 +439,7 @@ impl World {
         // REF: FUN_801DE840 (0x801DF034..0x801DF044), FUN_8003774C (case 0x47)
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
-            let arrived = self.step_player_walk_leg(walk.target, walk.speed);
+            let arrived = self.step_player_walk_leg(walk.target, walk.speed, walk.approach);
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
                 self.dialog.inline = Some(id);
@@ -604,6 +604,7 @@ impl World {
                             Some(legaia_engine_field::inline_dialogue::PropPlayerWalk {
                                 target: (decode(b0), decode(b1)),
                                 speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
+                                approach: b2 >> 4,
                                 frames: 0,
                             });
                         break;
@@ -996,14 +997,27 @@ fn is_object_word_op(bytecode: &[u8], pc: usize) -> bool {
 
 impl World {
     /// Step the player one frame of a script walk-to-tile leg (op `0x47`
-    /// on the player, `C7 F8 <tx> <tz> <mode>`): toward `target` by at most
-    /// `speed` on each axis, facing the step, on the floor under every step.
-    /// Returns whether the player stands on the target (or there is no
+    /// on the player, `C7 F8 <tx> <tz> <mode>`), on the floor under every
+    /// step. Returns whether the player stands on the target (or there is no
     /// player to walk). Shared by the cutscene timeline's player leg and a
     /// prop run's.
     ///
+    /// The player runs the same walk kernel an NPC leg does
+    /// ([`legaia_engine_motion_vm::motion_vm::step`]): `approach` is the mode
+    /// byte's high nibble, so a default-mode leg closes the dominant axis
+    /// first and only then cuts the diagonal, and the facing is the
+    /// eight-point compass entry of the step's axis signs (the `0x47` tail,
+    /// `0x80037D4C..0x80037DDC`), written on every moving frame as the tail
+    /// writes it - never an in-between angle.
+    ///
     /// REF: FUN_8003774C (case 0x47)
-    pub(crate) fn step_player_walk_leg(&mut self, target: (i16, i16), speed: u16) -> bool {
+    pub(crate) fn step_player_walk_leg(
+        &mut self,
+        target: (i16, i16),
+        speed: u16,
+        approach: u8,
+    ) -> bool {
+        use legaia_engine_motion_vm::motion_vm::{MotionState, MotionTarget, step};
         let Some(p) = self.player_actor_slot else {
             return true;
         };
@@ -1011,19 +1025,23 @@ impl World {
             return true;
         };
         let ms = &mut actor.move_state;
-        let (dx, dz) = (
-            i32::from(target.0) - i32::from(ms.world_x),
-            i32::from(target.1) - i32::from(ms.world_z),
-        );
-        let step = i32::from(speed.max(1));
-        let sx = dx.clamp(-step, step);
-        let sz = dz.clamp(-step, step);
-        if sx != 0 || sz != 0 {
-            ms.world_x += sx as i16;
-            ms.world_z += sz as i16;
-            ms.render_26 = (((sx as f32).atan2(sz as f32) / std::f32::consts::TAU * 4096.0).round()
-                as i32
-                & 0x0FFF) as i16;
+        let mut st = MotionState {
+            world_x: ms.world_x,
+            world_z: ms.world_z,
+            speed: speed.max(1),
+            approach,
+            ..MotionState::default()
+        };
+        let goal = MotionTarget {
+            x: target.0,
+            z: target.1,
+            ..MotionTarget::default()
+        };
+        step(&mut st, goal, &[0x47]);
+        ms.world_x = st.world_x;
+        ms.world_z = st.world_z;
+        if st.yaw_written {
+            ms.render_26 = (st.yaw & 0x0FFF) as i16;
         }
         let (nx, nz) = (i32::from(ms.world_x), i32::from(ms.world_z));
         let arrived = (nx, nz) == (i32::from(target.0), i32::from(target.1));
@@ -1130,10 +1148,21 @@ impl World {
                             .or_insert_with(|| name.clone().into_bytes());
                     }
                 }
+                // `0xC2` / `0xC4` - an item name off the static item-name
+                // table `0x8007436C + id*0xC`, which names every id. The
+                // item catalog names only the usable items, so resolving
+                // through it alone left a weapon or key item blank ("There
+                // is a  in the treasure chest!", issue #556); it stays the
+                // fallback for a disc-free host.
                 0xC2 | 0xC4 => {
-                    if let Some(entry) = self.tables.item_catalog.get(arg) {
-                        map.entry((2, arg))
-                            .or_insert_with(|| entry.name.as_bytes().to_vec());
+                    let name = self.item_display_name(arg).or_else(|| {
+                        self.tables
+                            .item_catalog
+                            .get(arg)
+                            .map(|e| e.name.to_string())
+                    });
+                    if let Some(name) = name {
+                        map.entry((2, arg)).or_insert_with(|| name.into_bytes());
                     }
                 }
                 // `0xC7 xx` - an inline 8-byte SCUS name (the Ra-Seru
@@ -1490,6 +1519,26 @@ mod tests {
             None,
             "a sprite escape is not a number"
         );
+    }
+
+    /// Issue #556: the item-name escapes resolve off the static item-name
+    /// table, which names every id - a key item or a weapon from a chest
+    /// included, which the usable-item catalog has no row for.
+    #[test]
+    fn item_name_escapes_name_items_the_catalog_does_not_hold() {
+        let mut w = World::new();
+        let mut names = vec![None; 256];
+        names[0xA6] = Some("Key".to_string());
+        w.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+            item_names: Some(legaia_game_tables::item_names::ItemNameTable::from_names(
+                names,
+            )),
+            ..Default::default()
+        });
+        assert!(w.tables.item_catalog.get(0xA6).is_none());
+        let record = [0x1F, 0xC2, 0xA6, b' ', 0xC4, 0xA6, 0x00];
+        let subs = w.dialog_substitutions(&record).expect("item escapes");
+        assert_eq!(subs.get(&(2, 0xA6)), Some(&b"Key".to_vec()));
     }
 
     #[test]

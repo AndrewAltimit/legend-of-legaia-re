@@ -302,3 +302,48 @@ fn bonus_drop_grants_equipment_and_retail_draws_nothing() {
     // No executable installed: an empty pool, and nothing to roll.
     assert!(World::default().bonus_drop_pool().is_empty());
 }
+
+/// The Tetsu spar order fix: in `town01` a field script reads the "spar
+/// counts" flag `0x20C` as set once the spar (`0x20B`) and the measuring
+/// (`0x227`) both are, whatever order they came in; off (retail), only the
+/// flag itself answers, and a spar fought first never raises it. The bank is
+/// never written, and no other scene is touched.
+#[test]
+fn tetsu_spar_fix_counts_a_spar_fought_before_the_measuring() {
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    // `72 0C 05 00`: jump 5 on, fall through to the advance on off - the
+    // shape of Tetsu's "Nothing in particular" test at `P1[10]` `+0xA43`.
+    let test = [0x72, 0x0C, 0x05, 0x00];
+    let counted = |w: &mut World| {
+        let mut ctx = legaia_engine_vm::field::FieldCtx::default();
+        let r = field_step_routed(&mut FieldHostImpl { world: w }, &mut ctx, &test, 0);
+        r != legaia_engine_vm::field::StepResult::Advance { next_pc: 4 }
+    };
+    let mut world = World {
+        active_scene_label: TETSU_SPAR_SCENE.into(),
+        ..Default::default()
+    };
+    world.system_flag_set(TETSU_SPAR_FOUGHT_FLAG);
+    world.toggles.tetsu_spar_fix = true;
+    assert!(!counted(&mut world), "before the measuring the spar waits");
+    world.system_flag_set(TETSU_MEASURED_FLAG);
+    assert!(counted(&mut world), "after it, the early spar counts");
+    assert!(
+        !world.system_flag_test(TETSU_SPAR_COUNTED_FLAG),
+        "the fix reads; the bank stays as retail wrote it"
+    );
+
+    world.toggles.tetsu_spar_fix = false;
+    assert!(!counted(&mut world), "retail: the early spar never counts");
+    world.toggles.tetsu_spar_fix = true;
+    world.active_scene_label = "town0b".into();
+    assert!(
+        !counted(&mut world),
+        "only Rim Elm before the Mist reads it"
+    );
+
+    let mut t = WorldToggles::new();
+    assert!(t.tetsu_spar_fix, "on by default");
+    t.pin_retail();
+    assert!(!t.tetsu_spar_fix, "off in retail-faithful mode");
+}

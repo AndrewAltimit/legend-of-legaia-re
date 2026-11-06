@@ -77,6 +77,16 @@ impl PlayWindowApp {
                     g.seat_step_marker(class, cursor as u16, timer, mesh);
                 }
             }
+            // ... and the hall's animated props on the clip cursors the
+            // displayed frame drew (`LEGAIA_SEAT_DANCE_PROPS`).
+            if due
+                && let Some(clips) = sc.seat_dance_props.take()
+                && let Some(g) = self.session.host.world.minigames.dance.as_mut()
+            {
+                for (clip, cursor, passes) in clips {
+                    g.seat_hall_prop_displayed(clip, cursor, passes);
+                }
+            }
             // ... and the text balloon the displayed frame drew, or none
             // (`LEGAIA_SEAT_BALLOON`).
             if due && let Some(b) = sc.seat_balloon.take() {
@@ -145,7 +155,14 @@ impl PlayWindowApp {
             // A capture no pose reaches stands the camera on this frame's
             // seats, and the tick's ghost bits read the pose before them: the
             // pass walks a table, and a seat's jump is none of retail's.
-            if due && sc.battle_ghost_pose.is_none() {
+            //
+            // Not on a sweep: a sweep films the play path on a pad script and
+            // seats nothing, and re-running the pass after the tick there
+            // ran it after the anim pass too - a defeat fade's first frame
+            // drew additive one frame before the play path (and the page)
+            // draws it, retail's order being ghost pass, presentation tick,
+            // then the walker that raises the fade.
+            if due && sc.sweep.is_none() && sc.battle_ghost_pose.is_none() {
                 self.session.host.world.refresh_battle_camera_ghost();
             }
             if due && !sc.seat_battle_clips.is_empty() {
@@ -182,6 +199,13 @@ impl PlayWindowApp {
             }
             if due && sc.seat_move_label_unseen {
                 self.session.host.world.battle.move_label_closed = true;
+            }
+            if due && let Some((actor, member)) = sc.seat_hud_close {
+                let targets: Vec<[i16; 2]> = sc.seat_hud_glides.iter().map(|g| g.target).collect();
+                self.session
+                    .host
+                    .world
+                    .seat_battle_hud_close(actor, member, &targets);
             }
             if due {
                 for g in &sc.seat_hud_glides {

@@ -2713,7 +2713,8 @@ caller, and run off the same calls
   `z = 0x200` and seats a ring part there, kept in the handle table
   `0x801F809C`; arm 7's pass halts every one of them. The arm writes into
   its caller, so the engine runs it inside the caller's op-`0x20` step and
-  seats what it returns on the module's next tick.
+  seats what it returns right after that part tick, as every part-called
+  stager's seats are ([below](#part-called-stager-arms)).
 - **PROT 0934 (Ozma)**: arm 0 seats three records on the caller's `+0x3C`
   trio. Arms 1..3 scatter sparks `0x801F9E28` and bolts `0x801F9F2C` off
   `rand()`, each with a random wait `+0x54`; arms 1 and 2 grow their volley
@@ -2981,7 +2982,12 @@ arm clears it.
 
 Arm 1 holds the opening's ray emitter `0x801F8FF0` through its countdown: every
 eleven units its op `0x20` calls `FUN_801F8BF8`'s arm 1, four `0x801F9008` rays on
-six `rand()` draws each. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
+six `rand()` draws each. Arm 0 seats the emitter on the caster's display trio
+(`FUN_80050ED4(caster + 0x3C, caster + 0x44, ..)` at `0x801F6C70..0x801F6C94`),
+not its live pair: `+0x3E` is the height the pose decoder raises by the pose
+centroid (`0x8004A430..0x8004A458`), so the rays fan out of the crystal's middle,
+`(28, -388, 1007)` in a `rugi` capture, where a seat on the floor put their
+origin under the HUD. The pool flush `0x801F6E34` and the white `0x801F6E74` sit
 past the countdown test `0x801F6E2C`, on the arm's pass, so the fan lives the whole
 arm. The arm's phase store sits behind the fork on the last roll, which the
 presentation decoder reads as `Every`; `summon_holds::gate_va` names the test.
@@ -3476,6 +3482,7 @@ three units). The bodies without that store keep the half turn
 | 0965 `0xB6` Doomsday, `0x801F69D8` | [below](#prot-0965-doomsday) | `0x801F8370`, counted in **vsyncs** (drained by the bare frame step), seeded `0x20`; arm `0x0C` then waits on the target row's settle |
 | 0960 `0xA6` Neo Star Slash, `0x801F69D8` | [below](#prot-0960-neo-star-slash) | `0x801F8E50`, seeded `scalar << 5`; the chain (`NEO_STAR_SLASH_CHAIN`) carries the phase, so the director carries the countdown |
 | 0955 `0x6E` Kiss of Death, `0x801F86A4` | arm 0's `0xC`-frame shot on the caster (pitch `-0x20`, TR `(0, 0x400, ctx[+0x6D0] / 3)`), arm 1's `0xA0`-frame pull-in (pitch `0x80`, TR z `ctx[+0x6D0] / 2`), arm 3's cut on the victim after turning it to the caster (TR `(0, 0x500, 0x600)`); TR z drift `scalar * delta` on arms 4 and 5 | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 7` / `<< 5` / `<< 7` / `<< 7`; the body's chain is ported (`kiss_of_death_tick`), so the director carries the countdown. Arm 0's seat tints (every standing seat `+0x21C = 0xFF`, the caster restored) and arm 1's caster `+0x21C = 7` are not ported |
+| 0955 `0x60` White Shield, `0x801F8F0C` | three shots behind the caster on its live pair, TR y `0x400`: arm 0's `0xC`-frame shot (pitch `-0x20`, TR z `ctx[+0x6D0] / 2`), arm 1's `0x100`-frame pull (pitch `0x80`, TR z `ctx[+0x6D0]`), arm 2's `0x40`-frame level-off (pitch `0`); arm 3 is the buff | `0x801F9D28`, seeded `scalar * 12`, re-armed `<< 8` / `* 0x60`; the chain is ported (`white_shield_tick`), so the director carries the countdown and its hold. `battle_bubu2_spoon_white_shield_mid_cast` holds arm 0's table with `96` left |
 
 - **0944** frames on the caster's facing, which the cast begin points at its
   target, so a replay is steered onto the capture's target too
@@ -3611,7 +3618,28 @@ both seats (`+ 0x800` onto the caster, the victim back onto it) and stores phase
 0951 and 0952 also store the yaw counter `ctx[+0x6DA] = 0x200` on arm 0. The port's
 approach leg holds the module while the caster walks, so it makes these
 calls on the body's behalf (`capture_approach_follows`,
-`capture_approach_yaw_base`) and runs the walk on phase `1`. PROT 0941's Steal
+`capture_approach_yaw_base`) and runs the walk on phase `1`.
+
+The walk's framing style is two stores. Arm 0 rolls it,
+`ctx[+0xD] = rand() % 4` (`0x801F71D0..0x801F71F8` in PROT 0952 `0x5C`; the same
+at `0x801F6AC4`, and in PROT 0951 at `0x801F6AE0` and `0x801F78A0`), next to the
+counter's `0x200`, and its case 6 frames on the roll. Every later pass of `0x70`
+stores `1` in the delay slot of its module call (`0x801E50CC`), so arm 1's
+case 6 frames half a turn round. `battle_tunnelc_xain_bloody_horns_mid_cast`,
+taken on the arm-0 pass, holds endpoint yaw `3658` (`0x202 - 3000 + 0x800`, roll
+`1`); a PCSX-Redux film of the same cast from `battle_tunnelc_xain_strike` holds
+`1917` on its arm-0 pass (roll `0`, heading about `2690`).
+
+Arm 0 makes its stores and its case 6 on both sides of its range poll: it turns
+both seats (`0x801F7250..0x801F7270`), polls (`0x801F7278`), and from the
+in-reach side (the thirty-two pushes below, phase `2` at once) or the walking
+side reaches the case 6 at `0x801F72E4`. The port's approach leg makes the
+arm's turn, stores and case 6 ahead of its own poll, so a caster already in
+reach takes them too (`World::open_capture_walk_pass`); the film's counter then
+reads `516` on arm 2 as retail's does, where the leg left it on the seed's
+`2092`. The camera's own copy of `ctx[+0xD]` is a pass behind either store, so
+the step hands the `0x70` pin to the host (`BattleActionHost::camera_variant_pinned`)
+and the leg passes the live byte to `BattleCamera::arm_module_follow`. PROT 0941's Steal
 frames on other arms and keeps its own director.
 
 The arrival is not a stop. The pass that reads the range metric at zero runs
@@ -4624,7 +4652,42 @@ records. Further 0903 facts:
   (`jal 0x801D5854` with `a1 = 8` at `0x801F761C`), whose dead-target arm
   zeroes the yaw ladder `ctx[+0x6DA]`, and halves the victim's animation rate
   (`+0x21D = scalar >> 1` at `0x801F76D8`), slowing the knock-back clip and
-  the fade the arm waits on.
+  the fade the arm waits on. The dead-target yaw is
+  `-target[+0x46] - ((ctx[+0x26D] << 9) - 0x100)`, the track coin's turn, so the
+  arm's whole close-up stands `0x200` round from retail's when the coin falls
+  the other way. The coin's only writer is `FUN_8004E13C` (`sb v0,0x26d(a0)`
+  at `0x8004E2DC`, `rand() % 2`), which the clip commit `FUN_8004AD80` calls
+  for an entry whose `+0x87` byte is set; the port draws it there, on the
+  world stream (`BattleActionCtx::track_coin`).
+- Arm 10 shows the victim again: `sw a0,0x4(s2)` at `0x801F7388` stores the
+  neutral word `0x20080200` over the band's hide, and a non-zero word draws
+  the body whatever its `+0x21C` (`0xFF` still). So the victim stands in the
+  frame for the creature's walk-in while the caster stays hidden
+  (`gimard_burning_attack`, arm 11: the victim's `+0x04 = 0x20080200`, the
+  caster's `0`).
+- The walk's puffs follow the emitter's law on both sides. Each new effect-pool
+  child sits on an object of the pose the creature held one pass earlier, plus
+  its jitter (`--pose-objects` beside `fxpool.csv`: mean residual within `5`
+  units on every axis on both sides), and the decoded object table matches the
+  port's `stream_pose` to the unit at every walk cursor. Which objects the
+  `rand()` picks is what parts the two clouds.
+- Late in arm 12 retail's creature holds its walk cursor (`180` in the
+  recording) while the engine's loops on. The creature fades under
+  `+0x21C = 2`, and the anim tick skips a body whose node colour word reads zero
+  (`0x800474D4..0x800474E0`); the port's skip tests only the hide. The body is
+  gone from the frame by then, so nothing on screen differs.
+- Arm 11's last pass points the creature at seat `0` (`sb zero,0x1dd(s3)` at
+  `0x801F75F0`), and from then on it stands. The anim tick steps a
+  positive root speed only while `FUN_8004E2F0(slot, +0x1DD)` reads out of
+  range (`0x80047D4C..0x80047D5C`), and the arm-11 poll stopped the creature
+  inside the caster's reach as well as the victim's, so through arm 12 its
+  walk clip loops in place (`z = -531` from arm 12's first pass to the band's
+  end in the `party_basic_attack_vs_gobu_gobu` recording). The engine seats the
+  creature past its eight-slot table, so that poll goes through the creature
+  metric (`World::root_motion_range`); through the table's own metric it read
+  out of range and the creature walked on out of the frame. Its walk starts on
+  the pass the walk clip commits, on the clip's root motion alone: the arm-11
+  creature stands at `z = -2196` after that pass on both sides.
 - Arm 11 stamps the victim's burn presentation (`+0x04 = 0x3FF`,
   `+0x0C = 0x1000`, `+0x21C = 0`, `+0x21F = 1`) inside its targetable branch.
 - `gimard_burning_attack` (arm 11) holds the two tunnel parts mid-program and
@@ -4656,12 +4719,24 @@ PROT 0907 reports its arms' calls too (`nighto_direct`, the table under
 from several seats and the band depth, so each pass hands the host the point
 it built (`ArmDirection::arm_point`, `SpawnAnchor::ArmPoint`).
 
+<a id="part-called-stager-arms"></a>
+
 **Part-called stager arms.** A record's op `0x20` calls its module's stager
 row, and the stager seats more records off the calling part
 (`a0 = part + 0x14`, `a1 = part + 0x24`). The band queues each call with what
 the stager reads off the part - position, rotation, `+0xB4` and op `0x20`'s
-second operand (`cast_module_ticks::StagerCaller`) - and runs it on the
-module's next tick. PROT 0907's and 0908's stagers only seat records
+second operand (`cast_module_ticks::StagerCaller`) - and runs it as soon as the
+frame's part tick ends (`World::tick_summon`), so the records it seats are born
+on their caller's frame, as retail's are: the call runs inside the caller's
+move-VM step and seats through `FUN_80050ED4` -> `FUN_80021B04`, whose own VM
+run (`jal 0x80023070` at `0x80021DC0`) is the only step a new part takes that
+frame. PROT 0964's opening shows it: the emitter `0x801F8FF0` opens on
+`WAIT_SET 0`, so its seat run breaks and the same frame's part tick makes the
+first call, and a capture logs the emitter, the two glows and the first four
+rays on one vsync, the rays at level `0x1000` with their first fade step a
+frame later. Queued for the module's next tick instead, every fan was born a
+battle frame late. PROT 0909's calls step the phase and stay on the module's
+tick. PROT 0907's and 0908's stagers only seat records
 (`nighto_stager_spawns`, `zenoir_stager_spawns`, returning
 `StagerSpawn`s); PROT 0909's also steps the phase
 (`run_viguro_stager_calls`). An arm that writes into the part it seated

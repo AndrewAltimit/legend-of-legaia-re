@@ -322,7 +322,7 @@ impl RetailBattle {
         if self.cam_style != 0 || accum != 8 * u16::from(step) {
             return None;
         }
-        let [_, pass_n, pass_n1, pass_n2] = self.recent_steps.map(i32::from);
+        let [_, pass_n, pass_n1, pass_n2] = [0, 1, 2, 3].map(|i| i32::from(self.recent_steps[i]));
         let (s1, s2) = (pass_n1, pass_n2);
         let drift = |s: i32| (s * 4 / 3).max(1);
         let (live, end) = self.cam_tween;
@@ -565,11 +565,27 @@ impl RetailBattle {
     /// not two of the child's passes: Barra's Windcutter ran step `3`, and
     /// six ticks back from the gate is the child's `0x29` exit pass, a pass
     /// before the frame retail's display held.
+    ///
+    /// A seed held on the accumulator ([`Self::step_run_accum_hold`]) runs
+    /// only the run's passes on its step: of the two frames behind the gate,
+    /// one past the run's start keeps the ordinary step.
     pub fn drive_display_lag(&self) -> u16 {
-        let step = self
-            .frame_step_seed()
-            .map_or(self.child_ordinary_step(), |s| s.0);
-        DISPLAY_LAG_PASSES * u16::from(step.max(1))
+        let ordinary = self.child_ordinary_step();
+        let Some((step, _, _, hold)) = self.frame_step_seed() else {
+            return DISPLAY_LAG_PASSES * u16::from(ordinary.max(1));
+        };
+        let seeded = hold.map_or(usize::MAX, |_| self.step_run.1);
+        (0..usize::from(DISPLAY_LAG_PASSES))
+            .map(|k| {
+                // The frame `k + 1` passes behind the gate: the engine opens a
+                // seeded frame on each run pass after the first.
+                if k + 1 < seeded {
+                    u16::from(step.max(1))
+                } else {
+                    u16::from(ordinary.max(1))
+                }
+            })
+            .sum()
     }
 
     /// Whether the image child's camera is aligned to the pose the
@@ -1029,6 +1045,16 @@ impl RetailBattle {
                     && self.active_actor >= 3
                     && self.queued_category == 3
                     && (0x14..=0x1E).contains(&self.action_state);
+                // ... and a monster cast's party target still idling ahead of
+                // the hit, the same clock: the cast band stages nothing on the
+                // victim before its hit (`battle_nilboa_aluru_v2_aluru_cannon_mid_cast`'s
+                // Vahn, a close-up whose sway the replay's own cursor missed).
+                let cast_target_idle = clip == 0
+                    && slot == self.target_code
+                    && slot < 3
+                    && self.active_actor >= 3
+                    && self.queued_category == 2
+                    && (0x28..=0x2F).contains(&self.action_state);
                 // ... and a monster on its idle in the strike loop, with the
                 // first swing staged behind it: the idle runs from the end of
                 // the walk or close-in, whose passes the replay's clock does
@@ -1043,6 +1069,7 @@ impl RetailBattle {
                     || parked_idle
                     || walking
                     || melee_target_idle
+                    || cast_target_idle
                     || summon_band_idle
                     || target_reaction
                     || (slot != self.active_actor && slot != self.target_code)
@@ -1492,7 +1519,13 @@ impl RetailBattle {
                         // heading the caster keeps.
                         || (seat >= 3 && self.queued_category == 2 && self.target_code == seat))
                         .then_some(self.target_code),
-                    yaw: Some(self.walk_yaw_base),
+                    // Past a walk-in body's arm 0 the counter is the arm's
+                    // own rung, not the seed's clock
+                    // ([`super::seed_plan::yaw_counter_reseeded_by`]).
+                    yaw: (!(self.action_state == 0x70
+                        && self.module_phase >= 1
+                        && super::seed_plan::yaw_counter_reseeded_by(self.queued_action)))
+                    .then_some(self.walk_yaw_base),
                     // An Attack's counter climbs from the arm's `0x200`
                     // unless a swing re-seed could have moved it.
                     // A Spirit band action's climbs from the seed's, and how
@@ -1741,6 +1774,19 @@ pub(super) fn run_drive(
             );
         }
         if std::env::var_os("LEGAIA_RC_DRIVE_TRACE").is_some() {
+            if let Some(c) = world.battle.camera.as_ref() {
+                eprintln!(
+                    "[rc-cam] t={t} pose={:?} target={:?} gauges={:?}",
+                    c.pose(),
+                    c.glide_target(),
+                    world
+                        .actors
+                        .iter()
+                        .take(8)
+                        .map(|a| a.battle.spirit_gauge)
+                        .collect::<Vec<_>>()
+                );
+            }
             let hp: Vec<u16> = world.actors.iter().take(8).map(|a| a.battle.hp).collect();
             eprintln!(
                 "[rc] t={t} mode={:?} flow={:?} cmd={} act={} st=0x{:02X} hp={hp:?} cam={:?} depth={} acc={:?} plaque_dy={} tint={:?}",

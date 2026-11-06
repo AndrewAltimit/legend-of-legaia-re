@@ -362,22 +362,25 @@ pub fn unpack_actor_state_rgb(word: u32) -> [u8; 3] {
 }
 
 /// Ease each 10-bit lane of `word` toward `target_rgb[lane] << 2` by
-/// `step_lanes`, clamping at the target - the `FUN_80050F30` primitive.
-/// The presentation tick's neutral decay is
+/// `step_lanes`, clamping at the target - the `FUN_80050F30` primitive with
+/// the step already scaled. The presentation tick's neutral decay is
 /// `ease_actor_state(w, [0x80; 3], IMPACT_EASE_STEP)`.
+///
+/// A lane already on its target is not rewritten; the third lane's store masks
+/// with `0x000FFFFF` (`0x8005105C..0x8005106C`), so the top two bits clear
+/// whenever that lane moves and survive when it does not - the same masks as
+/// [`crate::battle_formulas::packed3_approach_target`].
 pub fn ease_actor_state(word: u32, target_rgb: [u8; 3], step_lanes: u32) -> u32 {
-    // The top two bits ride along untouched (`FUN_80050F30` masks each
-    // lane back in and never clears them).
-    let mut out = word & 0xC000_0000;
+    use crate::battle_formulas::approach_channel_clamped;
+    const KEEP: [u32; 3] = [0xFFFF_FC00, 0xFFF0_03FF, 0x000F_FFFF];
+    let mut out = word;
     for n in 0..3u32 {
-        let cur = (word >> (10 * n)) & 0x3FF;
-        let tgt = u32::from(target_rgb[n as usize]) << 2;
-        let next = if cur < tgt {
-            (cur + step_lanes).min(tgt)
-        } else {
-            cur.saturating_sub(step_lanes).max(tgt)
-        };
-        out |= next << (10 * n);
+        let cur = ((out >> (10 * n)) & 0x3FF) as i32;
+        let tgt = i32::from(target_rgb[n as usize]) << 2;
+        if cur != tgt {
+            let next = approach_channel_clamped(cur, tgt, step_lanes as i32) as u32 & 0x3FF;
+            out = (out & KEEP[n as usize]) | (next << (10 * n));
+        }
     }
     out
 }

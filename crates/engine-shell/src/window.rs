@@ -95,6 +95,7 @@ pub(crate) use geometry::{
 // hosts share one implementation (the native window, the asset-viewer and
 // the browser play page) rather than forking the kernel per host.
 pub use entry_bench::cmd_entry_bench;
+pub use gamepad::{GamepadHost, GamepadPoll};
 pub use headless::HeadlessPlayWindow;
 pub(crate) use legaia_scene_formats::battle_backdrop::build_ground_grid_rgbc as build_battle_ground_grid;
 pub use run::cmd_play_window;

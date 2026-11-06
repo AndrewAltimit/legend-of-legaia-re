@@ -1,4 +1,5 @@
-//! Controller input for the play window.
+//! Controller input for the play window (and the launcher's screen, which
+//! moves its focus with the same folded word).
 //!
 //! gilrs reports every connected gamepad; this module renames its buttons to
 //! the W3C standard-mapping indices and folds them through the shared layout
@@ -72,7 +73,7 @@ const MAPPED_BUTTONS: [gilrs::Button; 16] = {
 /// One poll's result: the edges against the last poll, plus every button
 /// pressed since it (including one already released again).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct GamepadPoll {
+pub struct GamepadPoll {
     pub edges: GamepadEdges,
     pub taps: u16,
 }
@@ -89,7 +90,7 @@ enum Source {
 }
 
 /// The window's controller reader.
-pub(crate) struct GamepadHost {
+pub struct GamepadHost {
     source: Source,
     tracker: StandardGamepad,
     /// The two force-feedback effects (`[strong, weak]`) playing at full
@@ -105,7 +106,7 @@ impl GamepadHost {
     /// Open the platform's controller backend. `None` (logged) when this
     /// build has no gamepad support or the backend cannot start; the window
     /// then runs keyboard-only, as it always could.
-    pub(crate) fn open() -> Option<Self> {
+    pub fn open() -> Option<Self> {
         #[cfg(feature = "gamepad")]
         {
             match gilrs::Gilrs::new() {
@@ -155,7 +156,7 @@ impl GamepadHost {
 
     /// Drain the backend's events and fold every connected controller's
     /// state through the shared layout.
-    pub(crate) fn poll(&mut self) -> GamepadPoll {
+    pub fn poll(&mut self) -> GamepadPoll {
         let (word, taps) = match &mut self.source {
             #[cfg(feature = "gamepad")]
             Source::Gilrs(gilrs) => poll_gilrs(gilrs),
@@ -197,7 +198,7 @@ impl GamepadHost {
 
     /// Focus loss: forget the held word, so a button still held re-enters
     /// as a fresh press (the pages' `legaiaResetGamepad`).
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.tracker.reset();
     }
 }

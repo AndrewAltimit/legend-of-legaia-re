@@ -317,6 +317,18 @@ impl LegaiaRuntime {
         self.page_toggles.tweaks.fortress_encounter_fix
     }
 
+    /// The Tetsu spar order fix, the native `--no-tetsu-spar-fix` inverted
+    /// (on by default). Retail mode holds it off.
+    pub fn set_tetsu_spar_fix(&mut self, on: bool) {
+        self.page_toggles.tweaks.tetsu_spar_fix = on;
+        self.apply_page_toggles();
+    }
+
+    /// Whether [`Self::set_tetsu_spar_fix`] is on.
+    pub fn tetsu_spar_fix(&self) -> bool {
+        self.page_toggles.tweaks.tetsu_spar_fix
+    }
+
     /// The jewel fix, the native `--jewel-fix`: the boss cinematic casts
     /// respect elemental guards. Retail mode holds it off.
     pub fn set_jewel_fix(&mut self, on: bool) {
@@ -714,12 +726,15 @@ mod tests {
             legaia_engine_session::session_switches::GameplayTweaks::default()
         );
         assert!(rt.shiny_seru() && rt.fortress_encounter_fix() && rt.hp_readout_guard());
+        assert!(rt.tetsu_spar_fix());
         assert!(!rt.flee_exp() && !rt.jewel_fix());
         assert_eq!(rt.exp_rate_permille(), 1000);
         rt.set_shiny_seru(false);
         rt.set_flee_exp(true);
         rt.set_exp_rate_permille(2000);
         rt.set_fortress_encounter_fix(false);
+        rt.set_tetsu_spar_fix(false);
+        assert!(!rt.tetsu_spar_fix());
         rt.set_jewel_fix(true);
         assert!(!rt.shiny_seru() && rt.flee_exp() && rt.jewel_fix());
         assert!(!rt.fortress_encounter_fix());
@@ -730,6 +745,7 @@ mod tests {
             "set_flee_exp",
             "set_exp_rate_permille",
             "set_fortress_encounter_fix",
+            "set_tetsu_spar_fix",
             "set_jewel_fix",
             "set_hp_readout_guard",
             "set_bonus_drop",

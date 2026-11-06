@@ -1402,6 +1402,18 @@ About a third of the field maps carry such cells: `rugi`'s candle glows
 (`0x80`, a vertical quad that stays square to the lens), the `vell` / `vozz`
 forest trees (`0x180`), the `0x380` billboards of `deene` and `retona`.
 
+**A cell's own tilt is authored, and it rests on the floor.** The record
+rotations are applied whatever the flags (`0x801F779C..0x801F77E4`:
+`RotMatrixX(+0x08)`, `RotMatrixY(+0x0A)`, `RotMatrixZ(+0x0C)`, each skipped
+when zero), after the cell's world Y is set to the corner-average floor plus
+`+0x02`. `dolk`'s toppled jars are such cells: pack mesh 24, a jar 128 units
+long and 32 in radius, placed at `y_off = -32` with a roll of `0x400` (cells
+`(91, 74)` and `(91, 79)` of the chest room) or a near-quarter roll and a
+yaw. The roll lays the jar on its side, so its radius is the lift, and the
+lowest vertex sits on the floor. A high camera with no contact shadow makes a
+jar lying against the wall read as hanging in the air. The port places them
+from the same record, through the same `Rx * Ry * Rz` composition.
+
 **Port.** Both hosts honour both forms.
 
 - *Move-VM parts.* Every part draw record carries the node's `+0x52` word as
@@ -2476,11 +2488,25 @@ Both hosts run the span test in the same vertex stage as the near reject
 `primSxy`), armed in battle and on the field (`camera_frame::prim_gpu_span_h`:
 the battle camera's `H = 256`, the field camera's own `_DAT_8007B6F4`, riding
 the parameters' enable lane). A split quad is dropped only when both halves
-exceed the limit. A PCSX-Redux capture drops more: its software GPU rejects a whole
-quad on any corner pair past the limit (`SoftRenderer::checkCoord4`), where the
-console skips the one triangle. `rikuroa_field_card_walk` leaves out a near wall
-quad whose halves span `513` and `443` rows, and the child of a PCSX-Redux state
-takes that rule beside its texel rule (`PsxTexelRule::PcsxRedux`). On the field it keeps `rim_elm_queen_bee_battle`'s frame
+exceed the limit.
+
+A PCSX-Redux capture runs its own limit instead, which drops both more and
+less than the console's. Its software GPU measures a corner pair only from a
+corner whose coordinate is negative (`SoftRenderer::checkCoord3` /
+`checkCoord4`), and one such pair past `1024 x 512` rejects a whole quad,
+where the console skips the one triangle; a primitive with no negative
+coordinate is drawn at any size. `rikuroa_field_card_walk` shows both. It
+leaves out a near wall quad whose halves span `513` and `443` rows (a corner
+at `y = -26`). It draws the floor quad beside it, corners `(109, 286)`,
+`(-29, 887)`, `(31, 194)` and `(-285, 487)`, whose halves span `693` rows
+with no negative `y`, as the light wedge in the frame's bottom-left; the
+console would skip both halves. The child of a PCSX-Redux state takes that
+rule in place of the console's, beside its texel rule
+(`PsxTexelRule::PcsxRedux`, `pcsx_quad_rejected` / `pcsx_tri_rejected` in
+the WGSL). The sign tests read the packet's own screen frame, Y down; the
+vertex stage's offsets are Y up and are flipped first. Read in the Y-up
+frame, the floor quad's `y = 887` corner tested as negative and the wedge
+dropped. On the field the console rule keeps `rim_elm_queen_bee_battle`'s frame
 clear: its camera stands beside a decoration rock whose near face projects
 past the span. The dance hall applies the same rule to its baked hall on the
 CPU ([`minigame-dance.md`](minigame-dance.md#the-camera-keyframe-track)).
@@ -2538,6 +2564,23 @@ in-plane scales `0x140` / `0x100`. At `SZ = 64` an unclamped projection puts
 the inner edge past the screen's edge and the ring draws nothing visible;
 under the cap the inner edge is an ellipse about `130 x 104` pixels and the
 ring frames the screen as the yellow glow arms 13..19 hold.
+
+A corner at or behind the eye is one more case of the same limits. `SZ`
+saturates at `0`, the capped divide puts the corner at `OF + 2 * IR`, and
+the GPU draws the primitive to that point. A near-plane clip would trim the
+primitive where it crosses the eye plane instead and draw another shape. The
+near reject drops most primitives that reach behind the eye, so this
+corner case shows only on a large primitive whose mean `SZ` still clears the
+floor. The vertex stage seats such a corner at that screen point and at the
+depth the cap stands for (`w = H / 2 / sz_per_w`), with the primitive's mean
+depth word when the draw links at its mean (`prim_mean_depth` read at
+`w = 1`), or the nearest otherwise. It does so only for a primitive with a
+single owner and a corner in front of the eye (`gte_saturate_prim`, the GLSL
+`primReachesFront`). A primitive wholly behind the eye, or a vertex two
+primitives weld, keeps the near-plane clip and its own depth, since the
+clip's crossing point depends on that depth. The battle ground grid's cells
+behind the eye are the emitter's own cull
+([`battle-stage-camera.md`](battle-stage-camera.md#the-two-culls)).
 
 The port applies the limits in the mesh vertex stage under PSX mode only
 (`Renderer::set_psx_mode`): `prim_near_reject::gte_saturated_clip` on the

@@ -468,7 +468,7 @@ Calls `FUN_801E6968` (the Lost Grail **Final Heal** auto-revive; engine `World::
 
 Ramps `_DAT_8007B910` back up to `_DAT_8008457C` (the configured [audio level](battle-action-helpers.md#the-_dat_8007b910-ramps-are-an-audio-duck)). Per-category pose updates. Calls `FUN_801E7250` ([the HP-bar settle gate](battle-action-exit-gates.md#what-fun_801e7250-measures)); decrements `ctx[+0x6D8]`. When < 0 and `ctx[+0x276] == 0`: `ctx[+0x269] == 0` → `0x5A`, else `0x52`.
 
-Under `timer < 0xC`, calls `FUN_801D99BC` and unloads: `FUN_801D8DE8(actor[+0x18], 1)` (anim), `+0x4E/+0x4F` if anim was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (damage), `+0x44`; then **raises** `+0x59` (the capture banner) and unloads `+0x51` / `+0x50`, plus the multi-cast `(id, id-4)` loop off `_DAT_801F6974` - see [the sweep section](battle-action-exit-gates.md#the-sweep-the-teardown-falls-into-0x801e62180x801e6368).
+Under `timer < 0xC`, calls `FUN_801D99BC` and sends out on closing glides ([mode `1`](battle-hud.md#action-phase-records)): `FUN_801D8DE8(ctx[+0x18], 1)` (the readout bar `7` or the panels `6`), `+0x4E/+0x4F` if that was 6, `ctx[+0x26]` (the level-up banner), `+0xF/+0x52` (the Spirit pair, under `ctx[+0x19]`), `+0x44` (the actor plaque); then **raises** `+0x59` (the capture banner) and unloads `+0x51` / `+0x50`, plus the multi-cast `(id, id-4)` loop off `_DAT_801F6974` - see [the sweep section](battle-action-exit-gates.md#the-sweep-the-teardown-falls-into-0x801e62180x801e6368).
 
 **Next:** `0x52` or `0x5A`.
 
@@ -542,7 +542,9 @@ If `ctx[+0x287] != 0`: duck the audio level `_DAT_8007B910 -= DAT_1F800393`, cla
 
 #### State `0x70` - Magic-capture - phase 2
 
-Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] = 1` in the call's delay slot. Runs `func_0x801F2160` (the [magic effect-class dispatcher](battle-action-helpers.md#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](battle-action-helpers.md#battle-helper-functions)). Ported as `magic::magic_capture_phase2` over `BattleActionHost::capture_stager_tick`.
+Same audio duck as `0x6F`, behind the same `ctx[+0x287]` gate. Pins `ctx[+0xD] = 1` in the call's delay slot. Runs `func_0x801F2160` (the [magic effect-class dispatcher](battle-action-helpers.md#battle-helper-functions), keyed on the spell's effect-class byte) - for a capture-class action this is the drive loop of the paged **cast module**: the module tick re-enters every frame and the state advances only on a zero return, with no timer and no bail-out ([cast-module.md](cast-module.md)). When done, calls `func_0x801F0348` (the [target-size camera framing](battle-action-helpers.md#battle-helper-functions)).
+
+Ported as `magic::magic_capture_phase2` over `BattleActionHost::capture_stager_tick`; the pin reaches the host first (`BattleActionHost::camera_variant_pinned`), since a walk-in module frames case 6 inside the same tick ([cast-module.md](cast-module.md#capture-walk-in-bodies)).
 
 **Next:** `0x71`.
 

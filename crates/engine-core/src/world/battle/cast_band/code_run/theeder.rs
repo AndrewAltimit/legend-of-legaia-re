@@ -117,7 +117,7 @@ impl World {
     ///
     /// The atan2 is the ported `FUN_80019B28`
     /// ([`legaia_engine_battle_vm::battle_action::bearing_12bit_approx`]) over the
-    /// approximated arctan LUT, the same one the enemy target cursor uses.
+    /// computed arctan LUT, which is the retail table.
     ///
     /// REF: FUN_801F69D8 (PROT 0904 arm 12 cone gate), FUN_80019B28
     pub fn seats_in_cone(

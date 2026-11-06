@@ -59,7 +59,8 @@ pub(super) fn run_battle(
     let battle = {
         let mut b = battle.clone();
         b.resident_shiny_seru = is_shiny_seru_patch(entry.resident_patch.as_deref());
-        b.entry_latches = crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
+        (b.entry_latches, b.entry_lowers) =
+            crate::retail_compare_battle::entry_latches(opts.extracted, retail, &b);
         latched = b;
         &latched
     };
@@ -692,6 +693,17 @@ pub(super) fn battle_image(
                 .join(","),
         ));
     }
+    if !battle.entry_lowers.is_empty() {
+        env.push((
+            "LEGAIA_BATTLE_LOWERS",
+            battle
+                .entry_lowers
+                .iter()
+                .map(|f| format!("{f:x}"))
+                .collect::<Vec<_>>()
+                .join(","),
+        ));
+    }
     // The idle orbit is a clock: phase-align it to the retail instant when
     // retail's own orbit owns the yaw (the battle tick's prologue store,
     // gated on these command-flow bytes - `0x801D07AC..0x801D07CC`).
@@ -855,6 +867,19 @@ pub(super) fn battle_image(
             legaia_engine_capture::hud_glide::HudGlideSeat::to_env(&battle.hud_glides),
         ));
     }
+    // Who the Done band's closing glides name: the finished actor and the
+    // bar's member, on engine seats.
+    if let Some((actor, member)) = battle.hud_close_seats.filter(|_| !displayed_menu) {
+        let pc = battle.party_count.clamp(1, 3);
+        env.push((
+            "LEGAIA_SEAT_HUD_CLOSE",
+            format!(
+                "{},{}",
+                legaia_engine_capture::battle_drive::engine_seat(actor, pc),
+                legaia_engine_capture::battle_drive::engine_seat(member, pc)
+            ),
+        ));
+    }
     // The numerals the displayed frame drew, off retail's own packets
     // (`displayed_popup_cells`); where they cannot be read, the newest
     // numeral's rise (`popup_age_seat`) on the engine seat of its struck
@@ -886,9 +911,16 @@ pub(super) fn battle_image(
     if battle.replay_keeps_default_step() {
         env.push(("LEGAIA_BATTLE_PARTY_STEP", "0".to_string()));
     }
-    if let Some((step, state, from)) = battle.frame_step_seed() {
+    if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         let from = from.map_or(String::new(), |(clip, cursor)| format!(",{clip},{cursor}"));
         env.push(("LEGAIA_BATTLE_FRAME_STEP", format!("{step},{state}{from}")));
+        if let Some(hold) = hold {
+            env.push(("LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM", hold.to_string()));
+        }
+    }
+    // Diagnostic: the image child's whole seat, as handed over.
+    if std::env::var_os("LEGAIA_RC_CHILD_ENV").is_some() {
+        eprintln!("[rc-env] {:?}", env);
     }
     let mut tick = crate::retail_compare_battle::BATTLE_CAPTURE_TICK
         + u64::from(engine.prompt_tick.unwrap_or(0));

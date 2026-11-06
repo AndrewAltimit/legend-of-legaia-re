@@ -307,6 +307,15 @@ pub struct InventoryUseSession {
     /// list and can commit again before the screen closes.
     /// Drained by `legaia_engine_menu_runtime::field_menu_dispatch::apply_inventory_outcome`.
     pub consumed_items: Vec<u8>,
+    /// Display names by item id, ahead of [`Self::catalog`]'s.
+    ///
+    /// The catalog holds the **usable** items (the effect-descriptor rows), so
+    /// a weapon or key item in the bag has no entry there. The battle Item
+    /// window lists every held id (unusable ones dimmed), and without these
+    /// names such a row printed its raw id (`Item 22`, `Item A6`) where retail
+    /// prints the static item-name table's name (issue #556). Hosts fill it
+    /// from the disc's name table; empty falls back to the catalog.
+    pub item_names: std::collections::BTreeMap<u8, String>,
 }
 
 impl InventoryUseSession {
@@ -340,7 +349,24 @@ impl InventoryUseSession {
             consumed_items: Vec::new(),
             bag_slots: Vec::new(),
             bag_counts: Vec::new(),
+            item_names: std::collections::BTreeMap::new(),
         }
+    }
+
+    /// Install display names by id ([`Self::item_names`]).
+    pub fn with_item_names(mut self, names: std::collections::BTreeMap<u8, String>) -> Self {
+        self.item_names = names;
+        self
+    }
+
+    /// The row label for `id`: the installed name, else the catalog's, else
+    /// the raw id in hex.
+    pub fn item_label(&self, id: u8) -> String {
+        self.item_names
+            .get(&id)
+            .cloned()
+            .or_else(|| self.catalog.get(id).map(|e| e.name.to_string()))
+            .unwrap_or_else(|| format!("Item {id:02X}"))
     }
 
     /// Remove the item at flat index `idx` from the session's list (the
@@ -451,11 +477,7 @@ impl InventoryUseSession {
                 }
                 None => {
                     row_of_id.insert(*id, rows.len());
-                    let name = self
-                        .catalog
-                        .get(*id)
-                        .map(|e| e.name.to_string())
-                        .unwrap_or_else(|| format!("Item {id:02X}"));
+                    let name = self.item_label(*id);
                     rows.push(ItemMenuRow {
                         id: *id,
                         name,

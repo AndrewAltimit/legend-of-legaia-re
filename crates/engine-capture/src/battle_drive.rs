@@ -1386,6 +1386,7 @@ impl BattleDrive {
         // (`0x801E2CF8`), which is no coin; with the SM running one pass a
         // battle frame that rung is live for a whole frame, and flipping it
         // swung the seed's framing half a turn.
+        let mut coin_seat = None;
         {
             let pc = world.party.party_count.clamp(1, 3);
             let state = world.battle_ctx.action_state;
@@ -1458,8 +1459,14 @@ impl BattleDrive {
                 }
                 if let Some(coin) = steer.coin {
                     cam.align_phase_cursor(coin);
+                    coin_seat = Some(coin);
                 }
             }
+        }
+        // The coin is a ctx byte the camera reads every drive
+        // (`BattleCamInputs::track_coin`): seat it on the world.
+        if let Some(coin) = coin_seat {
+            world.battle_ctx.track_coin = coin & 1;
         }
         let pc = world.party.party_count.clamp(1, 3);
         let ours = world.mode == SceneMode::Battle
@@ -1478,6 +1485,31 @@ impl BattleDrive {
         {
             let n = a.battle.params.len().min(queue.len());
             a.battle.params[..n].copy_from_slice(&queue[..n]);
+        }
+        // A monster strike's aim, on a rescue run only (harness only,
+        // `LEGAIA_BATTLE_STRIKE_AIM`): the replay reaches the striker's turns
+        // on another `rand()` count than retail's, so one unit of an earlier
+        // walk or nudge can aim every one of them at another member and leave
+        // the gate unmet. From the seed pass to the Attack arm, a physical
+        // turn of the striker then aims at the capture's `+0x1DD` while that
+        // member stands (a cast keeps its own aim). Off by default: aiming
+        // every turn lets an earlier turn than the one retail stands on meet
+        // the gate (`battle_jou_gola_gola_v3_strike`'s yaw), so the image
+        // child takes it only once a run has missed the gate.
+        if seat >= 3
+            && ours
+            && category == 3
+            && strike_aim_rescue()
+            && (0x0C..0x14).contains(&state)
+            && let Some(t) = steer.target.map(|t| engine_seat(t, pc)).filter(|&t| t < pc)
+            && world
+                .actors
+                .get(usize::from(t))
+                .is_some_and(|a| a.battle.hp > 0)
+            && let Some(a) = world.actors.get_mut(usize::from(engine_seat(seat, pc)))
+            && a.battle.action_category == 3
+        {
+            a.battle.active_target = t;
         }
         // The parked approach ([`ActionSteer::park`]): from the seat's Attack
         // arm `0x14` to the poll, its walk is held where it stands.
@@ -1522,10 +1554,24 @@ impl BattleDrive {
         // two passes into its action would be filmed on the engine's coin.
         // Pin it through the seed instead
         // (`BattleActionCtx::camera_variant_pin`), for the driven seat only.
+        // A walk-in body's arm 0 rolls the style afresh (`rand() % 4` at
+        // `0x801F71D0` in PROT 0952) ahead of its case 6, and a capture on
+        // that pass holds the roll; every later pass re-pins `1` before the
+        // module ticks, which the roll then matches anyway. The approach leg
+        // standing in for the arm takes the pin over its own roll.
+        let arm0_roll = want == 0x70
+            && CAPTURE_BAND.contains(&state)
+            && world.casting.module_phase == 0
+            && matches!(end, SpanGate::CaptureFade { arm: Some((p, _)), .. } if p >= 1)
+            && capture_body(world, world.battle_ctx.active_actor).is_some_and(|(e, b)| {
+                legaia_engine_cast::cast_module_camera::capture_approach_yaw_base(e, Some(b))
+                    .is_some()
+            });
         world.battle_ctx.camera_variant_pin = style.filter(|_| {
-            ours && (seat < 3 || category == 3)
+            ours && ((seat < 3 || category == 3)
                 && (PRE_SEED_STATES.contains(&state) || state == 0x0C)
                 && !CAPTURE_BAND.contains(&want)
+                || arm0_roll)
         });
         if end == SpanGate::Landed {
             if let Some(e) = steer.prior
@@ -2004,3 +2050,10 @@ pub(crate) fn unlearn_spell(record: &mut legaia_save::CharacterRecord, spell_id:
 
 #[cfg(test)]
 mod tests;
+
+/// Whether this run is a strike-aim rescue (`LEGAIA_BATTLE_STRIKE_AIM=1`,
+/// set by the retail-compare image child's retry once a run missed its gate).
+fn strike_aim_rescue() -> bool {
+    static AIM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *AIM.get_or_init(|| std::env::var("LEGAIA_BATTLE_STRIKE_AIM").is_ok_and(|v| v.trim() == "1"))
+}

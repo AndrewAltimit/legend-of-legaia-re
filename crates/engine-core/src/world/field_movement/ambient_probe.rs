@@ -56,18 +56,15 @@ pub(super) struct AmbientPlayerProbe {
     pub(super) exempt: bool,
 }
 
-/// The 12-bit engine heading that points along `(dx, dz)` - the engine's
-/// stand-in for retail's arctangent resolver `FUN_80019B28` (LUT at
-/// `DAT_8006F4C8`), in the engine's own convention where `0` faces Z+ rather
-/// than retail's `+0x26` space where `0` faces Z-.
-///
-/// Float `atan2` rather than the LUT, so the result is shape-faithful and not
-/// bit-exact; every consumer either draws it or quantises it into a 45°
-/// compass sector.
+/// The 12-bit engine heading that points along `(dx, dz)`: retail's
+/// arctangent resolver `FUN_80019B28` (LUT at `DAT_8006F4C8`) over the
+/// displacement, exactly ([`legaia_engine_system::trig::bearing12`]), in the
+/// engine's own convention where `0` faces Z+ rather than retail's `+0x26`
+/// space where `0` faces Z-. The deltas arrive as `f32` but are whole numbers.
 ///
 /// REF: FUN_80019B28
 pub(super) fn engine_bearing(dx: f32, dz: f32) -> i16 {
-    ((dx.atan2(dz) / std::f32::consts::TAU * 4096.0).round() as i32 & 0x0FFF) as i16
+    legaia_engine_system::trig::bearing12(dz as i32, dx as i32) as i16
 }
 
 /// Does this motion stream carry a walk op - a directional step

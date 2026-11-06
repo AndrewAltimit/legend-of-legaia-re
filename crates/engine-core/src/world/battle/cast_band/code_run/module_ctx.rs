@@ -195,7 +195,8 @@ impl World {
     /// reaction plays (retail commits a reaction into `+0x1D9` like any
     /// other clip), else the committed `current_anim`. A downed party seat
     /// holds the engine's defeat pose rather than clip `8`, so a finished
-    /// defeat pose reads as settled too.
+    /// defeat pose reads as settled too, and a dead seat with no clips at all
+    /// reads settled at once.
     pub(in crate::world::battle) fn chain_seat_settled(&self, slot: usize, faded: bool) -> bool {
         let Some(a) = self.actors.get(slot) else {
             return true;
@@ -210,7 +211,12 @@ impl World {
         let downed = playing == legaia_engine_cast::cast_module_ticks::SETTLE_DOWN_CLIP
             || (a.battle_pose == Some(legaia_engine_battle_vm::battle_action::Pose::Defeat as u8)
                 && a.battle_animation.as_ref().is_none_or(|p| p.finished()));
-        downed || (faded && (a.battle.render_color == 0 || !a.active))
+        // A seat with no clips to play (a headless body) never reaches the
+        // down clip, so it reads settled as soon as it is down, as a clip
+        // gate passes on a seat that can never commit one.
+        downed
+            || a.battle_action_clips.is_none()
+            || (faded && (a.battle.render_color == 0 || !a.active))
     }
 
     /// [`Self::chain_seat_settled`] over the seats a [`legaia_engine_cast::cast_module_ticks::ChainSettle`]

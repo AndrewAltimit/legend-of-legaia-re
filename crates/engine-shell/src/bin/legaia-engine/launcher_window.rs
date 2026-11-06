@@ -12,7 +12,9 @@
 //!   the native file dialog (`rfd`); dropping a file on the window or typing
 //!   a path also works, for desktops without a file-dialog portal. A disc
 //!   that validates is remembered, and from then on the screen letters
-//!   itself in the game's own font, read from that disc.
+//!   itself in the game's own font, read from that disc. The last few
+//!   discs are kept (`LauncherSettings::recent_discs`); right-click or
+//!   Shift+Enter on *Choose disc* steps to the next that still validates.
 //! - **Options.** The engine's enhancement knobs the game remembers
 //!   (written to its own `legaia-options.toml`, the value the in-game keys
 //!   toggle) and the launch switches with no option behind them
@@ -24,10 +26,17 @@
 //!   green, the original's own dim (`OptionRow::original_value`).
 //! - **Controls.** The current key bindings (`legaia-input.toml`), so a
 //!   player sees them before the game starts.
+//! - **Saves folder** opens the data directory; its second action (or a
+//!   dropped `.mcr` / `.mcd` / `.gme` / `.mcs`) mounts an emulator memory
+//!   card as the save screen's card 2 (`--card`, `LauncherSettings::card`).
 //! - **Play** starts the game in a child process (winit allows one event
 //!   loop per process, and the launcher holds it) and closes the window.
 //!   A clean exit ends the launcher; a failure brings the window back with
 //!   the end of the game's log (`legaia-engine-game.log`).
+//!
+//! A controller works the screen as the game's menus do: the D-pad or left
+//! stick moves, Cross activates, Triangle is the right-click, Circle leaves
+//! the Controls page, Start plays, L1 / R1 page the options.
 //!
 //! The screen is keyboard-first: arrows move, Enter activates, Left / Right
 //! change a value, Tab jumps between the columns, Page Up / Page Down / Home
@@ -147,15 +156,33 @@ fn no_window(why: &str) -> ! {
 /// `launcher.toml` included. Legaia Explorer's *Play* goes through here, so a
 /// game started from either program is the same game. A settings file that
 /// does not parse plays on the defaults, the way the launcher window treats it.
+///
+/// The disc becomes the launcher's disc and the newest of its recent ones
+/// ([`LauncherSettings::remember_disc`]), as a *Play* in the launcher makes
+/// it: the disc played before stays one Shift+Enter away there.
 pub(crate) fn launch_args(disc: &Path) -> Result<Vec<OsString>> {
-    let settings = launcher::settings_path()
-        .and_then(|f| {
-            LauncherSettings::load(&f)
-                .inspect_err(|e| log::warn!("launch: {} ignored: {e:#}", f.display()))
-                .ok()
-        })
-        .unwrap_or_default();
+    let settings_file = launcher::settings_path();
+    let loaded = settings_file.as_deref().and_then(|f| {
+        LauncherSettings::load(f)
+            .inspect_err(|e| log::warn!("launch: {} ignored: {e:#}", f.display()))
+            .ok()
+    });
     let info = launcher::validate_disc(disc).map_err(|p| anyhow::anyhow!("{p}"))?;
+    // A settings file that does not parse is left alone (the launcher window
+    // re-prompts on it); only a readable or absent one is updated.
+    let settings = match (settings_file.as_deref(), loaded) {
+        (Some(f), Some(mut s)) => {
+            s.remember_disc(&info.path);
+            if let Err(e) = s.save(f) {
+                log::warn!(
+                    "launch: could not remember the disc in {} ({e:#})",
+                    f.display()
+                );
+            }
+            s
+        }
+        (_, s) => s.unwrap_or_default(),
+    };
     let mut args = vec![OsString::from("legaia-engine")];
     args.extend(launcher::play_args_with(&info, &settings));
     Ok(args)
@@ -399,6 +426,10 @@ struct LauncherApp {
     solid: (u32, u32, u32, u32),
     disc: Option<DiscInfo>,
     problem: Option<DiscProblem>,
+    /// The disc *Choose disc*'s second action (right-click, Shift+Enter)
+    /// switches to: the next remembered disc that still validates
+    /// ([`launcher::next_recent_disc`]).
+    recent_offer: Option<DiscInfo>,
     /// The remembered expansion pack, checked ([`launcher::inspect_expansion`]),
     /// or why it could not be read.
     expansion: Option<Result<ExpansionInfo, String>>,
@@ -406,6 +437,9 @@ struct LauncherApp {
     /// ([`launcher::discover_packs`]), read once when the window opens: the
     /// Expansion button steps through them before it opens a file dialog.
     packs: Vec<ExpansionInfo>,
+    /// The remembered memory card, checked ([`launcher::inspect_card`]), or
+    /// why it cannot be mounted.
+    card: Option<Result<launcher::CardInfo, String>>,
     settings: LauncherSettings,
     settings_file: Option<PathBuf>,
     options: OptionsState,
@@ -432,6 +466,10 @@ struct LauncherApp {
     /// When the window last opened (input settles for a moment after).
     opened_at: Instant,
     screenshot: Option<PathBuf>,
+    /// The connected controllers, opened with the window (none in a
+    /// scripted capture): the D-pad moves the focus, Cross activates, as in
+    /// the game's own menus ([`Self::pad_input`]).
+    pad: Option<legaia_engine_shell::window::GamepadHost>,
     /// The Controls page's table and the key it may be waiting for. Read from
     /// [`launcher::INPUT_FILE`] when the page opens; every bound key is
     /// written straight back, the same file the game's Key Config writes.
@@ -463,6 +501,7 @@ impl LauncherApp {
             solid: (0, 0, 1, 1),
             disc: None,
             problem,
+            recent_offer: None,
             expansion: settings
                 .expansion
                 .as_deref()
@@ -472,6 +511,7 @@ impl LauncherApp {
                 .flatten()
                 .filter(ExpansionInfo::playable)
                 .collect(),
+            card: settings.card.as_deref().map(launcher::inspect_card),
             settings,
             settings_file,
             options,
@@ -491,13 +531,21 @@ impl LauncherApp {
                 launcher::INPUT_FILE,
             ))),
             screenshot: std::env::var_os(SCREENSHOT_ENV).map(PathBuf::from),
+            pad: None,
         };
         app.set_disc(disc);
-        app.status = app
-            .problem
-            .as_ref()
-            .map(problem_message)
-            .filter(|m| !m.is_empty());
+        app.refresh_recent_offer();
+        let offer = app
+            .disc
+            .is_none()
+            .then_some(app.recent_offer.as_ref())
+            .flatten();
+        app.status = match (&app.problem, offer) {
+            (Some(p), _) => Some(problem_status(p, offer)),
+            (None, Some(o)) => Some(vec![(recent_offer_line(o), GOOD)]),
+            (None, None) => None,
+        }
+        .filter(|m| !m.is_empty());
         if let Some(n) = std::env::var(FOCUS_ENV)
             .ok()
             .and_then(|v| v.trim().parse::<i32>().ok())
@@ -546,20 +594,54 @@ impl LauncherApp {
         }
     }
 
+    /// Recompute [`Self::recent_offer`] after the disc or the list changed.
+    fn refresh_recent_offer(&mut self) {
+        self.recent_offer = launcher::next_recent_disc(&self.settings, launcher::validate_disc);
+    }
+
+    /// *Choose disc*'s second action: switch to the next remembered disc
+    /// that still validates. The list keeps its order while stepping, so
+    /// repeated steps visit each disc; *Play* moves the one played to the
+    /// head.
+    fn step_recent_disc(&mut self) {
+        let Some(info) = self.recent_offer.take() else {
+            self.status = Some(vec![(
+                "No other disc has been chosen here yet. Choose disc... adds one; the last \
+                 few are remembered."
+                    .into(),
+                DIM,
+            )]);
+            self.win.request_redraw();
+            return;
+        };
+        log::info!("launcher: switched to recent disc {}", info.path.display());
+        self.settings.disc = Some(info.path.clone());
+        self.save_settings();
+        self.problem = None;
+        self.typed.clear();
+        let name = file_name_of(&info.path);
+        self.set_disc(Some(info));
+        self.refresh_recent_offer();
+        self.focus = Item::Play;
+        self.status = Some(vec![(
+            format!("Disc ready: {name}, chosen before. Press Enter to play."),
+            GOOD,
+        )]);
+        self.win.request_redraw();
+    }
+
     fn try_disc(&mut self, path: &Path) {
         match launcher::validate_disc(path) {
             Ok(info) => {
+                self.settings.remember_disc(&info.path);
+                self.save_settings();
                 if let Some(f) = &self.settings_file {
-                    if let Err(e) = launcher::remember(f, &info) {
-                        log::warn!("launcher: could not save settings ({e:#})");
-                    } else {
-                        log::info!("launcher: remembered {} in {}", path.display(), f.display());
-                    }
+                    log::info!("launcher: remembered {} in {}", path.display(), f.display());
                 }
-                self.settings.disc = Some(info.path.clone());
                 self.problem = None;
                 self.typed.clear();
                 self.set_disc(Some(info));
+                self.refresh_recent_offer();
                 self.focus = Item::Play;
                 self.status = Some(vec![("Disc ready. Press Enter to play.".into(), GOOD)]);
             }
@@ -782,6 +864,21 @@ impl LauncherApp {
             self.focus = Item::Expansion;
             return;
         }
+        if let Some(Err(why)) = &self.card {
+            self.status = Some(vec![
+                ("Card 2 cannot be used:".into(), WARN),
+                (why.clone(), WARN),
+                (CARD_FIX.into(), DIM),
+            ]);
+            self.focus = Item::DataFolder;
+            return;
+        }
+        // The disc played becomes the newest of the remembered ones.
+        if self.settings.recent_discs.first() != Some(&info.path) {
+            self.settings.remember_disc(&info.path);
+            self.save_settings();
+            self.refresh_recent_offer();
+        }
         match spawn_game(&info, &self.settings, online) {
             Ok(g) => {
                 log::info!("launcher: game started on {}", info.bin.display());
@@ -847,7 +944,69 @@ impl LauncherApp {
         self.atlas = None;
         self.upload_font();
         self.opened_at = Instant::now();
+        if self.pad.is_none() && self.screenshot.is_none() {
+            self.pad = legaia_engine_shell::window::GamepadHost::open();
+        }
+        if let Some(pad) = &mut self.pad {
+            // A button still held from the game (the Start that quit it)
+            // re-enters as a fresh press only after it is let go.
+            let _ = pad.poll();
+        }
         self.win.request_redraw();
+    }
+
+    /// Poll the controllers and act on the buttons pressed since the last
+    /// poll, while the window is up: the D-pad (or left stick) moves the
+    /// focus and steps an option, Cross activates, Triangle is the second
+    /// action (a right-click), Circle backs out of the Controls page, Start
+    /// plays, L1 / R1 page the option list.
+    fn pad_input(&mut self, evl: &ActiveEventLoop) {
+        let Some(pad) = &mut self.pad else { return };
+        if self.win.window.is_none() {
+            return;
+        }
+        let poll = pad.poll();
+        let pressed = poll.edges.pressed | poll.taps;
+        evl.set_control_flow(ControlFlow::WaitUntil(
+            Instant::now() + Duration::from_millis(16),
+        ));
+        if pressed == 0
+            || self.awaiting_key().is_some()
+            || self.opened_at.elapsed() < Duration::from_millis(300)
+        {
+            return;
+        }
+        for nav in pad_nav(pressed) {
+            match nav {
+                PadNav::Focus(d) => self.step_focus(d),
+                PadNav::Horizontal(d) => self.horizontal(d, evl),
+                PadNav::Page(d) => self.step_option(d * (VISIBLE_LINES as i32 - 2)),
+                PadNav::Back => {
+                    if self.panel == Panel::Controls {
+                        self.leave_controls();
+                    }
+                }
+                PadNav::Activate(d) => self.activate(self.focus, d, evl),
+                PadNav::Play => {
+                    if self.disc.is_some() {
+                        self.activate(Item::Play, 1, evl);
+                    }
+                }
+            }
+        }
+        self.win.request_redraw();
+    }
+
+    /// Left / Right (arrow keys, D-pad): step the focused option, or move
+    /// between the columns.
+    fn horizontal(&mut self, dir: i8, evl: &ActiveEventLoop) {
+        match self.focus {
+            Item::Opt(_) => self.activate(self.focus, dir, evl),
+            Item::Bind(_) | Item::BindReset if dir < 0 => self.focus = Item::Panel,
+            Item::Bind(_) | Item::BindReset => {}
+            _ if dir > 0 => self.switch_column(),
+            _ => {}
+        }
     }
 
     /// Notice the game ending: a clean exit ends the launcher, a failure
@@ -918,12 +1077,71 @@ impl LauncherApp {
         }]);
     }
 
+    /// Mount `path` as the game's second memory card when it reads as one.
+    fn try_card(&mut self, path: &Path) {
+        match launcher::inspect_card(path) {
+            Ok(info) => {
+                log::info!("launcher: memory card {}", info.path.display());
+                self.settings.card = Some(info.path.clone());
+                self.save_settings();
+                self.status = Some(vec![(card_summary(&info), GOOD)]);
+                self.card = Some(Ok(info));
+            }
+            Err(why) => {
+                log::warn!("launcher: memory card {}: {why}", path.display());
+                self.status = Some(vec![
+                    ("Not a memory card the game can use:".into(), WARN),
+                    (why, WARN),
+                    (CARD_FIX.into(), DIM),
+                ]);
+            }
+        }
+        self.focus = Item::DataFolder;
+        self.win.request_redraw();
+    }
+
+    /// Stop mounting the remembered memory card.
+    fn clear_card(&mut self) {
+        if self.settings.card.take().is_some() {
+            self.card = None;
+            self.save_settings();
+            self.status = Some(vec![(
+                "No memory card: the game uses only its own save card.".into(),
+                DIM,
+            )]);
+        }
+        self.win.request_redraw();
+    }
+
+    fn browse_card(&mut self) {
+        let mut dialog = rfd::FileDialog::new()
+            .set_title("Choose a memory card from your emulator")
+            .add_filter("PlayStation memory card", &launcher::CARD_EXTENSIONS)
+            .add_filter("Any file", &["*"]);
+        if let Some(dir) = self
+            .settings
+            .card
+            .as_deref()
+            .and_then(Path::parent)
+            .filter(|d| d.is_dir())
+        {
+            dialog = dialog.set_directory(dir);
+        }
+        if let Some(w) = self.win.window.as_deref() {
+            dialog = dialog.set_parent(w);
+        }
+        if let Some(p) = dialog.pick_file() {
+            self.try_card(&p);
+        }
+    }
+
     /// Activate the focused control (`dir` steps an option backwards).
     fn activate(&mut self, item: Item, dir: i8, evl: &ActiveEventLoop) {
         self.focus = item;
         match item {
             Item::Play => self.play(evl, false),
             Item::Online => self.play(evl, true),
+            Item::ChooseDisc if dir < 0 => self.step_recent_disc(),
             Item::ChooseDisc => self.browse(),
             Item::Expansion if dir < 0 => self.clear_expansion(),
             Item::Expansion => self.next_expansion(),
@@ -946,6 +1164,7 @@ impl LauncherApp {
                 self.rebind = KeyRebindSession::new(Mapping::default());
                 self.save_bindings("Every key is back on its default.".into());
             }
+            Item::DataFolder if dir < 0 => self.browse_card(),
             Item::DataFolder => self.open_data_folder(),
             Item::Quit => evl.exit(),
             Item::Opt(row) => {
@@ -1023,6 +1242,10 @@ impl LauncherApp {
     fn reset_focused(&mut self) {
         if self.focus == Item::Expansion {
             self.clear_expansion();
+            return;
+        }
+        if self.focus == Item::DataFolder {
+            self.clear_card();
             return;
         }
         if let Item::Opt(row) = self.focus
@@ -1461,12 +1684,18 @@ impl LauncherApp {
                     "Choose your disc image first.".into()
                 }
             }
-            Item::ChooseDisc => match &self.disc {
-                Some(d) => format!("Pick another disc image. Now: {}", d.path.display()),
-                None => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
-                         raw dump, or its .cue. It is checked and remembered. No game data is included. Ctrl+O."
-                    .into(),
-            },
+            Item::ChooseDisc => {
+                match (&self.disc, &self.recent_offer) {
+                    (Some(_), Some(offer)) => change_disc_help(offer),
+                    (Some(d), None) => {
+                        format!("Pick another disc image. Now: {}", d.path.display())
+                    }
+                    (None, Some(offer)) => choose_disc_help(offer),
+                    (None, None) => "Pick your Legend of Legaia (USA) disc image: the .bin of a \
+                             raw dump, or its .cue. It is checked and remembered. No game data is included. Ctrl+O."
+                        .into(),
+                }
+            }
             Item::Online => "Start the game with the Multiplayer screen open: host a room \
                              others on your network join, or join one with its address and \
                              room code. Tab opens the same screen in play."
@@ -1516,10 +1745,7 @@ impl LauncherApp {
                 ),
             },
             Item::BindReset => "Put every button back on the key it starts on.".into(),
-            Item::DataFolder => {
-                let dir = std::env::current_dir().unwrap_or_default();
-                format!("Saves, options and key bindings live in {}", dir.display())
-            }
+            Item::DataFolder => data_folder_help(self.card.as_ref()),
             Item::Quit => "Close the launcher. Esc.".into(),
             Item::Opt(row) => {
                 let mut s = row.help().to_string();
@@ -1632,6 +1858,7 @@ impl ApplicationHandler for LauncherApp {
 
     fn about_to_wait(&mut self, evl: &ActiveEventLoop) {
         self.poll_game(evl);
+        self.pad_input(evl);
     }
 
     fn window_event(&mut self, evl: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -1646,6 +1873,8 @@ impl ApplicationHandler for LauncherApp {
             WindowEvent::DroppedFile(p) => {
                 if launcher::expansion_pack_path(&p).is_some() {
                     self.try_expansion(&p);
+                } else if launcher::is_card_file(&p) {
+                    self.try_card(&p);
                 } else {
                     self.try_disc(&p);
                 }
@@ -1714,7 +1943,11 @@ impl ApplicationHandler for LauncherApp {
                 };
                 log::debug!("launcher: {button:?} click at {:?}", self.cursor);
                 if let Some(item) = self.hit()
-                    && (dir > 0 || matches!(item, Item::Opt(_) | Item::Expansion))
+                    && (dir > 0
+                        || matches!(
+                            item,
+                            Item::Opt(_) | Item::Expansion | Item::ChooseDisc | Item::DataFolder
+                        ))
                 {
                     self.activate(item, dir, evl);
                 }
@@ -1768,7 +2001,10 @@ impl ApplicationHandler for LauncherApp {
                             self.try_disc(&p);
                             self.typed_tried = !self.typed.is_empty();
                         } else {
-                            self.activate(self.focus, 1, evl);
+                            // Shift+Enter is the right-click: the second
+                            // action (the previous disc, a value back).
+                            let dir = if self.modifiers.shift_key() { -1 } else { 1 };
+                            self.activate(self.focus, dir, evl);
                         }
                     }
                     Key::Named(NamedKey::Space) if !typing => self.activate(self.focus, 1, evl),
@@ -1800,13 +2036,7 @@ impl ApplicationHandler for LauncherApp {
                         } else {
                             1
                         };
-                        match self.focus {
-                            Item::Opt(_) => self.activate(self.focus, dir, evl),
-                            Item::Bind(_) | Item::BindReset if dir < 0 => self.focus = Item::Panel,
-                            Item::Bind(_) | Item::BindReset => {}
-                            _ if dir > 0 => self.switch_column(),
-                            _ => {}
-                        }
+                        self.horizontal(dir, evl);
                     }
                     Key::Character(c)
                         if !typing
@@ -2178,6 +2408,121 @@ fn open_folder(dir: &Path) -> std::io::Result<()> {
 
 /// The disc card's one-line summary of `p`; the full reason goes in the
 /// help box ([`problem_message`]).
+/// One line naming a mounted memory card and what the game will find on it.
+fn card_summary(info: &launcher::CardInfo) -> String {
+    let name = file_name_of(&info.path);
+    match info.saves {
+        0 => format!("Card 2 is {name}, no Legaia saves yet."),
+        1 => format!("Card 2 is {name}, 1 save."),
+        n => format!("Card 2 is {name}, {n} saves."),
+    }
+}
+
+/// The advice under a memory card that would not mount.
+const CARD_FIX: &str = "Choose a .mcr, .mcd, .gme or .mcs card (Shift+Enter), or Delete.";
+
+/// *Saves folder*'s help: the game's own card is in that folder; an
+/// emulator card can ride beside it as card 2 (`--card`).
+fn data_folder_help(card: Option<&Result<launcher::CardInfo, String>>) -> String {
+    let mut s = String::from("Open the folder your saves and settings live in. ");
+    match card {
+        None => s.push_str("Shift+Enter: use an emulator memory card as card 2."),
+        Some(Ok(info)) => {
+            s.push_str(&card_summary(info));
+            s.push_str(" Delete removes it.");
+        }
+        Some(Err(_)) => s.push_str("Card 2 cannot be read. Delete removes it."),
+    }
+    s
+}
+
+/// What a controller button does on the launcher screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PadNav {
+    /// Up / Down: the focus.
+    Focus(i32),
+    /// Left / Right: step an option, or change column.
+    Horizontal(i8),
+    /// L1 / R1: a page of the option list.
+    Page(i32),
+    /// Circle: out of the Controls page.
+    Back,
+    /// Cross (`1`) or Triangle, the right-click (`-1`).
+    Activate(i8),
+    /// Start: play the ready disc.
+    Play,
+}
+
+/// The launcher actions for one poll's newly pressed PSX buttons, in order:
+/// the moves first, then at most one activation (Triangle before Cross
+/// before Start), so a chord cannot both play and change an option.
+fn pad_nav(pressed: u16) -> Vec<PadNav> {
+    use legaia_engine_system::pad::PadButton as B;
+    let on = |b: B| pressed & b.mask() != 0;
+    let mut out = Vec::new();
+    for (b, nav) in [
+        (B::Up, PadNav::Focus(-1)),
+        (B::Down, PadNav::Focus(1)),
+        (B::Left, PadNav::Horizontal(-1)),
+        (B::Right, PadNav::Horizontal(1)),
+        (B::L1, PadNav::Page(-1)),
+        (B::R1, PadNav::Page(1)),
+        (B::Circle, PadNav::Back),
+    ] {
+        if on(b) {
+            out.push(nav);
+        }
+    }
+    if on(B::Triangle) {
+        out.push(PadNav::Activate(-1));
+    } else if on(B::Cross) {
+        out.push(PadNav::Activate(1));
+    } else if on(B::Start) {
+        out.push(PadNav::Play);
+    }
+    out
+}
+
+/// A path's file name, for a line that names a disc.
+fn file_name_of(p: &Path) -> String {
+    p.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| p.display().to_string())
+}
+
+/// The line that offers a remembered disc back.
+fn recent_offer_line(offer: &DiscInfo) -> String {
+    format!("Shift+Enter: {}, chosen before.", file_name_of(&offer.path))
+}
+
+/// *Change disc*'s help while another remembered disc is on offer: the disc
+/// card already shows the current one.
+fn change_disc_help(offer: &DiscInfo) -> String {
+    format!(
+        "Pick another disc image (Ctrl+O). Right-click or Shift+Enter: {}, chosen before.",
+        file_name_of(&offer.path)
+    )
+}
+
+/// *Choose disc*'s help with no usable disc but a remembered one on offer.
+fn choose_disc_help(offer: &DiscInfo) -> String {
+    format!(
+        "Pick your disc image (.bin or .cue). {}",
+        recent_offer_line(offer)
+    )
+}
+
+/// The help box's lines for a disc problem; with a remembered disc on offer,
+/// the problem's reason and the offer in place of its advice.
+fn problem_status(p: &DiscProblem, offer: Option<&DiscInfo>) -> Vec<Message> {
+    let mut msg = problem_message(p);
+    if let Some(o) = offer {
+        msg.truncate(1);
+        msg.push((recent_offer_line(o), GOOD));
+    }
+    msg
+}
+
 fn problem_headline(p: &DiscProblem) -> &'static str {
     match p {
         DiscProblem::NotSet => "Choose your Legend of Legaia (USA) disc image",
@@ -2487,6 +2832,24 @@ mod tests {
     }
 
     #[test]
+    fn controller_buttons_drive_the_screen_like_its_keys() {
+        use legaia_engine_system::pad::PadButton as B;
+        assert!(pad_nav(0).is_empty());
+        assert_eq!(pad_nav(B::Down.mask()), [PadNav::Focus(1)]);
+        assert_eq!(pad_nav(B::Left.mask()), [PadNav::Horizontal(-1)]);
+        assert_eq!(pad_nav(B::R1.mask()), [PadNav::Page(1)]);
+        assert_eq!(pad_nav(B::Cross.mask()), [PadNav::Activate(1)]);
+        assert_eq!(pad_nav(B::Triangle.mask()), [PadNav::Activate(-1)]);
+        assert_eq!(pad_nav(B::Circle.mask()), [PadNav::Back]);
+        assert_eq!(pad_nav(B::Start.mask()), [PadNav::Play]);
+        // One activation per poll: a chord does not both play and step.
+        assert_eq!(
+            pad_nav(B::Cross.mask() | B::Start.mask() | B::Up.mask()),
+            [PadNav::Focus(-1), PadNav::Activate(1)]
+        );
+    }
+
+    #[test]
     fn wrap_breaks_words_and_long_paths() {
         let font = legaia_font::Font::placeholder();
         let c = canvas(&font);
@@ -2635,6 +2998,7 @@ mod tests {
                 flee_exp: true,
                 exp_rate_permille: Some(2000),
                 no_fortress_encounter_fix: true,
+                no_tetsu_spar_fix: true,
                 jewel_fix: true,
                 no_hp_readout_guard: true,
                 spirit_ap: Some(-16),
@@ -2655,6 +3019,7 @@ mod tests {
                 flee_exp,
                 exp_rate,
                 no_fortress_encounter_fix,
+                no_tetsu_spar_fix,
                 jewel_fix,
                 no_hp_readout_guard,
                 spirit_ap,
@@ -2673,6 +3038,7 @@ mod tests {
                 );
                 assert!(equipment_drops);
                 assert!(no_shiny_seru && flee_exp && no_fortress_encounter_fix && jewel_fix);
+                assert!(no_tetsu_spar_fix);
                 assert!(no_hp_readout_guard);
                 assert_eq!(exp_rate, Some(2000));
             }
@@ -2783,8 +3149,60 @@ mod tests {
                     .into(),
             },
         ];
+        // A remembered disc offered back, under each problem and in the
+        // Choose disc help with a disc in use (the longest file name the
+        // test path has).
+        let offer = DiscInfo {
+            path: path.clone(),
+            bin: path.clone(),
+            executable: launcher::USA_EXECUTABLE.into(),
+        };
         for p in problems {
             out.push((format!("{p:?}"), problem_message(&p)));
+            out.push((
+                format!("{p:?} + recent offer"),
+                problem_status(&p, Some(&offer)),
+            ));
+        }
+        out.push((
+            "change disc + recent offer".into(),
+            one(&change_disc_help(&offer)),
+        ));
+        out.push((
+            "choose disc + recent offer".into(),
+            one(&choose_disc_help(&offer)),
+        ));
+        // The memory card's lines: the Saves folder help with each card
+        // state, and the refusals.
+        let card = |saves| launcher::CardInfo {
+            path: "/home/player/Emulators/DuckStation/memcards/SCUS-94254_1.mcd".into(),
+            format: "mcr",
+            saves,
+        };
+        out.push(("saves, no card".into(), one(&data_folder_help(None))));
+        for n in [0, 1, 15] {
+            out.push((
+                format!("saves, card with {n}"),
+                one(&data_folder_help(Some(&Ok(card(n))))),
+            ));
+        }
+        out.push((
+            "saves, bad card".into(),
+            one(&data_folder_help(Some(&Err(String::new())))),
+        ));
+        let why = "Unrecognised save container (4096 bytes).".to_string();
+        for head in [
+            "Not a memory card the game can use:",
+            "Card 2 cannot be used:",
+        ] {
+            out.push((
+                format!("card refused: {head}"),
+                vec![
+                    (head.into(), WARN),
+                    (why.clone(), WARN),
+                    (CARD_FIX.into(), DIM),
+                ],
+            ));
         }
         // Every reason the disc sniffer gives.
         let mut iso = vec![0u8; legaia_iso::sniff::SNIFF_LEN];

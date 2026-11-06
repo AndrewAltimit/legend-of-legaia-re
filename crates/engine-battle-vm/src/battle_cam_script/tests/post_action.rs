@@ -448,6 +448,7 @@ fn a_real_turn_films_its_done_tail_and_holds_it_for_the_next_actor() {
                     active_commits: 0,
                     active_installs: 0,
                     swing_reseed: (0, 0),
+                    track_coin: 0,
                     camera_option: 0,
                     acting_body: None,
                     cursor: None,
@@ -525,11 +526,12 @@ fn a_setup_state_holds_the_action_framing_until_the_seed_rearms() {
     assert_ne!(held.yaw, shot.yaw, "the setup states still orbit the yaw");
     assert_eq!(cam.rand_state, drawn, "a setup state draws nothing");
 
-    // The seed: a case-6 arm toward the new actor, with the new action's coin.
+    // The seed: a case-6 arm toward the new actor. It draws no coin: that
+    // is the clip commit's (`FUN_8004E13C`).
     cam.observe_action_state(0x0C);
     cam.set_phase_on_state(BattleCamPhase::Action, 0x0C);
     assert!(!cam.holds_framing());
-    assert_ne!(cam.rand_state, drawn, "the seed re-rolls the track coin");
+    assert_eq!(cam.rand_state, drawn, "the seed draws no track coin");
     steps(&mut cam, 40);
     assert_eq!(cam.framing_pose().focus[0], -500.0);
 }
@@ -545,18 +547,25 @@ fn a_rounds_first_actor_keeps_the_far_framing_in_setup() {
     assert_eq!(cam.phase(), BattleCamPhase::Menu);
 }
 
-/// The end-of-action gate's case 6 is the finished actor's, no new action: it
-/// draws no track coin even when the phase changes under it (`0x52`'s case 8
-/// handing to a cast's case 6).
+/// The camera draws no track coin of its own: entering an action, or the
+/// end-of-action gate's case 6 handing to a cast's case 6, leaves the shared
+/// `rand()` stream where it was. The coin `ctx[+0x26D]` is the clip commit's
+/// draw (`FUN_8004E13C`, `0x8004E2DC`), and the camera holds whatever the
+/// world's ctx byte reads.
 #[test]
-fn the_end_of_action_gate_draws_no_track_coin() {
+fn the_camera_draws_no_track_coin() {
     let mut cam = BattleCamera::new(BattleCamPhase::Menu, 0);
-    cam.set_phase_on_state(BattleCamPhase::ActionEnd, 0x52);
     let drawn = cam.rand_state;
-    cam.observe_action_state(0x5A);
-    cam.set_phase_on_state(BattleCamPhase::Action, 0x5A);
+    cam.observe_action_state(0x14);
+    cam.set_phase_on_state(BattleCamPhase::Action, 0x14);
     assert_eq!(cam.phase(), BattleCamPhase::Action);
     assert_eq!(cam.rand_state, drawn);
+    cam.set_phase_on_state(BattleCamPhase::ActionEnd, 0x52);
+    cam.observe_action_state(0x5A);
+    cam.set_phase_on_state(BattleCamPhase::Action, 0x5A);
+    assert_eq!(cam.rand_state, drawn);
+    cam.align_phase_cursor(3);
+    assert_eq!(cam.phase_cursor(), 1);
 }
 
 /// The strike loop `0x1E` arms case 7 on every pass with no fork

@@ -639,6 +639,10 @@ div.play-vis-head { cursor: default; }
               <input type="checkbox" id="play-fortress-fix"> Fortress battles fix
             </label>
             <label class="play-dev-menu"
+                   title="A spar with Tetsu fought before Mei measures Vahn still counts, so talking to Tetsu afterwards brings the hunters home; in the original the story cannot go on (play-window --no-tetsu-spar-fix turns it off). A game played in the original order plays the same either way; Retail-faithful holds it off. Starts on the engine's default.">
+              <input type="checkbox" id="play-tetsu-spar-fix"> Tetsu spar order fix
+            </label>
+            <label class="play-dev-menu"
                    title="Elemental jewels, guards and All Guard protect against the boss cinematic casts (Xain, Cort, the Delilas trio), which retail lets through (the patcher's --jewel-fix; play-window --jewel-fix). Not retail; Retail-faithful holds it off.">
               <input type="checkbox" id="play-jewel-fix"> Boss casts respect jewels
             </label>
@@ -3317,6 +3321,7 @@ div.play-vis-head { cursor: default; }
   const fleeExpEl = document.getElementById('play-flee-exp');
   const expRateEl = document.getElementById('play-exp-rate');
   const fortressFixEl = document.getElementById('play-fortress-fix');
+  const tetsuSparFixEl = document.getElementById('play-tetsu-spar-fix');
   const jewelFixEl = document.getElementById('play-jewel-fix');
   const hpGuardEl = document.getElementById('play-hp-readout-guard');
   const bonusDropEl = document.getElementById('play-bonus-drop');
@@ -3342,6 +3347,7 @@ div.play-vis-head { cursor: default; }
     fleeExpEl.checked = !!rtCall('flee_exp');
     expRateEl.value = String(rtCall('exp_rate_permille') || 1000);
     fortressFixEl.checked = !!rtCall('fortress_encounter_fix');
+    tetsuSparFixEl.checked = !!rtCall('tetsu_spar_fix');
     jewelFixEl.checked = !!rtCall('jewel_fix');
     hpGuardEl.checked = !!rtCall('hp_readout_guard');
     bonusDropEl.checked = !!rtCall('bonus_drop');
@@ -3404,6 +3410,7 @@ div.play-vis-head { cursor: default; }
     rtCall('set_flee_exp', !!fleeExpEl.checked);
     rtCall('set_exp_rate_permille', parseInt(expRateEl.value, 10) || 1000);
     rtCall('set_fortress_encounter_fix', !!fortressFixEl.checked);
+    rtCall('set_tetsu_spar_fix', !!tetsuSparFixEl.checked);
     rtCall('set_jewel_fix', !!jewelFixEl.checked);
     rtCall('set_hp_readout_guard', !!hpGuardEl.checked);
     rtCall('set_bonus_drop', !!bonusDropEl.checked);
@@ -3447,6 +3454,7 @@ div.play-vis-head { cursor: default; }
   fleeExpEl.addEventListener('change', () => { rtCall('set_flee_exp', !!fleeExpEl.checked); canvas.focus(); });
   expRateEl.addEventListener('change', () => { rtCall('set_exp_rate_permille', parseInt(expRateEl.value, 10) || 1000); canvas.focus(); });
   fortressFixEl.addEventListener('change', () => { rtCall('set_fortress_encounter_fix', !!fortressFixEl.checked); canvas.focus(); });
+  tetsuSparFixEl.addEventListener('change', () => { rtCall('set_tetsu_spar_fix', !!tetsuSparFixEl.checked); canvas.focus(); });
   jewelFixEl.addEventListener('change', () => { rtCall('set_jewel_fix', !!jewelFixEl.checked); canvas.focus(); });
   hpGuardEl.addEventListener('change', () => { rtCall('set_hp_readout_guard', !!hpGuardEl.checked); canvas.focus(); });
   bonusDropEl.addEventListener('change', () => { rtCall('set_bonus_drop', !!bonusDropEl.checked); canvas.focus(); });

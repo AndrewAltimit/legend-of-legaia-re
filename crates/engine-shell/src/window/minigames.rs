@@ -69,6 +69,11 @@ pub(super) struct DanceVenueGpu {
     pub(super) untextured_kept: Option<Vec<u32>>,
     /// The step-marker tiles: the hall's wall panels and stage screens.
     pub(super) markers: Vec<VenueMarkerGpu>,
+    /// The hall's animated props (the spotlight beams and their fixtures),
+    /// posed on the run's clip clock.
+    pub(super) props: Vec<VenuePropGpu>,
+    /// The venue the props pose off (its scene ANM bank and meshes).
+    pub(super) venue: Option<legaia_engine_minigame_scenes::dance_venue::DanceVenue>,
     /// The floor's body meshes + choreography bank off this venue, handed to
     /// the cast surface when this copy is installed.
     pub(super) cast_assets:
@@ -85,6 +90,24 @@ pub(super) struct VenueMarkerGpu {
     pub(super) baked: std::collections::HashMap<i16, (VenueTexturedBake, VenueColorBake)>,
     /// What the uploads hold: the mesh and the kept triangles of each half.
     pub(super) shown: Option<(i16, Vec<u32>, Vec<u32>)>,
+    pub(super) textured_gpu: Option<UploadedVramMesh>,
+    pub(super) untextured_gpu: Option<UploadedColorMesh>,
+}
+
+/// One animated hall prop: its draw, each pose it has shown baked at its
+/// place, and the one on the GPU this frame.
+pub(super) struct VenuePropGpu {
+    pub(super) venue_draw: legaia_engine_minigame_scenes::dance_venue::VenueDraw,
+    pub(super) baked: std::collections::HashMap<
+        legaia_engine_scene::field_env::PropPoseKey,
+        (VenueTexturedBake, VenueColorBake),
+    >,
+    /// What the uploads hold: the pose and the kept triangles of each half.
+    pub(super) shown: Option<(
+        legaia_engine_scene::field_env::PropPoseKey,
+        Vec<u32>,
+        Vec<u32>,
+    )>,
     pub(super) textured_gpu: Option<UploadedVramMesh>,
     pub(super) untextured_gpu: Option<UploadedColorMesh>,
 }

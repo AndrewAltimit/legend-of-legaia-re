@@ -564,3 +564,25 @@ fn colour_render_state_packs_the_blend_word_and_scale() {
     // floors `-c >> 12` to -1, one step down per channel.
     assert_eq!(mesh.colors[0], [0x3F, 0x7F, 0xBF]);
 }
+
+/// A part seated after the frame's part tick takes the seater's own VM run
+/// and nothing more that frame (`FUN_80021B04`'s `jal 0x80023070`): its
+/// program runs up to its first wait, the wait is not drained, and the next
+/// frame's tick does not re-run the seat step.
+#[test]
+fn seat_unrun_runs_the_seat_step_without_a_part_tick() {
+    let (bytes, ov) = synthetic();
+    let mut scene = SummonScene::spawn(&ov, &bytes, 26, [0, 0, 0]);
+    let mut host = H;
+    let ran = scene.seat_unrun(&mut host);
+    assert_eq!(ran.len(), scene.parts.len());
+    let mesh = scene.parts.iter().find(|p| p.model_sel == 0).unwrap();
+    // ANIM_BANK_SET ran; WAIT_SET 1 broke the step with its wait undrained.
+    assert_eq!(mesh.state.anim_3c, 8);
+    assert_eq!(mesh.state.wait_timer, 8);
+    let pc = mesh.state.pc;
+    // A second call finds nothing unrun.
+    assert!(scene.seat_unrun(&mut host).is_empty());
+    let mesh = scene.parts.iter().find(|p| p.model_sel == 0).unwrap();
+    assert_eq!(mesh.state.pc, pc);
+}

@@ -196,6 +196,7 @@ impl World {
         // Expose the record's NPC slot so the host's `0x4C 0x51` NPC-run hook
         // can route the prologue's walk ops to the interacted actor.
         self.dialog.stepping_inline_npc = id.npc_slot;
+        self.dialog.stepping_inline = true;
         // A talk runs on the touched actor's own context (retail's dialog SM
         // `FUN_80039B7C` dispatches the actor's record against its own
         // record), so its own-context `2B` / `2C` / `2D` ops read and write
@@ -982,6 +983,26 @@ impl World {
                     id.pc = final_pc;
                     break;
                 }
+                // `4C 53` / `4C 54` poll the staged mode switch
+                // `FUN_801D65D8` and re-run their own PC while it is in
+                // flight (the wait join at `0x801E28C4`, `0x801DEE4C`): a
+                // timed park too, three frames for a switch. `town01`
+                // P1[51], the panoramic map in the Genesis Tree garden,
+                // raises the screen tint and then waits on `4C 53` before
+                // it seats the overview; ending the talk at the poll left
+                // the screen dark with nothing to lift it.
+                // REF: FUN_801DE840 (`0x801E1AF8`, `0x801E1B0C`), FUN_801D65D8
+                FieldStepResult::Halt { final_pc }
+                    if (b & 0x7F) == 0x4C
+                        && matches!(
+                            id.bytecode
+                                .get(final_pc + if b & 0x80 != 0 { 2 } else { 1 }),
+                            Some(&(0x53 | 0x54))
+                        ) =>
+                {
+                    id.pc = final_pc;
+                    break;
+                }
                 // Any other halt/hold, an unhandled op, or an end: stop.
                 // (Unlike the cutscene timeline the runner does not force-
                 // advance past these - an inline script that can't proceed
@@ -1001,6 +1022,7 @@ impl World {
             }
         }
         self.dialog.stepping_inline_npc = None;
+        self.dialog.stepping_inline = false;
         if let Some(slot) = npc_flag_slot
             && let Some(ch) = self
                 .field_vm
@@ -1292,6 +1314,7 @@ impl World {
                     id.player_walk = Some(legaia_engine_field::inline_dialogue::PropPlayerWalk {
                         target: (decode(b0), decode(b1)),
                         speed: crate::world::field_npc_walk_step_speed(0x80, b2 & 7),
+                        approach: b2 >> 4,
                         frames: 0,
                     });
                 }
@@ -1354,7 +1377,11 @@ impl World {
         let had_leg = id.player_walk.is_some() || id.player_turn.is_some();
         if let Some(mut walk) = id.player_walk.take() {
             walk.frames += 1;
-            let arrived = self.step_player_walk_leg(walk.target, walk.speed.saturating_mul(grid));
+            let arrived = self.step_player_walk_leg(
+                walk.target,
+                walk.speed.saturating_mul(grid),
+                walk.approach,
+            );
             if !arrived && walk.frames < WALK_PARK_TIMEOUT {
                 id.player_walk = Some(walk);
                 return true;

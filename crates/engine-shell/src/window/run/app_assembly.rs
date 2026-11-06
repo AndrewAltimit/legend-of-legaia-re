@@ -153,6 +153,8 @@ impl PlayWindowApp {
             battle_ground_mesh: None,
             battle_ground_cue_far: None,
             battle_ground_rgbc: legaia_engine_battle_vm::battle_ground_grid::GRID_RGBC_SETTLED,
+            battle_ground_mask: Vec::new(),
+            battle_ground_built: None,
             battle_stage_outdoor: false,
             prev_scene_mode: None,
             monster_archive: None,

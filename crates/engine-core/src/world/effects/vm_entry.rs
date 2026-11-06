@@ -57,6 +57,24 @@ impl World {
         self.system_flag_test(idx)
     }
 
+    /// The system-flag test a field script's `0x70..0x7F` ops ask:
+    /// [`Self::system_flag_test`], except that with
+    /// [`crate::world::WorldToggles::tetsu_spar_fix`] on, Rim Elm's
+    /// [`crate::world::TETSU_SPAR_COUNTED_FLAG`] reads set once the spar and
+    /// the measuring both are. The flag bank itself is left as retail wrote
+    /// it, so a save made either way loads the same into either mode.
+    pub fn script_system_flag_test(&self, idx: u16) -> bool {
+        if self.toggles.tetsu_spar_fix
+            && idx == crate::world::TETSU_SPAR_COUNTED_FLAG
+            && self.active_scene_label == crate::world::TETSU_SPAR_SCENE
+            && self.system_flag_test(crate::world::TETSU_SPAR_FOUGHT_FLAG)
+            && self.system_flag_test(crate::world::TETSU_MEASURED_FLAG)
+        {
+            return true;
+        }
+        self.system_flag_test(idx)
+    }
+
     pub fn system_flag_test(&self, idx: u16) -> bool {
         let byte = (idx >> 3) as usize;
         if byte < self.flags.system_flags.len() {

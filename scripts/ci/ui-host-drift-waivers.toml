@@ -791,7 +791,7 @@ elsewhere. `restore_dance_ambient` / `stage_dance_ambient` / `step_dance_ambient
 paints the field's last cells into its VRAM ahead of the stage: the native step calls them
 directly, the page through its own export `play_mg_dance_ambient_step`, which
 its venue bake's frame calls. The venue's placement moved out of this step into
-`append_venue_draw`, so `place_point` and `rotate` no longer list. `walk_heightfield` uploads the dance venue
+`place_venue_meshes`, so `place_point` and `rotate` no longer list. `walk_heightfield` uploads the dance venue
 (`DanceVenue::build`) on the staging edge; the pages bake the same build,
 placed through the same `EnvDraw::place_point` (a SIM_PAIRS row), once at disc
 load (`load_dance_bodies`). `entry_bytes` / `from_venue` / `has_assets` /

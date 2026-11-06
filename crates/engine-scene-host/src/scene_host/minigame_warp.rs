@@ -236,12 +236,14 @@ impl SceneHost {
         let map = self.index.entry_bytes_extended(idx).ok()?;
         let region_block = scene.field_map_region_block(&self.index).ok().flatten();
         let lead = legaia_engine_minigame_scenes::fishing_venue::party_placements(venue)[0];
+        let (anchor_x, anchor_y, anchor_z) =
+            legaia_engine_minigame_scenes::fishing_venue::lead_anchor(venue, Some(&map));
         Some(legaia_engine_fishing::fishing::PondVenue {
             map,
             region_block,
-            anchor_x: lead.x,
-            anchor_z: lead.z,
-            anchor_y: 0,
+            anchor_x,
+            anchor_z,
+            anchor_y,
             facing: lead.facing,
             rod_mesh: legaia_engine_minigame_scenes::fishing_rod::rod_mesh_from_scene(&scene),
         })

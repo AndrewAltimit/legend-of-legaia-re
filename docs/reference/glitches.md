@@ -82,6 +82,7 @@ A status of *explained* means the cause is located in the code and accounts for 
 | Incense carry-over ("New Game+") | explained | The Incense window is one number in the program's own memory, outside the block that is saved, loaded or rebuilt for a new game. |
 | Juggernaut's Room door | explained | From a strip beside a guard, one interact press lands in his talk box and the door's box at once; he makes it a talk, and the door, later in the actor list, gets it. |
 | Noa's sigil and the Door of Light in Nivora | explained | The crest stands inside a nine-by-nine map rectangle marked Door of Light allowed, listed ahead of the tunnel rectangles that forbid it. |
+| Sparring with Tetsu before the measuring | explained | The spar counts towards the hunters' return only if Mei has already measured Vahn, and nothing raises its flag later; the port's Tetsu spar order fix lets it count. |
 
 ## WORK ERR, missing encounters and script slips
 

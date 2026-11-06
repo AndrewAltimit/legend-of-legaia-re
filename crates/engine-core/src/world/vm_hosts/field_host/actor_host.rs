@@ -199,4 +199,40 @@ impl<'a> FieldActorHost for FieldHostImpl<'a> {
     fn script_table_teleport(&mut self, ctx: &mut FieldCtx) {
         Self::script_table_teleport(self, ctx)
     }
+
+    // Op `4C 8C` (arm `0x801E23EC`: `lh v0,0x68(s5)`) tests the actor's
+    // `+0x68`, which is its **clip cursor**: the anim tick `FUN_800204F8`
+    // zeroes it on a re-point (`0x8002059C`), steps it by the rate each frame
+    // (`0x80020690`) and clamps it at `frames * 16 - 1` at the end of a
+    // clamped clip (`0x80020718`). The port keeps that cursor on the actor's
+    // clip state, not on the context - a placed object's on its prop, a
+    // placement's in `FieldNpcState::clip_cursors` - so the test reads it
+    // there. Read off the context alone it was always zero, and the skip was
+    // always taken: `town01` P2[4]'s `CC 01 A0 00 05 00`, `26 1D 00`,
+    // `CC 01 8C 18 00` (close Mei's door once its swing has played) never
+    // closed the door behind her.
+    //
+    // REF: FUN_801DE840 (0x801E23EC), FUN_800204F8
+    fn op4c_n8_subc_field_68_is_zero(&self, ctx: &FieldCtx) -> bool {
+        let w = &*self.world;
+        if let Some(record) = w.field_vm.executing_object
+            && let Some(p) = w
+                .props
+                .bank
+                .props
+                .values()
+                .find(|p| p.record == usize::from(record))
+        {
+            return p.anim.cursor == 0;
+        }
+        if let Some(slot) = w
+            .field_vm
+            .executing_channel
+            .or(w.dialog.stepping_inline_npc)
+            && let Some(clip) = w.npcs.clip_cursors.get(&slot)
+        {
+            return clip.cursor == 0;
+        }
+        ctx.field_68 == 0
+    }
 }

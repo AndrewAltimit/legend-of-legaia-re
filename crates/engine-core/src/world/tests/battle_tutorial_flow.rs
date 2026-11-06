@@ -418,6 +418,57 @@ fn the_somersault_entry_passes_the_drill_and_commits_the_last_lesson() {
     assert!(world.battle.tutorial.as_ref().unwrap().pending_advance);
 }
 
+/// Issue #548: with the port's saved-chain Arts list switched on (a native
+/// launcher switch, off on the page), the drill lesson's `Arts` opened the list
+/// instead of the entry. The list had no row to confirm and never reaches the
+/// drill check, so the `[High] [Low] [High]` lesson could not be passed and the
+/// sparring fight softlocked. The tutorial always opens the entry.
+#[test]
+fn the_saved_arts_list_never_stands_in_for_the_drill_entry() {
+    let mut world = tutorial_battle_world();
+    world.toggles.arts_saved_list = true;
+    world.battle.tutorial.as_mut().unwrap().lesson = TutorialLesson::HyperArts.raw();
+    world.open_battle_command(0);
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::OpenArtsMenu,
+    });
+    world.tick_battle_command();
+    assert!(world.battle.arts_menu.is_none(), "no saved-chain list");
+    assert!(world.battle.arts_input.is_some(), "the arts entry opens");
+    assert!(world.arts_input_view().is_some(), "the command bar is up");
+    assert_eq!(world.battle.flow, BattleFlowState::ArtsCommandEntry);
+}
+
+/// Outside the tutorial too, an empty saved-chain list opens the entry: a list
+/// with no row has nothing to confirm, so it could only be backed out of.
+#[test]
+fn an_empty_saved_arts_list_opens_the_entry() {
+    let mut world = World::new();
+    world.toggles.live_gameplay_loop = true;
+    world.toggles.arts_saved_list = true;
+    world.battle.player_driven = true;
+    world.enter_battle(3, 2);
+    for i in 0..5 {
+        world.actors[i].battle.hp = 100;
+        world.actors[i].battle.max_hp = 100;
+    }
+    assert!(world.battle.tutorial.is_none());
+    assert!(world.build_battle_arts_rows(0).is_empty());
+    world.open_battle_command(0);
+    world.battle.command = Some(BattleCommandSession {
+        actor: 0,
+        party_slot: 0,
+        no_escape: false,
+        phase: CommandPhase::OpenArtsMenu,
+    });
+    world.tick_battle_command();
+    assert!(world.battle.arts_menu.is_none());
+    assert!(world.battle.arts_input.is_some());
+}
+
 #[test]
 fn a_wrong_drill_string_is_refused_back_to_the_command_menu() {
     use legaia_engine_system::input::PadButton;

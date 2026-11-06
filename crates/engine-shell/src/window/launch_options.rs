@@ -295,6 +295,11 @@ pub struct ScreenshotConfig {
     /// (`World::seat_battle_hud_glide`, the combo cluster's age). Set by the
     /// retail-compare image channel.
     pub seat_hud_glides: Vec<legaia_engine_capture::hud_glide::HudGlideSeat>,
+    /// `LEGAIA_SEAT_HUD_CLOSE=<actor>,<member>`: the engine seats the
+    /// capture's closing HUD glides name - the finished actor and the
+    /// readout bar's member (`World::seat_battle_hud_close`). Set by the
+    /// retail-compare image channel.
+    pub seat_hud_close: Option<(u8, u8)>,
     /// `LEGAIA_SEAT_MENU_GLIDE_LEFT=<frames>`: a round-prompt capture whose
     /// far framing (case 9) was still walking, with the frames of its arm
     /// the displayed frame had left; the captured frame stands the engine's
@@ -431,6 +436,11 @@ pub struct ScreenshotConfig {
     /// state's displayed frame drew them, written over the game's on the frame
     /// the capture is taken (`DanceGame::seat_step_marker`); taken once.
     pub seat_dance_markers: std::cell::Cell<Option<SeatedDanceMarkers>>,
+    /// `LEGAIA_SEAT_DANCE_PROPS`: the hall's animated props' clip cursors as
+    /// a retail state's RAM holds them, with the passes the displayed frame
+    /// stands behind, written over the game's on the frame the capture is
+    /// taken (`DanceGame::seat_hall_prop_displayed`); taken once.
+    pub seat_dance_props: std::cell::Cell<Option<Vec<(u8, i16, u16)>>>,
     /// `LEGAIA_SEAT_BALLOON`: the text balloon a retail state's displayed
     /// frame drew (the place-name banner a door leaves up, which a card
     /// load never raises), or none, written over the field's on the frame
@@ -1086,6 +1096,10 @@ impl ScreenshotConfig {
                 let (page, slide) = v.split_once(',')?;
                 Some((page.trim().parse().ok()?, slide.trim().parse().ok()?))
             }),
+            seat_hud_close: std::env::var("LEGAIA_SEAT_HUD_CLOSE").ok().and_then(|v| {
+                let (a, m) = v.split_once(',')?;
+                Some((a.trim().parse().ok()?, m.trim().parse().ok()?))
+            }),
             seat_hud_glides: std::env::var("LEGAIA_SEAT_HUD_GLIDES")
                 .map(|v| legaia_engine_capture::hud_glide::HudGlideSeat::list_from_env(&v))
                 .unwrap_or_default(),
@@ -1158,6 +1172,11 @@ impl ScreenshotConfig {
                 std::env::var("LEGAIA_SEAT_DANCE_MARKERS")
                     .ok()
                     .map(|v| legaia_engine_capture::field_seeds::dance_markers_from_env(&v)),
+            ),
+            seat_dance_props: std::cell::Cell::new(
+                std::env::var("LEGAIA_SEAT_DANCE_PROPS")
+                    .ok()
+                    .map(|v| legaia_engine_capture::field_seeds::dance_props_from_env(&v)),
             ),
             seat_turning_parts: std::cell::Cell::new(
                 std::env::var("LEGAIA_SEAT_TURNING_PARTS")

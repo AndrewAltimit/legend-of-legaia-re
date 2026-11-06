@@ -62,11 +62,12 @@ pub(super) fn build_spell_session(world: &World, catalog: &SpellCatalog) -> Spel
                 // `character_ability_bits` mirror is ordinal-indexed and
                 // names a different member once `active_party` reorders).
                 ability_bits: legaia_engine_battle::spells::record_ability_word(member),
-                // Retail resolves the Ra-Seru slot through the
-                // per-character offset table at 0x8007B424; the engine's
-                // roster always carries the Ra-Seru equipped, so the
-                // gate stays open here.
-                ra_seru_missing: false,
+                // Retail's caster gate reads `record[0x196 + table[char]]`,
+                // the halfword table at 0x8007B424 (`lbu v0,0x75e(v0)` at
+                // 0x801D908C), and buzzes on an empty Ra-Seru byte.
+                ra_seru_missing: legaia_engine_menus::equip_session::RETAIL_RASERU_EQUIP_BYTE
+                    .get(i)
+                    .is_some_and(|&b| member.equipment().slots[b as usize] == 0),
             }
         })
         .collect();
@@ -141,12 +142,17 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
             row
         })
         .collect();
+    let names = items
+        .iter()
+        .filter_map(|&id| Some((id, world.item_display_name(id)?)))
+        .collect();
     InventoryUseSession::new(
         world.tables.item_catalog.clone(),
         items,
         targets,
         InventoryContext::Field,
     )
+    .with_item_names(names)
     // The row payloads: retail's list entries carry a bag slot, and Use /
     // Throw Out remove from the slot the row named.
     .with_bag_slots(bag_slots)
@@ -165,23 +171,8 @@ fn build_inventory_session(world: &World) -> InventoryUseSession {
 pub fn item_display_text(world: &World, id: u8) -> ItemDisplayText {
     let text = world.menu.text.as_ref();
     ItemDisplayText {
-        name: text
-            .and_then(|t| t.item_name(id))
-            .map(|name| {
-                // Three weapon names substitute a hero's record name.
-                let hero = legaia_game_tables::item_names::PARTY_NAMED_ITEMS
-                    .iter()
-                    .find(|(item, _)| *item == id)
-                    .map(|&(_, record)| record);
-                match hero.and_then(|r| Some((r, world.party.roster_names().get(r).cloned()?))) {
-                    Some((r, renamed)) => name.replacen(
-                        legaia_game_tables::item_names::DEFAULT_PARTY_NAMES[r],
-                        &renamed,
-                        1,
-                    ),
-                    None => name.to_string(),
-                }
-            })
+        name: world
+            .item_display_name(id)
             .or_else(|| {
                 world
                     .tables

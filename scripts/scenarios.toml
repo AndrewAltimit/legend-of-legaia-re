@@ -7103,6 +7103,7 @@ topics = ["battle", "enemy attack", "Nurga", "uru2", "harvest"]
 
 [[scenarios]]
 label = "son_field_door_hop"
+arrival = { from = "map03", door = 13 }
 backup_fingerprint = "6f1f22770d047956493bed7c4d576080a04fbb533471f642fd6d906ed81672cb"
 description = "son free field run. RETAIL disc: map03_field_door_hop crossed map03:45:84 by autorun_door_hop.lua: player position held on the door walk-on tile, door record run as the disc wrote it, saved 1558 vsyncs in. No flag or other RAM poke: story flags are the source state plus what the door wrote."
 phase = "field"

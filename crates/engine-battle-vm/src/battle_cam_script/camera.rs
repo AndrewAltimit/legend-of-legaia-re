@@ -528,6 +528,9 @@ pub struct BattleCamInputs {
     /// the count sets the yaw counter `ctx[+0x6DA]` to
     /// `coin * 0x800 + 0x280` ([`BattleCamera::observe_swing_reseed`]).
     pub swing_reseed: (u32, u8),
+    /// The track coin `ctx[+0x26D]` (`BattleActionCtx::track_coin`), which
+    /// the clip commit draws; the camera reads it every drive.
+    pub track_coin: u8,
     /// The options screen's **Battle Camera** row, config word
     /// `_DAT_800846C0`: [`CAMERA_OPTION_CLOSE`] (`0`), `1` Normal,
     /// [`CAMERA_OPTION_FAR`] (`2`). See [`BattleCamera::set_camera_option`].
@@ -637,6 +640,7 @@ pub fn drive_on_stream(
     cam.observe_active_commits(inputs.active_commits);
     cam.observe_active_installs(inputs.active_installs);
     cam.observe_swing_reseed(inputs.swing_reseed);
+    cam.align_phase_cursor(inputs.track_coin);
     cam.set_camera_option(inputs.camera_option);
     cam.set_shake_amplitude(inputs.shake_amplitude);
     cam.set_attack_channels(inputs.attack, tracks);

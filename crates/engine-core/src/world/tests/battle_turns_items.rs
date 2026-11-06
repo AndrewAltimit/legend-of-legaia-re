@@ -315,3 +315,83 @@ fn opening_the_item_window_moves_the_flow_byte_onto_it() {
     }
     assert!(world.battle.item_menu.is_some(), "the item window is open");
 }
+
+/// Issue #556: the battle Item window lists every held id, unusable ones
+/// dimmed, but named its rows off the item catalog - which holds only the
+/// usable items - so a weapon or key item read `Item 22` / `Item A6`. Rows
+/// name through the disc's item-name table, and each prints its stack's count.
+#[test]
+fn battle_item_rows_name_unusable_items_and_print_stack_counts() {
+    let mut world = World {
+        party: legaia_engine_menus::party_state::PartyState {
+            party_count: 1,
+            ..Default::default()
+        },
+        ..World::default()
+    };
+    world.battle.player_driven = true;
+    world.mode = SceneMode::Battle;
+    world.set_item_catalog(full_test_catalog());
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    // Synthetic names: no catalog row for the two non-consumables.
+    let mut names = vec![None; 256];
+    names[0x01] = Some("Leaf".to_string());
+    names[0x22] = Some("Knife".to_string());
+    names[0xA6] = Some("Key".to_string());
+    world.menu.text = Some(legaia_engine_menus::pause_screens::MenuTextTables {
+        item_names: Some(legaia_game_tables::item_names::ItemNameTable::from_names(
+            names,
+        )),
+        ..Default::default()
+    });
+    assert!(world.tables.item_catalog.get(0x22).is_none());
+    assert!(world.tables.item_catalog.get(0xA6).is_none());
+    world.party.inventory.insert(0x01, 4);
+    world.party.inventory.insert(0x22, 1);
+    world.party.inventory.insert(0xA6, 1);
+    let view = world.build_battle_item_session().menu_view();
+    let rows: Vec<(String, u8)> = view
+        .rows
+        .iter()
+        .map(|r| (r.name.clone(), r.count))
+        .collect();
+    assert_eq!(
+        rows,
+        vec![
+            ("Leaf".to_string(), 4),
+            ("Knife".to_string(), 1),
+            ("Key".to_string(), 1),
+        ]
+    );
+}
+
+/// Issue #556: Noa's first solo stretch listed Vahn's items. Retail's window
+/// selector gives a lone non-Vahn member the bag's upper half until story flag
+/// `20` - the `terra_party_battle` capture reads members `1`, roster `[1]`,
+/// flag 20 clear, window `(128, 256)`, with Vahn's leaves in the lower half -
+/// so her battle Item window lists her half alone.
+#[test]
+fn a_lone_noa_lists_only_her_half_of_the_bag_in_battle() {
+    use legaia_save::retail_inventory::ItemWindow;
+    let mut world = World::new();
+    world.set_item_catalog(full_test_catalog());
+    world.party.party_count = 1;
+    world.party.active_party = vec![0];
+    world.tick();
+    assert_eq!(world.party.inventory.window(), ItemWindow::Low);
+    world.party.inventory.insert(0x01, 5); // Vahn's stack, lower half
+    world.party.active_party = vec![1];
+    world.tick();
+    assert_eq!(world.party.inventory.window(), ItemWindow::High);
+    world.party.inventory.insert(0x02, 2); // Noa's, upper half
+    world.mode = SceneMode::Battle;
+    world.battle.player_driven = true;
+    world.actors[0].battle.max_hp = 100;
+    world.actors[0].battle.hp = 100;
+    world.actors[0].battle.liveness = 1;
+    let view = world.build_battle_item_session().menu_view();
+    let ids: Vec<u8> = view.rows.iter().map(|r| r.id).collect();
+    assert_eq!(ids, vec![0x02], "Vahn's half stays out of reach");
+}

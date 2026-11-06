@@ -95,6 +95,7 @@ fn round_trip_v2_full_ext() {
             options: None,
             expansion: None,
             run_rules: None,
+            record_tally: None,
             active_party: vec![0, 1, 2],
             per_char: vec![
                 (
@@ -337,6 +338,50 @@ fn save_file_round_trips_through_retail_sc_block() {
     );
 }
 
+/// The records screen's battle / escape tallies ride an `LGSF` file in the
+/// optional `LGXG` block and a retail SC block at `0x564` / `0x568`; a zero
+/// tally writes no block, so such a file is byte-identical to a pre-block
+/// one.
+#[test]
+fn record_tally_round_trips_through_lgsf_and_the_retail_block() {
+    use crate::card::{BLOCK_SIZE, RetailRecordTally};
+    let tally = RetailRecordTally {
+        battles: 708,
+        escapes: 37,
+    };
+    let mut sf = minimal_save();
+    let bare = sf.write();
+    sf.ext_v2.record_tally = Some(RetailRecordTally::default());
+    assert_eq!(sf.write(), bare, "a zero tally emits no block");
+
+    sf.ext_v2.record_tally = Some(tally);
+    let bytes = sf.write();
+    assert!(bytes.windows(4).any(|w| w == SAVE_FILE_EXTG_MAGIC));
+    assert_eq!(
+        SaveFile::parse(&bytes).unwrap().ext_v2.record_tally,
+        Some(tally)
+    );
+
+    let mut sc_block = vec![0u8; BLOCK_SIZE];
+    sf.write_into_retail_sc_block(&mut sc_block).unwrap();
+    assert_eq!(&sc_block[0x564..0x568], &708u32.to_le_bytes());
+    assert_eq!(&sc_block[0x568..0x56C], &37u32.to_le_bytes());
+    let lifted = SaveFile::from_retail_sc_block(&sc_block, 4).unwrap();
+    assert_eq!(lifted.ext_v2.record_tally, Some(tally));
+    // The window reader agrees with the block reader.
+    let window = lifted.ext_v2.retail_window.as_deref().unwrap();
+    assert_eq!(
+        crate::card::read_retail_record_tally_from_window(window),
+        Some(tally)
+    );
+
+    // A save with neither a tally nor a window is a New Game's: it zeroes a
+    // previous occupant's counts rather than inheriting them.
+    let fresh = minimal_save();
+    fresh.write_into_retail_sc_block(&mut sc_block).unwrap();
+    assert_eq!(crate::card::read_retail_record_tally(&sc_block), None);
+}
+
 // --- Panic-hardening / adversarial-input regression tests -------------
 
 fn save_with_saved_chain() -> SaveFile {
@@ -358,6 +403,7 @@ fn save_with_saved_chain() -> SaveFile {
             options: None,
             expansion: None,
             run_rules: None,
+            record_tally: None,
             active_party: vec![0, 1],
             per_char: vec![(
                 0,

@@ -320,6 +320,12 @@ is the only row that is always white. Ported as
 `engine-menus::shop::shop_root_command_rows`, which both hosts consult for the
 Sell row's ink.
 
+The confirm runs the same scan. `FUN_801DAFD4` (sub-screen `0x1A`), on row 1,
+walks the window again (`0x801DB11C..0x801DB178`) and, finding no slot with an
+id and a count, replaces the cue with buzz `0x23` (`FUN_80035BD0`) and keeps the
+mode select open: an empty bag never reaches the sell list. The engine's
+`MenuRuntime` commit route holds the hand on Sell the same way.
+
 After each row the cursor sprite `func_0x8002b994(0, mode, WX, rowY)` (the
 16x16 bobbing menu cursor, drawn at the window origin X - the same "+0"
 cursor column as the buy list) is gated on the picker cursor word

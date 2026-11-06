@@ -3,6 +3,38 @@
 use super::*;
 
 impl World {
+    /// Item `id`'s display name off the disc's static item-name table
+    /// (`PTR_DAT_8007436C`, installed with the menu text), or `None` without
+    /// one (a disc-free host) or for a blank row.
+    ///
+    /// Three weapon names carry a hero's default name; it reads the hero's
+    /// current record name instead, as retail's name substitution does.
+    ///
+    /// Every item list resolves through this before the item catalog: the
+    /// catalog holds only the usable items, so a weapon or key item has no
+    /// catalog name. An id an expansion pack aliases this fight answers
+    /// `None`, so the catalog's pack name wins.
+    pub fn item_display_name(&self, id: u8) -> Option<String> {
+        if self.pack_item_alias(id).is_some() {
+            return None;
+        }
+        let name = self.menu.text.as_ref()?.item_name(id)?;
+        let hero = legaia_game_tables::item_names::PARTY_NAMED_ITEMS
+            .iter()
+            .find(|(item, _)| *item == id)
+            .map(|&(_, record)| record);
+        Some(
+            match hero.and_then(|r| Some((r, self.party.roster_names().get(r).cloned()?))) {
+                Some((r, renamed)) => name.replacen(
+                    legaia_game_tables::item_names::DEFAULT_PARTY_NAMES[r],
+                    &renamed,
+                    1,
+                ),
+                None => name.to_string(),
+            },
+        )
+    }
+
     /// Set the item catalog the battle / field menu consults for item
     /// actions. Replaces any prior catalog. Engines populate this at
     /// boot time (typically from the vanilla catalog).

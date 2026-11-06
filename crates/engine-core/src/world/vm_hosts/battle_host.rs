@@ -334,6 +334,9 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
     fn begin_counterattack(&mut self, counterer: u8, attacker: u8) -> bool {
         self.world.begin_counterattack(counterer, attacker)
     }
+    fn seed_entry(&mut self, actor: u8) {
+        self.world.seed_capture_gauges(actor);
+    }
     fn seed_formation_recentre(&mut self, actor: u8) {
         self.world.seed_battle_formation_recentre(actor);
         self.world
@@ -386,6 +389,11 @@ impl<'a> BattleActionHost for BattleHostImpl<'a> {
         self.world
             .pending_battle_events
             .push(BattleEvent::CameraFrameHeight { height });
+    }
+    fn camera_variant_pinned(&mut self, style: u8) {
+        // The step's write-back stores the same byte; the module tick inside
+        // this pass reads it first.
+        self.world.battle_ctx.camera_variant = style;
     }
     fn party_setup(&mut self, actor_slot: u8) {
         self.world

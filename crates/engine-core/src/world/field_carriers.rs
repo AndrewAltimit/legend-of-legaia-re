@@ -114,8 +114,12 @@ impl World {
                 .iter()
                 .map(|a| {
                     format!(
-                        "P{}[{}] flag 0x{:03X} -> row {}",
-                        a.partition, a.record, a.flag, a.row
+                        "P{}[{}] {} 0x{:03X} -> row {}",
+                        a.partition,
+                        a.record,
+                        if a.clears { "clear" } else { "flag" },
+                        a.flag,
+                        a.row
                     )
                 })
                 .collect();

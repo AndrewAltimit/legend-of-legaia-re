@@ -485,25 +485,21 @@ impl<'a> MoveHost for MoveVmHostImpl<'a> {
     // --- ext sub-op 0x3A angle-to-player ------------------------------
 
     fn ext_compute_angle(&self, state: &MoveActorState) -> u16 {
-        // Per the original: `func_0x80019B28(actor.world_z, actor.world_x,
-        // player.world_z, player.world_x)`. Engines that don't model a
-        // player slot get angle 0 (matching the no-player default).
+        // `FUN_80019B28(actor.z, actor.x, player.z, player.x)` at
+        // `0x801D484C..0x801D486C`, the player read through `0x8007C364`: the
+        // retail bearing, `0` toward `+Z` and `0x400` toward `+X`. An `f32`
+        // `atan2(dz, dx)` stood here, which measures from `+X` and so
+        // mirrored every angle across the diagonal (`0x400 - bearing`).
+        // Engines that don't model a player slot get angle 0 (matching the
+        // no-player default).
         let Some(player_slot) = self.world.player_actor_slot else {
             return 0;
         };
         let player = &self.world.actors[player_slot as usize].move_state;
-        // Atan2-style angle in PSX 12-bit units (4096 = full circle). The
-        // original used a libgte angle helper; we use a portable
-        // f32::atan2 then quantise. Direction convention matches the
-        // original (Z first arg, X second).
-        let dz = (player.world_z as i32 - state.world_z as i32) as f32;
-        let dx = (player.world_x as i32 - state.world_x as i32) as f32;
-        if dx == 0.0 && dz == 0.0 {
-            return 0;
-        }
-        let theta = dz.atan2(dx);
-        let units = (theta / std::f32::consts::TAU * 4096.0).round() as i32;
-        (units & 0x0FFF) as u16
+        legaia_engine_system::trig::bearing12(
+            i32::from(player.world_z) - i32::from(state.world_z),
+            i32::from(player.world_x) - i32::from(state.world_x),
+        )
     }
 
     // --- ext sub-op 0x3B party-member position lookup ------------------

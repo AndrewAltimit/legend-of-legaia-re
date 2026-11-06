@@ -122,6 +122,26 @@ fn enter_dance_consumes_the_mode_request_and_raises_the_pass_flag() {
     assert!(world.system_flag_test(legaia_engine_minigames::dance::WIN_FLAG));
 }
 
+/// A run starts from the save's dance best (`_DAT_80084464`), which its
+/// free-play panel draws and its tick raises in place.
+#[test]
+fn enter_dance_seats_the_saved_best() {
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.minigames.dance_best = 568;
+    world.enter_dance(legaia_engine_minigames::dance::DanceGame::new(
+        dance_test_chart(),
+        false,
+    ));
+    assert_eq!(
+        world.minigames.dance.as_ref().map(|g| g.best_score()),
+        Some(568)
+    );
+    let game = world.exit_dance().expect("a run to tear down");
+    assert_eq!(game.best_score(), 568);
+    assert_eq!(world.minigames.dance_best, 568);
+}
+
 /// Both hosts poll `exit_dance` from their frame path on every non-`Dance`
 /// frame, so the poll has to be inert when no run is installed. It was not:
 /// the teardown ran the dance stager's PAD-LATCH CLEAR every frame, which

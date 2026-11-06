@@ -95,6 +95,14 @@ impl World {
         }
     }
 
+    /// Raise sound-flag bit 2 as op-`0x35` sub-op 6 does (`0x801E01D8`), for
+    /// a door record the field VM does not run: the overworld entity SM keeps
+    /// only an entrance's `0x3F`, and the host replays the rest of the
+    /// record's path ([`Self::release_field_init_voices`] consumes the bit).
+    pub fn raise_keep_audio_across_field_init(&mut self) {
+        self.audio.keep_audio_across_field_init = true;
+    }
+
     /// Drain the SPU voices field-VM ops asked the host to stop this tick.
     pub fn take_sfx_voice_stops(&mut self) -> Vec<u8> {
         std::mem::take(&mut self.audio.sfx_voice_stops)

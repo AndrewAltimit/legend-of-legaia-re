@@ -67,7 +67,7 @@ fn save_full_round_trips_globals() {
 
 /// Casino coins, the Point Card bank and the fishing point record survive a
 /// save / load - through the LGSF `LGX7` block and through a retail SC block,
-/// where retail keeps all nine words in its live-state window.
+/// where retail keeps all ten words in its live-state window.
 #[test]
 fn save_full_round_trips_the_minigame_purses() {
     let mut world = World::new();
@@ -81,6 +81,7 @@ fn save_full_round_trips_the_minigame_purses() {
     world.minigames.fishing_best_fish = 9;
     world.minigames.fishing_casts = 55;
     world.minigames.fishing_prizes_purchased = 0x81;
+    world.minigames.dance_best = 568;
     let check = |w: &World| {
         assert_eq!(w.minigames.casino_coins, 4321);
         assert_eq!(w.minigames.point_card, 765);
@@ -91,6 +92,7 @@ fn save_full_round_trips_the_minigame_purses() {
         assert_eq!(w.minigames.fishing_best_fish, 9);
         assert_eq!(w.minigames.fishing_casts, 55);
         assert_eq!(w.minigames.fishing_prizes_purchased, 0x81);
+        assert_eq!(w.minigames.dance_best, 568);
     };
     let sf = world.save_full();
 
@@ -104,6 +106,43 @@ fn save_full_round_trips_the_minigame_purses() {
     let mut from_block = World::new();
     from_block.load_full(legaia_save::SaveFile::from_retail_sc_block(&block, 1).unwrap());
     check(&from_block);
+}
+
+/// The records screen's battle / escape tallies survive both save carriers
+/// and a New Game zeroes them; an `LGSF` file from before the `LGXG` block
+/// takes them from the retail window it carries.
+#[test]
+fn save_full_round_trips_the_record_tallies() {
+    use legaia_save::card::RetailRecordTally;
+    let tally = RetailRecordTally {
+        battles: 345,
+        escapes: 12,
+    };
+    let mut world = World::new();
+    world.load_party(legaia_save::Party::zeroed(1));
+    world.party.record_tally = tally;
+    let sf = world.save_full();
+
+    let mut from_file = World::new();
+    from_file.load_full(legaia_save::SaveFile::parse(&sf.write()).unwrap());
+    assert_eq!(from_file.party.record_tally, tally);
+
+    let mut block = vec![0u8; legaia_save::card::BLOCK_SIZE];
+    sf.write_into_retail_sc_block(&mut block).unwrap();
+    let lifted = legaia_save::SaveFile::from_retail_sc_block(&block, 1).unwrap();
+    let mut from_block = World::new();
+    from_block.load_full(lifted.clone());
+    assert_eq!(from_block.party.record_tally, tally);
+
+    // Without the block, the window's words.
+    let mut no_block = lifted;
+    no_block.ext_v2.record_tally = None;
+    let mut from_window = World::new();
+    from_window.load_full(no_block);
+    assert_eq!(from_window.party.record_tally, tally);
+
+    from_window.begin_new_game();
+    assert_eq!(from_window.party.record_tally, RetailRecordTally::default());
 }
 
 #[test]

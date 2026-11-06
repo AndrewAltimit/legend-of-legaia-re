@@ -53,8 +53,9 @@ span-squash + centroid recentre with camera-focus compensation),
 `build_attack_target_queue` (`FUN_801D8A88`, the multi-target ring *builder* -
 counts live monsters, sorts the alternates by bearing offset from the current
 target) and its `cycle_attack_target` (`FUN_801D8D00`, the next/prev accessor),
-`bearing_12bit` (`FUN_80019B28`, the faithful arctan-LUT atan2 the builder
-sorts by), `first_live_monster_slot` (`FUN_801DB8B4`),
+`bearing_12bit` (`FUN_80019B28`, the arctan-LUT atan2 the builder sorts by,
+as a table-parameterised reference; callers reach the live form
+`engine-system::trig::bearing12` through `bearing_12bit_approx`), `first_live_monster_slot` (`FUN_801DB8B4`),
 `first_selectable_target` / `next_selectable_actor` (`FUN_801DBA04` /
 `FUN_801DB81C`, the participant scans), and `redirect_dead_target`
 (`FUN_801DB124`, re-roll a queued action's target to a living same-side slot

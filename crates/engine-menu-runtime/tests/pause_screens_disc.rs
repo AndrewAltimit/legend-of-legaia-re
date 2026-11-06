@@ -26,6 +26,16 @@ fn disc_scus() -> Option<Vec<u8>> {
         .ok()
 }
 
+/// Every member wears its Ra-Seru: the Magic screen's caster confirm refuses
+/// a caster whose Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`) is empty.
+fn wear_ra_seru(world: &mut World) {
+    for (i, member) in world.party.roster.members.iter_mut().enumerate().take(3) {
+        let mut equip = member.equipment();
+        equip.slots[[3, 2, 3][i]] = [0x01, 0x0A, 0x13][i];
+        member.set_equipment(equip);
+    }
+}
+
 fn world_with_disc_text(scus: &[u8]) -> World {
     let mut world = World::new();
     world.party.roster = legaia_save::Party::zeroed(1);
@@ -37,6 +47,7 @@ fn world_with_disc_text(scus: &[u8]) -> World {
     hms.mp_cur = 60;
     member.set_hp_mp_sp(hms);
     member.set_magic_rank(7);
+    wear_ra_seru(&mut world);
     world.install_menu_text(scus);
     world.set_item_catalog(legaia_engine_menus::items::ItemCatalog::vanilla());
     world

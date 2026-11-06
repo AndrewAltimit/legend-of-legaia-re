@@ -28,6 +28,16 @@ use legaia_engine_menus::options::OptionsState;
 use legaia_engine_menus::save_select::{SaveRack, SaveSelectMode, SlotSnapshot};
 use legaia_engine_system::input::PadButton;
 
+/// Every member wears its Ra-Seru: the Magic screen's caster confirm refuses
+/// a caster whose Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`) is empty.
+fn wear_ra_seru(world: &mut World) {
+    for (i, member) in world.party.roster.members.iter_mut().enumerate().take(3) {
+        let mut equip = member.equipment();
+        equip.slots[[3, 2, 3][i]] = [0x01, 0x0A, 0x13][i];
+        member.set_equipment(equip);
+    }
+}
+
 fn fresh_world() -> World {
     let mut world = World::new();
     world.party.roster = legaia_save::Party::zeroed(3);
@@ -43,6 +53,7 @@ fn fresh_world() -> World {
     world.set_item_catalog(ItemCatalog::vanilla());
     world.party.inventory.insert(0x77, 3); // Healing Leaf (real item id)
     world.party.money = 100;
+    wear_ra_seru(&mut world);
     world
 }
 

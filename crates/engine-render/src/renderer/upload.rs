@@ -316,6 +316,49 @@ impl Renderer {
         })
     }
 
+    /// Swap a mesh from [`Self::upload_vram_mesh`] onto a new index list over
+    /// the same vertices, without re-uploading them. `positions` and `cba_tsb`
+    /// are the streams the mesh was uploaded with. Valid only for a mesh whose
+    /// primitives own their vertices (no vertex shared between primitives): a
+    /// vertex's corner refs then depend on its own primitive alone, so they
+    /// hold under any subset of the primitives. The battle ground grid's
+    /// per-frame cell cull is the caller.
+    pub fn reindex_vram_mesh(
+        &self,
+        mesh: &mut UploadedVramMesh,
+        positions: &[[f32; 3]],
+        cba_tsb: &[[u16; 2]],
+        indices: &[u32],
+    ) -> Result<()> {
+        if !indices.len().is_multiple_of(3) {
+            anyhow::bail!(
+                "vram mesh reindex: index count {} is not a multiple of 3",
+                indices.len()
+            );
+        }
+        if let Some(&max_idx) = indices.iter().max()
+            && (max_idx as usize) >= positions.len()
+        {
+            anyhow::bail!(
+                "vram mesh reindex: index {max_idx} >= vertex count {}",
+                positions.len()
+            );
+        }
+        let (indices_with_tail, semi_ranges, semi_prims) =
+            psx_blend::append_semi_tail(indices, cba_tsb, positions);
+        mesh.index_buf = self.mesh_buffers.upload(
+            &self.device,
+            &self.queue,
+            "vram mesh index buffer",
+            MeshBufferKind::Index,
+            bytemuck::cast_slice(&indices_with_tail),
+        );
+        mesh.index_count = indices.len() as u32;
+        mesh.semi_ranges = semi_ranges;
+        mesh.semi_prims = semi_prims;
+        Ok(())
+    }
+
     /// Upload an untextured vertex-colour triangle mesh: position + per-vertex
     /// `[r, g, b]` (each 0..255, alpha forced opaque) + triangle indices. The
     /// inverse of [`Self::upload_vram_mesh`] for the `F*`/`G*` props that carry

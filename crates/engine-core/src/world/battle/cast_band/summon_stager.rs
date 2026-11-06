@@ -235,6 +235,7 @@ impl World {
                 cam.nudge_module_tr_x(n.tr_x);
             }
         }
+        let style = self.battle_ctx.camera_variant;
         if let Some(f) = run.as_ref().and_then(|r| r.camera_follow)
             && let Some(cam) = self.battle.camera.as_mut()
         {
@@ -247,7 +248,7 @@ impl World {
                 ],
                 height: None,
             };
-            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw);
+            cam.arm_module_follow(actor, f.yaw_base, f.depth_raw, style);
         }
         if run.as_ref().is_some_and(|r| r.camera_end_frame)
             && let Some(cam) = self.battle.camera.as_mut()
@@ -435,9 +436,21 @@ impl World {
         // capture's creature `+0x21D = 4` halves the clip's speed). The
         // measured constant stays for a creature with no root speed to
         // play (a headless seat with no clip).
-        let root_driven = self
-            .battle_playing_root_motion(usize::from(slot))
-            .is_some_and(|(speed, _)| speed > 0);
+        //
+        // A seat with record clips whose walk clip is staged but not yet
+        // committed is root-driven too: the commit lands in this pass's anim
+        // tick, and the clip's root motion walks it from there. Stepping it
+        // by hand on that first pass put Gimard's creature 28 units ahead of
+        // retail's through PROT 0903's arm 11 (`-2169` against `-2196` on
+        // the pass the walk starts).
+        let walk_pending = self
+            .actors
+            .get(usize::from(slot))
+            .is_some_and(|a| a.battle_action_clips.is_some() && a.battle.current_anim != 1);
+        let root_driven = walk_pending
+            || self
+                .battle_playing_root_motion(usize::from(slot))
+                .is_some_and(|(speed, _)| speed > 0);
         if let Some(a) = self.actors.get_mut(usize::from(slot)) {
             a.battle.facing_angle = facing;
             a.battle.active_target = victim;

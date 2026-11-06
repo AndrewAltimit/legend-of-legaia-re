@@ -33,6 +33,18 @@ fn the_pond_surface_seats_the_party_under_the_venue_camera() {
     legaia_engine_scene_host::fishing_venue::tick_fishing_venue_on_host(&mut host);
     let lead = host.world.minigames.fishing_venue.wander.clone().unwrap();
     assert_eq!((lead.x, lead.y, lead.z), (4736, -128, 10752));
+    // The cast lure anchors on the same footing (the cast arm reads the
+    // lead's `+0x16`), on either shore.
+    for venue in 0..2 {
+        let v = host.fishing_venue_map(venue).expect("venue map");
+        eprintln!(
+            "[ran] venue {venue} anchor ({}, {}, {})",
+            v.anchor_x, v.anchor_y, v.anchor_z
+        );
+        if (v.anchor_x, v.anchor_z) == (lead.x, lead.z) {
+            assert_eq!(v.anchor_y, lead.y, "the lure anchors on the lead's footing");
+        }
+    }
 
     let mut surface = FishingSurface::default();
     assert!(

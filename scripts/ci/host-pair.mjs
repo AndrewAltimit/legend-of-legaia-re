@@ -4,7 +4,7 @@
 //
 //   scripts/ci/host-pair.mjs --site site --engine target/release-test/legaia-engine --out DIR
 //       [--scene town_walk,menu,...] [--mode retail,enhanced] [--every n] [--ticks n]
-//       [--gl swiftshader|egl] [--threshold 32] [--keep-all]
+//       [--gl swiftshader|egl] [--threshold 32] [--keep-all] [--from n]
 //
 // The native side is `play-window`'s own capture sweep (`--screenshot-every`, `--pad-script`)
 // with `LEGAIA_SWEEP_TRACE` writing `engine-session::host_trace` beside each PNG. The page side
@@ -42,6 +42,19 @@ const menuTaps = () => {
   return t;
 };
 
+const arts = (from, to) => {
+  const cyc = ['Cross', 'Left', 'Right', 'Up', 'Down', 'Left', 'Cross', 'Cross'];
+  const t = [];
+  for (let n = from, i = 0; n <= to; n += 12, i++) t.push([n, cyc[i % cyc.length]]);
+  return t;
+};
+const savePause = () => {
+  const t = [[30, 'Start']];
+  for (let i = 0; i < 6; i++) t.push([60 + i * 15, 'Down']); /* Items .. Save, the seventh row */
+  for (const n of [170, 260, 330, 420]) t.push([n, 'Cross']);
+  t.push([470, 'Up'], [500, 'Cross']); /* the confirm starts on No */
+  return t; /* the save closes the menu; `slot_save` resumes a window-written save on both */
+};
 const every = (from, to, step, b) => { const t = []; for (let n = from; n <= to; n += step) t.push([n, b]); return t; };
 
 /* `hold` [from, to, button], `taps` [tick, button], `env` for the native side with the page's
@@ -55,6 +68,10 @@ export const SCENES = {
   battle: { scene: 'map01', ticks: 900, every: 30, battle: 30, taps: every(300, 890, 40, 'Cross') },
   results: { scene: 'map01', ticks: 3600, every: 60, battle: 30, taps: every(300, 3590, 20, 'Cross') },
   cast: { scene: 'map01', ticks: 900, every: 30, battle: 30, inflight: [0, 138, 3] },
+  /* Arts input: open the command ring, then direction presses and confirms on a cycle. */
+  arts: { scene: 'map01', ticks: 1500, every: 30, battle: 30, taps: arts(300, 1490) },
+  /* Pause menu Save on the world map (saving works anywhere there): slot, block, Yes. */
+  save: { scene: 'map01', ticks: 720, every: 30, taps: savePause() },
 };
 /* The five minigames from the picker's own entries, on a rhythm of presses. */
 const mgPad = () => {
@@ -285,7 +302,7 @@ async function main() {
   }
   const names = arg('scene') ? arg('scene').split(',') : Object.keys(SCENES);
   const modes = arg('mode') ? arg('mode').split(',') : ['retail'];
-  const opts = { every: +arg('every', 0), ticks: +arg('ticks', 0), threshold: +arg('threshold', 32), report: +arg('report', 0.01), keepAll: !!arg('keep-all') };
+  const opts = { every: +arg('every', 0), ticks: +arg('ticks', 0), threshold: +arg('threshold', 32), report: +arg('report', 0.01), from: +arg('from', 0), keepAll: !!arg('keep-all') };
   const { port, stop } = await serveSite(site);
   const browser = await launchChromium({ gl: arg('gl', 'swiftshader'), vsync: false });
   const lines = [];
@@ -307,7 +324,8 @@ async function main() {
     console.error(`[host-pair] ${name}/${mode}: native`);
     const shots = nativeRun(engine, name, sc, mode, path.join(dir, 'native'), opts);
     if (!shots.length) { lines.push(`${name}/${mode}: NO NATIVE FRAMES`); continue; }
-    const ticks = shots.map((f) => +/\d+/.exec(f)[0]);
+    /* `--from n` pairs only the native frames from tick n on (the page still steps from 0). */
+    const ticks = shots.map((f) => +/\d+/.exec(f)[0]).filter((t) => t >= opts.from);
     const first = fs.readFileSync(path.join(dir, 'native', shots[0]));
     const size = [first.readUInt32BE(16), first.readUInt32BE(20)];
     console.error(`[host-pair] ${name}/${mode}: ${ticks.length} native frames ${size.join('x')}, page`);

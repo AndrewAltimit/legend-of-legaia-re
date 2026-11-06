@@ -223,6 +223,14 @@ pub const DANCE_SCORE_Y: i16 = 0x14;
 pub const DANCE_SCORE_BOX_WIDGET: u32 = 8;
 /// Brightness every element of the score strip draws at.
 pub const DANCE_HUD_BRIGHTNESS: i32 = 0x80;
+/// Widget id of the free-play personal-best panel's label (`a2 = 0x20` at
+/// `0x801CF5BC`).
+pub const BEST_PANEL_WIDGET: u32 = 0x20;
+/// Free-play personal-best panel label x (`a0 = 0x28` at `0x801CF5B4`); the
+/// number run starts four pixels on (`a1 = 0x2C` at `0x801CF5D4`).
+pub const BEST_PANEL_X: i16 = 0x28;
+/// Free-play personal-best panel scanline (`0x10`).
+pub const BEST_PANEL_Y: i16 = 0x10;
 /// Groove-gauge readout position for the human dancer, `(x, y)`.
 pub const DANCE_GAUGE_XY: (i16, i16) = (0x58, 0xC0);
 /// Beat-track anchor for the human dancer, `(x, y)`.
@@ -311,6 +319,15 @@ impl DanceGame {
     pub fn hud_frame_rows(&self, rival_hud: bool) -> Vec<DanceHudRow> {
         let beat = self.beat_index();
         let mut out = Vec::new();
+        // Free play's personal-best panel ([`Self::best_panel_quads`]).
+        if self.mode == DanceMode::FreePlay {
+            out.push(DanceHudRow {
+                text: format!("BEST {}", self.best_score),
+                x: BEST_PANEL_X as i32,
+                y: BEST_PANEL_Y as i32,
+                dim: false,
+            });
+        }
         for d in self.hud_draws(rival_hud) {
             match d {
                 DanceHudDraw::Score { x, y, value, .. } => {

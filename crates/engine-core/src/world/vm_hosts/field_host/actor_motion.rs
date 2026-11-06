@@ -525,6 +525,7 @@ impl FieldHostImpl<'_> {
             // legs) plays its walk clip instead of gliding in the idle.
             self.world.carry_npc_run_anim(slot, move_id);
             self.world.script_npc_move(slot, move_id);
+            self.world.seat_npc_floor_resample(slot, ctx.flags);
             return;
         }
         // The parked-sentinel tile (127,127) decodes to (0x3FC0, 0x3FC0):
@@ -596,7 +597,93 @@ impl FieldHostImpl<'_> {
                 }
                 self.world.carry_npc_run_anim(slot, move_id);
                 self.world.script_npc_move(slot, move_id);
+                self.world.seat_npc_floor_resample(slot, ctx.flags);
             }
         }
+    }
+}
+
+impl World {
+    /// The seat's floor re-sample on a placement NPC (op `4C 51`, the
+    /// case-5 sub-1 body at `0x801E1904..0x801E1940`): `+0x16` takes the
+    /// floor under the new tile (`FUN_80019278`) when `+0x10` carries a
+    /// `0x20200` bit - every placement does, the seater's class bit
+    /// `0x20000` - and never under the script-held height `0x20000000`.
+    ///
+    /// The port keeps a placement's Y as a held glide height
+    /// (`FieldNpcState::glide_y`) or, with none held, the live floor sample,
+    /// so the re-sample drops the held height: the next draw stands the NPC
+    /// on the floor it was seated on. Kept, it carried the old height across
+    /// the seat for as long as the cull held it - `town01` P2[4] leaves Mei
+    /// gliding at her front door, P2[5] seats her in Vahn's house, and she
+    /// hung in the air above the table for the whole measuring beat.
+    ///
+    /// REF: FUN_801DE840 (0x801E1904..0x801E1940), FUN_80019278, FUN_8003BC08
+    pub(crate) fn seat_npc_floor_resample(&mut self, slot: u8, ctx_flags: u32) {
+        if ctx_flags & 0x2000_0000 == 0 {
+            self.npcs.glide_y.remove(&slot);
+        }
+    }
+}
+
+#[cfg(test)]
+mod seat_and_cursor_tests {
+    use crate::world::World;
+    use crate::world::vm_hosts::{FieldHostImpl, field_step_routed};
+    use legaia_engine_vm::field::{FieldCtx, StepResult};
+
+    fn clip(cursor: i16) -> legaia_engine_scene::field_env::PropAnim {
+        legaia_engine_scene::field_env::PropAnim {
+            anim_id: 1,
+            frames: 30,
+            scaled_step: false,
+            step_div: 2,
+            cursor,
+            flags: 0,
+            rate: 16,
+        }
+    }
+
+    /// `4C 8C` reads the actor's clip cursor `+0x68`, which the port keeps on
+    /// the actor's clip state: a placement whose clip has moved advances, one
+    /// on frame 0 takes the skip.
+    #[test]
+    fn op_4c_8c_reads_the_placements_clip_cursor() {
+        let op = [0x4C, 0x8C, 0x05, 0x00];
+        let mut w = World::new();
+        w.field_vm.executing_channel = Some(5);
+        w.npcs.clip_cursors.insert(5, clip(479));
+        let mut ctx = FieldCtx::default();
+        let r = field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut ctx, &op, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 4 });
+        w.npcs.clip_cursors.insert(5, clip(0));
+        let r = field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut ctx, &op, 0);
+        assert_eq!(r, StepResult::Advance { next_pc: 7 });
+    }
+
+    /// A cutscene's `4C 51` seat re-samples the placement's floor: a held
+    /// glide height does not follow it to the new tile, unless the script
+    /// holds the height itself (`0x20000000`).
+    #[test]
+    fn a_seat_drops_the_held_height() {
+        let mut w = World::new();
+        w.npcs.positions.insert(34, (2240, 3776));
+        w.npcs.glide_y.insert(34, -96);
+        w.field_vm.in_spawned_record_slice = true;
+        w.field_vm.executing_channel = Some(34);
+        let mut ctx = FieldCtx::default();
+        let op = [0x4C, 0x51, 0x62, 0x8E, 0x01, 0x3E];
+        let r = field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut ctx, &op, 0);
+        assert!(matches!(r, StepResult::Advance { .. }));
+        assert_eq!(w.npcs.positions.get(&34), Some(&(12608, 1920)));
+        assert!(!w.npcs.glide_y.contains_key(&34));
+
+        w.npcs.glide_y.insert(34, -480);
+        let mut held = FieldCtx {
+            flags: 0x2000_0000,
+            ..FieldCtx::default()
+        };
+        field_step_routed(&mut FieldHostImpl { world: &mut w }, &mut held, &op, 0);
+        assert_eq!(w.npcs.glide_y.get(&34), Some(&-480));
     }
 }

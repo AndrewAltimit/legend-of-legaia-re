@@ -346,6 +346,7 @@ op `4C 8A`) is what made the town's lit rows look baked. See
 | `FUN_801D5778` launches the commit log off-screen at round start | falsified (a ring exit or return launches it) | Plausible: the log disappears around the round's start. The flow tail table at `0x801CE948` calls the copy loops on steps `5 / 7 / 9 / 0x2A / 0x30` (out) and `0x2B / 0x31 / 8` (in); Begin exits without one. |
 | The Auto command replays the saved command string | falsified (the Auto flag rebuilds the queue) | Plausible: `FUN_801DA34C` reloads the record's string on the Attack confirm, and the review screen shows it. The fighter's swings come from `FUN_801F0450`'s rebuild under `ctx[+0x266 + seat]` at every round's state `0x00`. |
 | The intro banner dedups a monster name by overwriting one glyph | falsified (it drops a character and appends `* N`) | Plausible: the label keeps its visual width. The routine truncates the instance letter and `strcat`s the rodata string at `0x801CECA8` (`0x801D9E60`). |
+| The magic-capture fade `0x6F` arms no framing, so its camera walks the table `0x6E` left on its own increment | falsified (it re-arms case 6 every pass) | Plausible: walked back on the re-arm's widening share, `zora_glare_petrify_pre`'s displayed TR z read worse than on the table's increment. The state calls `FUN_801D5854(actor, 6)` at `0x801E501C`, right after it ramps `ctx[+0x6D0]` down by `16 * step`; the zora miss was the endpoint the ramp moves, and the re-arm walk with that endpoint shift places both zora and `battle_map01_gomboo_steal_mid_cast` ([retail-compare.md](../tooling/retail-compare.md#an-ease-out-camera-carries-its-history)). |
 | Battle action state `0x00` runs once per battle | falsified (every round) | Plausible: the formation arm reads like battle setup. Begin sets flow `0xFE`, whose arm clears `ctx[7]` at `0x801D3224`. |
 
 ### The scripted boost profile is "the international release's" profile for every fight
@@ -978,6 +979,18 @@ larger figure is off by more than an order of magnitude; see
 [`effect-vm.md`](../subsystems/effect-vm.md).
 
 ## Audio / sound driver
+
+### `zeto_call_wave_mid_cast`'s `+5` dB is not a volume path
+
+The real-PCM `track` channel reads the state `+5.09` dB louder in retail with
+correlation `0.9995`, which reads as a level fault in the score's volume chain
+(sequence volume, VAB program and tone volume, `SsSetMVol`, the CD input). It is not.
+In one-second windows retail is `+2` to `+16` dB louder over the recording's first six
+seconds only, where the cast's own cues sound, and within `0.03` dB of the engine in
+every window after; the channel renders the score and nothing the cast keys, and the
+state has no cue voice sounding at its first sample (no voice record owned `0x21`), so
+`--cue-voices` changes nothing. The level is the cast's cues in a whole-window energy
+ratio ([real retail PCM](../subsystems/audio.md#real-retail-pcm)).
 
 ### The cue funnels' de-dup word is not dead
 
@@ -2097,6 +2110,7 @@ answered from the extracted image at its mapped base.
 | `noaru_field_card_walk`'s bowl turns on the wrong yaw, since fitting the part's angle lowers the frame's error | falsified (the capture's quad walk) | Plausible: the texture sits up to `14` px off and moving the seated yaw from `-237` to `-243` helps. The bowl's corners match the table at `-241` within truncation, and a raster of those packets by two triangles matches the engine frame and misses retail's. PCSX-Redux walks a `POLY_FT4`'s outline ([renderer-port](../subsystems/renderer-port.md#the-native-target)). |
 | The wall panels' moving art in the dance hall is a VRAM scroller or a `MoveImage` strip | falsified (a mesh flipbook) | Plausible: the ambient tree carries both, and retail's VRAM holds extra art. The page under the panels is the same in the engine's VRAM; the actors at those cells carry tick `FUN_801D0640`, the marker tiles, whose `+0x64` names another mesh ([minigame-dance](../subsystems/minigame-dance.md#step-marker-tiles)). |
 | The field near cut runs in `w` units, not `SZ = 6 * w` | falsified (a capturing emulator's polygon limit) | Plausible: a `w` cut dropped `rikuroa_field_card_walk`'s near wall quad as the frame does, where a `6 * w` cut kept it. PCSX-Redux's `checkCoord4` rejects that whole quad on one corner pair. With the rule on the capture child, the true cut holds the score. |
+| `rikuroa_field_card_walk`'s missing bottom-left floor is a field near-reject rule (a quad-size or near-cut test the port lacks) | falsified (the capturing emulator draws a quad the console would not) | Plausible: the missing polygon sits at the lens, beside the near wall quad the emulator drops. The retail table holds it, its mean `SZ` clears the floor, and only the emulator's span rule decides it: PCSX-Redux measures a corner pair only from a negative corner, and this quad has none. The port's copy of that rule tested the corners Y up. |
 | Ground record `+0x1C` / `+0x1D` hold the tile's page and CLUT | falsified (the signed `V` / `U` span) | Plausible: a doc line named them so, and the emitter reads them beside the tile. `FUN_801F6D48` adds them to the high edge (`0x801F6EE4..0x801F6F0C`); page and CLUT are `+0x15` and `+0x16`. |
 | `FUN_8001CF50` builds the field / cutscene camera rotation | falsified (a per-node camera-relative rotation) | Plausible: it rebuilds a rotation from the camera globals `0x8007B790/92/94`. Its SCUS callers `FUN_8001ADA4` and `FUN_8001B964` enter it only when `node+0x52 & 0x780` (`0x8001B374`, `0x8001BA0C`); bits `0x80` / `0x100` / `0x200` drop an axis and `0x400` locks the node to the camera. Every other node uses the camera matrix `FUN_800172C0` builds through `FUN_80026988`. The roll-factor finding stands; only its routine changes. |
 | `FUN_8001D088`'s counter `_DAT_8007BD28` and journal `0x800891A8` are bookkeeping that does not affect the pose | falsified (they drive a re-blend) | `FUN_8001BE80` zeroes the counter, tests it against `0xC00` at `0x8001C164` and re-blends from the journal (`0x8001C170..0x8001C1CC`); 5098 of 337597 gated half-frame samples on the disc take the retry. |

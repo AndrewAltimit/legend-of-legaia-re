@@ -50,7 +50,8 @@ HIT_FRAME_DRAWS = 20
 DROP_ENV = {
     "LEGAIA_BATTLE_DRIVE", "LEGAIA_CAPTURE_GATE", "LEGAIA_CAPTURE_DISPLAY_LAG",
     "LEGAIA_BATTLE_INFLIGHT", "LEGAIA_BATTLE_MONSTER_CAST", "LEGAIA_DIAG_CAPTURE_TICK",
-    "LEGAIA_BATTLE_CAM_ALIGN", "LEGAIA_BATTLE_FRAME_STEP", "LEGAIA_SEAT_HUD_GLIDES",
+    "LEGAIA_BATTLE_CAM_ALIGN", "LEGAIA_BATTLE_FRAME_STEP", "LEGAIA_BATTLE_FRAME_STEP_AFTER_ACCUM",
+    "LEGAIA_SEAT_HUD_GLIDES",
     # One capture instant's cycler and scroller state: seated for a whole run
     # they hold the arena's palette and texels still (the Cort fight's flesh).
     "LEGAIA_SEAT_CLUT_FX", "LEGAIA_SEAT_VRAM_RECTS",
@@ -158,6 +159,8 @@ def run_retail(a, out: Path) -> bool:
         env["LEGAIA_PRIM_CALLS"] = "1"
     if a.sfx_callers:
         env["LEGAIA_SFX_CALLERS"] = "1"
+    if a.pose_objects:
+        env["LEGAIA_POSE_OBJECTS"] = "1"
     if a.watch:
         env["LEGAIA_WATCH_W"] = a.watch
     cmd = ["timeout", "--kill-after=10", str(a.retail_timeout), "bash",
@@ -167,7 +170,7 @@ def run_retail(a, out: Path) -> bool:
         cmd.append("--headless")
     # A forced formation row and the monster-pick rewrite need the breakpoint
     # core; everything else runs on the recompiler (vsync hooks only).
-    if not a.formation and not a.monster_pick and not a.sfx_callers and not a.watch and not a.prim_calls:
+    if not (a.formation or a.monster_pick or a.sfx_callers or a.watch or a.prim_calls or a.pose_objects):
         cmd.insert(5, "--fast")
     print(f"[retail] capturing {a.state} {'strike' if a.physical else f'spell 0x{a.spell:02X}'} (an emulator run, minutes)")
     with open(rdir / "stdout.txt", "w") as log:
@@ -230,6 +233,68 @@ def retail_opening_pose(out: Path) -> str | None:
     pitch = pitch - 4096 if pitch >= 2048 else pitch
     return ",".join(str(v) for v in (
         pitch, cam["yaw"], cam["trx"], cam["try"], cam["trz"], body["fx"], 0, body["fz"]))
+
+
+def state_guard_seats(sstate: str) -> str | None:
+    """The party seats a PCSX-Redux state holds in the Spirit stance
+    (`+0x1DE == 4` on actor `(&DAT_801C9370)[seat]`), as a comma list, for a
+    recording older than the probe's `guard=` field. `None` when the state
+    cannot be read."""
+    exe = REPO / "target" / PROFILE / "pcsxr-state"
+    if not exe.exists() or not sstate:
+        return None
+    if not Path(sstate).exists():
+        # A recording made from another worktree names that worktree's
+        # library; the states are fingerprint-named, so look up the same file.
+        sstate = str(REPO / "saves" / "library" / "pcsx-redux" / Path(sstate).name)
+        if not Path(sstate).exists():
+            return None
+    base, top = 0x80000000, 0x80200000
+    tmp = REPO / "target" / "cast-sequence-guard-ram.bin"
+    r = subprocess.run([str(exe), "extract", sstate, "--start", hex(base), "--end", hex(top),
+                        "--out", str(tmp)], capture_output=True)
+    if r.returncode != 0 or not tmp.exists():
+        return None
+    ram = tmp.read_bytes()
+    tmp.unlink()
+
+    def u32(va: int) -> int:
+        o = va - base
+        return int.from_bytes(ram[o:o + 4], "little") if 0 <= o <= len(ram) - 4 else 0
+
+    seats = []
+    for s in range(3):
+        a = u32(0x801C9370 + 4 * s)
+        if not base <= a < top - 0x200:
+            continue
+        o = a - base
+        max_hp = int.from_bytes(ram[o + 0x14E:o + 0x150], "little")
+        if max_hp > 0 and ram[o + 0x1DE] == 4:
+            seats.append(str(s))
+    return ",".join(seats)
+
+
+def engine_guard(a, out: Path, done: dict) -> str:
+    """The party seats the engine child stands in the Spirit stance.
+
+    Both per-move wrappers double the defender roll on `+0x1DE == 4` and the
+    finisher halves the hit, so a capture whose victims guarded takes about
+    half the engine's unguarded damage. `--guard` wins (`-` = none); else the
+    probe's `guard=` (the stance at cast begin); else, for a recording older
+    than that field, the injected state's own stance - unless the run picked
+    the monster's turn rounds on from the state, whose stance it no longer
+    holds."""
+    if a.guard:
+        return "" if a.guard == "-" else a.guard
+    if "guard" in done:
+        return done["guard"]
+    manifest = read_kv(out / "retail" / "manifest.txt")
+    if a.physical or int(manifest.get("monster_pick", "0") or 0):
+        return ""
+    seats = state_guard_seats(manifest.get("sstate", ""))
+    if seats:
+        print(f"[engine] guard {seats} from the state's +0x1DE (recording predates guard=)")
+    return seats or ""
 
 
 def retail_opening_cursor(out: Path) -> str | None:
@@ -403,8 +468,8 @@ def run_engine(a, out: Path) -> bool:
         # (Mule) short of its last arms.
         "LEGAIA_DIAG_CAST_SEQ_MAX": "4000",
     })
-    if a.guard:
-        env["LEGAIA_BATTLE_GUARD"] = a.guard
+    if guard := engine_guard(a, out, done):
+        env["LEGAIA_BATTLE_GUARD"] = guard
     if a.learned and caster < 3:
         env["LEGAIA_CAST_LEARN"] = f"{caster},{a.spell},{a.learned}"
     if a.monster_hp and env.get("LEGAIA_BATTLE_BARS"):
@@ -530,6 +595,9 @@ def main() -> int:
     ap.add_argument("--sfx-callers", action="store_true",
                     help="retail: log every call into the cue producers and routers with its ra "
                          "(retail/sfxcall.csv; breakpoint core)")
+    ap.add_argument("--pose-objects", action="store_true",
+                    help="retail: pose.csv, the summon creature's decoded object table at each burn emit "
+                         "(breakpoint core; the engine half is LEGAIA_DIAG_CAST_PARTS's pose.csv)")
     ap.add_argument("--retail-parts", action="store_true",
                     help="retail: parts.csv, every live move-VM part per vsync (the engine half is LEGAIA_DIAG_CAST_PARTS)")
     ap.add_argument("--prim-calls", action="store_true",
@@ -538,7 +606,8 @@ def main() -> int:
                     help="engine: keep the child's --no-audio (no audio director, no sfx.csv)")
     ap.add_argument("--no-ground", action="store_true", help="do not seat the combatants on retail's ground pairs")
     ap.add_argument("--guard", default="", metavar="SEATS",
-                    help="engine: party seats in the Spirit stance at the cast (comma list; retail's +0x1DE == 4)")
+                    help="engine: party seats in the Spirit stance at the cast (comma list, `-` = none; "
+                         "default: the recording's guard=, retail's +0x1DE == 4 at cast begin)")
     ap.add_argument("--rand-at", metavar="ST7:PHASE",
                     help="engine: hold the world rand() stream on retail's seed word under this cast key "
                          "(its last vsync there), so the arm that leaves it draws as retail's did")

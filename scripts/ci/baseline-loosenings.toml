@@ -686,3 +686,55 @@ changes = [
   ["counts/native/world_map/retail/alloc_kb_per_frame", 1274.7, 1274.8],
   ["counts/native/world_map/retail/allocs_per_frame", 1810.8, 1811.8],
 ]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The capture child's PCSX-Redux polygon limit now reads packet axes and applies the emulator's triangle rule (checkCoord3: a pair counts only from a negative corner) in place of the console span. The state's table holds the Hyper Arts burst rays as POLY_GT3 pairs whose lower halves span over 511 rows with no negative corner (order 2373: (237,157), (115,733), (281,1023)); the emulator draws them, the console rule had dropped them. The port now draws the bottom ray too, about 6 px right of retail's and wider at the screen edge, so the burst's own placement is the residual. A/B on one binary over every minigame_ state: only this one moves (0.855 -> 0.848)."
+changes = [
+  ["states/minigame_muscle_dome_retail_skeleton_hyper_arts/image", 0.857, 0.848],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The arctan table the bearing reads now truncates as retail's 0x8006F4C8 does (FUN_80019B28 and the separation pair FUN_80050BB8 held to the disc by the retail-exec differential). A separation nudge and an approach facing one unit apart change which of the replay child's attempts reaches the gate; the scored attempt has the party walked aside where the rounding table's had it seated. Yaw exact; bisected per call site, and no other strike state's camera moved. Nighto's summon still reads one unit of facing off the corrected table."
+changes = [
+  ["states/battle_map03_moldy_worm_strike/camera", 0.999, 0.998],
+  ["states/nighto_summon_mid_cast/image", 0.997, 0.996],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The track coin ctx[+0x26D] is drawn where retail draws it, at the clip commit (FUN_8004E13C, 0x8004E2DC), no longer at the camera's Action-phase entry, which changes how many rand() draws the replay makes before the frame. These battle states replay on a seed from BATTLE_RNG_SEEDS, not on retail's stream, so later random elements land differently: Noa's stance in Berserker, Viguro B's mist and the second Viguro's pose in Viguro. Camera stays 1.0 and the coin matches the capture; adding back a discarded draw at Action entry restores 0.998 / 0.976 exactly."
+changes = [
+  ["states/battle_rugi_berserker_3_strike/image", 0.998, 0.99],
+  ["states/battle_vozz_viguro_strike/image", 0.976, 0.973],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "A walk-in cast's first module step runs its style roll (rand() % 4 at 0x801F71D0), turns both combatants and calls the case-6 framing on the in-reach path too, as retail does whether or not the caster stands in reach. Scythe Wind's camera rose .987 to 1.000 (yaw 345 against retail's 342); the still loses .002 to the shifted pose the roll's draw deals."
+changes = [
+  ["states/battle_tunnelb_nova_scythe_wind_mid_cast/image", 0.928, 0.926],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "The capture child's PCSX-Redux polygon limit now reads packet axes (the old copy tested Y-up offsets). The state's table holds a semi-transparent (B + F/4) textured quad of monster seat 4 (order 1360, tpage 0x76, CLUT row 485) with no negative corner, which the emulator draws and the flipped rule dropped; the port now draws it a little brighter than retail's, the seat-4 placement residue already open for Poisonous Worm. Bisected: restoring the old quad rule alone gives 0.952."
+changes = [
+  ["states/battle_vell_lippian_strike/image", 0.952, 0.951],
+]
+
+[[loosening]]
+file = "scripts/ci/retail-compare-baseline.json"
+reason = "Patched-executable states (the evolved-Cort PCSX state and a Delilas mod state) are not retail evidence; they report drift only. Each moved by .001 under this wave's retail-correct changes (bearing table, emulator span rule) and was not chased."
+changes = [
+  ["states/cort_evolved_pre_battle/image", 0.977, 0.976],
+  ["states/delilas_gi_spirit_streaks_v2/image", 0.987, 0.986],
+]
+
+[[loosening]]
+file = "scripts/ci/cost-baseline.json"
+reason = "The play bundle grows 0.25% with what the wave ports (the ground grid's cell culls and its mask export, the HUD teardown slide-outs, the dance and fishing wiring, the Tetsu spar fix tweak). No per-frame count rises: the grid cull re-indexes its uploaded vertices natively and sends one byte a cell to the page."
+changes = [
+  ["counts/bundle/play_gzip_bytes", 4873935, 4886163],
+]

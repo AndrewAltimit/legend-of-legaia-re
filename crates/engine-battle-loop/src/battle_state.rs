@@ -641,6 +641,10 @@ pub struct BattleState {
     /// plaque is either sliding out ([`Self::target_plaque_glide`], a
     /// closing launch) or gone. Cleared by the next action seed's raise.
     pub action_hud_wiped: bool,
+    /// The elements the Done band's teardown sends out on a closing glide
+    /// ([`ActionHudClose`]), drawn on it into the holds between actions.
+    /// `None` until a teardown; cleared by the next action seed's raise.
+    pub action_hud_close: Option<ActionHudClose>,
     /// The counterer whose strikes the counterattack swap is running, while
     /// the HUD still holds the elements the **monster's** action seed opened.
     /// The swap runs no seed pass, so retail keeps the readout bar the
@@ -789,6 +793,12 @@ pub struct BattleState {
     /// `.1` (sixteenths): the pass a capture's step run began on, as its
     /// cursor history holds it. Not a retail field.
     pub frame_step_seed_from: Option<(u8, i32)>,
+    /// A replay's seeded battle frame step held back until the close-up
+    /// accumulator `ctx[+0x87C]` reaches this value: the passes of the
+    /// capture state that ran before its step run began, as the
+    /// accumulator's per-pass gains (`8 * step`) count them. Not a retail
+    /// field.
+    pub frame_step_seed_after_accum: Option<u32>,
     /// The action state the SM's last pass ran (its state on entry), which
     /// the camera frames on retail's cadence
     /// (`World::battle_camera_state`).
@@ -1144,6 +1154,50 @@ pub struct BattleState {
 
 /// [`BattleState::capture_approach_yaw`]: where a driven monster-melee
 /// capture's walk ended, and on which counter reading.
+/// The action HUD's closing glides: what the Done band's teardown re-spawns
+/// with mode `1` after it wipes the handle list.
+///
+/// Once the `0x51` countdown is under `0xC` the teardown resets the list
+/// (`FUN_801D99BC` at `0x801E6170`) and calls `FUN_801D8DE8(id, 1)` for the
+/// action's own element `ctx[+0x18]` (record 7, the readout bar, or record 6
+/// with `0x4E` / `0x4F`, the roster panels), the level-up banner
+/// `ctx[+0x26]`, the Spirit pair `0x0F` / `0x52` under the `ctx[+0x19]`
+/// latch and the actor plaque `0x44` for every category but Run
+/// (`0x801E6178..0x801E6204`). Mode `1` spawns each at seat B, where it
+/// rests, and `FUN_801DB7B0` registers a glide back to seat A, off screen:
+/// every element slides out over the same `ctx[+0x1C] = 0x10` vsyncs on one
+/// pass. The glides outlive the action - `chitei2_kemaro_v2_pre_lava_breath`,
+/// saved at the next actor's `0x0A`, holds the bar `(16, 192) -> (16, 234)`,
+/// the plaque `(16, 12) -> (16, -26)` and the combo cluster at elapsed `15`
+/// of `16` in its glide table `ctx[+0x11B4]`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActionHudClose {
+    /// The one closing launch every element rides (`inbound`, seat B to A).
+    pub glide: legaia_engine_battle_vm::battle_commit_log::LogLaunch,
+    /// The actor the plaque (record `0x44`) names.
+    pub plaque: Option<u8>,
+    /// The party member the readout bar (record 7) shows.
+    pub bar: Option<u8>,
+    /// The roster panels (records 6 / `0x4E` / `0x4F`).
+    pub panels: bool,
+    /// The Spirit actor whose AP bar and plate (`0x0F` / `0x52`) leave.
+    pub spirit: Option<u8>,
+}
+
+impl ActionHudClose {
+    /// The launch, while it is still in flight.
+    pub fn in_flight(&self) -> Option<&legaia_engine_battle_vm::battle_commit_log::LogLaunch> {
+        (!self.glide.settled()).then_some(&self.glide)
+    }
+
+    /// How far an element closing from `seat_b` towards `seat_a` sits from
+    /// `seat_b` this frame: `FUN_801D9BBC`'s linear step on the closing
+    /// launch.
+    pub fn offset(&self, seat_a: i32, seat_b: i32) -> i32 {
+        (seat_a - seat_b) * i32::from(self.glide.elapsed) / i32::from(self.glide.total.max(1))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CaptureApproach {
     /// The yaw counter `ctx[+0x6DA]` on the walk's last pass.
@@ -1318,6 +1372,7 @@ impl BattleState {
             result_windows_glide: None,
             target_plate_cleared: false,
             action_hud_wiped: false,
+            action_hud_close: None,
             counter_hud: None,
             sideband: Default::default(),
             stage_id: 0,
@@ -1349,6 +1404,7 @@ impl BattleState {
             anim_slice_commits: Vec::new(),
             readout_trios: Vec::new(),
             frame_step_seed_from: None,
+            frame_step_seed_after_accum: None,
             sm_ran_state: None,
             defeat_sink_frame: None,
             vram_loads: Default::default(),

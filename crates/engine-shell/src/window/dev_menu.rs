@@ -25,9 +25,9 @@
 //! decomposition are the ported model
 //! (`legaia_engine_dev_menu::dev_menu_leaves::records_screen`).
 //!
-//! The lifetime battle / escape counters and the treasure census are state the
-//! engine does not keep, so those read zero and the treasure line stays hidden
-//! - the same page retail draws off a save that never incremented them.
+//! The lifetime battle / escape tallies come from `PartyState::record_tally`
+//! and the treasure pair from the field VM's script-counter slots 0 / 1, as
+//! retail reads them.
 
 use super::*;
 use legaia_engine_menu_runtime::dev_menu_host::DevMenuWorldExt;

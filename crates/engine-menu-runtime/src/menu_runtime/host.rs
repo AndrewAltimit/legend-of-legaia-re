@@ -8,6 +8,20 @@ impl MenuRuntimeHost<'_> {
         shop_menu_rows(self.world.seru_trade_enabled())
     }
 
+    /// Whether the bag's active window holds a slot with both an id and a
+    /// count: the shop mode select's Sell gate (`FUN_801DAFD4` row 1,
+    /// `0x801DB11C..0x801DB178`, the walk from `0x8007B5EA` to `0x8007B5EC`
+    /// over `0x80085958`). Without one retail buzzes `0x23` and keeps the
+    /// mode select open.
+    fn bag_window_holds_anything(&self) -> bool {
+        let inv = &self.world.party.inventory;
+        let (start, end) = inv.window_bounds();
+        let slots = inv.slots();
+        slots[start.min(slots.len())..end.min(slots.len())]
+            .iter()
+            .any(|&(id, count)| id != 0 && count != 0)
+    }
+
     /// The retail buy-list confirm dispatch for the row at `slot`
     /// ([`legaia_engine_menus::shop::buy_list_confirm_route`], `FUN_801DB21C` state 2):
     /// affordability against the purse first, then the item record's `+0`
@@ -350,7 +364,14 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
         // The shop top picker's row layout is dynamic (Trade only when enabled),
         // so resolve the committed slot against the live row list here.
         match state {
-            MenuState::ShopMenu => self.shop_menu_rows().get(slot as usize).copied(),
+            // Sell over a bag window with nothing in it buzzes and stays
+            // on the mode select (`FUN_801DAFD4` row 1).
+            MenuState::ShopMenu => match self.shop_menu_rows().get(slot as usize).copied() {
+                Some(MenuState::ShopSell) if !self.bag_window_holds_anything() => {
+                    Some(MenuState::ShopMenu)
+                }
+                route => route,
+            },
             // The buy list's confirm dispatch (`FUN_801DB21C` state 2):
             // gold short stays on the list (retail buzzes and re-arms list
             // mode 1); an equipment row parks the list under the recipient
@@ -387,7 +408,12 @@ impl<'a> MenuHost for MenuRuntimeHost<'a> {
             // (keyed to the shop's vendor id) for the current play-time window.
             // Buy / Sell / Exit are pure routes (handled by the route override).
             MenuState::ShopMenu => {
-                if self.shop_menu_rows().get(slot as usize) == Some(&MenuState::ShopTrade) {
+                let row = self.shop_menu_rows().get(slot as usize).copied();
+                if row == Some(MenuState::ShopSell) && !self.bag_window_holds_anything() {
+                    *self.refused = true;
+                    *self.stay_cursor = Some(slot);
+                }
+                if row == Some(MenuState::ShopTrade) {
                     let vendor = self
                         .shop_session
                         .as_ref()

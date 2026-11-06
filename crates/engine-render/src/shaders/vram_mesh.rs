@@ -247,7 +247,7 @@ fn vs_main(
     // PSX mode: the GTE's register limits (a corner past `IR = 0x7FFF` or
     // `SZ = 0xFFFF` lands where retail's packet put it), then the snap.
     if u.psx_params.z >= 0.5 {
-        clip = gte_saturate_clip(clip);
+        clip = gte_saturate_prim(clip, prim_c0, prim_c1, prim_c2, prim_c3);
         clip = psx_snap_clip(clip, PSX_STAGE_W, PSX_STAGE_H);
     }
     if u.psx_params.z >= 1.5 {

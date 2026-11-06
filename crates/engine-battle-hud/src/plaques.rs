@@ -29,6 +29,11 @@ use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
 pub fn battle_readout_bar_slot(world: &legaia_engine_core::world::World) -> Option<u8> {
     use legaia_engine_battle_vm::battle_action::ActionCategory;
     let pc = party_count(world) as u8;
+    // The teardown's close of `ctx[+0x18] = 7` (`0x801E6188`): the bar
+    // slides out naming the member it was opened for (`ctx[+0x20]`).
+    if let Some(c) = action_hud_closing(world) {
+        return c.bar.filter(|s| *s < pc);
+    }
     match battle_hud_phase(world) {
         BattleHudPhase::CommandEntry => match battle_command_surface(world)? {
             // The attack-mode prompt's step `0x2A` keeps the bar (`07/3`).
@@ -362,6 +367,9 @@ pub(super) const RING_AP_PLATE_SEATS_X: (i32, i32) = (328, 208);
 /// on every other surface that shows the panels.
 pub fn battle_round_prompt_panels_dy(world: &legaia_engine_core::world::World) -> i32 {
     let (a, b) = ROSTER_PANEL_SEATS_Y;
+    if let Some(c) = action_hud_closing(world).filter(|c| c.panels) {
+        return c.offset(a, b);
+    }
     if let Some(g) = ring_open_glide(world).or(run_confirm_glide(world)) {
         return (a - b) * i32::from(g.elapsed) / i32::from(g.total.max(1));
     }
@@ -467,6 +475,10 @@ pub(super) const TARGET_PLAQUE_SEATS_Y: (i32, i32) = (236, 194);
 /// ([`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]); every later
 /// command-entry step snaps it and this is `0`.
 pub fn battle_action_plaque_dy(world: &legaia_engine_core::world::World) -> i32 {
+    if let Some(c) = action_hud_closing(world) {
+        let (a, b) = ACTION_PLAQUE_SEATS_Y;
+        return c.offset(a, b);
+    }
     if let Some(g) = ring_open_glide(world) {
         let (a, b) = TAB_PLAQUE_SEATS_Y;
         return LogLaunch::seat_dy(Some(g), a, b);
@@ -507,6 +519,10 @@ pub(super) const READOUT_BAR_SEATS_Y: (i32, i32) = (234, 192);
 /// [`legaia_engine_battle_loop::battle_state::BattleState::ring_open_glide`]). `0` on every other
 /// command-entry step, which snaps the bar.
 pub fn battle_readout_bar_dy(world: &legaia_engine_core::world::World) -> i32 {
+    if let Some(c) = action_hud_closing(world) {
+        let (a, b) = READOUT_BAR_SEATS_Y;
+        return c.offset(a, b);
+    }
     if let Some(g) = ring_open_glide(world) {
         let (a, b) = RING_BAR_SEATS_Y;
         return LogLaunch::seat_dy(Some(g), a, b);

@@ -37,7 +37,7 @@ const MEGATON_PRESS_FADE_SLOT: legaia_overlay_images::cast_presentation::HandleS
 impl World {
     /// Whether module `entry`'s stager arms are run off its parts' op-`0x20`
     /// calls by [`Self::run_part_stager_calls`].
-    pub(in crate::world::battle::cast_band) fn runs_part_stager_calls(entry: u32) -> bool {
+    pub(in crate::world) fn runs_part_stager_calls(entry: u32) -> bool {
         matches!(
             entry,
             935 | 941
@@ -93,14 +93,16 @@ impl World {
     /// PROT 0929's arm 3 two.
     ///
     /// Retail runs the call inside the part's own move-VM step, so its
-    /// records are seated on that frame; the engine queues the call
-    /// (`MoveVmHostImpl::ext_20`) and seats them on the module's next tick,
-    /// as it does PROT 0909's.
+    /// records are seated on that frame. The engine queues the call
+    /// (`MoveVmHostImpl::ext_20`) and runs it right after the frame's part
+    /// tick (`World::tick_summon`), seating the records on the caller's frame
+    /// with the seater's own VM run and no part tick until the next frame;
+    /// the module's tick runs whatever a part ticked elsewhere left queued.
     ///
     /// REF: FUN_801F7740 (PROT 0906's stager), FUN_801F7FA8 (PROT 0907's),
     /// FUN_801F8310 (PROT 0908's), FUN_801F835C (PROT 0912's), each reached
     /// through `gp[+0x714]`
-    pub(in crate::world::battle::cast_band) fn run_part_stager_calls(&mut self, entry: u32) {
+    pub(in crate::world) fn run_part_stager_calls(&mut self, entry: u32) {
         // The seats of the arms run inside their caller's step (PROT
         // 0925's), in call order.
         for s in std::mem::take(&mut self.casting.module_stager_seats) {

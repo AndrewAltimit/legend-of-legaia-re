@@ -583,21 +583,15 @@ pub fn cell_offscreen(corners: [(i32, i32); 4]) -> bool {
 /// "grass vertex" sampled a blue texel region in `town01` and painted the
 /// floor sky-blue.
 ///
-/// # What this build leaves out, and why
+/// # What this build leaves out
 ///
 /// Retail culls cells twice, every frame, because the grid is world-fixed and
 /// the battle camera orbits over it: a view-space `z` bracket per cell
 /// ([`classify_cell`]), then a screen-rect bounding-box reject
-/// ([`cell_offscreen`]). Both kernels are ported and tested; neither is
-/// applied here.
-///
-/// That is deliberate. Retail's culls exist to keep the ordering table and the
-/// per-frame primitive budget inside a PSX's means: they remove only cells
-/// that are already off-screen or behind the camera, so under a depth-buffered
-/// projection with a real near plane they are **visually neutral**. Applying
-/// them at build time would be worse than not applying them - the grid is
-/// uploaded once and the camera then orbits, so cells culled against the entry
-/// pose would stay culled once they swung into view.
+/// ([`cell_offscreen`]). The build holds every cell; a host applies the
+/// culls per frame over the built mesh
+/// (`legaia_engine_battle_vm::battle_ground_grid::cell_mask`), since cells
+/// culled against one pose come into view once the camera turns.
 ///
 /// [`VramMesh`]: legaia_tmd::mesh::VramMesh
 pub fn build_ground_grid() -> legaia_tmd::mesh::VramMesh {

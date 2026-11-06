@@ -433,6 +433,81 @@ fn the_strike_loops_first_arm_chased_the_walks_heading() {
     assert!(camera_align::walk_heading(&ram, ctx).is_none());
 }
 
+/// `battle_geremi_ogre_strike`'s words: a walker the `+0x76` lock keeps on the
+/// walk clip into the strike loop, nearest the target on ring slot `3` and
+/// backing off `13` units a pass since. The displayed frame's pass stored the
+/// walk's bearing onto the target's live pair (`2483`) and the loop's first arm
+/// read it, so the table the RAM replaced chased an endpoint `67` further than
+/// the RAM's (the loop's bearing `2420` onto the body pair, a counter step at
+/// step `3`): the walk back lands on yaw `189`, where the frame reads best,
+/// and the RAM's endpoint alone gives `168`.
+#[test]
+fn a_locked_walk_nearest_on_slot_three_chased_the_walks_heading() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let (attacker, target) = (0x800E_D538u32, 0x800E_CF90u32);
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, ctx + 0x13, 4);
+    put8(&mut ram, ctx + 0x15, 1);
+    put32(&mut ram, ACTOR_TABLE + 4 * 4, attacker);
+    put32(&mut ram, ACTOR_TABLE + 2 * 4, target);
+    put8(&mut ram, attacker + 0x1DD, 2);
+    put8(&mut ram, attacker + 0x1D9, 1);
+    put16(&mut ram, attacker + 0x46, 2423);
+    for (k, (x, z)) in [
+        (210i32, 271i32),
+        (203, 260),
+        (196, 249),
+        (188, 239),
+        (226, 287),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put32(&mut ram, attacker + POSITION_RING + k as u32 * 8, x as u32);
+        put32(
+            &mut ram,
+            attacker + POSITION_RING + k as u32 * 8 + 4,
+            z as u32,
+        );
+    }
+    put16(&mut ram, frame_step::STEP_MODE, 0x10);
+    put16(&mut ram, frame_step::FRAME_HISTORY, 0x28E);
+    assert_eq!(frame_step(&ram), 3);
+    put16(&mut ram, target + 0x3C, 19);
+    put16(&mut ram, target + 0x40, (-27i16) as u16);
+    let h = camera_align::walk_heading(&ram, ctx).expect("locked walk, slot 3");
+    assert_eq!(h.displayed, 2483);
+    assert_eq!(h.end_shift, -67);
+
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put16(&mut ram, 0x8007_B792, 3520);
+    put16(&mut ram, rec(1), 106);
+    put16(&mut ram, rec(1) + 2, 2568);
+    let mut end_shift = [0; 9];
+    end_shift[1] = h.end_shift;
+    let walked = |end_shift| {
+        camera_align::displayed_cam_live_steps(
+            &ram,
+            ctx,
+            &[3, 3],
+            false,
+            [None; 9],
+            end_shift,
+            false,
+        )
+        .yaw
+    };
+    assert_eq!(walked(end_shift), 189.0);
+    assert_eq!(walked([0; 9]), 168.0);
+
+    // Off the walk clip the same ring is an arrival two passes into the loop,
+    // which read the loop's own heading (`battle_noaru_gilium_lv2_strike`).
+    put8(&mut ram, attacker + 0x1D9, 8);
+    assert!(camera_align::walk_heading(&ram, ctx).is_none());
+}
+
 /// Case `0xA`'s yaw clock: the endpoint climbs twice the cursor's step a pass,
 /// so the walk back from Poisonous Breath's `3350` under `3368` lands on the
 /// `3320` its frame fits best, where the RAM's endpoint alone gives `3296`.
@@ -2009,7 +2084,7 @@ fn a_turning_shot_walks_its_yaw_back_onto_the_framing_it_replaced() {
     // The whole pose: `battle_korb2_aluru_cannon_mid_cast`'s table and steps.
     b.queued_shot = 0x0E;
     b.step_run = (4, 3);
-    b.recent_steps = [4, 4, 4, 3];
+    b.recent_steps[..4].copy_from_slice(&[4, 4, 4, 3]);
     b.walk_yaw_base = 2088;
     b.cam_style = 0;
     b.cam_tween.0.focus = [474.0, 0.0, 978.0];
@@ -2169,4 +2244,113 @@ fn a_case_6_walk_runs_the_cast_waits_passes() {
     let one_in = capture_drive::case6_walk_passes(&[3; 16], 1);
     assert_eq!(one_in.len(), 10);
     assert_eq!(one_in.last(), Some(&0));
+}
+
+/// A magic-band step run that began inside `0x2B` holds its step back until
+/// the accumulator reaches the passes before it: Caruban's Fire Breath on a
+/// full party (`battle_rugi_caruban_3_fire_breath_mid_cast`) reads
+/// accumulator `64` over steps `3`, `3`, `2` (newest first), so the run's two
+/// step-`3` passes open once the first `0x2B` pass has added its `16`.
+#[test]
+fn a_magic_band_step_run_waits_for_the_passes_before_it() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 3);
+    put8(&mut ram, ctx + 1, 2);
+    put8(&mut ram, ctx + 6, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x4F);
+    put8(&mut ram, SEAT_CHARS, 1);
+    put32(&mut ram, ACTOR_TABLE, 0x800E_C9E8);
+    put16(&mut ram, 0x800E_C9E8 + 0x14C, 99);
+    put16(&mut ram, 0x800E_C9E8 + 0x14E, 99);
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.span_gate = SpanGate::Age { accum: 64 };
+    b.step_run = (3, 2);
+    b.recent_steps = [3, 3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2];
+    assert_eq!(b.step_run_accum_hold(), Some(16));
+    // A run over every `0x2B` pass waits for nothing (Windhash's
+    // accumulator `48` over two step-`3` passes of a three-pass run).
+    b.span_gate = SpanGate::Age { accum: 48 };
+    b.step_run = (3, 3);
+    b.recent_steps[..3].copy_from_slice(&[3, 3, 3]);
+    assert_eq!(b.step_run_accum_hold(), None);
+    // Passes before the run on another step than the replay's ordinary one
+    // cannot be counted by it (`battle_deene_ironman_jagged_earth_mid_cast`:
+    // `136` over `4`, `4`, `3`, `3`, `3`).
+    b.span_gate = SpanGate::Age { accum: 136 };
+    b.step_run = (4, 2);
+    b.recent_steps[..5].copy_from_slice(&[4, 4, 3, 3, 3]);
+    assert_eq!(b.step_run_accum_hold(), None);
+    // A history that does not add up to the accumulator names no pass.
+    b.span_gate = SpanGate::Age { accum: 60 };
+    b.step_run = (3, 2);
+    b.recent_steps[..3].copy_from_slice(&[3, 3, 2]);
+    assert_eq!(b.step_run_accum_hold(), None);
+}
+
+/// A `0x6F` capture walks back on the re-arm's widening share, with the TR z
+/// endpoint the depth ramp moved: `battle_map01_gomboo_steal_mid_cast`'s
+/// words (depth `3024` after one step-`3` ramp, so the pass before chased
+/// `prescale(3072) = 4915`, `77` past the RAM's `4838`). Its yaw stands
+/// `63 + 84` back - one pass on the table's `21`, one on the re-arm's
+/// `ceil(246 / 9) = 28` - where the table's own increment put it `126` back,
+/// a yaw increment short of the frame on screen.
+#[test]
+fn a_capture_fade_walks_back_on_the_rearm_with_the_ramped_endpoint() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    let rec = |k: u32| ctx + camera_align::TWEEN_TABLE + k * 4;
+    put8(&mut ram, ctx + 7, 0x6F);
+    put16(&mut ram, ctx + 0x6D0, 3024);
+    put16(&mut ram, 0x8007_B790, 10);
+    put16(&mut ram, 0x8007_B792, 3757);
+    put32(&mut ram, 0x8008_40BC, 1257);
+    put32(&mut ram, 0x8008_40C0, 4717);
+    put32(&mut ram, 0x8008_9118, (-364i32) as u32);
+    put32(&mut ram, 0x8008_9120, (-754i32) as u32);
+    for (k, inc, end) in [
+        (0u32, 2u16, 0i16),
+        (1, 21, 3940),
+        (4, 3, 1280),
+        (5, 14, 4838),
+        (6, 6, -417),
+        (8, 22, -941),
+    ] {
+        put16(&mut ram, rec(k), inc);
+        put16(&mut ram, rec(k) + 2, end as u16);
+    }
+    let shift = camera_align::capture_fade_end_shift(&ram, ctx, &[3, 3]);
+    assert_eq!(shift[5], 77);
+    assert_eq!(shift.iter().filter(|&&s| s != 0).count(), 1);
+    let p =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], shift, false);
+    assert_eq!(p.yaw, 3610.0);
+    let fixed =
+        camera_align::displayed_cam_live_steps(&ram, ctx, &[3, 3], false, [None; 9], [0; 9], false);
+    assert!(
+        p.tr[2] < fixed.tr[2],
+        "the ramped endpoint widens the gap: {} vs {}",
+        p.tr[2],
+        fixed.tr[2]
+    );
+}
+
+/// The walk-in bodies whose arm 0 stores the yaw counter's `0x200` rung (PROT
+/// 0951 / 0952) leave no seed clock behind; the others keep theirs.
+#[test]
+fn only_the_counter_storing_walk_ins_drop_the_yaw_clock() {
+    use super::seed_plan::yaw_counter_reseeded_by;
+    assert!(yaw_counter_reseeded_by(0x5C), "Bloody Horns");
+    assert!(yaw_counter_reseeded_by(0x5B), "Scythe Wind");
+    assert!(yaw_counter_reseeded_by(0xB8), "Astral Slash");
+    assert!(
+        !yaw_counter_reseeded_by(0x6F),
+        "Melt Spray walks on the seed's counter"
+    );
+    assert!(!yaw_counter_reseeded_by(0x60), "White Shield does not walk");
+    assert!(
+        !yaw_counter_reseeded_by(0x81),
+        "a summon is no capture body"
+    );
 }

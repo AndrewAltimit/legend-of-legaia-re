@@ -119,6 +119,11 @@
 --                        draw kind, draw mode, packed colours, radius and height
 --                        channels, position, scale, UV / tpage / CLUT and the
 --                        mode-3 H / S / V adds
+--                        and fxpool.csv beside it: every live effect-pool child
+--                        (_DAT_8007BD30) with its frame count, cursor and position
+--   LEGAIA_POSE_OBJECTS  1 = pose.csv (breakpoint core): at each burning-body emit
+--                        on the summon creature, its cursor, pair, facing and
+--                        decoded object table
 --   LEGAIA_PRIM_CALLS    1 = primcall.csv (breakpoint core): each prim dispatcher
 --                        FUN_80043390 entry with its colour word, level, caller
 --                        and first group words, and each cued leaf it reaches
@@ -224,7 +229,24 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
     if not (cast_seen and CAST_PARTS) then return end
     if probe.cast_parts == nil then
         probe.cast_parts = probe.csv_open(probe.out_path("parts.csv"),
-            "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42")
+            "vsync,st7,phase,node,flags,colour,level,kind,mode5a,mode9e,a0,a4,b4,b6,b8,ba,x,y,z,scale,f52,c9c,a8,ac,b0,b2,h90,s92,v94,vz,f7a,b6d,f42,r24,r26,r28")
+    end
+    -- fxpool.csv: every live child of the effect pool `_DAT_8007BD30`
+    -- (128 x 32-byte slots at `+0x10`): frame count, cursor, position >> 8.
+    if probe.cast_fxpool == nil then
+        probe.cast_fxpool = probe.csv_open(probe.out_path("fxpool.csv"),
+            "vsync,st7,phase,slot,frames,cursor,x,y,z")
+    end
+    local pool = u32(0x8007BD30)
+    if pool >= 0x80000000 and pool < 0x80200000 then
+        for k = 0, 127 do
+            local c = pool + 0x10 + 32 * k
+            local frames = u8(c)
+            if frames ~= 0 then
+                probe.cast_fxpool:row("%d,%d,%d,%d,%d,%d,%d,%d,%d", elapsed, st7, u8(cx + 0x279), k,
+                    frames, u8(c + 2), math.floor(s32(c + 0xC) / 256), math.floor(s32(c + 0x10) / 256), math.floor(s32(c + 0x14) / 256))
+            end
+        end
     end
     for k = 0, 8 do
         local n = u32(0x8007C34C + 4 * k)
@@ -232,13 +254,14 @@ function probe.cast_parts_row(cast_seen, elapsed, st7, cx)
         while n >= 0x80000000 and n < 0x80200000 and guard < 512 do
             guard = guard + 1
             if u32(n + 0xC) == 0x80021DF4 then
-                probe.cast_parts:row("%d,%d,%d,0x%08X,0x%08X,0x%08X,%d,%d,%d,0x%04X,0x%08X,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,0x%04X,%d,0x%04X,0x%04X,0x%04X,0x%04X,%d,%d,%d,%d,%d,%d,%d",
+                probe.cast_parts:row("%d,%d,%d,0x%08X,0x%08X,0x%08X,%d,%d,%d,0x%04X,0x%08X,0x%08X,%d,%d,%d,%d,%d,%d,%d,%d,0x%04X,%d,0x%04X,0x%04X,0x%04X,0x%04X,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                     elapsed, st7, u8(cx + 0x279), n, u32(n + 0x10), u32(n + 0x74), s32(n + 0x78),
                     s16(n + 0x56), s16(n + 0x5A), u16(n + 0x9E), u32(n + 0xA0), u32(n + 0xA4),
                     s16(n + 0xB4), s16(n + 0xB6), s16(n + 0xB8), s16(n + 0xBA),
-                    s32(n + 0x14), s32(n + 0x18), s32(n + 0x1C), u16(n + 0x72), u16(n + 0x52),
+                    s16(n + 0x14), s16(n + 0x16), s16(n + 0x18), u16(n + 0x72), u16(n + 0x52),
                     s16(n + 0x9C), u16(n + 0xA8), u16(n + 0xAC), u16(n + 0xB0), u16(n + 0xB2),
-                    s16(n + 0x90), s16(n + 0x92), s16(n + 0x94), s32(n + 0x34), s16(n + 0x7A), u8(n + 0x6D), s16(n + 0x42))
+                    s16(n + 0x90), s16(n + 0x92), s16(n + 0x94), s32(n + 0x34), s16(n + 0x7A), u8(n + 0x6D), s16(n + 0x42),
+                    s16(n + 0x24), s16(n + 0x26), s16(n + 0x28))
             end
             n = u32(n)
         end
@@ -280,6 +303,7 @@ local last_flow = -1
 local park_st7, park_since = -1, 0
 local parked = false
 local ground_at_cast = ""
+local guard_at_cast = ""
 local caster_at_cast = -1
 local target_at_cast = -1
 
@@ -331,6 +355,20 @@ local function ground_pairs()
             t[#t + 1] = string.format("%d:%d", x, z)
         else
             t[#t + 1] = "-"
+        end
+    end
+    return table.concat(t, ",")
+end
+
+-- The party seats standing in the Spirit stance (`+0x1DE == 4`), as a comma
+-- list: both per-move wrappers double the defender roll on it and the
+-- finisher halves the hit, so the engine side must stand the same seats.
+local function guard_seats()
+    local t = {}
+    for s = 0, 2 do
+        local a = actor(s)
+        if a ~= nil and u16(a + 0x14E) > 0 and u8(a + 0x1DE) == 4 then
+            t[#t + 1] = tostring(s)
         end
     end
     return table.concat(t, ",")
@@ -426,6 +464,28 @@ probe.run({
                     calls:row("%d,%s,0x%08X,0,0,0x%08X,0,0", last_elapsed, f[2], tou32(r.a1), tou32(r.ra))
                 end)
             end
+        end
+        if probe.getenv_num("LEGAIA_POSE_OBJECTS", 0) ~= 0 then
+            -- The burning-body emitter's loop head (FUN_8004998C,
+            -- 0x8004A61C): s3 the decoded actor, s2 its object table (the
+            -- pose the draw just decoded, 12 bytes an object), s4 the
+            -- stream's part count. One row per emit on the creature (pool
+            -- slot 7): its node cursor +0x68, its live pair and every
+            -- object's translation.
+            local pose = probe.csv_open(probe.out_path("pose.csv"), "vsync,cursor,x,y,z,facing,count,objects")
+            probe.arm_breakpoint(0x8004A61C, "Exec", 4, "poseobj", function()
+                local r = PCSX.getRegisters().GPR.n
+                local a = tou32(r.s3)
+                if a ~= actor(7) then return end
+                local tbl, n = tou32(r.s2), u8(tou32(r.s4))
+                local node = u32(a + 0x22C)
+                local objs = {}
+                for k = 0, n - 1 do
+                    objs[#objs + 1] = string.format("%d:%d:%d", s16(tbl + 12 * k), s16(tbl + 12 * k + 2), s16(tbl + 12 * k + 4))
+                end
+                pose:row("%d,%d,%d,%d,%d,%d,%d,%s", last_elapsed, ptr_ok(node) and u16(node + 0x68) or -1,
+                    s16(a + 0x34), s16(a + 0x36), s16(a + 0x38), s16(a + 0x46), n, table.concat(objs, " "))
+            end)
         end
         if probe.getenv_num("LEGAIA_SFX_CALLERS", 0) ~= 0 then
             -- Who fills the cue ring: the producer FUN_80035B50 / its
@@ -595,6 +655,7 @@ probe.run({
             cast_seen = true
             cast_vsync = elapsed
             ground_at_cast = ground_pairs()
+            guard_at_cast = guard_seats()
             caster_at_cast = acting
             target_at_cast = u8(actor(acting) + 0x1DD)
             PCSX.log(string.format("[cast t%d] caster=%d ground=%s", elapsed, acting, ground_at_cast))
@@ -720,8 +781,9 @@ probe.run({
         if probe.cast_seats.csv then probe.cast_seats.csv:close() end
         local fh = io.open(probe.out_path("done.txt"), "w")
         if fh then
-            fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\ncast_target=%d\nground=%s\nparked=%d\n",
+            fh:write(string.format("inject=%d\ncast=%d\ndone=%d\nshots=%d\ncaster=%d\nspell=%d\ntarget=%d\ncast_target=%d\nground=%s\nguard=%s\nparked=%d\n",
                 inject_vsync, cast_vsync, done_vsync, shots, caster_at_cast, SPELL, TARGET_SEAT, target_at_cast, ground_at_cast,
+                guard_at_cast,
                 parked and math.floor(park_st7 / 256) or -1))
             fh:close()
         end

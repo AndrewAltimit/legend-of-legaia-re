@@ -334,7 +334,10 @@ vec2 primSxy(mat4 m, vec3 c) {
   float d = max(max(cl.w * u_prim_near.y, 0.0), u_prim_near.x * 0.5);
   vec2 half_ = vec2(160.0, 120.0);
   vec2 off = cl.xy * half_ * u_prim_near.y / d;
-  return clamp(off + half_, vec2(-1024.0), vec2(1023.0)) - half_;
+  /* off is Y up; SY saturates on the screen's own Y-down axis. */
+  float sx = clamp(half_.x + off.x, -1024.0, 1023.0);
+  float sy = clamp(half_.y - off.y, -1024.0, 1023.0);
+  return vec2(sx - half_.x, half_.y - sy);
 }
 
 /* The GTE's register limits on one projected corner - the GLSL twin of
@@ -344,20 +347,29 @@ vec2 primSxy(mat4 m, vec3 c) {
  * eye space; 6 on the field). u_gte_sat = (sz_per_w, H, 0, 0) from the
  * shared camera_frame::gte_saturation (play_render_gte_sat -> setGteSat),
  * applied under PSX mode; all zeros never clamps. w is kept, a corner inside
- * every limit is returned as it came. */
+ * every limit is returned as it came. A corner on or behind the eye (SZ = 0)
+ * lands at OF + 2 * IR, the capped divide's real screen point, returned at
+ * the cap's depth (w = H / 2 / sz_per_w) so no near-plane clip trims the
+ * primitive there; its depth word stays when in range, else the nearest. */
 uniform vec4 u_gte_sat;
 const float GTE_OFY_BIAS = 0.05;
 vec4 gteSaturateClip(vec4 clip) {
   float w = clip.w;
-  if (u_gte_sat.x <= 0.0 || u_gte_sat.y <= 0.0 || w <= 0.0) return clip;
+  if (u_gte_sat.x <= 0.0 || u_gte_sat.y <= 0.0) return clip;
   float h = u_gte_sat.y;
   vec2 ir = vec2(clip.x * 160.0, -(clip.y - GTE_OFY_BIAS * w) * 120.0) * u_gte_sat.x / h;
   vec2 irc = clamp(ir, vec2(-32768.0), vec2(32767.0));
   float sz = w * u_gte_sat.x;
-  float d = max(min(sz, 65535.0), h * 0.5);
+  float d = max(clamp(sz, 0.0, 65535.0), h * 0.5);
   vec2 centre = vec2(160.0, 120.0 - GTE_OFY_BIAS * 120.0);
   vec2 sRaw = centre + h * irc / d;
   vec2 sc = clamp(sRaw, vec2(-1024.0), vec2(1023.0));
+  if (w <= 0.0) {
+    float wc = d / u_gte_sat.x;
+    float z = -1.0;
+    if (w < 0.0 && abs(clip.z / w) <= 1.0) z = clip.z / w;
+    return vec4((sc.x - 160.0) / 160.0 * wc, (120.0 - sc.y) / 120.0 * wc, z * wc, wc);
+  }
   if (irc == ir && d == sz && sc == sRaw) return clip;
   return vec4((sc.x - 160.0) / 160.0 * w, (120.0 - sc.y) / 120.0 * w, clip.z, w);
 }
@@ -366,6 +378,18 @@ bool spanTooBig(vec2 a, vec2 b, vec2 c) {
   vec2 lo = min(min(a, b), c);
   vec2 hi = max(max(a, b), c);
   return hi.x - lo.x > 1023.0 || hi.y - lo.y > 511.0;
+}
+
+/* Whether a corner behind the eye may be seated on screen (engine-render's
+ * gte_saturate_prim): its primitive has a single owner (c0.w >= 3) and a
+ * corner in front of the eye. A welded mesh or a primitive wholly behind
+ * the eye keeps the near-plane clip. */
+bool primReachesFront(mat4 m) {
+  if (a_prim_c0.w < 2.5) return false;
+  bool front = (m * vec4(a_prim_c0.xyz, 1.0)).w > 0.0 || (m * vec4(a_prim_c1, 1.0)).w > 0.0
+    || (m * vec4(a_prim_c2, 1.0)).w > 0.0;
+  if (a_prim_c0.w > 3.5) front = front || (m * vec4(a_prim_c3, 1.0)).w > 0.0;
+  return front;
 }
 
 bool primNearRejected(mat4 m) {
@@ -648,7 +672,9 @@ void main() {
   /* After the overworld bend, as native snaps after its curve: retail bends
    * SY before the packet is written. Identity while u_psx.z is 0. */
   if (u_psx.z >= 0.5) {
-    gl_Position = gteSaturateClip(gl_Position);
+    if (gl_Position.w > 0.0 || primReachesFront(u_mvp * u_model)) {
+      gl_Position = gteSaturateClip(gl_Position);
+    }
     gl_Position = psxSnapClip(gl_Position, 320.0, 240.0);
   }
   /* The native target's pixel centre (engine-render's psx_native_centre):

@@ -67,11 +67,17 @@ pub fn dev_menu_list_draws(session: &DevMenuSession, font: &legaia_font::Font) -
     out
 }
 
-/// The Records model for up to three character records and the world's play
-/// clock (whole seconds): the record-relative counter reads
-/// (`record_counters`) through the retail clamp / decompose model
-/// (`records_screen`).
-pub fn dev_records_model(records: &[&[u8]], play_time_seconds: u32) -> RecordsScreen {
+/// The Records model for up to three character records, the save window's
+/// battle / escape tallies, the world's play clock (whole seconds) and the
+/// script-counter slots 0 / 1 the treasure line divides: the record-relative
+/// counter reads (`record_counters`) through the retail clamp / decompose
+/// model (`records_screen`).
+pub fn dev_records_model(
+    records: &[&[u8]],
+    (battles, escapes): (u32, u32),
+    play_time_seconds: u32,
+    treasure: (i16, i16),
+) -> RecordsScreen {
     let mut chars = [CharRecordStats::default(); 3];
     for (slot, out) in chars.iter_mut().enumerate() {
         let Some(c) = records.get(slot).and_then(|r| ui::record_counters(r)) else {
@@ -88,10 +94,14 @@ pub fn dev_records_model(records: &[&[u8]], play_time_seconds: u32) -> RecordsSc
     }
     // Retail's play counter ticks at 60 Hz; the world keeps whole seconds.
     let play_frames = play_time_seconds.saturating_mul(60);
-    // No lifetime battle / escape tally and no treasure census exist on the
-    // world yet, so those read zero and the model's `total <= 0` guard hides
-    // the treasure line entirely.
-    records_screen(0, 0, play_frames, &chars, 0, 0)
+    records_screen(
+        battles,
+        escapes,
+        play_frames,
+        &chars,
+        i32::from(treasure.0),
+        i32::from(treasure.1),
+    )
 }
 
 /// The records screen (`FUN_801ED710`) for the live `world` at `pen`, retail
@@ -115,7 +125,19 @@ pub fn records_draws_for_world(
         .take(3)
         .map(|m| m.raw.as_slice())
         .collect();
-    let model = dev_records_model(&records, world.clock.play_time_seconds);
+    // The treasure line divides the field VM's script-counter slots 0 / 1
+    // (`0x801C6460` / `0x801C6462`), which `4C CA/CB/CC` and the dance
+    // results write.
+    let slots = &world.field_vm.slot_table;
+    let model = dev_records_model(
+        &records,
+        (
+            world.party.record_tally.battles,
+            world.party.record_tally.escapes,
+        ),
+        world.clock.play_time_seconds,
+        (slots[0], slots[1]),
+    );
     ui::records_screen_draws_for(font, &records_view(&model), pen)
 }
 
@@ -134,8 +156,8 @@ pub fn records_view(model: &RecordsScreen) -> ui::RecordsScreenView<'static> {
         monsters_defeated: model.monsters_defeated,
         hyper_arts: model.hyper_arts,
         magic: model.magic,
-        treasure_found: 0,
-        treasure_total: 0,
+        treasure_found: model.treasure_found,
+        treasure_total: model.treasure_total,
         treasure_percent: model.treasure_percent,
         treasure_fraction: model.treasure_fraction,
         treasure_shown: model.treasure_shown,
@@ -147,6 +169,8 @@ pub fn records_view(model: &RecordsScreen) -> ui::RecordsScreenView<'static> {
 mod tests {
     use super::*;
     use legaia_engine_ui::{RecordsField, record_offset, records_screen_fields};
+
+    const NO_TALLY: (u32, u32) = (0, 0);
 
     /// A record with distinguishable values in each of the six fields.
     fn record(scale: u32) -> Vec<u8> {
@@ -175,7 +199,7 @@ mod tests {
     #[test]
     fn model_reads_one_column_per_roster_slot() {
         let (a, b, c) = (record(1), record(2), record(3));
-        let m = dev_records_model(&[&a, &b, &c], 0);
+        let m = dev_records_model(&[&a, &b, &c], NO_TALLY, 0, (0, 0));
         assert_eq!(m.max_hits, [11, 22, 33]);
         assert_eq!(m.max_damage, [1000, 2000, 3000]);
         assert_eq!(m.knockouts, [3, 6, 9]);
@@ -189,10 +213,10 @@ mod tests {
     #[test]
     fn model_tolerates_a_short_roster() {
         let a = record(1);
-        let m = dev_records_model(&[&a], 0);
+        let m = dev_records_model(&[&a], NO_TALLY, 0, (0, 0));
         assert_eq!(m.max_hits, [11, 0, 0]);
         let short = vec![0u8; 8];
-        let m = dev_records_model(&[&short], 0);
+        let m = dev_records_model(&[&short], NO_TALLY, 0, (0, 0));
         assert_eq!(m.max_hits, [0, 0, 0]);
     }
 
@@ -200,24 +224,45 @@ mod tests {
     /// ticks - the conversion has to happen exactly once.
     #[test]
     fn play_clock_converts_seconds_to_retail_ticks_once() {
-        let m = dev_records_model(&[], 3661);
+        let m = dev_records_model(&[], NO_TALLY, 3661, (0, 0));
         assert_eq!((m.play_hours, m.play_minutes, m.play_seconds), (1, 1, 1));
-        let m = dev_records_model(&[], 59);
+        let m = dev_records_model(&[], NO_TALLY, 59, (0, 0));
         assert_eq!((m.play_hours, m.play_minutes, m.play_seconds), (0, 0, 59));
-        let m = dev_records_model(&[], 100 * 3600);
+        let m = dev_records_model(&[], NO_TALLY, 100 * 3600, (0, 0));
         assert_eq!((m.play_hours, m.play_minutes, m.play_seconds), (99, 59, 59));
     }
 
-    /// With no treasure census on the world the line is *absent*, not drawn
-    /// as `0 / 0`.
+    /// With a zero slot 1 the line is *absent*, not drawn as `0 / 0`.
     #[test]
     fn treasure_line_is_hidden_not_zeroed() {
-        let m = dev_records_model(&[], 0);
+        let m = dev_records_model(&[], NO_TALLY, 0, (0, 0));
         assert!(!m.treasure_shown);
         let fields = records_screen_fields(&records_view(&m), DEV_RECORDS_PEN);
         assert!(!fields.iter().any(
             |f| matches!(f, RecordsField::Label { text, .. } if text == RECORDS_LABELS.treasure)
         ));
+    }
+
+    /// The save window's tallies reach the two top rows, and slots 0 / 1
+    /// of the script-counter table reach the treasure line as found / total
+    /// with retail's percentage split (`25 / 64` = `39.06`).
+    #[test]
+    fn tally_and_slot_table_reach_the_page() {
+        let m = dev_records_model(&[], (708, 37), 0, (25, 64));
+        assert_eq!((m.battles, m.escapes), (708, 37));
+        assert!(m.treasure_shown);
+        assert_eq!((m.treasure_percent, m.treasure_fraction), (39, 6));
+        let v = records_view(&m);
+        assert_eq!((v.treasure_found, v.treasure_total), (25, 64));
+        let fields = records_screen_fields(&v, DEV_RECORDS_PEN);
+        for want in [708, 37, 25, 64, 39, 6] {
+            assert!(
+                fields
+                    .iter()
+                    .any(|f| matches!(f, RecordsField::Number { value, .. } if *value == want)),
+                "no field carries {want}"
+            );
+        }
     }
 
     /// A counter read out of a record reaches the emitted fields at the
@@ -226,7 +271,7 @@ mod tests {
     #[test]
     fn record_values_reach_the_emitted_fields() {
         let a = record(1);
-        let m = dev_records_model(&[&a], 12);
+        let m = dev_records_model(&[&a], NO_TALLY, 12, (0, 0));
         let fields = records_screen_fields(&records_view(&m), DEV_RECORDS_PEN);
         let (px, py) = DEV_RECORDS_PEN;
         assert!(fields.contains(&RecordsField::Number {

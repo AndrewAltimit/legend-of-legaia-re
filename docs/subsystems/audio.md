@@ -579,6 +579,18 @@ every start issued while bit 2 or that latch is up into
 ghidra/scripts/funcs/overlay_0897_801d6704.txt`, `800243f0.txt`,
 `8003aeb0.txt`.
 
+An overworld entrance is one of those door records. `map03`'s `P2[13]`
+runs `35 00 00 06` and then its `0x3F` into `son`, whose entry starts
+`2058` and parks on `0x1000` under a story test (`P1[0]` `+0x0C`, `+0x23`):
+the retail state `son_field_door_hop`, crossed on that record, holds `2000`
+sounding under the park word. The engine's overworld entity SM keeps only an
+entrance's `0x3F`, so the crossing walks the record's path
+(`man_field_scripts::record_path_trace`, the same flag-test walk that
+replays the record's flag writes) and raises bit 2 when a sub-op 6 lies on
+it ahead of the scene change (`World::raise_keep_audio_across_field_init`).
+Without it the init closed the overworld theme and `son` played `2058`.
+Pinned by `door_keep_bgm_disc.rs`'s `map03s_son_entrance_keeps_the_overworld_theme`.
+
 ### The control words: stop, pause, replay
 
 The op's arm table is `0x801CEE00` in the field overlay, indexed `sub - 1`
@@ -3272,7 +3284,8 @@ installs a door record no tile spawns), and the session ticks until it holds
 the captured scene. Whatever track sounds there is the engine's own door
 logic. `s2_rimelm_town01` (from `opurud`, `P2[9]`), `koin6` / `koin4` (from
 `kor4`, `P2[13]` / `P2[9]`) and `retockin_field_route_walk` (from `retock`,
-`P2[18]`) and `station_field_door_hop` (from `ropeway`, `P2[27]`) are seeded this way and match retail; with the sub-op 6 latch
+`P2[18]`), `station_field_door_hop` (from `ropeway`, `P2[27]`) and `son_field_door_hop` (from the overworld
+`map03`, `P2[13]`) are seeded this way and match retail; with the sub-op 6 latch
 disabled the first three fail again (the head start replaces the kept
 track), while `retockin` passes either way because its entry parks.
 
@@ -3303,6 +3316,13 @@ the engine seeded there holds the committed track as retail's poller does.
 is 63, which is static row `0x30`. `tower`'s lift pads fire it as the first op of their
 activation arm (`36 00 80 30 00`), and the engine's seed sounds the same cue
 (`engine-scene-host/tests/tower_lift_pad_touch_disc.rs`).
+
+The channel reads a PCSX-Redux state's cue voices off libsnd's records, whose `+0x06` is that
+emulator's `ENVX`, and its SPU runs on the host's audio clock
+([above](#the-envelope-channel-is-not-on-emulated-time)), so a one-shot can read as still
+sounding long after its sample ended. `son_field_door_hop` is the case: its records hold
+voices 22 and 23 at `7FFF`, where one ambient part keys a `40`-vsync sample every `63` vsyncs
+and only one voice sounds ([settled](../reference/re-settled-threads/audio.md#why-son_field_door_hops-records-hold-two-0x201-voices)).
 
 ## The keying differential
 
@@ -3438,7 +3458,11 @@ stopping the sequences leaves their held notes ringing beside the emitter. The f
 (voice records owned `0x21`: voices 16..18 here, nothing else stood up). It reads correlation `0.986`,
 level `+0.01` dB. An offset scan between the two halves has its best residual at `0` in every
 window, so the river is right to the sample. What remains reads `-25` to `-27` dB in the clean
-windows and near `-11` dB in others; that split is not traced.
+windows and near `-11` dB in others, and the split is the score's, not the river's: in each
+second fitted as `a * track + b * emitter`, `b` stays within `0.03` of `1` after the first second
+while `a` drops to `0.85..0.94` in the poor windows, and the silenced recording reads `1.0000`
+against the resumed SPU, river included
+([open](../reference/open-rev-eng-threads.md#why-does-track-2016-score-worse-under-rimelm_wall_press_lefts-river)).
 
 Per octave band the level difference is under `0.1` dB wherever no retail cue is
 in the window. Mix level, panning, pitch, envelope and reverb topology are not

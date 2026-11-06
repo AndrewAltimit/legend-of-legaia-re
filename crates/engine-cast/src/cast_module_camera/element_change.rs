@@ -121,7 +121,7 @@ const THUNDER: StrikeRecords = StrikeRecords {
 const THUNDER_RING: u32 = 0x801F_9A34;
 /// Thunder's `k = 5` spray pair, every pass (`0x801F76F0`, `0x801F7708`).
 pub const THUNDER_SPRAY: [u32; 2] = [0x801F_9AD0, 0x801F_9B20];
-/// Arm 0's records: on the caster's body pair, then at the negated point, then
+/// Arm 0's records: on the caster's display trio `+0x3C..+0x40`, then at the negated point, then
 /// the element's own there (`0x801F6C94..0x801F6D28`).
 const OPEN_BODY: u32 = 0x801F_8FF0;
 const OPEN_FAR: u32 = 0x801F_9058;
@@ -175,7 +175,12 @@ pub fn element_strike_camera(
             arm.shot = Some(cut(0, 0x600, 0x600));
             st.countdown.0 = SPEED_SCALAR << 8;
             let roll = (st.module_words[0] as usize).min(2);
-            arm.pass_spawns[0] = Some(seat(OPEN_BODY, at_caster, rot));
+            // `FUN_80050ED4(caster + 0x3C, caster + 0x44, ..)`
+            // (`0x801F6C70..0x801F6C94`): the display trio, whose height
+            // `+0x3E` the pose decoder raises by the pose centroid - the
+            // crystal's middle, where the rays fan out from.
+            let body = st.caster_body.unwrap_or(c);
+            arm.pass_spawns[0] = Some(seat(OPEN_BODY, [body.x, body.y, body.z], rot));
             arm.pass_spawns[1] = Some(seat(OPEN_FAR, far, rot));
             arm.pass_spawns[2] = Some(seat(OPEN_ELEMENT[roll], far, rot));
             arm.element_stream = true;

@@ -484,8 +484,9 @@ pub struct RetailBattle {
     pub cam_tween_steps: [u16; 9],
     /// The turn cursor `ctx[+0x1A]`: order entries this round has consumed.
     pub turn_cursor: u8,
-    /// The newest passes' frame steps ([`recent_pass_steps`]), newest first.
-    pub recent_steps: [u8; 4],
+    /// The newest sixteen passes' frame steps ([`recent_pass_steps`]),
+    /// newest first.
+    pub recent_steps: [u8; 16],
     /// One channel of the ambient word `0x8007B7B0`.
     pub ambient_word: u8,
     /// `ctx[+0x6D0]`, the depth case 6 frames at, before the projection
@@ -543,6 +544,12 @@ pub struct RetailBattle {
     /// surface on a pass the display has not shown yet
     /// ([`Self::displayed_menu_flow`]).
     pub hud_glides_unseen: bool,
+    /// The pool seats the Done band's closing glides name, when the glide
+    /// table holds one: the actor whose plaque (or Spirit pair) leaves,
+    /// `ctx[+0x13]` - still the finished actor through the next actor's
+    /// `0x0A` - and the readout bar's member `ctx[+0x20]`
+    /// ([`legaia_engine_battle_loop::battle_state::ActionHudClose`]).
+    pub hud_close_seats: Option<(u8, u8)>,
     /// The newest damage numeral as the displayed frame drew it: its struck
     /// pool slot and the engine popup age whose rise matches retail's
     /// (`hud_glide::popup_age_seat`); `None` with no live numeral.
@@ -632,6 +639,12 @@ pub struct RetailBattle {
     /// has settled, where retail's record raised them. Empty as read; the
     /// corpus run fills it.
     pub entry_latches: Vec<u16>,
+    /// The system flags the same record lowered within its battle-entry
+    /// window and the capture holds down ([`entry_latches`]'s CLEAR arms):
+    /// lowered once the field has settled, so a landing that re-ran the
+    /// record's opening (`jouine`'s Cort cutscene raising `0x645`) leaves the
+    /// flags where retail's entry op found them. Empty as read.
+    pub entry_lowers: Vec<u16>,
     /// The state was made on a shiny-Seru patched disc (its `resident_patch`
     /// names `shiny-seru`): that build's battle init takes one `rand()` draw
     /// for the shiny roll ahead of the formation draws

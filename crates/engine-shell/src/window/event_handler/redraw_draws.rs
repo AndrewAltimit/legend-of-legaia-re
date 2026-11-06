@@ -258,6 +258,23 @@ impl<'m> DrawCtx<'_, 'm> {
                     });
                 }
             }
+            // The animated props: the spotlight beams and their fixtures.
+            for p in &g.props {
+                if let Some(mesh) = p.textured_gpu.as_ref() {
+                    draws.push(SceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+                if let Some(mesh) = p.untextured_gpu.as_ref() {
+                    color_draws.push(ColorSceneDraw {
+                        mesh,
+                        mvp: cam,
+                        cue: None,
+                    });
+                }
+            }
             // The floor's bodies, posed in raw world coordinates by the
             // engine surface (`refresh_dance_cast_gpu`).
             if let Some(c) = store.dance_cast_gpu.as_ref() {

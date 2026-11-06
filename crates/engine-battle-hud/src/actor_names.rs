@@ -76,6 +76,12 @@ pub(super) fn actor_name(world: &legaia_engine_core::world::World, slot: u8) -> 
 /// captures agree - `Vahn` behind the tab in the ring, `Vahn` / `Gimard` /
 /// `Zora` at `(16, 12)` through their actions, nothing at `0x1E` or `0x0A`.
 pub fn battle_active_actor(world: &legaia_engine_core::world::World) -> Option<(u8, String)> {
+    // Past the Done band's teardown the plaque is its closing glide
+    // (`FUN_801D8DE8(0x44, 1)` at `0x801E6200`) or nothing.
+    if let Some(c) = action_hud_closing(world) {
+        let slot = c.plaque?;
+        return Some((slot, actor_name(world, slot)));
+    }
     match battle_hud_phase(world) {
         BattleHudPhase::Idle | BattleHudPhase::RoundPrompt => None,
         BattleHudPhase::CommandEntry => {

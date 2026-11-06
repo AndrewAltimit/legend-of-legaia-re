@@ -200,6 +200,17 @@ pub struct WorldToggles {
     /// set there, so it plays the same either way. On by default; off under
     /// [`Self::pin_retail`].
     pub fortress_encounter_fix: bool,
+    /// Tetsu spar order fix (a port softlock fix with no patcher flag yet):
+    /// in Rim Elm ([`TETSU_SPAR_SCENE`]) the field VM reads system flag
+    /// [`TETSU_SPAR_COUNTED_FLAG`] as set once both the spar
+    /// ([`TETSU_SPAR_FOUGHT_FLAG`]) and the measuring
+    /// ([`TETSU_MEASURED_FLAG`]) are, so a spar fought before the measuring
+    /// still lets Tetsu start the hunters' return. Retail raises the counted
+    /// flag only when the spar ends after the measuring, and nothing raises
+    /// it later: a player who spars first can never leave Rim Elm. A game
+    /// played in retail's order plays the same either way. On by default;
+    /// off under [`Self::pin_retail`].
+    pub tetsu_spar_fix: bool,
     /// Jewel fix (the engine twin of the patcher's `--jewel-fix`): the boss
     /// cinematic casts that retail rolls through the resist-bypass wrapper
     /// `FUN_801DD6B4` roll through the respecting one, `FUN_801DD4B0`, so
@@ -321,6 +332,20 @@ pub const FORTRESS_ENCOUNTER_SCENES: [&str; 2] = ["deroa", "chitei2"];
 /// escape-success record never lowers.
 pub const FORTRESS_STALE_FLAG: u16 = 0x15;
 
+/// The scene [`WorldToggles::tetsu_spar_fix`] applies in: Rim Elm before the
+/// Mist, the one scene whose scripts name [`TETSU_SPAR_COUNTED_FLAG`].
+pub const TETSU_SPAR_SCENE: &str = "town01";
+/// Tetsu's spar was fought: `town01` `P1[10]` raises it as his third answer
+/// starts the fight (`52 0B` at `+0x76A`).
+pub const TETSU_SPAR_FOUGHT_FLAG: u16 = 0x20B;
+/// The measuring at Vahn's house is done: `town01` `P2[5]` raises it first.
+pub const TETSU_MEASURED_FLAG: u16 = 0x227;
+/// The spar counts towards the hunters' return: the spar's return raises it
+/// only while [`TETSU_MEASURED_FLAG`] is up (`72 27 05 00` / `26 04 00` /
+/// `52 0C` at `P1[10]` `+0x7FB`), and Tetsu's "Nothing in particular" spawns
+/// the return (`P2[6]`) on it (`72 0C 1B 01` at `+0xA43`).
+pub const TETSU_SPAR_COUNTED_FLAG: u16 = 0x20C;
+
 /// [`WorldToggles::spirit_ap`] at retail (`0x20`).
 pub const SPIRIT_AP_RETAIL: i16 = legaia_engine_battle_vm::battle_action::SPIRIT_AP_RETAIL;
 /// The patcher's `--spirit-ap` range.
@@ -407,6 +432,7 @@ impl WorldToggles {
             flee_exp: false,
             exp_rate_permille: EXP_RATE_RETAIL,
             fortress_encounter_fix: true,
+            tetsu_spar_fix: true,
             jewel_fix: false,
             hp_readout_guard: true,
             spirit_ap: SPIRIT_AP_RETAIL,
@@ -451,6 +477,7 @@ impl WorldToggles {
         self.flee_exp = false;
         self.exp_rate_permille = EXP_RATE_RETAIL;
         self.fortress_encounter_fix = false;
+        self.tetsu_spar_fix = false;
         self.jewel_fix = false;
         self.hp_readout_guard = false;
         self.spirit_ap = SPIRIT_AP_RETAIL;
@@ -509,6 +536,9 @@ impl WorldToggles {
         }
         if self.fortress_encounter_fix {
             out.push("fortress_encounter_fix");
+        }
+        if self.tetsu_spar_fix {
+            out.push("tetsu_spar_fix");
         }
         if self.jewel_fix {
             out.push("jewel_fix");
@@ -570,6 +600,7 @@ mod fidelity_tests {
                 "hop_landing_guard",
                 "shiny_seru",
                 "fortress_encounter_fix",
+                "tetsu_spar_fix",
                 "hp_readout_guard",
                 "battle_entry_off_axis"
             ]
@@ -599,7 +630,7 @@ mod fidelity_tests {
         t.bonus_drop = true;
         t.save_anywhere = true;
         t.action_movement = true;
-        assert_eq!(t.retail_deviations().len(), 25);
+        assert_eq!(t.retail_deviations().len(), 26);
         t.pin_retail();
         assert!(t.retail_deviations().is_empty());
     }

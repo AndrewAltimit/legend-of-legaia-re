@@ -208,77 +208,119 @@ pub fn record_path_walk(
     pc: usize,
     flag_set: &dyn Fn(u16) -> bool,
 ) -> (RecordPathEnd, Vec<(bool, u16)>) {
+    let trace = record_path_trace(body, pc, flag_set);
+    (trace.end, trace.writes)
+}
+
+/// What a record's path does on the way to its end, as [`record_path_trace`]
+/// follows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordPathTrace {
+    /// Where the path ends.
+    pub end: RecordPathEnd,
+    /// The system-flag writes it makes, in order ([`record_path_walk`]).
+    pub writes: Vec<(bool, u16)>,
+    /// Every op-`0x35` it passes, `(operand, sub-op)`, in order.
+    pub bgm: Vec<(u16, u8)>,
+}
+
+impl RecordPathTrace {
+    /// The path raises sound-flag bit 2 (sub-op 6, `0x801E01D8`) before it
+    /// ends: the next field init keeps the music the door brought.
+    pub fn keeps_music(&self) -> bool {
+        self.bgm.iter().any(|&(_, sub)| sub == 6)
+    }
+}
+
+/// [`record_path_walk`] that also records the op-`0x35` BGM words the path
+/// runs. A door record raises sub-op 6 right before its `0x3F` (`map03`
+/// P2[13], the overworld entrance into `son`), and that bit decides whether
+/// the destination's field init keeps the overworld's track
+/// (`docs/subsystems/audio.md`, "A door keeps its music only behind sub-op 6").
+// REF: FUN_801DE840 (op 0x35, sub-op 6 arm 0x801E01D8)
+pub fn record_path_trace(
+    body: &[u8],
+    pc: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> RecordPathTrace {
     use legaia_scene_formats::field_disasm::decode;
     let mut writes: Vec<(bool, u16)> = Vec::new();
+    let mut bgm: Vec<(u16, u8)> = Vec::new();
     let mut pc = pc;
-    for _ in 0..4096 {
-        if pc >= body.len() {
-            return (RecordPathEnd::Closed, writes);
-        }
-        let Ok(insn) = decode(body, pc) else {
-            pc += 1;
-            continue;
-        };
-        let next = pc + insn.size.max(1);
-        match insn.info {
-            InsnInfo::SceneChange {
-                index,
-                entry_x,
-                entry_z,
-                dir,
-                ..
-            } => {
-                if let Some(name) = scene_change_name(body, &insn) {
-                    return (
-                        RecordPathEnd::SceneChange((index, name, entry_x, entry_z, dir)),
-                        writes,
-                    );
+    let end = 'walk: {
+        for _ in 0..4096 {
+            if pc >= body.len() {
+                break 'walk RecordPathEnd::Closed;
+            }
+            let Ok(insn) = decode(body, pc) else {
+                pc += 1;
+                continue;
+            };
+            let next = pc + insn.size.max(1);
+            match insn.info {
+                InsnInfo::Bgm { text_id, sub_op } => {
+                    bgm.push((text_id, sub_op));
+                    pc = next;
                 }
-                pc = next;
-            }
-            InsnInfo::SystemFlag {
-                kind: FlagKind::Test,
-                idx,
-                target: Some(target),
-                ..
-            } => {
-                let set = writes
-                    .iter()
-                    .rev()
-                    .find(|&&(_, f)| f == idx)
-                    .map_or_else(|| flag_set(idx), |&(s, _)| s);
-                pc = if set { target } else { next };
-            }
-            InsnInfo::SystemFlag {
-                kind: FlagKind::Set,
-                idx,
-                ..
-            } => {
-                writes.push((true, idx));
-                pc = next;
-            }
-            InsnInfo::SystemFlag {
-                kind: FlagKind::Clear,
-                idx,
-                ..
-            } => {
-                writes.push((false, idx));
-                pc = next;
-            }
-            InsnInfo::JmpRel { target, .. } => {
-                if target <= pc {
-                    return (RecordPathEnd::Closed, writes);
+                InsnInfo::SceneChange {
+                    index,
+                    entry_x,
+                    entry_z,
+                    dir,
+                    ..
+                } => {
+                    if let Some(name) = scene_change_name(body, &insn) {
+                        break 'walk RecordPathEnd::SceneChange((
+                            index, name, entry_x, entry_z, dir,
+                        ));
+                    }
+                    pc = next;
                 }
-                pc = target;
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Test,
+                    idx,
+                    target: Some(target),
+                    ..
+                } => {
+                    let set = writes
+                        .iter()
+                        .rev()
+                        .find(|&&(_, f)| f == idx)
+                        .map_or_else(|| flag_set(idx), |&(s, _)| s);
+                    pc = if set { target } else { next };
+                }
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Set,
+                    idx,
+                    ..
+                } => {
+                    writes.push((true, idx));
+                    pc = next;
+                }
+                InsnInfo::SystemFlag {
+                    kind: FlagKind::Clear,
+                    idx,
+                    ..
+                } => {
+                    writes.push((false, idx));
+                    pc = next;
+                }
+                InsnInfo::JmpRel { target, .. } => {
+                    if target <= pc {
+                        break 'walk RecordPathEnd::Closed;
+                    }
+                    pc = target;
+                }
+                InsnInfo::CondJmp { .. }
+                | InsnInfo::BBoxTest { .. }
+                | InsnInfo::InventoryCmp { .. }
+                | InsnInfo::Picker { .. } => break 'walk RecordPathEnd::Undecided,
+                _ => pc = next,
             }
-            InsnInfo::CondJmp { .. }
-            | InsnInfo::BBoxTest { .. }
-            | InsnInfo::InventoryCmp { .. }
-            | InsnInfo::Picker { .. } => return (RecordPathEnd::Undecided, writes),
-            _ => pc = next,
         }
-    }
-    (RecordPathEnd::Undecided, writes)
+        RecordPathEnd::Undecided
+    };
+    RecordPathTrace { end, writes, bgm }
 }
 
 /// [`record_path_walk`] over the MAN record at **flat** index `flat` (the
@@ -293,6 +335,28 @@ pub fn flat_record_path_walk(
 ) -> Option<(RecordPathEnd, Vec<(bool, u16)>)> {
     let (start, pc0, len) = flat_record_span(man_file, man, flat)?;
     Some(record_path_walk(&man[start..start + len], pc0, flag_set))
+}
+
+/// [`record_path_trace`] over the MAN record at **flat** index `flat`.
+pub fn flat_record_path_trace(
+    man_file: &ManFile,
+    man: &[u8],
+    flat: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<RecordPathTrace> {
+    let (start, pc0, len) = flat_record_span(man_file, man, flat)?;
+    Some(record_path_trace(&man[start..start + len], pc0, flag_set))
+}
+
+/// [`record_path_trace`] over partition-2 record `record` of a MAN.
+pub fn partition2_record_path_trace(
+    man_file: &ManFile,
+    man: &[u8],
+    record: usize,
+    flag_set: &dyn Fn(u16) -> bool,
+) -> Option<RecordPathTrace> {
+    let (start, pc0, len) = partition_record_span(man_file, man, 2, record)?;
+    Some(record_path_trace(&man[start..start + len], pc0, flag_set))
 }
 
 /// [`record_path_scene_change`] over partition-2 record `record` of a MAN,

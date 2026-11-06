@@ -74,6 +74,13 @@ pub struct DanceGame {
     pub(super) finish_cues: Vec<u16>,
     /// The human's award sounds since the last drain ([`Self::take_award_sounds`]).
     pub(super) award_sounds: Vec<super::DanceAwardSound>,
+    /// The saved best score `_DAT_80084464` (save block `0x324`) as this run
+    /// holds it: seeded from the save by the host ([`Self::set_best_score`]),
+    /// raised by [`Self::raise_best_score`].
+    pub(super) best_score: u32,
+    /// The hall's animated plain floor actors, one cursor per clip
+    /// ([`super::HallProps`]); empty until the bank is attached.
+    pub(super) hall_props: super::HallProps,
 }
 
 impl DanceGame {
@@ -125,6 +132,8 @@ impl DanceGame {
             finished: false,
             finish_cues: Vec::new(),
             award_sounds: Vec::new(),
+            best_score: 0,
+            hall_props: super::HallProps::default(),
         };
         // A chart-only run still spawns its floor - the actors just stand at
         // the origin and bind no clip, because both of those come off the
@@ -247,6 +256,25 @@ impl DanceGame {
             }
         }
         self.clip_ticks = Some(map);
+        self.hall_props = super::HallProps::from_bank(bank);
+    }
+
+    /// The hall's animated props' clip cursors ([`super::HallProps`]).
+    pub fn hall_props(&self) -> &super::HallProps {
+        &self.hall_props
+    }
+
+    /// Stand the hall's clip `anim_id` on a retail state's cursor - capture
+    /// alignment, never a game path ([`super::HallProps::seat`]).
+    pub fn seat_hall_prop(&mut self, anim_id: u8, cursor: i16) {
+        self.hall_props.seat(anim_id, cursor);
+    }
+
+    /// [`Self::seat_hall_prop`] on a retail RAM cursor walked back `passes`
+    /// of the hall's game frames ([`super::HallProps::seat_passes_back`]).
+    pub fn seat_hall_prop_displayed(&mut self, anim_id: u8, cursor: i16, passes: u16) {
+        self.hall_props
+            .seat_passes_back(anim_id, cursor, passes, MARKER_PASS_VSYNCS as u16);
     }
 
     /// Ticks `clip` plays before its end flag, when the bank is attached.
@@ -305,6 +333,8 @@ impl DanceGame {
         let delta = MARKER_PASS_VSYNCS as u8;
         let bias = legaia_scene_formats::field_objects::FIELD_ACTOR_PACK_BIAS as i16;
         for _ in 0..runs {
+            // The plain floor actors share the markers' list and pass.
+            self.hall_props.tick(MARKER_PASS_VSYNCS as u16);
             for m in self.markers.iter_mut() {
                 legaia_engine_field::dance_marker::step_marker(
                     m,
@@ -567,7 +597,8 @@ impl DanceGame {
         out
     }
 
-    /// The full per-frame HUD **quad** list, in retail's emission order: per
+    /// The full per-frame HUD **quad** list, in retail's emission order: free
+    /// play's personal-best panel ([`DanceGame::best_panel_quads`]), then per
     /// [`DanceGame::hud_draws`] element, the style-A digit run for each score
     /// readout, the score-box frame for each box ([`DanceGame::hud_quads`]'s
     /// quad), the `Lv.` label + digit pair for each gauge readout, and each
@@ -589,7 +620,9 @@ impl DanceGame {
             .widgets
             .get(DANCE_SCORE_BOX_WIDGET as usize)
             .map(|(w, a)| (*w, *a));
-        let mut out = Vec::new();
+        // The tick's head emits free play's personal-best panel before the
+        // HUD driver runs from its tail (`0x801CFFA0`).
+        let mut out = self.best_panel_quads();
         for d in self.hud_draws(rival_hud) {
             match d {
                 DanceHudDraw::Score { x, y, value, .. } => {
@@ -944,6 +977,62 @@ impl DanceGame {
 
     // ---------------------------------------------------------------- state
 
+    /// The saved best score this run holds (`_DAT_80084464`).
+    pub fn best_score(&self) -> u32 {
+        self.best_score
+    }
+
+    /// Seat the saved best score the run starts from (the save's
+    /// `_DAT_80084464`, [`legaia_save::minigame_save::RETAIL_DANCE_BEST_OFFSET`]).
+    pub fn set_best_score(&mut self, best: u32) {
+        self.best_score = best;
+    }
+
+    /// Raise the saved best to the human's score when that is higher, as the
+    /// tick does at its head in every state past `0` (`0x801CF584..0x801CF5A4`:
+    /// `lw` the best off `0x80084140 + 0x324`, `sltu` against `DAT_801D53CC`,
+    /// `sw` the score over it). The head returns before the raise in the
+    /// how-to (`mode == 2`, `0x801CF514`) and while the dev counter
+    /// `_DAT_8007B6D0` runs, so the how-to's score never lands in the save.
+    ///
+    /// PORT: FUN_801cf470 (the head's best-score raise)
+    pub fn raise_best_score(&mut self) {
+        if self.mode == DanceMode::HowTo {
+            return;
+        }
+        self.best_score = self.best_score.max(self.dancers[0].score);
+    }
+
+    /// The free-play personal-best panel, in emission order: widget `0x20`
+    /// at `(0x28, 0x10)` (`jal 0x801d2f38` at `0x801CF5C8`), then the saved
+    /// best as a style-B number run at `(0x2C, 0x10)` (`jal 0x801d32f8` at
+    /// `0x801CF5E8`), both at brightness `0x80` and scale `0x1000`. The tick
+    /// head emits it in every state past `0` of mode `3` only
+    /// (`0x801CF5A8..0x801CF5B0`), after the raise, so the value drawn is the
+    /// best the head just raised. Empty outside free play or without a widget
+    /// table.
+    ///
+    /// PORT: FUN_801cf470 (the head's free-play panel)
+    pub fn best_panel_quads(&self) -> Vec<DanceHudQuad> {
+        if self.mode != DanceMode::FreePlay {
+            return Vec::new();
+        }
+        let Some((w, abr)) = self.widgets.get(BEST_PANEL_WIDGET as usize) else {
+            return Vec::new();
+        };
+        let mut out = vec![dance_hud_widget_quad(
+            w,
+            *abr,
+            BEST_PANEL_X,
+            BEST_PANEL_Y,
+            BEST_PANEL_WIDGET,
+            DANCE_HUD_BRIGHTNESS,
+            0x1000,
+        )];
+        out.extend(self.number_quads(true, self.best_score, BEST_PANEL_X + 4, BEST_PANEL_Y));
+        out
+    }
+
     /// The human's running score.
     pub fn score(&self) -> u32 {
         self.dancers[0].score
@@ -1040,6 +1129,18 @@ impl DanceGame {
         }
     }
 
+    /// The three scores the results state copies into the field VM's
+    /// script-counter slots `0x801C6460[0..3]`: each floor slot's score word
+    /// (`0x801D53CC + slot * 4`) truncated to the halfword it is stored as
+    /// (`lhu` / `sh` at `0x801CFE58..0x801CFE7C`). The host town's script
+    /// prints slot 0 back through a dialog number escape. A floor slot the
+    /// mode seats no dancer in reads zero.
+    ///
+    /// PORT: FUN_801cf470 (state `0x14`'s score copy, `0x801CFE58..0x801CFE7C`)
+    pub fn results_counter_slots(&self) -> [i16; 3] {
+        std::array::from_fn(|i| self.dancers.get(i).map_or(0, |d| d.score as u16 as i16))
+    }
+
     /// The versus grade (retail modes 0/1): the human out-scores every rival on
     /// the floor. Ties go to the human - retail clears the win flag only when
     /// `human < rival`.
@@ -1110,6 +1211,9 @@ impl DanceGame {
         press: Option<DanceDir>,
     ) -> Option<DanceEvent> {
         let mut event = None;
+        // The tick's head raises the best off the score the last frame left,
+        // ahead of this frame's beat clock and judge.
+        self.raise_best_score();
         self.advance_step_markers(frame_delta);
         let step = frame_delta * PHASE_PER_DELTA;
         self.phase = (self.phase + step) % BEAT_PHASE_WRAP;

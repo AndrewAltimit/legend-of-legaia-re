@@ -514,6 +514,9 @@ pub struct TimelineWalk {
     pub resume_pc: usize,
     /// Per-tick step magnitude (`field_npc_walk_step_speed(0x80, mode & 7)`).
     pub speed: u16,
+    /// The walk kernel's approach mode, the mode byte's high nibble
+    /// (`srl a1,a1,0x4` at `0x80037BEC`).
+    pub approach: u8,
     /// Ticks parked so far, bounded by the walk park timeout.
     pub frames: u32,
 }

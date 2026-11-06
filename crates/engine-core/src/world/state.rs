@@ -630,6 +630,9 @@ impl World {
         // freshly reset window.
         self.party.retail_window = None;
         self.party.previous_scene = None;
+        // The records tallies live in the window the New Game slate zeroes
+        // (`FUN_8001DCF8`).
+        self.party.record_tally = Default::default();
         // Retail's New Game party is Vahn alone (`0x80084594 = 1`, member
         // list `[0]`). A composition left by an earlier session - the scene
         // picker seats Vahn / Noa / Gala before the title's New Game on both

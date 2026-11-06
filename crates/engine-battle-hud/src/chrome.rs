@@ -139,6 +139,10 @@ fn panels_still_open(s: u8) -> bool {
 /// and the Done hold closes them like the others
 /// ([`legaia_engine_battle_loop::battle_state::BattleState::module_panels_glide`]).
 pub fn battle_panels_visible(world: &legaia_engine_core::world::World) -> bool {
+    // The teardown's close of `ctx[+0x18] = 6` (`0x801E6188..0x801E61B0`).
+    if let Some(c) = action_hud_closing(world) {
+        return c.panels;
+    }
     match battle_hud_phase(world) {
         BattleHudPhase::RoundPrompt => true,
         // The ring parks the panels on a glide (step 1's `06/1 4E/1 4F/1`):

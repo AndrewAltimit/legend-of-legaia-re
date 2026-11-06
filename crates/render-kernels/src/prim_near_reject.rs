@@ -119,10 +119,11 @@ pub const GPU_MAX_SPAN: [f32; 2] = [1023.0, 511.0];
 pub fn gte_screen_offset(clip: [f32; 4], sz_per_w: f32, h: f32, half: [f32; 2]) -> [f32; 2] {
     let sz = (clip[3] * sz_per_w).max(0.0);
     let d = sz.max(h * 0.5);
-    std::array::from_fn(|i| {
-        let off = clip[i] * half[i] * sz_per_w / d;
-        (off + half[i]).clamp(-1024.0, 1023.0) - half[i]
-    })
+    // Clip `y` is up; `SY` saturates on the screen's own Y-down axis.
+    let off = [0, 1].map(|i| clip[i] * half[i] * sz_per_w / d);
+    let sx = (half[0] + off[0]).clamp(-1024.0, 1023.0);
+    let sy = (half[1] - off[1]).clamp(-1024.0, 1023.0);
+    [sx - half[0], half[1] - sy]
 }
 
 /// The per-frame parameters of the GTE's register limits
@@ -156,12 +157,18 @@ pub fn gte_saturation_params(gte: Option<(f32, f32)>) -> [f32; 4] {
 /// polygon, and the port interpolates its texture affinely in screen space
 /// too, so only the corners' screen positions matter.
 ///
-/// `None` when nothing saturates (or the corner is at or behind the eye,
-/// which the near reject and the span limit own).
+/// A corner at or behind the eye has `SZ = 0`, so the capped divide puts it
+/// at `OF + 2 * IR`: a real screen point the GPU draws the primitive to, not
+/// a point a near-plane clip trims the primitive at. It comes back at the
+/// depth the cap stands for (`w = H / 2 / sz_per_w`, positive), its depth
+/// word `clip.z / clip.w` when that lies in `0..=1` (the primitive's mean
+/// depth) and the nearest (`1`) otherwise.
+///
+/// `None` when nothing saturates.
 // REF: FUN_80044DC8
 pub fn gte_saturated_clip(clip: [f32; 4], sz_per_w: f32, h: f32) -> Option<[f32; 4]> {
     let w = clip[3];
-    if w <= 0.0 || sz_per_w <= 0.0 || h <= 0.0 {
+    if sz_per_w <= 0.0 || h <= 0.0 {
         return None;
     }
     let bias = legaia_engine_camera::projection::GTE_OFY_NDC_BIAS;
@@ -171,12 +178,24 @@ pub fn gte_saturated_clip(clip: [f32; 4], sz_per_w: f32, h: f32) -> Option<[f32;
     let sz = w * sz_per_w;
     let ir_xc = ir_x.clamp(-32768.0, 32767.0);
     let ir_yc = ir_y.clamp(-32768.0, 32767.0);
-    let szc = sz.min(65535.0);
+    let szc = sz.clamp(0.0, 65535.0);
     let d = szc.max(h * 0.5);
     let ofy = 120.0 - bias * 120.0;
     let (sx_raw, sy_raw) = (160.0 + h * ir_xc / d, ofy + h * ir_yc / d);
     let sx = sx_raw.clamp(-1024.0, 1023.0);
     let sy = sy_raw.clamp(-1024.0, 1023.0);
+    if w <= 0.0 {
+        let wc = d / sz_per_w;
+        let z = Some(clip[2] / w)
+            .filter(|z| w < 0.0 && (0.0..=1.0).contains(z))
+            .unwrap_or(1.0);
+        return Some([
+            (sx - 160.0) / 160.0 * wc,
+            (120.0 - sy) / 120.0 * wc,
+            z * wc,
+            wc,
+        ]);
+    }
     if ir_xc == ir_x && ir_yc == ir_y && d == sz && sx == sx_raw && sy == sy_raw {
         return None;
     }
@@ -330,6 +349,29 @@ mod tests {
         let side = gte_saturated_clip(corner(524.1, 133.0, 10728.2), 6.0, h).unwrap();
         let (x, _) = px(side);
         assert!((x - 470.0).abs() < 2.0, "{x}");
+    }
+
+    /// A corner behind the eye lands where the capped divide puts it,
+    /// `OF + 2 * IR`, at the cap's depth and in front of the eye - the
+    /// screen point retail's packet holds, which a near-plane clip would
+    /// trim the primitive at instead.
+    #[test]
+    fn a_corner_behind_the_eye_lands_at_twice_its_offset() {
+        let (h, k) = (608.0, 6.0);
+        // Eye offset (10, 40) units, 5 units behind the eye.
+        let c = field_clip(10.0, 40.0, -5.0);
+        let out = gte_saturated_clip(c, k, h).unwrap();
+        assert!((out[3] - h * 0.5 / k).abs() < 1e-3, "{out:?}");
+        let sx = 160.0 + out[0] / out[3] * 160.0;
+        let sy = 120.0 - out[1] / out[3] * 120.0;
+        let bias = legaia_engine_camera::projection::GTE_OFY_NDC_BIAS;
+        let ofy = 120.0 - bias * 120.0;
+        assert!((sx - (160.0 + 2.0 * 10.0 * k)).abs() < 1e-2, "{sx}");
+        let ir_y = -(c[1] - bias * c[3]) * 120.0 * k / h;
+        assert!((ir_y.abs() - 40.0 * k).abs() < 1e-2, "{ir_y}");
+        assert!((sy - (ofy + 2.0 * ir_y)).abs() < 1e-2, "{sy} {ir_y}");
+        // The depth word: nearest, as no mean depth rode in.
+        assert!((out[2] / out[3] - 1.0).abs() < 1e-6);
     }
 
     /// A battle-frame clip corner at eye offset `(x, y)` and depth `z`

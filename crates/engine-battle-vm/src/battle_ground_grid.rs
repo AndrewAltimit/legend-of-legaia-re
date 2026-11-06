@@ -86,12 +86,11 @@
 //! This module carries the emitter's *laws* the hosts consume: both battle
 //! draws fog the grid with [`grid_cue_far_z`] / [`grid_cue_max_ir0`]
 //! and the [`grid_far_colour`] resolved through [`OutdoorCueTable`]. The
-//! visibility culls ([`classify_cell`] / [`quad_on_screen`]) stay reference
-//! kernels: under a depth-buffered projection they are visually neutral,
-//! and applying them to the once-uploaded mesh would wrongly freeze the
-//! entry-pose cull (see `build_ground_grid`'s doc). The GTE half
-//! (`RTPS`/`RTPT` and the ordering-table link) stays outside this crate:
-//! `engine-vm` holds no projection matrix.
+//! visibility culls ([`classify_cell`] / [`quad_on_screen`]) run per frame
+//! through [`cell_mask`], which projects the probe points and lattice
+//! corners under the live battle pose; both hosts apply its mask under PSX
+//! mode (the native window's [`masked_indices`], the play page's collapsed
+//! cells). The ordering-table link stays with the hosts.
 
 /// World-space pitch of one grid cell (`0x200`).
 pub const CELL_PITCH: i32 = 0x200;
@@ -606,6 +605,81 @@ impl GroundGrid {
     pub fn max_quads(&self) -> usize {
         self.visible_cells() * SUB_QUADS_PER_CELL
     }
+}
+
+/// One grid point (`x`, `z`, with the emitter's implied `VY`) through the
+/// battle camera at retail's `320 x 240` framing: the clip position under
+/// [`legaia_engine_camera::projection::battle_vp`] composed with the stage's
+/// `(s, -s, s)` world scale, the model every battle draw class rides.
+fn grid_clip(vp: &[f32; 16], world_scale: f32, x: i32, z: i32) -> [f32; 4] {
+    let p = [
+        x as f32 * world_scale,
+        f32::from(implied_y(x)) * -world_scale,
+        z as f32 * world_scale,
+        1.0,
+    ];
+    std::array::from_fn(|r| (0..4).map(|c| vp[c * 4 + r] * p[c]).sum())
+}
+
+/// A clip corner as `RTPT` writes its `SXY`: `IR1` / `IR2` saturated, the
+/// divide's quotient capped at `H / SZ = 2` (`SZ` saturated at `0`, so a
+/// corner behind the eye lands at `OF + 2 * IR`), `SX` / `SY` saturated.
+fn grid_sxy(clip: [f32; 4]) -> (i16, i16) {
+    use legaia_engine_camera::projection::{GTE_H, GTE_OFY_NDC_BIAS as B};
+    let w = clip[3];
+    let ir_x = (clip[0] * 160.0 / GTE_H).clamp(-32768.0, 32767.0);
+    let ir_y = (-(clip[1] - B * w) * 120.0 / GTE_H).clamp(-32768.0, 32767.0);
+    let d = w.clamp(0.0, 65535.0).max(GTE_H * 0.5);
+    let sx = (160.0 + GTE_H * ir_x / d).clamp(-1024.0, 1023.0);
+    let sy = (120.0 * (1.0 - B) + GTE_H * ir_y / d).clamp(-1024.0, 1023.0);
+    (sx.floor() as i16, sy.floor() as i16)
+}
+
+/// Which cells of a `width x height` grid the emitter draws under `pose`:
+/// pass 1's depth bracket on the cell's probe point ([`classify_cell`] over
+/// `MVMVA`'s `IR3`, saturated) and pass 2's screen reject on the outer
+/// lattice corners ([`quad_on_screen`]). Row-major, `row * width + col` -
+/// the order `legaia_scene_formats::battle_backdrop::build_ground_grid_sized`
+/// emits its cells in, each as [`INDICES_PER_CELL`] indices.
+///
+/// The far bracket is what shows: a cell whose probe sits past `0x6500` is
+/// not drawn, and the backdrop shell shows where it would lie.
+pub fn cell_mask(
+    pose: &legaia_engine_camera::projection::BattleCamPose,
+    world_scale: f32,
+    width: i16,
+    height: i16,
+) -> Vec<bool> {
+    let vp = legaia_engine_camera::projection::battle_vp(pose, world_scale, 320.0 / 240.0);
+    let mut mask = Vec::with_capacity(usize::from(width as u16) * usize::from(height as u16));
+    for row in 0..i32::from(height) {
+        for col in 0..i32::from(width) {
+            let (px, pz) = probe_point(width, height, col, row);
+            let ir3 = grid_clip(&vp, world_scale, px, pz)[3].clamp(-32768.0, 32767.0);
+            if classify_cell(ir3.floor() as i32) != CellVis::Visible {
+                mask.push(false);
+                continue;
+            }
+            let l = cell_lattice(width, height, col, row);
+            let corners = [l[0][0], l[0][2], l[2][0], l[2][2]]
+                .map(|(x, z)| grid_sxy(grid_clip(&vp, world_scale, x, z)));
+            mask.push(quad_on_screen(corners));
+        }
+    }
+    mask
+}
+
+/// Indices one cell of the built grid carries: four quads of two triangles.
+pub const INDICES_PER_CELL: usize = 24;
+
+/// The built grid's index list with the cells `mask` drops left out.
+pub fn masked_indices(indices: &[u32], mask: &[bool]) -> Vec<u32> {
+    indices
+        .chunks(INDICES_PER_CELL)
+        .zip(mask.iter().chain(std::iter::repeat(&true)))
+        .filter(|(_, keep)| **keep)
+        .flat_map(|(c, _)| c.iter().copied())
+        .collect()
 }
 
 #[cfg(test)]

@@ -31,6 +31,7 @@ Classes:
 | `--fortress-encounter-fix` | (b) carried | `WorldToggles::fortress_encounter_fix`. |
 | `--jewel-fix` | (b) carried | `WorldToggles::jewel_fix`. |
 | (no patcher flag) state-`0x51` HP-readout park | (b) carried | `WorldToggles::hp_readout_guard`; the patcher has no fix for this park. |
+| (no patcher flag) Tetsu spar fought before the measuring | (b) carried | `WorldToggles::tetsu_spar_fix`; the patcher has no fix for this softlock. |
 | `--equipment-drops` | (b) carried | `WorldToggles::bonus_drop`. |
 | `--spirit-ap`, `--damage-ap` | (b) carried | `WorldToggles::spirit_ap`, `damage_ap`. |
 | `--seru-catch-rate` | (b) carried | `WorldToggles::seru_catch_pct`. |
@@ -61,6 +62,7 @@ Each switch is one field of `legaia_engine_session::session_switches::GameplayTw
 | Run-away EXP | `--flee-exp` | off | off |
 | EXP rate | `--exp-rate MULT` (`0.1..=5`) | `1x` | `1x` |
 | Fortress battles fix | `--no-fortress-encounter-fix` | on | off |
+| Tetsu spar order fix | `--no-tetsu-spar-fix` | on | off |
 | Boss casts respect jewels | `--jewel-fix` | off | off |
 | Battle freeze guard | `--no-hp-readout-guard` | on | off |
 | Bonus equipment drops | `--equipment-drops` | off | off |
@@ -74,7 +76,7 @@ Each switch is one field of `legaia_engine_session::session_switches::GameplayTw
 
 The launcher groups the toggles under *Gameplay tweaks* and the sliders (the EXP rate with them) under *Battle tuning*; the play page has a panel for each. A slider cycles a fixed step list that starts at retail (`GameplayTweaks::SPIRIT_AP_STEPS` and its siblings); the flags take any value in range.
 
-The two fixes default on because a game the defect never touched plays identically with them on: the Fortress fix changes nothing on a save without the stale flag, and the readout guard is an identity while retail's readout invariant holds. Shiny Seru keeps the default it shipped with. The jewel fix, run-away EXP and the EXP rate change the game's balance and default to retail.
+The three fixes default on because a game the defect never touched plays identically with them on: the Fortress fix changes nothing on a save without the stale flag, the Tetsu fix changes nothing in a game that sparred after the measuring, and the readout guard is an identity while retail's readout invariant holds. Shiny Seru keeps the default it shipped with. The jewel fix, run-away EXP and the EXP rate change the game's balance and default to retail.
 
 ### Shiny Seru
 
@@ -95,6 +97,10 @@ Each monster record's base EXP is scaled before the victory sum (`apply_battle_l
 ### Fortress battles fix
 
 The encounter condition walk (`FUN_801D9E1C`, `RegionEncounterTable::select_group`) asks `World::encounter_condition_flag_test` instead of the raw flag bank. In `deroa` and `chitei2` that answers system flag `0x15` as clear, so the walk falls past the Floating Castle's copied "no battles" group to the group retail reaches on a healthy save. The castle `taiku` still reads the flag, so its last-minute quiet window stays. The defect and the scenes are traced in [field-oddities](../reference/glitches/field-oddities.md#no-encounters-in-jettes-absolute-fortress). The patch reaches the same walk by rewriting group 0 into a duplicate of group 1; the engine reaches it without touching the table.
+
+### Tetsu spar order fix
+
+A field script's system-flag test asks `World::script_system_flag_test` instead of the raw flag bank. In `town01` that answers flag `0x20C` (the spar counts) as set once `0x20B` (the spar was fought) and `0x227` (the measuring is done) both are, so a spar fought before the measuring lets Tetsu's next "Nothing in particular" start the hunters' return. Retail raises `0x20C` only on a spar's return after the measuring, and nothing raises it later: the player who spars first can never leave Rim Elm ([field-sequence-breaks](../reference/glitches/field-sequence-breaks.md#sparring-with-tetsu-before-the-measuring)). The bank itself is left as retail wrote it, so a save loads the same into either mode, and a game in retail's order reads the flag the fix would answer anyway.
 
 ### Boss casts respect jewels
 

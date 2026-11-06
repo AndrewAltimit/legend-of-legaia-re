@@ -86,15 +86,13 @@ pub fn rotate_step(current: u16, target: u16, decreasing: bool, speed: u32, rema
 }
 
 /// Convert a 2D displacement `(dx, dz)` to a 12-bit fixed-point yaw
-/// (0x000..0xFFF, clockwise, 0x000 = +Z). Retail calls `FUN_80019b28`.
+/// (0x000..0xFFF, clockwise, 0x000 = +Z): `FUN_80019B28(self.z, self.x,
+/// target.z, target.x)` at `0x80037EB4..0x80037EC4`, the retail integer
+/// bearing over the arctan table ([`legaia_engine_system::trig::bearing12`]).
+/// An `f32` `atan2` rounded to the nearest unit stood here and missed the
+/// table's truncation by one unit on about half of all bearings.
 pub(super) fn bearing_to_yaw(dx: i32, dz: i32) -> u16 {
-    if dx == 0 && dz == 0 {
-        return 0;
-    }
-    let radians = (dx as f32).atan2(dz as f32);
-    let raw = (radians * (0x1000 as f32) / (2.0 * std::f32::consts::PI)).round() as i32;
-    // Normalize to 12-bit [0, 0x1000).
-    ((raw % 0x1000 + 0x1000) % 0x1000) as u16
+    legaia_engine_system::trig::bearing12(dz, dx)
 }
 
 /// Step a value toward a target by at most `rate`, clamped - the ramp in

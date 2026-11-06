@@ -339,7 +339,7 @@ impl LegaiaMinigames {
             // Anchored on the lead's seat, as retail's lure spawn reads the
             // lead actor's own position (`fishing_venue::lead_spawn`).
             let (anchor_x, anchor_y, anchor_z) =
-                legaia_engine_minigame_scenes::fishing_venue::lead_spawn(venue);
+                legaia_engine_minigame_scenes::fishing_venue::lead_anchor(venue, Some(&map));
             p.attach_venue(legaia_engine_fishing::fishing::PondVenue {
                 map,
                 region_block: scene.region_block.clone(),

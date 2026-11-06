@@ -641,3 +641,59 @@ fn the_song_end_counts_down_3_2_1_finish() {
     assert_eq!(first_seen, vec![0x1A, 0x19, 0x18, 0x17], "3, 2, 1, FINISH!");
     assert_eq!(cues, vec![0x209, 0x208, 0x207, 0x206]);
 }
+
+/// The results state copies the floor's three scores into the field VM's
+/// script-counter slots `0x801C6460[0..3]` (`0x801CFE58..0x801CFE7C`), which
+/// is what the host town's Disco King score line (escape `0xCE 0x0B`) prints back
+/// through its number escape. A real song played to its end through
+/// `World::tick` must leave those slots holding the run's scores, the
+/// human's in slot 0.
+#[test]
+fn a_finished_song_hands_its_scores_to_the_script_counters() {
+    use legaia_engine_core::world::World;
+    use legaia_engine_mode::mode::SceneMode;
+    use legaia_engine_system::input::PadButton;
+
+    let Some(loaded) = dance_overlay() else {
+        eprintln!("[skip] LEGAIA_DISC_BIN / extracted PROT.DAT missing (disc-gated)");
+        return;
+    };
+    let game = DanceGame::from_overlay(&loaded, false).expect("real chart");
+    let mut world = World::new();
+    world.mode = SceneMode::Field;
+    world.field_vm.slot_table[..3].copy_from_slice(&[-1, -1, -1]);
+    world.enter_dance(game);
+
+    let mut frames = 0usize;
+    while world.mode == SceneMode::Dance && frames < 60_000 {
+        let want = world
+            .minigames
+            .dance
+            .as_ref()
+            .filter(|g| !g.in_dead_zone())
+            .and_then(|g| g.judged_symbol())
+            .filter(|s| *s != 0);
+        world.set_pad(0);
+        match want {
+            Some(1) => world.set_pad(PadButton::Square.mask()),
+            Some(2) => world.set_pad(PadButton::Circle.mask()),
+            Some(3) => world.set_pad(PadButton::Triangle.mask()),
+            _ => {}
+        }
+        let _ = world.tick();
+        frames += 1;
+    }
+    assert_ne!(world.mode, SceneMode::Dance, "the song never finished");
+    let game = world
+        .minigames
+        .dance
+        .as_ref()
+        .expect("the run stays readable");
+    assert!(game.score() > 0, "the auto-played run scored");
+    let want: Vec<i16> = (0..3).map(|i| game.dancer_score(i) as u16 as i16).collect();
+    eprintln!(
+        "[dance] finished after {frames} ticks; counter slots {:?}",
+        &world.field_vm.slot_table[..3]
+    );
+    assert_eq!(&world.field_vm.slot_table[..3], &want[..]);
+}

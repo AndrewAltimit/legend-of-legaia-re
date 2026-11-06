@@ -168,8 +168,16 @@ impl FieldHostImpl<'_> {
         }
         // When the inline-script field-VM runner owns the box, it advances /
         // dismisses it (see `World::drive_inline_dialogue`); the simplified
-        // dialog-advance must not clear the box out from under it.
-        if self.world.dialog.current.is_none() || self.world.dialog.inline.is_some() {
+        // dialog-advance must not clear the box out from under it. The runner
+        // holds the talk out of `dialog.inline` while it steps the record, so
+        // its own `4C 54` reads `stepping_inline` instead: there the op is
+        // retail's bare mode-switch poll (`town01` P1[51]'s panorama hands the
+        // view back on it), and waiting for a dismiss press parked the talk
+        // on a dark screen.
+        if self.world.dialog.current.is_none()
+            || self.world.dialog.inline.is_some()
+            || self.world.dialog.stepping_inline
+        {
             return false;
         }
         // A carrier's spar menu owns the dialog input while it is up: navigate +

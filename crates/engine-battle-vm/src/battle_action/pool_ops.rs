@@ -651,38 +651,26 @@ pub fn next_selectable_actor(
 
 /// Entries in the retail arctan LUT at `0x8006F4C8` - the index space
 /// `bearing_12bit` divides into is `(min << 11) / max`, so `0..=0x800`.
-pub const ARCTAN_LUT_LEN: usize = 0x801;
+pub const ARCTAN_LUT_LEN: usize = legaia_engine_system::trig::ATAN_LUT_LEN;
 
-/// A port-side stand-in for the retail arctan LUT at `0x8006F4C8`.
-///
-/// The retail table is Sony data and no engine boot path extracts it, so this
-/// is the same function computed from first principles: entry `i` is
-/// `atan(i / 2048)` expressed in 12-bit turn units (`0x1000` = one turn),
+/// The retail arctan LUT at `0x8006F4C8`, computed rather than read
+/// ([`legaia_engine_system::trig::atan_lut`]): byte for byte the retail table,
 /// which fixes `lut[0] == 0` and `lut[0x800] == 0x200` (45 degrees) - the two
-/// values [`bearing_12bit`]'s quadrant algebra depends on.
-///
-/// Substituting the table leaves the *arithmetic* of `FUN_80019B28`
-/// untouched: quadrant folding, the `(min << 11) / max` divide and the
-/// per-octant constants are the ported ones. Only the sampled arctan differs,
-/// by at most a unit of the 12-bit angle, which is below the resolution any
-/// consumer of a heading here cares about.
+/// values [`bearing_12bit`]'s quadrant algebra depends on. The name is older
+/// than the match: the table once rounded where retail truncates, which moved
+/// about half of all bearings by a unit.
 pub fn approx_arctan_lut() -> &'static [i16; ARCTAN_LUT_LEN] {
-    use std::sync::OnceLock;
-    static LUT: OnceLock<[i16; ARCTAN_LUT_LEN]> = OnceLock::new();
-    LUT.get_or_init(|| {
-        let mut t = [0i16; ARCTAN_LUT_LEN];
-        for (i, slot) in t.iter_mut().enumerate() {
-            let ratio = i as f64 / 2048.0;
-            *slot = (ratio.atan() * 4096.0 / std::f64::consts::TAU).round() as i16;
-        }
-        t
-    })
+    legaia_engine_system::trig::atan_lut()
 }
 
-/// [`bearing_12bit`] over [`approx_arctan_lut`] - the form a caller with no
-/// disc-extracted arctan table uses.
+/// [`bearing_12bit`] over the computed table: the retail bearing exactly
+/// (`FUN_80019B28` run off the disc agrees on every input the retail-exec
+/// differential draws).
 pub fn bearing_12bit_approx(p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
-    bearing_12bit(approx_arctan_lut(), p1z, p1x, p2z, p2x)
+    legaia_engine_system::trig::bearing12(
+        i32::from(p2z) - i32::from(p1z),
+        i32::from(p2x) - i32::from(p1x),
+    )
 }
 
 /// Convert two world points to a 12-bit heading (`0x000..0xFFF`), with
@@ -698,13 +686,18 @@ pub fn bearing_12bit_approx(p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
 /// the full circle. Every result is masked to `0xFFF`.
 ///
 /// The LUT is data supplied by the caller. No Sony table bytes are embedded
-/// here: a host with the disc-extracted `0x8006F4C8` table passes it, and a
-/// host without one passes [`approx_arctan_lut`] (which is what
-/// [`bearing_12bit_approx`], and through it the engine's enemy target cursor,
-/// does). The motion VM keeps a separate `f32` approximation of the whole
-/// function for its face-target ramp; this is the faithful integer form.
+/// here: [`approx_arctan_lut`] is the table's formula, and
+/// [`bearing_12bit_approx`] - what every engine caller uses - is this
+/// function over it, through `legaia_engine_system::trig::bearing12`, the
+/// one integer form the motion VM and the field facings share.
 ///
 /// PORT: FUN_80019B28
+///
+/// REPLACED-BY: `legaia_engine_system::trig::bearing12`, which carries the
+/// same PORT tag and is the live path every caller reaches through
+/// [`bearing_12bit_approx`]. This table-parameterised form stays as the
+/// reference its unit tests drive with a caller-supplied table; no host is
+/// owed a call to it.
 pub fn bearing_12bit(atan_lut: &[i16], p1z: i16, p1x: i16, p2z: i16, p2x: i16) -> u16 {
     let mut dz = p2z as i32 - p1z as i32;
     let mut dx = p2x as i32 - p1x as i32;

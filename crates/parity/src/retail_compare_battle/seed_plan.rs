@@ -46,9 +46,11 @@ pub(super) const SPARRING_OPEN_TICKS: u32 = 160;
 pub const OPENING_FLOWS: [u8; 6] = [0xFD, 0x00, 0x0A, 0x0B, 0x0C, 0x14];
 
 /// A replay's battle frame step seed: the step, the action state it holds
-/// in, and the acting body's `(clip, cursor)` the step waits for
-/// ([`RetailBattle::step_run_start`]), `None` to run it over the whole state.
-pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>);
+/// in, the acting body's `(clip, cursor)` the step waits for
+/// ([`RetailBattle::step_run_start`]), `None` to run it over the whole state,
+/// and the close-up accumulator the step waits for
+/// ([`RetailBattle::step_run_accum_hold`]).
+pub type FrameStepSeed = (u8, u8, Option<(u8, i32)>, Option<u32>);
 
 /// The first committed dynamic animation slot (`+0x1D9`), where a party art
 /// materialises (`docs/subsystems/battle-actor-rendering.md`).
@@ -102,13 +104,29 @@ impl RetailBattle {
             && self.step_run.1 >= 16
             && !matches!(self.seed_plan(), SeedPlan::Cast)
         {
-            return Some((default, self.action_state, None));
+            return Some((default, self.action_state, None, None));
+        }
+        // A capture in the capture band's CD holds whose newest passes ran
+        // another step: the branch `0x6E` re-arms case 6 every pass
+        // (`FUN_801D5854(actor, 6)`) and the walker steps once a pass, so
+        // how far the framing has closed counts passes, not vsyncs, and the
+        // hold is placed on vsync clocks (the yaw counter, the depth ramp).
+        // `battle_map01_gomboo_steal_mid_cast`'s newest seven passes ran at
+        // step `3` (ring entries `575..585`), and at the default `2` the
+        // replay's eye stood `89` closer than retail's (camera `.991` to
+        // `.998`).
+        if matches!(self.span_gate, SpanGate::CaptureFade { .. })
+            && matches!(self.action_state, 0x6E | 0x6F)
+            && self.step_run.0 != default
+            && self.step_run.1 < 16
+        {
+            return Some((self.step_run.0, 0x6E, None, None));
         }
         if matches!(self.seed_plan(), SeedPlan::Cast) {
             return (legaia_engine_battle_vm::battle_cam_script::SUMMON_CAST_STATES
                 .contains(&self.action_state)
                 && self.frame_step != default)
-                .then_some((self.frame_step, self.action_state, None));
+                .then_some((self.frame_step, self.action_state, None, None));
         }
         // A monster's magic-band capture on `0x2B`: the capture is a pass or
         // three past the clip commit, the commit's cursor and accumulator
@@ -118,7 +136,12 @@ impl RetailBattle {
         // the displayed frame is two of them back.
         if self.monster_magic_band_age() && self.action_state == 0x2B {
             let (step, _) = self.step_run;
-            return (step != default).then_some((step, self.action_state, None));
+            return (step != default).then_some((
+                step,
+                self.action_state,
+                None,
+                self.step_run_accum_hold(),
+            ));
         }
         // An action in flight: the newest passes' step, from the pass the
         // run began on (`step_run_start`) when the history holds where it
@@ -141,7 +164,56 @@ impl RetailBattle {
         // `1.000` to `.967` and `camera` `1.000` to `.987`.
         self.step_run_start
             .filter(|&(clip, _)| clip >= DYNAMIC_SLOT_ART)
-            .map(|from| (step, self.action_state, Some(from)))
+            .map(|from| (step, self.action_state, Some(from), None))
+    }
+
+    /// Where a magic-band capture's step run began, as the close-up
+    /// accumulator counts it: the value `ctx[+0x87C]` held after the `0x2B`
+    /// passes that ran before the run. `None` when the run covers every
+    /// `0x2B` pass, or the history does not add up to the capture's
+    /// accumulator.
+    ///
+    /// Each `0x2B` pass's framing prologue adds `8 * step` of the step that
+    /// pass ran at (`0x801D5900..0x801D5914`), and a pass runs at the step
+    /// the frames before it left in `FUN_80016B6C`'s ring, so the pass that
+    /// first draws an expensive effect runs at the cheaper step and only the
+    /// passes after it at the dearer one. Caruban's Fire Breath on a full
+    /// party (`battle_rugi_caruban_3_fire_breath_mid_cast`): accumulator `64`
+    /// over steps `2`, `3`, `3`, the first `0x2B` frame costing `550`
+    /// hblanks where the `0x29` frames cost `450`.
+    pub fn step_run_accum_hold(&self) -> Option<u32> {
+        let SpanGate::Age { accum } = self.span_gate else {
+            return None;
+        };
+        let (_, run) = self.step_run;
+        let mut sum = 0u32;
+        let mut passes = 0usize;
+        for &s in &self.recent_steps {
+            if sum >= u32::from(accum) {
+                break;
+            }
+            sum += 8 * u32::from(s);
+            passes += 1;
+        }
+        if sum != u32::from(accum) || run >= passes {
+            return None;
+        }
+        // The passes before the run stand on the replay's ordinary step,
+        // so they must have run at it: `battle_deene_ironman_jagged_earth_mid_cast`
+        // ran three step-`3` passes ahead of its step-`4` run, which the
+        // replay's step `2` counts in five (`image` `.871` to `.846`).
+        let ordinary = self.child_ordinary_step();
+        if self.recent_steps[run..passes]
+            .iter()
+            .any(|&s| s != ordinary)
+        {
+            return None;
+        }
+        let in_run: u32 = self.recent_steps[..run]
+            .iter()
+            .map(|&s| 8 * u32::from(s))
+            .sum();
+        Some(u32::from(accum) - in_run)
     }
 
     /// The step a replay's ordinary frames run on. A replayed cast, a monster's
@@ -219,6 +291,33 @@ pub(super) const END_PHASE_WORD: u32 = 0x8007_BD2C;
 /// The results hold `gp+0xA54`.
 pub(super) const END_RESULTS_HOLD: u32 = 0x8007_BD6C;
 
+/// The acting seat's queued action id `actor[+0x1DF]`, `0` when the seat's
+/// record is not in RAM.
+fn capture_action(ram: &[u8], ctx: u32) -> u8 {
+    let actor = game_anchors::u32_at(
+        ram,
+        ACTOR_TABLE + u32::from(game_anchors::u8_at(ram, ctx + 0x13).min(7)) * 4,
+    );
+    if in_ram(actor) {
+        game_anchors::u8_at(ram, actor + 0x1DF)
+    } else {
+        0
+    }
+}
+
+/// Whether the capture-class action `action` reaches a walk-in body whose
+/// arm 0 stores its own yaw counter rung (`li v0,0x200; sh v0,0x6DA(v1)`,
+/// PROT 0952 at `0x801F7204` for Bloody Horns): a capture past that arm holds
+/// the walk's counter, not the one the action seed started.
+pub(super) fn yaw_counter_reseeded_by(action: u8) -> bool {
+    legaia_engine_cast::cast_module_ticks::capture_body_for_action(action).is_some_and(
+        |(entry, body)| {
+            legaia_engine_cast::cast_module_camera::capture_approach_yaw_base(entry, Some(body))
+                .is_some()
+        },
+    )
+}
+
 /// Read the [`SpanGate`] off a capture.
 pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
     if game_anchors::u8_at(ram, END_SIGNAL) != 0xFE {
@@ -266,8 +365,14 @@ pub(super) fn span_gate(ram: &[u8], ctx: u32) -> SpanGate {
                 })
                 .flatten();
             // The yaw counter is a clock only while the action SM drifts it
-            // (any Battle Camera option but Far, `0x801E29D4`).
-            let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2)
+            // (any Battle Camera option but Far, `0x801E29D4`), and only
+            // from the seed: a walk-in body's arm 0 stores its own rung over
+            // it (`capture_approach_yaw_base`), so past that arm it counts the
+            // walk, not the band.
+            let reseeded = game_anchors::u8_at(ram, ctx + 7) == 0x70
+                && game_anchors::u8_at(ram, ctx + 0x279) >= 1
+                && yaw_counter_reseeded_by(capture_action(ram, ctx));
+            let yaw = (game_anchors::u8_at(ram, BATTLE_CAMERA_OPTION) != 2 && !reseeded)
                 .then(|| game_anchors::u16_at(ram, ctx + 0x6DA));
             return SpanGate::CaptureFade {
                 height: game_anchors::u16_at(ram, ctx + 0x6D0),

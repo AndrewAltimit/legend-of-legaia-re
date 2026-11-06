@@ -134,6 +134,25 @@ fn reaction_falls_through_to_the_second_alternative() {
 
 // -- per-body walks -----------------------------------------------------
 
+/// Arm 10 shows the hidden victim on the neutral word (`sw a0,0x4(s2)` at
+/// `0x801F7388`) and leaves its render flag and the caster alone.
+#[test]
+fn gimard_shows_the_victim_for_the_walk_in() {
+    let mut seats = row();
+    for s in &mut seats {
+        s.present_04 = 0;
+        s.render_flag = 0xFF;
+    }
+    let mut ctx = CastModuleCtx {
+        phase: GIMARD_STAGE_ARM,
+        ..Default::default()
+    };
+    gimard_tick(&mut ctx, &mut seats, WHO, None);
+    assert_eq!(seats[3].present_04, GIMARD_VICTIM_SHOWN_WORD);
+    assert_eq!(seats[3].render_flag, 0xFF);
+    assert_eq!(seats[0].present_04, 0, "the caster stays hidden");
+}
+
 #[test]
 fn gimard_waits_out_a_dead_victims_fade() {
     let mut seats = row();

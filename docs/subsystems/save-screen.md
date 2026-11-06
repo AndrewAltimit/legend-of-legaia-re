@@ -822,7 +822,7 @@ Global header fields, as absolute block offsets:
 |---|---|---|---|
 | `0x200` | `0x24` | `0x80084340` | Location name, ASCII, NUL-terminated - retail's `0x24`-byte copy of the scene MAN's banner name ([place-names](../formats/place-names.md)); bytes after the NUL are whatever followed it in the MAN |
 | `0x254` | `0xC` x 3 | `0x80084394` | Party display-name list for the info panel, one slot per active member (`RETAIL_PARTY_NAME_TABLE_OFFSET`) |
-| `0x30C`..`0x32C` | - | `0x8008444C`.. | Fishing words ([minigame purses](#the-minigame-purses-are-live-state-words-too)) |
+| `0x30C`..`0x32C` | - | `0x8008444C`.. | Fishing words and the dance best ([minigame purses](#the-minigame-purses-are-live-state-words-too)) |
 | `0x408` | `0x10` | `0x80084548` | CDNAME label of the current scene, NUL-padded - the scene a load resumes into |
 | `0x418` | `0x10` | `0x80084558` | CDNAME label of the previous scene |
 | `0x428` | 8 | `0x80084568` / `6C` | Field position snapshot `(x, z)`, two sign-extended words |
@@ -947,7 +947,7 @@ and each host loading the other's block to the same world.
 
 ### The minigame purses are live-state words too
 
-Nine words inside the window, each at SC offset `VA - 0x80084140`:
+Ten words inside the window, each at SC offset `VA - 0x80084140`:
 
 | RAM | SC | Word |
 |---|---|---|
@@ -957,13 +957,15 @@ Nine words inside the window, each at SC offset `VA - 0x80084140`:
 | `0x80084458` | `0x318` | best award |
 | `0x8008445C` | `0x31C` | best species |
 | `0x80084460` | `0x320` | cast counter |
+| `0x80084464` | `0x324` | dance hall best score ([dance](minigame-dance.md#the-saved-best)) |
 | `0x8008446C` | `0x32C` | prize bitmask |
 | `0x800845A4` | `0x464` | casino coins |
 | `0x800845B4` | `0x474` | Point Card bank |
 
 `legaia_save::MinigameSave` carries them: `SaveFile::from_retail_sc_block`
 reads them, `write_into_retail_sc_block` writes them, an engine `LGSF` file
-holds them in the optional `LGX7` block (emitted only when one is non-zero),
+holds them in the optional `LGX7` block (emitted only when one is non-zero; a
+nine-word body from before the dance best reads it as `0`),
 and `World::save_full` / `load_full` map them to `World::minigames`.
 
 ### The play clock
@@ -982,6 +984,26 @@ port counts one per claimed sim tick
 seconds (`SaveExtV2::play_time_seconds`): the lift takes `counter / 60` and the
 composer writes `seconds * 60`. An engine-authored block's `LGXE` tail carries
 the same seconds and wins on the lift.
+
+### The records tallies
+
+`0x800846A4` (SC `0x564`) counts battles and `0x800846A8` (SC `0x568`) counts
+escapes; the records screen `FUN_801ED710` prints them as "No. of Battles" /
+"No. of Escapes". The battle-scene setup `FUN_80055B6C` adds one to the first
+per battle (`lw` / `addiu 1` / `sw` off the `0x80084140` base at
+`0x80055BAC..0x80055BDC`). The Run roll `FUN_801E791C` adds one to the second
+on a successful flee, after testing bit `0x100` of the special-battle word
+`_DAT_8007BAC0` and branching past the store when it is up
+(`0x801E7B40..0x801E7B68`), so a forced flee is no escape on the records. The
+New Game slate zeroes both with the rest of the window. The library cards carry
+both words growing with the play clock.
+
+The port counts them on `PartyState::record_tally`: `World::enter_battle` is
+the setup's half, `World::count_battle_escape` the roll's. A lift reads them
+off the block, an `LGSF` file carries them in the optional `LGXG` block, and an
+`LGSF` written before that block takes them from the window it carries. The
+composer writes them when the save names them, and writes zero for a save with
+neither a tally nor a window, which is a New Game's.
 
 ### The engine-ext blob in the unread tail
 
@@ -1009,7 +1031,8 @@ Pinned by `crates/save/tests/resume_and_engine_ext.rs`.
 
 `SaveFile::write_into_retail_sc_block` stamps the SC magic and its regions -
 the four-slot record array, the story-flag window, the inventory, the gold
-slot, the nine minigame words and the play clock - and restamps the checksum.
+slot, the nine minigame words, the records tallies and the play clock - and
+restamps the checksum.
 Every byte outside those regions survives, which is right for editing an
 existing save and is the sharp edge for a new one. Write order is records,
 then flags, then inventory, which is what reclaims slot 3's aliased tail.
@@ -1038,8 +1061,8 @@ reads on retail's load screen and in the BIOS card browser:
 
 What such a block still leaves zero are the banner name's bytes after its NUL,
 the play clock's sub-second ticks (the engine keeps whole seconds; a window
-still in the same second keeps its ticks), and unnamed words at `0x300..0x308`,
-`0x324`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC`, `0x564..0x568` and
+still in the same second keeps its ticks), and
+unnamed words at `0x300..0x308`, `0x480`, `0x4A4..0x4D1`, `0x4E4..0x4EC` and
 `0x590..0x59C`. Which of those a resumed retail game reads is open.
 
 Retail loads both kinds. A cold-booted retail disc in PCSX-Redux

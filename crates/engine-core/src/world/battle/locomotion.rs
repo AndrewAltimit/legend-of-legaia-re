@@ -324,7 +324,9 @@ impl World {
         creature_size: u8,
         target: u8,
     ) -> u16 {
-        if self.battle.end.is_some() {
+        // Retail's slot gate (`sltiu a2,0x8`) on the target: a group code
+        // or the creature's own engine slot reads out of range.
+        if self.battle.end.is_some() || target >= 8 {
             return 1;
         }
         let Some(tgt) = self.actors.get(usize::from(target)) else {
@@ -543,6 +545,15 @@ impl World {
         self.refresh_battle_body_pairs();
     }
 
+    /// The translations of `slot`'s playing pose, one per stream part - the
+    /// object table `ctx+0x6F4` the decode `FUN_8004998C` leaves and the
+    /// burning-body emitter draws from. A diagnostic read for the cast
+    /// recorder.
+    pub fn battle_stream_pose_translations(&self, slot: usize) -> Option<Vec<[i16; 3]>> {
+        let a = self.actors.get(slot)?;
+        Some(stream_pose(a)?.iter().map(|(t, _)| *t).collect())
+    }
+
     /// The body pair `+0x3C` / `+0x40` `FUN_8004998C` would store for `slot`
     /// off its current pose, whether or not the seat carries a pair of its own
     /// (a summoned creature has no [`BattleActor::seat`]).
@@ -598,7 +609,7 @@ impl World {
         if latched {
             return;
         }
-        if speed > 0 && self.battle_range_metric(slot as u8, target) == 0 {
+        if speed > 0 && self.root_motion_range(slot, target) == 0 {
             return;
         }
         let (sin, cos) = legaia_engine_system::trig::trig12(facing);
@@ -611,6 +622,29 @@ impl World {
         let ms = &mut self.actors[slot].move_state;
         ms.world_x = ms.world_x.wrapping_add(dx as i16);
         ms.world_z = ms.world_z.wrapping_add(dz as i16);
+    }
+
+    /// The range poll the root-motion term stands behind
+    /// (`jal 0x8004E2F0` at `0x80047D50`, `a0` = the actor's slot, `a1` =
+    /// its `+0x1DD`). Retail seats the summon creature at slot `7`, inside
+    /// the table, so its walk stops the frame it comes in range of its
+    /// target; the engine seats it past the table, where
+    /// [`Self::battle_range_metric`] reads every slot as out of range, so
+    /// the creature's poll goes through [`Self::creature_range_metric`].
+    /// PROT 0903 shows the difference: its arm 11 retargets the creature
+    /// onto seat `0` (`sb zero,0x1dd(s3)` at `0x801F75F0`) beside the
+    /// caster, and from then on retail's creature stands, its walk clip
+    /// looping in place, where the engine's walked on out of the frame.
+    fn root_motion_range(&self, slot: usize, target: u8) -> u16 {
+        if self.casting.summon_actor_slot.map(usize::from) == Some(slot) {
+            let a = &self.actors[slot];
+            return self.creature_range_metric(
+                (a.move_state.world_x, a.move_state.world_z),
+                0,
+                target,
+            );
+        }
+        self.battle_range_metric(slot as u8, target)
     }
 
     /// The anim tick's **in-range back-off** (`FUN_80047430`,
@@ -1071,6 +1105,28 @@ mod tests {
         assert_ne!(w.battle_range_metric(0, 1), 0);
         // Missing slots read as out-of-range 1 (retail's >= 8 head gate).
         assert_eq!(w.battle_range_metric(0, 9), 1);
+    }
+
+    /// The summon creature's root-motion poll (`jal 0x8004E2F0` at
+    /// `0x80047D50`) answers through the creature metric: retail seats it at
+    /// slot `7`, inside the table, where the engine's past-the-table slot
+    /// reads every poll as out of range. Beside its target it stands; with
+    /// a group target it reads out of range, as retail's slot gate does.
+    #[test]
+    fn the_summon_creature_stands_once_in_range_of_its_target() {
+        let mut w = battle_world();
+        let slot = w.actors.len();
+        w.actors.push(crate::world::Actor::default());
+        w.casting.summon_actor_slot = Some(slot as u8);
+        w.tick_battle_locomotion(); // seed seats
+        let (sx, sz) = w.battle_seat_of(0);
+        w.actors[slot].move_state.world_x = sx;
+        w.actors[slot].move_state.world_z = sz.wrapping_add(60);
+        assert_eq!(w.battle_range_metric(slot as u8, 0), 1);
+        assert_eq!(w.root_motion_range(slot, 0), 0);
+        assert_eq!(w.root_motion_range(slot, 9), 1);
+        w.actors[slot].move_state.world_z = sz.wrapping_add(2000);
+        assert_ne!(w.root_motion_range(slot, 0), 0);
     }
 
     #[test]

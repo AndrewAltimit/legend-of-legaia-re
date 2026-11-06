@@ -152,6 +152,13 @@ impl World {
             .filter(|(_, qty)| **qty > 0)
             .map(|(id, qty)| (*id, *qty))
             .unzip();
+        // Row names off the disc's item-name table: the catalog names only
+        // the usable items, and the window lists every held id. Bag ids only -
+        // a pack item's alias id names the pack item through the catalog.
+        let item_names: std::collections::BTreeMap<u8, String> = items
+            .iter()
+            .filter_map(|&id| Some((id, self.item_display_name(id)?)))
+            .collect();
         // An expansion pack's battle consumables, under this fight's
         // aliases (none without a pack).
         items.extend(self.pack_battle_item_ids());
@@ -211,6 +218,7 @@ impl World {
             InventoryContext::Battle,
         )
         .with_bag_counts(counts)
+        .with_item_names(item_names)
     }
 
     /// Drive the open battle inventory submenu one frame from [`World::input`].

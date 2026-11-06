@@ -68,6 +68,32 @@ fn reset_sigpipe() {
     }
 }
 
+/// A `play-window` a script drives (a screenshot, a pad or key script): the
+/// capture children of retail-compare, the gate and the tests. Nobody types
+/// into it, so it needs no input method.
+fn scripted_window(
+    screenshot: bool,
+    pad_script: &Option<String>,
+    key_script: &Option<String>,
+) -> bool {
+    screenshot || pad_script.is_some() || key_script.is_some()
+}
+
+/// Open the window without an X input method. winit's X11 backend opens an
+/// XIM context at startup and waits on the input-method server's replies, so
+/// a wedged server (an ibus that stopped answering) leaves every new window
+/// blocked at 0 CPU before it maps - a capture child, and the CI job or gate
+/// waiting on it, hangs until its timeout. `@im=none` is X11's "no input
+/// method"; Wayland, Windows and macOS read nothing from it.
+fn no_input_method() {
+    // SAFETY: called from `main` before any thread is spawned (the launcher,
+    // audio and render threads all start later), so nothing reads the
+    // environment concurrently.
+    unsafe {
+        std::env::set_var("XMODIFIERS", "@im=none");
+    }
+}
+
 /// The game icon (`legaia_app_theme::icons::GAME_PNG`) on every window this
 /// process opens: the launcher, the play window, the minigames window.
 fn set_window_icon() {
@@ -104,6 +130,21 @@ fn main() -> Result<()> {
         );
     }
     let cli = Cli::parse();
+    if let Some(Cmd::PlayWindow {
+        screenshot,
+        screenshot_every,
+        pad_script,
+        key_script,
+        ..
+    }) = &cli.cmd
+        && scripted_window(
+            screenshot.is_some() || screenshot_every.is_some(),
+            pad_script,
+            key_script,
+        )
+    {
+        no_input_method();
+    }
     // No subcommand (a double-click): the first-run launcher picks the disc,
     // then boots `play-window` on it - in this process when no picker window
     // was needed, otherwise in a child it already ran.
@@ -460,6 +501,7 @@ fn main() -> Result<()> {
             flee_exp,
             exp_rate,
             no_fortress_encounter_fix,
+            no_tetsu_spar_fix,
             jewel_fix,
             no_hp_readout_guard,
             spirit_ap,
@@ -570,6 +612,7 @@ fn main() -> Result<()> {
                                 .exp_rate_permille,
                         ),
                         fortress_encounter_fix: !no_fortress_encounter_fix,
+                        tetsu_spar_fix: !no_tetsu_spar_fix,
                         jewel_fix,
                         hp_readout_guard: !no_hp_readout_guard,
                         spirit_ap: spirit_ap.unwrap_or(legaia_engine_core::world::SPIRIT_AP_RETAIL),
@@ -865,4 +908,18 @@ fn cmd_packs(dir: Option<&Path>, json: bool) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scripted_window;
+
+    #[test]
+    fn a_scripted_window_drops_the_input_method_and_a_players_keeps_it() {
+        let script = Some("40:Cross".to_string());
+        assert!(scripted_window(true, &None, &None));
+        assert!(scripted_window(false, &script, &None));
+        assert!(scripted_window(false, &None, &script));
+        assert!(!scripted_window(false, &None, &None));
+    }
 }

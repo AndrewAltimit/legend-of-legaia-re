@@ -309,3 +309,39 @@ fn classify_walks_row_major_and_counts_the_emitted_quads() {
     }
     assert_eq!(grid.cell(4, 0), None);
 }
+
+/// The settled battle framing: eye `0x1333` behind a focus at the origin,
+/// no pitch.
+fn settled_pose(yaw: f32) -> legaia_engine_camera::projection::BattleCamPose {
+    legaia_engine_camera::projection::BattleCamPose {
+        pitch: 0.0,
+        yaw,
+        tr: [0.0, 1280.0, 4915.0],
+        focus: [0.0; 3],
+    }
+}
+
+#[test]
+fn the_cell_mask_keeps_the_cells_in_front_and_drops_the_rest() {
+    let mask = cell_mask(&settled_pose(0.0), 4.0, 28, 28);
+    assert_eq!(mask.len(), 28 * 28);
+    let kept = mask.iter().filter(|&&k| k).count();
+    assert!(kept > 0 && kept < mask.len(), "{kept}");
+    // The cell under the focus is in shot.
+    let (col, row) = (14, 15);
+    assert!(mask[row * 28 + col]);
+    // A full turn of the camera keeps the same cells; a half turn keeps
+    // another set.
+    assert_eq!(cell_mask(&settled_pose(4096.0), 4.0, 28, 28), mask);
+    assert_ne!(cell_mask(&settled_pose(2048.0), 4.0, 28, 28), mask);
+}
+
+#[test]
+fn masked_indices_keep_whole_cells_in_order() {
+    let indices: Vec<u32> = (0..3 * INDICES_PER_CELL as u32).collect();
+    let out = masked_indices(&indices, &[true, false, true]);
+    assert_eq!(out.len(), 2 * INDICES_PER_CELL);
+    assert_eq!(out[INDICES_PER_CELL], 2 * INDICES_PER_CELL as u32);
+    // An empty mask keeps every cell.
+    assert_eq!(masked_indices(&indices, &[]), indices);
+}

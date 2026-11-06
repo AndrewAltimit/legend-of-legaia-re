@@ -159,6 +159,11 @@ spell XP and the Seru debuff landing in a special battle, where the tail returns
 first; spell XP banked off a Stoned victim whose hit the finisher had zeroed; and a
 module's own roll ignoring both seats' Venom and Toxic, drawing a third `rand()` on
 the bypass wrapper, which draws two, and handing a Stoned victim the whole hit.
+A third test calls each capture-class special the way its module's damage site does:
+it reads the site's `jal` (which wrapper) and its `addiu a0, zero, imm` (which power)
+off the module image, calls that, and holds `World::enemy_move_predamage` on the move
+id to it, half the victims in the Spirit stance. It pins the routing from a move id to
+its module, baked power and wrapper, which the wrapper tests take as given.
 
 The Auto assembler `FUN_801F0450`, run whole over the real art banks, found the tail's
 Spirit gate drawing `% 7` where the bytes draw `% 14`, and the pool dropping every
@@ -218,3 +223,17 @@ The lure's flight and in-water move in `FUN_801D26CC`, with the tail's record, r
 Baka Fighter's round score `FUN_801D2A28` matches, and tracing what feeds it found the channel unwired: no host installed the two bonus tables, the match bonus row was never seeded, and the running total never reached the cabinet, so neither secret opponent could ever appear. Retail also scores only the player's round win, off the player's HP.
 
 The same search for setters with no live caller found the bag's window selector `FUN_8004313C` unwired: the live game never left the full window, so a lone character saw the whole array.
+
+The bearing `FUN_80019B28`, run over the `i16` plane against `bearing_12bit_approx`, disagreed on
+about half of all inputs by one unit: the port computed the arctan table at `0x8006F4C8` by rounding
+where the retail table truncates, so 1037 of its 2049 entries stood one high. Every battle facing,
+approach and separation nudge read through it, and the motion VM's face-target ramp and the field
+NPC facings used a rounded `f32` `atan2` with the same error. The one table and the one integer
+bearing now sit in `legaia_engine_system::trig`, and the separation pair `FUN_80050BB8` matches
+`push_apart` over it. Reading the bearing's callers found the move VM's sub-op `0x3A` measuring from
+`+X` (`atan2(dz, dx)`), which mirrored every angle it wrote.
+
+The take-item fallback `FUN_800430AC` walks the present-party list at `0x80084598`; the port walked
+the whole roster, so a script could take an accessory off a member who was not in the party. The
+shout selector `FUN_8004C140` matches over every roster id and action constant.
+

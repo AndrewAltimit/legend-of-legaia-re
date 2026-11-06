@@ -852,7 +852,7 @@ phase 0.
 | `0x09` | `FUN_801D7FF8` | all-party apply (cursor count 0: confirm / cancel only) |
 | `0x0A` | `FUN_801D8308` | single-target apply |
 | `0x0B` / `0x0C` / `0x0D` | `FUN_801D8A58` / `FUN_801D8B90` / `FUN_801D8D94` | Door of Light / Door of Wind / Incense |
-| `0x0E` | `FUN_801D8F10` | Magic caster picker |
+| `0x0E` | `FUN_801D8F10` | Magic caster picker; confirm buzzes `0x23` on a caster with no spells or an empty Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`, `0x801D9060..0x801D90B8`) |
 | `0x0F` | `FUN_801D9110` | spell list (cancel -> `0x0E`; confirm -> `0x10` / `0x11`, `li` at `0x801d920c` / `0x801d924c` / `0x801d9258`) |
 | `0x10` | `FUN_801D9280` | group cast (cursor count 0) |
 | `0x11` | `FUN_801D9594` | single-target cast |

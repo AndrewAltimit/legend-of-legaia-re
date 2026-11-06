@@ -108,6 +108,13 @@ pub struct HostTraceFrame {
     /// fog's stage luminance cap and each actor's battle texture slot. A
     /// host that writes these from its battle mesh build parts here.
     pub battle_stage: u64,
+    /// Every battle body's presentation words, in the clear: actor slot, the
+    /// `+0x21C` arm (`render_flag`), the colour word's lanes, the blend and
+    /// the mode word (`flag_word`, whose top byte the tint pass reads for the
+    /// draw's semi-transparency). Both hosts draw a body's tint and blend
+    /// from these through one draw plan, so a picture that differs while
+    /// this channel agrees is a draw-side difference.
+    pub battle_bodies: Vec<(u8, u8, u32, u32, u32)>,
     /// The audio director's command record
     /// ([`crate::audio_director::AudioCommandLog`]): how many commands the
     /// host's routing has issued and their digest. `None` with no director
@@ -261,6 +268,22 @@ pub fn sample<S: AudioSink>(session: &BootSession<S>) -> HostTraceFrame {
                 session.camera.distance,
             ))
         },
+        battle_bodies: world
+            .actors
+            .iter()
+            .enumerate()
+            .filter(|(_, a)| a.active && world.mode == legaia_engine_mode::mode::SceneMode::Battle)
+            .map(|(i, a)| {
+                let b = &a.battle;
+                (
+                    i as u8,
+                    b.render_flag,
+                    b.render_color,
+                    b.render_blend,
+                    b.flag_word,
+                )
+            })
+            .collect(),
         audio: session
             .bgm
             .as_ref()
@@ -358,6 +381,7 @@ pub const CHANNELS: &[&str] = &[
     "naming",
     "bindings",
     "battle_stage",
+    "battle_bodies",
     "audio",
     "switches",
 ];
@@ -386,6 +410,7 @@ fn channel_equal(a: &HostTraceFrame, b: &HostTraceFrame, ch: &str) -> bool {
         "naming" => a.naming == b.naming,
         "bindings" => a.bindings == b.bindings,
         "battle_stage" => a.battle_stage == b.battle_stage,
+        "battle_bodies" => a.battle_bodies == b.battle_bodies,
         "audio" => a.audio == b.audio,
         "switches" => a.switches == b.switches,
         _ => true,

@@ -66,6 +66,8 @@
       <tr><td>Battle items <code>FUN_800402F4</code></td><td>Phoenix healed a flat quarter and skipped its draw, status and gauge. Medicine and Antidote missed the raw status word, MP items restored the dead, Fury Boost landed on the dead, and a heal landed at commit, not at state <code>0x3F</code>. The Point Card was not offered in battle at all.</td></tr>
       <tr><td>Queue builder <code>FUN_801EED1C</code></td><td>An art ran with too little Spirit and an unknown art still ran. The price now comes off the gauge at the cleanup arm <code>0x801E5D74</code>, ahead of the action's own <code>+8</code>.</td></tr>
       <tr><td>Walk step <code>FUN_801D01B0</code></td><td>A wall skid kept the held heading and full speed, the diagonal cut ignored the camera mode, and terrain slow and op <code>4C DF</code> had no port.</td></tr>
+      <tr><td>Bearing <code>FUN_80019B28</code></td><td>The computed arctan table rounded where retail's truncates, so about half of all bearings stood one unit off; the move VM's sub-op <code>0x3A</code> measured from <code>+X</code> and mirrored every angle.</td></tr>
+      <tr><td>Take-item fallback <code>FUN_800430AC</code></td><td>Walked the whole roster where retail walks the present party, so an absent member could lose a worn accessory.</td></tr>
       <tr><td>Encounter roll <code>FUN_801D9E1C</code></td><td>The anti-repeat latch was cleared on every scene entry, where retail's one global stands across them. The counter, rate shifts, story-group walk and battle setup all match.</td></tr>
     </tbody>
   </table>

@@ -176,12 +176,18 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
             || (legaia_save::card::RETAIL_AUDIO_LEVEL_OFFSET
                 ..legaia_save::card::RETAIL_VOICE_VOLUME_OFFSET + 4)
                 .contains(&i)
+            // The records screen's battle / escape tallies (`0x800846A4` /
+            // `0x800846A8`) - live-state words the engine counts itself.
+            || (legaia_save::card::RETAIL_BATTLE_COUNT_OFFSET
+                ..legaia_save::card::RETAIL_ESCAPE_COUNT_OFFSET + 4)
+                .contains(&i)
             // The play-time counter (`0x80084570`, 60 ticks a second).
             || (legaia_save::card::RETAIL_PLAY_COUNTER_OFFSET
                 ..legaia_save::card::RETAIL_PLAY_COUNTER_OFFSET + 4)
                 .contains(&i)
-            // The nine minigame words (coins, Point Card, fishing record) -
-            // live-state window words retail saves like the gold.
+            // The ten minigame words (coins, Point Card, fishing record,
+            // dance best) - live-state window words retail saves like the
+            // gold.
             || {
                 use legaia_save::minigame_save::*;
                 [
@@ -194,6 +200,7 @@ fn composition_is_an_in_place_patch_over_a_named_region_list() {
                     RETAIL_FISHING_PRIZES_OFFSET,
                     legaia_save::card::RETAIL_COINS_OFFSET,
                     RETAIL_POINT_CARD_OFFSET,
+                    RETAIL_DANCE_BEST_OFFSET,
                 ]
                 .iter()
                 .any(|&o| (o..o + 4).contains(&i))

@@ -161,9 +161,17 @@ pub(super) fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8])
 /// pairing is the gate: a row no record enters has no arm. (The context's
 /// scripted bit is not one - the sparring fight and the Rim Elm Gimard
 /// read it clear.)
-pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle) -> Vec<u16> {
+///
+/// Returns `(raise, lower)`: the SET arms the save holds up, and the CLEAR
+/// arms of the same row the save holds down
+/// ([`legaia_engine_field::man_field_scripts::BattleEntryArm::clears`]).
+pub fn entry_latches(
+    extracted: &Path,
+    retail: &RetailObs,
+    battle: &RetailBattle,
+) -> (Vec<u16>, Vec<u16>) {
     let Some(save) = retail.save.clone() else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     let held = crate::retail_compare::system_flag_ids(&save);
     // The report flag is the entry tail's own write (`FUN_801DA51C`,
@@ -182,7 +190,7 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
         enable_audio: false,
     };
     let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
-        return tail;
+        return (tail, Vec::new());
     };
     crate::retail_compare::pin_seed_retail(
         &mut session.host.world.toggles,
@@ -196,18 +204,28 @@ pub fn entry_latches(extracted: &Path, retail: &RetailObs, battle: &RetailBattle
     let _landing = session.resume_save(save, &retail.scene, &opts);
     let world = &session.host.world;
     let Some(row) = matching_row(world, &battle.monster_ids) else {
-        return tail;
+        return (tail, Vec::new());
     };
-    let mut out: Vec<u16> = world
+    let arms = world
         .scene_battle_entry_arms
         .iter()
-        .filter(|a| u16::from(a.row) == row && held.contains(&a.flag))
+        .filter(|a| u16::from(a.row) == row);
+    let mut raise: Vec<u16> = arms
+        .clone()
+        .filter(|a| !a.clears && held.contains(&a.flag))
         .map(|a| a.flag)
         .chain(tail)
         .collect();
-    out.sort_unstable();
-    out.dedup();
-    out
+    raise.sort_unstable();
+    raise.dedup();
+    let mut lower: Vec<u16> = arms
+        .filter(|a| a.clears && !held.contains(&a.flag))
+        .map(|a| a.flag)
+        .filter(|f| !raise.contains(f))
+        .collect();
+    lower.sort_unstable();
+    lower.dedup();
+    (raise, lower)
 }
 
 /// Seed the engine into `retail`'s battle and sample it.
@@ -266,6 +284,9 @@ pub fn run_engine_battle(
     }
     for &idx in &battle.entry_latches {
         session.host.world.system_flag_set(idx);
+    }
+    for &idx in &battle.entry_lowers {
+        session.host.world.system_flag_clear(idx);
     }
     let world = &mut session.host.world;
     let source;
@@ -350,9 +371,10 @@ pub fn run_engine_battle(
     if battle.replay_keeps_default_step() {
         session.host.world.toggles.battle_party_cost_step = false;
     }
-    if let Some((step, state, from)) = battle.frame_step_seed() {
+    if let Some((step, state, from, hold)) = battle.frame_step_seed() {
         session.host.world.seed_battle_frame_step(step, state);
         session.host.world.battle.frame_step_seed_from = from;
+        session.host.world.battle.frame_step_seed_after_accum = hold;
     }
     if !session.host.world.force_encounter(fid) {
         bail!("force_encounter({fid}) refused ({source})");

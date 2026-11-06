@@ -109,6 +109,15 @@ Windows, `~/Library/Application Support/legaia-engine` on macOS); the next
 start shows it ready, with *Play* focused, so `Enter` starts the game.
 *Change disc...* picks another one.
 
+The launcher keeps the last few discs that passed (`recent_discs` in the same
+file, newest first), so a retail disc and a randomized or translated copy are
+both one key away. Right-click or `Shift+Enter` on *Choose disc...* steps to
+the next remembered disc that still passes, skipping any that are gone; the
+help box names it. When the disc used last time is gone, the help box offers
+the newest one that still passes in place of the advice to choose again.
+*Play* moves the disc it starts to the head of the list, and so does a game
+started from Legaia Explorer (`legaia-engine launch --disc`).
+
 ### Options
 
 The option list holds the engine's enhancement knobs, so none of them needs a
@@ -116,6 +125,12 @@ terminal flag. It is grouped, and scrolls when it is longer than the panel:
 the selected row stays in view, a bar on the panel's right edge shows where the
 view is, the mouse wheel scrolls it, and `Page Up` / `Page Down` / `Home` /
 `End` move through it.
+
+A controller works the launcher the way it works the game's menus: the D-pad
+or left stick moves the focus and steps an option, Cross presses, Triangle is
+the right-click (an option a value back, the previous disc on *Choose
+disc...*), Circle leaves the *Controls* page, Start plays a ready disc, and
+L1 / R1 page the option list. Key rebinding stays a keyboard task.
 
 The first row, *Look and feel*, speaks for every row below it except the
 window and the sound levels. *Enhanced* is the first-start set, *Original* is
@@ -146,6 +161,7 @@ where it was; `Delete` on the row puts all of them back on *Enhanced*.
 | Gameplay tweaks | Shiny Seru (off = `--no-shiny-seru`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Run-away EXP (`--flee-exp`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Fortress battles fix (off = `--no-fortress-encounter-fix`) | `launcher.toml` | - | on |
+| Gameplay tweaks | Tetsu spar order fix (off = `--no-tetsu-spar-fix`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Boss casts respect jewels (`--jewel-fix`) | `launcher.toml` | - | off |
 | Gameplay tweaks | Battle freeze guard (off = `--no-hp-readout-guard`) | `launcher.toml` | - | on |
 | Gameplay tweaks | Bonus equipment drops (`--equipment-drops`) | `launcher.toml` | - | off |
@@ -184,6 +200,18 @@ switches with no option behind them; the browser play page has a box for each.
 *Original game only* starts the game retail-faithful (`play-window --retail`):
 every enhancement off for that session, the saved options untouched; the rows
 it overrides read *Original* while it is on.
+
+*Saved-chain Arts list* is an addition of the port's; the original has nothing
+like it. With it on, the battle command ring's **Arts** opens a list of the
+chains saved for the acting character instead of the original's entry, where
+each command is one D-pad press until the AP runs out. The chains are the ones
+composed and named in the chain editor (Triangle on the pause menu's *Status*
+screen). Confirming a row plays that chain's arrows through the same arts queue
+the entry builds from typed presses, so learning an art by using it, Miracle Arts
+and Super Arts work from a row as they do from the entry. Two cases still open
+the press-by-press entry: the sparring tutorial, whose drill checks the presses
+themselves, and a character with no saved chain. *Original game only* holds it
+off.
 
 ### Changing the keys
 
@@ -242,7 +270,14 @@ A launcher start runs the game from the per-user data directory
 (`~/.local/share/legaia-engine` on Linux; the same folder as the settings on
 Windows and macOS), so key bindings (`legaia-input.toml`), options
 (`legaia-options.toml`) and `saves/` stay in one place however the binary was
-started; *Open saves folder* opens it. `LEGAIA_ENGINE_CONFIG_DIR` and
+started; *Open saves folder* opens it. Right-click or `Shift+Enter` on that
+button (Triangle on a controller), or dropping the file on the window, picks
+a memory card from another emulator (`.mcr`, `.mcd`, `.srm`, DexDrive `.gme`,
+single-save `.mcs`) as the save screen's **card 2**: the launcher mounts it
+through the game's own reader, says how many Legend of Legaia saves it holds,
+remembers it (`card` in `launcher.toml`) and starts the game with `--card`, so
+those saves load and save in place - what the browser play page's card import
+does. `Delete` on the button removes it. `LEGAIA_ENGINE_CONFIG_DIR` and
 `LEGAIA_ENGINE_DATA_DIR` override the two directories. Every subcommand below
 behaves exactly as before; the launcher only answers the no-argument case.
 

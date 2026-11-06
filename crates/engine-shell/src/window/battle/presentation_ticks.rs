@@ -182,26 +182,68 @@ impl PlayWindowApp {
             grid::grid_far_colour(base, self.battle_stage_outdoor).map(|c| f32::from(c) / 255.0),
         );
         let near = grid::battle_ambient_colour(base);
-        if near == self.battle_ground_rgbc {
+        // Retail's two cell culls (`grid::cell_mask`): the far bracket and the
+        // screen reject decide which cells the emitter draws this frame. PSX
+        // mode only; clean rendering draws the whole plane.
+        let mask = if self.psx_render {
+            let cells = legaia_scene_formats::battle_backdrop::GRID_CELLS as i16;
+            grid::cell_mask(
+                &self.session.host.world.battle_cam_pose(),
+                legaia_engine_camera::projection::BATTLE_WORLD_SCALE,
+                cells,
+                cells,
+            )
+        } else {
+            Vec::new()
+        };
+        if near == self.battle_ground_rgbc && mask == self.battle_ground_mask {
             return;
         }
         let Some(r) = self.win.renderer.as_ref() else {
             return;
         };
-        let g = build_battle_ground_grid(near);
-        match r.upload_vram_mesh(
-            &g.positions,
-            &g.uvs,
-            &g.cba_tsb,
-            &g.normals,
-            &g.colors,
-            &g.indices,
-        ) {
-            Ok(m) => {
-                self.meshes[gi] = m;
-                self.battle_ground_rgbc = near;
+        // The vertex streams change only with the colour, so a colour change
+        // rebuilds and re-uploads the mesh; a mask change (most frames while
+        // the camera moves) re-indexes the uploaded vertices. Each sub-quad
+        // owns its four vertices, which is what `reindex_vram_mesh` needs.
+        if near != self.battle_ground_rgbc || self.battle_ground_built.is_none() {
+            let g = build_battle_ground_grid(near);
+            match r.upload_vram_mesh(
+                &g.positions,
+                &g.uvs,
+                &g.cba_tsb,
+                &g.normals,
+                &g.colors,
+                &g.indices,
+            ) {
+                Ok(m) => {
+                    self.meshes[gi] = m;
+                    self.battle_ground_rgbc = near;
+                    self.battle_ground_mask = Vec::new();
+                    self.battle_ground_built = Some(g);
+                }
+                Err(e) => {
+                    log::warn!("play-window: battle ground grid re-colour: {e:#}");
+                    return;
+                }
             }
-            Err(e) => log::warn!("play-window: battle ground grid re-colour: {e:#}"),
+        }
+        if mask == self.battle_ground_mask {
+            return;
+        }
+        let Some(g) = self.battle_ground_built.as_ref() else {
+            return;
+        };
+        let indices = grid::masked_indices(&g.indices, &mask);
+        if indices.is_empty() {
+            // Every cell culled: the grid is off the frame
+            // (the redraw skips its draw), and wgpu takes no empty buffer.
+            self.battle_ground_mask = mask;
+            return;
+        }
+        match r.reindex_vram_mesh(&mut self.meshes[gi], &g.positions, &g.cba_tsb, &indices) {
+            Ok(()) => self.battle_ground_mask = mask,
+            Err(e) => log::warn!("play-window: battle ground grid cell cull: {e:#}"),
         }
     }
 

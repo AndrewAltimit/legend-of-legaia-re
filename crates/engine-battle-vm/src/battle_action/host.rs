@@ -152,6 +152,13 @@ pub trait BattleActionHost {
     /// `0x801E3444..0x801E3490` stores all four halfwords). Default no-op.
     fn set_actor_anchor(&mut self, _slot: u8, _x: i16, _z: i16) {}
 
+    /// Entry of the action seed `0x0C` for `actor`, ahead of its setup
+    /// hooks and of the depth `FUN_801F0348` reads. Nothing in retail runs
+    /// here; a capture harness re-seats what retail's seed found (the
+    /// combatants' Spirit gauges, which a growing body's size byte follows).
+    /// Default no-op.
+    fn seed_entry(&mut self, _actor: u8) {}
+
     /// `FUN_801EFE44`, the action seed's **formation recentre** on the acting
     /// slot `actor`: squash an axis whose span exceeds `0x800`, then move
     /// every combatant so the box the action frames - the target alone for
@@ -196,6 +203,13 @@ pub trait BattleActionHost {
     ///
     /// REF: FUN_801F0348
     fn camera_frame_height(&mut self, _height: i16) {}
+
+    /// Receives the framing style `ctx[+0xD]` a state stores ahead of a call
+    /// that frames inside the same pass. The capture band's `0x70` pins it to
+    /// `1` in the delay slot of its module call (`0x801E50CC`), and the
+    /// module's case 6 (`FUN_801D5854(ctx[+0x13], 6)` from a walk-in arm)
+    /// reads it before the pass ends. Default no-op.
+    fn camera_variant_pinned(&mut self, _style: u8) {}
 
     /// The summon band's `0x37` exit: it clears `ctx[+0x278]`
     /// (`sb zero,0x278(a0)` at `0x801E4E98`) - the byte the band shares with

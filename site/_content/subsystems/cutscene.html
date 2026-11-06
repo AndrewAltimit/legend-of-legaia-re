@@ -215,6 +215,18 @@ legaia-engine play-str MOV/MV1.STR --disc "Legend of Legaia (USA).bin"</code></p
   </ul>
 </section>
 
+<section class="doc-section" id="rim-elm-day" data-doc="rim-elms-day-before-the-hunt">
+  <h2>Rim Elm&rsquo;s day before the hunt</h2>
+  <p>After the naming, <code>town01</code> plays its story beats in a fixed order, each a scene record gated on the flags the one before raised:</p>
+  <ul class="bullets">
+    <li><strong>The Elder at the Genesis Tree</strong> (<code>P2[3]</code>), raising <code>0x225</code>.</li>
+    <li><strong>Mei below the garden gate</strong> (<code>P2[4]</code>, a walk-on band), raising <code>0x226</code>. She walks out of her house and her door closes behind her.</li>
+    <li><strong>The measuring at Vahn&rsquo;s house</strong> (<code>P2[5]</code>, spawned by the front door), raising <code>0x227</code>.</li>
+    <li><strong>The hunters&rsquo; return</strong> (<code>P2[6]</code>), spawned only by Tetsu&rsquo;s talk after a spar fought once the measuring is done. Stepping out of the house starts nothing; a retail state outside the house after the measuring has the return&rsquo;s flag clear. A spar fought before the measuring never counts in the original, which then cannot go on; the port&rsquo;s Tetsu spar order fix lets it count.</li>
+  </ul>
+  <p>The garden&rsquo;s blackboard (the panoramic map) is a talk that leaves the field view and comes back through a staged mode switch; the talk waits on it rather than ending. Detail and addresses on <a href="https://github.com/AndrewAltimit/legend-of-legaia-re/blob/main/docs/subsystems/cutscene.md#rim-elms-day-before-the-hunt">the cutscene reference</a>.</p>
+</section>
+
 <section class="doc-section" id="battle-intro" data-doc="script-cutscene-helpers-overlay_cutscene_dialogue">
   <h2>Battle intro and script helpers</h2>
   <p>The shatter or swirl before a fight is a third overlay, <strong>PROT 0979</strong>, sharing the movie player's slot. Its init picks a style from the battle flags byte, the formation's first monster id and (two arms) the scene index - style 2 is the ordinary shatter, 3 and 4 are reached by a handful of formations - and its per-frame tick owns the whole frame until the battle scene takes over. Port <code>render-kernels::battle_intro_styles</code> + <code>render-kernels::battle_intro</code>. The scripted <code>op*</code> / <code>ed*</code> scenes also lean on five shared per-frame helpers in the dialogue overlay (party-leader swap, position tween, teardown, particle emitter, colour rotate); both are tabulated on <a href="cutscene-internals.html#battle-intro">internals</a>.</p>

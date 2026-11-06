@@ -932,9 +932,15 @@ pub(super) struct WalkHeading {
 /// `112` further, and the walk back lands on yaw `795` where the RAM's endpoint
 /// alone gives `759`.
 ///
-/// `None` otherwise. Nearest on slot `3` is a pass later and the bearing is the
-/// loop's own: `12` units of this shift read `battle_noaru_gilium_lv2_strike`
-/// `.904` to `.585`. Nor is a party attacker's (its first swing commit re-seeds
+/// A walker the `+0x76` lock keeps on the walk clip into the loop is read the
+/// same way when it stands nearest on slot `3`: its loop passes back it off
+/// the target a ring step at a time, and the displayed frame is still the
+/// walk's last pass (`battle_geremi_ogre_strike` yaw `168` to `189`, `image`
+/// `.878` to `.999`; `battle_vozz_twin_tomb_strike` `.957` to `.997`).
+///
+/// `None` otherwise. An arrival off the walk clip nearest on slot `3` is a pass
+/// later and the bearing is the loop's own: `12` units of this shift read
+/// `battle_noaru_gilium_lv2_strike` `.904` to `.585`. Nor is a party attacker's (its first swing commit re-seeds
 /// the yaw counter, `FUN_8004E13C`) or a later swing's table read this way.
 pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
     if game_anchors::u8_at(ram, ctx + 7) != STRIKE_LOOP_STATE
@@ -963,7 +969,12 @@ pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
         let (a, t) = (ring(actor, k), ring(target, k));
         (a[0] - t[0]).hypot(a[1] - t[1])
     };
-    if dist(2) >= dist(1) || dist(2) >= dist(3) {
+    let nearest_two = dist(2) < dist(1) && dist(2) < dist(3);
+    let locked_walk_nearest_three = game_anchors::u8_at(ram, actor + 0x1D9) == WALK_CLIP
+        && dist(3) < dist(1)
+        && dist(3) < dist(2)
+        && dist(3) < dist(4);
+    if !nearest_two && !locked_walk_nearest_three {
         return None;
     }
     // How far the target's body stood off its live pair.
@@ -988,4 +999,25 @@ pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
         displayed: displayed.rem_euclid(4096) as u16,
         end_shift: turn - (4 * step / 3).max(1),
     })
+}
+
+/// How far the TR z endpoint stood, on the pass before a `0x6F` capture's,
+/// from the RAM's own - [`displayed_cam_live_steps`]'s `end_shift`, in the
+/// walker's raw space.
+///
+/// The magic-capture fade ramps the framing depth `ctx[+0x6D0]` down by
+/// `16 * step` (`lbu v1,0x393` / `sll v1,v1,0x4` / `subu` at
+/// `0x801E5000..0x801E5014`) and then re-arms case 6 on the new depth
+/// (`jal 0x801d5854`, `a1 = 6` at `0x801E501C`), whose TR z endpoint is the
+/// depth prescaled. The pass before stood on the depth before that ramp,
+/// whether it was a `0x6F` pass (which ramped from there) or the `0x6E`
+/// branch the fade left (which holds the depth the ramp starts from). The
+/// other components' endpoints do not move with the depth.
+pub(super) fn capture_fade_end_shift(ram: &[u8], ctx: u32, steps: &[u8]) -> [i32; 9] {
+    use legaia_engine_battle_vm::battle_cam_script::prescale_tr_z;
+    let depth = i32::from(game_anchors::u16_at(ram, ctx + 0x6D0) as i16);
+    let ramp = 16 * i32::from(steps.first().copied().unwrap_or(1).max(1));
+    let mut shift = [0; 9];
+    shift[5] = (prescale_tr_z(depth + ramp) - prescale_tr_z(depth)) as i32;
+    shift
 }

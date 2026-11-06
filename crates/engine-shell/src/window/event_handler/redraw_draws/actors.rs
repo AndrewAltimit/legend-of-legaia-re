@@ -259,6 +259,7 @@ impl<'m> DrawCtx<'_, 'm> {
         // depth, for the capture that pins it).
         if in_battle
             && app.session.host.world.battle_ground_grid_drawn()
+            && (app.battle_ground_mask.is_empty() || app.battle_ground_mask.contains(&true))
             && let Some(gi) = app.battle_ground_mesh
             && let Some(gmesh) = store.meshes.get(gi)
         {

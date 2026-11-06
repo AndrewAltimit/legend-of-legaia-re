@@ -115,6 +115,12 @@ impl World {
                                 .as_ref()
                                 .is_some_and(|p| p.cursor_sixteenths() as i32 >= cursor)
                     })
+            })
+            && self.battle.frame_step_seed_after_accum.is_none_or(|hold| {
+                self.battle
+                    .camera
+                    .as_ref()
+                    .is_some_and(|c| c.close_up_accum() >= hold)
             });
         // A seed on the magic band's sustained state `0x2B` also opens on
         // `0x2A`: the pass after the clip commit is the `0x2A` pass storing
@@ -943,6 +949,24 @@ mod tests {
         w.battle_ctx.action_state = 0x34;
         w.apply_battle_frame_step_seed();
         assert_eq!(w.battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+    }
+
+    /// A seed held on the close-up accumulator keeps the ordinary step in
+    /// its state until the accumulator reaches the hold.
+    #[test]
+    fn a_seeded_step_held_on_the_accumulator_waits_for_it() {
+        use legaia_engine_battle_vm::battle_cam_script::{BattleCamPhase, BattleCamera};
+        let mut w = World::new();
+        w.toggles.battle_party_cost_step = false;
+        w.seed_battle_frame_step(3, 0x2B);
+        w.battle.frame_step_seed_after_accum = Some(16);
+        w.battle.camera = Some(BattleCamera::new(BattleCamPhase::Menu, 0));
+        w.battle_ctx.action_state = 0x2B;
+        w.apply_battle_frame_step_seed();
+        assert_eq!(w.battle_frame_step(), DEFAULT_BATTLE_FRAME_STEP);
+        w.battle.frame_step_seed_after_accum = Some(0);
+        w.apply_battle_frame_step_seed();
+        assert_eq!(w.battle_frame_step(), 3);
     }
 
     #[test]

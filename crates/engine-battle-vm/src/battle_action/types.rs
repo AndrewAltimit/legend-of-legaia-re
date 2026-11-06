@@ -1020,14 +1020,11 @@ pub struct BattleActionCtx {
     /// `sb v0,0x8(s5)` at `0x801E2FF0..0x801E3000`, in the `jal 0x80056798`
     /// delay slot).
     ///
-    /// It is a **latch**, not a per-action flag: nothing in `FUN_801E295C`
-    /// clears it, and its one reader is the Done band's UI teardown
-    /// (`lbu v0,0x8(s5)` at `0x801E61CC`), which tears down the two
-    /// Spirit-only HUD elements `0x0F` and `0x52`
-    /// (`FUN_801D8DE8(id, 1)` at `0x801E61DC` / `0x801E61E8`) once the
-    /// battle has seen at least one Spirit action. So the elements are
-    /// unloaded on every later action too, which is harmless and is what
-    /// retail does.
+    /// The action seed clears it (`sb zero,0x8(s5)` at `0x801E2D00`), so it
+    /// counts this action's raises alone. Its one reader is the Done band's
+    /// UI teardown (`lbu v0,0x8(s5)` at `0x801E61CC`), which sends the two
+    /// Spirit-only HUD elements `0x0F` and `0x52` out on their closing glide
+    /// (`FUN_801D8DE8(id, 1)` at `0x801E61DC` / `0x801E61E8`).
     ///
     /// REF: FUN_801E295C (`0x801E2FF0`, `0x801E61CC`)
     pub spirit_action_count: u8,
@@ -1039,16 +1036,24 @@ pub struct BattleActionCtx {
     /// `[+0x18]` - the **action's own HUD element id**, the one the Done
     /// band's teardown unloads first (`lbu v0,0x7(s5)` at `0x801E6178`).
     ///
-    /// Written by the action seed's Attack arm (`li v0,0x7` /
-    /// `sb v0,0x7(s5)` at `0x801E2F48..0x801E2F50`), which is why a party
-    /// attack's weapon-slash element `7` is torn down with the action.
-    /// Element `6` is the one value that drags a pair with it.
+    /// Cleared by the action seed (`sb zero,0x7(s5)` at `0x801E2D08`).
+    /// Written `7` (the readout bar) where a bar opens for a party target -
+    /// the seed's Attack / keep-`0x28` Magic arms (`0x801E2F48..0x801E2F50`)
+    /// and the `0x3E` band (`0x801E4044`) - and `6` (the roster panels)
+    /// where the panels open for a party-wide action: the `0x3E` band
+    /// (`0x801E407C`) and `FUN_801E6D84`'s party-wide arm for a monster
+    /// caster. Element `6` is the one value that drags a pair with it.
     ///
     /// This is a **context** byte. `BattleActor::ui_element_id` carries the
-    /// same `7` on the acting actor and is the port's own field - retail's
-    /// `0x801E2F44` writes the acting *slot* to `ctx[+0x20]` there, not an
-    /// element id to the actor.
+    /// same `7` on the acting actor and is the port's own field; retail's
+    /// `0x801E2F44` writes the bar's member to `ctx[+0x20]`
+    /// ([`Self::readout_bar_member`]).
     pub action_ui_element: u8,
+    /// `[+0x20]` - the party member the readout bar (record 7) was last
+    /// opened for: the seed's target (`sb t2,0xf(s5)` at `0x801E2F44`), the
+    /// item pre-arm's actor (`sb v1,0xf(s5)` at `0x801E3DB8`) and the `0x3E`
+    /// band's target (`0x801E403C`). The bar the teardown closes names it.
+    pub readout_bar_member: u8,
     /// `[+0x276]` - the side-band applier stage (`FUN_801F12D0`): seeded to
     /// `1` when a `summon.dat` / `readef.DAT` read starts, `0` once its slots
     /// have landed. It gates the `QueuedFromMenu` / `PreActionWait`
@@ -1193,6 +1198,13 @@ pub struct BattleActionCtx {
     /// The last re-seed's coin, `rand() % 2`: the counter becomes
     /// `coin * 0x800 + 0x280`.
     pub swing_yaw_coin: u8,
+    /// `ctx[+0x26D]`, the per-action track coin: `rand() % 2`, drawn by
+    /// `FUN_8004E13C` (`sb v0,0x26d(a0)` at `0x8004E2DC`) on every clip
+    /// commit whose entry's `+0x87` byte is set, after that routine's
+    /// value-2 re-seed draw. It picks the per-art track column and the
+    /// case-8 dead-target yaw's `0x200` turn; the battle camera reads it
+    /// (`BattleCamInputs::track_coin`).
+    pub track_coin: u8,
     /// The display frame of the active actor's last clip commit - the
     /// origin the re-zeroed `ctx[+0x87C]` counts from (`8` per vsync), which
     /// the retail comparison corpus aligns a summon `0x33` capture on.
@@ -1298,7 +1310,9 @@ pub struct BattleActionCtx {
     /// retail's; the retail comparison drive pins the variant the capture
     /// reads (`ctx[+0xD]`) for the seat it drives. The seed is the only
     /// place the pin can land in time: the state after it arms its framing
-    /// on the same tick. Nothing in play sets it.
+    /// on the same tick. A walk-in capture body's arm 0, which rolls the
+    /// style again, takes it the same way (`World`'s approach leg). Nothing
+    /// in play sets it.
     pub camera_variant_pin: Option<u8>,
 
     /// `[+0x6D0]` - the battle camera's framing height / distance.

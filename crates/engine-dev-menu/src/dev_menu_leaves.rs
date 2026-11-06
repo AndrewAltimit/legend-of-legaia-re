@@ -49,12 +49,11 @@
 //!   consumer are the CAMERA readout (nothing publishes retail's packed
 //!   scratchpad camera word) and the 18 rows of the retail list the engine has
 //!   no backing state for.
-//! - **`FUN_801ED710`** (battle-records data model) is hosted by the native
-//!   window's developer-menu Records page, which feeds it the live character
-//!   records and the world play clock. Two of its inputs are still absent -
-//!   the lifetime battle / escape tallies and the treasure census - so those
-//!   fields read zero and the treasure line stays hidden, which is also what
-//!   retail draws off a save that never incremented them.
+//! - **`FUN_801ED710`** (battle-records data model) is hosted by both play
+//!   hosts' developer-menu Records page and the end-of-game soft reset, which
+//!   feed it the live character records, the world play clock, the save
+//!   window's battle / escape tallies and the script-counter slots 0 / 1 the
+//!   treasure line divides.
 //! - **`FUN_801E5B4C`** (equipment stat-comparison preview) is split. The slot
 //!   resolution is live through [`crate::dev_equip_commit::commit_equip`]. The
 //!   comparison panel is not: the engine's equip screen is the menu-overlay
@@ -443,6 +442,11 @@ pub struct RecordsScreen {
     pub hyper_arts: [u8; 3],
     /// Per-character magic count.
     pub magic: [u8; 3],
+    /// Treasure found / total, the two halfwords `DAT_801C6460` /
+    /// `DAT_801C6462` (`lh` at `0x801EDD88` / `0x801EDDB4`) - slots 0 and 1
+    /// of the field VM's script-counter table, drawn as read.
+    pub treasure_found: i32,
+    pub treasure_total: i32,
     /// Treasure percentage `found*100/total` (0 when `total <= 0`).
     pub treasure_percent: i32,
     /// Treasure fractional part `(found*10000/total) - percent*100`.
@@ -473,9 +477,10 @@ pub fn decompose_play_time(frames: u32) -> (i32, i32, i32) {
 
 /// Build the records-screen model from the raw runtime globals.
 ///
-/// Wired: `legaia-engine play-window`'s developer-menu Records page builds
-/// this model from the live character records and the world play clock -
-/// `PlayWindowApp::build_dev_records_draws` -> `dev_records_model` -> here.
+/// Wired: both play hosts' developer-menu Records page and the end-of-game
+/// soft reset build this model from the live world -
+/// `legaia_engine_screens::dev_menu::records_draws_for_world` ->
+/// `dev_records_model` -> here.
 /// PORT: FUN_801ED710
 pub fn records_screen(
     battles: u32,
@@ -493,6 +498,8 @@ pub fn records_screen(
         play_hours,
         play_minutes,
         play_seconds,
+        treasure_found,
+        treasure_total,
         ..Default::default()
     };
     for (i, c) in chars.iter().enumerate() {

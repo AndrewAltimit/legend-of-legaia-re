@@ -613,6 +613,64 @@ impl PlayWindowApp {
         {
             let _ = std::fs::write(rec.dir.join(format!("vram_{tick}.bin")), v.as_bytes());
         }
+        // Beside it, `fxpool.csv`: every live child of the effect pool
+        // (`_DAT_8007BD30`) each tick - slot, frame count and cursor, the
+        // integer position - the engine half of the probe's file of the
+        // same name: where the burning bodies' puffs sit.
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && w.casting.active_summon.is_some()
+            && let Ok(f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("fxpool.csv"))
+        {
+            let mut f = std::io::BufWriter::new(f);
+            for (i, c) in w.effect_pool.children.iter().enumerate() {
+                if c.frame_count == 0 {
+                    continue;
+                }
+                let _ = writeln!(
+                    f,
+                    "{tick},{i},{},{},{},{},{},{}",
+                    c.frame_count,
+                    c.frame_cursor,
+                    c.pos[0] >> 8,
+                    c.pos[1] >> 8,
+                    c.pos[2] >> 8,
+                    c.anim_id,
+                );
+            }
+        }
+        // And `pose.csv`: the summon creature's playing pose each tick - its
+        // cursor, live pair, facing and every stream part's translation, the
+        // engine half of the probe's `--pose-objects`.
+        if std::env::var_os("LEGAIA_DIAG_CAST_PARTS").is_some()
+            && let Some(slot) = w.casting.summon_actor_slot.map(usize::from)
+            && let Some(objs) = w.battle_stream_pose_translations(slot)
+            && let Some(a) = w.actors.get(slot)
+            && let Ok(mut f) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(rec.dir.join("pose.csv"))
+        {
+            let objs: Vec<String> = objs
+                .iter()
+                .map(|t| format!("{}:{}:{}", t[0], t[1], t[2]))
+                .collect();
+            let _ = writeln!(
+                f,
+                "{tick},{},{},{},{},{},{},{}",
+                a.battle_animation
+                    .as_ref()
+                    .map_or(-1, |p| i32::from(p.cursor_sixteenths())),
+                a.move_state.world_x,
+                a.move_state.world_y,
+                a.move_state.world_z,
+                a.battle.facing_angle,
+                objs.len(),
+                objs.join(" "),
+            );
+        }
         // `LEGAIA_DIAG_CAST_PARTS=1`: every live part of the cast's scene
         // graph each tick (`parts.csv`) - its record, draw words and
         // channels, the engine half of a part-pool side-by-side.

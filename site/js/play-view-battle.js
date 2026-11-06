@@ -195,6 +195,33 @@
             b.groundAmbientKey = ambientKey;
           }
         }
+        /* Retail's two cell culls (`battle_ground_grid::cell_mask`, PSX mode
+         * only): the far bracket and the screen reject. The engine hands the
+         * grid with each dropped cell collapsed when the drawn set moves - the
+         * native window's masked index list. Guarded against a cached WASM
+         * without the export. */
+        if (typeof rt.play_battle_ground_cull_key === 'function') {
+          const psx = !!this.psxRender;
+          const cullKey = rt.play_battle_ground_cull_key(psx);
+          if (cullKey !== (b.groundCullKey || 0) && b.groundPositions) {
+            /* Collapse each dropped cell (sixteen vertices) onto its first
+             * vertex, from the positions held since the grid's upload. */
+            const mask = rt.play_battle_ground_cull_mask(psx);
+            const src = b.groundPositions;
+            const pos = b.groundCulled || (b.groundCulled = new Float32Array(src.length));
+            pos.set(src);
+            const cellFloats = 16 * 3;
+            for (let c = 0; c < mask.length; c++) {
+              if (mask[c]) continue;
+              const o = c * cellFloats;
+              for (let v = o + 3; v < o + cellFloats && v < pos.length; v += 3) {
+                pos[v] = pos[o]; pos[v + 1] = pos[o + 1]; pos[v + 2] = pos[o + 2];
+              }
+            }
+            this.renderer.updateSceneMeshPositions(b.ground, pos);
+            b.groundCullKey = cullKey;
+          }
+        }
         /* A cast holding `ctx[+0x278]` bit 0 on the floor ambient takes the
          * grid off the screen (`World::battle_ground_grid_drawn`). Guarded
          * against a cached WASM without the export. */
@@ -560,7 +587,10 @@
           rt.play_battle_backdrop_spun_cba_tsb(), rt.play_battle_backdrop_spun_indices(),
           rt.play_battle_backdrop_spun_flat_rgba());
       }
-      b.ground = up(BATTLE_MESH_BASE + 1, rt.play_battle_ground_positions(),
+      b.groundCullKey = 0;
+      b.groundCulled = null;
+      b.groundPositions = Float32Array.from(rt.play_battle_ground_positions());
+      b.ground = up(BATTLE_MESH_BASE + 1, b.groundPositions,
         rt.play_battle_ground_uvs(), rt.play_battle_ground_cba_tsb(),
         rt.play_battle_ground_indices(),
         (typeof rt.play_battle_ground_flat_rgba === 'function')

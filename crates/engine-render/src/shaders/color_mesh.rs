@@ -80,7 +80,7 @@ fn vs_main(
     // The GTE's register limits first: a corner past them is where retail's
     // packet put it, not where an unclamped projection would.
     if u.psx_params.z >= 0.5 {
-        out.clip_pos = gte_saturate_clip(out.clip_pos);
+        out.clip_pos = gte_saturate_prim(out.clip_pos, prim_c0, prim_c1, prim_c2, prim_c3);
         out.clip_pos = psx_snap_clip(out.clip_pos, PSX_STAGE_W, PSX_STAGE_H);
     }
     if u.psx_params.z >= 1.5 {

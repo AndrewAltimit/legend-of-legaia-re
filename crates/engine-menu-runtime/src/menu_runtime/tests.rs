@@ -614,6 +614,47 @@ fn a_refused_buy_banks_no_points() {
     assert_eq!(runtime.point_card_toast(), None);
 }
 
+/// Sell over an empty bag window buzzes and keeps the mode select open:
+/// `FUN_801DAFD4` row 1 walks the window for a slot with an id and a count
+/// (`0x801DB11C..0x801DB178`) and on none replaces the cue with `0x23`.
+#[test]
+fn sell_over_an_empty_bag_buzzes_and_stays_on_the_mode_select() {
+    use legaia_engine_menus::shop::{ShopInventory, ShopSession};
+
+    for stocked in [false, true] {
+        let mut world = world_with_party(1);
+        if stocked {
+            world.party.inventory.insert(0x77, 1);
+        }
+        let mut runtime = MenuRuntime::new("/tmp/legaia-test");
+        runtime.open_shop(ShopSession::new(ShopInventory::new(1, Vec::new())));
+        runtime.ctx.state = MenuState::ShopMenu.as_byte();
+        runtime.tick(&mut world, down());
+        let _ = runtime.take_ui_cue();
+        runtime.tick(&mut world, cross());
+        let (state, cue) = if stocked {
+            (
+                MenuState::ShopSell,
+                Some(legaia_engine_menus::menu_cues::MENU_CONFIRM_CUE),
+            )
+        } else {
+            (
+                MenuState::ShopMenu,
+                Some(legaia_engine_menus::shop_cues::SHOP_REFUSAL_CUE),
+            )
+        };
+        assert_eq!(
+            MenuState::from_byte(runtime.ctx.state),
+            Some(state),
+            "stocked {stocked}"
+        );
+        assert_eq!(runtime.take_ui_cue(), cue, "stocked {stocked}");
+        if !stocked {
+            assert_eq!(runtime.ctx.cursor, 1, "the hand stays on Sell");
+        }
+    }
+}
+
 #[test]
 fn shop_buy_refusal_beat_stays_on_the_list_row() {
     use legaia_engine_menus::shop::{ShopInventory, ShopItem, ShopSession};

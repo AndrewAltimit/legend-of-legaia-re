@@ -27,6 +27,10 @@ use super::*;
 /// Placement record 7 - the active-actor readout bar.
 const READOUT_BAR_ELEMENT: u8 = 7;
 
+/// Placement record 6 - the first roster panel; the teardown's close of it
+/// drags `0x4E` / `0x4F` with it (`0x801E6194..0x801E61B0`).
+const ROSTER_PANEL_ELEMENT: u8 = 6;
+
 impl World {
     /// Note a HUD element raise for the two action plates that glide in:
     /// `FUN_801D8DE8(0x44 | 0x51, 0)` from the action seed's banner plan
@@ -47,9 +51,13 @@ impl World {
             } else if element == HUD_TARGET_BANNER && self.battle.action_hud_wiped {
                 self.battle.target_plaque_glide = Some(LogLaunch::new(true));
             }
+            self.note_action_hud_close(element);
             return;
         }
         if element == HUD_CASTER_BANNER {
+            // A new action's seed: its `FUN_801D99BC` (`0x801E2CF4`) wiped
+            // the last action's closing glides.
+            self.battle.action_hud_close = None;
             // A new action's seed: whatever cleared the last target plate's
             // content is behind it.
             self.battle.action_plaque_glide = Some(LogLaunch::new(false));
@@ -84,6 +92,43 @@ impl World {
         }
     }
 
+    /// Note one element of the Done band's teardown that leaves on a closing
+    /// glide ([`legaia_engine_battle_loop::battle_state::ActionHudClose`]):
+    /// `FUN_801D8DE8(id, 1)` re-spawns it at seat B and glides it to seat A.
+    /// Every call of one teardown lands on the same pass, so they share one
+    /// launch; a launch already under way belongs to an earlier action.
+    ///
+    /// PORT: FUN_801E295C (`0x801E6178..0x801E6204`, the closing half)
+    fn note_action_hud_close(&mut self, element: u8) {
+        use legaia_engine_battle_loop::battle_state::ActionHudClose;
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        use legaia_engine_battle_vm::battle_cue_group::HUD_CASTER_BANNER;
+        let actor = self.battle_ctx.active_actor;
+        let fresh = self
+            .battle
+            .action_hud_close
+            .is_none_or(|c| c.glide.elapsed != 0);
+        if fresh {
+            self.battle.action_hud_close = Some(ActionHudClose {
+                glide: LogLaunch::new(true),
+                plaque: None,
+                bar: None,
+                panels: false,
+                spirit: None,
+            });
+        }
+        let Some(c) = self.battle.action_hud_close.as_mut() else {
+            return;
+        };
+        match element {
+            HUD_CASTER_BANNER => c.plaque = Some(actor),
+            READOUT_BAR_ELEMENT => c.bar = Some(self.battle_ctx.readout_bar_member),
+            ROSTER_PANEL_ELEMENT => c.panels = true,
+            legaia_engine_battle_vm::battle_action::SPIRIT_AP_BAR_ELEMENT => c.spirit = Some(actor),
+            _ => {}
+        }
+    }
+
     /// Whether the action seed opens record 7 for its target: an Attack or a
     /// Magic action aimed at a party seat. The Magic arm's item-class branch
     /// (spell class `< 0x14` with id `< 0x65`, `0x801E2EEC..0x801E2EF8`)
@@ -112,7 +157,9 @@ impl World {
     /// `0x4F`, re-seated per party size); the ring's arms land on
     /// `(160 | 248, 64)` / `(204, 32 | 96)` (records 9 / `0x0A` / 8 /
     /// `0x0B`), its plaque on `(68, 12)` (record `0x1A`) and its AP plate on
-    /// `(208, 172)` (record `0x52`). Returns whether a glide the
+    /// `(208, 172)` (record `0x52`); the Done band's closing glides land
+    /// on `(16, -26)`, `(x, 234)` and `(328, 172)`
+    /// ([`legaia_engine_battle_loop::battle_state::ActionHudClose`]). Returns whether a glide the
     /// engine holds took the seat. The retail-compare capture seats this
     /// from a capture whose glides were in flight; no game path calls it.
     pub fn seat_battle_hud_glide(&mut self, target: [i16; 2], elapsed: u8) -> bool {
@@ -121,6 +168,16 @@ impl World {
         // plate's.
         let spirit = self.spirit_gauge_view().is_some();
         let glide = match target {
+            // The Done band's closing glides (mode `1`, seat B back to seat
+            // A): the actor plaque leaving through the top edge, the bar,
+            // the AP bar or the roster panels through the bottom one, the AP
+            // plate off the right.
+            [16, -26] | [_, 234] | [328, 172] => {
+                self.battle.action_hud_close.as_mut().map(|c| &mut c.glide)
+            }
+            // The combo cluster's own close (`FUN_801D8DE8(0x50, 1)` at
+            // `0x801E6360`) is the host's.
+            [328, 168] => None,
             [16, 12] => self.battle.action_plaque_glide.as_mut(),
             [16, 192] | [208, 172] if spirit => Some(self.battle.spirit_gauge_glide.get_or_insert(
                 legaia_engine_battle_vm::battle_commit_log::LogLaunch::new(false),
@@ -143,6 +200,11 @@ impl World {
             return false;
         };
         g.elapsed = elapsed.min(g.total);
+        // The port's stepper leaves the closing launch out of its return
+        // (`BattleState::step_action_plate_glides`).
+        if matches!(target, [16, -26] | [_, 234] | [328, 172]) {
+            return true;
+        }
         // What the stepper returned on the pass the capture froze.
         let ret = if g.settled() {
             0
@@ -151,6 +213,37 @@ impl World {
         };
         self.battle.widget_glide_return = ret;
         true
+    }
+
+    /// Stand the Done band's closing glides on what a retail capture's
+    /// glide table holds: the closing records' target seats name the
+    /// elements (`(16, -26)` the actor plaque, `(328, 172)` the AP plate and
+    /// with it the AP bar on `(16, 234)`, otherwise `(16, 234)` the readout
+    /// bar, `(x, 234)` the roster panels), `actor` the finished actor
+    /// (`ctx[+0x13]`) and `member` the bar's member (`ctx[+0x20]`). The
+    /// replay reaches the capture's `0x0A` on its own history, whose last
+    /// action need not be retail's. No game path calls it.
+    pub fn seat_battle_hud_close(&mut self, actor: u8, member: u8, targets: &[[i16; 2]]) {
+        use legaia_engine_battle_loop::battle_state::ActionHudClose;
+        use legaia_engine_battle_vm::battle_commit_log::LogLaunch;
+        let spirit = targets.contains(&[328, 172]);
+        let plaque = targets.contains(&[16, -26]);
+        let bottom = targets.contains(&[16, 234]);
+        let panels = targets.iter().any(|t| t[1] == 234 && t[0] != 16);
+        if !(spirit || plaque || bottom || panels) {
+            return;
+        }
+        let glide = self
+            .battle
+            .action_hud_close
+            .map_or(LogLaunch::new(true), |c| c.glide);
+        self.battle.action_hud_close = Some(ActionHudClose {
+            glide,
+            plaque: plaque.then_some(actor),
+            bar: (bottom && !spirit).then_some(member),
+            panels,
+            spirit: spirit.then_some(actor),
+        });
     }
 
     /// A press is parked only while the stepper's return is under this

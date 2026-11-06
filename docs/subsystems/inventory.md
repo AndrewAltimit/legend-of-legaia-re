@@ -122,6 +122,8 @@ The span also lands in `gp[+0x2D6]`, so `gp[+0x2D4]` is only ever `128` or `256`
 
 **Live cross-check** on a mid-game battle state: party count 3, window `(0, 256, 256)`, 160 contiguous occupied slots.
 
+**The lone-member halves, live.** `terra_party_battle` (Noa's opening chapter, Noa alone in the field list) reads member count `1`, roster byte `1`, story flag 20 clear and window `(128, 256, 128)`: her own stack sits in the upper half and Vahn's Healing Leaves stay in the lower, out of her reach. The cave01 and rikuroa battle states with Vahn alone read `(0, 128, 128)`. A lone Noa's Items screen and battle Item window therefore list her half only.
+
 **The "72-slot inventory" is not an engine bound.** 72 is the size of the general-items display page the *Have 99 Items* GameShark code targeted. The accessors bound on `gp[+0x2D4]`. Arithmetic built on a 72-slot bag, including older ACE out-of-bounds ceilings, is void.
 
 <a id="design-intent"></a>

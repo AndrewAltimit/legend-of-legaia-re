@@ -241,6 +241,7 @@ impl World {
                 // once per party member that dispatches with category 5.
                 let escaped = self.roll_battle_escape();
                 if escaped {
+                    self.count_battle_escape();
                     self.stage_party_flee();
                 }
                 if let Some(a) = self.actors.get_mut(actor as usize) {

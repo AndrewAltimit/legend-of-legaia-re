@@ -585,6 +585,7 @@ pub(super) fn magic_capture_phase2<H: BattleActionHost + ?Sized>(
         host.duck_audio_level(75);
     }
     ctx.camera_variant = CAPTURE_CAMERA_VARIANT;
+    host.camera_variant_pinned(CAPTURE_CAMERA_VARIANT);
     // PORT: FUN_801F2160 (call site; the tick body is the host's resident
     // cast module)
     if host.capture_stager_tick() {

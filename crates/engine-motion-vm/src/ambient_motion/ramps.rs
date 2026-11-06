@@ -200,12 +200,18 @@ impl RampScheduler {
 }
 
 /// Retail's scalar lerp: `end + (start - end) * remaining / total`, with a
-/// truncating (toward-zero) divide. Reproduces `0x80036E00..0x80036E50`.
+/// truncating (toward-zero) divide. Reproduces `0x80036E00..0x80036E50`:
+/// `subu`, `mult` / `mflo` and `addu` all wrap in 32 bits, so a product past
+/// `i32` keeps its low word rather than saturating.
 pub(super) fn lerp_remaining(start: i32, end: i32, remaining: i32, total: i32) -> i32 {
     if total == 0 {
         return end;
     }
-    end + (start - end).saturating_mul(remaining) / total
+    start
+        .wrapping_sub(end)
+        .wrapping_mul(remaining)
+        .wrapping_div(total)
+        .wrapping_add(end)
 }
 
 /// `kind 3`: the lerp run on three packed 8-bit lanes (`0x80036E54..0x80036F60`).

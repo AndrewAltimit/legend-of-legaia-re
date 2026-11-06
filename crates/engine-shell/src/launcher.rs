@@ -86,6 +86,20 @@ pub struct LauncherSettings {
     /// as it shipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expansion: Option<PathBuf>,
+    /// An emulator memory card (`.mcr` / `.mcd` / `.gme` / `.mcs`) mounted
+    /// in the save screen's second card port, passed to the game as
+    /// `--card`: the player's saves from another emulator, loaded and saved
+    /// in place. The browser play page imports the same containers through
+    /// the same reader (`legaia_save::emu::MountedCard`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<PathBuf>,
+    /// Disc images that validated here before, newest first, at most
+    /// [`RECENT_DISCS_MAX`] ([`Self::remember_disc`]). [`Self::disc`] is the
+    /// head of the list once one has been chosen; the rest are what *Choose
+    /// disc* offers back (a retail disc beside a patched copy, a disc on a
+    /// drive that comes and goes).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_discs: Vec<PathBuf>,
     /// The `play-window` launch switches, in the layout the play page
     /// stores too (one serde shape for both hosts), flattened so the file
     /// keeps its keys at the top level.
@@ -93,7 +107,33 @@ pub struct LauncherSettings {
     pub switches: PersistedSwitches,
 }
 
+/// How many disc images [`LauncherSettings::recent_discs`] keeps.
+pub const RECENT_DISCS_MAX: usize = 6;
+
 impl LauncherSettings {
+    /// Make `path` the disc to boot and the newest entry of
+    /// [`Self::recent_discs`] (an older entry for the same file moves up).
+    pub fn remember_disc(&mut self, path: &Path) {
+        self.disc = Some(path.to_path_buf());
+        self.note_recent_disc(path);
+    }
+
+    /// Put `path` at the head of [`Self::recent_discs`] without making it
+    /// the disc to boot.
+    pub fn note_recent_disc(&mut self, path: &Path) {
+        self.recent_discs.retain(|p| p != path);
+        self.recent_discs.insert(0, path.to_path_buf());
+        self.recent_discs.truncate(RECENT_DISCS_MAX);
+    }
+
+    /// The remembered discs other than [`Self::disc`], newest first.
+    pub fn other_recent_discs(&self) -> impl Iterator<Item = &Path> {
+        self.recent_discs
+            .iter()
+            .map(PathBuf::as_path)
+            .filter(move |p| self.disc.as_deref() != Some(*p))
+    }
+
     /// Read the settings file. A missing file is the first-run case and
     /// yields the empty default; a file that exists but does not parse is an
     /// error (the caller re-prompts rather than guessing).
@@ -319,11 +359,35 @@ pub fn decide(
     }
 }
 
-/// Remember `info` as the disc to boot next time.
+/// Remember `info` as the disc to boot next time (and the newest recent disc).
 pub fn remember(settings_file: &Path, info: &DiscInfo) -> Result<()> {
     let mut s = LauncherSettings::load(settings_file).unwrap_or_default();
-    s.disc = Some(info.path.clone());
+    s.remember_disc(&info.path);
     s.save(settings_file)
+}
+
+/// The recent disc after [`LauncherSettings::disc`] in
+/// [`LauncherSettings::recent_discs`] that still validates, wrapping round
+/// the list: what *Choose disc*'s second action steps to. When the current
+/// disc itself no longer validates the walk starts at the newest entry. Stepping does not
+/// reorder the list (only [`LauncherSettings::remember_disc`] does), so
+/// repeated steps visit every remembered disc in turn.
+pub fn next_recent_disc(
+    settings: &LauncherSettings,
+    validate: impl Fn(&Path) -> std::result::Result<DiscInfo, DiscProblem>,
+) -> Option<DiscInfo> {
+    let list = &settings.recent_discs;
+    let cur = settings.disc.as_deref();
+    // From a current disc that no longer validates (moved, unplugged) the
+    // newest good disc comes first.
+    let start = cur
+        .filter(|c| validate(c).is_ok())
+        .and_then(|c| list.iter().position(|p| p == c))
+        .map_or(0, |i| i + 1);
+    (0..list.len())
+        .map(|k| list[(start + k) % list.len()].as_path())
+        .filter(|p| Some(*p) != cur)
+        .find_map(|p| validate(p).ok())
 }
 
 /// The `play-window` argument list a launcher start boots: the title screen
@@ -345,6 +409,12 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     if let Some(pack) = &settings.expansion {
         args.push("--expansion".into());
         args.push(pack.clone().into_os_string());
+    }
+    // The memory card is the player's own saves: it rides with `--retail`
+    // too.
+    if let Some(card) = &settings.card {
+        args.push("--card".into());
+        args.push(card.clone().into_os_string());
     }
     if settings.switches.psx_render {
         args.push("--psx-render".into());
@@ -380,6 +450,9 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
     }
     if settings.switches.no_fortress_encounter_fix {
         args.push("--no-fortress-encounter-fix".into());
+    }
+    if settings.switches.no_tetsu_spar_fix {
+        args.push("--no-tetsu-spar-fix".into());
     }
     if settings.switches.jewel_fix {
         args.push("--jewel-fix".into());
@@ -430,6 +503,61 @@ pub fn play_args_with(info: &DiscInfo, settings: &LauncherSettings) -> Vec<std::
         args.push("--action-movement".into());
     }
     args
+}
+
+/// The file extensions of the memory-card containers the game mounts
+/// (`legaia_save::emu::detect`): raw `.mcr` / `.mcd` / `.srm`, DexDrive
+/// `.gme`, single-save `.mcs`.
+pub const CARD_EXTENSIONS: [&str; 5] = ["mcr", "mcd", "srm", "gme", "mcs"];
+
+/// Whether `path` names a memory-card container by its extension (a dropped
+/// file is routed by this before it is read).
+pub fn is_card_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| CARD_EXTENSIONS.iter().any(|c| c.eq_ignore_ascii_case(e)))
+}
+
+/// A memory card the launcher checked ([`inspect_card`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CardInfo {
+    /// The card file, absolute (the game runs in the data directory).
+    pub path: PathBuf,
+    /// The container format's label (`mcr`, `gme`, `mcs`).
+    pub format: &'static str,
+    /// How many Legend of Legaia saves the game would list on it: the
+    /// blocks `MountedCard::save_at` resumes.
+    pub saves: usize,
+}
+
+/// Mount `path` the way the game will (`MountedCard::open`) and count the
+/// saves its load screen would list. The error is a sentence for the help
+/// box.
+pub fn inspect_card(path: &Path) -> std::result::Result<CardInfo, String> {
+    if !path.exists() {
+        return Err(format!("There is no file at {}.", path.display()));
+    }
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    // The reader's first clause, as a sentence: its advice ("expected a raw
+    // .mcr ...") is the launcher's own line under it.
+    let card = legaia_save::emu::MountedCard::open(&path).map_err(|e| {
+        let root = e.root_cause().to_string();
+        let head = root
+            .split(" - ")
+            .next()
+            .and_then(|h| h.split(". ").next())
+            .unwrap_or(&root)
+            .trim_end_matches('.');
+        let mut s = head.chars();
+        let first = s.next().map(|c| c.to_uppercase().collect::<String>());
+        format!("{}{}.", first.unwrap_or_default(), s.as_str())
+    })?;
+    let saves = (0..15u8).filter(|&c| card.save_at(c).is_some()).count();
+    Ok(CardInfo {
+        path,
+        format: card.view.format.label(),
+        saves,
+    })
 }
 
 /// An expansion pack the launcher checked ([`inspect_expansion`]).
@@ -729,6 +857,7 @@ pub enum OptionRow {
     FleeExp,
     ExpRate,
     FortressFix,
+    TetsuSparFix,
     JewelFix,
     HpReadoutGuard,
     BonusDrop,
@@ -745,7 +874,7 @@ pub enum OptionRow {
 
 /// The option rows in screen order, with the heading each group starts
 /// under (`Some` on a group's first row).
-pub const OPTION_ROWS: [(Option<&str>, OptionRow); 38] = [
+pub const OPTION_ROWS: [(Option<&str>, OptionRow); 39] = [
     (Some("Start here"), OptionRow::Preset),
     (Some("Display"), OptionRow::Fullscreen),
     (None, OptionRow::WindowSize),
@@ -769,6 +898,7 @@ pub const OPTION_ROWS: [(Option<&str>, OptionRow); 38] = [
     (None, OptionRow::BonusDrop),
     (None, OptionRow::SaveAnywhere),
     (None, OptionRow::FortressFix),
+    (None, OptionRow::TetsuSparFix),
     (None, OptionRow::JewelFix),
     (None, OptionRow::HpReadoutGuard),
     (Some("Battle tuning"), OptionRow::ExpRate),
@@ -804,6 +934,7 @@ fn original_state() -> (legaia_engine_menus::options::OptionsState, LauncherSett
     w.flee_exp = false;
     w.exp_rate_permille = None;
     w.no_fortress_encounter_fix = true;
+    w.no_tetsu_spar_fix = true;
     w.jewel_fix = false;
     w.no_hp_readout_guard = true;
     w.spirit_ap = None;
@@ -902,6 +1033,7 @@ impl OptionRow {
             Self::FleeExp => "Run-away EXP",
             Self::ExpRate => "EXP rate",
             Self::FortressFix => "Fortress battles fix",
+            Self::TetsuSparFix => "Tetsu spar order fix",
             Self::JewelFix => "Boss casts respect jewels",
             Self::HpReadoutGuard => "Battle freeze guard",
             Self::BonusDrop => "Bonus equipment drops",
@@ -996,6 +1128,10 @@ impl OptionRow {
                 "Fixes Jette's fortress having no battles and a dead Door of Light after \
                  escaping the floating castle with under a minute left."
             }
+            Self::TetsuSparFix => {
+                "Sparring with Tetsu before Mei measures you still counts, so the hunters \
+                 come home. In the original the game cannot go on."
+            }
             Self::JewelFix => {
                 "Elemental jewels and guards protect against the bosses' signature \
                  attacks too, which the original lets through."
@@ -1067,6 +1203,7 @@ impl OptionRow {
                 | Self::FleeExp
                 | Self::ExpRate
                 | Self::FortressFix
+                | Self::TetsuSparFix
                 | Self::JewelFix
                 | Self::HpReadoutGuard
                 | Self::BonusDrop
@@ -1135,6 +1272,7 @@ impl OptionRow {
                 )
             }
             Self::FortressFix => on_off(!s.switches.no_fortress_encounter_fix),
+            Self::TetsuSparFix => on_off(!s.switches.no_tetsu_spar_fix),
             Self::JewelFix => on_off(s.switches.jewel_fix),
             Self::HpReadoutGuard => on_off(!s.switches.no_hp_readout_guard),
             Self::BonusDrop => on_off(s.switches.equipment_drops),
@@ -1277,6 +1415,7 @@ impl OptionRow {
             Self::FleeExp => w.flee_exp = d.flee_exp,
             Self::ExpRate => w.exp_rate_permille = d.exp_rate_permille,
             Self::FortressFix => w.no_fortress_encounter_fix = d.no_fortress_encounter_fix,
+            Self::TetsuSparFix => w.no_tetsu_spar_fix = d.no_tetsu_spar_fix,
             Self::JewelFix => w.jewel_fix = d.jewel_fix,
             Self::HpReadoutGuard => w.no_hp_readout_guard = d.no_hp_readout_guard,
             Self::BonusDrop => w.equipment_drops = d.equipment_drops,
@@ -1382,6 +1521,7 @@ impl OptionRow {
                 s.switches.exp_rate_permille = (next != EXP_RATE_RETAIL).then_some(next);
             }
             Self::FortressFix => s.switches.no_fortress_encounter_fix ^= true,
+            Self::TetsuSparFix => s.switches.no_tetsu_spar_fix ^= true,
             Self::JewelFix => s.switches.jewel_fix ^= true,
             Self::HpReadoutGuard => s.switches.no_hp_readout_guard ^= true,
             Self::BonusDrop => s.switches.equipment_drops ^= true,
@@ -1711,6 +1851,72 @@ mod tests {
     }
 
     #[test]
+    fn recent_discs_keep_newest_first_without_repeats() {
+        let mut s = LauncherSettings::default();
+        for i in 0..(RECENT_DISCS_MAX + 2) {
+            s.remember_disc(Path::new(&format!("/g/{i}.bin")));
+        }
+        assert_eq!(s.recent_discs.len(), RECENT_DISCS_MAX);
+        assert_eq!(s.recent_discs[0], Path::new("/g/7.bin"));
+        // Choosing an older disc again moves it up instead of repeating it.
+        s.remember_disc(Path::new("/g/4.bin"));
+        assert_eq!(s.recent_discs[0], Path::new("/g/4.bin"));
+        assert_eq!(s.recent_discs.len(), RECENT_DISCS_MAX);
+        assert_eq!(
+            s.recent_discs
+                .iter()
+                .filter(|p| p.ends_with("4.bin"))
+                .count(),
+            1
+        );
+        assert!(s.other_recent_discs().all(|p| p != Path::new("/g/4.bin")));
+        // The list round-trips through the settings file beside the switches.
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join(SETTINGS_FILE);
+        s.switches.retail = true;
+        s.save(&f).unwrap();
+        assert_eq!(LauncherSettings::load(&f).unwrap(), s);
+        // A settings file from before the list still loads.
+        std::fs::write(&f, "disc = \"/g/old.bin\"\n").unwrap();
+        assert!(LauncherSettings::load(&f).unwrap().recent_discs.is_empty());
+    }
+
+    #[test]
+    fn next_recent_disc_skips_dead_entries_and_wraps() {
+        let mut s = LauncherSettings::default();
+        for p in ["/g/a.bin", "/g/gone.bin", "/g/b.bin", "/g/cur.bin"] {
+            s.remember_disc(Path::new(p));
+        }
+        let validate = |p: &Path| {
+            if p.ends_with("gone.bin") {
+                Err(DiscProblem::Missing(p.to_path_buf()))
+            } else {
+                Ok(ok_info(p))
+            }
+        };
+        // Newest first: cur, b, gone, a. Stepping walks on from the current
+        // disc, skips the one that is gone, and wraps.
+        let first = next_recent_disc(&s, validate).unwrap();
+        assert_eq!(first.path, Path::new("/g/b.bin"));
+        s.disc = Some(first.path.clone());
+        let second = next_recent_disc(&s, validate).unwrap();
+        assert_eq!(second.path, Path::new("/g/a.bin"));
+        s.disc = Some(second.path.clone());
+        let wrapped = next_recent_disc(&s, validate).unwrap();
+        assert_eq!(wrapped.path, Path::new("/g/cur.bin"));
+        // A remembered disc that is gone steps to the newest good one.
+        s.disc = Some("/g/gone.bin".into());
+        assert_eq!(
+            next_recent_disc(&s, validate).unwrap().path,
+            Path::new("/g/cur.bin")
+        );
+        // Nothing else that validates: nothing to offer.
+        let mut lone = LauncherSettings::default();
+        lone.remember_disc(Path::new("/g/cur.bin"));
+        assert!(next_recent_disc(&lone, validate).is_none());
+    }
+
+    #[test]
     fn malformed_settings_file_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join(SETTINGS_FILE);
@@ -1833,6 +2039,53 @@ mod tests {
         // No pack writes no key.
         let none = toml::to_string(&LauncherSettings::default()).unwrap();
         assert!(!none.contains("expansion"));
+    }
+
+    #[test]
+    fn the_memory_card_rides_the_play_args_with_retail_too() {
+        let info = ok_info(Path::new("/g/l.bin"));
+        let s = LauncherSettings {
+            card: Some("/cards/epsxe000.mcr".into()),
+            switches: PersistedSwitches {
+                retail: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let a = play_args_with(&info, &s);
+        let at = a.iter().position(|x| x == "--card").expect("--card");
+        assert_eq!(a[at + 1], "/cards/epsxe000.mcr");
+        let text = toml::to_string(&s).unwrap();
+        assert_eq!(toml::from_str::<LauncherSettings>(&text).unwrap(), s);
+        assert!(
+            !toml::to_string(&LauncherSettings::default())
+                .unwrap()
+                .contains("card")
+        );
+        // The `play-window` parser takes what the launcher hands it.
+        assert!(a.iter().any(|x| x == "--retail"));
+    }
+
+    #[test]
+    fn card_files_are_recognised_and_inspected_through_the_game_reader() {
+        assert!(is_card_file(Path::new("/c/Legaia.MCR")));
+        assert!(is_card_file(Path::new("/c/slot.gme")));
+        assert!(!is_card_file(Path::new("/c/legaia.bin")));
+        let dir = tempfile::tempdir().unwrap();
+        // A freshly formatted raw card: mounts, holds no saves.
+        let blank = dir.path().join("blank.mcr");
+        let mut bytes = vec![0u8; 128 * 1024];
+        bytes[..2].copy_from_slice(b"MC");
+        std::fs::write(&blank, &bytes).unwrap();
+        let info = inspect_card(&blank).expect("a formatted card mounts");
+        assert_eq!((info.format, info.saves), ("mcr", 0));
+        assert!(info.path.is_absolute());
+        // Not a card: refused with the reader's reason, as a sentence.
+        let junk = dir.path().join("junk.mcr");
+        std::fs::write(&junk, vec![7u8; 4096]).unwrap();
+        let why = inspect_card(&junk).unwrap_err();
+        assert_eq!(why, "Unrecognised save container (4096 bytes).");
+        assert!(inspect_card(&dir.path().join("gone.mcr")).is_err());
     }
 
     /// A chosen file names a pack as a bundle, a folder or its manifest; the
@@ -2061,6 +2314,7 @@ mod tests {
             FleeExp => "play-flee-exp",
             ExpRate => "play-exp-rate",
             FortressFix => "play-fortress-fix",
+            TetsuSparFix => "play-tetsu-spar-fix",
             JewelFix => "play-jewel-fix",
             HpReadoutGuard => "play-hp-readout-guard",
             BonusDrop => "play-bonus-drop",

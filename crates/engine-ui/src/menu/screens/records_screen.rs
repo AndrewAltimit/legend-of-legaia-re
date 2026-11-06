@@ -44,9 +44,9 @@
 //! Three values on the page are **not** per-character and live in the block
 //! itself: `No. of Battles` (`0x800846A4`), `No. of Escapes`
 //! (`0x800846A8`) and the 1/60 s play-time counter (`0x800845DC`). The
-//! treasure line's found/total pair is a world-map overlay global
-//! (`DAT_801C6460` / `DAT_801C6462`), not a save-block field at all, and
-//! retail hides the whole line when the total is zero.
+//! treasure line's found/total pair is slots 0 and 1 of the field VM's
+//! script-counter table (`DAT_801C6460` / `DAT_801C6462`), not a save-block
+//! field at all, and retail hides the whole line when the total is zero.
 //!
 //! # Wiring status
 //!
@@ -55,11 +55,11 @@
 //! row of: the native window behind the `LEGAIA_DEV_MENU` opt-in
 //! (`window/dev_menu.rs`) and the browser play page behind its session-only
 //! Dev-menu checkbox (`web-play/src/play_dev_menu.rs`). Both feed the six
-//! per-character counters through [`RecordCounters`] and the play clock from
-//! `World::clock.play_time_seconds`. The lifetime battle and escape
-//! counters and the treasure census are state the engine does not keep yet,
-//! so those two fields read zero and the treasure line stays hidden - which
-//! is also what retail draws on a save that has never incremented them.
+//! per-character counters through [`RecordCounters`], the play clock from
+//! `World::clock.play_time_seconds`, the battle / escape tallies from
+//! `PartyState::record_tally` (counted by `World::enter_battle` and the Run
+//! roll's success arm) and the treasure pair from the world's
+//! script-counter slots. The end-of-game soft reset draws the same page.
 
 use crate::{TextDraw, text_draws_for};
 

@@ -164,6 +164,12 @@ fn a_cancelled_visit_leaves_the_record_alone() {
     sub.tick_pad_edge(PadButton::Circle.mask());
     let page = closed_list(&mut sub);
     assert_eq!(apply_list_order_outcome(&page, &mut world), 0);
+    // The Magic screen refuses a caster with no Ra-Seru, so the order is
+    // read with it worn again.
+    let member = &mut world.party.roster.members[0];
+    let mut equip = member.equipment();
+    equip.slots[3] = 0x60;
+    member.set_equipment(equip);
     assert_eq!(screen_ids(&world), SPELLS.to_vec());
 }
 
@@ -213,5 +219,11 @@ fn an_empty_raseru_slot_reports_no_list_to_the_apply() {
     equip.slots[3] = 0;
     member.set_equipment(equip);
     assert_eq!(apply_list_order_outcome(&page, &mut world), 0);
+    // The Magic screen refuses a caster with no Ra-Seru, so the order is
+    // read with it worn again.
+    let member = &mut world.party.roster.members[0];
+    let mut equip = member.equipment();
+    equip.slots[3] = 0x60;
+    member.set_equipment(equip);
     assert_eq!(screen_ids(&world), SPELLS.to_vec());
 }

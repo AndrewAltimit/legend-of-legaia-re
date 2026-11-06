@@ -35,8 +35,9 @@
 ///   action by the seed arms - [`battle_readout_bar_slot`],
 ///   [`battle_move_name`], [`battle_target_plaque`].
 /// * **`Idle`** (`0x0A` between actions, the open and the close): retail
-///   holds no live handle at all (the `evil_medallion_rage_battle` state,
-///   taken in `0x0A`, has an empty handle list).
+///   opens nothing here. A round's first actor's `0x0A` holds no handle at
+///   all (`evil_medallion_rage_battle`); a later one's still holds the last
+///   action's closing glides ([`action_hud_closing`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BattleHudPhase {
     Idle,
@@ -52,6 +53,27 @@ pub enum BattleHudPhase {
 /// live widget handle.
 pub fn battle_action_in_flight(state: u8) -> bool {
     matches!(state, 0x0C..=0x52 | 0x64..=0x6B | 0x6E..=0x71)
+}
+
+/// The Done band's closing glides while they are on screen
+/// ([`legaia_engine_battle_loop::battle_state::ActionHudClose`]): from the
+/// teardown that launched them, through the holds between actions, to the
+/// next action seed's handle-list reset (`FUN_801D99BC` at `0x801E2CF4`).
+/// The command surfaces rebuild the list from their own sub-draw steps, so
+/// none of these survives into them.
+pub fn action_hud_closing(
+    world: &legaia_engine_core::world::World,
+) -> Option<&legaia_engine_battle_loop::battle_state::ActionHudClose> {
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return None;
+    }
+    let c = world.battle.action_hud_close.as_ref()?;
+    c.in_flight()?;
+    match battle_hud_phase(world) {
+        BattleHudPhase::Idle => Some(c),
+        BattleHudPhase::Action if world.battle.action_hud_wiped => Some(c),
+        _ => None,
+    }
 }
 
 /// The HUD phase this frame is in ([`BattleHudPhase`]).

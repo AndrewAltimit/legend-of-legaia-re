@@ -799,9 +799,10 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 
 /// PORT: FUN_800430AC
 ///
-/// Party-wide **accessory unequip-by-id**. Walks the active party in
-/// roster order (retail: member ids at `0x80084598+`, count at
-/// `DAT_80084594`, records at `0x80084708 + id * 0x414`) and scans each
+/// Party-wide **accessory unequip-by-id**. Walks the present-party list
+/// `present` in its own order (retail: member ids at `0x80084598+`, count at
+/// `DAT_80084594`, records at `0x80084708 + id * 0x414`) - a roster member
+/// who is not in it keeps what they wear - and scans each
 /// record's three accessory ("Goods") slots - equipment indices `5..=7`,
 /// record offsets `+0x19B..0x19D` (Ring 1 / Ring 2 / Accessory). On the
 /// **first** slot whose byte equals `item_id` it zeroes the slot and
@@ -849,8 +850,15 @@ pub fn vanilla_equipment_catalog() -> EquipmentCatalog {
 /// stalled the script on 63 disc sites across 13 scenes. And the follow-up
 /// "what is left is the world-side override" was true only until that override
 /// landed; this paragraph is what replaced it.
-pub fn party_unequip_accessory_by_id(party: &mut legaia_save::Party, item_id: u8) -> bool {
-    for member in &mut party.members {
+pub fn party_unequip_accessory_by_id(
+    party: &mut legaia_save::Party,
+    present: &[u8],
+    item_id: u8,
+) -> bool {
+    for &id in present {
+        let Some(member) = party.members.get_mut(usize::from(id)) else {
+            continue;
+        };
         let mut eq = member.equipment();
         for slot in 5..8usize {
             if eq.slots[slot] == item_id {
@@ -938,6 +946,8 @@ mod tests {
 
     // -- party_unequip_accessory_by_id (FUN_800430AC) ------------------
 
+    const ALL: [u8; 3] = [0, 1, 2];
+
     fn party_with_goods(goods: &[[u8; 3]]) -> legaia_save::Party {
         let mut p = legaia_save::Party::zeroed(goods.len());
         for (m, g) in p.members.iter_mut().zip(goods) {
@@ -952,7 +962,7 @@ mod tests {
     fn unequip_clears_first_matching_goods_slot_only() {
         // Member 0 carries 0x42 twice; only the first match clears.
         let mut p = party_with_goods(&[[0x42, 0x42, 0x11], [0x42, 0, 0]]);
-        assert!(party_unequip_accessory_by_id(&mut p, 0x42));
+        assert!(party_unequip_accessory_by_id(&mut p, &ALL, 0x42));
         assert_eq!(p.members[0].equipment().slots[5..8], [0, 0x42, 0x11]);
         // Member 1 untouched (the scan stopped at member 0).
         assert_eq!(p.members[1].equipment().slots[5], 0x42);
@@ -961,7 +971,7 @@ mod tests {
     #[test]
     fn unequip_scans_later_members_when_earlier_lack_the_id() {
         let mut p = party_with_goods(&[[0x11, 0x12, 0x13], [0, 0x99, 0]]);
-        assert!(party_unequip_accessory_by_id(&mut p, 0x99));
+        assert!(party_unequip_accessory_by_id(&mut p, &ALL, 0x99));
         assert_eq!(p.members[1].equipment().slots[5..8], [0, 0, 0]);
         // Member 0 untouched.
         assert_eq!(p.members[0].equipment().slots[5..8], [0x11, 0x12, 0x13]);
@@ -970,15 +980,16 @@ mod tests {
     #[test]
     fn unequip_misses_report_the_retail_0x100_case() {
         let mut p = party_with_goods(&[[0x11, 0x12, 0x13]]);
-        assert!(!party_unequip_accessory_by_id(&mut p, 0x99));
+        assert!(!party_unequip_accessory_by_id(&mut p, &ALL, 0x99));
         // Weapon/armor slots (0..5) are never scanned - an id living
         // there does not count.
         let mut eq = p.members[0].equipment();
         eq.slots[0] = 0x99;
         p.members[0].set_equipment(eq);
-        assert!(!party_unequip_accessory_by_id(&mut p, 0x99));
+        assert!(!party_unequip_accessory_by_id(&mut p, &ALL, 0x99));
         assert!(!party_unequip_accessory_by_id(
             &mut legaia_save::Party::zeroed(0),
+            &ALL,
             0x11
         ));
     }
@@ -988,7 +999,7 @@ mod tests {
         // Retail compares the raw byte, so id 0 "clears" the first empty
         // goods slot and reports success.
         let mut p = party_with_goods(&[[0x11, 0, 0x13]]);
-        assert!(party_unequip_accessory_by_id(&mut p, 0));
+        assert!(party_unequip_accessory_by_id(&mut p, &ALL, 0));
         assert_eq!(p.members[0].equipment().slots[5..8], [0x11, 0, 0x13]);
     }
 

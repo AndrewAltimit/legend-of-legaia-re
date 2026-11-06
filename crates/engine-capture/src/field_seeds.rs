@@ -404,6 +404,32 @@ pub fn dance_markers_env(rows: &[Option<[i16; 3]>]) -> String {
         .join(";")
 }
 
+/// The dance hall's animated props as `LEGAIA_SEAT_DANCE_PROPS`:
+/// `clip:cursor:passes` per clip, `;`-joined - the RAM's cursor and how many
+/// passes the displayed frame stands behind it.
+pub fn dance_props_env(clips: &[(u8, i16)], passes: u16) -> String {
+    clips
+        .iter()
+        .map(|(clip, cursor)| format!("{clip}:{cursor}:{passes}"))
+        .collect::<Vec<_>>()
+        .join(";")
+}
+
+/// Parse [`dance_props_env`]: `(clip, cursor, passes)`; malformed entries are
+/// dropped.
+pub fn dance_props_from_env(v: &str) -> Vec<(u8, i16, u16)> {
+    v.split(';')
+        .filter_map(|e| {
+            let mut f = e.trim().split(':');
+            Some((
+                f.next()?.parse().ok()?,
+                f.next()?.parse().ok()?,
+                f.next()?.parse().ok()?,
+            ))
+        })
+        .collect()
+}
+
 /// Parse [`dance_markers_env`]: `(class, [cursor, timer, mesh])`; malformed
 /// entries are dropped.
 pub fn dance_markers_from_env(v: &str) -> Vec<(usize, [i16; 3])> {

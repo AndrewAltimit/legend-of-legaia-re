@@ -1214,6 +1214,12 @@ pub(crate) enum Cmd {
         /// holds it off.
         #[arg(long, default_value_t = false)]
         no_fortress_encounter_fix: bool,
+        /// No Tetsu spar order fix: a spar with Tetsu fought before the
+        /// measuring at Vahn's house never counts, as in retail, and the
+        /// hunters never return. On by default (a game played in retail's
+        /// order plays the same either way). `--retail` holds it off.
+        #[arg(long, default_value_t = false)]
+        no_tetsu_spar_fix: bool,
         /// Jewel fix: the boss cinematic casts (Xain, Cort, the Delilas trio)
         /// respect elemental jewels, guards and All Guard - the engine twin
         /// of the patcher's `--jewel-fix`. Not retail; `--retail` holds it
@@ -1492,7 +1498,7 @@ pub(crate) enum Cmd {
             conflicts_with_all = ["no_dynamic_lighting", "no_dyn_shadows",
                 "no_entry_pulse", "no_occlusion_fade", "no_volumetric_fog", "no_ssao", "smart_monsters",
                 "arts_saved_list",
-                "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "jewel_fix",
+                "no_shiny_seru", "flee_exp", "exp_rate", "no_fortress_encounter_fix", "no_tetsu_spar_fix", "jewel_fix",
                 "no_hp_readout_guard", "spirit_ap", "damage_ap", "seru_catch_rate",
                 "enemy_attack_count", "enemy_stat_scale", "equipment_drops", "save_anywhere",
                 "action_movement"]

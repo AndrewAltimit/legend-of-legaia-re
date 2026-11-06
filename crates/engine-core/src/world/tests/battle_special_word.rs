@@ -169,3 +169,16 @@ fn battle_exit_clears_ailments_unless_the_arena_bit() {
     assert_eq!(run(0x200), (false, 1));
     assert_eq!(run(0x100), (true, 1), "the arena bit keeps the party's");
 }
+
+/// `0x801E7B40..0x801E7B68`: the success arm adds one to the records'
+/// escape tally unless the word's `0x100` bit forced the flee, which retail
+/// tests first and branches past the store.
+#[test]
+fn a_forced_flee_is_no_escape_on_the_records() {
+    let mut world = special_world(1, 0);
+    world.count_battle_escape();
+    assert_eq!(world.party.record_tally.escapes, 1);
+    let mut forced = special_world(1, 0x100);
+    forced.count_battle_escape();
+    assert_eq!(forced.party.record_tally.escapes, 0);
+}

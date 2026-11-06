@@ -27,6 +27,16 @@ const HEAL: u8 = 0x10;
 
 /// A three-member party at `hp` / 100, with `HEAL` learned by member 0 and
 /// the static spell record for it installed as `(class, sub, flags)`.
+/// Every member wears its Ra-Seru: the Magic screen's caster confirm refuses
+/// a caster whose Ra-Seru byte (`record[0x196 + 0x8007B424[char]]`) is empty.
+fn wear_ra_seru(world: &mut World) {
+    for (i, member) in world.party.roster.members.iter_mut().enumerate().take(3) {
+        let mut equip = member.equipment();
+        equip.slots[[3, 2, 3][i]] = [0x01, 0x0A, 0x13][i];
+        member.set_equipment(equip);
+    }
+}
+
 fn world(hp: u16, record: Option<(u8, u8, u8)>) -> World {
     let mut world = World::new();
     world.party.roster = legaia_save::Party::zeroed(3);
@@ -38,6 +48,7 @@ fn world(hp: u16, record: Option<(u8, u8, u8)>) -> World {
         hms.mp_max = 30;
         member.set_hp_mp_sp(hms);
     }
+    wear_ra_seru(&mut world);
     world.party.party_count = 3;
     world.party.party_leader_slot = Some(0);
     world.set_item_catalog(ItemCatalog::vanilla());
