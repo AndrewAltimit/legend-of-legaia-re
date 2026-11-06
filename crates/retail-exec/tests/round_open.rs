@@ -3,7 +3,7 @@
 //! `World::roll_battle_formation`; `FUN_801E752C`, the status tick, against
 //! `World::tick_status_effects`.
 
-use crate::common::{Rng, disc, scus, scus_cpu};
+use crate::common::{Rng, disc, scus, scus_cpu, split_statuses};
 use legaia_engine_battle::accessory_passives::AccessoryPassives;
 use legaia_engine_battle::monster_catalog::{FormationDef, FormationSlot};
 use legaia_engine_battle_vm::battle_formulas::FormationAdvantage;
@@ -199,6 +199,7 @@ fn seed_port(w: &mut World, s: &Seats) {
             a.battle_monster_id = Some(u16::from(s.monster_id));
         }
     }
+    split_statuses(w, s.seed);
     w.rng_state = s.seed;
 }
 

@@ -3,7 +3,7 @@
 //! `World::enemy_move_predamage`, a summon body's hit against
 //! `World::summon_module_roll`, each followed by the fold that lands the hit.
 
-use crate::common::{Rng, disc, scus_cpu};
+use crate::common::{Rng, disc, scus_cpu, split_statuses};
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_battle::move_power::MovePowerCatalog;
 use legaia_engine_battle::spells::SpellOutcome;
@@ -223,6 +223,7 @@ fn seed_port(w: &mut World, c: &Cast) {
         a.battle_monster_id = (s >= 3).then_some(0x40 + u16::from(s));
         a.battle_element = (s >= 3).then_some(c.elements[i - 3 * usize::from(s >= 3)]);
     }
+    split_statuses(w, c.seed);
     let body = &c.seats[7];
     let mut def = MonsterDef::new(0x100, "body", body.hp, body.atk);
     def.intel = body.int;

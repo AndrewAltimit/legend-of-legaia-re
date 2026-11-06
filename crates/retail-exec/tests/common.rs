@@ -87,3 +87,14 @@ pub fn seat_status(w: &mut legaia_engine_core::world::World, slot: u8, word: u16
     }
     w.actors[usize::from(slot)].battle.field_flags = raw;
 }
+
+/// [`seat_status`] over every actor the test has seated a raw word on, each
+/// split or not by a bit of `salt`.
+pub fn split_statuses(w: &mut legaia_engine_core::world::World, salt: u32) {
+    for i in 0..w.actors.len().min(32) {
+        let word = w.actors[i].battle.field_flags;
+        if word != 0 {
+            seat_status(w, i as u8, word, salt >> i & 1 != 0);
+        }
+    }
+}

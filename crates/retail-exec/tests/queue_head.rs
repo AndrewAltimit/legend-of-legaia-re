@@ -2,7 +2,7 @@
 //! against `World::arm_ai_companion`, the HP it pins on her seat, and the string
 //! the spar's third lesson forces on the lead.
 
-use crate::common::{Rng, disc, scus_cpu};
+use crate::common::{Rng, disc, scus_cpu, split_statuses};
 use legaia_engine_battle::monster_catalog::MonsterDef;
 use legaia_engine_core::world::World;
 use legaia_retail_exec::{Cpu, Stop, V0};
@@ -164,6 +164,7 @@ fn the_companion_picks_what_retail_picks() {
         w.actors[0].battle.hp = t.lead_hp;
         w.actors[0].battle.max_hp = t.lead_max;
         w.actors[0].battle.field_flags = t.lead_status;
+        split_statuses(&mut w, t.seed);
         w.actors[1].battle.hp = t.terra_hp;
         w.actors[1].battle.mp = t.terra_mp;
         w.rng_state = t.seed;
