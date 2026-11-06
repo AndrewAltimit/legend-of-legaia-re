@@ -3501,12 +3501,12 @@ level tracks a frame-stepped retail one within `8` units across the ramp.
 | `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
 | `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
-| `theeder_summon_mid_cast` | `0.722` | `+2.30` dB | `+55` | the voice starts `0.23` s before retail's |
+| `theeder_summon_mid_cast` | `0.904` | `+2.32` dB | `-378` | the voice past the drive's wait aligns `9.9` vsyncs earlier than the engine's, inside the seek window ([below](#the-cast-channels-seek-window)) |
 | `zenoir_summon_mid_cast` | `0.812` | `+1.59` dB | `+725` | the voice within `0.08` s of retail's |
-| `nighto_summon_mid_cast` | `0.328` | `+0.13` dB | `-138` | the voice starts `0.16` s before retail's |
-| `orb_summon_mid_cast` | `0.949` | `+0.04` dB | `+284` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
-| `swordie_summon_mid_cast` | `0.988` | `+0.18` dB | `-289` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
-| `gilium_summon_mid_cast` | `0.194` | `-0.54` dB | `+94` | the voice `0.30` s early, and lifted to full CD volume under a duck that has settled in retail by its start ([below](#the-drive-holds-a-summons-voice)) |
+| `nighto_summon_mid_cast` | `0.973` | `+0.10` dB | `-274` | the voice past the drive's wait aligns `13.1` vsyncs earlier than the engine's, inside the seek window |
+| `orb_summon_mid_cast` | `0.994` | `+0.02` dB | `+246` | the voice `64` ms after retail's, at retail's gain (`0.906` against `0.905`); it started `0.99` s early and `0.7` dB quiet before the drive's wait and the CD volume |
+| `swordie_summon_mid_cast` | `0.988` | `+0.18` dB | `-243` | the voice `6` ms after retail's, at retail's gain (`0.906` against `0.908`); it started `0.71` s early before |
+| `gilium_summon_mid_cast` | `0.226` | `+0.02` dB | `+723` | the voice `0.30` s early, and lifted to full CD volume under a duck that has settled in retail by its start ([below](#the-drive-holds-a-summons-voice)) |
 
 What it found on Call Wave, both from the disassembly and both confirmed by the recording:
 
@@ -3552,6 +3552,23 @@ level change under a sounding clip lifts it to the full CD volume
 ([the CD input volume](#the-cd-input-volume)), and Orb's duck is still ramping when its voice starts only
 because the blocked frames held the ramp.
 
+<a id="the-cast-channels-seek-window"></a>
+**The cast channel's seek window.** The drive's seek time is not one number: it varies across drives and
+across emulators (PCSX-Redux answers these seeks in `1..4` vsyncs, mednafen in the times above), and the
+port keeps one model of it. The cast channel therefore accepts any wait inside a window rather than the
+model's to the vsync. The child writes, beside the WAV, whether the module's arm waited on the drive on
+each recorded tick (`<wav>.drive`, `World::cast_drive_waiting`). Where it did, the recording before the
+wait's end mixes on the cast's own offset, and the part after it (the voice) is fitted on its own over
+the first three seconds, at any shift from the engine's whole wait earlier (a drive that answered at once)
+to `max(8, wait / 2)` vsyncs later (`pcm_retail::fit_cast_offset_after_wait`, the margin shared with the
+[cast-sequence oracle](../tooling/cast-sequence-oracle.md#cd-seek-waits)). `audio-pcm.py` prints each
+state's wait, the voice's shift against the cast's offset and the window searched, so the tolerance is
+never silent. On the five summon states with a wait: Theeder `0.722` to `0.904` (voice `-9.9` vsyncs),
+Nighto `0.326` to `0.973` (`-13.1`), Orb `0.935` to `0.994` (`-5.2`), Swordie `0.903` to `0.988`
+(`-1.1`), Gilium `0.219` to `0.226` (`+5.1`); the casts with no drive wait are unchanged. Theeder's and
+Nighto's shifts are against mednafen, the emulator the seek law is fitted to, so they are a residual of
+the port's drive on those two casts that the window covers, not emulator variance.
+
 **A call behind its arm's own gate.** Gilium's PROT 0923 arm 2 drains a countdown (`0x801FA4F8`,
 `bgtz a1,0x801F8B5C` at `0x801F6CAC`) before it polls the drive and calls `0x16E`; the port raised the cue
 as soon as the drive was idle, while the countdown still held the arm, and the voice started `0.59` s early
@@ -3562,7 +3579,9 @@ now lands on the pass the arm's hold lets through: `0.30` s early, the rest of t
 (`55` vsyncs from its seek in retail, `40` in the port) unexplained.
 
 Theeder's and Nighto's voices are not held by the drive: their selector seeks and their own seeks both
-land on `XA8`, so the module's seek is a few vsyncs, and their voices still start `0.23` and `0.16` s early.
+land on `XA8`, so the module's seek is a few vsyncs. The port still holds their seek arms `24` and `23` frames
+behind the selector's seek it issues as the module arms, and the cast channel's voice fit places their voices
+`9.9` and `13.1` vsyncs after mednafen's: retail's selector seek may already be done by then.
 Frame-stepped, `theeder_summon_mid_cast` reaches arm 1 `86` vsyncs after the state, behind the side-band
 read (`cmd 6` reads in the `summon.dat` region, `41347..41446` in three chunks), and arm 2 runs past the
 end of the log at `+187` where the port's countdown leaves it at `+213`; arm 2 also polls the selector's

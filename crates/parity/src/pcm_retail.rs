@@ -633,6 +633,72 @@ pub fn fit_cast_offset(retail: &[i16], track: &[i16], cast: &[i16], lag: i64) ->
         .unwrap_or(0)
 }
 
+/// A cast's CD-seek wait in the engine's cast recording, read off its
+/// `.drive` sidecar (one `0` / `1` line per recorded tick, `1` where the
+/// module's arm waited on the drive): `(first held tick, ticks held)` of the
+/// last such run. `None` when nothing in the recording waited.
+pub fn cast_drive_wait(drive: &str) -> Option<(usize, usize)> {
+    let held: Vec<bool> = drive.lines().map(|l| l.trim() == "1").collect();
+    let end = held.iter().rposition(|&h| h)? + 1;
+    let start = held[..end].iter().rposition(|&h| !h).map_or(0, |i| i + 1);
+    Some((start, end - start))
+}
+
+/// The voice after a cast's CD-seek wait, aligned within the seek window
+/// (`docs/subsystems/audio.md`, "The cast channel's seek window"): retail's
+/// wait may run anywhere from no extra vsync to the engine's `held` plus
+/// [`crate::cast_sequence::drive_window_margin`], so the recording from the
+/// wait's end on (`split`, a cast sample) is fitted to what is left of
+/// `retail` over that span of shifts around `offset`, the cast's own fit.
+/// Returns the shift for the part past `split` and the window searched, in
+/// samples either side of `offset` (`(-early, late)`).
+pub fn fit_cast_offset_after_wait(
+    retail: &[i16],
+    track: &[i16],
+    cast: &[i16],
+    lag: i64,
+    offset: i64,
+    split: usize,
+    held: usize,
+) -> (i64, (i64, i64)) {
+    let mono = |pcm: &[i16], t: i64, gain: f64| -> f64 {
+        usize::try_from(t)
+            .ok()
+            .and_then(|t| pcm.get(t * 2..t * 2 + 2))
+            .map_or(0.0, |s| (f64::from(s[0]) + f64::from(s[1])) * 0.5 / gain)
+    };
+    let vs = RETAIL_VSYNC_SAMPLES;
+    let margin = crate::cast_sequence::drive_window_margin(held as u64) as f64;
+    // Retail's wait in [0, held + margin] vsyncs: its voice lands up to `held`
+    // vsyncs earlier than the engine's, or `margin` later.
+    let window = (-((held as f64 * vs) as i64), (margin * vs) as i64);
+    // The voice's opening seconds past the wait carry the fit.
+    let span = (3 * SPU_INTERNAL_RATE as usize).min((cast.len() / 2).saturating_sub(split));
+    let fit = |d: i64| -> f64 {
+        let (mut dot, mut ee) = (0.0, 0.0);
+        for k in split..split + span {
+            let v = mono(cast, k as i64, 1.0);
+            let t = k as i64 + d;
+            let l = mono(retail, t, MEDNAFEN_RECORD_GAIN) - mono(track, t + lag, 1.0);
+            dot += l * v;
+            ee += v * v;
+        }
+        dot / ee.max(1.0).sqrt()
+    };
+    if span == 0 {
+        return (offset, window);
+    }
+    let best = |from: i64, to: i64, step: usize| {
+        (from..=to)
+            .step_by(step)
+            .max_by(|a, b| fit(*a).total_cmp(&fit(*b)))
+            .unwrap_or(offset)
+    };
+    let coarse = best(offset + window.0, offset + window.1, 64);
+    let mid = best(coarse - 64, coarse + 64, 8);
+    (best(mid - 8, mid + 8, 1), window)
+}
+
 /// `add` into `pcm`, shifted the way [`score_window`] reads a lag: retail's
 /// frame `t` stands on the engine's frame `t + lag`, and a voice resumed from
 /// the state is on retail's clock.
@@ -650,6 +716,7 @@ fn mix_at_lag(pcm: &mut [i16], add: &[i16], lag: i64) {
 }
 
 pub fn run(args: PcmRetailArgs) -> Result<()> {
+    let mut cast_drive: Option<serde_json::Value> = None;
     let (pcm, label) = if let Some(state) = &args.resume_state {
         let st = legaia_mednafen::SaveState::from_path(state)?;
         let mut spu = spu_resumed_from_retail(&st)?;
@@ -766,7 +833,37 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             // against what the track leaves of the recording, and reported.
             let offset = fit_cast_offset(&retail, &pcm, &cast, lag);
             println!("{}: cast offset {offset:+} samples", args.label);
-            mix_at_lag(&mut pcm, &cast, lag + offset);
+            // A CD-seek wait in the cast: the voice past it may start anywhere
+            // in the seek window, and is aligned there on its own.
+            let wait = std::fs::read_to_string(cast_path.with_extension("drive"))
+                .ok()
+                .and_then(|t| cast_drive_wait(&t));
+            match wait {
+                Some((start, held)) => {
+                    let split =
+                        (((start + held) as f64 * args.vsync_samples) as usize).min(cast.len() / 2);
+                    let (after, window) =
+                        fit_cast_offset_after_wait(&retail, &pcm, &cast, lag, offset, split, held);
+                    println!(
+                        "{}: cast CD-seek wait {held} ticks from tick {start}: voice offset {after:+} \
+                         samples ({:+.1} vsyncs past the cast's), window {:+}..={:+} samples",
+                        args.label,
+                        (after - offset) as f64 / args.vsync_samples,
+                        window.0,
+                        window.1
+                    );
+                    mix_at_lag(&mut pcm, &cast[..split * 2], lag + offset);
+                    mix_at_lag(&mut pcm, &cast[split * 2..], lag + after + split as i64);
+                    cast_drive = Some(serde_json::json!({
+                        "wait_start_tick": start,
+                        "held_ticks": held,
+                        "offset": offset,
+                        "voice_offset": after,
+                        "window": [window.0, window.1],
+                    }));
+                }
+                None => mix_at_lag(&mut pcm, &cast, lag + offset),
+            }
         }
         (pcm, args.label.clone())
     };
@@ -797,7 +894,11 @@ pub fn run(args: PcmRetailArgs) -> Result<()> {
             }
         }
         if let Some(out) = &args.json {
-            std::fs::write(out, serde_json::to_string_pretty(&score)?)?;
+            let mut v = serde_json::to_value(&score)?;
+            if let (Some(d), Some(m)) = (cast_drive.take(), v.as_object_mut()) {
+                m.insert("cast_drive".into(), d);
+            }
+            std::fs::write(out, serde_json::to_string_pretty(&v)?)?;
         }
     }
     Ok(())
@@ -984,6 +1085,41 @@ fn read_position(state: &Path, extracted: &Path) -> Result<(RetailSeqPosition, V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `.drive` sidecar's last run of waiting ticks is the wait the voice
+    /// follows; a recording that never waited has none.
+    #[test]
+    fn the_drive_sidecar_names_the_last_wait() {
+        assert_eq!(cast_drive_wait("0\n0\n1\n1\n1\n0\n"), Some((2, 3)));
+        assert_eq!(cast_drive_wait("1\n1\n0\n0\n1\n0\n"), Some((4, 1)));
+        assert_eq!(cast_drive_wait("1\n1\n"), Some((0, 2)));
+        assert_eq!(cast_drive_wait("0\n0\n"), None);
+        assert_eq!(cast_drive_wait(""), None);
+    }
+
+    /// The voice past the wait is found wherever the window puts it: a cast
+    /// whose voice retail started `held` vsyncs sooner fits at that shift.
+    #[test]
+    fn the_voice_after_a_wait_fits_inside_the_window() {
+        let n = 4 * SPU_INTERNAL_RATE as usize;
+        let tone = |t: usize| ((t as f64 * 0.05).sin() * (t as f64 * 0.0007).cos() * 8000.0) as i16;
+        let (split, held, early) = (20_000usize, 20usize, 7_000usize);
+        // Engine: the voice from `split + early`; retail: from `split`.
+        let mut cast = vec![0i16; n * 2];
+        let mut retail = vec![0i16; n * 2];
+        for t in 0..n - split - early {
+            let v = tone(t);
+            cast[(split + early + t) * 2] = v;
+            cast[(split + early + t) * 2 + 1] = v;
+            let r = (f64::from(v) * MEDNAFEN_RECORD_GAIN) as i16;
+            retail[(split + t) * 2] = r;
+            retail[(split + t) * 2 + 1] = r;
+        }
+        let track = vec![0i16; n * 2];
+        let (got, window) = fit_cast_offset_after_wait(&retail, &track, &cast, 0, 0, split, held);
+        assert_eq!(got, -(early as i64));
+        assert!(window.0 <= got && got <= window.1);
+    }
 
     #[test]
     fn the_duck_ramps_from_the_states_own_level() {

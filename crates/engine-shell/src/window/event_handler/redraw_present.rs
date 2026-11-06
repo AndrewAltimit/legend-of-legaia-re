@@ -397,6 +397,11 @@ struct AudioWavRecorder {
     /// (`AudioDirector::duck_applied`, `DAT_8007B6EC`), written beside the WAV
     /// as `<path>.duck`: the duck the score is to be rendered under.
     duck: Vec<u8>,
+    /// Whether the module's arm waited on the CD drive on each recorded tick
+    /// (`World::cast_drive_waiting`), written beside the WAV as
+    /// `<path>.drive`: where the cast's seek wait sits, which the PCM cast
+    /// channel aligns the voice after within the seek window.
+    drive: Vec<u8>,
     /// The last tick pulled, so a redraw that ran no tick pulls nothing.
     last_tick: Option<u64>,
     /// Fractional output frames carried between ticks.
@@ -460,6 +465,7 @@ impl PlayWindowApp {
                 frames: (seconds * f64::from(legaia_engine_audio::SPU_INTERNAL_RATE)) as usize,
                 pcm: Vec::new(),
                 duck: Vec::new(),
+                drive: Vec::new(),
                 last_tick: None,
                 carry: 0.0,
                 start: None,
@@ -490,6 +496,8 @@ impl PlayWindowApp {
         let keep = rec.start.is_some();
         if keep {
             rec.duck.push(director.duck_applied());
+            rec.drive
+                .push(u8::from(self.session.host.world.cast_drive_waiting()));
         }
         let pcm = &mut rec.pcm;
         director.audio().with_core(|core| {
@@ -518,6 +526,8 @@ impl PlayWindowApp {
             rec.pcm.truncate(rec.frames * 2);
             let duck: String = rec.duck.iter().map(|l| format!("{l}\n")).collect();
             let _ = std::fs::write(rec.path.with_extension("duck"), duck);
+            let drive: String = rec.drive.iter().map(|d| format!("{d}\n")).collect();
+            let _ = std::fs::write(rec.path.with_extension("drive"), drive);
             match legaia_parity::pcm_oracle::write_wav(&rec.path, &rec.pcm) {
                 Ok(()) => {
                     println!(

@@ -363,6 +363,13 @@ def main() -> int:
              for p in ("0", "1", "2")),
             key=lambda r: r["corr_median"],
         )
+        if d := c.get("cast_drive"):
+            # The voice past the cast's CD-seek wait is aligned on its own, within
+            # the seek window (docs/subsystems/audio.md): reported, never silent.
+            vs = 737.1365
+            print(f"[cast] {label}: CD-seek wait {d['held_ticks']} ticks; voice "
+                  f"{(d['voice_offset'] - d['offset']) / vs:+.1f} vsyncs past the cast's offset, "
+                  f"window {d['window'][0] / vs:+.1f}..{d['window'][1] / vs:+.1f} vsyncs")
         results.setdefault(label, {})
         results[label] |= {"cast_corr": c["corr_median"], "cast_level": c["level_db"]}
     for label in filter(want, CORE_STATES):

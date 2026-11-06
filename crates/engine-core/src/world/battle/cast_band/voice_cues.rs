@@ -121,6 +121,15 @@ impl World {
         self.step_module_drive(arm);
     }
 
+    /// Whether the resident module's current arm waits on the drive: the
+    /// seek arm before its seek issues, the poll arm until the seek completes.
+    /// What the oracles read to place a cast's CD-seek wait (the PCM cast
+    /// channel's `.drive` sidecar).
+    pub fn cast_drive_waiting(&self) -> bool {
+        self.mode == legaia_engine_mode::mode::SceneMode::Battle
+            && self.module_drive_holds(self.casting.module_phase)
+    }
+
     /// Whether the module's `arm` returns busy on the drive this pass: its seek
     /// arm until the drive is free to take the seek, its poll arm until the
     /// seek completes.
