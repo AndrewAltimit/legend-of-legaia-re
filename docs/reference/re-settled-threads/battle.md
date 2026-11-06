@@ -2523,3 +2523,12 @@ The walk's focus closes on the caster from that seat's framing, and the residue 
 `battle_rugi_barra_windcutter_mid_cast` is the same walk from the round's first action, so it starts on the prompt's far framing. That framing's orbit is a clock the RAM does not date, and the yaw is read off the frame. Which of two Spirit seats went last is also not read from the RAM: the actor records of the seats differ in their idle clip's phase, and no rule over that has been tested. Each capture carries a [walk pin](../../tooling/retail-compare.md#a-shot-armed-after-the-displayed-frame), which moves no game state.
 
 Owning pages: [`retail-compare.md`](../../tooling/retail-compare.md), [`battle-action.md`](../../subsystems/battle-action.md).
+
+### Why Death Game's replayed deal differed from retail's
+
+Grade `capture`, with the deal `disassembly`. The draws were never the difference; the stream's position was. A breakpoint on `rand()` (`0x80056798`) over the first vsync of `battle_jou_puera_v3_death_game_mid_cast` logs eight calls: the battle frame driver's discarded draw (`$ra` `0x80046D34`), the deal's six (`0x801F7BEC`), and one after (`0x8004E2C4`). Six draws from the state's own seed word `0x80009010`, one past the driver's, deal retail's `[1,1,1,2]`; from the word itself they deal `[2,1,1,1]`.
+
+The engine runs the driver's draw ahead of its module tick too, so a replay with its stream set to the state's word at action state `0x70`, module phase `0` (`LEGAIA_CAST_RAND_SEED=112:0:<word>`) deals `[1,1,1,2]` and puts the four cards' labels on retail's pixels. A replay seeded only at the encounter entry deals off another position.
+
+Owning pages: [`cast-module.md`](../../subsystems/cast-module.md#prot-0957-death-game), [`cast-sequence-oracle.md`](../../tooling/cast-sequence-oracle.md).
+
