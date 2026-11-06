@@ -808,6 +808,14 @@ impl RetailBattle {
             }
         }
         let pool = usize::from(self.active_actor);
+        // A monster on the clip the frame on screen showed, which moved
+        // inside the lag all the same: the arrival's idle stage committed on
+        // the displayed pass and the loop's passes since backed it off its
+        // target (`battle_jou_cort_181_strike`: ring `(-201, 530)` displayed,
+        // `(-206, 546)` live, idle record on slots `0..=2`).
+        if let Some(seat) = self.displayed_monster_strike_seat() {
+            return vec![seat];
+        }
         if pool >= 3
             || pool >= usize::from(self.party_count.clamp(1, 3))
             || !(0x1E..=0x20).contains(&self.action_state)
@@ -826,6 +834,39 @@ impl RetailBattle {
             facing: None,
             body: None,
         }]
+    }
+
+    /// [`Self::engine_image_displayed_seats`]' seat for a monster strike
+    /// whose displayed clip is the RAM's (no commit inside the lag, not a
+    /// walk on the clock) but whose live pair moved inside the lag: the
+    /// displayed frame's ring pair.
+    fn displayed_monster_strike_seat(
+        &self,
+    ) -> Option<legaia_engine_capture::ground_snap::GroundSnap> {
+        let pool = usize::from(self.active_actor);
+        let strike = matches!(self.seed_plan(), SeedPlan::Action { state: 0x1E, .. })
+            && self.queued_category == 3
+            && matches!(self.span_gate, SpanGate::Age { .. });
+        if pool < 3
+            || !strike
+            || self.walk_clock_capture()
+            || self.displayed_strike_clip().is_some()
+        {
+            return None;
+        }
+        let m = pool - 3;
+        if m >= usize::from(self.monster_count) {
+            return None;
+        }
+        let then = (*self.displayed_ground.get(pool)?)?;
+        let live = self.captured.get(pool).copied().flatten()?.0;
+        (then != live).then(|| legaia_engine_capture::ground_snap::GroundSnap {
+            slot: self.party_count.clamp(1, 3) + m as u8,
+            x: then[0],
+            z: then[1],
+            facing: None,
+            body: None,
+        })
     }
 
     /// The acting monster's clip on the **displayed** frame, for the image

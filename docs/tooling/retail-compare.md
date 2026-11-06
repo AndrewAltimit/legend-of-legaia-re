@@ -1299,6 +1299,15 @@ case aims at those positions - case 6 on a caster, case 0 on a member, case
   cursor `144` on `(12, -217)`, while the RAM holds the `0x0E` commit on
   `(3, -154)` (`image` `.922` to `.953`). Stood there before the alignment,
   the body moved the framing too (`.870`).
+- **A monster strike that moved inside the lag on the clip it showed.** A
+  monster in the strike loop whose displayed clip is the RAM's (no commit
+  in the window, not a walk on the clock) but whose live pair the ring
+  shows elsewhere stands on the ring's pair the same way
+  (`RetailBattle::displayed_monster_strike_seat`).
+  `battle_jou_cort_181_strike`'s idle committed on the displayed pass and
+  the loop's passes since backed Cort off his target: `(-201, 530)`
+  displayed against `(-206, 546)` live (`image` `.870` to `.957`). The
+  `10`-unit yaw its child peaked on past the walk back was that body.
 - **After-image ghosts on the displayed frame.** The ghost walk
   ([`FUN_80049348`](../subsystems/battle-actor-rendering.md#the-after-image-ghost-walk-fun_80049348))
   re-poses each ghost from the history ring's cursor `+0x17A` and live pair
@@ -1528,7 +1537,8 @@ The same holds for the round start's squash and recentre (`FUN_801D388C`, `World
 A driven capture of a strike also replays rounds its history did not, and every walk and push in them carries the formation further off (`battle_chitei2_gilium_strike`'s drive ran four rounds and stood the party up to `2000` units from its pairs).
 Retail's own action seeded on the ground the capture holds: state `0x0C` recentres the formation so an Attack's target sits on the origin, and the capture's target reads `(0, 0)`.
 So each time the capture's acting seat seeds an action, the engine stands every other combatant back on its captured pair (`BattleState::capture_reseat`, armed by `legaia_engine_capture::bar_seeds::arm_capture_reseat` on both sides; `LEGAIA_BATTLE_RESEAT` for the image child), and the action plays from there.
-A melee capture's bystanders stand where state `0x14`'s [make-way step](../subsystems/battle-action-helpers.md#the-make-way-step-state-0x14-and-the-sm-tail) had moved them by the capture's countdown `ctx[+0x6D6]`, so the re-seat stands each one back by the step's own travel over the countdown retail had drained, on the heading `0x14` will give it, and the replayed step walks it onto its captured pair (`BattleState::capture_make_way_left`, `World::stand_capture_bystanders_before_make_way`). Without it `battle_map03_moldy_worm_strike`'s three bystanders ended a whole step, `(-48, -192)`, past their pairs: the capture's headings all read `0x8A8`, the engine's own, and its countdown `0`.
+A melee capture's bystanders already hold state `0x14`'s [make-way step](../subsystems/battle-action-helpers.md#the-make-way-step-state-0x14-and-the-sm-tail), so the replayed step moves them that far again: `battle_map03_moldy_worm_strike`'s three bystanders end a whole step, `(-48, -192)`, past their pairs (the capture's headings `ctx[+0x6E6 + i*2]` all read `0x8A8`, the engine's own, and its countdown `ctx[+0x6D6]` reads `0`).
+The ground snap stands them back at the phase, so no frame shows it. Standing them back by the step at the re-seat instead moved no image score, and it changes the drive the image child replays: `battle_noaru_gilium_lv2_strike`, `battle_jou_kemaro_v3_strike` and `battle_korb2_ghost_knight_strike` lost their gates until the child stood them back too, and then a moldy-worm child drew the Acid Slime twice.
 The attacker is not stood on its captured pair: that is where its walk ended, and the walk is what the action's yaw counter `ctx[+0x6DA]` clocks (`battle_korb2_medusa_strike` holds `664`, about `75` step-`2` passes past the Attack arm's `0x200` rung, `0x801E2F20`). Stood there it arrives at once, the counter short by the whole walk; left on the replay's ground it walks from wherever earlier rounds put it - `battle_korb2_medusa_strike` came in from behind the party, and the case-7 yaw, `counter - heading`, framed the strike from the far side. The case-7 camera read `0.875` on nine monster-strike states for that reason.
 
 So a monster-melee capture also places the walk's start (`BattleState::capture_approach_yaw`, `RetailBattle::capture_approach_yaw`; `LEGAIA_BATTLE_APPROACH_YAW` for the image child). A monster's counter after the Attack arm has one rung, since the swing-clip re-seed is a party seat's (`FUN_8004E13C`, gated on `ctx[+0x13] < 3`), and it climbs `max(1, 4 * step / 3)` an SM pass. The walk is a straight line: every approach pass re-faces the attacker onto the target's live pair (`0x801E32EC..0x801E3318`), and its root motion runs along that heading. So retail's start lies on the ray from the target's captured pair through the attacker's, as far back of the strike pair as the walk covers in the counter units from `0x202` to the arrival:

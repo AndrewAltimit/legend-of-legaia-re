@@ -1934,6 +1934,68 @@ fn a_first_pass_monster_strike_shows_the_clip_before_its_commit() {
     assert!(!b.party_spirit_round(), "a member swung or acted otherwise");
 }
 
+/// A monster strike whose displayed frame shows the RAM's own clip but whose
+/// live pair moved inside the lag (`battle_jou_cort_181_strike`: the arrival's
+/// idle committed on the displayed pass, and the loop's passes since backed
+/// Cort off his target, `(-201, 530)` displayed against `(-206, 546)` live):
+/// the image child stands the attacker on the displayed frame's ring pair.
+#[test]
+fn a_monster_strike_that_moved_inside_the_lag_stands_on_the_displayed_pair() {
+    let mut ram = vec![0u8; 0x20_0000];
+    let ctx = 0x800E_B654;
+    put32(&mut ram, BATTLE_CTX, ctx);
+    put8(&mut ram, ctx, 1);
+    put8(&mut ram, ctx + 1, 1);
+    put8(&mut ram, ctx + 6, 0xFF);
+    put8(&mut ram, ctx + 7, 0x1E);
+    put8(&mut ram, FORMATION_CELL, 0x0A);
+    let (vahn, cort, record) = (0x800E_C9E8u32, 0x800E_D000u32, 0x800A_8158u32);
+    for (slot, base) in [(0u32, vahn), (3, cort)] {
+        put32(&mut ram, ACTOR_TABLE + slot * 4, base);
+        put16(&mut ram, base + 0x14C, 50);
+        put16(&mut ram, base + 0x14E, 60);
+    }
+    put32(&mut ram, 0x801C_9348, record);
+    let (idle, walk) = (0x800B_0AE8u32, 0x800B_1C2Cu32);
+    for (i, e) in [idle, walk].into_iter().enumerate() {
+        put32(&mut ram, record + 0x4C + 4 * i as u32, e);
+    }
+    put16(&mut ram, cort + 0x34, (-206i16) as u16);
+    put16(&mut ram, cort + 0x38, 546);
+    for (k, (e, cur, x, z)) in [
+        (idle, 32u16, -206i32, 546i32),
+        (idle, 16, -206, 546),
+        (idle, 0, -201, 530),
+        (walk, 188, -185, 466),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let k = k as u32;
+        put32(&mut ram, cort + 0x234 + 4 * k, e);
+        put16(&mut ram, cort + 0x17A + 2 * k, cur);
+        put32(&mut ram, cort + POSITION_RING + 8 * k, x as u32);
+        put32(&mut ram, cort + POSITION_RING + 8 * k + 4, z as u32);
+    }
+    let mut b = RetailBattle::from_ram(&ram).expect("seedable");
+    b.active_actor = 3;
+    b.action_state = 0x1E;
+    b.queued_category = 3;
+    b.caster_clip = 0;
+    b.span_gate = SpanGate::Age { accum: 64 };
+    let pc = b.party_count.clamp(1, 3);
+    assert!(
+        b.engine_image_displayed_clips().is_empty(),
+        "no commit in the window"
+    );
+    let seats = b.engine_image_displayed_seats();
+    assert_eq!(seats.len(), 1);
+    assert_eq!((seats[0].slot, seats[0].x, seats[0].z), (pc, -201, 530));
+    // Standing where it stood, it takes no seat.
+    b.displayed_ground[3] = Some([-206, 546]);
+    assert!(b.engine_image_displayed_seats().is_empty());
+}
+
 /// A round prompt caught on its far framing's arm: `gaza2_card_first_menu`'s
 /// table (TR z `353` a frame with `1050` to go, TR y `19` with `47`, pitch
 /// landed) has three frames left, and the displayed frame six vsyncs more.
