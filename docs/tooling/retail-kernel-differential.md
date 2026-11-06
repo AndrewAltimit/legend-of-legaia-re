@@ -361,3 +361,19 @@ spawner's and the world-map labels' widths read the layout and now read the meas
 banner `FUN_801D9D3C` matches `enemy_menu_rows` and `layout_enemy_menu_rows` over the measure. On four labels that
 cannot sit side by side inside `6..0x13A`, retail's relax-and-clamp loop never settles and spins for ever, where the
 port stops at its bound.
+
+The SFX cue ring, run frame by frame - the enqueue trio `FUN_80035B50` / `FUN_80035BAC` /
+`FUN_80035BD0`, the aging loop of `FUN_8001698C` (`0x80016AF4..0x80016B58`) and the drainer
+`FUN_80016B6C` up to its loop's exit, with the libsnd key calls logged - against `SfxScheduler`
+and the `SfxBank` voice choice, found one defect: a sustained runtime row with no voices keyed
+nothing in the port, where the drainer releases the held run before it tests the count
+(`0x80016DC4..0x80016E00`). The ring, the one-shot cursor, the sustained run and its latch match.
+The drainer goes on past the ring into the frame's vsync pacing, which rewrites the frame step,
+so the test stops it at `0x80016EA4`.
+
+A spell cast from the pause Magic screen, the single-target and group commits of `FUN_801D9594` /
+`FUN_801D9280` against the Magic sub-session and `apply_spell_outcome`, found the port healing a
+catalog placeholder (`MP * 8`, `MP * 6`) where the applier `FUN_800402F4` caps the heal at its
+level-scaled amount, so 122 of 125 casts wrote different records. The port also charged MP for a
+cast on a member already at full HP, which retail's confirm refuses through the validator.
+

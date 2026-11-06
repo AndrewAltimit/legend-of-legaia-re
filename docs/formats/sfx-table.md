@@ -197,6 +197,11 @@ names, with no fallback bank. The ring ages by the vsyncs one host tick spans.
 - A one-shot stops each voice (`FUN_800653C8`) just before reprogramming it.
 - The sustained held-count write is inside the key-on loop, so a sustained cue
   with voice count zero releases the old run but leaves `gp+0x5D0` unchanged.
+  The port's `SfxBank::play_descriptor` does the same for a runtime row.
+- The static table has 100 rows, but the drainer indexes it for every id below
+  `0x200`, so an id past row `99` keys whatever the bytes after the table read
+  (199 of those 412 rows carry a voice count). No shipped producer is known to
+  push one; the port keys nothing for it.
 - One-shots sit at the top of the voice file, away from the sequencer's
   ascending first-idle scan. A cue is never dropped for want of an idle voice:
   the fifth hit in battle re-keys voice 23 and cuts the first.
