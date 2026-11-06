@@ -9,7 +9,7 @@
 #
 #   verify          self-hosted   fmt + clippy + test gate
 #   build-cross     self-hosted   the three Linux-hosted targets below
-#   build-macos     macos-14      universal-apple-darwin (arm64 + x86_64, lipo)
+#   build-macos     macos-15      universal-apple-darwin (arm64 + x86_64, lipo)
 #   publish         self-hosted   SHA256SUMS over every archive + one release edit
 #
 # The self-hosted runner is arm64 Linux, which makes both of its non-native
@@ -165,7 +165,7 @@ jobs:
   # `publish`, which needs `verify`, so a red gate still blocks the release.
   build-macos:
     name: Build (macOS universal)
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 180
     steps:
       - name: Checkout

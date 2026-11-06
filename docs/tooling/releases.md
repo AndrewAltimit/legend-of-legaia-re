@@ -31,7 +31,7 @@ The workflow has four jobs:
 |---|---|---|
 | `verify` | self-hosted | `cargo fmt --check`, `clippy -D warnings`, `cargo test --workspace` |
 | `build-cross` | self-hosted (arm64 Linux) | the two Linux targets and Windows; uploads the archives as a workflow artifact |
-| `build-macos` | GitHub-hosted `macos-14` | the universal macOS archive; uploads it as a workflow artifact |
+| `build-macos` | GitHub-hosted `macos-15` | the universal macOS archive; uploads it as a workflow artifact |
 | `publish` | self-hosted | `needs` all three; checks every archive's hash, writes `SHA256SUMS`, makes the one release edit with the runner's `gh` |
 
 The build jobs never touch the release. Only `publish` does, and it waits for
@@ -419,6 +419,14 @@ venv inside the cache. The venv is what sidesteps PEP 668's
 "externally managed environment" refusal on Debian and Ubuntu without
 resorting to `--break-system-packages`. zig is used purely as a cross-linker
 with bundled glibc stubs; no Zig code is involved.
+
+The macOS job is the one piece on a GitHub-hosted image, and it names that
+image by version (`macos-15`), so the build stays reproducible. When GitHub
+retires the image, the job fails before its first step with a single
+annotation, `The configuration 'macos-NN-arm64-...' is not supported`, and
+the release run shows it cancelled with no log. Move `runs-on` to a supported
+`macos-*` label, then rehearse with a build-only `workflow_dispatch` on the
+branch before tagging.
 
 ## Interaction with `main-ci.yml`
 
