@@ -417,6 +417,7 @@ impl World {
                     .copied(),
             );
             self.casting.module_scatter = arm.scatter;
+            self.casting.module_trail = arm.trail;
             self.casting.module_rock_burst = arm.rock_burst;
             self.casting.module_spray = arm.spray;
             self.casting.module_ring = arm.ring;

@@ -715,6 +715,24 @@ pub const CAPTURE_DIRECTOR_RECORDS: &[(u32, &[u32])] = &[
     ),
     (944, &[0x801F_7FD0, 0x801F_8038]),
     (
+        953,
+        &[
+            0x801F_7BD0,
+            0x801F_7C40,
+            0x801F_7CB0,
+            0x801F_7A3C,
+            0x801F_7B48,
+            0x801F_799C,
+            0x801F_7A0C,
+            0x801F_7854,
+            0x801F_77C8,
+            0x801F_7838,
+            0x801F_78CC,
+            0x801F_7AF8,
+            0x801F_7D20,
+        ],
+    ),
+    (
         951,
         &[
             0x801F_8348,
@@ -841,7 +859,7 @@ pub fn capture_arm_resets_pass_counter(prot_entry: u32, phase: u8) -> bool {
 /// shell no retail frame of the cast holds).
 pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 | 939 => true,
+        935 | 939 | 953 => true,
         964 => true,
         947 | 948 => true,
         942 => body == Some(super::POWER_UP_BODY),
@@ -882,7 +900,7 @@ pub fn capture_director_seats_all(prot_entry: u32, body: Option<u32>) -> bool {
 /// Breath and PROT 0962's other bodies.
 pub fn capture_spawns_per_arm(prot_entry: u32, body: Option<u32>) -> bool {
     match prot_entry {
-        935 | 939 => true,
+        935 | 939 | 953 => true,
         964 => true,
         938 => body == Some(0x801F_69EC),
         940 => body == Some(0x801F_7240),
@@ -946,6 +964,10 @@ pub fn capture_arm_halts_records(prot_entry: u32, phase: u8) -> &'static [u32] {
         // (`0x801F8B14..0x801F8B60`). No other body in PROT 0955 seats the
         // record.
         (955, 2) => &[super::KISS_OF_DEATH_PASS_RECORD],
+        // Terio Punch's arm 6 walks the trail's handle list (`0x801F7E98`,
+        // count `0x801F8098`) on its passing pass and halts each
+        // (`0x801F728C..0x801F72B8`).
+        (953, 6) => &[super::TERIO_TRAIL_RECORD],
         _ => &[],
     }
 }

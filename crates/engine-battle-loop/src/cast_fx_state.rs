@@ -169,6 +169,9 @@ pub struct CastFxState {
     /// retail draws its sixteen `rand()`s, for the band to seat on the pass.
     /// A director's per-pass scatter ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::scatter`]).
     pub module_scatter: Option<(u32, u8)>,
+    /// A director's per-pass trail, `(record, first index)`
+    /// ([`legaia_engine_cast::cast_module_camera::CaptureCamArm::trail`]).
+    pub module_trail: Option<(u32, u16)>,
     /// PROT 0935's rock pass, by its pass word, for the frame the host opens.
     pub module_rock_burst: Option<u8>,
     /// PROT 0964's Thunder spray records, for the frame the host opens.
@@ -503,6 +506,7 @@ impl CastFxState {
             module_shake: 0,
             module_hit_arm: None,
             module_scatter: None,
+            module_trail: None,
             module_rock_burst: None,
             module_spray: None,
             module_ring: None,

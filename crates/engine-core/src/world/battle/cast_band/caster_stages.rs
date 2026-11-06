@@ -226,6 +226,32 @@ impl World {
                     }
                 }
             }
+            // PROT 0953's arm 6: two trail records at the origin a battle
+            // frame, each on three draws stored over it
+            // (`0x801F711C..0x801F71F4`).
+            if let Some((record, first)) = self.casting.module_trail.take()
+                && opens_pass
+            {
+                for n in first..first.wrapping_add(2) {
+                    let spin = (self.next_rand() % 3) as i16 - 1;
+                    let rate = (self.next_rand() % 0x400) as u16 + 0x80;
+                    let roll = n
+                        .wrapping_mul(0x600)
+                        .wrapping_add((self.next_rand() % 0x200) as u16);
+                    self.casting.seat_stager_spawn(
+                        run.prot_entry,
+                        &legaia_engine_cast::cast_module_ticks::StagerSpawn {
+                            record,
+                            pos: [0; 3],
+                            rot: [0; 3],
+                            pokes: vec![(0x84, spin as u16), (0xB4, rate), (0x28, roll)],
+                            patches: Vec::new(),
+                            halve_speed: false,
+                            scale: 0x1000,
+                        },
+                    );
+                }
+            }
             if let Some(records) = self.casting.module_spray.take()
                 && opens_pass
             {
