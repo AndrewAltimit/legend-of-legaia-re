@@ -426,7 +426,13 @@ fn seed_and_settle(
                 // So is the region-selector band: the settle's passes ran at
                 // the seat, where the record holds the player, not where
                 // retail's last pass stood ([`hold_selector_bands`]).
+                // The arm's op `0x46` window goes with its bit
+                // ([`held_selector_window`]).
                 if let Some(save) = retail.save.as_ref() {
+                    let before = raised_band_bits(&session.host.world);
+                    if let Some(w) = held_selector_window(&session.host.world, save, &before) {
+                        session.camera.zone.view_window = w;
+                    }
                     hold_selector_bands(&mut session.host.world, save);
                 }
             }

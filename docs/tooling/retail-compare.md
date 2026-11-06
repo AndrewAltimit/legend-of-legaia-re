@@ -4287,7 +4287,7 @@ Shapes the corpus separates, each with what it indicates:
 | camera and dialogue off together, `script` detail says the gate was not met | a record the phase gate could not bring the engine to ([above](#mid-script-states)) |
 | flags `+sys` bits only the engine has, on a gated state | a placement the record poked ran its talk body in the engine ([above](#mid-script-states)) |
 | flags `+sys` / `-sys` one bit apart inside `0x19B..0x1AA` | the entry script's one-hot region selector, re-evaluated at the seat ([below](#the-region-selector-band-and-the-entry-order)) |
-| `view_window` at `0` beside that selector pair (`cort_evolved_approach_cutscene`) | the same pass: each selector arm applies its own op `0x46` window ([below](#the-region-selector-band-and-the-entry-order)) |
+| `view_window` at `0` beside that selector pair | the same pass: each selector arm applies its own op `0x46` window, which the band hold now lands with the bit ([below](#the-region-selector-band-and-the-entry-order)) |
 | a room or selector bit down in the engine only, the system script's PC never moving off its loop head | the system context halted, or a record holding the player from the landing: a pre-fight flag ([below](#a-pre-fight-flag-runs-the-entrys-post-battle-branch)), or a halt nothing clears |
 | `fog_gate` and flag `0x01F` up in the engine only (`rikuroa_post_genesis_tree`) | script progress a card load undoes ([below](#a-flag-the-entry-raises-on-every-load)) |
 | retail's camera focus thousands of units off its player (`kor5_post_43a_checkpoint`: player Z `5312`, focus Z `11840`) | a focus left behind - a probe poke, or a script carrying a movement-locked player; the seed lands retail's focus ([below](#a-poked-player-keeps-the-arrival-focus)) |
@@ -4491,8 +4491,7 @@ slice into the load frame closes this bit but runs the entry's BGM cue and fog
 op before the seed's flags exist, and the corpus `bgm` channel fell by a
 fifth (by a tenth even with `--flags-first`), so the order stands, and the
 seed lands the save's bit back over the band once the settle has run
-([below](#the-band-is-held)). The `0x46` window the settle's arm wrote stays
-the engine's. The opening legs are pre-run already, and there the run
+([below](#the-band-is-held)), with the window of the arm that bit names. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
 `opdeene` states carry retail's selector through the seed.
 
@@ -4505,12 +4504,11 @@ its own op `0x46`. `jouind`'s entry `P1[0]` carries nine of them:
 | `3` | `0x19E` | `+0x214` | `46 24 F6 FA 0A 0D` = `(-10, -6, 10, 13)` |
 | `4` | `0x19F` | `+0x267` | `46 24 F9 F9 08 27` = `(-7, -7, 8, 39)` |
 
-`cort_evolved_approach_cutscene` reads `(-7, -7, 8, 39)` against the engine's
-`(-10, -6, 10, 13)`: the window of the `0x19F` arm retail took at the arrival
-tile against the window of the `0x19E` arm the seed takes at the seat, all
-four bytes apart. It is the same one pass, scored twice - there is no second
-divergence in the window bytes, and none in the op `0x46` handler, which
-every other field state in the corpus agrees on.
+`cort_evolved_approach_cutscene` holds `(-7, -7, 8, 39)`, the window of the
+`0x19F` arm retail took at the arrival tile, where the settle's `0x19E` arm at
+the seat writes `(-10, -6, 10, 13)`, all four bytes apart. It is the same one
+pass as the bit, so the hold lands the window with it
+([below](#the-band-is-held)).
 
 The band need not be keyed on the region type. `nilboa` and `garmel` select
 a room bit in `0x528..0x52E` by `CD F8` tile boxes instead, tested in a fixed
@@ -4536,8 +4534,12 @@ the set of one of them, and once the settle has run - at the record's
 resume tick on a mid-script state, before the forced entry on a battle
 state - each band bit is landed back on the save's. The settle is seeding,
 not game time, as the battle seed's hold of the script counters at
-`0x801C6460` already says. The selector arm the settle took still ran, so a band arm
-that writes the view window or the camera region shows in those channels.
+`0x801C6460` already says. The selector arm the settle took still ran. Its op `0x46` is undone with
+the bit: where the save's bit is one the settle did not raise, the zone
+camera takes the long-form window that bit's own arm applies after its set
+(`held_selector_window`, read off the same bytecode as the bands), so
+`cort_evolved_approach_cutscene` reads `view_window` `1.000` (from `0`). No
+other field state's channels move. A band arm's camera region is not held.
 The eight `nilboa` states read `flags` `1.000` (from `.997`), and so do
 `nivora_duel_mid_blazing_slash`, `chapter2_garmel_pre_zeto` and
 `cort_evolved_approach_cutscene`.

@@ -116,9 +116,74 @@ pub fn hold_selector_bands(
     }
 }
 
+/// The visible-tile window each selector arm applies: for every band bit a
+/// [`selector_bands`] arm raises, the long-form op `0x46` (`46 24 x0 z0 x1
+/// z1`) that follows its `Set` before the next band clear. `jouind` `P1[0]`'s
+/// region-type arms end `0x19E` on `(-10, -6, 10, 13)` and `0x19F` on
+/// `(-7, -7, 8, 39)`.
+pub fn selector_arm_windows(bytecode: &[u8]) -> Vec<(u16, [i8; 4])> {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+    let bands = selector_bands(bytecode);
+    let in_band = |idx: u16| bands.iter().any(|b| b.contains(&idx));
+    let mut out: Vec<(u16, [i8; 4])> = Vec::new();
+    let mut armed: Option<u16> = None;
+    for insn in LinearWalker::new(bytecode, 0).flatten() {
+        match insn.info {
+            InsnInfo::SystemFlag { kind, idx, .. } if in_band(idx) => {
+                armed = match kind {
+                    FlagKind::Set => Some(idx),
+                    _ => None,
+                };
+            }
+            InsnInfo::ViewWindow {
+                long: true, bytes, ..
+            } => {
+                if let Some(bit) = armed.take()
+                    && !out.iter().any(|(b, _)| *b == bit)
+                {
+                    out.push((
+                        bit,
+                        [bytes[0], bytes[1], bytes[2], bytes[3]].map(|v| v as i8),
+                    ));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The window of the selector arm the save's band names, where the settle
+/// took a different arm. The arm retail ran last ended on its own op `0x46`,
+/// and a record holding the player since has kept the system SM
+/// (`FUN_801DA51C`) from running another pass, so the window is that arm's
+/// as much as the bit is. `before` is the engine's raised band bits ahead of
+/// [`hold_selector_bands`].
+pub fn held_selector_window(
+    world: &legaia_engine_core::world::World,
+    save: &legaia_save::SaveFile,
+    before: &[u16],
+) -> Option<[i8; 4]> {
+    let raised = system_flag_ids(save);
+    let windows = selector_arm_windows(&world.field_bytecode);
+    windows
+        .iter()
+        .find(|(bit, _)| raised.contains(bit) && !before.contains(bit))
+        .map(|&(_, w)| w)
+}
+
+/// The engine's raised bits over every [`selector_bands`] band.
+pub fn raised_band_bits(world: &legaia_engine_core::world::World) -> Vec<u16> {
+    selector_bands(&world.field_bytecode)
+        .into_iter()
+        .flatten()
+        .filter(|&idx| world.system_flag_test(idx))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::selector_bands;
+    use super::{selector_arm_windows, selector_bands};
 
     #[test]
     fn a_run_of_clears_and_one_set_is_a_band() {
@@ -133,5 +198,21 @@ mod tests {
     fn a_short_run_is_not_a_band() {
         let bc = [0x65, 0x27, 0x65, 0x28, 0x65, 0x29, 0x55, 0x28];
         assert!(selector_bands(&bc).is_empty());
+    }
+
+    #[test]
+    fn each_arm_keeps_the_window_after_its_set() {
+        // Two arms of a four-bit band: clear `0x19C..=0x19F`, set one, then
+        // the arm's long-form op `0x46`.
+        let clears: Vec<u8> = (0x9C..=0x9F).flat_map(|i| [0x61, i]).collect();
+        let mut bc = clears.clone();
+        bc.extend([0x51, 0x9E, 0x46, 0x24, 0xF6, 0xFA, 0x0A, 0x0D]);
+        bc.extend(clears);
+        bc.extend([0x51, 0x9F, 0x46, 0x24, 0xF9, 0xF9, 0x08, 0x27]);
+        let w = selector_arm_windows(&bc);
+        assert_eq!(
+            w,
+            vec![(0x19E, [-10, -6, 10, 13]), (0x19F, [-7, -7, 8, 39])]
+        );
     }
 }
