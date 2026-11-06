@@ -3489,7 +3489,7 @@ span. `--per-second` prints level and correlation second by second.
 | State | `cast` corr | Level | Offset | Reading |
 |---|---|---|---|---|
 | `zeto_call_wave_mid_cast` | `0.9992` | `+0.01` dB | `+159` | the voice `XA11` channel `0` lands where retail's does, at the cue gain |
-| `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | level right in every second; seconds `5..7` read `0.48..0.88`, the party's hit and its reactions |
+| `zeto_big_wave_mid_cast` | `0.986` | `-0.03` dB | `+104` | the voice alike to `5.5` s (quarter-seconds at `0.99..1.00`); from `5.75` to `7.25` s, the party's hit and its reactions, the quarters read `0.33..0.74` with the level right, and the best fit at `6.75..7.0` s puts the engine's sounds `67` ms (four vsyncs) early. No retail cue capture of the cast exists |
 | `cort_mystic_shield_mid_cast` | `0.937` | `+0.01` dB | `-79` | |
 | `cort_guilty_cross_mid_cast` | `0.859` | `+0.02` dB | `-436` | the voice `XA22` channel `5` lands within `32` ms of retail's; the rest is the ring's cues |
 | `theeder_summon_mid_cast` | `0.721` | `+0.20` dB | `+55` | the voice starts `0.23` s before retail's |
