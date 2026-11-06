@@ -1259,12 +1259,24 @@ impl BattleDrive {
                     })
                     && match end {
                         SpanGate::DoneHold { timer } => world.battle_ctx.frame_timer <= timer,
+                        // A phase past arm 0 with no module word is placed
+                        // inside the arm by the close-up accumulator, which
+                        // every pass's framing call advances and the arm's
+                        // clip commit zeroed: `battle_tunnelc_xain_bloody_horns_mid_cast`
+                        // reads `16`, a pass past the walk's commit, and the
+                        // arm's first tick showed the frame a pass early.
+                        // Arm 0 commits no clip of its own, so its
+                        // accumulator counts the band, not the arm.
                         SpanGate::CaptureFade {
                             arm: Some((phase, PHASE_ONLY)),
+                            accum,
                             ..
                         } if state == 0x70 => {
                             !capture_phase_directed(world, engine_seat(seat, pc))
-                                || world.casting.module_phase >= phase
+                                || world.casting.module_phase > phase
+                                || world.casting.module_phase == phase
+                                    && (phase == 0
+                                        || active_close_up_accum(world) >= u32::from(accum))
                         }
                         SpanGate::CaptureFade {
                             arm: Some((phase, countdown)),

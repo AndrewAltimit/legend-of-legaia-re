@@ -2614,6 +2614,14 @@ the caster's cursor, so `capture_countdown_va` names no word for them. Their
 the replay was filmed on the band's first tick. `koru_blade_breath_mid_cast`
 sits in arm 3, and the gate took its `camera` from `.763` to `.862`.
 
+Past arm 0 the arm alone places the capture a pass early: the arm's clip commit zeroed
+the close-up accumulator `ctx[+0x87C]` and every pass's framing call advances it, so the
+capture's word says how far into the arm it sits. The gate waits for the engine's
+accumulator to reach it. `battle_tunnelc_xain_bloody_horns_mid_cast` reads `16`, one pass
+past the walk's commit; taken on the arm's first tick its retake fell on the band's `0x6F`
+frame, and `image` read `.719` where the gate's own pass reads `.799`. Arm 0 commits no clip
+of its own, so its word counts the band and the arm alone stays its gate.
+
 **A shot armed past a skipped walk-in.** Those bodies' arms 0 and 1 walk Koru
 into reach and frame him through case 6 on every pass; a retail film of the
 walk (`koru_pre_thunder_needle`, 36 vsyncs of arm 1) swings that framing onto
