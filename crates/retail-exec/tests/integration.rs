@@ -50,6 +50,7 @@ mod round_end;
 mod round_open;
 mod separation;
 mod seru_debuff;
+mod shop_quantity;
 mod slot_machine;
 mod spirit_cleanup;
 mod spoils;

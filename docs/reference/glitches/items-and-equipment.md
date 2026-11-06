@@ -822,13 +822,16 @@ The French build has both USA additions: the front check at `0x801DCEF8..0x801DC
 Every giver on the disc goes through the same trimming add, so a chest, a battle drop or a prize at 99 is discarded
 without a message.
 
-Every build has a sibling of the reported fault in the gold shop. Stackable items go through a quantity screen capped
-at `min(gold / price, 99, 99 - held)` (`jal 0x80042ee0` at `0x801DB8B0` on USA, `0x801DDEF8..0x801DDF5C` on the
-Japanese disc), but equipment does not. The buy-list confirm `FUN_801DB21C` tests only gold before routing on the item
-kind, and the recipient picker's "to the bag" row runs `jal 0x800421d4` at `0x801DB490` and then debits gold with no
-held-count read for the item between them. Buying a hundredth copy of one piece of equipment takes the gold and leaves
-99. This is read from the instructions of the USA and Japanese builds, and the French build is the USA code
-relocated; it has not been run.
+Every build has a sibling of the reported fault in the gold shop, for both kinds of item. The buy-list confirm
+`FUN_801DB21C` tests only gold before routing on the item kind. Equipment goes to the recipient picker, whose "to the
+bag" row runs `jal 0x800421d4` at `0x801DB490` and then debits gold with no held-count read for the item between them.
+Stackable items go to the quantity stepper `FUN_801DB7F4`, whose bound is `min(gold / price, 99, 99 - held)`
+(`jal 0x80042ee0` at `0x801DB8B0` on USA, `0x801DDEF8..0x801DDF5C` on the Japanese disc). The bound only stops the
+number climbing: the list seeds the number at `1` (`sw t0,0x46b4` at `0x801DB2B4`) and the stepper's confirm buys it
+whatever the bound, so at 99 held the bound is `0` and the one copy is still bought. Either way a hundredth copy takes
+the gold and leaves 99. The stackable case is run in the retail differential (`shop_quantity`); the equipment case is
+read from the instructions of the USA and Japanese builds, and the French build is the USA code relocated. The port's
+shop refuses both buys and keeps the gold.
 
 ### Verifying it
 

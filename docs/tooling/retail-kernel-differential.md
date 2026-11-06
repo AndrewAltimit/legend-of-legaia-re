@@ -341,3 +341,8 @@ it arms the monster's turn and again at the seed; retail calls it once (`0x801E2
 longer repeats it. The cast modules' seat view had the same split: a module's Stone test and its cure masks
 (Vera's `+0x16E` mask) saw the raw half alone, so a cure left a Venom a hit had dealt. The view now carries
 the whole word, and a tracked ailment whose bits a module clears leaves the tracker.
+
+The shop's quantity steppers, buy `FUN_801DB7F4` and sell `FUN_801DBD94`, match the port's sessions and the
+runtime's purse and bag writes over generated pad scripts, bounds and stacks. One arm differs by choice: at 99
+held retail opens the buy stepper with a bound of `0`, buys the one copy it starts on and takes the gold for a
+copy the add then trims, where the port's runtime refuses the buy.
