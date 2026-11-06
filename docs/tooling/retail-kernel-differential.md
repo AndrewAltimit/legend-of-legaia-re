@@ -346,3 +346,9 @@ The shop's quantity steppers, buy `FUN_801DB7F4` and sell `FUN_801DBD94`, match 
 runtime's purse and bag writes over generated pad scripts, bounds and stacks. One arm differs by choice: at 99
 held retail opens the buy stepper with a bound of `0`, buys the one copy it starts on and takes the gold for a
 copy the add then trims, where the port's runtime refuses the buy.
+
+The field interact probe `FUN_801CF9F4`, run over crowds of actors around the probe point, confirms the port's
+box and finds the pick differ: every hit overwrites the caller's `+0x98` link, so the last actor in list order
+is talked to, where the port takes the nearest. Switching to slot order changed the casino's `koin1` door
+`P1[56]` into a talk with `P1[63]`, so the port keeps the nearest until a capture reads that scene's spawn
+order.

@@ -453,8 +453,12 @@ impl World {
     /// NPC boxes retail keeps the *last* actor-list hit (the `+0x98` link is
     /// overwritten per match); the engine's NPC set is a hash map with no
     /// list order, so it picks the hit nearest the probe point instead
-    /// (tie-break: lowest slot) - identical whenever NPCs stand more than
-    /// 144 units apart, which every authored placement does.
+    /// (tie-break: lowest slot) - identical whenever the boxes do not
+    /// overlap. They can: `koin1`'s probe from door `P1[56]` also boxes
+    /// `P1[63]`, where a slot-order walk would talk to `P1[63]`. Which one
+    /// retail answers turns on the scene's spawn order, which no capture has
+    /// read yet (the retail differential `interact_probe` pins the last-hit
+    /// rule itself).
     pub fn field_interact_probe_slot(&self) -> Option<u8> {
         let slot = self.player_actor_slot? as usize;
         if slot >= self.actors.len() || !self.actors[slot].active {

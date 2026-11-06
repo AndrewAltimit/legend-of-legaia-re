@@ -31,6 +31,7 @@ mod fishing_cadence;
 mod fishing_fight;
 mod floor_height;
 mod inn;
+mod interact_probe;
 mod inventory;
 mod item_apply;
 mod item_probe;
