@@ -59,7 +59,9 @@ impl World {
             root_speed: a.battle.render_blend as i32,
             hp_bar_delta: a.battle.hp_bar_pending,
             hp: a.battle.hp,
-            flags: a.battle.field_flags,
+            // The whole `+0x16E` word, tracker included: a module's Stone
+            // test (`FLAG_NON_TARGETABLE`) and its cure masks read the word.
+            flags: self.raw_status_word(slot),
             // `+0x1D9` is the clip the body is playing, a hit reaction
             // included: the engine plays those on the reaction channel
             // (`World::battle_current_anim`). Reading the action channel
@@ -218,6 +220,23 @@ impl World {
         use legaia_engine_battle_vm::battle_anim_rate::AnimRate;
         let creature = self.casting.summon_actor_slot == Some(slot);
         let reaction_map = self.battle_reaction_map(slot as usize);
+        // The view carried the whole word: a tracked ailment whose bits the
+        // module cleared (a cure's mask) leaves the tracker, and the raw half
+        // keeps what the tracker does not hold.
+        let stripped: Vec<legaia_engine_battle_vm::status_effects::StatusKind> = self
+            .battle
+            .status_effects
+            .statuses(slot)
+            .iter()
+            .filter(|s| s.display_bit() != 0 && s.display_bit() & st.flags == 0)
+            .map(|s| s.kind)
+            .collect();
+        for kind in stripped {
+            self.battle.status_effects.strip(slot, kind);
+        }
+        let tracked = legaia_engine_battle_vm::status_effects::pack_display_flags(
+            self.battle.status_effects.statuses(slot),
+        );
         let Some(a) = self.actors.get_mut(slot as usize) else {
             return;
         };
@@ -231,7 +250,7 @@ impl World {
         }
         a.battle.hp_bar_pending = st.hp_bar_delta;
         a.battle.hp = st.hp;
-        a.battle.field_flags = st.flags;
+        a.battle.field_flags = st.flags & !tracked;
         // A reaction a module stages on a combatant with the commit bit
         // (`+0x1DC |= 1`) - one of its `+0x1EF..+0x1F2` entries - plays at
         // once on the reaction channel, the engine's seat of retail's
@@ -309,5 +328,38 @@ impl World {
                     .unwrap_or((a.move_state.world_x, a.move_state.world_z))
             })
             .unwrap_or((0, 0))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::world::World;
+    use legaia_engine_battle_vm::status_effects::StatusKind;
+
+    /// A module reads and writes the whole `+0x16E` word: a Venom a hit left
+    /// in the tracker is in the view (Vera's cure masks it, an AoE's Stone test
+    /// skips a tracked Stone), and a cure's clear takes it out of the tracker.
+    #[test]
+    fn a_cast_view_carries_and_clears_the_whole_word() {
+        let mut w = World::new();
+        w.load_party(legaia_save::Party::zeroed(3));
+        w.enter_battle(3, 2);
+        w.battle.status_effects.apply(0, StatusKind::Venom);
+        w.battle.status_effects.apply(0, StatusKind::Stone);
+        w.actors[0].battle.field_flags = 0x1000;
+        let v = w.cast_view(0);
+        assert_eq!(v.flags, 0x1005);
+        // An untouched view writes nothing new.
+        w.write_cast_view(0, &v);
+        assert_eq!(w.actors[0].battle.field_flags, 0x1000);
+        assert!(w.battle.status_effects.has(0, StatusKind::Venom));
+        // A cure that masks Venom and Curse off.
+        let mut v = w.cast_view(0);
+        v.flags &= !0x1001;
+        w.write_cast_view(0, &v);
+        assert!(!w.battle.status_effects.has(0, StatusKind::Venom));
+        assert!(w.battle.status_effects.has(0, StatusKind::Stone));
+        assert_eq!(w.actors[0].battle.field_flags, 0);
+        assert_eq!(w.raw_status_word(0), 0x0004);
     }
 }

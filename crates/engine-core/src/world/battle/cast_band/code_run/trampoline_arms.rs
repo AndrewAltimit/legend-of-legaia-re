@@ -347,6 +347,8 @@ impl World {
     pub(in crate::world) fn apply_effect_child_hit(&mut self, slot: usize, damage: i32) -> i32 {
         use legaia_engine_battle_vm::battle_cast_census::{EffectChildVictim, effect_child_hit};
         let mut cursor = self.battle_ctx.cast_readout_cursor;
+        // The whole `+0x16E` word, tracker included.
+        let word = self.raw_status_word(slot as u8);
         let Some(a) = self.actors.get_mut(slot) else {
             return 0;
         };
@@ -355,7 +357,7 @@ impl World {
         let mut victim = EffectChildVictim {
             hp: a.battle.hp,
             hp_bar_delta: a.battle.hp_bar_pending,
-            flags: a.battle.field_flags,
+            flags: word,
             staged_anim: a.battle.queued_anim,
             restage: 0,
             reaction_alt: p(0x1EF),

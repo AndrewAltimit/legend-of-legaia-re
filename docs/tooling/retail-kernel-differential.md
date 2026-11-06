@@ -338,4 +338,6 @@ reader sat in the seed's retarget gate (`0x801E2C8C`), the victory re-pick's `0x
 status tier (`0x8004E828`). All of them now read `World::raw_status_word` or the host's `status_word`. Reading
 the seed's gate whole showed the engine running the retarget `FUN_801E7320` twice for a raw Confuse, once where
 it arms the monster's turn and again at the seed; retail calls it once (`0x801E2CA0`), so the seed hook no
-longer repeats it.
+longer repeats it. The cast modules' seat view had the same split: a module's Stone test and its cure masks
+(Vera's `+0x16E` mask) saw the raw half alone, so a cure left a Venom a hit had dealt. The view now carries
+the whole word, and a tracked ailment whose bits a module clears leaves the tracker.
