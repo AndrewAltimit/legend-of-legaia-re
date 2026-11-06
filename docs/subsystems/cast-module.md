@@ -1810,7 +1810,10 @@ seated as a part. A rendezvous phase with no record behind it holds, as
 retail's does.
 
 The director `cast_module_camera::viguro_direct` carries the rest: arm 4 holds
-while the creature's `+0x38` is at or past `0x200`; arms 5, 7, 9 and 11 drain
+while the creature's `+0x38` is at or past `0x200`, read off the seat the stager's
+arm 0 has just stood at `z = 0xC00` (the port's early seat had idled at the caster,
+which read as arrived and cut to the creature shot while retail's still framed the
+vortex: arm 4 `.036` to `.982` frame by frame); arms 5, 7, 9 and 11 drain
 the countdown; arm 12 **climbs** it by a quarter of the frame product until
 it reaches `0x201`; arms 11..14 add to the yaw global every pass.
 
@@ -3072,6 +3075,30 @@ rather than cutting. Below `scalar << 6`, arm 4 seats four scattered records a
 pass, each on five `rand()` draws of the world stream. Arm 0's `MoveImage` copies
 the CLUT at `(0xD0, 0x1DC)` onto `(0xE0, 0x1DC)`; the wind draws through the copy.
 
+### PROT 0951 (Chaos Flare)
+
+<a id="prot-0951-chaos-flare"></a>
+
+`cast_module_camera::chaos_flare_camera` carries the `0x36` body (`0x801F6A20`, twelve
+arms through the table at `0x801F69D8`); arms 0 and 1 are the walk into reach. Arm 2
+turns the caster on the victim, steps it back an eighth of its heading's sine and cosine,
+cuts on it (pitch `0x70`, TR `(0, 0x800, 0x800)`), stages the charge clip `8` with the
+bump at rate `2`, seats the charge's seven records through `FUN_80050ED4`
+(`0x801F83FC` .. `0x801F8978`) and hides every party seat but the victim. Arm 6 flushes
+the pool and seats the flare's seven (`0x801F8644` .. `0x801F895C`), takes the backdrop
+off and stores stage byte `3`; arm 8 cuts on the victim for the strike; arm 10 flushes
+again and clears the stage byte; arm 11 shows every seat with HP at rate `8`. Arms 3, 5,
+8, 9 and 11 drift the camera every pass, held or not. The records' op `0x20` calls run
+the module's stager (`FUN_801F81DC`).
+
+Without the director the pager seated all of the image's records at once and the camera
+held `0x6F`'s pose: a `--physical` film of `battle_noaru_songi_chaos_flare_mid_cast`
+read `.233` frame by frame, `.703` with it. Its charge clip `8` goes in on arm 2's pass
+(`capture_caster_stage_arms`), not ahead of the module. Not carried: arms 2 and 6's stores into the
+first monster record's node (`+0x85` / `+0x86`), the light words behind `0x800845C8`, and
+arms 9 and 10's hold of the victim's rate on its reaction clip. Grade `disassembly` +
+`capture`.
+
 ### PROT 0954 (Fatal Decision)
 
 <a id="prot-0954-fatal-decision-is-ported-whole"></a>
@@ -3154,6 +3181,36 @@ Its opening frames by the caster's own monster id: Terror Face (`0x7F`) stages c
 `7` on the far framing and a slow pitch drift, `0x28..=0x2A` clip `9` and
 `0x83..=0x85` clip `8` on the near framing and a yaw drift. Arms 1 and 2 each cut
 to a seat and seat the same four ring records on it, the caster and then the victim.
+
+### PROT 0955 (White Shield, Power Charge, Melt Spray)
+
+<a id="prot-0955-white-shield-power-charge-melt-spray"></a>
+
+The cell's three other bodies each place their own records, so none takes the pager's
+whole-image placement (`capture_director_seats_all`). The two that draw something do it
+through the cell's stager `FUN_801F9370`, reached from a record's op `0x20`: arm 0 seats
+`0x801F93EC`, arm 1 `0x801F9744`, each on the caller's `+0x14` / `+0x24` at its `+0x72`.
+
+- **White Shield** (`0x60`, `white_shield_camera`). Arm 0 seats `0x801F93D4` on the
+  caster seat (`0x801F8FB4..0x801F8FC8`), a twenty-byte record whose op `0x20` calls stager
+  arm 0: the shield column the frame holds through arms 1 and 2.
+- **Power Charge** (`0x72`, `power_charge_camera`). Arm 0 frames the caster's display pair
+  (pitch `-0x80`, TR `(0, 0x300, ctx[+0x6D0] / 2)`, `0xC` frames), hides every seat with HP
+  and shows the caster on tint `7` (`0x801F72D4..0x801F732C`), stages clip `0x0A` and
+  seats `0x801F972C`, which calls stager arm 1: the aura. Arm 1 drifts pitch `+2` and TR y
+  and z by the frame product until its gate, then cuts to `(0, 0x300, ctx[+0x6D0])`; arm 2
+  is the buff; `0xFF` shows every seat with HP.
+- **Melt Spray** (`0x6F`, `melt_spray_camera`) makes no spawn call at all. Its arm 2
+  stages the spray clip `7` with the bump, and arm 3 clears the staged byte once that clip
+  plays (`0x801F828C..0x801F82A0`).
+
+Power Charge's `0x0A` and Melt Spray's `7` are staged on the arm that stores them
+(`capture_caster_stage_arms`), and the module runs on while they play; staged ahead of
+the module, the caster played its whole clip before arm 0 ran. Before the stager and the
+directors, all three drew the pager's records - other bodies' rings and lips - at the
+caster's feet, or nothing. Frame by frame against `--physical` films of the `*_mid_cast`
+states: White Shield `.577` to `.797`, Power Charge `.587` to `.898`, Melt Spray `.795` to
+`.827`. Grade `disassembly` + `capture`.
 
 ### PROT 0957 (Death Game)
 
