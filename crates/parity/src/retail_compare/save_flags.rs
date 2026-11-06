@@ -52,3 +52,86 @@ pub fn system_flag_ids(save: &legaia_save::SaveFile) -> Vec<u16> {
     }
     out
 }
+
+/// The one-hot region-selector bands in a scene's field bytecode: a run of
+/// at least four `Clear`s over consecutive system flags followed by the `Set`
+/// of one of them. Every field scene's entry loop keeps one (`0x527..0x52E`,
+/// the region-type band `0x19B..0x1AA`; `docs/subsystems/script-vm.md`):
+/// each pass clears the band and raises the bit of the region the player stands in, so the
+/// bit records where the loop's last pass ran.
+pub fn selector_bands(bytecode: &[u8]) -> Vec<std::ops::RangeInclusive<u16>> {
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker};
+    let mut bands: Vec<std::ops::RangeInclusive<u16>> = Vec::new();
+    let mut run: Option<(u16, u16)> = None;
+    for insn in LinearWalker::new(bytecode, 0).flatten() {
+        let flag = match insn.info {
+            InsnInfo::SystemFlag { kind, idx, .. } => Some((kind, idx)),
+            _ => None,
+        };
+        match (flag, run) {
+            (Some((FlagKind::Clear, idx)), Some((lo, hi))) if idx == hi.wrapping_add(1) => {
+                run = Some((lo, idx));
+                continue;
+            }
+            (Some((FlagKind::Set, idx)), Some((lo, hi)))
+                if hi - lo >= 3 && (lo..=hi).contains(&idx) && !bands.contains(&(lo..=hi)) =>
+            {
+                bands.push(lo..=hi);
+            }
+            _ => {}
+        }
+        run = match flag {
+            Some((FlagKind::Clear, idx)) => Some((idx, idx)),
+            _ => None,
+        };
+    }
+    bands
+}
+
+/// Land the save's own bits over every [`selector_bands`] band.
+///
+/// A seed's settle runs the entry loop with the player on the seat, and its
+/// passes re-select the band there. Where a record took the player out of the
+/// region the loop last selected, that pass is one retail never ran: the
+/// system SM runs no pass while a record holds the player, so retail's bit
+/// still names the region the player left. `nivora_cutscene_delilas_intro`
+/// holds `0x52C` (`nilboa` `P1[0]`'s box `[26, 0 .. 126, 87]`) with the
+/// cutscene `P2[3]` holding the player on tile `(112, 114)`, in `0x52B`'s box
+/// `[16, 88 .. 126, 126]`. The settle is seeding, not game time, so the band
+/// is the save's again once it has run, as the script counters are
+/// ([`super::hold_slot_table`]).
+pub fn hold_selector_bands(
+    world: &mut legaia_engine_core::world::World,
+    save: &legaia_save::SaveFile,
+) {
+    let raised = system_flag_ids(save);
+    for band in selector_bands(&world.field_bytecode) {
+        for idx in band {
+            if raised.contains(&idx) {
+                world.system_flag_set(idx);
+            } else {
+                world.system_flag_clear(idx);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selector_bands;
+
+    #[test]
+    fn a_run_of_clears_and_one_set_is_a_band() {
+        // `nilboa` `P1[0]`'s arm: clear `0x527..=0x52E` (`65 27` .. `65 2E`),
+        // set `0x52B`; then a lone clear and a set outside any run.
+        let mut bc: Vec<u8> = (0x27..=0x2E).flat_map(|i| [0x65, i]).collect();
+        bc.extend([0x55, 0x2B, 0x65, 0x10, 0x55, 0x10]);
+        assert_eq!(selector_bands(&bc), vec![0x527..=0x52E]);
+    }
+
+    #[test]
+    fn a_short_run_is_not_a_band() {
+        let bc = [0x65, 0x27, 0x65, 0x28, 0x65, 0x29, 0x55, 0x28];
+        assert!(selector_bands(&bc).is_empty());
+    }
+}

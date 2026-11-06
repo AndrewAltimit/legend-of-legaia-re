@@ -3582,11 +3582,11 @@ Its misses fall into three shapes:
   Ravine. No op-`0x44` site in `nilboa` names `0x68`. All of these are seated
   ([`scripted_seats`](#the-seeding-model)'s park arm), and both states read
   `npcs` `1.000`. The walk-on's wall paints are not: the seed's grid keeps
-  the unbridged walls. The `nivora` flags channel's two bits are `P1[0]`'s
-  region flags: retail holds `0x52C` (box `[26, 0 .. 126, 87]`) although the
-  player stands at tile row `114`, and the engine `0x52B` (box
-  `[16, 88 .. 126, 126]`, the player's tile), so retail's last region pass
-  ran before the cutscene walked the player in and the engine's ran after.
+  the unbridged walls. Retail's `P1[0]` region bit is `0x52C` (box
+  `[26, 0 .. 126, 87]`) although the player stands at tile row `114`, in
+  `0x52B`'s box `[16, 88 .. 126, 126]`: retail's last region pass ran before
+  the cutscene walked the player in, and the seed's settle ran one after
+  ([the band is held](#the-band-is-held)).
 - **A cutscene's closing placement.** A placement can stand 64 units (half
   a tile) off the tile its spawn decodes (`(b & 0x7F) * 0x80 + 0x40`,
   `+ 0x80` instead with bit 7, `0x8003A330..0x8003A384`) for two reasons. Most are
@@ -4367,8 +4367,10 @@ re-selected at the seat. Retail runs the install slice in the load frame
 (`FUN_8003AB2C`, to the first executed `0x21`). Moving every scene's install
 slice into the load frame closes this bit but runs the entry's BGM cue and fog
 op before the seed's flags exist, and the corpus `bgm` channel fell by a
-fifth (by a tenth even with `--flags-first`), so the order stands and the
-bit is a seeding limit. The opening legs are pre-run already, and there the run
+fifth (by a tenth even with `--flags-first`), so the order stands, and the
+seed lands the save's bit back over the band once the settle has run
+([below](#the-band-is-held)). The `0x46` window the settle's arm wrote stays
+the engine's. The opening legs are pre-run already, and there the run
 stops where retail's does (`World::pre_run_entry_script`), so the two
 `opdeene` states carry retail's selector through the seed.
 
@@ -4396,6 +4398,27 @@ selected leaves the same residue: `nivora_cutscene_delilas_intro` and
 tile `(112, 114)`, inside the box of `0x52B` the seed selects there, and
 `chapter2_garmel_pre_zeto` holds `0x529` and `0x19E` with the player on a
 tile no box covers.
+
+<a id="the-band-is-held"></a>
+
+Neither the walk-on tile nor the state's position snapshot recovers that
+pass. The cutscene `nivora` stands in is `P2[3]`, whose `.PCH` walk-on tiles
+`(103, 112)` and `(117, 115)` both lie in `0x52B`'s box, and so do the
+fallback tiles of `P2[20]`, the record ahead of the Koru fight (`(99, 109)`,
+`(100, 109)`; its primary tile `(8, 27)` is `0x528`'s). The save window's
+snapshot `(6388, 9748)` (tile `(49, 75)`) is in `0x52C`'s box, but it is the
+last mode hand-over's, not the last pass's. So the seeds hold the band
+instead (`hold_selector_bands`): the bands are read off the scene's own
+bytecode, any run of four or more consecutive system-flag clears followed by
+the set of one of them, and once the settle has run - at the record's
+resume tick on a mid-script state, before the forced entry on a battle
+state - each band bit is landed back on the save's. The settle is seeding,
+not game time, as the battle seed's hold of the script counters at
+`0x801C6460` already says. The selector arm the settle took still ran, so a band arm
+that writes the view window or the camera region shows in those channels.
+The eight `nilboa` states read `flags` `1.000` (from `.997`), and so do
+`nivora_duel_mid_blazing_slash`, `chapter2_garmel_pre_zeto` and
+`cort_evolved_approach_cutscene`.
 
 The same pass picks the frame's clear colour. `town01`'s entry loop sets
 `4C 13` to the cave brown `(60, 40, 20)` while the player stands in its
@@ -4838,6 +4861,30 @@ two-step seat) sits in the second step: a pose one ease step past the first
 (`1769`, `622`) does not reach the fit the open thread names
 ([open threads](../reference/open-rev-eng-threads.md)). Dump both buffers with
 `pcsxr-state vram` and crop each at its own display origin.
+
+<a id="the-walk-rewind-and-the-ordering-tables"></a>
+
+The ordering tables do not reach the displayed frame either. Of the two
+double-buffer records at `0x8007BF30`, record `1` holds a full table (`771`
+packets) whose raster (`ot-raster.py`) is the buffer at `y 4`, the pass
+between, and record `0` - the one that drew the displayed buffer - is already
+cleared for the next pass (`16` packets). What the frames do show is the
+shape of the miss. Tile by tile, the displayed buffer stands `(8..12, -4..-10)`
+px from the `y 4` one, the vertical part growing toward the near floor at
+the lower left: parallax, so the camera moved between the two passes, not
+only turned. Both later passes hold eye Z `4768` and `H` `256`, the block's
+own constants (mode `4`, `B60A` `0`), so no follow-ease step on either side
+of the staging pose reaches the fit's farther eye. The rewind's candidates
+score `.912` (the previous pass's target recomposed on its footing), `.927`
+(recomposed on the newest pass's floor) and `.928` (both steps against the
+staging pose). The walk continued from the state (`walk_film.csv`, pad held)
+shows the footing trailing the floor: the staging eye Y sits on the floor's
+tier (`768`, `1024`, `1152`) from the first pass on it, while the footing
+conforms `24` a pass behind. But recomposing on the newest floor takes
+`kor3_field_route_walk` from `.991` to `.916`: its footing descends `32` a
+pass (`-192` to `-160`), and its frame stands on the older target's eye Y
+`1280`, which the footing gives. So the footing rule stays, and the second
+step's pose is history the RAM does not hold.
 
 A seat is not the last snap of the settle window. The entry script runs its
 first pass on the ticks after the seat

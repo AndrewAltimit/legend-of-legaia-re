@@ -409,6 +409,11 @@ pub fn run_engine_battle(
             break;
         }
     }
+    // The region-selector band the settle re-selected at the seat is history
+    // retail's field had already written ([`crate::retail_compare::hold_selector_bands`]).
+    if let Some(save) = retail.save.as_ref() {
+        crate::retail_compare::hold_selector_bands(&mut session.host.world, save);
+    }
     for &idx in &battle.entry_latches {
         session.host.world.system_flag_set(idx);
     }
