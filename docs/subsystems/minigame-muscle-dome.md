@@ -598,7 +598,7 @@ Every host closes the opponent's selection through `MuscleDomeSession::opponent_
 | `[2]` | dual role: active-panel id (compared against `ctx+0x275`; `record[2] + ctx+0x275 == 6` triggers a panel-swap reset of `ctx+0x880..0x883`) **and** the count of leading sub-draw handles bound to the four input slots `ctx+0x1114[]` (flagged `+0x1D = 2`) |
 | `[3+2k]`, `[4+2k]` | `(element id, mode)` pairs fed to `FUN_801D8DE8` |
 
-When `_DAT_800846C8` is set, the returned sprite handles are stashed into `ctx+0x1114[]`. The `func_0x80035f04` calls are the shared screen-projection helper anchoring sprites over the 3D fighters.
+When `_DAT_800846C8` is set, the returned sprite handles are stashed into `ctx+0x1114[]`. The `FUN_80035F04` call in the composer is the text-width measure ([dialog-font](../formats/dialog-font.md)), not a projection: element `0x1A` measures a name label.
 
 **Resolution.** In the commit phases the driver walks the actor's `+0x1DF` queue, sets `+0x1DD` / `+0x1DE`, and the shared battle-action path plays each queued action against the opponent record (HP `+0x14C`, max `+0x14E`). Per-command damage uses the shared battle formulas unmodified; there is no dome-local scaling.
 
@@ -614,7 +614,7 @@ When `_DAT_800846C8` is set, the returned sprite handles are stashed into `ctx+0
 | `0x0B` | "Spirit" heading (`_DAT_80076D2C = s_Spirit_801F4B98`) |
 | `0x0E` | name second panel -> `_DAT_80076D74` (same blank gate) |
 | `0x16`-`0x19` | the four direction-command portraits; sets `_DAT_8007BB8C = charid-1`, frame = `elem_id-0x13` |
-| `0x1A` | formatted number - `func_0x80035f04` on actor `+0x1BC` -> `_DAT_80076E86` / `_DAT_80076E94` |
+| `0x1A` | the acting fighter's name label: the name pointer actor `+0x1BC` -> `_DAT_80076E94` (placement record `+0x284`) and its `FUN_80035F04` width -> `_DAT_80076E86` (`+0x276`), `0x801D8FFC..0x801D9024` |
 | `0x52` | player gauge value: copies actor `+0x170` into the char record, sets `DAT_8007BD00 = charid-1` and `_DAT_800773C8` |
 | `0x53` | opponent gauge value (opponent actor `+0x170` -> `_DAT_800773E0`) |
 | `0x58` | opponent name -> `_DAT_80077464` (blank-gated, keyed on the opponent id) |

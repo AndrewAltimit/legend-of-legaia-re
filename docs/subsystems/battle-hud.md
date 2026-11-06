@@ -293,6 +293,14 @@ command or playing an action out - and shows that actor only:
 | `MP` label sprite `(224,86)` | `(192, 194)` |
 | MP current / separator / maximum | right edge 238 / `(240, 188)` / right edge 274 (two digits start at 258) |
 
+The current values are the displayed words, not the live ones: HP `+0x172` and
+MP `+0x174`. The battle frame's bar step `FUN_80047430` moves a quarter of a
+signed accumulator onto each a frame - `+0x10` for HP, `+0x178` for MP (the MP
+block at `0x800475A4..0x80047620`, on a party seat) - so a cast's MP counts down
+over a few frames rather than dropping, and the gauge colour (`0x80046B78`)
+reads the same `+0x174`. Port: `BattleActor::mp_display` carries `+0x174`,
+`tick_mp_bar` runs `party_mp_step` beside the HP ramp, and the HUD rows draw it.
+
 When the bar takes over, the panels do not stop drawing. Retail moves the whole
 cluster to `y = 230`, below the 228-line display window - the same park row the
 arts input screen uses

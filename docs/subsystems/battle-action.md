@@ -1130,7 +1130,7 @@ Beyond `actor[+0x1DE]` (category), these per-actor bytes are read or written by 
 | `+0x16E` | u16 | Per-actor flag bank. Bit `0x4` = "non-targetable", bit `0x380` = "AI-controlled", bit `0x404` = "AI + non-targetable". Read at state-`0x0C` to decide between `FUN_801EED1C` and `FUN_801E7320`. |
 | `+0x10` | i32 | **Pending HP-bar delta** - how much `+0x172` still has to move. Ramped into the bar a quarter at a time by `FUN_80047430`, and only while it is non-zero. |
 | `+0x172`/`+0x174` | u16 | **Displayed** HP / MP - the values the HUD bars draw, lagging live HP `+0x14C` and live MP `+0x150`. `FUN_80047430` ramps `+0x172` by the `+0x10` accumulator and `+0x174` by `+0x178`, in the same quarter-step shape. |
-| `+0x178` | u16 | Last-action MP cost (used to display `-N MP` on screen). |
+| `+0x178` | i16 | **Pending MP-bar delta** - the MP twin of `+0x10`, seeded at each cast and MP item and moved onto `+0x174` a quarter at a time on a party seat. |
 | `+0x1D9` | u8 | **Current** anim ID (read-only here; written by the animation system). |
 | `+0x1DA` | u8 | **Queued** next anim ID. The state machine writes this; the animation system reads `+0x1D9` toward `+0x1DA`. |
 | `+0x1DC` | u8 | Per-actor flag bits. `0x01` = "windup done", `0x02` = "advance done", `0x04` = "exit". Set by the strike/spell loops. |

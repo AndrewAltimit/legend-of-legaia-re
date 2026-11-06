@@ -187,6 +187,12 @@
   <p>The steps fill two memos and the disc index&rsquo;s cache and write nothing else, so no frame or tick can see whether they ran. A key the edge then reads differently is a miss, and builds as it would have. Both hosts and the headless drivers go through the memos; only this page prewarms.</p>
 </section>
 
+<section class="doc-section" id="input">
+  <h2>Touch pad and the bug report</h2>
+  <p><strong>The touch pad</strong> (<code>touch-pad.js</code>) is an on-screen PSX pad over the picture: a D-pad, the four face buttons, the shoulders and Select / Start. It does not keep an input path of its own. Each pressed button is held through a virtual source in <code>pad-bindings.js</code> that joins the controller poll, so every reader of a controller press - the field tick, the menus, the title card - takes a touch press with no call site and no binding table of its own. The D-pad is one surface read by angle from its centre, with a dead zone in the middle and about a 45-degree wedge per diagonal, so a thumb rolls between directions without lifting. It shows by default where the only pointer is coarse (a phone or tablet), the <em>Touch pad</em> button toggles it on any device and remembers the choice, and hiding it releases whatever it held.</p>
+  <p><strong>Copy report</strong> beside the disc picker puts on the clipboard what a bug report needs: the bundle&rsquo;s version, the browser and GL renderer, the window, the input devices (pointer kind, touch points, whether the touch pad shows, each connected controller and its mapping), the disc file&rsquo;s name and size, the engine&rsquo;s state, the stored options and the page&rsquo;s last warnings and errors. It holds no disc bytes.</p>
+</section>
+
 <section class="doc-section" id="other">
   <h2>The other surfaces</h2>
     <p>The minigames page holds the play hosts&rsquo; <code>AudioDirector</code> over one <code>WebAudioOut</code>, opened inside a user gesture. A tab change is that game&rsquo;s mode entry: the old game&rsquo;s voices and armed cues go, and the new game&rsquo;s banks stage as its door warp stages them. Every cue keys a live SPU voice, so its envelope, volume, pan, reverb send and closed-slot silence are the play hosts&rsquo;; a disc test renders each cue against the director and requires the same samples, and a host-drift tier rejects a cue played as a decoded buffer. Only the BGM is a buffer, an offline render at the same unity gain.</p>

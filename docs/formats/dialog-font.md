@@ -282,6 +282,8 @@ The rows the counter types into belong to a scrolling window, not a page buffer:
 
 The port is `legaia_font::Font::measure` (`crates/font/src/measure.rs`), which takes the surface's `DAT_800740E8` and a resolver for the runtime substitutions, and reports any token it could not resolve so a width is never silently a lower bound.
 
+A width is the measure's, not the draw layout's. `Font::layout` places glyphs for drawing, and it draws an author escape (`0x5E X`, `0xFF X`) as glyphs and gives a `0xCE` escape its sprite's advance or none, so on most strings carrying an escape the two disagree. Run off the disc in the R3000 interpreter (`retail-exec` `text_width`), `FUN_80035F04` with its expander matches `Font::measure` at both glyph pads; the text balloon spawner and the world-map place-name labels size themselves through the measure ([retail-kernel-differential](../tooling/retail-kernel-differential.md)).
+
 ### The field dialog box
 
 The pager `FUN_801D84D0` draws each row with `FUN_80036888` at the box's own `x` (`ctx+0x12`) and stores `DAT_800740E8 = 1` before every row (`0x801D96F0`, `0x801D9750`, `0x801D97D8`). A dialogue glyph therefore advances `widths[c] + 2`. The `v0_1_tetsu_dialogue_accept` save state's display list confirms it: the CLUT-7 glyph sprites of the box's first row step exactly `widths[c] + 2` apart.
