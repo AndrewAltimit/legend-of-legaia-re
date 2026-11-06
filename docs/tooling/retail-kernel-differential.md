@@ -274,3 +274,10 @@ not have. The waker now reads and clears both halves, and Numb lasts until it or
 
 The partition-2 record dispatcher `FUN_8003BDE0` matches over every such record of every scene MAN on the
 disc: the record it locates, its C1-any and C2-all story-flag gates, and the script entry it installs.
+
+Comparing the monster picker's stored category itself, rather than reading a stored `0` as a strike, found two
+more. A pass whose later cast entry fails its MP test keeps what an earlier entry of the same walk stored
+(`0x801EA51C` sits ahead of the `+0x1DE` store at `0x801EA528`); the port dropped it, so the retry's empty walk
+left the seat without the cast retail plays. And monsters `0x97` / `0x98` under a `0x380` status clear a stored
+cast to `0` and keep the ring, or keep any other category and skip the ring (`0x801EAD58..0x801EAD80`); the
+port ran neither.

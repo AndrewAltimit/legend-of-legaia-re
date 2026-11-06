@@ -231,11 +231,15 @@ fn one_pass(
             .and_then(|i| input.ai_bytes.get(i))
             .copied()
             .unwrap_or(0);
+        // A failure here comes ahead of this entry's stores (the MP test at
+        // `0x801EA51C` sits before `sb v0,0x1de(s4)` at `0x801EA528`), but an
+        // earlier match in the same walk has already stored its spell,
+        // clip and category, and they stand into the retry.
         let Some(bytes) = (id != 0).then(|| spell(id)).flatten() else {
-            return Pass::Failed(None);
+            return Pass::Failed(picked);
         };
         if input.mp < u16::from(bytes.mp) {
-            return Pass::Failed(None);
+            return Pass::Failed(picked);
         }
         let stored = CorePick::Magic {
             spell: id,

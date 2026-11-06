@@ -206,6 +206,9 @@ pub struct AiCast {
     /// `+0x1DD` the generic core already stored, so the caller keeps its own
     /// `target_class` and ignores [`Self::target_class`].
     pub keep_target: bool,
+    /// The arm jumps past the recent-target ring (`0x801EBDF0`) instead of
+    /// into it (`0x801EBDAC`), so the ring draws nothing this turn.
+    pub skip_ring: bool,
 }
 
 impl AiCast {
@@ -216,6 +219,7 @@ impl AiCast {
             category: 2,
             spirit_gauge_writeback: None,
             keep_target: false,
+            skip_ring: false,
         }
     }
 
@@ -329,6 +333,7 @@ pub fn decide(
                     category: 3,
                     spirit_gauge_writeback: None,
                     keep_target: false,
+                    skip_ring: false,
                 });
             }
         }
@@ -436,9 +441,23 @@ pub fn decide(
             }
         }
         0x97 | 0x98 => {
-            // Arms its ability cooldown each turn (no scripted cast for the
-            // non-AI-flagged path); the generic core's choice stands.
+            // Arms its ability cooldown each turn (`0x801EAD3C..0x801EAD54`).
+            // Unflagged, the generic core's choice stands. Under a `0x380`
+            // status the arm tests the stored category (`0x801EAD58..
+            // 0x801EAD80`): a cast is cleared to `0` - the turn arms nothing -
+            // and the ring runs; anything else stands and the ring is skipped.
             state.dat[pi + 4] = 1;
+            if ai380 {
+                let cast = ctx.core_category == 2;
+                return Some(AiCast {
+                    spell_id: 0,
+                    target_class: 0,
+                    category: if cast { 0 } else { ctx.core_category },
+                    spirit_gauge_writeback: None,
+                    keep_target: true,
+                    skip_ring: !cast,
+                });
+            }
         }
         0x99 | 0x9a | 0x9b => {
             if !ai380 {
