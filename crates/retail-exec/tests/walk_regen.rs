@@ -44,7 +44,7 @@ fn a_walk_tick_restores_what_retail_restores() {
             let r = RECORDS + id * STRIDE;
             let bits = [0u32, 0x0100_0000, 0x0200_0000, 0x0400_0000, 0x0700_0000]
                 [rng.below(5) as usize]
-                | rng.below(2) * 0x10;
+                | (rng.below(2) * 0x10);
             cpu.mem.wr32(r + 0xF8, bits);
             let mut gauge = |max_off: u32| {
                 let max = [0u16, 5, 99, 999, 9999, 0xFFFF][rng.below(6) as usize];
