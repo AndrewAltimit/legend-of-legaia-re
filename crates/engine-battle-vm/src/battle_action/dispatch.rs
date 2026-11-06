@@ -955,6 +955,7 @@ pub(super) fn action_seed<H: BattleActionHost + ?Sized>(
     // per-action camera-angle variant, rolled `rand() % 4` before the
     // category dispatch. Each category arm below may narrow it further.
     ctx.camera_variant = (host.rng() % 4) as u8;
+    ctx.seed_camera_variant = ctx.camera_variant;
 
     // Per-action camera framing (`FUN_801F0348` at `801e2d2c`). Retail runs
     // this unconditionally on the seed path, ahead of - and independent of -

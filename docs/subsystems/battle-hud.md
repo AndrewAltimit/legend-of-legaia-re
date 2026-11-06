@@ -715,6 +715,11 @@ at `(16, 192)` and the move name, and no cluster record). Port:
 | 76 / 77 | move name | `y = 150`, four X fields written to `0xA0 - width / 2`; plain glyphs, no plate |
 | 80 | combo cluster anchor | `(328, 170)` to `(168, 170)` over sixteen frames |
 
+A monster spell's name opens on the cast-begin pass `0x28` (`FUN_801D8DE8(0x4C, 0)`
+at `0x801E4458`), not on the seed that stores `0x28`: the films of Bloody Horns and
+Scythe Wind hold no name on the frame the seed's framing shows and the name on the
+next. The port shows it from the pass after `0x28` (`battle_move_name`).
+
 The target plaque's name carries the `0xCE` badge escape (`Gimard` at `x = 241`,
 `Skeleton A` at 245, `Gobu Gobu` at 249). Move-name seats: `Somersault` 130,
 `Tail Fire` 135, `Glare` 146. The cluster's own seats are in

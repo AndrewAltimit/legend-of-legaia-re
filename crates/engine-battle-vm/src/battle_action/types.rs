@@ -1300,6 +1300,14 @@ pub struct BattleActionCtx {
     /// REF: FUN_801E295C (`0x801E2D30`, `0x801E2E60`, `0x801E2E94`)
     pub camera_variant: u8,
 
+    /// [`Self::camera_variant`] as the action seed's own framing call reads
+    /// it: the raw `rand() % 4` roll. The seed stores the roll
+    /// (`sb v0,0xd(a0)` at `0x801E2D30`) and calls `FUN_801D5854(ctx[+0x13],
+    /// 6)` at `0x801E2D50` **before** the category arm narrows the byte
+    /// (Magic's `sb zero` at `0x801E2EC8`), so the seed pass frames on the
+    /// roll while the pass after it frames on the narrowed value.
+    pub seed_camera_variant: u8,
+
     /// Capture-harness pin for [`Self::camera_variant`]: when set, the
     /// action seed (`0x0C`) stores it over its own `rand() % 4` roll and the
     /// category arm's narrowing, after the draws themselves were made so the

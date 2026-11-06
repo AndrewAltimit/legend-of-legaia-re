@@ -780,7 +780,13 @@ pub fn battle_action_framing(world: &World, acting_slot: u8) -> script::ActionFr
         battle_over: false,
         depth_raw: world.battle.camera_frame_height as i32,
         yaw_base: 0,
-        style: world.battle_ctx.camera_variant,
+        // The seed pass frames before its category arm narrows the byte
+        // (`0x801E2D50` ahead of `0x801E2EC8`).
+        style: if world.battle_camera_state() == 0x0C {
+            world.battle_ctx.seed_camera_variant
+        } else {
+            world.battle_ctx.camera_variant
+        },
         char_id: if party {
             world.party_roster_slot(usize::from(acting_slot)) as u8 + 1
         } else {

@@ -540,6 +540,19 @@ fn action_seed_camera_variant_follows_the_category_arm() {
     }
 }
 
+/// The seed's own framing call reads the roll before the category arm
+/// narrows it (`0x801E2D50` ahead of `0x801E2EC8`), so the roll is kept
+/// beside the narrowed byte.
+#[test]
+fn action_seed_keeps_its_roll_for_its_own_framing() {
+    let (mut ctx, mut host) = fresh(ActionCategory::Magic, 1);
+    ctx.action_state = ActionState::ActionSeed.as_byte();
+    host.rng_seq = vec![3];
+    step(&mut host, &mut ctx);
+    assert_eq!(ctx.camera_variant, 0);
+    assert_eq!(ctx.seed_camera_variant, 3);
+}
+
 /// The capture harness's variant pin lands over the seed's roll and the
 /// category arm's narrowing, and leaves the draws themselves in place.
 #[test]

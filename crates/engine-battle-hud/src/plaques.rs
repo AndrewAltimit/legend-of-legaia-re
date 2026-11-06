@@ -120,6 +120,10 @@ pub fn battle_ring_ap_plate_value(world: &legaia_engine_core::world::World) -> O
     Some(world.spirit_gauge(actor).min(100) as u8)
 }
 
+/// The cast-begin state whose pass opens a monster spell's name label
+/// (`FUN_801D8DE8(0x4C, 0)` at `0x801E4458`).
+const MONSTER_CAST_BEGIN_STATE: u8 = 0x28;
+
 /// The name label retail draws under the action (placement records 76 /
 /// 77, `Somersault` / `Tail Fire` / `Glare` / `Healing Leaf`), or `None`.
 ///
@@ -204,6 +208,16 @@ pub fn battle_move_name(world: &legaia_engine_core::world::World) -> Option<Stri
                 ModuleCaption::Cleared => None,
                 ModuleCaption::ModuleString(va) => world.cast_module_string(id, va),
             };
+        }
+        // The label opens on the `0x28` pass itself, so the seed's pass
+        // (which stores `0x28`) shows none: `battle_tunnelc_xain_strike` and
+        // `dohaty_nova_v2_pre_scythe_wind` films hold no label on the frame
+        // the seed's case 6 frames, and the label on the next.
+        if matches!(
+            world.battle_ctx.action_state,
+            0x00..=0x0C | MONSTER_CAST_BEGIN_STATE
+        ) {
+            return None;
         }
         let id = actor.battle.params[0];
         world

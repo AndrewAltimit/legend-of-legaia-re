@@ -801,6 +801,17 @@ roll. (The arm addresses come from the seed's own category jump table at
 `0x801CF144`, six words indexed by `+0x1DE`, guard `sltiu v0,v1,0x6` at
 `0x801E2D68`.)
 
+The seed's own framing reads the roll, not the narrowed byte: the
+`FUN_801D5854(ctx[+0x13], 6)` call at `0x801E2D50` sits between the roll's store
+(`0x801E2D30`) and the category dispatch (`0x801E2D88`), so a Magic action's seed
+pass frames on `rand() % 4` and only the `0x28` pass after it frames on the `0`
+the Magic arm stores. `dohaty_nova_v2_pre_scythe_wind`'s recording shows it: the
+seed pass arms the tween toward yaw `2048`, which is `ctx[+0x6DA]` (`0x800`) less
+Nova's unturned facing `0x800` plus the half turn of an odd roll, and the `0x28`
+pass re-arms toward `3980` on style `0` and the turned facing. Port:
+`BattleActionCtx::seed_camera_variant`, which `battle_action_framing` reads while
+the camera frames the seed pass.
+
 Two later bands narrow it again. State `0x14` masks it to bit 0 on its
 **in-range shortcut** into the strike loop (`lbu` / `andi 1` / `sb` at
 `0x801E321C..0x801E322C`) - the outer `switch`'s entry for `0x14` is
