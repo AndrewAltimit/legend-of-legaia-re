@@ -38,6 +38,7 @@ mod melee_hit;
 mod menu_stats;
 mod monster_pick;
 mod muscle_contest;
+mod passive_sweep;
 mod queue_head;
 mod record_spawn;
 mod round_boundary;

@@ -227,10 +227,14 @@ impl World {
     /// Faithful shape per the disassembly (`800402f4.txt`
     /// `0x80041C70..0x80041FB0`): party seats only, one `rand()` draw per
     /// rolled target, `target_agl < rand % (attacker_agl + target_agl)`
-    /// lands the bit. One engine-model equivalence, disclosed: the guard
-    /// accessories gate at **infliction** here, where retail's applier writes
-    /// the bit unconditionally and the per-frame guard sweep `FUN_8004CE2C`
-    /// clears it the next frame - the same steady state, one frame apart.
+    /// lands the bit. The guard accessories gate at **infliction** here.
+    /// For Glare that is retail's own order: PROT 0940's body tests Stone and
+    /// Master Guard (`0x801F7054..0x801F7070`) before its inline `ori 0x4`,
+    /// so a guarded seat also keeps its queued action. Whether the other
+    /// three modules test first or call the applier, which writes the bit
+    /// unconditionally and leaves the clear to the per-frame sweep
+    /// [`World::tick_battle_passive_sweep`] (cancelling the queued action on
+    /// the way), is not measured.
     ///
     /// **The Stone arm's tail is asymmetric with the Curse one, and both
     /// halves are ported.** Between the roll and the exit the class-9 arm

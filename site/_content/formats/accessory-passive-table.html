@@ -141,7 +141,7 @@ if index &lt; 0x40:
       <ul class="bullets">
         <li><strong>Escape.</strong> Pinned in the run roll <code>FUN_801E791C</code>: <code>0x34</code> Escape Boost (Chicken Heart) scales the party's escape roll &times;1.5; <code>0x37</code> Great Escape (Chicken King) forces the roll compare to a tie - assured escape, still blocked by the scripted no-escape flag, hence "non-boss". Both fold only from <em>living</em> wearers (<a href="../subsystems/battle-action.html#spirit-run-live-menu">battle-action</a>).</li>
         <li><strong>Magic Boost (<code>0x2E</code>, Ivory Book).</strong> The killing-blow Seru-absorb roll reads ability word <code>+0xF8</code> bit <code>0x4000</code> and adds a flat 30 percentage points to the monster's catch byte before the d100.</li>
-        <li><strong>Maximum AP (<code>0x2A</code>).</strong> The guard applier's second word (<code>+0xF8</code> bit <code>0x400</code>) writes <code>0x64</code> to the actor's <code>+0x170</code> gauge - how that offset is pinned as the 0..100 AP gauge.</li>
+        <li><strong>Maximum AP (<code>0x2A</code>).</strong> The guard applier's second word (<code>+0xF8</code> bit <code>0x400</code>) writes <code>0x64</code> to a living wearer's <code>+0x170</code> gauge on every battle frame - how that offset is pinned as the 0..100 AP gauge.</li>
         <li><strong>Spell grants.</strong> Talismans <code>0x72..=0x76</code> grant summon spells <code>0x9A/0x9B/0x9C/0x9D/0x99</code> (Palma / Mule / Horn / Jedo / Juggernaut); Ra-Seru weapons <code>0x09/0x11/0x19</code> grant <code>0x9E/0x9F/0xA0</code>. The spell-slot list is maintained at <code>char +0x13D</code>.</li>
       </ul>
     </div>

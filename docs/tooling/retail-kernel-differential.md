@@ -289,3 +289,14 @@ The port's hit strip also left a tracked Confuse standing; it now clears the who
 
 The camera-register zone ramp's handler `FUN_80037018`, read from its disassembly, matches
 `zone_ramp_tick` over every gate, store width, the retire arm and the zero-span trap.
+
+The party walk of the per-frame actor pass `FUN_8004CE2C` (`0x8004CE6C..0x8004D018`), which the battle
+template's tick `FUN_8004DA00` tail-calls on every battle frame, had no port. Retail's melee status arms,
+an enemy special's Venom and Toxic and a cast's raw bits are written whatever the target wears, and this
+walk takes off each bit the wearer's guards cover, fallen or not; so in the port a Poison, Curse or Numb
+Guard stopped nothing that reached the word that way, and Master Guard only stopped Rot. Maximum AP, which
+the same walk uses to hold a living wearer's gauge at 100, did nothing. `World::tick_battle_passive_sweep`
+now runs the walk at the head of each battle frame and matches it over every guard combination, with the
+word split between the port's raw half and its tracker. The infliction-time guard tests the port keeps
+(Glare, the Rot arms) are retail's own: PROT 0940 tests Stone and Master Guard before it writes the bit
+(`0x801F7054..0x801F7070`), and the Rot arms read both guards ahead of their draw.
