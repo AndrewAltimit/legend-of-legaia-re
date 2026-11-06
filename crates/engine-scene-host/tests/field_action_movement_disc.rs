@@ -41,7 +41,14 @@ fn town01() -> Option<SceneHost> {
     })?;
     let mut host = SceneHost::open_extracted(&extracted).expect("open SceneHost");
     host.enter_field_scene("town01", 0).expect("enter town01");
+    // Three ticks, then the rest of the scene load's post-load pad hold
+    // (`FUN_8003ADAC`, `_DAT_8007B6B4 = 0x28`), which keeps the pad
+    // controller - and the action model behind it - off until it drains.
     for _ in 0..3 {
+        host.tick().expect("tick");
+    }
+    while host.world.field_warp_words().1 != 0 {
+        host.world.set_pad(0);
         host.tick().expect("tick");
     }
     host.world.toggles.action_movement = true;

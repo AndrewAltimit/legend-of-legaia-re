@@ -92,6 +92,12 @@ pub struct EncounterState {
     /// word (`World::seed_battle_map_define`); the port's own dome leg
     /// names the arena through `World::muscle_leg_in_battle`.
     pub battle_map_define: Option<u16>,
+    /// How many times the encounter hand-off has raised the field party HUD's
+    /// short-idle marker `_DAT_8007B5F4` (`FUN_801DA51C` stores `1` at
+    /// `0x801DA704`, in the arm that starts the field-to-battle intro). The
+    /// marker itself lives with the HUD, which clears it; the world only
+    /// publishes the raise, as a count a HUD compares against the one it saw.
+    pub hud_short_idle_raises: u32,
 }
 
 impl EncounterState {
@@ -108,6 +114,7 @@ impl EncounterState {
             step_counter: crate::region_encounter::ENCOUNTER_COUNTER_BASE,
             region_setup: None,
             battle_map_define: None,
+            hud_short_idle_raises: 0,
         }
     }
 }

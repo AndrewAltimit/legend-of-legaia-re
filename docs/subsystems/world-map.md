@@ -793,7 +793,7 @@ the position. A match decrements it by `_DAT_1F800393` (`lbu v1,0x7f(t1)` at
 shortening it to `0` under Immediate and `0x50` under Gradual. It is taken on
 any of four terms (`0x801D0DC0..0x801D0E0C`): the player's engaged bit
 `+0x10 & 0x80000` (`lw a1,0x1c(s0)` off `0x8007C348` is `_DAT_8007C364`),
-`_DAT_1F800394 & 0x400`, `_DAT_8007B6B4 != 0`, `_DAT_8007B6B0 == 0`. The
+`_DAT_1F800394 & 0x400`, `_DAT_8007B6B4 != 0`, `_DAT_8007B6B0 != 0`. The
 script runner `FUN_80039B7C` raises the engaged bit on every frame it steps a
 spawned context, so a script that holds the player keeps the countdown
 rearming and the HUD never appears - which is why no ending scene shows a
@@ -803,6 +803,27 @@ from `FUN_8003BC08` on the later `_DAT_8007C354` list, so the frame a record
 first engages the player still draws the readout. Port:
 `world_map_panel_host::field_hud_rearm_held` answers the term for both hosts
 and `FieldPartyHud::rearm_term` delays it the same frame.
+
+**The warp words and the short-idle marker.** The last two terms read the
+current frame: the player tick `FUN_801D1344` drains `_DAT_8007B6B4` at
+`0x801D1618` before it calls the HUD at `0x801D1660`. Every map install
+leaves that word at `0x28` (`FUN_8003ADAC`, the tail call of the MAN
+installer `FUN_8003AEB0` at `0x8003BAE0`), so the countdown starts only once
+the post-load hold has drained: on an ordinary scene entry the readout comes
+up `0x28` frames after the pad comes back. The marker `_DAT_8007B5F4` has one
+non-zero writer, the encounter hand-off in `FUN_801DA51C` (`0x801DA704`, beside
+the game-mode `8` store and the rumble), which every field fight passes - a
+boss included. The HUD clears it on every pass that is not the entry arm (the
+suppress exit's delay slot at `0x801D0DBC`, the position compare's at
+`0x801D0EAC`). A battle and the intro replace slot A, so the marker survives to
+the field-back load, whose hold keeps the HUD in the entry arm at a countdown
+of `0`: the readout comes up on the first frame the pad does. A retail capture
+of a `vell` random encounter left by Run reads exactly that - the hold at `0x28`
+from the field-back load, the marker at `1` and the countdown at `0` through the
+drain, the marker cleared on the frame the hold reaches `0`. Port:
+`world_map_panel_host::field_hud_warp_rearm` (the two words) and
+`FieldPartyHud::tick_marked` (the marker, raised from
+`EncounterState::hud_short_idle_raises`).
 
 **Slot residency.** The routine lives in slot A, so it draws nothing while
 another image holds the slot. The field-to-battle transition overlay (PROT

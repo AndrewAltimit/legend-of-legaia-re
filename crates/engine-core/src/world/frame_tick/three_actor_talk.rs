@@ -41,9 +41,10 @@ impl World {
     ///   the switch reachable everywhere at once: every host drives
     ///   [`Self::set_pad`], so none of them needs a binding of its own and
     ///   there is no second key table to drift from the engine's. The retail
-    ///   suppressor pair `_DAT_8007B6B4` / `_DAT_8007B6B0` is
-    ///   host-substituted by "a dialogue owns the pad", so a switch never
-    ///   arms under an open text box.
+    ///   suppressor pair `_DAT_8007B6B4` / `_DAT_8007B6B0` is the warp's
+    ///   hold and timer, so no switch arms through a scene's post-load hold
+    ///   or a kind-0 warp; "a dialogue owns the pad" stands in for the
+    ///   hold's unported script-runner writer, so none arms under a box.
     ///
     ///   The port latches its field **run** modifier off the same pad word
     ///   ([`crate::world::FieldLocomotion::run_button_held`], mask
@@ -97,11 +98,18 @@ impl World {
         let leader = self.field_leader().min(2);
         let swap_world = LeaderSwapWorld {
             leader,
-            // Host substitution for the retail suppressor pair
-            // `_DAT_8007B6B4` / `_DAT_8007B6B0` (un-pinned globals): no
-            // switch arms while a dialogue owns the pad.
-            suppress_a: i32::from(self.dialogue_owns_input()),
-            suppress_b: 0,
+            // The suppressor pair is the warp's: `_DAT_8007B6B4`, the
+            // post-warp / post-load hold, and `_DAT_8007B6B0`, the kind-0
+            // warp timer (`World::field_warp_words`). The hold's third
+            // writer, the script runner's `0x10` after a context ends
+            // (`FUN_80039B7C`, `0x80039D60`), is not ported; an open
+            // dialogue stands in for it, so no switch arms under a box.
+            suppress_a: if self.locomotion.warp.hold != 0 {
+                self.locomotion.warp.hold
+            } else {
+                i32::from(self.dialogue_owns_input())
+            },
+            suppress_b: self.locomotion.warp.timer,
             // The engine models no second controller that could hold the
             // camera-busy bit at state 0, and no `_DAT_1F800394` pad-word
             // mirror: both alternate arm routes read clear, leaving the

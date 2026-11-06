@@ -323,7 +323,6 @@
 "8001d140" = "Scratchpad-stack render trampoline: swaps SP into the 0x1F8002BC fast-scratch window, jals the per-actor render dispatcher 8001ada4 for the caller's list head, restores SP. Pure R3000 performance idiom around the (documented) render dispatcher; no behaviour of its own. see ghidra/scripts/funcs/8001d140.txt"
 "801d99bc" = "Per-actor battle UI-element array teardown: zeroes the 0x28-actor UI-element arrays (+0x1074/+0x11b4/+0x11b7) and calls 800355f0. Frame draw-state reset companion to 800355f0; no engine equivalent (engine holds battle UI state in Rust structs). see ghidra/scripts/funcs/801d99bc.txt"
 "8003563c" = "Per-actor record-queue append: appends a 16-byte record into an actor's 8-slot sub-buffer on the gp+0x148 draw/event list (lazy 0x80-byte alloc, hard cap 8). Data-structure plumbing; the reward-resolver semantic it serves is ported in apply_battle_loot. see ghidra/scripts/funcs/8003563c.txt"
-"8003adac" = "Scene-entry letterbox/sprite-pair chrome: builds two box/sprite primitives (sizes 0x1E, 0x08) via the panel emitter 80024e80. Host GP0 chrome emission; engine draws scene-entry framing through its own overlay path. see ghidra/scripts/funcs/8003adac.txt"
 "800355f0" = "Floating draw-list teardown: drains the gp+0x148 element list, freeing nodes via FUN_800319A8. Pure host data-structure teardown (maps to Rust Drop/clear); no port site. see ghidra/scripts/funcs/800355f0.txt"
 
 

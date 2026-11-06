@@ -69,12 +69,30 @@ fn json(s: &str) -> serde_json::Value {
     serde_json::from_str(s).unwrap_or(serde_json::Value::Null)
 }
 
+/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the pad controller and
+/// its menu accept off until it drains.
+fn wait_out_load_hold(rt: &mut LegaiaRuntime) {
+    for _ in 0..0x40 {
+        let held = rt
+            .debug_session()
+            .is_some_and(|s| s.host.world.field_warp_words().1 != 0);
+        if !held {
+            return;
+        }
+        rt.set_pad(0);
+        rt.tick_frame().expect("tick");
+    }
+    panic!("the post-load hold never drained");
+}
+
 fn loaded_in(scene: &str) -> Option<LegaiaRuntime> {
     let disc = std::env::var("LEGAIA_DISC_BIN").ok()?;
     let bytes = std::fs::read(&disc).ok()?;
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(bytes, String::new()).ok()?;
     rt.enter_field(scene).ok()?;
+    wait_out_load_hold(&mut rt);
     Some(rt)
 }
 
@@ -589,6 +607,7 @@ fn rung3_items_use_opens_the_target_panel_over_a_hurt_party() {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(bytes, String::new()).expect("load_disc");
     rt.enter_field("town01").expect("enter town01");
+    wait_out_load_hold(&mut rt);
     rt.insert_card(
         0,
         card_with_bag(1, 0, "Vahn", 500, (90, 200), &[(plain, 3), (water, 2)]),

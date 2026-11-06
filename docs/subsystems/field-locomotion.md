@@ -940,6 +940,12 @@ Crossing onto a kind-0 tile does not move the player at once. The kind-0 arm **a
 
 `_DAT_8007B6B4` is often called a dialogue-pacing countdown; this landing is one of its writers and the player tick is its drain. The timer half does not walk the actor anywhere, and the crossing tile is `(_DAT_8007BDC8, _DAT_8007BDCC)` - a dump printed at the phantom VA `0x801C36AC` reads otherwise ([`overlay-va-aliases.md`](../reference/overlay-va-aliases.md)).
 
+<a id="the-post-load-hold"></a>
+
+**The post-load hold.** The word has three more writers: the script runner `FUN_80039B7C` (`0x10`, at `0x80039D60` / `0x80039F34`, when the byte `0x80073F02` is set), the travel-art fade actor (zero, `0x801EE168` / `0x801EE478`), and `FUN_8003ADAC`, the tail call of the MAN installer `FUN_8003AEB0` (`0x8003BAE0`). The last stores `0x28` on **every map install** - a door, a save load and a return from battle alike - and clears the player's movement lock.
+
+So every scene opens with the pad off for `0x28` vsyncs, no encounter roll (`FUN_801D9E1C` tests the word at `0x801DA14C`), and the party HUD held in its entry arm. A retail capture of a `vell` random encounter left by Run reads the word at `0x28` from the field-back load (game mode `2`) and draining by `2` a tick from the first field frame. Port: `World::seat_map_install_hold`, called from `SceneHost::enter_field_scene` and from the battle exit `World::finish_battle`; the overworld's pad step drains and tests it as the field's does. The script runner's `0x10` writer is not ported.
+
 <a id="retail-capture-of-the-warp"></a>
 
 #### Retail capture of the warp

@@ -34,6 +34,23 @@ const ROW_OPTIONS: usize = 4;
 const ROW_LOAD: usize = 5;
 const ROW_SAVE: usize = 6;
 
+/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the pad controller and
+/// its menu accept off until it drains.
+fn wait_out_load_hold(rt: &mut LegaiaRuntime) {
+    for _ in 0..0x40 {
+        let held = rt
+            .debug_session()
+            .is_some_and(|s| s.host.world.field_warp_words().1 != 0);
+        if !held {
+            return;
+        }
+        rt.set_pad(0);
+        rt.tick_frame().expect("tick");
+    }
+    panic!("the post-load hold never drained");
+}
+
 fn loaded_in_town() -> Option<LegaiaRuntime> {
     loaded_in("town01")
 }
@@ -50,6 +67,7 @@ fn loaded_in(scene: &str) -> Option<LegaiaRuntime> {
     let mut rt = LegaiaRuntime::new();
     rt.load_disc(bytes, String::new()).ok()?;
     rt.enter_field(scene).ok()?;
+    wait_out_load_hold(&mut rt);
     Some(rt)
 }
 

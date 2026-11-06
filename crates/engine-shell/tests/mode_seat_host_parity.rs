@@ -39,6 +39,10 @@ use legaia_web_play::runtime::LegaiaRuntime;
 
 const SCENE: &str = "town01";
 
+/// Ticks after the field entry before the menu opens: four, plus the
+/// post-load hold.
+const POST_LOAD_TICKS: usize = 4 + 0x28;
+
 /// `(mode index, mode name)` with consecutive duplicates removed - the chain
 /// of words the host walked.
 fn chain(words: &[(u8, String)]) -> Vec<(u8, String)> {
@@ -75,7 +79,9 @@ fn native_chain(disc: &str) -> (Vec<(u8, String)>, u64) {
     )
     .expect("enter field live");
     sample(&s, &mut words);
-    for _ in 0..4 {
+    // Past the scene load's post-load hold (`FUN_8003ADAC`, `0x28` vsyncs),
+    // which keeps the pad controller - and its menu accept - off.
+    for _ in 0..POST_LOAD_TICKS {
         let _ = s.tick();
         sample(&s, &mut words);
     }
@@ -111,7 +117,7 @@ fn web_chain(disc_bytes: Vec<u8>) -> (Vec<(u8, String)>, u64) {
     sample(&rt, &mut words);
     rt.enter_field(SCENE).expect("enter_field");
     sample(&rt, &mut words);
-    for _ in 0..4 {
+    for _ in 0..POST_LOAD_TICKS {
         let _ = rt.tick_frame();
         sample(&rt, &mut words);
     }

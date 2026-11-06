@@ -102,6 +102,23 @@ struct Hold {
     right_axis: f32,
 }
 
+/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the pad controller and
+/// its menu accept off until it drains.
+fn wait_out_load_hold(rt: &mut LegaiaRuntime) {
+    for _ in 0..0x40 {
+        let held = rt
+            .debug_session()
+            .is_some_and(|s| s.host.world.field_warp_words().1 != 0);
+        if !held {
+            return;
+        }
+        rt.set_pad(0);
+        rt.tick_frame().expect("tick");
+    }
+    panic!("the post-load hold never drained");
+}
+
 fn walk(rt: &mut LegaiaRuntime, button: PadButton) -> Hold {
     rt.set_pad(0);
     for _ in 0..2 {
@@ -150,6 +167,7 @@ fn up_walks_away_from_the_camera_and_right_walks_screen_right_at_every_orbit() {
         for _ in 0..8 {
             rt.tick_frame().expect("tick");
         }
+        wait_out_load_hold(&mut rt);
         rt.play_camera_set_orbit(orbit);
         assert!((rt.play_camera_orbit() - orbit).abs() < 1e-6);
 

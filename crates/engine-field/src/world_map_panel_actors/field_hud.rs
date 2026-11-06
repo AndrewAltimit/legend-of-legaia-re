@@ -59,11 +59,14 @@ pub struct HudInput {
     pub pad: u32,
     /// `_DAT_1F800394 & 0x0800_0000` - the second suppress gate.
     pub scratch_suppress: bool,
-    /// True on the frame the scene is (re-)entered: any of the object flag
-    /// `0x0008_0000`, `_DAT_1F800394 & 0x400`, `_DAT_8007B6B4 != 0`, or
-    /// `_DAT_8007B6B0 == 0`.
+    /// True on a frame the scene-entry arm is taken: any of the player's
+    /// engaged bit `0x0008_0000`, `_DAT_1F800394 & 0x400`,
+    /// `_DAT_8007B6B4 != 0` or `_DAT_8007B6B0 != 0` (`0x801D0DC0..0x801D0E0C`;
+    /// the last test is `beq v0,zero` *to the position compare*, so a zero
+    /// warp timer is the one that does **not** rearm).
     pub rearm: bool,
-    /// `_DAT_8007B5F4` - the short-idle marker.
+    /// `_DAT_8007B5F4` - the short-idle marker the encounter hand-off raises
+    /// (`0x801DA704`) and every non-entry pass of this routine clears.
     pub short_idle: bool,
     /// `_DAT_801F348C` - the idle countdown.
     pub timer: i16,

@@ -135,6 +135,19 @@ fn player_xz(host: &SceneHost) -> (i16, i16) {
     (ms.world_x, ms.world_z)
 }
 
+/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`): the pad controller is off until it drains.
+fn wait_out_load_hold(host: &mut SceneHost) {
+    for _ in 0..0x40 {
+        if host.world.field_warp_words().1 == 0 {
+            return;
+        }
+        host.world.set_pad(0);
+        host.tick().expect("tick");
+    }
+    panic!("the post-load hold never drained");
+}
+
 fn hold(host: &mut SceneHost, pad: u16, frames: usize) {
     for _ in 0..frames {
         host.world.set_pad(pad);
@@ -261,6 +274,7 @@ fn walls_draw_generated_boxes_and_a_crate_is_a_floor_top() {
             .sample_field_floor_height(i32::from(cx), i32::from(cz)),
         -64
     );
+    wait_out_load_hold(&mut host);
     let x0 = player_xz(&host).0;
     hold(&mut host, PadButton::Right.mask(), 4);
     let toward = if player_xz(&host).0 > x0 {

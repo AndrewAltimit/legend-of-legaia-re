@@ -184,7 +184,22 @@ fn booted(scene: &str) -> Option<NativeSession> {
             .ok()?;
     }
     session.set_save_rack(card_rack(), vec![port0_blocks(), Vec::new()]);
+    wait_out_load_hold(&mut session);
     Some(session)
+}
+
+/// Tick with the pad neutral through the scene load's post-load hold
+/// (`FUN_8003ADAC`, `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the
+/// pad controller and its menu accept off until it drains.
+fn wait_out_load_hold(s: &mut NativeSession) {
+    for _ in 0..0x40 {
+        if s.host.world.field_warp_words().1 == 0 {
+            return;
+        }
+        s.host.world.set_pad(0);
+        let _ = s.tick();
+    }
+    panic!("the post-load hold never drained");
 }
 
 /// Retail's two console ports, a card mounted in port 1.

@@ -498,7 +498,19 @@ impl World {
     ///
     /// REF: FUN_801D01B0 (speed + the clip-base slice `0x801D0424..0x801D04A4`)
     fn step_world_map_locomotion(&mut self) {
+        // The overworld's frame pump is the field's `FUN_801D1344`: it drains
+        // the post-warp / post-load hold `_DAT_8007B6B4` by the frame delta
+        // ahead of every gate (`0x801D1618..0x801D1630`), and skips the pad
+        // controller while it is non-zero (`0x801D16C8..0x801D16E4`) - the
+        // same step `step_field_locomotion` runs in a town.
+        legaia_engine_field::field_warp_tile::drain_post_warp_hold(
+            &mut self.locomotion.warp,
+            self.move_vm.ramp_ratio.max(1),
+        );
         if self.dialogue_owns_input() {
+            return;
+        }
+        if legaia_engine_field::field_warp_tile::pad_suppressed(&self.locomotion.warp) {
             return;
         }
         // A spawned overworld cutscene timeline owns the player - the opening

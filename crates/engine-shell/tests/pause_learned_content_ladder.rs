@@ -129,6 +129,20 @@ fn close_to_root(s: &mut NativeSession) {
     panic!("Circle never handed the pad back to the root list");
 }
 
+/// Tick with the pad neutral through the scene load's post-load hold
+/// (`FUN_8003ADAC`, `_DAT_8007B6B4 = 0x28`): the field frame pump keeps the
+/// pad controller and its menu accept off until it drains.
+fn wait_out_load_hold(s: &mut NativeSession) {
+    for _ in 0..0x40 {
+        if s.host.world.field_warp_words().1 == 0 {
+            return;
+        }
+        s.host.world.set_pad(0);
+        let _ = s.tick();
+    }
+    panic!("the post-load hold never drained");
+}
+
 /// town01 with a new-game party, one or two spells learned by Vahn, and
 /// `bag` in the bag.
 fn booted(spells: &[u8], bag: &[u8]) -> Option<NativeSession> {
@@ -148,6 +162,7 @@ fn booted(spells: &[u8], bag: &[u8]) -> Option<NativeSession> {
     s.begin_new_game();
     s.enter_field_live("town01", &FieldLiveOpts::default())
         .expect("enter town01");
+    wait_out_load_hold(&mut s);
     // The native host's boot step the headless session skips (see the
     // module docs): the menu overlay's data tables, off the user's disc.
     let overlay = s

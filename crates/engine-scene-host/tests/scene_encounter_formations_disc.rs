@@ -228,6 +228,10 @@ fn a_region_scene_still_reaches_battle_after_the_new_game_reset() {
         world.battle.player_driven = false;
 
         let mut triggered = false;
+        // The scene load's post-load pad hold (`FUN_8003ADAC`) holds the roll
+        // (`0x801DA14C`) until the player tick drains it; this drives the step
+        // kernel without those frames.
+        world.release_post_load_hold();
         for _ in 0..40_000 {
             if world.on_field_step() {
                 triggered = true;

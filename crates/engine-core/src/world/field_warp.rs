@@ -209,6 +209,49 @@ impl World {
         self.locomotion.player_rig_dirty = false;
         self.locomotion.player_rig_bound = Some(self.player_rig_source());
     }
+
+    /// The post-load pad hold every map install leaves: `FUN_8003ADAC`, the
+    /// one call at the tail of the MAN installer `FUN_8003AEB0`
+    /// (`jal 0x8003adac` at `0x8003BAE0`, reached on both of the installer's
+    /// player-seat arms), stores `_DAT_8007B6B4 = 0x28`
+    /// (`li v0,0x28; sw v0,-0x494c(v1)` at `0x8003ADF8..0x8003ADFC`) and clears
+    /// the player's `+0x10 & 0x80000` bit. That is the hold a kind-0 warp's
+    /// landing writes too ([`warp_tile::POST_WARP_HOLD_FRAMES`]), and the
+    /// field frame pump `FUN_801D1344` treats it the same way: the pad
+    /// controller stays off until it drains, the region reader rolls no
+    /// encounter (`0x801DA14C`), and the party HUD stays in its rearm arm
+    /// (`0x801D0DEC`).
+    ///
+    /// Every scene load runs the installer, a return from battle included:
+    /// a retail capture of a `vell` random encounter escaped by Run reads
+    /// `_DAT_8007B6B4 = 0x28` on the field-back load (game mode `2`) and
+    /// draining by the frame delta from the first field frame.
+    ///
+    /// PORT: FUN_8003ADAC (the `_DAT_8007B6B4` store and the player-bit clear;
+    /// its two `FUN_80024E80` fades are not seated here)
+    pub fn seat_map_install_hold(&mut self) {
+        self.locomotion.warp.hold = warp_tile::POST_WARP_HOLD_FRAMES;
+        if let Some(slot) = self.player_actor_slot
+            && let Some(actor) = self.actors.get_mut(slot as usize)
+        {
+            actor.move_state.flags &= !warp_tile::MOVEMENT_LOCK;
+        }
+    }
+
+    /// Drop the post-load hold at once, for a tool or test that stands at a
+    /// scene entry and drives a step kernel (`on_field_step`, the menu gate)
+    /// without running the frames that drain it. Not a retail path: the
+    /// game's own drain is the player tick's (`FUN_801D1344`, `0x801D1618`).
+    pub fn release_post_load_hold(&mut self) {
+        self.locomotion.warp.hold = 0;
+    }
+
+    /// `_DAT_8007B6B0` / `_DAT_8007B6B4`, the kind-0 warp's timer and the
+    /// post-load pad hold, for the readers outside this crate (the field
+    /// party HUD's rearm arm).
+    pub fn field_warp_words(&self) -> (i32, i32) {
+        (self.locomotion.warp.timer, self.locomotion.warp.hold)
+    }
 }
 
 #[cfg(test)]
@@ -220,6 +263,40 @@ mod tests {
         w.mode = legaia_engine_mode::mode::SceneMode::Field;
         w.install_field_player(0);
         w
+    }
+
+    /// `FUN_8003ADAC`: the map install leaves `0x28` of hold and clears the
+    /// movement lock; the hold keeps the pad controller off and the
+    /// encounter roll held (`0x801DA14C`) until the player tick drains it.
+    #[test]
+    fn the_map_install_hold_gates_the_pad_and_the_roll_until_it_drains() {
+        let mut w = world_with_player();
+        let slot = w.player_actor_slot.unwrap() as usize;
+        assert!(!w.encounter_roll_held());
+        w.actors[slot].move_state.flags |= warp_tile::MOVEMENT_LOCK;
+        w.seat_map_install_hold();
+        assert_eq!(w.field_warp_words(), (0, warp_tile::POST_WARP_HOLD_FRAMES));
+        assert_eq!(
+            w.actors[slot].move_state.flags & warp_tile::MOVEMENT_LOCK,
+            0
+        );
+        assert!(w.encounter_roll_held(), "the hold holds the roll");
+        assert!(warp_tile::pad_suppressed(&w.locomotion.warp));
+        let mut ticks = 0;
+        while w.field_warp_words().1 != 0 {
+            w.step_field_locomotion();
+            ticks += 1;
+            assert!(
+                ticks <= warp_tile::POST_WARP_HOLD_FRAMES,
+                "the hold never drained"
+            );
+        }
+        assert_eq!(
+            ticks,
+            warp_tile::POST_WARP_HOLD_FRAMES,
+            "one per tick at ratio 1"
+        );
+        assert!(!w.encounter_roll_held());
     }
 
     #[test]

@@ -241,7 +241,10 @@ pub fn passive_hud_text_draws(
 /// last ran in. Then retail's player-engaged term: a script or conversation
 /// that holds the player restarts the idle countdown every frame, read a
 /// frame late, the order retail's actor lists run in
-/// (`FieldPartyHud::rearm_term`).
+/// (`FieldPartyHud::rearm_term`). Last the warp words: the post-load hold a
+/// scene entry or a battle return leaves, and a running kind-0 warp, hold the
+/// countdown at its start on the frame they read
+/// (`world_map_panel_host::field_hud_warp_rearm`).
 pub fn field_party_hud_rearm(
     hud: &mut legaia_engine_field::world_map_panel_host::FieldPartyHud,
     scene_latch: &mut Option<String>,
@@ -254,6 +257,9 @@ pub fn field_party_hud_rearm(
     }
     let held = legaia_engine_world_views::world_map_panel_host::field_hud_rearm_held(&host.world);
     if hud.rearm_term(held) {
+        hud.rearm();
+    }
+    if legaia_engine_world_views::world_map_panel_host::field_hud_warp_rearm(&host.world) {
         hud.rearm();
     }
 }
@@ -278,7 +284,16 @@ pub fn field_party_hud_tick(
         .map(usize::from)
         .and_then(|s| world.actors.get(s))
         .map(|a| (a.move_state.world_x, a.move_state.world_z));
-    hud.tick(suppressed, view_mode, pad, player_pos, 1, projected_y);
+    hud.tick_marked(
+        suppressed,
+        view_mode,
+        pad,
+        player_pos,
+        1,
+        projected_y,
+        world.encounters.hud_short_idle_raises,
+        legaia_engine_world_views::world_map_panel_host::field_hud_resident(world),
+    );
 }
 
 /// The field overlay's own stage windows that ride the shop-family overlay

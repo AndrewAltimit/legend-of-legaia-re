@@ -339,6 +339,9 @@ impl World {
         if matches!(self.mode, SceneMode::Field | SceneMode::WorldMap) {
             self.recentre_field_window_on_player();
             self.battle.field_camera_reseat = true;
+            // The field-back load re-runs the MAN installer, whose tail
+            // leaves the post-load pad hold (`FUN_8003ADAC`).
+            self.seat_map_install_hold();
         }
     }
 

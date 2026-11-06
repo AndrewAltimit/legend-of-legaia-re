@@ -38,6 +38,7 @@ fn open_town01() -> Option<SceneHost> {
     for _ in 0..3 {
         host.tick().expect("tick");
     }
+    wait_out_load_hold(&mut host);
     let bytes = host
         .index
         .entry_bytes(legaia_actor_formats::character_pack::PROT_ENTRY_INDEX)
@@ -56,6 +57,19 @@ fn open_town01() -> Option<SceneHost> {
     host.world.actors[s].move_state.world_z = 2624;
     host.world.actors[s].move_state.flags &= !0x0008_0000;
     Some(host)
+}
+
+/// Stand through the scene load's post-load pad hold (`FUN_8003ADAC`,
+/// `_DAT_8007B6B4 = 0x28`): the pad controller is off until it drains.
+fn wait_out_load_hold(host: &mut SceneHost) {
+    for _ in 0..0x40 {
+        if host.world.field_warp_words().1 == 0 {
+            return;
+        }
+        host.world.set_pad(0);
+        host.tick().expect("tick");
+    }
+    panic!("the post-load hold never drained");
 }
 
 fn drive(host: &mut SceneHost, pad: u16, frames: u32) {
