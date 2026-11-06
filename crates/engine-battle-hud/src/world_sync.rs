@@ -345,6 +345,60 @@ fn dome_intro_names(
     vec![(name.to_string(), x)]
 }
 
+/// PROT 0957 `0x76` (Death Game) arm 3's labels this frame, as `(text, pen x,
+/// pen y)` in stage pixels: under each card its two lines, the victim's name
+/// or one of the module's head strings, each centred on the card's column by
+/// its `FUN_80035F04` width (`font`) and drawn through `FUN_80036888`
+/// (`0x801F7F50..0x801F810C`). Empty off arm 3's window, outside battle, and
+/// with no module image (disc-free).
+pub fn battle_death_game_labels(
+    world: &legaia_engine_core::world::World,
+    font: &legaia_font::Font,
+) -> Vec<(Vec<u8>, i32, i32)> {
+    use legaia_engine_cast::cast_module_camera::{
+        DEATH_GAME_PROT, DeathGameLabel, LABEL_FIRST_CENTRE_X, LABEL_ROWS_Y, LABEL_STEP_X,
+        head_string,
+    };
+    if world.mode != legaia_engine_mode::mode::SceneMode::Battle {
+        return Vec::new();
+    }
+    let Some(rows) = world.casting.module_cam.death_game.labels() else {
+        return Vec::new();
+    };
+    let Some(image) = world
+        .casting
+        .effect_pool
+        .as_ref()
+        .and_then(|p| p.module(DEATH_GAME_PROT))
+        .map(|m| m.bytes.clone())
+    else {
+        return Vec::new();
+    };
+    let victim = world
+        .casting
+        .module_cam
+        .victim_slot
+        .map(|slot| crate::actor_names::actor_name(world, slot).into_bytes());
+    let mut out = Vec::new();
+    for (i, pair) in rows.iter().enumerate() {
+        let Some(pair) = pair else { continue };
+        for (line, y) in pair.iter().zip(LABEL_ROWS_Y) {
+            let text = match line {
+                DeathGameLabel::Victim => victim.clone(),
+                DeathGameLabel::Head(n) => head_string(&image, *n).map(<[u8]>::to_vec),
+            };
+            let Some(text) = text else { continue };
+            let width = font
+                .measure(&text, &legaia_font::MeasureOptions::default())
+                .max_px as i32;
+            // `x = i * 0x4C - ((width >> 1) - 0x30)`.
+            let x = i as i32 * LABEL_STEP_X - ((width >> 1) - LABEL_FIRST_CENTRE_X);
+            out.push((text, x, y));
+        }
+    }
+    out
+}
+
 /// The boss-name banner a battle-stage module has up this frame, as
 /// `(label, pen x, pen y)` - the Cort arrival's phase 5 (PROT 0968,
 /// `0x801F7054..0x801F709C`), which measures the first monster's name with

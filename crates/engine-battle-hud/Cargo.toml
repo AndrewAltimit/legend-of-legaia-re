@@ -29,6 +29,7 @@ legaia-ui-formats.workspace = true
 # frame at a time (`world::test_drivers`).
 legaia-engine-core = { workspace = true, features = ["test-drivers"] }
 legaia-actor-formats.workspace = true
+legaia-overlay-images.workspace = true
 legaia-save.workspace = true
 
 [[test]]

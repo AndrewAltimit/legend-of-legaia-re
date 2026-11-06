@@ -253,7 +253,7 @@ pub fn battle_hud_frame_draws(
     let stage_banner = bh::battle_stage_banner(w, inputs.font);
     let banner = battle_banner_message(w, inputs.chrome);
     let tutorial_rect = battle_tutorial_stage_rect(w, inputs.font);
-    legaia_engine_ui::battle_hud_draws_for(
+    let mut draws = legaia_engine_ui::battle_hud_draws_for(
         inputs.font,
         &legaia_engine_ui::BattleHudFrame {
             slots: &slots,
@@ -323,7 +323,19 @@ pub fn battle_hud_frame_draws(
             diag: legaia_engine_ui::diag_hud_enabled(),
         },
         BATTLE_HUD_PEN,
-    )
+    );
+    // PROT 0957's Death Game labels under its cards (arm 3), in the battle
+    // captions' ink: retail's `FUN_80036888` lines read `(200, 200, 200)` on
+    // the cast's own frames, the tier-7 CLUT's readout white.
+    let (origin, scale) = legaia_engine_ui::pause_menu::stage_transform(surface_w, surface_h);
+    for (label, x, y) in bh::battle_death_game_labels(w, inputs.font) {
+        let layout = inputs.font.layout(&label);
+        let mut rows =
+            legaia_engine_ui::text_draws_for(&layout, (x, y), legaia_engine_ui::READOUT_NORMAL);
+        legaia_engine_ui::scale_stage_text_draws(&mut rows, origin, scale);
+        draws.text.extend(rows);
+    }
+    draws
 }
 
 /// The battle HUD's chrome sprites (strip + plaque lozenges, gold `HP` / green

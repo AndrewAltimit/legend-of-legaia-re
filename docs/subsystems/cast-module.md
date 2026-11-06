@@ -3337,9 +3337,18 @@ hosts:
 `0x801FA2B8`'s four handles, the deal and the swap words are
 `cast_module_camera::DeathGame`; `World::feed_death_game` makes the draws and reads
 the pad ahead of a pass, and `carry_death_game_pass` plays the cues and writes through
-the handles after it. The labels of arm 3 (`FUN_80036888`, the victim's name `+0x1BC`
-and four strings at `0x801F69D8..0x801F69F8`) and result `4`'s `FUN_801E22C8` are not
-drawn yet.
+the handles after it. Result `4`'s `FUN_801E22C8` is not drawn yet.
+
+**The labels** (arm 3, `0x801F7F50..0x801F810C`) draw while the drained word is in
+`0x180..=0x580`: two `FUN_80036888` lines under each card, at `y = 0x90` and `0x9C`, each
+centred on the card's column by its `FUN_80035F04` width, `x = i * 0x4C + 0x30 - (width >>
+1)`. The card's value picks the pair out of the victim's name (`+0x1BC`) and the module's
+five head strings (`0x801F69D8 + 8 n`): `1` the victim over head `0`, `2` head `1` (the
+caster's name) over head `0`, `3` head `2` over head `3`, `4` head `2` over head `4`. The
+port is `DeathGame::labels` with `engine-battle-hud::battle_death_game_labels`, which reads
+the head strings off the module image and is drawn by the battle HUD's builder on both
+hosts in the captions' ink. A retail frame of `battle_jou_puera_v3_death_game_mid_cast` in
+arm 3 and the engine's on the same pass put an equal label on the same pixels.
 
 ### PROT 0966 (Evil Seru Magic)
 
