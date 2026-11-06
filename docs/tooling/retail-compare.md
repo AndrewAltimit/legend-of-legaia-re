@@ -3014,7 +3014,7 @@ vsync, so each kind of capture adds the clock that places it inside:
 |---|---|---|
 | Full-screen flash up | the flash's age in vsyncs (`FadeState::age_vsyncs`) | - |
 | `0x33`, no flash yet | caster committed clip `9` and close-up accumulator `ctx[+0x87C]` (`BattleCamera::close_up_accum`) reached retail's | `a<acc>` |
-| PROT 0903 walk arm (`11`) | yaw base `ctx[+0x6DA]`, which the arm swings `6 * scalar` a vsync from `0x200` | `y<yaw>` |
+| PROT 0903 walk arm (`11`) | yaw base `ctx[+0x6DA]`, which the arm swings `6 * scalar` a vsync from `0x200` and the action SM's prologue drifts beside it ([below](#the-walk-arms-yaw-is-two-clocks)) | `y<yaw>` |
 | PROT 0903 countdown arms (`1..=10`) | module countdown word `0x801F7960`, draining `scalar` a vsync (`ModuleCamState::countdown`) | `c<count>` |
 | Done band `0x51` / `0x52` | hold countdown `ctx[+0x6D8]` (the pad-driven plan's `DoneHold`): `0x3C` frames, or `0x96` behind a magic level-up banner | `d<timer>` |
 | `0x35` / `0x36` under a ported pacing director | module phase byte `ctx[+0x279]` (`PhaseGate::module_phase`) | `m<phase>` |
@@ -3037,6 +3037,16 @@ Notes on the rows:
   reads `8 * (frames since the commit + 1)`; counting frames instead is one
   vsync late, which on a capture taken on the band's last `0x33` frame is a gate
   never met.
+- <a id="the-walk-arms-yaw-is-two-clocks"></a>**The walk arm's yaw is two clocks.** Arm 11 adds
+  `6 * step * scalar` to `ctx[+0x6DA]` a pass (`lbu 0x7F` / `lbu 0x69` off
+  `0x1F800314`, `0x801F73C8..0x801F7400`), and the action SM's prologue adds
+  `max(1, 4 * step / 3)` to the same word on the same pass
+  (`0x801E29E4..0x801E2A24`): `197` a step-`4` pass. The gate takes the RAM's
+  yaw back over the display lag's passes on both, so it names the engine pass
+  the screen shows. `gimard_burning_attack`'s RAM reads `1497`, five passes
+  past the `0x200` seat; taken back on the swing alone it named `1113`, eight
+  units past the engine's pass at `1103`, and the gate waited a whole pass
+  more (`image` `.742` to `.912`).
 - **Stream poll.** The arm holds on `FUN_8003F2B8(1)` for as long as the drive
   takes the creature stream's read - four vsyncs in one PCSX-Redux cast, more
   than twenty in `nova_summon_mid_cast`'s Mednafen state - while the engine's

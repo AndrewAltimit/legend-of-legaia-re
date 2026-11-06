@@ -980,6 +980,10 @@ impl RetailBattle {
             arrival_cue: arrival_columns(ram),
             dohati_gauge: dohati_gauge(ram),
             display_pass_lag: display_pass_steps(ram).iter().map(|&s| u16::from(s)).sum(),
+            display_pass_yaw_drift: display_pass_steps(ram)
+                .iter()
+                .map(|&s| legaia_engine_battle_vm::battle_cam_script::action_yaw_pass_increment(s))
+                .sum(),
             display_fade_lag: displayed_fade_lag_vsyncs(ram),
             frame_step: frame_step(ram),
             step_run: newest_step_run(ram),

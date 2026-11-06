@@ -427,6 +427,10 @@ pub struct RetailBattle {
     /// Vsyncs the two passes the displayed frame lags by spanned, each on
     /// its own step ([`display_pass_steps`]).
     pub display_pass_lag: u16,
+    /// What the action SM's prologue drifted the yaw counter `ctx[+0x6DA]`
+    /// by over the same two passes: `max(1, 4 * step / 3)` a pass
+    /// (`0x801E29E4..0x801E2A24`).
+    pub display_pass_yaw_drift: u16,
     /// Vsyncs the displayed frame's screen fades lag the RAM's fade actors
     /// by ([`displayed_fade_lag_vsyncs`]).
     pub display_fade_lag: u16,

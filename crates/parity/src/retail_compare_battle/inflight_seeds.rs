@@ -643,8 +643,20 @@ impl RetailBattle {
             } else {
                 self.display_lag
             };
+            //
+            // The prologue's drift lands in the same word on each of those
+            // passes (`0x801E29E4..0x801E2A24`), `5` a step-`4` pass beside
+            // the swing's `192`: Burning Attack's RAM reads `1497`, five
+            // passes of `197` past the seat, and the frame on screen is the
+            // engine's pass at `1103`, where the swing alone took back to
+            // `1113` and the gate waited a pass past it (`.742` to `.912`).
+            let drift = if legaia_engine_session::native::battle_frame_cadence_on() {
+                i32::from(self.display_pass_yaw_drift)
+            } else {
+                0
+            };
             let per_vsync = 6 * legaia_engine_cast::cast_module_camera::MODULE_DRAIN_PER_TICK;
-            let back = (i32::from(lag) * per_vsync).min(walk_swing(i32::from(*y)));
+            let back = (i32::from(lag) * per_vsync + drift).min(walk_swing(i32::from(*y)));
             *y = ((i32::from(*y) - back) & 0xFFF) as u16;
         }
         Some(g)
