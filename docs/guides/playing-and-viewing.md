@@ -50,7 +50,11 @@ The launcher is one screen: a disc card at the top, the actions on the left
 (*Play*, *Play online*, *Choose disc...* / *Change disc...*, *Controls*,
 *Expansion pack...*, *Saves folder*, *Quit*) with a help box under them that explains whatever is
 focused, and the options on the right. Once a disc validates, the screen is
-lettered in the game's own dialog font, read from that disc.
+lettered in the game's own dialog font, read from that disc. It is drawn in
+whole steps (2x in its 960x720 window); a window a little short of a step, as
+a 960x720 window on a 768-pixel-tall screen comes back once the title bar and
+panel are paid for, keeps the step with a slimmer header band rather than
+falling to 1x.
 
 | Key / mouse | Does |
 |---|---|
@@ -366,11 +370,18 @@ around (`F3`, `T`, `R`, `End`) says so when pressed on the title screen or in a 
 `F12` (or `?`) opens the panel; a controller opens it with `Select` + `Start`,
 which with `L1` and `R1` also held stays the original game's soft reset. The
 game holds still under it. Its first page, **Settings**, lists what the game
-reads live: fullscreen, camera distance, reduce flashing, the lighting and
-shadow rows, fog, see-through walls, free-angle movement and the volumes, in
-the launcher's words and writing the same `legaia-options.toml`. Up / Down
-pick a row and Left / Right (Cross, or `Enter`) change it, with the row's help
-underneath; a change takes effect behind the panel at once. `L1` / `R1` (`Tab`)
+reads live: fullscreen, camera distance, the PlayStation pixel look, reduce
+flashing, the lighting and shadow rows, fog, see-through walls, free-angle
+movement, the volumes and *Original game only*, in the launcher's words and
+writing the same `legaia-options.toml`. Up / Down pick a row and Left / Right
+(Cross, or `Enter`) change it, `Delete` puts it back on its default as on the
+launcher, with the row's help underneath; a change takes
+effect behind the panel at once, and the list scrolls when it is longer than
+the plate. The PlayStation pixel look and *Original game only* are launcher
+rows too: changed here, they are written to `launcher.toml`, so the next Play
+starts the way this game ended, as the play page's two boxes are remembered.
+While *Original game only* is on, the rows it holds read *Original* and do not
+change, as on the launcher. `L1` / `R1` (`Tab`)
 flip to the **Cheats** page ([below](#cheats)), then to the **Keys** page: every toggle key with its current state (`F11`
 fullscreen among them), the key each pad button is on (Cross, Circle, Start,
 ...), read from the live Key Config table, and the mouse's camera controls.

@@ -1408,6 +1408,9 @@ pub(super) fn key_from_name(name: &str) -> Option<KeyCode> {
         "F12" => KeyCode::F12,
         // The pack reload (`window::pack_reload`).
         "END" => KeyCode::End,
+        // The settings page's row reset (`option_keys::panel_key`).
+        "DELETE" | "DEL" => KeyCode::Delete,
+        "BACKSPACE" => KeyCode::Backspace,
         "/" | "?" | "SLASH" => KeyCode::Slash,
         // The multiplayer room screen (`window::netplay`).
         "TAB" => KeyCode::Tab,
@@ -1603,6 +1606,8 @@ mod key_script_tests {
         names.push("Tab".to_string());
         names.push("End".to_string());
         names.push("Home".to_string());
+        names.push("Delete".to_string());
+        names.push("Backspace".to_string());
         names.push("`".to_string());
         names.push("\\".to_string());
         let reachable: std::collections::BTreeSet<String> = names

@@ -1293,7 +1293,7 @@ table; a switch with no page twin is a host difference, not a world default.
 
 | Native switch | Page twin |
 |---|---|
-| `--retail`, `--psx-render`, `--dynamic-lighting`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog`, `--no-ssao` | the retail box (`set_retail_mode`) and the render checkboxes |
+| `--retail`, `--psx-render`, `--dynamic-lighting`, `--no-dynamic-lighting`, `--no-dyn-shadows`, `--no-occlusion-fade`, `--no-volumetric-fog`, `--no-ssao` | the retail box (`set_retail_mode`) and the render checkboxes. `--retail` and `--psx-render` are also live rows of the window's `F12` panel (*Original game only*, *PlayStation pixel look*), which write `launcher.toml` as the boxes write `legaia.switches` |
 | `--learn-spell`, `--set-flag` | `learn_spell`, `set_system_flag` at runtime |
 | `--cheat-*`, `--cheat-file`, `--cheat-strict` | `cheat_*`, `cheat_apply_codes` (its `strict` argument is the Strict box) |
 | `--battle-bgm` | `set_battle_bgm` |
@@ -1337,7 +1337,7 @@ so a switch added there is remembered on both hosts or on neither:
 | Remembered | Where each host keeps it |
 |---|---|
 | `OptionsState` rows (lighting, fog, see-through walls, bloom, camera distance, volumes, mono output, ...) | `legaia-options.toml`; `localStorage["legaia.options"]` |
-| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning) | the launcher's settings file; `localStorage["legaia.switches"]` |
+| `PersistedSwitches` (PSX rasterisation, retail-faithful, entry pulse, smart monsters, the saved-chain Arts list, the gameplay tweaks and battle tuning) | the launcher's settings file (which `play-window`'s `F12` panel also writes, for its two live rows); `localStorage["legaia.switches"]` |
 | key bindings | `legaia-input.toml`; the page's pad-bindings store |
 | the output level | the launcher's Master volume row (`OptionsState::master_volume`, percent of the full mix); the page's slider under `localStorage["legaia.play-volume"]`, in its own units, since its `1x` is a different gain (see [open differences](#open-differences)) |
 | nothing (session only) | the world-map markers and the battle cadence (diagnostic environment switches natively), the cheats, the dev menu |
@@ -1681,7 +1681,7 @@ reverse-engineering questions, so they are not on
 | debug spawn and entry keys | Native only: `F5`, `F`, `G`, `H`, `J` hand-spawn effects, `N` opens the naming prompt, and `K`, `U`, `L`, `O`, `M`, `B` enter a minigame. The page's minigame picker (`play_mg_debug_warp`) and its debug exports are its entries; no retail flow needs a key. |
 | offline Multiplayer screen | Native only: `Tab` out of a room opens a host-or-join screen in the frame, where `play-window` has no other form. The page's Online panel is the same step, and out of a room `Tab` stays the browser's focus key. |
 | automatic quality step-down | Page only: on a machine that cannot hold the frame rate, `play-quality-ladder.js` turns ambient occlusion and lamp shadows off and lowers the 3D scale for the session, and says so; the saved options keep their values. A desktop player picks a window size and the options; neither retail nor PSX rasterisation steps down. |
-| touch controls | Neither host has an on-screen pad. Phones are not a target for now, so the page takes keyboard, controller and mouse as the window does. |
+| touch controls | Page only, by platform: on a touch screen the page draws an on-screen pad over the picture ([`touch-pad.js`](../subsystems/browser-host.md#the-touch-pad-touch-padjs)); the window takes keyboard, controller and mouse. |
 | VR | Page only, by platform: WebXR `immersive-vr` on the site's 3D pages ([`vr-mode.md`](../subsystems/vr-mode.md)); the window has no OpenXR path. |
 | netplay hosting | Native only, by platform: a page cannot listen on a socket, so it joins a room a window (`--host`) or `legaia-relay` hosts ([`netplay.md`](../subsystems/netplay.md)). |
 | pack folder watch | Native only (`--expansion-watch`); the page reloads from its pack library on `End`, as the window does by hand. |
