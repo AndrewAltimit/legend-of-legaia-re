@@ -1015,6 +1015,13 @@ pub(super) fn arm_launch_battle(
             .ok()
             .and_then(|s| s.trim().parse::<u32>().ok())
         {
+            // `LEGAIA_BATTLE_SETTLE_PARK=<pc>`: end the settle on the tick
+            // the scene system script parks on `pc` - retail's, parked
+            // after spawning the fight's own record
+            // (`retail_compare_battle::SpawnPark`).
+            let park = std::env::var("LEGAIA_BATTLE_SETTLE_PARK")
+                .ok()
+                .and_then(|s| s.trim().parse::<usize>().ok());
             session.set_host_drains_queues(false);
             for _ in 0..n {
                 if let Err(e) = session.tick() {
@@ -1023,6 +1030,9 @@ pub(super) fn arm_launch_battle(
                 }
                 session.field_vram_tick();
                 session.fog_render_tick();
+                if park == Some(session.host.world.field_pc) {
+                    break;
+                }
             }
             session.set_host_drains_queues(true);
             // `LEGAIA_BATTLE_LATCHES=23c,19` (hex): the system flags the

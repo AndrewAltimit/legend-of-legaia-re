@@ -162,16 +162,18 @@ pub(super) fn matching_row(world: &legaia_engine_core::world::World, ids: &[u8])
 /// scripted bit is not one - the sparring fight and the Rim Elm Gimard
 /// read it clear.)
 ///
-/// Returns `(raise, lower)`: the SET arms the save holds up, and the CLEAR
+/// Returns `(raise, lower, park)`: the SET arms the save holds up, the CLEAR
 /// arms of the same row the save holds down
-/// ([`legaia_engine_field::man_field_scripts::BattleEntryArm::clears`]).
+/// ([`legaia_engine_field::man_field_scripts::BattleEntryArm::clears`]), and
+/// the system script's [`SpawnPark`] when retail's is parked on one - whose
+/// guard flag joins `raise`.
 pub fn entry_latches(
     extracted: &Path,
     retail: &RetailObs,
     battle: &RetailBattle,
-) -> (Vec<u16>, Vec<u16>) {
+) -> (Vec<u16>, Vec<u16>, Option<usize>) {
     let Some(save) = retail.save.clone() else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), None);
     };
     let held = crate::retail_compare::system_flag_ids(&save);
     // The report flag is the entry tail's own write (`FUN_801DA51C`,
@@ -190,7 +192,7 @@ pub fn entry_latches(
         enable_audio: false,
     };
     let Ok(mut session) = NativeSession::open(extracted, &cfg) else {
-        return (tail, Vec::new());
+        return (tail, Vec::new(), None);
     };
     crate::retail_compare::pin_seed_retail(
         &mut session.host.world.toggles,
@@ -204,8 +206,13 @@ pub fn entry_latches(
     let _landing = session.resume_save(save, &retail.scene, &opts);
     let world = &session.host.world;
     let Some(row) = matching_row(world, &battle.monster_ids) else {
-        return (tail, Vec::new());
+        return (tail, Vec::new(), None);
     };
+    let park = retail
+        .scripts
+        .pooled_system_pc
+        .and_then(|pc| spawn_park(&session.host, pc, row))
+        .filter(|p| held.contains(&p.guard));
     let arms = world
         .scene_battle_entry_arms
         .iter()
@@ -215,6 +222,7 @@ pub fn entry_latches(
         .filter(|a| !a.clears && held.contains(&a.flag))
         .map(|a| a.flag)
         .chain(tail)
+        .chain(park.map(|p| p.guard))
         .collect();
     raise.sort_unstable();
     raise.dedup();
@@ -225,7 +233,82 @@ pub fn entry_latches(
         .collect();
     lower.sort_unstable();
     lower.dedup();
-    (raise, lower)
+    (raise, lower, park.map(|p| p.pc))
+}
+
+/// Retail's scene system script parked on the yield straight after the
+/// op-`0x44` spawn of the record that enters the fight, behind the test of
+/// the record's own run latch: `[7x <guard> -> pc] [44 <flat>] [21]`, with
+/// `pc` the PC after the `0x21`.
+///
+/// `town0b`'s entry body reads `73 07 05 00 · 44 79 · 21` at `+0x44E`: on
+/// the pass that finds `0x307` down it spawns `P2[26]`, the Gimard raid,
+/// and yields. That record raises `0x307` as its first op and takes the
+/// player, and the system SM `FUN_801DA51C` runs no pass while a record
+/// holds the player, so the context stays on `+0x455` through the whole
+/// raid and the fight it enters (row `2`, `3E 00 02` at `+0x851`). The rest
+/// of that pass - the region selector at `+0x4D3` - never ran, so the
+/// capture holds `0x528` (selected earlier in the pass) and none of
+/// `0x19B..0x1AA`.
+///
+/// A seed that lands the save with the guard up skips the spawn and runs
+/// the whole pass, raising `0x19D` there. The seed holds the guard back
+/// from the landing ([`entry_latches`]) and stops its settle on the tick
+/// the engine's system script parks on the same PC
+/// ([`RetailBattle::entry_park`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpawnPark {
+    /// The PC after the `0x21` (retail's system `+0x9E`).
+    pub pc: usize,
+    /// The test's flag, which the spawned record raises itself.
+    pub guard: u16,
+}
+
+/// The [`SpawnPark`] retail's system script holds at `pc`, when the spawned
+/// record enters formation row `row` and raises the guard flag.
+fn spawn_park(
+    host: &legaia_engine_scene_host::scene_host::SceneHost,
+    pc: usize,
+    row: u16,
+) -> Option<SpawnPark> {
+    use legaia_engine_field::man_field_scripts as mfs;
+    use legaia_scene_formats::field_disasm::{FlagKind, InsnInfo, LinearWalker, decode};
+    let bc = &host.world.field_bytecode;
+    if pc < 7 || bc.get(pc - 1) != Some(&0x21) {
+        return None;
+    }
+    let InsnInfo::SpawnRecord { global_index } = decode(bc, pc - 3).ok()?.info else {
+        return None;
+    };
+    let InsnInfo::SystemFlag {
+        kind: FlagKind::Test,
+        idx: guard,
+        target: Some(t),
+        ..
+    } = decode(bc, pc - 7).ok()?.info
+    else {
+        return None;
+    };
+    if t != pc {
+        return None;
+    }
+    let man = host.scene.as_ref()?.field_man_payload(&host.index).ok()??;
+    let mf = legaia_scene_formats::man_section::parse(&man).ok()?;
+    let n0 = mf.header.partition_counts[0].max(0) as usize;
+    let n1 = mf.header.partition_counts[1].max(0) as usize;
+    let idx = usize::from(global_index).checked_sub(n0 + n1)?;
+    if !mfs::record_battle_entry_rows(&mf, &man, 2, idx)
+        .iter()
+        .any(|&r| u16::from(r) == row)
+    {
+        return None;
+    }
+    let (start, pc0, len) = mfs::partition_record_span(&mf, &man, 2, idx)?;
+    let body = man.get(start..start + len)?;
+    let raises = LinearWalker::new(body, pc0).flatten().any(
+        |i| matches!(i.info, InsnInfo::SystemFlag { kind: FlagKind::Set, idx, .. } if idx == guard),
+    );
+    raises.then_some(SpawnPark { pc, guard })
 }
 
 /// Seed the engine into `retail`'s battle and sample it.
@@ -281,6 +364,11 @@ pub fn run_engine_battle(
         session.field_vram_tick();
         session.fog_render_tick();
         session.host.route_bgm_events(&mut director)?;
+        // Retail's field ran no pass past the one that spawned the fight's
+        // record ([`SpawnPark`]).
+        if battle.entry_park == Some(session.host.world.field_pc) {
+            break;
+        }
     }
     for &idx in &battle.entry_latches {
         session.host.world.system_flag_set(idx);

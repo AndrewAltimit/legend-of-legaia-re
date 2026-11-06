@@ -4422,6 +4422,24 @@ seed lowers each such flag after the settle where the capture holds it down
 `0x645` before the forced entry. Every evolved-Cort battle state used to read
 `+sys 0x645`, and now reads `flags` `1.0`.
 
+A fight the system script spawned also stops the settle. `town0b`'s entry
+body reads `73 07 05 00 · 44 79 · 21` at `+0x44E`: on the pass that finds
+`0x307` down it spawns `P2[26]`, the Gimard raid, and yields. The raid raises
+`0x307` as its first op and takes the player, so the system SM runs no
+further pass, and a battle capture's system node - off the lists the fight
+unlinked, but still in the actor pool `0x8007C370`
+(`RetailScripts::pooled_system_pc`) - sits on `+0x455` for the whole raid
+and fight. The region selector at `+0x4D3` never ran: the capture holds the
+room bit `0x528` (selected earlier in that pass) and nothing in
+`0x19B..0x1AA`. A seed that lands with `0x307` up skips the spawn, runs the
+whole pass and raises `0x19D` there. When retail's system PC follows a
+`[7x <guard> -> pc] [44 <flat>] [21]` whose record enters the capture's row
+and raises the guard itself (`retail_compare_battle::SpawnPark`), the guard
+joins the latches and the settle ends on the tick the engine's system
+script parks on the same PC (`RetailBattle::entry_park`; the image child
+reads `LEGAIA_BATTLE_SETTLE_PARK`). `battle_melee_hit_spark` and both
+`battle_gimard_tail_fire_*` states read `flags` `1.0` against `.963`.
+
 The fight's entry writes flags of its own. The field entity SM's entry tail
 (`FUN_801DA51C`, `0x801DA6C4..0x801DA6EC`) raises system flags `0` and `3`
 while flag `0x13` is up and lowers the victory latch `0x35`

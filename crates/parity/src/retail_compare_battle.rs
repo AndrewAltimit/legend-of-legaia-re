@@ -646,6 +646,10 @@ pub struct RetailBattle {
     /// record's opening (`jouine`'s Cort cutscene raising `0x645`) leaves the
     /// flags where retail's entry op found them. Empty as read.
     pub entry_lowers: Vec<u16>,
+    /// The system-script PC the seed's settle stops on: retail's, when it is
+    /// parked straight after spawning the fight's record
+    /// ([`engine_run::SpawnPark`]). `None` as read; the corpus run fills it.
+    pub entry_park: Option<usize>,
     /// The state was made on a shiny-Seru patched disc (its `resident_patch`
     /// names `shiny-seru`): that build's battle init takes one `rand()` draw
     /// for the shiny roll ahead of the formation draws
