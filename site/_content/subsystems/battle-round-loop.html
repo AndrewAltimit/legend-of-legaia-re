@@ -148,7 +148,7 @@
     </tbody>
   </table>
   </div>
-  <p>The poison ticker subtracts against <code>current - 1</code> before applying the cap, so a tick that would reach zero leaves the actor at 1 HP, and it draws no RNG. Bit <code>0x0400</code> has clearers all over the battle code and <strong>no retail setter</strong>: a word-level decode of the executable and every overlay finds only clears. Faint is not a bit at all - it is current HP of zero.</p>
+  <p>The poison ticker subtracts against <code>current - 1</code> before applying the cap, so a tick that would reach zero leaves the actor at 1 HP, and it draws no RNG. Bit <code>0x0400</code> has clearers all over the battle code and <strong>one retail setter</strong>, in a cast image: Kiss of Death&rsquo;s miss arm (PROT 0955) ORs it in. A word-level decode of the executable and every other overlay finds only clears, so a static sweep alone reads Numb as unused. Faint is not a bit at all - it is current HP of zero.</p>
   <h3>How the port enforces them</h3>
   <ul class="bullets">
     <li><strong>Once a round.</strong> The ticker runs at the round boundary, just before the keys re-seed, with the never-kill clamp.</li>
@@ -156,7 +156,9 @@
     <li><strong>On-hit strip.</strong> A landed melee hit clears the target&rsquo;s delegation bits, Numb and Sleep (<code>FUN_801EC3E4</code>), unless the target is Stone; a Stone target takes no damage.</li>
     <li><strong>Magic blocked.</strong> A cursed or fainted monster caster falls back to a physical strike; a party caster in that state finds the Magic arm bouncing back to the command menu.</li>
     <li><strong>Confuse</strong> retargets a monster&rsquo;s action to a random living member of the other side; a confused party member gets no command and loses its turn. <strong>Stone</strong> lifts when the party escapes: retail&rsquo;s run band floors every 0-HP member at 1.</li>
-    <li><strong>No timer.</strong> Nothing in the battle code wears a status off with time. Every store to the status word that clears a bit is a cure, a guard passive&rsquo;s sweep, a hit&rsquo;s <code>0x0F80</code> strip, the tick&rsquo;s scripted-monster arm or the <code>0x400</code> waker, so Venom, Toxic, Rot and Curse last until cured. The tick has no Stone test either: a Stoned actor with Venom drains.</li>
+    <li><strong>The guard sweep.</strong> On every battle frame the per-frame actor pass walks the party and takes off each status bit the wearer&rsquo;s guard accessories cover, fallen or not, and holds a living Maximum AP wearer&rsquo;s gauge at 100. Most appliers (the melee status arms, an enemy special&rsquo;s Venom and Toxic, a cast&rsquo;s raw bits) write the bit whatever the target wears, so this sweep is what makes Poison Guard, Curse Guard, Numb Guard and Master Guard work. The port runs it at the head of each battle frame (<code>World::tick_battle_passive_sweep</code>).</li>
+    <li><strong>The Numb waker.</strong> At each round&rsquo;s end every afflicted actor draws one <code>rand()</code> and wakes from Numb on a one-in-eight roll (<code>FUN_801F45A4</code>). A monster that is still Numb when its turn is picked arms nothing: the turn picker&rsquo;s tail zeroes its category after every draw is spent.</li>
+    <li><strong>No timer.</strong> Nothing in the battle code wears a status off with time. Every store to the status word that clears a bit is a cure, a guard passive&rsquo;s sweep, a hit&rsquo;s <code>0x0F80</code> strip, the tick&rsquo;s scripted-monster arm or the <code>0x400</code> waker, so Venom, Toxic, Rot and Curse last until cured, and Sleep and Confuse until a strike or a cure. The tick has no Stone test either: a Stoned actor with Venom drains.</li>
   </ul>
 </section>
 
