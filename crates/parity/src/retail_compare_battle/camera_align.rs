@@ -1052,10 +1052,15 @@ pub(super) struct WalkHeading {
 /// same way when it stands nearest on slot `3`: its loop passes back it off
 /// the target a ring step at a time, and the displayed frame is still the
 /// walk's last pass (`battle_geremi_ogre_strike` yaw `168` to `189`, `image`
-/// `.878` to `.999`; `battle_vozz_twin_tomb_strike` `.957` to `.997`).
+/// `.878` to `.999`; `battle_vozz_twin_tomb_strike` `.957` to `.997`). So is
+/// a walker whose RAM pass has just committed its swing, when the clip-record
+/// ring (`+0x234`) holds the walk's record on slots `1..=3`: the displayed
+/// frame's pass still ran the walk (`battle_map03_moldy_worm_strike`, swing
+/// clip `5` committed on the RAM's pass, yaw `1429` to `1438`, `image` `.941`
+/// to `.999`).
 ///
-/// `None` otherwise. An arrival off the walk clip nearest on slot `3` is a pass
-/// later and the bearing is the loop's own: `12` units of this shift read
+/// `None` otherwise. An arrival off the walk clip nearest on slot `3`, its
+/// record changed by slot `2`, is a pass later and the bearing is the loop's own: `12` units of this shift read
 /// `battle_noaru_gilium_lv2_strike` `.904` to `.585`. Nor is a party attacker's (its first swing commit re-seeds
 /// the yaw counter, `FUN_8004E13C`) or a later swing's table read this way.
 pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
@@ -1086,7 +1091,13 @@ pub(super) fn walk_heading(ram: &[u8], ctx: u32) -> Option<WalkHeading> {
         (a[0] - t[0]).hypot(a[1] - t[1])
     };
     let nearest_two = dist(2) < dist(1) && dist(2) < dist(3);
-    let locked_walk_nearest_three = game_anchors::u8_at(ram, actor + 0x1D9) == WALK_CLIP
+    // The walk clip's record held from slot `3` through slot `1` and the RAM's
+    // pass committed the swing: the displayed frame's pass still ran the
+    // walk, as a locked walker's does.
+    let record = |k: u32| game_anchors::u32_at(ram, actor + RING_RECORD + k * 4);
+    let walk_held = record(1) == record(2) && record(2) == record(3) && record(0) != record(1);
+    let locked_walk_nearest_three = (game_anchors::u8_at(ram, actor + 0x1D9) == WALK_CLIP
+        || walk_held)
         && dist(3) < dist(1)
         && dist(3) < dist(2)
         && dist(3) < dist(4);

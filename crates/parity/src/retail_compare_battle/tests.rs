@@ -506,6 +506,20 @@ fn a_locked_walk_nearest_on_slot_three_chased_the_walks_heading() {
     // which read the loop's own heading (`battle_noaru_gilium_lv2_strike`).
     put8(&mut ram, attacker + 0x1D9, 8);
     assert!(camera_align::walk_heading(&ram, ctx).is_none());
+
+    // A swing committed on the RAM's pass alone, the walk's record held on
+    // slots `1..=3` (`battle_map03_moldy_worm_strike`): the displayed frame's
+    // pass still ran the walk.
+    let record = |k: u32| attacker + ram_read::RING_RECORD + k * 4;
+    put32(&mut ram, record(0), 0x800B_21E4);
+    for k in 1..=4 {
+        put32(&mut ram, record(k), 0x800A_DFD8);
+    }
+    let h = camera_align::walk_heading(&ram, ctx).expect("swing committed on the RAM's pass");
+    assert_eq!(h.displayed, 2483);
+    // ... but not when the record changed by slot `2`.
+    put32(&mut ram, record(2), 0x800B_21E4);
+    assert!(camera_align::walk_heading(&ram, ctx).is_none());
 }
 
 /// Case `0xA`'s yaw clock: the endpoint climbs twice the cursor's step a pass,
