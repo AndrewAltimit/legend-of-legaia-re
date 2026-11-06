@@ -253,7 +253,8 @@ impl World {
             return None;
         }
         let roster_id = u8::try_from(self.party_roster_slot(actor_idx) + 1).ok()?;
-        let status = self.battle.status_effects.display_flags(actor_idx as u8);
+        // The whole `+0x16E` word: a limb a module rotted is in the raw half.
+        let status = self.raw_status_word(actor_idx as u8);
         let word = match actor.battle.render_color {
             0 => legaia_engine_battle_vm::battle_impact_fx::IMPACT_NEUTRAL_STATE,
             w => w,
