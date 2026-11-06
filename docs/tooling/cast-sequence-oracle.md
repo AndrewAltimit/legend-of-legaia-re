@@ -144,8 +144,10 @@ seat's HP, the main loop's frame counter `gp+0x480` (`frame`, read at
 `0x8007B798`), the side-band applier stage `ctx[+0x276]` (`c276`, the
 token a module's stream-wait arm polls) and the words the read-span poll
 `FUN_8003DE7C(1)` reads (`xaspan` `gp+0x91C`, `cdbusy` `0x8007BA70`,
-`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`) and the BIOS `rand()` seed word
-`0x80009010` (`rand`). A second file, `body.csv`, holds
+`cdmode` `0x8007B83C`, `cdread` `0x8007B8C2`), the BIOS `rand()` seed word
+`0x80009010` (`rand`) and which ordering table links a screen fade's quad
+(`fade_back`: `2` the current record, `1` only the other, `0` none; see
+[the pairing rule](#the-pairing-rule)). A second file, `body.csv`, holds
 per vsync the acting seat's clip `+0x1D9`, node cursor `+0x68`, live pair,
 body pair `+0x3C` / `+0x40` and the camera focus with its tween endpoints:
 the series a summon close-up's framing is read off. A third, `cam.csv`, holds
@@ -289,6 +291,19 @@ Frames pair on the action-SM clock, never on wall time:
    just ran and takes no lag. On a cast whose close-up the engine already
    matches, `auto` scores those segments higher than a fixed lag of `0`, `2`,
    `6` or `10`; a re-score with `--score-only --retail-lag` repeats that check.
+   A screen fade reads its own table
+   ([retail-compare](retail-compare.md#the-double-buffers-phase-is-a-draw-tick-phase)): where
+   the grab's `fade_back` is `1` and the paired engine frame shows a fade
+   (the recorder's `fade_level` above `0`), the pair is keyed one game frame
+   back instead of two (`FADE_FRAMES_BACK`, the report's `fade_pairs`). A
+   recording without the column keeps the two-pass law. On the
+   `battle_kor_spoon_strike` Zenoir film the summon's white rise scored `.44`
+   under the law and `.80` at a fixed lag of `0`, which read like a display
+   rule; the state's RAM says otherwise. Every vsync of the rise links the
+   fade in the current table (`fade_back` `2`), and the flash-in's block on
+   the first `0x34` row already holds delay `17` of its `20`: the actor ticks
+   on its spawn pass, and the engine's fade stood one pass behind retail's
+   until it did too (`spawn_screen_fade`).
 4. **Offset.** A retail frame `k` vsyncs into its segment, measured on the
    [game clock](#the-game-clock), pairs with the engine frame `k` ticks into
    the aligned segment, clamped to that segment's last tick. An engine arm
