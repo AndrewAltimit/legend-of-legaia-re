@@ -286,3 +286,6 @@ The round tick run over six rounds with an ailment the port's status tracker hol
 retail's word, found Sleep (`0x800`) and the `0x380` group wearing off after three rounds in the port, where
 retail's tick never clears them: like Numb they last until a hit's `0x0F80` strip, a cure or the battle's end.
 The port's hit strip also left a tracked Confuse standing; it now clears the whole family.
+
+The camera-register zone ramp's handler `FUN_80037018`, read from its disassembly, matches
+`zone_ramp_tick` over every gate, store width, the retire arm and the zero-span trap.

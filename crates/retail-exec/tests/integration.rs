@@ -54,3 +54,4 @@ mod turn_pick;
 mod unequip;
 mod validator;
 mod walk_step;
+mod zone_ramp;

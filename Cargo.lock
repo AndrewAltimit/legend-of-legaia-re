@@ -3189,6 +3189,7 @@ dependencies = [
  "legaia-engine-menus",
  "legaia-engine-minigame-scenes",
  "legaia-engine-minigames",
+ "legaia-engine-motion-vm",
  "legaia-engine-scene",
  "legaia-engine-system",
  "legaia-engine-vm",
