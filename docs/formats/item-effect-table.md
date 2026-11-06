@@ -333,12 +333,16 @@ from it. An unflagged item's `FUN_8003043C` walks the party list - count
 `0x80084594`, member ids from `0x80084598` (`0x800304B0..0x80030518`), skipping
 any id `>= 3` (`sltiu v0,v0,0x3` at `0x800304DC`) - calling the shared
 relevance/validity predicate `FUN_8003FB10(class, tier, member)` per member and
-returning "usable" if any call succeeds (`sltu v0,zero,s1` at `0x8003051C`). The from-scratch equivalent (`inventory_use::item_has_valid_target` ->
-`effect_benefits_target`) greys a heal when every living ally is at full HP, a
-cure when nobody carries the matching status, and a revive when nobody has
-fallen, re-implementing the item-relevance arms of the retail predicate
-`FUN_8003fb10` (the 16-arm menu/UI validator documented in
-[`battle-action.md`](../subsystems/battle-action.md#action-validator-fun_8003fb10)).
+returning "usable" if any call succeeds (`sltu v0,zero,s1` at `0x8003051C`).
+With the table installed the port runs exactly that:
+`menu_validator::item_affects_anyone` broadcasts the descriptor over the present
+party through the ported validator `FUN_8003fb10` (the 16-arm menu/UI validator
+documented in [`battle-action.md`](../subsystems/battle-action.md#action-validator-fun_8003fb10)),
+and both the Use list's dim bit and the Items screen's confirm read it. So an MP
+restore refuses a fallen member, a stat seed a member already at the stat's cap,
+and an arts book (classes `0x0B..0x0D`, valid on roster id `class - 0x0B` alone)
+any party without its reader. The disc-free stand-in
+(`inventory_use::item_has_valid_target`) answers from the catalog effect instead.
 
 The **permanent stat-up *Water* line** (class 6) is seeded into the catalog
 from the installed table by `ItemCatalog::apply_stat_items` (so it appears only

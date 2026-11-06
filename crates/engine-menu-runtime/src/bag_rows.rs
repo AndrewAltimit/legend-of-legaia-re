@@ -137,14 +137,17 @@ fn bag_window_ids(world: &World) -> (Vec<u8>, u16) {
 ///
 /// Retail is the party scan `FUN_8003043C`, which runs the action validator
 /// `FUN_8003FB10` over each member and dims when no member accepts (every
-/// ally at full HP for a heal, nobody poisoned for an antidote). The port
-/// scans the same set through the engine's own effect resolver, so the
-/// answer tracks whatever the catalog says the item does.
+/// ally at full HP for a heal, nobody poisoned for an antidote). With the
+/// disc item-effect table installed that is what answers
+/// ([`crate::menu_validator::item_affects_anyone`]).
 ///
-/// An item with no catalog entry is **not** dimmed: retail's validator
-/// answers for a descriptor, and a catalog gap is the port's, not the
-/// player's.
-fn item_applies_to_anyone(world: &World, id: u8) -> bool {
+/// With no table, the port scans the same set through the engine's own
+/// effect resolver, so the answer tracks whatever the catalog says the item
+/// does; an item with no catalog entry is then **not** dimmed.
+pub(crate) fn item_applies_to_anyone(world: &World, id: u8) -> bool {
+    if let Some(answer) = crate::menu_validator::item_affects_anyone(world, id) {
+        return answer;
+    }
     let Some(entry) = world.tables.item_catalog.get(id) else {
         return true;
     };

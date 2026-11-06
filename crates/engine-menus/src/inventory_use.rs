@@ -316,6 +316,12 @@ pub struct InventoryUseSession {
     /// prints the static item-name table's name (issue #556). Hosts fill it
     /// from the disc's name table; empty falls back to the catalog.
     pub item_names: std::collections::BTreeMap<u8, String>,
+    /// The field list's applicability answers from retail's own probe: the
+    /// ids `FUN_8003043C` (the action validator over the present party)
+    /// answers "would do nothing" for. `None` keeps the catalog-side
+    /// reconstruction [`item_has_valid_target`], which is what a host without
+    /// the disc item-effect table has. Battle never reads it.
+    pub field_unaffected: Option<Vec<u8>>,
 }
 
 impl InventoryUseSession {
@@ -329,7 +335,7 @@ impl InventoryUseSession {
         targets: Vec<TargetRow>,
         context: InventoryContext,
     ) -> Self {
-        let filtered_items = filter_items(&items, &catalog, context, &targets);
+        let filtered_items = filter_items(&items, &catalog, context, &targets, None);
         // Empty filter still starts at the browsing screen - engines need
         // to render the "no items" overlay rather than insta-abort.
         let state = InventoryUseState::Browsing { cursor: 0 };
@@ -350,7 +356,16 @@ impl InventoryUseSession {
             bag_slots: Vec::new(),
             bag_counts: Vec::new(),
             item_names: std::collections::BTreeMap::new(),
+            field_unaffected: None,
         }
+    }
+
+    /// Answer the field list's applicability gate with retail's probe
+    /// ([`Self::field_unaffected`]): `unaffected` are the ids it greys.
+    pub fn with_field_probe(mut self, unaffected: Vec<u8>) -> Self {
+        self.field_unaffected = Some(unaffected);
+        self.refresh_filter();
+        self
     }
 
     /// Install display names by id ([`Self::item_names`]).
@@ -420,7 +435,13 @@ impl InventoryUseSession {
     /// [`Self::items`] (throw-out delete, Arrange reorder) and clamp a
     /// browsing cursor back into the filtered range.
     pub fn refresh_filter(&mut self) {
-        self.filtered_items = filter_items(&self.items, &self.catalog, self.context, &self.targets);
+        self.filtered_items = filter_items(
+            &self.items,
+            &self.catalog,
+            self.context,
+            &self.targets,
+            self.field_unaffected.as_deref(),
+        );
         if let InventoryUseState::Browsing { cursor } = &mut self.state {
             *cursor = (*cursor).min(self.filtered_items.len().saturating_sub(1));
         }
@@ -768,6 +789,7 @@ fn filter_items(
     catalog: &ItemCatalog,
     context: InventoryContext,
     targets: &[TargetRow],
+    field_unaffected: Option<&[u8]>,
 ) -> Vec<usize> {
     let mut out = Vec::new();
     for (i, id) in items.iter().enumerate() {
@@ -780,9 +802,13 @@ fn filter_items(
         // full party HP is therefore pickable in a fight - greying it there
         // left the battle Item window with no selectable row, no cursor and
         // a dead Confirm.
+        let applicable = |entry: &ItemEntry| match field_unaffected {
+            Some(ids) => !ids.contains(id),
+            None => item_has_valid_target(entry, targets),
+        };
         if let Some(entry) = catalog.get(*id)
             && context.allows(entry)
-            && (context == InventoryContext::Battle || item_has_valid_target(entry, targets))
+            && (context == InventoryContext::Battle || applicable(entry))
         {
             out.push(i);
         }
@@ -803,7 +829,15 @@ fn filter_items(
 ///
 /// Field context only: the battle list skips it (see [`filter_items`]).
 ///
-/// PORT: FUN_8003043c
+/// This is the disc-free stand-in. A host with the disc item-effect table
+/// answers the gate with retail's probe itself
+/// ([`InventoryUseSession::with_field_probe`]); the two differ wherever the
+/// validator's arm differs from the catalog effect (an MP restore refuses a
+/// fallen member, a stat seed a member at the stat's cap, a one-member item
+/// any other member).
+///
+/// REF: FUN_8003043c (ported as
+/// `legaia_engine_menu_runtime::menu_validator::item_affects_anyone`)
 /// REF: FUN_8003fb10 (16-arm target-relevance validator)
 fn item_has_valid_target(entry: &ItemEntry, targets: &[TargetRow]) -> bool {
     // Effects with no per-target relevance notion (Escape, permanent stat-up /

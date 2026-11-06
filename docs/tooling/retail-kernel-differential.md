@@ -237,3 +237,11 @@ The take-item fallback `FUN_800430AC` walks the present-party list at `0x8008459
 the whole roster, so a script could take an accessory off a member who was not in the party. The
 shout selector `FUN_8004C140` matches over every roster id and action constant.
 
+The Use list's applicability probe `FUN_8003043C`, run with the validator live beneath it over every
+field-usable item, found the port answering it from the catalog's effect where retail asks the validator.
+An MP restore lit for a fallen member, a stat seed for a member already at the stat's cap, and an arts
+book for a party without its reader (classes `0x0B..0x0D` match one roster id); the Doors never read
+system flags `5` / `6`. The Items screen's confirm used the same stand-in, so it could use a row the list
+had greyed. The probe now runs the ported validator over the roster records, and the party heal's walk
+reads a present id of `3` as the dead quad: out of battle the validator's pointer arrays stop at three,
+so that read is stale stack in retail.

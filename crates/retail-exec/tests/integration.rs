@@ -29,6 +29,7 @@ mod fishing_fight;
 mod inn;
 mod inventory;
 mod item_apply;
+mod item_probe;
 mod level_up;
 mod magic_level;
 mod melee_hit;
