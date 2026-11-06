@@ -1704,7 +1704,10 @@ Vahn in an earlier round, so the frame drew him an opaque grey Stone body
 where retail's status word reads `0` and its near-camera ghost is a faint
 trace. So when the capture's seat seeds its action, the re-seat also strips
 every ailment the captured word does not carry
-(`BattleState::capture_reseat_bars`), and takes back the HP and MP the
+(`BattleState::capture_reseat_bars`) from both halves of the engine's word -
+the tracker and the raw bits a cast module wrote, since the HUD gauge and status
+element read the whole word (`battle_korb2_ghost_knight_strike`'s replayed Curse
+tinted Vahn's readout where retail's reads `0`) - and takes back the HP and MP the
 replay's rounds dealt off a combatant standing on both sides, whose bar the HUD
 draws (`battle_tower_guardian_strike`'s Vahn read `258` where retail's reads
 `498`). Medusa's frame reads `.885` to `.978` with both. The camera's own
