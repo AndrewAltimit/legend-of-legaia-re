@@ -17,8 +17,8 @@
       "track_level": 0.0057
     },
     "gilium_summon_mid_cast": {
-      "cast_corr": 0.2192,
-      "cast_level": 0.0026
+      "cast_corr": 0.2261,
+      "cast_level": 0.0163
     },
     "keikoku_chest_pre": {
       "core_corr": 1.0,
@@ -53,16 +53,16 @@
       "track_level": -0.0008
     },
     "nighto_summon_mid_cast": {
-      "cast_corr": 0.3263,
-      "cast_level": 0.1574
+      "cast_corr": 0.9733,
+      "cast_level": 0.1028
     },
     "noa_levelup_field_pre": {
       "track_corr": 0.999,
       "track_level": 0.0033
     },
     "orb_summon_mid_cast": {
-      "cast_corr": 0.9353,
-      "cast_level": 0.0203
+      "cast_corr": 0.994,
+      "cast_level": 0.0232
     },
     "party_battle_gobu_gobu": {
       "track_corr": 0.9997,
@@ -79,16 +79,16 @@
       "track_level": 0.0037
     },
     "swordie_summon_mid_cast": {
-      "cast_corr": 0.9033,
-      "cast_level": 0.1973
+      "cast_corr": 0.9883,
+      "cast_level": 0.175
     },
     "terra_party_battle": {
       "track_corr": 0.9992,
       "track_level": 0.0004
     },
     "theeder_summon_mid_cast": {
-      "cast_corr": 0.7221,
-      "cast_level": 2.2496
+      "cast_corr": 0.9037,
+      "cast_level": 2.3231
     },
     "title_screen_new_game": {
       "core_corr": 1.0,
