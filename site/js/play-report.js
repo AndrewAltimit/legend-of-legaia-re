@@ -57,6 +57,20 @@
     });
   }
 
+  /* What the player is pressing with: a touch-only phone, a keyboard, a pad. */
+  function inputLine() {
+    return ask(() => {
+      const coarse = matchMedia('(pointer: coarse)').matches;
+      const fine = matchMedia('(any-pointer: fine)').matches;
+      const pads = Array.from((navigator.getGamepads && navigator.getGamepads()) || [])
+        .filter((g) => g && g.connected).map((g) => `${g.id} (${g.mapping || 'no mapping'})`);
+      const tp = document.querySelector('.touch-pad');
+      return `pointer ${coarse ? 'coarse' : 'fine'}${fine ? '' : ' only'}, ${navigator.maxTouchPoints | 0} touch points, `
+        + `touch pad ${tp ? (tp.classList.contains('is-hidden') ? 'hidden' : 'shown') : 'absent'}, `
+        + `gamepads: ${pads.length ? pads.join('; ') : 'none'}`;
+    });
+  }
+
   function text() {
     const rt = window.__playRuntime;
     const disc = window.__playDisc;
@@ -68,6 +82,7 @@
       `Browser: ${navigator.userAgent}`,
       `GL: ${glLine()}`,
       `Window: ${innerWidth}x${innerHeight} at ${devicePixelRatio}x`,
+      `Input: ${inputLine()}`,
       `Disc file: ${picked ? `${picked.name}, ${picked.size} bytes` : disc ? `${disc.size} bytes` : 'none'}`,
       `Status: ${ask(() => document.getElementById('play-status').textContent.trim().replace(/\s+/g, ' '))}`,
     ];
@@ -75,7 +90,7 @@
       lines.push(`Engine: ${ask(() => rt.state_json())}`);
       lines.push(`Mode: ${ask(() => rt.mode_state_json())}`);
     }
-    for (const key of ['legaia.options', 'legaia.switches']) {
+    for (const key of ['legaia.options', 'legaia.switches', 'legaia.touch-pad']) {
       lines.push(`${key}: ${ask(() => localStorage.getItem(key))}`);
     }
     lines.push(`Recent warnings and errors (${recent.length}):`);
